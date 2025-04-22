@@ -1,22 +1,20 @@
 version: 2
-project_name: sst
+project_name: opencode
 before:
   hooks:
-    - go mod tidy
-    - go test ./cmd/... ./pkg/...
 builds:
   - env:
       - CGO_ENABLED=0
     goos:
       - linux
       - darwin
-    main: ./cmd/sst
+    main: ./main.go
 
 archives:
   - format: tar.gz
     # this name template makes the OS and Arch compatible with the results of uname.
     name_template: >-
-      sst-
+      opencode-
       {{- if eq .Os "darwin" }}mac-
       {{- else if eq .Os "windows" }}windows-
       {{- else if eq .Os "linux" }}linux-{{end}}
@@ -33,20 +31,20 @@ checksum:
 snapshot:
   name_template: "0.0.0-{{ .Timestamp }}"
 aurs:
-  - homepage: "https://github.com/sst/sst"
+  - homepage: "https://github.com/opencode-ai/opencode"
     description: "Deploy anything"
     private_key: "{{ .Env.AUR_KEY }}"
-    git_url: "ssh://aur@aur.archlinux.org/sst-bin.git"
+    git_url: "ssh://aur@aur.archlinux.org/opencode.git"
     license: "MIT"
     package: |-
-      install -Dm755 ./sst "${pkgdir}/usr/bin/sst"
+      install -Dm755 ./opencode "${pkgdir}/usr/bin/opencode"
 brews:
   - repository:
-      owner: sst
+      owner: opencode-ai
       name: homebrew-tap
 nfpms:
-  - maintainer: sst
-    description: the sst cli
+  - maintainer: opencode
+    description: terminal based agent that can build anything
     formats:
       - deb
       - rpm
@@ -54,14 +52,6 @@ nfpms:
       {{ .ProjectName }}-
       {{- if eq .Os "darwin" }}mac
       {{- else }}{{ .Os }}{{ end }}-{{ .Arch }}
-
-# scoop:
-#   bucket:
-#     owner: sst
-#     name: scoop-bucket
-#   homepage: "https://github.com/sst/ion"
-#   description: "sst cli"
-#   license: Apache 2.0
 
 changelog:
   sort: asc
