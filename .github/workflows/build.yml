@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - dev
+      - opencode
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -19,15 +19,6 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      - uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
-
-      - run: |
-          npm config set //registry.npmjs.org/:_authToken $NODE_AUTH_TOKEN
-          npm whoami
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - run: git fetch --force --tags
 
@@ -35,14 +26,7 @@ jobs:
         with:
           go-version: ">=1.23.2"
 
-      - name: Go Mod
-        run: go mod download
-
-      # TODO remove temporary workaround
-      - run: bun i --frozen-lockfile
-      - run: git reset --hard
-      - run: cd platform && bun tsc --noEmit
-      - run: ./platform/scripts/build
+      - run: go mod download
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
