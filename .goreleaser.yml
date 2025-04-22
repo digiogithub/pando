@@ -31,13 +31,18 @@ checksum:
 snapshot:
   name_template: "0.0.0-{{ .Timestamp }}"
 aurs:
-  - homepage: "https://github.com/opencode-ai/opencode"
+  - name: opencode
+    homepage: "https://github.com/opencode-ai/opencode"
     description: "Deploy anything"
-    private_key: "{{ .Env.AUR_KEY }}"
-    git_url: "ssh://aur@aur.archlinux.org/opencode.git"
+    maintainers:
+      - "opencode <noreply@opencode.ai>"
     license: "MIT"
-    name: opencode
-    package_name: opencode
+    private_key: "{{ .Env.AUR_KEY }}"
+    git_url: "ssh://aur@aur.archlinux.org/opencode-bin.git"
+    provides:
+      - opencode
+    conflicts:
+      - opencode
     package: |-
       install -Dm755 ./opencode "${pkgdir}/usr/bin/opencode"
 # brews:
