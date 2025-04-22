@@ -37,6 +37,7 @@ aurs:
     git_url: "ssh://aur@aur.archlinux.org/opencode.git"
     license: "MIT"
     name: opencode
+    package_name: opencode
     package: |-
       install -Dm755 ./opencode "${pkgdir}/usr/bin/opencode"
 # brews:
