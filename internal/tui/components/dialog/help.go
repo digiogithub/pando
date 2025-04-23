@@ -62,7 +62,7 @@ func (h *helpCmp) render() string {
 	var (
 		pairs []string
 		width int
-		rows  = 14 - 2
+		rows  = 10 - 2
 	)
 	for i := 0; i < len(bindings); i += rows {
 		var (

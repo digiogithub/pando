@@ -190,7 +190,6 @@ func (c *commandDialogCmp) View() string {
 		styles.BaseStyle.Width(maxWidth).Render(""),
 		styles.BaseStyle.Width(maxWidth).Render(lipgloss.JoinVertical(lipgloss.Left, commandItems...)),
 		styles.BaseStyle.Width(maxWidth).Render(""),
-		styles.BaseStyle.Width(maxWidth).Padding(0, 1).Foreground(styles.ForgroundDim).Render("↑/k: up  ↓/j: down  enter: select  esc: cancel"),
 	)
 
 	return styles.BaseStyle.Padding(1, 2).
@@ -244,4 +243,3 @@ func NewCommandDialogCmp() CommandDialog {
 		selectedCommandID: "",
 	}
 }
-

@@ -30,7 +30,7 @@ type keyMap struct {
 var keys = keyMap{
 	Logs: key.NewBinding(
 		key.WithKeys("ctrl+l"),
-		key.WithHelp("ctrl+L", "logs"),
+		key.WithHelp("ctrl+l", "logs"),
 	),
 
 	Quit: key.NewBinding(
@@ -49,7 +49,7 @@ var keys = keyMap{
 
 	Commands: key.NewBinding(
 		key.WithKeys("ctrl+k"),
-		key.WithHelp("ctrl+K", "commands"),
+		key.WithHelp("ctrl+k", "commands"),
 	),
 }
 
@@ -95,8 +95,6 @@ type appModel struct {
 
 	showInitDialog bool
 	initDialog     dialog.InitDialogCmp
-
-	editingMode bool
 }
 
 func (a appModel) Init() tea.Cmd {
@@ -164,8 +162,6 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.initDialog.SetSize(msg.Width, msg.Height)
 
 		return a, tea.Batch(cmds...)
-	case chat.EditorFocusMsg:
-		a.editingMode = bool(msg)
 	// Status
 	case util.InfoMsg:
 		s, cmd := a.status.Update(msg)
@@ -360,7 +356,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.showHelp = !a.showHelp
 			return a, nil
 		case key.Matches(msg, helpEsc):
-			if !a.editingMode {
+			if a.app.CoderAgent.IsBusy() {
 				if a.showQuit {
 					return a, nil
 				}
@@ -477,7 +473,7 @@ func (a appModel) View() string {
 		)
 	}
 
-	if a.editingMode {
+	if !a.app.CoderAgent.IsBusy() {
 		a.status.SetHelpMsg("ctrl+? help")
 	} else {
 		a.status.SetHelpMsg("? help")
@@ -494,7 +490,7 @@ func (a appModel) View() string {
 		if a.currentPage == page.LogsPage {
 			bindings = append(bindings, logsKeyReturnKey)
 		}
-		if !a.editingMode {
+		if !a.app.CoderAgent.IsBusy() {
 			bindings = append(bindings, helpEsc)
 		}
 		a.help.SetBindings(bindings)
@@ -585,7 +581,6 @@ func New(app *app.App) tea.Model {
 		permissions:   dialog.NewPermissionDialogCmp(),
 		initDialog:    dialog.NewInitDialogCmp(),
 		app:           app,
-		editingMode:   true,
 		commands:      []dialog.Command{},
 		pages: map[page.PageID]tea.Model{
 			page.ChatPage: page.NewChatPage(app),

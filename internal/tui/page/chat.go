@@ -15,12 +15,11 @@ import (
 var ChatPage PageID = "chat"
 
 type chatPage struct {
-	app         *app.App
-	editor      layout.Container
-	messages    layout.Container
-	layout      layout.SplitPaneLayout
-	session     session.Session
-	editingMode bool
+	app      *app.App
+	editor   layout.Container
+	messages layout.Container
+	layout   layout.SplitPaneLayout
+	session  session.Session
 }
 
 type ChatKeyMap struct {
@@ -34,8 +33,8 @@ var keyMap = ChatKeyMap{
 		key.WithHelp("ctrl+n", "new session"),
 	),
 	Cancel: key.NewBinding(
-		key.WithKeys("ctrl+x"),
-		key.WithHelp("ctrl+x", "cancel"),
+		key.WithKeys("esc"),
+		key.WithHelp("esc", "cancel"),
 	),
 }
 
@@ -65,8 +64,6 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		p.session = msg
-	case chat.EditorFocusMsg:
-		p.editingMode = bool(msg)
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, keyMap.NewSession):
@@ -136,11 +133,7 @@ func (p *chatPage) View() string {
 
 func (p *chatPage) BindingKeys() []key.Binding {
 	bindings := layout.KeyMapToSlice(keyMap)
-	if p.editingMode {
-		bindings = append(bindings, p.editor.BindingKeys()...)
-	} else {
-		bindings = append(bindings, p.messages.BindingKeys()...)
-	}
+	bindings = append(bindings, p.messages.BindingKeys()...)
 	return bindings
 }
 
@@ -155,10 +148,9 @@ func NewChatPage(app *app.App) tea.Model {
 		layout.WithBorder(true, false, false, false),
 	)
 	return &chatPage{
-		app:         app,
-		editor:      editorContainer,
-		messages:    messagesContainer,
-		editingMode: true,
+		app:      app,
+		editor:   editorContainer,
+		messages: messagesContainer,
 		layout: layout.NewSplitPane(
 			layout.WithLeftPanel(messagesContainer),
 			layout.WithBottomPanel(editorContainer),

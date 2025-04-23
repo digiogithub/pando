@@ -64,15 +64,15 @@ var permissionsKeys = permissionsMapping{
 	),
 	Allow: key.NewBinding(
 		key.WithKeys("a"),
-		key.WithHelp("a", "allow"),
+		key.WithHelp("a", "[a]llow"),
 	),
 	AllowSession: key.NewBinding(
-		key.WithKeys("A"),
-		key.WithHelp("A", "allow for session"),
+		key.WithKeys("s"),
+		key.WithHelp("s", "allow for [s]ession"),
 	),
 	Deny: key.NewBinding(
 		key.WithKeys("d"),
-		key.WithHelp("d", "deny"),
+		key.WithHelp("d", "[d]eny"),
 	),
 	Tab: key.NewBinding(
 		key.WithKeys("tab"),
@@ -375,9 +375,6 @@ func (p *permissionDialogCmp) render() string {
 		contentFinal = p.renderDefaultContent()
 	}
 
-	// Add help text
-	helpText := styles.BaseStyle.Width(p.width - 4).Padding(0, 1).Foreground(styles.ForgroundDim).Render("←/→/tab: switch options  a: allow  A: allow for session  d: deny  enter/space: confirm")
-	
 	content := lipgloss.JoinVertical(
 		lipgloss.Top,
 		title,
@@ -385,8 +382,7 @@ func (p *permissionDialogCmp) render() string {
 		headerContent,
 		contentFinal,
 		buttons,
-		styles.BaseStyle.Render(strings.Repeat(" ", p.width - 4)),
-		helpText,
+		styles.BaseStyle.Render(strings.Repeat(" ", p.width-4)),
 	)
 
 	return styles.BaseStyle.

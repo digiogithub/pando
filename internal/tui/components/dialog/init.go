@@ -46,8 +46,8 @@ func (k initDialogKeyMap) ShortHelp() []key.Binding {
 			key.WithHelp("enter", "confirm"),
 		),
 		key.NewBinding(
-			key.WithKeys("esc"),
-			key.WithHelp("esc", "cancel"),
+			key.WithKeys("esc", "q"),
+			key.WithHelp("esc/q", "cancel"),
 		),
 		key.NewBinding(
 			key.WithKeys("y", "n"),
@@ -114,6 +114,7 @@ func (m InitDialogCmp) View() string {
 		Padding(1, 1).
 		Render("Would you like to initialize this project?")
 
+	maxWidth = min(maxWidth, m.width-10)
 	yesStyle := styles.BaseStyle
 	noStyle := styles.BaseStyle
 
@@ -144,12 +145,6 @@ func (m InitDialogCmp) View() string {
 		Padding(1, 0).
 		Render(buttons)
 
-	help := styles.BaseStyle.
-		Width(maxWidth).
-		Padding(0, 1).
-		Foreground(styles.ForgroundDim).
-		Render("tab/←/→: toggle  y/n: yes/no  enter: confirm  esc: cancel")
-
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		title,
@@ -158,7 +153,6 @@ func (m InitDialogCmp) View() string {
 		question,
 		buttons,
 		styles.BaseStyle.Width(maxWidth).Render(""),
-		help,
 	)
 
 	return styles.BaseStyle.Padding(1, 2).
