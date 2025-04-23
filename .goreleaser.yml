@@ -32,9 +32,9 @@ snapshot:
 aurs:
   - name: opencode
     homepage: "https://github.com/opencode-ai/opencode"
-    description: "Deploy anything"
+    description: "terminal based agent that can build anything"
     maintainers:
-      - "opencode <noreply@opencode.ai>"
+      - "kujtimiihoxha <kujtimii.h@gmail.com>"
     license: "MIT"
     private_key: "{{ .Env.AUR_KEY }}"
     git_url: "ssh://aur@aur.archlinux.org/opencode-bin.git"
@@ -49,7 +49,7 @@ brews:
       owner: opencode-ai
       name: homebrew-tap
 nfpms:
-  - maintainer: opencode
+  - maintainer: kujtimiihoxha
     description: terminal based agent that can build anything
     formats:
       - deb
