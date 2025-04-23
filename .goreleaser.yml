@@ -44,10 +44,10 @@ aurs:
       - opencode
     package: |-
       install -Dm755 ./opencode "${pkgdir}/usr/bin/opencode"
-# brews:
-#   - repository:
-#       owner: opencode-ai
-#       name: homebrew-tap
+brews:
+  - repository:
+      owner: opencode-ai
+      name: homebrew-tap
 nfpms:
   - maintainer: opencode
     description: terminal based agent that can build anything
