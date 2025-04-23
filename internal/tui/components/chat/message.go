@@ -28,7 +28,7 @@ const (
 	assistantMessageType
 	toolMessageType
 
-	maxResultHeight = 15
+	maxResultHeight = 10
 )
 
 var diffStyle = diff.NewStyleConfig(diff.WithShowHeader(false), diff.WithShowHunkHeader(false))
@@ -148,7 +148,7 @@ func renderAssistantMessage(
 			content = "*Finished without output*"
 		}
 
-		content = renderMessage(content, false, msg.ID == focusedUIMessageId, width, info...)
+		content = renderMessage(content, false, true, width, info...)
 		messages = append(messages, uiMessage{
 			ID:          msg.ID,
 			messageType: assistantMessageType,

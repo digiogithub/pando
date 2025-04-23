@@ -21,9 +21,7 @@ type editorCmp struct {
 	textarea textarea.Model
 }
 
-type FocusEditorMsg bool
-
-type focusedEditorKeyMaps struct {
+type EditorKeyMaps struct {
 	Send       key.Binding
 	OpenEditor key.Binding
 }
@@ -34,10 +32,10 @@ type bluredEditorKeyMaps struct {
 	OpenEditor key.Binding
 }
 
-var KeyMaps = focusedEditorKeyMaps{
+var editorMaps = EditorKeyMaps{
 	Send: key.NewBinding(
-		key.WithKeys("ctrl+s"),
-		key.WithHelp("ctrl+s", "send message"),
+		key.WithKeys("enter", "ctrl+s"),
+		key.WithHelp("enter", "send message"),
 	),
 	OpenEditor: key.NewBinding(
 		key.WithKeys("ctrl+e"),
@@ -107,29 +105,24 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.session = msg
 		}
 		return m, nil
-	case FocusEditorMsg:
-		if msg {
-			m.textarea.Focus()
-			return m, tea.Batch(textarea.Blink, util.CmdHandler(EditorFocusMsg(true)))
-		}
 	case tea.KeyMsg:
 		if key.Matches(msg, messageKeys.PageUp) || key.Matches(msg, messageKeys.PageDown) ||
 			key.Matches(msg, messageKeys.HalfPageUp) || key.Matches(msg, messageKeys.HalfPageDown) {
 			return m, nil
 		}
-		if key.Matches(msg, KeyMaps.OpenEditor) {
+		if key.Matches(msg, editorMaps.OpenEditor) {
 			if m.app.CoderAgent.IsSessionBusy(m.session.ID) {
 				return m, util.ReportWarn("Agent is working, please wait...")
 			}
 			return m, openEditor()
 		}
 		// if the key does not match any binding, return
-		if m.textarea.Focused() && key.Matches(msg, KeyMaps.Send) {
+		if m.textarea.Focused() && key.Matches(msg, editorMaps.Send) {
 			return m, m.send()
 		}
-		
+
 		// Handle Enter key
-		if m.textarea.Focused() && msg.String() == "enter" {
+		if m.textarea.Focused() && key.Matches(msg, editorMaps.Send) {
 			value := m.textarea.Value()
 			if len(value) > 0 && value[len(value)-1] == '\\' {
 				// If the last character is a backslash, remove it and add a newline
@@ -163,7 +156,7 @@ func (m *editorCmp) GetSize() (int, int) {
 
 func (m *editorCmp) BindingKeys() []key.Binding {
 	bindings := []key.Binding{}
-	bindings = append(bindings, layout.KeyMapToSlice(KeyMaps)...)
+	bindings = append(bindings, layout.KeyMapToSlice(editorMaps)...)
 	return bindings
 }
 

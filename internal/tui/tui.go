@@ -224,7 +224,6 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.app.Permissions.GrantPersistant(msg.Permission)
 		case dialog.PermissionDeny:
 			a.app.Permissions.Deny(msg.Permission)
-			cmd = util.CmdHandler(chat.FocusEditorMsg(true))
 		}
 		a.showPermissions = false
 		return a, cmd
