@@ -64,15 +64,15 @@ var permissionsKeys = permissionsMapping{
 	),
 	Allow: key.NewBinding(
 		key.WithKeys("a"),
-		key.WithHelp("a", "[a]llow"),
+		key.WithHelp("a", "allow"),
 	),
 	AllowSession: key.NewBinding(
 		key.WithKeys("s"),
-		key.WithHelp("s", "allow for [s]ession"),
+		key.WithHelp("s", "allow for session"),
 	),
 	Deny: key.NewBinding(
 		key.WithKeys("d"),
-		key.WithHelp("d", "[d]eny"),
+		key.WithHelp("d", "deny"),
 	),
 	Tab: key.NewBinding(
 		key.WithKeys("tab"),
@@ -171,7 +171,7 @@ func (p *permissionDialogCmp) renderButtons() string {
 	}
 
 	allowButton := allowStyle.Padding(0, 1).Render("Allow (a)")
-	allowSessionButton := allowSessionStyle.Padding(0, 1).Render("Allow for session (A)")
+	allowSessionButton := allowSessionStyle.Padding(0, 1).Render("Allow for session (s)")
 	denyButton := denyStyle.Padding(0, 1).Render("Deny (d)")
 
 	content := lipgloss.JoinHorizontal(

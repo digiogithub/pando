@@ -116,11 +116,6 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, openEditor()
 		}
-		// if the key does not match any binding, return
-		if m.textarea.Focused() && key.Matches(msg, editorMaps.Send) {
-			return m, m.send()
-		}
-
 		// Handle Enter key
 		if m.textarea.Focused() && key.Matches(msg, editorMaps.Send) {
 			value := m.textarea.Value()

@@ -83,6 +83,14 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rendering = false
 		return m, nil
 
+	case tea.KeyMsg:
+		if key.Matches(msg, messageKeys.PageUp) || key.Matches(msg, messageKeys.PageDown) ||
+			key.Matches(msg, messageKeys.HalfPageUp) || key.Matches(msg, messageKeys.HalfPageDown) {
+			u, cmd := m.viewport.Update(msg)
+			m.viewport = u
+			cmds = append(cmds, cmd)
+		}
+
 	case renderFinishedMsg:
 		m.rendering = false
 		m.viewport.GotoBottom()
@@ -140,10 +148,6 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-
-	u, cmd := m.viewport.Update(msg)
-	m.viewport = u
-	cmds = append(cmds, cmd)
 
 	spinner, cmd := m.spinner.Update(msg)
 	m.spinner = spinner
@@ -351,6 +355,16 @@ func (m *messagesCmp) help() string {
 			styles.BaseStyle.Foreground(styles.ForgroundDim).Bold(true).Render("press "),
 			styles.BaseStyle.Foreground(styles.Forground).Bold(true).Render("esc"),
 			styles.BaseStyle.Foreground(styles.ForgroundDim).Bold(true).Render(" to exit cancel"),
+		)
+	} else {
+		text += lipgloss.JoinHorizontal(
+			lipgloss.Left,
+			styles.BaseStyle.Foreground(styles.ForgroundDim).Bold(true).Render("press "),
+			styles.BaseStyle.Foreground(styles.Forground).Bold(true).Render("enter"),
+			styles.BaseStyle.Foreground(styles.ForgroundDim).Bold(true).Render(" to send the message,"),
+			styles.BaseStyle.Foreground(styles.ForgroundDim).Bold(true).Render(" write"),
+			styles.BaseStyle.Foreground(styles.Forground).Bold(true).Render(" \\"),
+			styles.BaseStyle.Foreground(styles.ForgroundDim).Bold(true).Render(" and enter to add a new line"),
 		)
 	}
 	return styles.BaseStyle.
