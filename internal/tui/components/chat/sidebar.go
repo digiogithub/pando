@@ -116,13 +116,18 @@ func (m *sidebarCmp) sessionSection() string {
 func (m *sidebarCmp) modifiedFile(filePath string, additions, removals int) string {
 	stats := ""
 	if additions > 0 && removals > 0 {
-		stats = styles.BaseStyle.Foreground(styles.ForgroundDim).Render(fmt.Sprintf(" %d additions and  %d removals", additions, removals))
+		additions := styles.BaseStyle.Foreground(styles.Green).PaddingLeft(1).Render(fmt.Sprintf("+%d", additions))
+		removals := styles.BaseStyle.Foreground(styles.Red).PaddingLeft(1).Render(fmt.Sprintf("-%d", removals))
+		content := lipgloss.JoinHorizontal(lipgloss.Left, additions, removals)
+		stats = styles.BaseStyle.Width(lipgloss.Width(content)).Render(content)
 	} else if additions > 0 {
-		stats = styles.BaseStyle.Foreground(styles.ForgroundDim).Render(fmt.Sprintf(" %d additions", additions))
+		additions := fmt.Sprintf(" %s", styles.BaseStyle.PaddingLeft(1).Foreground(styles.Green).Render(fmt.Sprintf("+%d", additions)))
+		stats = styles.BaseStyle.Width(lipgloss.Width(additions)).Render(additions)
 	} else if removals > 0 {
-		stats = styles.BaseStyle.Foreground(styles.ForgroundDim).Render(fmt.Sprintf(" %d removals", removals))
+		removals := fmt.Sprintf(" %s", styles.BaseStyle.PaddingLeft(1).Foreground(styles.Red).Render(fmt.Sprintf("-%d", removals)))
+		stats = styles.BaseStyle.Width(lipgloss.Width(removals)).Render(removals)
 	}
-	filePathStr := styles.BaseStyle.Foreground(styles.Forground).Render(filePath)
+	filePathStr := styles.BaseStyle.Render(filePath)
 
 	return styles.BaseStyle.
 		Width(m.width).
