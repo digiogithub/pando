@@ -6,14 +6,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
-
-	"github.com/golang-migrate/migrate/v4/database/sqlite3"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/ncruces/go-sqlite3/driver"
+	_ "github.com/ncruces/go-sqlite3/embed"
 
 	"github.com/opencode-ai/opencode/internal/config"
 	"github.com/opencode-ai/opencode/internal/logging"
+
+	"github.com/pressly/goose/v3"
 )
 
 func Connect() (*sql.DB, error) {
@@ -54,38 +53,16 @@ func Connect() (*sql.DB, error) {
 		}
 	}
 
-	// Initialize schema from embedded file
-	d, err := iofs.New(FS, "migrations")
-	if err != nil {
-		logging.Error("Failed to open embedded migrations", "error", err)
-		db.Close()
-		return nil, fmt.Errorf("failed to open embedded migrations: %w", err)
+	goose.SetBaseFS(FS)
+
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		logging.Error("Failed to set dialect", "error", err)
+		return nil, fmt.Errorf("failed to set dialect: %w", err)
 	}
 
-	driver, err := sqlite3.WithInstance(db, &sqlite3.Config{})
-	if err != nil {
-		logging.Error("Failed to create SQLite driver", "error", err)
-		db.Close()
-		return nil, fmt.Errorf("failed to create SQLite driver: %w", err)
+	if err := goose.Up(db, "migrations"); err != nil {
+		logging.Error("Failed to apply migrations", "error", err)
+		return nil, fmt.Errorf("failed to apply migrations: %w", err)
 	}
-
-	m, err := migrate.NewWithInstance("iofs", d, "ql", driver)
-	if err != nil {
-		logging.Error("Failed to create migration instance", "error", err)
-		db.Close()
-		return nil, fmt.Errorf("failed to create migration instance: %w", err)
-	}
-
-	err = m.Up()
-	if err != nil && err != migrate.ErrNoChange {
-		logging.Error("Migration failed", "error", err)
-		db.Close()
-		return nil, fmt.Errorf("failed to apply schema: %w", err)
-	} else if err == migrate.ErrNoChange {
-		logging.Info("No schema changes to apply")
-	} else {
-		logging.Info("Schema migration applied successfully")
-	}
-
 	return db, nil
 }

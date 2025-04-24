@@ -1,3 +1,5 @@
+-- +goose Up
+-- +goose StatementBegin
 -- Sessions
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -78,3 +80,19 @@ UPDATE sessions SET
     message_count = message_count - 1
 WHERE id = old.session_id;
 END;
+
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DROP TRIGGER IF EXISTS update_sessions_updated_at;
+DROP TRIGGER IF EXISTS update_messages_updated_at;
+DROP TRIGGER IF EXISTS update_files_updated_at;
+
+DROP TRIGGER IF EXISTS update_session_message_count_on_delete;
+DROP TRIGGER IF EXISTS update_session_message_count_on_insert;
+
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS files;
+-- +goose StatementEnd
