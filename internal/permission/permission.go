@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/opencode-ai/opencode/internal/config"
@@ -104,12 +103,8 @@ func (s *permissionService) Request(opts CreatePermissionRequest) bool {
 	s.Publish(pubsub.CreatedEvent, permission)
 
 	// Wait for the response with a timeout
-	select {
-	case resp := <-respCh:
-		return resp
-	case <-time.After(10 * time.Minute):
-		return false
-	}
+	resp := <-respCh
+	return resp
 }
 
 func (s *permissionService) AutoApproveSession(sessionID string) {
