@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kujtimiihoxha/opencode/internal/config"
+	"github.com/opencode-ai/opencode/internal/config"
 )
 
 type GrepParams struct {

@@ -12,13 +12,13 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/kujtimiihoxha/opencode/internal/config"
-	"github.com/kujtimiihoxha/opencode/internal/diff"
-	"github.com/kujtimiihoxha/opencode/internal/llm/agent"
-	"github.com/kujtimiihoxha/opencode/internal/llm/models"
-	"github.com/kujtimiihoxha/opencode/internal/llm/tools"
-	"github.com/kujtimiihoxha/opencode/internal/message"
-	"github.com/kujtimiihoxha/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/config"
+	"github.com/opencode-ai/opencode/internal/diff"
+	"github.com/opencode-ai/opencode/internal/llm/agent"
+	"github.com/opencode-ai/opencode/internal/llm/models"
+	"github.com/opencode-ai/opencode/internal/llm/tools"
+	"github.com/opencode-ai/opencode/internal/message"
+	"github.com/opencode-ai/opencode/internal/tui/styles"
 )
 
 type uiMessageType int

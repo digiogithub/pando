@@ -24,7 +24,7 @@ OpenCode is a Go-based CLI application that brings AI assistance to your termina
 
 ```bash
 # Coming soon
-go install github.com/kujtimiihoxha/opencode@latest
+go install github.com/opencode-ai/opencode@latest
 ```
 
 ## Configuration
@@ -341,7 +341,7 @@ While the LSP client implementation supports the full LSP protocol (including co
 
 ```bash
 # Clone the repository
-git clone https://github.com/kujtimiihoxha/opencode.git
+git clone https://github.com/opencode-ai/opencode.git
 cd opencode
 
 # Build

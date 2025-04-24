@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kujtimiihoxha/opencode/internal/llm/models"
-	"github.com/kujtimiihoxha/opencode/internal/llm/tools"
-	"github.com/kujtimiihoxha/opencode/internal/message"
+	"github.com/opencode-ai/opencode/internal/llm/models"
+	"github.com/opencode-ai/opencode/internal/llm/tools"
+	"github.com/opencode-ai/opencode/internal/message"
 )
 
 type EventType string

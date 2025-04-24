@@ -8,11 +8,11 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/kujtimiihoxha/opencode/internal/app"
-	"github.com/kujtimiihoxha/opencode/internal/session"
-	"github.com/kujtimiihoxha/opencode/internal/tui/layout"
-	"github.com/kujtimiihoxha/opencode/internal/tui/styles"
-	"github.com/kujtimiihoxha/opencode/internal/tui/util"
+	"github.com/opencode-ai/opencode/internal/app"
+	"github.com/opencode-ai/opencode/internal/session"
+	"github.com/opencode-ai/opencode/internal/tui/layout"
+	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/util"
 )
 
 type editorCmp struct {

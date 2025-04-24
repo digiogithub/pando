@@ -7,15 +7,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kujtimiihoxha/opencode/internal/config"
-	"github.com/kujtimiihoxha/opencode/internal/db"
-	"github.com/kujtimiihoxha/opencode/internal/history"
-	"github.com/kujtimiihoxha/opencode/internal/llm/agent"
-	"github.com/kujtimiihoxha/opencode/internal/logging"
-	"github.com/kujtimiihoxha/opencode/internal/lsp"
-	"github.com/kujtimiihoxha/opencode/internal/message"
-	"github.com/kujtimiihoxha/opencode/internal/permission"
-	"github.com/kujtimiihoxha/opencode/internal/session"
+	"github.com/opencode-ai/opencode/internal/config"
+	"github.com/opencode-ai/opencode/internal/db"
+	"github.com/opencode-ai/opencode/internal/history"
+	"github.com/opencode-ai/opencode/internal/llm/agent"
+	"github.com/opencode-ai/opencode/internal/logging"
+	"github.com/opencode-ai/opencode/internal/lsp"
+	"github.com/opencode-ai/opencode/internal/message"
+	"github.com/opencode-ai/opencode/internal/permission"
+	"github.com/opencode-ai/opencode/internal/session"
 )
 
 type App struct {

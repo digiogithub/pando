@@ -1,4 +1,4 @@
-module github.com/kujtimiihoxha/opencode
+module github.com/opencode-ai/opencode
 
 go 1.24.0
 

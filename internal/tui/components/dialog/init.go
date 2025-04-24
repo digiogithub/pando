@@ -5,8 +5,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/kujtimiihoxha/opencode/internal/tui/styles"
-	"github.com/kujtimiihoxha/opencode/internal/tui/util"
+	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/util"
 )
 
 // InitDialogCmp is a component that asks the user if they want to initialize the project.

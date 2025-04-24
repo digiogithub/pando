@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/google/uuid"
-	"github.com/kujtimiihoxha/opencode/internal/config"
-	"github.com/kujtimiihoxha/opencode/internal/llm/tools"
-	"github.com/kujtimiihoxha/opencode/internal/logging"
-	"github.com/kujtimiihoxha/opencode/internal/message"
+	"github.com/opencode-ai/opencode/internal/config"
+	"github.com/opencode-ai/opencode/internal/llm/tools"
+	"github.com/opencode-ai/opencode/internal/logging"
+	"github.com/opencode-ai/opencode/internal/message"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
