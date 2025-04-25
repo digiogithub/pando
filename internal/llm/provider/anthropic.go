@@ -262,7 +262,7 @@ func (a *anthropicClient) stream(ctx context.Context, messages []message.Message
 				event := anthropicStream.Current()
 				err := accumulatedMessage.Accumulate(event)
 				if err != nil {
-					eventChan <- ProviderEvent{Type: EventError, Error: err}
+					logging.Warn("Error accumulating message", "error", err)
 					continue
 				}
 
