@@ -105,6 +105,17 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.session = msg
 		}
 		return m, nil
+	case tea.BlurMsg:
+		m.textarea.Blur()
+		return m, nil
+	case tea.MouseMsg:
+		if !m.textarea.Focused() {
+			m.textarea.Focus()
+			return m, textarea.Blink
+		}
+	case tea.FocusMsg:
+		m.textarea.Focus()
+		return m, textarea.Blink
 	case tea.KeyMsg:
 		if key.Matches(msg, messageKeys.PageUp) || key.Matches(msg, messageKeys.PageDown) ||
 			key.Matches(msg, messageKeys.HalfPageUp) || key.Matches(msg, messageKeys.HalfPageDown) {
