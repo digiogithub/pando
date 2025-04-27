@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/opencode-ai/opencode/internal/config"
 	"github.com/opencode-ai/opencode/internal/llm/models"
 	"github.com/opencode-ai/opencode/internal/llm/tools"
 	"github.com/opencode-ai/opencode/internal/message"
@@ -82,6 +83,7 @@ type baseProvider[C ProviderClient] struct {
 }
 
 func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption) (Provider, error) {
+	cfg := config.Get()
 	clientOptions := providerClientOptions{}
 	for _, o := range opts {
 		o(&clientOptions)
@@ -110,6 +112,7 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 	case models.ProviderGROQ:
 		clientOptions.openaiOptions = append(clientOptions.openaiOptions,
 			WithOpenAIBaseURL("https://api.groq.com/openai/v1"),
+			WithOpenAIDisableReasoningEffort(),
 		)
 		return &baseProvider[OpenAIClient]{
 			options: clientOptions,
@@ -118,6 +121,20 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 	case models.ProviderMock:
 		// TODO: implement mock client for test
 		panic("not implemented")
+	}
+	// check if we can find the customProvider in the config
+	if customProvider, ok := cfg.Providers[providerName]; ok {
+		switch customProvider.Type {
+		case config.ProviderTypeOpenAI:
+			clientOptions.openaiOptions = append(clientOptions.openaiOptions,
+				WithOpenAIBaseURL(customProvider.BaseURL),
+				WithOpenAIDisableReasoningEffort(), // we might need to have this configurable also?
+			)
+			return &baseProvider[OpenAIClient]{
+				options: clientOptions,
+				client:  newOpenAIClient(clientOptions),
+			}, nil
+		}
 	}
 	return nil, fmt.Errorf("provider not supported: %s", providerName)
 }

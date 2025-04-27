@@ -4,13 +4,13 @@ const (
 	ProviderGROQ ModelProvider = "groq"
 
 	// GROQ
-	QWENQwq ModelID = "qwen-qwq"
+	QWENQwq ModelID = "groq.qwen-qwq"
 
 	// GROQ preview models
-	Llama4Scout               ModelID = "meta-llama/llama-4-scout-17b-16e-instruct"
-	Llama4Maverick            ModelID = "meta-llama/llama-4-maverick-17b-128e-instruct"
-	Llama3_3_70BVersatile     ModelID = "llama-3.3-70b-versatile"
-	DeepseekR1DistillLlama70b ModelID = "deepseek-r1-distill-llama-70b"
+	Llama4Scout               ModelID = "groq.llama-4-scout-17b-16e-instruct"
+	Llama4Maverick            ModelID = "groq.llama-4-maverick-17b-128e-instruct"
+	Llama3_3_70BVersatile     ModelID = "groq.llama-3.3-70b-versatile"
+	DeepseekR1DistillLlama70b ModelID = "groq.deepseek-r1-distill-llama-70b"
 )
 
 var GroqModels = map[ModelID]Model{
@@ -33,7 +33,7 @@ var GroqModels = map[ModelID]Model{
 
 	Llama4Scout: {
 		ID:                 Llama4Scout,
-		Name:               "Llama4Scout",
+		Name:               "Llama 4 Scout",
 		Provider:           ProviderGROQ,
 		APIModel:           "meta-llama/llama-4-scout-17b-16e-instruct",
 		CostPer1MIn:        0.11,
@@ -45,7 +45,7 @@ var GroqModels = map[ModelID]Model{
 
 	Llama4Maverick: {
 		ID:                 Llama4Maverick,
-		Name:               "Llama4Maverick",
+		Name:               "Llama 4 Maverick",
 		Provider:           ProviderGROQ,
 		APIModel:           "meta-llama/llama-4-maverick-17b-128e-instruct",
 		CostPer1MIn:        0.20,
@@ -57,7 +57,7 @@ var GroqModels = map[ModelID]Model{
 
 	Llama3_3_70BVersatile: {
 		ID:                 Llama3_3_70BVersatile,
-		Name:               "Llama3_3_70BVersatile",
+		Name:               "Llama 3.3 70B Versatile",
 		Provider:           ProviderGROQ,
 		APIModel:           "llama-3.3-70b-versatile",
 		CostPer1MIn:        0.59,
@@ -69,7 +69,7 @@ var GroqModels = map[ModelID]Model{
 
 	DeepseekR1DistillLlama70b: {
 		ID:                 DeepseekR1DistillLlama70b,
-		Name:               "DeepseekR1DistillLlama70b",
+		Name:               "Deepseek R1 Distill Llama 70b",
 		Provider:           ProviderGROQ,
 		APIModel:           "deepseek-r1-distill-llama-70b",
 		CostPer1MIn:        0.75,

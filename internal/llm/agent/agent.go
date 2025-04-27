@@ -252,9 +252,10 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 	eventChan := a.provider.StreamResponse(ctx, msgHistory, a.tools)
 
 	assistantMsg, err := a.messages.Create(ctx, sessionID, message.CreateMessageParams{
-		Role:  message.Assistant,
-		Parts: []message.ContentPart{},
-		Model: a.provider.Model().ID,
+		Role:     message.Assistant,
+		Parts:    []message.ContentPart{},
+		Model:    a.provider.Model().ID,
+		Provider: a.provider.Model().Provider,
 	})
 	if err != nil {
 		return assistantMsg, nil, fmt.Errorf("failed to create assistant message: %w", err)
@@ -438,22 +439,37 @@ func (a *agent) TrackUsage(ctx context.Context, sessionID string, model models.M
 
 func createAgentProvider(agentName config.AgentName) (provider.Provider, error) {
 	cfg := config.Get()
-	agentConfig, ok := cfg.Agents[agentName]
-	if !ok {
+	agentConfig, foundModel := cfg.Agents[agentName]
+	if !foundModel {
 		return nil, fmt.Errorf("agent %s not found", agentName)
 	}
-	model, ok := models.SupportedModels[agentConfig.Model]
-	if !ok {
-		return nil, fmt.Errorf("model %s not supported", agentConfig.Model)
+
+	if agentConfig.Model == "" {
+		return nil, fmt.Errorf("agent %s has no model configured", agentName)
 	}
 
-	providerCfg, ok := cfg.Providers[model.Provider]
-	if !ok {
+	model, err := config.GetModel(agentConfig.Model, agentConfig.Provider)
+	providerCfg, foundProvider := cfg.Providers[model.Provider]
+	if !foundProvider {
 		return nil, fmt.Errorf("provider %s not supported", model.Provider)
 	}
 	if providerCfg.Disabled {
 		return nil, fmt.Errorf("provider %s is not enabled", model.Provider)
 	}
+
+	// try to find the model in the provider config
+	if !foundModel {
+		model, foundModel = providerCfg.Models[agentConfig.Model]
+		// if not found create a simple model just based on the model id
+		if !foundModel {
+			model = models.Model{
+				ID:       agentConfig.Model,
+				APIModel: string(agentConfig.Model),
+				Provider: model.Provider,
+			}
+		}
+	}
+
 	maxTokens := model.DefaultMaxTokens
 	if agentConfig.MaxTokens > 0 {
 		maxTokens = agentConfig.MaxTokens

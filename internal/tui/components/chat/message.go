@@ -15,7 +15,6 @@ import (
 	"github.com/opencode-ai/opencode/internal/config"
 	"github.com/opencode-ai/opencode/internal/diff"
 	"github.com/opencode-ai/opencode/internal/llm/agent"
-	"github.com/opencode-ai/opencode/internal/llm/models"
 	"github.com/opencode-ai/opencode/internal/llm/tools"
 	"github.com/opencode-ai/opencode/internal/message"
 	"github.com/opencode-ai/opencode/internal/tui/styles"
@@ -121,25 +120,29 @@ func renderAssistantMessage(
 	finishData := msg.FinishPart()
 	info := []string{}
 
+	model, _ := config.GetModel(msg.Model, msg.Provider)
+	if model.ID == "" {
+		model.Name = "Unknown"
+	}
 	// Add finish info if available
 	if finished {
 		switch finishData.Reason {
 		case message.FinishReasonEndTurn:
 			took := formatTimeDifference(msg.CreatedAt, finishData.Time)
 			info = append(info, styles.BaseStyle.Width(width-1).Foreground(styles.ForgroundDim).Render(
-				fmt.Sprintf(" %s (%s)", models.SupportedModels[msg.Model].Name, took),
+				fmt.Sprintf(" %s (%s)", model.Name, took),
 			))
 		case message.FinishReasonCanceled:
 			info = append(info, styles.BaseStyle.Width(width-1).Foreground(styles.ForgroundDim).Render(
-				fmt.Sprintf(" %s (%s)", models.SupportedModels[msg.Model].Name, "canceled"),
+				fmt.Sprintf(" %s (%s)", model.Name, "canceled"),
 			))
 		case message.FinishReasonError:
 			info = append(info, styles.BaseStyle.Width(width-1).Foreground(styles.ForgroundDim).Render(
-				fmt.Sprintf(" %s (%s)", models.SupportedModels[msg.Model].Name, "error"),
+				fmt.Sprintf(" %s (%s)", model.Name, "error"),
 			))
 		case message.FinishReasonPermissionDenied:
 			info = append(info, styles.BaseStyle.Width(width-1).Foreground(styles.ForgroundDim).Render(
-				fmt.Sprintf(" %s (%s)", models.SupportedModels[msg.Model].Name, "permission denied"),
+				fmt.Sprintf(" %s (%s)", model.Name, "permission denied"),
 			))
 		}
 	}

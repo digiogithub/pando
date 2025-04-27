@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/opencode-ai/opencode/internal/config"
-	"github.com/opencode-ai/opencode/internal/llm/models"
 	"github.com/opencode-ai/opencode/internal/lsp"
 	"github.com/opencode-ai/opencode/internal/lsp/protocol"
 	"github.com/opencode-ai/opencode/internal/pubsub"
@@ -236,7 +235,10 @@ func (m statusCmp) model() string {
 	if !ok {
 		return "Unknown"
 	}
-	model := models.SupportedModels[coder.Model]
+	model, _ := config.GetModel(coder.Model, coder.Provider)
+	if model.ID == "" {
+		model.Name = "Unknown"
+	}
 	return styles.Padded.Background(styles.Grey).Foreground(styles.Text).Render(model.Name)
 }
 

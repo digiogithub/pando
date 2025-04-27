@@ -33,6 +33,12 @@ type MCPServer struct {
 
 type AgentName string
 
+type ProviderType string
+
+const (
+	ProviderTypeOpenAI ProviderType = "openai"
+)
+
 const (
 	AgentCoder AgentName = "coder"
 	AgentTask  AgentName = "task"
@@ -41,15 +47,19 @@ const (
 
 // Agent defines configuration for different LLM models and their token limits.
 type Agent struct {
-	Model           models.ModelID `json:"model"`
-	MaxTokens       int64          `json:"maxTokens"`
-	ReasoningEffort string         `json:"reasoningEffort"` // For openai models low,medium,heigh
+	Model           models.ModelID       `json:"model"`
+	Provider        models.ModelProvider `json:"provider"`
+	MaxTokens       int64                `json:"maxTokens"`
+	ReasoningEffort string               `json:"reasoningEffort"` // For openai models low,medium,heigh
 }
 
 // Provider defines configuration for an LLM provider.
 type Provider struct {
-	APIKey   string `json:"apiKey"`
-	Disabled bool   `json:"disabled"`
+	APIKey   string                          `json:"apiKey"`
+	Disabled bool                            `json:"disabled"`
+	Type     ProviderType                    `json:"type"` // will be used to set the parent provider, e.x openai for openai compatible APIs
+	Models   map[models.ModelID]models.Model `json:"models"`
+	BaseURL  string                          `json:"baseUrl"`
 }
 
 // Data defines storage configuration.
@@ -332,8 +342,8 @@ func Validate() error {
 	// Validate agent models
 	for name, agent := range cfg.Agents {
 		// Check if model exists
-		model, modelExists := models.SupportedModels[agent.Model]
-		if !modelExists {
+		model, err := GetModel(agent.Model, agent.Provider)
+		if err != nil {
 			logging.Warn("unsupported model configured, reverting to default",
 				"agent", name,
 				"configured_model", agent.Model)
