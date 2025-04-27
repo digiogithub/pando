@@ -128,8 +128,12 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 		case config.ProviderTypeOpenAI:
 			clientOptions.openaiOptions = append(clientOptions.openaiOptions,
 				WithOpenAIBaseURL(customProvider.BaseURL),
-				WithOpenAIDisableReasoningEffort(), // we might need to have this configurable also?
 			)
+			if !customProvider.EnableReasoningEffort {
+				clientOptions.openaiOptions = append(clientOptions.openaiOptions,
+					WithOpenAIDisableReasoningEffort(),
+				)
+			}
 			return &baseProvider[OpenAIClient]{
 				options: clientOptions,
 				client:  newOpenAIClient(clientOptions),

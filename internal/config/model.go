@@ -36,6 +36,38 @@ func GetModel(model models.ModelID, provider models.ModelProvider) (models.Model
 	// try to find the model in the provider config
 	if !foundModel {
 		m, foundModel = providerCfg.Models[model]
+		// Add some default behavior
+		if foundModel {
+			m.Provider = providerName
+			if m.ID == "" {
+				m.ID = model
+			}
+			if m.APIModel == "" {
+				m.APIModel = string(model)
+			}
+			if m.Name == "" {
+				m.Name = fmt.Sprintf("%s: %s", providerName, model)
+			}
+			if m.Ref != "" {
+				existingModel, foundExisting := models.SupportedModels[models.ModelID(m.Ref)]
+				if foundExisting {
+					m.CostPer1MIn = existingModel.CostPer1MIn
+					m.CostPer1MInCached = existingModel.CostPer1MInCached
+					m.CostPer1MOut = existingModel.CostPer1MOut
+					m.CostPer1MOutCached = existingModel.CostPer1MOutCached
+					m.ContextWindow = existingModel.ContextWindow
+					m.DefaultMaxTokens = existingModel.DefaultMaxTokens
+					m.ContextWindow = existingModel.ContextWindow
+				}
+			}
+			if m.DefaultMaxTokens == 0 {
+				m.DefaultMaxTokens = 4096
+			}
+			if m.ContextWindow == 0 {
+				m.ContextWindow = 50_000
+			}
+		}
+
 		// if not found create a simple model just based on the model id
 		if !foundModel {
 			m = models.Model{

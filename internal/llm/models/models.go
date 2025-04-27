@@ -11,15 +11,16 @@ type Model struct {
 	ID                 ModelID       `json:"id"`
 	Name               string        `json:"name"`
 	Provider           ModelProvider `json:"provider"`
-	APIModel           string        `json:"api_model"`
-	CostPer1MIn        float64       `json:"cost_per_1m_in"`
-	CostPer1MOut       float64       `json:"cost_per_1m_out"`
-	CostPer1MInCached  float64       `json:"cost_per_1m_in_cached"`
-	CostPer1MOutCached float64       `json:"cost_per_1m_out_cached"`
-	ContextWindow      int64         `json:"context_window"`
-	DefaultMaxTokens   int64         `json:"default_max_tokens"`
-	CanReason          bool          `json:"can_reason"`
-	ImageInput         bool          `json:"image_input"`
+	APIModel           string        `json:"apiModel"`
+	CostPer1MIn        float64       `json:"costPer1mIn"`
+	CostPer1MOut       float64       `json:"costPer1mOut"`
+	CostPer1MInCached  float64       `json:"constPer1mInCached"`
+	CostPer1MOutCached float64       `json:"costPer1mOutCached"`
+	ContextWindow      int64         `json:"contextWindow"`
+	DefaultMaxTokens   int64         `json:"defaultMaxTokens"`
+	CanReason          bool          `json:"canReason"`
+	ImageInput         bool          `json:"imageInput"`
+	Ref                string        `json:"ref"` // used when referencing a default model config
 }
 
 const (

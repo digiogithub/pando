@@ -55,11 +55,12 @@ type Agent struct {
 
 // Provider defines configuration for an LLM provider.
 type Provider struct {
-	APIKey   string                          `json:"apiKey"`
-	Disabled bool                            `json:"disabled"`
-	Type     ProviderType                    `json:"type"` // will be used to set the parent provider, e.x openai for openai compatible APIs
-	Models   map[models.ModelID]models.Model `json:"models"`
-	BaseURL  string                          `json:"baseUrl"`
+	APIKey                string                          `json:"apiKey"`
+	Disabled              bool                            `json:"disabled"`
+	Type                  ProviderType                    `json:"type"` // will be used to set the parent provider, e.x openai for openai compatible APIs
+	Models                map[models.ModelID]models.Model `json:"models"`
+	BaseURL               string                          `json:"baseUrl"`
+	EnableReasoningEffort bool                            `json:"enableReasoningEffort"`
 }
 
 // Data defines storage configuration.
