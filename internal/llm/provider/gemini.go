@@ -221,7 +221,10 @@ func (g *geminiClient) send(ctx context.Context, messages []message.Message, too
 				}
 			}
 		}
-		finishReason := g.finishReason(resp.Candidates[0].FinishReason)
+		finishReason := message.FinishReasonEndTurn
+		if len(resp.Candidates) > 0 {
+			finishReason = g.finishReason(resp.Candidates[0].FinishReason)
+		}
 		if len(toolCalls) > 0 {
 			finishReason = message.FinishReasonToolUse
 		}
@@ -350,7 +353,11 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 			eventChan <- ProviderEvent{Type: EventContentStop}
 
 			if finalResp != nil {
-				finishReason := g.finishReason(finalResp.Candidates[0].FinishReason)
+
+				finishReason := message.FinishReasonEndTurn
+				if len(finalResp.Candidates) > 0 {
+					finishReason = g.finishReason(finalResp.Candidates[0].FinishReason)
+				}
 				if len(toolCalls) > 0 {
 					finishReason = message.FinishReasonToolUse
 				}
