@@ -196,16 +196,29 @@ func setDefaults(debug bool) {
 }
 
 // setProviderDefaults configures LLM provider defaults based on environment variables.
-// the default model priority is:
-// 1. Anthropic
-// 2. OpenAI
-// 3. Google Gemini
-// 4. Groq
-// 5. AWS Bedrock
 func setProviderDefaults() {
-	// Anthropic configuration
+	// Set all API keys we can find in the environment
 	if apiKey := os.Getenv("ANTHROPIC_API_KEY"); apiKey != "" {
 		viper.SetDefault("providers.anthropic.apiKey", apiKey)
+	}
+	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
+		viper.SetDefault("providers.openai.apiKey", apiKey)
+	}
+	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
+		viper.SetDefault("providers.gemini.apiKey", apiKey)
+	}
+	if apiKey := os.Getenv("GROQ_API_KEY"); apiKey != "" {
+		viper.SetDefault("providers.groq.apiKey", apiKey)
+	}
+
+	// Use this order to set the default models
+	// 1. Anthropic
+	// 2. OpenAI
+	// 3. Google Gemini
+	// 4. Groq
+	// 5. AWS Bedrock
+	// Anthropic configuration
+	if apiKey := os.Getenv("ANTHROPIC_API_KEY"); apiKey != "" {
 		viper.SetDefault("agents.coder.model", models.Claude37Sonnet)
 		viper.SetDefault("agents.task.model", models.Claude37Sonnet)
 		viper.SetDefault("agents.title.model", models.Claude37Sonnet)
@@ -214,7 +227,6 @@ func setProviderDefaults() {
 
 	// OpenAI configuration
 	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
-		viper.SetDefault("providers.openai.apiKey", apiKey)
 		viper.SetDefault("agents.coder.model", models.GPT41)
 		viper.SetDefault("agents.task.model", models.GPT41Mini)
 		viper.SetDefault("agents.title.model", models.GPT41Mini)
@@ -223,7 +235,6 @@ func setProviderDefaults() {
 
 	// Google Gemini configuration
 	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
-		viper.SetDefault("providers.gemini.apiKey", apiKey)
 		viper.SetDefault("agents.coder.model", models.Gemini25)
 		viper.SetDefault("agents.task.model", models.Gemini25Flash)
 		viper.SetDefault("agents.title.model", models.Gemini25Flash)
@@ -232,7 +243,6 @@ func setProviderDefaults() {
 
 	// Groq configuration
 	if apiKey := os.Getenv("GROQ_API_KEY"); apiKey != "" {
-		viper.SetDefault("providers.groq.apiKey", apiKey)
 		viper.SetDefault("agents.coder.model", models.QWENQwq)
 		viper.SetDefault("agents.task.model", models.QWENQwq)
 		viper.SetDefault("agents.title.model", models.QWENQwq)
