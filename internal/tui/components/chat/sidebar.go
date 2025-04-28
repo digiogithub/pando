@@ -14,6 +14,7 @@ import (
 	"github.com/opencode-ai/opencode/internal/pubsub"
 	"github.com/opencode-ai/opencode/internal/session"
 	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 )
 
 type sidebarCmp struct {
@@ -81,7 +82,9 @@ func (m *sidebarCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *sidebarCmp) View() string {
-	return styles.BaseStyle.
+	baseStyle := styles.BaseStyle()
+
+	return baseStyle.
 		Width(m.width).
 		PaddingLeft(4).
 		PaddingRight(2).
@@ -101,11 +104,19 @@ func (m *sidebarCmp) View() string {
 }
 
 func (m *sidebarCmp) sessionSection() string {
-	sessionKey := styles.BaseStyle.Foreground(styles.PrimaryColor).Bold(true).Render("Session")
-	sessionValue := styles.BaseStyle.
-		Foreground(styles.Forground).
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+
+	sessionKey := baseStyle.
+		Foreground(t.Primary()).
+		Bold(true).
+		Render("Session")
+
+	sessionValue := baseStyle.
+		Foreground(t.Text()).
 		Width(m.width - lipgloss.Width(sessionKey)).
 		Render(fmt.Sprintf(": %s", m.session.Title))
+
 	return lipgloss.JoinHorizontal(
 		lipgloss.Left,
 		sessionKey,
@@ -114,22 +125,40 @@ func (m *sidebarCmp) sessionSection() string {
 }
 
 func (m *sidebarCmp) modifiedFile(filePath string, additions, removals int) string {
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+
 	stats := ""
 	if additions > 0 && removals > 0 {
-		additions := styles.BaseStyle.Foreground(styles.Green).PaddingLeft(1).Render(fmt.Sprintf("+%d", additions))
-		removals := styles.BaseStyle.Foreground(styles.Red).PaddingLeft(1).Render(fmt.Sprintf("-%d", removals))
-		content := lipgloss.JoinHorizontal(lipgloss.Left, additions, removals)
-		stats = styles.BaseStyle.Width(lipgloss.Width(content)).Render(content)
-	} else if additions > 0 {
-		additions := fmt.Sprintf(" %s", styles.BaseStyle.PaddingLeft(1).Foreground(styles.Green).Render(fmt.Sprintf("+%d", additions)))
-		stats = styles.BaseStyle.Width(lipgloss.Width(additions)).Render(additions)
-	} else if removals > 0 {
-		removals := fmt.Sprintf(" %s", styles.BaseStyle.PaddingLeft(1).Foreground(styles.Red).Render(fmt.Sprintf("-%d", removals)))
-		stats = styles.BaseStyle.Width(lipgloss.Width(removals)).Render(removals)
-	}
-	filePathStr := styles.BaseStyle.Render(filePath)
+		additionsStr := baseStyle.
+			Foreground(t.Success()).
+			PaddingLeft(1).
+			Render(fmt.Sprintf("+%d", additions))
 
-	return styles.BaseStyle.
+		removalsStr := baseStyle.
+			Foreground(t.Error()).
+			PaddingLeft(1).
+			Render(fmt.Sprintf("-%d", removals))
+
+		content := lipgloss.JoinHorizontal(lipgloss.Left, additionsStr, removalsStr)
+		stats = baseStyle.Width(lipgloss.Width(content)).Render(content)
+	} else if additions > 0 {
+		additionsStr := fmt.Sprintf(" %s", baseStyle.
+			PaddingLeft(1).
+			Foreground(t.Success()).
+			Render(fmt.Sprintf("+%d", additions)))
+		stats = baseStyle.Width(lipgloss.Width(additionsStr)).Render(additionsStr)
+	} else if removals > 0 {
+		removalsStr := fmt.Sprintf(" %s", baseStyle.
+			PaddingLeft(1).
+			Foreground(t.Error()).
+			Render(fmt.Sprintf("-%d", removals)))
+		stats = baseStyle.Width(lipgloss.Width(removalsStr)).Render(removalsStr)
+	}
+
+	filePathStr := baseStyle.Render(filePath)
+
+	return baseStyle.
 		Width(m.width).
 		Render(
 			lipgloss.JoinHorizontal(
@@ -141,7 +170,14 @@ func (m *sidebarCmp) modifiedFile(filePath string, additions, removals int) stri
 }
 
 func (m *sidebarCmp) modifiedFiles() string {
-	modifiedFiles := styles.BaseStyle.Width(m.width).Foreground(styles.PrimaryColor).Bold(true).Render("Modified Files:")
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+
+	modifiedFiles := baseStyle.
+		Width(m.width).
+		Foreground(t.Primary()).
+		Bold(true).
+		Render("Modified Files:")
 
 	// If no modified files, show a placeholder message
 	if m.modFiles == nil || len(m.modFiles) == 0 {
@@ -150,13 +186,13 @@ func (m *sidebarCmp) modifiedFiles() string {
 		if remainingWidth > 0 {
 			message += strings.Repeat(" ", remainingWidth)
 		}
-		return styles.BaseStyle.
+		return baseStyle.
 			Width(m.width).
 			Render(
 				lipgloss.JoinVertical(
 					lipgloss.Top,
 					modifiedFiles,
-					styles.BaseStyle.Foreground(styles.ForgroundDim).Render(message),
+					baseStyle.Foreground(t.TextMuted()).Render(message),
 				),
 			)
 	}
@@ -175,7 +211,7 @@ func (m *sidebarCmp) modifiedFiles() string {
 		fileViews = append(fileViews, m.modifiedFile(path, stats.additions, stats.removals))
 	}
 
-	return styles.BaseStyle.
+	return baseStyle.
 		Width(m.width).
 		Render(
 			lipgloss.JoinVertical(

@@ -12,6 +12,7 @@ import (
 	"github.com/opencode-ai/opencode/internal/llm/models"
 	"github.com/opencode-ai/opencode/internal/tui/layout"
 	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 	"github.com/opencode-ai/opencode/internal/tui/util"
 )
 
@@ -185,10 +186,13 @@ func (m *modelDialogCmp) switchProvider(offset int) {
 }
 
 func (m *modelDialogCmp) View() string {
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+
 	// Capitalize first letter of provider name
 	providerName := strings.ToUpper(string(m.provider)[:1]) + string(m.provider[1:])
-	title := styles.BaseStyle.
-		Foreground(styles.PrimaryColor).
+	title := baseStyle.
+		Foreground(t.Primary()).
 		Bold(true).
 		Width(maxDialogWidth).
 		Padding(0, 0, 1).
@@ -199,10 +203,10 @@ func (m *modelDialogCmp) View() string {
 	modelItems := make([]string, 0, endIdx-m.scrollOffset)
 
 	for i := m.scrollOffset; i < endIdx; i++ {
-		itemStyle := styles.BaseStyle.Width(maxDialogWidth)
+		itemStyle := baseStyle.Width(maxDialogWidth)
 		if i == m.selectedIdx {
-			itemStyle = itemStyle.Background(styles.PrimaryColor).
-				Foreground(styles.Background).Bold(true)
+			itemStyle = itemStyle.Background(t.Primary()).
+				Foreground(t.Background()).Bold(true)
 		}
 		modelItems = append(modelItems, itemStyle.Render(m.models[i].Name))
 	}
@@ -212,14 +216,14 @@ func (m *modelDialogCmp) View() string {
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		title,
-		styles.BaseStyle.Width(maxDialogWidth).Render(lipgloss.JoinVertical(lipgloss.Left, modelItems...)),
+		baseStyle.Width(maxDialogWidth).Render(lipgloss.JoinVertical(lipgloss.Left, modelItems...)),
 		scrollIndicator,
 	)
 
-	return styles.BaseStyle.Padding(1, 2).
+	return baseStyle.Padding(1, 2).
 		Border(lipgloss.RoundedBorder()).
-		BorderBackground(styles.Background).
-		BorderForeground(styles.ForgroundDim).
+		BorderBackground(t.Background()).
+		BorderForeground(t.TextMuted()).
 		Width(lipgloss.Width(content) + 4).
 		Render(content)
 }
@@ -249,8 +253,11 @@ func (m *modelDialogCmp) getScrollIndicators(maxWidth int) string {
 		return ""
 	}
 
-	return styles.BaseStyle.
-		Foreground(styles.PrimaryColor).
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+
+	return baseStyle.
+		Foreground(t.Primary()).
 		Width(maxWidth).
 		Align(lipgloss.Right).
 		Bold(true).

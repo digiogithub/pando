@@ -10,8 +10,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/opencode-ai/opencode/internal/app"
 	"github.com/opencode-ai/opencode/internal/session"
+	"github.com/opencode-ai/opencode/internal/tui/components/dialog"
 	"github.com/opencode-ai/opencode/internal/tui/layout"
 	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 	"github.com/opencode-ai/opencode/internal/tui/util"
 )
 
@@ -100,6 +102,9 @@ func (m *editorCmp) send() tea.Cmd {
 func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
+	case dialog.ThemeChangedMsg:
+		m.textarea = CreateTextArea(&m.textarea)
+		return m, nil
 	case SessionSelectedMsg:
 		if msg.ID != m.session.ID {
 			m.session = msg
@@ -134,7 +139,13 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *editorCmp) View() string {
-	style := lipgloss.NewStyle().Padding(0, 0, 0, 1).Bold(true)
+	t := theme.CurrentTheme()
+
+	// Style the prompt with theme colors
+	style := lipgloss.NewStyle().
+		Padding(0, 0, 0, 1).
+		Bold(true).
+		Foreground(t.Primary())
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, style.Render(">"), m.textarea.View())
 }
@@ -155,23 +166,42 @@ func (m *editorCmp) BindingKeys() []key.Binding {
 	return bindings
 }
 
-func NewEditorCmp(app *app.App) tea.Model {
-	ti := textarea.New()
-	ti.Prompt = " "
-	ti.ShowLineNumbers = false
-	ti.BlurredStyle.Base = ti.BlurredStyle.Base.Background(styles.Background)
-	ti.BlurredStyle.CursorLine = ti.BlurredStyle.CursorLine.Background(styles.Background)
-	ti.BlurredStyle.Placeholder = ti.BlurredStyle.Placeholder.Background(styles.Background)
-	ti.BlurredStyle.Text = ti.BlurredStyle.Text.Background(styles.Background)
+func CreateTextArea(existing *textarea.Model) textarea.Model {
+	t := theme.CurrentTheme()
+	bgColor := t.Background()
+	textColor := t.Text()
+	textMutedColor := t.TextMuted()
 
-	ti.FocusedStyle.Base = ti.FocusedStyle.Base.Background(styles.Background)
-	ti.FocusedStyle.CursorLine = ti.FocusedStyle.CursorLine.Background(styles.Background)
-	ti.FocusedStyle.Placeholder = ti.FocusedStyle.Placeholder.Background(styles.Background)
-	ti.FocusedStyle.Text = ti.BlurredStyle.Text.Background(styles.Background)
-	ti.CharLimit = -1
-	ti.Focus()
+	ta := textarea.New()
+	ta.BlurredStyle.Base = styles.BaseStyle().Background(bgColor).Foreground(textColor)
+	ta.BlurredStyle.CursorLine = styles.BaseStyle().Background(bgColor)
+	ta.BlurredStyle.Placeholder = styles.BaseStyle().Background(bgColor).Foreground(textMutedColor)
+	ta.BlurredStyle.Text = styles.BaseStyle().Background(bgColor).Foreground(textColor)
+	ta.FocusedStyle.Base = styles.BaseStyle().Background(bgColor).Foreground(textColor)
+	ta.FocusedStyle.CursorLine = styles.BaseStyle().Background(bgColor)
+	ta.FocusedStyle.Placeholder = styles.BaseStyle().Background(bgColor).Foreground(textMutedColor)
+	ta.FocusedStyle.Text = styles.BaseStyle().Background(bgColor).Foreground(textColor)
+
+	ta.Prompt = " "
+	ta.ShowLineNumbers = false
+	ta.CharLimit = -1
+
+	if existing != nil {
+		ta.SetValue(existing.Value())
+		ta.SetWidth(existing.Width())
+		ta.SetHeight(existing.Height())
+	}
+
+	ta.Focus()
+	return ta
+}
+
+func NewEditorCmp(app *app.App) tea.Model {
+	ta := CreateTextArea(nil)
+
 	return &editorCmp{
 		app:      app,
-		textarea: ti,
+		textarea: ta,
 	}
 }
+

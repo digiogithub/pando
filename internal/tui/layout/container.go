@@ -4,7 +4,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 )
 
 type Container interface {
@@ -29,9 +29,6 @@ type container struct {
 	borderBottom bool
 	borderLeft   bool
 	borderStyle  lipgloss.Border
-	borderColor  lipgloss.TerminalColor
-
-	backgroundColor lipgloss.TerminalColor
 }
 
 func (c *container) Init() tea.Cmd {
@@ -45,13 +42,12 @@ func (c *container) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (c *container) View() string {
+	t := theme.CurrentTheme()
 	style := lipgloss.NewStyle()
 	width := c.width
 	height := c.height
-	// Apply background color if specified
-	if c.backgroundColor != nil {
-		style = style.Background(c.backgroundColor)
-	}
+
+	style = style.Background(t.Background())
 
 	// Apply border if any side is enabled
 	if c.borderTop || c.borderRight || c.borderBottom || c.borderLeft {
@@ -69,11 +65,7 @@ func (c *container) View() string {
 			width--
 		}
 		style = style.Border(c.borderStyle, c.borderTop, c.borderRight, c.borderBottom, c.borderLeft)
-
-		// Apply border color if specified
-		if c.borderColor != nil {
-			style = style.BorderBackground(c.backgroundColor).BorderForeground(c.borderColor)
-		}
+		style = style.BorderBackground(t.Background()).BorderForeground(t.BorderNormal())
 	}
 	style = style.
 		Width(width).
@@ -132,11 +124,10 @@ func (c *container) BindingKeys() []key.Binding {
 type ContainerOption func(*container)
 
 func NewContainer(content tea.Model, options ...ContainerOption) Container {
+
 	c := &container{
-		content:         content,
-		borderColor:     styles.BorderColor,
-		borderStyle:     lipgloss.NormalBorder(),
-		backgroundColor: styles.Background,
+		content:     content,
+		borderStyle: lipgloss.NormalBorder(),
 	}
 
 	for _, option := range options {
@@ -201,12 +192,6 @@ func WithBorderStyle(style lipgloss.Border) ContainerOption {
 	}
 }
 
-func WithBorderColor(color lipgloss.TerminalColor) ContainerOption {
-	return func(c *container) {
-		c.borderColor = color
-	}
-}
-
 func WithRoundedBorder() ContainerOption {
 	return WithBorderStyle(lipgloss.RoundedBorder())
 }
@@ -217,10 +202,4 @@ func WithThickBorder() ContainerOption {
 
 func WithDoubleBorder() ContainerOption {
 	return WithBorderStyle(lipgloss.DoubleBorder())
-}
-
-func WithBackgroundColor(color lipgloss.TerminalColor) ContainerOption {
-	return func(c *container) {
-		c.backgroundColor = color
-	}
 }

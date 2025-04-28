@@ -12,6 +12,7 @@ import (
 	"github.com/opencode-ai/opencode/internal/logging"
 	"github.com/opencode-ai/opencode/internal/tui/layout"
 	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 )
 
 type DetailComponent interface {
@@ -49,9 +50,10 @@ func (i *detailCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (i *detailCmp) updateContent() {
 	var content strings.Builder
+	t := theme.CurrentTheme()
 
 	// Format the header with timestamp and level
-	timeStyle := lipgloss.NewStyle().Foreground(styles.SubText0)
+	timeStyle := lipgloss.NewStyle().Foreground(t.TextMuted())
 	levelStyle := getLevelStyle(i.currentLog.Level)
 
 	header := lipgloss.JoinHorizontal(
@@ -65,7 +67,7 @@ func (i *detailCmp) updateContent() {
 	content.WriteString("\n\n")
 
 	// Message with styling
-	messageStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.Text)
+	messageStyle := lipgloss.NewStyle().Bold(true).Foreground(t.Text())
 	content.WriteString(messageStyle.Render("Message:"))
 	content.WriteString("\n")
 	content.WriteString(lipgloss.NewStyle().Padding(0, 2).Render(i.currentLog.Message))
@@ -73,13 +75,13 @@ func (i *detailCmp) updateContent() {
 
 	// Attributes section
 	if len(i.currentLog.Attributes) > 0 {
-		attrHeaderStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.Text)
+		attrHeaderStyle := lipgloss.NewStyle().Bold(true).Foreground(t.Text())
 		content.WriteString(attrHeaderStyle.Render("Attributes:"))
 		content.WriteString("\n")
 
 		// Create a table-like display for attributes
-		keyStyle := lipgloss.NewStyle().Foreground(styles.Primary).Bold(true)
-		valueStyle := lipgloss.NewStyle().Foreground(styles.Text)
+		keyStyle := lipgloss.NewStyle().Foreground(t.Primary()).Bold(true)
+		valueStyle := lipgloss.NewStyle().Foreground(t.Text())
 
 		for _, attr := range i.currentLog.Attributes {
 			attrLine := fmt.Sprintf("%s: %s",
@@ -96,23 +98,25 @@ func (i *detailCmp) updateContent() {
 
 func getLevelStyle(level string) lipgloss.Style {
 	style := lipgloss.NewStyle().Bold(true)
-
+	t := theme.CurrentTheme()
+	
 	switch strings.ToLower(level) {
 	case "info":
-		return style.Foreground(styles.Blue)
+		return style.Foreground(t.Info())
 	case "warn", "warning":
-		return style.Foreground(styles.Warning)
+		return style.Foreground(t.Warning())
 	case "error", "err":
-		return style.Foreground(styles.Error)
+		return style.Foreground(t.Error())
 	case "debug":
-		return style.Foreground(styles.Green)
+		return style.Foreground(t.Success())
 	default:
-		return style.Foreground(styles.Text)
+		return style.Foreground(t.Text())
 	}
 }
 
 func (i *detailCmp) View() string {
-	return styles.ForceReplaceBackgroundWithLipgloss(i.viewport.View(), styles.Background)
+	t := theme.CurrentTheme()
+	return styles.ForceReplaceBackgroundWithLipgloss(i.viewport.View(), t.Background())
 }
 
 func (i *detailCmp) GetSize() (int, int) {

@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 	"github.com/opencode-ai/opencode/internal/tui/util"
 )
 
@@ -92,55 +93,58 @@ func (m InitDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View implements tea.Model.
 func (m InitDialogCmp) View() string {
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+	
 	// Calculate width needed for content
 	maxWidth := 60 // Width for explanation text
 
-	title := styles.BaseStyle.
-		Foreground(styles.PrimaryColor).
+	title := baseStyle.
+		Foreground(t.Primary()).
 		Bold(true).
 		Width(maxWidth).
 		Padding(0, 1).
 		Render("Initialize Project")
 
-	explanation := styles.BaseStyle.
-		Foreground(styles.Forground).
+	explanation := baseStyle.
+		Foreground(t.Text()).
 		Width(maxWidth).
 		Padding(0, 1).
 		Render("Initialization generates a new OpenCode.md file that contains information about your codebase, this file serves as memory for each project, you can freely add to it to help the agents be better at their job.")
 
-	question := styles.BaseStyle.
-		Foreground(styles.Forground).
+	question := baseStyle.
+		Foreground(t.Text()).
 		Width(maxWidth).
 		Padding(1, 1).
 		Render("Would you like to initialize this project?")
 
 	maxWidth = min(maxWidth, m.width-10)
-	yesStyle := styles.BaseStyle
-	noStyle := styles.BaseStyle
+	yesStyle := baseStyle
+	noStyle := baseStyle
 
 	if m.selected == 0 {
 		yesStyle = yesStyle.
-			Background(styles.PrimaryColor).
-			Foreground(styles.Background).
+			Background(t.Primary()).
+			Foreground(t.Background()).
 			Bold(true)
 		noStyle = noStyle.
-			Background(styles.Background).
-			Foreground(styles.PrimaryColor)
+			Background(t.Background()).
+			Foreground(t.Primary())
 	} else {
 		noStyle = noStyle.
-			Background(styles.PrimaryColor).
-			Foreground(styles.Background).
+			Background(t.Primary()).
+			Foreground(t.Background()).
 			Bold(true)
 		yesStyle = yesStyle.
-			Background(styles.Background).
-			Foreground(styles.PrimaryColor)
+			Background(t.Background()).
+			Foreground(t.Primary())
 	}
 
 	yes := yesStyle.Padding(0, 3).Render("Yes")
 	no := noStyle.Padding(0, 3).Render("No")
 
-	buttons := lipgloss.JoinHorizontal(lipgloss.Center, yes, styles.BaseStyle.Render("  "), no)
-	buttons = styles.BaseStyle.
+	buttons := lipgloss.JoinHorizontal(lipgloss.Center, yes, baseStyle.Render("  "), no)
+	buttons = baseStyle.
 		Width(maxWidth).
 		Padding(1, 0).
 		Render(buttons)
@@ -148,17 +152,17 @@ func (m InitDialogCmp) View() string {
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		title,
-		styles.BaseStyle.Width(maxWidth).Render(""),
+		baseStyle.Width(maxWidth).Render(""),
 		explanation,
 		question,
 		buttons,
-		styles.BaseStyle.Width(maxWidth).Render(""),
+		baseStyle.Width(maxWidth).Render(""),
 	)
 
-	return styles.BaseStyle.Padding(1, 2).
+	return baseStyle.Padding(1, 2).
 		Border(lipgloss.RoundedBorder()).
-		BorderBackground(styles.Background).
-		BorderForeground(styles.ForgroundDim).
+		BorderBackground(t.Background()).
+		BorderForeground(t.TextMuted()).
 		Width(lipgloss.Width(content) + 4).
 		Render(content)
 }

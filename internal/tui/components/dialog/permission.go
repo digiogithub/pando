@@ -7,13 +7,13 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/opencode-ai/opencode/internal/diff"
 	"github.com/opencode-ai/opencode/internal/llm/tools"
 	"github.com/opencode-ai/opencode/internal/permission"
 	"github.com/opencode-ai/opencode/internal/tui/layout"
 	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 	"github.com/opencode-ai/opencode/internal/tui/util"
 )
 
@@ -149,25 +149,28 @@ func (p *permissionDialogCmp) selectCurrentOption() tea.Cmd {
 }
 
 func (p *permissionDialogCmp) renderButtons() string {
-	allowStyle := styles.BaseStyle
-	allowSessionStyle := styles.BaseStyle
-	denyStyle := styles.BaseStyle
-	spacerStyle := styles.BaseStyle.Background(styles.Background)
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+	
+	allowStyle := baseStyle
+	allowSessionStyle := baseStyle
+	denyStyle := baseStyle
+	spacerStyle := baseStyle.Background(t.Background())
 
 	// Style the selected button
 	switch p.selectedOption {
 	case 0:
-		allowStyle = allowStyle.Background(styles.PrimaryColor).Foreground(styles.Background)
-		allowSessionStyle = allowSessionStyle.Background(styles.Background).Foreground(styles.PrimaryColor)
-		denyStyle = denyStyle.Background(styles.Background).Foreground(styles.PrimaryColor)
+		allowStyle = allowStyle.Background(t.Primary()).Foreground(t.Background())
+		allowSessionStyle = allowSessionStyle.Background(t.Background()).Foreground(t.Primary())
+		denyStyle = denyStyle.Background(t.Background()).Foreground(t.Primary())
 	case 1:
-		allowStyle = allowStyle.Background(styles.Background).Foreground(styles.PrimaryColor)
-		allowSessionStyle = allowSessionStyle.Background(styles.PrimaryColor).Foreground(styles.Background)
-		denyStyle = denyStyle.Background(styles.Background).Foreground(styles.PrimaryColor)
+		allowStyle = allowStyle.Background(t.Background()).Foreground(t.Primary())
+		allowSessionStyle = allowSessionStyle.Background(t.Primary()).Foreground(t.Background())
+		denyStyle = denyStyle.Background(t.Background()).Foreground(t.Primary())
 	case 2:
-		allowStyle = allowStyle.Background(styles.Background).Foreground(styles.PrimaryColor)
-		allowSessionStyle = allowSessionStyle.Background(styles.Background).Foreground(styles.PrimaryColor)
-		denyStyle = denyStyle.Background(styles.PrimaryColor).Foreground(styles.Background)
+		allowStyle = allowStyle.Background(t.Background()).Foreground(t.Primary())
+		allowSessionStyle = allowSessionStyle.Background(t.Background()).Foreground(t.Primary())
+		denyStyle = denyStyle.Background(t.Primary()).Foreground(t.Background())
 	}
 
 	allowButton := allowStyle.Padding(0, 1).Render("Allow (a)")
@@ -192,15 +195,18 @@ func (p *permissionDialogCmp) renderButtons() string {
 }
 
 func (p *permissionDialogCmp) renderHeader() string {
-	toolKey := styles.BaseStyle.Foreground(styles.ForgroundDim).Bold(true).Render("Tool")
-	toolValue := styles.BaseStyle.
-		Foreground(styles.Forground).
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+	
+	toolKey := baseStyle.Foreground(t.TextMuted()).Bold(true).Render("Tool")
+	toolValue := baseStyle.
+		Foreground(t.Text()).
 		Width(p.width - lipgloss.Width(toolKey)).
 		Render(fmt.Sprintf(": %s", p.permission.ToolName))
 
-	pathKey := styles.BaseStyle.Foreground(styles.ForgroundDim).Bold(true).Render("Path")
-	pathValue := styles.BaseStyle.
-		Foreground(styles.Forground).
+	pathKey := baseStyle.Foreground(t.TextMuted()).Bold(true).Render("Path")
+	pathValue := baseStyle.
+		Foreground(t.Text()).
 		Width(p.width - lipgloss.Width(pathKey)).
 		Render(fmt.Sprintf(": %s", p.permission.Path))
 
@@ -210,45 +216,45 @@ func (p *permissionDialogCmp) renderHeader() string {
 			toolKey,
 			toolValue,
 		),
-		styles.BaseStyle.Render(strings.Repeat(" ", p.width)),
+		baseStyle.Render(strings.Repeat(" ", p.width)),
 		lipgloss.JoinHorizontal(
 			lipgloss.Left,
 			pathKey,
 			pathValue,
 		),
-		styles.BaseStyle.Render(strings.Repeat(" ", p.width)),
+		baseStyle.Render(strings.Repeat(" ", p.width)),
 	}
 
 	// Add tool-specific header information
 	switch p.permission.ToolName {
 	case tools.BashToolName:
-		headerParts = append(headerParts, styles.BaseStyle.Foreground(styles.ForgroundDim).Width(p.width).Bold(true).Render("Command"))
+		headerParts = append(headerParts, baseStyle.Foreground(t.TextMuted()).Width(p.width).Bold(true).Render("Command"))
 	case tools.EditToolName:
-		headerParts = append(headerParts, styles.BaseStyle.Foreground(styles.ForgroundDim).Width(p.width).Bold(true).Render("Diff"))
+		headerParts = append(headerParts, baseStyle.Foreground(t.TextMuted()).Width(p.width).Bold(true).Render("Diff"))
 	case tools.WriteToolName:
-		headerParts = append(headerParts, styles.BaseStyle.Foreground(styles.ForgroundDim).Width(p.width).Bold(true).Render("Diff"))
+		headerParts = append(headerParts, baseStyle.Foreground(t.TextMuted()).Width(p.width).Bold(true).Render("Diff"))
 	case tools.FetchToolName:
-		headerParts = append(headerParts, styles.BaseStyle.Foreground(styles.ForgroundDim).Width(p.width).Bold(true).Render("URL"))
+		headerParts = append(headerParts, baseStyle.Foreground(t.TextMuted()).Width(p.width).Bold(true).Render("URL"))
 	}
 
-	return lipgloss.NewStyle().Render(lipgloss.JoinVertical(lipgloss.Left, headerParts...))
+	return lipgloss.NewStyle().Background(t.Background()).Render(lipgloss.JoinVertical(lipgloss.Left, headerParts...))
 }
 
 func (p *permissionDialogCmp) renderBashContent() string {
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+	
 	if pr, ok := p.permission.Params.(tools.BashPermissionsParams); ok {
 		content := fmt.Sprintf("```bash\n%s\n```", pr.Command)
 
 		// Use the cache for markdown rendering
 		renderedContent := p.GetOrSetMarkdown(p.permission.ID, func() (string, error) {
-			r, _ := glamour.NewTermRenderer(
-				glamour.WithStyles(styles.MarkdownTheme(true)),
-				glamour.WithWordWrap(p.width-10),
-			)
+			r := styles.GetMarkdownRenderer(p.width-10)
 			s, err := r.Render(content)
-			return styles.ForceReplaceBackgroundWithLipgloss(s, styles.Background), err
+			return styles.ForceReplaceBackgroundWithLipgloss(s, t.Background()), err
 		})
 
-		finalContent := styles.BaseStyle.
+		finalContent := baseStyle.
 			Width(p.contentViewPort.Width).
 			Render(renderedContent)
 		p.contentViewPort.SetContent(finalContent)
@@ -295,39 +301,45 @@ func (p *permissionDialogCmp) renderWriteContent() string {
 }
 
 func (p *permissionDialogCmp) renderFetchContent() string {
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+	
 	if pr, ok := p.permission.Params.(tools.FetchPermissionsParams); ok {
 		content := fmt.Sprintf("```bash\n%s\n```", pr.URL)
 
 		// Use the cache for markdown rendering
 		renderedContent := p.GetOrSetMarkdown(p.permission.ID, func() (string, error) {
-			r, _ := glamour.NewTermRenderer(
-				glamour.WithStyles(styles.MarkdownTheme(true)),
-				glamour.WithWordWrap(p.width-10),
-			)
+			r := styles.GetMarkdownRenderer(p.width-10)
 			s, err := r.Render(content)
-			return styles.ForceReplaceBackgroundWithLipgloss(s, styles.Background), err
+			return styles.ForceReplaceBackgroundWithLipgloss(s, t.Background()), err
 		})
 
-		p.contentViewPort.SetContent(renderedContent)
+		finalContent := baseStyle.
+			Width(p.contentViewPort.Width).
+			Render(renderedContent)
+		p.contentViewPort.SetContent(finalContent)
 		return p.styleViewport()
 	}
 	return ""
 }
 
 func (p *permissionDialogCmp) renderDefaultContent() string {
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+	
 	content := p.permission.Description
 
 	// Use the cache for markdown rendering
 	renderedContent := p.GetOrSetMarkdown(p.permission.ID, func() (string, error) {
-		r, _ := glamour.NewTermRenderer(
-			glamour.WithStyles(styles.CatppuccinMarkdownStyle()),
-			glamour.WithWordWrap(p.width-10),
-		)
+		r := styles.GetMarkdownRenderer(p.width-10)
 		s, err := r.Render(content)
-		return styles.ForceReplaceBackgroundWithLipgloss(s, styles.Background), err
+		return styles.ForceReplaceBackgroundWithLipgloss(s, t.Background()), err
 	})
 
-	p.contentViewPort.SetContent(renderedContent)
+	finalContent := baseStyle.
+		Width(p.contentViewPort.Width).
+		Render(renderedContent)
+	p.contentViewPort.SetContent(finalContent)
 
 	if renderedContent == "" {
 		return ""
@@ -337,17 +349,21 @@ func (p *permissionDialogCmp) renderDefaultContent() string {
 }
 
 func (p *permissionDialogCmp) styleViewport() string {
+	t := theme.CurrentTheme()
 	contentStyle := lipgloss.NewStyle().
-		Background(styles.Background)
+		Background(t.Background())
 
 	return contentStyle.Render(p.contentViewPort.View())
 }
 
 func (p *permissionDialogCmp) render() string {
-	title := styles.BaseStyle.
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+	
+	title := baseStyle.
 		Bold(true).
 		Width(p.width - 4).
-		Foreground(styles.PrimaryColor).
+		Foreground(t.Primary()).
 		Render("Permission Required")
 	// Render header
 	headerContent := p.renderHeader()
@@ -378,18 +394,18 @@ func (p *permissionDialogCmp) render() string {
 	content := lipgloss.JoinVertical(
 		lipgloss.Top,
 		title,
-		styles.BaseStyle.Render(strings.Repeat(" ", lipgloss.Width(title))),
+		baseStyle.Render(strings.Repeat(" ", lipgloss.Width(title))),
 		headerContent,
 		contentFinal,
 		buttons,
-		styles.BaseStyle.Render(strings.Repeat(" ", p.width-4)),
+		baseStyle.Render(strings.Repeat(" ", p.width-4)),
 	)
 
-	return styles.BaseStyle.
+	return baseStyle.
 		Padding(1, 0, 0, 1).
 		Border(lipgloss.RoundedBorder()).
-		BorderBackground(styles.Background).
-		BorderForeground(styles.ForgroundDim).
+		BorderBackground(t.Background()).
+		BorderForeground(t.TextMuted()).
 		Width(p.width).
 		Height(p.height).
 		Render(

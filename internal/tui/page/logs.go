@@ -42,7 +42,7 @@ func (p *logsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (p *logsPage) View() string {
-	style := styles.BaseStyle.Width(p.width).Height(p.height)
+	style := styles.BaseStyle().Width(p.width).Height(p.height)
 	return style.Render(lipgloss.JoinVertical(lipgloss.Top,
 		p.table.View(),
 		p.details.View(),
@@ -77,7 +77,7 @@ func (p *logsPage) Init() tea.Cmd {
 
 func NewLogsPage() LogPage {
 	return &logsPage{
-		table:   layout.NewContainer(logs.NewLogsTable(), layout.WithBorderAll(), layout.WithBorderColor(styles.ForgroundDim)),
-		details: layout.NewContainer(logs.NewLogsDetails(), layout.WithBorderAll(), layout.WithBorderColor(styles.ForgroundDim)),
+		table:   layout.NewContainer(logs.NewLogsTable(), layout.WithBorderAll()),
+		details: layout.NewContainer(logs.NewLogsDetails(), layout.WithBorderAll()),
 	}
 }

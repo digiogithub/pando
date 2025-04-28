@@ -9,6 +9,7 @@ import (
 	"github.com/muesli/reflow/truncate"
 	"github.com/muesli/termenv"
 	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 	"github.com/opencode-ai/opencode/internal/tui/util"
 )
 
@@ -43,12 +44,15 @@ func PlaceOverlay(
 	fgHeight := len(fgLines)
 
 	if shadow {
+		t := theme.CurrentTheme()
+		baseStyle := styles.BaseStyle()
+
 		var shadowbg string = ""
 		shadowchar := lipgloss.NewStyle().
-			Background(styles.BackgroundDarker).
-			Foreground(styles.Background).
+			Background(t.BackgroundDarker()).
+			Foreground(t.Background()).
 			Render("░")
-		bgchar := styles.BaseStyle.Render(" ")
+		bgchar := baseStyle.Render(" ")
 		for i := 0; i <= fgHeight; i++ {
 			if i == 0 {
 				shadowbg += bgchar + strings.Repeat(bgchar, fgWidth) + "\n"

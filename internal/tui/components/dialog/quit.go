@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/opencode-ai/opencode/internal/tui/layout"
 	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 	"github.com/opencode-ai/opencode/internal/tui/util"
 )
 
@@ -81,16 +82,19 @@ func (q *quitDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (q *quitDialogCmp) View() string {
-	yesStyle := styles.BaseStyle
-	noStyle := styles.BaseStyle
-	spacerStyle := styles.BaseStyle.Background(styles.Background)
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+	
+	yesStyle := baseStyle
+	noStyle := baseStyle
+	spacerStyle := baseStyle.Background(t.Background())
 
 	if q.selectedNo {
-		noStyle = noStyle.Background(styles.PrimaryColor).Foreground(styles.Background)
-		yesStyle = yesStyle.Background(styles.Background).Foreground(styles.PrimaryColor)
+		noStyle = noStyle.Background(t.Primary()).Foreground(t.Background())
+		yesStyle = yesStyle.Background(t.Background()).Foreground(t.Primary())
 	} else {
-		yesStyle = yesStyle.Background(styles.PrimaryColor).Foreground(styles.Background)
-		noStyle = noStyle.Background(styles.Background).Foreground(styles.PrimaryColor)
+		yesStyle = yesStyle.Background(t.Primary()).Foreground(t.Background())
+		noStyle = noStyle.Background(t.Background()).Foreground(t.Primary())
 	}
 
 	yesButton := yesStyle.Padding(0, 1).Render("Yes")
@@ -104,7 +108,7 @@ func (q *quitDialogCmp) View() string {
 		buttons = spacerStyle.Render(strings.Repeat(" ", remainingWidth)) + buttons
 	}
 
-	content := styles.BaseStyle.Render(
+	content := baseStyle.Render(
 		lipgloss.JoinVertical(
 			lipgloss.Center,
 			question,
@@ -113,10 +117,10 @@ func (q *quitDialogCmp) View() string {
 		),
 	)
 
-	return styles.BaseStyle.Padding(1, 2).
+	return baseStyle.Padding(1, 2).
 		Border(lipgloss.RoundedBorder()).
-		BorderBackground(styles.Background).
-		BorderForeground(styles.ForgroundDim).
+		BorderBackground(t.Background()).
+		BorderForeground(t.TextMuted()).
 		Width(lipgloss.Width(content) + 4).
 		Render(content)
 }

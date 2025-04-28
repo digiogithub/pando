@@ -4,7 +4,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 )
 
 type SplitPaneLayout interface {
@@ -29,8 +29,6 @@ type splitPaneLayout struct {
 	rightPanel  Container
 	leftPanel   Container
 	bottomPanel Container
-
-	backgroundColor lipgloss.TerminalColor
 }
 
 type SplitPaneOption func(*splitPaneLayout)
@@ -113,11 +111,13 @@ func (s *splitPaneLayout) View() string {
 		finalView = topSection
 	}
 
-	if s.backgroundColor != nil && finalView != "" {
+	if finalView != "" {
+		t := theme.CurrentTheme()
+
 		style := lipgloss.NewStyle().
 			Width(s.width).
 			Height(s.height).
-			Background(s.backgroundColor)
+			Background(t.Background())
 
 		return style.Render(finalView)
 	}
@@ -241,10 +241,10 @@ func (s *splitPaneLayout) BindingKeys() []key.Binding {
 }
 
 func NewSplitPane(options ...SplitPaneOption) SplitPaneLayout {
+
 	layout := &splitPaneLayout{
-		ratio:           0.7,
-		verticalRatio:   0.9, // Default 80% for top section, 20% for bottom
-		backgroundColor: styles.Background,
+		ratio:         0.7,
+		verticalRatio: 0.9, // Default 90% for top section, 10% for bottom
 	}
 	for _, option := range options {
 		option(layout)
@@ -267,12 +267,6 @@ func WithRightPanel(panel Container) SplitPaneOption {
 func WithRatio(ratio float64) SplitPaneOption {
 	return func(s *splitPaneLayout) {
 		s.ratio = ratio
-	}
-}
-
-func WithSplitBackgroundColor(color lipgloss.TerminalColor) SplitPaneOption {
-	return func(s *splitPaneLayout) {
-		s.backgroundColor = color
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/opencode-ai/opencode/internal/pubsub"
 	"github.com/opencode-ai/opencode/internal/tui/layout"
 	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 	"github.com/opencode-ai/opencode/internal/tui/util"
 )
 
@@ -61,7 +62,8 @@ func (i *tableCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (i *tableCmp) View() string {
-	return styles.ForceReplaceBackgroundWithLipgloss(i.table.View(), styles.Background)
+	t := theme.CurrentTheme()
+	return styles.ForceReplaceBackgroundWithLipgloss(i.table.View(), t.Background())
 }
 
 func (i *tableCmp) GetSize() (int, int) {
@@ -114,6 +116,7 @@ func (i *tableCmp) setRows() {
 }
 
 func NewLogsTable() TableComponent {
+	t := theme.CurrentTheme()
 	columns := []table.Column{
 		{Title: "ID", Width: 4},
 		{Title: "Time", Width: 4},
@@ -122,7 +125,7 @@ func NewLogsTable() TableComponent {
 		{Title: "Attributes", Width: 10},
 	}
 	defaultStyles := table.DefaultStyles()
-	defaultStyles.Selected = defaultStyles.Selected.Foreground(styles.Primary)
+	defaultStyles.Selected = defaultStyles.Selected.Foreground(t.Primary())
 	tableModel := table.New(
 		table.WithColumns(columns),
 		table.WithStyles(defaultStyles),

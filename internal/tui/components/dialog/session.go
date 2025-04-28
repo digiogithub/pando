@@ -7,6 +7,7 @@ import (
 	"github.com/opencode-ai/opencode/internal/session"
 	"github.com/opencode-ai/opencode/internal/tui/layout"
 	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 	"github.com/opencode-ai/opencode/internal/tui/util"
 )
 
@@ -105,11 +106,14 @@ func (s *sessionDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (s *sessionDialogCmp) View() string {
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+	
 	if len(s.sessions) == 0 {
-		return styles.BaseStyle.Padding(1, 2).
+		return baseStyle.Padding(1, 2).
 			Border(lipgloss.RoundedBorder()).
-			BorderBackground(styles.Background).
-			BorderForeground(styles.ForgroundDim).
+			BorderBackground(t.Background()).
+			BorderForeground(t.TextMuted()).
 			Width(40).
 			Render("No sessions available")
 	}
@@ -146,20 +150,20 @@ func (s *sessionDialogCmp) View() string {
 
 	for i := startIdx; i < endIdx; i++ {
 		sess := s.sessions[i]
-		itemStyle := styles.BaseStyle.Width(maxWidth)
+		itemStyle := baseStyle.Width(maxWidth)
 
 		if i == s.selectedIdx {
 			itemStyle = itemStyle.
-				Background(styles.PrimaryColor).
-				Foreground(styles.Background).
+				Background(t.Primary()).
+				Foreground(t.Background()).
 				Bold(true)
 		}
 
 		sessionItems = append(sessionItems, itemStyle.Padding(0, 1).Render(sess.Title))
 	}
 
-	title := styles.BaseStyle.
-		Foreground(styles.PrimaryColor).
+	title := baseStyle.
+		Foreground(t.Primary()).
 		Bold(true).
 		Width(maxWidth).
 		Padding(0, 1).
@@ -168,15 +172,15 @@ func (s *sessionDialogCmp) View() string {
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		title,
-		styles.BaseStyle.Width(maxWidth).Render(""),
-		styles.BaseStyle.Width(maxWidth).Render(lipgloss.JoinVertical(lipgloss.Left, sessionItems...)),
-		styles.BaseStyle.Width(maxWidth).Render(""),
+		baseStyle.Width(maxWidth).Render(""),
+		baseStyle.Width(maxWidth).Render(lipgloss.JoinVertical(lipgloss.Left, sessionItems...)),
+		baseStyle.Width(maxWidth).Render(""),
 	)
 
-	return styles.BaseStyle.Padding(1, 2).
+	return baseStyle.Padding(1, 2).
 		Border(lipgloss.RoundedBorder()).
-		BorderBackground(styles.Background).
-		BorderForeground(styles.ForgroundDim).
+		BorderBackground(t.Background()).
+		BorderForeground(t.TextMuted()).
 		Width(lipgloss.Width(content) + 4).
 		Render(content)
 }

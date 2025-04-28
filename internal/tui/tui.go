@@ -27,6 +27,7 @@ type keyMap struct {
 	SwitchSession key.Binding
 	Commands      key.Binding
 	Models        key.Binding
+	SwitchTheme   key.Binding
 }
 
 var keys = keyMap{
@@ -57,6 +58,11 @@ var keys = keyMap{
 	Models: key.NewBinding(
 		key.WithKeys("ctrl+o"),
 		key.WithHelp("ctrl+o", "model selection"),
+	),
+
+	SwitchTheme: key.NewBinding(
+		key.WithKeys("ctrl+t"),
+		key.WithHelp("ctrl+t", "switch theme"),
 	),
 }
 
@@ -105,6 +111,9 @@ type appModel struct {
 
 	showInitDialog bool
 	initDialog     dialog.InitDialogCmp
+
+	showThemeDialog bool
+	themeDialog     dialog.ThemeDialog
 }
 
 func (a appModel) Init() tea.Cmd {
@@ -125,6 +134,8 @@ func (a appModel) Init() tea.Cmd {
 	cmd = a.modelDialog.Init()
 	cmds = append(cmds, cmd)
 	cmd = a.initDialog.Init()
+	cmds = append(cmds, cmd)
+	cmd = a.themeDialog.Init()
 	cmds = append(cmds, cmd)
 
 	// Check if we should show the init dialog
@@ -255,6 +266,15 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.showCommandDialog = false
 		return a, nil
 
+	case dialog.CloseThemeDialogMsg:
+		a.showThemeDialog = false
+		return a, nil
+
+	case dialog.ThemeChangedMsg:
+		a.pages[a.currentPage], cmd = a.pages[a.currentPage].Update(msg)
+		a.showThemeDialog = false
+		return a, tea.Batch(cmd, util.ReportInfo("Theme changed to: "+msg.ThemeName))
+
 	case dialog.CloseModelDialogMsg:
 		a.showModelDialog = false
 		return a, nil
@@ -344,7 +364,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 		case key.Matches(msg, keys.Commands):
-			if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions && !a.showSessionDialog {
+			if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showThemeDialog {
 				// Show commands dialog
 				if len(a.commands) == 0 {
 					return a, util.ReportWarn("No commands available")
@@ -359,10 +379,17 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.showModelDialog = false
 				return a, nil
 			}
-
 			if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
 				a.showModelDialog = true
 				return a, nil
+			}
+			return a, nil
+		case key.Matches(msg, keys.SwitchTheme):
+			if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+				// Show theme switcher dialog
+				a.showThemeDialog = true
+				// Theme list is dynamically loaded by the dialog component
+				return a, a.themeDialog.Init()
 			}
 			return a, nil
 		case key.Matches(msg, logsKeyReturnKey):
@@ -459,6 +486,16 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		d, initCmd := a.initDialog.Update(msg)
 		a.initDialog = d.(dialog.InitDialogCmp)
 		cmds = append(cmds, initCmd)
+		// Only block key messages send all other messages down
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return a, tea.Batch(cmds...)
+		}
+	}
+
+	if a.showThemeDialog {
+		d, themeCmd := a.themeDialog.Update(msg)
+		a.themeDialog = d.(dialog.ThemeDialog)
+		cmds = append(cmds, themeCmd)
 		// Only block key messages send all other messages down
 		if _, ok := msg.(tea.KeyMsg); ok {
 			return a, tea.Batch(cmds...)
@@ -629,6 +666,21 @@ func (a appModel) View() string {
 		)
 	}
 
+	if a.showThemeDialog {
+		overlay := a.themeDialog.View()
+		row := lipgloss.Height(appView) / 2
+		row -= lipgloss.Height(overlay) / 2
+		col := lipgloss.Width(appView) / 2
+		col -= lipgloss.Width(overlay) / 2
+		appView = layout.PlaceOverlay(
+			col,
+			row,
+			overlay,
+			appView,
+			true,
+		)
+	}
+
 	return appView
 }
 
@@ -645,6 +697,7 @@ func New(app *app.App) tea.Model {
 		modelDialog:   dialog.NewModelDialogCmp(),
 		permissions:   dialog.NewPermissionDialogCmp(),
 		initDialog:    dialog.NewInitDialogCmp(),
+		themeDialog:   dialog.NewThemeDialogCmp(),
 		app:           app,
 		commands:      []dialog.Command{},
 		pages: map[page.PageID]tea.Model{

@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 )
 
 type helpCmp struct {
@@ -53,10 +54,21 @@ func removeDuplicateBindings(bindings []key.Binding) []key.Binding {
 }
 
 func (h *helpCmp) render() string {
-	helpKeyStyle := styles.Bold.Background(styles.Background).Foreground(styles.Forground).Padding(0, 1, 0, 0)
-	helpDescStyle := styles.Regular.Background(styles.Background).Foreground(styles.ForgroundMid)
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+
+	helpKeyStyle := styles.Bold().
+		Background(t.Background()).
+		Foreground(t.Text()).
+		Padding(0, 1, 0, 0)
+
+	helpDescStyle := styles.Regular().
+		Background(t.Background()).
+		Foreground(t.TextMuted())
+
 	// Compile list of bindings to render
 	bindings := removeDuplicateBindings(h.keys)
+
 	// Enumerate through each group of bindings, populating a series of
 	// pairs of columns, one for keys, one for descriptions
 	var (
@@ -64,6 +76,7 @@ func (h *helpCmp) render() string {
 		width int
 		rows  = 10 - 2
 	)
+
 	for i := 0; i < len(bindings); i += rows {
 		var (
 			keys  []string
@@ -73,11 +86,12 @@ func (h *helpCmp) render() string {
 			keys = append(keys, helpKeyStyle.Render(bindings[j].Help().Key))
 			descs = append(descs, helpDescStyle.Render(bindings[j].Help().Desc))
 		}
+
 		// Render pair of columns; beyond the first pair, render a three space
 		// left margin, in order to visually separate the pairs.
 		var cols []string
 		if len(pairs) > 0 {
-			cols = []string{styles.BaseStyle.Render("   ")}
+			cols = []string{baseStyle.Render("   ")}
 		}
 
 		maxDescWidth := 0
@@ -89,7 +103,7 @@ func (h *helpCmp) render() string {
 		for i := range descs {
 			remainingWidth := maxDescWidth - lipgloss.Width(descs[i])
 			if remainingWidth > 0 {
-				descs[i] = descs[i] + styles.BaseStyle.Render(strings.Repeat(" ", remainingWidth))
+				descs[i] = descs[i] + baseStyle.Render(strings.Repeat(" ", remainingWidth))
 			}
 		}
 		maxKeyWidth := 0
@@ -101,7 +115,7 @@ func (h *helpCmp) render() string {
 		for i := range keys {
 			remainingWidth := maxKeyWidth - lipgloss.Width(keys[i])
 			if remainingWidth > 0 {
-				keys[i] = keys[i] + styles.BaseStyle.Render(strings.Repeat(" ", remainingWidth))
+				keys[i] = keys[i] + baseStyle.Render(strings.Repeat(" ", remainingWidth))
 			}
 		}
 
@@ -110,7 +124,7 @@ func (h *helpCmp) render() string {
 			strings.Join(descs, "\n"),
 		)
 
-		pair := styles.BaseStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, cols...))
+		pair := baseStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, cols...))
 		// check whether it exceeds the maximum width avail (the width of the
 		// terminal, subtracting 2 for the borders).
 		width += lipgloss.Width(pair)
@@ -130,9 +144,9 @@ func (h *helpCmp) render() string {
 			lipgloss.Left,              // x
 			lipgloss.Top,               // y
 			lastPair,                   // content
-			lipgloss.WithWhitespaceBackground(styles.Background), // background
+			lipgloss.WithWhitespaceBackground(t.Background()),
 		))
-		content := styles.BaseStyle.Width(h.width).Render(
+		content := baseStyle.Width(h.width).Render(
 			lipgloss.JoinHorizontal(
 				lipgloss.Top,
 				prefix...,
@@ -140,8 +154,9 @@ func (h *helpCmp) render() string {
 		)
 		return content
 	}
+
 	// Join pairs of columns and enclose in a border
-	content := styles.BaseStyle.Width(h.width).Render(
+	content := baseStyle.Width(h.width).Render(
 		lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			pairs...,
@@ -151,22 +166,25 @@ func (h *helpCmp) render() string {
 }
 
 func (h *helpCmp) View() string {
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+
 	content := h.render()
-	header := styles.BaseStyle.
+	header := baseStyle.
 		Bold(true).
 		Width(lipgloss.Width(content)).
-		Foreground(styles.PrimaryColor).
+		Foreground(t.Primary()).
 		Render("Keyboard Shortcuts")
 
-	return styles.BaseStyle.Padding(1).
+	return baseStyle.Padding(1).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.ForgroundDim).
+		BorderForeground(t.TextMuted()).
 		Width(h.width).
-		BorderBackground(styles.Background).
+		BorderBackground(t.Background()).
 		Render(
 			lipgloss.JoinVertical(lipgloss.Center,
 				header,
-				styles.BaseStyle.Render(strings.Repeat(" ", lipgloss.Width(header))),
+				baseStyle.Render(strings.Repeat(" ", lipgloss.Width(header))),
 				content,
 			),
 		)

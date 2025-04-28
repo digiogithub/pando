@@ -15,6 +15,7 @@ import (
 	"github.com/opencode-ai/opencode/internal/session"
 	"github.com/opencode-ai/opencode/internal/tui/components/chat"
 	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 	"github.com/opencode-ai/opencode/internal/tui/util"
 )
 
@@ -70,7 +71,21 @@ func (m statusCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-var helpWidget = styles.Padded.Background(styles.ForgroundMid).Foreground(styles.BackgroundDarker).Bold(true).Render("ctrl+? help")
+var helpWidget = ""
+
+// getHelpWidget returns the help widget with current theme colors
+func getHelpWidget(helpText string) string {
+	t := theme.CurrentTheme()
+	if helpText == "" {
+		helpText = "ctrl+? help"
+	}
+
+	return styles.Padded().
+		Background(t.TextMuted()).
+		Foreground(t.BackgroundDarker()).
+		Bold(true).
+		Render(helpText)
+}
 
 func formatTokensAndCost(tokens int64, cost float64) string {
 	// Format tokens in human-readable format (e.g., 110K, 1.2M)
@@ -99,29 +114,38 @@ func formatTokensAndCost(tokens int64, cost float64) string {
 }
 
 func (m statusCmp) View() string {
-	status := helpWidget
+	t := theme.CurrentTheme()
+
+	// Initialize the help widget
+	status := getHelpWidget("")
+
 	if m.session.ID != "" {
 		tokens := formatTokensAndCost(m.session.PromptTokens+m.session.CompletionTokens, m.session.Cost)
-		tokensStyle := styles.Padded.
-			Background(styles.Forground).
-			Foreground(styles.BackgroundDim).
+		tokensStyle := styles.Padded().
+			Background(t.Text()).
+			Foreground(t.BackgroundSecondary()).
 			Render(tokens)
 		status += tokensStyle
 	}
 
-	diagnostics := styles.Padded.Background(styles.BackgroundDarker).Render(m.projectDiagnostics())
+	diagnostics := styles.Padded().
+		Background(t.BackgroundDarker()).
+		Render(m.projectDiagnostics())
+
 	if m.info.Msg != "" {
-		infoStyle := styles.Padded.
-			Foreground(styles.Base).
+		infoStyle := styles.Padded().
+			Foreground(t.Background()).
 			Width(m.availableFooterMsgWidth(diagnostics))
+
 		switch m.info.Type {
 		case util.InfoTypeInfo:
-			infoStyle = infoStyle.Background(styles.BorderColor)
+			infoStyle = infoStyle.Background(t.Info())
 		case util.InfoTypeWarn:
-			infoStyle = infoStyle.Background(styles.Peach)
+			infoStyle = infoStyle.Background(t.Warning())
 		case util.InfoTypeError:
-			infoStyle = infoStyle.Background(styles.Red)
+			infoStyle = infoStyle.Background(t.Error())
 		}
+
 		// Truncate message if it's longer than available width
 		msg := m.info.Msg
 		availWidth := m.availableFooterMsgWidth(diagnostics) - 10
@@ -130,9 +154,9 @@ func (m statusCmp) View() string {
 		}
 		status += infoStyle.Render(msg)
 	} else {
-		status += styles.Padded.
-			Foreground(styles.Base).
-			Background(styles.BackgroundDim).
+		status += styles.Padded().
+			Foreground(t.Text()).
+			Background(t.BackgroundSecondary()).
 			Width(m.availableFooterMsgWidth(diagnostics)).
 			Render("")
 	}
@@ -143,6 +167,8 @@ func (m statusCmp) View() string {
 }
 
 func (m *statusCmp) projectDiagnostics() string {
+	t := theme.CurrentTheme()
+
 	// Check if any LSP server is still initializing
 	initializing := false
 	for _, client := range m.lspClients {
@@ -155,8 +181,8 @@ func (m *statusCmp) projectDiagnostics() string {
 	// If any server is initializing, show that status
 	if initializing {
 		return lipgloss.NewStyle().
-			Background(styles.BackgroundDarker).
-			Foreground(styles.Peach).
+			Background(t.BackgroundDarker()).
+			Foreground(t.Warning()).
 			Render(fmt.Sprintf("%s Initializing LSP...", styles.SpinnerIcon))
 	}
 
@@ -189,29 +215,29 @@ func (m *statusCmp) projectDiagnostics() string {
 
 	if len(errorDiagnostics) > 0 {
 		errStr := lipgloss.NewStyle().
-			Background(styles.BackgroundDarker).
-			Foreground(styles.Error).
+			Background(t.BackgroundDarker()).
+			Foreground(t.Error()).
 			Render(fmt.Sprintf("%s %d", styles.ErrorIcon, len(errorDiagnostics)))
 		diagnostics = append(diagnostics, errStr)
 	}
 	if len(warnDiagnostics) > 0 {
 		warnStr := lipgloss.NewStyle().
-			Background(styles.BackgroundDarker).
-			Foreground(styles.Warning).
+			Background(t.BackgroundDarker()).
+			Foreground(t.Warning()).
 			Render(fmt.Sprintf("%s %d", styles.WarningIcon, len(warnDiagnostics)))
 		diagnostics = append(diagnostics, warnStr)
 	}
 	if len(hintDiagnostics) > 0 {
 		hintStr := lipgloss.NewStyle().
-			Background(styles.BackgroundDarker).
-			Foreground(styles.Text).
+			Background(t.BackgroundDarker()).
+			Foreground(t.Text()).
 			Render(fmt.Sprintf("%s %d", styles.HintIcon, len(hintDiagnostics)))
 		diagnostics = append(diagnostics, hintStr)
 	}
 	if len(infoDiagnostics) > 0 {
 		infoStr := lipgloss.NewStyle().
-			Background(styles.BackgroundDarker).
-			Foreground(styles.Peach).
+			Background(t.BackgroundDarker()).
+			Foreground(t.Info()).
 			Render(fmt.Sprintf("%s %d", styles.InfoIcon, len(infoDiagnostics)))
 		diagnostics = append(diagnostics, infoStr)
 	}
@@ -230,6 +256,8 @@ func (m statusCmp) availableFooterMsgWidth(diagnostics string) int {
 }
 
 func (m statusCmp) model() string {
+	t := theme.CurrentTheme()
+
 	cfg := config.Get()
 
 	coder, ok := cfg.Agents[config.AgentCoder]
@@ -237,14 +265,22 @@ func (m statusCmp) model() string {
 		return "Unknown"
 	}
 	model := models.SupportedModels[coder.Model]
-	return styles.Padded.Background(styles.Grey).Foreground(styles.Text).Render(model.Name)
+
+	return styles.Padded().
+		Background(t.Secondary()).
+		Foreground(t.Background()).
+		Render(model.Name)
 }
 
 func (m statusCmp) SetHelpMsg(s string) {
-	helpWidget = styles.Padded.Background(styles.Forground).Foreground(styles.BackgroundDarker).Bold(true).Render(s)
+	// Update the help widget text using the getHelpWidget function
+	helpWidget = getHelpWidget(s)
 }
 
 func NewStatusCmp(lspClients map[string]*lsp.Client) StatusCmp {
+	// Initialize the help widget with default text
+	helpWidget = getHelpWidget("")
+
 	return &statusCmp{
 		messageTTL: 10 * time.Second,
 		lspClients: lspClients,

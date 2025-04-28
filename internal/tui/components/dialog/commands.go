@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/opencode-ai/opencode/internal/tui/layout"
 	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 	"github.com/opencode-ai/opencode/internal/tui/util"
 )
 
@@ -112,11 +113,14 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (c *commandDialogCmp) View() string {
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+	
 	if len(c.commands) == 0 {
-		return styles.BaseStyle.Padding(1, 2).
+		return baseStyle.Padding(1, 2).
 			Border(lipgloss.RoundedBorder()).
-			BorderBackground(styles.Background).
-			BorderForeground(styles.ForgroundDim).
+			BorderBackground(t.Background()).
+			BorderForeground(t.TextMuted()).
 			Width(40).
 			Render("No commands available")
 	}
@@ -154,17 +158,17 @@ func (c *commandDialogCmp) View() string {
 
 	for i := startIdx; i < endIdx; i++ {
 		cmd := c.commands[i]
-		itemStyle := styles.BaseStyle.Width(maxWidth)
-		descStyle := styles.BaseStyle.Width(maxWidth).Foreground(styles.ForgroundDim)
+		itemStyle := baseStyle.Width(maxWidth)
+		descStyle := baseStyle.Width(maxWidth).Foreground(t.TextMuted())
 
 		if i == c.selectedIdx {
 			itemStyle = itemStyle.
-				Background(styles.PrimaryColor).
-				Foreground(styles.Background).
+				Background(t.Primary()).
+				Foreground(t.Background()).
 				Bold(true)
 			descStyle = descStyle.
-				Background(styles.PrimaryColor).
-				Foreground(styles.Background)
+				Background(t.Primary()).
+				Foreground(t.Background())
 		}
 
 		title := itemStyle.Padding(0, 1).Render(cmd.Title)
@@ -177,8 +181,8 @@ func (c *commandDialogCmp) View() string {
 		}
 	}
 
-	title := styles.BaseStyle.
-		Foreground(styles.PrimaryColor).
+	title := baseStyle.
+		Foreground(t.Primary()).
 		Bold(true).
 		Width(maxWidth).
 		Padding(0, 1).
@@ -187,15 +191,15 @@ func (c *commandDialogCmp) View() string {
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		title,
-		styles.BaseStyle.Width(maxWidth).Render(""),
-		styles.BaseStyle.Width(maxWidth).Render(lipgloss.JoinVertical(lipgloss.Left, commandItems...)),
-		styles.BaseStyle.Width(maxWidth).Render(""),
+		baseStyle.Width(maxWidth).Render(""),
+		baseStyle.Width(maxWidth).Render(lipgloss.JoinVertical(lipgloss.Left, commandItems...)),
+		baseStyle.Width(maxWidth).Render(""),
 	)
 
-	return styles.BaseStyle.Padding(1, 2).
+	return baseStyle.Padding(1, 2).
 		Border(lipgloss.RoundedBorder()).
-		BorderBackground(styles.Background).
-		BorderForeground(styles.ForgroundDim).
+		BorderBackground(t.Background()).
+		BorderForeground(t.TextMuted()).
 		Width(lipgloss.Width(content) + 4).
 		Render(content)
 }

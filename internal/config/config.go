@@ -2,6 +2,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -65,6 +66,11 @@ type LSPConfig struct {
 	Options  any      `json:"options"`
 }
 
+// TUIConfig defines the configuration for the Terminal User Interface.
+type TUIConfig struct {
+	Theme string `json:"theme,omitempty"`
+}
+
 // Config is the main configuration structure for the application.
 type Config struct {
 	Data         Data                              `json:"data"`
@@ -76,6 +82,7 @@ type Config struct {
 	Debug        bool                              `json:"debug,omitempty"`
 	DebugLSP     bool                              `json:"debugLSP,omitempty"`
 	ContextPaths []string                          `json:"contextPaths,omitempty"`
+	TUI          TUIConfig                         `json:"tui"`
 }
 
 // Application constants
@@ -203,6 +210,7 @@ func configureViper() {
 func setDefaults(debug bool) {
 	viper.SetDefault("data.directory", defaultDataDirectory)
 	viper.SetDefault("contextPaths", defaultContextPaths)
+	viper.SetDefault("tui.theme", "catppuccin")
 
 	if debug {
 		viper.SetDefault("debug", true)
@@ -712,5 +720,58 @@ func UpdateAgentModel(agentName AgentName, modelID models.ModelID) error {
 		return fmt.Errorf("failed to update agent model: %w", err)
 	}
 
+	return nil
+}
+
+// UpdateTheme updates the theme in the configuration and writes it to the config file.
+func UpdateTheme(themeName string) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	// Update the in-memory config
+	cfg.TUI.Theme = themeName
+	
+	// Get the config file path
+	configFile := viper.ConfigFileUsed()
+	if configFile == "" {
+		// If no config file exists yet, create one with default settings
+		viper.Set("tui.theme", themeName)
+		return viper.SafeWriteConfig()
+	}
+	
+	// Read the existing config file
+	configData, err := os.ReadFile(configFile)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+	
+	// Parse the JSON
+	var configMap map[string]interface{}
+	if err := json.Unmarshal(configData, &configMap); err != nil {
+		return fmt.Errorf("failed to parse config file: %w", err)
+	}
+	
+	// Update just the theme value
+	tuiConfig, ok := configMap["tui"].(map[string]interface{})
+	if !ok {
+		// TUI config doesn't exist yet, create it
+		configMap["tui"] = map[string]interface{}{"theme": themeName}
+	} else {
+		// Update existing TUI config
+		tuiConfig["theme"] = themeName
+		configMap["tui"] = tuiConfig
+	}
+	
+	// Write the updated config back to file
+	updatedData, err := json.MarshalIndent(configMap, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	
+	if err := os.WriteFile(configFile, updatedData, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	
 	return nil
 }
