@@ -106,7 +106,7 @@ func generateSchema() map[string]any {
 				"type":        "string",
 				"description": "TUI theme name",
 				"default":     "opencode",
-				"enum":        []string{"opencode", "catppuccin", "flexoki", "gruvbox", "monokai", "onedark"},
+				"enum":        []string{"opencode", "catppuccin", "dracula", "flexoki", "gruvbox", "monokai", "onedark"},
 			},
 		},
 	}
