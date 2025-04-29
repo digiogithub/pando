@@ -115,6 +115,7 @@ func generateSchema() map[string]any {
 					"monokai",
 					"onedark",
 					"tokyonight",
+					"tron",
 				},
 			},
 		},
