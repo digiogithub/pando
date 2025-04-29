@@ -210,7 +210,7 @@ func configureViper() {
 func setDefaults(debug bool) {
 	viper.SetDefault("data.directory", defaultDataDirectory)
 	viper.SetDefault("contextPaths", defaultContextPaths)
-	viper.SetDefault("tui.theme", "catppuccin")
+	viper.SetDefault("tui.theme", "opencode")
 
 	if debug {
 		viper.SetDefault("debug", true)
@@ -731,7 +731,7 @@ func UpdateTheme(themeName string) error {
 
 	// Update the in-memory config
 	cfg.TUI.Theme = themeName
-	
+
 	// Get the config file path
 	configFile := viper.ConfigFileUsed()
 	if configFile == "" {
@@ -739,19 +739,19 @@ func UpdateTheme(themeName string) error {
 		viper.Set("tui.theme", themeName)
 		return viper.SafeWriteConfig()
 	}
-	
+
 	// Read the existing config file
 	configData, err := os.ReadFile(configFile)
 	if err != nil {
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
-	
+
 	// Parse the JSON
 	var configMap map[string]interface{}
 	if err := json.Unmarshal(configData, &configMap); err != nil {
 		return fmt.Errorf("failed to parse config file: %w", err)
 	}
-	
+
 	// Update just the theme value
 	tuiConfig, ok := configMap["tui"].(map[string]interface{})
 	if !ok {
@@ -762,16 +762,16 @@ func UpdateTheme(themeName string) error {
 		tuiConfig["theme"] = themeName
 		configMap["tui"] = tuiConfig
 	}
-	
+
 	// Write the updated config back to file
 	updatedData, err := json.MarshalIndent(configMap, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	
+
 	if err := os.WriteFile(configFile, updatedData, 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
-	
+
 	return nil
 }
