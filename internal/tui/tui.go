@@ -560,9 +560,9 @@ func (a appModel) View() string {
 	}
 
 	if !a.app.CoderAgent.IsBusy() {
-		a.status.SetHelpMsg("ctrl+? help")
+		a.status.SetHelpWidgetMsg("ctrl+? help")
 	} else {
-		a.status.SetHelpMsg("? help")
+		a.status.SetHelpWidgetMsg("? help")
 	}
 
 	if a.showHelp {

@@ -30,11 +30,6 @@ const (
 	maxResultHeight = 10
 )
 
-// getDiffWidth returns the width for the diff formatting
-func getDiffWidth(width int) int {
-	return width
-}
-
 type uiMessage struct {
 	ID          string
 	messageType uiMessageType
@@ -636,4 +631,3 @@ func formatTimestampDiff(start, end int64) string {
 	}
 	return fmt.Sprintf("%.1fm", diffSeconds/60)
 }
-

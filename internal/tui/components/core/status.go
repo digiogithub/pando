@@ -21,7 +21,7 @@ import (
 
 type StatusCmp interface {
 	tea.Model
-	SetHelpMsg(string)
+	SetHelpWidgetMsg(string)
 }
 
 type statusCmp struct {
@@ -272,7 +272,7 @@ func (m statusCmp) model() string {
 		Render(model.Name)
 }
 
-func (m statusCmp) SetHelpMsg(s string) {
+func (m statusCmp) SetHelpWidgetMsg(s string) {
 	// Update the help widget text using the getHelpWidget function
 	helpWidget = getHelpWidget(s)
 }

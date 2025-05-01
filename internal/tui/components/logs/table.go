@@ -63,6 +63,9 @@ func (i *tableCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (i *tableCmp) View() string {
 	t := theme.CurrentTheme()
+	defaultStyles := table.DefaultStyles()
+	defaultStyles.Selected = defaultStyles.Selected.Foreground(t.Primary())
+	i.table.SetStyles(defaultStyles)
 	return styles.ForceReplaceBackgroundWithLipgloss(i.table.View(), t.Background())
 }
 
@@ -116,7 +119,6 @@ func (i *tableCmp) setRows() {
 }
 
 func NewLogsTable() TableComponent {
-	t := theme.CurrentTheme()
 	columns := []table.Column{
 		{Title: "ID", Width: 4},
 		{Title: "Time", Width: 4},
@@ -124,11 +126,9 @@ func NewLogsTable() TableComponent {
 		{Title: "Message", Width: 10},
 		{Title: "Attributes", Width: 10},
 	}
-	defaultStyles := table.DefaultStyles()
-	defaultStyles.Selected = defaultStyles.Selected.Foreground(t.Primary())
+
 	tableModel := table.New(
 		table.WithColumns(columns),
-		table.WithStyles(defaultStyles),
 	)
 	tableModel.Focus()
 	return &tableCmp{

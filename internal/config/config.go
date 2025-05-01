@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/opencode-ai/opencode/internal/llm/models"
@@ -734,16 +735,22 @@ func UpdateTheme(themeName string) error {
 
 	// Get the config file path
 	configFile := viper.ConfigFileUsed()
+	var configData []byte
 	if configFile == "" {
-		// If no config file exists yet, create one with default settings
-		viper.Set("tui.theme", themeName)
-		return viper.SafeWriteConfig()
-	}
-
-	// Read the existing config file
-	configData, err := os.ReadFile(configFile)
-	if err != nil {
-		return fmt.Errorf("failed to read config file: %w", err)
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get home directory: %w", err)
+		}
+		configFile = filepath.Join(homeDir, fmt.Sprintf(".%s.json", appName))
+		logging.Info("config file not found, creating new one", "path", configFile)
+		configData = []byte(`{}`)
+	} else {
+		// Read the existing config file
+		data, err := os.ReadFile(configFile)
+		if err != nil {
+			return fmt.Errorf("failed to read config file: %w", err)
+		}
+		configData = data
 	}
 
 	// Parse the JSON
@@ -769,7 +776,7 @@ func UpdateTheme(themeName string) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(configFile, updatedData, 0644); err != nil {
+	if err := os.WriteFile(configFile, updatedData, 0o644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
