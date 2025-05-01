@@ -56,8 +56,8 @@ var keys = keyMap{
 	),
 
 	Models: key.NewBinding(
-		key.WithKeys("ctrl+m"),
-		key.WithHelp("ctrl+m", "model selection"),
+		key.WithKeys("ctrl+o"),
+		key.WithHelp("ctrl+o", "model selection"),
 	),
 
 	SwitchTheme: key.NewBinding(

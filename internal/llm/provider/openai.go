@@ -258,15 +258,6 @@ func (o *openaiClient) stream(ctx context.Context, messages []message.Message, t
 				chunk := openaiStream.Current()
 				acc.AddChunk(chunk)
 
-				if tool, ok := acc.JustFinishedToolCall(); ok {
-					toolCalls = append(toolCalls, message.ToolCall{
-						ID:    tool.Id,
-						Name:  tool.Name,
-						Input: tool.Arguments,
-						Type:  "function",
-					})
-				}
-
 				for _, choice := range chunk.Choices {
 					if choice.Delta.Content != "" {
 						eventChan <- ProviderEvent{
@@ -282,7 +273,9 @@ func (o *openaiClient) stream(ctx context.Context, messages []message.Message, t
 			if err == nil || errors.Is(err, io.EOF) {
 				// Stream completed successfully
 				finishReason := o.finishReason(string(acc.ChatCompletion.Choices[0].FinishReason))
-
+				if len(acc.ChatCompletion.Choices[0].Message.ToolCalls) > 0 {
+					toolCalls = append(toolCalls, o.toolCalls(acc.ChatCompletion)...)
+				}
 				if len(toolCalls) > 0 {
 					finishReason = message.FinishReasonToolUse
 				}

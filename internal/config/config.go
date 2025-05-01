@@ -242,6 +242,13 @@ func setProviderDefaults() {
 	if apiKey := os.Getenv("OPENROUTER_API_KEY"); apiKey != "" {
 		viper.SetDefault("providers.openrouter.apiKey", apiKey)
 	}
+	if apiKey := os.Getenv("XAI_API_KEY"); apiKey != "" {
+		viper.SetDefault("providers.xai.apiKey", apiKey)
+	}
+	if apiKey := os.Getenv("AZURE_OPENAI_ENDPOINT"); apiKey != "" {
+		// api-key may be empty when using Entra ID credentials – that's okay
+		viper.SetDefault("providers.azure.apiKey", os.Getenv("AZURE_OPENAI_API_KEY"))
+	}
 
 	// Use this order to set the default models
 	// 1. Anthropic
@@ -292,6 +299,13 @@ func setProviderDefaults() {
 		return
 	}
 
+	if viper.Get("providers.xai.apiKey") != "" {
+		viper.SetDefault("agents.coder.model", models.XAIGrok3Beta)
+		viper.SetDefault("agents.task.model", models.XAIGrok3Beta)
+		viper.SetDefault("agents.title.model", models.XAiGrok3MiniFastBeta)
+		return
+	}
+
 	// AWS Bedrock configuration
 	if hasAWSCredentials() {
 		viper.SetDefault("agents.coder.model", models.BedrockClaude37Sonnet)
@@ -301,8 +315,6 @@ func setProviderDefaults() {
 	}
 
 	if os.Getenv("AZURE_OPENAI_ENDPOINT") != "" {
-		// api-key may be empty when using Entra ID credentials – that's okay
-		viper.SetDefault("providers.azure.apiKey", os.Getenv("AZURE_OPENAI_API_KEY"))
 		viper.SetDefault("agents.coder.model", models.AzureGPT41)
 		viper.SetDefault("agents.task.model", models.AzureGPT41Mini)
 		viper.SetDefault("agents.title.model", models.AzureGPT41Mini)
