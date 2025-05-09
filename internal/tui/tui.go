@@ -37,13 +37,6 @@ type keyMap struct {
 
 type startCompactSessionMsg struct{}
 
-type compactSessionProgressMsg struct {
-	Progress     string
-	Done         bool
-	Error        error
-	NewSessionID string
-}
-
 const (
 	quitKey = "q"
 )
