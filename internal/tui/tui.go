@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/opencode-ai/opencode/internal/app"
 	"github.com/opencode-ai/opencode/internal/config"
+	"github.com/opencode-ai/opencode/internal/llm/agent"
 	"github.com/opencode-ai/opencode/internal/logging"
 	"github.com/opencode-ai/opencode/internal/permission"
 	"github.com/opencode-ai/opencode/internal/pubsub"
@@ -18,6 +19,7 @@ import (
 	"github.com/opencode-ai/opencode/internal/tui/components/dialog"
 	"github.com/opencode-ai/opencode/internal/tui/layout"
 	"github.com/opencode-ai/opencode/internal/tui/page"
+	"github.com/opencode-ai/opencode/internal/tui/theme"
 	"github.com/opencode-ai/opencode/internal/tui/util"
 )
 
@@ -30,6 +32,15 @@ type keyMap struct {
 	Filepicker    key.Binding
 	Models        key.Binding
 	SwitchTheme   key.Binding
+}
+
+type startCompactSessionMsg struct{}
+
+type compactSessionProgressMsg struct {
+	Progress     string
+	Done         bool
+	Error        error
+	NewSessionID string
 }
 
 const (
@@ -126,9 +137,12 @@ type appModel struct {
 
 	showThemeDialog bool
 	themeDialog     dialog.ThemeDialog
-	
+
 	showArgumentsDialog bool
 	argumentsDialog     dialog.ArgumentsDialogCmp
+
+	isCompacting      bool
+	compactingMessage string
 }
 
 func (a appModel) Init() tea.Cmd {
@@ -203,7 +217,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, filepickerCmd)
 
 		a.initDialog.SetSize(msg.Width, msg.Height)
-		
+
 		if a.showArgumentsDialog {
 			a.argumentsDialog.SetSize(msg.Width, msg.Height)
 			args, argsCmd := a.argumentsDialog.Update(msg)
@@ -293,6 +307,79 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.showCommandDialog = false
 		return a, nil
 
+	case startCompactSessionMsg:
+		// Start compacting the current session
+		a.isCompacting = true
+		a.compactingMessage = "Starting summarization..."
+
+		// Get the current session ID
+		chatPageModel := a.pages[page.ChatPage]
+
+		// Use type assertion with interface that has GetSessionID method
+		type sessionGetter interface {
+			GetSessionID() string
+		}
+
+		chatPage, ok := chatPageModel.(sessionGetter)
+		if !ok {
+			a.isCompacting = false
+			return a, util.ReportError(fmt.Errorf("failed to get chat page"))
+		}
+
+		sessionID := chatPage.GetSessionID()
+		if sessionID == "" {
+			a.isCompacting = false
+			return a, util.ReportWarn("No active session to summarize")
+		}
+
+		// Start the summarization process
+		return a, func() tea.Msg {
+			ctx := context.Background()
+			a.app.CoderAgent.Summarize(ctx, sessionID)
+			return nil
+		}
+
+	case pubsub.Event[agent.AgentEvent]:
+		payload := msg.Payload
+		if payload.Error != nil {
+			a.isCompacting = false
+			return a, util.ReportError(payload.Error)
+		}
+
+		a.compactingMessage = payload.Progress
+
+		if payload.Done && payload.Type == agent.AgentEventTypeSummarize {
+			a.isCompacting = false
+
+			if payload.SessionID != "" {
+				// Switch to the new session
+				return a, func() tea.Msg {
+					sessions, err := a.app.Sessions.List(context.Background())
+					if err != nil {
+						return util.InfoMsg{
+							Type: util.InfoTypeError,
+							Msg:  "Failed to list sessions: " + err.Error(),
+						}
+					}
+
+					for _, s := range sessions {
+						if s.ID == payload.SessionID {
+							return dialog.SessionSelectedMsg{Session: s}
+						}
+					}
+
+					return util.InfoMsg{
+						Type: util.InfoTypeError,
+						Msg:  "Failed to find new session",
+					}
+				}
+			}
+
+			return a, util.ReportInfo("Session summarization complete")
+		}
+		// Continue listening for events
+		return a, nil
+
 	case dialog.CloseThemeDialogMsg:
 		a.showThemeDialog = false
 		return a, nil
@@ -357,22 +444,22 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, msg.Command.Handler(msg.Command)
 		}
 		return a, util.ReportInfo("Command selected: " + msg.Command.Title)
-		
+
 	case dialog.ShowArgumentsDialogMsg:
 		// Show arguments dialog
 		a.argumentsDialog = dialog.NewArgumentsDialogCmp(msg.CommandID, msg.Content)
 		a.showArgumentsDialog = true
 		return a, a.argumentsDialog.Init()
-		
+
 	case dialog.CloseArgumentsDialogMsg:
 		// Close arguments dialog
 		a.showArgumentsDialog = false
-		
+
 		// If submitted, replace $ARGUMENTS and run the command
 		if msg.Submit {
 			// Replace $ARGUMENTS with the provided arguments
 			content := strings.ReplaceAll(msg.Content, "$ARGUMENTS", msg.Arguments)
-			
+
 			// Execute the command with arguments
 			return a, util.CmdHandler(dialog.CommandRunCustomMsg{
 				Content: content,
@@ -387,7 +474,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.argumentsDialog = args.(dialog.ArgumentsDialogCmp)
 			return a, cmd
 		}
-		
+
 		switch {
 
 		case key.Matches(msg, keys.Quit):
@@ -668,10 +755,29 @@ func (a appModel) View() string {
 
 	}
 
-	if !a.app.CoderAgent.IsBusy() {
-		a.status.SetHelpWidgetMsg("ctrl+? help")
-	} else {
-		a.status.SetHelpWidgetMsg("? help")
+	// Show compacting status overlay
+	if a.isCompacting {
+		t := theme.CurrentTheme()
+		style := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(t.BorderFocused()).
+			BorderBackground(t.Background()).
+			Padding(1, 2).
+			Background(t.Background()).
+			Foreground(t.Text())
+
+		overlay := style.Render("Summarizing\n" + a.compactingMessage)
+		row := lipgloss.Height(appView) / 2
+		row -= lipgloss.Height(overlay) / 2
+		col := lipgloss.Width(appView) / 2
+		col -= lipgloss.Width(overlay) / 2
+		appView = layout.PlaceOverlay(
+			col,
+			row,
+			overlay,
+			appView,
+			true,
+		)
 	}
 
 	if a.showHelp {
@@ -789,7 +895,7 @@ func (a appModel) View() string {
 			true,
 		)
 	}
-	
+
 	if a.showArgumentsDialog {
 		overlay := a.argumentsDialog.View()
 		row := lipgloss.Height(appView) / 2
@@ -850,7 +956,17 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 			)
 		},
 	})
-	
+
+	model.RegisterCommand(dialog.Command{
+		ID:          "compact",
+		Title:       "Compact Session",
+		Description: "Summarize the current session and create a new one with the summary",
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return func() tea.Msg {
+				return startCompactSessionMsg{}
+			}
+		},
+	})
 	// Load custom commands
 	customCommands, err := dialog.LoadCustomCommands()
 	if err != nil {
@@ -860,6 +976,6 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 			model.RegisterCommand(cmd)
 		}
 	}
-	
+
 	return model
 }
