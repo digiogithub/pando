@@ -231,32 +231,32 @@ func (p *permissionDialogCmp) renderHeader() string {
 		headerParts = append(headerParts, baseStyle.Foreground(t.TextMuted()).Width(p.width).Bold(true).Render("Command"))
 	case tools.EditToolName:
 		params := p.permission.Params.(tools.EditPermissionsParams)
-		toolKey := baseStyle.Foreground(t.TextMuted()).Bold(true).Render("File")
-		toolValue := baseStyle.
+		fileKey := baseStyle.Foreground(t.TextMuted()).Bold(true).Render("File")
+		filePath := baseStyle.
 			Foreground(t.Text()).
-			Width(p.width - lipgloss.Width(toolKey)).
+			Width(p.width - lipgloss.Width(fileKey)).
 			Render(fmt.Sprintf(": %s", params.FilePath))
 		headerParts = append(headerParts,
 			lipgloss.JoinHorizontal(
 				lipgloss.Left,
-				toolKey,
-				toolValue,
+				fileKey,
+				filePath,
 			),
 			baseStyle.Render(strings.Repeat(" ", p.width)),
 		)
 
 	case tools.WriteToolName:
 		params := p.permission.Params.(tools.WritePermissionsParams)
-		toolKey := baseStyle.Foreground(t.TextMuted()).Bold(true).Render("File")
-		toolValue := baseStyle.
+		fileKey := baseStyle.Foreground(t.TextMuted()).Bold(true).Render("File")
+		filePath := baseStyle.
 			Foreground(t.Text()).
-			Width(p.width - lipgloss.Width(toolKey)).
+			Width(p.width - lipgloss.Width(fileKey)).
 			Render(fmt.Sprintf(": %s", params.FilePath))
 		headerParts = append(headerParts,
 			lipgloss.JoinHorizontal(
 				lipgloss.Left,
-				toolKey,
-				toolValue,
+				fileKey,
+				filePath,
 			),
 			baseStyle.Render(strings.Repeat(" ", p.width)),
 		)
