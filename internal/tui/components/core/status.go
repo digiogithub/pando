@@ -135,7 +135,7 @@ func (m statusCmp) View() string {
 		if percentage > 80 {
 			tokensStyle = tokensStyle.Background(t.Warning())
 		}
-		tokenInfoWidth = lipgloss.Width(tokens)
+		tokenInfoWidth = lipgloss.Width(tokens) + 2
 		status += tokensStyle.Render(tokens)
 	}
 

@@ -14,6 +14,7 @@ import (
 	"github.com/opencode-ai/opencode/internal/logging"
 	"github.com/opencode-ai/opencode/internal/permission"
 	"github.com/opencode-ai/opencode/internal/pubsub"
+	"github.com/opencode-ai/opencode/internal/session"
 	"github.com/opencode-ai/opencode/internal/tui/components/chat"
 	"github.com/opencode-ai/opencode/internal/tui/components/core"
 	"github.com/opencode-ai/opencode/internal/tui/components/dialog"
@@ -102,13 +103,14 @@ var logsKeyReturnKey = key.NewBinding(
 )
 
 type appModel struct {
-	width, height int
-	currentPage   page.PageID
-	previousPage  page.PageID
-	pages         map[page.PageID]tea.Model
-	loadedPages   map[page.PageID]bool
-	status        core.StatusCmp
-	app           *app.App
+	width, height   int
+	currentPage     page.PageID
+	previousPage    page.PageID
+	pages           map[page.PageID]tea.Model
+	loadedPages     map[page.PageID]bool
+	status          core.StatusCmp
+	app             *app.App
+	selectedSession session.Session
 
 	showPermissions bool
 	permissions     dialog.PermissionDialogCmp
@@ -165,6 +167,7 @@ func (a appModel) Init() tea.Cmd {
 	cmd = a.initDialog.Init()
 	cmds = append(cmds, cmd)
 	cmd = a.filepicker.Init()
+	cmds = append(cmds, cmd)
 	cmd = a.themeDialog.Init()
 	cmds = append(cmds, cmd)
 
@@ -312,22 +315,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.isCompacting = true
 		a.compactingMessage = "Starting summarization..."
 
-		// Get the current session ID
-		chatPageModel := a.pages[page.ChatPage]
-
-		// Use type assertion with interface that has GetSessionID method
-		type sessionGetter interface {
-			GetSessionID() string
-		}
-
-		chatPage, ok := chatPageModel.(sessionGetter)
-		if !ok {
-			a.isCompacting = false
-			return a, util.ReportError(fmt.Errorf("failed to get chat page"))
-		}
-
-		sessionID := chatPage.GetSessionID()
-		if sessionID == "" {
+		if a.selectedSession.ID == "" {
 			a.isCompacting = false
 			return a, util.ReportWarn("No active session to summarize")
 		}
@@ -335,7 +323,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Start the summarization process
 		return a, func() tea.Msg {
 			ctx := context.Background()
-			a.app.CoderAgent.Summarize(ctx, sessionID)
+			a.app.CoderAgent.Summarize(ctx, a.selectedSession.ID)
 			return nil
 		}
 
@@ -374,8 +362,14 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-
 			return a, util.ReportInfo("Session summarization complete")
+		} else if payload.Done && payload.Type == agent.AgentEventTypeResponse && a.selectedSession.ID != "" {
+			model := a.app.CoderAgent.Model()
+			contextWindow := model.ContextWindow
+			tokens := a.selectedSession.CompletionTokens + a.selectedSession.PromptTokens
+			if tokens >= int64(float64(contextWindow)*0.95) {
+				return a, util.CmdHandler(startCompactSessionMsg{})
+			}
 		}
 		// Continue listening for events
 		return a, nil
@@ -429,7 +423,13 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case chat.SessionSelectedMsg:
+		a.selectedSession = msg
 		a.sessionDialog.SetSelectedSession(msg.ID)
+
+	case pubsub.Event[session.Session]:
+		if msg.Type == pubsub.UpdatedEvent && msg.Payload.ID == a.selectedSession.ID {
+			a.selectedSession = msg.Payload
+		}
 	case dialog.SessionSelectedMsg:
 		a.showSessionDialog = false
 		if a.currentPage == page.ChatPage {
@@ -691,6 +691,15 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // RegisterCommand adds a command to the command dialog
 func (a *appModel) RegisterCommand(cmd dialog.Command) {
 	a.commands = append(a.commands, cmd)
+}
+
+func (a *appModel) findCommand(id string) (dialog.Command, bool) {
+	for _, cmd := range a.commands {
+		if cmd.ID == id {
+			return cmd, true
+		}
+	}
+	return dialog.Command{}, false
 }
 
 func (a *appModel) moveToPage(pageID page.PageID) tea.Cmd {

@@ -46,6 +46,7 @@ type AgentEvent struct {
 
 type Service interface {
 	pubsub.Suscriber[AgentEvent]
+	Model() models.Model
 	Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error)
 	Cancel(sessionID string)
 	IsSessionBusy(sessionID string) bool
@@ -106,6 +107,10 @@ func NewAgent(
 	}
 
 	return agent, nil
+}
+
+func (a *agent) Model() models.Model {
+	return a.provider.Model()
 }
 
 func (a *agent) Cancel(sessionID string) {

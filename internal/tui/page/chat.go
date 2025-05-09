@@ -134,13 +134,6 @@ func (p *chatPage) sendMessage(text string, attachments []message.Attachment) te
 	return tea.Batch(cmds...)
 }
 
-func (p *chatPage) GetSessionID() string {
-	if p.session.ID == "" {
-		return ""
-	}
-	return p.session.ID
-}
-
 func (p *chatPage) SetSize(width, height int) tea.Cmd {
 	return p.layout.SetSize(width, height)
 }
