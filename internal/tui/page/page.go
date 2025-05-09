@@ -6,8 +6,3 @@ type PageID string
 type PageChangeMsg struct {
 	ID PageID
 }
-
-// ChatPageInterface is the interface for the chat page
-type ChatPageInterface interface {
-	GetSessionID() string
-}
