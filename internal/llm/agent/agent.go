@@ -263,7 +263,6 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			msgs[0].Role = message.User
 		}
 	}
-	logging.Debug("Messages", "messages", msgs)
 
 	userMsg, err := a.createUserMessage(ctx, sessionID, content, attachmentParts)
 	if err != nil {
