@@ -255,6 +255,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		for i, msg := range msgs {
 			if msg.ID == session.SummaryMessageID {
 				summaryMsgInex = i
+				break
 			}
 		}
 		if summaryMsgInex != -1 {
