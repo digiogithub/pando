@@ -1,7 +1,15 @@
-> [!NOTE]  
-> This is the original OpenCode repository, now continuing at [Charm](https://github.com/charmbracelet) with its original creator, [Kujtim Hoxha](https://github.com/kujtimiihoxha).  
-> Development is continuing under a new name as we prepare for a public relaunch.  
-> Follow [@charmcli](https://x.com/charmcli) or join our [Discord](https://charm.sh/chat) for updates.
+# Archived: Project has Moved
+
+This repository is no longer maintained.
+
+The project has continued under the name [Crush][crush], developed by the original author and the Charm team.
+
+To reduce confusion and ensure the community follows the active project, this repo will be removed in the near term.
+
+Please follow [Crush][crush] for ongoing development.
+
+[crush]: https://github.com/charmbracelet/crush
+
 
 # ⌬ OpenCode
 
