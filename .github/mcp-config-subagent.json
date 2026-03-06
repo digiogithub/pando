@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "remembrances": {
+      "type": "http",
+      "url": "http://127.0.0.1:4030/mcp",
+      "tools": [
+        "*"
+      ]
+    }
+  }
+}

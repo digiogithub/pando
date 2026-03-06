@@ -1,0 +1,1 @@
+surreal start --user root --pass root --log debug --bind 0.0.0.0:8000 rocksdb://~/www/MCP/remembrances-mcp/remembrances.db

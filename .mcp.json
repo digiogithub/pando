@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "hyper-mcp": {
+      "command": "hyper-mcp",
+      "args": ["--config-file", "/home/sevir/.config/hyper-mcp/search.yaml"]
+    },
+    "mesnada": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://127.0.0.1:9767/mcp"]
+    },
+    "remembrances": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://127.0.0.1:4030/mcp"]
+    }
+  }
+}

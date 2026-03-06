@@ -1,0 +1,72 @@
+plugins:
+  time:
+    url: oci://ghcr.io/tuananh/time-plugin:latest
+  think:
+    url: oci://ghcr.io/tuananh/think-plugin:latest
+  hash:
+    url: oci://ghcr.io/tuananh/hash-plugin:latest
+  fetch:
+    url: oci://ghcr.io/tuananh/fetch-plugin:latest
+    runtime_config:
+      allowed_hosts:
+        - "*"
+      memory_limit: "100 MB"
+  context7:
+    url: oci://ghcr.io/tuananh/context7-plugin:nightly
+    runtime_config:
+      allowed_hosts:
+        - context7.com
+  sequentialthinking:
+    url: oci://ghcr.io/sevir/sequentialthinking-plugin:latest
+  serper:
+    url: oci://ghcr.io/tuananh/serper-plugin:latest
+    runtime_config:
+      env_vars:
+        SERPER_API_KEY: "${SERPER_API_KEY}"
+      allowed_hosts:
+        - google.serper.dev
+  perplexity:
+    url: oci://ghcr.io/sevir/hyper-mcp/plugin-perplexity-search:latest
+    runtime_config:
+      env_vars:
+        PERPLEXITY_API_KEY: "${PERPLEXITY_API_KEY}"
+      allowed_hosts:
+        - api.perplexity.ai
+  google:
+    url: oci://ghcr.io/sevir/hyper-mcp/plugin-google-search:latest
+    runtime_config:
+      env_vars:
+        GOOGLE_API_KEY: "${GOOGLE_API_KEY}"
+        GOOGLE_SEARCH_ENGINE_ID: "${GOOGLE_SEARCH_ENGINE_ID}"
+      allowed_hosts:
+        - www.googleapis.com
+  brave:
+    url: oci://ghcr.io/sevir/hyper-mcp/plugin-brave-search:latest
+    runtime_config:
+      env_vars:
+        BRAVE_API_KEY: "${BRAVE_API_KEY}"
+      allowed_hosts:
+        - api.search.brave.com
+  logseq:
+    url: oci://ghcr.io/sevir/hyper-mcp/plugin-logseq:latest
+    #url: file://~/www/MCP/hyper-mcp/examples/plugins/logseq/target/wasm32-wasip1/release/plugin.wasm
+    runtime_config:
+      env_vars:
+        LOGSEQ_API_KEY: "idi"
+        LOGSEQ_BASE_URL: "http://127.0.0.1:12315"
+      allowed_hosts:
+        - localhost:12315
+        - 127.0.0.1:12315
+        - http://localhost:12315
+        - http://127.0.0.1:12315
+        - localhost
+        - 127.0.0.1
+  youtrack:
+    url: oci://ghcr.io/sevir/hyper-mcp/plugin-youtrack:latest
+    #url: file://~/www/MCP/hyper-mcp/examples/plugins/youtrack/target/wasm32-wasip1/release/plugin.wasm
+    runtime_config:
+      env_vars:
+        YOUTRACK_BASE_URL: "${YOUTRACK_BASE_URL}"
+        YOUTRACK_API_TOKEN: "${YOUTRACK_API_TOKEN}"
+      allowed_hosts:
+        - "digio.youtrack.cloud"

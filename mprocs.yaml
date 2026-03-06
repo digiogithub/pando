@@ -1,0 +1,3 @@
+procs:
+  mesnada: "mesnada -config .ai/mesnada.config.yaml"
+  remembrances: "remembrances-mcp-beta --config .ai/remembrances.config.yaml"
