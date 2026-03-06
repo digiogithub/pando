@@ -10,14 +10,14 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/opencode-ai/opencode/internal/app"
-	"github.com/opencode-ai/opencode/internal/message"
-	"github.com/opencode-ai/opencode/internal/pubsub"
-	"github.com/opencode-ai/opencode/internal/session"
-	"github.com/opencode-ai/opencode/internal/tui/components/dialog"
-	"github.com/opencode-ai/opencode/internal/tui/styles"
-	"github.com/opencode-ai/opencode/internal/tui/theme"
-	"github.com/opencode-ai/opencode/internal/tui/util"
+	"github.com/digiogithub/pando/internal/app"
+	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/digiogithub/pando/internal/session"
+	"github.com/digiogithub/pando/internal/tui/components/dialog"
+	"github.com/digiogithub/pando/internal/tui/styles"
+	"github.com/digiogithub/pando/internal/tui/theme"
+	"github.com/digiogithub/pando/internal/tui/util"
 )
 
 type cacheItem struct {

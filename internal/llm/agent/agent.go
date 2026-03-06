@@ -8,16 +8,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opencode-ai/opencode/internal/config"
-	"github.com/opencode-ai/opencode/internal/llm/models"
-	"github.com/opencode-ai/opencode/internal/llm/prompt"
-	"github.com/opencode-ai/opencode/internal/llm/provider"
-	"github.com/opencode-ai/opencode/internal/llm/tools"
-	"github.com/opencode-ai/opencode/internal/logging"
-	"github.com/opencode-ai/opencode/internal/message"
-	"github.com/opencode-ai/opencode/internal/permission"
-	"github.com/opencode-ai/opencode/internal/pubsub"
-	"github.com/opencode-ai/opencode/internal/session"
+	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/llm/prompt"
+	"github.com/digiogithub/pando/internal/llm/provider"
+	"github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/permission"
+	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/digiogithub/pando/internal/session"
+	"github.com/digiogithub/pando/internal/skills"
 )
 
 // Common errors
@@ -66,6 +67,9 @@ type agent struct {
 
 	titleProvider     provider.Provider
 	summarizeProvider provider.Provider
+	agentName         config.AgentName
+	skillManager      *skills.SkillManager
+	contextManager    *skills.ContextManager
 
 	activeRequests sync.Map
 }
@@ -75,25 +79,31 @@ func NewAgent(
 	sessions session.Service,
 	messages message.Service,
 	agentTools []tools.BaseTool,
+	skillManager *skills.SkillManager,
 ) (Service, error) {
-	agentProvider, err := createAgentProvider(agentName)
+	agentProvider, err := createAgentProvider(agentName, skillManager, nil)
 	if err != nil {
 		return nil, err
 	}
 	var titleProvider provider.Provider
 	// Only generate titles for the coder agent
 	if agentName == config.AgentCoder {
-		titleProvider, err = createAgentProvider(config.AgentTitle)
+		titleProvider, err = createAgentProvider(config.AgentTitle, nil, nil)
 		if err != nil {
 			return nil, err
 		}
 	}
 	var summarizeProvider provider.Provider
 	if agentName == config.AgentCoder {
-		summarizeProvider, err = createAgentProvider(config.AgentSummarizer)
+		summarizeProvider, err = createAgentProvider(config.AgentSummarizer, nil, nil)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	var contextManager *skills.ContextManager
+	if skillManager != nil && (agentName == config.AgentCoder || agentName == config.AgentTask) {
+		contextManager = skills.NewContextManager(skillManager, effectiveMaxTokens(agentName, agentProvider.Model()))
 	}
 
 	agent := &agent{
@@ -104,6 +114,9 @@ func NewAgent(
 		tools:             agentTools,
 		titleProvider:     titleProvider,
 		summarizeProvider: summarizeProvider,
+		agentName:         agentName,
+		skillManager:      skillManager,
+		contextManager:    contextManager,
 		activeRequests:    sync.Map{},
 	}
 
@@ -273,6 +286,11 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	// Append the new user message to the conversation history.
 	msgHistory := append(msgs, userMsg)
 
+	requestProvider, err := a.prepareProvider(content)
+	if err != nil {
+		return a.err(fmt.Errorf("failed to prepare agent provider: %w", err))
+	}
+
 	for {
 		// Check for cancellation before each iteration
 		select {
@@ -281,7 +299,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		default:
 			// Continue processing
 		}
-		agentMessage, toolResults, err := a.streamAndHandleEvents(ctx, sessionID, msgHistory)
+		agentMessage, toolResults, err := a.streamAndHandleEvents(ctx, sessionID, msgHistory, requestProvider)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				agentMessage.AddFinish(message.FinishReasonCanceled)
@@ -319,14 +337,14 @@ func (a *agent) createUserMessage(ctx context.Context, sessionID, content string
 	})
 }
 
-func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msgHistory []message.Message) (message.Message, *message.Message, error) {
+func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msgHistory []message.Message, requestProvider provider.Provider) (message.Message, *message.Message, error) {
 	ctx = context.WithValue(ctx, tools.SessionIDContextKey, sessionID)
-	eventChan := a.provider.StreamResponse(ctx, msgHistory, a.tools)
+	eventChan := requestProvider.StreamResponse(ctx, msgHistory, a.tools)
 
 	assistantMsg, err := a.messages.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Assistant,
 		Parts: []message.ContentPart{},
-		Model: a.provider.Model().ID,
+		Model: requestProvider.Model().ID,
 	})
 	if err != nil {
 		return assistantMsg, nil, fmt.Errorf("failed to create assistant message: %w", err)
@@ -337,7 +355,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 
 	// Process each event in the stream.
 	for event := range eventChan {
-		if processErr := a.processEvent(ctx, sessionID, &assistantMsg, event); processErr != nil {
+		if processErr := a.processEvent(ctx, sessionID, &assistantMsg, event, requestProvider); processErr != nil {
 			a.finishMessage(ctx, &assistantMsg, message.FinishReasonCanceled)
 			return assistantMsg, nil, processErr
 		}
@@ -442,7 +460,13 @@ func (a *agent) finishMessage(ctx context.Context, msg *message.Message, finishR
 	_ = a.messages.Update(ctx, *msg)
 }
 
-func (a *agent) processEvent(ctx context.Context, sessionID string, assistantMsg *message.Message, event provider.ProviderEvent) error {
+func (a *agent) processEvent(
+	ctx context.Context,
+	sessionID string,
+	assistantMsg *message.Message,
+	event provider.ProviderEvent,
+	requestProvider provider.Provider,
+) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -485,7 +509,7 @@ func (a *agent) processEvent(ctx context.Context, sessionID string, assistantMsg
 		if err := a.messages.Update(ctx, *assistantMsg); err != nil {
 			return fmt.Errorf("failed to update message: %w", err)
 		}
-		return a.TrackUsage(ctx, sessionID, a.provider.Model(), event.Response.Usage)
+		return a.TrackUsage(ctx, sessionID, requestProvider.Model(), event.Response.Usage)
 	}
 
 	return nil
@@ -522,12 +546,15 @@ func (a *agent) Update(agentName config.AgentName, modelID models.ModelID) (mode
 		return models.Model{}, fmt.Errorf("failed to update config: %w", err)
 	}
 
-	provider, err := createAgentProvider(agentName)
+	provider, err := createAgentProvider(agentName, a.skillManager, nil)
 	if err != nil {
 		return models.Model{}, fmt.Errorf("failed to create provider for model %s: %w", modelID, err)
 	}
 
 	a.provider = provider
+	if a.skillManager != nil && (agentName == config.AgentCoder || agentName == config.AgentTask) {
+		a.contextManager = skills.NewContextManager(a.skillManager, effectiveMaxTokens(agentName, provider.Model()))
+	}
 
 	return a.provider.Model(), nil
 }
@@ -703,7 +730,28 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-func createAgentProvider(agentName config.AgentName) (provider.Provider, error) {
+func (a *agent) prepareProvider(userPrompt string) (provider.Provider, error) {
+	if a.skillManager == nil {
+		return a.provider, nil
+	}
+
+	var activeSkillInstructions []string
+	if a.contextManager != nil {
+		for _, skillName := range a.contextManager.ShouldActivate(userPrompt) {
+			instructions, err := a.contextManager.ActivateSkill(skillName)
+			if err != nil {
+				return nil, fmt.Errorf("activate skill %q: %w", skillName, err)
+			}
+			if injected := prompt.InjectSkillInstructions(skillName, instructions); injected != "" {
+				activeSkillInstructions = append(activeSkillInstructions, injected)
+			}
+		}
+	}
+
+	return createAgentProvider(a.agentName, a.skillManager, activeSkillInstructions)
+}
+
+func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillManager, activeSkillInstructions []string) (provider.Provider, error) {
 	cfg := config.Get()
 	agentConfig, ok := cfg.Agents[agentName]
 	if !ok {
@@ -728,7 +776,7 @@ func createAgentProvider(agentName config.AgentName) (provider.Provider, error) 
 	opts := []provider.ProviderClientOption{
 		provider.WithAPIKey(providerCfg.APIKey),
 		provider.WithModel(model),
-		provider.WithSystemMessage(prompt.GetAgentPrompt(agentName, model.Provider)),
+		provider.WithSystemMessage(buildSystemMessage(agentName, model.Provider, skillManager, activeSkillInstructions)),
 		provider.WithMaxTokens(maxTokens),
 	}
 	if model.Provider == models.ProviderOpenAI || model.Provider == models.ProviderLocal && model.CanReason {
@@ -755,4 +803,36 @@ func createAgentProvider(agentName config.AgentName) (provider.Provider, error) 
 	}
 
 	return agentProvider, nil
+}
+
+func buildSystemMessage(
+	agentName config.AgentName,
+	modelProvider models.ModelProvider,
+	skillManager *skills.SkillManager,
+	activeSkillInstructions []string,
+) string {
+	systemMessage := prompt.GetAgentPrompt(agentName, modelProvider)
+	if skillManager == nil || (agentName != config.AgentCoder && agentName != config.AgentTask) {
+		return systemMessage
+	}
+
+	sections := make([]string, 0, 2+len(activeSkillInstructions))
+	if skillsMetadata := prompt.InjectSkillsMetadata(skillManager.GetAllMetadata()); skillsMetadata != "" {
+		sections = append(sections, skillsMetadata)
+	}
+	sections = append(sections, activeSkillInstructions...)
+	if len(sections) == 0 {
+		return systemMessage
+	}
+
+	return systemMessage + "\n\n" + strings.Join(sections, "\n\n")
+}
+
+func effectiveMaxTokens(agentName config.AgentName, model models.Model) int {
+	if cfg := config.Get(); cfg != nil {
+		if agentConfig, ok := cfg.Agents[agentName]; ok && agentConfig.MaxTokens > 0 {
+			return int(agentConfig.MaxTokens)
+		}
+	}
+	return int(model.DefaultMaxTokens)
 }

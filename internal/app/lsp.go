@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/opencode-ai/opencode/internal/config"
-	"github.com/opencode-ai/opencode/internal/logging"
-	"github.com/opencode-ai/opencode/internal/lsp"
-	"github.com/opencode-ai/opencode/internal/lsp/watcher"
+	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/lsp"
+	"github.com/digiogithub/pando/internal/lsp/watcher"
 )
 
 func (app *App) initLSPClients(ctx context.Context) {

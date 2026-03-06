@@ -1,7 +1,7 @@
 # Pando Repository Structure
 
 ## Overview
-Pando is a Go-based terminal AI assistant forked from the archived **OpenCode** project (github.com/opencode-ai/opencode). The original project evolved into **Crush** by Charmbracelet with a license change. Pando continues under MIT license.
+Pando is a Go-based terminal AI assistant forked from the archived **OpenCode** project (github.com/digiogithub/pando). The original project evolved into **Crush** by Charmbracelet with a license change. Pando continues under MIT license.
 
 ## Entrypoint & CLI
 - **[main.go]**: Application entrypoint. Calls `cmd.Execute()` wrapped in `logging.RecoverPanic`.

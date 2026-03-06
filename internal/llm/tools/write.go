@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opencode-ai/opencode/internal/config"
-	"github.com/opencode-ai/opencode/internal/diff"
-	"github.com/opencode-ai/opencode/internal/history"
-	"github.com/opencode-ai/opencode/internal/logging"
-	"github.com/opencode-ai/opencode/internal/lsp"
-	"github.com/opencode-ai/opencode/internal/permission"
+	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/diff"
+	"github.com/digiogithub/pando/internal/history"
+	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/lsp"
+	"github.com/digiogithub/pando/internal/permission"
 )
 
 type WriteParams struct {

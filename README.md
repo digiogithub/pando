@@ -1,6 +1,6 @@
 # ⌬ Pando
 
-> **Fork of [OpenCode](https://github.com/opencode-ai/opencode)** by Kujtim Hoxha.
+> **Fork of [OpenCode](https://github.com/digiogithub/pando)** by Kujtim Hoxha.
 > Maintained by **José F. Rives**.
 
 A powerful terminal-based AI assistant for developers, providing intelligent coding assistance directly in your terminal.
@@ -28,7 +28,7 @@ Pando is a Go-based CLI application that brings AI assistance to your terminal. 
 ### Using Go
 
 ```bash
-go install github.com/opencode-ai/opencode@latest
+go install github.com/digiogithub/pando@latest
 ```
 
 ### Building from Source
@@ -166,12 +166,76 @@ Custom commands are predefined prompts stored as Markdown files:
 
 ## Acknowledgments
 
-Pando is a fork of [OpenCode](https://github.com/opencode-ai/opencode), originally created by [Kujtim Hoxha](https://github.com/kujtimiihoxha).
+Pando is a fork of [OpenCode](https://github.com/digiogithub/pando), originally created by [Kujtim Hoxha](https://github.com/kujtimiihoxha).
 
 Special thanks to:
 - [@isaacphi](https://github.com/isaacphi) - For the [mcp-language-server](https://github.com/isaacphi/mcp-language-server) project
 - [@adamdottv](https://github.com/adamdottv) - For the design direction and UI/UX architecture
 - The broader open source community
+
+## Tasks
+
+### build
+
+Compila el binario de pando.
+
+```bash
+# Get version from last git tag
+VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+go build -ldflags "-X github.com/digiogithub/pando/internal/version.Version=$VERSION" -o pando .
+```
+
+### build-and-copy
+
+Compila el binario de pando y lo copia a `~/bin/`.
+
+```bash
+# Get version from last git tag
+VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+go build -ldflags "-X github.com/digiogithub/pando/internal/version.Version=$VERSION" -o pando .
+rm -f ~/bin/pando
+cp pando ~/bin/pando
+```
+
+### release
+
+Compila binarios para múltiples plataformas (Linux x64, Windows x64, macOS aarch64) y genera releases comprimidos en la carpeta `dist/`.
+
+```bash
+# Create dist folder
+mkdir -p dist
+
+# Get version from last git tag
+VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+
+# Function to build and zip
+build_and_zip() {
+    local os=$1
+    local arch=$2
+    local suffix=$3
+    local ext=$4
+
+    echo "Building for $os-$arch..."
+    GOOS=$os GOARCH=$arch go build -ldflags "-X github.com/digiogithub/pando/internal/version.Version=$VERSION" -o dist/pando-$suffix$ext .
+
+    echo "Zipping pando-$suffix$ext..."
+    cd dist
+    zip pando-$suffix.zip pando-$suffix$ext
+    rm pando-$suffix$ext
+    cd ..
+}
+
+# Linux x64
+build_and_zip linux amd64 linux-x64 ""
+
+# Windows x64
+build_and_zip windows amd64 windows-x64 ".exe"
+
+# macOS aarch64
+build_and_zip darwin arm64 darwin-arm64 ""
+
+echo "Release builds completed in dist/"
+```
 
 ## License
 

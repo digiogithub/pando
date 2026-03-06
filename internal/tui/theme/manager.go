@@ -7,8 +7,7 @@ import (
 	"sync"
 
 	"github.com/alecthomas/chroma/v2/styles"
-	"github.com/opencode-ai/opencode/internal/config"
-	"github.com/opencode-ai/opencode/internal/logging"
+	"github.com/digiogithub/pando/internal/config"
 )
 
 // Manager handles theme registration, selection, and retrieval.
@@ -42,6 +41,15 @@ func RegisterTheme(name string, theme Theme) {
 // SetTheme changes the active theme to the one with the specified name.
 // Returns an error if the theme doesn't exist.
 func SetTheme(name string) error {
+	if err := ApplyTheme(name); err != nil {
+		return err
+	}
+
+	return updateConfigTheme(name)
+}
+
+// ApplyTheme changes the active theme without writing to the config file.
+func ApplyTheme(name string) error {
 	globalManager.mu.Lock()
 	defer globalManager.mu.Unlock()
 
@@ -51,13 +59,6 @@ func SetTheme(name string) error {
 	}
 
 	globalManager.currentName = name
-
-	// Update the config file using viper
-	if err := updateConfigTheme(name); err != nil {
-		// Log the error but don't fail the theme change
-		logging.Warn("Warning: Failed to update config file with new theme", "err", err)
-	}
-
 	return nil
 }
 

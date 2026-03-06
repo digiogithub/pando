@@ -4,12 +4,10 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/opencode-ai/opencode/internal/tui/components/logs"
-	"github.com/opencode-ai/opencode/internal/tui/layout"
-	"github.com/opencode-ai/opencode/internal/tui/styles"
+	"github.com/digiogithub/pando/internal/tui/components/logs"
+	"github.com/digiogithub/pando/internal/tui/layout"
+	"github.com/digiogithub/pando/internal/tui/styles"
 )
-
-var LogsPage PageID = "logs"
 
 type LogPage interface {
 	tea.Model

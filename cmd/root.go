@@ -3,21 +3,23 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/digiogithub/pando/internal/app"
+	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/format"
+	"github.com/digiogithub/pando/internal/llm/agent"
+	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/digiogithub/pando/internal/tui"
+	"github.com/digiogithub/pando/internal/version"
 	zone "github.com/lrstanley/bubblezone"
-	"github.com/opencode-ai/opencode/internal/app"
-	"github.com/opencode-ai/opencode/internal/config"
-	"github.com/opencode-ai/opencode/internal/db"
-	"github.com/opencode-ai/opencode/internal/format"
-	"github.com/opencode-ai/opencode/internal/llm/agent"
-	"github.com/opencode-ai/opencode/internal/logging"
-	"github.com/opencode-ai/opencode/internal/pubsub"
-	"github.com/opencode-ai/opencode/internal/tui"
-	"github.com/opencode-ai/opencode/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -26,7 +28,9 @@ var rootCmd = &cobra.Command{
 	Short: "Terminal-based AI assistant for software development",
 	Long: `Pando is a powerful terminal-based AI assistant that helps with software development tasks.
 It provides an interactive chat interface with AI capabilities, code analysis, and LSP integration
-to assist developers in writing, debugging, and understanding code directly from the terminal.`,
+to assist developers in writing, debugging, and understanding code directly from the terminal.
+It also supports non-interactive prompts via the -p flag or piped stdin input.
+The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 	Example: `
   # Run in interactive mode
   pando
@@ -45,6 +49,26 @@ to assist developers in writing, debugging, and understanding code directly from
 
   # Run a single non-interactive prompt with JSON output format
   pando -p "Explain the use of context in Go" -f json
+
+  # Run with all tools auto-approved (no permission prompts)
+  pando -p "Fix all lint errors" --yolo
+
+  # Same but with full flag name
+  pando -p "Refactor main.go" --allow-all-tools
+
+  # Pipe prompt from stdin
+  echo "Explain Go context" | pando
+
+  # Read prompt from file
+  cat prompt.txt | pando
+
+  # Use environment variable for prompt
+  PANDO_PROMPT="Explain Go context" pando
+
+  # Combine with other flags
+  echo "Fix lint errors" | pando --yolo -f json
+
+  # Priority: -p flag > stdin > PANDO_PROMPT > interactive mode
   `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// If the help flag is set, show the help message
@@ -63,6 +87,30 @@ to assist developers in writing, debugging, and understanding code directly from
 		prompt, _ := cmd.Flags().GetString("prompt")
 		outputFormat, _ := cmd.Flags().GetString("output-format")
 		quiet, _ := cmd.Flags().GetBool("quiet")
+		yolo, _ := cmd.Flags().GetBool("yolo")
+		allowAll, _ := cmd.Flags().GetBool("allow-all-tools")
+		yoloMode := yolo || allowAll
+
+		// Read prompt from stdin if piped (not a terminal)
+		if prompt == "" {
+			fi, err := os.Stdin.Stat()
+			if err == nil && (fi.Mode()&os.ModeCharDevice) == 0 {
+				data, err := io.ReadAll(os.Stdin)
+				if err == nil {
+					stdinPrompt := strings.TrimSpace(string(data))
+					if stdinPrompt != "" {
+						prompt = stdinPrompt
+					}
+				}
+			}
+		}
+
+		// Check PANDO_PROMPT environment variable as last resort
+		if prompt == "" {
+			if envPrompt := os.Getenv("PANDO_PROMPT"); envPrompt != "" {
+				prompt = strings.TrimSpace(envPrompt)
+			}
+		}
 
 		// Validate format option
 		if !format.IsValid(outputFormat) {
@@ -111,10 +159,14 @@ to assist developers in writing, debugging, and understanding code directly from
 		// Non-interactive mode
 		if prompt != "" {
 			// Run non-interactive flow using the App method
-			return app.RunNonInteractive(ctx, prompt, outputFormat, quiet)
+			return app.RunNonInteractive(ctx, prompt, outputFormat, quiet, yoloMode)
 		}
 
 		// Interactive mode
+		if yoloMode {
+			app.Permissions.SetGlobalAutoApprove(true)
+		}
+
 		// Set up the TUI
 		zone.NewGlobal()
 		program := tea.NewProgram(
@@ -301,6 +353,8 @@ func init() {
 
 	// Add quiet flag to hide spinner in non-interactive mode
 	rootCmd.Flags().BoolP("quiet", "q", false, "Hide spinner in non-interactive mode")
+	rootCmd.Flags().Bool("yolo", false, "Auto-approve all tool permissions including MCP tools")
+	rootCmd.Flags().Bool("allow-all-tools", false, "Auto-approve all tool permissions (alias for --yolo)")
 
 	// Register custom validation for the format flag
 	rootCmd.RegisterFlagCompletionFunc("output-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
