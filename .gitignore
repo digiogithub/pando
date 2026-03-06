@@ -41,7 +41,9 @@ Thumbs.db
 .env
 .env.local
 
-.opencode/
+.pando/
 
-opencode
-opencode.md
+pando
+pando.md
+
+*.db

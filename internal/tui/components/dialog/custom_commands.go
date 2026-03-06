@@ -41,7 +41,7 @@ func LoadCustomCommands() ([]Command, error) {
 	}
 
 	if xdgConfigHome != "" {
-		userCommandsDir := filepath.Join(xdgConfigHome, "opencode", "commands")
+		userCommandsDir := filepath.Join(xdgConfigHome, "pando", "commands")
 		userCommands, err := loadCommandsFromDir(userCommandsDir, UserCommandPrefix)
 		if err != nil {
 			// Log error but continue - we'll still try to load other commands
@@ -51,10 +51,10 @@ func LoadCustomCommands() ([]Command, error) {
 		}
 	}
 
-	// Load commands from $HOME/.opencode/commands
+	// Load commands from $HOME/.pando/commands
 	home, err := os.UserHomeDir()
 	if err == nil {
-		homeCommandsDir := filepath.Join(home, ".opencode", "commands")
+		homeCommandsDir := filepath.Join(home, ".pando", "commands")
 		homeCommands, err := loadCommandsFromDir(homeCommandsDir, UserCommandPrefix)
 		if err != nil {
 			// Log error but continue - we'll still try to load other commands

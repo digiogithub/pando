@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 
+	toml "github.com/pelletier/go-toml/v2"
+
 	"github.com/opencode-ai/opencode/internal/llm/models"
 	"github.com/opencode-ai/opencode/internal/logging"
 	"github.com/spf13/viper"
@@ -98,9 +100,9 @@ type Config struct {
 
 // Application constants
 const (
-	defaultDataDirectory = ".opencode"
+	defaultDataDirectory = ".pando"
 	defaultLogLevel      = "info"
-	appName              = "opencode"
+	appName              = "pando"
 
 	MaxTokensFallbackDefault = 4096
 )
@@ -111,12 +113,12 @@ var defaultContextPaths = []string{
 	".cursor/rules/",
 	"CLAUDE.md",
 	"CLAUDE.local.md",
-	"opencode.md",
-	"opencode.local.md",
-	"OpenCode.md",
-	"OpenCode.local.md",
-	"OPENCODE.md",
-	"OPENCODE.local.md",
+	"pando.md",
+	"pando.local.md",
+	"Pando.md",
+	"Pando.local.md",
+	"PANDO.md",
+	"PANDO.local.md",
 }
 
 // Global configuration instance
@@ -160,7 +162,7 @@ func Load(workingDir string, debug bool) (*Config, error) {
 	if cfg.Debug {
 		defaultLevel = slog.LevelDebug
 	}
-	if os.Getenv("OPENCODE_DEV_DEBUG") == "true" {
+	if os.Getenv("PANDO_DEV_DEBUG") == "true" {
 		loggingFile := fmt.Sprintf("%s/%s", cfg.Data.Directory, "debug.log")
 		messagesPath := fmt.Sprintf("%s/%s", cfg.Data.Directory, "messages")
 
@@ -216,9 +218,10 @@ func Load(workingDir string, debug bool) (*Config, error) {
 }
 
 // configureViper sets up viper's configuration paths and environment variables.
+// By not setting SetConfigType, Viper auto-detects the format from the file
+// extension, supporting both .json and .toml (and other formats).
 func configureViper() {
 	viper.SetConfigName(fmt.Sprintf(".%s", appName))
-	viper.SetConfigType("json")
 	viper.AddConfigPath("$HOME")
 	viper.AddConfigPath(fmt.Sprintf("$XDG_CONFIG_HOME/%s", appName))
 	viper.AddConfigPath(fmt.Sprintf("$HOME/.config/%s", appName))
@@ -230,7 +233,7 @@ func configureViper() {
 func setDefaults(debug bool) {
 	viper.SetDefault("data.directory", defaultDataDirectory)
 	viper.SetDefault("contextPaths", defaultContextPaths)
-	viper.SetDefault("tui.theme", "opencode")
+	viper.SetDefault("tui.theme", "pando")
 	viper.SetDefault("autoCompact", true)
 
 	// Set default shell from environment or fallback to /bin/bash
@@ -448,10 +451,10 @@ func readConfig(err error) error {
 }
 
 // mergeLocalConfig loads and merges configuration from the local directory.
+// Supports both JSON and TOML formats via Viper auto-detection.
 func mergeLocalConfig(workingDir string) {
 	local := viper.New()
 	local.SetConfigName(fmt.Sprintf(".%s", appName))
-	local.SetConfigType("json")
 	local.AddConfigPath(workingDir)
 
 	// Merge local config if it exists
@@ -816,6 +819,15 @@ func setDefaultModelForAgent(agent AgentName) bool {
 	return false
 }
 
+// configFileFormat returns "toml" if the config file has a .toml extension,
+// otherwise defaults to "json".
+func configFileFormat(path string) string {
+	if strings.HasSuffix(path, ".toml") {
+		return "toml"
+	}
+	return "json"
+}
+
 func updateCfgFile(updateCfg func(config *Config)) error {
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")
@@ -841,18 +853,37 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 		configData = data
 	}
 
-	// Parse the JSON
+	format := configFileFormat(configFile)
+
+	// Parse the config file based on its format
 	var userCfg *Config
-	if err := json.Unmarshal(configData, &userCfg); err != nil {
-		return fmt.Errorf("failed to parse config file: %w", err)
+	switch format {
+	case "toml":
+		if err := toml.Unmarshal(configData, &userCfg); err != nil {
+			return fmt.Errorf("failed to parse TOML config file: %w", err)
+		}
+	default:
+		if err := json.Unmarshal(configData, &userCfg); err != nil {
+			return fmt.Errorf("failed to parse JSON config file: %w", err)
+		}
 	}
 
 	updateCfg(userCfg)
 
-	// Write the updated config back to file
-	updatedData, err := json.MarshalIndent(userCfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+	// Write the updated config back to file in the same format
+	var updatedData []byte
+	var err error
+	switch format {
+	case "toml":
+		updatedData, err = toml.Marshal(userCfg)
+		if err != nil {
+			return fmt.Errorf("failed to marshal TOML config: %w", err)
+		}
+	default:
+		updatedData, err = json.MarshalIndent(userCfg, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON config: %w", err)
+		}
 	}
 
 	if err := os.WriteFile(configFile, updatedData, 0o644); err != nil {

@@ -1,0 +1,128 @@
+# Mesnada Configuration File
+# This file defines model configurations and agent behaviors
+
+# Default model to use when none is specified
+default_model: "gpt-5.4"
+
+# List of available models with their descriptions (legacy/shared across all engines)
+# These models are available for all engines when engine-specific models are not defined
+models:
+  - id: "claude-sonnet-4.6"
+    description: "Use this model for coding tasks with a good programming practices"
+  - id: "claude-opus-4.6"
+    description: "Highest capability for complex reasoning and analysis"
+  - id: "gpt-5.4"
+    description: "The last and most powerful GPT model, suitable for all tasks with the capacity of gpt-5.3-codex and more advanced reasoning and creativity"
+  - id: "gpt-5.3-codex"
+    description: "Optimized for code generation and refactoring"
+  - id: "gpt-4.1"
+    description: "Reliable GPT-4 variant"
+  - id: "gemini-3-pro-preview"
+    description: "Use this model for multimodal tasks and big context requirements"
+
+# Engine-specific model configurations (optional)
+# If defined, these override the global models list for each engine
+engines:
+  copilot:
+    default_model: "gpt-5.3-codex"
+    models:
+      - id: "claude-sonnet-4.6"
+        description: "Use this model for coding tasks with a good programming practices"
+      - id: "claude-opus-4.6"
+        description: "Highest capability for complex reasoning and analysis"
+      - id: "gpt-5.4"
+        description: "The last and most powerful GPT model, suitable for all tasks with the capacity of gpt-5.3-codex and more advanced reasoning and creativity"
+      - id: "gpt-5.3-codex"
+        description: "Optimized for code generation and refactoring"
+      - id: "gpt-4.1"
+        description: "Reliable GPT-4 variant"
+      - id: "gemini-3-pro-preview"
+        description: "Use this model for multimodal tasks and big context requirements"
+
+  claude:
+    default_model: "claude-sonnet-4.6"
+    models:
+      - id: "claude-sonnet-4.6"
+        description: "Balanced performance and speed for general tasks"
+      - id: "claude-opus-4.6"
+        description: "Highest capability for complex reasoning and analysis"
+      - id: "claude-haiku-4.5"
+        description: "Fast responses for simple tasks and quick iterations"
+      - id: "claude-sonnet-4"
+        description: "Previous generation Sonnet model"
+      - id: "sonnet"
+        description: "Alias for latest Sonnet (Claude Code specific)"
+      - id: "opus"
+        description: "Alias for latest Opus (Claude Code specific)"
+      - id: "haiku"
+        description: "Alias for latest Haiku (Claude Code specific)"
+
+  gemini:
+    default_model: "gemini-3-pro-preview"
+    models:
+      - id: "gemini-3-pro-preview"
+        description: "For complex tasks that require deep reasoning and creativity"
+      - id: "gemini-2.5-flash"
+        description: "For tasks that need a balance of speed and reasoning"
+      - id: "gemini-2.5-flash-lite"
+        description: "For simple tasks that need to be done quickly"
+
+  opencode:
+    default_model: "openrouter/z-ai/glm-4.7"
+    models:
+      - id: "openrouter/z-ai/glm-4.7"
+        description: "GLM-4.7 is Z.AI’s latest flagship model, featuring upgrades in two key areas: enhanced programming capabilities and more stable multi-step reasoning/execution. It demonstrates significant improvements in executing complex agent tasks while delivering more natural conversational experiences and superior front-end aesthetics"
+      - id: "openrouter/minimax/minimax-m2.1"
+        description: "MiniMax-M2.1 is a lightweight, state-of-the-art large language model optimized for coding, agentic workflows, and modern application development"
+      - id: "openrouter/moonshotai/kimi-k2-thinking"
+        description: "The model is optimized for persistent step-by-step thought, dynamic tool invocation, and complex reasoning workflows that span hundreds of turns. It interleaves step-by-step reasoning with tool use, enabling autonomous research, coding, and writing that can persist for hundreds of sequential actions without drift"
+      - id: "openrouter/deepseek/deepseek-v3.2"
+        description: "DeepSeek-V3.2 is a large language model designed to harmonize high computational efficiency with strong reasoning and agentic tool-use performance"
+      - id: "openrouter/qwen/qwen3-coder"
+        description: "It is a powerful coding agent model specializing in autonomous programming via tool calling and environment interaction, combining coding proficiency with versatile general-purpose abilities"
+
+  ollama-claude:
+    default_model: "deepseek-r1:latest"
+    models:
+      - id: "gpt-oss:latest"
+        description: "GPT-OSS open source model"
+      - id: "glm-4.7-tools:latest"
+        description: "GLM-4.7 with tool support"
+      - id: "qwen3.5:9b"
+        description: "Qwen3.5 general tasks"
+
+  ollama-opencode:
+    default_model: "deepseek-r1:latest"
+    models:
+      - id: "gpt-oss:latest"
+        description: "GPT-OSS open source model"
+      - id: "glm-4.7-tools:latest"
+        description: "GLM-4.7 with tool support"
+      - id: "qwen3.5:9b"
+        description: "Qwen3.5 general tasks"
+
+  mistral:
+    default_model: "devstral-2"
+    models:
+      - id: "devstral-2"
+        description: "Devstral 2 (123B): Mistral's flagship coding agent model, achieves 72.2% on SWE-bench Verified, optimized for data-center GPUs (4x H100), 256K context window"
+      - id: "devstral-small"
+        description: "Devstral Small 2 (24B): Compact open-source coding agent (Apache 2.0), achieves 68.0% on SWE-bench Verified, runs on consumer hardware with 25GB VRAM, 256K context window"
+
+# Server configuration
+server:
+  host: "127.0.0.1"
+  port: 9767
+
+# Orchestrator configuration
+orchestrator:
+  store_path: ".mesnada/tasks.json"
+  log_dir: ".mesnada/logs"
+  max_parallel: 5
+
+  # Additional MCP config to pass to Copilot CLI for every spawned task.
+  # This is passed as: copilot --additional-mcp-config <value>
+  # Use @<path> to reference a JSON file relative to the task working directory.
+  # Example: @.github/mcp-config.json
+  default_mcp_config: "@.github/mcp-config.json"
+  default_engine: "copilot"

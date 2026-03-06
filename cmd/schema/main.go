@@ -38,8 +38,8 @@ func main() {
 func generateSchema() map[string]any {
 	schema := map[string]any{
 		"$schema":     "http://json-schema.org/draft-07/schema#",
-		"title":       "OpenCode Configuration",
-		"description": "Configuration schema for the OpenCode application",
+		"title":       "Pando Configuration",
+		"description": "Configuration schema for the Pando application",
 		"type":        "object",
 		"properties":  map[string]any{},
 	}
@@ -52,7 +52,7 @@ func generateSchema() map[string]any {
 			"directory": map[string]any{
 				"type":        "string",
 				"description": "Directory where application data is stored",
-				"default":     ".opencode",
+				"default":     ".pando",
 			},
 		},
 		"required": []string{"directory"},
@@ -89,12 +89,12 @@ func generateSchema() map[string]any {
 			".cursor/rules/",
 			"CLAUDE.md",
 			"CLAUDE.local.md",
-			"opencode.md",
-			"opencode.local.md",
-			"OpenCode.md",
-			"OpenCode.local.md",
-			"OPENCODE.md",
-			"OPENCODE.local.md",
+			"pando.md",
+			"pando.local.md",
+			"Pando.md",
+			"Pando.local.md",
+			"PANDO.md",
+			"PANDO.local.md",
 		},
 	}
 
@@ -105,9 +105,9 @@ func generateSchema() map[string]any {
 			"theme": map[string]any{
 				"type":        "string",
 				"description": "TUI theme name",
-				"default":     "opencode",
+				"default":     "pando",
 				"enum": []string{
-					"opencode",
+					"pando",
 					"catppuccin",
 					"dracula",
 					"flexoki",

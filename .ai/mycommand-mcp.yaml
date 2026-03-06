@@ -1,0 +1,50 @@
+prompts:
+  - name: "debug-remembrances-mcp"
+    description: "Send tasks to opencode agent connected to remembrances last build for testing tools and logic"
+    content: |
+      perfecto, usa la herramienta de enviar tareas al agente de opencode
+      para probar enviar a la knowledge base de remembrances la información
+      que obtengas con la tool `initial-context
+
+tools:
+  - name: "initial-context"
+    description: "Get initial context information for tasks"
+    command: ".ai/scripts/initial-context.sh"
+    path: "~/www/MCP/remembrances-mcp/"
+    accepts_args: true
+    accept_input: false
+
+  - name: "get_date"
+    description: "Displays the current system date and time in various formats. Can show UTC time, format output, or display specific timezones, the tool accepts the same arguments of the `date` linux command"
+    command: "date"
+    path: "./"
+    accepts_args: true
+    accept_input: false
+
+  - name: "curl"
+    description: "Downloads any resource from a URL using `curl` command. Use this tool for run any `curl` command what you want"
+    command: "curl"
+    path: "/tmp"
+    accepts_args: true
+    accept_input: false
+
+  - name: "terminal"
+    description: "Call to Bash terminal, send all commands to run into input argument"
+    command: "bash"
+    path: "~/www/MCP/remembrances-mcp/"
+    accepts_args: true
+    accept_input: true
+
+  - name: "osx-shell"
+    description: "Execute commands in an OSX zsh shell environment, send all commands to run into input argument"
+    command: "./ai/scripts/osx-connection.sh"
+    path: "~/www/MCP/remembrances-mcp/"
+    accepts_args: false
+    accept_input: true
+
+  - name: "opencode-agent-debug"
+    description: "Send to an opencode agent connected to remembrances last build for testing tools and logic, send the test to the agent tasks in the input argument"
+    command: "./ai/scripts/opencode-debug.sh"
+    path: "~/www/MCP/remembrances-mcp/"
+    accepts_args: false
+    accept_input: true

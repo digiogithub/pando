@@ -1,0 +1,153 @@
+# Sample YAML configuration file for Remembrances-MCP
+# This file contains all available configuration options with their default values.
+# You can copy this file to config.yaml and modify the values as needed.
+#
+# Standard locations (auto-detected if --config not specified):
+#   Linux: ~/.config/remembrances/config.yaml
+#   macOS: ~/Library/Application Support/remembrances/config.yaml
+#
+# Configuration can be overridden by command-line flags or environment variables.
+# Environment variables use the GOMEM_ prefix (e.g., GOMEM_MCP_HTTP_ADDR).
+# Command-line flags take precedence over YAML, and environment variables over both.
+
+# Enable MCP Streamable HTTP transport (recommended) (default: false)
+mcp-http: true
+
+# Port or address to bind MCP Streamable HTTP transport (default: "3000")
+mcp-http-addr: "4030"
+
+# MCP Streamable HTTP endpoint path (default: "/mcp")
+mcp-http-endpoint: "/mcp"
+
+# Enable HTTP JSON API transport (default: false)
+http: true
+
+# Address to bind HTTP transport (host:port) (default: "8080")
+# Can be just a port number ("8080") or host:port ("localhost:8080")
+http-addr: "localhost:9084"
+
+# Enable REST API server (default: false)
+#rest-api-serve: false
+
+# Path to the knowledge base directory (default: "")
+knowledge-base: "/www/MCP/Pando/pando/.kb"
+
+# ========== SurrealDB Configuration ==========
+# Path to the embedded SurrealDB database (default: "./remembrances.db")
+db-path: "surrealkv:///www/MCP/Pando/pando/remembrances.db"
+
+# URL for the remote SurrealDB instance (default: "")
+#surrealdb-url: "ws://localhost:8000"
+
+# Username for SurrealDB (default: "root")
+surrealdb-user: "root"
+
+# Password for SurrealDB (default: "root")
+surrealdb-pass: "root"
+
+# Namespace for SurrealDB (default: "test")
+surrealdb-namespace: "test"
+
+# Database for SurrealDB (default: "test")
+surrealdb-database: "test"
+
+# External command to start SurrealDB when connection fails (default: "")
+#surrealdb-start-cmd: "surreal start --user root --pass root surrealkv:///www/MCP/remembrances-mcp/remembrances-external.db"
+
+# ========== GGUF Local Model Configuration ==========
+# Path to GGUF model file for local embeddings (default: "")
+# When set, this takes priority over Ollama and OpenAI
+# Example: "/path/to/nomic-embed-text-v1.5.Q4_K_M.gguf"
+gguf-model-path: "/www/Remembrances/nomic-embed-text-v1.5.Q4_K_M.gguf"
+
+# Number of threads for GGUF model (0 = auto-detect) (default: 0)
+gguf-threads: 0
+
+# Number of GPU layers for GGUF model (0 = CPU only) (default: 0)
+# Higher values offload more computation to GPU
+gguf-gpu-layers: 32
+# ========== Ollama Configuration ==========
+# URL for the Ollama server (default: "http://localhost:11434")
+#ollama-url: "http://localhost:11434"
+
+# Ollama model to use for embeddings (default: "")
+#ollama-model: "nomic-embed-text:latest"
+# ========== OpenAI Configuration ==========
+# OpenAI API key (default: "")
+#openai-key: ""
+
+# OpenAI base URL (default: "https://api.openai.com/v1")
+#openai-url: "https://api.openai.com/v1"
+
+# OpenAI model to use for embeddings (default: "text-embedding-3-large")
+#openai-model: "text-embedding-3-large"
+
+# ========== Code-Specific Embedding Configuration ==========
+# These options allow using specialized code embedding models for code indexing
+# while using a different model for text/facts/vectors/events.
+# If not specified, the default GGUF model above is used for code indexing.
+#
+# Recommended code embedding models:
+#   - GGUF: CodeRankEmbed (coderankembed.Q4_K_M.gguf) - optimized for code
+#   - Ollama: jina/jina-embeddings-v2-base-code
+#
+# Example: Use CodeRankEmbed for code and nomic-embed-text for general text:
+#code-gguf-model-path: "/www/Remembrances/coderankembed.Q4_K_M.gguf"
+
+# Path to GGUF model for code embeddings (default: uses default gguf-model-path)
+code-gguf-model-path: "/www/Remembrances/coderankembed.Q4_K_M.gguf"
+
+# Ollama model for code embeddings (default: uses default ollama-model)
+#code-ollama-model: "hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M"
+
+# OpenAI model for code embeddings (default: uses default openai-model)
+#code-openai-model: ""
+
+# ========== Text Chunking Configuration ==========
+# Maximum chunk size in characters for text splitting (default: 1500)
+# This applies to all embedding providers (GGUF, Ollama, OpenAI)
+# Larger values mean fewer chunks but may exceed model context limits
+#chunk-size: 1500
+
+# Overlap between chunks in characters (default: 200)
+# Overlap helps preserve context across chunk boundaries
+# Typical values are 10-20% of chunk-size
+#chunk-overlap: 200
+
+# ========== Code Indexing Configuration ==========
+# The Code Indexing System uses Tree-sitter for AST parsing
+# and generates semantic embeddings for code symbols
+
+# Enable automatic project indexing on startup (default: false)
+# When enabled, previously indexed projects will be re-indexed
+code-indexing-auto-reindex: true
+
+# Maximum number of concurrent indexing workers (default: 4)
+# Higher values speed up indexing but use more CPU
+code-indexing-workers: 8
+
+# Maximum symbol size before chunking (default: 1500 characters)
+# Symbols larger than this are split into chunks for embedding
+#code-indexing-max-symbol-size: 1500
+
+# File patterns to exclude from indexing (comma-separated)
+# Default excludes: vendor, node_modules, .git, build, dist, __pycache__
+#code-indexing-exclude-patterns: "vendor,node_modules,.git,build,dist,__pycache__,*.min.js,*.bundle.js"
+
+# Maximum file size to index in bytes (default: 1048576 = 1MB)
+# Files larger than this are skipped
+code-indexing-max-file-size: 524288
+
+# Supported languages for code indexing:
+# go, typescript, javascript, tsx, python, rust, java, kotlin,
+# swift, c, cpp, objc, php, ruby, csharp, scala, bash, yaml
+
+# ========== Logging Configuration ==========
+# Path to the log file (logs will be written to both stdout and file) (default: "")
+#log: "/www/MCP/remembrances-mcp/remembrances-mcp.log"
+
+modules:
+  commercial_webui:
+    enabled: true
+    config:
+      port: "9084"

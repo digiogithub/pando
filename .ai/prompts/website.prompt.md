@@ -1,0 +1,1 @@
+In the folder website you have a static website for the project, using hugo and docsy theme, there is a makefile in this folder to build the website. The website is hosted in a github repository, and deployed using github pages (I have a github flow file)
