@@ -251,6 +251,24 @@
       },
       "type": "array"
     },
+    "skills": {
+      "description": "Skill discovery and prompt injection configuration",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Enable skills support",
+          "type": "boolean"
+        },
+        "paths": {
+          "description": "Additional skill search paths",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "data": {
       "description": "Storage configuration",
       "properties": {
@@ -411,6 +429,99 @@
             "tron"
           ],
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "mesnada": {
+      "description": "Mesnada integration configuration",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Enable Mesnada integration",
+          "type": "boolean"
+        },
+        "server": {
+          "description": "Mesnada HTTP server configuration",
+          "properties": {
+            "host": {
+              "default": "127.0.0.1",
+              "description": "Mesnada server host",
+              "type": "string"
+            },
+            "port": {
+              "default": 9767,
+              "description": "Mesnada server port",
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "orchestrator": {
+          "description": "Mesnada orchestrator configuration",
+          "properties": {
+            "storePath": {
+              "description": "Path to the Mesnada task store",
+              "type": "string"
+            },
+            "logDir": {
+              "description": "Directory for Mesnada task logs",
+              "type": "string"
+            },
+            "maxParallel": {
+              "default": 5,
+              "description": "Maximum number of parallel Mesnada tasks",
+              "type": "integer"
+            },
+            "defaultEngine": {
+              "default": "copilot",
+              "description": "Default engine for Mesnada tasks",
+              "type": "string"
+            },
+            "defaultMcpConfig": {
+              "description": "Default MCP config for Mesnada tasks",
+              "type": "string"
+            },
+            "personaPath": {
+              "description": "Path to Mesnada persona definitions",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "acp": {
+          "description": "Mesnada ACP configuration",
+          "properties": {
+            "enabled": {
+              "description": "Enable ACP-backed Mesnada agents",
+              "type": "boolean"
+            },
+            "defaultAgent": {
+              "description": "Default ACP agent for Mesnada",
+              "type": "string"
+            },
+            "autoPermission": {
+              "description": "Automatically approve ACP permissions",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "tui": {
+          "description": "Mesnada TUI configuration",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Enable Mesnada TUI features",
+              "type": "boolean"
+            },
+            "webui": {
+              "default": true,
+              "description": "Enable the Mesnada web UI",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
         }
       },
       "type": "object"

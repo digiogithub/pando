@@ -5,8 +5,8 @@ import (
 	"database/sql"
 
 	"github.com/google/uuid"
-	"github.com/opencode-ai/opencode/internal/db"
-	"github.com/opencode-ai/opencode/internal/pubsub"
+	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/pubsub"
 )
 
 type Session struct {

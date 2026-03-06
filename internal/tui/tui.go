@@ -8,26 +8,28 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/opencode-ai/opencode/internal/app"
-	"github.com/opencode-ai/opencode/internal/config"
-	"github.com/opencode-ai/opencode/internal/llm/agent"
-	"github.com/opencode-ai/opencode/internal/logging"
-	"github.com/opencode-ai/opencode/internal/permission"
-	"github.com/opencode-ai/opencode/internal/pubsub"
-	"github.com/opencode-ai/opencode/internal/session"
-	"github.com/opencode-ai/opencode/internal/tui/components/chat"
-	"github.com/opencode-ai/opencode/internal/tui/components/core"
-	"github.com/opencode-ai/opencode/internal/tui/components/dialog"
-	"github.com/opencode-ai/opencode/internal/tui/layout"
-	"github.com/opencode-ai/opencode/internal/tui/page"
-	"github.com/opencode-ai/opencode/internal/tui/theme"
-	"github.com/opencode-ai/opencode/internal/tui/util"
+	"github.com/digiogithub/pando/internal/app"
+	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/agent"
+	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/permission"
+	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/digiogithub/pando/internal/session"
+	"github.com/digiogithub/pando/internal/tui/components/chat"
+	"github.com/digiogithub/pando/internal/tui/components/core"
+	"github.com/digiogithub/pando/internal/tui/components/dialog"
+	"github.com/digiogithub/pando/internal/tui/layout"
+	"github.com/digiogithub/pando/internal/tui/page"
+	"github.com/digiogithub/pando/internal/tui/theme"
+	"github.com/digiogithub/pando/internal/tui/util"
 )
 
 type keyMap struct {
 	Logs          key.Binding
+	Orchestrator  key.Binding
 	Quit          key.Binding
 	Help          key.Binding
+	Settings      key.Binding
 	SwitchSession key.Binding
 	Commands      key.Binding
 	Filepicker    key.Binding
@@ -46,6 +48,10 @@ var keys = keyMap{
 		key.WithKeys("ctrl+l"),
 		key.WithHelp("ctrl+l", "logs"),
 	),
+	Orchestrator: key.NewBinding(
+		key.WithKeys("ctrl+m"),
+		key.WithHelp("ctrl+m", "orchestrator"),
+	),
 
 	Quit: key.NewBinding(
 		key.WithKeys("ctrl+c"),
@@ -54,6 +60,10 @@ var keys = keyMap{
 	Help: key.NewBinding(
 		key.WithKeys("ctrl+_", "ctrl+h"),
 		key.WithHelp("ctrl+?", "toggle help"),
+	),
+	Settings: key.NewBinding(
+		key.WithKeys("ctrl+g"),
+		key.WithHelp("ctrl+g", "settings"),
 	),
 
 	SwitchSession: key.NewBinding(
@@ -474,8 +484,8 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.showMultiArgumentsDialog = false
 			}
 			return a, nil
-		case key.Matches(msg, keys.SwitchSession):
-			if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions && !a.showCommandDialog {
+		case key.Matches(msg, keys.SwitchSession) && a.currentPage == page.ChatPage:
+			if !a.showQuit && !a.showPermissions && !a.showCommandDialog {
 				// Load sessions and show the dialog
 				sessions, err := a.app.Sessions.List(context.Background())
 				if err != nil {
@@ -518,6 +528,16 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, a.themeDialog.Init()
 			}
 			return a, nil
+		case key.Matches(msg, keys.Settings):
+			if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+				return a, a.moveToPage(page.SettingsPage)
+			}
+			return a, nil
+		case key.Matches(msg, keys.Orchestrator):
+			if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+				return a, a.moveToPage(page.OrchestratorPage)
+			}
+			return a, nil
 		case key.Matches(msg, returnKey) || key.Matches(msg):
 			if msg.String() == quitKey {
 				if a.currentPage == page.LogsPage {
@@ -546,6 +566,12 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a, nil
 				}
 				if a.currentPage == page.LogsPage {
+					return a, a.moveToPage(page.ChatPage)
+				}
+				if a.currentPage == page.SettingsPage {
+					return a, a.moveToPage(page.ChatPage)
+				}
+				if a.currentPage == page.OrchestratorPage {
 					return a, a.moveToPage(page.ChatPage)
 				}
 			}
@@ -915,8 +941,10 @@ func New(app *app.App) tea.Model {
 		app:           app,
 		commands:      []dialog.Command{},
 		pages: map[page.PageID]tea.Model{
-			page.ChatPage: page.NewChatPage(app),
-			page.LogsPage: page.NewLogsPage(),
+			page.ChatPage:         page.NewChatPage(app),
+			page.LogsPage:         page.NewLogsPage(),
+			page.SettingsPage:     page.NewSettingsPage(app),
+			page.OrchestratorPage: page.NewOrchestratorPage(app),
 		},
 		filepicker: dialog.NewFilepickerCmp(app),
 	}
@@ -949,6 +977,43 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 			return func() tea.Msg {
 				return startCompactSessionMsg{}
 			}
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "settings",
+		Title:       "Settings",
+		Description: "Open configuration settings",
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(page.PageChangeMsg{ID: page.SettingsPage})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "skills",
+		Title:       "Skills",
+		Description: "Manage skills (list, activate, deactivate)",
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			if app.SkillManager == nil {
+				return util.ReportWarn("Skills system not enabled")
+			}
+			metadata := app.SkillManager.GetAllMetadata()
+			if len(metadata) == 0 {
+				return util.ReportInfo("No skills discovered")
+			}
+			info := "Discovered skills:\n"
+			for _, m := range metadata {
+				info += fmt.Sprintf("  - %s v%s: %s\n", m.Name, m.Version, m.Description)
+			}
+			return tea.Batch(
+				util.CmdHandler(chat.SendMsg{Text: "/skills list\n" + info}),
+			)
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "orchestrator",
+		Title:       "Orchestrator",
+		Description: "Open the Mesnada orchestrator dashboard",
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(page.PageChangeMsg{ID: page.OrchestratorPage})
 		},
 	})
 	// Load custom commands

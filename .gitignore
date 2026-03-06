@@ -47,3 +47,5 @@ pando
 pando.md
 
 *.db
+dist/
+pando

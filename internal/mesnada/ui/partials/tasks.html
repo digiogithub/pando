@@ -1,0 +1,67 @@
+{{/* Renders the task list (left column) */}} {{if .Tasks}} {{range .Tasks}}
+<div
+    class="task {{.StatusClass}}"
+    role="button"
+    tabindex="0"
+    hx-get="/ui/partials/panel?task_id={{.ID}}"
+    hx-target="#right-panel"
+    hx-swap="innerHTML"
+    @click="Alpine.store('ui').selectedTask='{{.ID}}'"
+    :class="Alpine.store('ui').selectedTask==='{{.ID}}' ? 'selected' : ''"
+    style="cursor: pointer"
+>
+    <div class="row">
+        <div class="id">{{if .IsACP}}<span class="acp-icon" title="ACP Agent">A</span>{{end}}{{.ID}}</div>
+        <div class="pct">{{.ProgressText}}</div>
+        <div class="when" title="{{.WhenTitle}}">{{.WhenText}}</div>
+        <div class="status">
+            <span class="dot"></span><span>{{.Status}}</span>
+        </div>
+        <button
+            class="btn-ghost"
+            title="Purge task"
+            aria-label="Purge"
+            hx-post="/ui/purge?task_id={{.ID}}"
+            hx-target="#tasks-list"
+            hx-swap="innerHTML"
+            hx-include="#status-filter"
+            hx-confirm="Delete {{.ID}} from store?"
+            type="button"
+            @click.stop
+        >
+            <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+            >
+                <path d="M3 6h18" />
+                <path d="M8 6V4h8v2" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v6" />
+                <path d="M14 11v6" />
+            </svg>
+        </button>
+    </div>
+
+    {{if or .Tags .Engine .ACPMode}}
+    <div class="tags">
+        {{if .Engine}}<span class="tag {{.EngineClass}}">{{.Engine}}{{if .IsACP}}<span class="acp-badge">ACP</span>{{end}}</span
+        >{{end}}
+        {{if and .IsACP (ne .ACPMode "")}}<span class="tag">{{.ACPMode}}</span>{{end}}
+        {{range .Tags}}<span class="tag">{{.}}</span>{{end}}
+    </div>
+    {{end}}
+
+    <div class="prompt">
+        {{if .Model}}<span class="model-badge">{{.Model}}</span>
+        {{end}}{{.PromptExcerpt}}
+    </div>
+</div>
+{{end}} {{else}}
+<div class="empty">No tasks found for this filter.</div>
+{{end}}

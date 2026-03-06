@@ -7,9 +7,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/opencode-ai/opencode/internal/config"
-	"github.com/opencode-ai/opencode/internal/llm/models"
-	"github.com/opencode-ai/opencode/internal/logging"
+	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/skills"
 )
 
 func GetAgentPrompt(agentName config.AgentName, provider models.ModelProvider) string {
@@ -38,6 +39,65 @@ func GetAgentPrompt(agentName config.AgentName, provider models.ModelProvider) s
 	return basePrompt
 }
 
+func InjectSkillsMetadata(availableSkills []skills.SkillMetadata) string {
+	if len(availableSkills) == 0 {
+		return ""
+	}
+
+	var (
+		builder   strings.Builder
+		lineCount int
+	)
+
+	builder.WriteString("## Available Skills\n")
+	for _, skill := range availableSkills {
+		name := compactPromptText(skill.Name)
+		if name == "" {
+			continue
+		}
+
+		builder.WriteString("- **")
+		builder.WriteString(name)
+		builder.WriteString("**")
+
+		description := compactPromptText(skill.Description)
+		whenToUse := compactPromptText(skill.WhenToUse)
+
+		if description != "" {
+			builder.WriteString(": ")
+			builder.WriteString(description)
+		}
+		if whenToUse != "" {
+			builder.WriteString(" (use when: ")
+			builder.WriteString(whenToUse)
+			builder.WriteString(")")
+		}
+
+		builder.WriteByte('\n')
+		lineCount++
+	}
+
+	if lineCount == 0 {
+		return ""
+	}
+
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func InjectSkillInstructions(name string, instructions string) string {
+	body := strings.TrimSpace(instructions)
+	if body == "" {
+		return ""
+	}
+
+	skillName := compactPromptText(name)
+	if skillName == "" {
+		return fmt.Sprintf("## Active Skill Instructions\n%s", body)
+	}
+
+	return fmt.Sprintf("## Active Skill: %s\n%s", skillName, body)
+}
+
 var (
 	onceContext    sync.Once
 	contextContent string
@@ -58,71 +118,54 @@ func getContextFromPaths() string {
 }
 
 func processContextPaths(workDir string, paths []string) string {
-	var (
-		wg       sync.WaitGroup
-		resultCh = make(chan string)
-	)
-
 	// Track processed files to avoid duplicates
 	processedFiles := make(map[string]bool)
 	var processedMutex sync.Mutex
+	results := make([]string, 0)
 
 	for _, path := range paths {
-		wg.Add(1)
-		go func(p string) {
-			defer wg.Done()
-
-			if strings.HasSuffix(p, "/") {
-				filepath.WalkDir(filepath.Join(workDir, p), func(path string, d os.DirEntry, err error) error {
-					if err != nil {
-						return err
-					}
-					if !d.IsDir() {
-						// Check if we've already processed this file (case-insensitive)
-						processedMutex.Lock()
-						lowerPath := strings.ToLower(path)
-						if !processedFiles[lowerPath] {
-							processedFiles[lowerPath] = true
-							processedMutex.Unlock()
-
-							if result := processFile(path); result != "" {
-								resultCh <- result
-							}
-						} else {
-							processedMutex.Unlock()
-						}
-					}
+		if strings.HasSuffix(path, "/") {
+			_ = filepath.WalkDir(filepath.Join(workDir, path), func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if d.IsDir() {
 					return nil
-				})
-			} else {
-				fullPath := filepath.Join(workDir, p)
+				}
 
-				// Check if we've already processed this file (case-insensitive)
 				processedMutex.Lock()
-				lowerPath := strings.ToLower(fullPath)
+				lowerPath := strings.ToLower(path)
 				if !processedFiles[lowerPath] {
 					processedFiles[lowerPath] = true
 					processedMutex.Unlock()
 
-					result := processFile(fullPath)
+					result := processFile(path)
 					if result != "" {
-						resultCh <- result
+						results = append(results, result)
 					}
 				} else {
 					processedMutex.Unlock()
 				}
+				return nil
+			})
+			continue
+		}
+
+		fullPath := filepath.Join(workDir, path)
+
+		processedMutex.Lock()
+		lowerPath := strings.ToLower(fullPath)
+		if !processedFiles[lowerPath] {
+			processedFiles[lowerPath] = true
+			processedMutex.Unlock()
+
+			result := processFile(fullPath)
+			if result != "" {
+				results = append(results, result)
 			}
-		}(path)
-	}
-
-	go func() {
-		wg.Wait()
-		close(resultCh)
-	}()
-
-	results := make([]string, 0)
-	for result := range resultCh {
-		results = append(results, result)
+		} else {
+			processedMutex.Unlock()
+		}
 	}
 
 	return strings.Join(results, "\n")
@@ -134,4 +177,8 @@ func processFile(filePath string) string {
 		return ""
 	}
 	return "# From:" + filePath + "\n" + string(content)
+}
+
+func compactPromptText(text string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
 }

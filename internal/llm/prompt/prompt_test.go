@@ -6,7 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/opencode-ai/opencode/internal/config"
+	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/skills"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -37,6 +38,33 @@ func TestGetContextFromPaths(t *testing.T) {
 	context := getContextFromPaths()
 	expectedContext := fmt.Sprintf("# From:%s/file.txt\nfile.txt: test content\n# From:%s/directory/file_a.txt\ndirectory/file_a.txt: test content\n# From:%s/directory/file_b.txt\ndirectory/file_b.txt: test content\n# From:%s/directory/file_c.txt\ndirectory/file_c.txt: test content", tmpDir, tmpDir, tmpDir, tmpDir)
 	assert.Equal(t, expectedContext, context)
+}
+
+func TestInjectSkillsMetadata(t *testing.T) {
+	t.Parallel()
+
+	got := InjectSkillsMetadata([]skills.SkillMetadata{
+		{
+			Name:        "sql",
+			Description: "  Tune SQL queries safely. ",
+			WhenToUse:   " postgres tuning, slow queries ",
+		},
+		{
+			Name:        "docs",
+			Description: "Write concise release notes.",
+		},
+	})
+
+	want := "## Available Skills\n- **sql**: Tune SQL queries safely. (use when: postgres tuning, slow queries)\n- **docs**: Write concise release notes."
+	assert.Equal(t, want, got)
+}
+
+func TestInjectSkillInstructions(t *testing.T) {
+	t.Parallel()
+
+	got := InjectSkillInstructions(" sql ", "\nUse EXPLAIN ANALYZE before rewriting queries.\n")
+	want := "## Active Skill: sql\nUse EXPLAIN ANALYZE before rewriting queries."
+	assert.Equal(t, want, got)
 }
 
 func createTestFiles(t *testing.T, tmpDir string, testFiles []string) {

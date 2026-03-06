@@ -6,9 +6,9 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/google/uuid"
-	"github.com/opencode-ai/opencode/internal/config"
-	"github.com/opencode-ai/opencode/internal/pubsub"
 )
 
 var ErrorPermissionDenied = errors.New("permission denied")
@@ -39,6 +39,7 @@ type Service interface {
 	Deny(permission PermissionRequest)
 	Request(opts CreatePermissionRequest) bool
 	AutoApproveSession(sessionID string)
+	SetGlobalAutoApprove(enabled bool)
 }
 
 type permissionService struct {
@@ -47,6 +48,7 @@ type permissionService struct {
 	sessionPermissions  []PermissionRequest
 	pendingRequests     sync.Map
 	autoApproveSessions []string
+	globalAutoApprove   bool
 }
 
 func (s *permissionService) GrantPersistant(permission PermissionRequest) {
@@ -72,6 +74,9 @@ func (s *permissionService) Deny(permission PermissionRequest) {
 }
 
 func (s *permissionService) Request(opts CreatePermissionRequest) bool {
+	if s.globalAutoApprove {
+		return true
+	}
 	if slices.Contains(s.autoApproveSessions, opts.SessionID) {
 		return true
 	}
@@ -109,6 +114,10 @@ func (s *permissionService) Request(opts CreatePermissionRequest) bool {
 
 func (s *permissionService) AutoApproveSession(sessionID string) {
 	s.autoApproveSessions = append(s.autoApproveSessions, sessionID)
+}
+
+func (s *permissionService) SetGlobalAutoApprove(enabled bool) {
+	s.globalAutoApprove = enabled
 }
 
 func NewPermissionService() Service {

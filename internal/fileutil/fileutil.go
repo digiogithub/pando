@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/opencode-ai/opencode/internal/logging"
+	"github.com/digiogithub/pando/internal/logging"
 )
 
 var (

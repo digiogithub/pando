@@ -5,17 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/opencode-ai/opencode/internal/config"
-	"github.com/opencode-ai/opencode/internal/llm/tools"
-	"github.com/opencode-ai/opencode/internal/lsp"
-	"github.com/opencode-ai/opencode/internal/message"
-	"github.com/opencode-ai/opencode/internal/session"
+	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/lsp"
+	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/session"
+	"github.com/digiogithub/pando/internal/skills"
 )
 
 type agentTool struct {
-	sessions   session.Service
-	messages   message.Service
-	lspClients map[string]*lsp.Client
+	sessions     session.Service
+	messages     message.Service
+	lspClients   map[string]*lsp.Client
+	skillManager *skills.SkillManager
 }
 
 const (
@@ -54,7 +56,7 @@ func (b *agentTool) Run(ctx context.Context, call tools.ToolCall) (tools.ToolRes
 		return tools.ToolResponse{}, fmt.Errorf("session_id and message_id are required")
 	}
 
-	agent, err := NewAgent(config.AgentTask, b.sessions, b.messages, TaskAgentTools(b.lspClients))
+	agent, err := NewAgent(config.AgentTask, b.sessions, b.messages, TaskAgentTools(b.lspClients), b.skillManager)
 	if err != nil {
 		return tools.ToolResponse{}, fmt.Errorf("error creating agent: %s", err)
 	}
@@ -100,10 +102,12 @@ func NewAgentTool(
 	Sessions session.Service,
 	Messages message.Service,
 	LspClients map[string]*lsp.Client,
+	skillManager *skills.SkillManager,
 ) tools.BaseTool {
 	return &agentTool{
-		sessions:   Sessions,
-		messages:   Messages,
-		lspClients: LspClients,
+		sessions:     Sessions,
+		messages:     Messages,
+		lspClients:   LspClients,
+		skillManager: skillManager,
 	}
 }

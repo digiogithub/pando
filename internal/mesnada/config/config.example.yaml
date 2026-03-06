@@ -1,0 +1,176 @@
+# Mesnada Configuration File
+# This file defines model configurations and agent behaviors
+
+# Default model to use when none is specified
+default_model: "claude-sonnet-4.5"
+
+# List of available models with their descriptions (legacy/shared across all engines)
+# These models are available for all engines when engine-specific models are not defined
+models:
+  - id: "claude-sonnet-4.5"
+    description: "Balanced performance and speed for general tasks"
+
+  - id: "claude-opus-4.5"
+    description: "Highest capability for complex reasoning and analysis"
+
+  - id: "claude-haiku-4.5"
+    description: "Fast responses for simple tasks and quick iterations"
+
+  - id: "gpt-5.1-codex-max"
+    description: "Advanced coding capabilities with extended context"
+
+  - id: "gpt-5.1-codex"
+    description: "Optimized for code generation and refactoring"
+
+  - id: "gpt-5.2"
+    description: "Latest GPT model with improved reasoning"
+
+  - id: "gpt-5.1-codex-mini"
+    description: "Lightweight coding model for quick tasks"
+
+  - id: "gpt-4.1"
+    description: "Reliable GPT-4 variant"
+
+  - id: "gemini-3-pro-preview"
+    description: "Google's latest multimodal model"
+
+# Engine-specific model configurations (optional)
+# If defined, these override the global models list for each engine
+engines:
+  copilot:
+    default_model: "gpt-5.1-codex"
+    models:
+      - id: "gpt-5.1-codex-max"
+        description: "Advanced coding capabilities with extended context"
+      - id: "gpt-5.1-codex"
+        description: "Optimized for code generation and refactoring"
+      - id: "gpt-5.2"
+        description: "Latest GPT model with improved reasoning"
+      - id: "gpt-5.1-codex-mini"
+        description: "Lightweight coding model for quick tasks"
+      - id: "gpt-5-mini"
+        description: "Fast and efficient for simple queries"
+      - id: "gpt-4.1"
+        description: "Reliable GPT-4 variant"
+
+  claude:
+    default_model: "claude-sonnet-4.5"
+    models:
+      - id: "claude-sonnet-4.5"
+        description: "Balanced performance and speed for general tasks"
+      - id: "claude-opus-4.5"
+        description: "Highest capability for complex reasoning and analysis"
+      - id: "claude-haiku-4.5"
+        description: "Fast responses for simple tasks and quick iterations"
+      - id: "claude-sonnet-4"
+        description: "Previous generation Sonnet model"
+      - id: "sonnet"
+        description: "Alias for latest Sonnet (Claude Code specific)"
+      - id: "opus"
+        description: "Alias for latest Opus (Claude Code specific)"
+      - id: "haiku"
+        description: "Alias for latest Haiku (Claude Code specific)"
+
+  gemini:
+    default_model: "gemini-3-pro-preview"
+    models:
+      - id: "gemini-3-pro-preview"
+        description: "For complex tasks that require deep reasoning and creativity"
+      - id: "gemini-2.5-flash"
+        description: "For tasks that need a balance of speed and reasoning"
+      - id: "gemini-2.5-flash-lite"
+        description: "For simple tasks that need to be done quickly"
+
+  opencode:
+    default_model: "openrouter/z-ai/glm-4.7"
+    models:
+      - id: "openrouter/z-ai/glm-4.7"
+        description: "GLM-4.7 is Z.AI’s latest flagship model, featuring upgrades in two key areas: enhanced programming capabilities and more stable multi-step reasoning/execution. It demonstrates significant improvements in executing complex agent tasks while delivering more natural conversational experiences and superior front-end aesthetics"
+      - id: "openrouter/minimax/minimax-m2.1"
+        description: "MiniMax-M2.1 is a lightweight, state-of-the-art large language model optimized for coding, agentic workflows, and modern application development"
+      - id: "openrouter/xiaomi/mimo-v2-flash:free"
+        description: "MiMo-V2-Flash supports a hybrid-thinking toggle and a 256K context window, and excels at reasoning, coding, and agent scenarios"
+      - id: "openrouter/deepseek/deepseek-v3.2"
+        description: "DeepSeek-V3.2 is a large language model designed to harmonize high computational efficiency with strong reasoning and agentic tool-use performance"
+
+  ollama-claude:
+    default_model: "deepseek-r1:latest"
+    models:
+      - id: "deepseek-r1:latest"
+        description: "DeepSeek-R1 latest version for reasoning tasks"
+      - id: "deepseek-r1:14b-qwen-distill-q8_0"
+        description: "DeepSeek-R1 14B Qwen distilled quantized version"
+      - id: "gpt-oss:latest"
+        description: "GPT-OSS open source model"
+      - id: "glm-4.7-tools:latest"
+        description: "GLM-4.7 with tool support"
+      - id: "slekrem/gpt-oss-claude-code-32k:20b"
+        description: "GPT-OSS Claude Code 32k context variant"
+      - id: "huihui_ai/glm-4.7-flash-abliterated:q4_K_S"
+        description: "GLM-4.7 Flash abliterated variant"
+      - id: "hf.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M"
+        description: "Qwen3 Coder 30B for advanced coding tasks"
+
+  ollama-opencode:
+    default_model: "deepseek-r1:latest"
+    models:
+      - id: "deepseek-r1:latest"
+        description: "DeepSeek-R1 latest version for reasoning tasks"
+      - id: "deepseek-r1:14b-qwen-distill-q8_0"
+        description: "DeepSeek-R1 14B Qwen distilled quantized version"
+      - id: "gpt-oss:latest"
+        description: "GPT-OSS open source model"
+      - id: "glm-4.7-tools:latest"
+        description: "GLM-4.7 with tool support"
+      - id: "slekrem/gpt-oss-claude-code-32k:20b"
+        description: "GPT-OSS Claude Code 32k context variant"
+      - id: "huihui_ai/glm-4.7-flash-abliterated:q4_K_S"
+        description: "GLM-4.7 Flash abliterated variant"
+      - id: "hf.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M"
+        description: "Qwen3 Coder 30B for advanced coding tasks"
+
+  mistral:
+    default_model: "devstral-2"
+    models:
+      - id: "devstral-2"
+        description: "Devstral 2 (123B): Mistral's flagship coding agent model, 256K context window"
+      - id: "devstral-small"
+        description: "Devstral Small 2 (24B): Compact open-source coding agent, 256K context window"
+      - id: "local"
+        description: "Local model: connects to a local OpenAI-compatible server at localhost:8080 for fully offline/private deployments"
+
+# Server configuration
+server:
+  host: "127.0.0.1"
+  port: 8765
+
+# Orchestrator configuration
+orchestrator:
+  store_path: "~/.mesnada/tasks.json"
+  log_dir: "~/.mesnada/logs"
+  max_parallel: 5
+
+  # Additional MCP config to pass to the CLI for every spawned task.
+  # Path to a JSON file containing MCP server configuration.
+  # Can be absolute or relative to the task working directory.
+  # Mesnada will handle engine-specific format conversion automatically.
+  # Example: .github/mcp-config.json
+  default_mcp_config: ".github/mcp-config.json"
+
+  # Default CLI engine to use for spawning agents.
+  # Supported engines:
+  #   - "copilot": GitHub Copilot CLI (default)
+  #   - "claude": Anthropic Claude CLI
+  #   - "gemini": Google Gemini CLI
+  #   - "opencode": OpenCode.ai CLI
+  #   - "ollama-claude": Ollama with Claude integration
+  #   - "ollama-opencode": Ollama with OpenCode integration
+  # Can be overridden per-task via the spawn_agent tool.
+  default_engine: "copilot"
+
+  # Optional path to a directory containing persona .md files.
+  # Each .md file defines a different behavior/role (e.g., senior_programmer.md, qa_expert.md).
+  # The filename (without .md extension) becomes the persona name.
+  # When spawning agents, you can specify a persona to prepend its instructions to the prompt.
+  # Example: ~/.mesnada/personas
+  # persona_path: "~/.mesnada/personas"

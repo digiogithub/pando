@@ -7,17 +7,15 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/opencode-ai/opencode/internal/app"
-	"github.com/opencode-ai/opencode/internal/completions"
-	"github.com/opencode-ai/opencode/internal/message"
-	"github.com/opencode-ai/opencode/internal/session"
-	"github.com/opencode-ai/opencode/internal/tui/components/chat"
-	"github.com/opencode-ai/opencode/internal/tui/components/dialog"
-	"github.com/opencode-ai/opencode/internal/tui/layout"
-	"github.com/opencode-ai/opencode/internal/tui/util"
+	"github.com/digiogithub/pando/internal/app"
+	"github.com/digiogithub/pando/internal/completions"
+	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/session"
+	"github.com/digiogithub/pando/internal/tui/components/chat"
+	"github.com/digiogithub/pando/internal/tui/components/dialog"
+	"github.com/digiogithub/pando/internal/tui/layout"
+	"github.com/digiogithub/pando/internal/tui/util"
 )
-
-var ChatPage PageID = "chat"
 
 type chatPage struct {
 	app                  *app.App
@@ -76,7 +74,7 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if p.app.CoderAgent.IsBusy() {
 			return p, util.ReportWarn("Agent is busy, please wait before executing a command...")
 		}
-		
+
 		// Process the command content with arguments if any
 		content := msg.Content
 		if msg.Args != nil {
@@ -86,7 +84,7 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				content = strings.ReplaceAll(content, placeholder, value)
 			}
 		}
-		
+
 		// Handle custom command execution
 		cmd := p.sendMessage(content, nil)
 		if cmd != nil {

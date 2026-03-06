@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/opencode-ai/opencode/internal/config"
-	"github.com/opencode-ai/opencode/internal/llm/models"
+	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/models"
 )
 
 // JSONSchemaType represents a JSON Schema type
@@ -98,6 +98,25 @@ func generateSchema() map[string]any {
 		},
 	}
 
+	schema["properties"].(map[string]any)["skills"] = map[string]any{
+		"type":        "object",
+		"description": "Skill discovery and prompt injection configuration",
+		"properties": map[string]any{
+			"enabled": map[string]any{
+				"type":        "boolean",
+				"description": "Enable skills support",
+				"default":     true,
+			},
+			"paths": map[string]any{
+				"type":        "array",
+				"description": "Additional skill search paths",
+				"items": map[string]any{
+					"type": "string",
+				},
+			},
+		},
+	}
+
 	schema["properties"].(map[string]any)["tui"] = map[string]any{
 		"type":        "object",
 		"description": "Terminal User Interface configuration",
@@ -116,6 +135,100 @@ func generateSchema() map[string]any {
 					"onedark",
 					"tokyonight",
 					"tron",
+				},
+			},
+		},
+	}
+
+	schema["properties"].(map[string]any)["mesnada"] = map[string]any{
+		"type":        "object",
+		"description": "Mesnada integration configuration",
+		"properties": map[string]any{
+			"enabled": map[string]any{
+				"type":        "boolean",
+				"description": "Enable Mesnada integration",
+				"default":     false,
+			},
+			"server": map[string]any{
+				"type":        "object",
+				"description": "Mesnada HTTP server configuration",
+				"properties": map[string]any{
+					"host": map[string]any{
+						"type":        "string",
+						"description": "Mesnada server host",
+						"default":     "127.0.0.1",
+					},
+					"port": map[string]any{
+						"type":        "integer",
+						"description": "Mesnada server port",
+						"default":     9767,
+					},
+				},
+			},
+			"orchestrator": map[string]any{
+				"type":        "object",
+				"description": "Mesnada orchestrator configuration",
+				"properties": map[string]any{
+					"storePath": map[string]any{
+						"type":        "string",
+						"description": "Path to the Mesnada task store",
+					},
+					"logDir": map[string]any{
+						"type":        "string",
+						"description": "Directory for Mesnada task logs",
+					},
+					"maxParallel": map[string]any{
+						"type":        "integer",
+						"description": "Maximum number of parallel Mesnada tasks",
+						"default":     5,
+					},
+					"defaultEngine": map[string]any{
+						"type":        "string",
+						"description": "Default engine for Mesnada tasks",
+						"default":     "copilot",
+					},
+					"defaultMcpConfig": map[string]any{
+						"type":        "string",
+						"description": "Default MCP config for Mesnada tasks",
+					},
+					"personaPath": map[string]any{
+						"type":        "string",
+						"description": "Path to Mesnada persona definitions",
+					},
+				},
+			},
+			"acp": map[string]any{
+				"type":        "object",
+				"description": "Mesnada ACP configuration",
+				"properties": map[string]any{
+					"enabled": map[string]any{
+						"type":        "boolean",
+						"description": "Enable ACP-backed Mesnada agents",
+					},
+					"defaultAgent": map[string]any{
+						"type":        "string",
+						"description": "Default ACP agent for Mesnada",
+					},
+					"autoPermission": map[string]any{
+						"type":        "boolean",
+						"description": "Automatically approve ACP permissions",
+					},
+				},
+			},
+			"tui": map[string]any{
+				"type":        "object",
+				"description": "Mesnada TUI configuration",
+				"properties": map[string]any{
+					"enabled": map[string]any{
+						"type":        "boolean",
+						"description": "Enable Mesnada TUI features",
+						"default":     true,
+					},
+					"webui": map[string]any{
+						"type":        "boolean",
+						"description": "Enable the Mesnada web UI",
+						"default":     true,
+					},
 				},
 			},
 		},

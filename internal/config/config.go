@@ -12,8 +12,8 @@ import (
 
 	toml "github.com/pelletier/go-toml/v2"
 
-	"github.com/opencode-ai/opencode/internal/llm/models"
-	"github.com/opencode-ai/opencode/internal/logging"
+	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/spf13/viper"
 )
 
@@ -76,10 +76,54 @@ type TUIConfig struct {
 	Theme string `json:"theme,omitempty"`
 }
 
+// MesnadaServerConfig holds mesnada HTTP server configuration
+type MesnadaServerConfig struct {
+	Host string `json:"host,omitempty"`
+	Port int    `json:"port,omitempty"`
+}
+
+// MesnadaOrchestratorConfig holds orchestrator settings
+type MesnadaOrchestratorConfig struct {
+	StorePath        string `json:"storePath,omitempty"`
+	LogDir           string `json:"logDir,omitempty"`
+	MaxParallel      int    `json:"maxParallel,omitempty"`
+	DefaultEngine    string `json:"defaultEngine,omitempty"`
+	DefaultMCPConfig string `json:"defaultMcpConfig,omitempty"`
+	PersonaPath      string `json:"personaPath,omitempty"`
+}
+
+// MesnadaACPConfig holds ACP agent configuration
+type MesnadaACPConfig struct {
+	Enabled        bool   `json:"enabled,omitempty"`
+	DefaultAgent   string `json:"defaultAgent,omitempty"`
+	AutoPermission bool   `json:"autoPermission,omitempty"`
+}
+
+// MesnadaTUIConfig holds mesnada TUI settings
+type MesnadaTUIConfig struct {
+	Enabled bool `json:"enabled,omitempty"`
+	WebUI   bool `json:"webui,omitempty"`
+}
+
+// MesnadaConfig holds all mesnada integration configuration
+type MesnadaConfig struct {
+	Enabled      bool                      `json:"enabled,omitempty"`
+	Server       MesnadaServerConfig       `json:"server,omitempty"`
+	Orchestrator MesnadaOrchestratorConfig `json:"orchestrator,omitempty"`
+	ACP          MesnadaACPConfig          `json:"acp,omitempty"`
+	TUI          MesnadaTUIConfig          `json:"tui,omitempty"`
+}
+
 // ShellConfig defines the configuration for the shell used by the bash tool.
 type ShellConfig struct {
 	Path string   `json:"path,omitempty"`
 	Args []string `json:"args,omitempty"`
+}
+
+// SkillsConfig defines configuration for skill discovery and prompt injection.
+type SkillsConfig struct {
+	Enabled bool     `json:"enabled,omitempty"`
+	Paths   []string `json:"paths,omitempty"`
 }
 
 // Config is the main configuration structure for the application.
@@ -93,7 +137,9 @@ type Config struct {
 	Debug        bool                              `json:"debug,omitempty"`
 	DebugLSP     bool                              `json:"debugLSP,omitempty"`
 	ContextPaths []string                          `json:"contextPaths,omitempty"`
+	Skills       SkillsConfig                      `json:"skills,omitempty"`
 	TUI          TUIConfig                         `json:"tui"`
+	Mesnada      MesnadaConfig                     `json:"mesnada,omitempty"`
 	Shell        ShellConfig                       `json:"shell,omitempty"`
 	AutoCompact  bool                              `json:"autoCompact,omitempty"`
 }
@@ -233,7 +279,15 @@ func configureViper() {
 func setDefaults(debug bool) {
 	viper.SetDefault("data.directory", defaultDataDirectory)
 	viper.SetDefault("contextPaths", defaultContextPaths)
+	viper.SetDefault("skills.enabled", true)
 	viper.SetDefault("tui.theme", "pando")
+	viper.SetDefault("mesnada.enabled", false)
+	viper.SetDefault("mesnada.server.host", "127.0.0.1")
+	viper.SetDefault("mesnada.server.port", 9767)
+	viper.SetDefault("mesnada.orchestrator.maxParallel", 5)
+	viper.SetDefault("mesnada.orchestrator.defaultEngine", "copilot")
+	viper.SetDefault("mesnada.tui.enabled", true)
+	viper.SetDefault("mesnada.tui.webui", true)
 	viper.SetDefault("autoCompact", true)
 
 	// Set default shell from environment or fallback to /bin/bash
@@ -833,8 +887,11 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 		return fmt.Errorf("config not loaded")
 	}
 
-	// Get the config file path
-	configFile := viper.ConfigFileUsed()
+	configFile, err := resolveConfigFilePath()
+	if err != nil {
+		return err
+	}
+
 	var configData []byte
 	if configFile == "" {
 		homeDir, err := os.UserHomeDir()
@@ -842,15 +899,17 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 			return fmt.Errorf("failed to get home directory: %w", err)
 		}
 		configFile = filepath.Join(homeDir, fmt.Sprintf(".%s.json", appName))
+	}
+
+	data, err := os.ReadFile(configFile)
+	switch {
+	case err == nil:
+		configData = data
+	case os.IsNotExist(err):
 		logging.Info("config file not found, creating new one", "path", configFile)
 		configData = []byte(`{}`)
-	} else {
-		// Read the existing config file
-		data, err := os.ReadFile(configFile)
-		if err != nil {
-			return fmt.Errorf("failed to read config file: %w", err)
-		}
-		configData = data
+	default:
+		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	format := configFileFormat(configFile)
@@ -872,7 +931,6 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 
 	// Write the updated config back to file in the same format
 	var updatedData []byte
-	var err error
 	switch format {
 	case "toml":
 		updatedData, err = toml.Marshal(userCfg)
@@ -891,6 +949,39 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 	}
 
 	return nil
+}
+
+func resolveConfigFilePath() (string, error) {
+	if configFile := viper.ConfigFileUsed(); configFile != "" {
+		return configFile, nil
+	}
+
+	if cfg != nil && strings.TrimSpace(cfg.WorkingDir) != "" {
+		for _, extension := range []string{"toml", "json"} {
+			localConfig := filepath.Join(cfg.WorkingDir, fmt.Sprintf(".%s.%s", appName, extension))
+			if _, err := os.Stat(localConfig); err == nil {
+				return localConfig, nil
+			} else if err != nil && !os.IsNotExist(err) {
+				return "", fmt.Errorf("failed to stat config file: %w", err)
+			}
+		}
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	for _, extension := range []string{"toml", "json"} {
+		defaultConfig := filepath.Join(homeDir, fmt.Sprintf(".%s.%s", appName, extension))
+		if _, err := os.Stat(defaultConfig); err == nil {
+			return defaultConfig, nil
+		} else if err != nil && !os.IsNotExist(err) {
+			return "", fmt.Errorf("failed to stat config file: %w", err)
+		}
+	}
+
+	return "", nil
 }
 
 // Get returns the current configuration.
@@ -958,6 +1049,273 @@ func UpdateTheme(themeName string) error {
 	return updateCfgFile(func(config *Config) {
 		config.TUI.Theme = themeName
 	})
+}
+
+func UpdateShell(path string, args []string) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldShell := cfg.Shell
+	newShell := ShellConfig{
+		Path: path,
+		Args: append([]string(nil), args...),
+	}
+	cfg.Shell = newShell
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Shell.Path = path
+		config.Shell.Args = append([]string(nil), args...)
+	}); err != nil {
+		cfg.Shell = oldShell
+		return err
+	}
+
+	return nil
+}
+
+func UpdateAutoCompact(enabled bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldValue := cfg.AutoCompact
+	cfg.AutoCompact = enabled
+
+	if err := updateCfgFile(func(config *Config) {
+		config.AutoCompact = enabled
+	}); err != nil {
+		cfg.AutoCompact = oldValue
+		return err
+	}
+
+	return nil
+}
+
+func UpdateDebug(enabled bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldValue := cfg.Debug
+	cfg.Debug = enabled
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Debug = enabled
+	}); err != nil {
+		cfg.Debug = oldValue
+		return err
+	}
+
+	return nil
+}
+
+func UpdateSkillsEnabled(enabled bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldValue := cfg.Skills.Enabled
+	cfg.Skills.Enabled = enabled
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Skills.Enabled = enabled
+	}); err != nil {
+		cfg.Skills.Enabled = oldValue
+		return err
+	}
+
+	return nil
+}
+
+func UpdateMesnada(mesnadaCfg MesnadaConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldMesnada := cfg.Mesnada
+	cfg.Mesnada = mesnadaCfg
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Mesnada = mesnadaCfg
+	}); err != nil {
+		cfg.Mesnada = oldMesnada
+		return err
+	}
+
+	return nil
+}
+
+func UpdateProvider(name models.ModelProvider, apiKey string, disabled bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	if strings.TrimSpace(apiKey) == "" && !disabled {
+		return fmt.Errorf("provider %s requires an API key when enabled", name)
+	}
+
+	if cfg.Providers == nil {
+		cfg.Providers = make(map[models.ModelProvider]Provider)
+	}
+
+	oldProvider, hadProvider := cfg.Providers[name]
+	newProvider := Provider{
+		APIKey:   strings.TrimSpace(apiKey),
+		Disabled: disabled,
+	}
+	cfg.Providers[name] = newProvider
+
+	if err := updateCfgFile(func(config *Config) {
+		if config.Providers == nil {
+			config.Providers = make(map[models.ModelProvider]Provider)
+		}
+		config.Providers[name] = newProvider
+	}); err != nil {
+		if hadProvider {
+			cfg.Providers[name] = oldProvider
+		} else {
+			delete(cfg.Providers, name)
+		}
+		return err
+	}
+
+	return nil
+}
+
+func UpdateMCPServer(name string, server MCPServer) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("MCP server name cannot be empty")
+	}
+
+	if cfg.MCPServers == nil {
+		cfg.MCPServers = make(map[string]MCPServer)
+	}
+
+	oldServer, hadServer := cfg.MCPServers[name]
+	newServer := MCPServer{
+		Command: server.Command,
+		Env:     append([]string(nil), server.Env...),
+		Args:    append([]string(nil), server.Args...),
+		Type:    server.Type,
+		URL:     server.URL,
+		Headers: cloneStringMap(server.Headers),
+	}
+	if newServer.Type == "" {
+		newServer.Type = MCPStdio
+	}
+	cfg.MCPServers[name] = newServer
+
+	if err := updateCfgFile(func(config *Config) {
+		if config.MCPServers == nil {
+			config.MCPServers = make(map[string]MCPServer)
+		}
+		config.MCPServers[name] = newServer
+	}); err != nil {
+		if hadServer {
+			cfg.MCPServers[name] = oldServer
+		} else {
+			delete(cfg.MCPServers, name)
+		}
+		return err
+	}
+
+	return nil
+}
+
+func DeleteMCPServer(name string) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldServer, hadServer := cfg.MCPServers[name]
+	if !hadServer {
+		return fmt.Errorf("MCP server %s not found", name)
+	}
+	delete(cfg.MCPServers, name)
+
+	if err := updateCfgFile(func(config *Config) {
+		delete(config.MCPServers, name)
+	}); err != nil {
+		cfg.MCPServers[name] = oldServer
+		return err
+	}
+
+	return nil
+}
+
+func UpdateLSP(language string, lsp LSPConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	if strings.TrimSpace(language) == "" {
+		return fmt.Errorf("LSP language cannot be empty")
+	}
+
+	if cfg.LSP == nil {
+		cfg.LSP = make(map[string]LSPConfig)
+	}
+
+	oldLSP, hadLSP := cfg.LSP[language]
+	newLSP := LSPConfig{
+		Disabled: lsp.Disabled,
+		Command:  lsp.Command,
+		Args:     append([]string(nil), lsp.Args...),
+		Options:  lsp.Options,
+	}
+	cfg.LSP[language] = newLSP
+
+	if err := updateCfgFile(func(config *Config) {
+		if config.LSP == nil {
+			config.LSP = make(map[string]LSPConfig)
+		}
+		config.LSP[language] = newLSP
+	}); err != nil {
+		if hadLSP {
+			cfg.LSP[language] = oldLSP
+		} else {
+			delete(cfg.LSP, language)
+		}
+		return err
+	}
+
+	return nil
+}
+
+func DeleteLSP(language string) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldLSP, hadLSP := cfg.LSP[language]
+	if !hadLSP {
+		return fmt.Errorf("LSP %s not found", language)
+	}
+	delete(cfg.LSP, language)
+
+	if err := updateCfgFile(func(config *Config) {
+		delete(config.LSP, language)
+	}); err != nil {
+		cfg.LSP[language] = oldLSP
+		return err
+	}
+
+	return nil
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if values == nil {
+		return nil
+	}
+
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+
+	return cloned
 }
 
 // Tries to load Github token from all possible locations
