@@ -15,7 +15,7 @@ PareCode uses **proactive, deterministic token management** before every API cal
 **Implementation** (`src/index.rs`):
 - First launch: PareCode builds a complete structural map
   - Every file with line count
-  - 597 symbols (functions, structs, enums, classes) with line numbers
+  - 597 symbols (functions, structs, enums, classes) with line numbers. We can use https://github.com/madeindigio/go-tree-sitter for AST parsing and symbol extraction in golang projects.
   - Clusters (semantic groupings like `tui/`, `src/`, `tools/`)
 - Saved to `.parecode/project.graph` (~3-5KB JSON)
 - Subsequent runs: Load in milliseconds, check only what changed via git hashes
