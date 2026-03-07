@@ -18,92 +18,16 @@ import (
 	"github.com/digiogithub/pando/internal/tui/components/chat"
 	"github.com/digiogithub/pando/internal/tui/components/core"
 	"github.com/digiogithub/pando/internal/tui/components/dialog"
+	"github.com/digiogithub/pando/internal/tui/components/editor"
+	"github.com/digiogithub/pando/internal/tui/components/filetree"
 	"github.com/digiogithub/pando/internal/tui/layout"
 	"github.com/digiogithub/pando/internal/tui/page"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
+	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 )
-
-type keyMap struct {
-	Logs          key.Binding
-	Orchestrator  key.Binding
-	Quit          key.Binding
-	Help          key.Binding
-	Settings      key.Binding
-	SwitchSession key.Binding
-	Commands      key.Binding
-	Filepicker    key.Binding
-	Models        key.Binding
-	SwitchTheme   key.Binding
-}
 
 type startCompactSessionMsg struct{}
-
-const (
-	quitKey = "q"
-)
-
-var keys = keyMap{
-	Logs: key.NewBinding(
-		key.WithKeys("ctrl+l"),
-		key.WithHelp("ctrl+l", "logs"),
-	),
-	Orchestrator: key.NewBinding(
-		key.WithKeys("ctrl+m"),
-		key.WithHelp("ctrl+m", "orchestrator"),
-	),
-
-	Quit: key.NewBinding(
-		key.WithKeys("ctrl+c"),
-		key.WithHelp("ctrl+c", "quit"),
-	),
-	Help: key.NewBinding(
-		key.WithKeys("ctrl+_", "ctrl+h"),
-		key.WithHelp("ctrl+?", "toggle help"),
-	),
-	Settings: key.NewBinding(
-		key.WithKeys("ctrl+g"),
-		key.WithHelp("ctrl+g", "settings"),
-	),
-
-	SwitchSession: key.NewBinding(
-		key.WithKeys("ctrl+s"),
-		key.WithHelp("ctrl+s", "switch session"),
-	),
-
-	Commands: key.NewBinding(
-		key.WithKeys("ctrl+k"),
-		key.WithHelp("ctrl+k", "commands"),
-	),
-	Filepicker: key.NewBinding(
-		key.WithKeys("ctrl+f"),
-		key.WithHelp("ctrl+f", "select files to upload"),
-	),
-	Models: key.NewBinding(
-		key.WithKeys("ctrl+o"),
-		key.WithHelp("ctrl+o", "model selection"),
-	),
-
-	SwitchTheme: key.NewBinding(
-		key.WithKeys("ctrl+t"),
-		key.WithHelp("ctrl+t", "switch theme"),
-	),
-}
-
-var helpEsc = key.NewBinding(
-	key.WithKeys("?"),
-	key.WithHelp("?", "toggle help"),
-)
-
-var returnKey = key.NewBinding(
-	key.WithKeys("esc"),
-	key.WithHelp("esc", "close"),
-)
-
-var logsKeyReturnKey = key.NewBinding(
-	key.WithKeys("esc", "backspace", quitKey),
-	key.WithHelp("esc/q", "go back"),
-)
 
 type appModel struct {
 	width, height   int
@@ -111,9 +35,15 @@ type appModel struct {
 	previousPage    page.PageID
 	pages           map[page.PageID]tea.Model
 	loadedPages     map[page.PageID]bool
+	keys            KeyMap
 	status          core.StatusCmp
 	app             *app.App
 	selectedSession session.Session
+	chatPage        *page.ChatPageModel
+	fileTree        filetree.Component
+	viewer          editor.FileViewerComponent
+	tabBar          *editor.TabBar
+	layoutMode      page.ChatLayoutMode
 
 	showPermissions bool
 	permissions     dialog.PermissionDialogCmp
@@ -185,6 +115,7 @@ func (a appModel) Init() tea.Cmd {
 		}
 		return dialog.ShowInitDialogMsg{Show: shouldShow}
 	})
+	cmds = append(cmds, tea.EnableMouseCellMotion)
 
 	return tea.Batch(cmds...)
 }
@@ -193,6 +124,10 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		if cmd, handled := a.handleMouse(msg); handled {
+			return a, cmd
+		}
 	case tea.WindowSizeMsg:
 		msg.Height -= 1 // Make space for the status bar
 		a.width, a.height = msg.Width, msg.Height
@@ -424,6 +359,30 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, util.ReportInfo("Command selected: " + msg.Command.Title)
 
+	case dialog.OpenSessionDialogMsg:
+		if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions && !a.showCommandDialog {
+			return a, a.openSessionDialog()
+		}
+		return a, nil
+
+	case dialog.OpenModelDialogMsg:
+		if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+			return a, a.openModelDialog()
+		}
+		return a, nil
+
+	case dialog.OpenThemeDialogMsg:
+		if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+			return a, a.openThemeDialog()
+		}
+		return a, nil
+
+	case dialog.OpenFilepickerMsg:
+		if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+			return a, a.openFilepicker()
+		}
+		return a, nil
+
 	case dialog.ShowMultiArgumentsDialogMsg:
 		// Show multi-arguments dialog
 		a.multiArgumentsDialog = dialog.NewMultiArgumentsDialogCmp(msg.CommandID, msg.Content, msg.ArgNames)
@@ -462,7 +421,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch {
 
-		case key.Matches(msg, keys.Quit):
+		case key.Matches(msg, a.keys.Global.Quit):
 			a.showQuit = !a.showQuit
 			if a.showHelp {
 				a.showHelp = false
@@ -484,56 +443,36 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.showMultiArgumentsDialog = false
 			}
 			return a, nil
-		case key.Matches(msg, keys.SwitchSession) && a.currentPage == page.ChatPage:
+		case key.Matches(msg, a.keys.Chat.SwitchSession) && a.currentPage == page.ChatPage:
 			if !a.showQuit && !a.showPermissions && !a.showCommandDialog {
-				// Load sessions and show the dialog
-				sessions, err := a.app.Sessions.List(context.Background())
-				if err != nil {
-					return a, util.ReportError(err)
-				}
-				if len(sessions) == 0 {
-					return a, util.ReportWarn("No sessions available")
-				}
-				a.sessionDialog.SetSessions(sessions)
-				a.showSessionDialog = true
-				return a, nil
+				return a, a.openSessionDialog()
 			}
 			return a, nil
-		case key.Matches(msg, keys.Commands):
+		case key.Matches(msg, a.keys.Chat.Commands):
 			if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showThemeDialog && !a.showFilepicker {
-				// Show commands dialog
-				if len(a.commands) == 0 {
-					return a, util.ReportWarn("No commands available")
-				}
-				a.commandDialog.SetCommands(a.commands)
-				a.showCommandDialog = true
-				return a, nil
+				return a, a.openCommandDialog()
 			}
 			return a, nil
-		case key.Matches(msg, keys.Models):
+		case key.Matches(msg, a.keys.Chat.Models):
 			if a.showModelDialog {
 				a.showModelDialog = false
 				return a, nil
 			}
 			if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
-				a.showModelDialog = true
-				return a, nil
+				return a, a.openModelDialog()
 			}
 			return a, nil
-		case key.Matches(msg, keys.SwitchTheme):
+		case key.Matches(msg, a.keys.Global.SwitchTheme):
 			if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
-				// Show theme switcher dialog
-				a.showThemeDialog = true
-				// Theme list is dynamically loaded by the dialog component
-				return a, a.themeDialog.Init()
+				return a, a.openThemeDialog()
 			}
 			return a, nil
-		case key.Matches(msg, keys.Settings):
+		case key.Matches(msg, a.keys.Global.Settings):
 			if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
 				return a, a.moveToPage(page.SettingsPage)
 			}
 			return a, nil
-		case key.Matches(msg, keys.Orchestrator):
+		case key.Matches(msg, a.keys.Global.Orchestrator):
 			if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
 				return a, a.moveToPage(page.OrchestratorPage)
 			}
@@ -575,9 +514,9 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a, a.moveToPage(page.ChatPage)
 				}
 			}
-		case key.Matches(msg, keys.Logs):
+		case key.Matches(msg, a.keys.Global.Logs):
 			return a, a.moveToPage(page.LogsPage)
-		case key.Matches(msg, keys.Help):
+		case key.Matches(msg, a.keys.Global.Help):
 			if a.showQuit {
 				return a, nil
 			}
@@ -591,10 +530,13 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.showHelp = !a.showHelp
 				return a, nil
 			}
-		case key.Matches(msg, keys.Filepicker):
-			a.showFilepicker = !a.showFilepicker
-			a.filepicker.ToggleFilepicker(a.showFilepicker)
-			return a, nil
+		case key.Matches(msg, a.keys.Global.Filepicker):
+			if a.showFilepicker {
+				a.showFilepicker = false
+				a.filepicker.ToggleFilepicker(a.showFilepicker)
+				return a, nil
+			}
+			return a, a.openFilepicker()
 		}
 	default:
 		f, filepickerCmd := a.filepicker.Update(msg)
@@ -685,6 +627,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	s, _ := a.status.Update(msg)
 	a.status = s.(core.StatusCmp)
 	a.pages[a.currentPage], cmd = a.pages[a.currentPage].Update(msg)
+	a.syncChatState()
 	cmds = append(cmds, cmd)
 	return a, tea.Batch(cmds...)
 }
@@ -692,6 +635,46 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // RegisterCommand adds a command to the command dialog
 func (a *appModel) RegisterCommand(cmd dialog.Command) {
 	a.commands = append(a.commands, cmd)
+}
+
+func (a *appModel) openCommandDialog() tea.Cmd {
+	if len(a.commands) == 0 {
+		return util.ReportWarn("No commands available")
+	}
+
+	a.commandDialog.SetCommands(a.commands)
+	a.showCommandDialog = true
+	return a.commandDialog.Init()
+}
+
+func (a *appModel) openSessionDialog() tea.Cmd {
+	sessions, err := a.app.Sessions.List(context.Background())
+	if err != nil {
+		return util.ReportError(err)
+	}
+	if len(sessions) == 0 {
+		return util.ReportWarn("No sessions available")
+	}
+
+	a.sessionDialog.SetSessions(sessions)
+	a.showSessionDialog = true
+	return nil
+}
+
+func (a *appModel) openModelDialog() tea.Cmd {
+	a.showModelDialog = true
+	return a.modelDialog.Init()
+}
+
+func (a *appModel) openThemeDialog() tea.Cmd {
+	a.showThemeDialog = true
+	return a.themeDialog.Init()
+}
+
+func (a *appModel) openFilepicker() tea.Cmd {
+	a.showFilepicker = true
+	a.filepicker.ToggleFilepicker(a.showFilepicker)
+	return nil
 }
 
 func (a *appModel) findCommand(id string) (dialog.Command, bool) {
@@ -721,8 +704,199 @@ func (a *appModel) moveToPage(pageID page.PageID) tea.Cmd {
 		cmd := sizable.SetSize(a.width, a.height)
 		cmds = append(cmds, cmd)
 	}
+	a.syncChatState()
 
 	return tea.Batch(cmds...)
+}
+
+func (a *appModel) syncChatState() {
+	chatPage, ok := a.pages[page.ChatPage].(*page.ChatPageModel)
+	if !ok {
+		return
+	}
+	a.chatPage = chatPage
+	a.fileTree = chatPage.FileTree()
+	a.viewer = chatPage.Viewer()
+	a.tabBar = chatPage.TabBar()
+	a.layoutMode = chatPage.LayoutMode()
+}
+
+func (a appModel) helpSections() []dialog.HelpSection {
+	globalBindings := append([]key.Binding{}, a.keys.Global.Bindings()...)
+	if !a.app.CoderAgent.IsBusy() {
+		globalBindings = append(globalBindings, helpEsc)
+	}
+
+	sections := []dialog.HelpSection{
+		{Title: "Global", Bindings: globalBindings},
+	}
+
+	sections = append(sections, a.pageHelpSections()...)
+	sections = append(sections, a.dialogHelpSections()...)
+	return sections
+}
+
+func (a appModel) pageHelpSections() []dialog.HelpSection {
+	switch a.currentPage {
+	case page.ChatPage:
+		a.syncChatState()
+		pageBindings := a.pageBindings(a.pages[a.currentPage])
+		chatBindings := []key.Binding{
+			a.keys.Chat.SwitchSession,
+			a.keys.Chat.NewSession,
+			a.keys.Chat.Commands,
+			a.keys.Chat.Models,
+			a.keys.Chat.ShowCompletionDialog,
+			a.keys.Chat.ToggleSidebar,
+			a.keys.Chat.NextPanel,
+			a.keys.Chat.Cancel,
+		}
+		editorBindings := []key.Binding{
+			a.keys.Chat.Send,
+			a.keys.Chat.NewLine,
+		}
+		navigationBindings := []key.Binding{
+			a.keys.Chat.PageUp,
+			a.keys.Chat.PageDown,
+			a.keys.Chat.HalfPageUp,
+			a.keys.Chat.HalfPageDown,
+		}
+
+		extraEditorBindings := a.excludeBindings(
+			pageBindings,
+			a.keys.Global.Bindings(),
+			chatBindings,
+			editorBindings,
+			navigationBindings,
+			a.keys.FileTree.Bindings(),
+			a.keys.Editor.Bindings(),
+		)
+
+		sections := []dialog.HelpSection{
+			{Title: "Chat", Bindings: chatBindings},
+			{Title: "Editor", Bindings: append(editorBindings, extraEditorBindings...)},
+			{Title: "Navigation", Bindings: navigationBindings},
+		}
+		if a.layoutMode != page.ChatOnly {
+			sections = append(sections,
+				dialog.HelpSection{Title: "File tree", Bindings: a.keys.FileTree.Bindings()},
+				dialog.HelpSection{Title: "Layout", Bindings: filterHelpBindings(a.keys.Chat.ToggleSidebar, a.keys.Chat.NextPanel)},
+			)
+		}
+		if a.layoutMode == page.SidebarEditor {
+			sections = append(sections, dialog.HelpSection{Title: "Viewer", Bindings: a.keys.Editor.Bindings()})
+		}
+		return sections
+	case page.LogsPage:
+		return []dialog.HelpSection{{
+			Title:    "Logs",
+			Bindings: append(a.pageBindings(a.pages[a.currentPage]), logsKeyReturnKey),
+		}}
+	case page.OrchestratorPage:
+		return []dialog.HelpSection{{
+			Title:    "Orchestrator",
+			Bindings: a.pageBindings(a.pages[a.currentPage]),
+		}}
+	case page.SettingsPage:
+		return []dialog.HelpSection{{
+			Title:    "Settings",
+			Bindings: a.pageBindings(a.pages[a.currentPage]),
+		}}
+	default:
+		return nil
+	}
+}
+
+func (a appModel) dialogHelpSections() []dialog.HelpSection {
+	var sections []dialog.HelpSection
+
+	if a.showPermissions {
+		sections = append(sections, dialog.HelpSection{
+			Title:    "Permission dialog",
+			Bindings: a.permissions.BindingKeys(),
+		})
+	}
+	if a.showQuit {
+		sections = append(sections, dialog.HelpSection{
+			Title:    "Quit dialog",
+			Bindings: a.quit.BindingKeys(),
+		})
+	}
+	if a.showSessionDialog {
+		sections = append(sections, dialog.HelpSection{
+			Title:    "Session dialog",
+			Bindings: a.sessionDialog.BindingKeys(),
+		})
+	}
+	if a.showCommandDialog {
+		sections = append(sections, dialog.HelpSection{
+			Title:    "Command dialog",
+			Bindings: a.commandDialog.BindingKeys(),
+		})
+	}
+	if a.showModelDialog {
+		sections = append(sections, dialog.HelpSection{
+			Title:    "Model dialog",
+			Bindings: a.modelDialog.BindingKeys(),
+		})
+	}
+	if a.showInitDialog {
+		sections = append(sections, dialog.HelpSection{
+			Title:    "Initialize dialog",
+			Bindings: a.initDialog.Bindings(),
+		})
+	}
+	if a.showThemeDialog {
+		sections = append(sections, dialog.HelpSection{
+			Title:    "Theme dialog",
+			Bindings: a.themeDialog.BindingKeys(),
+		})
+	}
+	if a.showFilepicker {
+		sections = append(sections, dialog.HelpSection{
+			Title:    "File picker",
+			Bindings: a.filepicker.BindingKeys(),
+		})
+	}
+	if a.showMultiArgumentsDialog {
+		sections = append(sections, dialog.HelpSection{
+			Title:    "Arguments dialog",
+			Bindings: a.multiArgumentsDialog.Bindings(),
+		})
+	}
+
+	return sections
+}
+
+func (a appModel) pageBindings(model tea.Model) []key.Binding {
+	if bindings, ok := model.(layout.Bindings); ok {
+		return bindings.BindingKeys()
+	}
+	return nil
+}
+
+func (a appModel) excludeBindings(bindings []key.Binding, groups ...[]key.Binding) []key.Binding {
+	seen := make(map[string]struct{})
+	for _, group := range groups {
+		for _, binding := range group {
+			seen[a.bindingSignature(binding)] = struct{}{}
+		}
+	}
+
+	filtered := make([]key.Binding, 0, len(bindings))
+	for _, binding := range bindings {
+		signature := a.bindingSignature(binding)
+		if _, ok := seen[signature]; ok {
+			continue
+		}
+		filtered = append(filtered, binding)
+		seen[signature] = struct{}{}
+	}
+	return filtered
+}
+
+func (a appModel) bindingSignature(binding key.Binding) string {
+	return strings.Join(binding.Keys(), "|")
 }
 
 func (a appModel) View() string {
@@ -791,20 +965,7 @@ func (a appModel) View() string {
 	}
 
 	if a.showHelp {
-		bindings := layout.KeyMapToSlice(keys)
-		if p, ok := a.pages[a.currentPage].(layout.Bindings); ok {
-			bindings = append(bindings, p.BindingKeys()...)
-		}
-		if a.showPermissions {
-			bindings = append(bindings, a.permissions.BindingKeys()...)
-		}
-		if a.currentPage == page.LogsPage {
-			bindings = append(bindings, logsKeyReturnKey)
-		}
-		if !a.app.CoderAgent.IsBusy() {
-			bindings = append(bindings, helpEsc)
-		}
-		a.help.SetBindings(bindings)
+		a.help.SetSections(a.helpSections())
 
 		overlay := a.help.View()
 		row := lipgloss.Height(appView) / 2
@@ -921,14 +1082,36 @@ func (a appModel) View() string {
 		)
 	}
 
-	return appView
+	return tuizone.Manager.Scan(appView)
+}
+
+func (a *appModel) handleMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+		return nil, false
+	}
+	if a.showQuit || a.showPermissions || a.showSessionDialog || a.showCommandDialog ||
+		a.showModelDialog || a.showInitDialog || a.showFilepicker || a.showThemeDialog ||
+		a.showMultiArgumentsDialog {
+		return nil, false
+	}
+
+	if a.currentPage == page.ChatPage && tuizone.InBounds(tuizone.StatusSession, msg) {
+		return a.openSessionDialog(), true
+	}
+	if a.currentPage == page.ChatPage && tuizone.InBounds(tuizone.StatusModel, msg) {
+		return a.openModelDialog(), true
+	}
+
+	return nil, false
 }
 
 func New(app *app.App) tea.Model {
 	startPage := page.ChatPage
+	chatPage := page.NewChatPage(app)
 	model := &appModel{
 		currentPage:   startPage,
 		loadedPages:   make(map[page.PageID]bool),
+		keys:          DefaultKeyMap(),
 		status:        core.NewStatusCmp(app.LSPClients),
 		help:          dialog.NewHelpCmp(),
 		quit:          dialog.NewQuitCmp(),
@@ -940,8 +1123,13 @@ func New(app *app.App) tea.Model {
 		themeDialog:   dialog.NewThemeDialogCmp(),
 		app:           app,
 		commands:      []dialog.Command{},
+		chatPage:      chatPage,
+		fileTree:      chatPage.FileTree(),
+		viewer:        chatPage.Viewer(),
+		tabBar:        chatPage.TabBar(),
+		layoutMode:    chatPage.LayoutMode(),
 		pages: map[page.PageID]tea.Model{
-			page.ChatPage:         page.NewChatPage(app),
+			page.ChatPage:         chatPage,
 			page.LogsPage:         page.NewLogsPage(),
 			page.SettingsPage:     page.NewSettingsPage(app),
 			page.OrchestratorPage: page.NewOrchestratorPage(app),
@@ -953,6 +1141,7 @@ func New(app *app.App) tea.Model {
 		ID:          "init",
 		Title:       "Initialize Project",
 		Description: "Create/Update the Pando.md memory file",
+		Category:    dialog.CommandCategoryGeneral,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			prompt := `Please analyze this codebase and create a Pando.md file containing:
 1. Build/lint/test commands - especially for running a single test
@@ -973,6 +1162,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		ID:          "compact",
 		Title:       "Compact Session",
 		Description: "Summarize the current session and create a new one with the summary",
+		Category:    dialog.CommandCategoryGeneral,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return func() tea.Msg {
 				return startCompactSessionMsg{}
@@ -980,9 +1170,41 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		},
 	})
 	model.RegisterCommand(dialog.Command{
+		ID:          "switch-session",
+		Title:       "Switch Session",
+		Description: "Open the session switcher",
+		Shortcut:    "Ctrl+S",
+		Category:    dialog.CommandCategorySessions,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(dialog.OpenSessionDialogMsg{})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "select-model",
+		Title:       "Select Model",
+		Description: "Open the model selection dialog",
+		Shortcut:    "Ctrl+O",
+		Category:    dialog.CommandCategoryModels,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(dialog.OpenModelDialogMsg{})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "select-files",
+		Title:       "Select Files",
+		Description: "Open the file picker and attach files",
+		Shortcut:    "Ctrl+F",
+		Category:    dialog.CommandCategoryFiles,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(dialog.OpenFilepickerMsg{})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
 		ID:          "settings",
 		Title:       "Settings",
 		Description: "Open configuration settings",
+		Shortcut:    "Ctrl+G",
+		Category:    dialog.CommandCategoryView,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(page.PageChangeMsg{ID: page.SettingsPage})
 		},
@@ -991,6 +1213,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		ID:          "skills",
 		Title:       "Skills",
 		Description: "Manage skills (list, activate, deactivate)",
+		Category:    dialog.CommandCategoryGeneral,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			if app.SkillManager == nil {
 				return util.ReportWarn("Skills system not enabled")
@@ -1009,9 +1232,31 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		},
 	})
 	model.RegisterCommand(dialog.Command{
+		ID:          "logs",
+		Title:       "View Logs",
+		Description: "Open the logs page",
+		Shortcut:    "Ctrl+L",
+		Category:    dialog.CommandCategoryView,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(page.PageChangeMsg{ID: page.LogsPage})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "switch-theme",
+		Title:       "Switch Theme",
+		Description: "Open the theme picker",
+		Shortcut:    "Ctrl+T",
+		Category:    dialog.CommandCategoryView,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(dialog.OpenThemeDialogMsg{})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
 		ID:          "orchestrator",
 		Title:       "Orchestrator",
 		Description: "Open the Mesnada orchestrator dashboard",
+		Shortcut:    "Ctrl+M",
+		Category:    dialog.CommandCategoryView,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(page.PageChangeMsg{ID: page.OrchestratorPage})
 		},

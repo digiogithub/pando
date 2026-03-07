@@ -9,6 +9,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
+	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 )
 
 // SessionSelectedMsg is sent when a session is selected
@@ -101,6 +102,30 @@ func (s *sessionDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		s.width = msg.Width
 		s.height = msg.Height
+	case tea.MouseMsg:
+		if msg.Action != tea.MouseActionPress {
+			break
+		}
+		switch msg.Button {
+		case tea.MouseButtonLeft:
+			for i, sess := range s.sessions {
+				if !tuizone.InBounds(tuizone.SessionItemID(sess.ID), msg) {
+					continue
+				}
+				s.selectedIdx = i
+				return s, util.CmdHandler(SessionSelectedMsg{Session: s.sessions[s.selectedIdx]})
+			}
+		case tea.MouseButtonWheelUp:
+			if s.selectedIdx > 0 {
+				s.selectedIdx--
+			}
+			return s, nil
+		case tea.MouseButtonWheelDown:
+			if s.selectedIdx < len(s.sessions)-1 {
+				s.selectedIdx++
+			}
+			return s, nil
+		}
 	}
 	return s, nil
 }
@@ -108,7 +133,7 @@ func (s *sessionDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (s *sessionDialogCmp) View() string {
 	t := theme.CurrentTheme()
 	baseStyle := styles.BaseStyle()
-	
+
 	if len(s.sessions) == 0 {
 		return baseStyle.Padding(1, 2).
 			Border(lipgloss.RoundedBorder()).
@@ -159,7 +184,7 @@ func (s *sessionDialogCmp) View() string {
 				Bold(true)
 		}
 
-		sessionItems = append(sessionItems, itemStyle.Padding(0, 1).Render(sess.Title))
+		sessionItems = append(sessionItems, tuizone.MarkSessionItem(sess.ID, itemStyle.Padding(0, 1).Render(sess.Title)))
 	}
 
 	title := baseStyle.

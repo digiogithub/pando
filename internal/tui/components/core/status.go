@@ -17,6 +17,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
+	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 )
 
 type StatusCmp interface {
@@ -136,7 +137,7 @@ func (m statusCmp) View() string {
 			tokensStyle = tokensStyle.Background(t.Warning())
 		}
 		tokenInfoWidth = lipgloss.Width(tokens) + 2
-		status += tokensStyle.Render(tokens)
+		status += tuizone.MarkStatusSession(tokensStyle.Render(tokens))
 	}
 
 	diagnostics := styles.Padded().
@@ -175,7 +176,7 @@ func (m statusCmp) View() string {
 	}
 
 	status += diagnostics
-	status += m.model()
+	status += tuizone.MarkStatusModel(m.model())
 	return status
 }
 

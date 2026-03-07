@@ -1,6 +1,8 @@
 package dialog
 
 import (
+	"slices"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,6 +25,25 @@ type CompletionItemI interface {
 	utilComponents.SimpleListItem
 	GetValue() string
 	DisplayValue() string
+}
+
+func renderMatchedText(text string, matchedIndexes []int, baseStyle, matchStyle lipgloss.Style) string {
+	if len(matchedIndexes) == 0 {
+		return baseStyle.Render(text)
+	}
+
+	runes := []rune(text)
+	segments := make([]string, 0, len(runes))
+
+	for idx, r := range runes {
+		style := baseStyle
+		if slices.Contains(matchedIndexes, idx) {
+			style = matchStyle
+		}
+		segments = append(segments, style.Render(string(r)))
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Left, segments...)
 }
 
 func (ci *CompletionItem) Render(selected bool, width int) string {

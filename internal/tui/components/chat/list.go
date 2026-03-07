@@ -2,8 +2,10 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -21,9 +23,12 @@ import (
 )
 
 type cacheItem struct {
-	width   int
-	content []uiMessage
+	width      int
+	signature  string
+	content    []uiMessage
+	renderedAt time.Time
 }
+
 type messagesCmp struct {
 	app           *app.App
 	width, height int
@@ -36,8 +41,16 @@ type messagesCmp struct {
 	spinner       spinner.Model
 	rendering     bool
 	attachments   viewport.Model
+	renderSeq     int
 }
+
 type renderFinishedMsg struct{}
+
+type markdownDebounceMsg struct {
+	sequence int
+}
+
+const markdownRenderDebounce = 150 * time.Millisecond
 
 type MessageKeys struct {
 	PageDown     key.Binding
@@ -99,6 +112,11 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case renderFinishedMsg:
 		m.rendering = false
 		m.viewport.GotoBottom()
+	case markdownDebounceMsg:
+		if msg.sequence == m.renderSeq {
+			m.renderView()
+			m.viewport.GotoBottom()
+		}
 	case pubsub.Event[session.Session]:
 		if msg.Type == pubsub.UpdatedEvent && msg.Payload.ID == m.session.ID {
 			m.session = msg.Payload
@@ -144,9 +162,14 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if msg.Type == pubsub.UpdatedEvent && msg.Payload.SessionID == m.session.ID {
 			for i, v := range m.messages {
 				if v.ID == msg.Payload.ID {
+					previous := m.messages[i]
 					m.messages[i] = msg.Payload
-					delete(m.cachedContent, msg.Payload.ID)
-					needsRerender = true
+					if m.shouldDebounceRender(previous, msg.Payload) {
+						cmds = append(cmds, m.queueMarkdownRerender(msg.Payload.ID))
+					} else {
+						delete(m.cachedContent, msg.Payload.ID)
+						needsRerender = true
+					}
 					break
 				}
 			}
@@ -184,6 +207,59 @@ func formatTimeDifference(unixTime1, unixTime2 int64) string {
 	return fmt.Sprintf("%dm%ds", minutes, seconds)
 }
 
+func messageCacheSignature(msg message.Message, isSummary bool) string {
+	parts, err := json.Marshal(msg.Parts)
+	if err != nil {
+		return fmt.Sprintf("%s:%t:%d", msg.ID, isSummary, msg.UpdatedAt)
+	}
+
+	return fmt.Sprintf("%t:%s", isSummary, parts)
+}
+
+func cachedHeight(cache cacheItem) int {
+	height := 0
+	for _, item := range cache.content {
+		height += item.height + 1
+	}
+	return height
+}
+
+func (m *messagesCmp) shouldDebounceRender(previous, updated message.Message) bool {
+	if updated.Role != message.Assistant || updated.IsFinished() {
+		return false
+	}
+
+	if previous.Content().Text == updated.Content().Text &&
+		previous.ReasoningContent().Thinking == updated.ReasoningContent().Thinking {
+		return false
+	}
+
+	cache, ok := m.cachedContent[updated.ID]
+	if !ok || cache.renderedAt.IsZero() {
+		return false
+	}
+
+	return time.Since(cache.renderedAt) < markdownRenderDebounce
+}
+
+func (m *messagesCmp) queueMarkdownRerender(messageID string) tea.Cmd {
+	cache, ok := m.cachedContent[messageID]
+	if !ok {
+		return nil
+	}
+
+	delay := markdownRenderDebounce - time.Since(cache.renderedAt)
+	if delay < 0 {
+		delay = 0
+	}
+
+	m.renderSeq++
+	sequence := m.renderSeq
+	return tea.Tick(delay, func(time.Time) tea.Msg {
+		return markdownDebounceMsg{sequence: sequence}
+	})
+}
+
 func (m *messagesCmp) renderView() {
 	m.uiMessages = make([]uiMessage, 0)
 	pos := 0
@@ -195,8 +271,10 @@ func (m *messagesCmp) renderView() {
 	for inx, msg := range m.messages {
 		switch msg.Role {
 		case message.User:
-			if cache, ok := m.cachedContent[msg.ID]; ok && cache.width == m.width {
+			signature := messageCacheSignature(msg, false)
+			if cache, ok := m.cachedContent[msg.ID]; ok && cache.width == m.width && cache.signature == signature {
 				m.uiMessages = append(m.uiMessages, cache.content...)
+				pos += cachedHeight(cache)
 				continue
 			}
 			userMsg := renderUserMessage(
@@ -207,16 +285,20 @@ func (m *messagesCmp) renderView() {
 			)
 			m.uiMessages = append(m.uiMessages, userMsg)
 			m.cachedContent[msg.ID] = cacheItem{
-				width:   m.width,
-				content: []uiMessage{userMsg},
+				width:      m.width,
+				signature:  signature,
+				content:    []uiMessage{userMsg},
+				renderedAt: time.Now(),
 			}
 			pos += userMsg.height + 1 // + 1 for spacing
 		case message.Assistant:
-			if cache, ok := m.cachedContent[msg.ID]; ok && cache.width == m.width {
+			isSummary := m.session.SummaryMessageID == msg.ID
+			signature := messageCacheSignature(msg, isSummary)
+			if cache, ok := m.cachedContent[msg.ID]; ok && cache.width == m.width && cache.signature == signature {
 				m.uiMessages = append(m.uiMessages, cache.content...)
+				pos += cachedHeight(cache)
 				continue
 			}
-			isSummary := m.session.SummaryMessageID == msg.ID
 
 			assistantMessages := renderAssistantMessage(
 				msg,
@@ -233,8 +315,10 @@ func (m *messagesCmp) renderView() {
 				pos += msg.height + 1 // + 1 for spacing
 			}
 			m.cachedContent[msg.ID] = cacheItem{
-				width:   m.width,
-				content: assistantMessages,
+				width:      m.width,
+				signature:  signature,
+				content:    assistantMessages,
+				renderedAt: time.Now(),
 			}
 		}
 	}
@@ -473,6 +557,8 @@ func NewMessagesCmp(app *app.App) tea.Model {
 	s.Spinner = spinner.Pulse
 	vp := viewport.New(0, 0)
 	attachmets := viewport.New(0, 0)
+	vp.MouseWheelEnabled = true
+	vp.MouseWheelDelta = 2
 	vp.KeyMap.PageUp = messageKeys.PageUp
 	vp.KeyMap.PageDown = messageKeys.PageDown
 	vp.KeyMap.HalfPageUp = messageKeys.HalfPageUp

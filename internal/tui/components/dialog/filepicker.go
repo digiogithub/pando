@@ -19,6 +19,7 @@ import (
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/tui/image"
+	"github.com/digiogithub/pando/internal/tui/layout"
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
@@ -354,6 +355,7 @@ func (f *filepickerCmp) View() string {
 
 type FilepickerCmp interface {
 	tea.Model
+	layout.Bindings
 	ToggleFilepicker(showFilepicker bool)
 	IsCWDFocused() bool
 }
@@ -364,6 +366,10 @@ func (f *filepickerCmp) ToggleFilepicker(showFilepicker bool) {
 
 func (f *filepickerCmp) IsCWDFocused() bool {
 	return f.cwd.Focused()
+}
+
+func (f *filepickerCmp) BindingKeys() []key.Binding {
+	return layout.KeyMapToSlice(filePickerKeyMap)
 }
 
 func NewFilepickerCmp(app *app.App) FilepickerCmp {

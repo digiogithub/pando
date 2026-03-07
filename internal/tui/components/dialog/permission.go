@@ -15,6 +15,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
+	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 )
 
 type PermissionAction string
@@ -128,6 +129,21 @@ func (p *permissionDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p.contentViewPort = viewPort
 			cmds = append(cmds, cmd)
 		}
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			switch {
+			case tuizone.InBounds(tuizone.DialogButtonID(tuizone.PermissionAllow), msg):
+				return p, util.CmdHandler(PermissionResponseMsg{Action: PermissionAllow, Permission: p.permission})
+			case tuizone.InBounds(tuizone.DialogButtonID(tuizone.PermissionSession), msg):
+				return p, util.CmdHandler(PermissionResponseMsg{Action: PermissionAllowForSession, Permission: p.permission})
+			case tuizone.InBounds(tuizone.DialogButtonID(tuizone.PermissionDeny), msg):
+				return p, util.CmdHandler(PermissionResponseMsg{Action: PermissionDeny, Permission: p.permission})
+			}
+		}
+
+		viewPort, cmd := p.contentViewPort.Update(msg)
+		p.contentViewPort = viewPort
+		cmds = append(cmds, cmd)
 	}
 
 	return p, tea.Batch(cmds...)
@@ -173,9 +189,9 @@ func (p *permissionDialogCmp) renderButtons() string {
 		denyStyle = denyStyle.Background(t.Primary()).Foreground(t.Background())
 	}
 
-	allowButton := allowStyle.Padding(0, 1).Render("Allow (a)")
-	allowSessionButton := allowSessionStyle.Padding(0, 1).Render("Allow for session (s)")
-	denyButton := denyStyle.Padding(0, 1).Render("Deny (d)")
+	allowButton := tuizone.MarkDialogButton(tuizone.PermissionAllow, allowStyle.Padding(0, 1).Render("Allow (a)"))
+	allowSessionButton := tuizone.MarkDialogButton(tuizone.PermissionSession, allowSessionStyle.Padding(0, 1).Render("Allow for session (s)"))
+	denyButton := tuizone.MarkDialogButton(tuizone.PermissionDeny, denyStyle.Padding(0, 1).Render("Deny (d)"))
 
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Left,
@@ -512,6 +528,8 @@ func (c *permissionDialogCmp) GetOrSetMarkdown(key string, generator func() (str
 func NewPermissionDialogCmp() PermissionDialogCmp {
 	// Create viewport for content
 	contentViewport := viewport.New(0, 0)
+	contentViewport.MouseWheelEnabled = true
+	contentViewport.MouseWheelDelta = 2
 
 	return &permissionDialogCmp{
 		contentViewPort: contentViewport,

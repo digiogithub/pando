@@ -19,6 +19,9 @@ func GetMarkdownRenderer(width int) *glamour.TermRenderer {
 	r, _ := glamour.NewTermRenderer(
 		glamour.WithStyles(generateMarkdownStyleConfig()),
 		glamour.WithWordWrap(width),
+		glamour.WithChromaFormatter("terminal16m"),
+		glamour.WithEmoji(),
+		glamour.WithPreservedNewLines(),
 	)
 	return r
 }
@@ -35,16 +38,17 @@ func generateMarkdownStyleConfig() ansi.StyleConfig {
 				BlockSuffix: "",
 				Color:       stringPtr(adaptiveColorToString(t.MarkdownText())),
 			},
-			Margin: uintPtr(defaultMargin),
+			Margin: uintPtr(0),
 		},
 		BlockQuote: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
-				Color:  stringPtr(adaptiveColorToString(t.MarkdownBlockQuote())),
-				Italic: boolPtr(true),
-				Prefix: "┃ ",
+				Color:           stringPtr(adaptiveColorToString(t.MarkdownBlockQuote())),
+				BackgroundColor: stringPtr(adaptiveColorToString(t.BackgroundSecondary())),
+				Italic:          boolPtr(true),
+				Prefix:          "│ ",
 			},
 			Indent:      uintPtr(1),
-			IndentToken: stringPtr(BaseStyle().Render(" ")),
+			IndentToken: stringPtr(" "),
 		},
 		List: ansi.StyleList{
 			LevelIndent: defaultMargin,
@@ -152,18 +156,19 @@ func generateMarkdownStyleConfig() ansi.StyleConfig {
 		},
 		Code: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
-				Color:  stringPtr(adaptiveColorToString(t.MarkdownCode())),
-				Prefix: "",
-				Suffix: "",
+				Color:           stringPtr(adaptiveColorToString(t.MarkdownCode())),
+				BackgroundColor: stringPtr(adaptiveColorToString(t.BackgroundSecondary())),
+				Prefix:          " ",
+				Suffix:          " ",
 			},
 		},
 		CodeBlock: ansi.StyleCodeBlock{
 			StyleBlock: ansi.StyleBlock{
 				StylePrimitive: ansi.StylePrimitive{
-					Prefix: " ",
-					Color:  stringPtr(adaptiveColorToString(t.MarkdownCodeBlock())),
+					Color:           stringPtr(adaptiveColorToString(t.MarkdownCodeBlock())),
+					BackgroundColor: stringPtr(adaptiveColorToString(t.BackgroundDarker())),
 				},
-				Margin: uintPtr(defaultMargin),
+				Margin: uintPtr(0),
 			},
 			Chroma: &ansi.Chroma{
 				Text: ansi.StylePrimitive{
@@ -251,6 +256,7 @@ func generateMarkdownStyleConfig() ansi.StyleConfig {
 		Table: ansi.StyleTable{
 			StyleBlock: ansi.StyleBlock{
 				StylePrimitive: ansi.StylePrimitive{
+					Color:       stringPtr(adaptiveColorToString(t.MarkdownText())),
 					BlockPrefix: "\n",
 					BlockSuffix: "\n",
 				},
