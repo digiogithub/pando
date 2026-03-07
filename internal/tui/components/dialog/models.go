@@ -14,6 +14,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
+	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 )
 
 const (
@@ -134,6 +135,32 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+	case tea.MouseMsg:
+		if msg.Action != tea.MouseActionPress {
+			break
+		}
+		switch msg.Button {
+		case tea.MouseButtonLeft:
+			for i, model := range m.models {
+				if !tuizone.InBounds(tuizone.ModelItemID(string(model.ID)), msg) {
+					continue
+				}
+				m.selectedIdx = i
+				if m.selectedIdx < m.scrollOffset {
+					m.scrollOffset = m.selectedIdx
+				}
+				if m.selectedIdx >= m.scrollOffset+numVisibleModels {
+					m.scrollOffset = m.selectedIdx - (numVisibleModels - 1)
+				}
+				return m, util.CmdHandler(ModelSelectedMsg{Model: m.models[m.selectedIdx]})
+			}
+		case tea.MouseButtonWheelUp:
+			m.moveSelectionUp()
+			return m, nil
+		case tea.MouseButtonWheelDown:
+			m.moveSelectionDown()
+			return m, nil
+		}
 	}
 
 	return m, nil
@@ -208,7 +235,7 @@ func (m *modelDialogCmp) View() string {
 			itemStyle = itemStyle.Background(t.Primary()).
 				Foreground(t.Background()).Bold(true)
 		}
-		modelItems = append(modelItems, itemStyle.Render(m.models[i].Name))
+		modelItems = append(modelItems, tuizone.MarkModelItem(string(m.models[i].ID), itemStyle.Render(m.models[i].Name)))
 	}
 
 	scrollIndicator := m.getScrollIndicators(maxDialogWidth)

@@ -11,9 +11,15 @@ import (
 )
 
 type helpCmp struct {
-	width  int
-	height int
-	keys   []key.Binding
+	width    int
+	height   int
+	keys     []key.Binding
+	sections []HelpSection
+}
+
+type HelpSection struct {
+	Title    string
+	Bindings []key.Binding
 }
 
 func (h *helpCmp) Init() tea.Cmd {
@@ -22,6 +28,12 @@ func (h *helpCmp) Init() tea.Cmd {
 
 func (h *helpCmp) SetBindings(k []key.Binding) {
 	h.keys = k
+	h.sections = nil
+}
+
+func (h *helpCmp) SetSections(sections []HelpSection) {
+	h.sections = sections
+	h.keys = nil
 }
 
 func (h *helpCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -53,7 +65,34 @@ func removeDuplicateBindings(bindings []key.Binding) []key.Binding {
 	return result
 }
 
-func (h *helpCmp) render() string {
+func (h *helpCmp) normalizeSections() []HelpSection {
+	if len(h.sections) > 0 {
+		sections := make([]HelpSection, 0, len(h.sections))
+		for _, section := range h.sections {
+			bindings := removeDuplicateBindings(section.Bindings)
+			if len(bindings) == 0 {
+				continue
+			}
+			sections = append(sections, HelpSection{
+				Title:    section.Title,
+				Bindings: bindings,
+			})
+		}
+		return sections
+	}
+
+	bindings := removeDuplicateBindings(h.keys)
+	if len(bindings) == 0 {
+		return nil
+	}
+
+	return []HelpSection{{
+		Title:    "Shortcuts",
+		Bindings: bindings,
+	}}
+}
+
+func (h *helpCmp) renderSection(title string, bindings []key.Binding) string {
 	t := theme.CurrentTheme()
 	baseStyle := styles.BaseStyle()
 
@@ -66,103 +105,52 @@ func (h *helpCmp) render() string {
 		Background(t.Background()).
 		Foreground(t.TextMuted())
 
-	// Compile list of bindings to render
-	bindings := removeDuplicateBindings(h.keys)
+	titleStyle := styles.Bold().
+		Background(t.Background()).
+		Foreground(t.Primary())
 
-	// Enumerate through each group of bindings, populating a series of
-	// pairs of columns, one for keys, one for descriptions
-	var (
-		pairs []string
-		width int
-		rows  = 12 - 2
-	)
-
-	for i := 0; i < len(bindings); i += rows {
-		var (
-			keys  []string
-			descs []string
-		)
-		for j := i; j < min(i+rows, len(bindings)); j++ {
-			keys = append(keys, helpKeyStyle.Render(bindings[j].Help().Key))
-			descs = append(descs, helpDescStyle.Render(bindings[j].Help().Desc))
+	maxKeyWidth := 0
+	lines := make([]string, 0, len(bindings))
+	for _, binding := range bindings {
+		renderedKey := helpKeyStyle.Render(binding.Help().Key)
+		if width := lipgloss.Width(renderedKey); width > maxKeyWidth {
+			maxKeyWidth = width
 		}
-
-		// Render pair of columns; beyond the first pair, render a three space
-		// left margin, in order to visually separate the pairs.
-		var cols []string
-		if len(pairs) > 0 {
-			cols = []string{baseStyle.Render("   ")}
-		}
-
-		maxDescWidth := 0
-		for _, desc := range descs {
-			if maxDescWidth < lipgloss.Width(desc) {
-				maxDescWidth = lipgloss.Width(desc)
-			}
-		}
-		for i := range descs {
-			remainingWidth := maxDescWidth - lipgloss.Width(descs[i])
-			if remainingWidth > 0 {
-				descs[i] = descs[i] + baseStyle.Render(strings.Repeat(" ", remainingWidth))
-			}
-		}
-		maxKeyWidth := 0
-		for _, key := range keys {
-			if maxKeyWidth < lipgloss.Width(key) {
-				maxKeyWidth = lipgloss.Width(key)
-			}
-		}
-		for i := range keys {
-			remainingWidth := maxKeyWidth - lipgloss.Width(keys[i])
-			if remainingWidth > 0 {
-				keys[i] = keys[i] + baseStyle.Render(strings.Repeat(" ", remainingWidth))
-			}
-		}
-
-		cols = append(cols,
-			strings.Join(keys, "\n"),
-			strings.Join(descs, "\n"),
-		)
-
-		pair := baseStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, cols...))
-		// check whether it exceeds the maximum width avail (the width of the
-		// terminal, subtracting 2 for the borders).
-		width += lipgloss.Width(pair)
-		if width > h.width-2 {
-			break
-		}
-		pairs = append(pairs, pair)
 	}
 
-	// https://github.com/charmbracelet/lipgloss/issues/209
-	if len(pairs) > 1 {
-		prefix := pairs[:len(pairs)-1]
-		lastPair := pairs[len(pairs)-1]
-		prefix = append(prefix, lipgloss.Place(
-			lipgloss.Width(lastPair),   // width
-			lipgloss.Height(prefix[0]), // height
-			lipgloss.Left,              // x
-			lipgloss.Top,               // y
-			lastPair,                   // content
-			lipgloss.WithWhitespaceBackground(t.Background()),
-		))
-		content := baseStyle.Width(h.width).Render(
-			lipgloss.JoinHorizontal(
-				lipgloss.Top,
-				prefix...,
-			),
-		)
-		return content
-	}
-
-	// Join pairs of columns and enclose in a border
-	content := baseStyle.Width(h.width).Render(
-		lipgloss.JoinHorizontal(
+	for _, binding := range bindings {
+		renderedKey := helpKeyStyle.Render(binding.Help().Key)
+		keyPadding := max(0, maxKeyWidth-lipgloss.Width(renderedKey))
+		line := lipgloss.JoinHorizontal(
 			lipgloss.Top,
-			pairs...,
+			renderedKey+baseStyle.Render(strings.Repeat(" ", keyPadding+2)),
+			helpDescStyle.Render(binding.Help().Desc),
+		)
+		lines = append(lines, line)
+	}
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		titleStyle.Render(title),
+		lipgloss.JoinVertical(lipgloss.Left, lines...),
+	)
+}
+
+func (h *helpCmp) render() string {
+	baseStyle := styles.BaseStyle()
+
+	sections := h.normalizeSections()
+	rendered := make([]string, 0, len(sections))
+	for _, section := range sections {
+		rendered = append(rendered, h.renderSection(section.Title, section.Bindings))
+	}
+
+	return baseStyle.Width(h.width).Render(
+		lipgloss.JoinVertical(
+			lipgloss.Left,
+			rendered...,
 		),
 	)
-	return content
 }
 
 func (h *helpCmp) View() string {
@@ -193,6 +181,7 @@ func (h *helpCmp) View() string {
 type HelpCmp interface {
 	tea.Model
 	SetBindings([]key.Binding)
+	SetSections([]HelpSection)
 }
 
 func NewHelpCmp() HelpCmp {
