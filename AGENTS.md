@@ -8,10 +8,12 @@ Para las tools de remembrances siempre usa como user_id o project_id "pando" par
 
 ### Development Workflow
 
+- **Context Awareness**: Always be aware of the current context of the project. Use always the tools of kb and code of remembrances for retrieving relevant information about the project, its structure, and previous decisions.
 - **Planning**: If you are unsure about if you are following a plan, check with `last_to_remember` to see the current plan and confirm with the user if needed, before proceeding. If you don't have a plan, create one, split into phases, save them each fase using `save_fact` and save a summary of the plan using `to_remember`.
 - **Implementation**: Write code in small, testable increments. After each increment, run tests to ensure functionality.
 - **Code Style**: Follow Go best practices and project-specific coding standards
 - **Testing**: Create tests in `tests/` folder (Python files, not in root)
+- **Documentation**: Update documentation as needed, especially if you are adding new features or making significant changes. Use always for documentation the tools of kb of remembrances to save any relevant information about the project, the changes you are making, and the reasons behind those changes.
 
 ### External Research
 

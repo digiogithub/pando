@@ -1,7 +1,8 @@
 package styles
 
 const (
-	OpenCodeIcon string = "⌬"
+	PandoIcon    string = "⌘"
+	OpenCodeIcon        = PandoIcon // deprecated alias
 
 	CheckIcon    string = "✓"
 	ErrorIcon    string = "✖"
