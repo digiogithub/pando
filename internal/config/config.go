@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1267,6 +1268,14 @@ func refreshConfiguredDynamicModels() {
 	}
 
 	providerCfg, ok := cfg.Providers[models.ProviderOllama]
+	if !ok {
+		// Auto-detect Ollama if not configured
+		if tryAutoDetectOllama() {
+			providerCfg = cfg.Providers[models.ProviderOllama]
+			ok = true
+		}
+	}
+
 	if !ok || providerCfg.Disabled {
 		return
 	}
@@ -1277,6 +1286,37 @@ func refreshConfiguredDynamicModels() {
 	if err := models.RefreshProviderModels(ctx, models.ProviderOllama, providerCfg.APIKey, "", providerCfg.BaseURL); err != nil {
 		logging.Debug("Failed to refresh Ollama models during config load", "error", err)
 	}
+}
+
+// tryAutoDetectOllama pings Ollama's native API and registers it as a provider if reachable.
+func tryAutoDetectOllama() bool {
+	rawBase := strings.TrimSpace(os.Getenv("OLLAMA_BASE_URL"))
+	var pingURL string
+	if rawBase == "" {
+		pingURL = "http://localhost:11434/api/tags"
+	} else {
+		rawBase = strings.TrimRight(rawBase, "/")
+		rawBase = strings.TrimSuffix(rawBase, "/v1")
+		rawBase = strings.TrimSuffix(rawBase, "/api")
+		pingURL = strings.TrimRight(rawBase, "/") + "/api/tags"
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(pingURL) //nolint:noctx
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	if cfg.Providers == nil {
+		cfg.Providers = make(map[models.ModelProvider]Provider)
+	}
+	cfg.Providers[models.ProviderOllama] = Provider{}
+	logging.Info("Auto-detected Ollama", "url", pingURL)
+	return true
 }
 
 func ensureAgentDefaults() {

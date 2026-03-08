@@ -43,6 +43,7 @@ func FetchModelsFromProvider(ctx context.Context, provider ModelProvider, apiKey
 }
 
 func fetchOllamaModels(ctx context.Context, apiKey string, baseURL string) ([]FetchedModel, error) {
+	// Try OpenAI-compat endpoint first (/v1/models)
 	modelsURL, err := url.JoinPath(ResolveOllamaBaseURL(baseURL), "models")
 	if err != nil {
 		return nil, fmt.Errorf("build Ollama models URL: %w", err)
@@ -56,7 +57,7 @@ func fetchOllamaModels(ctx context.Context, apiKey string, baseURL string) ([]Fe
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
 	}
 
-	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
+	result, err := doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
 		var response struct {
 			Data []struct {
 				ID      string `json:"id"`
@@ -67,12 +68,60 @@ func fetchOllamaModels(ctx context.Context, apiKey string, baseURL string) ([]Fe
 			return nil, fmt.Errorf("parse response: %w", err)
 		}
 
-		result := make([]FetchedModel, 0, len(response.Data))
+		fetched := make([]FetchedModel, 0, len(response.Data))
 		for _, m := range response.Data {
-			result = append(result, FetchedModel{
+			fetched = append(fetched, FetchedModel{
 				ID:      m.ID,
 				Name:    m.ID,
 				Created: m.Created,
+			})
+		}
+
+		return fetched, nil
+	})
+
+	if err == nil && len(result) > 0 {
+		return result, nil
+	}
+
+	// Fallback to native Ollama API (/api/tags)
+	return fetchOllamaModelsNative(ctx, apiKey, baseURL)
+}
+
+func fetchOllamaModelsNative(ctx context.Context, apiKey string, baseURL string) ([]FetchedModel, error) {
+	tagsURL, err := url.JoinPath(ResolveOllamaRawBaseURL(baseURL), "api", "tags")
+	if err != nil {
+		return nil, fmt.Errorf("build Ollama tags URL: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tagsURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if strings.TrimSpace(apiKey) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	}
+
+	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
+		var response struct {
+			Models []struct {
+				Name  string `json:"name"`
+				Model string `json:"model"`
+			} `json:"models"`
+		}
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, fmt.Errorf("parse native response: %w", err)
+		}
+
+		result := make([]FetchedModel, 0, len(response.Models))
+		for _, m := range response.Models {
+			id := m.Model
+			if id == "" {
+				id = m.Name
+			}
+			result = append(result, FetchedModel{
+				ID:   id,
+				Name: m.Name,
 			})
 		}
 

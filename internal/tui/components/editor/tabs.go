@@ -21,10 +21,11 @@ const (
 
 // Tab represents a file opened in the editor area.
 type Tab struct {
-	Path  string
-	Name  string
-	Dirty bool
-	Icon  string
+	Path       string
+	Name       string
+	Dirty      bool
+	Icon       string
+	IsEditable bool // true when the tab should be opened in editable mode
 }
 
 // TabBar keeps track of open files and renders the compact one-line tab strip.
@@ -80,6 +81,46 @@ func (t *TabBar) OpenTab(path string) int {
 	t.activeIdx = len(t.tabs) - 1
 	t.ensureActiveVisible()
 	return t.activeIdx
+}
+
+// OpenEditableTab opens a new editable tab or focuses an existing one, returning its index.
+func (t *TabBar) OpenEditableTab(path string) int {
+	normalized := normalizeTabPath(path)
+	if normalized == "" {
+		return t.activeIdx
+	}
+
+	for idx := range t.tabs {
+		if t.tabs[idx].Path == normalized {
+			t.tabs[idx].IsEditable = true
+			t.activeIdx = idx
+			t.ensureActiveVisible()
+			return idx
+		}
+	}
+
+	name := filepath.Base(normalized)
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		name = normalized
+	}
+
+	t.tabs = append(t.tabs, Tab{
+		Path:       normalized,
+		Name:       name,
+		Icon:       tuistyles.FileIconFor(normalized),
+		IsEditable: true,
+	})
+	t.activeIdx = len(t.tabs) - 1
+	t.ensureActiveVisible()
+	return t.activeIdx
+}
+
+// IsActiveEditable returns true when the active tab is in editable mode.
+func (t *TabBar) IsActiveEditable() bool {
+	if tab := t.ActiveTab(); tab != nil {
+		return tab.IsEditable
+	}
+	return false
 }
 
 // CloseTab closes the tab at index and keeps the active selection in range.

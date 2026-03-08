@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/digiogithub/pando/internal/config"
@@ -15,11 +16,12 @@ import (
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
 	tuizone "github.com/digiogithub/pando/internal/tui/zone"
+	"github.com/sahilm/fuzzy"
 )
 
 const (
 	numVisibleModels = 10
-	maxDialogWidth   = 40
+	maxDialogWidth   = 44
 )
 
 // ModelSelectedMsg is sent when a model is selected
@@ -38,6 +40,7 @@ type ModelDialog interface {
 
 type modelDialogCmp struct {
 	models             []models.Model
+	filteredModels     []models.Model
 	provider           models.ModelProvider
 	availableProviders []models.ModelProvider
 
@@ -47,6 +50,7 @@ type modelDialogCmp struct {
 	scrollOffset    int
 	hScrollOffset   int
 	hScrollPossible bool
+	queryInput      textinput.Model
 }
 
 type modelKeyMap struct {
@@ -107,7 +111,33 @@ var modelKeys = modelKeyMap{
 
 func (m *modelDialogCmp) Init() tea.Cmd {
 	m.setupModels()
-	return nil
+	m.queryInput.Focus()
+	return textinput.Blink
+}
+
+func (m *modelDialogCmp) filterModels() {
+	query := strings.TrimSpace(m.queryInput.Value())
+	if query == "" {
+		m.filteredModels = m.models
+		return
+	}
+
+	names := make([]string, len(m.models))
+	for i, model := range m.models {
+		names[i] = model.Name
+	}
+
+	matches := fuzzy.Find(strings.ToLower(query), lowerStrings(names))
+	filtered := make([]models.Model, 0, len(matches))
+	for _, match := range matches {
+		filtered = append(filtered, m.models[match.Index])
+	}
+
+	m.filteredModels = filtered
+	if m.selectedIdx >= len(m.filteredModels) {
+		m.selectedIdx = 0
+		m.scrollOffset = 0
+	}
 }
 
 func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -118,19 +148,27 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.moveSelectionUp()
 		case key.Matches(msg, modelKeys.Down) || key.Matches(msg, modelKeys.J):
 			m.moveSelectionDown()
-		case key.Matches(msg, modelKeys.Left) || key.Matches(msg, modelKeys.H):
+		case key.Matches(msg, modelKeys.Left):
 			if m.hScrollPossible {
 				m.switchProvider(-1)
 			}
-		case key.Matches(msg, modelKeys.Right) || key.Matches(msg, modelKeys.L):
+		case key.Matches(msg, modelKeys.Right):
 			if m.hScrollPossible {
 				m.switchProvider(1)
 			}
 		case key.Matches(msg, modelKeys.Enter):
-			util.ReportInfo(fmt.Sprintf("selected model: %s", m.models[m.selectedIdx].Name))
-			return m, util.CmdHandler(ModelSelectedMsg{Model: m.models[m.selectedIdx]})
+			if len(m.filteredModels) == 0 {
+				return m, nil
+			}
+			util.ReportInfo(fmt.Sprintf("selected model: %s", m.filteredModels[m.selectedIdx].Name))
+			return m, util.CmdHandler(ModelSelectedMsg{Model: m.filteredModels[m.selectedIdx]})
 		case key.Matches(msg, modelKeys.Escape):
 			return m, util.CmdHandler(CloseModelDialogMsg{})
+		default:
+			var cmd tea.Cmd
+			m.queryInput, cmd = m.queryInput.Update(msg)
+			m.filterModels()
+			return m, cmd
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -141,7 +179,7 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.Button {
 		case tea.MouseButtonLeft:
-			for i, model := range m.models {
+			for i, model := range m.filteredModels {
 				if !tuizone.InBounds(tuizone.ModelItemID(string(model.ID)), msg) {
 					continue
 				}
@@ -152,7 +190,7 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selectedIdx >= m.scrollOffset+numVisibleModels {
 					m.scrollOffset = m.selectedIdx - (numVisibleModels - 1)
 				}
-				return m, util.CmdHandler(ModelSelectedMsg{Model: m.models[m.selectedIdx]})
+				return m, util.CmdHandler(ModelSelectedMsg{Model: m.filteredModels[m.selectedIdx]})
 			}
 		case tea.MouseButtonWheelUp:
 			m.moveSelectionUp()
@@ -168,11 +206,14 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // moveSelectionUp moves the selection up or wraps to bottom
 func (m *modelDialogCmp) moveSelectionUp() {
+	if len(m.filteredModels) == 0 {
+		return
+	}
 	if m.selectedIdx > 0 {
 		m.selectedIdx--
 	} else {
-		m.selectedIdx = len(m.models) - 1
-		m.scrollOffset = max(0, len(m.models)-numVisibleModels)
+		m.selectedIdx = len(m.filteredModels) - 1
+		m.scrollOffset = max(0, len(m.filteredModels)-numVisibleModels)
 	}
 
 	// Keep selection visible
@@ -183,7 +224,10 @@ func (m *modelDialogCmp) moveSelectionUp() {
 
 // moveSelectionDown moves the selection down or wraps to top
 func (m *modelDialogCmp) moveSelectionDown() {
-	if m.selectedIdx < len(m.models)-1 {
+	if len(m.filteredModels) == 0 {
+		return
+	}
+	if m.selectedIdx < len(m.filteredModels)-1 {
 		m.selectedIdx++
 	} else {
 		m.selectedIdx = 0
@@ -225,17 +269,30 @@ func (m *modelDialogCmp) View() string {
 		Padding(0, 0, 1).
 		Render(fmt.Sprintf("Select %s Model", providerName))
 
+	// Search input
+	queryStyle := baseStyle.
+		Width(maxDialogWidth).
+		Padding(0, 1).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(t.TextMuted())
+	m.queryInput.Width = max(0, maxDialogWidth-4)
+	searchInput := queryStyle.Render(m.queryInput.View())
+
 	// Render visible models
-	endIdx := min(m.scrollOffset+numVisibleModels, len(m.models))
+	endIdx := min(m.scrollOffset+numVisibleModels, len(m.filteredModels))
 	modelItems := make([]string, 0, endIdx-m.scrollOffset)
 
-	for i := m.scrollOffset; i < endIdx; i++ {
-		itemStyle := baseStyle.Width(maxDialogWidth)
-		if i == m.selectedIdx {
-			itemStyle = itemStyle.Background(t.Primary()).
-				Foreground(t.Background()).Bold(true)
+	if len(m.filteredModels) == 0 {
+		modelItems = append(modelItems, baseStyle.Width(maxDialogWidth).Padding(0, 1).Foreground(t.TextMuted()).Render("No models found"))
+	} else {
+		for i := m.scrollOffset; i < endIdx; i++ {
+			itemStyle := baseStyle.Width(maxDialogWidth)
+			if i == m.selectedIdx {
+				itemStyle = itemStyle.Background(t.Primary()).
+					Foreground(t.Background()).Bold(true)
+			}
+			modelItems = append(modelItems, tuizone.MarkModelItem(string(m.filteredModels[i].ID), itemStyle.Render(m.filteredModels[i].Name)))
 		}
-		modelItems = append(modelItems, tuizone.MarkModelItem(string(m.models[i].ID), itemStyle.Render(m.models[i].Name)))
 	}
 
 	scrollIndicator := m.getScrollIndicators(maxDialogWidth)
@@ -243,6 +300,8 @@ func (m *modelDialogCmp) View() string {
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		title,
+		searchInput,
+		baseStyle.Width(maxDialogWidth).Render(""),
 		baseStyle.Width(maxDialogWidth).Render(lipgloss.JoinVertical(lipgloss.Left, modelItems...)),
 		scrollIndicator,
 	)
@@ -258,11 +317,11 @@ func (m *modelDialogCmp) View() string {
 func (m *modelDialogCmp) getScrollIndicators(maxWidth int) string {
 	var indicator string
 
-	if len(m.models) > numVisibleModels {
+	if len(m.filteredModels) > numVisibleModels {
 		if m.scrollOffset > 0 {
 			indicator += "↑ "
 		}
-		if m.scrollOffset+numVisibleModels < len(m.models) {
+		if m.scrollOffset+numVisibleModels < len(m.filteredModels) {
 			indicator += "↓ "
 		}
 	}
@@ -358,10 +417,12 @@ func (m *modelDialogCmp) setupModelsForProvider(provider models.ModelProvider) {
 	m.models = getModelsForProvider(provider)
 	m.selectedIdx = 0
 	m.scrollOffset = 0
+	m.queryInput.SetValue("")
+	m.filterModels()
 
 	// Try to select the current model if it belongs to this provider
 	if provider == models.SupportedModels[selectedModelId].Provider {
-		for i, model := range m.models {
+		for i, model := range m.filteredModels {
 			if model.ID == selectedModelId {
 				m.selectedIdx = i
 				// Adjust scroll position to keep selected model visible
@@ -396,5 +457,12 @@ func getModelsForProvider(provider models.ModelProvider) []models.Model {
 }
 
 func NewModelDialogCmp() ModelDialog {
-	return &modelDialogCmp{}
+	input := textinput.New()
+	input.Placeholder = "Search models..."
+	input.Prompt = "> "
+	input.CharLimit = 128
+
+	return &modelDialogCmp{
+		queryInput: input,
+	}
 }

@@ -3,9 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -23,6 +20,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/components/dialog"
 	"github.com/digiogithub/pando/internal/tui/components/editor"
 	"github.com/digiogithub/pando/internal/tui/components/filetree"
+	"github.com/digiogithub/pando/internal/tui/components/terminal"
 	"github.com/digiogithub/pando/internal/tui/layout"
 	"github.com/digiogithub/pando/internal/tui/page"
 	"github.com/digiogithub/pando/internal/tui/theme"
@@ -72,6 +70,7 @@ type appModel struct {
 
 	showFilepicker bool
 	filepicker     dialog.FilepickerCmp
+	filepickerMode string // "attach" or "edit"
 
 	showThemeDialog bool
 	themeDialog     dialog.ThemeDialog
@@ -81,6 +80,9 @@ type appModel struct {
 
 	isCompacting      bool
 	compactingMessage string
+
+	terminalPanel   *terminal.TerminalPanel
+	terminalFocused bool
 }
 
 func (a appModel) Init() tea.Cmd {
@@ -135,9 +137,17 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		msg.Height -= 1 // Make space for the status bar
 		a.width, a.height = msg.Width, msg.Height
 
+		// Resize terminal panel and adjust available height for main content.
+		terminalPanelCmd := a.terminalPanel.SetSize(a.width, a.height)
+		cmds = append(cmds, terminalPanelCmd)
+
+		// Reduce available height for main content when terminal panel is visible.
+		mainMsg := msg
+		mainMsg.Height -= a.terminalPanel.PanelHeight()
+
 		s, _ := a.status.Update(msg)
 		a.status = s.(core.StatusCmp)
-		a.pages[a.currentPage], cmd = a.pages[a.currentPage].Update(msg)
+		a.pages[a.currentPage], cmd = a.pages[a.currentPage].Update(mainMsg)
 		cmds = append(cmds, cmd)
 
 		prm, permCmd := a.permissions.Update(msg)
@@ -382,9 +392,20 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dialog.OpenFilepickerMsg:
 		if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+			a.filepickerMode = "attach"
 			return a, a.openFilepicker()
 		}
 		return a, nil
+
+	case dialog.AttachmentAddedMsg:
+		// Intercept when filepicker is in edit mode: open file inline instead of attaching
+		if a.filepickerMode == "edit" {
+			a.filepickerMode = ""
+			a.showFilepicker = false
+			a.filepicker.ToggleFilepicker(false)
+			return a, util.CmdHandler(editor.OpenEditableFileMsg{Path: msg.Attachment.FileName})
+		}
+		// Fall through to normal attachment handling below
 
 	case dialog.ShowMultiArgumentsDialogMsg:
 		// Show multi-arguments dialog
@@ -422,6 +443,29 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, cmd
 		}
 
+		// Toggle terminal focus with ctrl+`
+		if key.Matches(msg, a.keys.Global.FocusTerminal) && a.terminalPanel.IsVisible() {
+			a.terminalFocused = !a.terminalFocused
+			if a.terminalFocused {
+				a.terminalPanel.Focus()
+			} else {
+				a.terminalPanel.Blur()
+			}
+			return a, nil
+		}
+
+		// When terminal is focused, route all key input to the terminal panel.
+		if a.terminalFocused && a.terminalPanel.IsVisible() {
+			newPanel, panelCmd := a.terminalPanel.Update(msg)
+			a.terminalPanel = newPanel
+			// Auto-close panel if all terminals closed.
+			if !a.terminalPanel.HasTerminals() {
+				a.terminalFocused = false
+				a.terminalPanel.Blur()
+			}
+			return a, panelCmd
+		}
+
 		switch {
 
 		case key.Matches(msg, a.keys.Global.Quit):
@@ -449,23 +493,14 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, a.keys.Editor.EditExternal):
 			if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions {
 				if a.tabBar != nil && a.tabBar.ActivePath() != "" {
-					editorCmd := os.Getenv("VISUAL")
-					if editorCmd == "" {
-						editorCmd = os.Getenv("EDITOR")
-					}
-					if editorCmd == "" {
-						editorCmd = "vi"
-					}
-					filePath := a.tabBar.ActivePath()
-					c := exec.Command(editorCmd, filePath)
-					return a, tea.ExecProcess(c, func(err error) tea.Msg {
-						if err != nil {
-							return util.InfoMsg{Type: util.InfoTypeError, Msg: "Editor error: " + err.Error()}
-						}
-						return util.InfoMsg{Type: util.InfoTypeInfo, Msg: "File edited: " + filepath.Base(filePath)}
-					})
+					// Open current file in inline editable editor
+					return a, util.CmdHandler(editor.OpenEditableFileMsg{Path: a.tabBar.ActivePath()})
 				}
-				return a, util.ReportWarn("No file open to edit")
+				// No file open: open filepicker in edit mode
+				a.filepickerMode = "edit"
+				a.showFilepicker = true
+				a.filepicker.ToggleFilepicker(a.showFilepicker)
+				return a, nil
 			}
 		case key.Matches(msg, a.keys.Chat.SwitchSession) && a.currentPage == page.ChatPage:
 			if !a.showQuit && !a.showPermissions && !a.showCommandDialog {
@@ -566,6 +601,17 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		f, filepickerCmd := a.filepicker.Update(msg)
 		a.filepicker = f.(dialog.FilepickerCmp)
 		cmds = append(cmds, filepickerCmd)
+
+		// Forward all non-key messages to the terminal panel (e.g. tick msgs).
+		if a.terminalPanel.IsVisible() {
+			newPanel, panelCmd := a.terminalPanel.Update(msg)
+			a.terminalPanel = newPanel
+			cmds = append(cmds, panelCmd)
+			if !a.terminalPanel.HasTerminals() {
+				a.terminalFocused = false
+				a.terminalPanel.Blur()
+			}
+		}
 
 	}
 
@@ -933,8 +979,16 @@ func (a appModel) bindingSignature(binding key.Binding) string {
 }
 
 func (a appModel) View() string {
-	components := []string{
-		a.pages[a.currentPage].View(),
+	pageView := a.pages[a.currentPage].View()
+
+	var components []string
+	if a.terminalPanel.IsVisible() {
+		components = []string{
+			pageView,
+			a.terminalPanel.View(),
+		}
+	} else {
+		components = []string{pageView}
 	}
 
 	components = append(components, a.status.View())
@@ -1172,7 +1226,8 @@ func New(app *app.App) tea.Model {
 			page.SettingsPage:     page.NewSettingsPage(app),
 			page.OrchestratorPage: page.NewOrchestratorPage(app),
 		},
-		filepicker: dialog.NewFilepickerCmp(app),
+		filepicker:    dialog.NewFilepickerCmp(app),
+		terminalPanel: terminal.NewTerminalPanel(),
 	}
 
 	model.RegisterCommand(dialog.Command{
@@ -1235,6 +1290,24 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Category:    dialog.CommandCategoryFiles,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(dialog.OpenFilepickerMsg{})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "edit-file",
+		Title:       "Edit File",
+		Description: "Open a file in the inline editor (Ctrl+I on active file)",
+		Shortcut:    "Ctrl+I",
+		Category:    dialog.CommandCategoryFiles,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			// If there's an active file, open it in inline editor
+			if model.tabBar != nil && model.tabBar.ActivePath() != "" {
+				return util.CmdHandler(editor.OpenEditableFileMsg{Path: model.tabBar.ActivePath()})
+			}
+			// Otherwise open the file picker in edit mode
+			model.filepickerMode = "edit"
+			model.showFilepicker = true
+			model.filepicker.ToggleFilepicker(true)
+			return nil
 		},
 	})
 	model.RegisterCommand(dialog.Command{
@@ -1326,6 +1399,31 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 				return copilotStatusCommand()
 		       },
 	       })
+	model.RegisterCommand(dialog.Command{
+		ID:          "open-terminal",
+		Title:       "Open Terminal Emulator Embedded",
+		Description: "Open an embedded terminal in the bottom panel",
+		Category:    dialog.CommandCategoryView,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			var cmds []tea.Cmd
+			if !model.terminalPanel.IsVisible() || !model.terminalPanel.HasTerminals() {
+				c := model.terminalPanel.OpenNewTerminal()
+				if c != nil {
+					cmds = append(cmds, c)
+				}
+			} else {
+				model.terminalPanel.Toggle()
+			}
+			model.terminalFocused = model.terminalPanel.IsVisible()
+			if model.terminalFocused {
+				model.terminalPanel.Focus()
+			} else {
+				model.terminalPanel.Blur()
+			}
+			return tea.Batch(cmds...)
+		},
+	})
+
 	// Load custom commands
 	customCommands, err := dialog.LoadCustomCommands()
 	if err != nil {

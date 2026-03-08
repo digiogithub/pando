@@ -49,3 +49,5 @@ pando.md
 *.db
 dist/
 pando
+.ai/.mesnada/logs/*
+.ai/.mesnada/task.json
