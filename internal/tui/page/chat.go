@@ -82,8 +82,9 @@ type editorWorkspace struct {
 	width  int
 	height int
 
-	viewer editor.FileViewerComponent
-	tabBar *editor.TabBar
+	viewer     editor.FileViewerComponent
+	fileEditor editor.FileEditableComponent
+	tabBar     *editor.TabBar
 }
 
 var keyMap = ChatKeyMap{
@@ -115,8 +116,9 @@ var keyMap = ChatKeyMap{
 
 func newEditorWorkspace(viewer editor.FileViewerComponent, tabBar *editor.TabBar) *editorWorkspace {
 	return &editorWorkspace{
-		viewer: viewer,
-		tabBar: tabBar,
+		viewer:     viewer,
+		fileEditor: editor.NewFileEditor(),
+		tabBar:     tabBar,
 	}
 }
 
@@ -131,18 +133,43 @@ func (w *editorWorkspace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	prevCount := w.tabBar.Count()
 	w.tabBar.Update(msg)
 
-	viewerModel, viewerCmd := w.viewer.Update(msg)
-	w.viewer = viewerModel.(editor.FileViewerComponent)
-	if viewerCmd != nil {
-		cmds = append(cmds, viewerCmd)
+	activePath := w.tabBar.ActivePath()
+	isEditable := w.tabBar.IsActiveEditable()
+
+	// Route messages to the correct active component
+	if isEditable {
+		editorModel, editorCmd := w.fileEditor.Update(msg)
+		w.fileEditor = editorModel.(editor.FileEditableComponent)
+		if editorCmd != nil {
+			cmds = append(cmds, editorCmd)
+		}
+		// Sync dirty state to tab
+		if w.fileEditor.IsDirty() {
+			w.tabBar.SetDirty(activePath, true)
+		}
+	} else {
+		viewerModel, viewerCmd := w.viewer.Update(msg)
+		w.viewer = viewerModel.(editor.FileViewerComponent)
+		if viewerCmd != nil {
+			cmds = append(cmds, viewerCmd)
+		}
 	}
 
-	activePath := w.tabBar.ActivePath()
+	// Handle FileEditSavedMsg: clear dirty flag on the tab
+	if savedMsg, ok := msg.(editor.FileEditSavedMsg); ok {
+		w.tabBar.SetDirty(savedMsg.Path, false)
+		cmds = append(cmds, util.ReportInfo("Saved: "+savedMsg.Path))
+	}
+
 	switch {
 	case prevCount > 0 && w.tabBar.Count() == 0:
 		cmds = append(cmds, util.CmdHandler(editor.CloseViewerMsg{Path: prevActive}))
 	case activePath != "" && activePath != prevActive:
-		cmds = append(cmds, w.viewer.OpenFile(activePath))
+		if isEditable {
+			cmds = append(cmds, w.fileEditor.OpenFile(activePath))
+		} else {
+			cmds = append(cmds, w.viewer.OpenFile(activePath))
+		}
 	}
 
 	return w, tea.Batch(cmds...)
@@ -155,10 +182,15 @@ func (w *editorWorkspace) View() string {
 
 	tabView := w.tabBar.View()
 	viewHeight := max(w.height-lipgloss.Height(tabView), 0)
+
+	if w.tabBar.IsActiveEditable() {
+		_ = w.fileEditor.SetSize(w.width, viewHeight)
+		return lipgloss.JoinVertical(lipgloss.Left, tabView, w.fileEditor.View())
+	}
+
 	if sizeable, ok := w.viewer.(layout.Sizeable); ok {
 		_ = sizeable.SetSize(w.width, viewHeight)
 	}
-
 	return lipgloss.JoinVertical(lipgloss.Left, tabView, w.viewer.View())
 }
 
@@ -166,6 +198,9 @@ func (w *editorWorkspace) SetSize(width, height int) tea.Cmd {
 	w.width = max(width, 0)
 	w.height = max(height, 0)
 	w.tabBar.SetSize(w.width)
+	if w.tabBar.IsActiveEditable() {
+		return w.fileEditor.SetSize(w.width, max(w.height-1, 0))
+	}
 	return w.viewer.SetSize(w.width, max(w.height-1, 0))
 }
 
@@ -185,6 +220,15 @@ func (w *editorWorkspace) OpenFile(path string) tea.Cmd {
 	}
 	w.tabBar.OpenTab(path)
 	return w.viewer.OpenFile(path)
+}
+
+// OpenEditableFile opens a file in editable mode in a new or existing tab.
+func (w *editorWorkspace) OpenEditableFile(path string) tea.Cmd {
+	if path == "" {
+		return nil
+	}
+	w.tabBar.OpenEditableTab(path)
+	return w.fileEditor.OpenFile(path)
 }
 
 func (w *editorWorkspace) HasTabs() bool {
@@ -337,6 +381,11 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.showCompletionDialog = false
 		p.focus = focusEditor
 		cmds = append(cmds, p.applyLayoutMode(SidebarEditor), p.editorWorkspace.OpenFile(msg.Path))
+		return p, tea.Batch(cmds...)
+	case editor.OpenEditableFileMsg:
+		p.showCompletionDialog = false
+		p.focus = focusEditor
+		cmds = append(cmds, p.applyLayoutMode(SidebarEditor), p.editorWorkspace.OpenEditableFile(msg.Path))
 		return p, tea.Batch(cmds...)
 	case editor.CloseViewerMsg:
 		p.showCompletionDialog = false

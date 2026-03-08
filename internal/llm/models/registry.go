@@ -32,6 +32,11 @@ func RefreshProviderModels(ctx context.Context, provider ModelProvider, apiKey s
 			continue
 		}
 
+		// Don't add duplicates by APIModel (handles cases where static model ID differs from dynamic)
+		if modelExistsByAPIModel(provider, fm.ID) {
+			continue
+		}
+
 		name := fm.Name
 		if name == "" {
 			name = fm.ID
@@ -50,6 +55,16 @@ func RefreshProviderModels(ctx context.Context, provider ModelProvider, apiKey s
 	}
 
 	return nil
+}
+
+// modelExistsByAPIModel checks if a static model already exists for a given provider+apiModel combination
+func modelExistsByAPIModel(provider ModelProvider, apiModel string) bool {
+	for _, m := range SupportedModels {
+		if m.Provider == provider && m.APIModel == apiModel {
+			return true
+		}
+	}
+	return false
 }
 
 func capitalizeProvider(s string) string {

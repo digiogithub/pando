@@ -1,0 +1,257 @@
+package terminal
+
+import (
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/taigrr/bubbleterm/emulator"
+
+	"github.com/digiogithub/pando/internal/tui/layout"
+)
+
+// terminalTickMsg is sent periodically to poll the terminal for new output.
+type terminalTickMsg struct{ id string }
+
+// TerminalComponent wraps bubbleterm/emulator as a Bubble Tea v1 model.
+type TerminalComponent interface {
+	tea.Model
+	layout.Sizeable
+	layout.Bindings
+	IsRunning() bool
+	Close() error
+}
+
+type terminalKeyMap struct {
+	FocusToggle key.Binding
+}
+
+// terminalModel is the concrete implementation.
+type terminalModel struct {
+	id      string
+	emu     *emulator.Emulator
+	rows    []string
+	width   int
+	height  int
+	focused bool
+	keyMap  terminalKeyMap
+}
+
+// tickInterval controls the refresh rate of the embedded terminal.
+const tickInterval = 33 * time.Millisecond // ~30 fps
+
+func shellCommand() *exec.Cmd {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/bash"
+	}
+	return exec.Command(shell)
+}
+
+// New creates a new TerminalComponent, launches $SHELL inside a PTY.
+func New(width, height int) (TerminalComponent, error) {
+	if width < 2 {
+		width = 80
+	}
+	if height < 2 {
+		height = 24
+	}
+
+	emu, err := emulator.New(width, height)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := shellCommand()
+	if err := emu.StartCommand(cmd); err != nil {
+		_ = emu.Close()
+		return nil, err
+	}
+
+	m := &terminalModel{
+		id:      emu.ID(),
+		emu:     emu,
+		rows:    make([]string, height),
+		width:   width,
+		height:  height,
+		focused: true,
+		keyMap:  defaultTerminalKeyMap(),
+	}
+	return m, nil
+}
+
+func defaultTerminalKeyMap() terminalKeyMap {
+	return terminalKeyMap{
+		FocusToggle: key.NewBinding(
+			key.WithKeys("ctrl+`"),
+			key.WithHelp("ctrl+`", "toggle terminal focus"),
+		),
+	}
+}
+
+func (m *terminalModel) Init() tea.Cmd {
+	return m.tick()
+}
+
+func (m *terminalModel) tick() tea.Cmd {
+	id := m.id
+	return tea.Tick(tickInterval, func(_ time.Time) tea.Msg {
+		return terminalTickMsg{id: id}
+	})
+}
+
+func (m *terminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case terminalTickMsg:
+		if msg.id != m.id {
+			return m, nil
+		}
+		frame := m.emu.GetScreen()
+		if len(frame.Rows) > 0 {
+			m.rows = frame.Rows
+		}
+		return m, m.tick()
+
+	case tea.KeyMsg:
+		if !m.focused {
+			return m, nil
+		}
+		input := keyMsgToInput(msg)
+		if input != "" {
+			_, _ = m.emu.Write([]byte(input))
+		}
+		return m, nil
+	}
+
+	return m, nil
+}
+
+func (m *terminalModel) View() string {
+	if len(m.rows) == 0 {
+		return strings.Repeat("\n", m.height-1)
+	}
+	return strings.Join(m.rows, "\n")
+}
+
+// SetSize implements layout.Sizeable.
+func (m *terminalModel) SetSize(width, height int) tea.Cmd {
+	if width < 2 {
+		width = 2
+	}
+	if height < 2 {
+		height = 2
+	}
+	m.width = width
+	m.height = height
+	_ = m.emu.Resize(width, height)
+	return nil
+}
+
+// GetSize implements layout.Sizeable.
+func (m *terminalModel) GetSize() (int, int) {
+	return m.width, m.height
+}
+
+// BindingKeys implements layout.Bindings.
+func (m *terminalModel) BindingKeys() []key.Binding {
+	return []key.Binding{m.keyMap.FocusToggle}
+}
+
+// IsRunning returns true if the shell process is still alive.
+func (m *terminalModel) IsRunning() bool {
+	return !m.emu.IsProcessExited()
+}
+
+// Close shuts down the terminal emulator.
+func (m *terminalModel) Close() error {
+	return m.emu.Close()
+}
+
+// keyMsgToInput converts a Bubble Tea v1 key message to a byte sequence
+// suitable for sending to the PTY.
+func keyMsgToInput(msg tea.KeyMsg) string {
+	switch msg.Type {
+	case tea.KeyEnter:
+		return "\r"
+	case tea.KeyBackspace:
+		return "\x7f"
+	case tea.KeyDelete:
+		return "\x1b[3~"
+	case tea.KeyTab:
+		return "\t"
+	case tea.KeySpace:
+		return " "
+	case tea.KeyEscape:
+		return "\x1b"
+	case tea.KeyUp:
+		return "\x1b[A"
+	case tea.KeyDown:
+		return "\x1b[B"
+	case tea.KeyRight:
+		return "\x1b[C"
+	case tea.KeyLeft:
+		return "\x1b[D"
+	case tea.KeyHome:
+		return "\x1b[H"
+	case tea.KeyEnd:
+		return "\x1b[F"
+	case tea.KeyPgUp:
+		return "\x1b[5~"
+	case tea.KeyPgDown:
+		return "\x1b[6~"
+	case tea.KeyCtrlA:
+		return "\x01"
+	case tea.KeyCtrlB:
+		return "\x02"
+	case tea.KeyCtrlC:
+		return "\x03"
+	case tea.KeyCtrlD:
+		return "\x04"
+	case tea.KeyCtrlE:
+		return "\x05"
+	case tea.KeyCtrlF:
+		return "\x06"
+	case tea.KeyCtrlG:
+		return "\x07"
+	case tea.KeyCtrlH:
+		return "\x08"
+	case tea.KeyCtrlJ:
+		return "\x0a"
+	case tea.KeyCtrlK:
+		return "\x0b"
+	case tea.KeyCtrlL:
+		return "\x0c"
+	case tea.KeyCtrlN:
+		return "\x0e"
+	case tea.KeyCtrlO:
+		return "\x0f"
+	case tea.KeyCtrlP:
+		return "\x10"
+	case tea.KeyCtrlQ:
+		return "\x11"
+	case tea.KeyCtrlR:
+		return "\x12"
+	case tea.KeyCtrlS:
+		return "\x13"
+	case tea.KeyCtrlT:
+		return "\x14"
+	case tea.KeyCtrlU:
+		return "\x15"
+	case tea.KeyCtrlV:
+		return "\x16"
+	case tea.KeyCtrlW:
+		return "\x17"
+	case tea.KeyCtrlX:
+		return "\x18"
+	case tea.KeyCtrlY:
+		return "\x19"
+	case tea.KeyCtrlZ:
+		return "\x1a"
+	case tea.KeyRunes:
+		return string(msg.Runes)
+	}
+	return ""
+}

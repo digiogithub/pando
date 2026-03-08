@@ -14,13 +14,15 @@ type KeyMap struct {
 }
 
 type GlobalKeys struct {
-	Logs         key.Binding
-	Orchestrator key.Binding
-	Quit         key.Binding
-	Help         key.Binding
-	Settings     key.Binding
-	Filepicker   key.Binding
-	SwitchTheme  key.Binding
+	Logs           key.Binding
+	Orchestrator   key.Binding
+	Quit           key.Binding
+	Help           key.Binding
+	Settings       key.Binding
+	Filepicker     key.Binding
+	SwitchTheme    key.Binding
+	ToggleTerminal key.Binding
+	FocusTerminal  key.Binding
 }
 
 type ChatKeys struct {
@@ -122,6 +124,14 @@ func DefaultKeyMap() KeyMap {
 			SwitchTheme: key.NewBinding(
 				key.WithKeys("ctrl+t"),
 				key.WithHelp("ctrl+t", "switch theme"),
+			),
+			ToggleTerminal: key.NewBinding(
+				key.WithKeys("ctrl+`"),
+				key.WithHelp("ctrl+`", "toggle terminal panel"),
+			),
+			FocusTerminal: key.NewBinding(
+				key.WithKeys("ctrl+`"),
+				key.WithHelp("ctrl+`", "focus/unfocus terminal"),
 			),
 		},
 		Chat: ChatKeys{
@@ -250,6 +260,7 @@ func (k GlobalKeys) ShortHelp() []key.Binding {
 		k.Settings,
 		k.Filepicker,
 		k.SwitchTheme,
+		k.ToggleTerminal,
 		k.Quit,
 	)
 }
@@ -259,6 +270,7 @@ func (k GlobalKeys) FullHelp() [][]key.Binding {
 		filterHelpBindings(k.Help, k.Quit),
 		filterHelpBindings(k.Logs, k.Orchestrator, k.Settings),
 		filterHelpBindings(k.Filepicker, k.SwitchTheme),
+		filterHelpBindings(k.ToggleTerminal, k.FocusTerminal),
 	)
 }
 
