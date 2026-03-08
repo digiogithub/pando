@@ -102,7 +102,17 @@ func NewDraculaTheme() *DraculaTheme {
 	}
 	theme.BackgroundDarkerColor = lipgloss.AdaptiveColor{
 		Dark:  "#21222c", // Slightly darker than background
-		Light: "#ffffff", // Slightly lighter than background
+		Light: "#F0F0F0", // Slightly lighter than background
+	}
+
+	// Selection colors
+	theme.SelectionBackgroundColor = lipgloss.AdaptiveColor{
+		Dark:  darkSelection,  // #44475a - good contrast with light fg
+		Light: lightSelection, // #d8d8d8 - good contrast with dark fg
+	}
+	theme.SelectionForegroundColor = lipgloss.AdaptiveColor{
+		Dark:  darkForeground,  // #f8f8f2
+		Light: lightForeground, // #282a36
 	}
 
 	// Border colors

@@ -16,7 +16,7 @@ import (
 func CoderPrompt(provider models.ModelProvider) string {
 	basePrompt := baseAnthropicCoderPrompt
 	switch provider {
-	case models.ProviderOpenAI:
+	case models.ProviderOpenAI, models.ProviderOllama:
 		basePrompt = baseOpenAICoderPrompt
 	}
 	envInfo := getEnvironmentInfo()

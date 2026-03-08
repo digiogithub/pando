@@ -2,16 +2,19 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
+	"sort"
 	"strings"
+	"time"
 
 	toml "github.com/pelletier/go-toml/v2"
 
+	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/spf13/viper"
@@ -55,6 +58,7 @@ type Agent struct {
 // Provider defines configuration for an LLM provider.
 type Provider struct {
 	APIKey   string `json:"apiKey"`
+	BaseURL  string `json:"baseURL,omitempty"`
 	Disabled bool   `json:"disabled"`
 }
 
@@ -88,6 +92,7 @@ type MesnadaOrchestratorConfig struct {
 	LogDir           string `json:"logDir,omitempty"`
 	MaxParallel      int    `json:"maxParallel,omitempty"`
 	DefaultEngine    string `json:"defaultEngine,omitempty"`
+	DefaultModel     string `json:"defaultModel,omitempty"`
 	DefaultMCPConfig string `json:"defaultMcpConfig,omitempty"`
 	PersonaPath      string `json:"personaPath,omitempty"`
 }
@@ -286,6 +291,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("mesnada.server.port", 9767)
 	viper.SetDefault("mesnada.orchestrator.maxParallel", 5)
 	viper.SetDefault("mesnada.orchestrator.defaultEngine", "copilot")
+	viper.SetDefault("mesnada.orchestrator.defaultModel", "gpt-5.4")
 	viper.SetDefault("mesnada.tui.enabled", true)
 	viper.SetDefault("mesnada.tui.webui", true)
 	viper.SetDefault("autoCompact", true)
@@ -334,11 +340,14 @@ func setProviderDefaults() {
 		// api-key may be empty when using Entra ID credentials – that's okay
 		viper.SetDefault("providers.azure.apiKey", os.Getenv("AZURE_OPENAI_API_KEY"))
 	}
-	if apiKey, err := LoadGitHubToken(); err == nil && apiKey != "" {
-		viper.SetDefault("providers.copilot.apiKey", apiKey)
-		if viper.GetString("providers.copilot.apiKey") == "" {
-			viper.Set("providers.copilot.apiKey", apiKey)
-		}
+	if baseURL := strings.TrimSpace(os.Getenv("OLLAMA_BASE_URL")); baseURL != "" {
+		viper.SetDefault("providers.ollama.baseURL", models.ResolveOllamaBaseURL(baseURL))
+	}
+	if apiKey := strings.TrimSpace(os.Getenv("OLLAMA_API_KEY")); apiKey != "" {
+		viper.SetDefault("providers.ollama.apiKey", apiKey)
+	}
+	if hasCopilotCredentials() {
+		viper.SetDefault("providers.copilot.disabled", false)
 	}
 
 	// Use this order to set the default models
@@ -484,7 +493,7 @@ func hasVertexAICredentials() bool {
 
 func hasCopilotCredentials() bool {
 	// Check for explicit Copilot parameters
-	if token, _ := LoadGitHubToken(); token != "" {
+	if token, _ := auth.LoadGitHubOAuthToken(); token != "" {
 		return true
 	}
 	return false
@@ -526,6 +535,9 @@ func applyDefaultValues() {
 			cfg.MCPServers[k] = v
 		}
 	}
+
+	refreshConfiguredDynamicModels()
+	ensureAgentDefaults()
 }
 
 // It validates model IDs and providers, ensuring they are supported.
@@ -554,28 +566,33 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 	providerCfg, providerExists := cfg.Providers[provider]
 
 	if !providerExists {
-		// Provider not configured, check if we have environment variables
-		apiKey := getProviderAPIKey(provider)
-		if apiKey == "" {
-			logging.Warn("provider not configured for model, reverting to default",
-				"agent", name,
-				"model", agent.Model,
-				"provider", provider)
-
-			// Set default model based on available providers
-			if setDefaultModelForAgent(name) {
-				logging.Info("set default model for agent", "agent", name, "model", cfg.Agents[name].Model)
-			} else {
-				return fmt.Errorf("no valid provider available for agent %s", name)
-			}
+		if provider == models.ProviderCopilot && hasCopilotCredentials() {
+			cfg.Providers[provider] = Provider{}
+			logging.Info("added Copilot provider from saved login session")
 		} else {
-			// Add provider with API key from environment
-			cfg.Providers[provider] = Provider{
-				APIKey: apiKey,
+			// Provider not configured, check if we have environment variables
+			apiKey := getProviderAPIKey(provider)
+			if apiKey == "" {
+				logging.Warn("provider not configured for model, reverting to default",
+					"agent", name,
+					"model", agent.Model,
+					"provider", provider)
+
+				// Set default model based on available providers
+				if setDefaultModelForAgent(name) {
+					logging.Info("set default model for agent", "agent", name, "model", cfg.Agents[name].Model)
+				} else {
+					return fmt.Errorf("no valid provider available for agent %s", name)
+				}
+			} else {
+				// Add provider with API key from environment
+				cfg.Providers[provider] = Provider{
+					APIKey: apiKey,
+				}
+				logging.Info("added provider from environment", "provider", provider)
 			}
-			logging.Info("added provider from environment", "provider", provider)
 		}
-	} else if providerCfg.Disabled || providerCfg.APIKey == "" {
+	} else if providerCfg.Disabled || (providerRequiresAPIKey(provider) && providerCfg.APIKey == "" && !providerCfg.Disabled) || (provider == models.ProviderCopilot && providerCfg.APIKey == "" && !hasCopilotCredentials()) {
 		// Provider is disabled or has no API key
 		logging.Warn("provider is disabled or has no API key, reverting to default",
 			"agent", name,
@@ -677,7 +694,15 @@ func Validate() error {
 
 	// Validate providers
 	for provider, providerCfg := range cfg.Providers {
-		if providerCfg.APIKey == "" && !providerCfg.Disabled {
+		if provider == models.ProviderCopilot {
+			if providerCfg.Disabled {
+				continue
+			}
+			if providerCfg.APIKey == "" && hasCopilotCredentials() {
+				continue
+			}
+		}
+		if providerRequiresAPIKey(provider) && providerCfg.APIKey == "" && !providerCfg.Disabled {
 			fmt.Printf("provider has no API key, marking as disabled %s", provider)
 			logging.Warn("provider has no API key, marking as disabled", "provider", provider)
 			providerCfg.Disabled = true
@@ -712,6 +737,8 @@ func getProviderAPIKey(provider models.ModelProvider) string {
 		return os.Getenv("AZURE_OPENAI_API_KEY")
 	case models.ProviderOpenRouter:
 		return os.Getenv("OPENROUTER_API_KEY")
+	case models.ProviderOllama:
+		return os.Getenv("OLLAMA_API_KEY")
 	case models.ProviderBedrock:
 		if hasAWSCredentials() {
 			return "aws-credentials-available"
@@ -870,6 +897,22 @@ func setDefaultModelForAgent(agent AgentName) bool {
 		return true
 	}
 
+	if providerCfg, ok := cfg.Providers[models.ProviderOllama]; ok && !providerCfg.Disabled {
+		model, ok := firstModelForProvider(models.ProviderOllama)
+		if !ok {
+			return false
+		}
+		maxTokens := int64(5000)
+		if agent == AgentTitle {
+			maxTokens = 80
+		}
+		cfg.Agents[agent] = Agent{
+			Model:     model.ID,
+			MaxTokens: maxTokens,
+		}
+		return true
+	}
+
 	return false
 }
 
@@ -887,7 +930,7 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 		return fmt.Errorf("config not loaded")
 	}
 
-	configFile, err := resolveConfigFilePath()
+	configFile, err := ResolveConfigFilePath()
 	if err != nil {
 		return err
 	}
@@ -951,7 +994,8 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 	return nil
 }
 
-func resolveConfigFilePath() (string, error) {
+// ResolveConfigFilePath finds the active config file path.
+func ResolveConfigFilePath() (string, error) {
 	if configFile := viper.ConfigFileUsed(); configFile != "" {
 		return configFile, nil
 	}
@@ -982,6 +1026,33 @@ func resolveConfigFilePath() (string, error) {
 	}
 
 	return "", nil
+}
+
+// Reload re-reads the config file and updates the global config.
+// It resets the global config and reloads from disk.
+func Reload() error {
+	workingDir := ""
+	debug := false
+	if cfg != nil {
+		workingDir = cfg.WorkingDir
+		debug = cfg.Debug
+	}
+
+	// Reset global state so Load() runs fresh
+	cfg = nil
+	viper.Reset()
+
+	_, err := Load(workingDir, debug)
+	return err
+}
+
+// ConfigFileFormat returns the format ("json" or "toml") of the active config file.
+func ConfigFileFormat() string {
+	path, err := ResolveConfigFilePath()
+	if err != nil || path == "" {
+		return "json"
+	}
+	return configFileFormat(path)
 }
 
 // Get returns the current configuration.
@@ -1146,12 +1217,15 @@ func UpdateMesnada(mesnadaCfg MesnadaConfig) error {
 	return nil
 }
 
-func UpdateProvider(name models.ModelProvider, apiKey string, disabled bool) error {
+func UpdateProvider(name models.ModelProvider, apiKey string, baseURL string, disabled bool) error {
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")
 	}
-	if strings.TrimSpace(apiKey) == "" && !disabled {
+	if providerRequiresAPIKey(name) && strings.TrimSpace(apiKey) == "" && !disabled {
 		return fmt.Errorf("provider %s requires an API key when enabled", name)
+	}
+	if name == models.ProviderOllama && strings.TrimSpace(baseURL) == "" && !disabled {
+		return fmt.Errorf("provider %s requires a base URL when enabled", name)
 	}
 
 	if cfg.Providers == nil {
@@ -1161,6 +1235,7 @@ func UpdateProvider(name models.ModelProvider, apiKey string, disabled bool) err
 	oldProvider, hadProvider := cfg.Providers[name]
 	newProvider := Provider{
 		APIKey:   strings.TrimSpace(apiKey),
+		BaseURL:  strings.TrimSpace(baseURL),
 		Disabled: disabled,
 	}
 	cfg.Providers[name] = newProvider
@@ -1180,6 +1255,65 @@ func UpdateProvider(name models.ModelProvider, apiKey string, disabled bool) err
 	}
 
 	return nil
+}
+
+func providerRequiresAPIKey(provider models.ModelProvider) bool {
+	return provider != models.ProviderCopilot && provider != models.ProviderOllama
+}
+
+func refreshConfiguredDynamicModels() {
+	if cfg == nil {
+		return
+	}
+
+	providerCfg, ok := cfg.Providers[models.ProviderOllama]
+	if !ok || providerCfg.Disabled {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := models.RefreshProviderModels(ctx, models.ProviderOllama, providerCfg.APIKey, "", providerCfg.BaseURL); err != nil {
+		logging.Debug("Failed to refresh Ollama models during config load", "error", err)
+	}
+}
+
+func ensureAgentDefaults() {
+	if cfg == nil {
+		return
+	}
+	if cfg.Agents == nil {
+		cfg.Agents = make(map[AgentName]Agent)
+	}
+
+	for _, agentName := range []AgentName{AgentCoder, AgentSummarizer, AgentTask, AgentTitle} {
+		if strings.TrimSpace(string(cfg.Agents[agentName].Model)) != "" {
+			continue
+		}
+		_ = setDefaultModelForAgent(agentName)
+	}
+}
+
+func firstModelForProvider(provider models.ModelProvider) (models.Model, bool) {
+	modelList := make([]models.Model, 0)
+	for _, model := range models.SupportedModels {
+		if model.Provider == provider {
+			modelList = append(modelList, model)
+		}
+	}
+	if len(modelList) == 0 {
+		return models.Model{}, false
+	}
+
+	sort.Slice(modelList, func(i, j int) bool {
+		if modelList[i].Name != modelList[j].Name {
+			return modelList[i].Name < modelList[j].Name
+		}
+		return modelList[i].ID < modelList[j].ID
+	})
+
+	return modelList[0], true
 }
 
 func UpdateMCPServer(name string, server MCPServer) error {
@@ -1318,52 +1452,8 @@ func cloneStringMap(values map[string]string) map[string]string {
 	return cloned
 }
 
-// Tries to load Github token from all possible locations
+// LoadGitHubToken loads a GitHub OAuth token from the saved Copilot login,
+// environment variables, or compatible external tooling.
 func LoadGitHubToken() (string, error) {
-	// First check environment variable
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		return token, nil
-	}
-
-	// Get config directory
-	var configDir string
-	if xdgConfig := os.Getenv("XDG_CONFIG_HOME"); xdgConfig != "" {
-		configDir = xdgConfig
-	} else if runtime.GOOS == "windows" {
-		if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
-			configDir = localAppData
-		} else {
-			configDir = filepath.Join(os.Getenv("HOME"), "AppData", "Local")
-		}
-	} else {
-		configDir = filepath.Join(os.Getenv("HOME"), ".config")
-	}
-
-	// Try both hosts.json and apps.json files
-	filePaths := []string{
-		filepath.Join(configDir, "github-copilot", "hosts.json"),
-		filepath.Join(configDir, "github-copilot", "apps.json"),
-	}
-
-	for _, filePath := range filePaths {
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			continue
-		}
-
-		var config map[string]map[string]interface{}
-		if err := json.Unmarshal(data, &config); err != nil {
-			continue
-		}
-
-		for key, value := range config {
-			if strings.Contains(key, "github.com") {
-				if oauthToken, ok := value["oauth_token"].(string); ok {
-					return oauthToken, nil
-				}
-			}
-		}
-	}
-
-	return "", fmt.Errorf("GitHub token not found in standard locations")
+	return auth.LoadGitHubOAuthToken()
 }

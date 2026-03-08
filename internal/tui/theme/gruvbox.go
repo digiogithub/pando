@@ -133,6 +133,16 @@ func NewGruvboxTheme() *GruvboxTheme {
 		Light: gruvboxLightBg0Soft,
 	}
 
+	// Selection colors
+	theme.SelectionBackgroundColor = lipgloss.AdaptiveColor{
+		Dark:  gruvboxDarkBg2,    // #504945 - good contrast with light fg
+		Light: gruvboxLightBg2,   // #d5c4a1 - good contrast with dark fg
+	}
+	theme.SelectionForegroundColor = lipgloss.AdaptiveColor{
+		Dark:  gruvboxDarkFg0,    // #fbf1c7 - bright text on dark selection
+		Light: gruvboxLightFg0,   // #282828 - dark text on light selection
+	}
+
 	// Border colors
 	theme.BorderNormalColor = lipgloss.AdaptiveColor{
 		Dark:  gruvboxDarkBg2,

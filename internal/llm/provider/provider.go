@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/tools"
@@ -100,6 +101,17 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 			client:  newAnthropicClient(clientOptions),
 		}, nil
 	case models.ProviderOpenAI:
+		return &baseProvider[OpenAIClient]{
+			options: clientOptions,
+			client:  newOpenAIClient(clientOptions),
+		}, nil
+	case models.ProviderOllama:
+		// Ollama's current /v1/chat/completions and /v1/models endpoints are compatible
+		// with the OpenAI client flow already used throughout Pando.
+		clientOptions.openaiOptions = ensureOpenAIBaseURL(
+			clientOptions.openaiOptions,
+			models.ResolveOllamaBaseURL(""),
+		)
 		return &baseProvider[OpenAIClient]{
 			options: clientOptions,
 			client:  newOpenAIClient(clientOptions),
@@ -244,4 +256,20 @@ func WithCopilotOptions(copilotOptions ...CopilotOption) ProviderClientOption {
 	return func(options *providerClientOptions) {
 		options.copilotOptions = copilotOptions
 	}
+}
+
+func ensureOpenAIBaseURL(options []OpenAIOption, baseURL string) []OpenAIOption {
+	if strings.TrimSpace(baseURL) == "" {
+		return options
+	}
+
+	configured := openaiOptions{}
+	for _, option := range options {
+		option(&configured)
+	}
+	if strings.TrimSpace(configured.baseURL) != "" {
+		return options
+	}
+
+	return append(options, WithOpenAIBaseURL(baseURL))
 }

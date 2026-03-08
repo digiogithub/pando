@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -20,16 +21,42 @@ import (
 	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 )
 
+// StatusAction represents the type of action triggered by clicking a status bar element.
+type StatusAction int
+
+const (
+	ActionShowHelp StatusAction = iota
+	ActionShowModels
+	ActionShowSession
+	ActionShowDiagnostics
+	ActionOpenFile
+)
+
+// StatusActionMsg is emitted when a clickable status bar element is clicked.
+type StatusActionMsg struct {
+	Action StatusAction
+	Data   string // e.g., file path for ActionOpenFile
+}
+
+// BreadcrumbsUpdatedMsg is sent when the breadcrumb trail changes.
+type BreadcrumbsUpdatedMsg struct {
+	Files []string
+}
+
+const maxBreadcrumbs = 5
+const maxBreadcrumbNameLen = 20
+
 type StatusCmp interface {
 	tea.Model
 }
 
 type statusCmp struct {
-	info       util.InfoMsg
-	width      int
-	messageTTL time.Duration
-	lspClients map[string]*lsp.Client
-	session    session.Session
+	info        util.InfoMsg
+	width       int
+	messageTTL  time.Duration
+	lspClients  map[string]*lsp.Client
+	session     session.Session
+	breadcrumbs []string // recently edited file paths
 }
 
 // clearMessageCmd is a command that clears status messages after a timeout
@@ -67,6 +94,34 @@ func (m statusCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.clearMessageCmd(ttl)
 	case util.ClearStatusMsg:
 		m.info = util.InfoMsg{}
+	case BreadcrumbsUpdatedMsg:
+		m.breadcrumbs = msg.Files
+		// Enforce max breadcrumbs
+		if len(m.breadcrumbs) > maxBreadcrumbs {
+			m.breadcrumbs = m.breadcrumbs[len(m.breadcrumbs)-maxBreadcrumbs:]
+		}
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			return m.handleMouseClick(msg)
+		}
+	}
+	return m, nil
+}
+
+// handleMouseClick checks zone bounds for clickable status bar elements and
+// returns an appropriate StatusActionMsg command.
+func (m statusCmp) handleMouseClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if tuizone.InBounds(tuizone.StatusHelp, msg) {
+		return m, util.CmdHandler(StatusActionMsg{Action: ActionShowHelp})
+	}
+	if tuizone.InBounds(tuizone.StatusDiagnostics, msg) {
+		return m, util.CmdHandler(StatusActionMsg{Action: ActionShowDiagnostics})
+	}
+	// Check breadcrumb clicks
+	for i, filePath := range m.breadcrumbs {
+		if tuizone.InBounds(tuizone.StatusBreadcrumbID(i), msg) {
+			return m, util.CmdHandler(StatusActionMsg{Action: ActionOpenFile, Data: filePath})
+		}
 	}
 	return m, nil
 }
@@ -76,7 +131,7 @@ var helpWidget = ""
 // getHelpWidget returns the help widget with current theme colors
 func getHelpWidget() string {
 	t := theme.CurrentTheme()
-	helpText := "ctrl+? help"
+	helpText := "ctrl+h help"
 
 	return styles.Padded().
 		Background(t.TextMuted()).
@@ -117,13 +172,62 @@ func formatTokensAndCost(tokens, contextWindow int64, cost float64) string {
 	return fmt.Sprintf("Context: %s, Cost: %s", formattedTokens, formattedCost)
 }
 
+// renderBreadcrumbs renders the breadcrumb trail of recently edited files.
+func (m statusCmp) renderBreadcrumbs() string {
+	if len(m.breadcrumbs) == 0 {
+		return ""
+	}
+
+	t := theme.CurrentTheme()
+	var parts []string
+	separator := lipgloss.NewStyle().
+		Foreground(t.TextMuted()).
+		Render(" > ")
+
+	for i, filePath := range m.breadcrumbs {
+		name := filepath.Base(filePath)
+		// Truncate long names
+		if len(name) > maxBreadcrumbNameLen {
+			name = name[:maxBreadcrumbNameLen-3] + "..."
+		}
+
+		var styled string
+		if i == len(m.breadcrumbs)-1 {
+			// Active (last) file highlighted with Primary color
+			styled = lipgloss.NewStyle().
+				Foreground(t.Primary()).
+				Bold(true).
+				Render(name)
+		} else {
+			styled = lipgloss.NewStyle().
+				Foreground(t.Text()).
+				Render(name)
+		}
+
+		parts = append(parts, tuizone.MarkStatusBreadcrumb(i, styled))
+	}
+
+	breadcrumbContent := strings.Join(parts, separator)
+	return lipgloss.NewStyle().
+		Background(t.BackgroundSecondary()).
+		PaddingLeft(1).
+		PaddingRight(1).
+		Render(breadcrumbContent)
+}
+
 func (m statusCmp) View() string {
 	t := theme.CurrentTheme()
 	modelID := config.Get().Agents[config.AgentCoder].Model
 	model := models.SupportedModels[modelID]
 
-	// Initialize the help widget
-	status := getHelpWidget()
+	// Initialize the help widget, wrapped in a clickable zone
+	status := tuizone.MarkStatusHelp(getHelpWidget())
+
+	// Render breadcrumbs between help widget and main status area
+	breadcrumbs := m.renderBreadcrumbs()
+	if breadcrumbs != "" {
+		status += breadcrumbs
+	}
 
 	tokenInfoWidth := 0
 	if m.session.ID != "" {
@@ -140,11 +244,15 @@ func (m statusCmp) View() string {
 		status += tuizone.MarkStatusSession(tokensStyle.Render(tokens))
 	}
 
-	diagnostics := styles.Padded().
-		Background(t.BackgroundDarker()).
-		Render(m.projectDiagnostics())
+	diagnosticsContent := m.projectDiagnostics()
+	diagnostics := tuizone.MarkStatusDiagnostics(
+		styles.Padded().
+			Background(t.BackgroundDarker()).
+			Render(diagnosticsContent),
+	)
 
-	availableWidht := max(0, m.width-lipgloss.Width(helpWidget)-lipgloss.Width(m.model())-lipgloss.Width(diagnostics)-tokenInfoWidth)
+	breadcrumbWidth := lipgloss.Width(breadcrumbs)
+	availableWidht := max(0, m.width-lipgloss.Width(helpWidget)-lipgloss.Width(m.model())-lipgloss.Width(diagnostics)-tokenInfoWidth-breadcrumbWidth)
 
 	if m.info.Msg != "" {
 		infoStyle := styles.Padded().
@@ -288,7 +396,8 @@ func NewStatusCmp(lspClients map[string]*lsp.Client) StatusCmp {
 	helpWidget = getHelpWidget()
 
 	return &statusCmp{
-		messageTTL: 10 * time.Second,
-		lspClients: lspClients,
+		messageTTL:  10 * time.Second,
+		lspClients:  lspClients,
+		breadcrumbs: []string{},
 	}
 }

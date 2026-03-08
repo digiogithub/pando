@@ -786,6 +786,14 @@ func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillM
 				provider.WithReasoningEffort(agentConfig.ReasoningEffort),
 			),
 		)
+	}
+	if model.Provider == models.ProviderOllama {
+		opts = append(
+			opts,
+			provider.WithOpenAIOptions(
+				provider.WithOpenAIBaseURL(models.ResolveOllamaBaseURL(providerCfg.BaseURL)),
+			),
+		)
 	} else if model.Provider == models.ProviderAnthropic && model.CanReason && agentName == config.AgentCoder {
 		opts = append(
 			opts,

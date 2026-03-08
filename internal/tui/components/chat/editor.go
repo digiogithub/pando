@@ -35,6 +35,7 @@ type editorCmp struct {
 
 type EditorKeyMaps struct {
 	Send       key.Binding
+	NewLine    key.Binding
 	OpenEditor key.Binding
 }
 
@@ -53,6 +54,10 @@ var editorMaps = EditorKeyMaps{
 	Send: key.NewBinding(
 		key.WithKeys("enter", "ctrl+s"),
 		key.WithHelp("enter", "send message"),
+	),
+	NewLine: key.NewBinding(
+		key.WithKeys("shift+enter", "ctrl+j"),
+		key.WithHelp("shift+enter", "new line"),
 	),
 	OpenEditor: key.NewBinding(
 		key.WithKeys("ctrl+e"),
@@ -198,17 +203,12 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.deleteMode = false
 			return m, nil
 		}
-		// Hanlde Enter key
+		if m.textarea.Focused() && key.Matches(msg, editorMaps.NewLine) {
+			m.textarea.InsertString("\n")
+			return m, nil
+		}
 		if m.textarea.Focused() && key.Matches(msg, editorMaps.Send) {
-			value := m.textarea.Value()
-			if len(value) > 0 && value[len(value)-1] == '\\' {
-				// If the last character is a backslash, remove it and add a newline
-				m.textarea.SetValue(value[:len(value)-1] + "\n")
-				return m, nil
-			} else {
-				// Otherwise, send the message
-				return m, m.send()
-			}
+			return m, m.send()
 		}
 
 	}

@@ -3,6 +3,7 @@ package config
 import (
 	"testing"
 
+	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/spf13/viper"
 )
 
@@ -39,5 +40,28 @@ func TestMesnadaDefaults(t *testing.T) {
 	}
 	if !loaded.Mesnada.TUI.WebUI {
 		t.Fatal("mesnada.tui.webui = false, want true")
+	}
+}
+
+func TestValidateAllowsOllamaWithoutAPIKey(t *testing.T) {
+	cfg = &Config{
+		Providers: map[models.ModelProvider]Provider{
+			models.ProviderOllama: {
+				BaseURL: "http://localhost:11434/v1",
+			},
+		},
+		Agents: make(map[AgentName]Agent),
+		LSP:    make(map[string]LSPConfig),
+	}
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	if err := Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if cfg.Providers[models.ProviderOllama].Disabled {
+		t.Fatal("ollama provider was disabled unexpectedly")
 	}
 }

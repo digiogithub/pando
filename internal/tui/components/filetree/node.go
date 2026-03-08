@@ -3,6 +3,8 @@ package filetree
 import (
 	"path/filepath"
 	"strings"
+
+	tuistyles "github.com/digiogithub/pando/internal/tui/styles"
 )
 
 type GitFileStatus int
@@ -101,31 +103,12 @@ func iconForNode(name string, isDir, expanded bool) string {
 	if isDir {
 		return directoryIcon(expanded)
 	}
-	return fileIcon(name)
+	return tuistyles.FileIconFor(name)
 }
 
 func directoryIcon(expanded bool) string {
 	if expanded {
-		return "▾"
+		return tuistyles.FolderOpenIcon
 	}
-	return "▸"
-}
-
-func fileIcon(name string) string {
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".go":
-		return ""
-	case ".md", ".mdx":
-		return "󰍔"
-	case ".json", ".yaml", ".yml", ".toml":
-		return "󰘦"
-	case ".js", ".ts", ".tsx", ".jsx":
-		return "󰌞"
-	case ".sql":
-		return "󰆼"
-	case ".sh", ".bash", ".zsh":
-		return "󱆃"
-	default:
-		return "•"
-	}
+	return tuistyles.FolderIcon
 }

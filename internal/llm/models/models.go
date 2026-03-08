@@ -18,8 +18,9 @@ type Model struct {
 	CostPer1MOutCached  float64       `json:"cost_per_1m_out_cached"`
 	ContextWindow       int64         `json:"context_window"`
 	DefaultMaxTokens    int64         `json:"default_max_tokens"`
-	CanReason           bool          `json:"can_reason"`
-	SupportsAttachments bool          `json:"supports_attachments"`
+	CanReason                bool `json:"can_reason"`
+	SupportsReasoningEffort  bool `json:"supports_reasoning_effort"`
+	SupportsAttachments      bool `json:"supports_attachments"`
 }
 
 // Model IDs
@@ -39,12 +40,13 @@ var ProviderPopularity = map[ModelProvider]int{
 	ProviderCopilot:    1,
 	ProviderAnthropic:  2,
 	ProviderOpenAI:     3,
-	ProviderGemini:     4,
-	ProviderGROQ:       5,
-	ProviderOpenRouter: 6,
-	ProviderBedrock:    7,
-	ProviderAzure:      8,
-	ProviderVertexAI:   9,
+	ProviderOllama:     4,
+	ProviderGemini:     5,
+	ProviderGROQ:       6,
+	ProviderOpenRouter: 7,
+	ProviderBedrock:    8,
+	ProviderAzure:      9,
+	ProviderVertexAI:   10,
 }
 
 var SupportedModels = map[ModelID]Model{

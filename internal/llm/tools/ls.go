@@ -94,13 +94,25 @@ func (l *lsTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 		return NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
 	}
 
+	workingDir := ""
+	if cfg := config.Get(); cfg != nil {
+		workingDir = cfg.WorkingDir
+	}
+	if workingDir == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return ToolResponse{}, fmt.Errorf("error resolving working directory: %w", err)
+		}
+		workingDir = wd
+	}
+
 	searchPath := params.Path
 	if searchPath == "" {
-		searchPath = config.WorkingDirectory()
+		searchPath = workingDir
 	}
 
 	if !filepath.IsAbs(searchPath) {
-		searchPath = filepath.Join(config.WorkingDirectory(), searchPath)
+		searchPath = filepath.Join(workingDir, searchPath)
 	}
 
 	if _, err := os.Stat(searchPath); os.IsNotExist(err) {

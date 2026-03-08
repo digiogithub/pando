@@ -152,8 +152,8 @@ func (t *themeDialogCmp) View() string {
 
 		if i == t.selectedIdx {
 			itemStyle = itemStyle.
-				Background(currentTheme.Primary()).
-				Foreground(currentTheme.Background()).
+				Background(currentTheme.SelectionBackground()).
+				Foreground(currentTheme.SelectionForeground()).
 				Bold(true)
 		}
 
@@ -195,4 +195,3 @@ func NewThemeDialogCmp() ThemeDialog {
 		currentTheme: "",
 	}
 }
-

@@ -9,7 +9,7 @@ For the remembrance tools, always use "pando" as the user_id or project_id to st
 ### Development Workflow
 
 - **Language**: Use always english for code, comments, and documentation.
-- **Context Awareness**: Always be aware of the current context of the project. Use always the tools of kb and code of remembrances for retrieving relevant information about the project, its structure, and previous decisions.
+- **Context Awareness**: Always be aware of the current context of the project. Use always the tools of kb and code of remembrances for retrieving relevant information about the project, its structure, and previous decisions. Activate the project monitoring with the tools of code of remembrances to keep track of changes and updates.
 - **Planning**: If you are unsure about if you are following a plan, check with `last_to_remember` to see the current plan and confirm with the user if needed, before proceeding. If you don't have a plan, create one, split into phases, save them each fase using `save_fact` and save a summary of the plan using `to_remember`.
 - **Implementation**: Write code in small, testable increments. After each increment, run tests to ensure functionality.
 - **Code Style**: Follow Go best practices and project-specific coding standards

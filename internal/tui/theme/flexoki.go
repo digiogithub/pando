@@ -91,7 +91,7 @@ func NewFlexokiTheme() *FlexokiTheme {
 		Light: flexokiBase600,
 	}
 	theme.TextMutedColor = lipgloss.AdaptiveColor{
-		Dark:  flexokiBase700,
+		Dark:  flexokiBase500, // Brighter than Base700 for better readability on dark bg
 		Light: flexokiBase500,
 	}
 	theme.TextEmphasizedColor = lipgloss.AdaptiveColor{
@@ -111,6 +111,16 @@ func NewFlexokiTheme() *FlexokiTheme {
 	theme.BackgroundDarkerColor = lipgloss.AdaptiveColor{
 		Dark:  flexokiBase900,
 		Light: flexokiBase100,
+	}
+
+	// Selection colors
+	theme.SelectionBackgroundColor = lipgloss.AdaptiveColor{
+		Dark:  flexokiBase850, // #343331 - good contrast with light text
+		Light: flexokiBase200, // #CECDC3 - good contrast with dark text
+	}
+	theme.SelectionForegroundColor = lipgloss.AdaptiveColor{
+		Dark:  flexokiPaper,  // #FFFCF0 - bright text on dark selection
+		Light: flexokiBlack,  // #100F0F - dark text on light selection
 	}
 
 	// Border colors

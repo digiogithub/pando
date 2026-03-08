@@ -26,6 +26,8 @@ const (
 	ChatOnly ChatLayoutMode = iota
 	SidebarChat
 	SidebarEditor
+	EditorChatSplit
+	EditorChatTab
 )
 
 type panelFocus int
@@ -34,6 +36,7 @@ const (
 	focusChat panelFocus = iota
 	focusFileTree
 	focusEditor
+	focusChatRight
 )
 
 type ChatPageModel struct {
@@ -47,10 +50,13 @@ type ChatPageModel struct {
 	chatContainer        layout.Container
 	fileTreePanel        layout.Container
 	editorPanel          layout.Container
+	editorChatPanel      layout.Container
 	messages             layout.Container
 	editor               layout.Container
 	completionDialog     dialog.CompletionDialog
 	showCompletionDialog bool
+
+	chatTabWorkspace *editorChatTabWorkspace
 
 	session    session.Session
 	layoutMode ChatLayoutMode
@@ -69,6 +75,7 @@ type ChatKeyMap struct {
 	Cancel               key.Binding
 	ToggleSidebar        key.Binding
 	NextPanel            key.Binding
+	ToggleEditorChat     key.Binding
 }
 
 type editorWorkspace struct {
@@ -99,6 +106,10 @@ var keyMap = ChatKeyMap{
 	NextPanel: key.NewBinding(
 		key.WithKeys("tab", "ctrl+["),
 		key.WithHelp("tab", "switch panel"),
+	),
+	ToggleEditorChat: key.NewBinding(
+		key.WithKeys("ctrl+e"),
+		key.WithHelp("ctrl+e", "toggle editor+chat layout"),
 	),
 }
 
@@ -182,6 +193,119 @@ func (w *editorWorkspace) HasTabs() bool {
 
 func (w *editorWorkspace) ActivePath() string {
 	return w.tabBar.ActivePath()
+}
+
+type editorChatTabWorkspace struct {
+	width  int
+	height int
+
+	viewer    editor.FileViewerComponent
+	tabBar    *editor.TabBar
+	chatView  layout.SplitPaneLayout
+	showChat  bool
+	chatTabID string
+}
+
+func newEditorChatTabWorkspace(viewer editor.FileViewerComponent, tabBar *editor.TabBar, chatView layout.SplitPaneLayout) *editorChatTabWorkspace {
+	return &editorChatTabWorkspace{
+		viewer:    viewer,
+		tabBar:    tabBar,
+		chatView:  chatView,
+		showChat:  false,
+		chatTabID: "__chat__",
+	}
+}
+
+func (w *editorChatTabWorkspace) Init() tea.Cmd {
+	return tea.Batch(w.viewer.Init(), w.chatView.Init())
+}
+
+func (w *editorChatTabWorkspace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	prevActive := w.tabBar.ActivePath()
+	prevCount := w.tabBar.Count()
+	w.tabBar.Update(msg)
+
+	activePath := w.tabBar.ActivePath()
+	if activePath == w.chatTabID {
+		w.showChat = true
+		chatModel, chatCmd := w.chatView.Update(msg)
+		w.chatView = chatModel.(layout.SplitPaneLayout)
+		if chatCmd != nil {
+			cmds = append(cmds, chatCmd)
+		}
+		return w, tea.Batch(cmds...)
+	}
+	w.showChat = false
+
+	viewerModel, viewerCmd := w.viewer.Update(msg)
+	w.viewer = viewerModel.(editor.FileViewerComponent)
+	if viewerCmd != nil {
+		cmds = append(cmds, viewerCmd)
+	}
+
+	switch {
+	case prevCount > 0 && w.tabBar.Count() == 0:
+		cmds = append(cmds, util.CmdHandler(editor.CloseViewerMsg{Path: prevActive}))
+	case activePath != "" && activePath != w.chatTabID && activePath != prevActive:
+		cmds = append(cmds, w.viewer.OpenFile(activePath))
+	}
+
+	return w, tea.Batch(cmds...)
+}
+
+func (w *editorChatTabWorkspace) View() string {
+	if w.width <= 0 || w.height <= 0 {
+		return ""
+	}
+
+	tabView := w.tabBar.View()
+	viewHeight := max(w.height-lipgloss.Height(tabView), 0)
+
+	if w.showChat {
+		w.chatView.SetSize(w.width, viewHeight)
+		return lipgloss.JoinVertical(lipgloss.Left, tabView, w.chatView.View())
+	}
+
+	if sizeable, ok := w.viewer.(layout.Sizeable); ok {
+		_ = sizeable.SetSize(w.width, viewHeight)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, tabView, w.viewer.View())
+}
+
+func (w *editorChatTabWorkspace) SetSize(width, height int) tea.Cmd {
+	w.width = max(width, 0)
+	w.height = max(height, 0)
+	w.tabBar.SetSize(w.width)
+	if w.showChat {
+		return w.chatView.SetSize(w.width, max(w.height-1, 0))
+	}
+	return w.viewer.SetSize(w.width, max(w.height-1, 0))
+}
+
+func (w *editorChatTabWorkspace) GetSize() (int, int) {
+	return w.width, w.height
+}
+
+func (w *editorChatTabWorkspace) BindingKeys() []key.Binding {
+	bindings := append([]key.Binding{}, w.tabBar.BindingKeys()...)
+	bindings = append(bindings, w.viewer.BindingKeys()...)
+	return bindings
+}
+
+func (w *editorChatTabWorkspace) EnsureChatTab() {
+	for i := 0; i < w.tabBar.Count(); i++ {
+		if tab := w.tabBar.ActiveTab(); tab != nil && tab.Path == w.chatTabID {
+			return
+		}
+	}
+	w.tabBar.OpenTab(w.chatTabID)
+}
+
+func (w *editorChatTabWorkspace) SelectChatTab() {
+	w.tabBar.OpenTab(w.chatTabID)
+	w.showChat = true
 }
 
 func (p *ChatPageModel) Init() tea.Cmd {
@@ -269,6 +393,22 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (p *ChatPageModel) handleKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 	switch {
+	case key.Matches(msg, keyMap.ToggleEditorChat):
+		p.showCompletionDialog = false
+		switch p.layoutMode {
+		case ChatOnly:
+			return true, p.applyLayoutMode(SidebarChat)
+		case SidebarChat:
+			return true, p.applyLayoutMode(SidebarEditor)
+		case SidebarEditor:
+			return true, p.applyLayoutMode(EditorChatSplit)
+		case EditorChatSplit:
+			return true, p.applyLayoutMode(EditorChatTab)
+		case EditorChatTab:
+			p.focus = focusChat
+			return true, p.applyLayoutMode(ChatOnly)
+		}
+		return true, nil
 	case key.Matches(msg, keyMap.ToggleSidebar):
 		p.showCompletionDialog = false
 		switch p.layoutMode {
@@ -311,16 +451,25 @@ func (p *ChatPageModel) routeMessage(msg tea.Msg) []tea.Cmd {
 		case focusFileTree:
 			return []tea.Cmd{p.updateFileTree(msg)}
 		case focusEditor:
+			if p.layoutMode == EditorChatTab && p.chatTabWorkspace != nil {
+				return []tea.Cmd{p.updateChatTabWorkspace(msg)}
+			}
 			return []tea.Cmd{p.updateEditorWorkspace(msg)}
+		case focusChatRight:
+			return []tea.Cmd{p.updateChatLayout(msg)}
 		default:
 			return []tea.Cmd{p.updateChatLayout(msg)}
 		}
 	default:
-		return []tea.Cmd{
+		cmds := []tea.Cmd{
 			p.updateFileTree(msg),
 			p.updateEditorWorkspace(msg),
 			p.updateChatLayout(msg),
 		}
+		if p.layoutMode == EditorChatTab && p.chatTabWorkspace != nil {
+			cmds = append(cmds, p.updateChatTabWorkspace(msg))
+		}
+		return cmds
 	}
 }
 
@@ -340,6 +489,16 @@ func (p *ChatPageModel) updateEditorWorkspace(msg tea.Msg) tea.Cmd {
 func (p *ChatPageModel) updateChatLayout(msg tea.Msg) tea.Cmd {
 	model, cmd := p.chatLayout.Update(msg)
 	p.chatLayout = model.(layout.SplitPaneLayout)
+	return cmd
+}
+
+func (p *ChatPageModel) updateChatTabWorkspace(msg tea.Msg) tea.Cmd {
+	if p.chatTabWorkspace == nil {
+		return nil
+	}
+	model, cmd := p.chatTabWorkspace.Update(msg)
+	p.chatTabWorkspace = model.(*editorChatTabWorkspace)
+	p.viewer = p.chatTabWorkspace.viewer
 	return cmd
 }
 
@@ -401,8 +560,13 @@ func (p *ChatPageModel) BindingKeys() []key.Binding {
 	if p.layoutMode != ChatOnly {
 		bindings = append(bindings, p.fileTree.BindingKeys()...)
 	}
-	if p.layoutMode == SidebarEditor {
+	switch p.layoutMode {
+	case SidebarEditor, EditorChatSplit:
 		bindings = append(bindings, p.editorWorkspace.BindingKeys()...)
+	case EditorChatTab:
+		if p.chatTabWorkspace != nil {
+			bindings = append(bindings, p.chatTabWorkspace.BindingKeys()...)
+		}
 	}
 	return bindings
 }
@@ -447,6 +611,28 @@ func (p *ChatPageModel) rebuildLayout() {
 			layout.WithRightPanel(p.editorPanel),
 			layout.WithRatio(0.20),
 		)
+	case EditorChatSplit:
+		innerSplit := layout.NewSplitPane(
+			layout.WithLeftPanel(p.editorPanel),
+			layout.WithRightPanel(p.chatContainer),
+			layout.WithRatio(0.56),
+		)
+		p.editorChatPanel = layout.NewContainer(innerSplit)
+		p.layout = layout.NewSplitPane(
+			layout.WithLeftPanel(p.fileTreePanel),
+			layout.WithRightPanel(p.editorChatPanel),
+			layout.WithRatio(0.20),
+		)
+	case EditorChatTab:
+		chatTabWs := newEditorChatTabWorkspace(p.viewer, p.tabBar, p.chatLayout)
+		chatTabWs.EnsureChatTab()
+		p.chatTabWorkspace = chatTabWs
+		editorChatTabPanel := layout.NewContainer(chatTabWs)
+		p.layout = layout.NewSplitPane(
+			layout.WithLeftPanel(p.fileTreePanel),
+			layout.WithRightPanel(editorChatTabPanel),
+			layout.WithRatio(0.20),
+		)
 	default:
 		p.layout = layout.NewSplitPane(
 			layout.WithLeftPanel(p.chatContainer),
@@ -463,6 +649,16 @@ func (p *ChatPageModel) normalizeFocus() {
 			p.focus = focusChat
 		}
 	case SidebarEditor:
+		if p.focus != focusFileTree {
+			p.focus = focusEditor
+		}
+	case EditorChatSplit:
+		switch p.focus {
+		case focusFileTree, focusEditor, focusChatRight:
+		default:
+			p.focus = focusEditor
+		}
+	case EditorChatTab:
 		if p.focus != focusFileTree {
 			p.focus = focusEditor
 		}
@@ -483,6 +679,21 @@ func (p *ChatPageModel) advanceFocus() {
 			return
 		}
 		p.focus = focusFileTree
+	case EditorChatSplit:
+		switch p.activeFocus() {
+		case focusFileTree:
+			p.focus = focusEditor
+		case focusEditor:
+			p.focus = focusChatRight
+		case focusChatRight:
+			p.focus = focusFileTree
+		}
+	case EditorChatTab:
+		if p.activeFocus() == focusFileTree {
+			p.focus = focusEditor
+			return
+		}
+		p.focus = focusFileTree
 	}
 }
 
@@ -498,21 +709,38 @@ func (p *ChatPageModel) activeFocus() panelFocus {
 			return focusFileTree
 		}
 		return focusEditor
+	case EditorChatSplit:
+		switch p.focus {
+		case focusFileTree:
+			return focusFileTree
+		case focusChatRight:
+			return focusChatRight
+		default:
+			return focusEditor
+		}
+	case EditorChatTab:
+		if p.focus == focusFileTree {
+			return focusFileTree
+		}
+		return focusEditor
 	default:
 		return focusChat
 	}
 }
 
 func (p *ChatPageModel) chatHasFocus() bool {
-	return p.activeFocus() == focusChat
+	f := p.activeFocus()
+	return f == focusChat || f == focusChatRight
 }
 
 func (p *ChatPageModel) editorOverlayX() int {
-	if p.layoutMode == ChatOnly {
+	switch p.layoutMode {
+	case ChatOnly:
 		return 0
+	default:
+		sidebarWidth, _ := p.fileTreePanel.GetSize()
+		return sidebarWidth
 	}
-	sidebarWidth, _ := p.fileTreePanel.GetSize()
-	return sidebarWidth
 }
 
 func NewChatPage(app *app.App) *ChatPageModel {
