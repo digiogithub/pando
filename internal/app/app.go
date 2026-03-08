@@ -13,11 +13,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/agent"
+	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
 	mesnadaConfig "github.com/digiogithub/pando/internal/mesnada/config"
@@ -78,6 +80,9 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 
 	// Initialize LSP clients in the background
 	go app.initLSPClients(ctx)
+
+	// Refresh dynamic models from configured providers in the background
+	go app.refreshDynamicModels(ctx)
 
 	// Initialize Mesnada orchestrator if enabled
 	cfg := config.Get()
@@ -335,6 +340,39 @@ func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat
 	logging.Info("Non-interactive run completed", "session_id", sess.ID)
 
 	return nil
+}
+
+// refreshDynamicModels fetches model lists from configured providers asynchronously.
+func (app *App) refreshDynamicModels(ctx context.Context) {
+	cfg := config.Get()
+	if cfg == nil {
+		return
+	}
+
+	for providerID, providerCfg := range cfg.Providers {
+		if providerCfg.Disabled {
+			continue
+		}
+
+		apiKey := providerCfg.APIKey
+		var bearerToken string
+		if providerID == models.ProviderCopilot {
+			token, err := auth.LoadGitHubOAuthToken()
+			if err != nil || token == "" {
+				continue
+			}
+			bearerToken = token
+			apiKey = ""
+		} else if providerID != models.ProviderOllama && apiKey == "" {
+			continue
+		}
+
+		if err := models.RefreshProviderModels(ctx, providerID, apiKey, bearerToken, providerCfg.BaseURL); err != nil {
+			logging.Debug("Failed to refresh models from provider", "provider", providerID, "error", err)
+		} else {
+			logging.Debug("Refreshed models from provider", "provider", providerID)
+		}
+	}
 }
 
 // Shutdown performs a clean shutdown of the application

@@ -6,24 +6,26 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"os"
+	"strings"
 	"time"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/shared"
+	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	toolsPkg "github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/version"
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/shared"
 )
 
 type copilotOptions struct {
 	reasoningEffort string
 	extraHeaders    map[string]string
 	bearerToken     string
+	baseURL         string
 }
 
 type CopilotOption func(*copilotOptions)
@@ -32,16 +34,10 @@ type copilotClient struct {
 	providerOptions providerClientOptions
 	options         copilotOptions
 	client          openai.Client
-	httpClient      *http.Client
+	baseURL         string
 }
 
 type CopilotClient ProviderClient
-
-// CopilotTokenResponse represents the response from GitHub's token exchange endpoint
-type CopilotTokenResponse struct {
-	Token     string `json:"token"`
-	ExpiresAt int64  `json:"expires_at"`
-}
 
 func (c *copilotClient) isAnthropicModel() bool {
 	for _, modelId := range models.CopilotAnthropicModels {
@@ -52,35 +48,103 @@ func (c *copilotClient) isAnthropicModel() bool {
 	return false
 }
 
-// loadGitHubToken loads the GitHub OAuth token from the standard GitHub CLI/Copilot locations
+func loadCopilotCredentials(savedToken, configuredToken, configuredBaseURL string) (string, string, error) {
+	if token := strings.TrimSpace(savedToken); token != "" {
+		baseURL := strings.TrimSpace(configuredBaseURL)
+		if baseURL == "" {
+			baseURL = auth.CopilotAPIBaseURL("")
+		}
+		return token, baseURL, nil
+	}
 
-// exchangeGitHubToken exchanges a GitHub token for a Copilot bearer token
-func (c *copilotClient) exchangeGitHubToken(githubToken string) (string, error) {
-	req, err := http.NewRequest("GET", "https://api.github.com/copilot_internal/v2/token", nil)
+	if token := strings.TrimSpace(configuredToken); token != "" {
+		baseURL := strings.TrimSpace(configuredBaseURL)
+		if baseURL == "" {
+			baseURL = auth.CopilotAPIBaseURL("")
+		}
+		return token, baseURL, nil
+	}
+
+	token, err := auth.LoadGitHubOAuthToken()
 	if err != nil {
-		return "", fmt.Errorf("failed to create token exchange request: %w", err)
+		return "", "", err
 	}
-
-	req.Header.Set("Authorization", "Token "+githubToken)
-	req.Header.Set("User-Agent", "OpenCode/1.0")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to exchange GitHub token: %w", err)
+	baseURL := strings.TrimSpace(configuredBaseURL)
+	if baseURL != "" {
+		return token, baseURL, nil
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("token exchange failed with status %d: %s", resp.StatusCode, string(body))
+	if session, err := auth.LoadCopilotSession(); err == nil && session != nil {
+		return token, auth.CopilotAPIBaseURL(session.EnterpriseURL), nil
 	}
+	return token, auth.CopilotAPIBaseURL(""), nil
+}
 
-	var tokenResp CopilotTokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return "", fmt.Errorf("failed to decode token response: %w", err)
+func newCopilotOpenAIClient(accessToken, baseURL string, headers map[string]string) openai.Client {
+	options := []option.RequestOption{
+		option.WithBaseURL(baseURL),
+		option.WithAPIKey(accessToken),
 	}
+	for key, value := range headers {
+		options = append(options, option.WithHeader(key, value))
+	}
+	return openai.NewClient(options...)
+}
 
-	return tokenResp.Token, nil
+func (c *copilotClient) requestHeaders(messages []message.Message) map[string]string {
+	headers := map[string]string{
+		"Editor-Version":         "Pando/" + version.Version,
+		"Editor-Plugin-Version":  "Pando/" + version.Version,
+		"Copilot-Integration-Id": "vscode-chat",
+		"User-Agent":             "Pando/" + version.Version,
+		"Openai-Intent":          "conversation-edits",
+		"x-initiator":            c.initiator(messages),
+	}
+	if c.hasVisionInput(messages) {
+		headers["Copilot-Vision-Request"] = "true"
+	}
+	for key, value := range c.options.extraHeaders {
+		headers[key] = value
+	}
+	return headers
+}
+
+func (c *copilotClient) requestClient(messages []message.Message) openai.Client {
+	return newCopilotOpenAIClient(c.options.bearerToken, c.baseURL, c.requestHeaders(messages))
+}
+
+func (c *copilotClient) initiator(messages []message.Message) string {
+	for idx := len(messages) - 1; idx >= 0; idx-- {
+		switch messages[idx].Role {
+		case message.User:
+			return "user"
+		case message.Assistant, message.Tool:
+			return "agent"
+		}
+	}
+	return "user"
+}
+
+func (c *copilotClient) hasVisionInput(messages []message.Message) bool {
+	for _, msg := range messages {
+		if msg.Role == message.User && len(msg.BinaryContent()) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *copilotClient) reloadCredentials() bool {
+	token, baseURL, err := loadCopilotCredentials("", c.providerOptions.apiKey, c.options.baseURL)
+	if err != nil || strings.TrimSpace(token) == "" {
+		return false
+	}
+	if token == c.options.bearerToken && baseURL == c.baseURL {
+		return false
+	}
+	c.options.bearerToken = token
+	c.baseURL = baseURL
+	c.client = newCopilotOpenAIClient(token, baseURL, c.requestHeaders(nil))
+	return true
 }
 
 func newCopilotClient(opts providerClientOptions) CopilotClient {
@@ -92,97 +156,28 @@ func newCopilotClient(opts providerClientOptions) CopilotClient {
 		o(&copilotOpts)
 	}
 
-	// Create HTTP client for token exchange
-	httpClient := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	var bearerToken string
-
-	// If bearer token is already provided, use it
-	if copilotOpts.bearerToken != "" {
-		bearerToken = copilotOpts.bearerToken
-	} else {
-		// Try to get GitHub token from multiple sources
-		var githubToken string
-
-		// 1. Environment variable
-		githubToken = os.Getenv("GITHUB_TOKEN")
-
-		// 2. API key from options
-		if githubToken == "" {
-			githubToken = opts.apiKey
-		}
-
-		// 3. Standard GitHub CLI/Copilot locations
-		if githubToken == "" {
-			var err error
-			githubToken, err = config.LoadGitHubToken()
-			if err != nil {
-				logging.Debug("Failed to load GitHub token from standard locations", "error", err)
-			}
-		}
-
-		if githubToken == "" {
-			logging.Error("GitHub token is required for Copilot provider. Set GITHUB_TOKEN environment variable, configure it in opencode.json, or ensure GitHub CLI/Copilot is properly authenticated.")
-			return &copilotClient{
-				providerOptions: opts,
-				options:         copilotOpts,
-				httpClient:      httpClient,
-			}
-		}
-
-		// Create a temporary client for token exchange
-		tempClient := &copilotClient{
-			providerOptions: opts,
-			options:         copilotOpts,
-			httpClient:      httpClient,
-		}
-
-		// Exchange GitHub token for bearer token
-		var err error
-		bearerToken, err = tempClient.exchangeGitHubToken(githubToken)
-		if err != nil {
-			logging.Error("Failed to exchange GitHub token for Copilot bearer token", "error", err)
-			return &copilotClient{
-				providerOptions: opts,
-				options:         copilotOpts,
-				httpClient:      httpClient,
-			}
-		}
+	bearerToken, baseURL, err := loadCopilotCredentials(copilotOpts.bearerToken, opts.apiKey, copilotOpts.baseURL)
+	if err != nil {
+		logging.Error("GitHub Copilot login is required. Run `pando auth copilot login` or provide a compatible GitHub token.", "error", err)
+		return &copilotClient{providerOptions: opts, options: copilotOpts, baseURL: auth.CopilotAPIBaseURL("")}
 	}
 
 	copilotOpts.bearerToken = bearerToken
-
-	// GitHub Copilot API base URL
-	baseURL := "https://api.githubcopilot.com"
-
-	openaiClientOptions := []option.RequestOption{
-		option.WithBaseURL(baseURL),
-		option.WithAPIKey(bearerToken), // Use bearer token as API key
-	}
-
-	// Add GitHub Copilot specific headers
-	openaiClientOptions = append(openaiClientOptions,
-		option.WithHeader("Editor-Version", "OpenCode/1.0"),
-		option.WithHeader("Editor-Plugin-Version", "OpenCode/1.0"),
-		option.WithHeader("Copilot-Integration-Id", "vscode-chat"),
-	)
-
-	// Add any extra headers
-	if copilotOpts.extraHeaders != nil {
-		for key, value := range copilotOpts.extraHeaders {
-			openaiClientOptions = append(openaiClientOptions, option.WithHeader(key, value))
-		}
-	}
-
-	client := openai.NewClient(openaiClientOptions...)
+	copilotOpts.baseURL = baseURL
+	client := newCopilotOpenAIClient(bearerToken, baseURL, map[string]string{
+		"Editor-Version":         "Pando/" + version.Version,
+		"Editor-Plugin-Version":  "Pando/" + version.Version,
+		"Copilot-Integration-Id": "vscode-chat",
+		"User-Agent":             "Pando/" + version.Version,
+		"Openai-Intent":          "conversation-edits",
+		"x-initiator":            "user",
+	})
 	// logging.Debug("Copilot client created", "opts", opts, "copilotOpts", copilotOpts, "model", opts.model)
 	return &copilotClient{
 		providerOptions: opts,
 		options:         copilotOpts,
 		client:          client,
-		httpClient:      httpClient,
+		baseURL:         baseURL,
 	}
 }
 
@@ -287,17 +282,19 @@ func (c *copilotClient) preparedParams(messages []openai.ChatCompletionMessagePa
 		Tools:    tools,
 	}
 
-	if c.providerOptions.model.CanReason == true {
+	if c.providerOptions.model.CanReason {
 		params.MaxCompletionTokens = openai.Int(c.providerOptions.maxTokens)
-		switch c.options.reasoningEffort {
-		case "low":
-			params.ReasoningEffort = shared.ReasoningEffortLow
-		case "medium":
-			params.ReasoningEffort = shared.ReasoningEffortMedium
-		case "high":
-			params.ReasoningEffort = shared.ReasoningEffortHigh
-		default:
-			params.ReasoningEffort = shared.ReasoningEffortMedium
+		if c.providerOptions.model.SupportsReasoningEffort {
+			switch c.options.reasoningEffort {
+			case "low":
+				params.ReasoningEffort = shared.ReasoningEffortLow
+			case "medium":
+				params.ReasoningEffort = shared.ReasoningEffortMedium
+			case "high":
+				params.ReasoningEffort = shared.ReasoningEffortHigh
+			default:
+				params.ReasoningEffort = shared.ReasoningEffortMedium
+			}
 		}
 	} else {
 		params.MaxTokens = openai.Int(c.providerOptions.maxTokens)
@@ -329,7 +326,8 @@ func (c *copilotClient) send(ctx context.Context, messages []message.Message, to
 	attempts := 0
 	for {
 		attempts++
-		copilotResponse, err := c.client.Chat.Completions.New(
+		client := c.requestClient(messages)
+		copilotResponse, err := client.Chat.Completions.New(
 			ctx,
 			params,
 		)
@@ -402,7 +400,8 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 	go func() {
 		for {
 			attempts++
-			copilotStream := c.client.Chat.Completions.NewStreaming(
+			client := c.requestClient(messages)
+			copilotStream := client.Chat.Completions.NewStreaming(
 				ctx,
 				params,
 			)
@@ -551,39 +550,11 @@ func (c *copilotClient) shouldRetry(attempts int, err error) (bool, int64, error
 
 	// Check for token expiration (401 Unauthorized)
 	if apierr.StatusCode == 401 {
-		// Try to refresh the bearer token
-		var githubToken string
-
-		// 1. Environment variable
-		githubToken = os.Getenv("GITHUB_TOKEN")
-
-		// 2. API key from options
-		if githubToken == "" {
-			githubToken = c.providerOptions.apiKey
+		if c.reloadCredentials() {
+			logging.Info("Reloaded GitHub Copilot credentials from the latest login state")
+			return true, 1000, nil
 		}
-
-		// 3. Standard GitHub CLI/Copilot locations
-		if githubToken == "" {
-			var err error
-			githubToken, err = config.LoadGitHubToken()
-			if err != nil {
-				logging.Debug("Failed to load GitHub token from standard locations during retry", "error", err)
-			}
-		}
-
-		if githubToken != "" {
-			newBearerToken, tokenErr := c.exchangeGitHubToken(githubToken)
-			if tokenErr == nil {
-				c.options.bearerToken = newBearerToken
-				// Update the client with the new token
-				// Note: This is a simplified approach. In a production system,
-				// you might want to recreate the entire client with the new token
-				logging.Info("Refreshed Copilot bearer token")
-				return true, 1000, nil // Retry immediately with new token
-			}
-			logging.Error("Failed to refresh Copilot bearer token", "error", tokenErr)
-		}
-		return false, 0, fmt.Errorf("authentication failed: %w", err)
+		return false, 0, fmt.Errorf("authentication failed: %w. Run `pando auth copilot login`", err)
 	}
 	logging.Debug("Copilot API Error", "status", apierr.StatusCode, "headers", apierr.Response.Header, "body", apierr.RawJSON())
 
@@ -669,3 +640,8 @@ func WithCopilotBearerToken(bearerToken string) CopilotOption {
 	}
 }
 
+func WithCopilotBaseURL(baseURL string) CopilotOption {
+	return func(options *copilotOptions) {
+		options.baseURL = strings.TrimSpace(baseURL)
+	}
+}

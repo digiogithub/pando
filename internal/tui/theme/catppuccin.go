@@ -79,6 +79,16 @@ func NewCatppuccinTheme() *CatppuccinTheme {
 		Light: "#F5F5F5", // Light equivalent
 	}
 
+	// Selection colors
+	theme.SelectionBackgroundColor = lipgloss.AdaptiveColor{
+		Dark:  "#45475a", // Surface0 - good contrast with light text
+		Light: "#bcc0cc", // Surface1 - good contrast with dark text
+	}
+	theme.SelectionForegroundColor = lipgloss.AdaptiveColor{
+		Dark:  mocha.Text().Hex,
+		Light: latte.Text().Hex,
+	}
+
 	// Border colors
 	theme.BorderNormalColor = lipgloss.AdaptiveColor{
 		Dark:  "#4b4c5c", // From existing styles

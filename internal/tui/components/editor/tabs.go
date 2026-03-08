@@ -75,7 +75,7 @@ func (t *TabBar) OpenTab(path string) int {
 	t.tabs = append(t.tabs, Tab{
 		Path: normalized,
 		Name: name,
-		Icon: iconForTab(normalized),
+		Icon: tuistyles.FileIconFor(normalized),
 	})
 	t.activeIdx = len(t.tabs) - 1
 	t.ensureActiveVisible()
@@ -450,24 +450,4 @@ func normalizeTabPath(path string) string {
 		return ""
 	}
 	return filepath.ToSlash(filepath.Clean(path))
-}
-
-func iconForTab(path string) string {
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
-	case ".go":
-		return ""
-	case ".md", ".mdx":
-		return "󰍔"
-	case ".json", ".yaml", ".yml", ".toml":
-		return "󰘦"
-	case ".js", ".jsx", ".ts", ".tsx":
-		return "󰌞"
-	case ".sql":
-		return "󰆼"
-	case ".sh", ".bash", ".zsh":
-		return "󱆃"
-	default:
-		return tuistyles.DocumentIcon
-	}
 }

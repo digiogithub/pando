@@ -101,7 +101,17 @@ func NewMonokaiProTheme() *MonokaiProTheme {
 	}
 	theme.BackgroundDarkerColor = lipgloss.AdaptiveColor{
 		Dark:  "#221f22", // Slightly darker than background
-		Light: "#ffffff", // Slightly lighter than background
+		Light: "#F0F0F0", // Slightly lighter than background
+	}
+
+	// Selection colors
+	theme.SelectionBackgroundColor = lipgloss.AdaptiveColor{
+		Dark:  darkSelection,  // #5b595c - good contrast with light text
+		Light: lightSelection, // #e5e5e6 - good contrast with dark text
+	}
+	theme.SelectionForegroundColor = lipgloss.AdaptiveColor{
+		Dark:  darkForeground,  // #fcfcfa
+		Light: lightForeground, // #2d2a2e
 	}
 
 	// Border colors

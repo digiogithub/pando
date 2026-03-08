@@ -85,7 +85,7 @@ func NewTronTheme() *TronTheme {
 		Light: lightForeground,
 	}
 	theme.TextMutedColor = lipgloss.AdaptiveColor{
-		Dark:  darkComment,
+		Dark:  "#6a8ca8", // Brighter than #4d6b87 for better readability on very dark bg
 		Light: lightComment,
 	}
 	theme.TextEmphasizedColor = lipgloss.AdaptiveColor{
@@ -104,7 +104,17 @@ func NewTronTheme() *TronTheme {
 	}
 	theme.BackgroundDarkerColor = lipgloss.AdaptiveColor{
 		Dark:  "#070d14", // Slightly darker than background
-		Light: "#ffffff", // Slightly lighter than background
+		Light: "#F0F0F0", // Slightly lighter than background
+	}
+
+	// Selection colors
+	theme.SelectionBackgroundColor = lipgloss.AdaptiveColor{
+		Dark:  "#1a3a4a",      // Tron-blue tinted selection, good contrast with light text
+		Light: lightSelection, // #d0e8ff - good contrast with dark text
+	}
+	theme.SelectionForegroundColor = lipgloss.AdaptiveColor{
+		Dark:  darkForeground,  // #caf0ff - bright text on dark selection
+		Light: lightForeground, // #0c141f
 	}
 
 	// Border colors

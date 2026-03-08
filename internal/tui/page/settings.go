@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	pandoapp "github.com/digiogithub/pando/internal/app"
+	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/tui/components/settings"
@@ -142,6 +143,7 @@ func buildProvidersSection(cfg *config.Config) settings.Section {
 	providerOrder := []models.ModelProvider{
 		models.ProviderAnthropic,
 		models.ProviderOpenAI,
+		models.ProviderOllama,
 		models.ProviderGemini,
 		models.ProviderGROQ,
 		models.ProviderOpenRouter,
@@ -151,8 +153,61 @@ func buildProvidersSection(cfg *config.Config) settings.Section {
 
 	fields := make([]settings.Field, 0, len(providerOrder)*2)
 	for _, providerID := range providerOrder {
-		providerCfg := cfg.Providers[providerID]
+		providerCfg, ok := cfg.Providers[providerID]
+		if !ok {
+			providerCfg.Disabled = true
+		}
 		providerName := string(providerID)
+
+		if providerID == models.ProviderCopilot {
+			status := auth.GetCopilotAuthStatus().Message
+
+			fields = append(fields,
+				settings.Field{
+					Label:    fmt.Sprintf("%s Auth", providerName),
+					Key:      fmt.Sprintf("providers.%s.auth", providerName),
+					Value:    status,
+					Type:     settings.FieldText,
+					ReadOnly: true,
+				},
+				settings.Field{
+					Label: fmt.Sprintf("%s Enabled", providerName),
+					Key:   fmt.Sprintf("providers.%s.enabled", providerName),
+					Value: boolString(!providerCfg.Disabled),
+					Type:  settings.FieldToggle,
+				},
+			)
+			continue
+		}
+
+		if providerID == models.ProviderOllama {
+			if strings.TrimSpace(providerCfg.BaseURL) == "" {
+				providerCfg.BaseURL = models.ResolveOllamaBaseURL("")
+			}
+
+			fields = append(fields,
+				settings.Field{
+					Label: fmt.Sprintf("%s Base URL", providerName),
+					Key:   fmt.Sprintf("providers.%s.baseURL", providerName),
+					Value: providerCfg.BaseURL,
+					Type:  settings.FieldText,
+				},
+				settings.Field{
+					Label:  fmt.Sprintf("%s API Key", providerName),
+					Key:    fmt.Sprintf("providers.%s.apiKey", providerName),
+					Value:  providerCfg.APIKey,
+					Type:   settings.FieldText,
+					Masked: true,
+				},
+				settings.Field{
+					Label: fmt.Sprintf("%s Enabled", providerName),
+					Key:   fmt.Sprintf("providers.%s.enabled", providerName),
+					Value: boolString(!providerCfg.Disabled),
+					Type:  settings.FieldToggle,
+				},
+			)
+			continue
+		}
 
 		fields = append(fields,
 			settings.Field{
@@ -599,6 +654,8 @@ func saveProvider(field settings.Field) error {
 	switch parts[2] {
 	case "apiKey":
 		providerCfg.APIKey = strings.TrimSpace(field.Value)
+	case "baseURL":
+		providerCfg.BaseURL = strings.TrimSpace(field.Value)
 	case "enabled":
 		enabled, err := parseBoolValue(field.Value)
 		if err != nil {
@@ -609,11 +666,19 @@ func saveProvider(field settings.Field) error {
 		return fmt.Errorf("unsupported provider field %q", parts[2])
 	}
 
-	if !providerCfg.Disabled && strings.TrimSpace(providerCfg.APIKey) == "" {
-		return fmt.Errorf("provider %s requires a non-empty API key when enabled", providerName)
+	if !providerCfg.Disabled {
+		if providerName == models.ProviderCopilot {
+			return config.UpdateProvider(providerName, providerCfg.APIKey, providerCfg.BaseURL, providerCfg.Disabled)
+		}
+		if providerName == models.ProviderOllama && strings.TrimSpace(providerCfg.BaseURL) == "" {
+			return fmt.Errorf("provider %s requires a non-empty base URL when enabled", providerName)
+		}
+		if providerName != models.ProviderOllama && strings.TrimSpace(providerCfg.APIKey) == "" {
+			return fmt.Errorf("provider %s requires a non-empty API key when enabled", providerName)
+		}
 	}
 
-	return config.UpdateProvider(providerName, providerCfg.APIKey, providerCfg.Disabled)
+	return config.UpdateProvider(providerName, providerCfg.APIKey, providerCfg.BaseURL, providerCfg.Disabled)
 }
 
 func saveAgent(field settings.Field) error {

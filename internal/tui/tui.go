@@ -3,6 +3,9 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -443,6 +446,27 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.showMultiArgumentsDialog = false
 			}
 			return a, nil
+		case key.Matches(msg, a.keys.Editor.EditExternal):
+			if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions {
+				if a.tabBar != nil && a.tabBar.ActivePath() != "" {
+					editorCmd := os.Getenv("VISUAL")
+					if editorCmd == "" {
+						editorCmd = os.Getenv("EDITOR")
+					}
+					if editorCmd == "" {
+						editorCmd = "vi"
+					}
+					filePath := a.tabBar.ActivePath()
+					c := exec.Command(editorCmd, filePath)
+					return a, tea.ExecProcess(c, func(err error) tea.Msg {
+						if err != nil {
+							return util.InfoMsg{Type: util.InfoTypeError, Msg: "Editor error: " + err.Error()}
+						}
+						return util.InfoMsg{Type: util.InfoTypeInfo, Msg: "File edited: " + filepath.Base(filePath)}
+					})
+				}
+				return a, util.ReportWarn("No file open to edit")
+			}
 		case key.Matches(msg, a.keys.Chat.SwitchSession) && a.currentPage == page.ChatPage:
 			if !a.showQuit && !a.showPermissions && !a.showCommandDialog {
 				return a, a.openSessionDialog()
@@ -619,6 +643,15 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.themeDialog = d.(dialog.ThemeDialog)
 		cmds = append(cmds, themeCmd)
 		// Only block key messages send all other messages down
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return a, tea.Batch(cmds...)
+		}
+	}
+
+	if a.showHelp {
+		h, helpCmd := a.help.Update(msg)
+		a.help = h.(dialog.HelpCmp)
+		cmds = append(cmds, helpCmd)
 		if _, ok := msg.(tea.KeyMsg); ok {
 			return a, tea.Batch(cmds...)
 		}
@@ -1095,10 +1128,15 @@ func (a *appModel) handleMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
 		return nil, false
 	}
 
+	if tuizone.InBounds(tuizone.StatusHelp, msg) {
+		a.showHelp = !a.showHelp
+		return nil, true
+	}
+
 	if a.currentPage == page.ChatPage && tuizone.InBounds(tuizone.StatusSession, msg) {
 		return a.openSessionDialog(), true
 	}
-	if a.currentPage == page.ChatPage && tuizone.InBounds(tuizone.StatusModel, msg) {
+	if tuizone.InBounds(tuizone.StatusModel, msg) {
 		return a.openModelDialog(), true
 	}
 
@@ -1261,6 +1299,33 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 			return util.CmdHandler(page.PageChangeMsg{ID: page.OrchestratorPage})
 		},
 	})
+	       model.RegisterCommand(dialog.Command{
+		       ID:          "copilot-login",
+		       Title:       "Copilot Login",
+		       Description: "Authenticate with GitHub Copilot",
+		       Category:    dialog.CommandCategoryGeneral,
+		       Handler: func(cmd dialog.Command) tea.Cmd {
+				return copilotLoginCommand()
+		       },
+	       })
+	       model.RegisterCommand(dialog.Command{
+		       ID:          "copilot-logout",
+		       Title:       "Copilot Logout",
+		       Description: "Remove Copilot authentication",
+		       Category:    dialog.CommandCategoryGeneral,
+		       Handler: func(cmd dialog.Command) tea.Cmd {
+				return copilotLogoutCommand()
+		       },
+	       })
+	       model.RegisterCommand(dialog.Command{
+		       ID:          "copilot-status",
+		       Title:       "Copilot Status",
+		       Description: "Show Copilot authentication status",
+		       Category:    dialog.CommandCategoryGeneral,
+		       Handler: func(cmd dialog.Command) tea.Cmd {
+				return copilotStatusCommand()
+		       },
+	       })
 	// Load custom commands
 	customCommands, err := dialog.LoadCustomCommands()
 	if err != nil {

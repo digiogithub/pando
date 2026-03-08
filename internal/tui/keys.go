@@ -41,10 +41,12 @@ type ChatKeys struct {
 }
 
 type EditorKeys struct {
-	Close   key.Binding
-	Search  key.Binding
-	NextTab key.Binding
-	PrevTab key.Binding
+	Close        key.Binding
+	Search       key.Binding
+	NextTab      key.Binding
+	PrevTab      key.Binding
+	EditExternal key.Binding
+	Save         key.Binding
 }
 
 type FileTreeKeys struct {
@@ -106,8 +108,8 @@ func DefaultKeyMap() KeyMap {
 				key.WithHelp("ctrl+c", "quit"),
 			),
 			Help: key.NewBinding(
-				key.WithKeys("ctrl+_", "ctrl+h"),
-				key.WithHelp("ctrl+?", "toggle help"),
+				key.WithKeys("ctrl+h", "ctrl+_"),
+				key.WithHelp("ctrl+h", "toggle help"),
 			),
 			Settings: key.NewBinding(
 				key.WithKeys("ctrl+g"),
@@ -124,12 +126,12 @@ func DefaultKeyMap() KeyMap {
 		},
 		Chat: ChatKeys{
 			Send: key.NewBinding(
-				key.WithKeys("enter", "ctrl+s"),
+				key.WithKeys("enter"),
 				key.WithHelp("enter", "send message"),
 			),
 			NewLine: key.NewBinding(
-				key.WithKeys("\\"),
-				key.WithHelp("\\ + enter", "new line"),
+				key.WithKeys("shift+enter", "ctrl+j"),
+				key.WithHelp("shift+enter", "new line"),
 			),
 			Cancel: key.NewBinding(
 				key.WithKeys("esc"),
@@ -196,6 +198,14 @@ func DefaultKeyMap() KeyMap {
 			PrevTab: key.NewBinding(
 				key.WithKeys("ctrl+shift+tab", "shift+ctrl+tab", "ctrl+pgup"),
 				key.WithHelp("ctrl+shift+tab", "prev tab"),
+			),
+			EditExternal: key.NewBinding(
+				key.WithKeys("ctrl+i"),
+				key.WithHelp("ctrl+i", "edit in external editor"),
+			),
+			Save: key.NewBinding(
+				key.WithKeys("ctrl+s"),
+				key.WithHelp("ctrl+s", "save file"),
 			),
 		},
 		FileTree: FileTreeKeys{
@@ -282,7 +292,7 @@ func (k ChatKeys) Bindings() []key.Binding {
 }
 
 func (k EditorKeys) ShortHelp() []key.Binding {
-	return filterHelpBindings(k.Close, k.Search, k.NextTab, k.PrevTab)
+	return filterHelpBindings(k.Close, k.Search, k.NextTab, k.PrevTab, k.EditExternal, k.Save)
 }
 
 func (k EditorKeys) FullHelp() [][]key.Binding {

@@ -105,6 +105,16 @@ func NewTokyoNightTheme() *TokyoNightTheme {
 		Light: "#f0f0f5", // Slightly lighter than background
 	}
 
+	// Selection colors
+	theme.SelectionBackgroundColor = lipgloss.AdaptiveColor{
+		Dark:  darkSelection,  // #2f334d - good contrast with light text
+		Light: lightSelection, // #c8c9ce - good contrast with dark text
+	}
+	theme.SelectionForegroundColor = lipgloss.AdaptiveColor{
+		Dark:  darkForeground,  // #c8d3f5
+		Light: lightForeground, // #3760bf
+	}
+
 	// Border colors
 	theme.BorderNormalColor = lipgloss.AdaptiveColor{
 		Dark:  darkBorder,

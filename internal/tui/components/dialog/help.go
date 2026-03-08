@@ -1,9 +1,11 @@
 package dialog
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/digiogithub/pando/internal/tui/styles"
@@ -15,6 +17,8 @@ type helpCmp struct {
 	height   int
 	keys     []key.Binding
 	sections []HelpSection
+	viewport viewport.Model
+	ready    bool
 }
 
 type HelpSection struct {
@@ -37,10 +41,26 @@ func (h *helpCmp) SetSections(sections []HelpSection) {
 }
 
 func (h *helpCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		h.width = 90
 		h.height = msg.Height
+		maxHeight := min(h.height-8, 40)
+		if !h.ready {
+			h.viewport = viewport.New(h.width-4, maxHeight)
+			h.viewport.MouseWheelEnabled = true
+			h.ready = true
+		} else {
+			h.viewport.Width = h.width - 4
+			h.viewport.Height = maxHeight
+		}
+	case tea.KeyMsg:
+		h.viewport, cmd = h.viewport.Update(msg)
+		return h, cmd
+	case tea.MouseMsg:
+		h.viewport, cmd = h.viewport.Update(msg)
+		return h, cmd
 	}
 	return h, nil
 }
@@ -118,6 +138,10 @@ func (h *helpCmp) renderSection(title string, bindings []key.Binding) string {
 		}
 	}
 
+	lineStyle := lipgloss.NewStyle().
+		Background(t.Background()).
+		Width(h.width - 6)
+
 	for _, binding := range bindings {
 		renderedKey := helpKeyStyle.Render(binding.Help().Key)
 		keyPadding := max(0, maxKeyWidth-lipgloss.Width(renderedKey))
@@ -126,7 +150,7 @@ func (h *helpCmp) renderSection(title string, bindings []key.Binding) string {
 			renderedKey+baseStyle.Render(strings.Repeat(" ", keyPadding+2)),
 			helpDescStyle.Render(binding.Help().Desc),
 		)
-		lines = append(lines, line)
+		lines = append(lines, lineStyle.Render(line))
 	}
 
 	return lipgloss.JoinVertical(
@@ -137,7 +161,8 @@ func (h *helpCmp) renderSection(title string, bindings []key.Binding) string {
 }
 
 func (h *helpCmp) render() string {
-	baseStyle := styles.BaseStyle()
+	t := theme.CurrentTheme()
+	contentWidth := h.width - 6
 
 	sections := h.normalizeSections()
 	rendered := make([]string, 0, len(sections))
@@ -145,12 +170,11 @@ func (h *helpCmp) render() string {
 		rendered = append(rendered, h.renderSection(section.Title, section.Bindings))
 	}
 
-	return baseStyle.Width(h.width).Render(
-		lipgloss.JoinVertical(
-			lipgloss.Left,
-			rendered...,
-		),
-	)
+	content := lipgloss.JoinVertical(lipgloss.Left, rendered...)
+	return lipgloss.NewStyle().
+		Background(t.Background()).
+		Width(contentWidth).
+		Render(content)
 }
 
 func (h *helpCmp) View() string {
@@ -158,11 +182,32 @@ func (h *helpCmp) View() string {
 	baseStyle := styles.BaseStyle()
 
 	content := h.render()
+
+	if h.ready {
+		h.viewport.SetContent(content)
+	}
+
 	header := baseStyle.
 		Bold(true).
-		Width(lipgloss.Width(content)).
+		Width(h.width - 4).
 		Foreground(t.Primary()).
 		Render("Keyboard Shortcuts")
+
+	scrollInfo := ""
+	if h.ready && h.viewport.TotalLineCount() > h.viewport.Height {
+		percent := int(h.viewport.ScrollPercent() * 100)
+		scrollInfoStyle := lipgloss.NewStyle().
+			Background(t.Background()).
+			Foreground(t.TextMuted())
+		scrollInfo = scrollInfoStyle.Render(fmt.Sprintf(" %d%% ↑↓", percent))
+	}
+
+	var viewportContent string
+	if h.ready {
+		viewportContent = h.viewport.View()
+	} else {
+		viewportContent = content
+	}
 
 	return baseStyle.Padding(1).
 		Border(lipgloss.RoundedBorder()).
@@ -173,7 +218,8 @@ func (h *helpCmp) View() string {
 			lipgloss.JoinVertical(lipgloss.Center,
 				header,
 				baseStyle.Render(strings.Repeat(" ", lipgloss.Width(header))),
-				content,
+				viewportContent,
+				scrollInfo,
 			),
 		)
 }

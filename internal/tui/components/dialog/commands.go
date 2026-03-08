@@ -102,15 +102,15 @@ func (ci Command) Render(selected bool, width int) string {
 
 	if selected {
 		titleLineStyle = titleLineStyle.
-			Background(t.Primary()).
-			Foreground(t.Background()).
+			Background(t.SelectionBackground()).
+			Foreground(t.SelectionForeground()).
 			Bold(true)
 		descStyle = descStyle.
-			Background(t.Primary()).
-			Foreground(t.Background())
-		titleStyle = titleStyle.Foreground(t.Background()).Bold(true)
-		matchStyle = matchStyle.Foreground(t.Background()).Bold(true).Underline(true)
-		shortcutStyle = shortcutStyle.Foreground(t.Background())
+			Background(t.SelectionBackground()).
+			Foreground(t.SelectionForeground())
+		titleStyle = titleStyle.Foreground(t.SelectionForeground()).Bold(true)
+		matchStyle = matchStyle.Foreground(t.SelectionForeground()).Bold(true).Underline(true)
+		shortcutStyle = shortcutStyle.Foreground(t.SelectionForeground())
 	}
 
 	title := titleStyle.Render(ci.Title)
@@ -143,15 +143,15 @@ func (m commandMatch) Render(selected bool, width int) string {
 
 	if selected {
 		titleLineStyle = titleLineStyle.
-			Background(t.Primary()).
-			Foreground(t.Background()).
+			Background(t.SelectionBackground()).
+			Foreground(t.SelectionForeground()).
 			Bold(true)
 		descStyle = descStyle.
-			Background(t.Primary()).
-			Foreground(t.Background())
-		titleStyle = titleStyle.Foreground(t.Background()).Bold(true)
-		matchStyle = matchStyle.Foreground(t.Background()).Bold(true).Underline(true)
-		shortcutStyle = shortcutStyle.Foreground(t.Background())
+			Background(t.SelectionBackground()).
+			Foreground(t.SelectionForeground())
+		titleStyle = titleStyle.Foreground(t.SelectionForeground()).Bold(true)
+		matchStyle = matchStyle.Foreground(t.SelectionForeground()).Bold(true).Underline(true)
+		shortcutStyle = shortcutStyle.Foreground(t.SelectionForeground())
 	}
 
 	title := renderMatchedText(m.command.Title, m.matchedIndexes, titleStyle, matchStyle)

@@ -1,6 +1,9 @@
 package settings
 
 import (
+	"strings"
+
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/digiogithub/pando/internal/tui/theme"
@@ -13,10 +16,15 @@ type SettingsCmp struct {
 	activeSectionIdx int
 	width            int
 	height           int
+	viewport         viewport.Model
 }
 
 func NewSettingsCmp() SettingsCmp {
-	return SettingsCmp{}
+	vp := viewport.New(0, 0)
+	vp.MouseWheelEnabled = true
+	vp.MouseWheelDelta = 3
+
+	return SettingsCmp{viewport: vp}
 }
 
 func (m SettingsCmp) Init() tea.Cmd {
@@ -29,11 +37,16 @@ func (m SettingsCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.syncSectionWidths()
+		m.syncViewport()
+		m.autoScrollToActiveField()
 		return m, nil
 	case tea.KeyMsg:
 		activeSection := m.activeSection()
 		if activeSection != nil && activeSection.IsEditing() {
-			return m, activeSection.Update(msg)
+			cmd := activeSection.Update(msg)
+			m.syncViewport()
+			m.autoScrollToActiveField()
+			return m, cmd
 		}
 
 		switch msg.String() {
@@ -41,19 +54,38 @@ func (m SettingsCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.sections) > 0 {
 				m.activeSectionIdx = (m.activeSectionIdx + 1) % len(m.sections)
 				m.syncSectionWidths()
+				m.syncViewport()
+				m.autoScrollToActiveField()
 			}
 			return m, nil
 		case "shift+tab":
 			if len(m.sections) > 0 {
 				m.activeSectionIdx = (m.activeSectionIdx - 1 + len(m.sections)) % len(m.sections)
 				m.syncSectionWidths()
+				m.syncViewport()
+				m.autoScrollToActiveField()
 			}
+			return m, nil
+		case "pgdown", "ctrl+f":
+			m.viewport.ViewDown()
+			return m, nil
+		case "pgup", "ctrl+b":
+			m.viewport.ViewUp()
 			return m, nil
 		}
 	}
 
+	if mouseMsg, ok := msg.(tea.MouseMsg); ok {
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(mouseMsg)
+		return m, cmd
+	}
+
 	if activeSection := m.activeSection(); activeSection != nil {
-		return m, activeSection.Update(msg)
+		cmd := activeSection.Update(msg)
+		m.syncViewport()
+		m.autoScrollToActiveField()
+		return m, cmd
 	}
 
 	return m, nil
@@ -81,6 +113,8 @@ func (m *SettingsCmp) SetSections(sections []Section) {
 	m.sections = cloneSections(sections)
 	m.activeSectionIdx = min(max(m.activeSectionIdx, 0), max(len(m.sections)-1, 0))
 	m.syncSectionWidths()
+	m.syncViewport()
+	m.autoScrollToActiveField()
 }
 
 func (m *SettingsCmp) Sections() []Section {
@@ -91,6 +125,8 @@ func (m *SettingsCmp) SetSize(width, height int) {
 	m.width = width
 	m.height = height
 	m.syncSectionWidths()
+	m.syncViewport()
+	m.autoScrollToActiveField()
 }
 
 func (m *SettingsCmp) ActiveSection() *Section {
@@ -109,6 +145,8 @@ func (m *SettingsCmp) SetActiveField(sectionTitle, fieldKey string) {
 				m.sections[sectionIdx].activeFieldIdx = fieldIdx
 				m.sections[sectionIdx].editor = nil
 				m.syncSectionWidths()
+				m.syncViewport()
+				m.autoScrollToActiveField()
 				return
 			}
 		}
@@ -116,10 +154,13 @@ func (m *SettingsCmp) SetActiveField(sectionTitle, fieldKey string) {
 		m.sections[sectionIdx].activeFieldIdx = 0
 		m.sections[sectionIdx].editor = nil
 		m.syncSectionWidths()
+		m.syncViewport()
+		m.autoScrollToActiveField()
 		return
 	}
 
 	m.syncSectionWidths()
+	m.syncViewport()
 }
 
 func (m SettingsCmp) renderSidebar() string {
@@ -176,9 +217,7 @@ func (m SettingsCmp) renderContent() string {
 		Render("No settings available.")
 	if activeSection != nil {
 		title = activeSection.Title
-		body = lipgloss.NewStyle().
-			Width(max(1, contentWidth-4)).
-			Render(activeSection.View(max(1, contentWidth-4), true))
+		body = m.viewport.View()
 	}
 
 	header := lipgloss.NewStyle().
@@ -205,6 +244,58 @@ func (m *SettingsCmp) syncSectionWidths() {
 	for i := range m.sections {
 		m.sections[i].SetWidth(contentWidth)
 	}
+}
+
+func (m *SettingsCmp) syncViewport() {
+	viewportWidth := max(1, m.width-min(sidebarWidth, max(1, m.width))-5)
+	viewportHeight := max(1, m.height-4)
+	m.viewport.Width = viewportWidth
+	m.viewport.Height = viewportHeight
+
+	activeSection := m.activeSection()
+	if activeSection == nil {
+		m.viewport.SetContent(lipgloss.NewStyle().Foreground(theme.CurrentTheme().TextMuted()).Render("No settings available."))
+		m.viewport.SetYOffset(0)
+		return
+	}
+
+	content := activeSection.View(viewportWidth, true)
+	yOffset := m.viewport.YOffset
+	maxOffset := max(0, lipgloss.Height(content)-viewportHeight)
+	m.viewport.SetContent(content)
+	m.viewport.SetYOffset(min(max(yOffset, 0), maxOffset))
+}
+
+func (m *SettingsCmp) autoScrollToActiveField() {
+	activeSection := m.activeSection()
+	if activeSection == nil || m.viewport.Height <= 0 {
+		return
+	}
+
+	activeField := activeSection.ActiveField()
+	if activeField == nil {
+		m.viewport.SetYOffset(0)
+		return
+	}
+
+	content := activeSection.View(max(1, m.viewport.Width), true)
+	lines := strings.Split(content, "\n")
+	targetLine := 0
+	for idx, line := range lines {
+		if strings.Contains(line, activeField.Label) {
+			targetLine = idx
+			break
+		}
+	}
+
+	yOffset := m.viewport.YOffset
+	if targetLine < yOffset {
+		yOffset = targetLine
+	} else if targetLine >= yOffset+m.viewport.Height {
+		yOffset = targetLine - m.viewport.Height + 1
+	}
+	maxOffset := max(0, len(lines)-m.viewport.Height)
+	m.viewport.SetYOffset(min(max(yOffset, 0), maxOffset))
 }
 
 func (m *SettingsCmp) activeSection() *Section {

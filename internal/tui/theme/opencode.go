@@ -85,7 +85,7 @@ func NewPandoTheme() *PandoTheme {
 		Light: lightForeground,
 	}
 	theme.TextMutedColor = lipgloss.AdaptiveColor{
-		Dark:  darkComment,
+		Dark:  "#808080", // Brighter than #6a6a6a for better readability on dark bg
 		Light: lightComment,
 	}
 	theme.TextEmphasizedColor = lipgloss.AdaptiveColor{
@@ -104,7 +104,17 @@ func NewPandoTheme() *PandoTheme {
 	}
 	theme.BackgroundDarkerColor = lipgloss.AdaptiveColor{
 		Dark:  "#121212", // Slightly darker than background
-		Light: "#ffffff", // Slightly lighter than background
+		Light: "#F0F0F0", // Slightly lighter than background
+	}
+
+	// Selection colors
+	theme.SelectionBackgroundColor = lipgloss.AdaptiveColor{
+		Dark:  darkSelection,  // #303030 - good contrast with light text
+		Light: lightSelection, // #e5e5e6 - good contrast with dark text
+	}
+	theme.SelectionForegroundColor = lipgloss.AdaptiveColor{
+		Dark:  "#f0f0f0",       // Bright text on dark selection
+		Light: lightForeground, // #2a2a2a
 	}
 
 	// Border colors

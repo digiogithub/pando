@@ -29,6 +29,10 @@ type Theme interface {
 	BackgroundSecondary() lipgloss.AdaptiveColor
 	BackgroundDarker() lipgloss.AdaptiveColor
 
+	// Selection colors (for highlighted/selected items)
+	SelectionBackground() lipgloss.AdaptiveColor
+	SelectionForeground() lipgloss.AdaptiveColor
+
 	// Border colors
 	BorderNormal() lipgloss.AdaptiveColor
 	BorderFocused() lipgloss.AdaptiveColor
@@ -100,6 +104,10 @@ type BaseTheme struct {
 	BackgroundSecondaryColor lipgloss.AdaptiveColor
 	BackgroundDarkerColor lipgloss.AdaptiveColor
 
+	// Selection colors
+	SelectionBackgroundColor lipgloss.AdaptiveColor
+	SelectionForegroundColor lipgloss.AdaptiveColor
+
 	// Border colors
 	BorderNormalColor  lipgloss.AdaptiveColor
 	BorderFocusedColor lipgloss.AdaptiveColor
@@ -164,6 +172,9 @@ func (t *BaseTheme) TextEmphasized() lipgloss.AdaptiveColor { return t.TextEmpha
 func (t *BaseTheme) Background() lipgloss.AdaptiveColor { return t.BackgroundColor }
 func (t *BaseTheme) BackgroundSecondary() lipgloss.AdaptiveColor { return t.BackgroundSecondaryColor }
 func (t *BaseTheme) BackgroundDarker() lipgloss.AdaptiveColor { return t.BackgroundDarkerColor }
+
+func (t *BaseTheme) SelectionBackground() lipgloss.AdaptiveColor { return t.SelectionBackgroundColor }
+func (t *BaseTheme) SelectionForeground() lipgloss.AdaptiveColor { return t.SelectionForegroundColor }
 
 func (t *BaseTheme) BorderNormal() lipgloss.AdaptiveColor { return t.BorderNormalColor }
 func (t *BaseTheme) BorderFocused() lipgloss.AdaptiveColor { return t.BorderFocusedColor }

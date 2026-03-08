@@ -10,20 +10,23 @@ import (
 )
 
 const (
-	FileTreeItemPrefix = "filetree-item-"
-	TabPrefix          = "tab-"
-	SidebarItemPrefix  = "sidebar-item-"
-	DialogButtonPrefix = "dialog-button-"
-	SessionItemPrefix  = "session-item-"
-	ModelItemPrefix    = "model-item-"
-	StatusModel        = "status-model"
-	StatusSession      = "status-session"
-	ViewerViewport     = "viewer-viewport"
-	DiffViewport       = "diff-viewport"
-	ChatViewport       = "chat-viewport"
-	PermissionAllow    = "permission-allow"
-	PermissionSession  = "permission-session"
-	PermissionDeny     = "permission-deny"
+	FileTreeItemPrefix   = "filetree-item-"
+	TabPrefix            = "tab-"
+	SidebarItemPrefix    = "sidebar-item-"
+	DialogButtonPrefix   = "dialog-button-"
+	SessionItemPrefix    = "session-item-"
+	ModelItemPrefix      = "model-item-"
+	StatusModel          = "status-model"
+	StatusSession        = "status-session"
+	StatusHelp           = "status-help"
+	StatusDiagnostics    = "status-diagnostics"
+	StatusBreadcrumbPrefix = "status-breadcrumb-"
+	ViewerViewport       = "viewer-viewport"
+	DiffViewport         = "diff-viewport"
+	ChatViewport         = "chat-viewport"
+	PermissionAllow      = "permission-allow"
+	PermissionSession    = "permission-session"
+	PermissionDeny       = "permission-deny"
 )
 
 var Manager = bubblezone.New()
@@ -94,6 +97,22 @@ func MarkDiffViewport(content string) string {
 
 func MarkChatViewport(content string) string {
 	return Manager.Mark(ChatViewport, content)
+}
+
+func MarkStatusHelp(content string) string {
+	return Manager.Mark(StatusHelp, content)
+}
+
+func MarkStatusDiagnostics(content string) string {
+	return Manager.Mark(StatusDiagnostics, content)
+}
+
+func StatusBreadcrumbID(index int) string {
+	return fmt.Sprintf("%s%d", StatusBreadcrumbPrefix, index)
+}
+
+func MarkStatusBreadcrumb(index int, content string) string {
+	return Manager.Mark(StatusBreadcrumbID(index), content)
 }
 
 func InBounds(id string, msg tea.MouseMsg) bool {

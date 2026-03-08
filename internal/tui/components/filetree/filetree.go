@@ -404,7 +404,7 @@ func (t *FileTree) renderNode(node *FileNode, selected bool) string {
 
 	lineStyle := styles.BaseStyle().Width(t.width)
 	if selected {
-		lineStyle = lineStyle.Background(th.Primary()).Foreground(th.Background()).Bold(true)
+		lineStyle = lineStyle.Background(th.SelectionBackground()).Foreground(th.SelectionForeground()).Bold(true)
 	}
 	return tuizone.MarkFileTreeItem(node.Path, lineStyle.Render(line))
 }

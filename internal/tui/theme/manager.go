@@ -114,6 +114,9 @@ func GetTheme(name string) Theme {
 
 // updateConfigTheme updates the theme setting in the configuration file
 func updateConfigTheme(themeName string) error {
+	if config.Get() == nil {
+		return nil
+	}
 	// Use the config package to update the theme
 	return config.UpdateTheme(themeName)
 }
