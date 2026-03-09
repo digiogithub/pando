@@ -4,17 +4,18 @@ import "github.com/charmbracelet/bubbles/key"
 
 // ViewerKeyMap defines the keybindings for the file viewer component.
 type ViewerKeyMap struct {
-	Down         key.Binding
-	Up           key.Binding
-	HalfPageDown key.Binding
-	HalfPageUp   key.Binding
-	Top          key.Binding
-	Bottom       key.Binding
-	Search       key.Binding
-	SearchNext   key.Binding
-	SearchPrev   key.Binding
-	CancelSearch key.Binding
-	Close        key.Binding
+	Down           key.Binding
+	Up             key.Binding
+	HalfPageDown   key.Binding
+	HalfPageUp     key.Binding
+	Top            key.Binding
+	Bottom         key.Binding
+	Search         key.Binding
+	SearchNext     key.Binding
+	SearchPrev     key.Binding
+	CancelSearch   key.Binding
+	Close          key.Binding
+	ToggleWordWrap key.Binding
 }
 
 // DefaultViewerKeyMap returns the default keybindings for the file viewer.
@@ -63,6 +64,10 @@ func DefaultViewerKeyMap() ViewerKeyMap {
 		Close: key.NewBinding(
 			key.WithKeys("esc", "q"),
 			key.WithHelp("esc/q", "close viewer"),
+		),
+		ToggleWordWrap: key.NewBinding(
+			key.WithKeys("alt+z"),
+			key.WithHelp("alt+z", "toggle word wrap"),
 		),
 	}
 }

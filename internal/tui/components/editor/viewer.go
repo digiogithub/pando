@@ -18,6 +18,7 @@ import (
 	tuitheme "github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
 	tuizone "github.com/digiogithub/pando/internal/tui/zone"
+	muwrap "github.com/muesli/reflow/wrap"
 )
 
 // CloseViewerMsg is emitted when the viewer should be closed.
@@ -62,6 +63,12 @@ type fileViewer struct {
 	searchQuery   string
 	searchMatches []int
 	currentMatch  int
+
+	// Word wrap state
+	wordWrap        bool
+	visualToRaw     []int // visual line index → raw line index (when wordWrap is true)
+	rawToFirstVisual []int // raw line index → first visual line index (when wordWrap is true)
+	totalVisualLines int   // total visual line count when wordWrap is true
 
 	loading       bool
 	loadErr       error
@@ -168,6 +175,11 @@ func (v *fileViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return v, nil
 		case key.Matches(msg, v.keyMap.Close):
 			return v, util.CmdHandler(CloseViewerMsg{Path: v.filePath})
+		case key.Matches(msg, v.keyMap.ToggleWordWrap):
+			v.wordWrap = !v.wordWrap
+			v.refreshViewportContent()
+			v.ensureCursorVisible()
+			return v, nil
 		}
 	}
 
@@ -350,6 +362,20 @@ func (v *fileViewer) ensureCursorVisible() {
 		return
 	}
 
+	if v.wordWrap && v.rawToFirstVisual != nil && v.cursorLine < len(v.rawToFirstVisual) {
+		visualLine := v.rawToFirstVisual[v.cursorLine]
+		visibleHeight := max(v.viewport.Height, 1)
+		yOffset := v.viewport.YOffset
+		if visualLine < yOffset {
+			yOffset = visualLine
+		} else if visualLine >= yOffset+visibleHeight {
+			yOffset = visualLine - visibleHeight + 1
+		}
+		maxOffset := max(v.totalVisualLines-visibleHeight, 0)
+		v.viewport.SetYOffset(util.Clamp(yOffset, 0, maxOffset))
+		return
+	}
+
 	visibleHeight := max(v.viewport.Height, 1)
 	yOffset := v.viewport.YOffset
 
@@ -369,6 +395,16 @@ func (v *fileViewer) syncCursorWithViewport() {
 		return
 	}
 
+	if v.wordWrap && v.visualToRaw != nil && len(v.visualToRaw) > 0 {
+		visibleHeight := max(v.viewport.Height, 1)
+		minVis := util.Clamp(v.viewport.YOffset, 0, max(len(v.visualToRaw)-1, 0))
+		maxVis := util.Clamp(v.viewport.YOffset+visibleHeight-1, 0, max(len(v.visualToRaw)-1, 0))
+		minRaw := v.visualToRaw[minVis]
+		maxRaw := v.visualToRaw[maxVis]
+		v.cursorLine = util.Clamp(v.cursorLine, minRaw, maxRaw)
+		return
+	}
+
 	visibleHeight := max(v.viewport.Height, 1)
 	minVisible := util.Clamp(v.viewport.YOffset, 0, max(v.lineCount()-1, 0))
 	maxVisible := util.Clamp(v.viewport.YOffset+visibleHeight-1, 0, max(v.lineCount()-1, 0))
@@ -376,6 +412,17 @@ func (v *fileViewer) syncCursorWithViewport() {
 }
 
 func (v *fileViewer) refreshViewportContent() {
+	if v.wordWrap && v.width > 0 {
+		content, vToR, rToV := v.buildWrappedContent()
+		v.visualToRaw = vToR
+		v.rawToFirstVisual = rToV
+		v.totalVisualLines = len(vToR)
+		v.viewport.SetContent(content)
+		return
+	}
+	v.visualToRaw = nil
+	v.rawToFirstVisual = nil
+	v.totalVisualLines = len(v.rawLines)
 	v.viewport.SetContent(v.renderViewportContent())
 }
 
@@ -426,6 +473,75 @@ func (v *fileViewer) renderViewportContent() string {
 	}
 
 	return builder.String()
+}
+
+// buildWrappedContent renders the file with word-wrapping, building visual↔raw line mappings.
+func (v *fileViewer) buildWrappedContent() (string, []int, []int) {
+	t := tuitheme.CurrentTheme()
+	contentWidth := max(v.width-v.gutterWidth()-2, 1)
+
+	matchLines := make(map[int]struct{}, len(v.searchMatches))
+	for _, idx := range v.searchMatches {
+		matchLines[idx] = struct{}{}
+	}
+
+	var builder strings.Builder
+	visualToRaw := make([]int, 0, len(v.rawLines))
+	rawToFirstVisual := make([]int, len(v.rawLines))
+
+	contStyle := func() lipgloss.Style {
+		return lipgloss.NewStyle().
+			Foreground(t.TextMuted()).
+			Background(t.Background()).
+			PaddingRight(1)
+	}
+
+	for i, rawLine := range v.rawLines {
+		rawToFirstVisual[i] = len(visualToRaw)
+
+		displayLine := rawLine
+		if i < len(v.highlightedLines) && v.highlightedLines[i] != "" {
+			displayLine = v.highlightedLines[i]
+		}
+
+		_, isMatch := matchLines[i]
+		isCurrentLine := i == v.cursorLine
+		isCurrentMatch := v.currentMatch >= 0 &&
+			v.currentMatch < len(v.searchMatches) &&
+			v.searchMatches[v.currentMatch] == i
+
+		// Wrap the display line (ANSI-aware)
+		var segs []string
+		if rawLine == "" {
+			segs = []string{displayLine}
+		} else {
+			wrapped := muwrap.String(displayLine, contentWidth)
+			segs = strings.Split(wrapped, "\n")
+			if len(segs) == 0 {
+				segs = []string{""}
+			}
+		}
+
+		for segIdx, seg := range segs {
+			visualToRaw = append(visualToRaw, i)
+
+			var gutter string
+			if segIdx == 0 {
+				gutter = v.renderGutter(i, isCurrentLine, isMatch, isCurrentMatch)
+			} else {
+				gutter = contStyle().Render(strings.Repeat(" ", v.gutterWidth()))
+			}
+
+			decoratedSeg := v.decorateLine(seg, isCurrentLine, isMatch, isCurrentMatch, t)
+			builder.WriteString(gutter)
+			builder.WriteString(decoratedSeg)
+			if i < len(v.rawLines)-1 || segIdx < len(segs)-1 {
+				builder.WriteByte('\n')
+			}
+		}
+	}
+
+	return builder.String(), visualToRaw, rawToFirstVisual
 }
 
 func (v *fileViewer) renderGutter(lineIndex int, isCurrentLine, isMatch, isCurrentMatch bool) string {
@@ -482,6 +598,9 @@ func (v *fileViewer) renderStatusLine(t tuitheme.Theme) string {
 	}
 
 	right := fmt.Sprintf("Ln %d/%d", v.currentLineNumber(), v.lineCount())
+	if v.wordWrap {
+		right = "WRAP  " + right
+	}
 	if v.loading {
 		right = "Loading"
 	} else if v.loadErr != nil {
