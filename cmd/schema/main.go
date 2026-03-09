@@ -263,22 +263,21 @@ func generateSchema() map[string]any {
 				"type": map[string]any{
 					"type":        "string",
 					"description": "Type of MCP server",
-					"enum":        []string{"stdio", "sse"},
+					"enum":        []string{"stdio", "sse", "streamable-http"},
 					"default":     "stdio",
 				},
 				"url": map[string]any{
 					"type":        "string",
-					"description": "URL for SSE type MCP servers",
+					"description": "URL for SSE and streamable-http type MCP servers",
 				},
 				"headers": map[string]any{
 					"type":        "object",
-					"description": "HTTP headers for SSE type MCP servers",
+					"description": "HTTP headers for SSE and streamable-http type MCP servers",
 					"additionalProperties": map[string]any{
 						"type": "string",
 					},
 				},
 			},
-			"required": []string{"command"},
 		},
 	}
 

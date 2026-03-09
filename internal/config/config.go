@@ -26,8 +26,9 @@ type MCPType string
 
 // Supported MCP types
 const (
-	MCPStdio MCPType = "stdio"
-	MCPSse   MCPType = "sse"
+	MCPStdio          MCPType = "stdio"
+	MCPSse            MCPType = "sse"
+	MCPStreamableHTTP MCPType = "streamable-http"
 )
 
 // MCPServer defines the configuration for a Model Control Protocol server.

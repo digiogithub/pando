@@ -7,11 +7,11 @@
   },
   "mcpServers": {
     "mesnada": {
-      "type": "sse",
+      "type": "streamable-http",
       "url": "http://127.0.0.1:9767/mcp"
     },
     "remembrances": {
-      "type": "sse",
+      "type": "streamable-http",
       "url": "http://127.0.0.1:4030/mcp"
     },
     "hyper-mcp": {

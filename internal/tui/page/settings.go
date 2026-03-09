@@ -375,11 +375,11 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 				Key:     fmt.Sprintf("mcpServers.%s.type", name),
 				Value:   serverType,
 				Type:    settings.FieldSelect,
-				Options: ensureOption([]string{string(config.MCPStdio), string(config.MCPSse)}, serverType),
+				Options: ensureOption([]string{string(config.MCPStdio), string(config.MCPSse), string(config.MCPStreamableHTTP)}, serverType),
 			},
 		)
 
-		if server.Type == config.MCPSse {
+		if server.Type == config.MCPSse || server.Type == config.MCPStreamableHTTP {
 			fields = append(fields, settings.Field{
 				Label: fmt.Sprintf("%s URL", name),
 				Key:   fmt.Sprintf("mcpServers.%s.url", name),
@@ -732,7 +732,7 @@ func saveMCPServer(field settings.Field) error {
 		server.Args = strings.Fields(field.Value)
 	case "type":
 		serverType := config.MCPType(strings.TrimSpace(field.Value))
-		if serverType != config.MCPStdio && serverType != config.MCPSse {
+		if serverType != config.MCPStdio && serverType != config.MCPSse && serverType != config.MCPStreamableHTTP {
 			return fmt.Errorf("unsupported MCP server type %q", field.Value)
 		}
 		server.Type = serverType
