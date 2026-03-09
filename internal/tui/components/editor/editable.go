@@ -17,6 +17,7 @@ import (
 	tuitheme "github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
 	tuizone "github.com/digiogithub/pando/internal/tui/zone"
+	muwrap "github.com/muesli/reflow/wrap"
 )
 
 // FileEditDirtyMsg is emitted when the editable file's dirty state changes.
@@ -80,6 +81,8 @@ type EditableKeyMap struct {
 	AddCursorDown key.Binding
 	// Exit edit mode
 	ExitEditMode key.Binding
+	// Toggle word wrap
+	ToggleWordWrap key.Binding
 }
 
 // DefaultEditableKeyMap returns the default keybindings for the editable component.
@@ -185,6 +188,11 @@ func DefaultEditableKeyMap() EditableKeyMap {
 			key.WithKeys("esc"),
 			key.WithHelp("esc", "exit edit mode"),
 		),
+		// Toggle word wrap
+		ToggleWordWrap: key.NewBinding(
+			key.WithKeys("alt+z"),
+			key.WithHelp("alt+z", "toggle word wrap"),
+		),
 	}
 }
 
@@ -227,6 +235,12 @@ type fileEditor struct {
 
 	// Internal clipboard (separate from OS clipboard)
 	internalClipboard string
+
+	// Word wrap state
+	wordWrap        bool
+	wrapWidth       int   // content width used for wrapping
+	rawToFirstVisual []int // raw line → first visual line index (rebuilt in refreshViewport)
+	totalVisualLines int
 
 	dirty         bool
 	loading       bool
@@ -493,6 +507,11 @@ func (e *fileEditor) handleKey(msg tea.KeyMsg) tea.Cmd {
 			e.ensureCursorVisible()
 			e.refreshViewport()
 		}
+
+	case key.Matches(msg, e.keyMap.ToggleWordWrap):
+		e.wordWrap = !e.wordWrap
+		e.refreshViewport()
+		e.ensureCursorVisible()
 
 	case msg.String() == "enter":
 		if e.hasSelection {
@@ -1111,6 +1130,27 @@ func (e *fileEditor) ensureCursorVisible() {
 		return
 	}
 
+	if e.wordWrap && e.rawToFirstVisual != nil && e.wrapWidth > 0 && e.cursorRow < len(e.rawToFirstVisual) {
+		subRow := e.cursorCol / e.wrapWidth
+		visualCursorRow := e.rawToFirstVisual[e.cursorRow] + subRow
+		visibleHeight := max(e.viewport.Height, 1)
+		yOffset := e.viewport.YOffset
+		if visualCursorRow < yOffset {
+			yOffset = visualCursorRow
+		} else if visualCursorRow >= yOffset+visibleHeight {
+			yOffset = visualCursorRow - visibleHeight + 1
+		}
+		maxOffset := max(e.totalVisualLines-visibleHeight, 0)
+		if yOffset < 0 {
+			yOffset = 0
+		}
+		if yOffset > maxOffset {
+			yOffset = maxOffset
+		}
+		e.viewport.SetYOffset(yOffset)
+		return
+	}
+
 	visibleHeight := max(e.viewport.Height, 1)
 	yOffset := e.viewport.YOffset
 
@@ -1131,6 +1171,18 @@ func (e *fileEditor) ensureCursorVisible() {
 }
 
 func (e *fileEditor) refreshViewport() {
+	if e.wordWrap && e.width > 0 {
+		contentWidth := max(e.width-e.gutterWidth()-2, 1)
+		content, rToV, total := e.renderWrappedContent(contentWidth)
+		e.wrapWidth = contentWidth
+		e.rawToFirstVisual = rToV
+		e.totalVisualLines = total
+		e.viewport.SetContent(content)
+		return
+	}
+	e.wrapWidth = 0
+	e.rawToFirstVisual = nil
+	e.totalVisualLines = len(e.lines)
 	e.viewport.SetContent(e.renderContent())
 }
 
@@ -1191,6 +1243,143 @@ func (e *fileEditor) extraCursorColForRow(row int) int {
 		}
 	}
 	return 0
+}
+
+// renderWrappedContent renders the editable buffer with word-wrapping enabled.
+// It returns (content, rawToFirstVisual, totalVisualLines).
+func (e *fileEditor) renderWrappedContent(contentWidth int) (string, []int, int) {
+	t := tuitheme.CurrentTheme()
+
+	switch {
+	case e.loading:
+		name := filepath.Base(e.filePath)
+		if name == "" || name == "." {
+			name = "file"
+		}
+		return styles.BaseStyle().Foreground(t.TextMuted()).Render("Loading " + name + "..."), nil, 0
+	case e.loadErr != nil:
+		return styles.BaseStyle().Foreground(t.Error()).Render(e.loadErr.Error()), nil, 0
+	case e.filePath == "" && len(e.lines) == 1 && e.lines[0] == "":
+		return styles.BaseStyle().Foreground(t.TextMuted()).Render("Open a file to edit it here."), nil, 0
+	case len(e.lines) == 0:
+		return "", nil, 0
+	}
+
+	cursorStyle := lipgloss.NewStyle().Background(t.Primary()).Foreground(t.Background())
+	bgStyle := lipgloss.NewStyle().Background(t.BackgroundSecondary()).Foreground(t.Text())
+	selStyle := lipgloss.NewStyle().Background(t.SelectionBackground()).Foreground(t.SelectionForeground())
+	normalStyle := lipgloss.NewStyle().Foreground(t.Text())
+	extraCursorStyle := lipgloss.NewStyle().Background(t.Primary()).Foreground(t.Background()).Faint(true)
+	extraBgStyle := lipgloss.NewStyle().Background(t.BackgroundSecondary()).Foreground(t.Text()).Faint(true)
+
+	rawToFirstVisual := make([]int, len(e.lines))
+	var builder strings.Builder
+	visualIdx := 0
+
+	for i, rawLine := range e.lines {
+		rawToFirstVisual[i] = visualIdx
+
+		renderedLine := rawLine
+		if i < len(e.highlightedLines) && e.highlightedLines[i] != "" {
+			renderedLine = e.highlightedLines[i]
+		}
+
+		isCurrentLine := i == e.cursorRow
+		isExtraCursor := e.isExtraCursorRow(i)
+		extraCol := e.extraCursorColForRow(i)
+		runes := []rune(rawLine)
+
+		// Wrap highlighted line into visual segments
+		var visSegs []string
+		if rawLine == "" {
+			visSegs = []string{renderedLine}
+		} else {
+			wrapped := muwrap.String(renderedLine, contentWidth)
+			visSegs = strings.Split(wrapped, "\n")
+			if len(visSegs) == 0 {
+				visSegs = []string{""}
+			}
+		}
+
+		numSegs := len(visSegs)
+		needsCharByChar := isCurrentLine || isExtraCursor || e.hasSelection
+
+		for segIdx, visSeg := range visSegs {
+			rawStartCol := segIdx * contentWidth
+			isLastSeg := segIdx == numSegs-1
+
+			gutter := e.renderGutterWrapped(i, segIdx, isCurrentLine || isExtraCursor)
+
+			var line string
+			if !needsCharByChar {
+				line = visSeg
+			} else {
+				// Determine sub-row boundaries in raw runes
+				subStart := rawStartCol
+				subEnd := min(rawStartCol+contentWidth, len(runes))
+				var subRunes []rune
+				if subStart < len(runes) {
+					subRunes = runes[subStart:subEnd]
+				}
+
+				var sb strings.Builder
+				for ci, r := range subRunes {
+					rawCol := rawStartCol + ci
+					isCursor := isCurrentLine && rawCol == e.cursorCol
+					isExtraCursorChar := isExtraCursor && rawCol == extraCol
+					inSel := e.isRowColInSelection(i, rawCol)
+
+					switch {
+					case isCursor:
+						sb.WriteString(cursorStyle.Render(string(r)))
+					case isExtraCursorChar:
+						sb.WriteString(extraCursorStyle.Render(string(r)))
+					case inSel:
+						sb.WriteString(selStyle.Render(string(r)))
+					case isCurrentLine:
+						sb.WriteString(bgStyle.Render(string(r)))
+					case isExtraCursor:
+						sb.WriteString(extraBgStyle.Render(string(r)))
+					default:
+						sb.WriteString(normalStyle.Render(string(r)))
+					}
+				}
+
+				// Cursor/extra-cursor at end of line: render in the last segment
+				if isLastSeg {
+					if isCurrentLine && e.cursorCol >= len(runes) {
+						sb.WriteString(cursorStyle.Render(" "))
+					} else if isExtraCursor && extraCol >= len(runes) {
+						sb.WriteString(extraCursorStyle.Render(" "))
+					}
+				}
+				line = sb.String()
+			}
+
+			builder.WriteString(gutter)
+			builder.WriteString(line)
+			if i < len(e.lines)-1 || segIdx < numSegs-1 {
+				builder.WriteByte('\n')
+			}
+			visualIdx++
+		}
+	}
+
+	return builder.String(), rawToFirstVisual, visualIdx
+}
+
+// renderGutterWrapped renders the gutter for a (possibly wrapped) sub-row.
+// For the first sub-row, it shows the line number. For continuations, it shows blank space.
+func (e *fileEditor) renderGutterWrapped(lineIndex, segIndex int, isCurrentLine bool) string {
+	if segIndex == 0 {
+		return e.renderGutter(lineIndex, isCurrentLine)
+	}
+	t := tuitheme.CurrentTheme()
+	return lipgloss.NewStyle().
+		Foreground(t.TextMuted()).
+		Background(t.Background()).
+		PaddingRight(1).
+		Render(strings.Repeat(" ", e.gutterWidth()))
 }
 
 func (e *fileEditor) renderGutter(lineIndex int, isCurrentLine bool) string {
@@ -1351,7 +1540,11 @@ func (e *fileEditor) renderStatusLine(t tuitheme.Theme) string {
 	if e.hasSelection {
 		selInfo = "  [SEL]"
 	}
-	right := cursorInfo + extraInfo + selInfo + "  [EDIT] esc=view"
+	wrapInfo := ""
+	if e.wordWrap {
+		wrapInfo = "  WRAP"
+	}
+	right := cursorInfo + extraInfo + selInfo + wrapInfo + "  [EDIT] esc=view"
 	if lineCount == 0 {
 		right = "[EDIT] esc=view"
 	}
