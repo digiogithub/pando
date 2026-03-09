@@ -2,6 +2,7 @@ package filetree
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -61,6 +62,10 @@ type FileTree struct {
 	keyMap       KeyMap
 	loading      map[string]bool
 	lastErr      error
+	// New file creation state
+	creatingFile    bool
+	newFileInput    textinput.Model
+	newFileDirPath  string // directory in which to create the file
 }
 
 func New(projectPath string, opts ...Option) *FileTree {
@@ -75,13 +80,20 @@ func New(projectPath string, opts ...Option) *FileTree {
 	input.CharLimit = 256
 	input.Blur()
 
+	newFileIn := textinput.New()
+	newFileIn.Prompt = "New file: "
+	newFileIn.Placeholder = "filename"
+	newFileIn.CharLimit = 256
+	newFileIn.Blur()
+
 	tree := &FileTree{
-		root:        NewRootNode(absPath),
-		projectPath: absPath,
-		filterInput: input,
-		gitStatuses: make(map[string]GitFileStatus),
-		keyMap:      DefaultKeyMap(),
-		loading:     make(map[string]bool),
+		root:         NewRootNode(absPath),
+		projectPath:  absPath,
+		filterInput:  input,
+		newFileInput: newFileIn,
+		gitStatuses:  make(map[string]GitFileStatus),
+		keyMap:       DefaultKeyMap(),
+		loading:      make(map[string]bool),
 	}
 	for _, opt := range opts {
 		opt(tree)
@@ -128,6 +140,15 @@ func (t *FileTree) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.applyStatuses(node)
 		t.rebuildFlatList()
 		return t, nil
+	case newFileCreatedMsg:
+		// Refresh the file tree and open the newly created file
+		relPath, _ := filepath.Rel(t.projectPath, msg.Path)
+		relPath = filepath.ToSlash(relPath)
+		t.selectedFile = msg.Path
+		return t, tea.Batch(
+			LoadFileTree(t.projectPath, LoadOptions{ShowHidden: t.showHidden}),
+			util.CmdHandler(FileSelectedMsg{Path: msg.Path, RelativePath: relPath}),
+		)
 	case GitStatusUpdateMsg:
 		if msg.Err != nil {
 			t.lastErr = msg.Err
@@ -151,6 +172,9 @@ func (t *FileTree) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.rebuildFlatList()
 		return t, nil
 	case tea.KeyMsg:
+		if t.creatingFile {
+			return t.handleNewFileInput(msg)
+		}
 		if t.filterMode {
 			return t.handleFilterInput(msg)
 		}
@@ -216,6 +240,8 @@ func (t *FileTree) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return t, t.expandCurrentNode()
 	case key.Matches(msg, t.keyMap.Open):
 		return t, t.openCurrentNode(false)
+	case key.Matches(msg, t.keyMap.NewFile):
+		return t.startCreatingFile()
 	default:
 		return t, nil
 	}
@@ -307,7 +333,9 @@ func (t *FileTree) View() string {
 	}
 
 	sections := []string{t.renderHeader()}
-	if t.filterMode || t.filterQuery != "" {
+	if t.creatingFile {
+		sections = append(sections, t.renderNewFileInput())
+	} else if t.filterMode || t.filterQuery != "" {
 		sections = append(sections, t.renderFilter())
 	}
 	sections = append(sections, t.renderBody())
@@ -594,4 +622,84 @@ func (t *FileTree) applyStatuses(root *FileNode) {
 	for _, child := range root.Children {
 		t.applyStatuses(child)
 	}
+}
+
+// --- New file creation ---
+
+// startCreatingFile enters the "create new file" mode.
+// If the selected node is a directory, create inside it; otherwise use its parent directory.
+func (t *FileTree) startCreatingFile() (tea.Model, tea.Cmd) {
+	node := t.currentNode()
+	dirPath := t.projectPath
+	if node != nil {
+		if node.IsDir {
+			dirPath = filepath.Join(t.projectPath, filepath.FromSlash(node.Path))
+		} else {
+			dirPath = filepath.Join(t.projectPath, filepath.FromSlash(filepath.Dir(node.Path)))
+		}
+	}
+	t.newFileDirPath = dirPath
+	t.creatingFile = true
+	t.newFileInput.SetValue("")
+	t.newFileInput.Focus()
+	return t, textinput.Blink
+}
+
+// handleNewFileInput processes key events when in file creation mode.
+func (t *FileTree) handleNewFileInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		t.creatingFile = false
+		t.newFileInput.Blur()
+		return t, nil
+	case "enter":
+		name := strings.TrimSpace(t.newFileInput.Value())
+		if name == "" {
+			t.creatingFile = false
+			t.newFileInput.Blur()
+			return t, nil
+		}
+		return t.confirmCreateFile(name)
+	}
+	var cmd tea.Cmd
+	t.newFileInput, cmd = t.newFileInput.Update(msg)
+	return t, cmd
+}
+
+func (t *FileTree) confirmCreateFile(name string) (tea.Model, tea.Cmd) {
+	t.creatingFile = false
+	t.newFileInput.Blur()
+
+	fullPath := filepath.Join(t.newFileDirPath, name)
+	return t, func() tea.Msg {
+		// Create parent dirs if needed (the filename may include subdirs)
+		dir := filepath.Dir(fullPath)
+		if err := os.MkdirAll(dir, 0755); err != nil { //nolint:gosec
+			return util.InfoMsg{Type: util.InfoTypeError, Msg: "Cannot create directory: " + err.Error()}
+		}
+		// Create the file (empty)
+		f, err := os.OpenFile(fullPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644) //nolint:gosec
+		if err != nil {
+			if os.IsExist(err) {
+				return util.InfoMsg{Type: util.InfoTypeWarn, Msg: "File already exists: " + name}
+			}
+			return util.InfoMsg{Type: util.InfoTypeError, Msg: "Cannot create file: " + err.Error()}
+		}
+		f.Close()
+		return newFileCreatedMsg{Path: fullPath}
+	}
+}
+
+type newFileCreatedMsg struct {
+	Path string
+}
+
+func (t *FileTree) renderNewFileInput() string {
+	th := theme.CurrentTheme()
+	t.newFileInput.Width = max(0, t.width-2)
+	input := t.newFileInput.View()
+	return styles.BaseStyle().
+		Width(t.width).
+		Foreground(th.Primary()).
+		Render(input)
 }

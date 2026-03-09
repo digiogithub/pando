@@ -52,7 +52,7 @@ type DeleteAttachmentKeyMaps struct {
 
 var editorMaps = EditorKeyMaps{
 	Send: key.NewBinding(
-		key.WithKeys("enter", "ctrl+s"),
+		key.WithKeys("enter"),
 		key.WithHelp("enter", "send message"),
 	),
 	NewLine: key.NewBinding(
@@ -60,15 +60,15 @@ var editorMaps = EditorKeyMaps{
 		key.WithHelp("shift+enter", "new line"),
 	),
 	OpenEditor: key.NewBinding(
-		key.WithKeys("ctrl+e"),
-		key.WithHelp("ctrl+e", "open editor"),
+		key.WithKeys("ctrl+i"),
+		key.WithHelp("ctrl+i", "open editor"),
 	),
 }
 
 var DeleteKeyMaps = DeleteAttachmentKeyMaps{
 	AttachmentDeleteMode: key.NewBinding(
-		key.WithKeys("ctrl+r"),
-		key.WithHelp("ctrl+r+{i}", "delete attachment at index i"),
+		key.WithKeys("ctrl+shift+r"),
+		key.WithHelp("ctrl+shift+r+{i}", "delete attachment at index i"),
 	),
 	Escape: key.NewBinding(
 		key.WithKeys("esc"),

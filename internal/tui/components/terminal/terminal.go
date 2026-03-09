@@ -10,11 +10,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/taigrr/bubbleterm/emulator"
 
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/tui/layout"
 )
 
 // terminalTickMsg is sent periodically to poll the terminal for new output.
-type terminalTickMsg struct{ id string }
+// GetScreen() is called inside the tick goroutine (not in Update) to avoid blocking the event loop.
+type terminalTickMsg struct {
+	id   string
+	rows []string
+}
 
 // TerminalComponent wraps bubbleterm/emulator as a Bubble Tea v1 model.
 type TerminalComponent interface {
@@ -60,16 +65,23 @@ func New(width, height int) (TerminalComponent, error) {
 		height = 24
 	}
 
+	logging.Info("terminal.New: creating emulator", "width", width, "height", height)
+
 	emu, err := emulator.New(width, height)
 	if err != nil {
+		logging.Error("terminal.New: emulator.New failed", "error", err)
 		return nil, err
 	}
+	logging.Info("terminal.New: emulator created", "id", emu.ID())
 
 	cmd := shellCommand()
+	logging.Info("terminal.New: starting shell command", "shell", cmd.Path)
 	if err := emu.StartCommand(cmd); err != nil {
+		logging.Error("terminal.New: StartCommand failed", "error", err)
 		_ = emu.Close()
 		return nil, err
 	}
+	logging.Info("terminal.New: shell started successfully", "id", emu.ID())
 
 	m := &terminalModel{
 		id:      emu.ID(),
@@ -98,8 +110,11 @@ func (m *terminalModel) Init() tea.Cmd {
 
 func (m *terminalModel) tick() tea.Cmd {
 	id := m.id
+	emu := m.emu
+	// GetScreen() is called inside the goroutine to avoid blocking the Bubble Tea event loop.
 	return tea.Tick(tickInterval, func(_ time.Time) tea.Msg {
-		return terminalTickMsg{id: id}
+		frame := emu.GetScreen()
+		return terminalTickMsg{id: id, rows: frame.Rows}
 	})
 }
 
@@ -109,17 +124,19 @@ func (m *terminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.id != m.id {
 			return m, nil
 		}
-		frame := m.emu.GetScreen()
-		if len(frame.Rows) > 0 {
-			m.rows = frame.Rows
+		logging.Debug("terminal.Update: tick received", "id", m.id, "rows", len(msg.rows))
+		if len(msg.rows) > 0 {
+			m.rows = msg.rows
 		}
 		return m, m.tick()
 
 	case tea.KeyMsg:
 		if !m.focused {
+			logging.Debug("terminal.Update: key ignored (not focused)", "id", m.id, "key", msg.String())
 			return m, nil
 		}
 		input := keyMsgToInput(msg)
+		logging.Debug("terminal.Update: key input", "id", m.id, "key", msg.String(), "input_bytes", len(input))
 		if input != "" {
 			_, _ = m.emu.Write([]byte(input))
 		}

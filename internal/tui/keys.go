@@ -52,13 +52,14 @@ type EditorKeys struct {
 }
 
 type FileTreeKeys struct {
-	Up       key.Binding
-	Down     key.Binding
-	Open     key.Binding
-	Search   key.Binding
-	Expand   key.Binding
+	Up      key.Binding
+	Down    key.Binding
+	Open    key.Binding
+	Search  key.Binding
+	Expand  key.Binding
 	Collapse key.Binding
 	Refresh  key.Binding
+	NewFile  key.Binding
 }
 
 type DialogKeys struct {
@@ -210,8 +211,8 @@ func DefaultKeyMap() KeyMap {
 				key.WithHelp("ctrl+shift+tab", "prev tab"),
 			),
 			EditExternal: key.NewBinding(
-				key.WithKeys("ctrl+i"),
-				key.WithHelp("ctrl+i", "edit in external editor"),
+				key.WithKeys("ctrl+e"),
+				key.WithHelp("ctrl+e", "edit file inline"),
 			),
 			Save: key.NewBinding(
 				key.WithKeys("ctrl+s"),
@@ -246,6 +247,10 @@ func DefaultKeyMap() KeyMap {
 			Refresh: key.NewBinding(
 				key.WithKeys("r"),
 				key.WithHelp("r", "refresh"),
+			),
+			NewFile: key.NewBinding(
+				key.WithKeys("ctrl+shift+n"),
+				key.WithHelp("ctrl+shift+n", "new file"),
 			),
 		},
 		Dialog: DialogKeys{},
@@ -316,13 +321,13 @@ func (k EditorKeys) Bindings() []key.Binding {
 }
 
 func (k FileTreeKeys) ShortHelp() []key.Binding {
-	return filterHelpBindings(k.Up, k.Down, k.Open, k.Search)
+	return filterHelpBindings(k.Up, k.Down, k.Open, k.Search, k.NewFile)
 }
 
 func (k FileTreeKeys) FullHelp() [][]key.Binding {
 	return compactHelpGroups(
 		filterHelpBindings(k.Up, k.Down, k.Open, k.Search),
-		filterHelpBindings(k.Expand, k.Collapse, k.Refresh),
+		filterHelpBindings(k.Expand, k.Collapse, k.Refresh, k.NewFile),
 	)
 }
 

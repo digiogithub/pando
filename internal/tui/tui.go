@@ -34,6 +34,14 @@ import (
 
 type startCompactSessionMsg struct{}
 
+// terminalOpenedMsg is sent after the terminal panel is opened so that
+// appModel.Update() (which uses a value receiver) can properly set
+// terminalFocused = true on the live copy returned to Bubble Tea.
+type terminalOpenedMsg struct{}
+
+// terminalClosedMsg is sent when the terminal panel is toggled off.
+type terminalClosedMsg struct{}
+
 type appModel struct {
 	width, height   int
 	currentPage     page.PageID
@@ -319,6 +327,21 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.showCommandDialog = false
 		return a, nil
 
+	case terminalOpenedMsg:
+		// This message is dispatched by the open-terminal command handler so that
+		// the focus flag is set on the value-receiver copy that Bubble Tea stores,
+		// not on the original *appModel pointer captured in the closure.
+		logging.Info("tui: terminal opened, setting focus")
+		a.terminalFocused = true
+		a.terminalPanel.Focus()
+		return a, nil
+
+	case terminalClosedMsg:
+		logging.Info("tui: terminal closed, removing focus")
+		a.terminalFocused = false
+		a.terminalPanel.Blur()
+		return a, nil
+
 	case startCompactSessionMsg:
 		// Start compacting the current session
 		a.isCompacting = true
@@ -511,6 +534,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Toggle terminal focus with ctrl+`
 		if key.Matches(msg, a.keys.Global.FocusTerminal) && a.terminalPanel.IsVisible() {
 			a.terminalFocused = !a.terminalFocused
+			logging.Debug("tui: FocusTerminal key", "terminalFocused", a.terminalFocused)
 			if a.terminalFocused {
 				a.terminalPanel.Focus()
 			} else {
@@ -533,7 +557,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch {
 
-		case key.Matches(msg, a.keys.Global.Quit):
+		case key.Matches(msg, a.keys.Global.Quit) && !(a.tabBar != nil && a.tabBar.IsActiveEditable()):
 			a.showQuit = !a.showQuit
 			if a.showHelp {
 				a.showHelp = false
@@ -567,7 +591,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.filepicker.ToggleFilepicker(a.showFilepicker)
 				return a, nil
 			}
-		case key.Matches(msg, a.keys.Chat.SwitchSession) && a.currentPage == page.ChatPage:
+		case key.Matches(msg, a.keys.Chat.SwitchSession) && a.currentPage == page.ChatPage && !(a.tabBar != nil && a.tabBar.IsActiveEditable()):
 			if !a.showQuit && !a.showPermissions && !a.showCommandDialog {
 				return a, a.openSessionDialog()
 			}
@@ -930,11 +954,18 @@ func (a appModel) pageHelpSections() []dialog.HelpSection {
 		if a.layoutMode != page.ChatOnly {
 			sections = append(sections,
 				dialog.HelpSection{Title: "File tree", Bindings: a.keys.FileTree.Bindings()},
-				dialog.HelpSection{Title: "Layout", Bindings: filterHelpBindings(a.keys.Chat.ToggleSidebar, a.keys.Chat.NextPanel)},
+				dialog.HelpSection{Title: "Layout", Bindings: filterHelpBindings(
+					a.keys.Chat.ToggleSidebar,
+					a.keys.Chat.NextPanel,
+					key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "toggle editor+chat layout")),
+				)},
 			)
 		}
-		if a.layoutMode == page.SidebarEditor {
-			sections = append(sections, dialog.HelpSection{Title: "Viewer", Bindings: a.keys.Editor.Bindings()})
+		if a.layoutMode == page.SidebarEditor || a.layoutMode == page.SidebarChat {
+			sections = append(sections, dialog.HelpSection{Title: "File", Bindings: filterHelpBindings(
+				a.keys.Editor.EditExternal,
+				a.keys.Editor.Save,
+			)})
 		}
 		return sections
 	case page.LogsPage:
@@ -1484,22 +1515,28 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Description: "Open an embedded terminal in the bottom panel",
 		Category:    dialog.CommandCategoryView,
 		Handler: func(cmd dialog.Command) tea.Cmd {
-			var cmds []tea.Cmd
+			logging.Info("tui: open-terminal command handler called",
+				"panel_visible", model.terminalPanel.IsVisible(),
+				"has_terminals", model.terminalPanel.HasTerminals(),
+			)
 			if !model.terminalPanel.IsVisible() || !model.terminalPanel.HasTerminals() {
-				c := model.terminalPanel.OpenNewTerminal()
-				if c != nil {
-					cmds = append(cmds, c)
-				}
-			} else {
-				model.terminalPanel.Toggle()
+				// OpenNewTerminal mutates the panel via pointer (safe) and returns the init tick cmd.
+				initCmd := model.terminalPanel.OpenNewTerminal()
+				logging.Info("tui: terminal panel opened", "visible", model.terminalPanel.IsVisible())
+				// Return the init tick cmd + a message so Update() sets terminalFocused on
+				// the live value-receiver copy (not on the original *appModel pointer).
+				return tea.Batch(
+					initCmd,
+					func() tea.Msg { return terminalOpenedMsg{} },
+				)
 			}
-			model.terminalFocused = model.terminalPanel.IsVisible()
-			if model.terminalFocused {
-				model.terminalPanel.Focus()
-			} else {
-				model.terminalPanel.Blur()
+			// Panel already has terminals: toggle visibility.
+			model.terminalPanel.Toggle()
+			logging.Info("tui: terminal panel toggled", "now_visible", model.terminalPanel.IsVisible())
+			if model.terminalPanel.IsVisible() {
+				return func() tea.Msg { return terminalOpenedMsg{} }
 			}
-			return tea.Batch(cmds...)
+			return func() tea.Msg { return terminalClosedMsg{} }
 		},
 	})
 

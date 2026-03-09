@@ -14,6 +14,7 @@ type KeyMap struct {
 	Search       key.Binding
 	Refresh      key.Binding
 	CancelSearch key.Binding
+	NewFile      key.Binding
 }
 
 var _ help.KeyMap = KeyMap{}
@@ -52,16 +53,21 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("esc"),
 			key.WithHelp("esc", "clear search"),
 		),
+		NewFile: key.NewBinding(
+			key.WithKeys("ctrl+shift+n"),
+			key.WithHelp("ctrl+shift+n", "new file"),
+		),
 	}
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Open, k.Search}
+	return []key.Binding{k.Up, k.Down, k.Open, k.Search, k.NewFile}
 }
 
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Expand, k.Collapse},
 		{k.Open, k.Search, k.Refresh, k.CancelSearch},
+		{k.NewFile},
 	}
 }
