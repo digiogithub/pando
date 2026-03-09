@@ -29,17 +29,88 @@ func FetchModelsFromProvider(ctx context.Context, provider ModelProvider, apiKey
 	case ProviderOllama:
 		return fetchOllamaModels(ctx, apiKey, baseURL)
 	case ProviderAnthropic:
-		// Anthropic doesn't have a list models endpoint
-		return nil, nil
+		return fetchAnthropicModels(ctx, apiKey)
 	case ProviderGemini:
 		return fetchGeminiModels(ctx, apiKey)
 	case ProviderGROQ:
 		return fetchGroqModels(ctx, apiKey)
 	case ProviderOpenRouter:
 		return fetchOpenRouterModels(ctx, apiKey)
+	case ProviderXAI:
+		return fetchXAIModels(ctx, apiKey)
 	default:
 		return nil, fmt.Errorf("provider %s does not support model listing", provider)
 	}
+}
+
+func fetchAnthropicModels(ctx context.Context, apiKey string) ([]FetchedModel, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("API key required for Anthropic")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.anthropic.com/v1/models", nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
+		var response struct {
+			Data []struct {
+				ID          string `json:"id"`
+				DisplayName string `json:"display_name"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, fmt.Errorf("parse response: %w", err)
+		}
+		result := make([]FetchedModel, 0, len(response.Data))
+		for _, m := range response.Data {
+			name := m.DisplayName
+			if name == "" {
+				name = m.ID
+			}
+			result = append(result, FetchedModel{
+				ID:   m.ID,
+				Name: name,
+			})
+		}
+		return result, nil
+	})
+}
+
+func fetchXAIModels(ctx context.Context, apiKey string) ([]FetchedModel, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("API key required for xAI")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.x.ai/v1/models", nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
+		var response struct {
+			Data []struct {
+				ID      string `json:"id"`
+				Created int64  `json:"created"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, fmt.Errorf("parse response: %w", err)
+		}
+		result := make([]FetchedModel, 0, len(response.Data))
+		for _, m := range response.Data {
+			result = append(result, FetchedModel{
+				ID:      m.ID,
+				Name:    m.ID,
+				Created: m.Created,
+			})
+		}
+		return result, nil
+	})
 }
 
 func fetchOllamaModels(ctx context.Context, apiKey string, baseURL string) ([]FetchedModel, error) {

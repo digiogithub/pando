@@ -816,7 +816,7 @@ func setDefaultModelForAgent(agent AgentName) bool {
 			maxTokens = 80
 		}
 		cfg.Agents[agent] = Agent{
-			Model:     models.Claude37Sonnet,
+			Model:     models.Claude4Sonnet,
 			MaxTokens: maxTokens,
 		}
 		return true
@@ -853,27 +853,18 @@ func setDefaultModelForAgent(agent AgentName) bool {
 	if apiKey := os.Getenv("OPENROUTER_API_KEY"); apiKey != "" {
 		var model models.ModelID
 		maxTokens := int64(5000)
-		reasoningEffort := ""
 
 		switch agent {
 		case AgentTitle:
 			model = models.OpenRouterClaude35Haiku
 			maxTokens = 80
-		case AgentTask:
-			model = models.OpenRouterClaude37Sonnet
 		default:
 			model = models.OpenRouterClaude37Sonnet
 		}
 
-		// Check if model supports reasoning
-		if modelInfo, ok := models.SupportedModels[model]; ok && modelInfo.CanReason {
-			reasoningEffort = "medium"
-		}
-
 		cfg.Agents[agent] = Agent{
-			Model:           model,
-			MaxTokens:       maxTokens,
-			ReasoningEffort: reasoningEffort,
+			Model:     model,
+			MaxTokens: maxTokens,
 		}
 		return true
 	}
@@ -1308,6 +1299,11 @@ func providerRequiresAPIKey(provider models.ModelProvider) bool {
 func refreshConfiguredDynamicModels() {
 	if cfg == nil {
 		return
+	}
+
+	// Load cached models from previous sessions so they are available before any API fetch.
+	if err := models.LoadModelCache(); err != nil {
+		logging.Debug("Failed to load model cache", "error", err)
 	}
 
 	providerCfg, ok := cfg.Providers[models.ProviderOllama]

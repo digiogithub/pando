@@ -30,7 +30,7 @@ func LoadCustomCommands() ([]Command, error) {
 
 	var commands []Command
 
-	// Load user commands from XDG_CONFIG_HOME/opencode/commands
+	// Load user commands from XDG_CONFIG_HOME/pando/commands
 	xdgConfigHome := os.Getenv("XDG_CONFIG_HOME")
 	if xdgConfigHome == "" {
 		// Default to ~/.config if XDG_CONFIG_HOME is not set

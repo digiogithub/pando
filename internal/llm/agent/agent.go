@@ -83,27 +83,38 @@ func NewAgent(
 ) (Service, error) {
 	agentProvider, err := createAgentProvider(agentName, skillManager, nil)
 	if err != nil {
-		return nil, err
+		// If the model is not yet available (e.g. dynamic models not fetched yet),
+		// create the agent without a provider. The TUI will prompt the user to select a model.
+		logging.Warn("Agent provider not available, model selection required", "agent", agentName, "error", err)
+		agentProvider = nil
 	}
+
 	var titleProvider provider.Provider
 	// Only generate titles for the coder agent
 	if agentName == config.AgentCoder {
 		titleProvider, err = createAgentProvider(config.AgentTitle, nil, nil)
 		if err != nil {
-			return nil, err
+			logging.Debug("Title agent provider not available", "error", err)
+			titleProvider = nil
 		}
 	}
 	var summarizeProvider provider.Provider
 	if agentName == config.AgentCoder {
 		summarizeProvider, err = createAgentProvider(config.AgentSummarizer, nil, nil)
 		if err != nil {
-			return nil, err
+			logging.Debug("Summarizer agent provider not available", "error", err)
+			summarizeProvider = nil
 		}
 	}
 
 	var contextManager *skills.ContextManager
-	if skillManager != nil && (agentName == config.AgentCoder || agentName == config.AgentTask) {
+	if skillManager != nil && agentProvider != nil && (agentName == config.AgentCoder || agentName == config.AgentTask) {
 		contextManager = skills.NewContextManager(skillManager, effectiveMaxTokens(agentName, agentProvider.Model()))
+	}
+
+	modelID := models.ModelID("")
+	if agentProvider != nil {
+		modelID = agentProvider.Model().ID
 	}
 
 	agent := &agent{
@@ -120,11 +131,14 @@ func NewAgent(
 		activeRequests:    sync.Map{},
 	}
 
-	logging.Debug("Agent created", "name", string(agentName), "model", agentProvider.Model().ID, "toolCount", len(agentTools))
+	logging.Debug("Agent created", "name", string(agentName), "model", modelID, "toolCount", len(agentTools))
 	return agent, nil
 }
 
 func (a *agent) Model() models.Model {
+	if a.provider == nil {
+		return models.Model{}
+	}
 	return a.provider.Model()
 }
 
@@ -210,8 +224,14 @@ func (a *agent) err(err error) AgentEvent {
 	}
 }
 
+// ErrNoModel is returned when the agent has no model configured.
+var ErrNoModel = fmt.Errorf("no model configured, please select a model")
+
 func (a *agent) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
 	logging.Debug("Agent.Run called", "sessionID", sessionID, "contentLength", len(content), "attachmentCount", len(attachments))
+	if a.provider == nil {
+		return nil, ErrNoModel
+	}
 	if !a.provider.Model().SupportsAttachments && attachments != nil {
 		attachments = nil
 	}

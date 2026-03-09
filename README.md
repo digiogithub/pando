@@ -183,6 +183,7 @@ Compila el binario de pando.
 # Get version from last git tag
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
 go build -ldflags "-X github.com/digiogithub/pando/internal/version.Version=$VERSION" -o pando .
+rm *.log
 ```
 
 ### build-and-copy

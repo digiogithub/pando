@@ -71,7 +71,7 @@ func RecoverPanic(name string, cleanup func()) {
 
 		// Create a timestamped panic log file
 		timestamp := time.Now().Format("20060102-150405")
-		filename := fmt.Sprintf("opencode-panic-%s-%s.log", name, timestamp)
+		filename := fmt.Sprintf("pando-panic-%s-%s.log", name, timestamp)
 
 		file, err := os.Create(filename)
 		if err != nil {

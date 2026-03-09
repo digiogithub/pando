@@ -379,6 +379,9 @@ func (app *App) refreshDynamicModels(ctx context.Context) {
 			logging.Debug("Failed to refresh models from provider", "provider", providerID, "error", err)
 		} else {
 			logging.Debug("Refreshed models from provider", "provider", providerID)
+			if err := models.SaveModelCache(); err != nil {
+				logging.Debug("Failed to save model cache", "error", err)
+			}
 		}
 	}
 }
