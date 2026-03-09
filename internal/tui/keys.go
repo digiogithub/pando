@@ -131,8 +131,8 @@ func DefaultKeyMap() KeyMap {
 				key.WithHelp("ctrl+`", "toggle terminal panel"),
 			),
 			FocusTerminal: key.NewBinding(
-				key.WithKeys("ctrl+`"),
-				key.WithHelp("ctrl+`", "focus/unfocus terminal"),
+				key.WithKeys("alt+`"),
+				key.WithHelp("alt+`", "focus/unfocus terminal"),
 			),
 		},
 		Chat: ChatKeys{

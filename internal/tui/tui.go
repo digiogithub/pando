@@ -34,13 +34,13 @@ import (
 
 type startCompactSessionMsg struct{}
 
-// terminalOpenedMsg is sent after the terminal panel is opened so that
-// appModel.Update() (which uses a value receiver) can properly set
-// terminalFocused = true on the live copy returned to Bubble Tea.
-type terminalOpenedMsg struct{}
-
-// terminalClosedMsg is sent when the terminal panel is toggled off.
-type terminalClosedMsg struct{}
+// terminalFocusChangedMsg updates terminal focus on the live app model copy
+// stored by Bubble Tea. The terminal panel itself is mutated through a shared
+// pointer, but appModel.terminalFocused must be updated via a message because
+// appModel.Update uses a value receiver.
+type terminalFocusChangedMsg struct {
+	focused bool
+}
 
 type appModel struct {
 	width, height   int
@@ -327,19 +327,14 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.showCommandDialog = false
 		return a, nil
 
-	case terminalOpenedMsg:
-		// This message is dispatched by the open-terminal command handler so that
-		// the focus flag is set on the value-receiver copy that Bubble Tea stores,
-		// not on the original *appModel pointer captured in the closure.
-		logging.Info("tui: terminal opened, setting focus")
-		a.terminalFocused = true
-		a.terminalPanel.Focus()
-		return a, nil
-
-	case terminalClosedMsg:
-		logging.Info("tui: terminal closed, removing focus")
-		a.terminalFocused = false
-		a.terminalPanel.Blur()
+	case terminalFocusChangedMsg:
+		logging.Info("tui: terminal focus changed", "focused", msg.focused)
+		a.terminalFocused = msg.focused
+		if msg.focused {
+			a.terminalPanel.Focus()
+		} else {
+			a.terminalPanel.Blur()
+		}
 		return a, nil
 
 	case startCompactSessionMsg:
@@ -531,8 +526,14 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, cmd
 		}
 
-		// Toggle terminal focus with ctrl+`
-		if key.Matches(msg, a.keys.Global.FocusTerminal) && a.terminalPanel.IsVisible() {
+		// Toggle terminal visibility with ctrl+`. This is handled before terminal
+		// input routing so the panel can always be hidden even while focused.
+		if key.Matches(msg, a.keys.Global.ToggleTerminal) {
+			return a, a.toggleTerminalPanel()
+		}
+
+		// Toggle terminal focus independently from panel visibility.
+		if key.Matches(msg, a.keys.Global.FocusTerminal) && a.terminalPanel.IsVisible() && a.terminalPanel.HasTerminals() {
 			a.terminalFocused = !a.terminalFocused
 			logging.Debug("tui: FocusTerminal key", "terminalFocused", a.terminalFocused)
 			if a.terminalFocused {
@@ -849,6 +850,27 @@ func (a *appModel) openFilepicker() tea.Cmd {
 	a.showFilepicker = true
 	a.filepicker.ToggleFilepicker(a.showFilepicker)
 	return nil
+}
+
+func (a *appModel) setTerminalFocus(focused bool) tea.Cmd {
+	return func() tea.Msg {
+		return terminalFocusChangedMsg{focused: focused}
+	}
+}
+
+func (a *appModel) toggleTerminalPanel() tea.Cmd {
+	logging.Info("tui: toggle-terminal invoked",
+		"panel_visible", a.terminalPanel.IsVisible(),
+		"has_terminals", a.terminalPanel.HasTerminals(),
+	)
+
+	if !a.terminalPanel.HasTerminals() {
+		initCmd := a.terminalPanel.OpenNewTerminal()
+		return tea.Batch(initCmd, a.setTerminalFocus(false))
+	}
+
+	a.terminalPanel.Toggle()
+	return a.setTerminalFocus(false)
 }
 
 func (a *appModel) findCommand(id string) (dialog.Command, bool) {
@@ -1515,28 +1537,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Description: "Open an embedded terminal in the bottom panel",
 		Category:    dialog.CommandCategoryView,
 		Handler: func(cmd dialog.Command) tea.Cmd {
-			logging.Info("tui: open-terminal command handler called",
-				"panel_visible", model.terminalPanel.IsVisible(),
-				"has_terminals", model.terminalPanel.HasTerminals(),
-			)
-			if !model.terminalPanel.IsVisible() || !model.terminalPanel.HasTerminals() {
-				// OpenNewTerminal mutates the panel via pointer (safe) and returns the init tick cmd.
-				initCmd := model.terminalPanel.OpenNewTerminal()
-				logging.Info("tui: terminal panel opened", "visible", model.terminalPanel.IsVisible())
-				// Return the init tick cmd + a message so Update() sets terminalFocused on
-				// the live value-receiver copy (not on the original *appModel pointer).
-				return tea.Batch(
-					initCmd,
-					func() tea.Msg { return terminalOpenedMsg{} },
-				)
-			}
-			// Panel already has terminals: toggle visibility.
-			model.terminalPanel.Toggle()
-			logging.Info("tui: terminal panel toggled", "now_visible", model.terminalPanel.IsVisible())
-			if model.terminalPanel.IsVisible() {
-				return func() tea.Msg { return terminalOpenedMsg{} }
-			}
-			return func() tea.Msg { return terminalClosedMsg{} }
+			return model.toggleTerminalPanel()
 		},
 	})
 
