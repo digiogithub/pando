@@ -12,6 +12,7 @@ import (
 	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/permission"
 )
 
@@ -116,6 +117,8 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return NewTextErrorResponse("URL must start with http:// or https://"), nil
 	}
 
+	logging.Debug("fetch tool called", "url", params.URL, "format", params.Format, "timeout", params.Timeout)
+
 	sessionID, messageID := GetContextValues(ctx)
 	if sessionID == "" || messageID == "" {
 		return ToolResponse{}, fmt.Errorf("session ID and message ID are required for creating a new file")
@@ -172,6 +175,8 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 
 	content := string(body)
 	contentType := resp.Header.Get("Content-Type")
+
+	logging.Debug("fetch completed", "url", params.URL, "statusCode", resp.StatusCode, "contentLength", len(body), "contentType", contentType)
 
 	switch format {
 	case "text":

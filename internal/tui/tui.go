@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/digiogithub/pando/internal/app"
+	"github.com/digiogithub/pando/internal/auth"
+	"go.dalton.dog/bubbleup"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/logging"
@@ -83,6 +86,8 @@ type appModel struct {
 
 	terminalPanel   *terminal.TerminalPanel
 	terminalFocused bool
+
+	alert bubbleup.AlertModel
 }
 
 func (a appModel) Init() tea.Cmd {
@@ -91,6 +96,8 @@ func (a appModel) Init() tea.Cmd {
 	a.loadedPages[a.currentPage] = true
 	cmds = append(cmds, cmd)
 	cmd = a.status.Init()
+	cmds = append(cmds, cmd)
+	cmd = a.alert.Init()
 	cmds = append(cmds, cmd)
 	cmd = a.quit.Init()
 	cmds = append(cmds, cmd)
@@ -182,21 +189,55 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(cmds...)
 	// Status
 	case util.InfoMsg:
+		// Error messages go to bubbleup alert overlay instead of status bar
+		if msg.Type == util.InfoTypeError {
+			cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.ErrorKey, msg.Msg))
+			outAlert, outCmd := a.alert.Update(msg)
+			a.alert = outAlert.(bubbleup.AlertModel)
+			cmds = append(cmds, outCmd)
+			return a, tea.Batch(cmds...)
+		}
 		s, cmd := a.status.Update(msg)
 		a.status = s.(core.StatusCmp)
 		cmds = append(cmds, cmd)
+		return a, tea.Batch(cmds...)
+	case util.AlertMsg:
+		cmds = append(cmds, a.alert.NewAlertCmd(msg.Type, msg.Msg))
+		outAlert, outCmd := a.alert.Update(msg)
+		a.alert = outAlert.(bubbleup.AlertModel)
+		cmds = append(cmds, outCmd)
+		return a, tea.Batch(cmds...)
+
+	// Copilot device code received - show alert and start polling
+	case copilotDeviceCodeMsg:
+		cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.WarnKey, msg.instructions))
+		outAlert, outCmd := a.alert.Update(msg)
+		a.alert = outAlert.(bubbleup.AlertModel)
+		cmds = append(cmds, outCmd)
+		cmds = append(cmds, copilotPollCommand(msg.deviceCode))
+		return a, tea.Batch(cmds...)
+
+	// Copilot login flow completed - show result (replaces device code alert)
+	case copilotLoginDoneMsg:
+		if msg.err != nil {
+			cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.ErrorKey, fmt.Sprintf("Copilot login failed: %v", msg.err)))
+		} else {
+			status := auth.GetCopilotAuthStatus()
+			cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.InfoKey, status.Message))
+		}
+		outAlert, outCmd := a.alert.Update(msg)
+		a.alert = outAlert.(bubbleup.AlertModel)
+		cmds = append(cmds, outCmd)
 		return a, tea.Batch(cmds...)
 	case pubsub.Event[logging.LogMessage]:
 		if msg.Payload.Persist {
 			switch msg.Payload.Level {
 			case "error":
-				s, cmd := a.status.Update(util.InfoMsg{
-					Type: util.InfoTypeError,
-					Msg:  msg.Payload.Message,
-					TTL:  msg.Payload.PersistTime,
-				})
-				a.status = s.(core.StatusCmp)
-				cmds = append(cmds, cmd)
+				// Show errors as bubbleup overlay alerts
+				cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.ErrorKey, msg.Payload.Message))
+				outAlert, outCmd := a.alert.Update(msg)
+				a.alert = outAlert.(bubbleup.AlertModel)
+				cmds = append(cmds, outCmd)
 			case "info":
 				s, cmd := a.status.Update(util.InfoMsg{
 					Type: util.InfoTypeInfo,
@@ -436,6 +477,13 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
+		// If a bubbleup alert is active, let it handle Esc to dismiss
+		if msg.String() == "esc" && a.alert.HasActiveAlert() {
+			outAlert, outCmd := a.alert.Update(msg)
+			a.alert = outAlert.(bubbleup.AlertModel)
+			return a, outCmd
+		}
+
 		// If multi-arguments dialog is open, let it handle the key press first
 		if a.showMultiArgumentsDialog {
 			args, cmd := a.multiArgumentsDialog.Update(msg)
@@ -708,6 +756,12 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	a.pages[a.currentPage], cmd = a.pages[a.currentPage].Update(msg)
 	a.syncChatState()
 	cmds = append(cmds, cmd)
+
+	// Update bubbleup alert model (handles ticks, dismiss, etc.)
+	outAlert, alertCmd := a.alert.Update(msg)
+	a.alert = outAlert.(bubbleup.AlertModel)
+	cmds = append(cmds, alertCmd)
+
 	return a, tea.Batch(cmds...)
 }
 
@@ -1169,6 +1223,9 @@ func (a appModel) View() string {
 		)
 	}
 
+	// Render bubbleup alert overlay as the final layer
+	appView = a.alert.Render(appView)
+
 	return tuizone.Manager.Scan(appView)
 }
 
@@ -1228,6 +1285,11 @@ func New(app *app.App) tea.Model {
 		},
 		filepicker:    dialog.NewFilepickerCmp(app),
 		terminalPanel: terminal.NewTerminalPanel(),
+		alert: bubbleup.NewAlertModel(60, false, 5*time.Second).
+			WithPosition(bubbleup.TopRightPosition).
+			WithMinWidth(20).
+			WithUnicodePrefix().
+			WithAllowEscToClose(),
 	}
 
 	model.RegisterCommand(dialog.Command{

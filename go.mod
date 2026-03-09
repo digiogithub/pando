@@ -47,6 +47,7 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/taigrr/bubbleterm v0.2.0 // indirect
+	go.dalton.dog/bubbleup v1.3.0 // indirect
 )
 
 require (

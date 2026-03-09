@@ -46,6 +46,7 @@ func (b *mcpTool) Info() tools.ToolInfo {
 }
 
 func runTool(ctx context.Context, c MCPClient, toolName string, input string) (tools.ToolResponse, error) {
+	logging.Debug("runTool", "toolName", toolName, "inputLength", len(input))
 	defer c.Close()
 	initRequest := mcp.InitializeRequest{}
 	initRequest.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
@@ -80,10 +81,12 @@ func runTool(ctx context.Context, c MCPClient, toolName string, input string) (t
 		}
 	}
 
+	logging.Debug("runTool completed", "toolName", toolName, "outputLength", len(output))
 	return tools.NewTextResponse(output), nil
 }
 
 func (b *mcpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolResponse, error) {
+	logging.Debug("mcpTool.Run", "toolName", b.Info().Name, "type", string(b.mcpConfig.Type))
 	sessionID, messageID := tools.GetContextValues(ctx)
 	if sessionID == "" || messageID == "" {
 		return tools.ToolResponse{}, fmt.Errorf("session ID and message ID are required for creating a new file")
@@ -140,6 +143,7 @@ func NewMcpTool(name string, tool mcp.Tool, permissions permission.Service, mcpC
 var mcpTools []tools.BaseTool
 
 func getTools(ctx context.Context, name string, m config.MCPServer, permissions permission.Service, c MCPClient) []tools.BaseTool {
+	logging.Debug("getTools", "serverName", name, "type", string(m.Type))
 	var stdioTools []tools.BaseTool
 	initRequest := mcp.InitializeRequest{}
 	initRequest.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
@@ -159,6 +163,7 @@ func getTools(ctx context.Context, name string, m config.MCPServer, permissions 
 		logging.Error("error listing tools", "error", err)
 		return stdioTools
 	}
+	logging.Debug("MCP server tools listed", "serverName", name, "toolCount", len(tools.Tools))
 	for _, t := range tools.Tools {
 		stdioTools = append(stdioTools, NewMcpTool(name, t, permissions, m))
 	}
@@ -167,10 +172,12 @@ func getTools(ctx context.Context, name string, m config.MCPServer, permissions 
 }
 
 func GetMcpTools(ctx context.Context, permissions permission.Service) []tools.BaseTool {
+	logging.Debug("GetMcpTools called", "existingToolCount", len(mcpTools), "serverCount", len(config.Get().MCPServers))
 	if len(mcpTools) > 0 {
 		return mcpTools
 	}
 	for name, m := range config.Get().MCPServers {
+		logging.Debug("Initializing MCP server", "name", name, "type", string(m.Type))
 		switch m.Type {
 		case config.MCPStdio:
 			c, err := client.NewStdioMCPClient(
@@ -197,5 +204,6 @@ func GetMcpTools(ctx context.Context, permissions permission.Service) []tools.Ba
 		}
 	}
 
+	logging.Debug("MCP tools loaded", "totalToolCount", len(mcpTools))
 	return mcpTools
 }

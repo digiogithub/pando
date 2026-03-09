@@ -16,6 +16,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/fileutil"
+	"github.com/digiogithub/pando/internal/logging"
 )
 
 type GrepParams struct {
@@ -131,6 +132,8 @@ func (g *grepTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return NewTextErrorResponse("pattern is required"), nil
 	}
 
+	logging.Debug("grep tool called", "pattern", params.Pattern, "path", params.Path, "include", params.Include, "literalText", params.LiteralText)
+
 	// If literal_text is true, escape the pattern
 	searchPattern := params.Pattern
 	if params.LiteralText {
@@ -146,6 +149,8 @@ func (g *grepTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("error searching files: %w", err)
 	}
+
+	logging.Debug("grep completed", "matchCount", len(matches), "truncated", truncated)
 
 	var output string
 	if len(matches) == 0 {

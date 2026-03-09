@@ -97,6 +97,8 @@ func (g *globTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return NewTextErrorResponse("pattern is required"), nil
 	}
 
+	logging.Debug("glob tool called", "pattern", params.Pattern, "path", params.Path)
+
 	searchPath := params.Path
 	if searchPath == "" {
 		searchPath = config.WorkingDirectory()
@@ -106,6 +108,8 @@ func (g *globTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("error finding files: %w", err)
 	}
+
+	logging.Debug("glob completed", "fileCount", len(files), "truncated", truncated)
 
 	var output string
 	if len(files) == 0 {

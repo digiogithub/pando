@@ -41,6 +41,9 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
   # Run with debug logging in a specific directory
   pando -d -c /path/to/project
 
+  # Run with debug logging to a specific file
+  pando -d -l /tmp/pando-debug.log
+
   # Print version
   pando -v
 
@@ -83,6 +86,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 
 		// Load the config
 		debug, _ := cmd.Flags().GetBool("debug")
+		logFile, _ := cmd.Flags().GetString("log-file")
 		cwd, _ := cmd.Flags().GetString("cwd")
 		prompt, _ := cmd.Flags().GetString("prompt")
 		outputFormat, _ := cmd.Flags().GetString("output-format")
@@ -130,16 +134,18 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			}
 			cwd = c
 		}
-		_, err := config.Load(cwd, debug)
+		_, err := config.Load(cwd, debug, logFile)
 		if err != nil {
 			return err
 		}
+		logging.Debug("Config loaded", "workingDir", cwd, "debug", debug, "logFile", logFile)
 
 		// Connect DB, this will also run migrations
 		conn, err := db.Connect()
 		if err != nil {
 			return err
 		}
+		logging.Debug("Database connected")
 
 		// Create main context for the application
 		ctx, cancel := context.WithCancel(context.Background())
@@ -150,6 +156,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			logging.Error("Failed to create app: %v", err)
 			return err
 		}
+		logging.Debug("App initialized")
 		// Defer shutdown here so it runs for both interactive and non-interactive modes
 		defer app.Shutdown()
 
@@ -247,6 +254,7 @@ func attemptTUIRecovery(program *tea.Program) {
 func initMCPTools(ctx context.Context, app *app.App) {
 	go func() {
 		defer logging.RecoverPanic("MCP-goroutine", nil)
+		logging.Debug("initMCPTools started")
 
 		// Create a context with timeout for the initial MCP tools fetch
 		ctxWithTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -254,6 +262,7 @@ func initMCPTools(ctx context.Context, app *app.App) {
 
 		// Set this up once with proper error handling
 		agent.GetMcpTools(ctxWithTimeout, app.Permissions)
+		logging.Debug("initMCPTools completed")
 		logging.Info("MCP message handling goroutine exiting")
 	}()
 }
@@ -344,6 +353,7 @@ func init() {
 	rootCmd.Flags().BoolP("help", "h", false, "Help")
 	rootCmd.Flags().BoolP("version", "v", false, "Version")
 	rootCmd.Flags().BoolP("debug", "d", false, "Debug")
+	rootCmd.Flags().StringP("log-file", "l", "", "Path to log file (enables debug logging to file)")
 	rootCmd.Flags().StringP("cwd", "c", "", "Current working directory")
 	rootCmd.Flags().StringP("prompt", "p", "", "Prompt to run in non-interactive mode")
 

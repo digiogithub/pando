@@ -43,6 +43,9 @@ func newGeminiClient(opts providerClientOptions) GeminiClient {
 		return nil
 	}
 
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Creating Gemini client", "model", opts.model.APIModel)
+	}
 	return &geminiClient{
 		providerOptions: opts,
 		options:         geminiOpts,
@@ -244,6 +247,9 @@ func (g *geminiClient) send(ctx context.Context, messages []message.Message, too
 			finishReason = message.FinishReasonToolUse
 		}
 
+		if cfg != nil && cfg.Debug {
+			logging.Debug("Gemini send completed", "model", g.providerOptions.model.APIModel, "content_length", len(content))
+		}
 		return &ProviderResponse{
 			Content:      content,
 			ToolCalls:    toolCalls,
@@ -284,6 +290,9 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 
 		for {
 			attempts++
+			if cfg != nil && cfg.Debug {
+				logging.Debug("Gemini stream started", "model", g.providerOptions.model.APIModel, "attempt", attempts)
+			}
 
 			currentContent := ""
 			toolCalls := []message.ToolCall{}
@@ -372,6 +381,9 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 				}
 				if len(toolCalls) > 0 {
 					finishReason = message.FinishReasonToolUse
+				}
+				if cfg != nil && cfg.Debug {
+					logging.Debug("Gemini stream completed", "model", g.providerOptions.model.APIModel)
 				}
 				eventChan <- ProviderEvent{
 					Type: EventComplete,

@@ -116,6 +116,8 @@ func (w *writeTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		filePath = filepath.Join(config.WorkingDirectory(), filePath)
 	}
 
+	logging.Debug("write tool called", "filePath", params.FilePath, "contentLen", len(params.Content))
+
 	fileInfo, err := os.Stat(filePath)
 	if err == nil {
 		if fileInfo.IsDir() {
@@ -214,6 +216,7 @@ func (w *writeTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 	recordFileRead(filePath)
 	waitForLspDiagnostics(ctx, filePath, w.lspClients)
 
+	logging.Debug("write completed", "filePath", filePath, "additions", additions, "removals", removals)
 	result := fmt.Sprintf("File successfully written: %s", filePath)
 	result = fmt.Sprintf("<result>\n%s\n</result>", result)
 	result += getDiagnostics(filePath, w.lspClients)

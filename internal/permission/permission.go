@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/google/uuid"
 )
@@ -74,10 +75,13 @@ func (s *permissionService) Deny(permission PermissionRequest) {
 }
 
 func (s *permissionService) Request(opts CreatePermissionRequest) bool {
+	logging.Debug("Permission requested", "sessionID", opts.SessionID, "toolName", opts.ToolName, "action", opts.Action, "path", opts.Path)
 	if s.globalAutoApprove {
+		logging.Debug("Permission result", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", true)
 		return true
 	}
 	if slices.Contains(s.autoApproveSessions, opts.SessionID) {
+		logging.Debug("Permission result", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", true)
 		return true
 	}
 	dir := filepath.Dir(opts.Path)
@@ -109,6 +113,7 @@ func (s *permissionService) Request(opts CreatePermissionRequest) bool {
 
 	// Wait for the response with a timeout
 	resp := <-respCh
+	logging.Debug("Permission result", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", resp)
 	return resp
 }
 

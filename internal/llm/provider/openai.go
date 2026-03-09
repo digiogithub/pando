@@ -58,6 +58,9 @@ func newOpenAIClient(opts providerClientOptions) OpenAIClient {
 	}
 
 	client := openai.NewClient(openaiClientOptions...)
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Creating OpenAI client", "model", opts.model.APIModel, "baseURL", openaiOpts.baseURL)
+	}
 	return &openaiClient{
 		providerOptions: opts,
 		options:         openaiOpts,
@@ -89,10 +92,11 @@ func (o *openaiClient) convertMessages(messages []message.Message) (openaiMessag
 				Role: "assistant",
 			}
 
-			if msg.Content().String() != "" {
-				assistantMsg.Content = openai.ChatCompletionAssistantMessageParamContentUnion{
-					OfString: openai.String(msg.Content().String()),
-				}
+			// Always set Content (even if empty) to avoid nil content errors
+			// with providers like Ollama that require a non-nil content field.
+			contentStr := msg.Content().String()
+			assistantMsg.Content = openai.ChatCompletionAssistantMessageParamContentUnion{
+				OfString: openai.String(contentStr),
 			}
 
 			if len(msg.ToolCalls()) > 0 {
@@ -229,6 +233,9 @@ func (o *openaiClient) send(ctx context.Context, messages []message.Message, too
 			finishReason = message.FinishReasonToolUse
 		}
 
+		if cfg := config.Get(); cfg != nil && cfg.Debug {
+			logging.Debug("OpenAI send completed", "model", o.providerOptions.model.APIModel, "content_length", len(content))
+		}
 		return &ProviderResponse{
 			Content:      content,
 			ToolCalls:    toolCalls,
@@ -256,6 +263,9 @@ func (o *openaiClient) stream(ctx context.Context, messages []message.Message, t
 	go func() {
 		for {
 			attempts++
+			if cfg.Debug {
+				logging.Debug("OpenAI stream started", "model", o.providerOptions.model.APIModel, "attempt", attempts)
+			}
 			openaiStream := o.client.Chat.Completions.NewStreaming(
 				ctx,
 				params,
@@ -291,6 +301,9 @@ func (o *openaiClient) stream(ctx context.Context, messages []message.Message, t
 					finishReason = message.FinishReasonToolUse
 				}
 
+				if cfg.Debug {
+					logging.Debug("OpenAI stream completed", "model", o.providerOptions.model.APIModel, "finishReason", finishReason, "toolCallCount", len(toolCalls))
+				}
 				eventChan <- ProviderEvent{
 					Type: EventComplete,
 					Response: &ProviderResponse{
@@ -342,6 +355,10 @@ func (o *openaiClient) shouldRetry(attempts int, err error) (bool, int64, error)
 
 	if apierr.StatusCode != 429 && apierr.StatusCode != 500 {
 		return false, 0, err
+	}
+
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("OpenAI retry evaluation", "attempts", attempts, "statusCode", apierr.StatusCode)
 	}
 
 	if attempts > maxRetries {

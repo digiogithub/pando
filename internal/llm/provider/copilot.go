@@ -144,6 +144,9 @@ func (c *copilotClient) reloadCredentials() bool {
 	c.options.bearerToken = token
 	c.baseURL = baseURL
 	c.client = newCopilotOpenAIClient(token, baseURL, c.requestHeaders(nil))
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Copilot credentials reloaded", "baseURL", baseURL)
+	}
 	return true
 }
 
@@ -164,6 +167,20 @@ func newCopilotClient(opts providerClientOptions) CopilotClient {
 
 	copilotOpts.bearerToken = bearerToken
 	copilotOpts.baseURL = baseURL
+
+	// Verify that the Copilot models API is accessible before creating the client
+	if err := auth.CheckCopilotModelsAPI(bearerToken, baseURL); err != nil {
+		logging.Error("Copilot models API is not accessible. Disabling Copilot provider.", "error", err)
+		// Disable the Copilot provider in configuration
+		if cfg := config.Get(); cfg != nil {
+			if providerCfg, ok := cfg.Providers[models.ProviderCopilot]; ok {
+				providerCfg.Disabled = true
+				cfg.Providers[models.ProviderCopilot] = providerCfg
+			}
+		}
+		return &copilotClient{providerOptions: opts, options: copilotOpts, baseURL: baseURL}
+	}
+
 	client := newCopilotOpenAIClient(bearerToken, baseURL, map[string]string{
 		"Editor-Version":         "Pando/" + version.Version,
 		"Editor-Plugin-Version":  "Pando/" + version.Version,
@@ -172,7 +189,9 @@ func newCopilotClient(opts providerClientOptions) CopilotClient {
 		"Openai-Intent":          "conversation-edits",
 		"x-initiator":            "user",
 	})
-	// logging.Debug("Copilot client created", "opts", opts, "copilotOpts", copilotOpts, "model", opts.model)
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Copilot client created", "model", opts.model.APIModel, "baseURL", baseURL)
+	}
 	return &copilotClient{
 		providerOptions: opts,
 		options:         copilotOpts,
@@ -362,6 +381,9 @@ func (c *copilotClient) send(ctx context.Context, messages []message.Message, to
 			finishReason = message.FinishReasonToolUse
 		}
 
+		if cfg.Debug {
+			logging.Debug("Copilot send completed", "model", c.providerOptions.model.APIModel, "content_length", len(content))
+		}
 		return &ProviderResponse{
 			Content:      content,
 			ToolCalls:    toolCalls,
@@ -400,6 +422,9 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 	go func() {
 		for {
 			attempts++
+			if cfg.Debug {
+				logging.Debug("Copilot stream started", "model", c.providerOptions.model.APIModel, "attempt", attempts, "isAnthropicModel", c.isAnthropicModel())
+			}
 			client := c.requestClient(messages)
 			copilotStream := client.Chat.Completions.NewStreaming(
 				ctx,
@@ -493,6 +518,9 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 					finishReason = message.FinishReasonToolUse
 				}
 
+				if cfg.Debug {
+					logging.Debug("Copilot stream completed", "model", c.providerOptions.model.APIModel, "finishReason", finishReason, "toolCallCount", len(toolCalls))
+				}
 				eventChan <- ProviderEvent{
 					Type: EventComplete,
 					Response: &ProviderResponse{
@@ -564,6 +592,10 @@ func (c *copilotClient) shouldRetry(attempts int, err error) (bool, int64, error
 
 	if apierr.StatusCode == 500 {
 		logging.Warn("Copilot API returned 500 error, retrying", "error", err)
+	}
+
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Copilot retry evaluation", "attempts", attempts, "statusCode", apierr.StatusCode)
 	}
 
 	if attempts > maxRetries {

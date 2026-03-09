@@ -7,7 +7,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/message"
 )
 
@@ -51,6 +53,10 @@ func newBedrockClient(opts providerClientOptions) BedrockClient {
 	modelName := opts.model.APIModel
 	opts.model.APIModel = fmt.Sprintf("%s.%s", regionPrefix, modelName)
 
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Creating Bedrock client", "model", opts.model.APIModel, "region", region)
+	}
+
 	// Determine which provider to use based on the model
 	if strings.Contains(string(opts.model.APIModel), "anthropic") {
 		// Create Anthropic client with Bedrock configuration
@@ -79,6 +85,9 @@ func (b *bedrockClient) send(ctx context.Context, messages []message.Message, to
 	if b.childProvider == nil {
 		return nil, errors.New("unsupported model for bedrock provider")
 	}
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Bedrock send delegating to child provider", "model", b.providerOptions.model.APIModel)
+	}
 	return b.childProvider.send(ctx, messages, tools)
 }
 
@@ -96,6 +105,9 @@ func (b *bedrockClient) stream(ctx context.Context, messages []message.Message, 
 		return eventChan
 	}
 
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Bedrock stream delegating to child provider", "model", b.providerOptions.model.APIModel)
+	}
 	return b.childProvider.stream(ctx, messages, tools)
 }
 

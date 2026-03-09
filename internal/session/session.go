@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/pubsub"
 )
 
@@ -48,6 +49,7 @@ func (s *service) Create(ctx context.Context, title string) (Session, error) {
 	}
 	session := s.fromDBItem(dbSession)
 	s.Publish(pubsub.CreatedEvent, session)
+	logging.Debug("Session created", "title", title)
 	return session, nil
 }
 
@@ -97,6 +99,7 @@ func (s *service) Get(ctx context.Context, id string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
+	logging.Debug("Session retrieved", "sessionID", id)
 	return s.fromDBItem(dbSession), nil
 }
 
@@ -117,6 +120,7 @@ func (s *service) Save(ctx context.Context, session Session) (Session, error) {
 	}
 	session = s.fromDBItem(dbSession)
 	s.Publish(pubsub.UpdatedEvent, session)
+	logging.Debug("Session saved", "sessionID", session.ID, "title", session.Title)
 	return session, nil
 }
 

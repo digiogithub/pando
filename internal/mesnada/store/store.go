@@ -33,12 +33,13 @@ type ListFilter struct {
 
 // FileStore implements Store using a JSON file for persistence.
 type FileStore struct {
-	path     string
-	tasks    map[string]*models.Task
-	mu       sync.RWMutex
-	saveOnce sync.Once
-	dirty    bool
-	closeCh  chan struct{}
+	path      string
+	tasks     map[string]*models.Task
+	mu        sync.RWMutex
+	saveOnce  sync.Once
+	closeOnce sync.Once
+	dirty     bool
+	closeCh   chan struct{}
 }
 
 // NewFileStore creates a new file-based store.
@@ -258,8 +259,11 @@ func (fs *FileStore) UpdateStatus(id string, status models.TaskStatus) error {
 }
 
 // Close stops the background saver and performs final save.
+// Safe to call multiple times.
 func (fs *FileStore) Close() error {
-	close(fs.closeCh)
+	fs.closeOnce.Do(func() {
+		close(fs.closeCh)
+	})
 	return nil
 }
 

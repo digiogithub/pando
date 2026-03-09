@@ -9,6 +9,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/tools/shell"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/permission"
 )
 
@@ -243,6 +244,8 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return NewTextErrorResponse("missing command"), nil
 	}
 
+	logging.Debug("bash tool called", "command", params.Command, "timeout", params.Timeout)
+
 	baseCmd := strings.Fields(params.Command)[0]
 	for _, banned := range bannedCommands {
 		if strings.EqualFold(baseCmd, banned) {
@@ -283,6 +286,7 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 			return ToolResponse{}, permission.ErrorPermissionDenied
 		}
 	}
+	logging.Debug("bash executing", "command", params.Command, "isSafeReadOnly", isSafeReadOnly)
 	startTime := time.Now()
 	shell := shell.GetPersistentShell(config.WorkingDirectory())
 	stdout, stderr, exitCode, interrupted, err := shell.Exec(ctx, params.Command, params.Timeout)
@@ -292,6 +296,7 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 
 	stdout = truncateOutput(stdout)
 	stderr = truncateOutput(stderr)
+	logging.Debug("bash completed", "command", params.Command, "exitCode", exitCode, "interrupted", interrupted, "stdoutLen", len(stdout), "stderrLen", len(stderr))
 
 	errorMessage := stderr
 	if interrupted {
