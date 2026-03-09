@@ -344,7 +344,7 @@ func SyntaxHighlight(w io.Writer, source, fileName, formatter string, bg lipglos
 
 	// Dynamic theme based on current theme values
 	syntaxThemeXml := fmt.Sprintf(`
-	<style name="opencode-theme">
+	<style name="pando-theme">
 	<!-- Base colors -->
 	<entry type="Background" style="bg:%s"/>
 	<entry type="Text" style="%s"/>

@@ -14,6 +14,7 @@ import (
 	"go.dalton.dog/bubbleup"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/agent"
+	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -126,6 +127,22 @@ func (a appModel) Init() tea.Cmd {
 			}
 		}
 		return dialog.ShowInitDialogMsg{Show: shouldShow}
+	})
+
+	// Show model selector if the configured model is not yet available
+	cmds = append(cmds, func() tea.Msg {
+		cfg := config.Get()
+		if cfg == nil {
+			return nil
+		}
+		agentCfg, ok := cfg.Agents[config.AgentCoder]
+		if !ok {
+			return dialog.OpenModelDialogMsg{}
+		}
+		if _, modelOK := models.SupportedModels[agentCfg.Model]; !modelOK {
+			return dialog.OpenModelDialogMsg{}
+		}
+		return nil
 	})
 	cmds = append(cmds, tea.EnableMouseCellMotion)
 

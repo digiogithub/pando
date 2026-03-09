@@ -40,12 +40,7 @@ type copilotClient struct {
 type CopilotClient ProviderClient
 
 func (c *copilotClient) isAnthropicModel() bool {
-	for _, modelId := range models.CopilotAnthropicModels {
-		if c.providerOptions.model.ID == modelId {
-			return true
-		}
-	}
-	return false
+	return models.IsCopilotAnthropicModel(c.providerOptions.model.APIModel)
 }
 
 func loadCopilotCredentials(savedToken, configuredToken, configuredBaseURL string) (string, string, error) {

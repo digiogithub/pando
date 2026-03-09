@@ -2,6 +2,7 @@ package page
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -10,6 +11,7 @@ import (
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/completions"
 	"github.com/digiogithub/pando/internal/config"
+	agentpkg "github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui/components/chat"
@@ -267,13 +269,24 @@ func (w *editorChatTabWorkspace) Init() tea.Cmd {
 func (w *editorChatTabWorkspace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	wasShowingChat := w.showChat
 	prevActive := w.tabBar.ActivePath()
 	prevCount := w.tabBar.Count()
-	w.tabBar.Update(msg)
+
+	// Don't forward key events to the tabBar when chat is active — otherwise
+	// the tabBar intercepts characters and navigation keys meant for the chat
+	// input textarea.
+	if _, isKey := msg.(tea.KeyMsg); !isKey || !w.showChat {
+		w.tabBar.Update(msg)
+	}
 
 	activePath := w.tabBar.ActivePath()
 	if activePath == w.chatTabID {
 		w.showChat = true
+		// When the chat tab just became active, focus the textarea.
+		if !wasShowingChat {
+			cmds = append(cmds, util.CmdHandler(chat.FocusChatEditorMsg{}))
+		}
 		chatModel, chatCmd := w.chatView.Update(msg)
 		w.chatView = chatModel.(layout.SplitPaneLayout)
 		if chatCmd != nil {
@@ -475,7 +488,10 @@ func (p *ChatPageModel) handleKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 		}
 		p.showCompletionDialog = false
 		p.advanceFocus()
-		return true, nil
+		if p.chatHasFocus() {
+			return true, util.CmdHandler(chat.FocusChatEditorMsg{})
+		}
+		return true, util.CmdHandler(chat.BlurChatEditorMsg{})
 	case key.Matches(msg, keyMap.ShowCompletionDialog):
 		if p.chatHasFocus() {
 			p.showCompletionDialog = true
@@ -509,6 +525,51 @@ func (p *ChatPageModel) routeMessage(msg tea.Msg) []tea.Cmd {
 		default:
 			return []tea.Cmd{p.updateChatLayout(msg)}
 		}
+	case tea.MouseMsg:
+		// Non-scroll mouse events: broadcast to all panels (e.g. clicks for zone handling)
+		if msg.Button != tea.MouseButtonWheelUp && msg.Button != tea.MouseButtonWheelDown &&
+			msg.Button != tea.MouseButtonWheelLeft && msg.Button != tea.MouseButtonWheelRight {
+			cmds := []tea.Cmd{
+				p.updateFileTree(msg),
+				p.updateEditorWorkspace(msg),
+				p.updateChatLayout(msg),
+			}
+			if p.layoutMode == EditorChatTab && p.chatTabWorkspace != nil {
+				cmds = append(cmds, p.updateChatTabWorkspace(msg))
+			}
+			return cmds
+		}
+
+		// Scroll events: route only to the panel under the mouse pointer
+		x := msg.X
+
+		if p.layoutMode == ChatOnly {
+			return []tea.Cmd{p.updateChatLayout(msg)}
+		}
+
+		ftWidth, _ := p.fileTreePanel.GetSize()
+		if x < ftWidth {
+			return []tea.Cmd{p.updateFileTree(msg)}
+		}
+
+		switch p.layoutMode {
+		case SidebarChat:
+			return []tea.Cmd{p.updateChatLayout(msg)}
+		case SidebarEditor:
+			return []tea.Cmd{p.updateEditorWorkspace(msg)}
+		case EditorChatSplit:
+			edWidth, _ := p.editorPanel.GetSize()
+			if x < ftWidth+edWidth {
+				return []tea.Cmd{p.updateEditorWorkspace(msg)}
+			}
+			return []tea.Cmd{p.updateChatLayout(msg)}
+		case EditorChatTab:
+			if p.chatTabWorkspace != nil {
+				return []tea.Cmd{p.updateChatTabWorkspace(msg)}
+			}
+			return []tea.Cmd{p.updateEditorWorkspace(msg)}
+		}
+		return nil
 	default:
 		cmds := []tea.Cmd{
 			p.updateFileTree(msg),
@@ -565,6 +626,9 @@ func (p *ChatPageModel) sendMessage(text string, attachments []message.Attachmen
 
 	_, err := p.app.CoderAgent.Run(context.Background(), p.session.ID, text, attachments...)
 	if err != nil {
+		if errors.Is(err, agentpkg.ErrNoModel) {
+			return util.CmdHandler(dialog.OpenModelDialogMsg{})
+		}
 		return util.ReportError(err)
 	}
 	return tea.Batch(cmds...)
@@ -640,10 +704,16 @@ func (p *ChatPageModel) applyLayoutMode(mode ChatLayoutMode) tea.Cmd {
 	p.layoutMode = mode
 	p.normalizeFocus()
 	p.rebuildLayout()
+	var cmds []tea.Cmd
 	if p.width > 0 && p.height > 0 {
-		return p.layout.SetSize(p.width, p.height)
+		cmds = append(cmds, p.layout.SetSize(p.width, p.height))
 	}
-	return nil
+	if p.chatHasFocus() {
+		cmds = append(cmds, util.CmdHandler(chat.FocusChatEditorMsg{}))
+	} else {
+		cmds = append(cmds, util.CmdHandler(chat.BlurChatEditorMsg{}))
+	}
+	return tea.Batch(cmds...)
 }
 
 func (p *ChatPageModel) rebuildLayout() {

@@ -145,9 +145,21 @@ func (m *editorCmp) send() tea.Cmd {
 	)
 }
 
+// FocusChatEditorMsg is sent to the chat editor to request textarea focus.
+type FocusChatEditorMsg struct{}
+
+// BlurChatEditorMsg is sent to the chat editor to relinquish textarea focus.
+type BlurChatEditorMsg struct{}
+
 func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
+	case FocusChatEditorMsg:
+		m.textarea.Focus()
+		return m, textarea.Blink
+	case BlurChatEditorMsg:
+		m.textarea.Blur()
+		return m, nil
 	case dialog.ThemeChangedMsg:
 		m.textarea = CreateTextArea(&m.textarea)
 	case dialog.CompletionSelectedMsg:
