@@ -168,6 +168,13 @@ func (t *TabBar) ActivePath() string {
 	return ""
 }
 
+// SetActiveEditable switches the active tab between editable and view-only mode.
+func (t *TabBar) SetActiveEditable(editable bool) {
+	if tab := t.ActiveTab(); tab != nil {
+		tab.IsEditable = editable
+	}
+}
+
 // SetDirty updates the dirty state for the tab identified by path.
 func (t *TabBar) SetDirty(path string, dirty bool) {
 	normalized := normalizeTabPath(path)

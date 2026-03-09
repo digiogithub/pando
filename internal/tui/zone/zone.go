@@ -22,6 +22,7 @@ const (
 	StatusDiagnostics    = "status-diagnostics"
 	StatusBreadcrumbPrefix = "status-breadcrumb-"
 	ViewerViewport       = "viewer-viewport"
+	EditorViewport       = "editor-viewport"
 	DiffViewport         = "diff-viewport"
 	ChatViewport         = "chat-viewport"
 	PermissionAllow      = "permission-allow"
@@ -89,6 +90,10 @@ func MarkModelItem(id, content string) string {
 
 func MarkViewerViewport(content string) string {
 	return Manager.Mark(ViewerViewport, content)
+}
+
+func MarkEditorViewport(content string) string {
+	return Manager.Mark(EditorViewport, content)
 }
 
 func MarkDiffViewport(content string) string {

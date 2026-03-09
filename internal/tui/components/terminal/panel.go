@@ -1,9 +1,12 @@
 package terminal
 
 import (
+	"fmt"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/digiogithub/pando/internal/logging"
 	tuistyles "github.com/digiogithub/pando/internal/tui/styles"
 	tuitheme "github.com/digiogithub/pando/internal/tui/theme"
 )
@@ -17,6 +20,12 @@ const (
 
 // ToggleTerminalMsg is broadcast to show/hide the terminal panel.
 type ToggleTerminalMsg struct{}
+
+// TerminalOpenedMsg is sent after a new terminal is successfully opened.
+// It carries the init command so the caller can properly update the model's focus state.
+type TerminalOpenedMsg struct {
+	InitCmd tea.Cmd
+}
 
 // TerminalPanel is the bottom-anchored panel containing the tab bar and
 // the active terminal's output.
@@ -47,13 +56,17 @@ func (p *TerminalPanel) OpenNewTerminal() tea.Cmd {
 		termW = 80
 	}
 
+	logging.Info("TerminalPanel.OpenNewTerminal: starting", "width", termW, "height", termH, "panel_width", p.width, "panel_height", p.height)
+
 	term, err := New(termW, termH)
 	if err != nil {
+		logging.Error("TerminalPanel.OpenNewTerminal: New() failed", "error", err)
 		return nil
 	}
 
 	p.tabBar.OpenTab(term)
 	p.visible = true
+	logging.Info("TerminalPanel.OpenNewTerminal: terminal opened, panel visible", "tab_count", p.tabBar.Count())
 
 	// Initialise the terminal ticker
 	return term.Init()
@@ -126,6 +139,7 @@ func (p *TerminalPanel) terminalBodyHeight() int {
 
 // Update propagates Bubble Tea messages to the active terminal and the tab bar.
 func (p *TerminalPanel) Update(msg tea.Msg) (*TerminalPanel, tea.Cmd) {
+	logging.Debug("TerminalPanel.Update", "msg_type", fmt.Sprintf("%T", msg), "focused", p.focused, "visible", p.visible, "tabs", p.tabBar.Count())
 	var cmds []tea.Cmd
 
 	// Let the tab bar handle tab-switching / close keybindings only when focused.

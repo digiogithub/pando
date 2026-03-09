@@ -111,8 +111,8 @@ var keyMap = ChatKeyMap{
 		key.WithHelp("tab", "switch panel"),
 	),
 	ToggleEditorChat: key.NewBinding(
-		key.WithKeys("ctrl+e"),
-		key.WithHelp("ctrl+e", "toggle editor+chat layout"),
+		key.WithKeys("ctrl+r"),
+		key.WithHelp("ctrl+r", "toggle editor+chat layout"),
 	),
 }
 
@@ -155,6 +155,15 @@ func (w *editorWorkspace) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if viewerCmd != nil {
 			cmds = append(cmds, viewerCmd)
 		}
+	}
+
+	// Handle ExitEditModeMsg: switch the active tab back to view-only mode.
+	if exitMsg, ok := msg.(editor.ExitEditModeMsg); ok {
+		w.tabBar.SetActiveEditable(false)
+		if exitMsg.Path != "" {
+			cmds = append(cmds, w.viewer.OpenFile(exitMsg.Path))
+		}
+		return w, tea.Batch(cmds...)
 	}
 
 	// Handle FileEditSavedMsg: clear dirty flag on the tab
