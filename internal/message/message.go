@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/pubsub"
 )
 
@@ -79,6 +80,7 @@ func (s *service) Create(ctx context.Context, sessionID string, params CreateMes
 		return Message{}, err
 	}
 	s.Publish(pubsub.CreatedEvent, message)
+	logging.Debug("Message created", "sessionID", sessionID, "role", string(params.Role), "partCount", len(params.Parts))
 	return message, nil
 }
 
@@ -118,6 +120,7 @@ func (s *service) Update(ctx context.Context, message Message) error {
 	}
 	message.UpdatedAt = time.Now().Unix()
 	s.Publish(pubsub.UpdatedEvent, message)
+	logging.Debug("Message updated", "messageID", message.ID, "sessionID", message.SessionID)
 	return nil
 }
 
@@ -141,6 +144,7 @@ func (s *service) List(ctx context.Context, sessionID string) ([]Message, error)
 			return nil, err
 		}
 	}
+	logging.Debug("Messages listed", "sessionID", sessionID, "count", len(messages))
 	return messages, nil
 }
 

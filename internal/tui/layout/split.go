@@ -117,6 +117,7 @@ func (s *splitPaneLayout) View() string {
 		style := lipgloss.NewStyle().
 			Width(s.width).
 			Height(s.height).
+			MaxHeight(s.height).
 			Background(t.Background())
 
 		return style.Render(finalView)

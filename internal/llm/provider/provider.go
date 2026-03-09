@@ -6,8 +6,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/message"
 )
 
@@ -88,6 +90,9 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 	clientOptions := providerClientOptions{}
 	for _, o := range opts {
 		o(&clientOptions)
+	}
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Creating provider", "provider", providerName, "model", clientOptions.model.APIModel)
 	}
 	switch providerName {
 	case models.ProviderCopilot:
@@ -192,6 +197,9 @@ func (p *baseProvider[C]) cleanMessages(messages []message.Message) (cleaned []m
 
 func (p *baseProvider[C]) SendMessages(ctx context.Context, messages []message.Message, tools []tools.BaseTool) (*ProviderResponse, error) {
 	messages = p.cleanMessages(messages)
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Sending messages", "model", p.options.model.APIModel, "message_count", len(messages))
+	}
 	return p.client.send(ctx, messages, tools)
 }
 
@@ -201,6 +209,9 @@ func (p *baseProvider[C]) Model() models.Model {
 
 func (p *baseProvider[C]) StreamResponse(ctx context.Context, messages []message.Message, tools []tools.BaseTool) <-chan ProviderEvent {
 	messages = p.cleanMessages(messages)
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Starting stream response", "model", p.options.model.APIModel, "message_count", len(messages), "tool_count", len(tools))
+	}
 	return p.client.stream(ctx, messages, tools)
 }
 

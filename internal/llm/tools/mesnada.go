@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/pkg/mesnada/models"
 )
@@ -142,6 +143,8 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		background = *req.Background
 	}
 
+	logging.Debug("mesnada spawn called", "prompt_length", len(req.Prompt), "engine", req.Engine, "model", req.Model, "background", background)
+
 	task, err := t.orchestrator.Spawn(ctx, models.SpawnRequest{
 		Prompt:     req.Prompt,
 		WorkDir:    req.WorkDir,
@@ -155,6 +158,7 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		return NewTextErrorResponse(err.Error()), nil
 	}
 
+	logging.Debug("mesnada task spawned", "taskID", task.ID, "status", string(task.Status))
 	result := map[string]any{
 		"task_id":    task.ID,
 		"status":     task.Status,
@@ -197,6 +201,7 @@ func (t *MesnadaGetTaskTool) Run(ctx context.Context, params ToolCall) (ToolResp
 		return NewTextErrorResponse("task_id is required"), nil
 	}
 
+	logging.Debug("mesnada get task", "taskID", req.TaskID)
 	task, err := t.orchestrator.GetTask(req.TaskID)
 	if err != nil {
 		return NewTextErrorResponse(err.Error()), nil
@@ -253,6 +258,7 @@ func (t *MesnadaListTasksTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		req.Limit = 20
 	}
 
+	logging.Debug("mesnada list tasks", "statusFilter", req.Status, "tags", req.Tags, "limit", req.Limit)
 	tasks, err := t.orchestrator.ListTasks(models.ListRequest{
 		Status: statuses,
 		Tags:   req.Tags,
@@ -303,6 +309,7 @@ func (t *MesnadaWaitTaskTool) Run(ctx context.Context, params ToolCall) (ToolRes
 		return NewTextErrorResponse("task_id is required"), nil
 	}
 
+	logging.Debug("mesnada wait task", "taskID", req.TaskID, "timeout", req.Timeout)
 	var timeout time.Duration
 	if req.Timeout != "" {
 		var err error
@@ -355,6 +362,7 @@ func (t *MesnadaCancelTaskTool) Run(ctx context.Context, params ToolCall) (ToolR
 		return NewTextErrorResponse("task_id is required"), nil
 	}
 
+	logging.Debug("mesnada cancel task", "taskID", req.TaskID)
 	if err := t.orchestrator.Cancel(req.TaskID); err != nil {
 		return NewTextErrorResponse(err.Error()), nil
 	}
@@ -395,6 +403,7 @@ func (t *MesnadaGetOutputTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		return NewTextErrorResponse("task_id is required"), nil
 	}
 
+	logging.Debug("mesnada get output", "taskID", req.TaskID)
 	task, err := t.orchestrator.GetTask(req.TaskID)
 	if err != nil {
 		return NewTextErrorResponse(err.Error()), nil

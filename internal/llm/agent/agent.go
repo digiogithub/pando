@@ -120,6 +120,7 @@ func NewAgent(
 		activeRequests:    sync.Map{},
 	}
 
+	logging.Debug("Agent created", "name", string(agentName), "model", agentProvider.Model().ID, "toolCount", len(agentTools))
 	return agent, nil
 }
 
@@ -165,6 +166,7 @@ func (a *agent) IsSessionBusy(sessionID string) bool {
 }
 
 func (a *agent) generateTitle(ctx context.Context, sessionID string, content string) error {
+	logging.Debug("Generating title", "sessionID", sessionID, "contentLength", len(content))
 	if content == "" {
 		return nil
 	}
@@ -209,6 +211,7 @@ func (a *agent) err(err error) AgentEvent {
 }
 
 func (a *agent) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
+	logging.Debug("Agent.Run called", "sessionID", sessionID, "contentLength", len(content), "attachmentCount", len(attachments))
 	if !a.provider.Model().SupportsAttachments && attachments != nil {
 		attachments = nil
 	}
@@ -265,6 +268,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	if err != nil {
 		return a.err(fmt.Errorf("failed to get session: %w", err))
 	}
+	logging.Debug("processGeneration", "sessionID", sessionID, "existingMessages", len(msgs), "hasSummary", session.SummaryMessageID != "")
 	if session.SummaryMessageID != "" {
 		summaryMsgInex := -1
 		for i, msg := range msgs {
@@ -299,6 +303,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		default:
 			// Continue processing
 		}
+		logging.Debug("processGeneration iteration", "sessionID", sessionID, "historyLength", len(msgHistory))
 		agentMessage, toolResults, err := a.streamAndHandleEvents(ctx, sessionID, msgHistory, requestProvider)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -338,6 +343,7 @@ func (a *agent) createUserMessage(ctx context.Context, sessionID, content string
 }
 
 func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msgHistory []message.Message, requestProvider provider.Provider) (message.Message, *message.Message, error) {
+	logging.Debug("streamAndHandleEvents started", "sessionID", sessionID, "historyLength", len(msgHistory), "model", requestProvider.Model().ID)
 	ctx = context.WithValue(ctx, tools.SessionIDContextKey, sessionID)
 	eventChan := requestProvider.StreamResponse(ctx, msgHistory, a.tools)
 
@@ -437,6 +443,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 		}
 	}
 out:
+	logging.Debug("Tool calls processed", "sessionID", sessionID, "toolCallCount", len(toolCalls), "toolResultCount", len(toolResults))
 	if len(toolResults) == 0 {
 		return assistantMsg, nil, nil
 	}
@@ -476,12 +483,15 @@ func (a *agent) processEvent(
 
 	switch event.Type {
 	case provider.EventThinkingDelta:
+		logging.Debug("Event: ThinkingDelta", "sessionID", sessionID, "contentLength", len(event.Content))
 		assistantMsg.AppendReasoningContent(event.Content)
 		return a.messages.Update(ctx, *assistantMsg)
 	case provider.EventContentDelta:
+		logging.Debug("Event: ContentDelta", "sessionID", sessionID, "contentLength", len(event.Content))
 		assistantMsg.AppendContent(event.Content)
 		return a.messages.Update(ctx, *assistantMsg)
 	case provider.EventToolUseStart:
+		logging.Debug("Event: ToolUseStart", "sessionID", sessionID, "toolName", event.ToolCall.Name, "toolID", event.ToolCall.ID)
 		assistantMsg.AddToolCall(*event.ToolCall)
 		return a.messages.Update(ctx, *assistantMsg)
 	// TODO: see how to handle this
@@ -494,6 +504,7 @@ func (a *agent) processEvent(
 	// 		return err
 	// 	}
 	case provider.EventToolUseStop:
+		logging.Debug("Event: ToolUseStop", "sessionID", sessionID, "toolID", event.ToolCall.ID)
 		assistantMsg.FinishToolCall(event.ToolCall.ID)
 		return a.messages.Update(ctx, *assistantMsg)
 	case provider.EventError:
@@ -504,6 +515,7 @@ func (a *agent) processEvent(
 		logging.ErrorPersist(event.Error.Error())
 		return event.Error
 	case provider.EventComplete:
+		logging.Debug("Event: Complete", "sessionID", sessionID, "finishReason", event.Response.FinishReason, "toolCallCount", len(event.Response.ToolCalls), "inputTokens", event.Response.Usage.InputTokens, "outputTokens", event.Response.Usage.OutputTokens)
 		assistantMsg.SetToolCalls(event.Response.ToolCalls)
 		assistantMsg.AddFinish(event.Response.FinishReason)
 		if err := a.messages.Update(ctx, *assistantMsg); err != nil {
@@ -526,6 +538,8 @@ func (a *agent) TrackUsage(ctx context.Context, sessionID string, model models.M
 		model.CostPer1MIn/1e6*float64(usage.InputTokens) +
 		model.CostPer1MOut/1e6*float64(usage.OutputTokens)
 
+	logging.Debug("TrackUsage", "sessionID", sessionID, "model", model.ID, "cost", cost, "inputTokens", usage.InputTokens, "outputTokens", usage.OutputTokens)
+
 	sess.Cost += cost
 	sess.CompletionTokens = usage.OutputTokens + usage.CacheReadTokens
 	sess.PromptTokens = usage.InputTokens + usage.CacheCreationTokens
@@ -538,6 +552,7 @@ func (a *agent) TrackUsage(ctx context.Context, sessionID string, model models.M
 }
 
 func (a *agent) Update(agentName config.AgentName, modelID models.ModelID) (models.Model, error) {
+	logging.Debug("Agent model update", "agentName", string(agentName), "newModel", string(modelID))
 	if a.IsBusy() {
 		return models.Model{}, fmt.Errorf("cannot change model while processing requests")
 	}
@@ -560,6 +575,7 @@ func (a *agent) Update(agentName config.AgentName, modelID models.ModelID) (mode
 }
 
 func (a *agent) Summarize(ctx context.Context, sessionID string) error {
+	logging.Debug("Summarize started", "sessionID", sessionID)
 	if a.summarizeProvider == nil {
 		return fmt.Errorf("summarize provider not available")
 	}
@@ -731,6 +747,7 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 }
 
 func (a *agent) prepareProvider(userPrompt string) (provider.Provider, error) {
+	logging.Debug("prepareProvider", "agentName", string(a.agentName), "hasSkillManager", a.skillManager != nil)
 	if a.skillManager == nil {
 		return a.provider, nil
 	}
@@ -752,6 +769,7 @@ func (a *agent) prepareProvider(userPrompt string) (provider.Provider, error) {
 }
 
 func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillManager, activeSkillInstructions []string) (provider.Provider, error) {
+	logging.Debug("createAgentProvider", "agentName", string(agentName))
 	cfg := config.Get()
 	agentConfig, ok := cfg.Agents[agentName]
 	if !ok {
@@ -761,6 +779,7 @@ func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillM
 	if !ok {
 		return nil, fmt.Errorf("model %s not supported", agentConfig.Model)
 	}
+	logging.Debug("createAgentProvider", "agentName", string(agentName), "model", agentConfig.Model, "provider", model.Provider)
 
 	providerCfg, ok := cfg.Providers[model.Provider]
 	if !ok {

@@ -80,6 +80,7 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 
 	// Initialize LSP clients in the background
 	go app.initLSPClients(ctx)
+	logging.Debug("LSP clients initialization started")
 
 	// Refresh dynamic models from configured providers in the background
 	go app.refreshDynamicModels(ctx)
@@ -112,6 +113,7 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 				}
 			}()
 			logging.Info("Mesnada orchestrator started", "addr", addr)
+		logging.Debug("Mesnada orchestrator created", "addr", addr)
 		}
 	}
 
@@ -135,7 +137,9 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 		logging.Error("Failed to create coder agent", err)
 		return nil, err
 	}
+	logging.Debug("Coder agent created", "model", app.CoderAgent.Model().ID)
 
+	logging.Debug("App created", "workingDir", config.WorkingDirectory())
 	return app, nil
 }
 
@@ -253,6 +257,7 @@ func newSkillManager(cfg *config.Config) (*skills.SkillManager, error) {
 	}
 
 	logging.Info("Loaded skills", "count", len(discoveredSkills), "search_paths", discoveryPaths)
+	logging.Debug("Skill manager initialized", "skillCount", len(discoveredSkills))
 	return skillManager, nil
 }
 
@@ -275,6 +280,7 @@ func (app *App) initTheme() {
 // RunNonInteractive handles the execution flow when a prompt is provided via CLI flag.
 func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat string, quiet bool, yoloMode bool) error {
 	logging.Info("Running in non-interactive mode")
+	logging.Debug("Non-interactive mode started", "promptLength", len(prompt), "outputFormat", outputFormat, "yoloMode", yoloMode)
 
 	if yoloMode {
 		a.Permissions.SetGlobalAutoApprove(true)
@@ -316,6 +322,7 @@ func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat
 	}
 
 	result := <-done
+	logging.Debug("Non-interactive agent completed", "sessionID", sess.ID, "hasError", result.Error != nil)
 	if result.Error != nil {
 		if errors.Is(result.Error, context.Canceled) || errors.Is(result.Error, agent.ErrRequestCancelled) {
 			logging.Info("Agent processing cancelled", "session_id", sess.ID)
@@ -348,6 +355,7 @@ func (app *App) refreshDynamicModels(ctx context.Context) {
 	if cfg == nil {
 		return
 	}
+	logging.Debug("Refreshing dynamic models", "providerCount", len(cfg.Providers))
 
 	for providerID, providerCfg := range cfg.Providers {
 		if providerCfg.Disabled {
@@ -377,6 +385,7 @@ func (app *App) refreshDynamicModels(ctx context.Context) {
 
 // Shutdown performs a clean shutdown of the application
 func (app *App) Shutdown() {
+	logging.Debug("App shutdown started")
 	if app.MesnadaServer != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := app.MesnadaServer.Shutdown(shutdownCtx); err != nil {
@@ -411,4 +420,5 @@ func (app *App) Shutdown() {
 		}
 		cancel()
 	}
+	logging.Debug("App shutdown completed")
 }

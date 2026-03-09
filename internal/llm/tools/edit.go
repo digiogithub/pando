@@ -136,6 +136,8 @@ func (e *editTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		params.FilePath = filepath.Join(wd, params.FilePath)
 	}
 
+	logging.Debug("edit tool called", "filePath", params.FilePath, "oldStringLen", len(params.OldString), "newStringLen", len(params.NewString))
+
 	var response ToolResponse
 	var err error
 
@@ -171,6 +173,7 @@ func (e *editTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 }
 
 func (e *editTool) createNewFile(ctx context.Context, filePath, content string) (ToolResponse, error) {
+	logging.Debug("edit creating new file", "filePath", filePath)
 	fileInfo, err := os.Stat(filePath)
 	if err == nil {
 		if fileInfo.IsDir() {
@@ -240,6 +243,7 @@ func (e *editTool) createNewFile(ctx context.Context, filePath, content string) 
 	recordFileWrite(filePath)
 	recordFileRead(filePath)
 
+	logging.Debug("edit file created", "filePath", filePath)
 	return WithResponseMetadata(
 		NewTextResponse("File created: "+filePath),
 		EditResponseMetadata{
@@ -251,6 +255,7 @@ func (e *editTool) createNewFile(ctx context.Context, filePath, content string) 
 }
 
 func (e *editTool) deleteContent(ctx context.Context, filePath, oldString string) (ToolResponse, error) {
+	logging.Debug("edit deleting content", "filePath", filePath, "oldStringLen", len(oldString))
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -370,6 +375,7 @@ func (e *editTool) deleteContent(ctx context.Context, filePath, oldString string
 }
 
 func (e *editTool) replaceContent(ctx context.Context, filePath, oldString, newString string) (ToolResponse, error) {
+	logging.Debug("edit replacing content", "filePath", filePath, "oldStringLen", len(oldString), "newStringLen", len(newString))
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -479,6 +485,7 @@ func (e *editTool) replaceContent(ctx context.Context, filePath, oldString, newS
 	recordFileWrite(filePath)
 	recordFileRead(filePath)
 
+	logging.Debug("edit content replaced", "filePath", filePath, "additions", additions, "removals", removals)
 	return WithResponseMetadata(
 		NewTextResponse("Content replaced in file: "+filePath),
 		EditResponseMetadata{

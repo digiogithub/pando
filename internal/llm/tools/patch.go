@@ -96,6 +96,8 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return NewTextErrorResponse("patch_text is required"), nil
 	}
 
+	logging.Debug("patch tool called", "patchTextLen", len(params.PatchText))
+
 	// Identify all files needed for the patch and verify they've been read
 	filesToRead := diff.IdentifyFilesNeeded(params.PatchText)
 	for _, filePath := range filesToRead {
@@ -163,6 +165,8 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		}
 		currentFiles[filePath] = string(content)
 	}
+
+	logging.Debug("patch files loaded", "fileCount", len(currentFiles))
 
 	// Process the patch
 	patch, fuzz, err := diff.TextToPatch(params.PatchText, currentFiles)
@@ -350,6 +354,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		waitForLspDiagnostics(ctx, filePath, p.lspClients)
 	}
 
+	logging.Debug("patch applied", "filesChanged", len(changedFiles), "additions", totalAdditions, "removals", totalRemovals)
 	result := fmt.Sprintf("Patch applied successfully. %d files changed, %d additions, %d removals",
 		len(changedFiles), totalAdditions, totalRemovals)
 

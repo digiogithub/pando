@@ -377,6 +377,41 @@ func ValidateCopilotToken(ctx context.Context, session CopilotSession) error {
 	return nil
 }
 
+// CheckCopilotModelsAPI verifies that the Copilot models API endpoint is
+// reachable using the provided bearer token and base URL.
+func CheckCopilotModelsAPI(token, baseURL string) error {
+	if strings.TrimSpace(token) == "" {
+		return fmt.Errorf("copilot token is empty")
+	}
+	if strings.TrimSpace(baseURL) == "" {
+		baseURL = CopilotAPIBaseURL("")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/models", nil)
+	if err != nil {
+		return fmt.Errorf("create models API request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", "Pando/"+version.Version)
+	req.Header.Set("Openai-Intent", "conversation-edits")
+	req.Header.Set("x-initiator", "user")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("copilot models API unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("copilot models API error: status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	return nil
+}
+
 func resolveGitHubDomain(enterpriseURL string) string {
 	if domain := NormalizeGitHubDomain(enterpriseURL); domain != "" {
 		return domain

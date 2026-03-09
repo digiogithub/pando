@@ -141,6 +141,7 @@ type Config struct {
 	LSP          map[string]LSPConfig              `json:"lsp,omitempty"`
 	Agents       map[AgentName]Agent               `json:"agents,omitempty"`
 	Debug        bool                              `json:"debug,omitempty"`
+	LogFile      string                            `json:"logFile,omitempty"`
 	DebugLSP     bool                              `json:"debugLSP,omitempty"`
 	ContextPaths []string                          `json:"contextPaths,omitempty"`
 	Skills       SkillsConfig                      `json:"skills,omitempty"`
@@ -178,8 +179,9 @@ var cfg *Config
 
 // Load initializes the configuration from environment variables and config files.
 // If debug is true, debug mode is enabled and log level is set to debug.
+// If logFile is provided, all logs are written to the specified file.
 // It returns an error if configuration loading fails.
-func Load(workingDir string, debug bool) (*Config, error) {
+func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	if cfg != nil {
 		return cfg, nil
 	}
@@ -210,11 +212,46 @@ func Load(workingDir string, debug bool) (*Config, error) {
 	}
 
 	applyDefaultValues()
+
+	// Apply logFile from CLI argument if provided
+	if len(logFile) > 0 && logFile[0] != "" {
+		cfg.LogFile = logFile[0]
+		// If log file is specified, enable debug mode automatically
+		cfg.Debug = true
+	}
+
 	defaultLevel := slog.LevelInfo
 	if cfg.Debug {
 		defaultLevel = slog.LevelDebug
 	}
-	if os.Getenv("PANDO_DEV_DEBUG") == "true" {
+
+	if cfg.LogFile != "" {
+		// Log to the specified file
+		loggingFile := cfg.LogFile
+		loggingDir := filepath.Dir(loggingFile)
+		messagesPath := filepath.Join(loggingDir, "messages")
+
+		// Create parent directory if needed
+		if err := os.MkdirAll(loggingDir, 0o755); err != nil {
+			return cfg, fmt.Errorf("failed to create log directory: %w", err)
+		}
+
+		if _, err := os.Stat(messagesPath); os.IsNotExist(err) {
+			if err := os.MkdirAll(messagesPath, 0o756); err != nil {
+				return cfg, fmt.Errorf("failed to create messages directory: %w", err)
+			}
+		}
+		logging.MessageDir = messagesPath
+
+		sloggingFileWriter, err := os.OpenFile(loggingFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
+		if err != nil {
+			return cfg, fmt.Errorf("failed to open log file: %w", err)
+		}
+		logger := slog.New(slog.NewTextHandler(sloggingFileWriter, &slog.HandlerOptions{
+			Level: defaultLevel,
+		}))
+		slog.SetDefault(logger)
+	} else if os.Getenv("PANDO_DEV_DEBUG") == "true" {
 		loggingFile := fmt.Sprintf("%s/%s", cfg.Data.Directory, "debug.log")
 		messagesPath := fmt.Sprintf("%s/%s", cfg.Data.Directory, "messages")
 
@@ -239,7 +276,6 @@ func Load(workingDir string, debug bool) (*Config, error) {
 		if err != nil {
 			return cfg, fmt.Errorf("failed to open log file: %w", err)
 		}
-		// Configure logger
 		logger := slog.New(slog.NewTextHandler(sloggingFileWriter, &slog.HandlerOptions{
 			Level: defaultLevel,
 		}))
@@ -754,17 +790,24 @@ func getProviderAPIKey(provider models.ModelProvider) string {
 
 // setDefaultModelForAgent sets a default model for an agent based on available providers
 func setDefaultModelForAgent(agent AgentName) bool {
+	// Only use Copilot if credentials exist AND provider is not disabled
 	if hasCopilotCredentials() {
-		maxTokens := int64(5000)
-		if agent == AgentTitle {
-			maxTokens = 80
+		copilotDisabled := false
+		if providerCfg, ok := cfg.Providers[models.ProviderCopilot]; ok && providerCfg.Disabled {
+			copilotDisabled = true
 		}
+		if !copilotDisabled {
+			maxTokens := int64(5000)
+			if agent == AgentTitle {
+				maxTokens = 80
+			}
 
-		cfg.Agents[agent] = Agent{
-			Model:     models.CopilotGPT4o,
-			MaxTokens: maxTokens,
+			cfg.Agents[agent] = Agent{
+				Model:     models.CopilotGPT4o,
+				MaxTokens: maxTokens,
+			}
+			return true
 		}
-		return true
 	}
 	// Check providers in order of preference
 	if apiKey := os.Getenv("ANTHROPIC_API_KEY"); apiKey != "" {

@@ -107,6 +107,8 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return NewTextErrorResponse("file_path is required"), nil
 	}
 
+	logging.Debug("view tool called", "filePath", params.FilePath, "offset", params.Offset, "limit", params.Limit)
+
 	// Handle relative paths
 	filePath := params.FilePath
 	if !filepath.IsAbs(filePath) {
@@ -174,6 +176,7 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return ToolResponse{}, fmt.Errorf("error reading file: %w", err)
 	}
 
+	logging.Debug("view file read", "filePath", filePath, "lineCount", lineCount)
 	notifyLspOpenFile(ctx, filePath, v.lspClients)
 	output := "<file>\n"
 	// Format the output with line numbers

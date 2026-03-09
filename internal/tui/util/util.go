@@ -48,7 +48,34 @@ type (
 		TTL  time.Duration
 	}
 	ClearStatusMsg struct{}
+
+	// AlertMsg triggers a bubbleup overlay alert instead of the status bar.
+	AlertMsg struct {
+		Type    string // bubbleup alert key: "Info", "Warn", "Error"
+		Msg     string
+		Persist bool // if true, alert stays until dismissed with Esc
+	}
 )
+
+// AlertInfo creates a bubbleup info overlay alert.
+func AlertInfo(msg string) tea.Cmd {
+	return CmdHandler(AlertMsg{Type: "Info", Msg: msg})
+}
+
+// AlertWarn creates a bubbleup warning overlay alert.
+func AlertWarn(msg string) tea.Cmd {
+	return CmdHandler(AlertMsg{Type: "Warn", Msg: msg})
+}
+
+// AlertError creates a bubbleup error overlay alert.
+func AlertError(msg string) tea.Cmd {
+	return CmdHandler(AlertMsg{Type: "Error", Msg: msg})
+}
+
+// AlertPersist creates a persistent bubbleup alert that stays until Esc is pressed.
+func AlertPersist(alertType, msg string) tea.Cmd {
+	return CmdHandler(AlertMsg{Type: alertType, Msg: msg, Persist: true})
+}
 
 func Clamp(v, low, high int) int {
 	if high < low {

@@ -50,6 +50,9 @@ func newAnthropicClient(opts providerClientOptions) AnthropicClient {
 	}
 
 	client := anthropic.NewClient(anthropicClientOptions...)
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Creating Anthropic client", "model", opts.model.APIModel)
+	}
 	return &anthropicClient{
 		providerOptions: opts,
 		options:         anthropicOpts,
@@ -236,6 +239,9 @@ func (a *anthropicClient) send(ctx context.Context, messages []message.Message, 
 			}
 		}
 
+		if cfg := config.Get(); cfg != nil && cfg.Debug {
+			logging.Debug("Anthropic send completed", "model", a.providerOptions.model.APIModel, "content_length", len(content))
+		}
 		return &ProviderResponse{
 			Content:   content,
 			ToolCalls: a.toolCalls(*anthropicResponse),
@@ -268,6 +274,9 @@ func (a *anthropicClient) stream(ctx context.Context, messages []message.Message
 	go func() {
 		for {
 			attempts++
+			if cfg != nil && cfg.Debug {
+				logging.Debug("Anthropic stream started", "model", a.providerOptions.model.APIModel, "attempt", attempts)
+			}
 			anthropicStream := a.client.Messages.NewStreaming(
 				ctx,
 				preparedMessages,
@@ -357,6 +366,9 @@ func (a *anthropicClient) stream(ctx context.Context, messages []message.Message
 
 			err := anthropicStream.Err()
 			if err == nil || errors.Is(err, io.EOF) {
+				if cfg != nil && cfg.Debug {
+					logging.Debug("Anthropic stream completed successfully", "model", a.providerOptions.model.APIModel)
+				}
 				close(eventChan)
 				return
 			}
@@ -402,7 +414,12 @@ func (a *anthropicClient) shouldRetry(attempts int, err error) (bool, int64, err
 		return false, 0, err
 	}
 
-	if attempts > maxRetries {
+	retry := attempts <= maxRetries
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Anthropic retry evaluation", "attempts", attempts, "statusCode", apierr.StatusCode, "willRetry", retry)
+	}
+
+	if !retry {
 		return false, 0, fmt.Errorf("maximum retry attempts reached for rate limit: %d retries", maxRetries)
 	}
 

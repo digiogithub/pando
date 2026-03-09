@@ -67,9 +67,17 @@ func (c *container) View() string {
 		style = style.Border(c.borderStyle, c.borderTop, c.borderRight, c.borderBottom, c.borderLeft)
 		style = style.BorderBackground(t.Background()).BorderForeground(t.BorderNormal())
 	}
+	// Subtract padding from content height so total rendered height matches c.height.
+	// lipgloss.Height() is a minimum (not a maximum) and padding is added outside it,
+	// so we must reduce the content height to account for padding.
+	contentHeight := height - c.paddingTop - c.paddingBottom
+	if contentHeight < 0 {
+		contentHeight = 0
+	}
 	style = style.
 		Width(width).
-		Height(height).
+		Height(contentHeight).
+		MaxHeight(height).
 		PaddingTop(c.paddingTop).
 		PaddingRight(c.paddingRight).
 		PaddingBottom(c.paddingBottom).
