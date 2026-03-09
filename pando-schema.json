@@ -12,83 +12,20 @@
         "model": {
           "description": "Model ID for the agent",
           "enum": [
-            "gpt-4.1",
-            "llama-3.3-70b-versatile",
-            "azure.gpt-4.1",
-            "openrouter.gpt-4o",
-            "openrouter.o1-mini",
-            "openrouter.claude-3-haiku",
-            "claude-3-opus",
-            "gpt-4o",
-            "gpt-4o-mini",
-            "o1",
-            "meta-llama/llama-4-maverick-17b-128e-instruct",
-            "azure.o3-mini",
-            "openrouter.gpt-4o-mini",
-            "openrouter.o1",
-            "claude-3.5-haiku",
-            "o4-mini",
-            "azure.gpt-4.1-mini",
-            "openrouter.o3",
-            "grok-3-beta",
-            "o3-mini",
-            "qwen-qwq",
-            "azure.o1",
-            "openrouter.gemini-2.5-flash",
-            "openrouter.gemini-2.5",
-            "o1-mini",
-            "azure.gpt-4o",
-            "openrouter.gpt-4.1-mini",
-            "openrouter.claude-3.5-sonnet",
-            "openrouter.o3-mini",
-            "gpt-4.1-mini",
-            "gpt-4.5-preview",
-            "gpt-4.1-nano",
-            "deepseek-r1-distill-llama-70b",
             "azure.gpt-4o-mini",
-            "openrouter.gpt-4.1",
-            "bedrock.claude-3.7-sonnet",
-            "claude-3-haiku",
-            "o3",
-            "gemini-2.0-flash-lite",
             "azure.o3",
-            "azure.gpt-4.5-preview",
-            "openrouter.claude-3-opus",
-            "grok-3-mini-fast-beta",
-            "claude-4-sonnet",
-            "azure.o4-mini",
-            "grok-3-fast-beta",
-            "claude-3.5-sonnet",
             "azure.o1-mini",
-            "openrouter.claude-3.7-sonnet",
-            "openrouter.gpt-4.5-preview",
-            "grok-3-mini-beta",
-            "claude-3.7-sonnet",
-            "gemini-2.0-flash",
-            "openrouter.deepseek-r1-free",
-            "vertexai.gemini-2.5-flash",
+            "azure.o4-mini",
+            "azure.gpt-4.1-mini",
             "vertexai.gemini-2.5",
-            "o1-pro",
-            "gemini-2.5",
-            "meta-llama/llama-4-scout-17b-16e-instruct",
+            "vertexai.gemini-2.5-flash",
             "azure.gpt-4.1-nano",
-            "openrouter.gpt-4.1-nano",
-            "gemini-2.5-flash",
-            "openrouter.o4-mini",
-            "openrouter.claude-3.5-haiku",
-            "claude-4-opus",
-            "openrouter.o1-pro",
-            "copilot.gpt-4o",
-            "copilot.gpt-4o-mini",
-            "copilot.gpt-4.1",
-            "copilot.claude-3.5-sonnet",
-            "copilot.claude-3.7-sonnet",
-            "copilot.claude-sonnet-4",
-            "copilot.o1",
-            "copilot.o3-mini",
-            "copilot.o4-mini",
-            "copilot.gemini-2.0-flash",
-            "copilot.gemini-2.5-pro"
+            "azure.gpt-4.5-preview",
+            "azure.gpt-4o",
+            "azure.o1",
+            "azure.gpt-4.1",
+            "azure.o3-mini",
+            "bedrock.claude-3.7-sonnet"
           ],
           "type": "string"
         },
@@ -108,7 +45,7 @@
       "type": "object"
     }
   },
-  "description": "Configuration schema for the OpenCode application",
+  "description": "Configuration schema for the Pando application",
   "properties": {
     "agents": {
       "additionalProperties": {
@@ -122,83 +59,20 @@
           "model": {
             "description": "Model ID for the agent",
             "enum": [
-              "gpt-4.1",
-              "llama-3.3-70b-versatile",
-              "azure.gpt-4.1",
-              "openrouter.gpt-4o",
-              "openrouter.o1-mini",
-              "openrouter.claude-3-haiku",
-              "claude-3-opus",
-              "gpt-4o",
-              "gpt-4o-mini",
-              "o1",
-              "meta-llama/llama-4-maverick-17b-128e-instruct",
-              "azure.o3-mini",
-              "openrouter.gpt-4o-mini",
-              "openrouter.o1",
-              "claude-3.5-haiku",
-              "o4-mini",
-              "azure.gpt-4.1-mini",
-              "openrouter.o3",
-              "grok-3-beta",
-              "o3-mini",
-              "qwen-qwq",
-              "azure.o1",
-              "openrouter.gemini-2.5-flash",
-              "openrouter.gemini-2.5",
-              "o1-mini",
-              "azure.gpt-4o",
-              "openrouter.gpt-4.1-mini",
-              "openrouter.claude-3.5-sonnet",
-              "openrouter.o3-mini",
-              "gpt-4.1-mini",
-              "gpt-4.5-preview",
-              "gpt-4.1-nano",
-              "deepseek-r1-distill-llama-70b",
               "azure.gpt-4o-mini",
-              "openrouter.gpt-4.1",
-              "bedrock.claude-3.7-sonnet",
-              "claude-3-haiku",
-              "o3",
-              "gemini-2.0-flash-lite",
               "azure.o3",
-              "azure.gpt-4.5-preview",
-              "openrouter.claude-3-opus",
-              "grok-3-mini-fast-beta",
-              "claude-4-sonnet",
-              "azure.o4-mini",
-              "grok-3-fast-beta",
-              "claude-3.5-sonnet",
               "azure.o1-mini",
-              "openrouter.claude-3.7-sonnet",
-              "openrouter.gpt-4.5-preview",
-              "grok-3-mini-beta",
-              "claude-3.7-sonnet",
-              "gemini-2.0-flash",
-              "openrouter.deepseek-r1-free",
-              "vertexai.gemini-2.5-flash",
+              "azure.o4-mini",
+              "azure.gpt-4.1-mini",
               "vertexai.gemini-2.5",
-              "o1-pro",
-              "gemini-2.5",
-              "meta-llama/llama-4-scout-17b-16e-instruct",
+              "vertexai.gemini-2.5-flash",
               "azure.gpt-4.1-nano",
-              "openrouter.gpt-4.1-nano",
-              "gemini-2.5-flash",
-              "openrouter.o4-mini",
-              "openrouter.claude-3.5-haiku",
-              "claude-4-opus",
-              "openrouter.o1-pro",
-              "copilot.gpt-4o",
-              "copilot.gpt-4o-mini",
-              "copilot.gpt-4.1",
-              "copilot.claude-3.5-sonnet",
-              "copilot.claude-3.7-sonnet",
-              "copilot.claude-sonnet-4",
-              "copilot.o1",
-              "copilot.o3-mini",
-              "copilot.o4-mini",
-              "copilot.gemini-2.0-flash",
-              "copilot.gemini-2.5-pro"
+              "azure.gpt-4.5-preview",
+              "azure.gpt-4o",
+              "azure.o1",
+              "azure.gpt-4.1",
+              "azure.o3-mini",
+              "bedrock.claude-3.7-sonnet"
             ],
             "type": "string"
           },
@@ -238,12 +112,12 @@
         ".cursor/rules/",
         "CLAUDE.md",
         "CLAUDE.local.md",
-        "opencode.md",
-        "opencode.local.md",
-        "OpenCode.md",
-        "OpenCode.local.md",
-        "OPENCODE.md",
-        "OPENCODE.local.md"
+        "pando.md",
+        "pando.local.md",
+        "Pando.md",
+        "Pando.local.md",
+        "PANDO.md",
+        "PANDO.local.md"
       ],
       "description": "Context paths for the application",
       "items": {
@@ -251,29 +125,11 @@
       },
       "type": "array"
     },
-    "skills": {
-      "description": "Skill discovery and prompt injection configuration",
-      "properties": {
-        "enabled": {
-          "default": true,
-          "description": "Enable skills support",
-          "type": "boolean"
-        },
-        "paths": {
-          "description": "Additional skill search paths",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
     "data": {
       "description": "Storage configuration",
       "properties": {
         "directory": {
-          "default": ".opencode",
+          "default": ".pando",
           "description": "Directory where application data is stored",
           "type": "string"
         }
@@ -352,7 +208,7 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "HTTP headers for SSE type MCP servers",
+            "description": "HTTP headers for SSE and streamable-http type MCP servers",
             "type": "object"
           },
           "type": {
@@ -360,21 +216,112 @@
             "description": "Type of MCP server",
             "enum": [
               "stdio",
-              "sse"
+              "sse",
+              "streamable-http"
             ],
             "type": "string"
           },
           "url": {
-            "description": "URL for SSE type MCP servers",
+            "description": "URL for SSE and streamable-http type MCP servers",
             "type": "string"
           }
         },
-        "required": [
-          "command"
-        ],
         "type": "object"
       },
       "description": "Model Control Protocol server configurations",
+      "type": "object"
+    },
+    "mesnada": {
+      "description": "Mesnada integration configuration",
+      "properties": {
+        "acp": {
+          "description": "Mesnada ACP configuration",
+          "properties": {
+            "autoPermission": {
+              "description": "Automatically approve ACP permissions",
+              "type": "boolean"
+            },
+            "defaultAgent": {
+              "description": "Default ACP agent for Mesnada",
+              "type": "string"
+            },
+            "enabled": {
+              "description": "Enable ACP-backed Mesnada agents",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Enable Mesnada integration",
+          "type": "boolean"
+        },
+        "orchestrator": {
+          "description": "Mesnada orchestrator configuration",
+          "properties": {
+            "defaultEngine": {
+              "default": "copilot",
+              "description": "Default engine for Mesnada tasks",
+              "type": "string"
+            },
+            "defaultMcpConfig": {
+              "description": "Default MCP config for Mesnada tasks",
+              "type": "string"
+            },
+            "logDir": {
+              "description": "Directory for Mesnada task logs",
+              "type": "string"
+            },
+            "maxParallel": {
+              "default": 5,
+              "description": "Maximum number of parallel Mesnada tasks",
+              "type": "integer"
+            },
+            "personaPath": {
+              "description": "Path to Mesnada persona definitions",
+              "type": "string"
+            },
+            "storePath": {
+              "description": "Path to the Mesnada task store",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "server": {
+          "description": "Mesnada HTTP server configuration",
+          "properties": {
+            "host": {
+              "default": "127.0.0.1",
+              "description": "Mesnada server host",
+              "type": "string"
+            },
+            "port": {
+              "default": 9767,
+              "description": "Mesnada server port",
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "tui": {
+          "description": "Mesnada TUI configuration",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Enable Mesnada TUI features",
+              "type": "boolean"
+            },
+            "webui": {
+              "default": true,
+              "description": "Enable the Mesnada web UI",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        }
+      },
       "type": "object"
     },
     "providers": {
@@ -400,8 +347,7 @@
               "openrouter",
               "bedrock",
               "azure",
-              "vertexai",
-              "copilot"
+              "vertexai"
             ],
             "type": "string"
           }
@@ -411,14 +357,32 @@
       "description": "LLM provider configurations",
       "type": "object"
     },
+    "skills": {
+      "description": "Skill discovery and prompt injection configuration",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Enable skills support",
+          "type": "boolean"
+        },
+        "paths": {
+          "description": "Additional skill search paths",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "tui": {
       "description": "Terminal User Interface configuration",
       "properties": {
         "theme": {
-          "default": "opencode",
+          "default": "pando",
           "description": "TUI theme name",
           "enum": [
-            "opencode",
+            "pando",
             "catppuccin",
             "dracula",
             "flexoki",
@@ -433,104 +397,11 @@
       },
       "type": "object"
     },
-    "mesnada": {
-      "description": "Mesnada integration configuration",
-      "properties": {
-        "enabled": {
-          "default": false,
-          "description": "Enable Mesnada integration",
-          "type": "boolean"
-        },
-        "server": {
-          "description": "Mesnada HTTP server configuration",
-          "properties": {
-            "host": {
-              "default": "127.0.0.1",
-              "description": "Mesnada server host",
-              "type": "string"
-            },
-            "port": {
-              "default": 9767,
-              "description": "Mesnada server port",
-              "type": "integer"
-            }
-          },
-          "type": "object"
-        },
-        "orchestrator": {
-          "description": "Mesnada orchestrator configuration",
-          "properties": {
-            "storePath": {
-              "description": "Path to the Mesnada task store",
-              "type": "string"
-            },
-            "logDir": {
-              "description": "Directory for Mesnada task logs",
-              "type": "string"
-            },
-            "maxParallel": {
-              "default": 5,
-              "description": "Maximum number of parallel Mesnada tasks",
-              "type": "integer"
-            },
-            "defaultEngine": {
-              "default": "copilot",
-              "description": "Default engine for Mesnada tasks",
-              "type": "string"
-            },
-            "defaultMcpConfig": {
-              "description": "Default MCP config for Mesnada tasks",
-              "type": "string"
-            },
-            "personaPath": {
-              "description": "Path to Mesnada persona definitions",
-              "type": "string"
-            }
-          },
-          "type": "object"
-        },
-        "acp": {
-          "description": "Mesnada ACP configuration",
-          "properties": {
-            "enabled": {
-              "description": "Enable ACP-backed Mesnada agents",
-              "type": "boolean"
-            },
-            "defaultAgent": {
-              "description": "Default ACP agent for Mesnada",
-              "type": "string"
-            },
-            "autoPermission": {
-              "description": "Automatically approve ACP permissions",
-              "type": "boolean"
-            }
-          },
-          "type": "object"
-        },
-        "tui": {
-          "description": "Mesnada TUI configuration",
-          "properties": {
-            "enabled": {
-              "default": true,
-              "description": "Enable Mesnada TUI features",
-              "type": "boolean"
-            },
-            "webui": {
-              "default": true,
-              "description": "Enable the Mesnada web UI",
-              "type": "boolean"
-            }
-          },
-          "type": "object"
-        }
-      },
-      "type": "object"
-    },
     "wd": {
       "description": "Working directory for the application",
       "type": "string"
     }
   },
-  "title": "OpenCode Configuration",
+  "title": "Pando Configuration",
   "type": "object"
 }

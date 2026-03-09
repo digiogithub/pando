@@ -12,12 +12,10 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/sahilm/fuzzy"
 )
 
-var (
-	rgPath  string
-	fzfPath string
-)
+var rgPath string
 
 func init() {
 	var err error
@@ -25,11 +23,6 @@ func init() {
 	if err != nil {
 		logging.Warn("Ripgrep (rg) not found in $PATH. Some features might be limited or slower.")
 		rgPath = ""
-	}
-	fzfPath, err = exec.LookPath("fzf")
-	if err != nil {
-		logging.Warn("FZF not found in $PATH. Some features might be limited or slower.")
-		fzfPath = ""
 	}
 }
 
@@ -53,19 +46,18 @@ func GetRgCmd(globPattern string) *exec.Cmd {
 	return cmd
 }
 
-func GetFzfCmd(query string) *exec.Cmd {
-	if fzfPath == "" {
-		return nil
+// FuzzyFilter filters items by query using the same scoring algorithm as fzf.
+// Results are sorted by match quality (best matches first).
+func FuzzyFilter(query string, items []string) []string {
+	if query == "" {
+		return items
 	}
-	fzfArgs := []string{
-		"--filter",
-		query,
-		"--read0",
-		"--print0",
+	matches := fuzzy.Find(query, items)
+	result := make([]string, len(matches))
+	for i, m := range matches {
+		result[i] = m.Str
 	}
-	cmd := exec.Command(fzfPath, fzfArgs...)
-	cmd.Dir = "."
-	return cmd
+	return result
 }
 
 type FileInfo struct {
