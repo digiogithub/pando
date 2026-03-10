@@ -38,7 +38,7 @@ Args = []
 
 [Agents]
 [Agents.coder]
-Model = 'copilot.gpt-4o-mini-2024-07-18'
+Model = 'ollama.minimax-m2.5:cloud'
 MaxTokens = 4096
 ReasoningEffort = ''
 
@@ -69,6 +69,15 @@ PersonaPath = ''
 Enabled = false
 DefaultAgent = ''
 AutoPermission = false
+
+[Mesnada.ACP.Server]
+Enabled = false
+Transports = ['http']
+Host = '0.0.0.0'
+Port = 8766
+MaxSessions = 100
+SessionTimeout = '30m'
+RequireAuth = false
 
 [Mesnada.TUI]
 Enabled = false
