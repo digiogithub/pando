@@ -236,7 +236,10 @@ func (m statusCmp) View() string {
 		tokensStyle := styles.Padded().
 			Background(t.Text()).
 			Foreground(t.BackgroundSecondary())
-		percentage := (float64(totalTokens) / float64(model.ContextWindow)) * 100
+		var percentage float64
+		if model.ContextWindow > 0 {
+			percentage = (float64(totalTokens) / float64(model.ContextWindow)) * 100
+		}
 		if percentage > 80 {
 			tokensStyle = tokensStyle.Background(t.Warning())
 		}
@@ -382,14 +385,21 @@ func (m statusCmp) model() string {
 
 	coder, ok := cfg.Agents[config.AgentCoder]
 	if !ok {
-		return "Unknown"
+		return styles.Padded().
+			Background(t.Secondary()).
+			Foreground(t.Background()).
+			Render("No model")
 	}
-	model := models.SupportedModels[coder.Model]
+	model, modelOK := models.SupportedModels[coder.Model]
+	modelName := model.Name
+	if !modelOK || modelName == "" {
+		modelName = "No model"
+	}
 
 	return styles.Padded().
 		Background(t.Secondary()).
 		Foreground(t.Background()).
-		Render(model.Name)
+		Render(modelName)
 }
 
 func NewStatusCmp(lspClients map[string]*lsp.Client) StatusCmp {

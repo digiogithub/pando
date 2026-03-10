@@ -227,7 +227,13 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 		return a, tea.Batch(cmds...)
 	case util.AlertMsg:
-		cmds = append(cmds, a.alert.NewAlertCmd(msg.Type, msg.Msg))
+		if msg.Persist {
+			// Persistent alerts last 10 minutes and are dismissed with Esc
+			longAlert := bubbleup.NewAlertModel(60, false, 10*time.Minute)
+			cmds = append(cmds, longAlert.NewAlertCmd(msg.Type, msg.Msg))
+		} else {
+			cmds = append(cmds, a.alert.NewAlertCmd(msg.Type, msg.Msg))
+		}
 		outAlert, outCmd := a.alert.Update(msg)
 		a.alert = outAlert.(bubbleup.AlertModel)
 		cmds = append(cmds, outCmd)
@@ -235,7 +241,11 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Copilot device code received - show alert and start polling
 	case copilotDeviceCodeMsg:
-		cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.WarnKey, msg.instructions))
+		// Use a long-duration alert (10 min) so the user has time to copy
+		// the code and complete the flow. The alert is dismissed on Esc or
+		// when the login completes.
+		longAlert := bubbleup.NewAlertModel(60, false, 10*time.Minute)
+		cmds = append(cmds, longAlert.NewAlertCmd(bubbleup.WarnKey, msg.instructions))
 		outAlert, outCmd := a.alert.Update(msg)
 		a.alert = outAlert.(bubbleup.AlertModel)
 		cmds = append(cmds, outCmd)

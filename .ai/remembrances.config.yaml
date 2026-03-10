@@ -58,7 +58,7 @@ surrealdb-database: "test"
 # Path to GGUF model file for local embeddings (default: "")
 # When set, this takes priority over Ollama and OpenAI
 # Example: "/path/to/nomic-embed-text-v1.5.Q4_K_M.gguf"
-gguf-model-path: "/www/Remembrances/nomic-embed-text-v1.5.Q4_K_M.gguf"
+#gguf-model-path: "/www/Remembrances/nomic-embed-text-v1.5.Q4_K_M.gguf"
 
 # Number of threads for GGUF model (0 = auto-detect) (default: 0)
 gguf-threads: 0
@@ -68,10 +68,10 @@ gguf-threads: 0
 gguf-gpu-layers: 32
 # ========== Ollama Configuration ==========
 # URL for the Ollama server (default: "http://localhost:11434")
-#ollama-url: "http://localhost:11434"
+ollama-url: "http://localhost:11434"
 
 # Ollama model to use for embeddings (default: "")
-#ollama-model: "nomic-embed-text:latest"
+ollama-model: "nomic-embed-text:latest"
 # ========== OpenAI Configuration ==========
 # OpenAI API key (default: "")
 #openai-key: ""
@@ -95,10 +95,10 @@ gguf-gpu-layers: 32
 #code-gguf-model-path: "/www/Remembrances/coderankembed.Q4_K_M.gguf"
 
 # Path to GGUF model for code embeddings (default: uses default gguf-model-path)
-code-gguf-model-path: "/www/Remembrances/coderankembed.Q4_K_M.gguf"
+#code-gguf-model-path: "/www/Remembrances/coderankembed.Q4_K_M.gguf"
 
 # Ollama model for code embeddings (default: uses default ollama-model)
-#code-ollama-model: "hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M"
+code-ollama-model: "hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M"
 
 # OpenAI model for code embeddings (default: uses default openai-model)
 #code-openai-model: ""
@@ -146,8 +146,8 @@ code-indexing-max-file-size: 524288
 # Path to the log file (logs will be written to both stdout and file) (default: "")
 #log: "/www/MCP/remembrances-mcp/remembrances-mcp.log"
 
-modules:
-  commercial_webui:
-    enabled: true
-    config:
-      port: "9084"
+# modules:
+#   commercial_webui:
+#     enabled: true
+#     config:
+#       port: "9084"

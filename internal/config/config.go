@@ -594,7 +594,8 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 		if setDefaultModelForAgent(name) {
 			logging.Info("set default model for agent", "agent", name, "model", cfg.Agents[name].Model)
 		} else {
-			return fmt.Errorf("no valid provider available for agent %s", name)
+			logging.Warn("no valid provider available for agent, model selection required",
+				"agent", name)
 		}
 		return nil
 	}
@@ -620,7 +621,8 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 				if setDefaultModelForAgent(name) {
 					logging.Info("set default model for agent", "agent", name, "model", cfg.Agents[name].Model)
 				} else {
-					return fmt.Errorf("no valid provider available for agent %s", name)
+					logging.Warn("no valid provider available for agent, model selection required",
+						"agent", name)
 				}
 			} else {
 				// Add provider with API key from environment
