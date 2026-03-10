@@ -241,6 +241,10 @@ func (m *modelDialogCmp) moveSelectionDown() {
 }
 
 func (m *modelDialogCmp) switchProvider(offset int) {
+	if len(m.availableProviders) == 0 {
+		return
+	}
+
 	newOffset := m.hScrollOffset + offset
 
 	// Ensure we stay within bounds
@@ -259,6 +263,39 @@ func (m *modelDialogCmp) switchProvider(offset int) {
 func (m *modelDialogCmp) View() string {
 	t := theme.CurrentTheme()
 	baseStyle := styles.BaseStyle()
+
+	// Handle case where no providers are available
+	if len(m.availableProviders) == 0 || m.provider == "" {
+		noProviderMsg := baseStyle.
+			Foreground(t.Primary()).
+			Bold(true).
+			Width(maxDialogWidth).
+			Padding(1, 2).
+			Render("No Model Providers Available")
+
+		helpLines := []string{
+			baseStyle.Foreground(t.TextMuted()).Width(maxDialogWidth).Padding(0, 2).Render("Configure a provider to get started:"),
+			"",
+			baseStyle.Foreground(t.Text()).Width(maxDialogWidth).Padding(0, 2).Render("• GitHub Copilot: /login"),
+			baseStyle.Foreground(t.Text()).Width(maxDialogWidth).Padding(0, 2).Render("• Ollama: install & run ollama"),
+			baseStyle.Foreground(t.Text()).Width(maxDialogWidth).Padding(0, 2).Render("• OpenAI: set OPENAI_API_KEY"),
+			baseStyle.Foreground(t.Text()).Width(maxDialogWidth).Padding(0, 2).Render("• Anthropic: set ANTHROPIC_API_KEY"),
+			"",
+			baseStyle.Foreground(t.TextMuted()).Width(maxDialogWidth).Padding(0, 2).Render("Press Esc to close"),
+		}
+
+		content := lipgloss.JoinVertical(lipgloss.Left,
+			noProviderMsg,
+			lipgloss.JoinVertical(lipgloss.Left, helpLines...),
+		)
+
+		return baseStyle.Padding(1, 2).
+			Border(lipgloss.RoundedBorder()).
+			BorderBackground(t.Background()).
+			BorderForeground(t.TextMuted()).
+			Width(lipgloss.Width(content) + 4).
+			Render(content)
+	}
 
 	// Capitalize first letter of provider name
 	providerName := strings.ToUpper(string(m.provider)[:1]) + string(m.provider[1:])
@@ -360,7 +397,22 @@ func (m *modelDialogCmp) setupModels() {
 	m.availableProviders = getEnabledProviders(cfg)
 	m.hScrollPossible = len(m.availableProviders) > 1
 
+	// If no providers are available, leave provider empty and models empty
+	if len(m.availableProviders) == 0 {
+		m.provider = ""
+		m.models = nil
+		m.filteredModels = nil
+		return
+	}
+
 	m.provider = modelInfo.Provider
+
+	// If the selected model's provider is empty or not in the available list,
+	// fall back to the first available provider
+	if m.provider == "" || findProviderIndex(m.availableProviders, m.provider) == -1 {
+		m.provider = m.availableProviders[0]
+	}
+
 	m.hScrollOffset = findProviderIndex(m.availableProviders, m.provider)
 
 	m.setupModelsForProvider(m.provider)

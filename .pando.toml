@@ -1,17 +1,79 @@
-# Pando Configuration
-# Schema: ./pando-schema.json
+WorkingDir = ''
+Debug = false
+LogFile = ''
+DebugLSP = false
+ContextPaths = []
+AutoCompact = false
 
-[lsp.gopls]
-command = "gopls"
+[Data]
+Directory = ''
 
-[mcpServers.mesnada]
-type = "streamable-http"
-url = "http://127.0.0.1:9767/mcp"
+[MCPServers]
+[MCPServers.hyper-mcp]
+Command = 'hyper-mcp'
+Env = []
+Args = ['--config-file', '/home/sevir/.config/hyper-mcp/search.yaml']
+Type = ''
+URL = ''
 
-[mcpServers.remembrances]
-type = "streamable-http"
-url = "http://127.0.0.1:4030/mcp"
+[MCPServers.mesnada]
+Command = ''
+Env = []
+Args = []
+Type = 'streamable-http'
+URL = 'http://127.0.0.1:9767/mcp'
 
-[mcpServers.hyper-mcp]
-command = "hyper-mcp"
-args = ["--config-file", "/home/sevir/.config/hyper-mcp/search.yaml"]
+[MCPServers.remembrances]
+Command = ''
+Env = []
+Args = []
+Type = 'streamable-http'
+URL = 'http://127.0.0.1:4030/mcp'
+
+[LSP]
+[LSP.gopls]
+Disabled = false
+Command = 'gopls'
+Args = []
+
+[Agents]
+[Agents.coder]
+Model = 'copilot.gpt-4o-mini-2024-07-18'
+MaxTokens = 4096
+ReasoningEffort = ''
+
+[Skills]
+Enabled = false
+Paths = []
+
+[TUI]
+Theme = ''
+
+[Mesnada]
+Enabled = false
+
+[Mesnada.Server]
+Host = ''
+Port = 0
+
+[Mesnada.Orchestrator]
+StorePath = ''
+LogDir = ''
+MaxParallel = 0
+DefaultEngine = ''
+DefaultModel = ''
+DefaultMCPConfig = ''
+PersonaPath = ''
+
+[Mesnada.ACP]
+Enabled = false
+DefaultAgent = ''
+AutoPermission = false
+
+[Mesnada.TUI]
+Enabled = false
+WebUI = false
+
+[Shell]
+Path = ''
+Args = []
