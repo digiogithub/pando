@@ -31,6 +31,9 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	api.GET("/tasks/:id/acp/permissions", s.apiACPListPermissions)
 	api.POST("/tasks/:id/acp/permissions/:req_id", s.apiACPResolvePermission)
 
+	// Register ACP management API endpoints
+	s.registerACPAPI(api)
+
 	mux.Handle("/api/", r)
 }
 
