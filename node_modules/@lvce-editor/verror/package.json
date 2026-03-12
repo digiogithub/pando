@@ -1,0 +1,13 @@
+{
+  "name": "@lvce-editor/verror",
+  "version": "1.7.0",
+  "description": "Improve error messages by adding additional context to an error",
+  "main": "dist/index.js",
+  "type": "module",
+  "types": "dist/index.d.ts",
+  "keywords": [
+    "error"
+  ],
+  "author": "Lvce Editor",
+  "license": "MIT"
+}
