@@ -1,0 +1,76 @@
+package acp
+
+import (
+	"context"
+
+	"github.com/digiogithub/pando/internal/llm/agent"
+	"github.com/digiogithub/pando/internal/message"
+)
+
+// AgentServiceAdapter adapts the Pando agent.Service to the ACP AgentService interface.
+// This breaks the import cycle by allowing ACP server to work with the interface
+// while the actual implementation uses the real agent service.
+type AgentServiceAdapter struct {
+	agent agent.Service
+}
+
+// NewAgentServiceAdapter creates a new adapter that wraps a Pando agent service.
+func NewAgentServiceAdapter(agent agent.Service) *AgentServiceAdapter {
+	return &AgentServiceAdapter{
+		agent: agent,
+	}
+}
+
+// Run runs the agent and converts events to ACP format.
+func (a *AgentServiceAdapter) Run(
+	ctx context.Context,
+	sessionID string,
+	content string,
+	attachments ...message.Attachment,
+) (<-chan AgentEvent, error) {
+	// Run the real agent
+	realEventChan, err := a.agent.Run(ctx, sessionID, content, attachments...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a channel for ACP events
+	acpEventChan := make(chan AgentEvent)
+
+	// Convert events from agent.AgentEvent to acp.AgentEvent
+	go func() {
+		defer close(acpEventChan)
+
+		for realEvent := range realEventChan {
+			var acpEvent AgentEvent
+
+			// Convert event type
+			switch realEvent.Type {
+			case agent.AgentEventTypeError:
+				acpEvent.Type = AgentEventTypeError
+				acpEvent.Error = realEvent.Error
+
+			case agent.AgentEventTypeResponse:
+				acpEvent.Type = AgentEventTypeResponse
+				acpEvent.Message = realEvent.Message
+
+			case agent.AgentEventTypeSummarize:
+				acpEvent.Type = AgentEventTypeSummarize
+			}
+
+			// Send converted event
+			select {
+			case acpEventChan <- acpEvent:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return acpEventChan, nil
+}
+
+// Cancel cancels the agent processing for a session.
+func (a *AgentServiceAdapter) Cancel(sessionID string) {
+	a.agent.Cancel(sessionID)
+}
