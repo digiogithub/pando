@@ -10,6 +10,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/tools/shell"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/mesnada/acp"
 	"github.com/digiogithub/pando/internal/permission"
 )
 
@@ -246,6 +247,11 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 
 	logging.Debug("bash tool called", "command", params.Command, "timeout", params.Timeout)
 
+	// Check if we're in ACP context and should use client callbacks
+	if acpConn := ctx.Value(ACPClientConnContextKey); acpConn != nil {
+		return b.runWithACP(ctx, params, acpConn)
+	}
+
 	baseCmd := strings.Fields(params.Command)[0]
 	for _, banned := range bannedCommands {
 		if strings.EqualFold(baseCmd, banned) {
@@ -349,4 +355,90 @@ func countLines(s string) int {
 		return 0
 	}
 	return len(strings.Split(s, "\n"))
+}
+
+// runWithACP handles command execution via ACP client callback.
+func (b *bashTool) runWithACP(ctx context.Context, params BashParams, acpConnInterface interface{}) (ToolResponse, error) {
+	acpConn, ok := acpConnInterface.(*acp.ACPClientConnection)
+	if !ok {
+		return ToolResponse{}, fmt.Errorf("invalid ACP client connection type")
+	}
+
+	logging.Debug("bash tool using ACP callback", "command", params.Command)
+
+	// Parse command into command and args
+	// Simple parsing - split by spaces (this could be improved for quoted args)
+	parts := strings.Fields(params.Command)
+	if len(parts) == 0 {
+		return NewTextErrorResponse("empty command"), nil
+	}
+
+	command := parts[0]
+	args := parts[1:]
+
+	// Use the working directory from the connection
+	cwd := acpConn.GetWorkDir()
+
+	startTime := time.Now()
+
+	// Create terminal on client
+	terminalID, err := acpConn.CreateTerminal(ctx, command, args, cwd)
+	if err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("Failed to create terminal: %s", err)), nil
+	}
+
+	logging.Debug("bash ACP terminal created", "terminalID", terminalID)
+
+	// Wait for terminal to exit (with timeout from params)
+	timeoutDuration := time.Duration(params.Timeout) * time.Millisecond
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeoutDuration)
+	defer cancel()
+
+	exitCode, err := acpConn.WaitForTerminalExit(timeoutCtx, terminalID)
+	if err != nil {
+		// If timeout, try to get output anyway
+		if err == context.DeadlineExceeded {
+			output, outputErr := acpConn.TerminalOutput(ctx, terminalID)
+			if outputErr == nil {
+				output = truncateOutput(output)
+				output += "\n\nCommand was aborted before completion (timeout)"
+
+				metadata := BashResponseMetadata{
+					StartTime: startTime.UnixMilli(),
+					EndTime:   time.Now().UnixMilli(),
+				}
+				return WithResponseMetadata(NewTextResponse(output), metadata), nil
+			}
+		}
+		return NewTextErrorResponse(fmt.Sprintf("Failed to wait for terminal: %s", err)), nil
+	}
+
+	// Get the output
+	output, err := acpConn.TerminalOutput(ctx, terminalID)
+	if err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("Failed to get terminal output: %s", err)), nil
+	}
+
+	// Truncate if needed
+	output = truncateOutput(output)
+
+	// Add exit code info if non-zero
+	if exitCode != nil && *exitCode != 0 {
+		if output != "" {
+			output += "\n"
+		}
+		output += fmt.Sprintf("Exit code %d", *exitCode)
+	}
+
+	logging.Debug("bash ACP completed", "command", params.Command, "exitCode", exitCode, "outputLen", len(output))
+
+	metadata := BashResponseMetadata{
+		StartTime: startTime.UnixMilli(),
+		EndTime:   time.Now().UnixMilli(),
+	}
+
+	if output == "" {
+		return WithResponseMetadata(NewTextResponse("no output"), metadata), nil
+	}
+	return WithResponseMetadata(NewTextResponse(output), metadata), nil
 }

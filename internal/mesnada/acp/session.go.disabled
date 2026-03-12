@@ -1,0 +1,99 @@
+package acp
+
+import (
+	"context"
+	"sync"
+	"time"
+
+	acpsdk "github.com/coder/acp-go-sdk"
+)
+
+// ACPServerSession represents an active ACP session on the server side.
+// Each session manages a conversation between a client and the Pando LLM agent.
+type ACPServerSession struct {
+	// ID is the unique session identifier
+	ID acpsdk.SessionId
+
+	// WorkDir is the working directory for this session
+	WorkDir string
+
+	// CreatedAt is when the session was created
+	CreatedAt time.Time
+
+	// clientConn is the connection to the client for sending notifications
+	clientConn *acpsdk.ClientSideConnection
+
+	// ctx is the context for this session (for cancellation)
+	ctx context.Context
+
+	// cancel is the cancellation function
+	cancel context.CancelFunc
+
+	// pandoSessionID is the internal Pando session ID
+	pandoSessionID string
+
+	// mu protects concurrent access to session state
+	mu sync.Mutex
+}
+
+// NewACPServerSession creates a new ACP server session.
+func NewACPServerSession(
+	sessionID acpsdk.SessionId,
+	workDir string,
+	clientConn *acpsdk.ClientSideConnection,
+	pandoSessionID string,
+) *ACPServerSession {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	return &ACPServerSession{
+		ID:             sessionID,
+		WorkDir:        workDir,
+		CreatedAt:      time.Now(),
+		clientConn:     clientConn,
+		ctx:            ctx,
+		cancel:         cancel,
+		pandoSessionID: pandoSessionID,
+	}
+}
+
+// Context returns the session's context.
+func (s *ACPServerSession) Context() context.Context {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ctx
+}
+
+// Cancel cancels the session context.
+func (s *ACPServerSession) Cancel() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cancel != nil {
+		s.cancel()
+	}
+}
+
+// SendUpdate sends a SessionUpdate notification to the client.
+func (s *ACPServerSession) SendUpdate(update acpsdk.SessionUpdate) error {
+	s.mu.Lock()
+	clientConn := s.clientConn
+	sessionID := s.ID
+	s.mu.Unlock()
+
+	if clientConn == nil {
+		return nil // No client connection, skip notification
+	}
+
+	notification := acpsdk.SessionNotification{
+		SessionId: sessionID,
+		Update:    update,
+	}
+
+	return clientConn.Notify(s.ctx, "session/update", notification)
+}
+
+// PandoSessionID returns the internal Pando session ID.
+func (s *ACPServerSession) PandoSessionID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pandoSessionID
+}
