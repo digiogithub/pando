@@ -88,6 +88,17 @@ type ACPAgentConfig struct {
 	Capabilities ACPCapabilities   `json:"capabilities" yaml:"capabilities"`
 }
 
+// ACPServerConfig holds configuration for the ACP server.
+type ACPServerConfig struct {
+	Enabled        bool     `json:"enabled" yaml:"enabled"`
+	Transports     []string `json:"transports" yaml:"transports"` // ["stdio", "http"]
+	Host           string   `json:"host" yaml:"host"`
+	Port           int      `json:"port" yaml:"port"`
+	MaxSessions    int      `json:"max_sessions" yaml:"max_sessions"`
+	SessionTimeout string   `json:"session_timeout" yaml:"session_timeout"`
+	RequireAuth    bool     `json:"require_auth" yaml:"require_auth"`
+}
+
 // ACPConfig global ACP configuration.
 type ACPConfig struct {
 	Enabled        bool                      `json:"enabled" yaml:"enabled"`
@@ -95,6 +106,7 @@ type ACPConfig struct {
 	DefaultMode    string                    `json:"default_mode,omitempty" yaml:"default_mode,omitempty"`
 	Agents         map[string]ACPAgentConfig `json:"agents,omitempty" yaml:"agents,omitempty"`
 	AutoPermission bool                      `json:"auto_permission" yaml:"auto_permission"`
+	Server         ACPServerConfig           `json:"server,omitempty" yaml:"server,omitempty"`
 }
 
 // DefaultConfig returns the default configuration.

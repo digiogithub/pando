@@ -14,6 +14,7 @@ import (
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
+	"github.com/digiogithub/pando/internal/mesnada/acp"
 	"github.com/digiogithub/pando/internal/permission"
 )
 
@@ -111,12 +112,17 @@ func (w *writeTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return NewTextErrorResponse("content is required"), nil
 	}
 
+	logging.Debug("write tool called", "filePath", params.FilePath, "contentLen", len(params.Content))
+
+	// Check if we're in ACP context and should use client callbacks
+	if acpConn := ctx.Value(ACPClientConnContextKey); acpConn != nil {
+		return w.runWithACP(ctx, params, acpConn)
+	}
+
 	filePath := params.FilePath
 	if !filepath.IsAbs(filePath) {
 		filePath = filepath.Join(config.WorkingDirectory(), filePath)
 	}
-
-	logging.Debug("write tool called", "filePath", params.FilePath, "contentLen", len(params.Content))
 
 	fileInfo, err := os.Stat(filePath)
 	if err == nil {
@@ -220,6 +226,55 @@ func (w *writeTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 	result := fmt.Sprintf("File successfully written: %s", filePath)
 	result = fmt.Sprintf("<result>\n%s\n</result>", result)
 	result += getDiagnostics(filePath, w.lspClients)
+	return WithResponseMetadata(NewTextResponse(result),
+		WriteResponseMetadata{
+			Diff:      diff,
+			Additions: additions,
+			Removals:  removals,
+		},
+	), nil
+}
+
+// runWithACP handles file writing via ACP client callback.
+func (w *writeTool) runWithACP(ctx context.Context, params WriteParams, acpConnInterface interface{}) (ToolResponse, error) {
+	acpConn, ok := acpConnInterface.(*acp.ACPClientConnection)
+	if !ok {
+		return ToolResponse{}, fmt.Errorf("invalid ACP client connection type")
+	}
+
+	logging.Debug("write tool using ACP callback", "filePath", params.FilePath)
+
+	// Try to read the existing file content to generate a diff
+	oldContent := ""
+	existingContent, err := acpConn.ReadTextFile(ctx, params.FilePath)
+	if err == nil {
+		oldContent = existingContent
+
+		// Check if content is identical
+		if oldContent == params.Content {
+			return NewTextErrorResponse(fmt.Sprintf("File %s already contains the exact content. No changes made.", params.FilePath)), nil
+		}
+	}
+	// If file doesn't exist, err will be non-nil, which is fine for new files
+
+	// Generate diff for display
+	diff, additions, removals := diff.GenerateDiff(
+		oldContent,
+		params.Content,
+		params.FilePath,
+	)
+
+	// Write file via client callback
+	err = acpConn.WriteTextFile(ctx, params.FilePath, params.Content)
+	if err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("Failed to write file: %s", err)), nil
+	}
+
+	logging.Debug("write ACP completed", "filePath", params.FilePath, "additions", additions, "removals", removals)
+
+	result := fmt.Sprintf("File successfully written: %s", params.FilePath)
+	result = fmt.Sprintf("<result>\n%s\n</result>", result)
+
 	return WithResponseMetadata(NewTextResponse(result),
 		WriteResponseMetadata{
 			Diff:      diff,

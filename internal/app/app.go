@@ -22,6 +22,7 @@ import (
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
+	mesnadaACP "github.com/digiogithub/pando/internal/mesnada/acp"
 	mesnadaConfig "github.com/digiogithub/pando/internal/mesnada/config"
 	mesnadaOrch "github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	mesnadaServer "github.com/digiogithub/pando/internal/mesnada/server"
@@ -95,6 +96,38 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 		} else {
 			app.MesnadaOrchestrator = orch
 
+			// Initialize ACP handler if ACP server is enabled
+			var acpHandler *mesnadaServer.ACPHandler
+			if mesnadaCfg.AppConfig != nil && mesnadaCfg.AppConfig.ACP.Server.Enabled {
+				// Import ACP package
+				acpAgent := mesnadaACP.NewSimpleACPAgent(version.Version, nil)
+
+				// Parse session timeout
+				sessionTimeout := 30 * time.Minute
+				if mesnadaCfg.AppConfig.ACP.Server.SessionTimeout != "" {
+					if timeout, err := time.ParseDuration(mesnadaCfg.AppConfig.ACP.Server.SessionTimeout); err == nil {
+						sessionTimeout = timeout
+					}
+				}
+
+				// Create HTTP transport with configuration
+				transportCfg := mesnadaACP.HTTPTransportConfig{
+					MaxSessions:  mesnadaCfg.AppConfig.ACP.Server.MaxSessions,
+					IdleTimeout:  sessionTimeout,
+					EventBufSize: 100,
+				}
+				transport := mesnadaACP.NewHTTPTransport(acpAgent, nil, transportCfg)
+
+				// Create ACP handler
+				acpHandler = mesnadaServer.NewACPHandler(mesnadaServer.ACPHandlerConfig{
+					Agent:     acpAgent,
+					Logger:    nil,
+					Transport: transport,
+				})
+
+				logging.Info("ACP server enabled", "host", mesnadaCfg.AppConfig.ACP.Server.Host, "port", mesnadaCfg.AppConfig.ACP.Server.Port)
+			}
+
 			// Create and start HTTP server
 			addr := fmt.Sprintf("%s:%d", cfg.Mesnada.Server.Host, cfg.Mesnada.Server.Port)
 			srv := mesnadaServer.New(mesnadaServer.Config{
@@ -103,6 +136,7 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 				Version:      version.Version,
 				UseStdio:     false,
 				AppConfig:    mesnadaCfg.AppConfig,
+				ACPHandler:   acpHandler,
 			})
 			app.MesnadaServer = srv
 
@@ -188,6 +222,35 @@ func convertToMesnadaAppConfig(cfg *config.Config) *mesnadaConfig.Config {
 	mesnadaCfg.ACP.Enabled = cfg.Mesnada.ACP.Enabled
 	mesnadaCfg.ACP.DefaultAgent = cfg.Mesnada.ACP.DefaultAgent
 	mesnadaCfg.ACP.AutoPermission = cfg.Mesnada.ACP.AutoPermission
+
+	// ACP Server configuration
+	mesnadaCfg.ACP.Server.Enabled = cfg.Mesnada.ACP.Server.Enabled
+	if cfg.Mesnada.ACP.Server.Host != "" {
+		mesnadaCfg.ACP.Server.Host = cfg.Mesnada.ACP.Server.Host
+	} else if mesnadaCfg.ACP.Server.Enabled {
+		mesnadaCfg.ACP.Server.Host = "0.0.0.0"
+	}
+	if cfg.Mesnada.ACP.Server.Port > 0 {
+		mesnadaCfg.ACP.Server.Port = cfg.Mesnada.ACP.Server.Port
+	} else if mesnadaCfg.ACP.Server.Enabled {
+		mesnadaCfg.ACP.Server.Port = 8766
+	}
+	if cfg.Mesnada.ACP.Server.MaxSessions > 0 {
+		mesnadaCfg.ACP.Server.MaxSessions = cfg.Mesnada.ACP.Server.MaxSessions
+	} else if mesnadaCfg.ACP.Server.Enabled {
+		mesnadaCfg.ACP.Server.MaxSessions = 100
+	}
+	if cfg.Mesnada.ACP.Server.SessionTimeout != "" {
+		mesnadaCfg.ACP.Server.SessionTimeout = cfg.Mesnada.ACP.Server.SessionTimeout
+	} else if mesnadaCfg.ACP.Server.Enabled {
+		mesnadaCfg.ACP.Server.SessionTimeout = "30m"
+	}
+	if len(cfg.Mesnada.ACP.Server.Transports) > 0 {
+		mesnadaCfg.ACP.Server.Transports = cfg.Mesnada.ACP.Server.Transports
+	} else if mesnadaCfg.ACP.Server.Enabled {
+		mesnadaCfg.ACP.Server.Transports = []string{"http"}
+	}
+	mesnadaCfg.ACP.Server.RequireAuth = cfg.Mesnada.ACP.Server.RequireAuth
 
 	mesnadaCfg.TUI.Enabled = cfg.Mesnada.TUI.Enabled
 	mesnadaCfg.TUI.WebUI = cfg.Mesnada.TUI.WebUI
