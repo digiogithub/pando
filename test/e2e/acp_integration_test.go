@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"www.github.com/MCP/pando/internal/mesnada/acp"
+	"github.com/digiogithub/pando/internal/mesnada/acp"
 )
 
 // TestEndToEndHTTPFlow tests a complete client-server interaction
