@@ -1,0 +1,129 @@
+package acp
+
+import (
+	"context"
+	"log"
+	"os"
+	"testing"
+
+	acpsdk "github.com/coder/acp-go-sdk"
+)
+
+func TestNewPandoACPAgent(t *testing.T) {
+	version := "1.0.0-test"
+	workDir := "/tmp/test"
+	logger := log.New(os.Stderr, "[TEST] ", log.LstdFlags)
+
+	agent := NewPandoACPAgent(version, workDir, logger)
+
+	if agent == nil {
+		t.Fatal("NewPandoACPAgent returned nil")
+	}
+
+	if agent.version != version {
+		t.Errorf("Expected version %s, got %s", version, agent.version)
+	}
+
+	if agent.workDir != workDir {
+		t.Errorf("Expected workDir %s, got %s", workDir, agent.workDir)
+	}
+
+	if agent.logger != logger {
+		t.Errorf("Logger not set correctly")
+	}
+
+	// Check capabilities - ACP agents don't have FS capabilities in the same way
+	// They advertise different capabilities (LoadSession, MCP, Prompt)
+	if agent.capabilities.LoadSession {
+		t.Error("Expected LoadSession capability to be false")
+	}
+}
+
+func TestNewPandoACPAgent_NilLogger(t *testing.T) {
+	agent := NewPandoACPAgent("1.0.0", "/tmp", nil)
+
+	if agent == nil {
+		t.Fatal("NewPandoACPAgent returned nil")
+	}
+
+	if agent.logger == nil {
+		t.Error("Expected default logger to be set when nil is passed")
+	}
+}
+
+func TestInitialize_Success(t *testing.T) {
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", nil)
+
+	// Protocol version is just an int
+	protocolVersion := acpsdk.ProtocolVersion(1)
+
+	req := acpsdk.InitializeRequest{
+		ProtocolVersion: protocolVersion,
+		ClientInfo: &acpsdk.Implementation{
+			Name:    "test-client",
+			Version: "1.0.0",
+		},
+	}
+
+	ctx := context.Background()
+	result, err := agent.Initialize(ctx, req)
+
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	if result.ProtocolVersion != protocolVersion {
+		t.Errorf("Expected protocol version %d, got %d",
+			protocolVersion, result.ProtocolVersion)
+	}
+
+	if result.AgentInfo == nil {
+		t.Fatal("Expected AgentInfo to be set")
+	}
+
+	if result.AgentInfo.Name != "pando" {
+		t.Errorf("Expected agent name 'pando', got %s", result.AgentInfo.Name)
+	}
+
+	if result.AgentInfo.Version != "1.0.0-test" {
+		t.Errorf("Expected agent version '1.0.0-test', got %s", result.AgentInfo.Version)
+	}
+
+	// Check that auth methods is initialized (even if empty)
+	if result.AuthMethods == nil {
+		t.Error("Expected AuthMethods to be initialized")
+	}
+}
+
+func TestGetVersion(t *testing.T) {
+	version := "1.2.3-test"
+	agent := NewPandoACPAgent(version, "/tmp", nil)
+
+	result := agent.GetVersion()
+
+	if result != version {
+		t.Errorf("Expected version %s, got %s", version, result)
+	}
+}
+
+func TestGetCapabilities(t *testing.T) {
+	agent := NewPandoACPAgent("1.0.0", "/tmp", nil)
+
+	caps := agent.GetCapabilities()
+
+	// ACP agents have different capabilities
+	if caps.LoadSession {
+		t.Error("Expected LoadSession capability to be false")
+	}
+}
+
+func TestCancel(t *testing.T) {
+	agent := NewPandoACPAgent("1.0.0", "/tmp", nil)
+
+	ctx := context.Background()
+	err := agent.Cancel(ctx, acpsdk.CancelNotification{})
+
+	if err != nil {
+		t.Errorf("Cancel should not return error, got: %v", err)
+	}
+}
