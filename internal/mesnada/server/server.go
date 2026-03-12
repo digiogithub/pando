@@ -41,6 +41,9 @@ type Server struct {
 	uiOnce   sync.Once
 	uiTpl    *template.Template
 	uiTplErr error
+
+	// ACP support
+	acpHandler *ACPHandler
 }
 
 // Session represents an MCP session.
@@ -86,6 +89,7 @@ type Config struct {
 	Commit       string
 	UseStdio     bool
 	AppConfig    *config.Config
+	ACPHandler   *ACPHandler // Optional ACP handler for remote connections
 }
 
 // New creates a new MCP server.
@@ -99,6 +103,7 @@ func New(cfg Config) *Server {
 		tools:        make(map[string]ToolHandler),
 		useStdio:     cfg.UseStdio,
 		config:       cfg.AppConfig,
+		acpHandler:   cfg.ACPHandler,
 	}
 
 	s.registerTools()
@@ -109,6 +114,11 @@ func New(cfg Config) *Server {
 		mux.HandleFunc("/mcp/sse", s.handleSSE)
 		mux.HandleFunc("/health", s.handleHealth)
 		mux.Handle("/", s.newGinEngine())
+
+		// Register ACP endpoints if handler is provided
+		if s.acpHandler != nil {
+			s.acpHandler.RegisterRoutes(mux)
+		}
 
 		s.httpServer = &http.Server{
 			Addr:         cfg.Addr,
@@ -125,8 +135,8 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id")
-		w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id, ACP-Session-Id")
+		w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id, ACP-Session-Id")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)
@@ -142,6 +152,14 @@ func (s *Server) Start() error {
 	if s.useStdio {
 		return s.runStdio()
 	}
+
+	// Start ACP cleanup goroutine if handler is configured
+	if s.acpHandler != nil {
+		ctx := context.Background()
+		s.acpHandler.StartCleanup(ctx)
+		log.Printf("ACP transport enabled on /mesnada/acp")
+	}
+
 	log.Printf("MCP server starting on %s", s.addr)
 	return s.httpServer.ListenAndServe()
 }
