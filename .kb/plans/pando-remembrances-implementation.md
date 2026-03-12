@@ -1,4 +1,4 @@
-# Pando Remembrances Implementation Plan
+@google/gemini-cli# Pando Remembrances Implementation Plan
 
 ## Overview
 
