@@ -1,0 +1,12 @@
+{
+    "chat.agent.maxRequests": 100,
+    "chat.tools.terminal.autoApprove": {
+        "sudo": false,
+        "rm": false,
+        "rmdir": false,
+        "del": false,
+        "chown": false,
+        "/^Remove-Item\\b/i": false,
+        "/.*/": true
+    }
+}

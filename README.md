@@ -238,6 +238,72 @@ build_and_zip darwin arm64 darwin-arm64 ""
 echo "Release builds completed in dist/"
 ```
 
+## ACP Server
+
+Pando can act as an **ACP (Agent Client Protocol) server**, allowing other ACP-compatible clients to connect and execute conversations. This enables Pando to be used as a backend service for various AI agent applications.
+
+### Quick Start
+
+Run Pando as an ACP server:
+
+```bash
+# Stdio mode (for process-based communication)
+pando --acp-server
+
+# HTTP mode (configure in .pando.toml first)
+pando acp start
+```
+
+### Configuration
+
+Add to your `.pando.toml`:
+
+```toml
+[mesnada.acp_server]
+enabled = true
+transports = ["http"]
+host = "0.0.0.0"
+port = 8765
+max_sessions = 100
+idle_timeout = "30m"
+```
+
+### Management Commands
+
+```bash
+# Start ACP server
+pando acp start
+
+# Check server status
+pando acp status
+
+# List active sessions
+pando acp sessions
+
+# View server statistics
+pando acp stats
+
+# Stop server
+pando acp stop
+```
+
+### Client Examples
+
+Examples are provided for:
+- Go client: `examples/acp-client/go/`
+- Python client: `examples/acp-client/python/`
+
+### Documentation
+
+For comprehensive documentation, see [docs/acp-server.md](docs/acp-server.md)
+
+Features:
+- HTTP+SSE transport for real-time updates
+- Multiple concurrent sessions
+- Security boundaries (path validation)
+- Permission system for tool execution
+- Auto-approval mode for trusted environments
+
 ## License
 
 Pando is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

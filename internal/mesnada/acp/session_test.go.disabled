@@ -1,0 +1,454 @@
+package acp
+
+import (
+	"context"
+	"log"
+	"os"
+	"testing"
+	"time"
+
+	acpsdk "github.com/coder/acp-go-sdk"
+	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/digiogithub/pando/internal/session"
+)
+
+// mockAgentService is a mock implementation of AgentService for testing
+type mockAgentService struct {
+	runFunc    func(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error)
+	cancelFunc func(sessionID string)
+}
+
+func (m *mockAgentService) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
+	if m.runFunc != nil {
+		return m.runFunc(ctx, sessionID, content, attachments...)
+	}
+	events := make(chan AgentEvent)
+	close(events)
+	return events, nil
+}
+
+func (m *mockAgentService) Cancel(sessionID string) {
+	if m.cancelFunc != nil {
+		m.cancelFunc(sessionID)
+	}
+}
+
+// mockSessionService is a mock implementation of session.Service for testing
+type mockSessionService struct {
+	*pubsub.Broker[session.Session]
+	sessions map[string]session.Session
+}
+
+func newMockSessionService() *mockSessionService {
+	return &mockSessionService{
+		Broker:   pubsub.NewBroker[session.Session](),
+		sessions: make(map[string]session.Session),
+	}
+}
+
+func (m *mockSessionService) Create(ctx context.Context, title string) (session.Session, error) {
+	sess := session.Session{
+		ID:        "test-session-" + title,
+		Title:     title,
+		CreatedAt: time.Now().Unix(),
+		UpdatedAt: time.Now().Unix(),
+	}
+	m.sessions[sess.ID] = sess
+	return sess, nil
+}
+
+func (m *mockSessionService) CreateTitleSession(ctx context.Context, parentSessionID string) (session.Session, error) {
+	return session.Session{}, nil
+}
+
+func (m *mockSessionService) CreateTaskSession(ctx context.Context, toolCallID, parentSessionID, title string) (session.Session, error) {
+	return session.Session{}, nil
+}
+
+func (m *mockSessionService) Get(ctx context.Context, id string) (session.Session, error) {
+	if sess, ok := m.sessions[id]; ok {
+		return sess, nil
+	}
+	return session.Session{}, nil
+}
+
+func (m *mockSessionService) List(ctx context.Context) ([]session.Session, error) {
+	var sessions []session.Session
+	for _, sess := range m.sessions {
+		sessions = append(sessions, sess)
+	}
+	return sessions, nil
+}
+
+func (m *mockSessionService) Save(ctx context.Context, sess session.Session) (session.Session, error) {
+	m.sessions[sess.ID] = sess
+	return sess, nil
+}
+
+func (m *mockSessionService) Delete(ctx context.Context, id string) error {
+	delete(m.sessions, id)
+	return nil
+}
+
+// mockMessageService is a mock implementation of message.Service for testing
+type mockMessageService struct {
+	*pubsub.Broker[message.Message]
+}
+
+func newMockMessageService() *mockMessageService {
+	return &mockMessageService{
+		Broker: pubsub.NewBroker[message.Message](),
+	}
+}
+
+func (m *mockMessageService) Create(ctx context.Context, sessionID string, params message.CreateMessageParams) (message.Message, error) {
+	return message.Message{}, nil
+}
+
+func (m *mockMessageService) Update(ctx context.Context, msg message.Message) error {
+	return nil
+}
+
+func (m *mockMessageService) Get(ctx context.Context, id string) (message.Message, error) {
+	return message.Message{}, nil
+}
+
+func (m *mockMessageService) List(ctx context.Context, sessionID string) ([]message.Message, error) {
+	return []message.Message{}, nil
+}
+
+func (m *mockMessageService) Delete(ctx context.Context, id string) error {
+	return nil
+}
+
+func (m *mockMessageService) DeleteSessionMessages(ctx context.Context, sessionID string) error {
+	return nil
+}
+
+func TestNewSession(t *testing.T) {
+	logger := log.New(os.Stdout, "[TEST] ", log.LstdFlags)
+	mockAgent := &mockAgentService{}
+	mockSessions := newMockSessionService()
+	mockMessages := newMockMessageService()
+
+	agent := NewPandoACPAgent(
+		"test-version",
+		"/tmp/test",
+		logger,
+		mockAgent,
+		mockSessions,
+		mockMessages,
+	)
+
+	ctx := context.Background()
+	workDir := "/tmp/test-session"
+	req := acpsdk.NewSessionRequest{
+		Cwd: &workDir,
+	}
+
+	resp, err := agent.NewSession(ctx, req)
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	if resp.SessionId == "" {
+		t.Fatal("Expected non-empty session ID")
+	}
+
+	// Verify session was stored
+	agent.sessionsMu.RLock()
+	_, exists := agent.sessions[resp.SessionId]
+	agent.sessionsMu.RUnlock()
+
+	if !exists {
+		t.Fatal("Session not found in sessions map")
+	}
+
+	t.Logf("Session created successfully: %s", resp.SessionId)
+}
+
+func TestPromptBasic(t *testing.T) {
+	logger := log.New(os.Stdout, "[TEST] ", log.LstdFlags)
+
+	// Create a mock agent that simulates a simple response
+	mockAgent := &mockAgentService{
+		runFunc: func(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
+			events := make(chan AgentEvent, 1)
+			go func() {
+				defer close(events)
+
+				// Simulate an agent response
+				msg := message.Message{
+					ID:        "test-msg-1",
+					SessionID: sessionID,
+					Role:      message.Assistant,
+					Parts: []message.ContentPart{
+						message.TextContent{Text: "Hello! I processed your prompt: " + content},
+						message.Finish{Reason: message.FinishReasonEndTurn, Time: time.Now().Unix()},
+					},
+				}
+
+				events <- AgentEvent{
+					Type:    AgentEventTypeResponse,
+					Message: msg,
+				}
+			}()
+			return events, nil
+		},
+	}
+
+	mockSessions := newMockSessionService()
+	mockMessages := newMockMessageService()
+
+	acpAgent := NewPandoACPAgent(
+		"test-version",
+		"/tmp/test",
+		logger,
+		mockAgent,
+		mockSessions,
+		mockMessages,
+	)
+
+	ctx := context.Background()
+
+	// Create a session first
+	sessionResp, err := acpAgent.NewSession(ctx, acpsdk.NewSessionRequest{})
+	if err != nil {
+		t.Fatalf("Failed to create session: %v", err)
+	}
+
+	// Send a prompt
+	promptReq := acpsdk.PromptRequest{
+		SessionId: sessionResp.SessionId,
+		Prompt: acpsdk.Prompt{
+			Content: []acpsdk.ContentBlock{
+				acpsdk.TextBlock("Hello, world!"),
+			},
+		},
+	}
+
+	promptResp, err := acpAgent.Prompt(ctx, promptReq)
+	if err != nil {
+		t.Fatalf("Prompt failed: %v", err)
+	}
+
+	if promptResp.StopReason != acpsdk.StopReasonEndTurn {
+		t.Fatalf("Expected StopReasonEndTurn, got: %s", promptResp.StopReason)
+	}
+
+	t.Logf("Prompt processed successfully with stop reason: %s", promptResp.StopReason)
+}
+
+func TestMultipleConcurrentSessions(t *testing.T) {
+	logger := log.New(os.Stdout, "[TEST] ", log.LstdFlags)
+	mockAgent := &mockAgentService{
+		runFunc: func(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
+			events := make(chan AgentEvent, 1)
+			go func() {
+				defer close(events)
+				msg := message.Message{
+					ID:        "test-msg",
+					SessionID: sessionID,
+					Role:      message.Assistant,
+					Parts: []message.ContentPart{
+						message.TextContent{Text: "Response for " + sessionID},
+						message.Finish{Reason: message.FinishReasonEndTurn, Time: time.Now().Unix()},
+					},
+				}
+				events <- AgentEvent{
+					Type:    AgentEventTypeResponse,
+					Message: msg,
+				}
+			}()
+			return events, nil
+		},
+	}
+
+	mockSessions := newMockSessionService()
+	mockMessages := newMockMessageService()
+
+	acpAgent := NewPandoACPAgent(
+		"test-version",
+		"/tmp/test",
+		logger,
+		mockAgent,
+		mockSessions,
+		mockMessages,
+	)
+
+	ctx := context.Background()
+
+	// Create multiple sessions
+	numSessions := 5
+	sessionIDs := make([]acpsdk.SessionId, numSessions)
+
+	for i := 0; i < numSessions; i++ {
+		resp, err := acpAgent.NewSession(ctx, acpsdk.NewSessionRequest{})
+		if err != nil {
+			t.Fatalf("Failed to create session %d: %v", i, err)
+		}
+		sessionIDs[i] = resp.SessionId
+	}
+
+	// Verify all sessions exist
+	acpAgent.sessionsMu.RLock()
+	sessionCount := len(acpAgent.sessions)
+	acpAgent.sessionsMu.RUnlock()
+
+	if sessionCount != numSessions {
+		t.Fatalf("Expected %d sessions, got %d", numSessions, sessionCount)
+	}
+
+	t.Logf("Successfully created %d concurrent sessions", numSessions)
+}
+
+func TestCancelSession(t *testing.T) {
+	logger := log.New(os.Stdout, "[TEST] ", log.LstdFlags)
+
+	cancelled := false
+	mockAgent := &mockAgentService{
+		cancelFunc: func(sessionID string) {
+			cancelled = true
+		},
+	}
+
+	mockSessions := newMockSessionService()
+	mockMessages := newMockMessageService()
+
+	acpAgent := NewPandoACPAgent(
+		"test-version",
+		"/tmp/test",
+		logger,
+		mockAgent,
+		mockSessions,
+		mockMessages,
+	)
+
+	ctx := context.Background()
+
+	// Create a session
+	sessionResp, err := acpAgent.NewSession(ctx, acpsdk.NewSessionRequest{})
+	if err != nil {
+		t.Fatalf("Failed to create session: %v", err)
+	}
+
+	// Cancel the session
+	err = acpAgent.Cancel(ctx, acpsdk.CancelNotification{
+		SessionId: sessionResp.SessionId,
+	})
+	if err != nil {
+		t.Fatalf("Cancel failed: %v", err)
+	}
+
+	if !cancelled {
+		t.Fatal("Expected agent cancel to be called")
+	}
+
+	t.Log("Session cancelled successfully")
+}
+
+func TestExtractPromptText(t *testing.T) {
+	logger := log.New(os.Stdout, "[TEST] ", log.LstdFlags)
+	mockAgent := &mockAgentService{}
+	mockSessions := newMockSessionService()
+	mockMessages := newMockMessageService()
+
+	agent := NewPandoACPAgent(
+		"test-version",
+		"/tmp/test",
+		logger,
+		mockAgent,
+		mockSessions,
+		mockMessages,
+	)
+
+	tests := []struct {
+		name        string
+		prompt      acpsdk.Prompt
+		expectedErr bool
+		expected    string
+	}{
+		{
+			name: "single text block",
+			prompt: acpsdk.Prompt{
+				Content: []acpsdk.ContentBlock{
+					acpsdk.TextBlock("Hello"),
+				},
+			},
+			expectedErr: false,
+			expected:    "Hello",
+		},
+		{
+			name: "multiple text blocks",
+			prompt: acpsdk.Prompt{
+				Content: []acpsdk.ContentBlock{
+					acpsdk.TextBlock("Hello"),
+					acpsdk.TextBlock("World"),
+				},
+			},
+			expectedErr: false,
+			expected:    "Hello\nWorld",
+		},
+		{
+			name: "empty prompt",
+			prompt: acpsdk.Prompt{
+				Content: []acpsdk.ContentBlock{},
+			},
+			expectedErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := agent.extractPromptText(tt.prompt)
+			if tt.expectedErr {
+				if err == nil {
+					t.Fatal("Expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if result != tt.expected {
+				t.Fatalf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestMapFinishReasonToStopReason(t *testing.T) {
+	logger := log.New(os.Stdout, "[TEST] ", log.LstdFlags)
+	mockAgent := &mockAgentService{}
+	mockSessions := newMockSessionService()
+	mockMessages := newMockMessageService()
+
+	agent := NewPandoACPAgent(
+		"test-version",
+		"/tmp/test",
+		logger,
+		mockAgent,
+		mockSessions,
+		mockMessages,
+	)
+
+	tests := []struct {
+		finishReason message.FinishReason
+		expected     acpsdk.StopReason
+	}{
+		{message.FinishReasonEndTurn, acpsdk.StopReasonEndTurn},
+		{message.FinishReasonMaxTokens, acpsdk.StopReasonMaxTokens},
+		{message.FinishReasonCanceled, acpsdk.StopReasonCancelled},
+		{message.FinishReasonPermissionDenied, acpsdk.StopReasonError},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.finishReason), func(t *testing.T) {
+			result := agent.mapFinishReasonToStopReason(tt.finishReason)
+			if result != tt.expected {
+				t.Fatalf("Expected %s, got %s", tt.expected, result)
+			}
+		})
+	}
+}
