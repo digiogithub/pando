@@ -15,16 +15,18 @@ type ToolInfo struct {
 type toolResponseType string
 
 type (
-	sessionIDContextKey string
-	messageIDContextKey string
+	sessionIDContextKey       string
+	messageIDContextKey       string
+	acpClientConnContextKey   string
 )
 
 const (
 	ToolResponseTypeText  toolResponseType = "text"
 	ToolResponseTypeImage toolResponseType = "image"
 
-	SessionIDContextKey sessionIDContextKey = "session_id"
-	MessageIDContextKey messageIDContextKey = "message_id"
+	SessionIDContextKey     sessionIDContextKey     = "session_id"
+	MessageIDContextKey     messageIDContextKey     = "message_id"
+	ACPClientConnContextKey acpClientConnContextKey = "acp_client_connection"
 )
 
 type ToolResponse struct {
