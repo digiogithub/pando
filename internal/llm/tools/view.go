@@ -13,6 +13,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
+	"github.com/digiogithub/pando/internal/mesnada/acp"
 )
 
 type ViewParams struct {
@@ -108,6 +109,11 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	}
 
 	logging.Debug("view tool called", "filePath", params.FilePath, "offset", params.Offset, "limit", params.Limit)
+
+	// Check if we're in ACP context and should use client callbacks
+	if acpConn := ctx.Value(ACPClientConnContextKey); acpConn != nil {
+		return v.runWithACP(ctx, params, acpConn)
+	}
 
 	// Handle relative paths
 	filePath := params.FilePath
@@ -314,4 +320,74 @@ func (s *LineScanner) Text() string {
 
 func (s *LineScanner) Err() error {
 	return s.scanner.Err()
+}
+
+// runWithACP handles file reading via ACP client callback.
+func (v *viewTool) runWithACP(ctx context.Context, params ViewParams, acpConnInterface interface{}) (ToolResponse, error) {
+	acpConn, ok := acpConnInterface.(*acp.ACPClientConnection)
+	if !ok {
+		return ToolResponse{}, fmt.Errorf("invalid ACP client connection type")
+	}
+
+	logging.Debug("view tool using ACP callback", "filePath", params.FilePath)
+
+	// Read file content via client callback
+	content, err := acpConn.ReadTextFile(ctx, params.FilePath)
+	if err != nil {
+		// Return user-friendly error
+		return NewTextErrorResponse(fmt.Sprintf("Failed to read file: %s", err)), nil
+	}
+
+	// Set default limit if not provided
+	if params.Limit <= 0 {
+		params.Limit = DefaultReadLimit
+	}
+
+	// Process the content (apply offset and limit)
+	lines := strings.Split(content, "\n")
+	totalLines := len(lines)
+
+	// Apply offset
+	startLine := params.Offset
+	if startLine >= totalLines {
+		return NewTextErrorResponse(fmt.Sprintf("Offset %d exceeds file length (%d lines)", startLine, totalLines)), nil
+	}
+
+	// Apply limit
+	endLine := startLine + params.Limit
+	if endLine > totalLines {
+		endLine = totalLines
+	}
+
+	// Extract the requested lines
+	selectedLines := lines[startLine:endLine]
+
+	// Truncate long lines
+	for i, line := range selectedLines {
+		if len(line) > MaxLineLength {
+			selectedLines[i] = line[:MaxLineLength] + "..."
+		}
+	}
+
+	processedContent := strings.Join(selectedLines, "\n")
+
+	// Format output with line numbers
+	output := "<file>\n"
+	output += addLineNumbers(processedContent, params.Offset+1)
+
+	// Add note if content was truncated
+	if endLine < totalLines {
+		output += fmt.Sprintf("\n\n(File has more lines. Use 'offset' parameter to read beyond line %d)", endLine)
+	}
+	output += "\n</file>\n"
+
+	logging.Debug("view ACP completed", "filePath", params.FilePath, "linesRead", len(selectedLines))
+
+	return WithResponseMetadata(
+		NewTextResponse(output),
+		ViewResponseMetadata{
+			FilePath: params.FilePath,
+			Content:  processedContent,
+		},
+	), nil
 }
