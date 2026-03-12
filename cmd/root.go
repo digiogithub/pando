@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	// "log" // Commented out - used in runACPServer which is TODO
 	"os"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/logging"
+	// "github.com/digiogithub/pando/internal/mesnada/acp" // Commented out - used in runACPServer which is TODO
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/tui"
 	"github.com/digiogithub/pando/internal/version"
@@ -82,6 +84,12 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		if cmd.Flag("version").Changed {
 			fmt.Println(version.Version)
 			return nil
+		}
+
+		// Check if ACP server mode is requested
+		acpServer, _ := cmd.Flags().GetBool("acp-server")
+		if acpServer {
+			return runACPServer()
 		}
 
 		// Load the config
@@ -342,6 +350,43 @@ func setupSubscriptions(app *app.App, parentCtx context.Context) (chan tea.Msg, 
 	return ch, cleanupFunc
 }
 
+// runACPServer starts Pando in ACP server mode.
+// TODO: Re-enable once Fase 3 (PandoACPAgent with stdio transport) is complete
+func runACPServer() error {
+	return fmt.Errorf("ACP stdio transport not yet implemented - use HTTP/SSE transport via 'pando server' instead")
+
+	/* TODO: Uncomment once Fase 3 is complete
+	// Get current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current working directory: %v", err)
+	}
+
+	// Create logger for ACP agent
+	logger := log.New(os.Stderr, "[ACP] ", log.LstdFlags)
+	logger.Printf("Starting Pando ACP Agent v%s", version.Version)
+
+	// Create ACP agent
+	agent := acp.NewPandoACPAgent(version.Version, cwd, logger)
+
+	// Create stdio transport
+	transport := acp.NewStdioTransport(agent, logger)
+
+	// Create context with cancellation
+	ctx := context.Background()
+
+	// Run the transport loop
+	logger.Printf("ACP agent listening on stdio")
+	if err := transport.Run(ctx); err != nil {
+		logger.Printf("ACP agent error: %v", err)
+		return fmt.Errorf("ACP agent error: %w", err)
+	}
+
+	logger.Printf("ACP agent shutdown complete")
+	return nil
+	*/
+}
+
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
@@ -365,6 +410,9 @@ func init() {
 	rootCmd.Flags().BoolP("quiet", "q", false, "Hide spinner in non-interactive mode")
 	rootCmd.Flags().Bool("yolo", false, "Auto-approve all tool permissions including MCP tools")
 	rootCmd.Flags().Bool("allow-all-tools", false, "Auto-approve all tool permissions (alias for --yolo)")
+
+	// Add ACP server flag
+	rootCmd.Flags().Bool("acp-server", false, "Run as ACP server (allows other agents to connect)")
 
 	// Register custom validation for the format flag
 	rootCmd.RegisterFlagCompletionFunc("output-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
