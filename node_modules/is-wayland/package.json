@@ -1,0 +1,46 @@
+{
+	"name": "is-wayland",
+	"version": "0.1.0",
+	"description": "Check if the current Linux session is using Wayland",
+	"license": "MIT",
+	"repository": "sindresorhus/is-wayland",
+	"funding": "https://github.com/sponsors/sindresorhus",
+	"author": {
+		"name": "Sindre Sorhus",
+		"email": "sindresorhus@gmail.com",
+		"url": "https://sindresorhus.com"
+	},
+	"type": "module",
+	"exports": {
+		"types": "./index.d.ts",
+		"default": "./index.js"
+	},
+	"sideEffects": false,
+	"engines": {
+		"node": ">=20"
+	},
+	"scripts": {
+		"test": "xo && node --test test.js"
+	},
+	"files": [
+		"index.js",
+		"index.d.ts"
+	],
+	"keywords": [
+		"wayland",
+		"linux",
+		"display",
+		"server",
+		"x11",
+		"xorg",
+		"session",
+		"desktop",
+		"environment",
+		"detect",
+		"check",
+		"is"
+	],
+	"devDependencies": {
+		"xo": "^1.2.2"
+	}
+}

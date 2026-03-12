@@ -1,0 +1,57 @@
+{
+  "name": "@joshua.litt/get-ripgrep",
+  "version": "0.0.3",
+  "description": "A module for downloading ripgrep at runtime a Node project",
+  "main": "dist/index.js",
+  "typings": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joshualitt/ripgrep.git"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "format": "prettier --write ."
+  },
+  "keywords": [
+    "lvce-editor",
+    "ripgrep"
+  ],
+  "author": "Lvce Editor",
+  "license": "MIT",
+  "dependencies": {
+    "@lvce-editor/verror": "^1.6.0",
+    "execa": "^9.5.2",
+    "extract-zip": "^2.0.1",
+    "fs-extra": "^11.3.0",
+    "got": "^14.4.5",
+    "path-exists": "^5.0.0",
+    "xdg-basedir": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.13.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3"
+  },
+  "prettier": {
+    "semi": false,
+    "singleQuote": true
+  },
+  "directories": {
+    "example": "example",
+    "test": "test"
+  },
+  "bugs": {
+    "url": "https://github.com/joshualitt/ripgrep/issues"
+  },
+  "homepage": "https://github.com/joshualitt/ripgrep#readme"
+}

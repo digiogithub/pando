@@ -99,11 +99,23 @@ type MesnadaOrchestratorConfig struct {
 	PersonaPath      string `json:"personaPath,omitempty"`
 }
 
+// MesnadaACPServerConfig holds configuration for the ACP server.
+type MesnadaACPServerConfig struct {
+	Enabled        bool     `json:"enabled,omitempty"`
+	Transports     []string `json:"transports,omitempty"` // ["stdio", "http"]
+	Host           string   `json:"host,omitempty"`
+	Port           int      `json:"port,omitempty"`
+	MaxSessions    int      `json:"maxSessions,omitempty"`
+	SessionTimeout string   `json:"sessionTimeout,omitempty"`
+	RequireAuth    bool     `json:"requireAuth,omitempty"`
+}
+
 // MesnadaACPConfig holds ACP agent configuration
 type MesnadaACPConfig struct {
-	Enabled        bool   `json:"enabled,omitempty"`
-	DefaultAgent   string `json:"defaultAgent,omitempty"`
-	AutoPermission bool   `json:"autoPermission,omitempty"`
+	Enabled        bool                    `json:"enabled,omitempty"`
+	DefaultAgent   string                  `json:"defaultAgent,omitempty"`
+	AutoPermission bool                    `json:"autoPermission,omitempty"`
+	Server         MesnadaACPServerConfig  `json:"server,omitempty"`
 }
 
 // MesnadaTUIConfig holds mesnada TUI settings
@@ -133,6 +145,17 @@ type SkillsConfig struct {
 	Paths   []string `json:"paths,omitempty"`
 }
 
+// RemembrancesConfig defines configuration for the remembrances system.
+type RemembrancesConfig struct {
+	Enabled                   bool   `json:"enabled" toml:"Enabled"`
+	DocumentEmbeddingProvider string `json:"document_embedding_provider" toml:"DocumentEmbeddingProvider"`
+	DocumentEmbeddingModel    string `json:"document_embedding_model" toml:"DocumentEmbeddingModel"`
+	CodeEmbeddingProvider     string `json:"code_embedding_provider" toml:"CodeEmbeddingProvider"`
+	CodeEmbeddingModel        string `json:"code_embedding_model" toml:"CodeEmbeddingModel"`
+	ChunkSize                 int    `json:"chunk_size" toml:"ChunkSize"`
+	ChunkOverlap              int    `json:"chunk_overlap" toml:"ChunkOverlap"`
+}
+
 // Config is the main configuration structure for the application.
 type Config struct {
 	Data         Data                              `json:"data"`
@@ -150,6 +173,7 @@ type Config struct {
 	Mesnada      MesnadaConfig                     `json:"mesnada,omitempty"`
 	Shell        ShellConfig                       `json:"shell,omitempty"`
 	AutoCompact  bool                              `json:"autoCompact,omitempty"`
+	Remembrances RemembrancesConfig                `json:"remembrances,omitempty"`
 }
 
 // Application constants
@@ -333,6 +357,15 @@ func setDefaults(debug bool) {
 	viper.SetDefault("mesnada.tui.enabled", true)
 	viper.SetDefault("mesnada.tui.webui", true)
 	viper.SetDefault("autoCompact", true)
+
+	// Remembrances defaults
+	viper.SetDefault("remembrances.enabled", false)
+	viper.SetDefault("remembrances.document_embedding_provider", "ollama")
+	viper.SetDefault("remembrances.document_embedding_model", "nomic-embed-text")
+	viper.SetDefault("remembrances.code_embedding_provider", "ollama")
+	viper.SetDefault("remembrances.code_embedding_model", "nomic-embed-text")
+	viper.SetDefault("remembrances.chunk_size", 800)
+	viper.SetDefault("remembrances.chunk_overlap", 100)
 
 	// Set default shell from environment or fallback to /bin/bash
 	shellPath := os.Getenv("SHELL")

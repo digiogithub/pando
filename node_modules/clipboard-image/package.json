@@ -1,0 +1,49 @@
+{
+	"name": "clipboard-image",
+	"version": "0.1.0",
+	"description": "Get and set images on the macOS clipboard",
+	"license": "MIT",
+	"repository": "sindresorhus/clipboard-image",
+	"funding": "https://github.com/sponsors/sindresorhus",
+	"author": {
+		"name": "Sindre Sorhus",
+		"email": "sindresorhus@gmail.com",
+		"url": "https://sindresorhus.com"
+	},
+	"type": "module",
+	"bin": "./cli.js",
+	"exports": {
+		"types": "./index.d.ts",
+		"default": "./index.js"
+	},
+	"sideEffects": false,
+	"engines": {
+		"node": ">=20"
+	},
+	"scripts": {
+		"test": "xo && ava"
+	},
+	"files": [
+		"index.js",
+		"index.d.ts",
+		"cli.js"
+	],
+	"keywords": [
+		"clipboard",
+		"image",
+		"images",
+		"pasteboard",
+		"macos",
+		"mac",
+		"copy",
+		"paste",
+		"nspasteboard"
+	],
+	"dependencies": {
+		"run-jxa": "^3.0.0"
+	},
+	"devDependencies": {
+		"ava": "^6.4.1",
+		"xo": "^1.2.2"
+	}
+}
