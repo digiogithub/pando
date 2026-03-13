@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -19,6 +22,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/components/dialog"
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
+	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 	"github.com/digiogithub/pando/internal/tui/util"
 )
 
@@ -28,6 +32,8 @@ type cacheItem struct {
 	content    []uiMessage
 	renderedAt time.Time
 }
+
+type copiedMsg struct{}
 
 type messagesCmp struct {
 	app           *app.App
@@ -42,6 +48,14 @@ type messagesCmp struct {
 	rendering     bool
 	attachments   viewport.Model
 	renderSeq     int
+
+	// Mouse selection state
+	mouseDown       bool
+	selectionActive bool
+	selectionStartY int
+	selectionEndY   int
+	contentLines    []string // plain-text lines for copy
+	copyFeedback    bool     // show "Copied!" notification
 }
 
 type renderFinishedMsg struct{}
