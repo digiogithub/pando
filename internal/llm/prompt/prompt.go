@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,10 +11,11 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/skills"
 )
 
-func GetAgentPrompt(agentName config.AgentName, provider models.ModelProvider) string {
+func GetAgentPrompt(agentName config.AgentName, provider models.ModelProvider, luaMgr *luaengine.FilterManager) string {
 	basePrompt := ""
 	switch agentName {
 	case config.AgentCoder:
@@ -28,15 +30,31 @@ func GetAgentPrompt(agentName config.AgentName, provider models.ModelProvider) s
 		basePrompt = "You are a helpful assistant"
 	}
 
+	finalPrompt := basePrompt
 	if agentName == config.AgentCoder || agentName == config.AgentTask {
 		// Add context from project-specific instruction files if they exist
 		contextContent := getContextFromPaths()
 		logging.Debug("Context content", "Context", contextContent)
 		if contextContent != "" {
-			return fmt.Sprintf("%s\n\n# Project-Specific Context\n Make sure to follow the instructions in the context below\n%s", basePrompt, contextContent)
+			finalPrompt = fmt.Sprintf("%s\n\n# Project-Specific Context\n Make sure to follow the instructions in the context below\n%s", basePrompt, contextContent)
 		}
 	}
-	return basePrompt
+
+	if luaMgr != nil && luaMgr.IsEnabled() {
+		hookData := map[string]interface{}{
+			"system_prompt": finalPrompt,
+			"agent_name":    string(agentName),
+			"provider":      string(provider),
+		}
+		result, err := luaMgr.ExecuteHook(context.Background(), luaengine.HookSystemPrompt, hookData)
+		if err == nil && result != nil && result.Modified {
+			if modified, ok := result.Data["system_prompt"].(string); ok && modified != "" {
+				finalPrompt = modified
+			}
+		}
+	}
+
+	return finalPrompt
 }
 
 func InjectSkillsMetadata(availableSkills []skills.SkillMetadata) string {

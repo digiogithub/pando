@@ -33,6 +33,8 @@ import (
 	"github.com/digiogithub/pando/internal/skills"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/version"
+	"github.com/digiogithub/pando/internal/luaengine"
+	"github.com/digiogithub/pando/internal/mcpgateway"
 )
 
 type App struct {
@@ -48,6 +50,8 @@ type App struct {
 	MesnadaOrchestrator *mesnadaOrch.Orchestrator
 	MesnadaServer       *mesnadaServer.Server
 	Remembrances        *rag.RemembrancesService
+	LuaManager          *luaengine.FilterManager
+	MCPGateway          *mcpgateway.Gateway
 
 	clientsMutex sync.RWMutex
 
@@ -100,6 +104,45 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 				logging.Info("Remembrances service initialized")
 			}
 		}
+	}
+
+	// Initialize Lua filter manager if enabled
+	cfg = config.Get()
+	if cfg != nil && cfg.Lua.Enabled && cfg.Lua.ScriptPath != "" {
+		luaTimeout := 5 * time.Second
+		if cfg.Lua.Timeout != "" {
+			if d, err := time.ParseDuration(cfg.Lua.Timeout); err == nil {
+				luaTimeout = d
+			}
+		}
+		luaMgr, err := luaengine.NewFilterManager(cfg.Lua.ScriptPath, luaTimeout, cfg.Lua.StrictMode)
+		if err != nil {
+			logging.Error("Failed to create Lua filter manager", "error", err)
+		} else {
+			app.LuaManager = luaMgr
+			agent.SetLuaManager(luaMgr)
+			session.SetLuaManager(luaMgr)
+			logging.Info("Lua filter manager initialized", "script", cfg.Lua.ScriptPath)
+		}
+	}
+
+	// Initialize MCP Gateway if enabled
+	cfg = config.Get()
+	if cfg != nil && cfg.MCPGateway.Enabled {
+		favCfg := mcpgateway.FavoriteConfig{
+			Threshold:    cfg.MCPGateway.FavoriteThreshold,
+			MaxFavorites: cfg.MCPGateway.MaxFavorites,
+			WindowDays:   cfg.MCPGateway.FavoriteWindowDays,
+			DecayDays:    cfg.MCPGateway.DecayDays,
+		}
+		gw := mcpgateway.NewGateway(conn, favCfg)
+		go func() {
+			if err := gw.Initialize(ctx, cfg.MCPServers); err != nil {
+				logging.Error("MCP Gateway initialization failed", "error", err)
+			}
+		}()
+		app.MCPGateway = gw
+		logging.Info("MCP Gateway initialized")
 	}
 
 	// Initialize Mesnada orchestrator if enabled
@@ -176,6 +219,7 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 		agent.CoderAgentToolsWithMesnada(
 			app.MesnadaOrchestrator,
 			app.Remembrances,
+			app.MCPGateway,
 			app.Permissions,
 			app.Sessions,
 			app.Messages,
@@ -188,6 +232,10 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 	if err != nil {
 		logging.Error("Failed to create coder agent", err)
 		return nil, err
+	}
+	// Wire Lua manager into agent for lifecycle hooks
+	if app.LuaManager != nil {
+		app.CoderAgent.SetLuaManager(app.LuaManager)
 	}
 	logging.Debug("Coder agent created", "model", app.CoderAgent.Model().ID)
 

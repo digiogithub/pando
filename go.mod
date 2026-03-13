@@ -40,20 +40,49 @@ require (
 )
 
 require (
+	al.essio.dev/pkg/shellescape v1.5.1 // indirect
+	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/VividCortex/ewma v1.1.1 // indirect
+	github.com/aws/aws-sdk-go v1.34.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
+	github.com/cbroglie/mustache v1.0.1 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260303162955-0b88c25f3fff // indirect
 	github.com/charmbracelet/x/exp/golden v0.0.0-20241212170349-ad4b7ae0f25f // indirect
 	github.com/charmbracelet/x/exp/ordered v0.1.0 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/vt v0.0.0-20260305213658-fe36e8c10185 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
+	github.com/cheggaaa/pb/v3 v3.0.5 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/creack/pty v1.1.24 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/fatih/color v1.7.0 // indirect
+	github.com/go-sql-driver/mysql v1.9.1 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	github.com/layeh/gopher-json v0.0.0-20201124131017-552bb3c4c3bf // indirect
+	github.com/lib/pq v1.10.9 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/mattn/go-colorable v0.1.2 // indirect
+	github.com/mattn/go-sqlite3 v1.14.3 // indirect
+	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
+	github.com/mitchellh/mapstructure v1.3.2 // indirect
+	github.com/montanaflynn/stats v0.7.0 // indirect
+	github.com/prometheus/client_golang v1.11.1 // indirect
+	github.com/prometheus/client_model v0.2.0 // indirect
+	github.com/prometheus/common v0.26.0 // indirect
+	github.com/prometheus/procfs v0.16.0 // indirect
+	github.com/technoweenie/multipartstreamer v1.0.1 // indirect
+	github.com/vadv/gopher-lua-libs v0.8.0 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
+	github.com/yuin/gluamapper v0.0.0-20150323120927-d836955830e7 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
+	gopkg.in/xmlpath.v2 v2.0.0-20150820204837-860cbeca3ebc // indirect
 )
 
 require (

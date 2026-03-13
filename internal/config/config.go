@@ -165,6 +165,25 @@ type APIServerConfig struct {
 	RequireAuth bool   `json:"requireAuth,omitempty"`
 }
 
+// MCPGatewayConfig defines configuration for the MCP gateway subsystem.
+type MCPGatewayConfig struct {
+	Enabled            bool `json:"enabled,omitempty" toml:"Enabled"`
+	FavoriteThreshold  int  `json:"favorite_threshold,omitempty" toml:"FavoriteThreshold"`
+	MaxFavorites       int  `json:"max_favorites,omitempty" toml:"MaxFavorites"`
+	FavoriteWindowDays int  `json:"favorite_window_days,omitempty" toml:"FavoriteWindowDays"`
+	DecayDays          int  `json:"decay_days,omitempty" toml:"DecayDays"`
+}
+
+// LuaConfig defines configuration for the Lua scripting engine.
+type LuaConfig struct {
+	Enabled         bool   `json:"enabled,omitempty" toml:"Enabled"`
+	ScriptPath      string `json:"script_path,omitempty" toml:"ScriptPath"`
+	Timeout         string `json:"timeout,omitempty" toml:"Timeout"`       // e.g. "5s"
+	StrictMode      bool   `json:"strict_mode,omitempty" toml:"StrictMode"`
+	HotReload       bool   `json:"hot_reload,omitempty" toml:"HotReload"`
+	LogFilteredData bool   `json:"log_filtered_data,omitempty" toml:"LogFilteredData"`
+}
+
 // Config is the main configuration structure for the application.
 type Config struct {
 	Data         Data                              `json:"data"`
@@ -184,6 +203,8 @@ type Config struct {
 	AutoCompact  bool                              `json:"autoCompact,omitempty"`
 	Remembrances RemembrancesConfig                `json:"remembrances,omitempty"`
 	Server       APIServerConfig                   `json:"server,omitempty"`
+	Lua          LuaConfig                         `json:"lua,omitempty"`
+	MCPGateway   MCPGatewayConfig                  `json:"mcpGateway,omitempty"`
 }
 
 // Application constants
@@ -373,6 +394,18 @@ func setDefaults(debug bool) {
 	viper.SetDefault("server.port", 8765)
 	viper.SetDefault("server.requireAuth", true)
 	viper.SetDefault("autoCompact", true)
+
+	// Lua scripting engine defaults
+	viper.SetDefault("lua.enabled", false)
+	viper.SetDefault("lua.timeout", "5s")
+	viper.SetDefault("lua.strict_mode", false)
+
+	// MCP Gateway defaults
+	viper.SetDefault("mcpGateway.enabled", false)
+	viper.SetDefault("mcpGateway.favorite_threshold", 5)
+	viper.SetDefault("mcpGateway.max_favorites", 15)
+	viper.SetDefault("mcpGateway.favorite_window_days", 30)
+	viper.SetDefault("mcpGateway.decay_days", 14)
 
 	// Remembrances defaults
 	viper.SetDefault("remembrances.enabled", false)
