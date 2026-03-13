@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"os"
@@ -28,6 +29,7 @@ import (
 	mesnadaServer "github.com/digiogithub/pando/internal/mesnada/server"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
+	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
@@ -406,6 +408,58 @@ func (app *App) initTheme() {
 	}
 }
 
+type assistantTextStreamer struct {
+	output    io.Writer
+	sessionID string
+	offsets   map[string]int
+	wrote     bool
+}
+
+func newAssistantTextStreamer(output io.Writer, sessionID string) *assistantTextStreamer {
+	return &assistantTextStreamer{
+		output:    output,
+		sessionID: sessionID,
+		offsets:   make(map[string]int),
+	}
+}
+
+func (s *assistantTextStreamer) Consume(event pubsub.Event[message.Message]) error {
+	if event.Type != pubsub.CreatedEvent && event.Type != pubsub.UpdatedEvent {
+		return nil
+	}
+
+	return s.ConsumeMessage(event.Payload)
+}
+
+func (s *assistantTextStreamer) ConsumeMessage(msg message.Message) error {
+	if msg.SessionID != s.sessionID || msg.Role != message.Assistant {
+		return nil
+	}
+
+	content := msg.Content().String()
+	offset := s.offsets[msg.ID]
+	if len(content) <= offset {
+		return nil
+	}
+
+	if _, err := io.WriteString(s.output, content[offset:]); err != nil {
+		return err
+	}
+
+	s.offsets[msg.ID] = len(content)
+	s.wrote = true
+	return nil
+}
+
+func (s *assistantTextStreamer) CloseLine() error {
+	if !s.wrote {
+		return nil
+	}
+
+	_, err := io.WriteString(s.output, "\n")
+	return err
+}
+
 // RunNonInteractive handles the execution flow when a prompt is provided via CLI flag.
 func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat string, quiet bool, yoloMode bool) error {
 	logging.Info("Running in non-interactive mode")
@@ -445,14 +499,48 @@ func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat
 		a.Permissions.AutoApproveSession(sess.ID)
 	}
 
+	var (
+		streamer     *assistantTextStreamer
+		streamCancel context.CancelFunc
+		streamWG     sync.WaitGroup
+	)
+	if outputFormat == format.Text.String() {
+		streamer = newAssistantTextStreamer(os.Stdout, sess.ID)
+		streamCtx, cancel := context.WithCancel(ctx)
+		streamCancel = cancel
+		messageEvents := a.Messages.Subscribe(streamCtx)
+
+		streamWG.Add(1)
+		go func() {
+			defer streamWG.Done()
+			for event := range messageEvents {
+				if err := streamer.Consume(event); err != nil {
+					logging.Warn("Failed to stream non-interactive response", "session_id", sess.ID, "error", err)
+					return
+				}
+			}
+		}()
+	}
+
 	done, err := a.CoderAgent.Run(ctx, sess.ID, prompt)
 	if err != nil {
+		if streamCancel != nil {
+			streamCancel()
+			streamWG.Wait()
+		}
 		return fmt.Errorf("failed to start agent processing stream: %w", err)
 	}
 
 	result := <-done
+	if streamCancel != nil {
+		streamCancel()
+		streamWG.Wait()
+	}
 	logging.Debug("Non-interactive agent completed", "sessionID", sess.ID, "hasError", result.Error != nil)
 	if result.Error != nil {
+		if streamer != nil {
+			_ = streamer.CloseLine()
+		}
 		if errors.Is(result.Error, context.Canceled) || errors.Is(result.Error, agent.ErrRequestCancelled) {
 			logging.Info("Agent processing cancelled", "session_id", sess.ID)
 			return nil
@@ -471,7 +559,20 @@ func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat
 		content = result.Message.Content().String()
 	}
 
-	fmt.Println(format.FormatOutput(content, outputFormat))
+	if streamer != nil {
+		if err := streamer.ConsumeMessage(result.Message); err != nil {
+			return fmt.Errorf("failed to stream final response: %w", err)
+		}
+		if streamer.wrote {
+			if err := streamer.CloseLine(); err != nil {
+				return fmt.Errorf("failed to finalize streamed response: %w", err)
+			}
+		} else {
+			fmt.Println(content)
+		}
+	} else {
+		fmt.Println(format.FormatOutput(content, outputFormat))
+	}
 
 	logging.Info("Non-interactive run completed", "session_id", sess.ID)
 

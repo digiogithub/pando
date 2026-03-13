@@ -908,7 +908,6 @@ func Validate() error {
 			}
 		}
 		if providerRequiresAPIKey(provider) && providerCfg.APIKey == "" && !providerCfg.Disabled {
-			fmt.Printf("provider has no API key, marking as disabled %s", provider)
 			logging.Warn("provider has no API key, marking as disabled", "provider", provider)
 			providerCfg.Disabled = true
 			cfg.Providers[provider] = providerCfg
