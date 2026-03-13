@@ -413,155 +413,111 @@ func (app *App) initTheme() {
 type assistantTextStreamer struct {
 	output             io.Writer
 	sessionID          string
-	contentOffsets     map[string]int
-	seenAssistantMsgs  map[string]bool
-	knownToolCalls     map[string]message.ToolCall
-	printedToolCalls   map[string]bool
-	printedToolResults map[string]bool
 	currentSection     string
 	lastEndedWithNewline bool
 	wrote              bool
+	wroteContent       bool
 }
 
 func newAssistantTextStreamer(output io.Writer, sessionID string) *assistantTextStreamer {
 	return &assistantTextStreamer{
-		output:             output,
-		sessionID:          sessionID,
-		contentOffsets:     make(map[string]int),
-		seenAssistantMsgs:  make(map[string]bool),
-		knownToolCalls:     make(map[string]message.ToolCall),
-		printedToolCalls:   make(map[string]bool),
-		printedToolResults: make(map[string]bool),
+		output:    output,
+		sessionID: sessionID,
 	}
 }
 
-func (s *assistantTextStreamer) Consume(event pubsub.Event[message.Message]) error {
-	if event.Type != pubsub.CreatedEvent && event.Type != pubsub.UpdatedEvent {
+func (s *assistantTextStreamer) Consume(event pubsub.Event[agent.AgentEvent]) error {
+	if event.Type != pubsub.CreatedEvent {
 		return nil
 	}
 
-	return s.ConsumeMessage(event.Payload)
+	return s.ConsumeAgentEvent(event.Payload)
 }
 
-func (s *assistantTextStreamer) ConsumeMessage(msg message.Message) error {
-	if msg.SessionID != s.sessionID {
+func (s *assistantTextStreamer) ConsumeAgentEvent(event agent.AgentEvent) error {
+	if event.SessionID != s.sessionID {
 		return nil
 	}
 
-	switch msg.Role {
-	case message.Assistant:
-		return s.consumeAssistantMessage(msg)
-	case message.Tool:
-		return s.consumeToolMessage(msg)
+	switch event.Type {
+	case agent.AgentEventTypeContentDelta:
+		return s.consumeContentDelta(event.Delta)
+	case agent.AgentEventTypeToolCall:
+		if event.ToolCall == nil {
+			return nil
+		}
+		return s.consumeToolCall(*event.ToolCall)
+	case agent.AgentEventTypeToolResult:
+		if event.ToolResult == nil {
+			return nil
+		}
+		return s.consumeToolResult(*event.ToolResult)
 	default:
 		return nil
 	}
 }
 
-func (s *assistantTextStreamer) consumeAssistantMessage(msg message.Message) error {
-	for _, toolCall := range msg.ToolCalls() {
-		s.knownToolCalls[toolCall.ID] = toolCall
-	}
-
-	if err := s.writeAssistantDelta(msg); err != nil {
-		return err
-	}
-
-	for _, toolCall := range msg.ToolCalls() {
-		if s.printedToolCalls[toolCall.ID] {
-			continue
-		}
-		if err := s.startSection("tool"); err != nil {
-			return err
-		}
-
-		line := fmt.Sprintf("🔧 %s", toolCall.Name)
-		if compactInput := compactSingleLine(toolCall.Input, 180); compactInput != "" {
-			line += " " + compactInput
-		}
-
-		if err := s.writeString(line + "\n"); err != nil {
-			return err
-		}
-
-		s.printedToolCalls[toolCall.ID] = true
-		s.wrote = true
-	}
-
-	return nil
-}
-
-func (s *assistantTextStreamer) consumeToolMessage(msg message.Message) error {
-	for _, result := range msg.ToolResults() {
-		if s.printedToolResults[result.ToolCallID] {
-			continue
-		}
-
-		if err := s.startSection("tool"); err != nil {
-			return err
-		}
-
-		toolName := result.Name
-		if toolName == "" {
-			if toolCall, ok := s.knownToolCalls[result.ToolCallID]; ok && toolCall.Name != "" {
-				toolName = toolCall.Name
-			} else {
-				toolName = result.ToolCallID
-			}
-		}
-
-		status := "✓"
-		line := fmt.Sprintf("%s %s completed", status, toolName)
-		if result.IsError {
-			status = "✗"
-			line = fmt.Sprintf("%s %s failed", status, toolName)
-			if preview := compactSingleLine(result.Content, 200); preview != "" {
-				line += ": " + preview
-			}
-		}
-
-		if err := s.writeString(line + "\n"); err != nil {
-			return err
-		}
-
-		s.printedToolResults[result.ToolCallID] = true
-		s.wrote = true
-	}
-
-	return nil
-}
-
-func (s *assistantTextStreamer) writeAssistantDelta(msg message.Message) error {
-	content := msg.Content().String()
-	offset := s.contentOffsets[msg.ID]
-	if len(content) <= offset {
+func (s *assistantTextStreamer) consumeContentDelta(delta string) error {
+	if delta == "" {
 		return nil
 	}
 
-	if err := s.startAssistantMessage(msg.ID); err != nil {
+	if err := s.startSection("assistant"); err != nil {
 		return err
 	}
 
-	if err := s.writeString(content[offset:]); err != nil {
+	if err := s.writeString(delta); err != nil {
 		return err
 	}
 
-	s.contentOffsets[msg.ID] = len(content)
+	s.wrote = true
+	s.wroteContent = true
+	return nil
+}
+
+func (s *assistantTextStreamer) consumeToolCall(toolCall message.ToolCall) error {
+	if err := s.startSection("tool"); err != nil {
+		return err
+	}
+
+	line := fmt.Sprintf("🔧 %s", toolCall.Name)
+	if compactInput := compactSingleLine(toolCall.Input, 180); compactInput != "" {
+		line += " " + compactInput
+	}
+
+	if err := s.writeString(line + "\n"); err != nil {
+		return err
+	}
+
 	s.wrote = true
 	return nil
 }
 
-func (s *assistantTextStreamer) startAssistantMessage(messageID string) error {
-	if s.currentSection == "assistant" && s.seenAssistantMsgs[messageID] {
-		return nil
-	}
-
-	if err := s.writeSeparator(); err != nil {
+func (s *assistantTextStreamer) consumeToolResult(result message.ToolResult) error {
+	if err := s.startSection("tool"); err != nil {
 		return err
 	}
 
-	s.currentSection = "assistant"
-	s.seenAssistantMsgs[messageID] = true
+	toolName := result.Name
+	if toolName == "" {
+		toolName = result.ToolCallID
+	}
+
+	status := "✓"
+	line := fmt.Sprintf("%s %s completed", status, toolName)
+	if result.IsError {
+		status = "✗"
+		line = fmt.Sprintf("%s %s failed", status, toolName)
+		if preview := compactSingleLine(result.Content, 200); preview != "" {
+			line += ": " + preview
+		}
+	}
+
+	if err := s.writeString(line + "\n"); err != nil {
+		return err
+	}
+
+	s.wrote = true
 	return nil
 }
 
@@ -588,6 +544,24 @@ func (s *assistantTextStreamer) writeSeparator() error {
 		separator = "\n"
 	}
 	return s.writeString(separator)
+}
+
+func (s *assistantTextStreamer) PrintFinalContent(content string) error {
+	content = strings.TrimSpace(content)
+	if content == "" || s.wroteContent {
+		return nil
+	}
+
+	if err := s.startSection("assistant"); err != nil {
+		return err
+	}
+	if err := s.writeString(content); err != nil {
+		return err
+	}
+
+	s.wrote = true
+	s.wroteContent = true
+	return nil
 }
 
 func compactSingleLine(value string, limit int) string {
@@ -682,12 +656,12 @@ func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat
 		streamer = newAssistantTextStreamer(os.Stdout, sess.ID)
 		streamCtx, cancel := context.WithCancel(ctx)
 		streamCancel = cancel
-		messageEvents := a.Messages.Subscribe(streamCtx)
+		agentEvents := a.CoderAgent.Subscribe(streamCtx)
 
 		streamWG.Add(1)
 		go func() {
 			defer streamWG.Done()
-			for event := range messageEvents {
+			for event := range agentEvents {
 				if err := streamer.Consume(event); err != nil {
 					logging.Warn("Failed to stream non-interactive response", "session_id", sess.ID, "error", err)
 					return
@@ -705,7 +679,10 @@ func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat
 		return fmt.Errorf("failed to start agent processing stream: %w", err)
 	}
 
-	result := <-done
+	var result agent.AgentEvent
+	for event := range done {
+		result = event
+	}
 	if streamCancel != nil {
 		streamCancel()
 		streamWG.Wait()
@@ -734,8 +711,8 @@ func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat
 	}
 
 	if streamer != nil {
-		if err := streamer.ConsumeMessage(result.Message); err != nil {
-			return fmt.Errorf("failed to stream final response: %w", err)
+		if err := streamer.PrintFinalContent(content); err != nil {
+			return fmt.Errorf("failed to render final response: %w", err)
 		}
 		if streamer.wrote {
 			if err := streamer.CloseLine(); err != nil {

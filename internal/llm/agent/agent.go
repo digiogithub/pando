@@ -31,15 +31,21 @@ var (
 type AgentEventType string
 
 const (
-	AgentEventTypeError     AgentEventType = "error"
-	AgentEventTypeResponse  AgentEventType = "response"
-	AgentEventTypeSummarize AgentEventType = "summarize"
+	AgentEventTypeError        AgentEventType = "error"
+	AgentEventTypeResponse     AgentEventType = "response"
+	AgentEventTypeSummarize    AgentEventType = "summarize"
+	AgentEventTypeContentDelta AgentEventType = "content_delta"
+	AgentEventTypeToolCall     AgentEventType = "tool_call"
+	AgentEventTypeToolResult   AgentEventType = "tool_result"
 )
 
 type AgentEvent struct {
 	Type    AgentEventType
 	Message message.Message
 	Error   error
+	Delta   string
+	ToolCall   *message.ToolCall
+	ToolResult *message.ToolResult
 
 	// When summarizing
 	SessionID string
@@ -231,6 +237,10 @@ func (a *agent) err(err error) AgentEvent {
 	}
 }
 
+func (a *agent) publishEvent(event AgentEvent) {
+	a.Publish(pubsub.CreatedEvent, event)
+}
+
 // ErrNoModel is returned when the agent has no model configured.
 var ErrNoModel = fmt.Errorf("no model configured, please select a model")
 
@@ -266,7 +276,7 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 		logging.Debug("Request completed", "sessionID", sessionID)
 		a.activeRequests.Delete(sessionID)
 		cancel()
-		a.Publish(pubsub.CreatedEvent, result)
+		a.publishEvent(result)
 		events <- result
 		close(events)
 	}()
@@ -337,6 +347,8 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		return a.err(fmt.Errorf("failed to prepare agent provider: %w", err))
 	}
 
+	sawToolRound := false
+
 	for {
 		// Check for cancellation before each iteration
 		select {
@@ -346,7 +358,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			// Continue processing
 		}
 		logging.Debug("processGeneration iteration", "sessionID", sessionID, "historyLength", len(msgHistory))
-		agentMessage, toolResults, err := a.streamAndHandleEvents(ctx, sessionID, msgHistory, requestProvider)
+		agentMessage, toolResults, err := a.streamAndHandleEvents(ctx, sessionID, msgHistory, requestProvider, sawToolRound)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				agentMessage.AddFinish(message.FinishReasonCanceled)
@@ -364,13 +376,15 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		}
 		if (agentMessage.FinishReason() == message.FinishReasonToolUse) && toolResults != nil {
 			// We are not done, we need to respond with the tool response
+			sawToolRound = true
 			msgHistory = append(msgHistory, agentMessage, *toolResults)
 			continue
 		}
 		return AgentEvent{
-			Type:    AgentEventTypeResponse,
-			Message: agentMessage,
-			Done:    true,
+			Type:      AgentEventTypeResponse,
+			Message:   agentMessage,
+			SessionID: sessionID,
+			Done:      true,
 		}
 	}
 }
@@ -398,7 +412,7 @@ func (a *agent) createUserMessage(ctx context.Context, sessionID, content string
 	})
 }
 
-func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msgHistory []message.Message, requestProvider provider.Provider) (message.Message, *message.Message, error) {
+func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msgHistory []message.Message, requestProvider provider.Provider, emitContentDeltas bool) (message.Message, *message.Message, error) {
 	logging.Debug("streamAndHandleEvents started", "sessionID", sessionID, "historyLength", len(msgHistory), "model", requestProvider.Model().ID)
 	ctx = context.WithValue(ctx, tools.SessionIDContextKey, sessionID)
 	eventChan := requestProvider.StreamResponse(ctx, msgHistory, a.tools)
@@ -417,7 +431,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 
 	// Process each event in the stream.
 	for event := range eventChan {
-		if processErr := a.processEvent(ctx, sessionID, &assistantMsg, event, requestProvider); processErr != nil {
+		if processErr := a.processEvent(ctx, sessionID, &assistantMsg, event, requestProvider, emitContentDeltas); processErr != nil {
 			a.finishMessage(ctx, &assistantMsg, message.FinishReasonCanceled)
 			return assistantMsg, nil, processErr
 		}
@@ -462,9 +476,11 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 			if tool == nil {
 				toolResults[i] = message.ToolResult{
 					ToolCallID: toolCall.ID,
+					Name:       toolCall.Name,
 					Content:    fmt.Sprintf("Tool not found: %s", toolCall.Name),
 					IsError:    true,
 				}
+				a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]})
 				continue
 			}
 			toolResult, toolErr := tool.Run(ctx, tools.ToolCall{
@@ -476,15 +492,19 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 				if errors.Is(toolErr, permission.ErrorPermissionDenied) {
 					toolResults[i] = message.ToolResult{
 						ToolCallID: toolCall.ID,
+						Name:       toolCall.Name,
 						Content:    "Permission denied",
 						IsError:    true,
 					}
+					a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]})
 					for j := i + 1; j < len(toolCalls); j++ {
 						toolResults[j] = message.ToolResult{
 							ToolCallID: toolCalls[j].ID,
+							Name:       toolCalls[j].Name,
 							Content:    "Tool execution canceled by user",
 							IsError:    true,
 						}
+						a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[j]})
 					}
 					a.finishMessage(ctx, &assistantMsg, message.FinishReasonPermissionDenied)
 					break
@@ -492,10 +512,12 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 			}
 			toolResults[i] = message.ToolResult{
 				ToolCallID: toolCall.ID,
+				Name:       toolCall.Name,
 				Content:    toolResult.Content,
 				Metadata:   toolResult.Metadata,
 				IsError:    toolResult.IsError,
 			}
+			a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]})
 		}
 	}
 out:
@@ -529,6 +551,7 @@ func (a *agent) processEvent(
 	assistantMsg *message.Message,
 	event provider.ProviderEvent,
 	requestProvider provider.Provider,
+	emitContentDeltas bool,
 ) error {
 	select {
 	case <-ctx.Done():
@@ -545,10 +568,14 @@ func (a *agent) processEvent(
 	case provider.EventContentDelta:
 		logging.Debug("Event: ContentDelta", "sessionID", sessionID, "contentLength", len(event.Content))
 		assistantMsg.AppendContent(event.Content)
+		if emitContentDeltas {
+			a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: event.Content})
+		}
 		return a.messages.Update(ctx, *assistantMsg)
 	case provider.EventToolUseStart:
 		logging.Debug("Event: ToolUseStart", "sessionID", sessionID, "toolName", event.ToolCall.Name, "toolID", event.ToolCall.ID)
 		assistantMsg.AddToolCall(*event.ToolCall)
+		a.publishEvent(AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: event.ToolCall})
 		return a.messages.Update(ctx, *assistantMsg)
 	// TODO: see how to handle this
 	// case provider.EventToolUseDelta:
