@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -19,6 +22,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/components/dialog"
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
+	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 	"github.com/digiogithub/pando/internal/tui/util"
 )
 
@@ -28,6 +32,8 @@ type cacheItem struct {
 	content    []uiMessage
 	renderedAt time.Time
 }
+
+type copiedMsg struct{}
 
 type messagesCmp struct {
 	app           *app.App
@@ -42,6 +48,14 @@ type messagesCmp struct {
 	rendering     bool
 	attachments   viewport.Model
 	renderSeq     int
+
+	// Mouse selection state
+	mouseDown       bool
+	selectionActive bool
+	selectionStartY int
+	selectionEndY   int
+	contentLines    []string // plain-text lines for copy
+	copyFeedback    bool     // show "Copied!" notification
 }
 
 type renderFinishedMsg struct{}
@@ -101,12 +115,67 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rendering = false
 		return m, nil
 
+	case copiedMsg:
+		m.copyFeedback = false
+
 	case tea.MouseMsg:
+		if msg.Button == tea.MouseButtonLeft {
+			zone := tuizone.Manager.Get(tuizone.ChatViewport)
+			if zone != nil && zone.InBounds(msg) {
+				_, relY := zone.Pos(msg)
+				contentLine := m.viewport.YOffset + relY
+				switch msg.Action {
+				case tea.MouseActionPress:
+					m.mouseDown = true
+					m.selectionActive = false
+					m.selectionStartY = contentLine
+					m.selectionEndY = contentLine
+				case tea.MouseActionMotion:
+					if m.mouseDown {
+						m.selectionEndY = contentLine
+						if m.selectionStartY != m.selectionEndY {
+							m.selectionActive = true
+						}
+					}
+				case tea.MouseActionRelease:
+					m.mouseDown = false
+					if m.selectionStartY != m.selectionEndY {
+						m.selectionActive = true
+					}
+				}
+			} else if msg.Action == tea.MouseActionRelease {
+				m.mouseDown = false
+			}
+		}
 		u, cmd := m.viewport.Update(msg)
 		m.viewport = u
 		cmds = append(cmds, cmd)
 
 	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" && m.selectionActive {
+			start := m.selectionStartY
+			end := m.selectionEndY
+			if start > end {
+				start, end = end, start
+			}
+			if start < 0 {
+				start = 0
+			}
+			if end >= len(m.contentLines) {
+				end = len(m.contentLines) - 1
+			}
+			if start <= end && len(m.contentLines) > 0 {
+				text := strings.TrimSpace(strings.Join(m.contentLines[start:end+1], "\n"))
+				if err := clipboard.WriteAll(text); err == nil {
+					m.copyFeedback = true
+					cmds = append(cmds, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+						return copiedMsg{}
+					}))
+				}
+			}
+			m.selectionActive = false
+			return m, tea.Batch(cmds...)
+		}
 		if key.Matches(msg, messageKeys.PageUp) || key.Matches(msg, messageKeys.PageDown) ||
 			key.Matches(msg, messageKeys.HalfPageUp) || key.Matches(msg, messageKeys.HalfPageDown) {
 			u, cmd := m.viewport.Update(msg)
@@ -339,16 +408,23 @@ func (m *messagesCmp) renderView() {
 		)
 	}
 
-	m.viewport.SetContent(
-		baseStyle.
-			Width(m.width).
-			Render(
-				lipgloss.JoinVertical(
-					lipgloss.Top,
-					messages...,
-				),
+	fullContent := baseStyle.
+		Width(m.width).
+		Render(
+			lipgloss.JoinVertical(
+				lipgloss.Top,
+				messages...,
 			),
-	)
+		)
+
+	// Build plain-text lines for mouse selection/copy
+	rawLines := strings.Split(fullContent, "\n")
+	m.contentLines = make([]string, len(rawLines))
+	for i, line := range rawLines {
+		m.contentLines[i] = ansi.Strip(line)
+	}
+
+	m.viewport.SetContent(fullContent)
 }
 
 func (m *messagesCmp) View() string {
