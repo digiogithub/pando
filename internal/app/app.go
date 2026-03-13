@@ -1,10 +1,13 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"os"
@@ -28,6 +31,7 @@ import (
 	mesnadaServer "github.com/digiogithub/pando/internal/mesnada/server"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
+	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
@@ -406,6 +410,230 @@ func (app *App) initTheme() {
 	}
 }
 
+type assistantTextStreamer struct {
+	output             io.Writer
+	sessionID          string
+	contentOffsets     map[string]int
+	seenAssistantMsgs  map[string]bool
+	knownToolCalls     map[string]message.ToolCall
+	printedToolCalls   map[string]bool
+	printedToolResults map[string]bool
+	currentSection     string
+	lastEndedWithNewline bool
+	wrote              bool
+}
+
+func newAssistantTextStreamer(output io.Writer, sessionID string) *assistantTextStreamer {
+	return &assistantTextStreamer{
+		output:             output,
+		sessionID:          sessionID,
+		contentOffsets:     make(map[string]int),
+		seenAssistantMsgs:  make(map[string]bool),
+		knownToolCalls:     make(map[string]message.ToolCall),
+		printedToolCalls:   make(map[string]bool),
+		printedToolResults: make(map[string]bool),
+	}
+}
+
+func (s *assistantTextStreamer) Consume(event pubsub.Event[message.Message]) error {
+	if event.Type != pubsub.CreatedEvent && event.Type != pubsub.UpdatedEvent {
+		return nil
+	}
+
+	return s.ConsumeMessage(event.Payload)
+}
+
+func (s *assistantTextStreamer) ConsumeMessage(msg message.Message) error {
+	if msg.SessionID != s.sessionID {
+		return nil
+	}
+
+	switch msg.Role {
+	case message.Assistant:
+		return s.consumeAssistantMessage(msg)
+	case message.Tool:
+		return s.consumeToolMessage(msg)
+	default:
+		return nil
+	}
+}
+
+func (s *assistantTextStreamer) consumeAssistantMessage(msg message.Message) error {
+	for _, toolCall := range msg.ToolCalls() {
+		s.knownToolCalls[toolCall.ID] = toolCall
+	}
+
+	if err := s.writeAssistantDelta(msg); err != nil {
+		return err
+	}
+
+	for _, toolCall := range msg.ToolCalls() {
+		if s.printedToolCalls[toolCall.ID] {
+			continue
+		}
+		if err := s.startSection("tool"); err != nil {
+			return err
+		}
+
+		line := fmt.Sprintf("🔧 %s", toolCall.Name)
+		if compactInput := compactSingleLine(toolCall.Input, 180); compactInput != "" {
+			line += " " + compactInput
+		}
+
+		if err := s.writeString(line + "\n"); err != nil {
+			return err
+		}
+
+		s.printedToolCalls[toolCall.ID] = true
+		s.wrote = true
+	}
+
+	return nil
+}
+
+func (s *assistantTextStreamer) consumeToolMessage(msg message.Message) error {
+	for _, result := range msg.ToolResults() {
+		if s.printedToolResults[result.ToolCallID] {
+			continue
+		}
+
+		if err := s.startSection("tool"); err != nil {
+			return err
+		}
+
+		toolName := result.Name
+		if toolName == "" {
+			if toolCall, ok := s.knownToolCalls[result.ToolCallID]; ok && toolCall.Name != "" {
+				toolName = toolCall.Name
+			} else {
+				toolName = result.ToolCallID
+			}
+		}
+
+		status := "✓"
+		line := fmt.Sprintf("%s %s completed", status, toolName)
+		if result.IsError {
+			status = "✗"
+			line = fmt.Sprintf("%s %s failed", status, toolName)
+			if preview := compactSingleLine(result.Content, 200); preview != "" {
+				line += ": " + preview
+			}
+		}
+
+		if err := s.writeString(line + "\n"); err != nil {
+			return err
+		}
+
+		s.printedToolResults[result.ToolCallID] = true
+		s.wrote = true
+	}
+
+	return nil
+}
+
+func (s *assistantTextStreamer) writeAssistantDelta(msg message.Message) error {
+	content := msg.Content().String()
+	offset := s.contentOffsets[msg.ID]
+	if len(content) <= offset {
+		return nil
+	}
+
+	if err := s.startAssistantMessage(msg.ID); err != nil {
+		return err
+	}
+
+	if err := s.writeString(content[offset:]); err != nil {
+		return err
+	}
+
+	s.contentOffsets[msg.ID] = len(content)
+	s.wrote = true
+	return nil
+}
+
+func (s *assistantTextStreamer) startAssistantMessage(messageID string) error {
+	if s.currentSection == "assistant" && s.seenAssistantMsgs[messageID] {
+		return nil
+	}
+
+	if err := s.writeSeparator(); err != nil {
+		return err
+	}
+
+	s.currentSection = "assistant"
+	s.seenAssistantMsgs[messageID] = true
+	return nil
+}
+
+func (s *assistantTextStreamer) startSection(section string) error {
+	if s.currentSection == section {
+		return nil
+	}
+
+	if err := s.writeSeparator(); err != nil {
+		return err
+	}
+
+	s.currentSection = section
+	return nil
+}
+
+func (s *assistantTextStreamer) writeSeparator() error {
+	if !s.wrote {
+		return nil
+	}
+
+	separator := "\n\n"
+	if s.lastEndedWithNewline {
+		separator = "\n"
+	}
+	return s.writeString(separator)
+}
+
+func compactSingleLine(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	var compacted bytes.Buffer
+	if err := json.Compact(&compacted, []byte(value)); err == nil {
+		value = compacted.String()
+	}
+
+	value = strings.Join(strings.Fields(value), " ")
+	if limit > 0 && len(value) > limit {
+		value = value[:limit-3] + "..."
+	}
+
+	return value
+}
+
+func (s *assistantTextStreamer) CloseLine() error {
+	if !s.wrote {
+		return nil
+	}
+
+	if s.lastEndedWithNewline {
+		return nil
+	}
+
+	return s.writeString("\n")
+}
+
+func (s *assistantTextStreamer) writeString(value string) error {
+	if value == "" {
+		return nil
+	}
+
+	if _, err := io.WriteString(s.output, value); err != nil {
+		return err
+	}
+
+	s.lastEndedWithNewline = strings.HasSuffix(value, "\n")
+	return nil
+}
+
 // RunNonInteractive handles the execution flow when a prompt is provided via CLI flag.
 func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat string, quiet bool, yoloMode bool) error {
 	logging.Info("Running in non-interactive mode")
@@ -445,14 +673,48 @@ func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat
 		a.Permissions.AutoApproveSession(sess.ID)
 	}
 
+	var (
+		streamer     *assistantTextStreamer
+		streamCancel context.CancelFunc
+		streamWG     sync.WaitGroup
+	)
+	if outputFormat == format.Text.String() {
+		streamer = newAssistantTextStreamer(os.Stdout, sess.ID)
+		streamCtx, cancel := context.WithCancel(ctx)
+		streamCancel = cancel
+		messageEvents := a.Messages.Subscribe(streamCtx)
+
+		streamWG.Add(1)
+		go func() {
+			defer streamWG.Done()
+			for event := range messageEvents {
+				if err := streamer.Consume(event); err != nil {
+					logging.Warn("Failed to stream non-interactive response", "session_id", sess.ID, "error", err)
+					return
+				}
+			}
+		}()
+	}
+
 	done, err := a.CoderAgent.Run(ctx, sess.ID, prompt)
 	if err != nil {
+		if streamCancel != nil {
+			streamCancel()
+			streamWG.Wait()
+		}
 		return fmt.Errorf("failed to start agent processing stream: %w", err)
 	}
 
 	result := <-done
+	if streamCancel != nil {
+		streamCancel()
+		streamWG.Wait()
+	}
 	logging.Debug("Non-interactive agent completed", "sessionID", sess.ID, "hasError", result.Error != nil)
 	if result.Error != nil {
+		if streamer != nil {
+			_ = streamer.CloseLine()
+		}
 		if errors.Is(result.Error, context.Canceled) || errors.Is(result.Error, agent.ErrRequestCancelled) {
 			logging.Info("Agent processing cancelled", "session_id", sess.ID)
 			return nil
@@ -471,7 +733,20 @@ func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat
 		content = result.Message.Content().String()
 	}
 
-	fmt.Println(format.FormatOutput(content, outputFormat))
+	if streamer != nil {
+		if err := streamer.ConsumeMessage(result.Message); err != nil {
+			return fmt.Errorf("failed to stream final response: %w", err)
+		}
+		if streamer.wrote {
+			if err := streamer.CloseLine(); err != nil {
+				return fmt.Errorf("failed to finalize streamed response: %w", err)
+			}
+		} else {
+			fmt.Println(content)
+		}
+	} else {
+		fmt.Println(format.FormatOutput(content, outputFormat))
+	}
 
 	logging.Info("Non-interactive run completed", "session_id", sess.ID)
 
