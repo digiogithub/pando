@@ -6,6 +6,7 @@ import (
 	"io"
 	// "log" // Commented out - used in runACPServer which is TODO
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/llm/agent"
+	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
 	// "github.com/digiogithub/pando/internal/mesnada/acp" // Commented out - used in runACPServer which is TODO
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -51,6 +53,10 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 
   # Run a single non-interactive prompt
   pando -p "Explain the use of context in Go"
+
+	# Run a single non-interactive prompt with a specific model for this run
+	pando -p "Explain the use of context in Go" -m copilot.gpt-5.4
+
 
   # Run a single non-interactive prompt with JSON output format
   pando -p "Explain the use of context in Go" -f json
@@ -97,6 +103,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		logFile, _ := cmd.Flags().GetString("log-file")
 		cwd, _ := cmd.Flags().GetString("cwd")
 		prompt, _ := cmd.Flags().GetString("prompt")
+		modelOverride, _ := cmd.Flags().GetString("model")
 		outputFormat, _ := cmd.Flags().GetString("output-format")
 		quiet, _ := cmd.Flags().GetBool("quiet")
 		yolo, _ := cmd.Flags().GetBool("yolo")
@@ -146,6 +153,12 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		if err != nil {
 			return err
 		}
+		if strings.TrimSpace(modelOverride) != "" {
+			if err := config.OverrideAgentModel(config.AgentCoder, models.ModelID(strings.TrimSpace(modelOverride))); err != nil {
+				return fmt.Errorf("failed to override model %q: %w", modelOverride, err)
+			}
+			logging.Debug("Runtime model override applied", "agent", config.AgentCoder, "model", modelOverride)
+		}
 		logging.Debug("Config loaded", "workingDir", cwd, "debug", debug, "logFile", logFile)
 
 		// Connect DB, this will also run migrations
@@ -173,6 +186,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 
 		// Non-interactive mode
 		if prompt != "" {
+			quiet = true
 			// Run non-interactive flow using the App method
 			return app.RunNonInteractive(ctx, prompt, outputFormat, quiet, yoloMode)
 		}
@@ -401,6 +415,7 @@ func init() {
 	rootCmd.Flags().StringP("log-file", "l", "", "Path to log file (enables debug logging to file)")
 	rootCmd.Flags().StringP("cwd", "c", "", "Current working directory")
 	rootCmd.Flags().StringP("prompt", "p", "", "Prompt to run in non-interactive mode")
+	rootCmd.Flags().StringP("model", "m", "", "Override the model for this run without changing the saved config")
 
 	// Add format flag with validation logic
 	rootCmd.Flags().StringP("output-format", "f", format.Text.String(),
@@ -417,5 +432,18 @@ func init() {
 	// Register custom validation for the format flag
 	rootCmd.RegisterFlagCompletionFunc("output-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return format.SupportedFormats, cobra.ShellCompDirectiveNoFileComp
+	})
+
+	rootCmd.RegisterFlagCompletionFunc("model", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		matches := make([]string, 0, len(models.SupportedModels))
+		needle := strings.ToLower(strings.TrimSpace(toComplete))
+		for modelID := range models.SupportedModels {
+			candidate := string(modelID)
+			if needle == "" || strings.Contains(strings.ToLower(candidate), needle) {
+				matches = append(matches, candidate)
+			}
+		}
+		sort.Strings(matches)
+		return matches, cobra.ShellCompDirectiveNoFileComp
 	})
 }
