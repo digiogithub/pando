@@ -18,6 +18,7 @@ import (
 
 	config "github.com/digiogithub/pando/internal/mesnada/config"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
+	rag "github.com/digiogithub/pando/internal/rag"
 )
 
 const (
@@ -44,6 +45,9 @@ type Server struct {
 
 	// ACP support
 	acpHandler *ACPHandler
+
+	// Remembrances support (optional)
+	remembrances *rag.RemembrancesService
 }
 
 // Session represents an MCP session.
@@ -89,7 +93,8 @@ type Config struct {
 	Commit       string
 	UseStdio     bool
 	AppConfig    *config.Config
-	ACPHandler   *ACPHandler // Optional ACP handler for remote connections
+	ACPHandler   *ACPHandler                // Optional ACP handler for remote connections
+	Remembrances *rag.RemembrancesService   // Optional remembrances service
 }
 
 // New creates a new MCP server.
@@ -104,6 +109,7 @@ func New(cfg Config) *Server {
 		useStdio:     cfg.UseStdio,
 		config:       cfg.AppConfig,
 		acpHandler:   cfg.ACPHandler,
+		remembrances: cfg.Remembrances,
 	}
 
 	s.registerTools()

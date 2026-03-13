@@ -153,6 +153,7 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 				UseStdio:     false,
 				AppConfig:    mesnadaCfg.AppConfig,
 				ACPHandler:   acpHandler,
+				Remembrances: app.Remembrances,
 			})
 			app.MesnadaServer = srv
 
