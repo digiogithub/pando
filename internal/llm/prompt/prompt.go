@@ -136,12 +136,18 @@ func getContextFromPaths() string {
 }
 
 func processContextPaths(workDir string, paths []string) string {
+	selectedProjectContextPath, hasSelectedProjectContextPath := config.DetectPreferredProjectContextPath(workDir)
+
 	// Track processed files to avoid duplicates
 	processedFiles := make(map[string]bool)
 	var processedMutex sync.Mutex
 	results := make([]string, 0)
 
 	for _, path := range paths {
+		if hasSelectedProjectContextPath && config.IsPrioritizedProjectContextPath(path) && filepath.Base(path) != selectedProjectContextPath {
+			continue
+		}
+
 		if strings.HasSuffix(path, "/") {
 			_ = filepath.WalkDir(filepath.Join(workDir, path), func(path string, d os.DirEntry, err error) error {
 				if err != nil {
