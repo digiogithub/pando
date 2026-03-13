@@ -3,10 +3,10 @@ Debug = false
 LogFile = ''
 DebugLSP = false
 ContextPaths = []
-AutoCompact = false
+AutoCompact = true
 
 [Data]
-Directory = ''
+Directory = './.pando/data'
 
 [MCPServers]
 [MCPServers.hyper-mcp]
@@ -43,32 +43,32 @@ MaxTokens = 4096
 ReasoningEffort = ''
 
 [Skills]
-Enabled = false
-Paths = []
+Enabled = true
+Paths = ['./agents/skills']
 
 [TUI]
 Theme = ''
 
 [Mesnada]
-Enabled = false
+Enabled = true
 
 [Mesnada.Server]
 Host = ''
-Port = 0
+Port = 5005
 
 [Mesnada.Orchestrator]
-StorePath = ''
-LogDir = ''
-MaxParallel = 0
-DefaultEngine = ''
-DefaultModel = ''
-DefaultMCPConfig = ''
-PersonaPath = ''
+StorePath = './.pando/mesnada'
+LogDir = './.pando/mesnada/logs'
+MaxParallel = 5
+DefaultEngine = 'claude'
+DefaultModel = 'sonnet'
+DefaultMCPConfig = '.github/mcp-config.json'
+PersonaPath = './.pando/mesnada/personas'
 
 [Mesnada.ACP]
-Enabled = false
-DefaultAgent = ''
-AutoPermission = false
+Enabled = true
+DefaultAgent = 'copilot'
+AutoPermission = true
 
 [Mesnada.ACP.Server]
 Enabled = false
@@ -80,7 +80,7 @@ SessionTimeout = '30m'
 RequireAuth = false
 
 [Mesnada.TUI]
-Enabled = false
+Enabled = true
 WebUI = false
 
 [Shell]
