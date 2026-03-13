@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/digiogithub/pando/internal/llm/models"
@@ -63,5 +65,77 @@ func TestValidateAllowsOllamaWithoutAPIKey(t *testing.T) {
 	}
 	if cfg.Providers[models.ProviderOllama].Disabled {
 		t.Fatal("ollama provider was disabled unexpectedly")
+	}
+}
+
+func TestOverrideAgentModelUpdatesMemoryOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".pando.toml")
+	originalConfig := "[Agents]\n[Agents.coder]\nModel = 'openai.gpt-4.1'\n"
+	if err := os.WriteFile(configPath, []byte(originalConfig), 0o644); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	cfg = &Config{
+		WorkingDir: tmpDir,
+		Agents: map[AgentName]Agent{
+			AgentCoder: {
+				Model:     models.GPT41,
+				MaxTokens: 1234,
+			},
+		},
+		Providers: map[models.ModelProvider]Provider{
+			models.ProviderOpenAI: {
+				APIKey: "test-key",
+			},
+		},
+		LSP: make(map[string]LSPConfig),
+	}
+	viper.Reset()
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	if err := OverrideAgentModel(AgentCoder, models.GPT41Mini); err != nil {
+		t.Fatalf("OverrideAgentModel() error = %v", err)
+	}
+
+	if got := cfg.Agents[AgentCoder].Model; got != models.GPT41Mini {
+		t.Fatalf("coder model = %q, want %q", got, models.GPT41Mini)
+	}
+
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+	if string(content) != originalConfig {
+		t.Fatalf("config file was modified unexpectedly\n got: %q\nwant: %q", string(content), originalConfig)
+	}
+}
+
+func TestOverrideAgentModelRejectsUnavailableProvider(t *testing.T) {
+	cfg = &Config{
+		Agents: map[AgentName]Agent{
+			AgentCoder: {
+				Model: models.GPT41,
+			},
+		},
+		Providers: map[models.ModelProvider]Provider{
+			models.ProviderOpenAI: {
+				Disabled: true,
+			},
+		},
+		LSP: make(map[string]LSPConfig),
+	}
+	viper.Reset()
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	err := OverrideAgentModel(AgentCoder, models.GPT41Mini)
+	if err == nil {
+		t.Fatal("OverrideAgentModel() error = nil, want provider validation error")
 	}
 }
