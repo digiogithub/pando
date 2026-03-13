@@ -139,3 +139,28 @@ func TestOverrideAgentModelRejectsUnavailableProvider(t *testing.T) {
 		t.Fatal("OverrideAgentModel() error = nil, want provider validation error")
 	}
 }
+
+func TestResolveProjectInitializationContextPath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	if got := ResolveProjectInitializationContextPath(tmpDir); got != "AGENTS.md" {
+		t.Fatalf("default initialization file = %q, want %q", got, "AGENTS.md")
+	}
+
+	for _, entry := range []struct {
+		name string
+		want string
+	}{
+		{name: "CLAUDE.md", want: "CLAUDE.md"},
+		{name: "PANDO.md", want: "PANDO.md"},
+		{name: "AGENTS.md", want: "AGENTS.md"},
+	} {
+		path := filepath.Join(tmpDir, entry.name)
+		if err := os.WriteFile(path, []byte(entry.name), 0o644); err != nil {
+			t.Fatalf("write %s: %v", entry.name, err)
+		}
+		if got := ResolveProjectInitializationContextPath(tmpDir); got != entry.want {
+			t.Fatalf("after creating %s, ResolveProjectInitializationContextPath() = %q, want %q", entry.name, got, entry.want)
+		}
+	}
+}
