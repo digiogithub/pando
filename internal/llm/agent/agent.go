@@ -14,6 +14,7 @@ import (
 	"github.com/digiogithub/pando/internal/llm/provider"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -55,6 +56,7 @@ type Service interface {
 	IsBusy() bool
 	Update(agentName config.AgentName, modelID models.ModelID) (models.Model, error)
 	Summarize(ctx context.Context, sessionID string) error
+	SetLuaManager(fm *luaengine.FilterManager)
 }
 
 type agent struct {
@@ -70,6 +72,7 @@ type agent struct {
 	agentName         config.AgentName
 	skillManager      *skills.SkillManager
 	contextManager    *skills.ContextManager
+	luaMgr            *luaengine.FilterManager
 
 	activeRequests sync.Map
 }
@@ -140,6 +143,10 @@ func (a *agent) Model() models.Model {
 		return models.Model{}
 	}
 	return a.provider.Model()
+}
+
+func (a *agent) SetLuaManager(fm *luaengine.FilterManager) {
+	a.luaMgr = fm
 }
 
 func (a *agent) Cancel(sessionID string) {
@@ -303,6 +310,21 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		}
 	}
 
+	// Hook 4: hook_conversation_start — may inject context into user content
+	if a.luaMgr != nil && a.luaMgr.IsEnabled() {
+		hookData := map[string]interface{}{
+			"session_id":      sessionID,
+			"is_new_session":  len(msgs) == 0,
+			"message_count":   len(msgs),
+		}
+		result, _ := a.luaMgr.ExecuteHook(ctx, luaengine.HookConversationStart, hookData)
+		if result != nil && result.Modified {
+			if injected, ok := result.Data["injected_context"].(string); ok && injected != "" {
+				content = injected + "\n\n" + content
+			}
+		}
+	}
+
 	userMsg, err := a.createUserMessage(ctx, sessionID, content, attachmentParts)
 	if err != nil {
 		return a.err(fmt.Errorf("failed to create user message: %w", err))
@@ -354,6 +376,20 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 }
 
 func (a *agent) createUserMessage(ctx context.Context, sessionID, content string, attachmentParts []message.ContentPart) (message.Message, error) {
+	// Hook 5: hook_user_prompt — may modify user content before creating message
+	if a.luaMgr != nil && a.luaMgr.IsEnabled() {
+		hookData := map[string]interface{}{
+			"session_id":   sessionID,
+			"user_content": content,
+		}
+		result, _ := a.luaMgr.ExecuteHook(ctx, luaengine.HookUserPrompt, hookData)
+		if result != nil && result.Modified {
+			if modified, ok := result.Data["modified_content"].(string); ok && modified != "" {
+				content = modified
+			}
+		}
+	}
+
 	parts := []message.ContentPart{message.TextContent{Text: content}}
 	parts = append(parts, attachmentParts...)
 	return a.messages.Create(ctx, sessionID, message.CreateMessageParams{
@@ -540,6 +576,16 @@ func (a *agent) processEvent(
 		assistantMsg.AddFinish(event.Response.FinishReason)
 		if err := a.messages.Update(ctx, *assistantMsg); err != nil {
 			return fmt.Errorf("failed to update message: %w", err)
+		}
+		// Hook 6: hook_agent_response_finish — informational, result ignored
+		if a.luaMgr != nil && a.luaMgr.IsEnabled() {
+			hookData := map[string]interface{}{
+				"session_id":    sessionID,
+				"finish_reason": string(event.Response.FinishReason),
+				"input_tokens":  event.Response.Usage.InputTokens,
+				"output_tokens": event.Response.Usage.OutputTokens,
+			}
+			a.luaMgr.ExecuteHook(ctx, luaengine.HookAgentResponseFinish, hookData) //nolint:errcheck
 		}
 		return a.TrackUsage(ctx, sessionID, requestProvider.Model(), event.Response.Usage)
 	}
@@ -858,7 +904,7 @@ func buildSystemMessage(
 	skillManager *skills.SkillManager,
 	activeSkillInstructions []string,
 ) string {
-	systemMessage := prompt.GetAgentPrompt(agentName, modelProvider)
+	systemMessage := prompt.GetAgentPrompt(agentName, modelProvider, globalLuaManager)
 	if skillManager == nil || (agentName != config.AgentCoder && agentName != config.AgentTask) {
 		return systemMessage
 	}

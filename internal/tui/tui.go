@@ -154,6 +154,18 @@ func (a appModel) Init() tea.Cmd {
 	})
 	cmds = append(cmds, tea.EnableMouseCellMotion)
 
+	// Fetch MCP gateway favorites count if the gateway is active.
+	if a.app != nil && a.app.MCPGateway != nil {
+		gw := a.app.MCPGateway
+		cmds = append(cmds, func() tea.Msg {
+			favorites, err := gw.GetFavorites(context.Background())
+			if err != nil {
+				return nil
+			}
+			return core.MCPGatewayMsg{FavoritesCount: len(favorites)}
+		})
+	}
+
 	return tea.Batch(cmds...)
 }
 

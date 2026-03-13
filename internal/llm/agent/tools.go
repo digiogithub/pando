@@ -6,6 +6,7 @@ import (
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/lsp"
+	"github.com/digiogithub/pando/internal/mcpgateway"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
@@ -47,6 +48,7 @@ func CoderAgentTools(
 func CoderAgentToolsWithMesnada(
 	mesnadaOrchestrator *orchestrator.Orchestrator,
 	remembrances *rag.RemembrancesService,
+	gateway *mcpgateway.Gateway,
 	permissions permission.Service,
 	sessions session.Service,
 	messages message.Service,
@@ -54,14 +56,41 @@ func CoderAgentToolsWithMesnada(
 	lspClients map[string]*lsp.Client,
 	skillManager *skills.SkillManager,
 ) []tools.BaseTool {
-	baseTools := CoderAgentTools(
-		permissions,
-		sessions,
-		messages,
-		history,
-		lspClients,
-		skillManager,
-	)
+	ctx := context.Background()
+
+	var baseTools []tools.BaseTool
+	if gateway != nil {
+		// Use gateway-aware MCP tools (catalog + call proxy + favorites).
+		gatewayTools := GetMcpToolsWithGateway(ctx, permissions, gateway)
+		baseTools = append(
+			[]tools.BaseTool{
+				tools.NewBashTool(permissions),
+				tools.NewEditTool(lspClients, permissions, history),
+				tools.NewFetchTool(permissions),
+				tools.NewGlobTool(),
+				tools.NewGrepTool(),
+				tools.NewLsTool(),
+				tools.NewSourcegraphTool(),
+				tools.NewViewTool(lspClients),
+				tools.NewPatchTool(lspClients, permissions, history),
+				tools.NewWriteTool(lspClients, permissions, history),
+				NewAgentTool(sessions, messages, lspClients, skillManager),
+			},
+			gatewayTools...,
+		)
+		if len(lspClients) > 0 {
+			baseTools = append(baseTools, tools.NewDiagnosticsTool(lspClients))
+		}
+	} else {
+		baseTools = CoderAgentTools(
+			permissions,
+			sessions,
+			messages,
+			history,
+			lspClients,
+			skillManager,
+		)
+	}
 	if mesnadaOrchestrator != nil {
 		baseTools = append(baseTools,
 			tools.NewMesnadaSpawnTool(mesnadaOrchestrator),

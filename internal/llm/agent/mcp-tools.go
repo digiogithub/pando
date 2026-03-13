@@ -8,6 +8,8 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/luaengine"
+	"github.com/digiogithub/pando/internal/mcpgateway"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/version"
 
@@ -15,6 +17,14 @@ import (
 	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 )
+
+// globalLuaManager is the package-level Lua filter manager, set during app initialization.
+var globalLuaManager *luaengine.FilterManager
+
+// SetLuaManager sets the global Lua filter manager used for MCP tool input/output filtering.
+func SetLuaManager(fm *luaengine.FilterManager) {
+	globalLuaManager = fm
+}
 
 type mcpTool struct {
 	mcpName     string
@@ -46,7 +56,7 @@ func (b *mcpTool) Info() tools.ToolInfo {
 	}
 }
 
-func runTool(ctx context.Context, c MCPClient, toolName string, input string) (tools.ToolResponse, error) {
+func runTool(ctx context.Context, c MCPClient, serverName string, toolName string, input string) (tools.ToolResponse, error) {
 	logging.Debug("runTool", "toolName", toolName, "inputLength", len(input))
 	defer c.Close()
 	initRequest := mcp.InitializeRequest{}
@@ -67,6 +77,16 @@ func runTool(ctx context.Context, c MCPClient, toolName string, input string) (t
 	if err = json.Unmarshal([]byte(input), &args); err != nil {
 		return tools.NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
 	}
+
+	// Apply Lua input filter if manager is available
+	if globalLuaManager != nil && globalLuaManager.IsEnabled() {
+		hookCtx := luaengine.NewInputContext(serverName, toolName, args, "")
+		if filtered, ferr := globalLuaManager.ApplyInputFilter(ctx, hookCtx); ferr == nil && filtered.Modified {
+			args = filtered.Data
+			logging.Debug("Lua input filter applied", "toolName", toolName, "serverName", serverName)
+		}
+	}
+
 	toolRequest.Params.Arguments = args
 	result, err := c.CallTool(ctx, toolRequest)
 	if err != nil {
@@ -79,6 +99,18 @@ func runTool(ctx context.Context, c MCPClient, toolName string, input string) (t
 			output = v.Text
 		} else {
 			output = fmt.Sprintf("%v", v)
+		}
+	}
+
+	// Apply Lua output filter if manager is available
+	if globalLuaManager != nil && globalLuaManager.IsEnabled() {
+		resultData := map[string]interface{}{"output": output}
+		hookCtx := luaengine.NewOutputContext(serverName, toolName, resultData, "", 0)
+		if filtered, ferr := globalLuaManager.ApplyOutputFilter(ctx, hookCtx); ferr == nil && filtered.Modified {
+			if out, ok := filtered.Data["output"].(string); ok {
+				output = out
+			}
+			logging.Debug("Lua output filter applied", "toolName", toolName, "serverName", serverName)
 		}
 	}
 
@@ -117,7 +149,7 @@ func (b *mcpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolRes
 		if err != nil {
 			return tools.NewTextErrorResponse(err.Error()), nil
 		}
-		return runTool(ctx, c, b.tool.Name, params.Input)
+		return runTool(ctx, c, b.mcpName, b.tool.Name, params.Input)
 	case config.MCPSse:
 		c, err := client.NewSSEMCPClient(
 			b.mcpConfig.URL,
@@ -126,7 +158,7 @@ func (b *mcpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolRes
 		if err != nil {
 			return tools.NewTextErrorResponse(err.Error()), nil
 		}
-		return runTool(ctx, c, b.tool.Name, params.Input)
+		return runTool(ctx, c, b.mcpName, b.tool.Name, params.Input)
 	case config.MCPStreamableHTTP:
 		c, err := client.NewStreamableHttpClient(
 			b.mcpConfig.URL,
@@ -135,7 +167,7 @@ func (b *mcpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolRes
 		if err != nil {
 			return tools.NewTextErrorResponse(err.Error()), nil
 		}
-		return runTool(ctx, c, b.tool.Name, params.Input)
+		return runTool(ctx, c, b.mcpName, b.tool.Name, params.Input)
 	}
 
 	return tools.NewTextErrorResponse("invalid mcp type"), nil
@@ -226,4 +258,50 @@ func GetMcpTools(ctx context.Context, permissions permission.Service) []tools.Ba
 
 	logging.Debug("MCP tools loaded", "totalToolCount", len(mcpTools))
 	return mcpTools
+}
+
+// GetMcpToolsWithGateway returns MCP-backed tools for the LLM agent.
+// When gw is non-nil (gateway mode), it exposes two proxy tools plus any
+// favorite tools as direct wrappers. When gw is nil it falls back to the
+// standard per-server tool list.
+func GetMcpToolsWithGateway(ctx context.Context, permissions permission.Service, gw *mcpgateway.Gateway) []tools.BaseTool {
+	if gw == nil {
+		return GetMcpTools(ctx, permissions)
+	}
+
+	result := []tools.BaseTool{
+		mcpgateway.NewCatalogTool(gw),
+		mcpgateway.NewCallToolProxy(gw),
+	}
+
+	// Add favorite tools as direct wrappers so the LLM can call them without
+	// going through the proxy (lower latency, richer schema visibility).
+	favorites, err := gw.GetFavorites(ctx)
+	if err != nil {
+		logging.Error("MCP gateway: failed to load favorites", "error", err)
+		return result
+	}
+
+	cfg := config.Get()
+	if cfg == nil {
+		return result
+	}
+
+	for _, fav := range favorites {
+		srv, ok := cfg.MCPServers[fav.ServerName]
+		if !ok {
+			continue
+		}
+		// Reconstruct an mcp.Tool from the registry data so we can reuse the
+		// existing NewMcpTool helper.
+		t := mcp.Tool{
+			Name:        fav.ToolName,
+			Description: fav.Description,
+		}
+		t.InputSchema.Properties = fav.InputSchema
+		result = append(result, NewMcpTool(fav.ServerName, t, permissions, srv))
+	}
+
+	logging.Debug("MCP gateway tools assembled", "total", len(result), "favorites", len(favorites))
+	return result
 }

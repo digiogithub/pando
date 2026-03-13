@@ -43,6 +43,13 @@ type BreadcrumbsUpdatedMsg struct {
 	Files []string
 }
 
+// MCPGatewayMsg carries the current number of MCP gateway favorite tools.
+// Send this message whenever the favorites count changes (e.g., after
+// gateway initialization or after a tool invocation updates the stats).
+type MCPGatewayMsg struct {
+	FavoritesCount int
+}
+
 const maxBreadcrumbs = 5
 const maxBreadcrumbNameLen = 20
 
@@ -51,12 +58,13 @@ type StatusCmp interface {
 }
 
 type statusCmp struct {
-	info        util.InfoMsg
-	width       int
-	messageTTL  time.Duration
-	lspClients  map[string]*lsp.Client
-	session     session.Session
-	breadcrumbs []string // recently edited file paths
+	info               util.InfoMsg
+	width              int
+	messageTTL         time.Duration
+	lspClients         map[string]*lsp.Client
+	session            session.Session
+	breadcrumbs        []string // recently edited file paths
+	mcpFavoritesCount  int      // number of MCP gateway favorite tools (0 = gateway off)
 }
 
 // clearMessageCmd is a command that clears status messages after a timeout
@@ -100,6 +108,8 @@ func (m statusCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.breadcrumbs) > maxBreadcrumbs {
 			m.breadcrumbs = m.breadcrumbs[len(m.breadcrumbs)-maxBreadcrumbs:]
 		}
+	case MCPGatewayMsg:
+		m.mcpFavoritesCount = msg.FavoritesCount
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			return m.handleMouseClick(msg)
@@ -287,6 +297,14 @@ func (m statusCmp) View() string {
 	}
 
 	status += diagnostics
+	if m.mcpFavoritesCount > 0 {
+		t := theme.CurrentTheme()
+		mcpBadge := styles.Padded().
+			Background(t.BackgroundDarker()).
+			Foreground(t.Primary()).
+			Render(fmt.Sprintf("⚡%d", m.mcpFavoritesCount))
+		status += mcpBadge
+	}
 	status += tuizone.MarkStatusModel(m.model())
 	return status
 }

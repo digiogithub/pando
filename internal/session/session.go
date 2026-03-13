@@ -3,12 +3,22 @@ package session
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/pubsub"
 )
+
+// globalLuaManager is the package-level Lua filter manager for session lifecycle hooks.
+var globalLuaManager *luaengine.FilterManager
+
+// SetLuaManager sets the Lua filter manager used for session lifecycle hooks.
+func SetLuaManager(fm *luaengine.FilterManager) {
+	globalLuaManager = fm
+}
 
 type Session struct {
 	ID               string
@@ -50,6 +60,17 @@ func (s *service) Create(ctx context.Context, title string) (Session, error) {
 	session := s.fromDBItem(dbSession)
 	s.Publish(pubsub.CreatedEvent, session)
 	logging.Debug("Session created", "title", title)
+
+	// Hook 2: hook_session_start — informational
+	if globalLuaManager != nil && globalLuaManager.IsEnabled() {
+		hookData := map[string]interface{}{
+			"session_id": session.ID,
+			"title":      session.Title,
+			"created_at": time.Unix(session.CreatedAt, 0).Format(time.RFC3339),
+		}
+		globalLuaManager.ExecuteHook(ctx, luaengine.HookSessionStart, hookData) //nolint:errcheck
+	}
+
 	return session, nil
 }
 
@@ -99,8 +120,20 @@ func (s *service) Get(ctx context.Context, id string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
+	session := s.fromDBItem(dbSession)
 	logging.Debug("Session retrieved", "sessionID", id)
-	return s.fromDBItem(dbSession), nil
+
+	// Hook 3: hook_session_restore — informational
+	if globalLuaManager != nil && globalLuaManager.IsEnabled() {
+		hookData := map[string]interface{}{
+			"session_id":    session.ID,
+			"title":         session.Title,
+			"message_count": session.MessageCount,
+		}
+		globalLuaManager.ExecuteHook(ctx, luaengine.HookSessionRestore, hookData) //nolint:errcheck
+	}
+
+	return session, nil
 }
 
 func (s *service) Save(ctx context.Context, session Session) (Session, error) {
