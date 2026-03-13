@@ -32,6 +32,22 @@ func (s *Server) registerTools() {
 	s.tools["get_task_output"] = s.toolGetTaskOutput
 	s.tools["set_progress"] = s.toolSetProgress
 	s.tools["acp_session_control"] = s.toolACPSessionControl
+
+	if s.remembrances != nil {
+		s.tools["kb_add_document"] = s.toolKBAddDocument
+		s.tools["kb_search_documents"] = s.toolKBSearchDocuments
+		s.tools["kb_get_document"] = s.toolKBGetDocument
+		s.tools["kb_delete_document"] = s.toolKBDeleteDocument
+		s.tools["save_event"] = s.toolSaveEvent
+		s.tools["search_events"] = s.toolSearchEvents
+		s.tools["code_index_project"] = s.toolCodeIndexProject
+		s.tools["code_hybrid_search"] = s.toolCodeHybridSearch
+		s.tools["code_find_symbol"] = s.toolCodeFindSymbol
+		s.tools["code_get_symbols_overview"] = s.toolCodeGetSymbolsOverview
+		s.tools["code_get_project_stats"] = s.toolCodeGetProjectStats
+		s.tools["code_reindex_file"] = s.toolCodeReindexFile
+		s.tools["code_list_projects"] = s.toolCodeListProjects
+	}
 }
 
 func (s *Server) detectEngineForModel(modelID string) models.Engine {
@@ -59,6 +75,261 @@ func (s *Server) detectEngineForModel(modelID string) models.Engine {
 	}
 
 	return ""
+}
+
+func (s *Server) getRemembrancesToolDefinitions() []Tool {
+	if s.remembrances == nil {
+		return nil
+	}
+	return []Tool{
+		{
+			Name:        "kb_add_document",
+			Description: "Add or update a document in the knowledge base with automatic chunking and embedding.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "Unique path/identifier for the document (e.g. 'project/readme.md')",
+					},
+					"content": map[string]interface{}{
+						"type":        "string",
+						"description": "The full text content to store",
+					},
+					"metadata": map[string]interface{}{
+						"type":        "object",
+						"description": "Optional key-value metadata to associate with the document",
+					},
+				},
+				"required": []string{"path", "content"},
+			},
+		},
+		{
+			Name:        "kb_search_documents",
+			Description: "Search the knowledge base for documents semantically similar to a query using hybrid vector + FTS search.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "The search query in natural language",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Maximum number of results to return (default: 10)",
+						"default":     10,
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+		{
+			Name:        "kb_get_document",
+			Description: "Retrieve a specific document from the knowledge base by its path.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "The document path/identifier to retrieve",
+					},
+				},
+				"required": []string{"path"},
+			},
+		},
+		{
+			Name:        "kb_delete_document",
+			Description: "Remove a document and all its chunks from the knowledge base.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "The document path/identifier to delete",
+					},
+				},
+				"required": []string{"path"},
+			},
+		},
+		{
+			Name:        "save_event",
+			Description: "Store a temporal event with subject, content, and optional metadata. Events are searchable by semantic similarity and time filters.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"subject": map[string]interface{}{
+						"type":        "string",
+						"description": "Subject/category for the event (e.g. user ID, session ID, topic)",
+					},
+					"content": map[string]interface{}{
+						"type":        "string",
+						"description": "The event text content",
+					},
+					"metadata": map[string]interface{}{
+						"type":        "object",
+						"description": "Optional key-value metadata to associate with the event",
+					},
+				},
+				"required": []string{"subject", "content"},
+			},
+		},
+		{
+			Name:        "search_events",
+			Description: "Search temporal events using hybrid vector + FTS search with optional time filters.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "The search query in natural language",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Maximum number of results to return (default: 20)",
+						"default":     20,
+					},
+					"from_date": map[string]interface{}{
+						"type":        "string",
+						"description": "Filter events from this date (RFC3339 format, e.g. '2024-01-01T00:00:00Z')",
+					},
+					"to_date": map[string]interface{}{
+						"type":        "string",
+						"description": "Filter events up to this date (RFC3339 format)",
+					},
+					"subject": map[string]interface{}{
+						"type":        "string",
+						"description": "Filter by subject/category",
+					},
+				},
+			},
+		},
+		{
+			Name:        "code_index_project",
+			Description: "Index all supported source files in a project directory for semantic code search. Runs asynchronously and returns a job ID.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"project_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Unique identifier for the project",
+					},
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "Absolute path to the project root directory",
+					},
+				},
+				"required": []string{"project_id", "path"},
+			},
+		},
+		{
+			Name:        "code_hybrid_search",
+			Description: "Search code symbols using hybrid vector + FTS search across an indexed project.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "Search query in natural language or code",
+					},
+					"project_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Project ID to search within",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Maximum number of results (default: 10)",
+						"default":     10,
+					},
+				},
+				"required": []string{"query", "project_id"},
+			},
+		},
+		{
+			Name:        "code_find_symbol",
+			Description: "Find symbols (functions, types, methods, etc.) by name in an indexed project.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"name": map[string]interface{}{
+						"type":        "string",
+						"description": "Symbol name or name path pattern to find",
+					},
+					"project_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Project ID to search within",
+					},
+					"symbol_type": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional symbol type filter (e.g. 'function', 'type', 'method', 'interface')",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Maximum number of results (default: 50)",
+						"default":     50,
+					},
+				},
+				"required": []string{"name", "project_id"},
+			},
+		},
+		{
+			Name:        "code_get_symbols_overview",
+			Description: "Get a high-level overview of top-level symbols in a specific file.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"file_path": map[string]interface{}{
+						"type":        "string",
+						"description": "Relative file path within the project",
+					},
+					"project_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Project ID",
+					},
+				},
+				"required": []string{"file_path", "project_id"},
+			},
+		},
+		{
+			Name:        "code_get_project_stats",
+			Description: "Get statistics for an indexed project including file count, symbol count, and language breakdown.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"project_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Project ID to get stats for",
+					},
+				},
+				"required": []string{"project_id"},
+			},
+		},
+		{
+			Name:        "code_reindex_file",
+			Description: "Re-index a single file within an already indexed project.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"project_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Project ID",
+					},
+					"file_path": map[string]interface{}{
+						"type":        "string",
+						"description": "Relative file path within the project to re-index",
+					},
+				},
+				"required": []string{"project_id", "file_path"},
+			},
+		},
+		{
+			Name:        "code_list_projects",
+			Description: "List all indexed code projects with their status and statistics.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+	}
 }
 
 func (s *Server) getToolDefinitions() []Tool {
@@ -98,7 +369,7 @@ func (s *Server) getToolDefinitions() []Tool {
 		modelEnum = append(modelEnum, modelID)
 	}
 
-	return []Tool{
+	tools := []Tool{
 		{
 			Name:        "spawn_agent",
 			Description: "Spawn a new CLI agent to execute a task. Supports multiple engines: 'copilot' (GitHub Copilot CLI, default), 'claude-code' (Anthropic Claude CLI), 'gemini-cli' (Google Gemini CLI), 'opencode' (OpenCode.ai CLI), 'ollama-claude' (Ollama Claude interface), or 'ollama-opencode' (Ollama OpenCode interface). The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
@@ -434,6 +705,9 @@ func (s *Server) getToolDefinitions() []Tool {
 			},
 		},
 	}
+
+	tools = append(tools, s.getRemembrancesToolDefinitions()...)
+	return tools
 }
 
 func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (interface{}, error) {
