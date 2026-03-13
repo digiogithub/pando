@@ -408,16 +408,23 @@ func (m *messagesCmp) renderView() {
 		)
 	}
 
-	m.viewport.SetContent(
-		baseStyle.
-			Width(m.width).
-			Render(
-				lipgloss.JoinVertical(
-					lipgloss.Top,
-					messages...,
-				),
+	fullContent := baseStyle.
+		Width(m.width).
+		Render(
+			lipgloss.JoinVertical(
+				lipgloss.Top,
+				messages...,
 			),
-	)
+		)
+
+	// Build plain-text lines for mouse selection/copy
+	rawLines := strings.Split(fullContent, "\n")
+	m.contentLines = make([]string, len(rawLines))
+	for i, line := range rawLines {
+		m.contentLines[i] = ansi.Strip(line)
+	}
+
+	m.viewport.SetContent(fullContent)
 }
 
 func (m *messagesCmp) View() string {
