@@ -28,6 +28,7 @@ import (
 	mesnadaServer "github.com/digiogithub/pando/internal/mesnada/server"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
+	rag "github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
 	"github.com/digiogithub/pando/internal/tui/theme"
@@ -46,6 +47,7 @@ type App struct {
 	SkillManager        *skills.SkillManager
 	MesnadaOrchestrator *mesnadaOrch.Orchestrator
 	MesnadaServer       *mesnadaServer.Server
+	Remembrances        *rag.RemembrancesService
 
 	clientsMutex sync.RWMutex
 
@@ -86,8 +88,22 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 	// Refresh dynamic models from configured providers in the background
 	go app.refreshDynamicModels(ctx)
 
-	// Initialize Mesnada orchestrator if enabled
+	// Initialize Remembrances service if enabled
 	cfg := config.Get()
+	if cfg != nil {
+		remembrances, err := rag.NewRemembrancesService(conn, &cfg.Remembrances)
+		if err != nil {
+			logging.Error("Failed to create remembrances service", "error", err)
+		} else {
+			app.Remembrances = remembrances
+			if remembrances != nil {
+				logging.Info("Remembrances service initialized")
+			}
+		}
+	}
+
+	// Initialize Mesnada orchestrator if enabled
+	cfg = config.Get()
 	if cfg != nil && cfg.Mesnada.Enabled {
 		mesnadaCfg := convertMesnadaConfig(cfg)
 		orch, err := mesnadaOrch.New(mesnadaCfg)
@@ -147,7 +163,7 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 				}
 			}()
 			logging.Info("Mesnada orchestrator started", "addr", addr)
-		logging.Debug("Mesnada orchestrator created", "addr", addr)
+			logging.Debug("Mesnada orchestrator created", "addr", addr)
 		}
 	}
 
@@ -158,6 +174,7 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 		app.Messages,
 		agent.CoderAgentToolsWithMesnada(
 			app.MesnadaOrchestrator,
+			app.Remembrances,
 			app.Permissions,
 			app.Sessions,
 			app.Messages,

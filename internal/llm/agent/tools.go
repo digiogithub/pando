@@ -9,6 +9,7 @@ import (
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
+	"github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
 )
@@ -45,6 +46,7 @@ func CoderAgentTools(
 
 func CoderAgentToolsWithMesnada(
 	mesnadaOrchestrator *orchestrator.Orchestrator,
+	remembrances *rag.RemembrancesService,
 	permissions permission.Service,
 	sessions session.Service,
 	messages message.Service,
@@ -68,6 +70,25 @@ func CoderAgentToolsWithMesnada(
 			tools.NewMesnadaWaitTaskTool(mesnadaOrchestrator),
 			tools.NewMesnadaCancelTaskTool(mesnadaOrchestrator),
 			tools.NewMesnadaGetOutputTool(mesnadaOrchestrator),
+		)
+	}
+	if remembrances != nil {
+		baseTools = append(baseTools,
+			tools.NewKBAddDocumentTool(remembrances.KB),
+			tools.NewKBSearchDocumentsTool(remembrances.KB),
+			tools.NewKBGetDocumentTool(remembrances.KB),
+			tools.NewKBDeleteDocumentTool(remembrances.KB),
+			tools.NewSaveEventTool(remembrances.Events),
+			tools.NewSearchEventsTool(remembrances.Events),
+			tools.NewCodeIndexProjectTool(remembrances.Code),
+			tools.NewCodeIndexStatusTool(remembrances.Code),
+			tools.NewCodeHybridSearchTool(remembrances.Code),
+			tools.NewCodeFindSymbolTool(remembrances.Code),
+			tools.NewCodeGetSymbolsOverviewTool(remembrances.Code),
+			tools.NewCodeGetProjectStatsTool(remembrances.Code),
+			tools.NewCodeReindexFileTool(remembrances.Code),
+			tools.NewCodeListProjectsTool(remembrances.Code),
+			tools.NewCodeSearchPatternTool(remembrances.Code),
 		)
 	}
 	return baseTools
