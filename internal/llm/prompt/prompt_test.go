@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/digiogithub/pando/internal/config"
@@ -13,7 +14,8 @@ import (
 )
 
 func TestGetContextFromPaths(t *testing.T) {
-	t.Parallel()
+	resetContextCache()
+	t.Cleanup(resetContextCache)
 
 	tmpDir := t.TempDir()
 	_, err := config.Load(tmpDir, false)
@@ -38,6 +40,24 @@ func TestGetContextFromPaths(t *testing.T) {
 	context := getContextFromPaths()
 	expectedContext := fmt.Sprintf("# From:%s/file.txt\nfile.txt: test content\n# From:%s/directory/file_a.txt\ndirectory/file_a.txt: test content\n# From:%s/directory/file_b.txt\ndirectory/file_b.txt: test content\n# From:%s/directory/file_c.txt\ndirectory/file_c.txt: test content", tmpDir, tmpDir, tmpDir, tmpDir)
 	assert.Equal(t, expectedContext, context)
+}
+
+func TestProcessContextPathsUsesFirstProjectMemoryFileByPriority(t *testing.T) {
+	tmpDir := t.TempDir()
+	createTestFiles(t, tmpDir, []string{"AGENTS.md", "PANDO.md", "CLAUDE.md"})
+
+	context := processContextPaths(tmpDir, []string{"AGENTS.md", "PANDO.md", "CLAUDE.md"})
+	expected := fmt.Sprintf("# From:%s/AGENTS.md\nAGENTS.md: test content", tmpDir)
+	assert.Equal(t, expected, context)
+}
+
+func TestProcessContextPathsFallsBackToNextPriorityFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	createTestFiles(t, tmpDir, []string{"PANDO.md", "CLAUDE.md"})
+
+	context := processContextPaths(tmpDir, []string{"AGENTS.md", "PANDO.md", "CLAUDE.md"})
+	expected := fmt.Sprintf("# From:%s/PANDO.md\nPANDO.md: test content", tmpDir)
+	assert.Equal(t, expected, context)
 }
 
 func TestInjectSkillsMetadata(t *testing.T) {
@@ -82,4 +102,9 @@ func createTestFiles(t *testing.T, tmpDir string, testFiles []string) {
 			require.NoError(t, err)
 		}
 	}
+}
+
+func resetContextCache() {
+	onceContext = sync.Once{}
+	contextContent = ""
 }
