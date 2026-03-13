@@ -1,4 +1,4 @@
-# Binaries for programs and plugins
+27;7;84~# Binaries for programs and plugins
 *.exe
 *.exe~
 *.dll
@@ -39,6 +39,10 @@ Thumbs.db
 # Local environment variables
 .env
 .env.local
+
+**/node_modules/
+node_modules/
+
 
 .pando/
 

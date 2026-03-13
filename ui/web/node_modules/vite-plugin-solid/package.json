@@ -1,0 +1,82 @@
+{
+  "name": "vite-plugin-solid",
+  "version": "2.11.10",
+  "description": "solid-js integration plugin for vite 3/4/5/6",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "main": "dist/cjs/index.cjs",
+  "module": "dist/esm/index.mjs",
+  "types": "dist/types/src/index.d.ts",
+  "exports": {
+    "types": "./dist/types/src/index.d.ts",
+    "import": "./dist/esm/index.mjs",
+    "node": "./dist/cjs/index.cjs",
+    "require": "./dist/cjs/index.cjs",
+    "default": "./dist/cjs/index.cjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/solidjs/vite-plugin-solid.git"
+  },
+  "keywords": [
+    "vite",
+    "vite plugin",
+    "vitejs",
+    "vitejs plugin",
+    "vite-plugin",
+    "solid"
+  ],
+  "author": "Alexandre Mouton-Brady <amoutonbrady@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/solidjs/vite-plugin-solid/issues"
+  },
+  "homepage": "https://github.com/solidjs/vite-plugin-solid#readme",
+  "dependencies": {
+    "@babel/core": "^7.23.3",
+    "@types/babel__core": "^7.20.4",
+    "babel-preset-solid": "^1.8.4",
+    "merge-anything": "^5.1.7",
+    "solid-refresh": "^0.6.3",
+    "vitefu": "^1.0.4"
+  },
+  "devDependencies": {
+    "@babel/preset-env": "^7.23.3",
+    "@babel/preset-typescript": "^7.23.3",
+    "@changesets/cli": "^2.27.1",
+    "@rollup/plugin-babel": "^6.0.4",
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@skypack/package-check": "^0.2.2",
+    "@types/node": "^18.18.4",
+    "cypress": "^14.0.0",
+    "cypress-visual-regression": "^5.2.2",
+    "cypress-vite": "^1.6.0",
+    "cypress-wait-until": "^3.0.2",
+    "prettier": "^3.1.0",
+    "rollup": "^4.5.0",
+    "rollup-plugin-cleaner": "^1.0.0",
+    "solid-js": "^1.9.3",
+    "typescript": "^5.2.2",
+    "vite": "^6.0.0"
+  },
+  "peerDependencies": {
+    "@testing-library/jest-dom": "^5.16.6 || ^5.17.0 || ^6.*",
+    "solid-js": "^1.7.2",
+    "vite": "^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@testing-library/jest-dom": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "build": "rollup -c && tsc --emitDeclarationOnly",
+    "dev": "rollup -c -w",
+    "release": "pnpm build && changeset publish",
+    "check": "package-check",
+    "test": "node scripts/test-examples.ts"
+  }
+}
