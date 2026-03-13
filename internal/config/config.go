@@ -1602,7 +1602,7 @@ func tryAutoDetectOllama() bool {
 		cfg.Providers = make(map[models.ModelProvider]Provider)
 	}
 	cfg.Providers[models.ProviderOllama] = Provider{}
-	logging.Info("Auto-detected Ollama", "url", pingURL)
+	logging.Debug("Auto-detected Ollama", "url", pingURL)
 	return true
 }
 
