@@ -12,6 +12,7 @@ import (
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/rag/embeddings"
 	"github.com/digiogithub/pando/internal/tui/components/settings"
 	"github.com/digiogithub/pando/internal/tui/layout"
 	"github.com/digiogithub/pando/internal/tui/theme"
@@ -90,6 +91,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		buildMCPServersSection(cfg),
 		buildLSPSection(cfg),
 		buildMesnadaSection(cfg),
+		buildRemembrancesSection(cfg),
 	}
 }
 
@@ -463,6 +465,186 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 	}
 }
 
+func buildRemembrancesSection(cfg *config.Config) settings.Section {
+	rem := cfg.Remembrances
+	useSameModel := rem.UseSameModel
+
+	providerOptions := []string{"ollama", "openai", "google", "anthropic"}
+	docProviderModels := remembrancesModelsForProvider(rem.DocumentEmbeddingProvider)
+
+	codeProvider := rem.CodeEmbeddingProvider
+	codeModel := rem.CodeEmbeddingModel
+	if useSameModel {
+		codeProvider = rem.DocumentEmbeddingProvider
+		codeModel = rem.DocumentEmbeddingModel
+	}
+	codeProviderModels := remembrancesModelsForProvider(codeProvider)
+
+	docDimension := embeddings.GetModelDimension(rem.DocumentEmbeddingModel)
+	codeDimension := embeddings.GetModelDimension(codeModel)
+
+	fields := []settings.Field{
+		{
+			Label: "Enabled",
+			Key:   "remembrances.enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(rem.Enabled),
+		},
+	}
+
+	if !rem.Enabled {
+		fields = append(fields, settings.Field{
+			Label:    "Info",
+			Key:      "remembrances.info.disabled",
+			Value:    "Remembrances system is disabled. Enable it to configure embedding providers and models.",
+			Type:     settings.FieldText,
+			ReadOnly: true,
+		})
+		return settings.Section{Title: "Remembrances", Fields: fields}
+	}
+
+	fields = append(fields,
+		settings.Field{
+			Label: "Use Same Model",
+			Key:   "remembrances.use_same_model",
+			Type:  settings.FieldToggle,
+			Value: boolString(useSameModel),
+		},
+		settings.Field{
+			Label:    "Warning",
+			Key:      "remembrances.warning.reembed",
+			Type:     settings.FieldText,
+			Value:    "Changing embedding providers or models requires re-embedding existing Remembrances content.",
+			ReadOnly: true,
+		},
+	)
+
+	docDimStr := "auto-detect"
+	if docDimension > 0 {
+		docDimStr = fmt.Sprintf("%d dims", docDimension)
+	}
+	fields = append(fields,
+		settings.Field{
+			Label:   "Doc Provider",
+			Key:     "remembrances.document_embedding_provider",
+			Type:    settings.FieldSelect,
+			Value:   rem.DocumentEmbeddingProvider,
+			Options: ensureOption(providerOptions, rem.DocumentEmbeddingProvider),
+		},
+		settings.Field{
+			Label:   "Doc Model",
+			Key:     "remembrances.document_embedding_model",
+			Type:    settings.FieldSelect,
+			Value:   rem.DocumentEmbeddingModel,
+			Options: ensureOption(docProviderModels, rem.DocumentEmbeddingModel),
+		},
+		settings.Field{
+			Label:    "Doc Suggestions",
+			Key:      "remembrances.document_embedding_suggestions",
+			Type:     settings.FieldText,
+			Value:    remembrancesSuggestionsText(docProviderModels),
+			ReadOnly: true,
+		},
+		settings.Field{
+			Label:    "Doc Dims",
+			Key:      "remembrances.doc_dims_info",
+			Type:     settings.FieldText,
+			Value:    docDimStr,
+			ReadOnly: true,
+		},
+	)
+
+	codeDimStr := "auto-detect"
+	if codeDimension > 0 {
+		codeDimStr = fmt.Sprintf("%d dims", codeDimension)
+	}
+	fields = append(fields,
+		settings.Field{
+			Label:    "Code Provider",
+			Key:      "remembrances.code_embedding_provider",
+			Type:     settings.FieldSelect,
+			Value:    codeProvider,
+			Options:  ensureOption(providerOptions, codeProvider),
+			Disabled: useSameModel,
+		},
+		settings.Field{
+			Label:    "Code Model",
+			Key:      "remembrances.code_embedding_model",
+			Type:     settings.FieldSelect,
+			Value:    codeModel,
+			Options:  ensureOption(codeProviderModels, codeModel),
+			Disabled: useSameModel,
+		},
+		settings.Field{
+			Label:    "Code Suggestions",
+			Key:      "remembrances.code_embedding_suggestions",
+			Type:     settings.FieldText,
+			Value:    remembrancesSuggestionsText(codeProviderModels),
+			ReadOnly: true,
+			Disabled: useSameModel,
+		},
+		settings.Field{
+			Label:    "Code Dims",
+			Key:      "remembrances.code_dims_info",
+			Type:     settings.FieldText,
+			Value:    codeDimStr,
+			ReadOnly: true,
+		},
+	)
+
+	fields = append(fields,
+		settings.Field{
+			Label: "Chunk Size",
+			Key:   "remembrances.chunk_size",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(rem.ChunkSize),
+		},
+		settings.Field{
+			Label: "Chunk Overlap",
+			Key:   "remembrances.chunk_overlap",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(rem.ChunkOverlap),
+		},
+	)
+
+	validationMessage := "Configuration looks valid."
+	if err := validateRemembrancesConfig(cfg, rem); err != nil {
+		validationMessage = err.Error()
+	}
+	fields = append(fields, settings.Field{
+		Label:    "Validation",
+		Key:      "remembrances.validation",
+		Type:     settings.FieldText,
+		Value:    validationMessage,
+		ReadOnly: true,
+	})
+
+	return settings.Section{Title: "Remembrances", Fields: fields}
+}
+
+func remembrancesModelsForProvider(provider string) []string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "ollama":
+		return []string{"nomic-embed-text", "mxbai-embed-large", "all-minilm"}
+	case "openai":
+		return []string{"text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"}
+	case "google", "gemini":
+		return []string{"text-embedding-004"}
+	case "anthropic", "voyage":
+		return []string{"voyage-3", "voyage-3-large", "voyage-code-3"}
+	default:
+		return []string{}
+	}
+}
+
+func remembrancesSuggestionsText(models []string) string {
+	if len(models) == 0 {
+		return "No suggested models available for this provider."
+	}
+
+	return strings.Join(models, ", ")
+}
+
 func supportedModelOptions(cfg *config.Config) []string {
 	availableProviders := make(map[models.ModelProvider]struct{})
 	for providerID, providerCfg := range cfg.Providers {
@@ -575,6 +757,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveLSP(field)
 	case strings.HasPrefix(field.Key, "mesnada."):
 		return saveMesnada(field)
+	case strings.HasPrefix(field.Key, "remembrances."):
+		return saveRemembrances(field)
 	default:
 		return fmt.Errorf("unsupported setting %q", field.Key)
 	}
@@ -854,6 +1038,154 @@ func saveMesnada(field settings.Field) error {
 	}
 
 	return config.UpdateMesnada(mesnadaCfg)
+}
+
+func saveRemembrances(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	remCfg := cfg.Remembrances
+	switch field.Key {
+	case "remembrances.enabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Remembrances enabled value: %w", err)
+		}
+		remCfg.Enabled = enabled
+	case "remembrances.use_same_model":
+		useSameModel, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Remembrances same-model value: %w", err)
+		}
+		remCfg.UseSameModel = useSameModel
+	case "remembrances.document_embedding_provider":
+		remCfg.DocumentEmbeddingProvider = strings.TrimSpace(field.Value)
+		if defaultModel := embeddings.GetDefaultModel(remCfg.DocumentEmbeddingProvider); defaultModel != "" {
+			remCfg.DocumentEmbeddingModel = defaultModel
+		}
+	case "remembrances.document_embedding_model":
+		remCfg.DocumentEmbeddingModel = strings.TrimSpace(field.Value)
+	case "remembrances.code_embedding_provider":
+		remCfg.CodeEmbeddingProvider = strings.TrimSpace(field.Value)
+		if defaultModel := embeddings.GetDefaultModel(remCfg.CodeEmbeddingProvider); defaultModel != "" {
+			remCfg.CodeEmbeddingModel = defaultModel
+		}
+	case "remembrances.code_embedding_model":
+		remCfg.CodeEmbeddingModel = strings.TrimSpace(field.Value)
+	case "remembrances.chunk_size":
+		size, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid chunk size: %w", err)
+		}
+		if size < 100 || size > 10000 {
+			return fmt.Errorf("chunk size must be between 100 and 10000")
+		}
+		remCfg.ChunkSize = size
+	case "remembrances.chunk_overlap":
+		overlap, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid chunk overlap: %w", err)
+		}
+		if overlap < 0 || overlap > 1000 {
+			return fmt.Errorf("chunk overlap must be between 0 and 1000")
+		}
+		remCfg.ChunkOverlap = overlap
+	default:
+		return fmt.Errorf("unsupported Remembrances setting %q", field.Key)
+	}
+
+	remCfg = normalizeRemembrancesConfig(remCfg)
+	if err := validateRemembrancesConfig(cfg, remCfg); err != nil {
+		return err
+	}
+
+	return config.UpdateRemembrances(remCfg)
+}
+
+func normalizeRemembrancesConfig(remCfg config.RemembrancesConfig) config.RemembrancesConfig {
+	remCfg.DocumentEmbeddingProvider = strings.ToLower(strings.TrimSpace(remCfg.DocumentEmbeddingProvider))
+	remCfg.DocumentEmbeddingModel = strings.TrimSpace(remCfg.DocumentEmbeddingModel)
+	remCfg.CodeEmbeddingProvider = strings.ToLower(strings.TrimSpace(remCfg.CodeEmbeddingProvider))
+	remCfg.CodeEmbeddingModel = strings.TrimSpace(remCfg.CodeEmbeddingModel)
+
+	if remCfg.UseSameModel {
+		remCfg.CodeEmbeddingProvider = remCfg.DocumentEmbeddingProvider
+		remCfg.CodeEmbeddingModel = remCfg.DocumentEmbeddingModel
+	}
+
+	return remCfg
+}
+
+func validateRemembrancesConfig(cfg *config.Config, remCfg config.RemembrancesConfig) error {
+	if !remCfg.Enabled {
+		return nil
+	}
+
+	if remCfg.ChunkSize < 100 || remCfg.ChunkSize > 10000 {
+		return fmt.Errorf("chunk size must be between 100 and 10000")
+	}
+	if remCfg.ChunkOverlap < 0 || remCfg.ChunkOverlap > 1000 {
+		return fmt.Errorf("chunk overlap must be between 0 and 1000")
+	}
+
+	if err := validateRemembrancesEmbedding(cfg, remCfg.DocumentEmbeddingProvider, remCfg.DocumentEmbeddingModel); err != nil {
+		return fmt.Errorf("document embedding validation failed: %w", err)
+	}
+
+	if err := validateRemembrancesEmbedding(cfg, remCfg.CodeEmbeddingProvider, remCfg.CodeEmbeddingModel); err != nil {
+		return fmt.Errorf("code embedding validation failed: %w", err)
+	}
+
+	return nil
+}
+
+func validateRemembrancesEmbedding(cfg *config.Config, provider, model string) error {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	model = strings.TrimSpace(model)
+	if provider == "" {
+		return fmt.Errorf("provider cannot be empty")
+	}
+	if model == "" {
+		return fmt.Errorf("model cannot be empty")
+	}
+
+	apiKey, baseURL := remembrancesProviderCredentials(cfg, provider)
+	if _, err := embeddings.NewEmbedder(provider, model, apiKey, baseURL); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func remembrancesProviderCredentials(cfg *config.Config, provider string) (apiKey string, baseURL string) {
+	if cfg == nil {
+		return "", ""
+	}
+
+	switch provider {
+	case "openai":
+		if providerCfg, ok := cfg.Providers[models.ProviderOpenAI]; ok {
+			return strings.TrimSpace(providerCfg.APIKey), ""
+		}
+	case "google", "gemini":
+		if providerCfg, ok := cfg.Providers[models.ProviderGemini]; ok {
+			return strings.TrimSpace(providerCfg.APIKey), ""
+		}
+	case "anthropic", "voyage":
+		if providerCfg, ok := cfg.Providers[models.ProviderAnthropic]; ok {
+			return strings.TrimSpace(providerCfg.APIKey), ""
+		}
+	case "ollama":
+		baseURL = models.ResolveOllamaBaseURL("")
+		if providerCfg, ok := cfg.Providers[models.ProviderOllama]; ok {
+			baseURL = models.ResolveOllamaBaseURL(providerCfg.BaseURL)
+		}
+		return "", baseURL
+	}
+
+	return "", ""
 }
 
 func parseIntValue(value string) (int, error) {

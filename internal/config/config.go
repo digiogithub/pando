@@ -112,10 +112,10 @@ type MesnadaACPServerConfig struct {
 
 // MesnadaACPConfig holds ACP agent configuration
 type MesnadaACPConfig struct {
-	Enabled        bool                    `json:"enabled,omitempty"`
-	DefaultAgent   string                  `json:"defaultAgent,omitempty"`
-	AutoPermission bool                    `json:"autoPermission,omitempty"`
-	Server         MesnadaACPServerConfig  `json:"server,omitempty"`
+	Enabled        bool                   `json:"enabled,omitempty"`
+	DefaultAgent   string                 `json:"defaultAgent,omitempty"`
+	AutoPermission bool                   `json:"autoPermission,omitempty"`
+	Server         MesnadaACPServerConfig `json:"server,omitempty"`
 }
 
 // MesnadaTUIConfig holds mesnada TUI settings
@@ -152,8 +152,17 @@ type RemembrancesConfig struct {
 	DocumentEmbeddingModel    string `json:"document_embedding_model" toml:"DocumentEmbeddingModel"`
 	CodeEmbeddingProvider     string `json:"code_embedding_provider" toml:"CodeEmbeddingProvider"`
 	CodeEmbeddingModel        string `json:"code_embedding_model" toml:"CodeEmbeddingModel"`
+	UseSameModel              bool   `json:"use_same_model" toml:"UseSameModel"`
 	ChunkSize                 int    `json:"chunk_size" toml:"ChunkSize"`
 	ChunkOverlap              int    `json:"chunk_overlap" toml:"ChunkOverlap"`
+}
+
+// APIServerConfig holds configuration for the HTTP API server (WebUI backend).
+type APIServerConfig struct {
+	Enabled     bool   `json:"enabled,omitempty"`
+	Host        string `json:"host,omitempty"`
+	Port        int    `json:"port,omitempty"`
+	RequireAuth bool   `json:"requireAuth,omitempty"`
 }
 
 // Config is the main configuration structure for the application.
@@ -174,6 +183,7 @@ type Config struct {
 	Shell        ShellConfig                       `json:"shell,omitempty"`
 	AutoCompact  bool                              `json:"autoCompact,omitempty"`
 	Remembrances RemembrancesConfig                `json:"remembrances,omitempty"`
+	Server       APIServerConfig                   `json:"server,omitempty"`
 }
 
 // Application constants
@@ -356,6 +366,12 @@ func setDefaults(debug bool) {
 	viper.SetDefault("mesnada.orchestrator.defaultModel", "gpt-5.4")
 	viper.SetDefault("mesnada.tui.enabled", true)
 	viper.SetDefault("mesnada.tui.webui", true)
+
+	// API Server (WebUI backend) defaults
+	viper.SetDefault("server.enabled", false)
+	viper.SetDefault("server.host", "localhost")
+	viper.SetDefault("server.port", 8765)
+	viper.SetDefault("server.requireAuth", true)
 	viper.SetDefault("autoCompact", true)
 
 	// Remembrances defaults
@@ -364,6 +380,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("remembrances.document_embedding_model", "nomic-embed-text")
 	viper.SetDefault("remembrances.code_embedding_provider", "ollama")
 	viper.SetDefault("remembrances.code_embedding_model", "nomic-embed-text")
+	viper.SetDefault("remembrances.use_same_model", false)
 	viper.SetDefault("remembrances.chunk_size", 800)
 	viper.SetDefault("remembrances.chunk_overlap", 100)
 
@@ -607,8 +624,40 @@ func applyDefaultValues() {
 		}
 	}
 
+	normalizeRemembrancesDefaults()
 	refreshConfiguredDynamicModels()
 	ensureAgentDefaults()
+}
+
+func normalizeRemembrancesDefaults() {
+	rem := cfg.Remembrances
+
+	if strings.TrimSpace(rem.DocumentEmbeddingProvider) == "" {
+		rem.DocumentEmbeddingProvider = "ollama"
+	}
+	if strings.TrimSpace(rem.DocumentEmbeddingModel) == "" {
+		rem.DocumentEmbeddingModel = "nomic-embed-text"
+	}
+
+	if strings.TrimSpace(rem.CodeEmbeddingProvider) == "" {
+		rem.CodeEmbeddingProvider = rem.DocumentEmbeddingProvider
+	}
+	if strings.TrimSpace(rem.CodeEmbeddingModel) == "" {
+		rem.CodeEmbeddingModel = rem.DocumentEmbeddingModel
+	}
+
+	if !rem.UseSameModel &&
+		rem.DocumentEmbeddingProvider == rem.CodeEmbeddingProvider &&
+		rem.DocumentEmbeddingModel == rem.CodeEmbeddingModel {
+		rem.UseSameModel = true
+	}
+
+	if rem.UseSameModel {
+		rem.CodeEmbeddingProvider = rem.DocumentEmbeddingProvider
+		rem.CodeEmbeddingModel = rem.DocumentEmbeddingModel
+	}
+
+	cfg.Remembrances = rem
 }
 
 // It validates model IDs and providers, ensuring they are supported.
@@ -1282,6 +1331,25 @@ func UpdateMesnada(mesnadaCfg MesnadaConfig) error {
 		config.Mesnada = mesnadaCfg
 	}); err != nil {
 		cfg.Mesnada = oldMesnada
+		return err
+	}
+
+	return nil
+}
+
+// UpdateRemembrances updates remembrances configuration and persists it to the config file.
+func UpdateRemembrances(remembrancesCfg RemembrancesConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldRemembrances := cfg.Remembrances
+	cfg.Remembrances = remembrancesCfg
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Remembrances = remembrancesCfg
+	}); err != nil {
+		cfg.Remembrances = oldRemembrances
 		return err
 	}
 
