@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -24,19 +25,24 @@ import (
 )
 
 type editorCmp struct {
-	width       int
-	height      int
-	app         *app.App
-	session     session.Session
-	textarea    textarea.Model
-	attachments []message.Attachment
-	deleteMode  bool
+	width        int
+	height       int
+	app          *app.App
+	session      session.Session
+	textarea     textarea.Model
+	attachments  []message.Attachment
+	deleteMode   bool
+	inputHistory []string // sent messages for this session, oldest first
+	historyIdx   int      // -1 = not navigating; 0..len-1 = index in history
+	savedInput   string   // draft saved when entering history navigation mode
 }
 
 type EditorKeyMaps struct {
-	Send       key.Binding
-	NewLine    key.Binding
-	OpenEditor key.Binding
+	Send        key.Binding
+	NewLine     key.Binding
+	OpenEditor  key.Binding
+	HistoryPrev key.Binding
+	HistoryNext key.Binding
 }
 
 type bluredEditorKeyMaps struct {
@@ -62,6 +68,14 @@ var editorMaps = EditorKeyMaps{
 	OpenEditor: key.NewBinding(
 		key.WithKeys("ctrl+i"),
 		key.WithHelp("ctrl+i", "open editor"),
+	),
+	HistoryPrev: key.NewBinding(
+		key.WithKeys("up"),
+		key.WithHelp("↑", "previous input"),
+	),
+	HistoryNext: key.NewBinding(
+		key.WithKeys("down"),
+		key.WithHelp("↓", "next input"),
 	),
 }
 
@@ -132,17 +146,42 @@ func (m *editorCmp) send() tea.Cmd {
 	value := m.textarea.Value()
 	m.textarea.Reset()
 	attachments := m.attachments
-
 	m.attachments = nil
 	if value == "" {
 		return nil
 	}
+	// Append to in-memory input history and reset navigation state.
+	m.inputHistory = append(m.inputHistory, value)
+	m.historyIdx = -1
+	m.savedInput = ""
 	return tea.Batch(
 		util.CmdHandler(SendMsg{
 			Text:        value,
 			Attachments: attachments,
 		}),
 	)
+}
+
+// loadSessionHistory retrieves the user messages already sent in the current
+// session from the database, oldest first, to pre-populate input history.
+func (m *editorCmp) loadSessionHistory() []string {
+	if m.session.ID == "" {
+		return nil
+	}
+	msgs, err := m.app.Messages.List(context.Background(), m.session.ID)
+	if err != nil || len(msgs) == 0 {
+		return nil
+	}
+	var history []string
+	for _, msg := range msgs {
+		if msg.Role != message.User {
+			continue
+		}
+		if text := msg.Content().Text; text != "" {
+			history = append(history, text)
+		}
+	}
+	return history
 }
 
 // FocusChatEditorMsg is sent to the chat editor to request textarea focus.
@@ -171,6 +210,9 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SessionSelectedMsg:
 		if msg.ID != m.session.ID {
 			m.session = msg
+			m.inputHistory = m.loadSessionHistory()
+			m.historyIdx = -1
+			m.savedInput = ""
 		}
 		return m, nil
 	case dialog.AttachmentAddedMsg:
@@ -221,6 +263,37 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.textarea.Focused() && key.Matches(msg, editorMaps.Send) {
 			return m, m.send()
+		}
+		// History navigation: Up navigates to older sent messages.
+		// Only activate when the cursor is on the first line so normal
+		// cursor movement within multiline text is not affected.
+		if m.textarea.Focused() && key.Matches(msg, editorMaps.HistoryPrev) {
+			if m.textarea.Line() == 0 && len(m.inputHistory) > 0 {
+				if m.historyIdx == -1 {
+					m.savedInput = m.textarea.Value()
+					m.historyIdx = len(m.inputHistory) - 1
+				} else if m.historyIdx > 0 {
+					m.historyIdx--
+				}
+				m.textarea.SetValue(m.inputHistory[m.historyIdx])
+				m.textarea.CursorEnd()
+				return m, nil
+			}
+		}
+		// History navigation: Down navigates toward newer messages.
+		// When the newest entry is reached, the saved draft is restored.
+		// Only active while already navigating history.
+		if m.textarea.Focused() && key.Matches(msg, editorMaps.HistoryNext) && m.historyIdx != -1 {
+			if m.historyIdx < len(m.inputHistory)-1 {
+				m.historyIdx++
+				m.textarea.SetValue(m.inputHistory[m.historyIdx])
+				m.textarea.CursorEnd()
+			} else {
+				m.historyIdx = -1
+				m.textarea.SetValue(m.savedInput)
+				m.textarea.CursorEnd()
+			}
+			return m, nil
 		}
 
 	}
