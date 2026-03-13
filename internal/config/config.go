@@ -1223,11 +1223,65 @@ func WorkingDirectory() string {
 }
 
 func UpdateAgentModel(agentName AgentName, modelID models.ModelID) error {
+	return setAgentModel(agentName, modelID, true)
+}
+
+// OverrideAgentModel updates the selected agent model only for the current
+// process. The change is kept in memory and is not persisted to the config file.
+func OverrideAgentModel(agentName AgentName, modelID models.ModelID) error {
 	if cfg == nil {
 		panic("config not loaded")
 	}
 
-	existingAgentCfg := cfg.Agents[agentName]
+	model, ok := models.SupportedModels[modelID]
+	if !ok {
+		return fmt.Errorf("model %s not supported", modelID)
+	}
+
+	providerCfg, providerConfigured := cfg.Providers[model.Provider]
+	switch model.Provider {
+	case models.ProviderCopilot:
+		if providerConfigured && providerCfg.Disabled {
+			return fmt.Errorf("provider %s is disabled", model.Provider)
+		}
+		if !providerConfigured && !hasCopilotCredentials() {
+			return fmt.Errorf("provider %s is not configured", model.Provider)
+		}
+		if providerConfigured && providerCfg.APIKey == "" && !hasCopilotCredentials() && !providerCfg.Disabled {
+			return fmt.Errorf("provider %s has no credentials configured", model.Provider)
+		}
+	case models.ProviderOllama:
+		if !providerConfigured {
+			return fmt.Errorf("provider %s is not configured", model.Provider)
+		}
+		if providerCfg.Disabled {
+			return fmt.Errorf("provider %s is disabled", model.Provider)
+		}
+	default:
+		if !providerConfigured {
+			return fmt.Errorf("provider %s is not configured", model.Provider)
+		}
+		if providerCfg.Disabled {
+			return fmt.Errorf("provider %s is disabled", model.Provider)
+		}
+		if strings.TrimSpace(providerCfg.APIKey) == "" && strings.TrimSpace(getProviderAPIKey(model.Provider)) == "" {
+			return fmt.Errorf("provider %s has no credentials configured", model.Provider)
+		}
+	}
+
+	return setAgentModel(agentName, modelID, false)
+}
+
+func setAgentModel(agentName AgentName, modelID models.ModelID, persist bool) error {
+	if cfg == nil {
+		panic("config not loaded")
+	}
+
+	if cfg.Agents == nil {
+		cfg.Agents = make(map[AgentName]Agent)
+	}
+
+	existingAgentCfg, hadExistingAgent := cfg.Agents[agentName]
 
 	model, ok := models.SupportedModels[modelID]
 	if !ok {
@@ -1248,8 +1302,16 @@ func UpdateAgentModel(agentName AgentName, modelID models.ModelID) error {
 
 	if err := validateAgent(cfg, agentName, newAgentCfg); err != nil {
 		// revert config update on failure
-		cfg.Agents[agentName] = existingAgentCfg
+		if hadExistingAgent {
+			cfg.Agents[agentName] = existingAgentCfg
+		} else {
+			delete(cfg.Agents, agentName)
+		}
 		return fmt.Errorf("failed to update agent model: %w", err)
+	}
+
+	if !persist {
+		return nil
 	}
 
 	return updateCfgFile(func(config *Config) {
