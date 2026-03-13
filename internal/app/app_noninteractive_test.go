@@ -4,69 +4,54 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/pubsub"
 )
 
-func TestAssistantTextStreamerStreamsOnlyNewAssistantContent(t *testing.T) {
+func TestAssistantTextStreamerShowsToolsAndOnlyVisibleContent(t *testing.T) {
 	var output bytes.Buffer
 	streamer := newAssistantTextStreamer(&output, "session-1")
 
-	events := []pubsub.Event[message.Message]{
+	events := []pubsub.Event[agent.AgentEvent]{
 		{
 			Type: pubsub.CreatedEvent,
-			Payload: message.Message{
-				ID:        "assistant-1",
+			Payload: agent.AgentEvent{
 				SessionID: "session-1",
-				Role:      message.Assistant,
-			},
-		},
-		{
-			Type: pubsub.UpdatedEvent,
-			Payload: message.Message{
-				ID:        "assistant-1",
-				SessionID: "session-1",
-				Role:      message.Assistant,
-				Parts:     []message.ContentPart{message.TextContent{Text: "Voy a investigar"}},
-			},
-		},
-		{
-			Type: pubsub.UpdatedEvent,
-			Payload: message.Message{
-				ID:        "assistant-1",
-				SessionID: "session-1",
-				Role:      message.Assistant,
-				Parts: []message.ContentPart{
-					message.TextContent{Text: "Voy a investigar"},
-					message.ToolCall{ID: "tool-1", Name: "kb_search_documents", Input: "{\n  \"query\": \"pando\"\n}"},
-				},
+				Type:      agent.AgentEventTypeToolCall,
+				ToolCall:  &message.ToolCall{ID: "tool-1", Name: "kb_search_documents", Input: "{\n  \"query\": \"pando\"\n}"},
 			},
 		},
 		{
 			Type: pubsub.CreatedEvent,
-			Payload: message.Message{
-				ID:        "tool-msg-1",
+			Payload: agent.AgentEvent{
 				SessionID: "session-1",
-				Role:      message.Tool,
-				Parts:     []message.ContentPart{message.ToolResult{ToolCallID: "tool-1", Content: "2 docs found"}},
+				Type:      agent.AgentEventTypeToolResult,
+				ToolResult: &message.ToolResult{ToolCallID: "tool-1", Name: "kb_search_documents", Content: "2 docs found"},
 			},
 		},
 		{
-			Type: pubsub.UpdatedEvent,
-			Payload: message.Message{
-				ID:        "assistant-2",
+			Type: pubsub.CreatedEvent,
+			Payload: agent.AgentEvent{
 				SessionID: "session-1",
-				Role:      message.Assistant,
-				Parts:     []message.ContentPart{message.TextContent{Text: "Resumen final"}},
+				Type:      agent.AgentEventTypeContentDelta,
+				Delta:     "Resumen ",
 			},
 		},
 		{
-			Type: pubsub.UpdatedEvent,
-			Payload: message.Message{
-				ID:        "assistant-3",
+			Type: pubsub.CreatedEvent,
+			Payload: agent.AgentEvent{
+				SessionID: "session-1",
+				Type:      agent.AgentEventTypeContentDelta,
+				Delta:     "final",
+			},
+		},
+		{
+			Type: pubsub.CreatedEvent,
+			Payload: agent.AgentEvent{
 				SessionID: "session-2",
-				Role:      message.Assistant,
-				Parts:     []message.ContentPart{message.TextContent{Text: "ignored"}},
+				Type:      agent.AgentEventTypeContentDelta,
+				Delta:     "ignored",
 			},
 		},
 	}
@@ -81,30 +66,26 @@ func TestAssistantTextStreamerStreamsOnlyNewAssistantContent(t *testing.T) {
 		t.Fatalf("CloseLine() error = %v", err)
 	}
 
-	if got, want := output.String(), "Voy a investigar\n\n🔧 kb_search_documents {\"query\":\"pando\"}\n✓ kb_search_documents completed\n\nResumen final\n"; got != want {
+	if got, want := output.String(), "🔧 kb_search_documents {\"query\":\"pando\"}\n✓ kb_search_documents completed\n\nResumen final\n"; got != want {
 		t.Fatalf("streamed output = %q, want %q", got, want)
 	}
 }
 
-func TestAssistantTextStreamerIgnoresRepeatedSnapshots(t *testing.T) {
+func TestAssistantTextStreamerPrintsFinalContentFallback(t *testing.T) {
 	var output bytes.Buffer
 	streamer := newAssistantTextStreamer(&output, "session-1")
 
-	msg := message.Message{
-		ID:        "assistant-1",
-		SessionID: "session-1",
-		Role:      message.Assistant,
-		Parts:     []message.ContentPart{message.TextContent{Text: "stream"}},
+	if err := streamer.PrintFinalContent("final answer"); err != nil {
+		t.Fatalf("PrintFinalContent() error = %v", err)
+	}
+	if err := streamer.PrintFinalContent("ignored duplicate"); err != nil {
+		t.Fatalf("PrintFinalContent() second call error = %v", err)
+	}
+	if err := streamer.CloseLine(); err != nil {
+		t.Fatalf("CloseLine() error = %v", err)
 	}
 
-	if err := streamer.ConsumeMessage(msg); err != nil {
-		t.Fatalf("ConsumeMessage() error = %v", err)
-	}
-	if err := streamer.ConsumeMessage(msg); err != nil {
-		t.Fatalf("ConsumeMessage() second call error = %v", err)
-	}
-
-	if got, want := output.String(), "stream"; got != want {
+	if got, want := output.String(), "final answer\n"; got != want {
 		t.Fatalf("streamed output = %q, want %q", got, want)
 	}
 }
