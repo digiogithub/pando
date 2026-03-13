@@ -220,14 +220,64 @@ var defaultContextPaths = []string{
 	".github/copilot-instructions.md",
 	".cursorrules",
 	".cursor/rules/",
+	"AGENTS.md",
+	"PANDO.md",
 	"CLAUDE.md",
 	"CLAUDE.local.md",
 	"pando.md",
 	"pando.local.md",
 	"Pando.md",
 	"Pando.local.md",
-	"PANDO.md",
 	"PANDO.local.md",
+}
+
+var prioritizedProjectContextPathGroups = [][]string{
+	{"AGENTS.md"},
+	{"PANDO.md", "Pando.md", "pando.md"},
+	{"CLAUDE.md"},
+}
+
+// DetectPreferredProjectContextPath returns the highest-priority project
+// context file that already exists in the working directory.
+func DetectPreferredProjectContextPath(workDir string) (string, bool) {
+	for _, group := range prioritizedProjectContextPathGroups {
+		for _, candidate := range group {
+			fullPath := filepath.Join(workDir, candidate)
+			info, err := os.Stat(fullPath)
+			if err != nil {
+				continue
+			}
+			if info.IsDir() {
+				continue
+			}
+			return candidate, true
+		}
+	}
+
+	return "", false
+}
+
+// ResolveProjectInitializationContextPath returns the preferred existing
+// project context file, or the default file to create if none exists yet.
+func ResolveProjectInitializationContextPath(workDir string) string {
+	if path, ok := DetectPreferredProjectContextPath(workDir); ok {
+		return path
+	}
+	return prioritizedProjectContextPathGroups[0][0]
+}
+
+// IsPrioritizedProjectContextPath reports whether the path belongs to the
+// exclusive project context file family where only one file should be used.
+func IsPrioritizedProjectContextPath(path string) bool {
+	base := filepath.Base(path)
+	for _, group := range prioritizedProjectContextPathGroups {
+		for _, candidate := range group {
+			if base == candidate {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Global configuration instance
