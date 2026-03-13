@@ -110,7 +110,7 @@ func (m InitDialogCmp) View() string {
 		Foreground(t.Text()).
 		Width(maxWidth).
 		Padding(0, 1).
-		Render("Initialization generates a new Pando.md file that contains information about your codebase, this file serves as memory for each project, you can freely add to it to help the agents be better at their job.")
+		Render("Initialization creates or updates your main project memory file. Pando will use the first existing file in this order: AGENTS.md, PANDO.md, CLAUDE.md. If none exists yet, it will create AGENTS.md.")
 
 	question := baseStyle.
 		Foreground(t.Text()).
