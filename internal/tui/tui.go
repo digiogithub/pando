@@ -1387,16 +1387,18 @@ func New(app *app.App) tea.Model {
 	model.RegisterCommand(dialog.Command{
 		ID:          "init",
 		Title:       "Initialize Project",
-		Description: "Create/Update the Pando.md memory file",
+		Description: "Create/Update the primary project memory file",
 		Category:    dialog.CommandCategoryGeneral,
 		Handler: func(cmd dialog.Command) tea.Cmd {
-			prompt := `Please analyze this codebase and create a Pando.md file containing:
+ 			targetFile := config.ResolveProjectInitializationContextPath(config.WorkingDirectory())
+			prompt := fmt.Sprintf(`Please analyze this codebase and create or update %s containing:
 1. Build/lint/test commands - especially for running a single test
 2. Code style guidelines including imports, formatting, types, naming conventions, error handling, etc.
 
 The file you create will be given to agentic coding agents (such as yourself) that operate in this repository. Make it about 20 lines long.
-If there's already a pando.md, improve it.
-If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (in .github/copilot-instructions.md), make sure to include them.`
+If %s already exists, improve it.
+Prefer the first existing file in this order: AGENTS.md, PANDO.md, CLAUDE.md.
+If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (in .github/copilot-instructions.md), make sure to include them.`, targetFile, targetFile)
 			return tea.Batch(
 				util.CmdHandler(chat.SendMsg{
 					Text: prompt,
