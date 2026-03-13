@@ -1,6 +1,7 @@
 package config
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -65,6 +66,50 @@ func TestValidateAllowsOllamaWithoutAPIKey(t *testing.T) {
 	}
 	if cfg.Providers[models.ProviderOllama].Disabled {
 		t.Fatal("ollama provider was disabled unexpectedly")
+	}
+}
+
+func TestValidateDoesNotWriteMissingAPIKeyWarningToStdout(t *testing.T) {
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	os.Stdout = w
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+	})
+
+	cfg = &Config{
+		Providers: map[models.ModelProvider]Provider{
+			models.ProviderOpenAI: {},
+		},
+		Agents: make(map[AgentName]Agent),
+		LSP:    make(map[string]LSPConfig),
+	}
+	viper.Reset()
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	if err := Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stdout pipe writer: %v", err)
+	}
+	output, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read stdout pipe: %v", err)
+	}
+	if len(output) != 0 {
+		t.Fatalf("Validate() wrote to stdout: %q", string(output))
+	}
+
+	if !cfg.Providers[models.ProviderOpenAI].Disabled {
+		t.Fatal("openai provider should be disabled when API key is missing")
 	}
 }
 
