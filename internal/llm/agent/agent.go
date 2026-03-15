@@ -10,6 +10,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/toonconv"
 	"github.com/digiogithub/pando/internal/llm/prompt"
 	"github.com/digiogithub/pando/internal/llm/provider"
 	"github.com/digiogithub/pando/internal/llm/tools"
@@ -510,10 +511,14 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 					break
 				}
 			}
+			content := toolResult.Content
+			if !toolResult.IsError \&\& config.Get() != nil \&\& config.Get().ToonConversion {
+				content = toonconv.ConvertIfJSON(content)
+			}
 			toolResults[i] = message.ToolResult{
 				ToolCallID: toolCall.ID,
 				Name:       toolCall.Name,
-				Content:    toolResult.Content,
+				Content:    content,
 				Metadata:   toolResult.Metadata,
 				IsError:    toolResult.IsError,
 			}
