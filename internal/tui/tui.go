@@ -90,6 +90,10 @@ type appModel struct {
 	showMultiArgumentsDialog bool
 	multiArgumentsDialog     dialog.MultiArgumentsDialogCmp
 
+	showClaudeLoginDialog bool
+	claudeLoginDialog     dialog.ClaudeLoginDialogCmp
+	claudeLoginSession    *auth.ClaudeLoginSession
+
 	isCompacting      bool
 	compactingMessage string
 
@@ -223,6 +227,10 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, argsCmd, a.multiArgumentsDialog.Init())
 		}
 
+		if a.showClaudeLoginDialog {
+			a.claudeLoginDialog.SetSize(msg.Width, msg.Height)
+		}
+
 		return a, tea.Batch(cmds...)
 	// Status
 	case util.InfoMsg:
@@ -276,6 +284,50 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.alert = outAlert.(bubbleup.AlertModel)
 		cmds = append(cmds, outCmd)
 		return a, tea.Batch(cmds...)
+
+	// Claude OAuth login — phase 1: session ready, show dialog and open browser.
+	case dialog.ClaudeLoginStartMsg:
+		a.claudeLoginSession = msg.Session
+		a.claudeLoginDialog = dialog.NewClaudeLoginDialogCmp(msg.Session)
+		a.showClaudeLoginDialog = true
+		// Open the browser with the automatic URL.
+		_ = auth.OpenBrowser(msg.Session.AutoURL)
+		// Start waiting for the automatic browser callback in background.
+		return a, tea.Batch(a.claudeLoginDialog.Init(), dialog.ClaudeWaitAutoCodeCmd(msg.Session))
+
+	// Claude OAuth login — automatic browser callback delivered the code.
+	case auth.ClaudeAutoCode:
+		if !a.showClaudeLoginDialog {
+			return a, nil
+		}
+		a.showClaudeLoginDialog = false
+		a.claudeLoginSession = nil
+		if msg.Err != nil {
+			cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.ErrorKey, "Claude login failed: "+msg.Err.Error()))
+			outAlert, outCmd := a.alert.Update(msg)
+			a.alert = outAlert.(bubbleup.AlertModel)
+			cmds = append(cmds, outCmd)
+			return a, tea.Batch(cmds...)
+		}
+		// Exchange the code for tokens.
+		session := a.claudeLoginDialog.Session()
+		return a, dialog.ClaudeExchangeCodeCmd(session, msg.Code, msg.RedirectURI)
+
+	// Claude OAuth login — user submitted a manual code via the dialog input.
+	case dialog.ClaudeLoginCodeSubmitMsg:
+		a.showClaudeLoginDialog = false
+		session := a.claudeLoginSession
+		a.claudeLoginSession = nil
+		return a, dialog.ClaudeExchangeCodeCmd(session, msg.Code, msg.RedirectURI)
+
+	// Claude OAuth login — user cancelled the dialog.
+	case dialog.ClaudeLoginDialogCancelMsg:
+		if a.claudeLoginSession != nil {
+			a.claudeLoginSession.Cancel()
+			a.claudeLoginSession = nil
+		}
+		a.showClaudeLoginDialog = false
+		return a, nil
 
 	// Claude account messages
 	case dialog.ClaudeStatsMsg:
@@ -573,6 +625,13 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			outAlert, outCmd := a.alert.Update(msg)
 			a.alert = outAlert.(bubbleup.AlertModel)
 			return a, outCmd
+		}
+
+		// If Claude login dialog is open, let it handle all key presses.
+		if a.showClaudeLoginDialog {
+			d, cmd := a.claudeLoginDialog.Update(msg)
+			a.claudeLoginDialog = d.(dialog.ClaudeLoginDialogCmp)
+			return a, cmd
 		}
 
 		// If multi-arguments dialog is open, let it handle the key press first
@@ -1354,6 +1413,21 @@ func (a appModel) View() string {
 
 	if a.showMultiArgumentsDialog {
 		overlay := a.multiArgumentsDialog.View()
+		row := lipgloss.Height(appView) / 2
+		row -= lipgloss.Height(overlay) / 2
+		col := lipgloss.Width(appView) / 2
+		col -= lipgloss.Width(overlay) / 2
+		appView = layout.PlaceOverlay(
+			col,
+			row,
+			overlay,
+			appView,
+			true,
+		)
+	}
+
+	if a.showClaudeLoginDialog {
+		overlay := a.claudeLoginDialog.View()
 		row := lipgloss.Height(appView) / 2
 		row -= lipgloss.Height(overlay) / 2
 		col := lipgloss.Width(appView) / 2

@@ -19,12 +19,25 @@ import (
 )
 
 const (
-	ClaudeClientID           = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-	ClaudeAuthorizeURL       = "https://claude.ai/oauth/authorize"
-	ClaudeTokenURL           = "https://platform.claude.com/v1/oauth/token"
-	ClaudeProfileURL         = "https://api.anthropic.com/api/oauth/profile"
-	ClaudeOAuthBetaHeader    = "oauth-2025-04-20"
-	ClaudeOAuthScopes        = "user:file_upload user:inference user:mcp_servers user:profile user:sessions:claude_code"
+	ClaudeClientID        = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	ClaudeAuthorizeURL    = "https://claude.ai/oauth/authorize"
+	ClaudeTokenURL        = "https://platform.claude.com/v1/oauth/token"
+	ClaudeProfileURL      = "https://api.anthropic.com/api/oauth/profile"
+	ClaudeOAuthBetaHeader = "oauth-2025-04-20"
+
+	// ClaudeManualRedirectURL is used when the user cannot receive the automatic browser callback.
+	// Matches claude-code's MANUAL_REDIRECT_URL = platform.claude.com/oauth/code/callback.
+	// When used, platform.claude.com shows the authorization code to the user so they can paste it.
+	ClaudeManualRedirectURL = "https://platform.claude.com/oauth/code/callback"
+
+	// ClaudeSuccessURL is where to redirect after a successful automatic callback.
+	// Matches claude-code's CLAUDEAI_SUCCESS_URL.
+	ClaudeSuccessURL = "https://claude.ai/oauth/code/success?app=claude-code"
+
+	// ClaudeOAuthScopes matches claude-code's ed1 scope set (union of console + claude.ai scopes).
+	// org:create_api_key is required by the claude.ai authorization endpoint.
+	ClaudeOAuthScopes = "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
+
 	claudeCredentialFile     = "claude.json"
 	claudeCodeCredentialFile = ".credentials.json"
 
@@ -47,10 +60,28 @@ type ClaudeOAuthToken struct {
 	RateLimitTier    string   `json:"rateLimitTier,omitempty"`
 }
 
-// ClaudeProfile holds the user profile from Claude API.
+// ClaudeProfile holds the user profile from Claude API (/api/oauth/profile).
+// The response is nested: account and organization sub-objects.
 type ClaudeProfile struct {
+	Account      ClaudeProfileAccount      `json:"account"`
+	Organization ClaudeProfileOrganization `json:"organization"`
+}
+
+// ClaudeProfileAccount holds account-level info from the profile response.
+type ClaudeProfileAccount struct {
 	DisplayName  string `json:"display_name"`
 	EmailAddress string `json:"email_address"`
+	CreatedAt    string `json:"created_at"`
+}
+
+// ClaudeProfileOrganization holds organization-level info from the profile response.
+type ClaudeProfileOrganization struct {
+	UUID                    string `json:"uuid"`
+	OrganizationType        string `json:"organization_type"`
+	RateLimitTier           string `json:"rate_limit_tier"`
+	HasExtraUsageEnabled    bool   `json:"has_extra_usage_enabled"`
+	BillingType             string `json:"billing_type"`
+	SubscriptionCreatedAt   string `json:"subscription_created_at"`
 }
 
 // ClaudeAuthStatus holds the authentication status for Claude.
@@ -102,99 +133,185 @@ func computeCodeChallenge(verifier string) string {
 }
 
 // generateState generates a random state nonce.
+// Uses 32 bytes like claude-code's hW4() function.
 func generateState() (string, error) {
-	b := make([]byte, 16)
+	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generate state: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// ClaudeLogin performs the full PKCE OAuth2 flow for Claude.
-// Returns credentials, display name, and any error.
-func ClaudeLogin() (*ClaudeCredentials, string, error) {
+// ClaudeLoginSession holds the state of an in-progress OAuth login flow.
+// It is created by ClaudeLoginStart and consumed by ClaudeLoginFinish.
+// The TUI layer owns the session and drives the two phases:
+//  1. Display ManualURL to the user; open AutoURL in the browser.
+//  2. Wait for AutoCodeCh (browser callback) or accept manual code from the dialog.
+//  3. Call ClaudeLoginFinish with the received code and the appropriate redirect URI.
+type ClaudeLoginSession struct {
+	// ManualURL is the authorize URL using platform.claude.com as redirect_uri.
+	// The user can open it manually; that page shows the authorization code.
+	ManualURL string
+
+	// AutoURL is the authorize URL using the local callback server as redirect_uri.
+	// It is opened in the browser automatically.
+	AutoURL string
+
+	// AutoCodeCh receives the authorization code when the browser completes the flow.
+	// The message carries the code and the redirect URI that was used.
+	AutoCodeCh <-chan ClaudeAutoCode
+
+	// AutoRedirectURI is the localhost redirect_uri for the automatic flow.
+	AutoRedirectURI string
+
+	// internal fields needed by ClaudeLoginFinish.
+	verifier string
+	state    string
+	cancel   context.CancelFunc
+}
+
+// ClaudeAutoCode is sent on AutoCodeCh when the browser delivers the auth code.
+type ClaudeAutoCode struct {
+	Code        string
+	RedirectURI string
+	Err         error
+}
+
+// ClaudeLoginStart initializes the PKCE OAuth2 flow.
+// It starts a local HTTP callback server (non-blocking) and returns a session
+// with both the manual and automatic authorization URLs.
+// The caller must eventually call session.Cancel() to release resources.
+func ClaudeLoginStart() (*ClaudeLoginSession, error) {
 	verifier, err := generateCodeVerifier()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	challenge := computeCodeChallenge(verifier)
 
 	state, err := generateState()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	// Start local HTTP server to receive the callback.
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	// Start local callback server on a random port.
+	listener, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
-		return nil, "", fmt.Errorf("start callback server: %w", err)
+		return nil, fmt.Errorf("start callback server: %w", err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
-	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", port)
+	autoRedirectURI := fmt.Sprintf("http://localhost:%d/callback", port)
 
-	// Build authorization URL.
-	params := url.Values{}
-	params.Set("client_id", ClaudeClientID)
-	params.Set("response_type", "code")
-	params.Set("scope", ClaudeOAuthScopes)
-	params.Set("redirect_uri", redirectURI)
-	params.Set("code_challenge", challenge)
-	params.Set("code_challenge_method", "S256")
-	params.Set("state", state)
-	authURL := ClaudeAuthorizeURL + "?" + params.Encode()
-
-	// Open browser.
-	if err := OpenBrowser(authURL); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to open browser automatically. Please visit:\n%s\n", authURL)
+	// buildAuthURL constructs the authorize URL with the given redirect_uri.
+	// "code=true" is a non-standard param required by Anthropic (matches claude-code's GZ1).
+	buildAuthURL := func(redirectURI string) string {
+		params := url.Values{}
+		params.Set("code", "true")
+		params.Set("client_id", ClaudeClientID)
+		params.Set("response_type", "code")
+		params.Set("redirect_uri", redirectURI)
+		params.Set("scope", ClaudeOAuthScopes)
+		params.Set("code_challenge", challenge)
+		params.Set("code_challenge_method", "S256")
+		params.Set("state", state)
+		return ClaudeAuthorizeURL + "?" + params.Encode()
 	}
 
-	// Wait for callback.
-	codeCh := make(chan string, 1)
-	errCh := make(chan error, 1)
+	autoCodeCh := make(chan ClaudeAutoCode, 1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), claudeCallbackTimeout)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		send := func(result ClaudeAutoCode) {
+			select {
+			case autoCodeCh <- result:
+			default:
+			}
+		}
 		if q.Get("state") != state {
-			http.Error(w, "Invalid state parameter", http.StatusBadRequest)
-			errCh <- fmt.Errorf("invalid state parameter in callback")
+			http.Error(w, "Invalid state", http.StatusBadRequest)
+			send(ClaudeAutoCode{Err: fmt.Errorf("invalid state parameter in callback")})
 			return
 		}
 		if errParam := q.Get("error"); errParam != "" {
-			desc := q.Get("error_description")
 			http.Error(w, "Authorization failed: "+errParam, http.StatusBadRequest)
-			errCh <- fmt.Errorf("authorization error: %s: %s", errParam, desc)
+			send(ClaudeAutoCode{Err: fmt.Errorf("authorization error: %s: %s", errParam, q.Get("error_description"))})
 			return
 		}
 		code := q.Get("code")
 		if code == "" {
 			http.Error(w, "Missing authorization code", http.StatusBadRequest)
-			errCh <- fmt.Errorf("missing authorization code in callback")
+			send(ClaudeAutoCode{Err: fmt.Errorf("missing authorization code in callback")})
 			return
 		}
-		fmt.Fprintln(w, "<html><body><h2>Authentication successful! You can close this tab.</h2></body></html>")
-		codeCh <- code
+		http.Redirect(w, r, ClaudeSuccessURL, http.StatusFound)
+		send(ClaudeAutoCode{Code: code, RedirectURI: autoRedirectURI})
 	})
 
 	srv := &http.Server{Handler: mux}
 	go func() {
-		if serveErr := srv.Serve(listener); serveErr != nil && serveErr != http.ErrServerClosed {
-			errCh <- fmt.Errorf("callback server error: %w", serveErr)
-		}
+		_ = srv.Serve(listener)
 	}()
-	defer srv.Shutdown(context.Background()) //nolint:errcheck
 
-	var code string
-	select {
-	case code = <-codeCh:
-	case err = <-errCh:
-		return nil, "", err
-	case <-time.After(claudeCallbackTimeout):
-		return nil, "", fmt.Errorf("timed out waiting for OAuth callback (5 minutes)")
+	// Shut down the server when the context is done.
+	go func() {
+		<-ctx.Done()
+		_ = srv.Shutdown(context.Background())
+	}()
+
+	session := &ClaudeLoginSession{
+		ManualURL:       buildAuthURL(ClaudeManualRedirectURL),
+		AutoURL:         buildAuthURL(autoRedirectURI),
+		AutoCodeCh:      autoCodeCh,
+		AutoRedirectURI: autoRedirectURI,
+		verifier:        verifier,
+		state:           state,
+		cancel:          cancel,
 	}
+	return session, nil
+}
 
-	// Exchange code for tokens.
-	tokenResp, err := exchangeClaudeCode(code, redirectURI, verifier)
+// Cancel releases the resources held by the session (stops the callback server).
+func (s *ClaudeLoginSession) Cancel() {
+	if s.cancel != nil {
+		s.cancel()
+	}
+}
+
+// ExtractCodeFromInput extracts the authorization code from text entered by the user.
+// Accepts either a raw code string or a full redirect URL containing the code.
+func (s *ClaudeLoginSession) ExtractCodeFromInput(input string) string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return ""
+	}
+	if strings.HasPrefix(input, "http") {
+		if u, err := url.Parse(input); err == nil {
+			q := u.Query()
+			// Reject if state is present and mismatches.
+			if st := q.Get("state"); st != "" && st != s.state {
+				return ""
+			}
+			if code := q.Get("code"); code != "" {
+				return code
+			}
+		}
+	}
+	// Raw code: non-empty, no spaces, reasonable length.
+	if len(input) >= 10 && !strings.Contains(input, " ") {
+		return input
+	}
+	return ""
+}
+
+// ClaudeLoginFinish exchanges an authorization code for credentials and fetches
+// the user profile. redirectURI must be the one actually used during authorization
+// (either session.AutoRedirectURI or ClaudeManualRedirectURL).
+func ClaudeLoginFinish(session *ClaudeLoginSession, code, redirectURI string) (*ClaudeCredentials, string, error) {
+	defer session.Cancel()
+
+	tokenResp, err := exchangeClaudeCode(code, redirectURI, session.verifier, session.state)
 	if err != nil {
 		return nil, "", err
 	}
@@ -216,24 +333,51 @@ func ClaudeLogin() (*ClaudeCredentials, string, error) {
 		},
 	}
 
-	// Fetch profile.
+	// Fetch profile — matches claude-code's wc6 post-login handler calling Kg(accessToken).
 	displayName := ""
 	profile, err := GetClaudeProfile(tokenResp.AccessToken)
 	if err == nil && profile != nil {
-		displayName = profile.DisplayName
+		displayName = profile.Account.DisplayName
+		if profile.Organization.UUID != "" {
+			creds.OrganizationUUID = profile.Organization.UUID
+		}
+		if creds.ClaudeAiOauth.SubscriptionType == "" {
+			creds.ClaudeAiOauth.SubscriptionType = subscriptionTypeFromOrg(profile.Organization.OrganizationType)
+		}
+		if creds.ClaudeAiOauth.RateLimitTier == "" {
+			creds.ClaudeAiOauth.RateLimitTier = profile.Organization.RateLimitTier
+		}
 	}
 
 	return creds, displayName, nil
 }
 
+// subscriptionTypeFromOrg maps the organization_type field to a friendly subscription label,
+// matching the logic in claude-code's fZ1 function.
+func subscriptionTypeFromOrg(orgType string) string {
+	switch orgType {
+	case "claude_max":
+		return "max"
+	case "claude_pro":
+		return "pro"
+	case "claude_enterprise":
+		return "enterprise"
+	case "claude_team":
+		return "team"
+	default:
+		return ""
+	}
+}
+
 // exchangeClaudeCode exchanges an authorization code for tokens.
-func exchangeClaudeCode(code, redirectURI, verifier string) (*claudeTokenResponse, error) {
+func exchangeClaudeCode(code, redirectURI, verifier, state string) (*claudeTokenResponse, error) {
 	payload := map[string]string{
 		"grant_type":    "authorization_code",
 		"code":          code,
 		"redirect_uri":  redirectURI,
 		"client_id":     ClaudeClientID,
 		"code_verifier": verifier,
+		"state":         state,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -244,9 +388,8 @@ func exchangeClaudeCode(code, redirectURI, verifier string) (*claudeTokenRespons
 	if err != nil {
 		return nil, fmt.Errorf("create token exchange request: %w", err)
 	}
+	// Only Content-Type is sent — matches claude-code's by8 function (no anthropic-beta header).
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("anthropic-beta", ClaudeOAuthBetaHeader)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -391,9 +534,8 @@ func RefreshClaudeToken(creds *ClaudeCredentials) (*ClaudeCredentials, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create refresh token request: %w", err)
 	}
+	// Only Content-Type is sent — matches claude-code's QQ6 function (no anthropic-beta header).
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("anthropic-beta", ClaudeOAuthBetaHeader)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -461,14 +603,14 @@ func GetValidClaudeToken(creds *ClaudeCredentials) (string, *ClaudeCredentials, 
 }
 
 // GetClaudeProfile fetches the user profile from the Claude API.
+// Matches claude-code's Kg function: only Authorization and Content-Type headers.
 func GetClaudeProfile(accessToken string) (*ClaudeProfile, error) {
 	req, err := http.NewRequest(http.MethodGet, ClaudeProfileURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create profile request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("anthropic-beta", ClaudeOAuthBetaHeader)
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -522,8 +664,8 @@ func GetClaudeAuthStatus() (*ClaudeAuthStatus, error) {
 
 	// Try to fetch profile for display name / email (best-effort).
 	if profile, profileErr := GetClaudeProfile(creds.ClaudeAiOauth.AccessToken); profileErr == nil && profile != nil {
-		status.DisplayName = profile.DisplayName
-		status.Email = profile.EmailAddress
+		status.DisplayName = profile.Account.DisplayName
+		status.Email = profile.Account.EmailAddress
 	}
 
 	return status, nil

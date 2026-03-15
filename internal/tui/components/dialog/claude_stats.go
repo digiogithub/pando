@@ -17,10 +17,13 @@ type ClaudeAuthStatusMsg struct {
 	Err    error
 }
 
-// ClaudeLoginStartMsg triggers the OAuth login flow.
-type ClaudeLoginStartMsg struct{}
+// ClaudeLoginStartMsg is sent when the OAuth session has been initialized.
+// The TUI uses it to show the login dialog and open the browser.
+type ClaudeLoginStartMsg struct {
+	Session *auth.ClaudeLoginSession
+}
 
-// ClaudeLoginDoneMsg is sent after login completes.
+// ClaudeLoginDoneMsg is sent after login completes (success or failure).
 type ClaudeLoginDoneMsg struct {
 	DisplayName string
 	Err         error
@@ -42,10 +45,24 @@ func LoadClaudeStatsCmd() tea.Cmd {
 	}
 }
 
-// ClaudeLoginCmd performs OAuth login in background.
+// ClaudeLoginCmd starts the OAuth flow (phase 1): initializes the session and
+// returns ClaudeLoginStartMsg so the TUI can show the dialog and open the browser.
 func ClaudeLoginCmd() tea.Cmd {
 	return func() tea.Msg {
-		creds, displayName, err := auth.ClaudeLogin()
+		session, err := auth.ClaudeLoginStart()
+		if err != nil {
+			return ClaudeLoginDoneMsg{Err: err}
+		}
+		return ClaudeLoginStartMsg{Session: session}
+	}
+}
+
+// ClaudeExchangeCodeCmd performs the token exchange (phase 2).
+// It is called after the TUI receives the authorization code — either from the
+// automatic browser callback (ClaudeAutoCode) or from the manual input dialog.
+func ClaudeExchangeCodeCmd(session *auth.ClaudeLoginSession, code, redirectURI string) tea.Cmd {
+	return func() tea.Msg {
+		creds, displayName, err := auth.ClaudeLoginFinish(session, code, redirectURI)
 		if err != nil {
 			return ClaudeLoginDoneMsg{Err: err}
 		}
@@ -53,6 +70,15 @@ func ClaudeLoginCmd() tea.Cmd {
 			return ClaudeLoginDoneMsg{Err: err}
 		}
 		return ClaudeLoginDoneMsg{DisplayName: displayName}
+	}
+}
+
+// ClaudeWaitAutoCodeCmd waits for the automatic browser callback to deliver the
+// authorization code. It blocks until the code arrives or the session times out.
+func ClaudeWaitAutoCodeCmd(session *auth.ClaudeLoginSession) tea.Cmd {
+	return func() tea.Msg {
+		result := <-session.AutoCodeCh
+		return result // auth.ClaudeAutoCode — handled in tui.go
 	}
 }
 
