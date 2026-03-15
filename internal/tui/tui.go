@@ -276,6 +276,40 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.alert = outAlert.(bubbleup.AlertModel)
 		cmds = append(cmds, outCmd)
 		return a, tea.Batch(cmds...)
+
+	// Claude account messages
+	case dialog.ClaudeStatsMsg:
+		cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.InfoKey, msg.Content))
+		outAlert, outCmd := a.alert.Update(msg)
+		a.alert = outAlert.(bubbleup.AlertModel)
+		cmds = append(cmds, outCmd)
+		return a, tea.Batch(cmds...)
+
+	case dialog.ClaudeLoginDoneMsg:
+		if msg.Err != nil {
+			cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.ErrorKey, fmt.Sprintf("Claude login failed: %v", msg.Err)))
+		} else {
+			name := msg.DisplayName
+			if name == "" {
+				name = "Claude.ai"
+			}
+			cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.InfoKey, "Logged in as "+name))
+		}
+		outAlert, outCmd := a.alert.Update(msg)
+		a.alert = outAlert.(bubbleup.AlertModel)
+		cmds = append(cmds, outCmd)
+		return a, tea.Batch(cmds...)
+
+	case dialog.ClaudeLogoutDoneMsg:
+		if msg.Err != nil {
+			cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.ErrorKey, fmt.Sprintf("Claude logout failed: %v", msg.Err)))
+		} else {
+			cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.InfoKey, "Logged out from Claude.ai"))
+		}
+		outAlert, outCmd := a.alert.Update(msg)
+		a.alert = outAlert.(bubbleup.AlertModel)
+		cmds = append(cmds, outCmd)
+		return a, tea.Batch(cmds...)
 	case pubsub.Event[logging.LogMessage]:
 		if msg.Payload.Persist {
 			switch msg.Payload.Level {
@@ -1598,6 +1632,56 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Category:    dialog.CommandCategoryView,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return model.toggleTerminalPanel()
+		},
+	})
+
+	// Claude account commands
+	model.RegisterCommand(dialog.Command{
+		ID:          "claude:login",
+		Title:       "Login with Claude.ai",
+		Description: "Authenticate with your claude.ai account (OAuth)",
+		Category:    dialog.CommandCategoryAccount,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return dialog.ClaudeLoginCmd()
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "claude:logout",
+		Title:       "Logout from Claude.ai",
+		Description: "Remove saved Claude.ai credentials",
+		Category:    dialog.CommandCategoryAccount,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return dialog.ClaudeLogoutCmd()
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "claude:stats:daily",
+		Title:       "Claude: Today's usage",
+		Description: "Show today's message and token statistics",
+		Category:    dialog.CommandCategoryAccount,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return dialog.LoadClaudeStatsCmd()
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "claude:stats:weekly",
+		Title:       "Claude: Weekly usage",
+		Description: "Show this week's usage summary",
+		Category:    dialog.CommandCategoryAccount,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return dialog.LoadClaudeStatsCmd()
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "claude:stats:browser",
+		Title:       "Claude: Open usage page",
+		Description: "Open claude.ai/settings/usage in browser",
+		Category:    dialog.CommandCategoryAccount,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return func() tea.Msg {
+				_ = auth.OpenBrowser("https://claude.ai/settings/usage")
+				return nil
+			}
 		},
 	})
 

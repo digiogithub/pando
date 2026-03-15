@@ -11,4 +11,8 @@ const (
 	Claude3Opus    ModelID = "anthropic.claude-3-opus-20240229"
 	Claude4Opus    ModelID = "anthropic.claude-opus-4-20250514"
 	Claude4Sonnet  ModelID = "anthropic.claude-sonnet-4-20250514"
+	Claude45Sonnet ModelID = "anthropic.claude-sonnet-4-5-20250929"
+	Claude45Haiku  ModelID = "anthropic.claude-haiku-4-5-20251001"
+	Claude46Sonnet ModelID = "anthropic.claude-sonnet-4-6"
+	Claude46Opus   ModelID = "anthropic.claude-opus-4-6"
 )

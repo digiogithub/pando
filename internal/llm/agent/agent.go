@@ -378,6 +378,36 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			// We are not done, we need to respond with the tool response
 			sawToolRound = true
 			msgHistory = append(msgHistory, agentMessage, *toolResults)
+
+			// Check if we should auto-compact context before continuing the loop
+			if sess, sessErr := a.sessions.Get(ctx, sessionID); sessErr == nil && a.shouldCompact(sess.PromptTokens) {
+				a.publishEvent(AgentEvent{
+					Type:  AgentEventTypeResponse,
+					Delta: "\n\n⚡ Auto-compacting context to free space...\n",
+				})
+				if compactErr := a.compactContext(ctx, sessionID); compactErr != nil {
+					logging.Warn("Context compaction failed", "error", compactErr)
+				} else {
+					// Reload msgHistory from DB using the same SummaryMessageID logic
+					if newMsgs, listErr := a.messages.List(ctx, sessionID); listErr == nil {
+						if sess2, sessErr2 := a.sessions.Get(ctx, sessionID); sessErr2 == nil && sess2.SummaryMessageID != "" {
+							for i, m := range newMsgs {
+								if m.ID == sess2.SummaryMessageID {
+									newMsgs = newMsgs[i:]
+									newMsgs[0].Role = message.User
+									break
+								}
+							}
+						}
+						msgHistory = newMsgs
+					}
+					a.publishEvent(AgentEvent{
+						Type:  AgentEventTypeResponse,
+						Delta: "✓ Context compacted. Continuing...\n\n",
+					})
+				}
+			}
+
 			continue
 		}
 		return AgentEvent{
@@ -836,6 +866,112 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 		// Send final success event with the new session ID
 	}()
 
+	return nil
+}
+
+// shouldCompact returns true if the context usage exceeds the auto-compact threshold.
+func (a *agent) shouldCompact(usedTokens int64) bool {
+	cfg := config.Get()
+	agentCfg, ok := cfg.Agents[a.agentName]
+	if !ok || !agentCfg.AutoCompact {
+		return false
+	}
+	threshold := agentCfg.AutoCompactThreshold
+	if threshold <= 0 {
+		threshold = 0.85
+	}
+	contextWindow := a.provider.Model().ContextWindow
+	if contextWindow <= 0 {
+		return false
+	}
+	return float64(usedTokens) >= float64(contextWindow)*threshold
+}
+
+// compactContext summarizes the conversation history to reduce context size.
+// It creates a summary message and sets it as the session's SummaryMessageID so
+// subsequent calls to processGeneration will start from the summary.
+func (a *agent) compactContext(ctx context.Context, sessionID string) error {
+	if a.summarizeProvider == nil {
+		return fmt.Errorf("no summarizer provider available for compaction")
+	}
+
+	msgs, err := a.messages.List(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to list messages for compaction: %w", err)
+	}
+
+	if len(msgs) < 4 {
+		return nil // not enough messages to compact
+	}
+
+	// Build conversation text for summarization (text content only)
+	var convText strings.Builder
+	for _, msg := range msgs {
+		role := "User"
+		if msg.Role == message.Assistant {
+			role = "Assistant"
+		}
+		text := msg.Content().Text
+		if text != "" {
+			convText.WriteString(fmt.Sprintf("\n\n%s: %s", role, text))
+		}
+	}
+
+	compactionPrompt := `Create a structured summary of the conversation to replace the conversation history. Include:
+1. Task Overview: user's core request, success criteria, any constraints
+2. Current State: completed work, files modified (with paths), key outputs produced
+3. Important Discoveries: technical constraints, decisions made, errors resolved
+4. Next Steps: remaining work, pending decisions or blockers
+
+Be concise but complete. This summary will replace the conversation history.`
+
+	sendCtx := context.WithValue(ctx, tools.SessionIDContextKey, sessionID)
+	response, err := a.summarizeProvider.SendMessages(
+		sendCtx,
+		[]message.Message{
+			{
+				Role:  message.User,
+				Parts: []message.ContentPart{message.TextContent{Text: compactionPrompt + "\n\nConversation to summarize:\n" + convText.String()}},
+			},
+		},
+		[]tools.BaseTool{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to generate compaction summary: %w", err)
+	}
+
+	summary := strings.TrimSpace(response.Content)
+	if summary == "" {
+		return fmt.Errorf("empty compaction summary returned")
+	}
+
+	summaryText := fmt.Sprintf("The following is a summary of the earlier conversation:\n\n%s\n\n---\nConversation continues below:", summary)
+
+	summaryMsg, err := a.messages.Create(ctx, sessionID, message.CreateMessageParams{
+		Role: message.Assistant,
+		Parts: []message.ContentPart{
+			message.TextContent{Text: summaryText},
+			message.Finish{
+				Reason: message.FinishReasonEndTurn,
+				Time:   time.Now().Unix(),
+			},
+		},
+		Model: a.summarizeProvider.Model().ID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create compaction summary message: %w", err)
+	}
+
+	sess, err := a.sessions.Get(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session for compaction: %w", err)
+	}
+	sess.SummaryMessageID = summaryMsg.ID
+	if _, err = a.sessions.Save(ctx, sess); err != nil {
+		return fmt.Errorf("failed to save session after compaction: %w", err)
+	}
+
+	logging.InfoPersist(fmt.Sprintf("Context compacted: %d messages summarized, SummaryMessageID: %s", len(msgs), summaryMsg.ID))
 	return nil
 }
 
