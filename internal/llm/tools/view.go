@@ -2,6 +2,7 @@ package tools
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -176,6 +177,20 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return NewTextErrorResponse(fmt.Sprintf("This is an image file of type: %s\nUse a different tool to process images", imageType)), nil
 	}
 
+	// Check for binary content using a sample of up to 4096 bytes
+	{
+		f, err := os.Open(filePath)
+		if err != nil {
+			return ToolResponse{}, fmt.Errorf("error opening file for binary check: %w", err)
+		}
+		sample := make([]byte, binarySampleSize)
+		n, _ := f.Read(sample)
+		f.Close()
+		if isBinaryContent(sample[:n]) {
+			return NewTextErrorResponse(fmt.Sprintf("File appears to be binary: %s", filePath)), nil
+		}
+	}
+
 	// Read the file content
 	content, lineCount, err := readTextFile(filePath, params.Offset, params.Limit)
 	if err != nil {
@@ -278,6 +293,24 @@ func readTextFile(filePath string, offset, limit int) (string, int, error) {
 	}
 
 	return strings.Join(lines, "\n"), lineCount, nil
+}
+
+const binarySampleSize = 4096
+
+// isBinaryContent detects binary files using null-byte and non-printable ratio checks.
+func isBinaryContent(data []byte) bool {
+	// Null byte is a strong indicator of binary content
+	if bytes.IndexByte(data, 0) != -1 {
+		return true
+	}
+	// Count non-printable, non-whitespace bytes
+	nonPrintable := 0
+	for _, b := range data {
+		if b < 0x09 || (b > 0x0D && b < 0x20) || b > 0x7E {
+			nonPrintable++
+		}
+	}
+	return len(data) > 0 && float64(nonPrintable)/float64(len(data)) > 0.30
 }
 
 func isImageFile(filePath string) (bool, string) {

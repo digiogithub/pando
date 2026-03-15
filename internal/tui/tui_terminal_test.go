@@ -6,20 +6,20 @@ import (
 	"github.com/digiogithub/pando/internal/tui/components/terminal"
 )
 
-func TestDefaultKeyMapTerminalBindingsAreDistinct(t *testing.T) {
+func TestDefaultKeyMapTerminalBinding(t *testing.T) {
 	keys := DefaultKeyMap()
 
 	toggle := keys.Global.ToggleTerminal.Keys()
-	focus := keys.Global.FocusTerminal.Keys()
+	newTerm := keys.Global.NewTerminal.Keys()
 
-	if len(toggle) != 1 || toggle[0] != "ctrl+`" {
+	if len(toggle) != 1 || toggle[0] != "ctrl+shift+t" {
 		t.Fatalf("unexpected toggle terminal binding: %v", toggle)
 	}
-	if len(focus) != 1 || focus[0] != "alt+`" {
-		t.Fatalf("unexpected focus terminal binding: %v", focus)
+	if len(newTerm) != 1 || newTerm[0] != "ctrl+alt+t" {
+		t.Fatalf("unexpected new terminal binding: %v", newTerm)
 	}
-	if toggle[0] == focus[0] {
-		t.Fatalf("toggle and focus terminal bindings must be distinct, got %q", toggle[0])
+	if toggle[0] == newTerm[0] {
+		t.Fatalf("toggle and new-terminal bindings must be distinct, got %q", toggle[0])
 	}
 }
 
