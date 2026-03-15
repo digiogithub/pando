@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/rag/kb"
+	"github.com/digiogithub/pando/internal/rag/sessions"
 )
 
 // KB tool names
@@ -21,9 +24,10 @@ type KBAddDocumentTool struct {
 	store *kb.KBStore
 }
 
-// KBSearchDocumentsTool searches documents in the knowledge base.
+// KBSearchDocumentsTool searches documents in the knowledge base and optionally sessions.
 type KBSearchDocumentsTool struct {
-	store *kb.KBStore
+	store    *kb.KBStore
+	sessions *sessions.SessionRAGStore // may be nil
 }
 
 // KBGetDocumentTool retrieves a document from the knowledge base by path.
@@ -42,8 +46,9 @@ func NewKBAddDocumentTool(store *kb.KBStore) BaseTool {
 }
 
 // NewKBSearchDocumentsTool creates a new KBSearchDocumentsTool.
-func NewKBSearchDocumentsTool(store *kb.KBStore) BaseTool {
-	return &KBSearchDocumentsTool{store: store}
+// sessStore may be nil; if nil only KB search is performed.
+func NewKBSearchDocumentsTool(store *kb.KBStore, sessStore *sessions.SessionRAGStore) BaseTool {
+	return &KBSearchDocumentsTool{store: store, sessions: sessStore}
 }
 
 // NewKBGetDocumentTool creates a new KBGetDocumentTool.
@@ -121,7 +126,7 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 func (t *KBSearchDocumentsTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        kbSearchDocumentsToolName,
-		Description: "Searches the knowledge base for documents semantically similar to the query. Combines vector similarity and full-text search for best results. Use this to retrieve stored documentation, notes, or plans.",
+		Description: "Searches the knowledge base and/or past conversation sessions for content semantically similar to the query. Combines vector similarity and full-text search for best results.",
 		Parameters: map[string]any{
 			"query": map[string]any{
 				"type":        "string",
@@ -131,6 +136,11 @@ func (t *KBSearchDocumentsTool) Info() ToolInfo {
 				"type":        "integer",
 				"description": "Maximum number of results to return (default: 5, max: 20).",
 			},
+			"source": map[string]any{
+				"type":        "string",
+				"description": "Source to search: 'kb' (documents only), 'sessions' (past conversations only), or 'all' (default, searches both).",
+				"enum":        []string{"kb", "sessions", "all"},
+			},
 		},
 		Required: []string{"query"},
 	}
@@ -138,8 +148,9 @@ func (t *KBSearchDocumentsTool) Info() ToolInfo {
 
 func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
 	var req struct {
-		Query string `json:"query"`
-		Limit int    `json:"limit"`
+		Query  string `json:"query"`
+		Limit  int    `json:"limit"`
+		Source string `json:"source"`
 	}
 	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
@@ -153,43 +164,44 @@ func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolR
 	if req.Limit > 20 {
 		req.Limit = 20
 	}
+	if req.Source == "" {
+		req.Source = "all"
+	}
 
-	results, err := t.store.SearchDocuments(ctx, req.Query, req.Limit)
+	// Force KB-only when sessions store is not available.
+	if t.sessions == nil && req.Source != "kb" {
+		req.Source = "kb"
+	}
+
+	searcher := rag.NewUnifiedSearcher(t.store, t.sessions)
+	results, err := searcher.Search(ctx, req.Query, req.Limit, req.Source)
 	if err != nil {
-		return NewTextErrorResponse(fmt.Sprintf("kb search error: %v", err)), nil
+		return NewTextErrorResponse(fmt.Sprintf("search error: %v", err)), nil
 	}
 
 	if len(results) == 0 {
 		return NewTextResponse("No documents found matching the query."), nil
 	}
 
-	type resultItem struct {
-		FilePath     string                 `json:"file_path"`
-		ChunkContent string                 `json:"chunk_content"`
-		Score        float64                `json:"score"`
-		Rank         int                    `json:"rank"`
-		Metadata     map[string]interface{} `json:"metadata,omitempty"`
-	}
-
-	items := make([]resultItem, len(results))
-	for i, r := range results {
-		items[i] = resultItem{
-			FilePath:     r.Document.FilePath,
-			ChunkContent: r.ChunkContent,
-			Score:        r.Score,
-			Rank:         r.Rank,
-			Metadata:     r.Document.Metadata,
+	var sb strings.Builder
+	for _, r := range results {
+		switch r.Source {
+		case "kb":
+			sb.WriteString(fmt.Sprintf("[KB] %s:\n%s\n\n", r.FilePath, r.Content))
+		case "session":
+			turns := ""
+			if r.TurnStart > 0 || r.TurnEnd > 0 {
+				turns = fmt.Sprintf(", turns %d-%d", r.TurnStart, r.TurnEnd)
+			}
+			role := r.Role
+			if role == "" {
+				role = "mixed"
+			}
+			sb.WriteString(fmt.Sprintf("[Session: %q]%s, %s:\n%s\n\n", r.Title, turns, role, r.Content))
 		}
 	}
 
-	out, err := json.MarshalIndent(map[string]any{
-		"count":   len(items),
-		"results": items,
-	}, "", "  ")
-	if err != nil {
-		return NewTextErrorResponse("failed to marshal results"), nil
-	}
-	return NewTextResponse(string(out)), nil
+	return NewTextResponse(sb.String()), nil
 }
 
 // ---- KBGetDocumentTool ----
