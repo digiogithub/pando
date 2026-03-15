@@ -554,6 +554,11 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.toggleTerminalPanel()
 		}
 
+		// Open a new terminal tab (panel becomes visible if hidden).
+		if key.Matches(msg, a.keys.Global.NewTerminal) {
+			return a, a.openNewTerminalTab()
+		}
+
 		// Toggle terminal focus independently from panel visibility.
 		if key.Matches(msg, a.keys.Global.FocusTerminal) && a.terminalPanel.IsVisible() && a.terminalPanel.HasTerminals() {
 			a.terminalFocused = !a.terminalFocused
