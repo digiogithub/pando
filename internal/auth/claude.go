@@ -19,12 +19,14 @@ import (
 )
 
 const (
-	ClaudeClientID           = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-	ClaudeAuthorizeURL       = "https://claude.ai/oauth/authorize"
-	ClaudeTokenURL           = "https://platform.claude.com/v1/oauth/token"
-	ClaudeProfileURL         = "https://api.anthropic.com/api/oauth/profile"
-	ClaudeOAuthBetaHeader    = "oauth-2025-04-20"
-	ClaudeOAuthScopes        = "user:file_upload user:inference user:mcp_servers user:profile user:sessions:claude_code"
+	ClaudeClientID        = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	ClaudeAuthorizeURL    = "https://claude.ai/oauth/authorize"
+	ClaudeTokenURL        = "https://platform.claude.com/v1/oauth/token"
+	ClaudeProfileURL      = "https://api.anthropic.com/api/oauth/profile"
+	ClaudeOAuthBetaHeader = "oauth-2025-04-20"
+	// ClaudeOAuthScopes matches claude-code's ed1 scope set (union of console + claude.ai scopes).
+	// org:create_api_key is required by the claude.ai authorization endpoint.
+	ClaudeOAuthScopes        = "org:create_api_key user:file_upload user:inference user:mcp_servers user:profile user:sessions:claude_code"
 	claudeCredentialFile     = "claude.json"
 	claudeCodeCredentialFile = ".credentials.json"
 
@@ -47,10 +49,28 @@ type ClaudeOAuthToken struct {
 	RateLimitTier    string   `json:"rateLimitTier,omitempty"`
 }
 
-// ClaudeProfile holds the user profile from Claude API.
+// ClaudeProfile holds the user profile from Claude API (/api/oauth/profile).
+// The response is nested: account and organization sub-objects.
 type ClaudeProfile struct {
+	Account      ClaudeProfileAccount      `json:"account"`
+	Organization ClaudeProfileOrganization `json:"organization"`
+}
+
+// ClaudeProfileAccount holds account-level info from the profile response.
+type ClaudeProfileAccount struct {
 	DisplayName  string `json:"display_name"`
 	EmailAddress string `json:"email_address"`
+	CreatedAt    string `json:"created_at"`
+}
+
+// ClaudeProfileOrganization holds organization-level info from the profile response.
+type ClaudeProfileOrganization struct {
+	UUID                    string `json:"uuid"`
+	OrganizationType        string `json:"organization_type"`
+	RateLimitTier           string `json:"rate_limit_tier"`
+	HasExtraUsageEnabled    bool   `json:"has_extra_usage_enabled"`
+	BillingType             string `json:"billing_type"`
+	SubscriptionCreatedAt   string `json:"subscription_created_at"`
 }
 
 // ClaudeAuthStatus holds the authentication status for Claude.
@@ -125,15 +145,18 @@ func ClaudeLogin() (*ClaudeCredentials, string, error) {
 	}
 
 	// Start local HTTP server to receive the callback.
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	// Must listen on "localhost" (not 127.0.0.1) to match the redirect_uri registered with Anthropic.
+	listener, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		return nil, "", fmt.Errorf("start callback server: %w", err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
-	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", port)
+	redirectURI := fmt.Sprintf("http://localhost:%d/callback", port)
 
 	// Build authorization URL.
+	// Note: "code":"true" is a non-standard param required by Anthropic's OAuth server.
 	params := url.Values{}
+	params.Set("code", "true")
 	params.Set("client_id", ClaudeClientID)
 	params.Set("response_type", "code")
 	params.Set("scope", ClaudeOAuthScopes)
@@ -172,7 +195,8 @@ func ClaudeLogin() (*ClaudeCredentials, string, error) {
 			errCh <- fmt.Errorf("missing authorization code in callback")
 			return
 		}
-		fmt.Fprintln(w, "<html><body><h2>Authentication successful! You can close this tab.</h2></body></html>")
+		// Redirect to Claude's success page (matches original claude-code behavior).
+		http.Redirect(w, r, "https://claude.ai/oauth/code/success?app=claude-code", http.StatusFound)
 		codeCh <- code
 	})
 
@@ -194,7 +218,7 @@ func ClaudeLogin() (*ClaudeCredentials, string, error) {
 	}
 
 	// Exchange code for tokens.
-	tokenResp, err := exchangeClaudeCode(code, redirectURI, verifier)
+	tokenResp, err := exchangeClaudeCode(code, redirectURI, verifier, state)
 	if err != nil {
 		return nil, "", err
 	}
@@ -216,24 +240,52 @@ func ClaudeLogin() (*ClaudeCredentials, string, error) {
 		},
 	}
 
-	// Fetch profile.
+	// Fetch profile to get display name and organization UUID.
 	displayName := ""
 	profile, err := GetClaudeProfile(tokenResp.AccessToken)
 	if err == nil && profile != nil {
-		displayName = profile.DisplayName
+		displayName = profile.Account.DisplayName
+		if profile.Organization.UUID != "" {
+			creds.OrganizationUUID = profile.Organization.UUID
+		}
+		// Populate subscription/rate info from profile if not in token response.
+		if creds.ClaudeAiOauth.SubscriptionType == "" {
+			creds.ClaudeAiOauth.SubscriptionType = subscriptionTypeFromOrg(profile.Organization.OrganizationType)
+		}
+		if creds.ClaudeAiOauth.RateLimitTier == "" {
+			creds.ClaudeAiOauth.RateLimitTier = profile.Organization.RateLimitTier
+		}
 	}
 
 	return creds, displayName, nil
 }
 
+// subscriptionTypeFromOrg maps the organization_type field to a friendly subscription label,
+// matching the logic in claude-code's fZ1 function.
+func subscriptionTypeFromOrg(orgType string) string {
+	switch orgType {
+	case "claude_max":
+		return "max"
+	case "claude_pro":
+		return "pro"
+	case "claude_enterprise":
+		return "enterprise"
+	case "claude_team":
+		return "team"
+	default:
+		return ""
+	}
+}
+
 // exchangeClaudeCode exchanges an authorization code for tokens.
-func exchangeClaudeCode(code, redirectURI, verifier string) (*claudeTokenResponse, error) {
+func exchangeClaudeCode(code, redirectURI, verifier, state string) (*claudeTokenResponse, error) {
 	payload := map[string]string{
 		"grant_type":    "authorization_code",
 		"code":          code,
 		"redirect_uri":  redirectURI,
 		"client_id":     ClaudeClientID,
 		"code_verifier": verifier,
+		"state":         state,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -244,9 +296,8 @@ func exchangeClaudeCode(code, redirectURI, verifier string) (*claudeTokenRespons
 	if err != nil {
 		return nil, fmt.Errorf("create token exchange request: %w", err)
 	}
+	// Only Content-Type is sent — matches claude-code's by8 function (no anthropic-beta header).
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("anthropic-beta", ClaudeOAuthBetaHeader)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -461,14 +512,14 @@ func GetValidClaudeToken(creds *ClaudeCredentials) (string, *ClaudeCredentials, 
 }
 
 // GetClaudeProfile fetches the user profile from the Claude API.
+// Matches claude-code's Kg function: only Authorization and Content-Type headers.
 func GetClaudeProfile(accessToken string) (*ClaudeProfile, error) {
 	req, err := http.NewRequest(http.MethodGet, ClaudeProfileURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create profile request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("anthropic-beta", ClaudeOAuthBetaHeader)
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
