@@ -554,6 +554,11 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.toggleTerminalPanel()
 		}
 
+		// Open a new terminal tab (panel becomes visible if hidden).
+		if key.Matches(msg, a.keys.Global.NewTerminal) {
+			return a, a.openNewTerminalTab()
+		}
+
 		// Toggle terminal focus independently from panel visibility.
 		if key.Matches(msg, a.keys.Global.FocusTerminal) && a.terminalPanel.IsVisible() && a.terminalPanel.HasTerminals() {
 			a.terminalFocused = !a.terminalFocused
@@ -895,6 +900,18 @@ func (a *appModel) toggleTerminalPanel() tea.Cmd {
 	return a.setTerminalFocus(false)
 }
 
+// openNewTerminalTab opens a new terminal tab and ensures the panel is visible.
+// Unlike toggleTerminalPanel, this always opens a fresh terminal regardless of
+// whether other terminals already exist.
+func (a *appModel) openNewTerminalTab() tea.Cmd {
+	logging.Info("tui: open-new-terminal-tab invoked",
+		"panel_visible", a.terminalPanel.IsVisible(),
+		"tab_count", a.terminalPanel.HasTerminals(),
+	)
+	initCmd := a.terminalPanel.OpenNewTerminal()
+	return tea.Batch(initCmd, a.setTerminalFocus(false))
+}
+
 func (a *appModel) findCommand(id string) (dialog.Command, bool) {
 	for _, cmd := range a.commands {
 		if cmd.ID == id {
@@ -1131,7 +1148,7 @@ func (a appModel) View() string {
 	if a.terminalPanel.IsVisible() {
 		components = []string{
 			pageView,
-			a.terminalPanel.View(),
+			tuizone.MarkTerminalPanel(a.terminalPanel.View()),
 		}
 	} else {
 		components = []string{pageView}
