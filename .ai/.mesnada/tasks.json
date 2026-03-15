@@ -17,6 +17,28 @@
     "timeout": "10m0s",
     "mcp_config": "@.github/mcp-config.json"
   },
+  "task-05cf3152": {
+    "id": "task-05cf3152",
+    "prompt": "You are the task_id: task-05cf3152\n\nYou are implementing Phase 2 of the JSON→TOON conversion feature for the Pando project (Go codebase at /www/MCP/Pando/pando).\n\nPhase 1 has already completed: the package `internal/toonconv` exists with function `ConvertIfJSON(content string) string`.\n\n## Your Task\n\nModify `internal/llm/agent/agent.go` to apply TOON conversion on ALL tool responses before they are sent back to the AI model.\n\n---\n\n## Context\n\nThe file `internal/llm/agent/agent.go` contains the method `streamAndHandleEvents()`. Inside this method, there is a loop that processes tool calls. After each tool runs via `tool.Run(ctx, ...)`, its result is assigned to `toolResults[i]` (around line 513):\n\n```go\ntoolResults[i] = message.ToolResult{\n    ToolCallID: toolCall.ID,\n    Name:       toolCall.Name,\n    Content:    toolResult.Content,\n    Metadata:   toolResult.Metadata,\n    IsError:    toolResult.IsError,\n}\n```\n\nThis is the **single interception point** that covers ALL tools:\n- Internal tools (bash, edit, view, glob, grep, ls, fetch, patch, write, etc.)\n- Direct MCP tools (stdio/SSE/HTTP connections)\n- MCP Gateway proxy tools (`mcp_call_tool`, `mcp_query_catalog`)\n- MCP Gateway favorite tools\n- Remembrances tools (kb, code, events)\n- Mesnada tools\n\n## Steps\n\n1. **Read the file first**: Read `/www/MCP/Pando/pando/internal/llm/agent/agent.go` and locate the exact section where `toolResults[i]` is assigned (search for `toolResults[i] = message.ToolResult{`).\n\n2. **Read the config**: Read `/www/MCP/Pando/pando/internal/config/config.go` to understand the `ToonConversion` field that Phase 3 added (it's a `bool` field defaulting to `true`).\n\n3. **Modify the import block**: Add `\"github.com/digiogithub/pando/internal/toonconv\"` to the imports in `agent.go`.\n\n4. **Apply conversion**: At the point where `toolResults[i]` is created, apply TOON conversion on the content **only when**:\n   - `!toolResult.IsError` (don't convert error messages)\n   - `config.Get().ToonConversion` is true\n\n   The modified assignment should look like:\n   ```go\n   content := toolResult.Content\n   if !toolResult.IsError \u0026\u0026 config.Get() != nil \u0026\u0026 config.Get().ToonConversion {\n       content = toonconv.ConvertIfJSON(content)\n   }\n   toolResults[i] = message.ToolResult{\n       ToolCallID: toolCall.ID,\n       Name:       toolCall.Name,\n       Content:    content,\n       Metadata:   toolResult.Metadata,\n       IsError:    toolResult.IsError,\n   }\n   ```\n\n5. **Build verification**: Run `go build ./...` to verify everything compiles correctly.\n\n---\n\n## Important Notes\n- ONLY modify `internal/llm/agent/agent.go` (imports + one assignment block)\n- Do NOT convert error responses (IsError=true) — keep those as plain text\n- The `config` package is already imported in `agent.go` as `\"github.com/digiogithub/pando/internal/config\"`\n- If Phase 3's `ToonConversion` field doesn't exist yet in config, just check for the field existence or add a simple `toonconv.ConvertIfJSON(toolResult.Content)` call without the config guard (we'll add the config guard later)\n- After the change, run `go build ./...` and report the result\n\nReport what exact lines you changed and whether the build succeeded.",
+    "work_dir": "/www/MCP/Pando/pando",
+    "status": "running",
+    "engine": "claude",
+    "pid": 28798,
+    "model": "sonnet",
+    "log_file": "/www/MCP/Pando/pando/.ai/.mesnada/logs/task-05cf3152.log",
+    "created_at": "2026-03-15T16:46:21.655989818+01:00",
+    "started_at": "2026-03-15T16:46:21.657281685+01:00",
+    "dependencies": [
+      "task-7e5c74fe"
+    ],
+    "tags": [
+      "pando",
+      "toon",
+      "fase2"
+    ],
+    "timeout": "15m0s",
+    "mcp_config": "@.github/mcp-config.json"
+  },
   "task-07d75af7": {
     "id": "task-07d75af7",
     "prompt": "You are the task_id: task-07d75af7\n\nEres un experto en Go y bubbletea. Tu tarea es crear el File Viewer component para la TUI de Pando.\n\n## Contexto del Proyecto\nPando es un IDE TUI en Go basado en bubbletea. Working dir: /www/MCP/Pando/pando\n\n## Documentación de Referencia\nLee estos archivos:\n1. `/www/MCP/Pando/pando/.kb/pando/tui-enhancement/03-phase3-editor-syntax-highlighting.md` - Especificación completa\n2. `/www/MCP/Pando/pando/.kb/pando/tui-enhancement/09-revised-implementation-priorities.md` - Sección 1B\n3. `/www/MCP/Pando/pando/.kb/pando/tui-enhancement/11-external-libraries-reference.md` - viewport de bubbles\n\n## Código de Referencia - LEE PRIMERO\n- `internal/tui/components/editor/highlight.go` - El Highlighter creado por un agente previo (DEBE existir antes de tu ejecución)\n- `internal/tui/components/` - Patrones de componentes existentes\n- `internal/tui/theme/` - Sistema de temas\n- `go.mod` - Para ver dependencias de bubbles/viewport\n\nUsa también las tools de remembrances si están disponibles:\n- `code_hybrid_search` en proyecto \"pando\" para buscar cómo se usa viewport\n- `code_get_file_symbols` en `internal/tui/components/editor/highlight.go` para conocer la API del Highlighter\n\n## Archivos a Crear\n```\ninternal/tui/components/editor/viewer.go   # File viewer principal\ninternal/tui/components/editor/keys.go     # Keybindings del viewer\n```\n\n## Requisitos\n1. **viewer.go**: Componente read-only que muestra archivos:\n   - Basado en `viewport` de bubbles (ya es dependencia)\n   - Syntax highlighting via el Highlighter existente en highlight.go\n   - Números de línea usando `LeftGutterFunc` del viewport\n   - Scroll vertical con j/k, Ctrl+d/Ctrl+u (half page), g/G (top/bottom)\n   - Búsqueda con `/` o ctrl+f usando `SetHighlights()` + `HighlightNext/Previous`\n   - Current line highlight usando `StyleLineFunc`\n   - `OpenFile(path string) tea.Cmd` - Carga archivo async y aplica highlighting\n   - `SetSize(w, h int)` para responsive layout\n   - `FilePath() string` - Retorna path del archivo actual\n   - Status line inferior: nombre de archivo, línea actual, total líneas\n2. **keys.go**: KeyMap del viewer\n   - j/k: scroll línea, Ctrl+d/Ctrl+u: half page, g/G: top/bottom\n   - /: iniciar búsqueda, n/N: siguiente/anterior match, Esc: cancelar búsqueda\n   - q: cerrar viewer\n\n## IMPORTANTE\n- Reutilizar el Highlighter de highlight.go, NO reimplementar highlighting\n- El viewer es READ-ONLY por ahora (la edición es futuro)\n- Compila con `go build ./...` al final para verificar",
@@ -882,6 +904,29 @@
     "timeout": "45m0s",
     "mcp_config": "@.github/mcp-config.json"
   },
+  "task-7e5c74fe": {
+    "id": "task-7e5c74fe",
+    "prompt": "You are the task_id: task-7e5c74fe\n\nYou are implementing Phase 1 of the JSON→TOON conversion feature for the Pando project (Go codebase at /www/MCP/Pando/pando).\n\n## Your Task\n\n1. **Add the toon-go dependency** to go.mod/go.sum\n2. **Create the `internal/toonconv/toonconv.go` package** with a conversion utility\n\n---\n\n## Step 1: Add dependency\n\nRun:\n```\ncd /www/MCP/Pando/pando \u0026\u0026 go get github.com/toon-format/toon-go@v0.0.0-20251202084852-7ca0e27c4e8c\n```\n\n---\n\n## Step 2: Create `internal/toonconv/toonconv.go`\n\nCreate the file with this exact content:\n\n```go\n// Package toonconv provides utilities for converting JSON tool responses to\n// TOON (Token-Oriented Object Notation) format before sending them to the AI\n// model. TOON is more token-efficient than JSON for LLM prompts.\npackage toonconv\n\nimport (\n\t\"encoding/json\"\n\n\t\"github.com/toon-format/toon-go\"\n)\n\n// ConvertIfJSON checks whether content is valid JSON. If it is, it converts\n// it to TOON format using toon.MarshalString and returns the TOON string.\n// If content is not valid JSON (plain text, markdown, etc.) or if conversion\n// fails for any reason, it returns the original content unchanged.\n// The function is stateless and safe for concurrent use.\nfunc ConvertIfJSON(content string) string {\n\tif content == \"\" {\n\t\treturn content\n\t}\n\tif !json.Valid([]byte(content)) {\n\t\treturn content\n\t}\n\tvar data interface{}\n\tif err := json.Unmarshal([]byte(content), \u0026data); err != nil {\n\t\treturn content\n\t}\n\tout, err := toon.MarshalString(data, toon.WithLengthMarkers(true))\n\tif err != nil {\n\t\treturn content\n\t}\n\treturn out\n}\n```\n\n---\n\n## Notes\n- The toon-go library is already available in the GOPATH module cache at `/home/sevir/go/pkg/mod/github.com/toon-format/toon-go@v0.0.0-20251202084852-7ca0e27c4e8c/`\n- The `toon.MarshalString(v any, opts ...EncoderOption) (string, error)` API is the correct one to use\n- `toon.WithLengthMarkers(true)` enables optional `#` markers in array headers (consistent with remembrances-mcp usage)\n- After creating the file, run `go build ./internal/toonconv/...` to verify it compiles correctly\n- If `go get` fails due to network, try: `go mod edit -require github.com/toon-format/toon-go@v0.0.0-20251202084852-7ca0e27c4e8c \u0026\u0026 go mod download github.com/toon-format/toon-go@v0.0.0-20251202084852-7ca0e27c4e8c`\n\nReport what you did and whether the build succeeded.",
+    "work_dir": "/www/MCP/Pando/pando",
+    "status": "completed",
+    "engine": "claude",
+    "pid": 27813,
+    "output": "Phase 1 completada exitosamente:\n\n1. **Dependencia agregada**: `github.com/toon-format/toon-go@v0.0.0-20251202084852-7ca0e27c4e8c` añadida a `go.mod`/`go.sum`\n2. **Archivo creado**: `/www/MCP/Pando/pando/internal/toonconv/toonconv.go` con la función `ConvertIfJSON`\n3. **Build exitoso**: `go build ./internal/toonconv/...` completó sin errores\n\nEl paquete está listo para ser utilizado en fases posteriores.\n",
+    "output_tail": "Phase 1 completada exitosamente:\n\n1. **Dependencia agregada**: `github.com/toon-format/toon-go@v0.0.0-20251202084852-7ca0e27c4e8c` añadida a `go.mod`/`go.sum`\n2. **Archivo creado**: `/www/MCP/Pando/pando/internal/toonconv/toonconv.go` con la función `ConvertIfJSON`\n3. **Build exitoso**: `go build ./internal/toonconv/...` completó sin errores\n\nEl paquete está listo para ser utilizado en fases posteriores.\n",
+    "exit_code": 0,
+    "model": "sonnet",
+    "log_file": "/www/MCP/Pando/pando/.ai/.mesnada/logs/task-7e5c74fe.log",
+    "created_at": "2026-03-15T16:45:48.698917415+01:00",
+    "started_at": "2026-03-15T16:45:48.70976339+01:00",
+    "completed_at": "2026-03-15T16:46:09.233097351+01:00",
+    "tags": [
+      "pando",
+      "toon",
+      "fase1"
+    ],
+    "timeout": "15m0s",
+    "mcp_config": "@.github/mcp-config.json"
+  },
   "task-83efe1a5": {
     "id": "task-83efe1a5",
     "prompt": "You are the task_id: task-83efe1a5\n\nEres un experto en Go y bubbletea. Tu tarea es integrar los nuevos componentes (FileTree, Viewer, Tabs) en el layout principal de Pando.\n\n## Contexto del Proyecto\nPando es un IDE TUI en Go basado en bubbletea. Working dir: /www/MCP/Pando/pando\n\n## Documentación de Referencia\nLee estos archivos:\n1. `/www/MCP/Pando/pando/.kb/pando/tui-enhancement/09-revised-implementation-priorities.md` - Sección 1D Layout\n2. `/www/MCP/Pando/pando/.kb/pando/tui-enhancement/08-pando-current-state-detailed.md` - Arquitectura actual\n3. `/www/MCP/Pando/pando/.kb/pando/tui-enhancement/10-crush-architecture-deep-dive.md` - Cómo crush maneja layout\n\n## Código de Referencia - LEE TODO ESTO PRIMERO\nArchivos existentes (leer completos para entender la arquitectura):\n- `internal/tui/tui.go` - Modelo principal, routing de mensajes, Init, Update, View\n- `internal/tui/layout/` - SplitPane existente y sistema de layout\n- `internal/tui/page/chat.go` - ChatPage actual\n- `internal/tui/keys.go` - KeyMap jerárquico (creado por agente previo)\n\nComponentes nuevos creados por agentes previos (DEBEN existir):\n- `internal/tui/components/filetree/filetree.go` - FileTree component\n- `internal/tui/components/editor/viewer.go` - File Viewer\n- `internal/tui/components/editor/tabs.go` - Tab System\n- `internal/tui/components/editor/highlight.go` - Syntax Highlighting\n\nUsa también las tools de remembrances si están disponibles:\n- `code_get_file_symbols` para entender las interfaces de cada componente nuevo\n- `code_hybrid_search` para buscar cómo funciona el SplitPane\n\n## Archivos a Modificar\n```\ninternal/tui/tui.go          # Añadir componentes y modos de layout\ninternal/tui/page/chat.go    # Posible refactor para coexistir con editor\ninternal/tui/layout/          # Extender si es necesario\n```\n\n## Requisitos\n1. Añadir al appModel los nuevos componentes:\n   - fileTree (filetree.Model)\n   - viewer (editor.Viewer)\n   - tabBar (editor.TabBar)\n   - layoutMode (enum: ChatOnly, SidebarChat, SidebarEditor)\n2. **3 modos de layout**:\n   - **ChatOnly** (default actual, no cambiar nada)\n   - **SidebarChat**: FileTree (25% ancho) | Chat (75% ancho)\n   - **SidebarEditor**: FileTree (20%) | Editor+Tabs (80%)\n3. Toggle sidebar con **Ctrl+B** (añadir al KeyMap)\n4. **Flujo de interacción**:\n   - Ctrl+B → muestra/oculta sidebar en modo SidebarChat\n   - Seleccionar archivo en FileTree → abre en Viewer, cambia a SidebarEditor\n   - Esc en Viewer → volver a SidebarChat\n   - Cerrar último tab → volver a SidebarChat\n5. **Routing de teclas** según focus:\n   - Focus en FileTree: teclas van al filetree\n   - Focus en Chat: teclas van al chat (comportamiento actual)\n   - Focus en Editor: teclas van al viewer\n   - Tab o Ctrl+[ para cambiar focus entre paneles\n6. **Responsive**: Redistribuir paneles al recibir tea.WindowSizeMsg\n7. Usar SplitPaneLayout existente, extenderlo solo si es estrictamente necesario\n\n## IMPORTANTE\n- NO romper la funcionalidad del chat existente\n- El chat DEBE seguir siendo el modo por defecto (ChatOnly)\n- Lee TODOS los archivos existentes antes de hacer cambios\n- Si keys.go tiene campos Editor/FileTree vacíos, rellénalos con los bindings necesarios\n- Compila con `go build ./...` al final para verificar\n- Si hay tests, ejecútalos con `go test ./internal/tui/...`",
@@ -1382,6 +1427,25 @@
       "copilot-fix"
     ],
     "timeout": "15m0s",
+    "mcp_config": "@.github/mcp-config.json"
+  },
+  "task-caafa177": {
+    "id": "task-caafa177",
+    "prompt": "You are the task_id: task-caafa177\n\nYou are implementing Phase 3 of the JSON→TOON conversion feature for the Pando project (Go codebase at /www/MCP/Pando/pando).\n\n## Your Task\n\nAdd a `ToonConversion` configuration option to pando's config system so users can enable/disable the automatic JSON→TOON conversion of tool responses.\n\n---\n\n## Context\n\nPando converts JSON tool responses to TOON format (Token-Oriented Object Notation) before sending them to the AI model. This feature needs a config toggle.\n\n---\n\n## Steps\n\n1. **Read the config file first**: Read `/www/MCP/Pando/pando/internal/config/config.go` to understand the existing structure.\n\n2. **Add the ToonConversion field**: Add a boolean field `ToonConversion` to the main config struct (the one that maps to the config file). It should default to `true`.\n\n   Look for where other boolean feature flags are defined (e.g., `Debug`, `AutoCompact`, or similar). Add in the appropriate place:\n   ```go\n   ToonConversion bool `json:\"toon_conversion\" toml:\"toon_conversion\"`\n   ```\n\n3. **Set default to true**: Find the function that creates default config values (likely `DefaultConfig()` or similar) and ensure `ToonConversion` defaults to `true`. This is important — if the field is absent in the config file, conversion should be enabled by default.\n\n4. **Build verification**: Run `go build ./internal/config/...` to verify it compiles.\n\n---\n\n## Notes\n- Do NOT modify the agent or any other files — only config-related files\n- The config is typically at `internal/config/config.go` and possibly `internal/config/defaults.go`\n- Read the files before editing to understand the exact structure\n- Keep the change minimal: just add the field and its default value\n\nReport what files you modified and whether the build succeeded.",
+    "work_dir": "/www/MCP/Pando/pando",
+    "status": "running",
+    "engine": "claude",
+    "pid": 28137,
+    "model": "sonnet",
+    "log_file": "/www/MCP/Pando/pando/.ai/.mesnada/logs/task-caafa177.log",
+    "created_at": "2026-03-15T16:45:56.236702725+01:00",
+    "started_at": "2026-03-15T16:45:56.237440314+01:00",
+    "tags": [
+      "pando",
+      "toon",
+      "fase3"
+    ],
+    "timeout": "10m0s",
     "mcp_config": "@.github/mcp-config.json"
   },
   "task-ce1899ae": {
