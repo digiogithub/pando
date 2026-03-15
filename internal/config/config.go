@@ -155,6 +155,8 @@ type RemembrancesConfig struct {
 	UseSameModel              bool   `json:"use_same_model" toml:"UseSameModel"`
 	ChunkSize                 int    `json:"chunk_size" toml:"ChunkSize"`
 	ChunkOverlap              int    `json:"chunk_overlap" toml:"ChunkOverlap"`
+	SessionRAGEnabled         bool   `json:"session_rag_enabled" toml:"SessionRAGEnabled"`
+	SessionMinMessages        int    `json:"session_min_messages" toml:"SessionMinMessages"`
 }
 
 // APIServerConfig holds configuration for the HTTP API server (WebUI backend).
@@ -176,12 +178,14 @@ type MCPGatewayConfig struct {
 
 // LuaConfig defines configuration for the Lua scripting engine.
 type LuaConfig struct {
-	Enabled         bool   `json:"enabled,omitempty" toml:"Enabled"`
-	ScriptPath      string `json:"script_path,omitempty" toml:"ScriptPath"`
-	Timeout         string `json:"timeout,omitempty" toml:"Timeout"`       // e.g. "5s"
-	StrictMode      bool   `json:"strict_mode,omitempty" toml:"StrictMode"`
-	HotReload       bool   `json:"hot_reload,omitempty" toml:"HotReload"`
-	LogFilteredData bool   `json:"log_filtered_data,omitempty" toml:"LogFilteredData"`
+	Enabled         bool     `json:"enabled,omitempty" toml:"Enabled"`
+	ScriptPath      string   `json:"script_path,omitempty" toml:"ScriptPath"`
+	Timeout         string   `json:"timeout,omitempty" toml:"Timeout"`          // e.g. "5s"
+	StrictMode      bool     `json:"strict_mode,omitempty" toml:"StrictMode"`
+	HotReload       bool     `json:"hot_reload,omitempty" toml:"HotReload"`
+	LogFilteredData bool     `json:"log_filtered_data,omitempty" toml:"LogFilteredData"`
+	ToolsEnabled    bool     `json:"tools_enabled,omitempty" toml:"ToolsEnabled"`     // expose pando_tools to the LLM
+	AllowedModules  []string `json:"allowed_modules,omitempty" toml:"AllowedModules"` // e.g. ["io"] to enable io.popen
 }
 
 // Config is the main configuration structure for the application.
@@ -200,7 +204,8 @@ type Config struct {
 	TUI          TUIConfig                         `json:"tui"`
 	Mesnada      MesnadaConfig                     `json:"mesnada,omitempty"`
 	Shell        ShellConfig                       `json:"shell,omitempty"`
-	AutoCompact  bool                              `json:"autoCompact,omitempty"`
+	AutoCompact     bool                              `json:"autoCompact,omitempty"`
+	ToonConversion  bool                              `json:"toon_conversion" toml:"toon_conversion"`
 	Remembrances RemembrancesConfig                `json:"remembrances,omitempty"`
 	Server       APIServerConfig                   `json:"server,omitempty"`
 	Lua          LuaConfig                         `json:"lua,omitempty"`
@@ -444,11 +449,13 @@ func setDefaults(debug bool) {
 	viper.SetDefault("server.port", 8765)
 	viper.SetDefault("server.requireAuth", true)
 	viper.SetDefault("autoCompact", true)
+	viper.SetDefault("toon_conversion", true)
 
 	// Lua scripting engine defaults
 	viper.SetDefault("lua.enabled", false)
 	viper.SetDefault("lua.timeout", "5s")
 	viper.SetDefault("lua.strict_mode", false)
+	viper.SetDefault("lua.tools_enabled", true)
 
 	// MCP Gateway defaults
 	viper.SetDefault("mcpGateway.enabled", false)
@@ -466,6 +473,8 @@ func setDefaults(debug bool) {
 	viper.SetDefault("remembrances.use_same_model", false)
 	viper.SetDefault("remembrances.chunk_size", 800)
 	viper.SetDefault("remembrances.chunk_overlap", 100)
+	viper.SetDefault("remembrances.session_rag_enabled", false)
+	viper.SetDefault("remembrances.session_min_messages", 4)
 
 	// Set default shell from environment or fallback to /bin/bash
 	shellPath := os.Getenv("SHELL")

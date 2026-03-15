@@ -33,6 +33,7 @@ import (
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
+	ragSessions "github.com/digiogithub/pando/internal/rag/sessions"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
 	"github.com/digiogithub/pando/internal/tui/theme"
@@ -110,23 +111,70 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 		}
 	}
 
+	// Setup session RAG auto-indexing via pubsub
+	if cfg != nil && app.Remembrances != nil && app.Remembrances.Sessions != nil {
+		idx := ragSessions.NewSessionIndexer(
+			app.Remembrances.Sessions,
+			app.Messages,
+			app.Sessions,
+		)
+		app.Remembrances.SetSessionIndexer(idx)
+
+		sessionSubCtx, sessionSubCancel := context.WithCancel(ctx)
+		app.cancelFuncsMutex.Lock()
+		app.watcherCancelFuncs = append(app.watcherCancelFuncs, sessionSubCancel)
+		app.cancelFuncsMutex.Unlock()
+
+		sessionEvents := app.Sessions.Subscribe(sessionSubCtx)
+		app.watcherWG.Add(1)
+		go func() {
+			defer app.watcherWG.Done()
+			for event := range sessionEvents {
+				if !cfg.Remembrances.SessionRAGEnabled {
+					continue
+				}
+				sess := event.Payload
+				switch event.Type {
+				case pubsub.UpdatedEvent:
+					minMsgs := cfg.Remembrances.SessionMinMessages
+					if minMsgs <= 0 {
+						minMsgs = 3
+					}
+					if sess.MessageCount >= int64(minMsgs) {
+						go func(id string) {
+							idxCtx := context.Background()
+							if err := idx.IndexSession(idxCtx, id); err != nil {
+								logging.Error("Failed to auto-index session", "session_id", id, "error", err)
+							}
+						}(sess.ID)
+					}
+				case pubsub.DeletedEvent:
+					go func(id string) {
+						delCtx := context.Background()
+						if err := app.Remembrances.Sessions.DeleteSession(delCtx, id); err != nil {
+							logging.Debug("Session RAG cleanup", "session_id", id, "error", err)
+						}
+					}(sess.ID)
+				}
+			}
+		}()
+		logging.Info("Session RAG auto-indexing enabled")
+	}
+
 	// Initialize Lua filter manager if enabled
 	cfg = config.Get()
 	if cfg != nil && cfg.Lua.Enabled && cfg.Lua.ScriptPath != "" {
-		luaTimeout := 5 * time.Second
-		if cfg.Lua.Timeout != "" {
-			if d, err := time.ParseDuration(cfg.Lua.Timeout); err == nil {
-				luaTimeout = d
-			}
-		}
-		luaMgr, err := luaengine.NewFilterManager(cfg.Lua.ScriptPath, luaTimeout, cfg.Lua.StrictMode)
+		luaMgr, err := luaengine.NewFilterManagerFromConfig(&cfg.Lua)
 		if err != nil {
 			logging.Error("Failed to create Lua filter manager", "error", err)
-		} else {
+		} else if luaMgr != nil {
 			app.LuaManager = luaMgr
 			agent.SetLuaManager(luaMgr)
 			session.SetLuaManager(luaMgr)
-			logging.Info("Lua filter manager initialized", "script", cfg.Lua.ScriptPath)
+			logging.Info("Lua filter manager initialized",
+				"script", cfg.Lua.ScriptPath,
+				"tools_enabled", cfg.Lua.ToolsEnabled,
+				"allowed_modules", cfg.Lua.AllowedModules)
 		}
 	}
 
@@ -230,6 +278,7 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 			app.History,
 			app.LSPClients,
 			app.SkillManager,
+			app.LuaManager,
 		),
 		app.SkillManager,
 	)

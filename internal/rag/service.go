@@ -2,6 +2,7 @@
 package rag
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 	"github.com/digiogithub/pando/internal/rag/events"
 	"github.com/digiogithub/pando/internal/rag/kb"
+	"github.com/digiogithub/pando/internal/rag/sessions"
 )
 
 // RemembrancesService groups KB, Events, and Code indexing stores.
@@ -20,6 +22,8 @@ type RemembrancesService struct {
 	KB           *kb.KBStore
 	Events       *events.EventStore
 	Code         *code.CodeIndexer
+	Sessions     *sessions.SessionRAGStore
+	SessionIdx   *sessions.SessionIndexer // may be nil until SetSessionIndexer is called
 	docEmbedder  embeddings.Embedder
 	codeEmbedder embeddings.Embedder
 }
@@ -67,13 +71,34 @@ func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*Rememb
 	eventStore := events.NewEventStore(db, docEmbedder)
 	codeIndexer := code.NewCodeIndexer(db, codeEmbedder)
 
+	sessionStore := sessions.NewSessionRAGStore(db, docEmbedder, cfg.ChunkSize, cfg.ChunkOverlap)
+	if err := sessionStore.InitTables(context.Background()); err != nil {
+		return nil, fmt.Errorf("remembrances: init session RAG tables: %w", err)
+	}
+
 	return &RemembrancesService{
 		KB:           kbStore,
 		Events:       eventStore,
 		Code:         codeIndexer,
+		Sessions:     sessionStore,
 		docEmbedder:  docEmbedder,
 		codeEmbedder: codeEmbedder,
 	}, nil
+}
+
+// NewUnifiedSearcher creates a UnifiedSearcher backed by this service's KB and Sessions.
+func (r *RemembrancesService) NewUnifiedSearcher() *UnifiedSearcher {
+	if r.Sessions == nil {
+		return NewUnifiedSearcher(r.KB, nil)
+	}
+	return NewUnifiedSearcher(r.KB, r.Sessions)
+}
+
+// SetSessionIndexer attaches an optional SessionIndexer.
+// It is configured externally because it requires message and session services
+// that are not available during NewRemembrancesService construction.
+func (r *RemembrancesService) SetSessionIndexer(idx *sessions.SessionIndexer) {
+	r.SessionIdx = idx
 }
 
 // resolveAPIKey looks up the API key for a provider from the current app config.
