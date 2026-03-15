@@ -29,7 +29,7 @@ func FetchModelsFromProvider(ctx context.Context, provider ModelProvider, apiKey
 	case ProviderOllama:
 		return fetchOllamaModels(ctx, apiKey, baseURL)
 	case ProviderAnthropic:
-		return fetchAnthropicModels(ctx, apiKey)
+		return fetchAnthropicModels(ctx, apiKey, bearerToken)
 	case ProviderGemini:
 		return fetchGeminiModels(ctx, apiKey)
 	case ProviderGROQ:
