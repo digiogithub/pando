@@ -29,7 +29,7 @@ func FetchModelsFromProvider(ctx context.Context, provider ModelProvider, apiKey
 	case ProviderOllama:
 		return fetchOllamaModels(ctx, apiKey, baseURL)
 	case ProviderAnthropic:
-		return fetchAnthropicModels(ctx, apiKey)
+		return fetchAnthropicModels(ctx, apiKey, bearerToken)
 	case ProviderGemini:
 		return fetchGeminiModels(ctx, apiKey)
 	case ProviderGROQ:
@@ -43,17 +43,21 @@ func FetchModelsFromProvider(ctx context.Context, provider ModelProvider, apiKey
 	}
 }
 
-func fetchAnthropicModels(ctx context.Context, apiKey string) ([]FetchedModel, error) {
-	if apiKey == "" {
-		return nil, fmt.Errorf("API key required for Anthropic")
+func fetchAnthropicModels(ctx context.Context, apiKey, bearerToken string) ([]FetchedModel, error) {
+	if apiKey == "" && bearerToken == "" {
+		return nil, fmt.Errorf("API key or bearer token required for Anthropic")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.anthropic.com/v1/models", nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("x-api-key", apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
+	if bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+bearerToken)
+	} else {
+		req.Header.Set("x-api-key", apiKey)
+	}
 
 	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
 		var response struct {
