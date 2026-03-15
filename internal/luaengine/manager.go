@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
 	lua "github.com/yuin/gopher-lua"
 )
@@ -19,8 +20,10 @@ type FilterManager struct {
 	enabled      bool
 	timeout      time.Duration
 	strictMode   bool
+	toolsEnabled bool
 	mu           sync.RWMutex
 	scriptLoaded bool
+	luaTools     []LuaToolDef
 }
 
 // NewFilterManager creates a new FilterManager instance.
@@ -28,10 +31,11 @@ type FilterManager struct {
 // In non-strict mode, script load errors are logged but do not return an error.
 func NewFilterManager(scriptPath string, timeout time.Duration, strictMode bool) (*FilterManager, error) {
 	fm := &FilterManager{
-		scriptPath: scriptPath,
-		enabled:    true,
-		timeout:    timeout,
-		strictMode: strictMode,
+		scriptPath:   scriptPath,
+		enabled:      true,
+		timeout:      timeout,
+		strictMode:   strictMode,
+		toolsEnabled: true, // enabled by default for backwards compatibility
 	}
 
 	fm.L = NewLuaState()
@@ -44,6 +48,43 @@ func NewFilterManager(scriptPath string, timeout time.Duration, strictMode bool)
 			}
 			logging.Warn("Failed to load Lua filter script, continuing without filters",
 				"script_path", scriptPath,
+				"error", err)
+		}
+	}
+
+	return fm, nil
+}
+
+// NewFilterManagerFromConfig creates a FilterManager from a LuaConfig.
+// Returns nil, nil when lua is disabled or cfg is nil.
+func NewFilterManagerFromConfig(cfg *config.LuaConfig) (*FilterManager, error) {
+	if cfg == nil || !cfg.Enabled {
+		return nil, nil
+	}
+	timeout := 5 * time.Second
+	if cfg.Timeout != "" {
+		if d, err := time.ParseDuration(cfg.Timeout); err == nil && d > 0 {
+			timeout = d
+		}
+	}
+
+	fm := &FilterManager{
+		scriptPath:   cfg.ScriptPath,
+		enabled:      true,
+		timeout:      timeout,
+		strictMode:   cfg.StrictMode,
+		toolsEnabled: cfg.ToolsEnabled,
+	}
+	fm.L = NewLuaStateWithModules(cfg.AllowedModules)
+
+	if cfg.ScriptPath != "" {
+		if err := fm.LoadScript(); err != nil {
+			if cfg.StrictMode {
+				fm.L.Close()
+				return nil, fmt.Errorf("failed to load filter script: %w", err)
+			}
+			logging.Warn("Failed to load Lua filter script, continuing without filters",
+				"script_path", cfg.ScriptPath,
 				"error", err)
 		}
 	}
@@ -74,6 +115,7 @@ func (fm *FilterManager) LoadScript() error {
 	}
 
 	fm.scriptLoaded = true
+	fm.luaTools = DiscoverLuaTools(fm.L)
 	logging.Info("Lua filter script loaded", "script_path", fm.scriptPath)
 	return nil
 }
@@ -96,6 +138,7 @@ func (fm *FilterManager) ReloadScript() error {
 	}
 
 	fm.scriptLoaded = true
+	fm.luaTools = DiscoverLuaTools(fm.L)
 	logging.Info("Lua filter script reloaded", "script_path", fm.scriptPath)
 	return nil
 }
@@ -266,6 +309,29 @@ func (fm *FilterManager) executeFilter(ctx context.Context, functionName string,
 
 	result.ExecutionTime = time.Since(startTime)
 	return result, nil
+}
+
+// GetLuaTools returns the list of Lua-defined tools discovered in the loaded script.
+// Returns nil when tools_enabled is false.
+func (fm *FilterManager) GetLuaTools() []LuaToolDef {
+	fm.mu.RLock()
+	defer fm.mu.RUnlock()
+	if !fm.toolsEnabled {
+		return nil
+	}
+	return fm.luaTools
+}
+
+// ExecuteLuaTool executes a named Lua tool from the pando_tools table.
+// Returns the string output or an error.
+func (fm *FilterManager) ExecuteLuaTool(ctx context.Context, name string, params map[string]interface{}) (string, error) {
+	if !fm.enabled {
+		return "", fmt.Errorf("lua engine is disabled")
+	}
+	if !fm.scriptLoaded {
+		return "", fmt.Errorf("no Lua script loaded")
+	}
+	return ExecuteLuaTool(fm.L, &fm.mu, name, params, fm.timeout)
 }
 
 // buildContextTable creates a Lua table from a HookContext.
