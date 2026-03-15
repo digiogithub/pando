@@ -303,6 +303,23 @@ func (p *Parser) parseAddFile() (PatchAction, error) {
 	}, nil
 }
 
+// normalizeUnicode replaces common Unicode characters that LLMs generate
+// with their ASCII equivalents for better patch matching.
+func normalizeUnicode(s string) string {
+	r := strings.NewReplacer(
+		"\u2018", "'",   // left single quotation mark
+		"\u2019", "'",   // right single quotation mark
+		"\u201C", "\"",  // left double quotation mark
+		"\u201D", "\"",  // right double quotation mark
+		"\u2014", "-",   // em dash
+		"\u2013", "-",   // en dash
+		"\u2026", "...", // horizontal ellipsis
+		"\u00A0", " ",   // non-breaking space
+		"\u2011", "-",   // non-breaking hyphen
+	)
+	return r.Replace(s)
+}
+
 // Refactored to use a matcher function for each comparison type
 func findContextCore(lines []string, context []string, start int) (int, int) {
 	if len(context) == 0 {
@@ -321,6 +338,13 @@ func findContextCore(lines []string, context []string, start int) (int, int) {
 		return strings.TrimRight(a, " \t") == strings.TrimRight(b, " \t")
 	}); idx >= 0 {
 		return idx, fuzz
+	}
+
+	// Try unicode normalization (fuzz=2): handles common LLM-generated Unicode variants
+	if idx, _ := tryFindMatch(lines, context, start, func(a, b string) bool {
+		return normalizeUnicode(a) == normalizeUnicode(b)
+	}); idx >= 0 {
+		return idx, 2
 	}
 
 	// Try trimming all whitespace

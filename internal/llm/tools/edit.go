@@ -288,17 +288,13 @@ func (e *editTool) deleteContent(ctx context.Context, filePath, oldString string
 
 	oldContent := string(content)
 
-	index := strings.Index(oldContent, oldString)
-	if index == -1 {
-		return NewTextErrorResponse("old_string not found in file. Make sure it matches exactly, including whitespace and line breaks"), nil
+	newContent, strategyUsed, ok := matchAndReplace(oldContent, oldString, "")
+	if !ok {
+		return NewTextErrorResponse("old_string not found in file. Make sure it matches the file contents (including whitespace and line breaks). Tip: include more context lines to help identify the exact location."), nil
 	}
-
-	lastIndex := strings.LastIndex(oldContent, oldString)
-	if index != lastIndex {
-		return NewTextErrorResponse("old_string appears multiple times in the file. Please provide more context to ensure a unique match"), nil
+	if strategyUsed != "exact" {
+		logging.Debug("edit used fuzzy strategy for delete", "strategy", strategyUsed, "file", filePath)
 	}
-
-	newContent := oldContent[:index] + oldContent[index+len(oldString):]
 
 	sessionID, messageID := GetContextValues(ctx)
 
@@ -408,17 +404,13 @@ func (e *editTool) replaceContent(ctx context.Context, filePath, oldString, newS
 
 	oldContent := string(content)
 
-	index := strings.Index(oldContent, oldString)
-	if index == -1 {
-		return NewTextErrorResponse("old_string not found in file. Make sure it matches exactly, including whitespace and line breaks"), nil
+	newContent, strategyUsed, ok := matchAndReplace(oldContent, oldString, newString)
+	if !ok {
+		return NewTextErrorResponse("old_string not found in file. Make sure it matches the file contents (including whitespace and line breaks). Tip: include more context lines to help identify the exact location."), nil
 	}
-
-	lastIndex := strings.LastIndex(oldContent, oldString)
-	if index != lastIndex {
-		return NewTextErrorResponse("old_string appears multiple times in the file. Please provide more context to ensure a unique match"), nil
+	if strategyUsed != "exact" {
+		logging.Debug("edit used fuzzy strategy", "strategy", strategyUsed, "file", filePath)
 	}
-
-	newContent := oldContent[:index] + newString + oldContent[index+len(oldString):]
 
 	if oldContent == newContent {
 		return NewTextErrorResponse("new content is the same as old content. No changes made."), nil
