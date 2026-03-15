@@ -23,6 +23,7 @@ const (
 	CommandCategorySessions CommandCategory = "Sessions"
 	CommandCategoryModels   CommandCategory = "Models"
 	CommandCategoryView     CommandCategory = "View"
+	CommandCategoryAccount  CommandCategory = "Account"
 
 	commandDialogMinWidth        = 56
 	commandDialogMaxVisibleItems = 8
@@ -34,6 +35,7 @@ var commandCategoryOrder = []CommandCategory{
 	CommandCategorySessions,
 	CommandCategoryModels,
 	CommandCategoryView,
+	CommandCategoryAccount,
 }
 
 // Command represents a command that can be executed.
@@ -54,7 +56,7 @@ type commandMatch struct {
 
 func (c Command) normalizedCategory() CommandCategory {
 	switch c.Category {
-	case CommandCategoryFiles, CommandCategorySessions, CommandCategoryModels, CommandCategoryView:
+	case CommandCategoryFiles, CommandCategorySessions, CommandCategoryModels, CommandCategoryView, CommandCategoryAccount:
 		return c.Category
 	default:
 		return CommandCategoryGeneral

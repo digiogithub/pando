@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/tools"
@@ -101,9 +102,29 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 			client:  newCopilotClient(clientOptions),
 		}, nil
 	case models.ProviderAnthropic:
+		anthropicOpts := clientOptions.anthropicOptions
+		if clientOptions.apiKey == "" {
+			// Try to load Claude OAuth credentials automatically
+			if creds, _, err := auth.LoadClaudeCredentials(); err == nil && creds != nil {
+				if token, updatedCreds, err := auth.GetValidClaudeToken(creds); err == nil && token != "" {
+					// Save updated creds if refreshed
+					if updatedCreds != nil {
+						_ = auth.SaveClaudeCredentials(updatedCreds)
+					}
+					anthropicOpts = append(anthropicOpts, WithAnthropicOAuthToken(token))
+					logging.Debug("Using Claude OAuth token for authentication")
+				}
+			}
+		}
 		return &baseProvider[AnthropicClient]{
 			options: clientOptions,
-			client:  newAnthropicClient(clientOptions),
+			client: newAnthropicClient(providerClientOptions{
+				apiKey:           clientOptions.apiKey,
+				model:            clientOptions.model,
+				maxTokens:        clientOptions.maxTokens,
+				systemMessage:    clientOptions.systemMessage,
+				anthropicOptions: anthropicOpts,
+			}),
 		}, nil
 	case models.ProviderOpenAI:
 		return &baseProvider[OpenAIClient]{

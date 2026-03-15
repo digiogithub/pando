@@ -52,9 +52,11 @@ const (
 
 // Agent defines configuration for different LLM models and their token limits.
 type Agent struct {
-	Model           models.ModelID `json:"model"`
-	MaxTokens       int64          `json:"maxTokens"`
-	ReasoningEffort string         `json:"reasoningEffort"` // For openai models low,medium,heigh
+	Model                models.ModelID `json:"model"`
+	MaxTokens            int64          `json:"maxTokens"`
+	ReasoningEffort      string         `json:"reasoningEffort"`          // For openai models low,medium,heigh
+	AutoCompact          bool           `json:"autoCompact,omitempty"`    // enable auto-compaction when context fills up
+	AutoCompactThreshold float64        `json:"autoCompactThreshold,omitempty"` // 0.0-1.0, default 0.85
 }
 
 // Provider defines configuration for an LLM provider.
@@ -62,6 +64,8 @@ type Provider struct {
 	APIKey   string `json:"apiKey"`
 	BaseURL  string `json:"baseURL,omitempty"`
 	Disabled bool   `json:"disabled"`
+	// UseOAuth enables OAuth mode for the anthropic provider (claude.ai OAuth instead of API key).
+	UseOAuth bool `json:"useOAuth,omitempty"`
 }
 
 // Data defines storage configuration.
