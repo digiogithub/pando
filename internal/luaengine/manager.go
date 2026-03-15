@@ -21,6 +21,7 @@ type FilterManager struct {
 	strictMode   bool
 	mu           sync.RWMutex
 	scriptLoaded bool
+	luaTools     []LuaToolDef
 }
 
 // NewFilterManager creates a new FilterManager instance.
