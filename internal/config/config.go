@@ -200,7 +200,8 @@ type Config struct {
 	TUI          TUIConfig                         `json:"tui"`
 	Mesnada      MesnadaConfig                     `json:"mesnada,omitempty"`
 	Shell        ShellConfig                       `json:"shell,omitempty"`
-	AutoCompact  bool                              `json:"autoCompact,omitempty"`
+	AutoCompact     bool                              `json:"autoCompact,omitempty"`
+	ToonConversion  bool                              `json:"toon_conversion" toml:"toon_conversion"`
 	Remembrances RemembrancesConfig                `json:"remembrances,omitempty"`
 	Server       APIServerConfig                   `json:"server,omitempty"`
 	Lua          LuaConfig                         `json:"lua,omitempty"`
@@ -444,6 +445,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("server.port", 8765)
 	viper.SetDefault("server.requireAuth", true)
 	viper.SetDefault("autoCompact", true)
+	viper.SetDefault("toon_conversion", true)
 
 	// Lua scripting engine defaults
 	viper.SetDefault("lua.enabled", false)
