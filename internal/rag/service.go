@@ -2,6 +2,7 @@
 package rag
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 	"github.com/digiogithub/pando/internal/rag/events"
 	"github.com/digiogithub/pando/internal/rag/kb"
+	"github.com/digiogithub/pando/internal/rag/sessions"
 )
 
 // RemembrancesService groups KB, Events, and Code indexing stores.
@@ -20,6 +22,8 @@ type RemembrancesService struct {
 	KB           *kb.KBStore
 	Events       *events.EventStore
 	Code         *code.CodeIndexer
+	Sessions     *sessions.SessionRAGStore
+	SessionIdx   *sessions.SessionIndexer // may be nil until SetSessionIndexer is called
 	docEmbedder  embeddings.Embedder
 	codeEmbedder embeddings.Embedder
 }
