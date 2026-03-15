@@ -146,8 +146,8 @@ code-indexing-max-file-size: 524288
 # Path to the log file (logs will be written to both stdout and file) (default: "")
 #log: "/www/MCP/remembrances-mcp/remembrances-mcp.log"
 
-# modules:
-#   commercial_webui:
-#     enabled: true
-#     config:
-#       port: "9084"
+modules:
+  commercial_webui:
+    enabled: true
+    config:
+      port: "9084"
