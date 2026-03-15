@@ -4,47 +4,14 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/digiogithub/pando/internal/logging"
 	"github.com/sahilm/fuzzy"
 )
-
-var rgPath string
-
-func init() {
-	var err error
-	rgPath, err = exec.LookPath("rg")
-	if err != nil {
-		logging.Warn("Ripgrep (rg) not found in $PATH. Some features might be limited or slower.")
-		rgPath = ""
-	}
-}
-
-func GetRgCmd(globPattern string) *exec.Cmd {
-	if rgPath == "" {
-		return nil
-	}
-	rgArgs := []string{
-		"--files",
-		"-L",
-		"--null",
-	}
-	if globPattern != "" {
-		if !filepath.IsAbs(globPattern) && !strings.HasPrefix(globPattern, "/") {
-			globPattern = "/" + globPattern
-		}
-		rgArgs = append(rgArgs, "--glob", globPattern)
-	}
-	cmd := exec.Command(rgPath, rgArgs...)
-	cmd.Dir = "."
-	return cmd
-}
 
 // FuzzyFilter filters items by query using the same scoring algorithm as fzf.
 // Results are sorted by match quality (best matches first).
