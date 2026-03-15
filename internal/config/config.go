@@ -62,6 +62,8 @@ type Provider struct {
 	APIKey   string `json:"apiKey"`
 	BaseURL  string `json:"baseURL,omitempty"`
 	Disabled bool   `json:"disabled"`
+	// UseOAuth enables OAuth mode for the anthropic provider (claude.ai OAuth instead of API key).
+	UseOAuth bool `json:"useOAuth,omitempty"`
 }
 
 // Data defines storage configuration.
