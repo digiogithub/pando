@@ -38,6 +38,34 @@ func NewLuaState() *lua.LState {
 	return L
 }
 
+// NewLuaStateWithModules creates a sandboxed Lua state with optional extra modules.
+// allowedModules can include: "io" to enable file I/O (io.popen, io.open),
+// "os" to enable os.execute (use with caution — grants arbitrary shell access).
+func NewLuaStateWithModules(allowedModules []string) *lua.LState {
+	L := lua.NewState(lua.Options{
+		CallStackSize:       120,
+		RegistrySize:        1024,
+		SkipOpenLibs:        false,
+		IncludeGoStackTrace: true,
+	})
+
+	luastrings.Preload(L)
+	luatime.Preload(L)
+	luare.Preload(L)
+	L.PreloadModule("json", gopherjson.Loader)
+
+	for _, mod := range allowedModules {
+		switch mod {
+		case "io":
+			lua.OpenIo(L)
+		case "os":
+			lua.OpenOs(L)
+		}
+	}
+
+	return L
+}
+
 // CloseLuaState properly closes and cleans up a Lua state.
 func CloseLuaState(L *lua.LState) {
 	if L != nil {

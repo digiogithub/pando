@@ -109,3 +109,14 @@ end
 -- function global-input(ctx)
 --     return ctx.parameters
 -- end
+
+-- =============================================================================
+-- Custom Tools (pando_tools)
+-- See examples/lua-tools-example.lua for full examples.
+-- Tools defined here will be available to the LLM as "lua_<tool-name>".
+-- Enable in config:
+--   [lua]
+--   tools_enabled   = true
+--   allowed_modules = ["io"]   -- needed for io.popen in tool run functions
+-- =============================================================================
+-- pando_tools = { ... }
