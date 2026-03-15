@@ -5,7 +5,9 @@ import (
 
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
+	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/mcpgateway"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/internal/message"
@@ -22,13 +24,14 @@ func CoderAgentTools(
 	history history.Service,
 	lspClients map[string]*lsp.Client,
 	skillManager *skills.SkillManager,
+	luaMgr *luaengine.FilterManager,
 ) []tools.BaseTool {
 	ctx := context.Background()
 	otherTools := GetMcpTools(ctx, permissions)
 	if len(lspClients) > 0 {
 		otherTools = append(otherTools, tools.NewDiagnosticsTool(lspClients))
 	}
-	return append(
+	baseTools := append(
 		[]tools.BaseTool{
 			tools.NewBashTool(permissions),
 			tools.NewEditTool(lspClients, permissions, history),
@@ -43,6 +46,14 @@ func CoderAgentTools(
 			NewAgentTool(sessions, messages, lspClients, skillManager),
 		}, otherTools...,
 	)
+	if luaMgr != nil && luaMgr.IsEnabled() {
+		luaTools := tools.NewLuaToolsFromManager(luaMgr)
+		if len(luaTools) > 0 {
+			logging.Info("Registering Lua tools", "count", len(luaTools))
+			baseTools = append(baseTools, luaTools...)
+		}
+	}
+	return baseTools
 }
 
 func CoderAgentToolsWithMesnada(
