@@ -22,7 +22,7 @@ type GlobalKeys struct {
 	Filepicker     key.Binding
 	SwitchTheme    key.Binding
 	ToggleTerminal key.Binding
-	FocusTerminal  key.Binding
+	NewTerminal    key.Binding
 }
 
 type ChatKeys struct {
@@ -127,12 +127,12 @@ func DefaultKeyMap() KeyMap {
 				key.WithHelp("ctrl+t", "switch theme"),
 			),
 			ToggleTerminal: key.NewBinding(
-				key.WithKeys("ctrl+`"),
-				key.WithHelp("ctrl+`", "toggle terminal panel"),
+				key.WithKeys("ctrl+shift+t"),
+				key.WithHelp("ctrl+shift+t", "terminal: open/focus/unfocus"),
 			),
-			FocusTerminal: key.NewBinding(
-				key.WithKeys("alt+`"),
-				key.WithHelp("alt+`", "focus/unfocus terminal"),
+			NewTerminal: key.NewBinding(
+				key.WithKeys("ctrl+alt+t"),
+				key.WithHelp("ctrl+alt+t", "new terminal tab"),
 			),
 		},
 		Chat: ChatKeys{
@@ -275,7 +275,7 @@ func (k GlobalKeys) FullHelp() [][]key.Binding {
 		filterHelpBindings(k.Help, k.Quit),
 		filterHelpBindings(k.Logs, k.Orchestrator, k.Settings),
 		filterHelpBindings(k.Filepicker, k.SwitchTheme),
-		filterHelpBindings(k.ToggleTerminal, k.FocusTerminal),
+		filterHelpBindings(k.ToggleTerminal, k.NewTerminal),
 	)
 }
 
