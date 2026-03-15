@@ -125,15 +125,18 @@ func ClaudeLogin() (*ClaudeCredentials, string, error) {
 	}
 
 	// Start local HTTP server to receive the callback.
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	// Must listen on "localhost" (not 127.0.0.1) to match the redirect_uri registered with Anthropic.
+	listener, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		return nil, "", fmt.Errorf("start callback server: %w", err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
-	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", port)
+	redirectURI := fmt.Sprintf("http://localhost:%d/callback", port)
 
 	// Build authorization URL.
+	// Note: "code":"true" is a non-standard param required by Anthropic's OAuth server.
 	params := url.Values{}
+	params.Set("code", "true")
 	params.Set("client_id", ClaudeClientID)
 	params.Set("response_type", "code")
 	params.Set("scope", ClaudeOAuthScopes)
@@ -172,7 +175,8 @@ func ClaudeLogin() (*ClaudeCredentials, string, error) {
 			errCh <- fmt.Errorf("missing authorization code in callback")
 			return
 		}
-		fmt.Fprintln(w, "<html><body><h2>Authentication successful! You can close this tab.</h2></body></html>")
+		// Redirect to Claude's success page (matches original claude-code behavior).
+		http.Redirect(w, r, "https://claude.ai/oauth/code/success?app=claude-code", http.StatusFound)
 		codeCh <- code
 	})
 
@@ -194,7 +198,7 @@ func ClaudeLogin() (*ClaudeCredentials, string, error) {
 	}
 
 	// Exchange code for tokens.
-	tokenResp, err := exchangeClaudeCode(code, redirectURI, verifier)
+	tokenResp, err := exchangeClaudeCode(code, redirectURI, verifier, state)
 	if err != nil {
 		return nil, "", err
 	}
@@ -227,13 +231,14 @@ func ClaudeLogin() (*ClaudeCredentials, string, error) {
 }
 
 // exchangeClaudeCode exchanges an authorization code for tokens.
-func exchangeClaudeCode(code, redirectURI, verifier string) (*claudeTokenResponse, error) {
+func exchangeClaudeCode(code, redirectURI, verifier, state string) (*claudeTokenResponse, error) {
 	payload := map[string]string{
 		"grant_type":    "authorization_code",
 		"code":          code,
 		"redirect_uri":  redirectURI,
 		"client_id":     ClaudeClientID,
 		"code_verifier": verifier,
+		"state":         state,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
