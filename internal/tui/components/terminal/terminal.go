@@ -48,16 +48,23 @@ type terminalModel struct {
 // tickInterval controls the refresh rate of the embedded terminal.
 const tickInterval = 33 * time.Millisecond // ~30 fps
 
-func shellCommand() *exec.Cmd {
-	shell := os.Getenv("SHELL")
+func shellCommand(shellPath string, shellArgs []string) *exec.Cmd {
+	shell := shellPath
+	if shell == "" {
+		shell = os.Getenv("SHELL")
+	}
 	if shell == "" {
 		shell = "/bin/bash"
+	}
+	if len(shellArgs) > 0 {
+		return exec.Command(shell, shellArgs...)
 	}
 	return exec.Command(shell)
 }
 
-// New creates a new TerminalComponent, launches $SHELL inside a PTY.
-func New(width, height int) (TerminalComponent, error) {
+// New creates a new TerminalComponent, launches the configured shell inside a PTY.
+// shellPath and shellArgs come from config.Shell; empty values fall back to $SHELL / /bin/bash.
+func New(width, height int, shellPath string, shellArgs []string) (TerminalComponent, error) {
 	if width < 2 {
 		width = 80
 	}
@@ -74,8 +81,8 @@ func New(width, height int) (TerminalComponent, error) {
 	}
 	logging.Info("terminal.New: emulator created", "id", emu.ID())
 
-	cmd := shellCommand()
-	logging.Info("terminal.New: starting shell command", "shell", cmd.Path)
+	cmd := shellCommand(shellPath, shellArgs)
+	logging.Info("terminal.New: starting shell command", "shell", cmd.Path, "args", shellArgs)
 	if err := emu.StartCommand(cmd); err != nil {
 		logging.Error("terminal.New: StartCommand failed", "error", err)
 		_ = emu.Close()
