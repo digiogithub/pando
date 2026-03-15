@@ -12,6 +12,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	toolsPkg "github.com/digiogithub/pando/internal/llm/tools"
@@ -23,6 +24,7 @@ type anthropicOptions struct {
 	useBedrock   bool
 	disableCache bool
 	shouldThink  func(userMessage string) bool
+	oauthToken   string // Bearer access token (if using OAuth instead of API key)
 }
 
 type AnthropicOption func(*anthropicOptions)
@@ -44,6 +46,9 @@ func newAnthropicClient(opts providerClientOptions) AnthropicClient {
 	anthropicClientOptions := []option.RequestOption{}
 	if opts.apiKey != "" {
 		anthropicClientOptions = append(anthropicClientOptions, option.WithAPIKey(opts.apiKey))
+	} else if anthropicOpts.oauthToken != "" {
+		anthropicClientOptions = append(anthropicClientOptions, option.WithAuthToken(anthropicOpts.oauthToken))
+		anthropicClientOptions = append(anthropicClientOptions, option.WithHeader("anthropic-beta", auth.ClaudeOAuthBetaHeader))
 	}
 	if anthropicOpts.useBedrock {
 		anthropicClientOptions = append(anthropicClientOptions, bedrock.WithLoadDefaultConfig(context.Background()))
@@ -485,5 +490,11 @@ func DefaultShouldThinkFn(s string) bool {
 func WithAnthropicShouldThinkFn(fn func(string) bool) AnthropicOption {
 	return func(options *anthropicOptions) {
 		options.shouldThink = fn
+	}
+}
+
+func WithAnthropicOAuthToken(token string) AnthropicOption {
+	return func(options *anthropicOptions) {
+		options.oauthToken = token
 	}
 }
