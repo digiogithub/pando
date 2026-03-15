@@ -524,6 +524,9 @@ func setProviderDefaults() {
 	if hasCopilotCredentials() {
 		viper.SetDefault("providers.copilot.disabled", false)
 	}
+	if hasClaudeCredentials() {
+		viper.SetDefault("providers.anthropic.disabled", false)
+	}
 
 	// Use this order to set the default models
 	// 1. Copilot
@@ -674,6 +677,17 @@ func hasCopilotCredentials() bool {
 	return false
 }
 
+// hasClaudeCredentials returns true if a Claude OAuth token is available from any source:
+// the CLAUDE_CODE_OAUTH_TOKEN env var, pando's own credential file, or the existing
+// Claude Code installation (~/.claude/.credentials.json).
+func hasClaudeCredentials() bool {
+	if strings.TrimSpace(os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")) != "" {
+		return true
+	}
+	creds, _, err := auth.LoadClaudeCredentials()
+	return err == nil && creds != nil && creds.ClaudeAiOauth != nil && creds.ClaudeAiOauth.AccessToken != ""
+}
+
 // readConfig handles the result of reading a configuration file.
 func readConfig(err error) error {
 	if err == nil {
@@ -777,6 +791,9 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 		if provider == models.ProviderCopilot && hasCopilotCredentials() {
 			cfg.Providers[provider] = Provider{}
 			logging.Info("added Copilot provider from saved login session")
+		} else if provider == models.ProviderAnthropic && hasClaudeCredentials() {
+			cfg.Providers[provider] = Provider{}
+			logging.Info("added Anthropic provider from Claude OAuth credentials")
 		} else {
 			// Provider not configured, check if we have environment variables
 			apiKey := getProviderAPIKey(provider)
@@ -801,7 +818,7 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 				logging.Info("added provider from environment", "provider", provider)
 			}
 		}
-	} else if providerCfg.Disabled || (providerRequiresAPIKey(provider) && providerCfg.APIKey == "" && !providerCfg.Disabled) || (provider == models.ProviderCopilot && providerCfg.APIKey == "" && !hasCopilotCredentials()) {
+	} else if providerCfg.Disabled || (providerRequiresAPIKey(provider) && providerCfg.APIKey == "" && !providerCfg.Disabled && !(provider == models.ProviderAnthropic && hasClaudeCredentials())) || (provider == models.ProviderCopilot && providerCfg.APIKey == "" && !hasCopilotCredentials()) {
 		// Provider is disabled or has no API key
 		logging.Warn("provider is disabled or has no API key, reverting to default",
 			"agent", name,
@@ -912,6 +929,9 @@ func Validate() error {
 			}
 		}
 		if providerRequiresAPIKey(provider) && providerCfg.APIKey == "" && !providerCfg.Disabled {
+			if provider == models.ProviderAnthropic && hasClaudeCredentials() {
+				continue // OAuth credentials available — no API key needed
+			}
 			logging.Warn("provider has no API key, marking as disabled", "provider", provider)
 			providerCfg.Disabled = true
 			cfg.Providers[provider] = providerCfg
@@ -1301,6 +1321,16 @@ func OverrideAgentModel(agentName AgentName, modelID models.ModelID) error {
 			return fmt.Errorf("provider %s is not configured", model.Provider)
 		}
 		if providerConfigured && providerCfg.APIKey == "" && !hasCopilotCredentials() && !providerCfg.Disabled {
+			return fmt.Errorf("provider %s has no credentials configured", model.Provider)
+		}
+	case models.ProviderAnthropic:
+		if providerConfigured && providerCfg.Disabled {
+			return fmt.Errorf("provider %s is disabled", model.Provider)
+		}
+		if !providerConfigured && !hasClaudeCredentials() {
+			return fmt.Errorf("provider %s is not configured", model.Provider)
+		}
+		if providerConfigured && providerCfg.APIKey == "" && !hasClaudeCredentials() && !providerCfg.Disabled {
 			return fmt.Errorf("provider %s has no credentials configured", model.Provider)
 		}
 	case models.ProviderOllama:
