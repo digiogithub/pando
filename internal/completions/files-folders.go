@@ -1,9 +1,7 @@
 package completions
 
 import (
-	"bytes"
 	"fmt"
-	"path/filepath"
 
 	"github.com/digiogithub/pando/internal/fileutil"
 	"github.com/digiogithub/pando/internal/logging"
@@ -25,63 +23,17 @@ func (cg *filesAndFoldersContextGroup) GetEntry() dialog.CompletionItemI {
 	})
 }
 
-func processNullTerminatedOutput(outputBytes []byte) []string {
-	if len(outputBytes) > 0 && outputBytes[len(outputBytes)-1] == 0 {
-		outputBytes = outputBytes[:len(outputBytes)-1]
-	}
-
-	if len(outputBytes) == 0 {
-		return []string{}
-	}
-
-	split := bytes.Split(outputBytes, []byte{0})
-	matches := make([]string, 0, len(split))
-
-	for _, p := range split {
-		if len(p) == 0 {
-			continue
-		}
-
-		path := string(p)
-		path = filepath.Join(".", path)
-
-		if !fileutil.SkipHidden(path) {
-			matches = append(matches, path)
-		}
-	}
-
-	return matches
-}
-
 func (cg *filesAndFoldersContextGroup) getFiles(query string) ([]string, error) {
-	cmdRg := fileutil.GetRgCmd("")
+	logging.Debug("Using doublestar for file listing")
+	files, _, err := fileutil.GlobWithDoublestar("**/*", ".", 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to glob files: %w", err)
+	}
 
-	var allFiles []string
-
-	if cmdRg != nil {
-		logging.Debug("Using Ripgrep for file listing")
-		var rgOut bytes.Buffer
-		var rgErr bytes.Buffer
-		cmdRg.Stdout = &rgOut
-		cmdRg.Stderr = &rgErr
-
-		if err := cmdRg.Run(); err != nil {
-			return nil, fmt.Errorf("rg command failed: %w\nStderr: %s", err, rgErr.String())
-		}
-
-		allFiles = processNullTerminatedOutput(rgOut.Bytes())
-	} else {
-		logging.Debug("Using doublestar for file listing")
-		files, _, err := fileutil.GlobWithDoublestar("**/*", ".", 0)
-		if err != nil {
-			return nil, fmt.Errorf("failed to glob files: %w", err)
-		}
-
-		allFiles = make([]string, 0, len(files))
-		for _, file := range files {
-			if !fileutil.SkipHidden(file) {
-				allFiles = append(allFiles, file)
-			}
+	allFiles := make([]string, 0, len(files))
+	for _, file := range files {
+		if !fileutil.SkipHidden(file) {
+			allFiles = append(allFiles, file)
 		}
 	}
 

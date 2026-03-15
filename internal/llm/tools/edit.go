@@ -221,27 +221,28 @@ func (e *editTool) createNewFile(ctx context.Context, filePath, content string) 
 		return ToolResponse{}, permission.ErrorPermissionDenied
 	}
 
-	err = os.WriteFile(filePath, []byte(content), 0o644)
-	if err != nil {
-		return ToolResponse{}, fmt.Errorf("failed to write file: %w", err)
-	}
+	writeErr := withFileLock(filePath, func() error {
+		if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+			return fmt.Errorf("failed to write file: %w", err)
+		}
 
-	// File can't be in the history so we create a new file history
-	_, err = e.files.Create(ctx, sessionID, filePath, "")
-	if err != nil {
-		// Log error but don't fail the operation
-		return ToolResponse{}, fmt.Errorf("error creating file history: %w", err)
-	}
+		// File can't be in the history so we create a new file history
+		if _, err = e.files.Create(ctx, sessionID, filePath, ""); err != nil {
+			return fmt.Errorf("error creating file history: %w", err)
+		}
 
-	// Add the new content to the file history
-	_, err = e.files.CreateVersion(ctx, sessionID, filePath, content)
-	if err != nil {
-		// Log error but don't fail the operation
-		logging.Debug("Error creating file history version", "error", err)
-	}
+		// Add the new content to the file history
+		if _, err = e.files.CreateVersion(ctx, sessionID, filePath, content); err != nil {
+			logging.Debug("Error creating file history version", "error", err)
+		}
 
-	recordFileWrite(filePath)
-	recordFileRead(filePath)
+		recordFileWrite(filePath)
+		recordFileRead(filePath)
+		return nil
+	})
+	if writeErr != nil {
+		return ToolResponse{}, writeErr
+	}
 
 	logging.Debug("edit file created", "filePath", filePath)
 	return WithResponseMetadata(
@@ -288,17 +289,13 @@ func (e *editTool) deleteContent(ctx context.Context, filePath, oldString string
 
 	oldContent := string(content)
 
-	index := strings.Index(oldContent, oldString)
-	if index == -1 {
-		return NewTextErrorResponse("old_string not found in file. Make sure it matches exactly, including whitespace and line breaks"), nil
+	newContent, strategyUsed, ok := matchAndReplace(oldContent, oldString, "")
+	if !ok {
+		return NewTextErrorResponse("old_string not found in file. Make sure it matches the file contents (including whitespace and line breaks). Tip: include more context lines to help identify the exact location."), nil
 	}
-
-	lastIndex := strings.LastIndex(oldContent, oldString)
-	if index != lastIndex {
-		return NewTextErrorResponse("old_string appears multiple times in the file. Please provide more context to ensure a unique match"), nil
+	if strategyUsed != "exact" {
+		logging.Debug("edit used fuzzy strategy for delete", "strategy", strategyUsed, "file", filePath)
 	}
-
-	newContent := oldContent[:index] + oldContent[index+len(oldString):]
 
 	sessionID, messageID := GetContextValues(ctx)
 
@@ -334,35 +331,36 @@ func (e *editTool) deleteContent(ctx context.Context, filePath, oldString string
 		return ToolResponse{}, permission.ErrorPermissionDenied
 	}
 
-	err = os.WriteFile(filePath, []byte(newContent), 0o644)
-	if err != nil {
-		return ToolResponse{}, fmt.Errorf("failed to write file: %w", err)
-	}
-
-	// Check if file exists in history
-	file, err := e.files.GetByPathAndSession(ctx, filePath, sessionID)
-	if err != nil {
-		_, err = e.files.Create(ctx, sessionID, filePath, oldContent)
-		if err != nil {
-			// Log error but don't fail the operation
-			return ToolResponse{}, fmt.Errorf("error creating file history: %w", err)
+	writeErr := withFileLock(filePath, func() error {
+		if err := os.WriteFile(filePath, []byte(newContent), 0o644); err != nil {
+			return fmt.Errorf("failed to write file: %w", err)
 		}
-	}
-	if file.Content != oldContent {
-		// User Manually changed the content store an intermediate version
-		_, err = e.files.CreateVersion(ctx, sessionID, filePath, oldContent)
+
+		// Check if file exists in history
+		file, err := e.files.GetByPathAndSession(ctx, filePath, sessionID)
 		if err != nil {
+			if _, err = e.files.Create(ctx, sessionID, filePath, oldContent); err != nil {
+				return fmt.Errorf("error creating file history: %w", err)
+			}
+		}
+		if file.Content != oldContent {
+			// User manually changed the content — store an intermediate version
+			if _, err = e.files.CreateVersion(ctx, sessionID, filePath, oldContent); err != nil {
+				logging.Debug("Error creating file history version", "error", err)
+			}
+		}
+		// Store the new version
+		if _, err = e.files.CreateVersion(ctx, sessionID, filePath, ""); err != nil {
 			logging.Debug("Error creating file history version", "error", err)
 		}
-	}
-	// Store the new version
-	_, err = e.files.CreateVersion(ctx, sessionID, filePath, "")
-	if err != nil {
-		logging.Debug("Error creating file history version", "error", err)
-	}
 
-	recordFileWrite(filePath)
-	recordFileRead(filePath)
+		recordFileWrite(filePath)
+		recordFileRead(filePath)
+		return nil
+	})
+	if writeErr != nil {
+		return ToolResponse{}, writeErr
+	}
 
 	return WithResponseMetadata(
 		NewTextResponse("Content deleted from file: "+filePath),
@@ -408,17 +406,13 @@ func (e *editTool) replaceContent(ctx context.Context, filePath, oldString, newS
 
 	oldContent := string(content)
 
-	index := strings.Index(oldContent, oldString)
-	if index == -1 {
-		return NewTextErrorResponse("old_string not found in file. Make sure it matches exactly, including whitespace and line breaks"), nil
+	newContent, strategyUsed, ok := matchAndReplace(oldContent, oldString, newString)
+	if !ok {
+		return NewTextErrorResponse("old_string not found in file. Make sure it matches the file contents (including whitespace and line breaks). Tip: include more context lines to help identify the exact location."), nil
 	}
-
-	lastIndex := strings.LastIndex(oldContent, oldString)
-	if index != lastIndex {
-		return NewTextErrorResponse("old_string appears multiple times in the file. Please provide more context to ensure a unique match"), nil
+	if strategyUsed != "exact" {
+		logging.Debug("edit used fuzzy strategy", "strategy", strategyUsed, "file", filePath)
 	}
-
-	newContent := oldContent[:index] + newString + oldContent[index+len(oldString):]
 
 	if oldContent == newContent {
 		return NewTextErrorResponse("new content is the same as old content. No changes made."), nil
@@ -455,35 +449,36 @@ func (e *editTool) replaceContent(ctx context.Context, filePath, oldString, newS
 		return ToolResponse{}, permission.ErrorPermissionDenied
 	}
 
-	err = os.WriteFile(filePath, []byte(newContent), 0o644)
-	if err != nil {
-		return ToolResponse{}, fmt.Errorf("failed to write file: %w", err)
-	}
-
-	// Check if file exists in history
-	file, err := e.files.GetByPathAndSession(ctx, filePath, sessionID)
-	if err != nil {
-		_, err = e.files.Create(ctx, sessionID, filePath, oldContent)
-		if err != nil {
-			// Log error but don't fail the operation
-			return ToolResponse{}, fmt.Errorf("error creating file history: %w", err)
+	writeErr := withFileLock(filePath, func() error {
+		if err := os.WriteFile(filePath, []byte(newContent), 0o644); err != nil {
+			return fmt.Errorf("failed to write file: %w", err)
 		}
-	}
-	if file.Content != oldContent {
-		// User Manually changed the content store an intermediate version
-		_, err = e.files.CreateVersion(ctx, sessionID, filePath, oldContent)
+
+		// Check if file exists in history
+		file, err := e.files.GetByPathAndSession(ctx, filePath, sessionID)
 		if err != nil {
+			if _, err = e.files.Create(ctx, sessionID, filePath, oldContent); err != nil {
+				return fmt.Errorf("error creating file history: %w", err)
+			}
+		}
+		if file.Content != oldContent {
+			// User manually changed the content — store an intermediate version
+			if _, err = e.files.CreateVersion(ctx, sessionID, filePath, oldContent); err != nil {
+				logging.Debug("Error creating file history version", "error", err)
+			}
+		}
+		// Store the new version
+		if _, err = e.files.CreateVersion(ctx, sessionID, filePath, newContent); err != nil {
 			logging.Debug("Error creating file history version", "error", err)
 		}
-	}
-	// Store the new version
-	_, err = e.files.CreateVersion(ctx, sessionID, filePath, newContent)
-	if err != nil {
-		logging.Debug("Error creating file history version", "error", err)
-	}
 
-	recordFileWrite(filePath)
-	recordFileRead(filePath)
+		recordFileWrite(filePath)
+		recordFileRead(filePath)
+		return nil
+	})
+	if writeErr != nil {
+		return ToolResponse{}, writeErr
+	}
 
 	logging.Debug("edit content replaced", "filePath", filePath, "additions", additions, "removals", removals)
 	return WithResponseMetadata(
@@ -493,4 +488,17 @@ func (e *editTool) replaceContent(ctx context.Context, filePath, oldString, newS
 			Additions: additions,
 			Removals:  removals,
 		}), nil
+}
+
+// matchAndReplace tries to find oldString in content and replace it with newString
+// using a cascade of increasingly flexible strategies.
+// Returns (newContent, strategyUsed, true) on success, or ("", "", false) on failure.
+func matchAndReplace(content, oldString, newString string) (string, string, bool) {
+	strategies := defaultStrategies()
+	for _, s := range strategies {
+		if result, ok := s.Apply(content, oldString, newString); ok {
+			return result, s.Name(), true
+		}
+	}
+	return "", "", false
 }
