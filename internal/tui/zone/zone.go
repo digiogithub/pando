@@ -28,6 +28,7 @@ const (
 	PermissionAllow      = "permission-allow"
 	PermissionSession    = "permission-session"
 	PermissionDeny       = "permission-deny"
+	TerminalPanel        = "terminal-panel"
 )
 
 var Manager = bubblezone.New()
@@ -118,6 +119,10 @@ func StatusBreadcrumbID(index int) string {
 
 func MarkStatusBreadcrumb(index int, content string) string {
 	return Manager.Mark(StatusBreadcrumbID(index), content)
+}
+
+func MarkTerminalPanel(content string) string {
+	return Manager.Mark(TerminalPanel, content)
 }
 
 func InBounds(id string, msg tea.MouseMsg) bool {

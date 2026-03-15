@@ -2,10 +2,12 @@ package terminal
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
 	tuistyles "github.com/digiogithub/pando/internal/tui/styles"
 	tuitheme "github.com/digiogithub/pando/internal/tui/theme"
@@ -46,6 +48,7 @@ func NewTerminalPanel() *TerminalPanel {
 
 // OpenNewTerminal creates a new terminal session and adds it to the panel.
 // It also makes the panel visible if it was hidden.
+// The shell is read from config.Shell; falls back to $SHELL / /bin/bash.
 func (p *TerminalPanel) OpenNewTerminal() tea.Cmd {
 	termH := p.terminalBodyHeight()
 	if termH < 2 {
@@ -56,9 +59,18 @@ func (p *TerminalPanel) OpenNewTerminal() tea.Cmd {
 		termW = 80
 	}
 
-	logging.Info("TerminalPanel.OpenNewTerminal: starting", "width", termW, "height", termH, "panel_width", p.width, "panel_height", p.height)
+	var shellPath string
+	var shellArgs []string
+	if cfg := config.Get(); cfg != nil {
+		shellPath = cfg.Shell.Path
+		shellArgs = cfg.Shell.Args
+	}
 
-	term, err := New(termW, termH)
+	logging.Info("TerminalPanel.OpenNewTerminal: starting",
+		"width", termW, "height", termH,
+		"shell", shellPath, "args", shellArgs)
+
+	term, err := New(termW, termH, shellPath, shellArgs)
 	if err != nil {
 		logging.Error("TerminalPanel.OpenNewTerminal: New() failed", "error", err)
 		return nil
@@ -70,6 +82,11 @@ func (p *TerminalPanel) OpenNewTerminal() tea.Cmd {
 
 	// Initialise the terminal ticker
 	return term.Init()
+}
+
+// Show makes the panel visible without toggling.
+func (p *TerminalPanel) Show() {
+	p.visible = true
 }
 
 // Toggle hides or shows the panel.
@@ -104,6 +121,7 @@ func (p *TerminalPanel) HasTerminals() bool {
 
 // SetSize sets the total available width and the full-screen height so the
 // panel can compute its own height as ~40 % of the screen.
+// All open terminals are resized, not just the active one.
 func (p *TerminalPanel) SetSize(totalWidth, totalHeight int) tea.Cmd {
 	p.width = totalWidth
 	p.height = int(float64(totalHeight) * terminalHeightRatio)
@@ -113,11 +131,18 @@ func (p *TerminalPanel) SetSize(totalWidth, totalHeight int) tea.Cmd {
 
 	p.tabBar.SetWidth(totalWidth)
 
-	// Resize the active terminal if there is one.
-	if term := p.tabBar.ActiveTerminal(); term != nil {
-		return term.SetSize(totalWidth, p.terminalBodyHeight())
+	// Resize ALL open terminals so inactive ones have the right size when switched to.
+	bodyH := p.terminalBodyHeight()
+	var cmds []tea.Cmd
+	for i := range p.tabBar.tabs {
+		if cmd := p.tabBar.tabs[i].Terminal.SetSize(totalWidth, bodyH); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	}
-	return nil
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 // PanelHeight returns the height this panel occupies (tab bar + body).
@@ -191,16 +216,18 @@ func (p *TerminalPanel) View() string {
 	// Tab bar.
 	tabBarView := p.tabBar.View()
 
-	// Separator line.
+	// Separator line between tab bar and terminal body.
 	focused := p.focused
 	borderColor := th.BorderNormal()
 	if focused {
 		borderColor = th.BorderFocused()
 	}
+	separatorChar := "─"
+	separatorLine := strings.Repeat(separatorChar, p.width)
 	separator := base.
 		Width(p.width).
 		Foreground(borderColor).
-		Render(lipgloss.NewStyle().Width(p.width).Foreground(borderColor).Render(""))
+		Render(lipgloss.NewStyle().Width(p.width).Foreground(borderColor).Render(separatorLine))
 
 	// Terminal body.
 	bodyH := p.terminalBodyHeight()
