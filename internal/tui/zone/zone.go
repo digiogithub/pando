@@ -28,6 +28,7 @@ const (
 	PermissionAllow      = "permission-allow"
 	PermissionSession    = "permission-session"
 	PermissionDeny       = "permission-deny"
+	TerminalPanel        = "terminal-panel"
 )
 
 var Manager = bubblezone.New()
