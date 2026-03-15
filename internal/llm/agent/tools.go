@@ -5,7 +5,9 @@ import (
 
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
+	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/mcpgateway"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/internal/message"
