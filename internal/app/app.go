@@ -113,20 +113,17 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 	// Initialize Lua filter manager if enabled
 	cfg = config.Get()
 	if cfg != nil && cfg.Lua.Enabled && cfg.Lua.ScriptPath != "" {
-		luaTimeout := 5 * time.Second
-		if cfg.Lua.Timeout != "" {
-			if d, err := time.ParseDuration(cfg.Lua.Timeout); err == nil {
-				luaTimeout = d
-			}
-		}
-		luaMgr, err := luaengine.NewFilterManager(cfg.Lua.ScriptPath, luaTimeout, cfg.Lua.StrictMode)
+		luaMgr, err := luaengine.NewFilterManagerFromConfig(&cfg.Lua)
 		if err != nil {
 			logging.Error("Failed to create Lua filter manager", "error", err)
-		} else {
+		} else if luaMgr != nil {
 			app.LuaManager = luaMgr
 			agent.SetLuaManager(luaMgr)
 			session.SetLuaManager(luaMgr)
-			logging.Info("Lua filter manager initialized", "script", cfg.Lua.ScriptPath)
+			logging.Info("Lua filter manager initialized",
+				"script", cfg.Lua.ScriptPath,
+				"tools_enabled", cfg.Lua.ToolsEnabled,
+				"allowed_modules", cfg.Lua.AllowedModules)
 		}
 	}
 
@@ -230,6 +227,7 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 			app.History,
 			app.LSPClients,
 			app.SkillManager,
+			app.LuaManager,
 		),
 		app.SkillManager,
 	)
