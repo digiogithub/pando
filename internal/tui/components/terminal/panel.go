@@ -2,10 +2,12 @@ package terminal
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
 	tuistyles "github.com/digiogithub/pando/internal/tui/styles"
 	tuitheme "github.com/digiogithub/pando/internal/tui/theme"
@@ -46,6 +48,7 @@ func NewTerminalPanel() *TerminalPanel {
 
 // OpenNewTerminal creates a new terminal session and adds it to the panel.
 // It also makes the panel visible if it was hidden.
+// The shell is read from config.Shell; falls back to $SHELL / /bin/bash.
 func (p *TerminalPanel) OpenNewTerminal() tea.Cmd {
 	termH := p.terminalBodyHeight()
 	if termH < 2 {
@@ -56,9 +59,18 @@ func (p *TerminalPanel) OpenNewTerminal() tea.Cmd {
 		termW = 80
 	}
 
-	logging.Info("TerminalPanel.OpenNewTerminal: starting", "width", termW, "height", termH, "panel_width", p.width, "panel_height", p.height)
+	var shellPath string
+	var shellArgs []string
+	if cfg := config.Get(); cfg != nil {
+		shellPath = cfg.Shell.Path
+		shellArgs = cfg.Shell.Args
+	}
 
-	term, err := New(termW, termH)
+	logging.Info("TerminalPanel.OpenNewTerminal: starting",
+		"width", termW, "height", termH,
+		"shell", shellPath, "args", shellArgs)
+
+	term, err := New(termW, termH, shellPath, shellArgs)
 	if err != nil {
 		logging.Error("TerminalPanel.OpenNewTerminal: New() failed", "error", err)
 		return nil
@@ -70,6 +82,11 @@ func (p *TerminalPanel) OpenNewTerminal() tea.Cmd {
 
 	// Initialise the terminal ticker
 	return term.Init()
+}
+
+// Show makes the panel visible without toggling.
+func (p *TerminalPanel) Show() {
+	p.visible = true
 }
 
 // Toggle hides or shows the panel.
