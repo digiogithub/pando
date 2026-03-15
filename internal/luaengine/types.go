@@ -109,3 +109,19 @@ func NewHookResult() *HookResult {
 		Logs:     make([]string, 0),
 	}
 }
+
+// LuaToolDef defines a custom tool declared in a Lua script via pando_tools table.
+type LuaToolDef struct {
+	Name        string
+	Description string
+	Parameters  map[string]LuaToolParam
+	Required    []string
+}
+
+// LuaToolParam defines a parameter for a Lua-defined tool.
+type LuaToolParam struct {
+	Type        string      // "string", "boolean", "number", "integer"
+	Description string
+	Required    bool
+	Default     interface{} // optional default value
+}

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
 	lua "github.com/yuin/gopher-lua"
 )
@@ -21,6 +22,7 @@ type FilterManager struct {
 	strictMode   bool
 	mu           sync.RWMutex
 	scriptLoaded bool
+	luaTools     []LuaToolDef
 }
 
 // NewFilterManager creates a new FilterManager instance.
@@ -74,6 +76,7 @@ func (fm *FilterManager) LoadScript() error {
 	}
 
 	fm.scriptLoaded = true
+	fm.luaTools = DiscoverLuaTools(fm.L)
 	logging.Info("Lua filter script loaded", "script_path", fm.scriptPath)
 	return nil
 }
@@ -96,6 +99,7 @@ func (fm *FilterManager) ReloadScript() error {
 	}
 
 	fm.scriptLoaded = true
+	fm.luaTools = DiscoverLuaTools(fm.L)
 	logging.Info("Lua filter script reloaded", "script_path", fm.scriptPath)
 	return nil
 }
@@ -266,6 +270,25 @@ func (fm *FilterManager) executeFilter(ctx context.Context, functionName string,
 
 	result.ExecutionTime = time.Since(startTime)
 	return result, nil
+}
+
+// GetLuaTools returns the list of Lua-defined tools discovered in the loaded script.
+func (fm *FilterManager) GetLuaTools() []LuaToolDef {
+	fm.mu.RLock()
+	defer fm.mu.RUnlock()
+	return fm.luaTools
+}
+
+// ExecuteLuaTool executes a named Lua tool from the pando_tools table.
+// Returns the string output or an error.
+func (fm *FilterManager) ExecuteLuaTool(ctx context.Context, name string, params map[string]interface{}) (string, error) {
+	if !fm.enabled {
+		return "", fmt.Errorf("lua engine is disabled")
+	}
+	if !fm.scriptLoaded {
+		return "", fmt.Errorf("no Lua script loaded")
+	}
+	return ExecuteLuaTool(fm.L, &fm.mu, name, params, fm.timeout)
 }
 
 // buildContextTable creates a Lua table from a HookContext.
