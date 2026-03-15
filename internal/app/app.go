@@ -230,6 +230,7 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 			app.History,
 			app.LSPClients,
 			app.SkillManager,
+			app.LuaManager,
 		),
 		app.SkillManager,
 	)
