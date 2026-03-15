@@ -21,6 +21,7 @@ type FilterManager struct {
 	strictMode   bool
 	mu           sync.RWMutex
 	scriptLoaded bool
+	luaTools     []LuaToolDef
 }
 
 // NewFilterManager creates a new FilterManager instance.
@@ -74,6 +75,7 @@ func (fm *FilterManager) LoadScript() error {
 	}
 
 	fm.scriptLoaded = true
+	fm.luaTools = DiscoverLuaTools(fm.L)
 	logging.Info("Lua filter script loaded", "script_path", fm.scriptPath)
 	return nil
 }
@@ -96,6 +98,7 @@ func (fm *FilterManager) ReloadScript() error {
 	}
 
 	fm.scriptLoaded = true
+	fm.luaTools = DiscoverLuaTools(fm.L)
 	logging.Info("Lua filter script reloaded", "script_path", fm.scriptPath)
 	return nil
 }
