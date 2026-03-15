@@ -65,7 +65,9 @@ var SupportedModels = map[ModelID]Model{
 
 func init() {
 	// Azure and VertexAI are kept static because they don't expose a simple model listing endpoint.
+	// Anthropic models are hardcoded (same approach as Claude Code CLI) since the model list is static.
 	// All other providers populate models dynamically via RefreshProviderModels.
 	maps.Copy(SupportedModels, AzureModels)
 	maps.Copy(SupportedModels, VertexAIGeminiModels)
+	maps.Copy(SupportedModels, AnthropicModels)
 }
