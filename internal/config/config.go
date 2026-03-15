@@ -176,12 +176,14 @@ type MCPGatewayConfig struct {
 
 // LuaConfig defines configuration for the Lua scripting engine.
 type LuaConfig struct {
-	Enabled         bool   `json:"enabled,omitempty" toml:"Enabled"`
-	ScriptPath      string `json:"script_path,omitempty" toml:"ScriptPath"`
-	Timeout         string `json:"timeout,omitempty" toml:"Timeout"`       // e.g. "5s"
-	StrictMode      bool   `json:"strict_mode,omitempty" toml:"StrictMode"`
-	HotReload       bool   `json:"hot_reload,omitempty" toml:"HotReload"`
-	LogFilteredData bool   `json:"log_filtered_data,omitempty" toml:"LogFilteredData"`
+	Enabled         bool     `json:"enabled,omitempty" toml:"Enabled"`
+	ScriptPath      string   `json:"script_path,omitempty" toml:"ScriptPath"`
+	Timeout         string   `json:"timeout,omitempty" toml:"Timeout"`          // e.g. "5s"
+	StrictMode      bool     `json:"strict_mode,omitempty" toml:"StrictMode"`
+	HotReload       bool     `json:"hot_reload,omitempty" toml:"HotReload"`
+	LogFilteredData bool     `json:"log_filtered_data,omitempty" toml:"LogFilteredData"`
+	ToolsEnabled    bool     `json:"tools_enabled,omitempty" toml:"ToolsEnabled"`     // expose pando_tools to the LLM
+	AllowedModules  []string `json:"allowed_modules,omitempty" toml:"AllowedModules"` // e.g. ["io"] to enable io.popen
 }
 
 // Config is the main configuration structure for the application.
@@ -200,7 +202,8 @@ type Config struct {
 	TUI          TUIConfig                         `json:"tui"`
 	Mesnada      MesnadaConfig                     `json:"mesnada,omitempty"`
 	Shell        ShellConfig                       `json:"shell,omitempty"`
-	AutoCompact  bool                              `json:"autoCompact,omitempty"`
+	AutoCompact     bool                              `json:"autoCompact,omitempty"`
+	ToonConversion  bool                              `json:"toon_conversion" toml:"toon_conversion"`
 	Remembrances RemembrancesConfig                `json:"remembrances,omitempty"`
 	Server       APIServerConfig                   `json:"server,omitempty"`
 	Lua          LuaConfig                         `json:"lua,omitempty"`
@@ -444,11 +447,13 @@ func setDefaults(debug bool) {
 	viper.SetDefault("server.port", 8765)
 	viper.SetDefault("server.requireAuth", true)
 	viper.SetDefault("autoCompact", true)
+	viper.SetDefault("toon_conversion", true)
 
 	// Lua scripting engine defaults
 	viper.SetDefault("lua.enabled", false)
 	viper.SetDefault("lua.timeout", "5s")
 	viper.SetDefault("lua.strict_mode", false)
+	viper.SetDefault("lua.tools_enabled", true)
 
 	// MCP Gateway defaults
 	viper.SetDefault("mcpGateway.enabled", false)
