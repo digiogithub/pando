@@ -21,12 +21,14 @@ type FetchParams struct {
 	URL     string `json:"url"`
 	Format  string `json:"format"`
 	Timeout int    `json:"timeout,omitempty"`
+	Browser string `json:"browser,omitempty"`
 }
 
 type FetchPermissionsParams struct {
 	URL     string `json:"url"`
 	Format  string `json:"format"`
 	Timeout int    `json:"timeout,omitempty"`
+	Browser string `json:"browser,omitempty"`
 }
 
 type fetchTool struct {
@@ -42,14 +44,19 @@ WHEN TO USE THIS TOOL:
 - Use when you need to download content from a URL
 - Helpful for retrieving documentation, API responses, or web content
 - Useful for getting external information to assist with tasks
+- Ideal for JavaScript-heavy pages, SPAs, or sites that block bots (use browser mode)
 
 HOW TO USE:
 - Provide the URL to fetch content from
-- Specify the desired output format (text, markdown, or html)
+- Specify the desired output format (text, markdown, html, json, or auto)
+- Optionally select the browser backend (auto, http, chrome, firefox, curl)
 - Optionally set a timeout for the request
 
 FEATURES:
 - Supports five output formats: text, markdown, html, json, and auto
+- Browser backends: Chrome/Chromium headless, Firefox headless, curl, or plain HTTP
+- Auto browser mode tries Chrome -> Firefox -> curl -> http in order
+- Browser mode renders JavaScript and removes scripts, ads, nav, and styles
 - Automatically handles HTTP redirects
 - Sets reasonable timeouts to prevent hanging
 - Validates input parameters before making requests
@@ -59,10 +66,13 @@ FEATURES:
 LIMITATIONS:
 - Maximum response size is configurable (default 10MB)
 - Only supports HTTP and HTTPS protocols
-- Cannot handle authentication or cookies
-- Some websites may block automated requests
+- Browser modes require the corresponding binary installed (google-chrome, firefox, curl)
+- Some websites may still block automated requests even in headless mode
 
 TIPS:
+- Use browser=auto (default) to automatically pick the best available fetcher
+- Use browser=chrome or browser=firefox for JavaScript-heavy or SPA pages
+- Use browser=http for simple APIs and static pages (fastest, no binary needed)
 - Use text format for plain text content or simple API responses
 - Use markdown format for content that should be rendered with formatting
 - Use html format when you need the raw HTML structure
@@ -98,6 +108,11 @@ func (t *fetchTool) Info() ToolInfo {
 				"type":        "number",
 				"description": "Optional timeout in seconds (max 120)",
 			},
+			"browser": map[string]any{
+				"type":        "string",
+				"description": "Browser backend to use for fetching (auto, http, chrome, firefox, curl). Default is auto, which tries Chrome -> Firefox -> curl -> http.",
+				"enum":        []string{"auto", "http", "chrome", "firefox", "curl"},
+			},
 		},
 		Required: []string{"url", "format"},
 	}
@@ -129,13 +144,18 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return ToolResponse{}, fmt.Errorf("session ID and message ID are required for creating a new file")
 	}
 
+	browserMode := strings.ToLower(strings.TrimSpace(params.Browser))
+	if browserMode == "" {
+		browserMode = "auto"
+	}
+
 	p := t.permissions.Request(
 		permission.CreatePermissionRequest{
 			SessionID:   sessionID,
 			Path:        config.WorkingDirectory(),
 			ToolName:    FetchToolName,
 			Action:      "fetch",
-			Description: fmt.Sprintf("Fetch content from URL: %s", params.URL),
+			Description: fmt.Sprintf("Fetch content from URL: %s (browser: %s)", params.URL, browserMode),
 			Params:      FetchPermissionsParams(params),
 		},
 	)
@@ -144,15 +164,59 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return ToolResponse{}, permission.ErrorPermissionDenied
 	}
 
-	client := t.client
+	reqTimeout := 30 * time.Second
 	if params.Timeout > 0 {
-		maxTimeout := 120 // 2 minutes
+		maxTimeout := 120
 		if params.Timeout > maxTimeout {
 			params.Timeout = maxTimeout
 		}
-		client = &http.Client{
-			Timeout: time.Duration(params.Timeout) * time.Second,
+		reqTimeout = time.Duration(params.Timeout) * time.Second
+	}
+
+	maxSizeMB := 10 // default
+	if cfg := config.Get(); cfg != nil && cfg.InternalTools.FetchMaxSizeMB > 0 {
+		maxSizeMB = cfg.InternalTools.FetchMaxSizeMB
+	}
+
+	// ── Browser-based fetch ────────────────────────────────────────────────
+	if browserMode != "http" {
+		var browser fetchBrowser
+		var browserErr error
+
+		if browserMode == "auto" {
+			browser, browserErr = getDefaultFetchBrowser()
+		} else {
+			browser, browserErr = newFetchBrowser(browserMode)
 		}
+
+		if browserErr == nil {
+			logging.Debug("fetch tool using browser", "url", params.URL, "browser", browser.Name())
+			body, err := fetchWithBrowser(browser, params.URL, reqTimeout)
+			if err != nil {
+				// In auto mode fall through to plain HTTP; in explicit mode return error.
+				if browserMode != "auto" {
+					return NewTextErrorResponse(fmt.Sprintf("Browser fetch failed: %v", err)), nil
+				}
+				logging.Debug("browser fetch failed, falling back to http", "error", err)
+			} else {
+				maxSize := int64(maxSizeMB * 1024 * 1024)
+				if int64(len(body)) > maxSize {
+					body = body[:maxSize]
+				}
+				logging.Debug("browser fetch completed", "url", params.URL, "browser", browser.Name(), "bytes", len(body))
+				return processFetchedBody(body, "text/html", format)
+			}
+		} else if browserMode != "auto" {
+			return NewTextErrorResponse(fmt.Sprintf("Browser %q not available: %v", browserMode, browserErr)), nil
+		}
+		// auto mode: no browser available, fall through to plain HTTP
+		logging.Debug("no browser available, falling back to http", "error", browserErr)
+	}
+
+	// ── Plain HTTP fetch ───────────────────────────────────────────────────
+	client := t.client
+	if params.Timeout > 0 {
+		client = &http.Client{Timeout: reqTimeout}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", params.URL, nil)
@@ -160,7 +224,7 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return ToolResponse{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "pando/1.0")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -172,20 +236,21 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return NewTextErrorResponse(fmt.Sprintf("Request failed with status code: %d", resp.StatusCode)), nil
 	}
 
-	maxSizeMB := 10 // default
-	if cfg := config.Get(); cfg != nil && cfg.InternalTools.FetchMaxSizeMB > 0 {
-		maxSizeMB = cfg.InternalTools.FetchMaxSizeMB
-	}
 	maxSize := int64(maxSizeMB * 1024 * 1024)
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSize))
 	if err != nil {
 		return NewTextErrorResponse("Failed to read response body: " + err.Error()), nil
 	}
 
-	content := string(body)
 	contentType := resp.Header.Get("Content-Type")
-
 	logging.Debug("fetch completed", "url", params.URL, "statusCode", resp.StatusCode, "contentLength", len(body), "contentType", contentType)
+
+	return processFetchedBody(body, contentType, format)
+}
+
+// processFetchedBody converts the raw body into the requested format.
+func processFetchedBody(body []byte, contentType, format string) (ToolResponse, error) {
+	content := string(body)
 
 	switch format {
 	case "text":
