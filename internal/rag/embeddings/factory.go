@@ -22,6 +22,11 @@ func NewEmbedder(provider, model, apiKey, baseURL string) (Embedder, error) {
 	case "openai":
 		return NewOpenAIEmbedder(apiKey, model, baseURL)
 
+	// openai-compatible accepts any OpenAI-API-compatible endpoint (e.g. LM Studio, LocalAI, vLLM).
+	// baseURL and apiKey must be provided explicitly via the remembrances config.
+	case "openai-compatible":
+		return NewOpenAIEmbedder(apiKey, model, baseURL)
+
 	case "google", "gemini":
 		return NewGoogleEmbedder(apiKey, model, baseURL)
 
