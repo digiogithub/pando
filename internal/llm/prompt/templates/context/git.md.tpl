@@ -1,0 +1,1 @@
+{{/* Git context placeholder */}}
