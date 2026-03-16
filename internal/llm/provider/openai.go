@@ -134,6 +134,10 @@ func (o *openaiClient) convertTools(tools []tools.BaseTool) []openai.ChatComplet
 
 	for i, tool := range tools {
 		info := tool.Info()
+		required := info.Required
+		if required == nil {
+			required = []string{}
+		}
 		openaiTools[i] = openai.ChatCompletionToolParam{
 			Function: openai.FunctionDefinitionParam{
 				Name:        info.Name,
@@ -141,7 +145,7 @@ func (o *openaiClient) convertTools(tools []tools.BaseTool) []openai.ChatComplet
 				Parameters: openai.FunctionParameters{
 					"type":       "object",
 					"properties": info.Parameters,
-					"required":   info.Required,
+					"required":   required,
 				},
 			},
 		}
