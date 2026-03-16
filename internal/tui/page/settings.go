@@ -840,6 +840,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveMesnada(field)
 	case strings.HasPrefix(field.Key, "remembrances."):
 		return saveRemembrances(field)
+	case strings.HasPrefix(field.Key, "internalTools."):
+		return saveInternalTools(field)
 	default:
 		return fmt.Errorf("unsupported setting %q", field.Key)
 	}
@@ -1183,6 +1185,71 @@ func saveRemembrances(field settings.Field) error {
 	}
 
 	return config.UpdateRemembrances(remCfg)
+}
+
+func saveInternalTools(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	itCfg := cfg.InternalTools
+	switch field.Key {
+	case "internalTools.fetchEnabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Fetch Enabled value: %w", err)
+		}
+		itCfg.FetchEnabled = enabled
+	case "internalTools.fetchMaxSizeMB":
+		size, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Fetch Max Size value: %w", err)
+		}
+		if size < 1 {
+			return fmt.Errorf("fetch max size must be greater than zero")
+		}
+		itCfg.FetchMaxSizeMB = size
+	case "internalTools.googleSearchEnabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Google Search Enabled value: %w", err)
+		}
+		itCfg.GoogleSearchEnabled = enabled
+	case "internalTools.googleApiKey":
+		itCfg.GoogleAPIKey = strings.TrimSpace(field.Value)
+	case "internalTools.googleSearchEngineId":
+		itCfg.GoogleSearchEngineID = strings.TrimSpace(field.Value)
+	case "internalTools.braveSearchEnabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Brave Search Enabled value: %w", err)
+		}
+		itCfg.BraveSearchEnabled = enabled
+	case "internalTools.braveApiKey":
+		itCfg.BraveAPIKey = strings.TrimSpace(field.Value)
+	case "internalTools.perplexitySearchEnabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Perplexity Search Enabled value: %w", err)
+		}
+		itCfg.PerplexitySearchEnabled = enabled
+	case "internalTools.perplexityApiKey":
+		itCfg.PerplexityAPIKey = strings.TrimSpace(field.Value)
+	case "internalTools.context7Enabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Context7 Enabled value: %w", err)
+		}
+		itCfg.Context7Enabled = enabled
+	case "internalTools.info":
+		// read-only informational field, nothing to save
+		return nil
+	default:
+		return fmt.Errorf("unsupported InternalTools setting %q", field.Key)
+	}
+
+	return config.UpdateInternalTools(itCfg)
 }
 
 func normalizeRemembrancesConfig(remCfg config.RemembrancesConfig) config.RemembrancesConfig {
