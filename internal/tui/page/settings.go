@@ -840,6 +840,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveMesnada(field)
 	case strings.HasPrefix(field.Key, "remembrances."):
 		return saveRemembrances(field)
+	case strings.HasPrefix(field.Key, "internalTools."):
+		return saveInternalTools(field)
 	default:
 		return fmt.Errorf("unsupported setting %q", field.Key)
 	}
