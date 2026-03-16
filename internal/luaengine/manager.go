@@ -157,6 +157,15 @@ func (fm *FilterManager) ExecuteHook(ctx context.Context, hookType HookType, dat
 	return fm.executeFilter(ctx, functionName, hookCtx)
 }
 
+// RegisterPromptFunctions registers prompt-system functions in the Lua state.
+func (fm *FilterManager) RegisterPromptFunctions(opts *PromptFunctionOptions) {
+	fm.mu.Lock()
+	defer fm.mu.Unlock()
+	if fm.L != nil {
+		RegisterPromptFunctions(fm.L, opts)
+	}
+}
+
 // buildFilterFunctionName builds the Lua function name for a filter.
 // Format: <server-name>-input or <server-name>-output
 func buildFilterFunctionName(serverName string, filterType FilterType) string {
