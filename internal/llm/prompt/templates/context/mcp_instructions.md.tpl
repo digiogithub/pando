@@ -1,0 +1,1 @@
+{{/* MCP instructions context placeholder */}}

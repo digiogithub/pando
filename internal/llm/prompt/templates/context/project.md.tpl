@@ -1,0 +1,1 @@
+{{/* Project context placeholder */}}
