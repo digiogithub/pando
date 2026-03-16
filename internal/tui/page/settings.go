@@ -92,6 +92,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		buildLSPSection(cfg),
 		buildMesnadaSection(cfg),
 		buildRemembrancesSection(cfg),
+		buildInternalToolsSection(cfg),
 	}
 }
 
@@ -620,6 +621,86 @@ func buildRemembrancesSection(cfg *config.Config) settings.Section {
 	})
 
 	return settings.Section{Title: "Remembrances", Fields: fields}
+}
+
+func buildInternalToolsSection(cfg *config.Config) settings.Section {
+	it := cfg.InternalTools
+	fields := []settings.Field{
+		{
+			Label: "Fetch Enabled",
+			Key:   "internalTools.fetchEnabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(it.FetchEnabled),
+		},
+		{
+			Label: "Fetch Max Size (MB)",
+			Key:   "internalTools.fetchMaxSizeMB",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(it.FetchMaxSizeMB),
+		},
+		{
+			Label: "Google Search Enabled",
+			Key:   "internalTools.googleSearchEnabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(it.GoogleSearchEnabled),
+		},
+		{
+			Label:  "Google API Key",
+			Key:    "internalTools.googleApiKey",
+			Type:   settings.FieldText,
+			Value:  it.GoogleAPIKey,
+			Masked: true,
+		},
+		{
+			Label: "Google Search Engine ID",
+			Key:   "internalTools.googleSearchEngineId",
+			Type:  settings.FieldText,
+			Value: it.GoogleSearchEngineID,
+		},
+		{
+			Label: "Brave Search Enabled",
+			Key:   "internalTools.braveSearchEnabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(it.BraveSearchEnabled),
+		},
+		{
+			Label:  "Brave API Key",
+			Key:    "internalTools.braveApiKey",
+			Type:   settings.FieldText,
+			Value:  it.BraveAPIKey,
+			Masked: true,
+		},
+		{
+			Label: "Perplexity Search Enabled",
+			Key:   "internalTools.perplexitySearchEnabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(it.PerplexitySearchEnabled),
+		},
+		{
+			Label:  "Perplexity API Key",
+			Key:    "internalTools.perplexityApiKey",
+			Type:   settings.FieldText,
+			Value:  it.PerplexityAPIKey,
+			Masked: true,
+		},
+		{
+			Label: "Context7 Enabled",
+			Key:   "internalTools.context7Enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(it.Context7Enabled),
+		},
+		{
+			Label:    "Info",
+			Key:      "internalTools.info",
+			Type:     settings.FieldText,
+			Value:    "Search tools are only active when their API key is configured. Env vars: GOOGLE_API_KEY, BRAVE_API_KEY, PERPLEXITY_API_KEY",
+			ReadOnly: true,
+		},
+	}
+	return settings.Section{
+		Title:  "Internal Tools",
+		Fields: fields,
+	}
 }
 
 func remembrancesModelsForProvider(provider string) []string {
