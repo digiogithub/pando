@@ -31,31 +31,31 @@ func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*Rememb
 		return nil, nil
 	}
 
-	// Resolve API key for the document embedding provider.
-	docAPIKey := resolveAPIKey(cfg.DocumentEmbeddingProvider)
+	// Resolve API key and base URL for the document embedding provider.
+	docAPIKey, docBaseURL := resolveProviderCredentials(cfg.DocumentEmbeddingProvider)
 	docEmbedder, err := embeddings.NewEmbedder(
 		cfg.DocumentEmbeddingProvider,
 		cfg.DocumentEmbeddingModel,
 		docAPIKey,
-		"",
+		docBaseURL,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("remembrances: create document embedder (%s/%s): %w",
 			cfg.DocumentEmbeddingProvider, cfg.DocumentEmbeddingModel, err)
 	}
 
-	// Resolve API key for the code embedding provider.
+	// Resolve API key and base URL for the code embedding provider.
 	var codeEmbedder embeddings.Embedder
 	if cfg.CodeEmbeddingProvider == cfg.DocumentEmbeddingProvider &&
 		cfg.CodeEmbeddingModel == cfg.DocumentEmbeddingModel {
 		codeEmbedder = docEmbedder
 	} else {
-		codeAPIKey := resolveAPIKey(cfg.CodeEmbeddingProvider)
+		codeAPIKey, codeBaseURL := resolveProviderCredentials(cfg.CodeEmbeddingProvider)
 		codeEmbedder, err = embeddings.NewEmbedder(
 			cfg.CodeEmbeddingProvider,
 			cfg.CodeEmbeddingModel,
 			codeAPIKey,
-			"",
+			codeBaseURL,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("remembrances: create code embedder (%s/%s): %w",
@@ -63,9 +63,10 @@ func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*Rememb
 		}
 	}
 
+	workers := cfg.IndexWorkers
 	kbStore := kb.NewKBStore(db, docEmbedder, cfg.ChunkSize, cfg.ChunkOverlap)
 	eventStore := events.NewEventStore(db, docEmbedder)
-	codeIndexer := code.NewCodeIndexer(db, codeEmbedder)
+	codeIndexer := code.NewCodeIndexer(db, codeEmbedder, workers)
 
 	return &RemembrancesService{
 		KB:           kbStore,
@@ -76,28 +77,31 @@ func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*Rememb
 	}, nil
 }
 
-// resolveAPIKey looks up the API key for a provider from the current app config.
-func resolveAPIKey(provider string) string {
+// resolveProviderCredentials looks up the API key and base URL for a provider from the current app config.
+func resolveProviderCredentials(provider string) (apiKey, baseURL string) {
 	cfg := config.Get()
 	if cfg == nil {
-		return ""
+		return "", ""
 	}
 	// Map embedding provider names to LLM provider names used in pando config.
 	switch provider {
 	case "openai":
 		if p, ok := cfg.Providers[models.ProviderOpenAI]; ok {
-			return p.APIKey
+			return p.APIKey, p.BaseURL
 		}
 	case "google", "gemini":
 		if p, ok := cfg.Providers[models.ProviderGemini]; ok {
-			return p.APIKey
+			return p.APIKey, p.BaseURL
 		}
 	case "anthropic", "voyage":
 		if p, ok := cfg.Providers[models.ProviderAnthropic]; ok {
-			return p.APIKey
+			return p.APIKey, p.BaseURL
 		}
 	case "ollama":
-		// Ollama is local, no API key required.
+		if p, ok := cfg.Providers[models.ProviderOllama]; ok {
+			return "", models.ResolveOllamaBaseURL(p.BaseURL)
+		}
+		return "", models.ResolveOllamaBaseURL("")
 	}
-	return ""
+	return "", ""
 }
