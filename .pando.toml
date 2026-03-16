@@ -8,7 +8,7 @@ AutoCompact = true
 [Data]
 Directory = './.pando/data'
 
-[MCPServers]
+#[MCPServers]
 # [MCPServers.hyper-mcp]
 # Command = 'hyper-mcp'
 # Env = []
