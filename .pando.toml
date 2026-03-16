@@ -9,12 +9,12 @@ AutoCompact = true
 Directory = './.pando/data'
 
 [MCPServers]
-[MCPServers.hyper-mcp]
-Command = 'hyper-mcp'
-Env = []
-Args = ['--config-file', '/home/sevir/.config/hyper-mcp/search.yaml']
-Type = ''
-URL = ''
+# [MCPServers.hyper-mcp]
+# Command = 'hyper-mcp'
+# Env = []
+# Args = ['--config-file', '/home/sevir/.config/hyper-mcp/search.yaml']
+# Type = ''
+# URL = ''
 
 [MCPServers.mesnada]
 Command = ''
