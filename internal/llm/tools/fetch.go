@@ -21,12 +21,14 @@ type FetchParams struct {
 	URL     string `json:"url"`
 	Format  string `json:"format"`
 	Timeout int    `json:"timeout,omitempty"`
+	Browser string `json:"browser,omitempty"`
 }
 
 type FetchPermissionsParams struct {
 	URL     string `json:"url"`
 	Format  string `json:"format"`
 	Timeout int    `json:"timeout,omitempty"`
+	Browser string `json:"browser,omitempty"`
 }
 
 type fetchTool struct {
