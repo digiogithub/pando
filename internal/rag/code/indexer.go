@@ -48,14 +48,18 @@ type CodeIndexer struct {
 	jobs   map[string]*IndexingJob
 }
 
-// NewCodeIndexer creates a new CodeIndexer.
-func NewCodeIndexer(db *sql.DB, embedder embeddings.Embedder) *CodeIndexer {
+// NewCodeIndexer creates a new CodeIndexer with the given number of concurrent workers.
+// If workers is <= 0, the defaultWorkers value is used.
+func NewCodeIndexer(db *sql.DB, embedder embeddings.Embedder, workers int) *CodeIndexer {
+	if workers <= 0 {
+		workers = defaultWorkers
+	}
 	return &CodeIndexer{
 		db:       db,
 		embedder: embedder,
 		parser:   treesitter.NewParser(),
 		walker:   treesitter.NewASTWalker(treesitter.DefaultWalkerConfig()),
-		workers:  defaultWorkers,
+		workers:  workers,
 		jobs:     make(map[string]*IndexingJob),
 	}
 }

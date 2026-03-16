@@ -154,11 +154,18 @@ type RemembrancesConfig struct {
 	Enabled                   bool   `json:"enabled" toml:"Enabled"`
 	DocumentEmbeddingProvider string `json:"document_embedding_provider" toml:"DocumentEmbeddingProvider"`
 	DocumentEmbeddingModel    string `json:"document_embedding_model" toml:"DocumentEmbeddingModel"`
-	CodeEmbeddingProvider     string `json:"code_embedding_provider" toml:"CodeEmbeddingProvider"`
-	CodeEmbeddingModel        string `json:"code_embedding_model" toml:"CodeEmbeddingModel"`
-	UseSameModel              bool   `json:"use_same_model" toml:"UseSameModel"`
-	ChunkSize                 int    `json:"chunk_size" toml:"ChunkSize"`
-	ChunkOverlap              int    `json:"chunk_overlap" toml:"ChunkOverlap"`
+	// DocumentEmbeddingBaseURL and DocumentEmbeddingAPIKey are used when DocumentEmbeddingProvider is "openai-compatible".
+	DocumentEmbeddingBaseURL string `json:"document_embedding_base_url" toml:"DocumentEmbeddingBaseURL"`
+	DocumentEmbeddingAPIKey  string `json:"document_embedding_api_key" toml:"DocumentEmbeddingAPIKey"`
+	CodeEmbeddingProvider    string `json:"code_embedding_provider" toml:"CodeEmbeddingProvider"`
+	CodeEmbeddingModel       string `json:"code_embedding_model" toml:"CodeEmbeddingModel"`
+	// CodeEmbeddingBaseURL and CodeEmbeddingAPIKey are used when CodeEmbeddingProvider is "openai-compatible".
+	CodeEmbeddingBaseURL string `json:"code_embedding_base_url" toml:"CodeEmbeddingBaseURL"`
+	CodeEmbeddingAPIKey  string `json:"code_embedding_api_key" toml:"CodeEmbeddingAPIKey"`
+	UseSameModel         bool   `json:"use_same_model" toml:"UseSameModel"`
+	ChunkSize            int    `json:"chunk_size" toml:"ChunkSize"`
+	ChunkOverlap         int    `json:"chunk_overlap" toml:"ChunkOverlap"`
+	IndexWorkers         int    `json:"index_workers" toml:"IndexWorkers"`
 }
 
 // APIServerConfig holds configuration for the HTTP API server (WebUI backend).
@@ -494,6 +501,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("remembrances.use_same_model", false)
 	viper.SetDefault("remembrances.chunk_size", 800)
 	viper.SetDefault("remembrances.chunk_overlap", 100)
+	viper.SetDefault("remembrances.index_workers", 4)
 
 	// Internal Tools defaults
 	viper.SetDefault("internalTools.fetchEnabled", true)
@@ -810,6 +818,8 @@ func normalizeRemembrancesDefaults() {
 	if rem.UseSameModel {
 		rem.CodeEmbeddingProvider = rem.DocumentEmbeddingProvider
 		rem.CodeEmbeddingModel = rem.DocumentEmbeddingModel
+		rem.CodeEmbeddingBaseURL = rem.DocumentEmbeddingBaseURL
+		rem.CodeEmbeddingAPIKey = rem.DocumentEmbeddingAPIKey
 	}
 
 	cfg.Remembrances = rem
