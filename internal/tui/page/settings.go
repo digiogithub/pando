@@ -470,7 +470,7 @@ func buildRemembrancesSection(cfg *config.Config) settings.Section {
 	rem := cfg.Remembrances
 	useSameModel := rem.UseSameModel
 
-	providerOptions := []string{"ollama", "openai", "google", "anthropic"}
+	providerOptions := []string{"ollama", "openai", "google", "anthropic", "openai-compatible"}
 	docProviderModels := remembrancesModelsForProvider(rem.DocumentEmbeddingProvider)
 
 	codeProvider := rem.CodeEmbeddingProvider
@@ -524,6 +524,7 @@ func buildRemembrancesSection(cfg *config.Config) settings.Section {
 	if docDimension > 0 {
 		docDimStr = fmt.Sprintf("%d dims", docDimension)
 	}
+	docIsCustom := rem.DocumentEmbeddingProvider == "openai-compatible"
 	fields = append(fields,
 		settings.Field{
 			Label:   "Doc Provider",
@@ -533,11 +534,25 @@ func buildRemembrancesSection(cfg *config.Config) settings.Section {
 			Options: ensureOption(providerOptions, rem.DocumentEmbeddingProvider),
 		},
 		settings.Field{
-			Label:   "Doc Model",
-			Key:     "remembrances.document_embedding_model",
-			Type:    settings.FieldSelect,
-			Value:   rem.DocumentEmbeddingModel,
-			Options: ensureOption(docProviderModels, rem.DocumentEmbeddingModel),
+			Label: "Doc Model",
+			Key:   "remembrances.document_embedding_model",
+			Type:  settings.FieldText,
+			Value: rem.DocumentEmbeddingModel,
+		},
+		settings.Field{
+			Label:    "Doc Base URL",
+			Key:      "remembrances.document_embedding_base_url",
+			Type:     settings.FieldText,
+			Value:    rem.DocumentEmbeddingBaseURL,
+			Disabled: !docIsCustom,
+		},
+		settings.Field{
+			Label:    "Doc API Key",
+			Key:      "remembrances.document_embedding_api_key",
+			Type:     settings.FieldText,
+			Value:    rem.DocumentEmbeddingAPIKey,
+			Masked:   true,
+			Disabled: !docIsCustom,
 		},
 		settings.Field{
 			Label:    "Doc Suggestions",
@@ -559,6 +574,7 @@ func buildRemembrancesSection(cfg *config.Config) settings.Section {
 	if codeDimension > 0 {
 		codeDimStr = fmt.Sprintf("%d dims", codeDimension)
 	}
+	codeIsCustom := codeProvider == "openai-compatible"
 	fields = append(fields,
 		settings.Field{
 			Label:    "Code Provider",
@@ -571,10 +587,24 @@ func buildRemembrancesSection(cfg *config.Config) settings.Section {
 		settings.Field{
 			Label:    "Code Model",
 			Key:      "remembrances.code_embedding_model",
-			Type:     settings.FieldSelect,
+			Type:     settings.FieldText,
 			Value:    codeModel,
-			Options:  ensureOption(codeProviderModels, codeModel),
 			Disabled: useSameModel,
+		},
+		settings.Field{
+			Label:    "Code Base URL",
+			Key:      "remembrances.code_embedding_base_url",
+			Type:     settings.FieldText,
+			Value:    rem.CodeEmbeddingBaseURL,
+			Disabled: useSameModel || !codeIsCustom,
+		},
+		settings.Field{
+			Label:    "Code API Key",
+			Key:      "remembrances.code_embedding_api_key",
+			Type:     settings.FieldText,
+			Value:    rem.CodeEmbeddingAPIKey,
+			Masked:   true,
+			Disabled: useSameModel || !codeIsCustom,
 		},
 		settings.Field{
 			Label:    "Code Suggestions",
@@ -605,6 +635,12 @@ func buildRemembrancesSection(cfg *config.Config) settings.Section {
 			Key:   "remembrances.chunk_overlap",
 			Type:  settings.FieldText,
 			Value: fmt.Sprint(rem.ChunkOverlap),
+		},
+		settings.Field{
+			Label: "Index Workers",
+			Key:   "remembrances.index_workers",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(rem.IndexWorkers),
 		},
 	)
 
@@ -709,6 +745,9 @@ func remembrancesModelsForProvider(provider string) []string {
 		return []string{"nomic-embed-text", "mxbai-embed-large", "all-minilm"}
 	case "openai":
 		return []string{"text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"}
+	case "openai-compatible":
+		// Common models for OpenAI-compatible endpoints (LM Studio, LocalAI, vLLM, etc.)
+		return []string{"text-embedding-3-small", "text-embedding-ada-002", "nomic-embed-text", "bge-m3"}
 	case "google", "gemini":
 		return []string{"text-embedding-004"}
 	case "anthropic", "voyage":
@@ -1157,6 +1196,14 @@ func saveRemembrances(field settings.Field) error {
 		}
 	case "remembrances.code_embedding_model":
 		remCfg.CodeEmbeddingModel = strings.TrimSpace(field.Value)
+	case "remembrances.document_embedding_base_url":
+		remCfg.DocumentEmbeddingBaseURL = strings.TrimSpace(field.Value)
+	case "remembrances.document_embedding_api_key":
+		remCfg.DocumentEmbeddingAPIKey = strings.TrimSpace(field.Value)
+	case "remembrances.code_embedding_base_url":
+		remCfg.CodeEmbeddingBaseURL = strings.TrimSpace(field.Value)
+	case "remembrances.code_embedding_api_key":
+		remCfg.CodeEmbeddingAPIKey = strings.TrimSpace(field.Value)
 	case "remembrances.chunk_size":
 		size, err := parseIntValue(field.Value)
 		if err != nil {
@@ -1175,6 +1222,15 @@ func saveRemembrances(field settings.Field) error {
 			return fmt.Errorf("chunk overlap must be between 0 and 1000")
 		}
 		remCfg.ChunkOverlap = overlap
+	case "remembrances.index_workers":
+		workers, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid index workers: %w", err)
+		}
+		if workers < 1 || workers > 32 {
+			return fmt.Errorf("index workers must be between 1 and 32")
+		}
+		remCfg.IndexWorkers = workers
 	default:
 		return fmt.Errorf("unsupported Remembrances setting %q", field.Key)
 	}
@@ -1261,6 +1317,8 @@ func normalizeRemembrancesConfig(remCfg config.RemembrancesConfig) config.Rememb
 	if remCfg.UseSameModel {
 		remCfg.CodeEmbeddingProvider = remCfg.DocumentEmbeddingProvider
 		remCfg.CodeEmbeddingModel = remCfg.DocumentEmbeddingModel
+		remCfg.CodeEmbeddingBaseURL = remCfg.DocumentEmbeddingBaseURL
+		remCfg.CodeEmbeddingAPIKey = remCfg.DocumentEmbeddingAPIKey
 	}
 
 	return remCfg
@@ -1278,18 +1336,18 @@ func validateRemembrancesConfig(cfg *config.Config, remCfg config.RemembrancesCo
 		return fmt.Errorf("chunk overlap must be between 0 and 1000")
 	}
 
-	if err := validateRemembrancesEmbedding(cfg, remCfg.DocumentEmbeddingProvider, remCfg.DocumentEmbeddingModel); err != nil {
+	if err := validateRemembrancesEmbedding(cfg, remCfg.DocumentEmbeddingProvider, remCfg.DocumentEmbeddingModel, remCfg.DocumentEmbeddingAPIKey, remCfg.DocumentEmbeddingBaseURL); err != nil {
 		return fmt.Errorf("document embedding validation failed: %w", err)
 	}
 
-	if err := validateRemembrancesEmbedding(cfg, remCfg.CodeEmbeddingProvider, remCfg.CodeEmbeddingModel); err != nil {
+	if err := validateRemembrancesEmbedding(cfg, remCfg.CodeEmbeddingProvider, remCfg.CodeEmbeddingModel, remCfg.CodeEmbeddingAPIKey, remCfg.CodeEmbeddingBaseURL); err != nil {
 		return fmt.Errorf("code embedding validation failed: %w", err)
 	}
 
 	return nil
 }
 
-func validateRemembrancesEmbedding(cfg *config.Config, provider, model string) error {
+func validateRemembrancesEmbedding(cfg *config.Config, provider, model, customAPIKey, customBaseURL string) error {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	model = strings.TrimSpace(model)
 	if provider == "" {
@@ -1299,7 +1357,17 @@ func validateRemembrancesEmbedding(cfg *config.Config, provider, model string) e
 		return fmt.Errorf("model cannot be empty")
 	}
 
-	apiKey, baseURL := remembrancesProviderCredentials(cfg, provider)
+	var apiKey, baseURL string
+	if provider == "openai-compatible" {
+		apiKey = strings.TrimSpace(customAPIKey)
+		baseURL = strings.TrimSpace(customBaseURL)
+		if baseURL == "" {
+			return fmt.Errorf("base URL is required for openai-compatible provider")
+		}
+	} else {
+		apiKey, baseURL = remembrancesProviderCredentials(cfg, provider)
+	}
+
 	if _, err := embeddings.NewEmbedder(provider, model, apiKey, baseURL); err != nil {
 		return err
 	}
