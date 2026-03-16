@@ -159,6 +159,7 @@ type RemembrancesConfig struct {
 	UseSameModel              bool   `json:"use_same_model" toml:"UseSameModel"`
 	ChunkSize                 int    `json:"chunk_size" toml:"ChunkSize"`
 	ChunkOverlap              int    `json:"chunk_overlap" toml:"ChunkOverlap"`
+	IndexWorkers              int    `json:"index_workers" toml:"IndexWorkers"`
 }
 
 // APIServerConfig holds configuration for the HTTP API server (WebUI backend).
@@ -494,6 +495,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("remembrances.use_same_model", false)
 	viper.SetDefault("remembrances.chunk_size", 800)
 	viper.SetDefault("remembrances.chunk_overlap", 100)
+	viper.SetDefault("remembrances.index_workers", 4)
 
 	// Internal Tools defaults
 	viper.SetDefault("internalTools.fetchEnabled", true)

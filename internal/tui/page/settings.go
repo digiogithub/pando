@@ -606,6 +606,12 @@ func buildRemembrancesSection(cfg *config.Config) settings.Section {
 			Type:  settings.FieldText,
 			Value: fmt.Sprint(rem.ChunkOverlap),
 		},
+		settings.Field{
+			Label: "Index Workers",
+			Key:   "remembrances.index_workers",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(rem.IndexWorkers),
+		},
 	)
 
 	validationMessage := "Configuration looks valid."
@@ -1175,6 +1181,15 @@ func saveRemembrances(field settings.Field) error {
 			return fmt.Errorf("chunk overlap must be between 0 and 1000")
 		}
 		remCfg.ChunkOverlap = overlap
+	case "remembrances.index_workers":
+		workers, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid index workers: %w", err)
+		}
+		if workers < 1 || workers > 32 {
+			return fmt.Errorf("index workers must be between 1 and 32")
+		}
+		remCfg.IndexWorkers = workers
 	default:
 		return fmt.Errorf("unsupported Remembrances setting %q", field.Key)
 	}
