@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -48,13 +49,15 @@ HOW TO USE:
 - Optionally set a timeout for the request
 
 FEATURES:
-- Supports three output formats: text, markdown, and html
+- Supports five output formats: text, markdown, html, json, and auto
 - Automatically handles HTTP redirects
 - Sets reasonable timeouts to prevent hanging
 - Validates input parameters before making requests
+- Detects JSON responses and formats them as readable code blocks
+- Auto format selects the best output based on Content-Type and body content
 
 LIMITATIONS:
-- Maximum response size is 5MB
+- Maximum response size is configurable (default 10MB)
 - Only supports HTTP and HTTPS protocols
 - Cannot handle authentication or cookies
 - Some websites may block automated requests
@@ -63,7 +66,9 @@ TIPS:
 - Use text format for plain text content or simple API responses
 - Use markdown format for content that should be rendered with formatting
 - Use html format when you need the raw HTML structure
-- Set appropriate timeouts for potentially slow websites`
+- Set appropriate timeouts for potentially slow websites
+- Use auto format when you're unsure of the response type (APIs, pages, or data)
+- Use json format to force JSON pretty-printing for API endpoints`
 )
 
 func NewFetchTool(permissions permission.Service) BaseTool {
@@ -86,8 +91,8 @@ func (t *fetchTool) Info() ToolInfo {
 			},
 			"format": map[string]any{
 				"type":        "string",
-				"description": "The format to return the content in (text, markdown, or html)",
-				"enum":        []string{"text", "markdown", "html"},
+				"description": "The format to return the content in (text, markdown, html, json, or auto)",
+				"enum":        []string{"text", "markdown", "html", "json", "auto"},
 			},
 			"timeout": map[string]any{
 				"type":        "number",
@@ -109,8 +114,8 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 	}
 
 	format := strings.ToLower(params.Format)
-	if format != "text" && format != "markdown" && format != "html" {
-		return NewTextErrorResponse("Format must be one of: text, markdown, html"), nil
+	if format != "text" && format != "markdown" && format != "html" && format != "json" && format != "auto" {
+		return NewTextErrorResponse("Format must be one of: text, markdown, html, json, auto"), nil
 	}
 
 	if !strings.HasPrefix(params.URL, "http://") && !strings.HasPrefix(params.URL, "https://") {
@@ -167,7 +172,11 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return NewTextErrorResponse(fmt.Sprintf("Request failed with status code: %d", resp.StatusCode)), nil
 	}
 
-	maxSize := int64(5 * 1024 * 1024) // 5MB
+	maxSizeMB := 10 // default
+	if cfg := config.Get(); cfg != nil && cfg.InternalTools.FetchMaxSizeMB > 0 {
+		maxSizeMB = cfg.InternalTools.FetchMaxSizeMB
+	}
+	maxSize := int64(maxSizeMB * 1024 * 1024)
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSize))
 	if err != nil {
 		return NewTextErrorResponse("Failed to read response body: " + err.Error()), nil
@@ -190,6 +199,12 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return NewTextResponse(content), nil
 
 	case "markdown":
+		// Check for JSON content first (API responses are often JSON)
+		if strings.Contains(contentType, "application/json") ||
+			strings.Contains(contentType, "application/ld+json") ||
+			isJSONContent(body) {
+			return formatJSONResponse(body)
+		}
 		if strings.Contains(contentType, "text/html") {
 			markdown, err := convertHTMLToMarkdown(content)
 			if err != nil {
@@ -197,8 +212,26 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 			}
 			return NewTextResponse(markdown), nil
 		}
-
 		return NewTextResponse("```\n" + content + "\n```"), nil
+
+	case "json":
+		return formatJSONResponse(body)
+
+	case "auto":
+		isJSON := strings.Contains(contentType, "application/json") ||
+			strings.Contains(contentType, "application/ld+json") ||
+			isJSONContent(body)
+		if isJSON {
+			return formatJSONResponse(body)
+		}
+		if strings.Contains(contentType, "text/html") {
+			markdown, err := convertHTMLToMarkdown(content)
+			if err != nil {
+				return NewTextErrorResponse("Failed to convert HTML to Markdown: " + err.Error()), nil
+			}
+			return NewTextResponse(markdown), nil
+		}
+		return NewTextResponse(content), nil
 
 	case "html":
 		return NewTextResponse(content), nil
@@ -229,4 +262,17 @@ func convertHTMLToMarkdown(html string) (string, error) {
 	}
 
 	return markdown, nil
+}
+
+func isJSONContent(body []byte) bool {
+	s := strings.TrimSpace(string(body))
+	return strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[")
+}
+
+func formatJSONResponse(body []byte) (ToolResponse, error) {
+	var prettyJSON bytes.Buffer
+	if err := json.Indent(&prettyJSON, body, "", "  "); err != nil {
+		return NewTextErrorResponse("Failed to format JSON: " + err.Error()), nil
+	}
+	return NewTextResponse("```json\n" + prettyJSON.String() + "\n```"), nil
 }
