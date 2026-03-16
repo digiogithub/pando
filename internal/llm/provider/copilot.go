@@ -260,6 +260,10 @@ func (c *copilotClient) convertTools(tools []toolsPkg.BaseTool) []openai.ChatCom
 
 	for i, tool := range tools {
 		info := tool.Info()
+		required := info.Required
+		if required == nil {
+			required = []string{}
+		}
 		copilotTools[i] = openai.ChatCompletionToolParam{
 			Function: openai.FunctionDefinitionParam{
 				Name:        info.Name,
@@ -267,7 +271,7 @@ func (c *copilotClient) convertTools(tools []toolsPkg.BaseTool) []openai.ChatCom
 				Parameters: openai.FunctionParameters{
 					"type":       "object",
 					"properties": info.Parameters,
-					"required":   info.Required,
+					"required":   required,
 				},
 			},
 		}
