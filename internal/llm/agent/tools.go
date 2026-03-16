@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"strings"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/lsp"
@@ -27,6 +29,22 @@ func CoderAgentTools(
 	otherTools := GetMcpTools(ctx, permissions)
 	if len(lspClients) > 0 {
 		otherTools = append(otherTools, tools.NewDiagnosticsTool(lspClients))
+	}
+	cfg := config.Get()
+	if cfg != nil {
+		it := cfg.InternalTools
+		if it.GoogleSearchEnabled && strings.TrimSpace(it.GoogleAPIKey) != "" {
+			otherTools = append(otherTools, tools.NewGoogleSearchTool(permissions))
+		}
+		if it.BraveSearchEnabled && strings.TrimSpace(it.BraveAPIKey) != "" {
+			otherTools = append(otherTools, tools.NewBraveSearchTool(permissions))
+		}
+		if it.PerplexitySearchEnabled && strings.TrimSpace(it.PerplexityAPIKey) != "" {
+			otherTools = append(otherTools, tools.NewPerplexitySearchTool(permissions))
+		}
+		if it.Context7Enabled {
+			otherTools = append(otherTools, tools.NewContext7Tools()...)
+		}
 	}
 	return append(
 		[]tools.BaseTool{
@@ -90,6 +108,22 @@ func CoderAgentToolsWithMesnada(
 			lspClients,
 			skillManager,
 		)
+	}
+	cfg := config.Get()
+	if cfg != nil {
+		it := cfg.InternalTools
+		if it.GoogleSearchEnabled && strings.TrimSpace(it.GoogleAPIKey) != "" {
+			baseTools = append(baseTools, tools.NewGoogleSearchTool(permissions))
+		}
+		if it.BraveSearchEnabled && strings.TrimSpace(it.BraveAPIKey) != "" {
+			baseTools = append(baseTools, tools.NewBraveSearchTool(permissions))
+		}
+		if it.PerplexitySearchEnabled && strings.TrimSpace(it.PerplexityAPIKey) != "" {
+			baseTools = append(baseTools, tools.NewPerplexitySearchTool(permissions))
+		}
+		if it.Context7Enabled {
+			baseTools = append(baseTools, tools.NewContext7Tools()...)
+		}
 	}
 	if mesnadaOrchestrator != nil {
 		baseTools = append(baseTools,
