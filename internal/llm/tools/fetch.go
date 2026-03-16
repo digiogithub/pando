@@ -21,12 +21,14 @@ type FetchParams struct {
 	URL     string `json:"url"`
 	Format  string `json:"format"`
 	Timeout int    `json:"timeout,omitempty"`
+	Browser string `json:"browser,omitempty"`
 }
 
 type FetchPermissionsParams struct {
 	URL     string `json:"url"`
 	Format  string `json:"format"`
 	Timeout int    `json:"timeout,omitempty"`
+	Browser string `json:"browser,omitempty"`
 }
 
 type fetchTool struct {
@@ -42,14 +44,19 @@ WHEN TO USE THIS TOOL:
 - Use when you need to download content from a URL
 - Helpful for retrieving documentation, API responses, or web content
 - Useful for getting external information to assist with tasks
+- Ideal for JavaScript-heavy pages, SPAs, or sites that block bots (use browser mode)
 
 HOW TO USE:
 - Provide the URL to fetch content from
-- Specify the desired output format (text, markdown, or html)
+- Specify the desired output format (text, markdown, html, json, or auto)
+- Optionally select the browser backend (auto, http, chrome, firefox, curl)
 - Optionally set a timeout for the request
 
 FEATURES:
 - Supports five output formats: text, markdown, html, json, and auto
+- Browser backends: Chrome/Chromium headless, Firefox headless, curl, or plain HTTP
+- Auto browser mode tries Chrome -> Firefox -> curl -> http in order
+- Browser mode renders JavaScript and removes scripts, ads, nav, and styles
 - Automatically handles HTTP redirects
 - Sets reasonable timeouts to prevent hanging
 - Validates input parameters before making requests
@@ -59,10 +66,13 @@ FEATURES:
 LIMITATIONS:
 - Maximum response size is configurable (default 10MB)
 - Only supports HTTP and HTTPS protocols
-- Cannot handle authentication or cookies
-- Some websites may block automated requests
+- Browser modes require the corresponding binary installed (google-chrome, firefox, curl)
+- Some websites may still block automated requests even in headless mode
 
 TIPS:
+- Use browser=auto (default) to automatically pick the best available fetcher
+- Use browser=chrome or browser=firefox for JavaScript-heavy or SPA pages
+- Use browser=http for simple APIs and static pages (fastest, no binary needed)
 - Use text format for plain text content or simple API responses
 - Use markdown format for content that should be rendered with formatting
 - Use html format when you need the raw HTML structure
@@ -97,6 +107,11 @@ func (t *fetchTool) Info() ToolInfo {
 			"timeout": map[string]any{
 				"type":        "number",
 				"description": "Optional timeout in seconds (max 120)",
+			},
+			"browser": map[string]any{
+				"type":        "string",
+				"description": "Browser backend to use for fetching (auto, http, chrome, firefox, curl). Default is auto, which tries Chrome -> Firefox -> curl -> http.",
+				"enum":        []string{"auto", "http", "chrome", "firefox", "curl"},
 			},
 		},
 		Required: []string{"url", "format"},
