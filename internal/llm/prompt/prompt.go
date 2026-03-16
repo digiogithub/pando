@@ -206,3 +206,161 @@ func processFile(filePath string) string {
 func compactPromptText(text string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
 }
+
+// BuildOption is a functional option for configuring BuildPrompt.
+type BuildOption func(*buildOptions)
+
+type buildOptions struct {
+	mcpServers      []string
+	tools           []string
+	workingDir      string
+	isGitRepo       bool
+	platform        string
+	date            string
+	gitBranch       string
+	gitStatus       string
+	gitRecentCommits string
+	projectListing  string
+	skillsMetadata  string
+	activeSkills    []string
+	lspInfo         string
+	mcpInstructions string
+	version         string
+	model           string
+	contextFiles    []ContextFile
+}
+
+// WithMCPServers sets the list of MCP server names for capability detection.
+func WithMCPServers(servers []string) BuildOption {
+	return func(o *buildOptions) {
+		o.mcpServers = servers
+	}
+}
+
+// WithTools sets the list of available tool names for capability detection.
+func WithTools(tools []string) BuildOption {
+	return func(o *buildOptions) {
+		o.tools = tools
+	}
+}
+
+// WithEnvironment sets environment information for the prompt.
+func WithEnvironment(workingDir string, isGitRepo bool, platform, date string) BuildOption {
+	return func(o *buildOptions) {
+		o.workingDir = workingDir
+		o.isGitRepo = isGitRepo
+		o.platform = platform
+		o.date = date
+	}
+}
+
+// WithGitInfo sets git-related information for the prompt.
+func WithGitInfo(branch, status, recentCommits string) BuildOption {
+	return func(o *buildOptions) {
+		o.gitBranch = branch
+		o.gitStatus = status
+		o.gitRecentCommits = recentCommits
+	}
+}
+
+// WithProjectListing sets the project directory listing for the prompt.
+func WithProjectListing(listing string) BuildOption {
+	return func(o *buildOptions) {
+		o.projectListing = listing
+	}
+}
+
+// WithSkills sets skills metadata and active skills for the prompt.
+func WithSkills(metadata string, activeSkills []string) BuildOption {
+	return func(o *buildOptions) {
+		o.skillsMetadata = metadata
+		o.activeSkills = activeSkills
+	}
+}
+
+// WithLSPInfo sets LSP information for the prompt.
+func WithLSPInfo(info string) BuildOption {
+	return func(o *buildOptions) {
+		o.lspInfo = info
+	}
+}
+
+// WithMCPInstructions sets MCP instructions for the prompt.
+func WithMCPInstructions(instructions string) BuildOption {
+	return func(o *buildOptions) {
+		o.mcpInstructions = instructions
+	}
+}
+
+// WithVersion sets the application version for the prompt.
+func WithVersion(version string) BuildOption {
+	return func(o *buildOptions) {
+		o.version = version
+	}
+}
+
+// WithModel sets the model name for the prompt.
+func WithModel(model string) BuildOption {
+	return func(o *buildOptions) {
+		o.model = model
+	}
+}
+
+// WithContextFiles sets additional context files for the prompt.
+func WithContextFiles(files []ContextFile) BuildOption {
+	return func(o *buildOptions) {
+		o.contextFiles = files
+	}
+}
+
+// BuildPrompt constructs a system prompt using the template-based builder.
+// This is the new entry point that uses the template infrastructure while
+// keeping GetAgentPrompt available for backward compatibility.
+func BuildPrompt(ctx context.Context, agentName config.AgentName, provider models.ModelProvider, luaMgr *luaengine.FilterManager, opts ...BuildOption) (string, error) {
+	var o buildOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	cfg := config.Get()
+
+	// Detect capabilities
+	detector := NewCapabilityDetector(cfg, o.mcpServers, o.tools)
+	caps := detector.Detect()
+	google, brave, perplexity := detector.DetectWebSearchDetails()
+
+	hasSkills := o.skillsMetadata != "" || len(o.activeSkills) > 0
+
+	data := &PromptData{
+		AgentName:        string(agentName),
+		Version:          o.version,
+		WorkingDir:       o.workingDir,
+		IsGitRepo:        o.isGitRepo,
+		Platform:         o.platform,
+		Date:             o.date,
+		GitBranch:        o.gitBranch,
+		GitStatus:        o.gitStatus,
+		GitRecentCommits: o.gitRecentCommits,
+		ProjectListing:   o.projectListing,
+		Provider:         string(provider),
+		Model:            o.model,
+		HasRemembrances:  caps["remembrances"],
+		HasOrchestration: caps["orchestration"],
+		HasWebSearch:     caps["web_search"],
+		HasCodeIndexing:  caps["code_indexing"],
+		HasLSP:           caps["lsp"],
+		HasSkills:        hasSkills,
+		HasGoogleSearch:  google,
+		HasBraveSearch:   brave,
+		HasPerplexity:    perplexity,
+		ContextFiles:     o.contextFiles,
+		SkillsMetadata:   o.skillsMetadata,
+		ActiveSkills:     o.activeSkills,
+		LSPInfo:          o.lspInfo,
+		MCPInstructions:  o.mcpInstructions,
+		Config:           cfg,
+	}
+
+	builder := NewPromptBuilder(string(agentName), string(provider), data, luaMgr)
+	return builder.Build(ctx)
+}
