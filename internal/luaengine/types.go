@@ -22,6 +22,12 @@ const (
 	HookConversationStart   HookType = "conversation_start"
 	HookUserPrompt          HookType = "user_prompt"
 	HookAgentResponseFinish HookType = "agent_response_finish"
+
+	// Template system hooks
+	HookTemplateSection HookType = "template_section"
+	HookCapabilityCheck HookType = "capability_check"
+	HookProviderSelect  HookType = "provider_select"
+	HookPromptCompose   HookType = "prompt_compose"
 )
 
 // HookContext contains the context information passed to Lua filter functions.
