@@ -1588,6 +1588,25 @@ func UpdateRemembrances(remembrancesCfg RemembrancesConfig) error {
 	return nil
 }
 
+// UpdateInternalTools updates internal tools configuration and persists it to the config file.
+func UpdateInternalTools(internalToolsCfg InternalToolsConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldInternalTools := cfg.InternalTools
+	cfg.InternalTools = internalToolsCfg
+
+	if err := updateCfgFile(func(config *Config) {
+		config.InternalTools = internalToolsCfg
+	}); err != nil {
+		cfg.InternalTools = oldInternalTools
+		return err
+	}
+
+	return nil
+}
+
 func UpdateProvider(name models.ModelProvider, apiKey string, baseURL string, disabled bool) error {
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")

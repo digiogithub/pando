@@ -86,3 +86,15 @@ WebUI = false
 [Shell]
 Path = ''
 Args = []
+
+[InternalTools]
+# FetchEnabled = true
+# FetchMaxSizeMB = 10
+# GoogleSearchEnabled = true
+# GoogleApiKey = ''
+# GoogleSearchEngineId = ''
+# BraveSearchEnabled = true
+# BraveApiKey = ''
+# PerplexitySearchEnabled = true
+# PerplexityApiKey = ''
+# Context7Enabled = true
