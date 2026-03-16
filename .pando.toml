@@ -16,19 +16,19 @@ Directory = './.pando/data'
 # Type = ''
 # URL = ''
 
-[MCPServers.mesnada]
-Command = ''
-Env = []
-Args = []
-Type = 'streamable-http'
-URL = 'http://127.0.0.1:9767/mcp'
+# [MCPServers.mesnada]
+# Command = ''
+# Env = []
+# Args = []
+# Type = 'streamable-http'
+# URL = 'http://127.0.0.1:9767/mcp'
 
-[MCPServers.remembrances]
-Command = ''
-Env = []
-Args = []
-Type = 'streamable-http'
-URL = 'http://127.0.0.1:4030/mcp'
+# [MCPServers.remembrances]
+# Command = ''
+# Env = []
+# Args = []
+# Type = 'streamable-http'
+# URL = 'http://127.0.0.1:4030/mcp'
 
 [LSP]
 [LSP.gopls]
@@ -86,6 +86,26 @@ WebUI = false
 [Shell]
 Path = ''
 Args = []
+
+[Remembrances]
+Enabled = true
+UseSameModel = false
+
+# Provider options: ollama | openai | google | anthropic | openai-compatible
+DocumentEmbeddingProvider = 'ollama'
+DocumentEmbeddingModel = 'nomic-embed-text'
+# DocumentEmbeddingBaseURL = ''   # required when provider is 'openai-compatible'
+# DocumentEmbeddingAPIKey = ''    # required when provider is 'openai-compatible'
+
+# Use a separate model optimised for code (e.g. CodeRankEmbed via Ollama)
+CodeEmbeddingProvider = 'ollama'
+CodeEmbeddingModel = 'hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M'
+# CodeEmbeddingBaseURL = ''       # required when provider is 'openai-compatible'
+# CodeEmbeddingAPIKey = ''        # required when provider is 'openai-compatible'
+
+ChunkSize = 800
+ChunkOverlap = 100
+IndexWorkers = 4
 
 [InternalTools]
 # FetchEnabled = true
