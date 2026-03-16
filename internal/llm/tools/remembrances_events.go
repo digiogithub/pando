@@ -11,8 +11,8 @@ import (
 
 // Events tool names
 const (
-	saveEventToolName    = "remembrances_save_event"
-	searchEventsToolName = "remembrances_search_events"
+	saveEventToolName    = "save_event"
+	searchEventsToolName = "search_events"
 )
 
 // SaveEventTool stores a temporal event with semantic search.
