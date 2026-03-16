@@ -1,0 +1,1 @@
+{{/* Summarizer agent prompt placeholder */}}
