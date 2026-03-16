@@ -178,6 +178,29 @@ type MCPGatewayConfig struct {
 	DecayDays          int  `json:"decay_days,omitempty" toml:"DecayDays"`
 }
 
+// InternalToolsConfig defines configuration for Pando's built-in tool integrations.
+type InternalToolsConfig struct {
+	// Fetch tool
+	FetchEnabled   bool `json:"fetchEnabled,omitempty"`
+	FetchMaxSizeMB int  `json:"fetchMaxSizeMB,omitempty"`
+
+	// Google Custom Search
+	GoogleSearchEnabled  bool   `json:"googleSearchEnabled,omitempty"`
+	GoogleAPIKey         string `json:"googleApiKey,omitempty"`
+	GoogleSearchEngineID string `json:"googleSearchEngineId,omitempty"`
+
+	// Brave Search
+	BraveSearchEnabled bool   `json:"braveSearchEnabled,omitempty"`
+	BraveAPIKey        string `json:"braveApiKey,omitempty"`
+
+	// Perplexity AI Search
+	PerplexitySearchEnabled bool   `json:"perplexitySearchEnabled,omitempty"`
+	PerplexityAPIKey        string `json:"perplexityApiKey,omitempty"`
+
+	// Context7 library docs (no API key required)
+	Context7Enabled bool `json:"context7Enabled,omitempty"`
+}
+
 // LuaConfig defines configuration for the Lua scripting engine.
 type LuaConfig struct {
 	Enabled         bool   `json:"enabled,omitempty" toml:"Enabled"`
@@ -207,8 +230,9 @@ type Config struct {
 	AutoCompact  bool                              `json:"autoCompact,omitempty"`
 	Remembrances RemembrancesConfig                `json:"remembrances,omitempty"`
 	Server       APIServerConfig                   `json:"server,omitempty"`
-	Lua          LuaConfig                         `json:"lua,omitempty"`
-	MCPGateway   MCPGatewayConfig                  `json:"mcpGateway,omitempty"`
+	Lua           LuaConfig                         `json:"lua,omitempty"`
+	MCPGateway    MCPGatewayConfig                  `json:"mcpGateway,omitempty"`
+	InternalTools InternalToolsConfig               `json:"internalTools,omitempty"`
 }
 
 // Application constants
@@ -471,6 +495,14 @@ func setDefaults(debug bool) {
 	viper.SetDefault("remembrances.chunk_size", 800)
 	viper.SetDefault("remembrances.chunk_overlap", 100)
 
+	// Internal Tools defaults
+	viper.SetDefault("internalTools.fetchEnabled", true)
+	viper.SetDefault("internalTools.fetchMaxSizeMB", 10)
+	viper.SetDefault("internalTools.googleSearchEnabled", true)
+	viper.SetDefault("internalTools.braveSearchEnabled", true)
+	viper.SetDefault("internalTools.perplexitySearchEnabled", true)
+	viper.SetDefault("internalTools.context7Enabled", true)
+
 	// Set default shell from environment or fallback to /bin/bash
 	shellPath := os.Getenv("SHELL")
 	if shellPath == "" {
@@ -526,6 +558,28 @@ func setProviderDefaults() {
 	}
 	if hasClaudeCredentials() {
 		viper.SetDefault("providers.anthropic.disabled", false)
+	}
+
+	// Internal Tools API keys from environment
+	if apiKey := os.Getenv("PANDO_GOOGLE_API_KEY"); apiKey != "" {
+		viper.SetDefault("internalTools.googleApiKey", apiKey)
+	} else if apiKey := os.Getenv("GOOGLE_API_KEY"); apiKey != "" {
+		viper.SetDefault("internalTools.googleApiKey", apiKey)
+	}
+	if engineID := os.Getenv("PANDO_GOOGLE_SEARCH_ENGINE_ID"); engineID != "" {
+		viper.SetDefault("internalTools.googleSearchEngineId", engineID)
+	} else if engineID := os.Getenv("GOOGLE_SEARCH_ENGINE_ID"); engineID != "" {
+		viper.SetDefault("internalTools.googleSearchEngineId", engineID)
+	}
+	if apiKey := os.Getenv("PANDO_BRAVE_API_KEY"); apiKey != "" {
+		viper.SetDefault("internalTools.braveApiKey", apiKey)
+	} else if apiKey := os.Getenv("BRAVE_API_KEY"); apiKey != "" {
+		viper.SetDefault("internalTools.braveApiKey", apiKey)
+	}
+	if apiKey := os.Getenv("PANDO_PERPLEXITY_API_KEY"); apiKey != "" {
+		viper.SetDefault("internalTools.perplexityApiKey", apiKey)
+	} else if apiKey := os.Getenv("PERPLEXITY_API_KEY"); apiKey != "" {
+		viper.SetDefault("internalTools.perplexityApiKey", apiKey)
 	}
 
 	// Use this order to set the default models
