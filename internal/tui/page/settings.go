@@ -461,7 +461,7 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 	}
 
 	return settings.Section{
-		Title:  "Mesnada (Orchestrator) — Subagents",
+		Title:  "Subagents",
 		Fields: fields,
 	}
 }
@@ -501,7 +501,7 @@ func buildRemembrancesSection(cfg *config.Config) settings.Section {
 			Type:     settings.FieldText,
 			ReadOnly: true,
 		})
-		return settings.Section{Title: "Remembrances — KB and Code Indexing", Fields: fields}
+		return settings.Section{Title: "KB & Code Index", Fields: fields}
 	}
 
 	fields = append(fields,
@@ -620,7 +620,7 @@ func buildRemembrancesSection(cfg *config.Config) settings.Section {
 		ReadOnly: true,
 	})
 
-	return settings.Section{Title: "Remembrances", Fields: fields}
+	return settings.Section{Title: "KB & Code Index", Fields: fields}
 }
 
 func buildInternalToolsSection(cfg *config.Config) settings.Section {
