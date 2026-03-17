@@ -109,7 +109,10 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 		}
 	}
 
-	// 10. Join all non-empty sections
+	// 10. Apply Lua hook_prompt_compose (reorder/add/remove sections)
+	sections = b.applyComposeHook(ctx, sections)
+
+	// 11. Join all non-empty sections
 	var parts []string
 	for _, s := range sections {
 		trimmed := strings.TrimSpace(s.Content)
@@ -119,7 +122,7 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 	}
 	finalPrompt := strings.Join(parts, "\n\n")
 
-	// 11. Apply Lua hook_system_prompt
+	// 12. Apply Lua hook_system_prompt
 	finalPrompt = b.applyLuaSystemPromptHook(ctx, finalPrompt)
 
 	return finalPrompt, nil
