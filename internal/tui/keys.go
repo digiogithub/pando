@@ -16,6 +16,7 @@ type KeyMap struct {
 type GlobalKeys struct {
 	Logs           key.Binding
 	Orchestrator   key.Binding
+	Snapshots      key.Binding
 	Quit           key.Binding
 	Help           key.Binding
 	Settings       key.Binding
@@ -105,6 +106,10 @@ func DefaultKeyMap() KeyMap {
 			Orchestrator: key.NewBinding(
 				key.WithKeys("ctrl+m"),
 				key.WithHelp("ctrl+m", "orchestrator"),
+			),
+			Snapshots: key.NewBinding(
+				key.WithKeys("ctrl+shift+s"),
+				key.WithHelp("ctrl+shift+s", "snapshots"),
 			),
 			Quit: key.NewBinding(
 				key.WithKeys("ctrl+c"),
@@ -262,6 +267,7 @@ func (k GlobalKeys) ShortHelp() []key.Binding {
 		k.Help,
 		k.Logs,
 		k.Orchestrator,
+		k.Snapshots,
 		k.Settings,
 		k.Filepicker,
 		k.SwitchTheme,
