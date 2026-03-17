@@ -30,6 +30,24 @@ type Querier interface {
 	UpdateFile(ctx context.Context, arg UpdateFileParams) (File, error)
 	UpdateMessage(ctx context.Context, arg UpdateMessageParams) error
 	UpdateSession(ctx context.Context, arg UpdateSessionParams) (Session, error)
+	// Self-improvement queries
+	InsertPromptTemplate(ctx context.Context, arg InsertPromptTemplateParams) (PromptTemplate, error)
+	GetPromptTemplate(ctx context.Context, id string) (PromptTemplate, error)
+	ListActiveTemplatesBySection(ctx context.Context, section string) ([]ListActiveTemplatesBySectionRow, error)
+	CountPromptTemplates(ctx context.Context) (int64, error)
+	InsertSessionScore(ctx context.Context, arg InsertSessionScoreParams) (SessionScore, error)
+	GetSessionScore(ctx context.Context, sessionID string) (SessionScore, error)
+	CountSessionScores(ctx context.Context) (int64, error)
+	GetTokenBaseline(ctx context.Context, limit int64) (float64, error)
+	GetUCBStats(ctx context.Context, templateID string) (PromptUcbStat, error)
+	InsertSkill(ctx context.Context, arg InsertSkillParams) (SkillLibrary, error)
+	ListActiveSkillsByType(ctx context.Context, arg ListActiveSkillsByTypeParams) ([]SkillLibrary, error)
+	ListAllActiveSkills(ctx context.Context) ([]SkillLibrary, error)
+	CountActiveSkills(ctx context.Context) (int64, error)
+	DeactivateLowestSkill(ctx context.Context) error
+	IncrementSkillUsage(ctx context.Context, id string) error
+	ListUCBRanking(ctx context.Context) ([]ListUCBRankingRow, error)
+	GetEvaluatorStats(ctx context.Context) (GetEvaluatorStatsRow, error)
 }
 
 var _ Querier = (*Queries)(nil)
