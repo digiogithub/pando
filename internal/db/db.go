@@ -87,6 +87,57 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.updateSessionStmt, err = db.PrepareContext(ctx, updateSession); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateSession: %w", err)
 	}
+	if q.insertPromptTemplateStmt, err = db.PrepareContext(ctx, insertPromptTemplate); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertPromptTemplate: %w", err)
+	}
+	if q.getPromptTemplateStmt, err = db.PrepareContext(ctx, getPromptTemplate); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPromptTemplate: %w", err)
+	}
+	if q.listActiveTemplatesBySectionStmt, err = db.PrepareContext(ctx, listActiveTemplatesBySection); err != nil {
+		return nil, fmt.Errorf("error preparing query ListActiveTemplatesBySection: %w", err)
+	}
+	if q.countPromptTemplatesStmt, err = db.PrepareContext(ctx, countPromptTemplates); err != nil {
+		return nil, fmt.Errorf("error preparing query CountPromptTemplates: %w", err)
+	}
+	if q.insertSessionScoreStmt, err = db.PrepareContext(ctx, insertSessionScore); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertSessionScore: %w", err)
+	}
+	if q.getSessionScoreStmt, err = db.PrepareContext(ctx, getSessionScore); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSessionScore: %w", err)
+	}
+	if q.countSessionScoresStmt, err = db.PrepareContext(ctx, countSessionScores); err != nil {
+		return nil, fmt.Errorf("error preparing query CountSessionScores: %w", err)
+	}
+	if q.getTokenBaselineStmt, err = db.PrepareContext(ctx, getTokenBaseline); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTokenBaseline: %w", err)
+	}
+	if q.getUCBStatsStmt, err = db.PrepareContext(ctx, getUCBStats); err != nil {
+		return nil, fmt.Errorf("error preparing query GetUCBStats: %w", err)
+	}
+	if q.insertSkillStmt, err = db.PrepareContext(ctx, insertSkill); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertSkill: %w", err)
+	}
+	if q.listActiveSkillsByTypeStmt, err = db.PrepareContext(ctx, listActiveSkillsByType); err != nil {
+		return nil, fmt.Errorf("error preparing query ListActiveSkillsByType: %w", err)
+	}
+	if q.listAllActiveSkillsStmt, err = db.PrepareContext(ctx, listAllActiveSkills); err != nil {
+		return nil, fmt.Errorf("error preparing query ListAllActiveSkills: %w", err)
+	}
+	if q.countActiveSkillsStmt, err = db.PrepareContext(ctx, countActiveSkills); err != nil {
+		return nil, fmt.Errorf("error preparing query CountActiveSkills: %w", err)
+	}
+	if q.deactivateLowestSkillStmt, err = db.PrepareContext(ctx, deactivateLowestSkill); err != nil {
+		return nil, fmt.Errorf("error preparing query DeactivateLowestSkill: %w", err)
+	}
+	if q.incrementSkillUsageStmt, err = db.PrepareContext(ctx, incrementSkillUsage); err != nil {
+		return nil, fmt.Errorf("error preparing query IncrementSkillUsage: %w", err)
+	}
+	if q.listUCBRankingStmt, err = db.PrepareContext(ctx, listUCBRanking); err != nil {
+		return nil, fmt.Errorf("error preparing query ListUCBRanking: %w", err)
+	}
+	if q.getEvaluatorStatsStmt, err = db.PrepareContext(ctx, getEvaluatorStats); err != nil {
+		return nil, fmt.Errorf("error preparing query GetEvaluatorStats: %w", err)
+	}
 	return &q, nil
 }
 
