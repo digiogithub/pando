@@ -19,10 +19,13 @@ import (
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/evaluator"
+	"github.com/digiogithub/pando/internal/snapshot"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/llm/prompt"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
 	mesnadaACP "github.com/digiogithub/pando/internal/mesnada/acp"
@@ -49,6 +52,7 @@ type App struct {
 
 	CoderAgent agent.Service
 
+	Snapshots           snapshot.Service
 	LSPClients          map[string]*lsp.Client
 	SkillManager        *skills.SkillManager
 	MesnadaOrchestrator *mesnadaOrch.Orchestrator
@@ -56,6 +60,7 @@ type App struct {
 	Remembrances        *rag.RemembrancesService
 	LuaManager          *luaengine.FilterManager
 	MCPGateway          *mcpgateway.Gateway
+	Evaluator           *evaluator.EvaluatorService
 
 	clientsMutex sync.RWMutex
 
@@ -127,6 +132,35 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 			agent.SetLuaManager(luaMgr)
 			session.SetLuaManager(luaMgr)
 			logging.Info("Lua filter manager initialized", "script", cfg.Lua.ScriptPath)
+		}
+	}
+
+	// Initialize Snapshot service if enabled
+	cfg = config.Get()
+	if cfg != nil && cfg.Snapshots.Enabled {
+		snapshotSvc, err := snapshot.NewService()
+		if err != nil {
+			logging.Error("Failed to create snapshot service", "error", err)
+		} else {
+			app.Snapshots = snapshotSvc
+			session.SetSnapshotCreator(snapshot.NewAdapter(snapshotSvc))
+			logging.Info("Snapshot service initialized")
+		}
+	}
+
+	// Initialize Evaluator service (self-improvement loop, disabled by default).
+	cfg = config.Get()
+	if cfg != nil && cfg.Evaluator.Enabled {
+		evalSvc, err := evaluator.New(cfg.Evaluator, conn)
+		if err != nil {
+			logging.Warn("evaluator: failed to initialize, continuing without it", "err", err)
+		} else if evalSvc != nil {
+			app.Evaluator = evalSvc
+			// Wire evaluator into session (triggers EvaluateSession on EndSession).
+			session.SetEvaluator(evalSvc)
+			// Wire evaluator into prompt builder via adapter (UCB template selection + skill injection).
+			prompt.SetGlobalEvaluator(&evaluatorPromptAdapter{svc: evalSvc})
+			logging.Info("evaluator: self-improvement system initialized", "model", cfg.Evaluator.Model)
 		}
 	}
 
@@ -392,6 +426,41 @@ func newSkillManager(cfg *config.Config) (*skills.SkillManager, error) {
 	logging.Info("Loaded skills", "count", len(discoveredSkills), "search_paths", discoveryPaths)
 	logging.Debug("Skill manager initialized", "skillCount", len(discoveredSkills))
 	return skillManager, nil
+}
+
+// evaluatorPromptAdapter adapts *evaluator.EvaluatorService to prompt.PromptEvaluator.
+// It translates between the evaluator types and the prompt package types to avoid
+// import cycles between internal/llm/prompt and internal/evaluator.
+type evaluatorPromptAdapter struct {
+	svc *evaluator.EvaluatorService
+}
+
+func (a *evaluatorPromptAdapter) SelectTemplate(ctx context.Context, sectionName string) (*prompt.PromptEvaluatorTemplate, error) {
+	tmpl, err := a.svc.SelectTemplate(ctx, sectionName)
+	if err != nil || tmpl == nil {
+		return nil, err
+	}
+	return &prompt.PromptEvaluatorTemplate{
+		ID:      tmpl.ID,
+		Content: tmpl.Content,
+		Version: tmpl.Version,
+	}, nil
+}
+
+func (a *evaluatorPromptAdapter) GetActiveSkills(ctx context.Context, taskType string) ([]prompt.PromptEvaluatorSkill, error) {
+	skills, err := a.svc.GetActiveSkills(ctx, taskType)
+	if err != nil || len(skills) == 0 {
+		return nil, err
+	}
+	result := make([]prompt.PromptEvaluatorSkill, len(skills))
+	for i, sk := range skills {
+		result[i] = prompt.PromptEvaluatorSkill{Content: sk.Content}
+	}
+	return result, nil
+}
+
+func (a *evaluatorPromptAdapter) RecordTemplateSelection(ctx context.Context, sessionID, templateID string) {
+	a.svc.RecordTemplateSelection(ctx, sessionID, templateID)
 }
 
 // initTheme sets the application theme based on the configuration
@@ -780,6 +849,18 @@ func (app *App) Shutdown() {
 	if app.MesnadaOrchestrator != nil {
 		if err := app.MesnadaOrchestrator.Shutdown(); err != nil {
 			logging.Error("Failed to shutdown Mesnada orchestrator", "error", err)
+		}
+	}
+
+	// Cleanup old snapshots
+	if app.Snapshots != nil {
+		cfg := config.Get()
+		if cfg != nil {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if err := app.Snapshots.Cleanup(cleanupCtx, cfg.Snapshots.AutoCleanupDays, cfg.Snapshots.MaxSnapshots); err != nil {
+				logging.Error("Failed to cleanup snapshots", "error", err)
+			}
+			cancel()
 		}
 	}
 
