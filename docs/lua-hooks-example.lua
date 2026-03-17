@@ -109,3 +109,89 @@ end
 -- function global-input(ctx)
 --     return ctx.parameters
 -- end
+
+-- =============================================================================
+-- TEMPLATE SYSTEM HOOKS (Phase 5)
+-- These hooks allow fine-grained control over prompt template composition.
+-- =============================================================================
+
+-- =============================================================================
+-- Hook 7: hook_template_section
+-- Fired for each template section during prompt composition.
+-- ctx fields: section_name (string), section_content (string),
+--             agent_name (string), provider (string)
+-- Return ctx with modified section_content to override the section.
+-- Set section_content to "" to remove the section entirely.
+-- =============================================================================
+function hook_template_section(ctx)
+    -- Example: add project-specific workflow rules
+    if ctx.section_name == "base/workflow" then
+        local rules = pando_load_file(".pando/workflow-rules.md")
+        if rules then
+            ctx.section_content = ctx.section_content .. "\n\n" .. rules
+        end
+    end
+
+    -- Example: customize tone for task agents
+    -- if ctx.section_name == "base/tone" and ctx.agent_name == "task" then
+    --     ctx.section_content = ctx.section_content .. "\n- Be extra concise for sub-tasks."
+    -- end
+
+    return ctx
+end
+
+-- =============================================================================
+-- Hook 8: hook_capability_check
+-- Fired for each capability during detection.
+-- ctx fields: capability (string), available (bool), agent_name (string)
+-- Return ctx with modified available to override detection.
+-- Capability names: "remembrances", "orchestration", "web_search",
+--                   "code_indexing", "lsp"
+-- =============================================================================
+function hook_capability_check(ctx)
+    -- Example: disable web search in offline environments
+    -- if ctx.capability == "web_search" then
+    --     ctx.available = false
+    -- end
+    return ctx
+end
+
+-- =============================================================================
+-- Hook 9: hook_provider_select
+-- Fired during provider template selection.
+-- ctx fields: provider (string), model (string), agent_name (string)
+-- Return ctx with provider_template (string) to override which template is used.
+-- Template path format: "providers/<name>" (without .md.tpl extension)
+-- =============================================================================
+function hook_provider_select(ctx)
+    -- Example: use Anthropic template for all providers in planning mode
+    -- if ctx.agent_name == "planner" then
+    --     ctx.provider_template = "providers/anthropic"
+    -- end
+    return ctx
+end
+
+-- =============================================================================
+-- Hook 10: hook_prompt_compose
+-- Fired after all sections are rendered but before final assembly.
+-- ctx fields: sections (table of {name, content}),
+--             agent_name (string), provider (string)
+-- Return ctx with modified sections to reorder, add, or remove sections.
+-- =============================================================================
+function hook_prompt_compose(ctx)
+    -- Example: add a custom team instructions section at the end
+    -- local instructions = pando_load_file(".pando/team-instructions.md")
+    -- if instructions then
+    --     table.insert(ctx.sections, {name = "team_instructions", content = instructions})
+    -- end
+    return ctx
+end
+
+-- =============================================================================
+-- Lua Functions Available in Hooks
+-- =============================================================================
+-- pando_get_config(key)       - Get config value ("working_dir", "data_dir", "debug")
+-- pando_get_git_status()      - Returns table {is_repo=bool, working_dir=string}
+-- pando_load_file(path)       - Read file content (relative to working dir), or nil
+-- pando_list_mcp_servers()    - List connected MCP server names (when set externally)
+-- pando_list_tools()          - List available tool names (when set externally)
