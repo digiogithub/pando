@@ -19,6 +19,7 @@ import (
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/snapshot"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/agent"
@@ -49,6 +50,7 @@ type App struct {
 
 	CoderAgent agent.Service
 
+	Snapshots           snapshot.Service
 	LSPClients          map[string]*lsp.Client
 	SkillManager        *skills.SkillManager
 	MesnadaOrchestrator *mesnadaOrch.Orchestrator
@@ -127,6 +129,19 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 			agent.SetLuaManager(luaMgr)
 			session.SetLuaManager(luaMgr)
 			logging.Info("Lua filter manager initialized", "script", cfg.Lua.ScriptPath)
+		}
+	}
+
+	// Initialize Snapshot service if enabled
+	cfg = config.Get()
+	if cfg != nil && cfg.Snapshots.Enabled {
+		snapshotSvc, err := snapshot.NewService()
+		if err != nil {
+			logging.Error("Failed to create snapshot service", "error", err)
+		} else {
+			app.Snapshots = snapshotSvc
+			session.SetSnapshotCreator(snapshot.NewAdapter(snapshotSvc))
+			logging.Info("Snapshot service initialized")
 		}
 	}
 
