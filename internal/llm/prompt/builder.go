@@ -48,10 +48,10 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 		sections = append(sections, s)
 	}
 
-	// 2. Provider-specific section (if exists)
-	providerName := strings.ToLower(b.provider)
-	if providerName != "" && b.registry.Exists("providers/"+providerName) {
-		if s := b.renderSection(ctx, "providers/"+providerName); s.Content != "" {
+	// 2. Provider-specific section (with optional Lua override)
+	providerTemplate := b.selectProvider(ctx)
+	if providerTemplate != "" && b.registry.Exists(providerTemplate) {
+		if s := b.renderSection(ctx, providerTemplate); s.Content != "" {
 			sections = append(sections, s)
 		}
 	}
@@ -109,7 +109,10 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 		}
 	}
 
-	// 10. Join all non-empty sections
+	// 10. Apply Lua hook_prompt_compose (reorder/add/remove sections)
+	sections = b.applyComposeHook(ctx, sections)
+
+	// 11. Join all non-empty sections
 	var parts []string
 	for _, s := range sections {
 		trimmed := strings.TrimSpace(s.Content)
@@ -119,7 +122,7 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 	}
 	finalPrompt := strings.Join(parts, "\n\n")
 
-	// 11. Apply Lua hook_system_prompt
+	// 12. Apply Lua hook_system_prompt
 	finalPrompt = b.applyLuaSystemPromptHook(ctx, finalPrompt)
 
 	return finalPrompt, nil
@@ -173,6 +176,96 @@ func (b *PromptBuilder) checkCapability(ctx context.Context, name string, availa
 		}
 	}
 	return available
+}
+
+// selectProvider determines which provider template to use, allowing Lua
+// hook_provider_select to override the default selection.
+func (b *PromptBuilder) selectProvider(ctx context.Context) string {
+	providerName := strings.ToLower(b.provider)
+	if providerName == "" {
+		return ""
+	}
+	defaultTemplate := "providers/" + providerName
+
+	if b.luaMgr != nil && b.luaMgr.IsEnabled() {
+		hookData := map[string]interface{}{
+			"provider":   b.provider,
+			"model":      b.data.Model,
+			"agent_name": b.agentName,
+		}
+		result, err := b.luaMgr.ExecuteHook(ctx, luaengine.HookProviderSelect, hookData)
+		if err == nil && result != nil && result.Modified {
+			if override, ok := result.Data["provider_template"].(string); ok && override != "" {
+				return override
+			}
+		}
+	}
+
+	return defaultTemplate
+}
+
+// applyComposeHook applies Lua hook_prompt_compose to allow reordering,
+// adding, or removing sections before final assembly.
+func (b *PromptBuilder) applyComposeHook(ctx context.Context, sections []PromptSection) []PromptSection {
+	if b.luaMgr == nil || !b.luaMgr.IsEnabled() {
+		return sections
+	}
+
+	// Build sections data for Lua
+	sectionsList := make([]interface{}, len(sections))
+	for i, s := range sections {
+		sectionsList[i] = map[string]interface{}{
+			"name":    s.Name,
+			"content": s.Content,
+		}
+	}
+
+	hookData := map[string]interface{}{
+		"sections":   sectionsList,
+		"agent_name": b.agentName,
+		"provider":   b.provider,
+	}
+	result, err := b.luaMgr.ExecuteHook(ctx, luaengine.HookPromptCompose, hookData)
+	if err != nil || result == nil || !result.Modified {
+		return sections
+	}
+
+	// Reconstruct sections from Lua result
+	rawSections, ok := result.Data["sections"]
+	if !ok {
+		return sections
+	}
+
+	switch v := rawSections.(type) {
+	case []interface{}:
+		newSections := make([]PromptSection, 0, len(v))
+		for _, item := range v {
+			if m, ok := item.(map[string]interface{}); ok {
+				name, _ := m["name"].(string)
+				content, _ := m["content"].(string)
+				newSections = append(newSections, PromptSection{Name: name, Content: content})
+			}
+		}
+		return newSections
+	case map[string]interface{}:
+		// Lua tables with integer keys are returned as maps
+		newSections := make([]PromptSection, 0, len(v))
+		for i := 1; i <= len(v); i++ {
+			key := fmt.Sprintf("%d", i)
+			if item, ok := v[key]; ok {
+				if m, ok := item.(map[string]interface{}); ok {
+					name, _ := m["name"].(string)
+					content, _ := m["content"].(string)
+					newSections = append(newSections, PromptSection{Name: name, Content: content})
+				}
+			}
+		}
+		if len(newSections) > 0 {
+			return newSections
+		}
+	}
+
+	return sections
 }
 
 // applyLuaSystemPromptHook applies the existing Lua system_prompt hook.
