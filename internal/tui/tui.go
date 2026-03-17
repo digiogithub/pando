@@ -1519,6 +1519,7 @@ func New(app *app.App) tea.Model {
 			page.LogsPage:         page.NewLogsPage(),
 			page.SettingsPage:     page.NewSettingsPage(app),
 			page.OrchestratorPage: page.NewOrchestratorPage(app),
+			page.SnapshotsPage:    page.NewSnapshotsPage(),
 		},
 		filepicker:    dialog.NewFilepickerCmp(app),
 		terminalPanel: terminal.NewTerminalPanel(),
