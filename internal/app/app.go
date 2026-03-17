@@ -19,6 +19,8 @@ import (
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/evaluator"
+	"github.com/digiogithub/pando/internal/snapshot"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/agent"
@@ -49,6 +51,7 @@ type App struct {
 
 	CoderAgent agent.Service
 
+	Snapshots           snapshot.Service
 	LSPClients          map[string]*lsp.Client
 	SkillManager        *skills.SkillManager
 	MesnadaOrchestrator *mesnadaOrch.Orchestrator
@@ -56,6 +59,7 @@ type App struct {
 	Remembrances        *rag.RemembrancesService
 	LuaManager          *luaengine.FilterManager
 	MCPGateway          *mcpgateway.Gateway
+	Evaluator           *evaluator.EvaluatorService
 
 	clientsMutex sync.RWMutex
 
@@ -127,6 +131,19 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 			agent.SetLuaManager(luaMgr)
 			session.SetLuaManager(luaMgr)
 			logging.Info("Lua filter manager initialized", "script", cfg.Lua.ScriptPath)
+		}
+	}
+
+	// Initialize Snapshot service if enabled
+	cfg = config.Get()
+	if cfg != nil && cfg.Snapshots.Enabled {
+		snapshotSvc, err := snapshot.NewService()
+		if err != nil {
+			logging.Error("Failed to create snapshot service", "error", err)
+		} else {
+			app.Snapshots = snapshotSvc
+			session.SetSnapshotCreator(snapshot.NewAdapter(snapshotSvc))
+			logging.Info("Snapshot service initialized")
 		}
 	}
 
@@ -780,6 +797,18 @@ func (app *App) Shutdown() {
 	if app.MesnadaOrchestrator != nil {
 		if err := app.MesnadaOrchestrator.Shutdown(); err != nil {
 			logging.Error("Failed to shutdown Mesnada orchestrator", "error", err)
+		}
+	}
+
+	// Cleanup old snapshots
+	if app.Snapshots != nil {
+		cfg := config.Get()
+		if cfg != nil {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if err := app.Snapshots.Cleanup(cleanupCtx, cfg.Snapshots.AutoCleanupDays, cfg.Snapshots.MaxSnapshots); err != nil {
+				logging.Error("Failed to cleanup snapshots", "error", err)
+			}
+			cancel()
 		}
 	}
 
