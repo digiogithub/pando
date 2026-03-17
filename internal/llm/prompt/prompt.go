@@ -15,6 +15,16 @@ import (
 	"github.com/digiogithub/pando/internal/skills"
 )
 
+// globalEvaluator is the package-level evaluator used for UCB template selection
+// and skill injection in BuildPrompt.
+var globalEvaluator promptEvaluator
+
+// SetGlobalEvaluator sets the evaluator used by BuildPrompt for template selection
+// and skill injection. Pass nil to disable.
+func SetGlobalEvaluator(e promptEvaluator) {
+	globalEvaluator = e
+}
+
 func GetAgentPrompt(agentName config.AgentName, provider models.ModelProvider, luaMgr *luaengine.FilterManager) string {
 	basePrompt := ""
 	switch agentName {
@@ -362,5 +372,8 @@ func BuildPrompt(ctx context.Context, agentName config.AgentName, provider model
 	}
 
 	builder := NewPromptBuilder(string(agentName), string(provider), data, luaMgr)
+	if globalEvaluator != nil {
+		builder.SetEvaluator(globalEvaluator)
+	}
 	return builder.Build(ctx)
 }

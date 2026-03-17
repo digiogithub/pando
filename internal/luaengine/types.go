@@ -19,6 +19,7 @@ const (
 	HookSystemPrompt        HookType = "system_prompt"
 	HookSessionStart        HookType = "session_start"
 	HookSessionRestore      HookType = "session_restore"
+	HookSessionEnd          HookType = "session_end"
 	HookConversationStart   HookType = "conversation_start"
 	HookUserPrompt          HookType = "user_prompt"
 	HookAgentResponseFinish HookType = "agent_response_finish"
@@ -28,6 +29,9 @@ const (
 	HookCapabilityCheck HookType = "capability_check"
 	HookProviderSelect  HookType = "provider_select"
 	HookPromptCompose   HookType = "prompt_compose"
+
+	// Self-improvement hooks
+	HookEvaluationComplete HookType = "hook_evaluation_complete"
 )
 
 // HookContext contains the context information passed to Lua filter functions.
