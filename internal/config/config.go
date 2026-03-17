@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -218,6 +219,49 @@ type LuaConfig struct {
 	LogFilteredData bool   `json:"log_filtered_data,omitempty" toml:"LogFilteredData"`
 }
 
+// SnapshotsConfig defines configuration for the session snapshot system.
+type SnapshotsConfig struct {
+	Enabled         bool     `json:"enabled,omitempty"`
+	MaxSnapshots    int      `json:"maxSnapshots,omitempty"`
+	MaxFileSize     string   `json:"maxFileSize,omitempty"`     // e.g. "10MB"
+	ExcludePatterns []string `json:"excludePatterns,omitempty"` // e.g. ["*.log", "node_modules/"]
+	AutoCleanupDays int      `json:"autoCleanupDays,omitempty"`
+}
+
+// ParseMaxFileSize parses the MaxFileSize string to bytes.
+// Supports suffixes: KB, MB, GB (case-insensitive). Default is 10MB.
+func (c *SnapshotsConfig) ParseMaxFileSize() int64 {
+	const defaultSize int64 = 10 * 1024 * 1024 // 10MB
+	if c.MaxFileSize == "" {
+		return defaultSize
+	}
+	s := strings.ToUpper(strings.TrimSpace(c.MaxFileSize))
+	multipliers := []struct {
+		suffix string
+		factor int64
+	}{
+		{"GB", 1024 * 1024 * 1024},
+		{"MB", 1024 * 1024},
+		{"KB", 1024},
+	}
+	for _, m := range multipliers {
+		if strings.HasSuffix(s, m.suffix) {
+			numStr := strings.TrimSuffix(s, m.suffix)
+			n, err := strconv.ParseInt(strings.TrimSpace(numStr), 10, 64)
+			if err != nil {
+				return defaultSize
+			}
+			return n * m.factor
+		}
+	}
+	// Plain bytes
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return defaultSize
+	}
+	return n
+}
+
 // Config is the main configuration structure for the application.
 type Config struct {
 	Data         Data                              `json:"data"`
@@ -240,6 +284,7 @@ type Config struct {
 	Lua           LuaConfig                         `json:"lua,omitempty"`
 	MCPGateway    MCPGatewayConfig                  `json:"mcpGateway,omitempty"`
 	InternalTools InternalToolsConfig               `json:"internalTools,omitempty"`
+	Snapshots     SnapshotsConfig                   `json:"snapshots,omitempty"`
 }
 
 // Application constants
@@ -484,6 +529,13 @@ func setDefaults(debug bool) {
 	viper.SetDefault("lua.enabled", false)
 	viper.SetDefault("lua.timeout", "5s")
 	viper.SetDefault("lua.strict_mode", false)
+
+	// Snapshots defaults
+	viper.SetDefault("snapshots.enabled", true)
+	viper.SetDefault("snapshots.maxSnapshots", 100)
+	viper.SetDefault("snapshots.maxFileSize", "10MB")
+	viper.SetDefault("snapshots.excludePatterns", []string{"node_modules/", ".git/", "vendor/", "*.log", "*.tmp"})
+	viper.SetDefault("snapshots.autoCleanupDays", 30)
 
 	// MCP Gateway defaults
 	viper.SetDefault("mcpGateway.enabled", false)
