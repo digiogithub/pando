@@ -19,6 +19,7 @@ const (
 	HookSystemPrompt        HookType = "system_prompt"
 	HookSessionStart        HookType = "session_start"
 	HookSessionRestore      HookType = "session_restore"
+	HookSessionEnd          HookType = "session_end"
 	HookConversationStart   HookType = "conversation_start"
 	HookUserPrompt          HookType = "user_prompt"
 	HookAgentResponseFinish HookType = "agent_response_finish"

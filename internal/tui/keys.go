@@ -16,6 +16,7 @@ type KeyMap struct {
 type GlobalKeys struct {
 	Logs           key.Binding
 	Orchestrator   key.Binding
+	Snapshots      key.Binding
 	Quit           key.Binding
 	Help           key.Binding
 	Settings       key.Binding
