@@ -770,9 +770,22 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.currentPage == page.OrchestratorPage {
 					return a, a.moveToPage(page.ChatPage)
 				}
+				if a.currentPage == page.SnapshotsPage {
+					return a, a.moveToPage(page.ChatPage)
+				}
+				if a.currentPage == page.EvaluatorPage {
+					return a, a.moveToPage(page.ChatPage)
+				}
 			}
 		case key.Matches(msg, a.keys.Global.Logs):
 			return a, a.moveToPage(page.LogsPage)
+		case key.Matches(msg, a.keys.Global.Snapshots):
+			return a, a.moveToPage(page.SnapshotsPage)
+		case key.Matches(msg, a.keys.Global.Evaluator):
+			if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+				return a, a.moveToPage(page.EvaluatorPage)
+			}
+			return a, nil
 		case key.Matches(msg, a.keys.Global.Help):
 			if a.showQuit {
 				return a, nil
@@ -1136,6 +1149,16 @@ func (a appModel) pageHelpSections() []dialog.HelpSection {
 	case page.SettingsPage:
 		return []dialog.HelpSection{{
 			Title:    "Settings",
+			Bindings: a.pageBindings(a.pages[a.currentPage]),
+		}}
+	case page.SnapshotsPage:
+		return []dialog.HelpSection{{
+			Title:    "Snapshots",
+			Bindings: a.pageBindings(a.pages[a.currentPage]),
+		}}
+	case page.EvaluatorPage:
+		return []dialog.HelpSection{{
+			Title:    "Self-Improvement",
 			Bindings: a.pageBindings(a.pages[a.currentPage]),
 		}}
 	default:
@@ -1519,6 +1542,8 @@ func New(app *app.App) tea.Model {
 			page.LogsPage:         page.NewLogsPage(),
 			page.SettingsPage:     page.NewSettingsPage(app),
 			page.OrchestratorPage: page.NewOrchestratorPage(app),
+			page.SnapshotsPage:    page.NewSnapshotsPage(),
+			page.EvaluatorPage:    page.NewEvaluatorPage(app.Evaluator),
 		},
 		filepicker:    dialog.NewFilepickerCmp(app),
 		terminalPanel: terminal.NewTerminalPanel(),
@@ -1650,6 +1675,54 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Category:    dialog.CommandCategoryView,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(page.PageChangeMsg{ID: page.LogsPage})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "snapshots",
+		Title:       "View Snapshots",
+		Description: "Browse session snapshots and revert changes",
+		Shortcut:    "Ctrl+Shift+S",
+		Category:    dialog.CommandCategoryView,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return func() tea.Msg {
+				return page.PageChangeMsg{ID: page.SnapshotsPage}
+			}
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "evaluator",
+		Title:       "Self-Improvement",
+		Description: "Open the self-improvement evaluator dashboard",
+		Shortcut:    "Ctrl+Shift+E",
+		Category:    dialog.CommandCategoryView,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return func() tea.Msg {
+				return page.PageChangeMsg{ID: page.EvaluatorPage}
+			}
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "create-snapshot",
+		Title:       "Create Snapshot",
+		Description: "Create a manual snapshot of the current working directory",
+		Category:    dialog.CommandCategoryGeneral,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return func() tea.Msg {
+				if app.Snapshots != nil {
+					ctx := context.Background()
+					sessionID := model.selectedSession.ID
+					if sessionID == "" {
+						sessionID = "manual"
+					}
+					_, err := app.Snapshots.Create(ctx, sessionID, "manual", "Manual snapshot")
+					if err != nil {
+						logging.Error("Failed to create manual snapshot", "error", err)
+					} else {
+						logging.Info("Manual snapshot created")
+					}
+				}
+				return nil
+			}
 		},
 	})
 	model.RegisterCommand(dialog.Command{

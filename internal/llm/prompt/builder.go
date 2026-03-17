@@ -2,12 +2,49 @@ package prompt
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/luaengine"
 )
+
+// PromptEvaluatorTemplate mirrors evaluator.PromptTemplate to avoid import cycles.
+type PromptEvaluatorTemplate struct {
+	ID      string
+	Content string
+	Version int
+}
+
+// PromptEvaluatorSkill mirrors evaluator.Skill to avoid import cycles.
+type PromptEvaluatorSkill struct {
+	Content string
+}
+
+// PromptEvaluator is the interface used by PromptBuilder for UCB template
+// selection and skill injection. It is exported so app.go can implement an adapter
+// without creating an import cycle.
+type PromptEvaluator interface {
+	SelectTemplate(ctx context.Context, sectionName string) (*PromptEvaluatorTemplate, error)
+	GetActiveSkills(ctx context.Context, taskType string) ([]PromptEvaluatorSkill, error)
+	RecordTemplateSelection(ctx context.Context, sessionID, templateID string)
+}
+
+// promptEvaluator is the internal alias kept for backward-compatibility within this file.
+type promptEvaluator = PromptEvaluator
+
+// evaluatorTemplate is the internal alias for PromptEvaluatorTemplate.
+type evaluatorTemplate = PromptEvaluatorTemplate
+
+// evaluatorSkill is the internal alias for PromptEvaluatorSkill.
+type evaluatorSkill = PromptEvaluatorSkill
+
+// sessionIDKey is the context key used to retrieve the current session ID.
+type sessionIDKey struct{}
+
+// SessionIDKey is the exported context key for storing the session ID in context.
+var SessionIDKey = sessionIDKey{}
 
 // PromptBuilder composes a final system prompt from template sections.
 type PromptBuilder struct {
@@ -16,6 +53,13 @@ type PromptBuilder struct {
 	data      *PromptData
 	luaMgr    *luaengine.FilterManager
 	registry  *TemplateRegistry
+	evaluator promptEvaluator
+}
+
+// SetEvaluator wires an evaluator into the builder for UCB template selection
+// and skill injection. If e is nil the builder falls back to its default behaviour.
+func (b *PromptBuilder) SetEvaluator(e promptEvaluator) {
+	b.evaluator = e
 }
 
 // NewPromptBuilder creates a new PromptBuilder.
@@ -48,10 +92,10 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 		sections = append(sections, s)
 	}
 
-	// 2. Provider-specific section (if exists)
-	providerName := strings.ToLower(b.provider)
-	if providerName != "" && b.registry.Exists("providers/"+providerName) {
-		if s := b.renderSection(ctx, "providers/"+providerName); s.Content != "" {
+	// 2. Provider-specific section (with optional Lua override)
+	providerTemplate := b.selectProvider(ctx)
+	if providerTemplate != "" && b.registry.Exists(providerTemplate) {
+		if s := b.renderSection(ctx, providerTemplate); s.Content != "" {
 			sections = append(sections, s)
 		}
 	}
@@ -102,6 +146,23 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 		}
 	}
 
+	// 8b. Learned optimization rules from the Skill Library (injected by the evaluator).
+	if b.evaluator != nil {
+		if learnedSkills, err := b.evaluator.GetActiveSkills(ctx, "general"); err == nil && len(learnedSkills) > 0 {
+			var skillsText strings.Builder
+			skillsText.WriteString("## Learned Optimization Rules\n")
+			for _, sk := range learnedSkills {
+				skillsText.WriteString("- ")
+				skillsText.WriteString(sk.Content)
+				skillsText.WriteString("\n")
+			}
+			sections = append(sections, PromptSection{
+				Name:    "evaluator/learned_skills",
+				Content: skillsText.String(),
+			})
+		}
+	}
+
 	// 9. MCP instructions (if any)
 	if b.data.MCPInstructions != "" {
 		if s := b.renderSection(ctx, "context/mcp_instructions"); s.Content != "" {
@@ -109,7 +170,10 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 		}
 	}
 
-	// 10. Join all non-empty sections
+	// 10. Apply Lua hook_prompt_compose (reorder/add/remove sections)
+	sections = b.applyComposeHook(ctx, sections)
+
+	// 11. Join all non-empty sections
 	var parts []string
 	for _, s := range sections {
 		trimmed := strings.TrimSpace(s.Content)
@@ -119,7 +183,7 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 	}
 	finalPrompt := strings.Join(parts, "\n\n")
 
-	// 11. Apply Lua hook_system_prompt
+	// 12. Apply Lua hook_system_prompt
 	finalPrompt = b.applyLuaSystemPromptHook(ctx, finalPrompt)
 
 	return finalPrompt, nil
@@ -128,6 +192,17 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 // renderSection renders a single template section and applies the Lua
 // hook_template_section if available.
 func (b *PromptBuilder) renderSection(ctx context.Context, name string) PromptSection {
+	// Try UCB template selection via the evaluator before falling back to the registry.
+	if b.evaluator != nil {
+		if tmpl, err := b.evaluator.SelectTemplate(ctx, name); err == nil && tmpl != nil {
+			// Record which template was chosen so the evaluator can score it later.
+			if sessionID, ok := ctx.Value(SessionIDKey).(string); ok && sessionID != "" {
+				b.evaluator.RecordTemplateSelection(ctx, sessionID, tmpl.ID)
+			}
+			return PromptSection{Name: name, Content: tmpl.Content}
+		}
+	}
+
 	content, err := b.registry.Render(name, b.data)
 	if err != nil {
 		logging.Debug("Template section render skipped", "name", name, "error", err)
@@ -173,6 +248,96 @@ func (b *PromptBuilder) checkCapability(ctx context.Context, name string, availa
 		}
 	}
 	return available
+}
+
+// selectProvider determines which provider template to use, allowing Lua
+// hook_provider_select to override the default selection.
+func (b *PromptBuilder) selectProvider(ctx context.Context) string {
+	providerName := strings.ToLower(b.provider)
+	if providerName == "" {
+		return ""
+	}
+	defaultTemplate := "providers/" + providerName
+
+	if b.luaMgr != nil && b.luaMgr.IsEnabled() {
+		hookData := map[string]interface{}{
+			"provider":   b.provider,
+			"model":      b.data.Model,
+			"agent_name": b.agentName,
+		}
+		result, err := b.luaMgr.ExecuteHook(ctx, luaengine.HookProviderSelect, hookData)
+		if err == nil && result != nil && result.Modified {
+			if override, ok := result.Data["provider_template"].(string); ok && override != "" {
+				return override
+			}
+		}
+	}
+
+	return defaultTemplate
+}
+
+// applyComposeHook applies Lua hook_prompt_compose to allow reordering,
+// adding, or removing sections before final assembly.
+func (b *PromptBuilder) applyComposeHook(ctx context.Context, sections []PromptSection) []PromptSection {
+	if b.luaMgr == nil || !b.luaMgr.IsEnabled() {
+		return sections
+	}
+
+	// Build sections data for Lua
+	sectionsList := make([]interface{}, len(sections))
+	for i, s := range sections {
+		sectionsList[i] = map[string]interface{}{
+			"name":    s.Name,
+			"content": s.Content,
+		}
+	}
+
+	hookData := map[string]interface{}{
+		"sections":   sectionsList,
+		"agent_name": b.agentName,
+		"provider":   b.provider,
+	}
+	result, err := b.luaMgr.ExecuteHook(ctx, luaengine.HookPromptCompose, hookData)
+	if err != nil || result == nil || !result.Modified {
+		return sections
+	}
+
+	// Reconstruct sections from Lua result
+	rawSections, ok := result.Data["sections"]
+	if !ok {
+		return sections
+	}
+
+	switch v := rawSections.(type) {
+	case []interface{}:
+		newSections := make([]PromptSection, 0, len(v))
+		for _, item := range v {
+			if m, ok := item.(map[string]interface{}); ok {
+				name, _ := m["name"].(string)
+				content, _ := m["content"].(string)
+				newSections = append(newSections, PromptSection{Name: name, Content: content})
+			}
+		}
+		return newSections
+	case map[string]interface{}:
+		// Lua tables with integer keys are returned as maps
+		newSections := make([]PromptSection, 0, len(v))
+		for i := 1; i <= len(v); i++ {
+			key := fmt.Sprintf("%d", i)
+			if item, ok := v[key]; ok {
+				if m, ok := item.(map[string]interface{}); ok {
+					name, _ := m["name"].(string)
+					content, _ := m["content"].(string)
+					newSections = append(newSections, PromptSection{Name: name, Content: content})
+				}
+			}
+		}
+		if len(newSections) > 0 {
+			return newSections
+		}
+	}
+
+	return sections
 }
 
 // applyLuaSystemPromptHook applies the existing Lua system_prompt hook.

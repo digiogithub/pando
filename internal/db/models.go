@@ -8,6 +8,59 @@ import (
 	"database/sql"
 )
 
+type PromptTemplate struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Section   string `json:"section"`
+	Content   string `json:"content"`
+	Version   int64  `json:"version"`
+	IsActive  int64  `json:"is_active"`
+	IsDefault int64  `json:"is_default"`
+	CreatedAt int64  `json:"created_at"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
+type SessionScore struct {
+	ID               string         `json:"id"`
+	SessionID        string         `json:"session_id"`
+	TemplateID       sql.NullString `json:"template_id"`
+	Reward           float64        `json:"reward"`
+	SuccessScore     float64        `json:"success_score"`
+	EfficiencyScore  float64        `json:"efficiency_score"`
+	JudgeAnalysis    sql.NullString `json:"judge_analysis"`
+	JudgeModel       sql.NullString `json:"judge_model"`
+	PromptTokens     int64          `json:"prompt_tokens"`
+	CompletionTokens int64          `json:"completion_tokens"`
+	MessageCount     int64          `json:"message_count"`
+	UserCorrections  int64          `json:"user_corrections"`
+	EvaluatedAt      int64          `json:"evaluated_at"`
+	CreatedAt        int64          `json:"created_at"`
+}
+
+type PromptUcbStat struct {
+	TemplateID  string        `json:"template_id"`
+	TimesUsed   int64         `json:"times_used"`
+	TotalReward float64       `json:"total_reward"`
+	AvgReward   float64       `json:"avg_reward"`
+	UcbScore    float64       `json:"ucb_score"`
+	LastUsedAt  sql.NullInt64 `json:"last_used_at"`
+	UpdatedAt   int64         `json:"updated_at"`
+}
+
+type SkillLibrary struct {
+	ID               string         `json:"id"`
+	Title            string         `json:"title"`
+	Content          string         `json:"content"`
+	SourceSessionID  sql.NullString `json:"source_session_id"`
+	SourceTemplateID sql.NullString `json:"source_template_id"`
+	TaskType         string         `json:"task_type"`
+	UsageCount       int64          `json:"usage_count"`
+	SuccessRate      float64        `json:"success_rate"`
+	IsActive         int64          `json:"is_active"`
+	CreatedAt        int64          `json:"created_at"`
+	UpdatedAt        int64          `json:"updated_at"`
+}
+
 type File struct {
 	ID        string `json:"id"`
 	SessionID string `json:"session_id"`
