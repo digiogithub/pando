@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,12 +13,37 @@ import (
 	"github.com/digiogithub/pando/internal/pubsub"
 )
 
+// evaluatorService is the minimal interface used by session to trigger evaluation.
+// A local interface is used to avoid import cycles between session and evaluator.
+type evaluatorService interface {
+	EvaluateSession(ctx context.Context, sessionID string) error
+}
+
+var globalEvaluator evaluatorService
+
+// SetEvaluator sets the evaluator service used to trigger self-evaluation at session end.
+func SetEvaluator(e evaluatorService) {
+	globalEvaluator = e
+}
+
 // globalLuaManager is the package-level Lua filter manager for session lifecycle hooks.
 var globalLuaManager *luaengine.FilterManager
 
 // SetLuaManager sets the Lua filter manager used for session lifecycle hooks.
 func SetLuaManager(fm *luaengine.FilterManager) {
 	globalLuaManager = fm
+}
+
+// SnapshotCreator is an interface for creating snapshots without importing the snapshot package directly.
+type SnapshotCreator interface {
+	CreateSessionSnapshot(ctx context.Context, sessionID, snapshotType, description string) error
+}
+
+var globalSnapshotCreator SnapshotCreator
+
+// SetSnapshotCreator sets the snapshot creator used for session lifecycle snapshots.
+func SetSnapshotCreator(sc SnapshotCreator) {
+	globalSnapshotCreator = sc
 }
 
 type Session struct {
@@ -42,6 +68,7 @@ type Service interface {
 	List(ctx context.Context) ([]Session, error)
 	Save(ctx context.Context, session Session) (Session, error)
 	Delete(ctx context.Context, id string) error
+	EndSession(ctx context.Context, id string) error
 }
 
 type service struct {
@@ -69,6 +96,19 @@ func (s *service) Create(ctx context.Context, title string) (Session, error) {
 			"created_at": time.Unix(session.CreatedAt, 0).Format(time.RFC3339),
 		}
 		globalLuaManager.ExecuteHook(ctx, luaengine.HookSessionStart, hookData) //nolint:errcheck
+	}
+
+	// Create start snapshot asynchronously
+	if globalSnapshotCreator != nil {
+		go func() {
+			if err := globalSnapshotCreator.CreateSessionSnapshot(
+				context.Background(), session.ID, "start", "Session start: "+session.Title,
+			); err != nil {
+				logging.Error("Failed to create start snapshot", "sessionID", session.ID, "error", err)
+			} else {
+				logging.Debug("Start snapshot created", "sessionID", session.ID)
+			}
+		}()
 	}
 
 	return session, nil
@@ -182,6 +222,38 @@ func (s service) fromDBItem(item db.Session) Session {
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
 	}
+}
+
+func (s *service) EndSession(ctx context.Context, id string) error {
+	session, err := s.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// Create end snapshot asynchronously
+	if globalSnapshotCreator != nil {
+		go func() {
+			if err := globalSnapshotCreator.CreateSessionSnapshot(
+				context.Background(), session.ID, "end", "Session end: "+session.Title,
+			); err != nil {
+				logging.Error("Failed to create end snapshot", "sessionID", session.ID, "error", err)
+			} else {
+				logging.Debug("End snapshot created", "sessionID", session.ID)
+			}
+		}()
+	}
+
+	// Execute Lua hook
+	if globalLuaManager != nil && globalLuaManager.IsEnabled() {
+		hookData := map[string]interface{}{
+			"session_id":    session.ID,
+			"title":         session.Title,
+			"message_count": session.MessageCount,
+		}
+		globalLuaManager.ExecuteHook(ctx, luaengine.HookSessionEnd, hookData) //nolint:errcheck
+	}
+
+	return nil
 }
 
 func NewService(q db.Querier) Service {
