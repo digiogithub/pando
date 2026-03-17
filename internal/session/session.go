@@ -20,6 +20,18 @@ func SetLuaManager(fm *luaengine.FilterManager) {
 	globalLuaManager = fm
 }
 
+// SnapshotCreator is an interface for creating snapshots without importing the snapshot package directly.
+type SnapshotCreator interface {
+	CreateSessionSnapshot(ctx context.Context, sessionID, snapshotType, description string) error
+}
+
+var globalSnapshotCreator SnapshotCreator
+
+// SetSnapshotCreator sets the snapshot creator used for session lifecycle snapshots.
+func SetSnapshotCreator(sc SnapshotCreator) {
+	globalSnapshotCreator = sc
+}
+
 type Session struct {
 	ID               string
 	ParentSessionID  string
@@ -42,6 +54,7 @@ type Service interface {
 	List(ctx context.Context) ([]Session, error)
 	Save(ctx context.Context, session Session) (Session, error)
 	Delete(ctx context.Context, id string) error
+	EndSession(ctx context.Context, id string) error
 }
 
 type service struct {
