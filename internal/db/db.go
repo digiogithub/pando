@@ -87,6 +87,57 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.updateSessionStmt, err = db.PrepareContext(ctx, updateSession); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateSession: %w", err)
 	}
+	if q.insertPromptTemplateStmt, err = db.PrepareContext(ctx, insertPromptTemplate); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertPromptTemplate: %w", err)
+	}
+	if q.getPromptTemplateStmt, err = db.PrepareContext(ctx, getPromptTemplate); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPromptTemplate: %w", err)
+	}
+	if q.listActiveTemplatesBySectionStmt, err = db.PrepareContext(ctx, listActiveTemplatesBySection); err != nil {
+		return nil, fmt.Errorf("error preparing query ListActiveTemplatesBySection: %w", err)
+	}
+	if q.countPromptTemplatesStmt, err = db.PrepareContext(ctx, countPromptTemplates); err != nil {
+		return nil, fmt.Errorf("error preparing query CountPromptTemplates: %w", err)
+	}
+	if q.insertSessionScoreStmt, err = db.PrepareContext(ctx, insertSessionScore); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertSessionScore: %w", err)
+	}
+	if q.getSessionScoreStmt, err = db.PrepareContext(ctx, getSessionScore); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSessionScore: %w", err)
+	}
+	if q.countSessionScoresStmt, err = db.PrepareContext(ctx, countSessionScores); err != nil {
+		return nil, fmt.Errorf("error preparing query CountSessionScores: %w", err)
+	}
+	if q.getTokenBaselineStmt, err = db.PrepareContext(ctx, getTokenBaseline); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTokenBaseline: %w", err)
+	}
+	if q.getUCBStatsStmt, err = db.PrepareContext(ctx, getUCBStats); err != nil {
+		return nil, fmt.Errorf("error preparing query GetUCBStats: %w", err)
+	}
+	if q.insertSkillStmt, err = db.PrepareContext(ctx, insertSkill); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertSkill: %w", err)
+	}
+	if q.listActiveSkillsByTypeStmt, err = db.PrepareContext(ctx, listActiveSkillsByType); err != nil {
+		return nil, fmt.Errorf("error preparing query ListActiveSkillsByType: %w", err)
+	}
+	if q.listAllActiveSkillsStmt, err = db.PrepareContext(ctx, listAllActiveSkills); err != nil {
+		return nil, fmt.Errorf("error preparing query ListAllActiveSkills: %w", err)
+	}
+	if q.countActiveSkillsStmt, err = db.PrepareContext(ctx, countActiveSkills); err != nil {
+		return nil, fmt.Errorf("error preparing query CountActiveSkills: %w", err)
+	}
+	if q.deactivateLowestSkillStmt, err = db.PrepareContext(ctx, deactivateLowestSkill); err != nil {
+		return nil, fmt.Errorf("error preparing query DeactivateLowestSkill: %w", err)
+	}
+	if q.incrementSkillUsageStmt, err = db.PrepareContext(ctx, incrementSkillUsage); err != nil {
+		return nil, fmt.Errorf("error preparing query IncrementSkillUsage: %w", err)
+	}
+	if q.listUCBRankingStmt, err = db.PrepareContext(ctx, listUCBRanking); err != nil {
+		return nil, fmt.Errorf("error preparing query ListUCBRanking: %w", err)
+	}
+	if q.getEvaluatorStatsStmt, err = db.PrepareContext(ctx, getEvaluatorStats); err != nil {
+		return nil, fmt.Errorf("error preparing query GetEvaluatorStats: %w", err)
+	}
 	return &q, nil
 }
 
@@ -195,6 +246,91 @@ func (q *Queries) Close() error {
 	if q.updateSessionStmt != nil {
 		if cerr := q.updateSessionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateSessionStmt: %w", cerr)
+		}
+	}
+	if q.insertPromptTemplateStmt != nil {
+		if cerr := q.insertPromptTemplateStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertPromptTemplateStmt: %w", cerr)
+		}
+	}
+	if q.getPromptTemplateStmt != nil {
+		if cerr := q.getPromptTemplateStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPromptTemplateStmt: %w", cerr)
+		}
+	}
+	if q.listActiveTemplatesBySectionStmt != nil {
+		if cerr := q.listActiveTemplatesBySectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listActiveTemplatesBySectionStmt: %w", cerr)
+		}
+	}
+	if q.countPromptTemplatesStmt != nil {
+		if cerr := q.countPromptTemplatesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countPromptTemplatesStmt: %w", cerr)
+		}
+	}
+	if q.insertSessionScoreStmt != nil {
+		if cerr := q.insertSessionScoreStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertSessionScoreStmt: %w", cerr)
+		}
+	}
+	if q.getSessionScoreStmt != nil {
+		if cerr := q.getSessionScoreStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getSessionScoreStmt: %w", cerr)
+		}
+	}
+	if q.countSessionScoresStmt != nil {
+		if cerr := q.countSessionScoresStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countSessionScoresStmt: %w", cerr)
+		}
+	}
+	if q.getTokenBaselineStmt != nil {
+		if cerr := q.getTokenBaselineStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTokenBaselineStmt: %w", cerr)
+		}
+	}
+	if q.getUCBStatsStmt != nil {
+		if cerr := q.getUCBStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getUCBStatsStmt: %w", cerr)
+		}
+	}
+	if q.insertSkillStmt != nil {
+		if cerr := q.insertSkillStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertSkillStmt: %w", cerr)
+		}
+	}
+	if q.listActiveSkillsByTypeStmt != nil {
+		if cerr := q.listActiveSkillsByTypeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listActiveSkillsByTypeStmt: %w", cerr)
+		}
+	}
+	if q.listAllActiveSkillsStmt != nil {
+		if cerr := q.listAllActiveSkillsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listAllActiveSkillsStmt: %w", cerr)
+		}
+	}
+	if q.countActiveSkillsStmt != nil {
+		if cerr := q.countActiveSkillsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countActiveSkillsStmt: %w", cerr)
+		}
+	}
+	if q.deactivateLowestSkillStmt != nil {
+		if cerr := q.deactivateLowestSkillStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deactivateLowestSkillStmt: %w", cerr)
+		}
+	}
+	if q.incrementSkillUsageStmt != nil {
+		if cerr := q.incrementSkillUsageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing incrementSkillUsageStmt: %w", cerr)
+		}
+	}
+	if q.listUCBRankingStmt != nil {
+		if cerr := q.listUCBRankingStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listUCBRankingStmt: %w", cerr)
+		}
+	}
+	if q.getEvaluatorStatsStmt != nil {
+		if cerr := q.getEvaluatorStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getEvaluatorStatsStmt: %w", cerr)
 		}
 	}
 	return err
