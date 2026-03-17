@@ -770,6 +770,9 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.currentPage == page.OrchestratorPage {
 					return a, a.moveToPage(page.ChatPage)
 				}
+				if a.currentPage == page.SnapshotsPage {
+					return a, a.moveToPage(page.ChatPage)
+				}
 			}
 		case key.Matches(msg, a.keys.Global.Logs):
 			return a, a.moveToPage(page.LogsPage)
@@ -1519,6 +1522,7 @@ func New(app *app.App) tea.Model {
 			page.LogsPage:         page.NewLogsPage(),
 			page.SettingsPage:     page.NewSettingsPage(app),
 			page.OrchestratorPage: page.NewOrchestratorPage(app),
+			page.SnapshotsPage:    page.NewSnapshotsPage(),
 		},
 		filepicker:    dialog.NewFilepickerCmp(app),
 		terminalPanel: terminal.NewTerminalPanel(),
