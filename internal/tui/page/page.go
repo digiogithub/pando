@@ -7,6 +7,8 @@ const (
 	LogsPage         PageID = "logs"
 	SettingsPage     PageID = "settings"
 	OrchestratorPage PageID = "orchestrator"
+	SnapshotsPage    PageID = "snapshots"
+	EvaluatorPage    PageID = "evaluator"
 )
 
 // PageChangeMsg is used to change the current page
