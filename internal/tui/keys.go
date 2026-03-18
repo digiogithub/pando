@@ -137,8 +137,8 @@ func DefaultKeyMap() KeyMap {
 				key.WithHelp("ctrl+t", "switch theme"),
 			),
 			ToggleTerminal: key.NewBinding(
-				key.WithKeys("ctrl+shift+t"),
-				key.WithHelp("ctrl+shift+t", "terminal: open/focus/unfocus"),
+				key.WithKeys("ctrl+`", "ctrl+shift+t"),
+				key.WithHelp("ctrl+` / ctrl+shift+t", "terminal: open/focus/unfocus"),
 			),
 			NewTerminal: key.NewBinding(
 				key.WithKeys("ctrl+alt+t"),
