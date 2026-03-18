@@ -18,10 +18,11 @@ import (
 )
 
 type FetchParams struct {
-	URL     string `json:"url"`
-	Format  string `json:"format"`
-	Timeout int    `json:"timeout,omitempty"`
-	Browser string `json:"browser,omitempty"`
+	URL       string `json:"url"`
+	Format    string `json:"format"`
+	Timeout   int    `json:"timeout,omitempty"`
+	Browser   string `json:"browser,omitempty"`
+	MaxLength int    `json:"max_length,omitempty"` // Max chars to return (0 = no limit beyond defaults)
 }
 
 type FetchPermissionsParams struct {
@@ -113,6 +114,10 @@ func (t *fetchTool) Info() ToolInfo {
 				"description": "Browser backend to use for fetching (auto, http, chrome, firefox, curl). Default is auto, which tries Chrome -> Firefox -> curl -> http.",
 				"enum":        []string{"auto", "http", "chrome", "firefox", "curl"},
 			},
+			"max_length": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of characters to return from the fetched content (0 = no limit). Useful for large pages.",
+			},
 		},
 		Required: []string{"url", "format"},
 	}
@@ -156,7 +161,12 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 			ToolName:    FetchToolName,
 			Action:      "fetch",
 			Description: fmt.Sprintf("Fetch content from URL: %s (browser: %s)", params.URL, browserMode),
-			Params:      FetchPermissionsParams(params),
+			Params: FetchPermissionsParams{
+				URL:     params.URL,
+				Format:  params.Format,
+				Timeout: params.Timeout,
+				Browser: params.Browser,
+			},
 		},
 	)
 
@@ -204,7 +214,11 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 					body = body[:maxSize]
 				}
 				logging.Debug("browser fetch completed", "url", params.URL, "browser", browser.Name(), "bytes", len(body))
-				return processFetchedBody(body, "text/html", format)
+				toolResp, fetchErr := processFetchedBody(body, "text/html", format)
+				if fetchErr != nil {
+					return toolResp, fetchErr
+				}
+				return applyFetchMaxLength(toolResp, params.MaxLength), nil
 			}
 		} else if browserMode != "auto" {
 			return NewTextErrorResponse(fmt.Sprintf("Browser %q not available: %v", browserMode, browserErr)), nil
@@ -226,26 +240,38 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-	resp, err := client.Do(req)
+	httpResp, err := client.Do(req)
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("failed to fetch URL: %w", err)
 	}
-	defer resp.Body.Close()
+	defer httpResp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return NewTextErrorResponse(fmt.Sprintf("Request failed with status code: %d", resp.StatusCode)), nil
+	if httpResp.StatusCode != http.StatusOK {
+		return NewTextErrorResponse(fmt.Sprintf("Request failed with status code: %d", httpResp.StatusCode)), nil
 	}
 
 	maxSize := int64(maxSizeMB * 1024 * 1024)
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSize))
+	body, err := io.ReadAll(io.LimitReader(httpResp.Body, maxSize))
 	if err != nil {
 		return NewTextErrorResponse("Failed to read response body: " + err.Error()), nil
 	}
 
-	contentType := resp.Header.Get("Content-Type")
-	logging.Debug("fetch completed", "url", params.URL, "statusCode", resp.StatusCode, "contentLength", len(body), "contentType", contentType)
+	contentType := httpResp.Header.Get("Content-Type")
+	logging.Debug("fetch completed", "url", params.URL, "statusCode", httpResp.StatusCode, "contentLength", len(body), "contentType", contentType)
 
-	return processFetchedBody(body, contentType, format)
+	toolResp, fetchErr := processFetchedBody(body, contentType, format)
+	if fetchErr != nil {
+		return toolResp, fetchErr
+	}
+	return applyFetchMaxLength(toolResp, params.MaxLength), nil
+}
+
+// applyFetchMaxLength truncates the response content if MaxLength is set.
+func applyFetchMaxLength(resp ToolResponse, maxLength int) ToolResponse {
+	if maxLength > 0 && len(resp.Content) > maxLength {
+		resp.Content = resp.Content[:maxLength] + fmt.Sprintf("\n\n... [content truncated at %d chars, %d more chars available] ...", maxLength, len(resp.Content)-maxLength)
+	}
+	return resp
 }
 
 // processFetchedBody converts the raw body into the requested format.
