@@ -815,6 +815,10 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Forward all non-key messages to the terminal panel (e.g. tick msgs).
 		if a.terminalPanel.IsVisible() {
+			logging.Debug("tui.Update default: forwarding to terminal panel",
+				"msg_type", fmt.Sprintf("%T", msg),
+				"terminalFocused", a.terminalFocused,
+				"has_terminals", a.terminalPanel.HasTerminals())
 			newPanel, panelCmd := a.terminalPanel.Update(msg)
 			a.terminalPanel = newPanel
 			cmds = append(cmds, panelCmd)
@@ -992,7 +996,14 @@ func (a *appModel) toggleTerminalPanel() tea.Cmd {
 
 	// Open a new terminal if none exist yet.
 	if !a.terminalPanel.HasTerminals() {
+		logging.Info("tui: opening first terminal",
+			"panel_width", a.width, "panel_height", a.height)
 		initCmd := a.terminalPanel.OpenNewTerminal()
+		if initCmd == nil {
+			logging.Error("tui: OpenNewTerminal returned nil initCmd — terminal creation failed")
+			return nil
+		}
+		logging.Info("tui: terminal opened, scheduling init tick + focus")
 		return tea.Batch(initCmd, a.setTerminalFocus(true))
 	}
 
