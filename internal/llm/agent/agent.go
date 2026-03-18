@@ -445,6 +445,9 @@ func (a *agent) createUserMessage(ctx context.Context, sessionID, content string
 func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msgHistory []message.Message, requestProvider provider.Provider, emitContentDeltas bool) (message.Message, *message.Message, error) {
 	logging.Debug("streamAndHandleEvents started", "sessionID", sessionID, "historyLength", len(msgHistory), "model", requestProvider.Model().ID)
 	ctx = context.WithValue(ctx, tools.SessionIDContextKey, sessionID)
+	if cache, ok := tools.GetSessionCacheByID(sessionID); ok {
+		ctx = context.WithValue(ctx, tools.SessionCacheContextKey, cache)
+	}
 	eventChan := requestProvider.StreamResponse(ctx, msgHistory, a.tools)
 
 	assistantMsg, err := a.messages.Create(ctx, sessionID, message.CreateMessageParams{
