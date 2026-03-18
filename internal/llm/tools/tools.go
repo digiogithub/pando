@@ -18,6 +18,7 @@ type (
 	sessionIDContextKey       string
 	messageIDContextKey       string
 	acpClientConnContextKey   string
+	sessionCacheContextKey    string
 )
 
 const (
@@ -27,6 +28,7 @@ const (
 	SessionIDContextKey     sessionIDContextKey     = "session_id"
 	MessageIDContextKey     messageIDContextKey     = "message_id"
 	ACPClientConnContextKey acpClientConnContextKey = "acp_client_connection"
+	SessionCacheContextKey  sessionCacheContextKey  = "session_cache"
 )
 
 type ToolResponse struct {
@@ -71,6 +73,16 @@ type ToolCall struct {
 type BaseTool interface {
 	Info() ToolInfo
 	Run(ctx context.Context, params ToolCall) (ToolResponse, error)
+}
+
+// PaginationInfo is a standardized pagination descriptor included in tool metadata.
+type PaginationInfo struct {
+	TotalItems    int    `json:"total_items,omitempty"`
+	ReturnedItems int    `json:"returned_items,omitempty"`
+	Offset        int    `json:"offset,omitempty"`
+	Limit         int    `json:"limit,omitempty"`
+	HasMore       bool   `json:"has_more,omitempty"`
+	CacheID       string `json:"cache_id,omitempty"` // Set if response was auto-cached
 }
 
 func GetContextValues(ctx context.Context) (string, string) {

@@ -15,8 +15,10 @@ import (
 )
 
 type BashParams struct {
-	Command string `json:"command"`
-	Timeout int    `json:"timeout"`
+	Command   string `json:"command"`
+	Timeout   int    `json:"timeout"`
+	HeadLimit int    `json:"head_limit"` // Max output lines to return (0 = no limit)
+	TailLines int    `json:"tail_lines"` // Only return last N lines (0 = no limit)
 }
 
 type BashPermissionsParams struct {
@@ -25,8 +27,10 @@ type BashPermissionsParams struct {
 }
 
 type BashResponseMetadata struct {
-	StartTime int64 `json:"start_time"`
-	EndTime   int64 `json:"end_time"`
+	StartTime  int64 `json:"start_time"`
+	EndTime    int64 `json:"end_time"`
+	TotalLines int   `json:"total_lines"`
+	Truncated  bool  `json:"truncated"`
 }
 type bashTool struct {
 	permissions permission.Service
@@ -224,6 +228,14 @@ func (b *bashTool) Info() ToolInfo {
 				"type":        "number",
 				"description": "Optional timeout in milliseconds (max 600000)",
 			},
+			"head_limit": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of output lines to return (0 = no limit, subject to 30000 char cap)",
+			},
+			"tail_lines": map[string]any{
+				"type":        "integer",
+				"description": "Return only the last N lines of output (useful for log tails). Overrides head_limit.",
+			},
 		},
 		Required: []string{"command"},
 	}
@@ -302,6 +314,24 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 
 	stdout = truncateOutput(stdout)
 	stderr = truncateOutput(stderr)
+
+	// Apply line-based limits if requested
+	totalLines := countLines(stdout)
+	truncated := false
+	if params.TailLines > 0 {
+		newStdout := tailLines(stdout, params.TailLines)
+		if newStdout != stdout {
+			truncated = true
+		}
+		stdout = newStdout
+	} else if params.HeadLimit > 0 {
+		newStdout := headLines(stdout, params.HeadLimit)
+		if newStdout != stdout {
+			truncated = true
+		}
+		stdout = newStdout
+	}
+
 	logging.Debug("bash completed", "command", params.Command, "exitCode", exitCode, "interrupted", interrupted, "stdoutLen", len(stdout), "stderrLen", len(stderr))
 
 	errorMessage := stderr
@@ -328,13 +358,34 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	}
 
 	metadata := BashResponseMetadata{
-		StartTime: startTime.UnixMilli(),
-		EndTime:   time.Now().UnixMilli(),
+		StartTime:  startTime.UnixMilli(),
+		EndTime:    time.Now().UnixMilli(),
+		TotalLines: totalLines,
+		Truncated:  truncated,
 	}
 	if stdout == "" {
 		return WithResponseMetadata(NewTextResponse("no output"), metadata), nil
 	}
 	return WithResponseMetadata(NewTextResponse(stdout), metadata), nil
+}
+
+// headLines returns the first n lines of s.
+func headLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if n >= len(lines) {
+		return s
+	}
+	return strings.Join(lines[:n], "\n") + fmt.Sprintf("\n\n... [output truncated at %d lines, %d more lines omitted] ...", n, len(lines)-n)
+}
+
+// tailLines returns the last n lines of s.
+func tailLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if n >= len(lines) {
+		return s
+	}
+	omitted := len(lines) - n
+	return fmt.Sprintf("... [first %d lines omitted, showing last %d lines] ...\n\n", omitted, n) + strings.Join(lines[len(lines)-n:], "\n")
 }
 
 func truncateOutput(content string) string {
@@ -422,6 +473,23 @@ func (b *bashTool) runWithACP(ctx context.Context, params BashParams, acpConnInt
 	// Truncate if needed
 	output = truncateOutput(output)
 
+	// Apply line-based limits if requested
+	acpTotalLines := countLines(output)
+	acpTruncated := false
+	if params.TailLines > 0 {
+		newOutput := tailLines(output, params.TailLines)
+		if newOutput != output {
+			acpTruncated = true
+		}
+		output = newOutput
+	} else if params.HeadLimit > 0 {
+		newOutput := headLines(output, params.HeadLimit)
+		if newOutput != output {
+			acpTruncated = true
+		}
+		output = newOutput
+	}
+
 	// Add exit code info if non-zero
 	if exitCode != nil && *exitCode != 0 {
 		if output != "" {
@@ -433,8 +501,10 @@ func (b *bashTool) runWithACP(ctx context.Context, params BashParams, acpConnInt
 	logging.Debug("bash ACP completed", "command", params.Command, "exitCode", exitCode, "outputLen", len(output))
 
 	metadata := BashResponseMetadata{
-		StartTime: startTime.UnixMilli(),
-		EndTime:   time.Now().UnixMilli(),
+		StartTime:  startTime.UnixMilli(),
+		EndTime:    time.Now().UnixMilli(),
+		TotalLines: acpTotalLines,
+		Truncated:  acpTruncated,
 	}
 
 	if output == "" {
