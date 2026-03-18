@@ -44,11 +44,47 @@ const (
 	MaxOutputLength = 30000
 )
 
-var bannedCommands = []string{
+var defaultBannedCommands = []string{
 	"alias", "curl", "curlie", "wget", "axel", "aria2c",
 	"nc", "telnet", "lynx", "w3m", "links", "httpie", "xh",
 	"http-prompt", "chrome", "firefox", "safari",
 }
+
+// effectiveBannedCommands returns the banned commands list, taking into account
+// the user configuration: BannedCommands replaces the default list entirely if set,
+// and AllowedCommands removes specific entries from the default list.
+func effectiveBannedCommands() []string {
+	cfg := config.Get()
+	if cfg == nil {
+		return defaultBannedCommands
+	}
+
+	// If the user explicitly set a custom banned list, use it as-is.
+	if len(cfg.Bash.BannedCommands) > 0 {
+		return cfg.Bash.BannedCommands
+	}
+
+	// Otherwise start from the default list and remove anything the user allowed.
+	if len(cfg.Bash.AllowedCommands) == 0 {
+		return defaultBannedCommands
+	}
+
+	allowed := make(map[string]struct{}, len(cfg.Bash.AllowedCommands))
+	for _, cmd := range cfg.Bash.AllowedCommands {
+		allowed[strings.ToLower(cmd)] = struct{}{}
+	}
+
+	result := make([]string, 0, len(defaultBannedCommands))
+	for _, cmd := range defaultBannedCommands {
+		if _, ok := allowed[strings.ToLower(cmd)]; !ok {
+			result = append(result, cmd)
+		}
+	}
+	return result
+}
+
+// bannedCommands is kept for backward compatibility with bashDescription.
+var bannedCommands = defaultBannedCommands
 
 var safeReadOnlyCommands = []string{
 	"ls", "echo", "pwd", "date", "cal", "uptime", "whoami", "id", "groups", "env", "printenv", "set", "unset", "which", "type", "whereis",
