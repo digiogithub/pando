@@ -357,6 +357,10 @@ func (o *openaiClient) shouldRetry(attempts int, err error) (bool, int64, error)
 		return false, 0, err
 	}
 
+	if apierr.StatusCode == 413 {
+		return false, 0, fmt.Errorf("request too large: the conversation context exceeds the model's token limit. Try starting a new session or switching to a model with a larger context window. Details: %s", apierr.Message)
+	}
+
 	if apierr.StatusCode != 429 && apierr.StatusCode != 500 {
 		return false, 0, err
 	}
