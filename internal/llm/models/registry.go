@@ -42,13 +42,22 @@ func RefreshProviderModels(ctx context.Context, provider ModelProvider, apiKey s
 			name = fm.ID
 		}
 
+		contextWindow := fm.ContextWindow
+		if contextWindow <= 0 {
+			contextWindow = 128_000 // reasonable default
+		}
+		maxTokens := int64(4096) // reasonable default
+		if contextWindow < maxTokens {
+			maxTokens = contextWindow / 2
+		}
+
 		model := Model{
 			ID:               modelID,
 			Name:             fmt.Sprintf("%s: %s", capitalizeProvider(string(provider)), name),
 			Provider:         provider,
 			APIModel:         fm.ID,
-			ContextWindow:    128_000, // reasonable default
-			DefaultMaxTokens: 4096,    // reasonable default
+			ContextWindow:    contextWindow,
+			DefaultMaxTokens: maxTokens,
 		}
 
 		RegisterDynamicModel(model)
