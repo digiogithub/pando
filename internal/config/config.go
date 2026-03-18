@@ -144,6 +144,15 @@ type ShellConfig struct {
 	Args []string `json:"args,omitempty"`
 }
 
+// BashConfig defines configuration for the bash tool, including command restrictions.
+type BashConfig struct {
+	// BannedCommands is the list of commands that the bash tool will refuse to execute.
+	// If empty, the default built-in list is used.
+	BannedCommands []string `json:"bannedCommands,omitempty"`
+	// AllowedCommands, when non-empty, removes specific commands from the default banned list.
+	AllowedCommands []string `json:"allowedCommands,omitempty"`
+}
+
 // SkillsConfig defines configuration for skill discovery and prompt injection.
 type SkillsConfig struct {
 	Enabled bool     `json:"enabled,omitempty"`
@@ -1732,6 +1741,40 @@ func UpdateInternalTools(internalToolsCfg InternalToolsConfig) error {
 	return nil
 }
 
+// UpdateProviderOAuth updates only the UseOAuth flag for the specified provider and persists the change.
+func UpdateProviderOAuth(name models.ModelProvider, useOAuth bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	if cfg.Providers == nil {
+		cfg.Providers = make(map[models.ModelProvider]Provider)
+	}
+
+	oldProvider, hadProvider := cfg.Providers[name]
+	newProvider := cfg.Providers[name]
+	newProvider.UseOAuth = useOAuth
+	cfg.Providers[name] = newProvider
+
+	if err := updateCfgFile(func(config *Config) {
+		if config.Providers == nil {
+			config.Providers = make(map[models.ModelProvider]Provider)
+		}
+		p := config.Providers[name]
+		p.UseOAuth = useOAuth
+		config.Providers[name] = p
+	}); err != nil {
+		if hadProvider {
+			cfg.Providers[name] = oldProvider
+		} else {
+			delete(cfg.Providers, name)
+		}
+		return err
+	}
+
+	return nil
+}
+
 func UpdateProvider(name models.ModelProvider, apiKey string, baseURL string, disabled bool) error {
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")
@@ -2015,4 +2058,158 @@ func cloneStringMap(values map[string]string) map[string]string {
 // environment variables, or compatible external tooling.
 func LoadGitHubToken() (string, error) {
 	return auth.LoadGitHubOAuthToken()
+}
+
+func UpdateAgent(agentName AgentName, agent Agent) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	if cfg.Agents == nil {
+		cfg.Agents = make(map[AgentName]Agent)
+	}
+
+	oldAgent, hadAgent := cfg.Agents[agentName]
+	cfg.Agents[agentName] = agent
+
+	if err := updateCfgFile(func(config *Config) {
+		if config.Agents == nil {
+			config.Agents = make(map[AgentName]Agent)
+		}
+		config.Agents[agentName] = agent
+	}); err != nil {
+		if hadAgent {
+			cfg.Agents[agentName] = oldAgent
+		} else {
+			delete(cfg.Agents, agentName)
+		}
+		return err
+	}
+
+	return nil
+}
+
+func UpdateGeneral(workingDir, logFile string, debugLSP bool, contextPaths []string, dataDir string) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldWorkingDir := cfg.WorkingDir
+	oldLogFile := cfg.LogFile
+	oldDebugLSP := cfg.DebugLSP
+	oldContextPaths := cfg.ContextPaths
+	oldDataDir := cfg.Data.Directory
+
+	cfg.WorkingDir = workingDir
+	cfg.LogFile = logFile
+	cfg.DebugLSP = debugLSP
+	cfg.ContextPaths = append([]string(nil), contextPaths...)
+	cfg.Data.Directory = dataDir
+
+	if err := updateCfgFile(func(config *Config) {
+		config.WorkingDir = workingDir
+		config.LogFile = logFile
+		config.DebugLSP = debugLSP
+		config.ContextPaths = append([]string(nil), contextPaths...)
+		config.Data.Directory = dataDir
+	}); err != nil {
+		cfg.WorkingDir = oldWorkingDir
+		cfg.LogFile = oldLogFile
+		cfg.DebugLSP = oldDebugLSP
+		cfg.ContextPaths = oldContextPaths
+		cfg.Data.Directory = oldDataDir
+		return err
+	}
+
+	return nil
+}
+
+func UpdateServer(server APIServerConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldServer := cfg.Server
+	cfg.Server = server
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Server = server
+	}); err != nil {
+		cfg.Server = oldServer
+		return err
+	}
+
+	return nil
+}
+
+func UpdateLua(lua LuaConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldLua := cfg.Lua
+	cfg.Lua = lua
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Lua = lua
+	}); err != nil {
+		cfg.Lua = oldLua
+		return err
+	}
+
+	return nil
+}
+
+func UpdateMCPGateway(gw MCPGatewayConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldGW := cfg.MCPGateway
+	cfg.MCPGateway = gw
+
+	if err := updateCfgFile(func(config *Config) {
+		config.MCPGateway = gw
+	}); err != nil {
+		cfg.MCPGateway = oldGW
+		return err
+	}
+
+	return nil
+}
+
+func UpdateSnapshots(snap SnapshotsConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldSnap := cfg.Snapshots
+	cfg.Snapshots = snap
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Snapshots = snap
+	}); err != nil {
+		cfg.Snapshots = oldSnap
+		return err
+	}
+
+	return nil
+}
+
+func UpdateEvaluator(eval EvaluatorConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldEval := cfg.Evaluator
+	cfg.Evaluator = eval
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Evaluator = eval
+	}); err != nil {
+		cfg.Evaluator = oldEval
+		return err
+	}
+
+	return nil
 }
