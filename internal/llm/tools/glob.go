@@ -39,8 +39,14 @@ COMMON PATTERN EXAMPLES:
 - 'src/**/*.{ts,tsx}' - Find all TypeScript files in the src directory
 - '*.{html,css,js}' - Find all HTML, CSS, and JS files
 
+PAGINATION:
+- head_limit: Maximum files to return (default: 100)
+- offset: Skip first N files for pagination
+- Example: head_limit=20, offset=20 to get files 21-40
+- Check has_more in the response metadata to know if more results exist
+
 LIMITATIONS:
-- Results are limited to 100 files (newest first)
+- Results are limited to 100 files by default (newest first)
 - Does not search file contents (use Grep tool for that)
 - Hidden files (starting with '.') are skipped
 
@@ -51,13 +57,18 @@ TIPS:
 )
 
 type GlobParams struct {
-	Pattern string `json:"pattern"`
-	Path    string `json:"path"`
+	Pattern   string `json:"pattern"`
+	Path      string `json:"path"`
+	HeadLimit int    `json:"head_limit"` // Max files to return (default 100)
+	Offset    int    `json:"offset"`     // Skip first N files for pagination
 }
 
 type GlobResponseMetadata struct {
 	NumberOfFiles int  `json:"number_of_files"`
 	Truncated     bool `json:"truncated"`
+	TotalFound    int  `json:"total_found"` // Total before offset/limit
+	Offset        int  `json:"offset"`
+	HasMore       bool `json:"has_more"`
 }
 
 type globTool struct{}
@@ -78,6 +89,14 @@ func (g *globTool) Info() ToolInfo {
 			"path": map[string]any{
 				"type":        "string",
 				"description": "The directory to search in. Defaults to the current working directory.",
+			},
+			"head_limit": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of files to return (default: 100). Use with offset for pagination.",
+			},
+			"offset": map[string]any{
+				"type":        "integer",
+				"description": "Skip the first N results. Use with head_limit for pagination.",
 			},
 		},
 		Required: []string{"pattern"},
@@ -101,20 +120,49 @@ func (g *globTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		searchPath = config.WorkingDirectory()
 	}
 
-	files, truncated, err := globFiles(params.Pattern, searchPath, 100)
+	limit := params.HeadLimit
+	if limit <= 0 {
+		limit = 100
+	}
+
+	// Get enough files to support offset
+	fetchLimit := limit + params.Offset
+	if fetchLimit < limit { // overflow protection
+		fetchLimit = limit
+	}
+	files, truncated, err := globFiles(params.Pattern, searchPath, fetchLimit+1) // +1 to detect has_more
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("error finding files: %w", err)
 	}
 
-	logging.Debug("glob completed", "fileCount", len(files), "truncated", truncated)
+	totalFound := len(files)
+
+	// Apply offset
+	if params.Offset > 0 && params.Offset < len(files) {
+		files = files[params.Offset:]
+	} else if params.Offset >= len(files) {
+		files = []string{}
+	}
+
+	// Apply limit
+	hasMore := false
+	if len(files) > limit {
+		files = files[:limit]
+		hasMore = true
+	}
+	if truncated {
+		hasMore = true
+	}
+
+	logging.Debug("glob completed", "fileCount", len(files), "truncated", truncated, "totalFound", totalFound, "offset", params.Offset)
 
 	var output string
 	if len(files) == 0 {
 		output = "No files found"
 	} else {
 		output = strings.Join(files, "\n")
-		if truncated {
-			output += "\n\n(Results are truncated. Consider using a more specific path or pattern.)"
+		if hasMore || truncated {
+			output += "\n\n(Results are truncated. Consider using a more specific path or pattern, or use offset/head_limit for pagination.)"
 		}
 	}
 
@@ -122,7 +170,10 @@ func (g *globTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		NewTextResponse(output),
 		GlobResponseMetadata{
 			NumberOfFiles: len(files),
-			Truncated:     truncated,
+			Truncated:     truncated || hasMore,
+			TotalFound:    totalFound,
+			Offset:        params.Offset,
+			HasMore:       hasMore,
 		},
 	), nil
 }
