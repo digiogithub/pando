@@ -93,6 +93,11 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		buildMesnadaSection(cfg),
 		buildRemembrancesSection(cfg),
 		buildInternalToolsSection(cfg),
+		buildServerSection(cfg),
+		buildLuaSection(cfg),
+		buildMCPGatewaySection(cfg),
+		buildSnapshotsSection(cfg),
+		buildEvaluatorSection(cfg),
 	}
 }
 
@@ -136,6 +141,36 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Label: "Shell Args",
 				Key:   "shell.args",
 				Value: strings.Join(cfg.Shell.Args, " "),
+				Type:  settings.FieldText,
+			},
+			{
+				Label: "Working Dir",
+				Key:   "general.workingDir",
+				Value: cfg.WorkingDir,
+				Type:  settings.FieldText,
+			},
+			{
+				Label: "Log File",
+				Key:   "general.logFile",
+				Value: cfg.LogFile,
+				Type:  settings.FieldText,
+			},
+			{
+				Label: "Debug LSP",
+				Key:   "general.debugLSP",
+				Value: boolString(cfg.DebugLSP),
+				Type:  settings.FieldToggle,
+			},
+			{
+				Label: "Context Paths",
+				Key:   "general.contextPaths",
+				Value: strings.Join(cfg.ContextPaths, ","),
+				Type:  settings.FieldText,
+			},
+			{
+				Label: "Data Directory",
+				Key:   "general.data.directory",
+				Value: cfg.Data.Directory,
 				Type:  settings.FieldText,
 			},
 		},
@@ -227,6 +262,14 @@ func buildProvidersSection(cfg *config.Config) settings.Section {
 				Type:  settings.FieldToggle,
 			},
 		)
+		if providerID == models.ProviderAnthropic {
+			fields = append(fields, settings.Field{
+				Label: fmt.Sprintf("%s Use OAuth", providerName),
+				Key:   fmt.Sprintf("providers.%s.useOAuth", providerName),
+				Value: boolString(providerCfg.UseOAuth),
+				Type:  settings.FieldToggle,
+			})
+		}
 	}
 
 	return settings.Section{
@@ -324,13 +367,41 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 		agentCfg := cfg.Agents[agentName]
 		modelID := string(agentCfg.Model)
 
-		fields = append(fields, settings.Field{
-			Label:   fmt.Sprintf("%s Model", string(agentName)),
-			Key:     fmt.Sprintf("agents.%s.model", agentName),
-			Value:   modelID,
-			Type:    settings.FieldSelect,
-			Options: ensureOption(modelOptions, modelID),
-		})
+		fields = append(fields,
+			settings.Field{
+				Label:   fmt.Sprintf("%s Model", string(agentName)),
+				Key:     fmt.Sprintf("agents.%s.model", agentName),
+				Value:   modelID,
+				Type:    settings.FieldSelect,
+				Options: ensureOption(modelOptions, modelID),
+			},
+			settings.Field{
+				Label: fmt.Sprintf("%s Max Tokens", string(agentName)),
+				Key:   fmt.Sprintf("agents.%s.maxTokens", agentName),
+				Value: fmt.Sprint(agentCfg.MaxTokens),
+				Type:  settings.FieldText,
+			},
+			settings.Field{
+				Label:   fmt.Sprintf("%s Reasoning Effort", string(agentName)),
+				Key:     fmt.Sprintf("agents.%s.reasoningEffort", agentName),
+				Value:   agentCfg.ReasoningEffort,
+				Type:    settings.FieldSelect,
+				Options: []string{"", "low", "medium", "high"},
+			},
+			settings.Field{
+				Label: fmt.Sprintf("%s Auto Compact", string(agentName)),
+				Key:   fmt.Sprintf("agents.%s.autoCompact", agentName),
+				Value: boolString(agentCfg.AutoCompact),
+				Type:  settings.FieldToggle,
+			},
+			settings.Field{
+				Label:    fmt.Sprintf("%s Compact Threshold", string(agentName)),
+				Key:      fmt.Sprintf("agents.%s.autoCompactThreshold", agentName),
+				Value:    fmt.Sprintf("%.2f", agentCfg.AutoCompactThreshold),
+				Type:     settings.FieldText,
+				Disabled: !agentCfg.AutoCompact,
+			},
+		)
 	}
 
 	return settings.Section{
@@ -390,6 +461,20 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 				Type:  settings.FieldText,
 			})
 		}
+		fields = append(fields,
+			settings.Field{
+				Label: fmt.Sprintf("%s Env", name),
+				Key:   fmt.Sprintf("mcpServers.%s.env", name),
+				Value: strings.Join(server.Env, " "),
+				Type:  settings.FieldText,
+			},
+			settings.Field{
+				Label: fmt.Sprintf("%s Headers", name),
+				Key:   fmt.Sprintf("mcpServers.%s.headers", name),
+				Value: headersToString(server.Headers),
+				Type:  settings.FieldText,
+			},
+		)
 	}
 
 	return settings.Section{
@@ -419,6 +504,12 @@ func buildLSPSection(cfg *config.Config) settings.Section {
 				Label: fmt.Sprintf("%s Command", language),
 				Key:   fmt.Sprintf("lsp.%s.command", language),
 				Value: lspCfg.Command,
+				Type:  settings.FieldText,
+			},
+			settings.Field{
+				Label: fmt.Sprintf("%s Args", language),
+				Key:   fmt.Sprintf("lsp.%s.args", language),
+				Value: strings.Join(lspCfg.Args, " "),
 				Type:  settings.FieldText,
 			},
 			settings.Field{
@@ -452,6 +543,19 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 		{Label: "Persona Path", Key: "mesnada.orchestrator.personaPath", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.PersonaPath},
 		{Label: "ACP Enabled", Key: "mesnada.acp.enabled", Type: settings.FieldToggle, Value: fmt.Sprint(cfg.Mesnada.ACP.Enabled)},
 		{Label: "ACP Auto Permission", Key: "mesnada.acp.autoPermission", Type: settings.FieldToggle, Value: fmt.Sprint(cfg.Mesnada.ACP.AutoPermission)},
+		{Label: "Orchestrator Store Path", Key: "mesnada.orchestrator.storePath", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.StorePath},
+		{Label: "Orchestrator Log Dir", Key: "mesnada.orchestrator.logDir", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.LogDir},
+		{Label: "Orchestrator Default Model", Key: "mesnada.orchestrator.defaultModel", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.DefaultModel},
+		{Label: "Orchestrator MCP Config", Key: "mesnada.orchestrator.defaultMcpConfig", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.DefaultMCPConfig},
+		{Label: "ACP Default Agent", Key: "mesnada.acp.defaultAgent", Type: settings.FieldText, Value: cfg.Mesnada.ACP.DefaultAgent},
+		{Label: "ACP Server Enabled", Key: "mesnada.acp.server.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.ACP.Server.Enabled)},
+		{Label: "ACP Server Host", Key: "mesnada.acp.server.host", Type: settings.FieldText, Value: cfg.Mesnada.ACP.Server.Host},
+		{Label: "ACP Server Port", Key: "mesnada.acp.server.port", Type: settings.FieldText, Value: fmt.Sprint(cfg.Mesnada.ACP.Server.Port)},
+		{Label: "ACP Server Max Sessions", Key: "mesnada.acp.server.maxSessions", Type: settings.FieldText, Value: fmt.Sprint(cfg.Mesnada.ACP.Server.MaxSessions)},
+		{Label: "ACP Server Session Timeout", Key: "mesnada.acp.server.sessionTimeout", Type: settings.FieldText, Value: cfg.Mesnada.ACP.Server.SessionTimeout},
+		{Label: "ACP Server Require Auth", Key: "mesnada.acp.server.requireAuth", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.ACP.Server.RequireAuth)},
+		{Label: "TUI Enabled", Key: "mesnada.tui.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.TUI.Enabled)},
+		{Label: "TUI Web UI", Key: "mesnada.tui.webui", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.TUI.WebUI)},
 	}
 
 	if !cfg.Mesnada.Enabled {
@@ -777,6 +881,241 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 	}
 }
 
+func buildServerSection(cfg *config.Config) settings.Section {
+	fields := []settings.Field{
+		{Label: "Enabled", Key: "server.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Server.Enabled)},
+		{Label: "Host", Key: "server.host", Type: settings.FieldText, Value: cfg.Server.Host},
+		{Label: "Port", Key: "server.port", Type: settings.FieldText, Value: fmt.Sprint(cfg.Server.Port)},
+		{Label: "Require Auth", Key: "server.requireAuth", Type: settings.FieldToggle, Value: boolString(cfg.Server.RequireAuth)},
+	}
+
+	if !cfg.Server.Enabled {
+		fields = append(fields, settings.Field{
+			Label:    "Info",
+			Key:      "server.info.disabled",
+			Type:     settings.FieldText,
+			Value:    "API server is disabled.",
+			ReadOnly: true,
+		})
+		for i := 1; i < len(fields)-1; i++ {
+			fields[i].Disabled = true
+		}
+	}
+
+	return settings.Section{
+		Title:  "API Server",
+		Fields: fields,
+	}
+}
+
+func buildLuaSection(cfg *config.Config) settings.Section {
+	fields := []settings.Field{
+		{Label: "Enabled", Key: "lua.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Lua.Enabled)},
+		{Label: "Script Path", Key: "lua.scriptPath", Type: settings.FieldText, Value: cfg.Lua.ScriptPath},
+		{Label: "Timeout", Key: "lua.timeout", Type: settings.FieldText, Value: cfg.Lua.Timeout},
+		{Label: "Strict Mode", Key: "lua.strictMode", Type: settings.FieldToggle, Value: boolString(cfg.Lua.StrictMode)},
+		{Label: "Hot Reload", Key: "lua.hotReload", Type: settings.FieldToggle, Value: boolString(cfg.Lua.HotReload)},
+		{Label: "Log Filtered Data", Key: "lua.logFilteredData", Type: settings.FieldToggle, Value: boolString(cfg.Lua.LogFilteredData)},
+	}
+
+	if !cfg.Lua.Enabled {
+		fields = append(fields, settings.Field{
+			Label:    "Info",
+			Key:      "lua.info.disabled",
+			Type:     settings.FieldText,
+			Value:    "Lua engine disabled.",
+			ReadOnly: true,
+		})
+		for i := 1; i < len(fields)-1; i++ {
+			fields[i].Disabled = true
+		}
+	}
+
+	return settings.Section{
+		Title:  "Lua Engine",
+		Fields: fields,
+	}
+}
+
+func buildMCPGatewaySection(cfg *config.Config) settings.Section {
+	fields := []settings.Field{
+		{Label: "Enabled", Key: "mcpGateway.enabled", Type: settings.FieldToggle, Value: boolString(cfg.MCPGateway.Enabled)},
+		{Label: "Favorite Threshold", Key: "mcpGateway.favoriteThreshold", Type: settings.FieldText, Value: fmt.Sprint(cfg.MCPGateway.FavoriteThreshold)},
+		{Label: "Max Favorites", Key: "mcpGateway.maxFavorites", Type: settings.FieldText, Value: fmt.Sprint(cfg.MCPGateway.MaxFavorites)},
+		{Label: "Favorite Window Days", Key: "mcpGateway.favoriteWindowDays", Type: settings.FieldText, Value: fmt.Sprint(cfg.MCPGateway.FavoriteWindowDays)},
+		{Label: "Decay Days", Key: "mcpGateway.decayDays", Type: settings.FieldText, Value: fmt.Sprint(cfg.MCPGateway.DecayDays)},
+		{
+			Label:    "Info",
+			Key:      "mcpGateway.info",
+			Type:     settings.FieldText,
+			Value:    "Tracks MCP tool usage frequency to surface favorites.",
+			ReadOnly: true,
+		},
+	}
+
+	if !cfg.MCPGateway.Enabled {
+		for i := 1; i < len(fields); i++ {
+			fields[i].Disabled = true
+		}
+	}
+
+	return settings.Section{
+		Title:  "MCP Gateway",
+		Fields: fields,
+	}
+}
+
+func buildSnapshotsSection(cfg *config.Config) settings.Section {
+	snap := cfg.Snapshots
+	fields := []settings.Field{
+		{
+			Label: "Enabled",
+			Key:   "snapshots.enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(snap.Enabled),
+		},
+		{
+			Label: "Max Snapshots",
+			Key:   "snapshots.maxSnapshots",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(snap.MaxSnapshots),
+		},
+		{
+			Label: "Max File Size",
+			Key:   "snapshots.maxFileSize",
+			Type:  settings.FieldText,
+			Value: snap.MaxFileSize,
+		},
+		{
+			Label: "Exclude Patterns",
+			Key:   "snapshots.excludePatterns",
+			Type:  settings.FieldText,
+			Value: strings.Join(snap.ExcludePatterns, ","),
+		},
+		{
+			Label: "Auto Cleanup Days",
+			Key:   "snapshots.autoCleanupDays",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(snap.AutoCleanupDays),
+		},
+		{
+			Label:    "Info",
+			Key:      "snapshots.info",
+			Type:     settings.FieldText,
+			Value:    "Session file snapshots. Excluded patterns use glob syntax (comma-separated).",
+			ReadOnly: true,
+		},
+	}
+
+	if !snap.Enabled {
+		for i := 1; i < len(fields); i++ {
+			fields[i].Disabled = true
+		}
+	}
+
+	return settings.Section{
+		Title:  "Snapshots",
+		Fields: fields,
+	}
+}
+
+func buildEvaluatorSection(cfg *config.Config) settings.Section {
+	eval := cfg.Evaluator
+	fields := []settings.Field{
+		{
+			Label: "Enabled",
+			Key:   "evaluator.enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(eval.Enabled),
+		},
+		{
+			Label:   "Judge Model",
+			Key:     "evaluator.model",
+			Type:    settings.FieldSelect,
+			Value:   string(eval.Model),
+			Options: ensureOption(supportedModelOptions(cfg), string(eval.Model)),
+		},
+		{
+			Label: "Judge Provider",
+			Key:   "evaluator.provider",
+			Type:  settings.FieldText,
+			Value: eval.Provider,
+		},
+		{
+			Label: "Alpha Weight",
+			Key:   "evaluator.alphaWeight",
+			Type:  settings.FieldText,
+			Value: fmt.Sprintf("%.2f", eval.AlphaWeight),
+		},
+		{
+			Label: "Beta Weight",
+			Key:   "evaluator.betaWeight",
+			Type:  settings.FieldText,
+			Value: fmt.Sprintf("%.2f", eval.BetaWeight),
+		},
+		{
+			Label: "Exploration C",
+			Key:   "evaluator.explorationC",
+			Type:  settings.FieldText,
+			Value: fmt.Sprintf("%.4f", eval.ExplorationC),
+		},
+		{
+			Label: "Min Sessions UCB",
+			Key:   "evaluator.minSessionsForUCB",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(eval.MinSessionsForUCB),
+		},
+		{
+			Label: "Max Tokens Baseline",
+			Key:   "evaluator.maxTokensBaseline",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(eval.MaxTokensBaseline),
+		},
+		{
+			Label: "Max Skills",
+			Key:   "evaluator.maxSkills",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(eval.MaxSkills),
+		},
+		{
+			Label: "Judge Prompt Template",
+			Key:   "evaluator.judgePromptTemplate",
+			Type:  settings.FieldText,
+			Value: eval.JudgePromptTemplate,
+		},
+		{
+			Label: "Async Evaluation",
+			Key:   "evaluator.async",
+			Type:  settings.FieldToggle,
+			Value: boolString(eval.Async),
+		},
+		{
+			Label: "Corrections Patterns",
+			Key:   "evaluator.correctionsPatterns",
+			Type:  settings.FieldText,
+			Value: strings.Join(eval.CorrectionsPatterns, ","),
+		},
+		{
+			Label:    "Info",
+			Key:      "evaluator.info",
+			Type:     settings.FieldText,
+			Value:    "LLM-as-Judge self-improvement with UCB1 prompt selection. Requires a cheap/fast judge model.",
+			ReadOnly: true,
+		},
+	}
+
+	if !eval.Enabled {
+		for i := 1; i < len(fields); i++ {
+			fields[i].Disabled = true
+		}
+	}
+
+	return settings.Section{
+		Title:  "Self-Improvement",
+		Fields: fields,
+	}
+}
+
 func remembrancesModelsForProvider(provider string) []string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "ollama":
@@ -879,6 +1218,23 @@ func skillLoadStatus(loaded bool) string {
 	return "unloaded"
 }
 
+// headersToString formats a headers map as sorted "Key:Value" pairs joined by spaces.
+func headersToString(headers map[string]string) string {
+	if len(headers) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(headers))
+	for k := range headers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+":"+headers[k])
+	}
+	return strings.Join(parts, " ")
+}
+
 func persistSetting(app *pandoapp.App, field settings.Field) error {
 	switch {
 	case field.Key == "tui.theme":
@@ -919,6 +1275,18 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveRemembrances(field)
 	case strings.HasPrefix(field.Key, "internalTools."):
 		return saveInternalTools(field)
+	case strings.HasPrefix(field.Key, "general."):
+		return saveGeneral(field)
+	case strings.HasPrefix(field.Key, "server."):
+		return saveServer(field)
+	case strings.HasPrefix(field.Key, "lua."):
+		return saveLua(field)
+	case strings.HasPrefix(field.Key, "mcpGateway."):
+		return saveMCPGateway(field)
+	case strings.HasPrefix(field.Key, "snapshots."):
+		return saveSnapshots(field)
+	case strings.HasPrefix(field.Key, "evaluator."):
+		return saveEvaluator(field)
 	default:
 		return fmt.Errorf("unsupported setting %q", field.Key)
 	}
@@ -1006,6 +1374,15 @@ func saveProvider(field settings.Field) error {
 			return fmt.Errorf("invalid provider enabled value: %w", err)
 		}
 		providerCfg.Disabled = !enabled
+	case "useOAuth":
+		useOAuth, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid useOAuth value: %w", err)
+		}
+		if providerName != models.ProviderAnthropic {
+			return fmt.Errorf("useOAuth is only supported for the anthropic provider")
+		}
+		return config.UpdateProviderOAuth(providerName, useOAuth)
 	default:
 		return fmt.Errorf("unsupported provider field %q", parts[2])
 	}
@@ -1027,16 +1404,58 @@ func saveProvider(field settings.Field) error {
 
 func saveAgent(field settings.Field) error {
 	parts := strings.Split(field.Key, ".")
-	if len(parts) != 3 || parts[2] != "model" {
+	if len(parts) != 3 {
 		return fmt.Errorf("invalid agent setting key %q", field.Key)
 	}
 
-	modelID := models.ModelID(strings.TrimSpace(field.Value))
-	if _, ok := models.SupportedModels[modelID]; !ok {
-		return fmt.Errorf("model %s not supported", modelID)
+	agentName := config.AgentName(parts[1])
+	agentCfg := config.Get().Agents[agentName]
+
+	switch parts[2] {
+	case "model":
+		modelID := models.ModelID(strings.TrimSpace(field.Value))
+		if _, ok := models.SupportedModels[modelID]; !ok {
+			return fmt.Errorf("model %s not supported", modelID)
+		}
+		return config.UpdateAgentModel(agentName, modelID)
+	case "maxTokens":
+		v, err := strconv.ParseInt(strings.TrimSpace(field.Value), 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid max tokens value: %w", err)
+		}
+		if v <= 0 {
+			return fmt.Errorf("max tokens must be greater than zero")
+		}
+		agentCfg.MaxTokens = v
+	case "reasoningEffort":
+		effort := strings.TrimSpace(field.Value)
+		switch effort {
+		case "", "low", "medium", "high":
+			// valid
+		default:
+			return fmt.Errorf("reasoning effort must be one of: empty, low, medium, high")
+		}
+		agentCfg.ReasoningEffort = effort
+	case "autoCompact":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid auto compact value: %w", err)
+		}
+		agentCfg.AutoCompact = v
+	case "autoCompactThreshold":
+		v, err := strconv.ParseFloat(strings.TrimSpace(field.Value), 64)
+		if err != nil {
+			return fmt.Errorf("invalid auto compact threshold value: %w", err)
+		}
+		if v < 0.0 || v > 1.0 {
+			return fmt.Errorf("auto compact threshold must be between 0.0 and 1.0")
+		}
+		agentCfg.AutoCompactThreshold = v
+	default:
+		return fmt.Errorf("unsupported agent field %q", parts[2])
 	}
 
-	return config.UpdateAgentModel(config.AgentName(parts[1]), modelID)
+	return config.UpdateAgent(agentName, agentCfg)
 }
 
 func saveMCPServer(field settings.Field) error {
@@ -1082,6 +1501,14 @@ func saveMCPServer(field settings.Field) error {
 		server.Type = serverType
 	case "url":
 		server.URL = strings.TrimSpace(field.Value)
+	case "env":
+		server.Env = strings.Fields(field.Value)
+	case "headers":
+		headers, err := parseHeaders(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid headers format: %w", err)
+		}
+		server.Headers = headers
 	default:
 		return fmt.Errorf("unsupported MCP server field %q", parts[2])
 	}
@@ -1122,6 +1549,8 @@ func saveLSP(field settings.Field) error {
 		return nil
 	case "command":
 		lspCfg.Command = strings.TrimSpace(field.Value)
+	case "args":
+		lspCfg.Args = strings.Fields(field.Value)
 	case "enabled":
 		enabled, err := parseBoolValue(field.Value)
 		if err != nil {
@@ -1193,6 +1622,70 @@ func saveMesnada(field settings.Field) error {
 			return fmt.Errorf("invalid Mesnada ACP auto permission value: %w", err)
 		}
 		mesnadaCfg.ACP.AutoPermission = autoPermission
+	case "mesnada.orchestrator.storePath":
+		mesnadaCfg.Orchestrator.StorePath = strings.TrimSpace(field.Value)
+	case "mesnada.orchestrator.logDir":
+		mesnadaCfg.Orchestrator.LogDir = strings.TrimSpace(field.Value)
+	case "mesnada.orchestrator.defaultModel":
+		mesnadaCfg.Orchestrator.DefaultModel = strings.TrimSpace(field.Value)
+	case "mesnada.orchestrator.defaultMcpConfig":
+		mesnadaCfg.Orchestrator.DefaultMCPConfig = strings.TrimSpace(field.Value)
+	case "mesnada.acp.defaultAgent":
+		mesnadaCfg.ACP.DefaultAgent = strings.TrimSpace(field.Value)
+	case "mesnada.acp.server.enabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid ACP server enabled value: %w", err)
+		}
+		mesnadaCfg.ACP.Server.Enabled = enabled
+	case "mesnada.acp.server.host":
+		host := strings.TrimSpace(field.Value)
+		if host == "" {
+			return fmt.Errorf("ACP server host cannot be empty")
+		}
+		mesnadaCfg.ACP.Server.Host = host
+	case "mesnada.acp.server.port":
+		port, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid ACP server port: %w", err)
+		}
+		if port < 1 || port > 65535 {
+			return fmt.Errorf("ACP server port must be between 1 and 65535")
+		}
+		mesnadaCfg.ACP.Server.Port = port
+	case "mesnada.acp.server.maxSessions":
+		maxSessions, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid ACP server max sessions: %w", err)
+		}
+		if maxSessions < 1 {
+			return fmt.Errorf("ACP server max sessions must be greater than zero")
+		}
+		mesnadaCfg.ACP.Server.MaxSessions = maxSessions
+	case "mesnada.acp.server.sessionTimeout":
+		timeout := strings.TrimSpace(field.Value)
+		if timeout == "" {
+			return fmt.Errorf("ACP server session timeout cannot be empty")
+		}
+		mesnadaCfg.ACP.Server.SessionTimeout = timeout
+	case "mesnada.acp.server.requireAuth":
+		requireAuth, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid ACP server require auth value: %w", err)
+		}
+		mesnadaCfg.ACP.Server.RequireAuth = requireAuth
+	case "mesnada.tui.enabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Mesnada TUI enabled value: %w", err)
+		}
+		mesnadaCfg.TUI.Enabled = enabled
+	case "mesnada.tui.webui":
+		webui, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Mesnada TUI webui value: %w", err)
+		}
+		mesnadaCfg.TUI.WebUI = webui
 	default:
 		return fmt.Errorf("unsupported Mesnada setting %q", field.Key)
 	}
@@ -1379,6 +1872,376 @@ func saveInternalTools(field settings.Field) error {
 	}
 
 	return config.UpdateInternalTools(itCfg)
+}
+
+// parseHeaders parses a "Key1:Value1 Key2:Value2" formatted string into a map.
+func parseHeaders(s string) (map[string]string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+
+	result := make(map[string]string)
+	for _, pair := range strings.Fields(s) {
+		idx := strings.IndexByte(pair, ':')
+		if idx < 0 {
+			return nil, fmt.Errorf("invalid header pair %q: expected Key:Value format", pair)
+		}
+		key := strings.TrimSpace(pair[:idx])
+		value := strings.TrimSpace(pair[idx+1:])
+		if key == "" {
+			return nil, fmt.Errorf("invalid header pair %q: key cannot be empty", pair)
+		}
+		result[key] = value
+	}
+	return result, nil
+}
+
+func saveGeneral(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	workingDir := cfg.WorkingDir
+	logFile := cfg.LogFile
+	debugLSP := cfg.DebugLSP
+	contextPaths := append([]string(nil), cfg.ContextPaths...)
+	dataDir := cfg.Data.Directory
+
+	switch field.Key {
+	case "general.workingDir":
+		workingDir = strings.TrimSpace(field.Value)
+	case "general.logFile":
+		logFile = strings.TrimSpace(field.Value)
+	case "general.debugLSP":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Debug LSP value: %w", err)
+		}
+		debugLSP = v
+	case "general.contextPaths":
+		parts := strings.Split(field.Value, ",")
+		contextPaths = make([]string, 0, len(parts))
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				contextPaths = append(contextPaths, trimmed)
+			}
+		}
+	case "general.data.directory":
+		dataDir = strings.TrimSpace(field.Value)
+	default:
+		return fmt.Errorf("unsupported general setting %q", field.Key)
+	}
+
+	return config.UpdateGeneral(workingDir, logFile, debugLSP, contextPaths, dataDir)
+}
+
+func saveServer(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	serverCfg := cfg.Server
+	switch field.Key {
+	case "server.enabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid server enabled value: %w", err)
+		}
+		serverCfg.Enabled = enabled
+	case "server.host":
+		host := strings.TrimSpace(field.Value)
+		if host == "" {
+			return fmt.Errorf("server host cannot be empty")
+		}
+		serverCfg.Host = host
+	case "server.port":
+		port, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid server port: %w", err)
+		}
+		if port < 1 || port > 65535 {
+			return fmt.Errorf("server port must be between 1 and 65535")
+		}
+		serverCfg.Port = port
+	case "server.requireAuth":
+		requireAuth, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid server require auth value: %w", err)
+		}
+		serverCfg.RequireAuth = requireAuth
+	case "server.info.disabled":
+		// read-only informational field, nothing to save
+		return nil
+	default:
+		return fmt.Errorf("unsupported server setting %q", field.Key)
+	}
+
+	return config.UpdateServer(serverCfg)
+}
+
+func saveLua(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	luaCfg := cfg.Lua
+	switch field.Key {
+	case "lua.enabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Lua enabled value: %w", err)
+		}
+		luaCfg.Enabled = enabled
+	case "lua.scriptPath":
+		luaCfg.ScriptPath = strings.TrimSpace(field.Value)
+	case "lua.timeout":
+		luaCfg.Timeout = strings.TrimSpace(field.Value)
+	case "lua.strictMode":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Lua strict mode value: %w", err)
+		}
+		luaCfg.StrictMode = v
+	case "lua.hotReload":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Lua hot reload value: %w", err)
+		}
+		luaCfg.HotReload = v
+	case "lua.logFilteredData":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Lua log filtered data value: %w", err)
+		}
+		luaCfg.LogFilteredData = v
+	case "lua.info.disabled":
+		// read-only informational field, nothing to save
+		return nil
+	default:
+		return fmt.Errorf("unsupported Lua setting %q", field.Key)
+	}
+
+	return config.UpdateLua(luaCfg)
+}
+
+func saveMCPGateway(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	gwCfg := cfg.MCPGateway
+	switch field.Key {
+	case "mcpGateway.enabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid MCP Gateway enabled value: %w", err)
+		}
+		gwCfg.Enabled = enabled
+	case "mcpGateway.favoriteThreshold":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid favorite threshold: %w", err)
+		}
+		if v < 0 {
+			return fmt.Errorf("favorite threshold must be >= 0")
+		}
+		gwCfg.FavoriteThreshold = v
+	case "mcpGateway.maxFavorites":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid max favorites: %w", err)
+		}
+		if v < 0 {
+			return fmt.Errorf("max favorites must be >= 0")
+		}
+		gwCfg.MaxFavorites = v
+	case "mcpGateway.favoriteWindowDays":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid favorite window days: %w", err)
+		}
+		if v < 0 {
+			return fmt.Errorf("favorite window days must be >= 0")
+		}
+		gwCfg.FavoriteWindowDays = v
+	case "mcpGateway.decayDays":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid decay days: %w", err)
+		}
+		if v < 0 {
+			return fmt.Errorf("decay days must be >= 0")
+		}
+		gwCfg.DecayDays = v
+	case "mcpGateway.info":
+		// read-only informational field, nothing to save
+		return nil
+	default:
+		return fmt.Errorf("unsupported MCP Gateway setting %q", field.Key)
+	}
+
+	return config.UpdateMCPGateway(gwCfg)
+}
+
+func saveSnapshots(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	snapCfg := cfg.Snapshots
+	switch field.Key {
+	case "snapshots.enabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid snapshots enabled value: %w", err)
+		}
+		snapCfg.Enabled = enabled
+	case "snapshots.maxSnapshots":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid max snapshots: %w", err)
+		}
+		if v < 1 {
+			return fmt.Errorf("max snapshots must be greater than zero")
+		}
+		snapCfg.MaxSnapshots = v
+	case "snapshots.maxFileSize":
+		size := strings.TrimSpace(field.Value)
+		if size == "" {
+			return fmt.Errorf("max file size cannot be empty")
+		}
+		snapCfg.MaxFileSize = size
+	case "snapshots.excludePatterns":
+		parts := strings.Split(field.Value, ",")
+		patterns := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				patterns = append(patterns, trimmed)
+			}
+		}
+		snapCfg.ExcludePatterns = patterns
+	case "snapshots.autoCleanupDays":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid auto cleanup days: %w", err)
+		}
+		if v < 0 {
+			return fmt.Errorf("auto cleanup days must be >= 0")
+		}
+		snapCfg.AutoCleanupDays = v
+	case "snapshots.info":
+		// read-only informational field, nothing to save
+		return nil
+	default:
+		return fmt.Errorf("unsupported snapshots setting %q", field.Key)
+	}
+
+	return config.UpdateSnapshots(snapCfg)
+}
+
+func saveEvaluator(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	evalCfg := cfg.Evaluator
+	switch field.Key {
+	case "evaluator.enabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid evaluator enabled value: %w", err)
+		}
+		evalCfg.Enabled = enabled
+	case "evaluator.model":
+		evalCfg.Model = models.ModelID(strings.TrimSpace(field.Value))
+	case "evaluator.provider":
+		evalCfg.Provider = strings.TrimSpace(field.Value)
+	case "evaluator.alphaWeight":
+		v, err := strconv.ParseFloat(strings.TrimSpace(field.Value), 64)
+		if err != nil {
+			return fmt.Errorf("invalid alpha weight: %w", err)
+		}
+		if v < 0.0 || v > 1.0 {
+			return fmt.Errorf("alpha weight must be between 0.0 and 1.0")
+		}
+		evalCfg.AlphaWeight = v
+	case "evaluator.betaWeight":
+		v, err := strconv.ParseFloat(strings.TrimSpace(field.Value), 64)
+		if err != nil {
+			return fmt.Errorf("invalid beta weight: %w", err)
+		}
+		if v < 0.0 || v > 1.0 {
+			return fmt.Errorf("beta weight must be between 0.0 and 1.0")
+		}
+		evalCfg.BetaWeight = v
+	case "evaluator.explorationC":
+		v, err := strconv.ParseFloat(strings.TrimSpace(field.Value), 64)
+		if err != nil {
+			return fmt.Errorf("invalid exploration C: %w", err)
+		}
+		if v < 0.0 {
+			return fmt.Errorf("exploration C must be >= 0")
+		}
+		evalCfg.ExplorationC = v
+	case "evaluator.minSessionsForUCB":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid min sessions for UCB: %w", err)
+		}
+		if v < 1 {
+			return fmt.Errorf("min sessions for UCB must be >= 1")
+		}
+		evalCfg.MinSessionsForUCB = v
+	case "evaluator.maxTokensBaseline":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid max tokens baseline: %w", err)
+		}
+		if v < 1 {
+			return fmt.Errorf("max tokens baseline must be >= 1")
+		}
+		evalCfg.MaxTokensBaseline = v
+	case "evaluator.maxSkills":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid max skills: %w", err)
+		}
+		if v < 1 {
+			return fmt.Errorf("max skills must be >= 1")
+		}
+		evalCfg.MaxSkills = v
+	case "evaluator.judgePromptTemplate":
+		evalCfg.JudgePromptTemplate = strings.TrimSpace(field.Value)
+	case "evaluator.async":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid evaluator async value: %w", err)
+		}
+		evalCfg.Async = v
+	case "evaluator.correctionsPatterns":
+		parts := strings.Split(field.Value, ",")
+		patterns := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				patterns = append(patterns, trimmed)
+			}
+		}
+		evalCfg.CorrectionsPatterns = patterns
+	case "evaluator.info":
+		// read-only informational field, nothing to save
+		return nil
+	default:
+		return fmt.Errorf("unsupported evaluator setting %q", field.Key)
+	}
+
+	return config.UpdateEvaluator(evalCfg)
 }
 
 func normalizeRemembrancesConfig(remCfg config.RemembrancesConfig) config.RemembrancesConfig {
