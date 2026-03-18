@@ -212,6 +212,26 @@
     ],
     "mcp_config": "@.github/mcp-config.json"
   },
+  "task-1376049f": {
+    "id": "task-1376049f",
+    "prompt": "You are implementing Phase 3 of the \"Settings TUI — Full Config Coverage\" plan for the Pando project.\n\n## Context\nPando is a Go-based AI assistant CLI tool. The settings TUI is in `internal/tui/page/settings.go`. Phase 1 has added the missing `Update*` functions to `internal/config/config.go`. Your job is to add 3 entirely new section builder functions to the TUI settings file.\n\n## Your task: Add new TUI sections for API Server, Lua Engine, MCP Gateway\n\nFirst, retrieve the detailed phase spec:\n- Use the remembrances MCP tool `get_fact` with user_id=\"pando\" and key=\"settings_tui_phase3_new_sections_server_lua_gateway\"\n- Also read the full plan: `kb_get_document` with file_path=\"plans/settings_tui_full_config_plan.md\"\n\nRead the full `internal/tui/page/settings.go` and `internal/config/config.go` before making any changes.\n\n## Functions to add\n\n### `buildServerSection(cfg *config.Config) settings.Section`\nTitle: \"API Server\"\nFields:\n- `Enabled` → key: \"server.enabled\", FieldToggle, value: boolString(cfg.Server.Enabled)\n- `Host` → key: \"server.host\", FieldText, value: cfg.Server.Host\n- `Port` → key: \"server.port\", FieldText, value: fmt.Sprint(cfg.Server.Port)\n- `Require Auth` → key: \"server.requireAuth\", FieldToggle, value: boolString(cfg.Server.RequireAuth)\n- When !cfg.Server.Enabled: add info field (key: \"server.info.disabled\", ReadOnly) and disable remaining fields (fields[1:])\n\n### `buildLuaSection(cfg *config.Config) settings.Section`\nTitle: \"Lua Engine\"\nFields:\n- `Enabled` → key: \"lua.enabled\", FieldToggle, value: boolString(cfg.Lua.Enabled)\n- `Script Path` → key: \"lua.scriptPath\", FieldText, value: cfg.Lua.ScriptPath\n- `Timeout` → key: \"lua.timeout\", FieldText, value: cfg.Lua.Timeout (hint: e.g. \"5s\")\n- `Strict Mode` → key: \"lua.strictMode\", FieldToggle, value: boolString(cfg.Lua.StrictMode)\n- `Hot Reload` → key: \"lua.hotReload\", FieldToggle, value: boolString(cfg.Lua.HotReload)\n- `Log Filtered Data` → key: \"lua.logFilteredData\", FieldToggle, value: boolString(cfg.Lua.LogFilteredData)\n- When !cfg.Lua.Enabled: show info field (key: \"lua.info.disabled\", ReadOnly: \"Lua engine disabled.\") and disable fields[1:]\n\n### `buildMCPGatewaySection(cfg *config.Config) settings.Section`\nTitle: \"MCP Gateway\"\nFields:\n- `Enabled` → key: \"mcpGateway.enabled\", FieldToggle, value: boolString(cfg.MCPGateway.Enabled)\n- `Favorite Threshold` → key: \"mcpGateway.favoriteThreshold\", FieldText, value: fmt.Sprint(cfg.MCPGateway.FavoriteThreshold)\n- `Max Favorites` → key: \"mcpGateway.maxFavorites\", FieldText, value: fmt.Sprint(cfg.MCPGateway.MaxFavorites)\n- `Favorite Window Days` → key: \"mcpGateway.favoriteWindowDays\", FieldText, value: fmt.Sprint(cfg.MCPGateway.FavoriteWindowDays)\n- `Decay Days` → key: \"mcpGateway.decayDays\", FieldText, value: fmt.Sprint(cfg.MCPGateway.DecayDays)\n- Info field (ReadOnly): \"Tracks MCP tool usage frequency to surface favorites.\"\n- When !cfg.MCPGateway.Enabled: disable fields[1:]\n\n## Important notes\n- Follow the exact same pattern as `buildMesnadaSection` (which uses a disabled-fields loop)\n- Use helper functions that already exist: `boolString()`, `settings.FieldToggle`, `settings.FieldText`, etc.\n- Place new functions after the existing `buildInternalToolsSection` function\n- Do NOT touch `buildSections()` registration (that's Phase 6)\n- Do NOT touch `persistSetting()` or save functions (that's Phase 5)\n- All code in English\n- Run `go build ./...` to verify — fix any compilation errors before finishing",
+    "work_dir": "/www/MCP/Pando/pando",
+    "status": "pending",
+    "engine": "claude",
+    "model": "sonnet",
+    "created_at": "2026-03-18T22:52:47.530569609+01:00",
+    "dependencies": [
+      "task-cb577afe"
+    ],
+    "tags": [
+      "pando",
+      "settings-tui",
+      "phase3",
+      "new-sections"
+    ],
+    "timeout": "30m0s",
+    "mcp_config": "@.github/mcp-config.json"
+  },
   "task-1754f2a1": {
     "id": "task-1754f2a1",
     "prompt": "You are the task_id: task-1754f2a1\n\nYou are implementing Phase 5 of the browser internal tools plan for the Pando project.\n\n## Your task: TUI Configuration Panel Integration\n\nWorking directory: /www/MCP/Pando/pando\n\nFIRST: Retrieve the detailed spec by calling the remembrances MCP tool `get_fact` with user_id=\"pando\" and key=\"browser_tools_phase5_tui_config\". Also check the KB document \"plans/browser_tools_chromedp_plan.md\" using `kb_get_document`.\n\n## What you must implement:\n\nThe InternalToolsConfig struct was extended in Phase 1 with 5 new browser fields:\n- BrowserEnabled bool\n- BrowserHeadless bool\n- BrowserTimeout int\n- BrowserUserDataDir string\n- BrowserMaxSessions int\n\nYour job is to expose these fields in the TUI settings panel.\n\n### Find the settings TUI file\nLook for the file that contains `buildInternalToolsSection` — it's likely at:\n`internal/tui/components/settings/settings.go`\nRead it fully before editing.\n\n### Add browser fields to buildInternalToolsSection()\n\nFind the `buildInternalToolsSection` function and add the browser fields BEFORE the existing readonly info field at the bottom of the section. Follow the exact same pattern as existing fields (same Field struct, same save lambda style).\n\nAdd a separator comment `// --- Browser Automation ---` before the block.\n\nFields to add:\n1. Label: \"Browser Enabled\", Type: FieldToggle, bound to cfg.InternalTools.BrowserEnabled → persists \"InternalTools.BrowserEnabled\"\n2. Label: \"Browser Headless\", Type: FieldToggle, bound to cfg.InternalTools.BrowserHeadless → persists \"InternalTools.BrowserHeadless\"\n3. Label: \"Browser Timeout (s)\", Type: FieldText, bound to strconv.Itoa(cfg.InternalTools.BrowserTimeout) → persists \"InternalTools.BrowserTimeout\"\n4. Label: \"Browser User Data Dir\", Type: FieldText, bound to cfg.InternalTools.BrowserUserDataDir → persists \"InternalTools.BrowserUserDataDir\"\n5. Label: \"Browser Max Sessions\", Type: FieldText, bound to strconv.Itoa(cfg.InternalTools.BrowserMaxSessions) → persists \"InternalTools.BrowserMaxSessions\"\n6. Label: \"Browser Info\", Type: FieldReadOnly, Value: \"Requires Chrome/Chromium in PATH. Tools: navigate, screenshot, get_content, evaluate, click, fill, scroll, console_logs, network, pdf\"\n\n### Update persistSetting() if needed\nLook for where other integer fields like \"FetchMaxSizeMB\" are persisted. If there's a special handler for integer fields, add analogous handling for:\n- \"InternalTools.BrowserTimeout\" → strconv.Atoi, assign to cfg.InternalTools.BrowserTimeout\n- \"InternalTools.BrowserMaxSessions\" → strconv.Atoi, assign to cfg.InternalTools.BrowserMaxSessions\n\n### Important\n- Read all relevant files before editing\n- Follow existing patterns EXACTLY (field types, save lambda style, strconv usage)\n- Do NOT change anything outside of buildInternalToolsSection and persistSetting\n- Run `go build ./...` to verify compilation\n\nWhen done, confirm the changes and report the line numbers where you added the fields.",
@@ -904,6 +924,26 @@
       "settings"
     ],
     "timeout": "30m0s",
+    "mcp_config": "@.github/mcp-config.json"
+  },
+  "task-5911abab": {
+    "id": "task-5911abab",
+    "prompt": "You are implementing Phase 2 of the \"Settings TUI — Full Config Coverage\" plan for the Pando project.\n\n## Context\nPando is a Go-based AI assistant CLI tool. The settings TUI is in `internal/tui/page/settings.go`. Phase 1 has already added the missing `Update*` functions to `internal/config/config.go`. Your job is to extend the existing TUI sections with the fields that were previously missing.\n\n## Your task: Extend existing sections in `internal/tui/page/settings.go`\n\nFirst, retrieve the detailed phase spec:\n- Use the remembrances MCP tool `get_fact` with user_id=\"pando\" and key=\"settings_tui_phase2_extend_existing_sections\"\n- Also read the full plan: `kb_get_document` with file_path=\"plans/settings_tui_full_config_plan.md\"\n\nRead the full `internal/tui/page/settings.go` before making any changes to understand the existing patterns.\n\n## Changes required\n\n### 2.1 `buildGeneralSection(cfg)` — add 5 new fields:\n- `WorkingDir` → key: \"general.workingDir\", FieldText\n- `LogFile` → key: \"general.logFile\", FieldText\n- `DebugLSP` → key: \"general.debugLSP\", FieldToggle\n- `ContextPaths` → key: \"general.contextPaths\", FieldText (value: strings.Join(cfg.ContextPaths, \",\"))\n- `Data Directory` → key: \"general.data.directory\", FieldText (value: cfg.Data.Directory)\n\n### 2.2 `buildAgentsSection(cfg)` — add 4 fields per agent (after the existing model field):\n- `{agent} Max Tokens` → key: \"agents.{name}.maxTokens\", FieldText, value: fmt.Sprint(agentCfg.MaxTokens)\n- `{agent} Reasoning Effort` → key: \"agents.{name}.reasoningEffort\", FieldSelect, options: []string{\"\", \"low\", \"medium\", \"high\"}\n- `{agent} Auto Compact` → key: \"agents.{name}.autoCompact\", FieldToggle\n- `{agent} Compact Threshold` → key: \"agents.{name}.autoCompactThreshold\", FieldText, value: fmt.Sprintf(\"%.2f\", agentCfg.AutoCompactThreshold), Disabled when !agentCfg.AutoCompact\n\n### 2.3 `buildProvidersSection(cfg)` — add UseOAuth toggle for Anthropic only:\n- Inside the per-provider loop, when providerID == models.ProviderAnthropic, add an extra field:\n  - `anthropic Use OAuth` → key: \"providers.anthropic.useOAuth\", FieldToggle\n\n### 2.4 `buildMCPServersSection(cfg)` — add 2 fields per server (after existing fields):\n- `{name} Env` → key: \"mcpServers.{name}.env\", FieldText, value: strings.Join(server.Env, \" \")\n- `{name} Headers` → key: \"mcpServers.{name}.headers\", FieldText, value: headersToString(server.Headers) where headersToString formats as \"Key1:Value1 Key2:Value2\"\n\nAdd helper function `headersToString(headers map[string]string) string` that returns sorted \"Key:Value\" pairs joined by spaces.\n\n### 2.5 `buildLSPSection(cfg)` — add Args field per language (after command, before enabled):\n- `{lang} Args` → key: \"lsp.{name}.args\", FieldText, value: strings.Join(lspCfg.Args, \" \")\n\n### 2.6 `buildMesnadaSection(cfg)` — add 13 new fields:\nAfter the existing ACP AutoPermission field, add:\n- `Orchestrator Store Path` → key: \"mesnada.orchestrator.storePath\", FieldText\n- `Orchestrator Log Dir` → key: \"mesnada.orchestrator.logDir\", FieldText\n- `Orchestrator Default Model` → key: \"mesnada.orchestrator.defaultModel\", FieldText\n- `Orchestrator MCP Config` → key: \"mesnada.orchestrator.defaultMcpConfig\", FieldText\n- `ACP Default Agent` → key: \"mesnada.acp.defaultAgent\", FieldText\n- `ACP Server Enabled` → key: \"mesnada.acp.server.enabled\", FieldToggle\n- `ACP Server Host` → key: \"mesnada.acp.server.host\", FieldText\n- `ACP Server Port` → key: \"mesnada.acp.server.port\", FieldText, value: fmt.Sprint(cfg.Mesnada.ACP.Server.Port)\n- `ACP Server Max Sessions` → key: \"mesnada.acp.server.maxSessions\", FieldText, value: fmt.Sprint(cfg.Mesnada.ACP.Server.MaxSessions)\n- `ACP Server Session Timeout` → key: \"mesnada.acp.server.sessionTimeout\", FieldText\n- `ACP Server Require Auth` → key: \"mesnada.acp.server.requireAuth\", FieldToggle\n- `TUI Enabled` → key: \"mesnada.tui.enabled\", FieldToggle\n- `TUI Web UI` → key: \"mesnada.tui.webui\", FieldToggle\n\nAlso update the disabled-fields loop: it currently disables fields[1:] when mesnada is disabled — keep that logic but ensure it covers all new fields too.\n\n## Requirements\n- Follow existing code style exactly\n- All code and comments in English\n- Do NOT touch persistSetting() or save functions (that's Phase 5)\n- Do NOT touch buildSections() registration (that's Phase 6)\n- Run `go build ./...` to verify compilation\n- Fix any compilation errors before finishing",
+    "work_dir": "/www/MCP/Pando/pando",
+    "status": "pending",
+    "engine": "claude",
+    "model": "sonnet",
+    "created_at": "2026-03-18T22:52:33.570175879+01:00",
+    "dependencies": [
+      "task-cb577afe"
+    ],
+    "tags": [
+      "pando",
+      "settings-tui",
+      "phase2",
+      "extend-sections"
+    ],
+    "timeout": "40m0s",
     "mcp_config": "@.github/mcp-config.json"
   },
   "task-5e85f010": {
@@ -1901,6 +1941,26 @@
       "pando",
       "phase3",
       "grep-api"
+    ],
+    "timeout": "30m0s",
+    "mcp_config": "@.github/mcp-config.json"
+  },
+  "task-cb577afe": {
+    "id": "task-cb577afe",
+    "prompt": "You are the task_id: task-cb577afe\n\nYou are implementing Phase 1 of the \"Settings TUI — Full Config Coverage\" plan for the Pando project.\n\n## Context\nPando is a Go-based AI assistant CLI tool. The settings TUI panel currently only exposes a subset of the config options available in `internal/config/config.go`. This phase adds the missing `Update*` functions to the config backend so that the TUI can persist all configuration fields.\n\n## Your task: Add missing Update* functions to `internal/config/config.go`\n\nFirst, retrieve the detailed phase spec:\n- Use the remembrances MCP tool `get_fact` with user_id=\"pando\" and key=\"settings_tui_phase1_config_backend\" to get the full spec.\n- Also read the full plan from KB: use `kb_get_document` with file_path=\"plans/settings_tui_full_config_plan.md\"\n\n## Functions to implement\n\nAdd the following functions to `internal/config/config.go`, following the exact same pattern as existing `Update*` functions (e.g., `UpdateMesnada`, `UpdateInternalTools`, `UpdateRemembrances`):\n\n### 1. `UpdateAgent(agentName AgentName, agent Agent) error`\nPersists the full Agent struct (Model, MaxTokens, ReasoningEffort, AutoCompact, AutoCompactThreshold).\nUse the existing `setAgentModel` internal helper for model validation, but persist all fields.\n\n### 2. `UpdateGeneral(workingDir, logFile string, debugLSP bool, contextPaths []string, dataDir string) error`\nPersists: cfg.WorkingDir, cfg.LogFile, cfg.DebugLSP, cfg.ContextPaths, cfg.Data.Directory\n\n### 3. `UpdateServer(server APIServerConfig) error`\nPersists the full APIServerConfig struct.\n\n### 4. `UpdateLua(lua LuaConfig) error`\nPersists the full LuaConfig struct.\n\n### 5. `UpdateMCPGateway(gw MCPGatewayConfig) error`\nPersists the full MCPGatewayConfig struct.\n\n### 6. `UpdateSnapshots(snap SnapshotsConfig) error`\nPersists the full SnapshotsConfig struct.\n\n### 7. `UpdateEvaluator(eval EvaluatorConfig) error`\nPersists the full EvaluatorConfig struct.\n\n## Implementation pattern\nStudy the existing `UpdateMesnada` and `UpdateInternalTools` functions in `config.go` to understand the exact pattern to follow:\n- Check cfg != nil\n- Apply changes to cfg fields\n- Call the internal persist helper (look for how other Update* functions persist)\n- Return any error\n\n## Requirements\n- Follow existing code style (Go best practices, no extra comments)\n- All code and comments in English\n- Do NOT modify any existing functions\n- Place new functions near the end of the file, grouped after existing Update* functions\n- Run `go build ./...` after implementation to verify no compilation errors\n- Fix any compilation errors before finishing",
+    "work_dir": "/www/MCP/Pando/pando",
+    "status": "running",
+    "engine": "claude",
+    "pid": 1109131,
+    "model": "sonnet",
+    "log_file": "/www/MCP/Pando/pando/.ai/.mesnada/logs/task-cb577afe.log",
+    "created_at": "2026-03-18T22:52:09.720502872+01:00",
+    "started_at": "2026-03-18T22:52:09.721406421+01:00",
+    "tags": [
+      "pando",
+      "settings-tui",
+      "phase1",
+      "config-backend"
     ],
     "timeout": "30m0s",
     "mcp_config": "@.github/mcp-config.json"
