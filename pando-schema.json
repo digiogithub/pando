@@ -397,6 +397,86 @@
       },
       "type": "object"
     },
+    "internalTools": {
+      "description": "Built-in tool integrations configuration",
+      "properties": {
+        "fetchEnabled": {
+          "default": true,
+          "description": "Enable the fetch/HTTP tool",
+          "type": "boolean"
+        },
+        "fetchMaxSizeMB": {
+          "default": 10,
+          "description": "Maximum response size in MB for the fetch tool",
+          "type": "integer"
+        },
+        "googleSearchEnabled": {
+          "default": true,
+          "description": "Enable Google Custom Search tool",
+          "type": "boolean"
+        },
+        "googleApiKey": {
+          "description": "Google Custom Search API key",
+          "type": "string"
+        },
+        "googleSearchEngineId": {
+          "description": "Google Custom Search Engine ID",
+          "type": "string"
+        },
+        "braveSearchEnabled": {
+          "default": true,
+          "description": "Enable Brave Search tool",
+          "type": "boolean"
+        },
+        "braveApiKey": {
+          "description": "Brave Search API key",
+          "type": "string"
+        },
+        "perplexitySearchEnabled": {
+          "default": true,
+          "description": "Enable Perplexity AI Search tool",
+          "type": "boolean"
+        },
+        "perplexityApiKey": {
+          "description": "Perplexity AI Search API key",
+          "type": "string"
+        },
+        "context7Enabled": {
+          "default": true,
+          "description": "Enable Context7 library docs tool",
+          "type": "boolean"
+        },
+        "browserEnabled": {
+          "default": false,
+          "description": "Enable browser automation tools (requires Chrome/Chromium in PATH)",
+          "type": "boolean"
+        },
+        "browserHeadless": {
+          "default": true,
+          "description": "Run browser in headless mode",
+          "type": "boolean"
+        },
+        "browserTimeout": {
+          "default": 30,
+          "description": "Default browser operation timeout in seconds",
+          "minimum": 5,
+          "maximum": 300,
+          "type": "integer"
+        },
+        "browserUserDataDir": {
+          "description": "Path to Chrome user data directory (optional, uses temp dir if empty)",
+          "type": "string"
+        },
+        "browserMaxSessions": {
+          "default": 3,
+          "description": "Maximum number of concurrent browser sessions",
+          "minimum": 1,
+          "maximum": 10,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "wd": {
       "description": "Working directory for the application",
       "type": "string"

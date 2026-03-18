@@ -85,7 +85,9 @@ TIPS:
 - For faster, more targeted searches, first use Glob to find relevant files, then use Grep
 - Use output_mode=content with context=3 to get surrounding code for better understanding
 - Use output_mode=count to quickly gauge how widespread a pattern is
-- Use type instead of include when searching by language for cleaner syntax`
+- Use type instead of include when searching by language for cleaner syntax
+- Responses with more than 300 lines are automatically cached in session memory
+- Use cache_read with the returned cache_id to access additional pages of cached results`
 )
 
 func NewGrepTool() BaseTool {
