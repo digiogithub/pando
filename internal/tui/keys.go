@@ -137,12 +137,12 @@ func DefaultKeyMap() KeyMap {
 				key.WithHelp("ctrl+t", "switch theme"),
 			),
 			ToggleTerminal: key.NewBinding(
-				key.WithKeys("ctrl+shift+t"),
-				key.WithHelp("ctrl+shift+t", "terminal: open/focus/unfocus"),
+				key.WithKeys("ctrl+`", "ctrl+alt+t"),
+				key.WithHelp("ctrl+` / ctrl+alt+t", "terminal: open/focus/unfocus"),
 			),
 			NewTerminal: key.NewBinding(
-				key.WithKeys("ctrl+alt+t"),
-				key.WithHelp("ctrl+alt+t", "new terminal tab"),
+				key.WithKeys("ctrl+shift+alt+t"),
+				key.WithHelp("ctrl+shift+alt+t", "new terminal tab"),
 			),
 		},
 		Chat: ChatKeys{
