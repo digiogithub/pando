@@ -139,38 +139,51 @@ func (b *mcpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolRes
 		return tools.NewTextErrorResponse("permission denied"), nil
 	}
 
+	var response tools.ToolResponse
+	var err error
+
 	switch b.mcpConfig.Type {
 	case config.MCPStdio:
-		c, err := client.NewStdioMCPClient(
+		c, cerr := client.NewStdioMCPClient(
 			b.mcpConfig.Command,
 			b.mcpConfig.Env,
 			b.mcpConfig.Args...,
 		)
-		if err != nil {
-			return tools.NewTextErrorResponse(err.Error()), nil
+		if cerr != nil {
+			return tools.NewTextErrorResponse(cerr.Error()), nil
 		}
-		return runTool(ctx, c, b.mcpName, b.tool.Name, params.Input)
+		response, err = runTool(ctx, c, b.mcpName, b.tool.Name, params.Input)
 	case config.MCPSse:
-		c, err := client.NewSSEMCPClient(
+		c, cerr := client.NewSSEMCPClient(
 			b.mcpConfig.URL,
 			client.WithHeaders(b.mcpConfig.Headers),
 		)
-		if err != nil {
-			return tools.NewTextErrorResponse(err.Error()), nil
+		if cerr != nil {
+			return tools.NewTextErrorResponse(cerr.Error()), nil
 		}
-		return runTool(ctx, c, b.mcpName, b.tool.Name, params.Input)
+		response, err = runTool(ctx, c, b.mcpName, b.tool.Name, params.Input)
 	case config.MCPStreamableHTTP:
-		c, err := client.NewStreamableHttpClient(
+		c, cerr := client.NewStreamableHttpClient(
 			b.mcpConfig.URL,
 			transport.WithHTTPHeaders(b.mcpConfig.Headers),
 		)
-		if err != nil {
-			return tools.NewTextErrorResponse(err.Error()), nil
+		if cerr != nil {
+			return tools.NewTextErrorResponse(cerr.Error()), nil
 		}
-		return runTool(ctx, c, b.mcpName, b.tool.Name, params.Input)
+		response, err = runTool(ctx, c, b.mcpName, b.tool.Name, params.Input)
+	default:
+		return tools.NewTextErrorResponse("invalid mcp type"), nil
 	}
 
-	return tools.NewTextErrorResponse("invalid mcp type"), nil
+	if err != nil {
+		return response, err
+	}
+
+	// Auto-cache large MCP tool responses (interception runs after Lua filters applied in runTool).
+	if cache := tools.GetSessionCache(ctx); cache != nil {
+		response = tools.InterceptToolResponse(cache, params.ID, b.Info().Name, response)
+	}
+	return response, nil
 }
 
 func NewMcpTool(name string, tool mcp.Tool, permissions permission.Service, mcpConfig config.MCPServer) tools.BaseTool {
