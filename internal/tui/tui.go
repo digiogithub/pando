@@ -641,15 +641,19 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, cmd
 		}
 
-		// Ctrl+Shift+T: open/show terminal and focus, or unfocus if already focused.
-		// Handled before terminal input routing so it always works.
+		// Ctrl+Alt+Y: show/hide terminal panel.
 		if key.Matches(msg, a.keys.Global.ToggleTerminal) {
 			return a, a.toggleTerminalPanel()
 		}
 
-		// Ctrl+Alt+T: open a new terminal tab (panel becomes visible and focused).
+		// Ctrl+Y: open a new terminal tab (panel becomes visible and focused).
 		if key.Matches(msg, a.keys.Global.NewTerminal) {
 			return a, a.openNewTerminalTab()
+		}
+
+		// Ctrl+Shift+Y: cycle to next terminal tab.
+		if key.Matches(msg, a.keys.Global.NextTerminal) {
+			return a, a.nextTerminalTab()
 		}
 
 		// When terminal is focused, route all key input to the terminal panel.
@@ -815,6 +819,10 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Forward all non-key messages to the terminal panel (e.g. tick msgs).
 		if a.terminalPanel.IsVisible() {
+			logging.Debug("tui.Update default: forwarding to terminal panel",
+				"msg_type", fmt.Sprintf("%T", msg),
+				"terminalFocused", a.terminalFocused,
+				"has_terminals", a.terminalPanel.HasTerminals())
 			newPanel, panelCmd := a.terminalPanel.Update(msg)
 			a.terminalPanel = newPanel
 			cmds = append(cmds, panelCmd)
@@ -979,10 +987,21 @@ func (a *appModel) setTerminalFocus(focused bool) tea.Cmd {
 	}
 }
 
-// toggleTerminalPanel implements Ctrl+Shift+T behaviour:
-//   - No terminals OR panel hidden → open/show terminal + focus it
-//   - Panel visible + not focused   → focus terminal
-//   - Panel visible + focused        → blur (return focus to chat)
+// triggerResize emits a synthetic WindowSizeMsg so all components re-layout
+// after the terminal panel is shown or hidden.
+func (a *appModel) triggerResize() tea.Cmd {
+	w := a.width
+	h := a.height + 1 // +1 because the handler subtracts 1 for the status bar
+	return func() tea.Msg {
+		return tea.WindowSizeMsg{Width: w, Height: h}
+	}
+}
+
+// toggleTerminalPanel implements Ctrl+Alt+Y behaviour:
+//   - No terminals: open terminal, show panel, give focus
+//   - Panel visible + focused: blur (return focus to chat)
+//   - Panel visible + not focused: focus terminal
+//   - Panel hidden: show panel, don't auto-focus
 func (a *appModel) toggleTerminalPanel() tea.Cmd {
 	logging.Info("tui: toggle-terminal invoked",
 		"panel_visible", a.terminalPanel.IsVisible(),
@@ -992,21 +1011,29 @@ func (a *appModel) toggleTerminalPanel() tea.Cmd {
 
 	// Open a new terminal if none exist yet.
 	if !a.terminalPanel.HasTerminals() {
+		logging.Info("tui: opening first terminal",
+			"panel_width", a.width, "panel_height", a.height)
 		initCmd := a.terminalPanel.OpenNewTerminal()
-		return tea.Batch(initCmd, a.setTerminalFocus(true))
+		if initCmd == nil {
+			logging.Error("tui: OpenNewTerminal returned nil initCmd — terminal creation failed")
+			return nil
+		}
+		return tea.Batch(initCmd, a.setTerminalFocus(true), a.triggerResize())
 	}
 
-	// Show panel if hidden, then focus.
+	// Show panel if hidden.
 	if !a.terminalPanel.IsVisible() {
 		a.terminalPanel.Show()
-		return a.setTerminalFocus(true)
+		return a.triggerResize()
 	}
 
 	// Panel visible: toggle focus.
 	if a.terminalFocused {
-		return a.setTerminalFocus(false) // return focus to chat
+		return tea.Batch(a.setTerminalFocus(false), a.triggerResize())
 	}
-	return a.setTerminalFocus(true)
+	// Panel visible but not focused: hide panel.
+	a.terminalPanel.Toggle()
+	return tea.Batch(a.setTerminalFocus(false), a.triggerResize())
 }
 
 // openNewTerminalTab opens a new terminal tab, makes the panel visible and focuses it.
@@ -1016,7 +1043,19 @@ func (a *appModel) openNewTerminalTab() tea.Cmd {
 		"tab_count", a.terminalPanel.HasTerminals(),
 	)
 	initCmd := a.terminalPanel.OpenNewTerminal()
-	return tea.Batch(initCmd, a.setTerminalFocus(true))
+	return tea.Batch(initCmd, a.setTerminalFocus(true), a.triggerResize())
+}
+
+// nextTerminalTab cycles to the next terminal tab, showing the panel and focusing it.
+func (a *appModel) nextTerminalTab() tea.Cmd {
+	if !a.terminalPanel.HasTerminals() {
+		return nil
+	}
+	a.terminalPanel.NextTab()
+	if !a.terminalPanel.IsVisible() {
+		a.terminalPanel.Show()
+	}
+	return tea.Batch(a.setTerminalFocus(true), a.triggerResize())
 }
 
 func (a *appModel) findCommand(id string) (dialog.Command, bool) {
@@ -1471,12 +1510,42 @@ func (a appModel) View() string {
 }
 
 func (a *appModel) handleMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
-	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
-		return nil, false
-	}
 	if a.showQuit || a.showPermissions || a.showSessionDialog || a.showCommandDialog ||
 		a.showModelDialog || a.showInitDialog || a.showFilepicker || a.showThemeDialog ||
 		a.showMultiArgumentsDialog {
+		return nil, false
+	}
+
+	// Mouse wheel: forward to terminal panel for scrollback.
+	if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+		if a.terminalPanel.IsVisible() && a.terminalPanel.HasTerminals() &&
+			tuizone.InBounds(tuizone.TerminalPanel, msg) {
+			newPanel, panelCmd := a.terminalPanel.Update(msg)
+			a.terminalPanel = newPanel
+			return panelCmd, true
+		}
+		return nil, false
+	}
+
+	// Middle-click: close terminal tab.
+	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonMiddle {
+		if a.terminalPanel.IsVisible() {
+			for i := 0; i < a.terminalPanel.TabCount(); i++ {
+				if tuizone.InBounds(tuizone.TerminalTabID(i), msg) {
+					a.terminalPanel.CloseTabAt(i)
+					if !a.terminalPanel.HasTerminals() {
+						a.terminalFocused = false
+						a.terminalPanel.Blur()
+					}
+					logging.Debug("tui: middle-click closed terminal tab", "idx", i)
+					return a.triggerResize(), true
+				}
+			}
+		}
+		return nil, false
+	}
+
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
 		return nil, false
 	}
 
@@ -1492,7 +1561,20 @@ func (a *appModel) handleMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
 		return a.openModelDialog(), true
 	}
 
-	// Click on the terminal panel → give focus to terminal.
+	// Left-click on a terminal tab → switch to that tab and focus.
+	if a.terminalPanel.IsVisible() {
+		for i := 0; i < a.terminalPanel.TabCount(); i++ {
+			if tuizone.InBounds(tuizone.TerminalTabID(i), msg) {
+				a.terminalPanel.SetActiveTab(i)
+				a.terminalFocused = true
+				a.terminalPanel.Focus()
+				logging.Debug("tui: left-click on terminal tab → switch and focus", "idx", i)
+				return nil, true
+			}
+		}
+	}
+
+	// Left-click on the terminal body → give focus to terminal.
 	if a.terminalPanel.IsVisible() && a.terminalPanel.HasTerminals() &&
 		tuizone.InBounds(tuizone.TerminalPanel, msg) {
 		if !a.terminalFocused {
@@ -1503,12 +1585,15 @@ func (a *appModel) handleMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
 		return nil, true
 	}
 
-	// Click on the chat viewport → return focus to chat (blur terminal).
-	if a.terminalFocused && tuizone.InBounds(tuizone.ChatViewport, msg) {
-		a.terminalFocused = false
-		a.terminalPanel.Blur()
-		logging.Debug("tui: mouse click on chat panel → blur terminal")
-		return nil, true
+	// Left-click on the chat viewport → return focus to chat (blur terminal).
+	// Return handled=false so the click propagates to the chat page.
+	if tuizone.InBounds(tuizone.ChatViewport, msg) {
+		if a.terminalFocused {
+			a.terminalFocused = false
+			a.terminalPanel.Blur()
+			logging.Debug("tui: mouse click on chat panel → blur terminal")
+		}
+		return nil, false
 	}
 
 	return nil, false
