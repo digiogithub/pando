@@ -8,7 +8,7 @@ AutoCompact = true
 [Data]
 Directory = './.pando/data'
 
-#[MCPServers]
+[MCPServers]
 # [MCPServers.hyper-mcp]
 # Command = 'hyper-mcp'
 # Env = []
@@ -23,12 +23,12 @@ Directory = './.pando/data'
 # Type = 'streamable-http'
 # URL = 'http://127.0.0.1:9767/mcp'
 
-# [MCPServers.remembrances]
-# Command = ''
-# Env = []
-# Args = []
-# Type = 'streamable-http'
-# URL = 'http://127.0.0.1:4030/mcp'
+[MCPServers.remembrances]
+Command = ''
+Env = []
+Args = []
+Type = 'streamable-http'
+URL = 'http://127.0.0.1:4030/mcp'
 
 [LSP]
 [LSP.gopls]
@@ -118,3 +118,8 @@ IndexWorkers = 4
 # PerplexitySearchEnabled = true
 # PerplexityApiKey = ''
 # Context7Enabled = true
+# BrowserEnabled = false
+# BrowserHeadless = true
+# BrowserTimeout = 30
+# BrowserUserDataDir = ''
+# BrowserMaxSessions = 3

@@ -45,6 +45,20 @@ func CoderAgentTools(
 		if it.Context7Enabled {
 			otherTools = append(otherTools, tools.NewContext7Tools()...)
 		}
+		if it.BrowserEnabled {
+			otherTools = append(otherTools,
+				tools.NewBrowserNavigateTool(),
+				tools.NewBrowserScreenshotTool(),
+				tools.NewBrowserGetContentTool(),
+				tools.NewBrowserEvaluateTool(),
+				tools.NewBrowserClickTool(),
+				tools.NewBrowserFillTool(),
+				tools.NewBrowserScrollTool(),
+				tools.NewBrowserConsoleLogsTool(),
+				tools.NewBrowserNetworkTool(),
+				tools.NewBrowserPDFTool(),
+			)
+		}
 	}
 	return append(
 		[]tools.BaseTool{
@@ -56,6 +70,8 @@ func CoderAgentTools(
 			tools.NewLsTool(),
 			tools.NewSourcegraphTool(),
 			tools.NewViewTool(lspClients),
+			tools.NewCacheReadTool(),
+			tools.NewCacheStatsTool(),
 			tools.NewPatchTool(lspClients, permissions, history),
 			tools.NewWriteTool(lspClients, permissions, history),
 			NewAgentTool(sessions, messages, lspClients, skillManager),
@@ -90,6 +106,8 @@ func CoderAgentToolsWithMesnada(
 				tools.NewLsTool(),
 				tools.NewSourcegraphTool(),
 				tools.NewViewTool(lspClients),
+				tools.NewCacheReadTool(),
+				tools.NewCacheStatsTool(),
 				tools.NewPatchTool(lspClients, permissions, history),
 				tools.NewWriteTool(lspClients, permissions, history),
 				NewAgentTool(sessions, messages, lspClients, skillManager),
@@ -123,6 +141,20 @@ func CoderAgentToolsWithMesnada(
 		}
 		if it.Context7Enabled {
 			baseTools = append(baseTools, tools.NewContext7Tools()...)
+		}
+		if it.BrowserEnabled {
+			baseTools = append(baseTools,
+				tools.NewBrowserNavigateTool(),
+				tools.NewBrowserScreenshotTool(),
+				tools.NewBrowserGetContentTool(),
+				tools.NewBrowserEvaluateTool(),
+				tools.NewBrowserClickTool(),
+				tools.NewBrowserFillTool(),
+				tools.NewBrowserScrollTool(),
+				tools.NewBrowserConsoleLogsTool(),
+				tools.NewBrowserNetworkTool(),
+				tools.NewBrowserPDFTool(),
+			)
 		}
 	}
 	if mesnadaOrchestrator != nil {
@@ -164,5 +196,6 @@ func TaskAgentTools(lspClients map[string]*lsp.Client) []tools.BaseTool {
 		tools.NewLsTool(),
 		tools.NewSourcegraphTool(),
 		tools.NewViewTool(lspClients),
+		tools.NewCacheReadTool(),
 	}
 }
