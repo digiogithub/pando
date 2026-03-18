@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	tuistyles "github.com/digiogithub/pando/internal/tui/styles"
 	tuitheme "github.com/digiogithub/pando/internal/tui/theme"
+	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 )
 
 const (
@@ -202,9 +203,9 @@ func (t *TerminalTabBar) renderedTabs(styles termTabStyles) []string {
 		parts = append(parts, label)
 		content := strings.Join(parts, " ")
 		if idx == t.activeIdx {
-			rendered[idx] = styles.Active.Render(content)
+			rendered[idx] = tuizone.MarkTerminalTab(idx, styles.Active.Render(content))
 		} else {
-			rendered[idx] = styles.Inactive.Render(content)
+			rendered[idx] = tuizone.MarkTerminalTab(idx, styles.Inactive.Render(content))
 		}
 	}
 	return rendered

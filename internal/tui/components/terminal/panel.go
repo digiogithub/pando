@@ -16,6 +16,10 @@ import (
 const (
 	// tabBarHeight is the fixed height of the terminal tab bar row.
 	tabBarHeight = 1
+	// separatorHeight is the fixed height of the separator line between tab bar and body.
+	separatorHeight = 1
+	// borderHeight is the height consumed by the panelStyle top border.
+	borderHeight = 1
 	// terminalHeightRatio is the fraction of total screen height for the panel.
 	terminalHeightRatio = 0.40
 )
@@ -119,14 +123,38 @@ func (p *TerminalPanel) HasTerminals() bool {
 	return p.tabBar.Count() > 0
 }
 
+// TabCount returns the number of open terminal tabs.
+func (p *TerminalPanel) TabCount() int {
+	return p.tabBar.Count()
+}
+
+// CloseTabAt closes the terminal tab at the given index.
+func (p *TerminalPanel) CloseTabAt(idx int) {
+	p.tabBar.CloseTab(idx)
+}
+
+// NextTab switches to the next terminal tab.
+func (p *TerminalPanel) NextTab() {
+	p.tabBar.NextTab()
+}
+
+// SetActiveTab switches directly to the tab at the given index.
+func (p *TerminalPanel) SetActiveTab(idx int) {
+	if idx >= 0 && idx < p.tabBar.Count() {
+		p.tabBar.activeIdx = idx
+		p.tabBar.ensureActiveVisible()
+	}
+}
+
 // SetSize sets the total available width and the full-screen height so the
 // panel can compute its own height as ~40 % of the screen.
 // All open terminals are resized, not just the active one.
 func (p *TerminalPanel) SetSize(totalWidth, totalHeight int) tea.Cmd {
 	p.width = totalWidth
 	p.height = int(float64(totalHeight) * terminalHeightRatio)
-	if p.height < tabBarHeight+2 {
-		p.height = tabBarHeight + 2
+	minHeight := tabBarHeight + separatorHeight + borderHeight + 2 // +2 for min body
+	if p.height < minHeight {
+		p.height = minHeight
 	}
 
 	p.tabBar.SetWidth(totalWidth)
@@ -154,8 +182,9 @@ func (p *TerminalPanel) PanelHeight() int {
 }
 
 // terminalBodyHeight is the height available for terminal output (below tabs).
+// It subtracts: tabBar (1) + separator (1) + panelStyle top border (1).
 func (p *TerminalPanel) terminalBodyHeight() int {
-	h := p.height - tabBarHeight
+	h := p.height - tabBarHeight - separatorHeight - borderHeight
 	if h < 2 {
 		return 2
 	}
@@ -164,7 +193,13 @@ func (p *TerminalPanel) terminalBodyHeight() int {
 
 // Update propagates Bubble Tea messages to the active terminal and the tab bar.
 func (p *TerminalPanel) Update(msg tea.Msg) (*TerminalPanel, tea.Cmd) {
-	logging.Debug("TerminalPanel.Update", "msg_type", fmt.Sprintf("%T", msg), "focused", p.focused, "visible", p.visible, "tabs", p.tabBar.Count())
+	isTick := false
+	if _, ok := msg.(terminalTickMsg); ok {
+		isTick = true
+	}
+	if !isTick {
+		logging.Debug("TerminalPanel.Update", "msg_type", fmt.Sprintf("%T", msg), "focused", p.focused, "visible", p.visible, "tabs", p.tabBar.Count())
+	}
 	var cmds []tea.Cmd
 
 	// Let the tab bar handle tab-switching / close keybindings only when focused.
@@ -179,7 +214,13 @@ func (p *TerminalPanel) Update(msg tea.Msg) (*TerminalPanel, tea.Cmd) {
 	// Propagate message to the active terminal.
 	if term := p.tabBar.ActiveTerminal(); term != nil {
 		var cmd tea.Cmd
-		if p.focused {
+		// Determine if this message should be forwarded to the terminal even when unfocused.
+		isTickMsg := func() bool { _, ok := msg.(terminalTickMsg); return ok }
+		isWheelMsg := func() bool {
+			m, ok := msg.(tea.MouseMsg)
+			return ok && (m.Button == tea.MouseButtonWheelUp || m.Button == tea.MouseButtonWheelDown)
+		}
+		if p.focused || isTickMsg() || isWheelMsg() {
 			updatedModel, c := term.Update(msg)
 			// Update back into the tab slot.
 			if idx := p.tabBar.activeIdx; idx >= 0 && idx < len(p.tabBar.tabs) {
@@ -187,18 +228,10 @@ func (p *TerminalPanel) Update(msg tea.Msg) (*TerminalPanel, tea.Cmd) {
 				p.tabBar.tabs[idx].Running = updatedModel.(TerminalComponent).IsRunning()
 			}
 			cmd = c
-		} else {
-			// Still need tick messages even when unfocused.
-			if _, ok := msg.(terminalTickMsg); ok {
-				updatedModel, c := term.Update(msg)
-				if idx := p.tabBar.activeIdx; idx >= 0 && idx < len(p.tabBar.tabs) {
-					p.tabBar.tabs[idx].Terminal = updatedModel.(TerminalComponent)
-					p.tabBar.tabs[idx].Running = updatedModel.(TerminalComponent).IsRunning()
-				}
-				cmd = c
-			}
 		}
 		cmds = append(cmds, cmd)
+	} else {
+		logging.Debug("TerminalPanel.Update: no active terminal", "tabs", p.tabBar.Count(), "activeIdx", p.tabBar.activeIdx)
 	}
 
 	return p, tea.Batch(cmds...)
@@ -209,6 +242,11 @@ func (p *TerminalPanel) View() string {
 	if !p.visible {
 		return ""
 	}
+
+	logging.Debug("TerminalPanel.View: rendering",
+		"width", p.width, "height", p.height,
+		"bodyH", p.terminalBodyHeight(),
+		"focused", p.focused, "tabs", p.tabBar.Count())
 
 	th := tuitheme.CurrentTheme()
 	base := tuistyles.BaseStyle()
@@ -222,19 +260,20 @@ func (p *TerminalPanel) View() string {
 	if focused {
 		borderColor = th.BorderFocused()
 	}
-	separatorChar := "─"
-	separatorLine := strings.Repeat(separatorChar, p.width)
+	separatorLine := strings.Repeat("─", p.width)
 	separator := base.
 		Width(p.width).
 		Foreground(borderColor).
-		Render(lipgloss.NewStyle().Width(p.width).Foreground(borderColor).Render(separatorLine))
+		Render(separatorLine)
 
 	// Terminal body.
 	bodyH := p.terminalBodyHeight()
 	bodyW := p.width
 	var bodyView string
 	if term := p.tabBar.ActiveTerminal(); term != nil {
+		logging.Debug("TerminalPanel.View: calling term.View()")
 		bodyView = term.View()
+		logging.Debug("TerminalPanel.View: term.View() returned", "bodyView_len", len(bodyView))
 	} else {
 		bodyView = lipgloss.NewStyle().
 			Width(bodyW).
