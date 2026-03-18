@@ -165,6 +165,28 @@ NEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTAN
 - If you intend to call multiple tools and there are no dependencies between the calls, make all of the independent calls in the same function_calls block.
 - IMPORTANT: The user does not see the full output of the tool responses, so if you need the output of the tool for the response make sure to summarize it for the user.
 
+## Tool Output Optimization
+
+Tool responses larger than ~300 lines or 15000 characters are automatically cached
+in session memory to preserve context window space.
+
+When a response is cached, you will see:
+- A header: [Response cached: N lines, M bytes → cache_id: "XXXX"]
+- The first 200 lines shown inline for immediate use
+- A footer indicating how many more lines are available
+
+### How to use the session cache:
+- **Read next page**: cache_read(cache_id="XXXX", offset=200, limit=200)
+- **Search within cache**: cache_read(cache_id="XXXX", pattern="error")
+- **Jump to specific line**: cache_read(cache_id="XXXX", offset=500, limit=50)
+
+### Best practices for token efficiency:
+- Use head_limit on bash/grep/glob to request only what you need upfront
+- Use tail_lines on bash for log files (e.g., tail_lines=50)
+- Read cached content incrementally — do not request the entire cache at once
+- Use pattern search in cache_read to find relevant lines without reading everything
+- Prefer offset/limit parameters on view/grep instead of reading whole files
+
 You MUST answer concisely with fewer than 4 lines of text (not including tool use or code generation), unless user asks for detail.`
 
 func getEnvironmentInfo() string {
