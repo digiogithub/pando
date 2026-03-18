@@ -815,6 +815,10 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Forward all non-key messages to the terminal panel (e.g. tick msgs).
 		if a.terminalPanel.IsVisible() {
+			logging.Debug("tui.Update default: forwarding to terminal panel",
+				"msg_type", fmt.Sprintf("%T", msg),
+				"terminalFocused", a.terminalFocused,
+				"has_terminals", a.terminalPanel.HasTerminals())
 			newPanel, panelCmd := a.terminalPanel.Update(msg)
 			a.terminalPanel = newPanel
 			cmds = append(cmds, panelCmd)
@@ -979,10 +983,11 @@ func (a *appModel) setTerminalFocus(focused bool) tea.Cmd {
 	}
 }
 
-// toggleTerminalPanel implements Ctrl+Shift+T behaviour:
-//   - No terminals OR panel hidden → open/show terminal + focus it
-//   - Panel visible + not focused   → focus terminal
-//   - Panel visible + focused        → blur (return focus to chat)
+// toggleTerminalPanel implements Ctrl+`/Ctrl+Alt+T behaviour:
+//   - No terminals: open terminal, show panel, DON'T auto-focus (press again to focus)
+//   - Panel hidden: show panel, DON'T auto-focus
+//   - Panel visible + not focused: focus terminal
+//   - Panel visible + focused: blur (return focus to chat)
 func (a *appModel) toggleTerminalPanel() tea.Cmd {
 	logging.Info("tui: toggle-terminal invoked",
 		"panel_visible", a.terminalPanel.IsVisible(),
@@ -990,16 +995,24 @@ func (a *appModel) toggleTerminalPanel() tea.Cmd {
 		"focused", a.terminalFocused,
 	)
 
-	// Open a new terminal if none exist yet.
+	// Open a new terminal if none exist yet — show but do NOT auto-focus.
+	// User can press the key again to focus it.
 	if !a.terminalPanel.HasTerminals() {
+		logging.Info("tui: opening first terminal",
+			"panel_width", a.width, "panel_height", a.height)
 		initCmd := a.terminalPanel.OpenNewTerminal()
-		return tea.Batch(initCmd, a.setTerminalFocus(true))
+		if initCmd == nil {
+			logging.Error("tui: OpenNewTerminal returned nil initCmd — terminal creation failed")
+			return nil
+		}
+		logging.Info("tui: terminal opened (not focused — press key again to focus)")
+		return initCmd
 	}
 
-	// Show panel if hidden, then focus.
+	// Show panel if hidden without focusing.
 	if !a.terminalPanel.IsVisible() {
 		a.terminalPanel.Show()
-		return a.setTerminalFocus(true)
+		return nil
 	}
 
 	// Panel visible: toggle focus.
