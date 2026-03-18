@@ -207,6 +207,13 @@ type InternalToolsConfig struct {
 
 	// Context7 library docs (no API key required)
 	Context7Enabled bool `json:"context7Enabled,omitempty"`
+
+	// Browser automation (chromedp)
+	BrowserEnabled     bool   `json:"browserEnabled,omitempty" toml:"BrowserEnabled"`
+	BrowserHeadless    bool   `json:"browserHeadless,omitempty" toml:"BrowserHeadless"`
+	BrowserTimeout     int    `json:"browserTimeout,omitempty" toml:"BrowserTimeout"`
+	BrowserUserDataDir string `json:"browserUserDataDir,omitempty" toml:"BrowserUserDataDir"`
+	BrowserMaxSessions int    `json:"browserMaxSessions,omitempty" toml:"BrowserMaxSessions"`
 }
 
 // LuaConfig defines configuration for the Lua scripting engine.
