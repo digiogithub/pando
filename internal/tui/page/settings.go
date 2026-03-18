@@ -725,6 +725,44 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 			Type:  settings.FieldToggle,
 			Value: boolString(it.Context7Enabled),
 		},
+		// --- Browser Automation ---
+		{
+			Label: "Browser Enabled",
+			Key:   "internalTools.browserEnabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(it.BrowserEnabled),
+		},
+		{
+			Label: "Browser Headless",
+			Key:   "internalTools.browserHeadless",
+			Type:  settings.FieldToggle,
+			Value: boolString(it.BrowserHeadless),
+		},
+		{
+			Label: "Browser Timeout (s)",
+			Key:   "internalTools.browserTimeout",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(it.BrowserTimeout),
+		},
+		{
+			Label: "Browser User Data Dir",
+			Key:   "internalTools.browserUserDataDir",
+			Type:  settings.FieldText,
+			Value: it.BrowserUserDataDir,
+		},
+		{
+			Label: "Browser Max Sessions",
+			Key:   "internalTools.browserMaxSessions",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(it.BrowserMaxSessions),
+		},
+		{
+			Label:    "Browser Info",
+			Key:      "internalTools.browserInfo",
+			Type:     settings.FieldText,
+			Value:    "Requires Chrome/Chromium in PATH. Tools: navigate, screenshot, get_content, evaluate, click, fill, scroll, console_logs, network, pdf",
+			ReadOnly: true,
+		},
 		{
 			Label:    "Info",
 			Key:      "internalTools.info",
