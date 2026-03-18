@@ -32,6 +32,11 @@ const (
 
 	// Self-improvement hooks
 	HookEvaluationComplete HookType = "hook_evaluation_complete"
+
+	// Cache lifecycle hooks
+	HookCacheStore HookType = "hook_cache_store" // fired when a tool response is auto-cached
+	HookCacheEvict HookType = "hook_cache_evict" // fired when an entry is LRU-evicted
+	HookCacheClear HookType = "hook_cache_clear" // fired when the session cache is cleared
 )
 
 // HookContext contains the context information passed to Lua filter functions.
