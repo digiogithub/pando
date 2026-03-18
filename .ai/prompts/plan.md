@@ -1,0 +1,1 @@
+Genera un plan de implementación dividido en fases, el detalle de cada fase guárdalo en una fact de remembrances y el plan completo guárdalo en kb de remembrances indicando en cada fase el identificador de la fact que contiene el detalle de esa fase

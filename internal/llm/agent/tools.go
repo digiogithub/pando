@@ -56,6 +56,8 @@ func CoderAgentTools(
 			tools.NewLsTool(),
 			tools.NewSourcegraphTool(),
 			tools.NewViewTool(lspClients),
+			tools.NewCacheReadTool(),
+			tools.NewCacheStatsTool(),
 			tools.NewPatchTool(lspClients, permissions, history),
 			tools.NewWriteTool(lspClients, permissions, history),
 			NewAgentTool(sessions, messages, lspClients, skillManager),
@@ -90,6 +92,8 @@ func CoderAgentToolsWithMesnada(
 				tools.NewLsTool(),
 				tools.NewSourcegraphTool(),
 				tools.NewViewTool(lspClients),
+				tools.NewCacheReadTool(),
+				tools.NewCacheStatsTool(),
 				tools.NewPatchTool(lspClients, permissions, history),
 				tools.NewWriteTool(lspClients, permissions, history),
 				NewAgentTool(sessions, messages, lspClients, skillManager),
@@ -164,5 +168,6 @@ func TaskAgentTools(lspClients map[string]*lsp.Client) []tools.BaseTool {
 		tools.NewLsTool(),
 		tools.NewSourcegraphTool(),
 		tools.NewViewTool(lspClients),
+		tools.NewCacheReadTool(),
 	}
 }
