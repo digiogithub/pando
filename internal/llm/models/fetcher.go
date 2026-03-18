@@ -13,10 +13,11 @@ import (
 
 // FetchedModel represents a model returned by a provider's API
 type FetchedModel struct {
-	ID          string `json:"id"`
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
-	Created     int64  `json:"created,omitempty"`
+	ID            string `json:"id"`
+	Name          string `json:"name,omitempty"`
+	Description   string `json:"description,omitempty"`
+	Created       int64  `json:"created,omitempty"`
+	ContextWindow int64  `json:"context_window,omitempty"`
 }
 
 // FetchModelsFromProvider queries a provider's API for available models
@@ -338,8 +339,9 @@ func fetchGroqModels(ctx context.Context, apiKey string) ([]FetchedModel, error)
 	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
 		var response struct {
 			Data []struct {
-				ID      string `json:"id"`
-				Created int64  `json:"created"`
+				ID            string `json:"id"`
+				Created       int64  `json:"created"`
+				ContextWindow int64  `json:"context_window"`
 			} `json:"data"`
 		}
 		if err := json.Unmarshal(body, &response); err != nil {
@@ -348,9 +350,10 @@ func fetchGroqModels(ctx context.Context, apiKey string) ([]FetchedModel, error)
 		result := make([]FetchedModel, 0, len(response.Data))
 		for _, m := range response.Data {
 			result = append(result, FetchedModel{
-				ID:      m.ID,
-				Name:    m.ID,
-				Created: m.Created,
+				ID:            m.ID,
+				Name:          m.ID,
+				Created:       m.Created,
+				ContextWindow: m.ContextWindow,
 			})
 		}
 		return result, nil
