@@ -16,6 +16,10 @@ import (
 const (
 	// tabBarHeight is the fixed height of the terminal tab bar row.
 	tabBarHeight = 1
+	// separatorHeight is the fixed height of the separator line between tab bar and body.
+	separatorHeight = 1
+	// borderHeight is the height consumed by the panelStyle top border.
+	borderHeight = 1
 	// terminalHeightRatio is the fraction of total screen height for the panel.
 	terminalHeightRatio = 0.40
 )
@@ -125,8 +129,9 @@ func (p *TerminalPanel) HasTerminals() bool {
 func (p *TerminalPanel) SetSize(totalWidth, totalHeight int) tea.Cmd {
 	p.width = totalWidth
 	p.height = int(float64(totalHeight) * terminalHeightRatio)
-	if p.height < tabBarHeight+2 {
-		p.height = tabBarHeight + 2
+	minHeight := tabBarHeight + separatorHeight + borderHeight + 2 // +2 for min body
+	if p.height < minHeight {
+		p.height = minHeight
 	}
 
 	p.tabBar.SetWidth(totalWidth)
@@ -154,8 +159,9 @@ func (p *TerminalPanel) PanelHeight() int {
 }
 
 // terminalBodyHeight is the height available for terminal output (below tabs).
+// It subtracts: tabBar (1) + separator (1) + panelStyle top border (1).
 func (p *TerminalPanel) terminalBodyHeight() int {
-	h := p.height - tabBarHeight
+	h := p.height - tabBarHeight - separatorHeight - borderHeight
 	if h < 2 {
 		return 2
 	}
@@ -164,7 +170,13 @@ func (p *TerminalPanel) terminalBodyHeight() int {
 
 // Update propagates Bubble Tea messages to the active terminal and the tab bar.
 func (p *TerminalPanel) Update(msg tea.Msg) (*TerminalPanel, tea.Cmd) {
-	logging.Debug("TerminalPanel.Update", "msg_type", fmt.Sprintf("%T", msg), "focused", p.focused, "visible", p.visible, "tabs", p.tabBar.Count())
+	isTick := false
+	if _, ok := msg.(terminalTickMsg); ok {
+		isTick = true
+	}
+	if !isTick {
+		logging.Debug("TerminalPanel.Update", "msg_type", fmt.Sprintf("%T", msg), "focused", p.focused, "visible", p.visible, "tabs", p.tabBar.Count())
+	}
 	var cmds []tea.Cmd
 
 	// Let the tab bar handle tab-switching / close keybindings only when focused.
@@ -190,6 +202,7 @@ func (p *TerminalPanel) Update(msg tea.Msg) (*TerminalPanel, tea.Cmd) {
 		} else {
 			// Still need tick messages even when unfocused.
 			if _, ok := msg.(terminalTickMsg); ok {
+				logging.Debug("TerminalPanel.Update: forwarding tick to unfocused terminal")
 				updatedModel, c := term.Update(msg)
 				if idx := p.tabBar.activeIdx; idx >= 0 && idx < len(p.tabBar.tabs) {
 					p.tabBar.tabs[idx].Terminal = updatedModel.(TerminalComponent)
@@ -199,6 +212,8 @@ func (p *TerminalPanel) Update(msg tea.Msg) (*TerminalPanel, tea.Cmd) {
 			}
 		}
 		cmds = append(cmds, cmd)
+	} else {
+		logging.Debug("TerminalPanel.Update: no active terminal", "tabs", p.tabBar.Count(), "activeIdx", p.tabBar.activeIdx)
 	}
 
 	return p, tea.Batch(cmds...)
@@ -222,12 +237,11 @@ func (p *TerminalPanel) View() string {
 	if focused {
 		borderColor = th.BorderFocused()
 	}
-	separatorChar := "─"
-	separatorLine := strings.Repeat(separatorChar, p.width)
+	separatorLine := strings.Repeat("─", p.width)
 	separator := base.
 		Width(p.width).
 		Foreground(borderColor).
-		Render(lipgloss.NewStyle().Width(p.width).Foreground(borderColor).Render(separatorLine))
+		Render(separatorLine)
 
 	// Terminal body.
 	bodyH := p.terminalBodyHeight()
