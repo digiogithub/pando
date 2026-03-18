@@ -10,25 +10,26 @@ import (
 )
 
 const (
-	FileTreeItemPrefix   = "filetree-item-"
-	TabPrefix            = "tab-"
-	SidebarItemPrefix    = "sidebar-item-"
-	DialogButtonPrefix   = "dialog-button-"
-	SessionItemPrefix    = "session-item-"
-	ModelItemPrefix      = "model-item-"
-	StatusModel          = "status-model"
-	StatusSession        = "status-session"
-	StatusHelp           = "status-help"
-	StatusDiagnostics    = "status-diagnostics"
+	FileTreeItemPrefix     = "filetree-item-"
+	TabPrefix              = "tab-"
+	SidebarItemPrefix      = "sidebar-item-"
+	DialogButtonPrefix     = "dialog-button-"
+	SessionItemPrefix      = "session-item-"
+	ModelItemPrefix        = "model-item-"
+	StatusModel            = "status-model"
+	StatusSession          = "status-session"
+	StatusHelp             = "status-help"
+	StatusDiagnostics      = "status-diagnostics"
 	StatusBreadcrumbPrefix = "status-breadcrumb-"
-	ViewerViewport       = "viewer-viewport"
-	EditorViewport       = "editor-viewport"
-	DiffViewport         = "diff-viewport"
-	ChatViewport         = "chat-viewport"
-	PermissionAllow      = "permission-allow"
-	PermissionSession    = "permission-session"
-	PermissionDeny       = "permission-deny"
-	TerminalPanel        = "terminal-panel"
+	ViewerViewport         = "viewer-viewport"
+	EditorViewport         = "editor-viewport"
+	DiffViewport           = "diff-viewport"
+	ChatViewport           = "chat-viewport"
+	PermissionAllow        = "permission-allow"
+	PermissionSession      = "permission-session"
+	PermissionDeny         = "permission-deny"
+	TerminalPanel          = "terminal-panel"
+	TerminalTabPrefix      = "terminal-tab-"
 )
 
 var Manager = bubblezone.New()
@@ -123,6 +124,14 @@ func MarkStatusBreadcrumb(index int, content string) string {
 
 func MarkTerminalPanel(content string) string {
 	return Manager.Mark(TerminalPanel, content)
+}
+
+func TerminalTabID(idx int) string {
+	return fmt.Sprintf("%s%d", TerminalTabPrefix, idx)
+}
+
+func MarkTerminalTab(idx int, content string) string {
+	return Manager.Mark(TerminalTabID(idx), content)
 }
 
 func InBounds(id string, msg tea.MouseMsg) bool {
