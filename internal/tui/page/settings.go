@@ -725,6 +725,44 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 			Type:  settings.FieldToggle,
 			Value: boolString(it.Context7Enabled),
 		},
+		// --- Browser Automation ---
+		{
+			Label: "Browser Enabled",
+			Key:   "internalTools.browserEnabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(it.BrowserEnabled),
+		},
+		{
+			Label: "Browser Headless",
+			Key:   "internalTools.browserHeadless",
+			Type:  settings.FieldToggle,
+			Value: boolString(it.BrowserHeadless),
+		},
+		{
+			Label: "Browser Timeout (s)",
+			Key:   "internalTools.browserTimeout",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(it.BrowserTimeout),
+		},
+		{
+			Label: "Browser User Data Dir",
+			Key:   "internalTools.browserUserDataDir",
+			Type:  settings.FieldText,
+			Value: it.BrowserUserDataDir,
+		},
+		{
+			Label: "Browser Max Sessions",
+			Key:   "internalTools.browserMaxSessions",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(it.BrowserMaxSessions),
+		},
+		{
+			Label:    "Browser Info",
+			Key:      "internalTools.browserInfo",
+			Type:     settings.FieldText,
+			Value:    "Requires Chrome/Chromium in PATH. Tools: navigate, screenshot, get_content, evaluate, click, fill, scroll, console_logs, network, pdf",
+			ReadOnly: true,
+		},
 		{
 			Label:    "Info",
 			Key:      "internalTools.info",
@@ -1298,6 +1336,41 @@ func saveInternalTools(field settings.Field) error {
 			return fmt.Errorf("invalid Context7 Enabled value: %w", err)
 		}
 		itCfg.Context7Enabled = enabled
+	case "internalTools.browserEnabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Browser Enabled value: %w", err)
+		}
+		itCfg.BrowserEnabled = enabled
+	case "internalTools.browserHeadless":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Browser Headless value: %w", err)
+		}
+		itCfg.BrowserHeadless = enabled
+	case "internalTools.browserTimeout":
+		timeout, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Browser Timeout value: %w", err)
+		}
+		if timeout < 5 || timeout > 300 {
+			return fmt.Errorf("browser timeout must be between 5 and 300 seconds")
+		}
+		itCfg.BrowserTimeout = timeout
+	case "internalTools.browserUserDataDir":
+		itCfg.BrowserUserDataDir = strings.TrimSpace(field.Value)
+	case "internalTools.browserMaxSessions":
+		maxSessions, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Browser Max Sessions value: %w", err)
+		}
+		if maxSessions < 1 || maxSessions > 10 {
+			return fmt.Errorf("browser max sessions must be between 1 and 10")
+		}
+		itCfg.BrowserMaxSessions = maxSessions
+	case "internalTools.browserInfo":
+		// read-only informational field, nothing to save
+		return nil
 	case "internalTools.info":
 		// read-only informational field, nothing to save
 		return nil
