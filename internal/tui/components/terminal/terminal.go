@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -36,13 +37,15 @@ type terminalKeyMap struct {
 
 // terminalModel is the concrete implementation.
 type terminalModel struct {
-	id      string
-	emu     *emulator.Emulator
-	rows    []string
-	width   int
-	height  int
-	focused bool
-	keyMap  terminalKeyMap
+	id            string
+	emu           *emulator.Emulator
+	rows          []string
+	width         int
+	height        int
+	focused       bool
+	keyMap        terminalKeyMap
+	writeCh       chan []byte    // serialized input queue; avoids blocking the main goroutine on emu.Write
+	processExited atomic.Bool   // cached exit state; avoids RLock() contention with GetScreen's Lock()
 }
 
 // tickInterval controls the refresh rate of the embedded terminal.
@@ -90,6 +93,7 @@ func New(width, height int, shellPath string, shellArgs []string) (TerminalCompo
 	}
 	logging.Info("terminal.New: shell started successfully", "id", emu.ID())
 
+	writeCh := make(chan []byte, 256)
 	m := &terminalModel{
 		id:      emu.ID(),
 		emu:     emu,
@@ -98,30 +102,66 @@ func New(width, height int, shellPath string, shellArgs []string) (TerminalCompo
 		height:  height,
 		focused: true,
 		keyMap:  defaultTerminalKeyMap(),
+		writeCh: writeCh,
 	}
+	// Update cached exit state without acquiring any mutex.
+	emu.SetOnExit(func(string) {
+		m.processExited.Store(true)
+	})
+	// Dedicated goroutine serializes PTY writes so the main goroutine never blocks
+	// waiting for the emulator mutex when GetScreen() holds the write lock.
+	go func() {
+		for data := range writeCh {
+			if _, err := emu.Write(data); err != nil {
+				logging.Warn("terminal: PTY write error", "id", emu.ID(), "error", err)
+			}
+		}
+	}()
 	return m, nil
 }
 
 func defaultTerminalKeyMap() terminalKeyMap {
 	return terminalKeyMap{
 		FocusToggle: key.NewBinding(
-			key.WithKeys("ctrl+`"),
-			key.WithHelp("ctrl+`", "toggle terminal focus"),
+			key.WithKeys("ctrl+alt+t"),
+			key.WithHelp("ctrl+alt+t", "toggle terminal focus"),
 		),
 	}
 }
 
 func (m *terminalModel) Init() tea.Cmd {
+	logging.Debug("terminal.Init: scheduling first tick", "id", m.id, "width", m.width, "height", m.height)
 	return m.tick()
 }
+
+// getScreenTimeout is the maximum time to wait for GetScreen() before skipping the frame.
+const getScreenTimeout = 200 * time.Millisecond
 
 func (m *terminalModel) tick() tea.Cmd {
 	id := m.id
 	emu := m.emu
 	// GetScreen() is called inside the goroutine to avoid blocking the Bubble Tea event loop.
+	// A timeout prevents the tick chain from freezing if GetScreen() deadlocks internally.
 	return tea.Tick(tickInterval, func(_ time.Time) tea.Msg {
-		frame := emu.GetScreen()
-		return terminalTickMsg{id: id, rows: frame.Rows}
+		logging.Debug("terminal.tick: calling GetScreen", "id", id)
+		type screenResult struct{ rows []string }
+		ch := make(chan screenResult, 1)
+		go func() {
+			frame := emu.GetScreen()
+			ch <- screenResult{rows: frame.Rows}
+		}()
+		select {
+		case r := <-ch:
+			firstRow := ""
+			if len(r.rows) > 0 {
+				firstRow = r.rows[0]
+			}
+			logging.Debug("terminal.tick: GetScreen returned", "id", id, "rows", len(r.rows), "first_row_len", len(firstRow), "first_row", firstRow)
+			return terminalTickMsg{id: id, rows: r.rows}
+		case <-time.After(getScreenTimeout):
+			logging.Warn("terminal.tick: GetScreen timeout, skipping frame", "id", id)
+			return terminalTickMsg{id: id, rows: nil}
+		}
 	})
 }
 
@@ -129,9 +169,10 @@ func (m *terminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case terminalTickMsg:
 		if msg.id != m.id {
+			logging.Debug("terminal.Update: tick ignored (id mismatch)", "my_id", m.id, "msg_id", msg.id)
 			return m, nil
 		}
-		logging.Debug("terminal.Update: tick received", "id", m.id, "rows", len(msg.rows))
+		logging.Debug("terminal.Update: tick received", "id", m.id, "rows", len(msg.rows), "process_exited", m.processExited.Load())
 		if len(msg.rows) > 0 {
 			m.rows = msg.rows
 		}
@@ -145,7 +186,11 @@ func (m *terminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		input := keyMsgToInput(msg)
 		logging.Debug("terminal.Update: key input", "id", m.id, "key", msg.String(), "input_bytes", len(input))
 		if input != "" {
-			_, _ = m.emu.Write([]byte(input))
+			select {
+			case m.writeCh <- []byte(input):
+			default:
+				logging.Warn("terminal.Update: write buffer full, dropping input", "id", m.id)
+			}
 		}
 		return m, nil
 	}
@@ -168,9 +213,12 @@ func (m *terminalModel) SetSize(width, height int) tea.Cmd {
 	if height < 2 {
 		height = 2
 	}
+	logging.Debug("terminal.SetSize", "id", m.id, "width", width, "height", height)
 	m.width = width
 	m.height = height
-	_ = m.emu.Resize(width, height)
+	if err := m.emu.Resize(width, height); err != nil {
+		logging.Error("terminal.SetSize: Resize failed", "id", m.id, "error", err)
+	}
 	return nil
 }
 
@@ -185,12 +233,14 @@ func (m *terminalModel) BindingKeys() []key.Binding {
 }
 
 // IsRunning returns true if the shell process is still alive.
+// Uses a cached atomic value to avoid RLock() contention with GetScreen's write lock.
 func (m *terminalModel) IsRunning() bool {
-	return !m.emu.IsProcessExited()
+	return !m.processExited.Load()
 }
 
-// Close shuts down the terminal emulator.
+// Close shuts down the terminal emulator and the write goroutine.
 func (m *terminalModel) Close() error {
+	close(m.writeCh)
 	return m.emu.Close()
 }
 
