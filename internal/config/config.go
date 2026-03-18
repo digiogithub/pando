@@ -2016,3 +2016,157 @@ func cloneStringMap(values map[string]string) map[string]string {
 func LoadGitHubToken() (string, error) {
 	return auth.LoadGitHubOAuthToken()
 }
+
+func UpdateAgent(agentName AgentName, agent Agent) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	if cfg.Agents == nil {
+		cfg.Agents = make(map[AgentName]Agent)
+	}
+
+	oldAgent, hadAgent := cfg.Agents[agentName]
+	cfg.Agents[agentName] = agent
+
+	if err := updateCfgFile(func(config *Config) {
+		if config.Agents == nil {
+			config.Agents = make(map[AgentName]Agent)
+		}
+		config.Agents[agentName] = agent
+	}); err != nil {
+		if hadAgent {
+			cfg.Agents[agentName] = oldAgent
+		} else {
+			delete(cfg.Agents, agentName)
+		}
+		return err
+	}
+
+	return nil
+}
+
+func UpdateGeneral(workingDir, logFile string, debugLSP bool, contextPaths []string, dataDir string) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldWorkingDir := cfg.WorkingDir
+	oldLogFile := cfg.LogFile
+	oldDebugLSP := cfg.DebugLSP
+	oldContextPaths := cfg.ContextPaths
+	oldDataDir := cfg.Data.Directory
+
+	cfg.WorkingDir = workingDir
+	cfg.LogFile = logFile
+	cfg.DebugLSP = debugLSP
+	cfg.ContextPaths = append([]string(nil), contextPaths...)
+	cfg.Data.Directory = dataDir
+
+	if err := updateCfgFile(func(config *Config) {
+		config.WorkingDir = workingDir
+		config.LogFile = logFile
+		config.DebugLSP = debugLSP
+		config.ContextPaths = append([]string(nil), contextPaths...)
+		config.Data.Directory = dataDir
+	}); err != nil {
+		cfg.WorkingDir = oldWorkingDir
+		cfg.LogFile = oldLogFile
+		cfg.DebugLSP = oldDebugLSP
+		cfg.ContextPaths = oldContextPaths
+		cfg.Data.Directory = oldDataDir
+		return err
+	}
+
+	return nil
+}
+
+func UpdateServer(server APIServerConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldServer := cfg.Server
+	cfg.Server = server
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Server = server
+	}); err != nil {
+		cfg.Server = oldServer
+		return err
+	}
+
+	return nil
+}
+
+func UpdateLua(lua LuaConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldLua := cfg.Lua
+	cfg.Lua = lua
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Lua = lua
+	}); err != nil {
+		cfg.Lua = oldLua
+		return err
+	}
+
+	return nil
+}
+
+func UpdateMCPGateway(gw MCPGatewayConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldGW := cfg.MCPGateway
+	cfg.MCPGateway = gw
+
+	if err := updateCfgFile(func(config *Config) {
+		config.MCPGateway = gw
+	}); err != nil {
+		cfg.MCPGateway = oldGW
+		return err
+	}
+
+	return nil
+}
+
+func UpdateSnapshots(snap SnapshotsConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldSnap := cfg.Snapshots
+	cfg.Snapshots = snap
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Snapshots = snap
+	}); err != nil {
+		cfg.Snapshots = oldSnap
+		return err
+	}
+
+	return nil
+}
+
+func UpdateEvaluator(eval EvaluatorConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldEval := cfg.Evaluator
+	cfg.Evaluator = eval
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Evaluator = eval
+	}); err != nil {
+		cfg.Evaluator = oldEval
+		return err
+	}
+
+	return nil
+}
