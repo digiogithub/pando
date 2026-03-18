@@ -138,6 +138,36 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Value: strings.Join(cfg.Shell.Args, " "),
 				Type:  settings.FieldText,
 			},
+			{
+				Label: "Working Dir",
+				Key:   "general.workingDir",
+				Value: cfg.WorkingDir,
+				Type:  settings.FieldText,
+			},
+			{
+				Label: "Log File",
+				Key:   "general.logFile",
+				Value: cfg.LogFile,
+				Type:  settings.FieldText,
+			},
+			{
+				Label: "Debug LSP",
+				Key:   "general.debugLSP",
+				Value: boolString(cfg.DebugLSP),
+				Type:  settings.FieldToggle,
+			},
+			{
+				Label: "Context Paths",
+				Key:   "general.contextPaths",
+				Value: strings.Join(cfg.ContextPaths, ","),
+				Type:  settings.FieldText,
+			},
+			{
+				Label: "Data Directory",
+				Key:   "general.data.directory",
+				Value: cfg.Data.Directory,
+				Type:  settings.FieldText,
+			},
 		},
 	}
 }
@@ -227,6 +257,14 @@ func buildProvidersSection(cfg *config.Config) settings.Section {
 				Type:  settings.FieldToggle,
 			},
 		)
+		if providerID == models.ProviderAnthropic {
+			fields = append(fields, settings.Field{
+				Label: fmt.Sprintf("%s Use OAuth", providerName),
+				Key:   fmt.Sprintf("providers.%s.useOAuth", providerName),
+				Value: boolString(providerCfg.UseOAuth),
+				Type:  settings.FieldToggle,
+			})
+		}
 	}
 
 	return settings.Section{
@@ -324,13 +362,41 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 		agentCfg := cfg.Agents[agentName]
 		modelID := string(agentCfg.Model)
 
-		fields = append(fields, settings.Field{
-			Label:   fmt.Sprintf("%s Model", string(agentName)),
-			Key:     fmt.Sprintf("agents.%s.model", agentName),
-			Value:   modelID,
-			Type:    settings.FieldSelect,
-			Options: ensureOption(modelOptions, modelID),
-		})
+		fields = append(fields,
+			settings.Field{
+				Label:   fmt.Sprintf("%s Model", string(agentName)),
+				Key:     fmt.Sprintf("agents.%s.model", agentName),
+				Value:   modelID,
+				Type:    settings.FieldSelect,
+				Options: ensureOption(modelOptions, modelID),
+			},
+			settings.Field{
+				Label: fmt.Sprintf("%s Max Tokens", string(agentName)),
+				Key:   fmt.Sprintf("agents.%s.maxTokens", agentName),
+				Value: fmt.Sprint(agentCfg.MaxTokens),
+				Type:  settings.FieldText,
+			},
+			settings.Field{
+				Label:   fmt.Sprintf("%s Reasoning Effort", string(agentName)),
+				Key:     fmt.Sprintf("agents.%s.reasoningEffort", agentName),
+				Value:   agentCfg.ReasoningEffort,
+				Type:    settings.FieldSelect,
+				Options: []string{"", "low", "medium", "high"},
+			},
+			settings.Field{
+				Label: fmt.Sprintf("%s Auto Compact", string(agentName)),
+				Key:   fmt.Sprintf("agents.%s.autoCompact", agentName),
+				Value: boolString(agentCfg.AutoCompact),
+				Type:  settings.FieldToggle,
+			},
+			settings.Field{
+				Label:    fmt.Sprintf("%s Compact Threshold", string(agentName)),
+				Key:      fmt.Sprintf("agents.%s.autoCompactThreshold", agentName),
+				Value:    fmt.Sprintf("%.2f", agentCfg.AutoCompactThreshold),
+				Type:     settings.FieldText,
+				Disabled: !agentCfg.AutoCompact,
+			},
+		)
 	}
 
 	return settings.Section{
@@ -773,6 +839,241 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 	}
 	return settings.Section{
 		Title:  "Internal Tools",
+		Fields: fields,
+	}
+}
+
+func buildServerSection(cfg *config.Config) settings.Section {
+	fields := []settings.Field{
+		{Label: "Enabled", Key: "server.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Server.Enabled)},
+		{Label: "Host", Key: "server.host", Type: settings.FieldText, Value: cfg.Server.Host},
+		{Label: "Port", Key: "server.port", Type: settings.FieldText, Value: fmt.Sprint(cfg.Server.Port)},
+		{Label: "Require Auth", Key: "server.requireAuth", Type: settings.FieldToggle, Value: boolString(cfg.Server.RequireAuth)},
+	}
+
+	if !cfg.Server.Enabled {
+		fields = append(fields, settings.Field{
+			Label:    "Info",
+			Key:      "server.info.disabled",
+			Type:     settings.FieldText,
+			Value:    "API server is disabled.",
+			ReadOnly: true,
+		})
+		for i := 1; i < len(fields)-1; i++ {
+			fields[i].Disabled = true
+		}
+	}
+
+	return settings.Section{
+		Title:  "API Server",
+		Fields: fields,
+	}
+}
+
+func buildLuaSection(cfg *config.Config) settings.Section {
+	fields := []settings.Field{
+		{Label: "Enabled", Key: "lua.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Lua.Enabled)},
+		{Label: "Script Path", Key: "lua.scriptPath", Type: settings.FieldText, Value: cfg.Lua.ScriptPath},
+		{Label: "Timeout", Key: "lua.timeout", Type: settings.FieldText, Value: cfg.Lua.Timeout},
+		{Label: "Strict Mode", Key: "lua.strictMode", Type: settings.FieldToggle, Value: boolString(cfg.Lua.StrictMode)},
+		{Label: "Hot Reload", Key: "lua.hotReload", Type: settings.FieldToggle, Value: boolString(cfg.Lua.HotReload)},
+		{Label: "Log Filtered Data", Key: "lua.logFilteredData", Type: settings.FieldToggle, Value: boolString(cfg.Lua.LogFilteredData)},
+	}
+
+	if !cfg.Lua.Enabled {
+		fields = append(fields, settings.Field{
+			Label:    "Info",
+			Key:      "lua.info.disabled",
+			Type:     settings.FieldText,
+			Value:    "Lua engine disabled.",
+			ReadOnly: true,
+		})
+		for i := 1; i < len(fields)-1; i++ {
+			fields[i].Disabled = true
+		}
+	}
+
+	return settings.Section{
+		Title:  "Lua Engine",
+		Fields: fields,
+	}
+}
+
+func buildMCPGatewaySection(cfg *config.Config) settings.Section {
+	fields := []settings.Field{
+		{Label: "Enabled", Key: "mcpGateway.enabled", Type: settings.FieldToggle, Value: boolString(cfg.MCPGateway.Enabled)},
+		{Label: "Favorite Threshold", Key: "mcpGateway.favoriteThreshold", Type: settings.FieldText, Value: fmt.Sprint(cfg.MCPGateway.FavoriteThreshold)},
+		{Label: "Max Favorites", Key: "mcpGateway.maxFavorites", Type: settings.FieldText, Value: fmt.Sprint(cfg.MCPGateway.MaxFavorites)},
+		{Label: "Favorite Window Days", Key: "mcpGateway.favoriteWindowDays", Type: settings.FieldText, Value: fmt.Sprint(cfg.MCPGateway.FavoriteWindowDays)},
+		{Label: "Decay Days", Key: "mcpGateway.decayDays", Type: settings.FieldText, Value: fmt.Sprint(cfg.MCPGateway.DecayDays)},
+		{
+			Label:    "Info",
+			Key:      "mcpGateway.info",
+			Type:     settings.FieldText,
+			Value:    "Tracks MCP tool usage frequency to surface favorites.",
+			ReadOnly: true,
+		},
+	}
+
+	if !cfg.MCPGateway.Enabled {
+		for i := 1; i < len(fields); i++ {
+			fields[i].Disabled = true
+		}
+	}
+
+	return settings.Section{
+		Title:  "MCP Gateway",
+		Fields: fields,
+	}
+}
+
+func buildSnapshotsSection(cfg *config.Config) settings.Section {
+	snap := cfg.Snapshots
+	fields := []settings.Field{
+		{
+			Label: "Enabled",
+			Key:   "snapshots.enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(snap.Enabled),
+		},
+		{
+			Label: "Max Snapshots",
+			Key:   "snapshots.maxSnapshots",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(snap.MaxSnapshots),
+		},
+		{
+			Label: "Max File Size",
+			Key:   "snapshots.maxFileSize",
+			Type:  settings.FieldText,
+			Value: snap.MaxFileSize,
+		},
+		{
+			Label: "Exclude Patterns",
+			Key:   "snapshots.excludePatterns",
+			Type:  settings.FieldText,
+			Value: strings.Join(snap.ExcludePatterns, ","),
+		},
+		{
+			Label: "Auto Cleanup Days",
+			Key:   "snapshots.autoCleanupDays",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(snap.AutoCleanupDays),
+		},
+		{
+			Label:    "Info",
+			Key:      "snapshots.info",
+			Type:     settings.FieldText,
+			Value:    "Session file snapshots. Excluded patterns use glob syntax (comma-separated).",
+			ReadOnly: true,
+		},
+	}
+
+	if !snap.Enabled {
+		for i := 1; i < len(fields); i++ {
+			fields[i].Disabled = true
+		}
+	}
+
+	return settings.Section{
+		Title:  "Snapshots",
+		Fields: fields,
+	}
+}
+
+func buildEvaluatorSection(cfg *config.Config) settings.Section {
+	eval := cfg.Evaluator
+	fields := []settings.Field{
+		{
+			Label: "Enabled",
+			Key:   "evaluator.enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(eval.Enabled),
+		},
+		{
+			Label:   "Judge Model",
+			Key:     "evaluator.model",
+			Type:    settings.FieldSelect,
+			Value:   string(eval.Model),
+			Options: ensureOption(supportedModelOptions(cfg), string(eval.Model)),
+		},
+		{
+			Label: "Judge Provider",
+			Key:   "evaluator.provider",
+			Type:  settings.FieldText,
+			Value: eval.Provider,
+		},
+		{
+			Label: "Alpha Weight",
+			Key:   "evaluator.alphaWeight",
+			Type:  settings.FieldText,
+			Value: fmt.Sprintf("%.2f", eval.AlphaWeight),
+		},
+		{
+			Label: "Beta Weight",
+			Key:   "evaluator.betaWeight",
+			Type:  settings.FieldText,
+			Value: fmt.Sprintf("%.2f", eval.BetaWeight),
+		},
+		{
+			Label: "Exploration C",
+			Key:   "evaluator.explorationC",
+			Type:  settings.FieldText,
+			Value: fmt.Sprintf("%.4f", eval.ExplorationC),
+		},
+		{
+			Label: "Min Sessions UCB",
+			Key:   "evaluator.minSessionsForUCB",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(eval.MinSessionsForUCB),
+		},
+		{
+			Label: "Max Tokens Baseline",
+			Key:   "evaluator.maxTokensBaseline",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(eval.MaxTokensBaseline),
+		},
+		{
+			Label: "Max Skills",
+			Key:   "evaluator.maxSkills",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(eval.MaxSkills),
+		},
+		{
+			Label: "Judge Prompt Template",
+			Key:   "evaluator.judgePromptTemplate",
+			Type:  settings.FieldText,
+			Value: eval.JudgePromptTemplate,
+		},
+		{
+			Label: "Async Evaluation",
+			Key:   "evaluator.async",
+			Type:  settings.FieldToggle,
+			Value: boolString(eval.Async),
+		},
+		{
+			Label: "Corrections Patterns",
+			Key:   "evaluator.correctionsPatterns",
+			Type:  settings.FieldText,
+			Value: strings.Join(eval.CorrectionsPatterns, ","),
+		},
+		{
+			Label:    "Info",
+			Key:      "evaluator.info",
+			Type:     settings.FieldText,
+			Value:    "LLM-as-Judge self-improvement with UCB1 prompt selection. Requires a cheap/fast judge model.",
+			ReadOnly: true,
+		},
+	}
+
+	if !eval.Enabled {
+		for i := 1; i < len(fields); i++ {
+			fields[i].Disabled = true
+		}
+	}
+
+	return settings.Section{
+		Title:  "Self-Improvement",
 		Fields: fields,
 	}
 }
