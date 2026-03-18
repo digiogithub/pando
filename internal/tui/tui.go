@@ -815,6 +815,10 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Forward all non-key messages to the terminal panel (e.g. tick msgs).
 		if a.terminalPanel.IsVisible() {
+			logging.Debug("tui.Update default: forwarding to terminal panel",
+				"msg_type", fmt.Sprintf("%T", msg),
+				"terminalFocused", a.terminalFocused,
+				"has_terminals", a.terminalPanel.HasTerminals())
 			newPanel, panelCmd := a.terminalPanel.Update(msg)
 			a.terminalPanel = newPanel
 			cmds = append(cmds, panelCmd)
