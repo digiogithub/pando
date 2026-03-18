@@ -112,6 +112,7 @@ func defaultTerminalKeyMap() terminalKeyMap {
 }
 
 func (m *terminalModel) Init() tea.Cmd {
+	logging.Debug("terminal.Init: scheduling first tick", "id", m.id, "width", m.width, "height", m.height)
 	return m.tick()
 }
 
@@ -120,7 +121,13 @@ func (m *terminalModel) tick() tea.Cmd {
 	emu := m.emu
 	// GetScreen() is called inside the goroutine to avoid blocking the Bubble Tea event loop.
 	return tea.Tick(tickInterval, func(_ time.Time) tea.Msg {
+		logging.Debug("terminal.tick: calling GetScreen", "id", id)
 		frame := emu.GetScreen()
+		firstRow := ""
+		if len(frame.Rows) > 0 {
+			firstRow = frame.Rows[0]
+		}
+		logging.Debug("terminal.tick: GetScreen returned", "id", id, "rows", len(frame.Rows), "first_row_len", len(firstRow), "first_row", firstRow)
 		return terminalTickMsg{id: id, rows: frame.Rows}
 	})
 }
@@ -129,9 +136,10 @@ func (m *terminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case terminalTickMsg:
 		if msg.id != m.id {
+			logging.Debug("terminal.Update: tick ignored (id mismatch)", "my_id", m.id, "msg_id", msg.id)
 			return m, nil
 		}
-		logging.Debug("terminal.Update: tick received", "id", m.id, "rows", len(msg.rows))
+		logging.Debug("terminal.Update: tick received", "id", m.id, "rows", len(msg.rows), "is_running", m.emu.IsProcessExited())
 		if len(msg.rows) > 0 {
 			m.rows = msg.rows
 		}
@@ -168,9 +176,12 @@ func (m *terminalModel) SetSize(width, height int) tea.Cmd {
 	if height < 2 {
 		height = 2
 	}
+	logging.Debug("terminal.SetSize", "id", m.id, "width", width, "height", height)
 	m.width = width
 	m.height = height
-	_ = m.emu.Resize(width, height)
+	if err := m.emu.Resize(width, height); err != nil {
+		logging.Error("terminal.SetSize: Resize failed", "id", m.id, "error", err)
+	}
 	return nil
 }
 
