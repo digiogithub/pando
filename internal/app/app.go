@@ -25,6 +25,7 @@ import (
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/llm/prompt"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
@@ -162,6 +163,13 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 			prompt.SetGlobalEvaluator(&evaluatorPromptAdapter{svc: evalSvc})
 			logging.Info("evaluator: self-improvement system initialized", "model", cfg.Evaluator.Model)
 		}
+	}
+
+	// Initialize browser registry if enabled
+	cfg = config.Get()
+	if cfg != nil && cfg.InternalTools.BrowserEnabled {
+		tools.InitBrowserRegistry(&cfg.InternalTools)
+		logging.Info("Browser registry initialized")
 	}
 
 	// Initialize MCP Gateway if enabled
@@ -863,6 +871,9 @@ func (app *App) Shutdown() {
 			cancel()
 		}
 	}
+
+	// Close all browser sessions
+	tools.CloseAllBrowserSessions()
 
 	// Cancel all watcher goroutines
 	app.cancelFuncsMutex.Lock()
