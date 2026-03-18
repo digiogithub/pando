@@ -1,27 +1,117 @@
 package terminal
 
 import (
+	"encoding/hex"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/taigrr/bubbleterm/emulator"
+	"github.com/charmbracelet/x/vt"
+	"github.com/creack/pty"
+	"github.com/google/uuid"
 
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/tui/layout"
 )
 
 // terminalTickMsg is sent periodically to poll the terminal for new output.
-// GetScreen() is called inside the tick goroutine (not in Update) to avoid blocking the event loop.
 type terminalTickMsg struct {
-	id   string
-	rows []string
+	id       string
+	rows     []string
+	newLines []string // lines collected from raw PTY output for scrollback
 }
 
-// TerminalComponent wraps bubbleterm/emulator as a Bubble Tea v1 model.
+// rawLineParser collects plain-text lines from raw PTY bytes (strips ANSI codes).
+// It handles \r\n correctly: \r saves the current content so that a following \n
+// can emit it (rather than losing it to an in-place overwrite reset).
+type rawLineParser struct {
+	current      []byte
+	lastComplete []byte // content saved on \r; emitted by the next \n if current is empty
+	inEsc        bool
+	escType      byte // '[' = CSI, ']' = OSC, 's' = ST second byte, '(' = charset, 0 = just entered
+}
+
+func (p *rawLineParser) processBytes(data []byte) []string {
+	var lines []string
+	for _, b := range data {
+		if p.inEsc {
+			switch p.escType {
+			case 0: // first byte after ESC
+				p.escType = b
+				if b != '[' && b != ']' && b != '(' {
+					// 2-char escape — done
+					p.inEsc = false
+					p.escType = 0
+				}
+			case '[': // CSI — ends at letter or ~
+				if (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || b == '~' {
+					p.inEsc = false
+					p.escType = 0
+				}
+			case ']': // OSC — ends at BEL or ESC \
+				if b == 0x07 {
+					p.inEsc = false
+					p.escType = 0
+				} else if b == 0x1b {
+					p.escType = 's' // waiting for backslash of ST
+				}
+			case 's': // second byte of ST (ESC \)
+				p.inEsc = false
+				p.escType = 0
+			case '(': // character set designation — skip one byte
+				p.inEsc = false
+				p.escType = 0
+			}
+			continue
+		}
+
+		switch b {
+		case 0x1b:
+			p.inEsc = true
+			p.escType = 0
+		case '\r':
+			// Carriage return: save current content as lastComplete so a
+			// subsequent \n can emit it (handles the common \r\n sequence).
+			if len(p.current) > 0 {
+				p.lastComplete = append(p.lastComplete[:0], p.current...)
+				p.current = p.current[:0]
+			}
+		case '\n':
+			// Emit current if non-empty; else emit lastComplete (from \r\n).
+			if len(p.current) > 0 {
+				lines = append(lines, string(p.current))
+				p.current = p.current[:0]
+				p.lastComplete = p.lastComplete[:0]
+			} else if len(p.lastComplete) > 0 {
+				lines = append(lines, string(p.lastComplete))
+				p.lastComplete = p.lastComplete[:0]
+			} else {
+				lines = append(lines, "")
+			}
+		case 0x07: // BEL — ignore
+		case 0x08: // BS — remove last byte
+			if len(p.current) > 0 {
+				p.current = p.current[:len(p.current)-1]
+			}
+		default:
+			if b >= 0x20 { // printable ASCII and multi-byte UTF-8 bytes
+				// Any printable char after \r means the line is being overwritten;
+				// discard the saved lastComplete.
+				p.lastComplete = p.lastComplete[:0]
+				p.current = append(p.current, b)
+			}
+		}
+	}
+	return lines
+}
+
+// TerminalComponent wraps a PTY + vt emulator as a Bubble Tea v1 model.
 type TerminalComponent interface {
 	tea.Model
 	layout.Sizeable
@@ -36,19 +126,33 @@ type terminalKeyMap struct {
 
 // terminalModel is the concrete implementation.
 type terminalModel struct {
-	id      string
-	emu     *emulator.Emulator
-	rows    []string
-	width   int
-	height  int
-	focused bool
-	keyMap  terminalKeyMap
+	id            string
+	master        *os.File         // PTY master fd
+	vtemu         *vt.SafeEmulator // thread-safe vt emulator
+	rows          []string
+	width         int
+	height        int
+	focused       bool
+	keyMap        terminalKeyMap
+	writeCh       chan []byte   // serialized input queue
+	processExited atomic.Bool  // cached exit state
+	stopCh        chan struct{} // signals goroutines to stop
+
+	// scrollback
+	scrollMu    sync.Mutex
+	newLinesBuf []string // lines waiting to be picked up on next tick
+	rawParser   rawLineParser
+	scrollback  []string // all collected lines (max scrollbackMaxLines)
+	scrollOffset int     // 0 = live view; >0 = lines scrolled up from bottom
 }
+
+const scrollbackMaxLines = 1000
+const scrollWheelStep = 3
 
 // tickInterval controls the refresh rate of the embedded terminal.
 const tickInterval = 33 * time.Millisecond // ~30 fps
 
-func shellCommand(shellPath string, shellArgs []string) *exec.Cmd {
+func shellCommand(shellPath string, shellArgs []string) (string, []string) {
 	shell := shellPath
 	if shell == "" {
 		shell = os.Getenv("SHELL")
@@ -56,14 +160,15 @@ func shellCommand(shellPath string, shellArgs []string) *exec.Cmd {
 	if shell == "" {
 		shell = "/bin/bash"
 	}
-	if len(shellArgs) > 0 {
-		return exec.Command(shell, shellArgs...)
+	args := shellArgs
+	// Force interactive mode when no custom args are provided.
+	if len(args) == 0 {
+		args = []string{"-i"}
 	}
-	return exec.Command(shell)
+	return shell, args
 }
 
 // New creates a new TerminalComponent, launches the configured shell inside a PTY.
-// shellPath and shellArgs come from config.Shell; empty values fall back to $SHELL / /bin/bash.
 func New(width, height int, shellPath string, shellArgs []string) (TerminalComponent, error) {
 	if width < 2 {
 		width = 80
@@ -72,56 +177,157 @@ func New(width, height int, shellPath string, shellArgs []string) (TerminalCompo
 		height = 24
 	}
 
-	logging.Info("terminal.New: creating emulator", "width", width, "height", height)
+	id := uuid.New().String()
+	logging.Info("terminal.New: creating", "id", id, "width", width, "height", height)
 
-	emu, err := emulator.New(width, height)
+	vtemu := vt.NewSafeEmulator(width, height)
+
+	shell, args := shellCommand(shellPath, shellArgs)
+	logging.Info("terminal.New: starting shell", "id", id, "shell", shell, "args", args)
+
+	cmd := exec.Command(shell, args...)
+
+	// Set up environment: inherit parent env and force TERM.
+	cmd.Env = os.Environ()
+	termSet := false
+	for i, env := range cmd.Env {
+		if len(env) >= 5 && env[:5] == "TERM=" {
+			cmd.Env[i] = "TERM=xterm-256color"
+			termSet = true
+			break
+		}
+	}
+	if !termSet {
+		cmd.Env = append(cmd.Env, "TERM=xterm-256color")
+	}
+
+	sz := &pty.Winsize{
+		Rows: uint16(height),
+		Cols: uint16(width),
+		X:    uint16(width * 8),
+		Y:    uint16(height * 16),
+	}
+	master, err := pty.StartWithSize(cmd, sz)
 	if err != nil {
-		logging.Error("terminal.New: emulator.New failed", "error", err)
+		logging.Error("terminal.New: pty.StartWithSize failed", "id", id, "error", err)
 		return nil, err
 	}
-	logging.Info("terminal.New: emulator created", "id", emu.ID())
+	logging.Info("terminal.New: shell started", "id", id, "pid", cmd.Process.Pid)
 
-	cmd := shellCommand(shellPath, shellArgs)
-	logging.Info("terminal.New: starting shell command", "shell", cmd.Path, "args", shellArgs)
-	if err := emu.StartCommand(cmd); err != nil {
-		logging.Error("terminal.New: StartCommand failed", "error", err)
-		_ = emu.Close()
-		return nil, err
-	}
-	logging.Info("terminal.New: shell started successfully", "id", emu.ID())
+	writeCh := make(chan []byte, 256)
+	stopCh := make(chan struct{})
 
 	m := &terminalModel{
-		id:      emu.ID(),
-		emu:     emu,
+		id:      id,
+		master:  master,
+		vtemu:   vtemu,
 		rows:    make([]string, height),
 		width:   width,
 		height:  height,
 		focused: true,
 		keyMap:  defaultTerminalKeyMap(),
+		writeCh: writeCh,
+		stopCh:  stopCh,
 	}
+
+	// Goroutine: read PTY master output → write to vt emulator + collect scrollback lines.
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := master.Read(buf)
+			if n > 0 {
+				dump := hex.EncodeToString(buf[:n])
+				if len(dump) > 120 {
+					dump = dump[:120] + "..."
+				}
+				logging.Debug("terminal: PTY data received", "id", id, "bytes", n, "hex", dump)
+				if _, werr := vtemu.Write(buf[:n]); werr != nil {
+					logging.Warn("terminal: vt write error", "id", id, "error", werr)
+				}
+				// Collect plain-text lines for scrollback.
+				newLines := m.rawParser.processBytes(buf[:n])
+				if len(newLines) > 0 {
+					m.scrollMu.Lock()
+					m.newLinesBuf = append(m.newLinesBuf, newLines...)
+					m.scrollMu.Unlock()
+				}
+			}
+			if err != nil {
+				logging.Info("terminal: PTY read ended", "id", id, "error", err)
+				return
+			}
+		}
+	}()
+
+	// Goroutine: write keyboard input to PTY master.
+	go func() {
+		for data := range writeCh {
+			if _, err := master.Write(data); err != nil {
+				logging.Warn("terminal: PTY keyboard write error", "id", id, "error", err)
+			}
+		}
+	}()
+
+	// Goroutine: forward emulator responses (e.g. CPR \x1b[6n replies) back to PTY stdin.
+	// Without this, programs like bash hang waiting for cursor-position responses.
+	go func() {
+		buf := make([]byte, 256)
+		for {
+			n, err := vtemu.Read(buf)
+			if n > 0 {
+				logging.Debug("terminal: emulator response to PTY", "id", id, "bytes", n)
+				if _, werr := master.Write(buf[:n]); werr != nil {
+					logging.Warn("terminal: PTY response write error", "id", id, "error", werr)
+				}
+			}
+			if err != nil {
+				logging.Info("terminal: emulator read ended", "id", id, "error", err)
+				return
+			}
+		}
+	}()
+
+	// Goroutine: monitor process exit.
+	go func() {
+		err := cmd.Wait()
+		logging.Info("terminal: shell exited", "id", id, "error", err)
+		m.processExited.Store(true)
+	}()
+
 	return m, nil
 }
 
 func defaultTerminalKeyMap() terminalKeyMap {
 	return terminalKeyMap{
 		FocusToggle: key.NewBinding(
-			key.WithKeys("ctrl+`"),
-			key.WithHelp("ctrl+`", "toggle terminal focus"),
+			key.WithKeys("ctrl+alt+t"),
+			key.WithHelp("ctrl+alt+t", "toggle terminal focus"),
 		),
 	}
 }
 
 func (m *terminalModel) Init() tea.Cmd {
+	logging.Debug("terminal.Init: scheduling first tick", "id", m.id)
 	return m.tick()
 }
 
 func (m *terminalModel) tick() tea.Cmd {
 	id := m.id
-	emu := m.emu
-	// GetScreen() is called inside the goroutine to avoid blocking the Bubble Tea event loop.
+	vtemu := m.vtemu
+	width := m.width
+	height := m.height
 	return tea.Tick(tickInterval, func(_ time.Time) tea.Msg {
-		frame := emu.GetScreen()
-		return terminalTickMsg{id: id, rows: frame.Rows}
+		rendered := vtemu.Render()
+		rows := splitIntoRows(rendered, height, width)
+		logging.Debug("terminal.tick: rendered", "id", id, "rendered_len", len(rendered), "rows", len(rows))
+
+		// Drain newLinesBuf for scrollback.
+		m.scrollMu.Lock()
+		newLines := m.newLinesBuf
+		m.newLinesBuf = nil
+		m.scrollMu.Unlock()
+
+		return terminalTickMsg{id: id, rows: rows, newLines: newLines}
 	})
 }
 
@@ -131,21 +337,53 @@ func (m *terminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.id != m.id {
 			return m, nil
 		}
-		logging.Debug("terminal.Update: tick received", "id", m.id, "rows", len(msg.rows))
+		logging.Debug("terminal.Update: tick received", "id", m.id, "rows", len(msg.rows), "process_exited", m.processExited.Load())
 		if len(msg.rows) > 0 {
 			m.rows = msg.rows
 		}
+		// Append new lines to scrollback.
+		if len(msg.newLines) > 0 {
+			m.scrollback = append(m.scrollback, msg.newLines...)
+			if len(m.scrollback) > scrollbackMaxLines {
+				m.scrollback = m.scrollback[len(m.scrollback)-scrollbackMaxLines:]
+			}
+		}
 		return m, m.tick()
+
+	case tea.MouseMsg:
+		// Handle mouse wheel for scrollback regardless of focus (wheel over the panel area).
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			m.scrollOffset += scrollWheelStep
+			if m.scrollOffset > len(m.scrollback) {
+				m.scrollOffset = len(m.scrollback)
+			}
+			return m, nil
+		case tea.MouseButtonWheelDown:
+			m.scrollOffset -= scrollWheelStep
+			if m.scrollOffset < 0 {
+				m.scrollOffset = 0
+			}
+			return m, nil
+		}
 
 	case tea.KeyMsg:
 		if !m.focused {
 			logging.Debug("terminal.Update: key ignored (not focused)", "id", m.id, "key", msg.String())
 			return m, nil
 		}
+		// Any key press while scrolled returns to live view.
+		if m.scrollOffset > 0 {
+			m.scrollOffset = 0
+		}
 		input := keyMsgToInput(msg)
 		logging.Debug("terminal.Update: key input", "id", m.id, "key", msg.String(), "input_bytes", len(input))
 		if input != "" {
-			_, _ = m.emu.Write([]byte(input))
+			select {
+			case m.writeCh <- []byte(input):
+			default:
+				logging.Warn("terminal.Update: write buffer full, dropping input", "id", m.id)
+			}
 		}
 		return m, nil
 	}
@@ -154,10 +392,48 @@ func (m *terminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *terminalModel) View() string {
+	if m.scrollOffset > 0 && len(m.scrollback) > 0 {
+		return m.scrollbackView()
+	}
 	if len(m.rows) == 0 {
 		return strings.Repeat("\n", m.height-1)
 	}
 	return strings.Join(m.rows, "\n")
+}
+
+// scrollbackView renders historical lines when the user has scrolled up.
+func (m *terminalModel) scrollbackView() string {
+	total := len(m.scrollback)
+	// end is the index (exclusive) of the last visible line.
+	end := total - m.scrollOffset
+	if end < 0 {
+		end = 0
+	}
+	start := end - m.height + 1 // +1 row for the status bar at top
+	if start < 0 {
+		start = 0
+	}
+
+	visible := m.scrollback[start:end]
+	rows := make([]string, m.height)
+
+	// First row: scrollback indicator.
+	indicator := fmt.Sprintf("─── SCROLLBACK  line %d/%d  (scroll ↓ or press key to return) ───",
+		end, total)
+	if len([]rune(indicator)) > m.width {
+		indicator = indicator[:m.width]
+	}
+	rows[0] = padRow(indicator, m.width)
+
+	for i := 1; i < m.height; i++ {
+		lineIdx := i - 1
+		if lineIdx < len(visible) {
+			rows[i] = padRow(visible[lineIdx], m.width)
+		} else {
+			rows[i] = strings.Repeat(" ", m.width)
+		}
+	}
+	return strings.Join(rows, "\n")
 }
 
 // SetSize implements layout.Sizeable.
@@ -168,9 +444,20 @@ func (m *terminalModel) SetSize(width, height int) tea.Cmd {
 	if height < 2 {
 		height = 2
 	}
+	logging.Debug("terminal.SetSize", "id", m.id, "width", width, "height", height)
 	m.width = width
 	m.height = height
-	_ = m.emu.Resize(width, height)
+
+	// Resize PTY and vt emulator.
+	if err := pty.Setsize(m.master, &pty.Winsize{
+		Rows: uint16(height),
+		Cols: uint16(width),
+		X:    uint16(width * 8),
+		Y:    uint16(height * 16),
+	}); err != nil {
+		logging.Error("terminal.SetSize: pty.Setsize failed", "id", m.id, "error", err)
+	}
+	m.vtemu.Resize(width, height)
 	return nil
 }
 
@@ -186,12 +473,49 @@ func (m *terminalModel) BindingKeys() []key.Binding {
 
 // IsRunning returns true if the shell process is still alive.
 func (m *terminalModel) IsRunning() bool {
-	return !m.emu.IsProcessExited()
+	return !m.processExited.Load()
 }
 
 // Close shuts down the terminal emulator.
 func (m *terminalModel) Close() error {
-	return m.emu.Close()
+	close(m.stopCh)
+	close(m.writeCh)
+	return m.master.Close()
+}
+
+// splitIntoRows splits the rendered output into individual rows and pads to width.
+func splitIntoRows(rendered string, height, width int) []string {
+	rows := make([]string, height)
+	lines := strings.Split(rendered, "\n")
+	for i := 0; i < height; i++ {
+		if i < len(lines) {
+			rows[i] = padRow(lines[i], width)
+		} else {
+			rows[i] = strings.Repeat(" ", width)
+		}
+	}
+	return rows
+}
+
+// padRow pads a row to the specified width, accounting for ANSI escape codes.
+func padRow(row string, width int) string {
+	visibleLen := 0
+	inEscape := false
+	for _, r := range row {
+		if r == '\033' {
+			inEscape = true
+		} else if inEscape {
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '~' {
+				inEscape = false
+			}
+		} else {
+			visibleLen++
+		}
+	}
+	if visibleLen < width {
+		return row + strings.Repeat(" ", width-visibleLen)
+	}
+	return row
 }
 
 // keyMsgToInput converts a Bubble Tea v1 key message to a byte sequence
