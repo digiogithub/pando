@@ -63,6 +63,12 @@ LIMITATIONS:
 - Cannot display binary files or images
 - Images can be identified but not displayed
 
+LARGE FILES:
+- Files with more than 300 lines trigger automatic session caching
+- First 200 lines are shown inline with a cache_id reference in the header
+- Use cache_read tool to access subsequent pages of the cached content
+- Alternatively, use the offset parameter directly to jump to specific line ranges
+
 TIPS:
 - Use with Glob tool to first find files you want to view
 - For code exploration, first use Grep to find relevant files, then View to examine them
