@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -87,6 +88,9 @@ func (s *service) Create(ctx context.Context, title string) (Session, error) {
 	session := s.fromDBItem(dbSession)
 	s.Publish(pubsub.CreatedEvent, session)
 	logging.Debug("Session created", "title", title)
+
+	// Register session cache
+	tools.RegisterSessionCache(session.ID)
 
 	// Hook 2: hook_session_start — informational
 	if globalLuaManager != nil && globalLuaManager.IsEnabled() {
@@ -260,6 +264,9 @@ func (s *service) EndSession(ctx context.Context, id string) error {
 			slog.Warn("evaluator: failed to trigger evaluation", "session_id", id, "err", err)
 		}
 	}
+
+	// Clear session cache
+	tools.UnregisterSessionCache(id)
 
 	return nil
 }
