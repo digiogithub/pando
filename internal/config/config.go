@@ -159,6 +159,14 @@ type SkillsConfig struct {
 	Paths   []string `json:"paths,omitempty"`
 }
 
+// SkillsCatalogConfig holds configuration for the skills.sh catalog integration.
+type SkillsCatalogConfig struct {
+	Enabled      bool   `json:"enabled" yaml:"enabled"`
+	BaseURL      string `json:"baseUrl" yaml:"baseUrl"`
+	AutoUpdate   bool   `json:"autoUpdate" yaml:"autoUpdate"`
+	DefaultScope string `json:"defaultScope" yaml:"defaultScope"` // "global" | "project"
+}
+
 // RemembrancesConfig defines configuration for the remembrances system.
 type RemembrancesConfig struct {
 	Enabled                   bool   `json:"enabled" toml:"Enabled"`
@@ -323,8 +331,9 @@ type Config struct {
 	LogFile      string                            `json:"logFile,omitempty"`
 	DebugLSP     bool                              `json:"debugLSP,omitempty"`
 	ContextPaths []string                          `json:"contextPaths,omitempty"`
-	Skills       SkillsConfig                      `json:"skills,omitempty"`
-	TUI          TUIConfig                         `json:"tui"`
+	Skills        SkillsConfig                      `json:"skills,omitempty"`
+	SkillsCatalog SkillsCatalogConfig               `json:"skillsCatalog,omitempty"`
+	TUI           TUIConfig                         `json:"tui"`
 	Mesnada      MesnadaConfig                     `json:"mesnada,omitempty"`
 	Shell        ShellConfig                       `json:"shell,omitempty"`
 	Bash         BashConfig                        `json:"bash,omitempty"`
@@ -559,6 +568,10 @@ func setDefaults(debug bool) {
 	viper.SetDefault("data.directory", defaultDataDirectory)
 	viper.SetDefault("contextPaths", defaultContextPaths)
 	viper.SetDefault("skills.enabled", true)
+	viper.SetDefault("skillsCatalog.enabled", true)
+	viper.SetDefault("skillsCatalog.baseUrl", "https://skills.sh")
+	viper.SetDefault("skillsCatalog.autoUpdate", false)
+	viper.SetDefault("skillsCatalog.defaultScope", "global")
 	viper.SetDefault("tui.theme", "pando")
 	viper.SetDefault("mesnada.enabled", false)
 	viper.SetDefault("mesnada.server.host", "127.0.0.1")
@@ -2236,6 +2249,25 @@ func UpdateBash(bash BashConfig) error {
 		config.Bash = bash
 	}); err != nil {
 		cfg.Bash = oldBash
+		return err
+	}
+
+	return nil
+}
+
+// UpdateSkillsCatalog updates skills catalog configuration and persists it to the config file.
+func UpdateSkillsCatalog(sc SkillsCatalogConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldSC := cfg.SkillsCatalog
+	cfg.SkillsCatalog = sc
+
+	if err := updateCfgFile(func(config *Config) {
+		config.SkillsCatalog = sc
+	}); err != nil {
+		cfg.SkillsCatalog = oldSC
 		return err
 	}
 
