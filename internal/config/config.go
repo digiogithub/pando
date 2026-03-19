@@ -49,7 +49,14 @@ const (
 	AgentSummarizer AgentName = "summarizer"
 	AgentTask       AgentName = "task"
 	AgentTitle      AgentName = "title"
+	AgentCLIAssist  AgentName = "cli-assist"
 )
+
+// CLIAssistConfig defines configuration for the CLI assist mode.
+type CLIAssistConfig struct {
+	Model   models.ModelID `toml:"Model"`
+	Timeout int            `toml:"Timeout"` // seconds, default 30
+}
 
 // Agent defines configuration for different LLM models and their token limits.
 type Agent struct {
@@ -345,6 +352,7 @@ type Config struct {
 	InternalTools InternalToolsConfig               `json:"internalTools,omitempty"`
 	Snapshots     SnapshotsConfig                   `json:"snapshots,omitempty"`
 	Evaluator     EvaluatorConfig                   `json:"evaluator,omitempty" toml:"evaluator"`
+	CLIAssist     CLIAssistConfig                   `json:"cliAssist,omitempty" toml:"cliAssist"`
 }
 
 // Application constants
@@ -936,6 +944,11 @@ func applyDefaultValues() {
 	normalizeRemembrancesDefaults()
 	refreshConfiguredDynamicModels()
 	ensureAgentDefaults()
+
+	// Set CLIAssist defaults
+	if cfg.CLIAssist.Timeout == 0 {
+		cfg.CLIAssist.Timeout = 30
+	}
 }
 
 func normalizeRemembrancesDefaults() {
