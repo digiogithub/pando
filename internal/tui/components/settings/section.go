@@ -79,6 +79,13 @@ func (s *Section) Update(msg tea.Msg) tea.Cmd {
 	case "down", "j":
 		s.activeFieldIdx = (s.activeFieldIdx + 1) % len(s.Fields)
 	case "enter":
+		field := s.ActiveField()
+		if field != nil && field.Type == FieldAction {
+			savedField := *field
+			return func() tea.Msg {
+				return SaveFieldMsg{SectionTitle: s.Title, Field: savedField}
+			}
+		}
 		return s.startEditing()
 	case "ctrl+s":
 		return s.saveActiveField()
