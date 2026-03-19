@@ -159,6 +159,14 @@ type SkillsConfig struct {
 	Paths   []string `json:"paths,omitempty"`
 }
 
+// SkillsCatalogConfig holds configuration for the skills.sh catalog integration.
+type SkillsCatalogConfig struct {
+	Enabled      bool   `json:"enabled" yaml:"enabled"`
+	BaseURL      string `json:"baseUrl" yaml:"baseUrl"`
+	AutoUpdate   bool   `json:"autoUpdate" yaml:"autoUpdate"`
+	DefaultScope string `json:"defaultScope" yaml:"defaultScope"` // "global" | "project"
+}
+
 // RemembrancesConfig defines configuration for the remembrances system.
 type RemembrancesConfig struct {
 	Enabled                   bool   `json:"enabled" toml:"Enabled"`
