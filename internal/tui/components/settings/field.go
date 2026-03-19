@@ -16,6 +16,7 @@ const (
 	FieldText FieldType = iota
 	FieldToggle
 	FieldSelect
+	FieldAction // triggers a command when enter/space is pressed
 )
 
 type Field struct {
@@ -37,6 +38,8 @@ func (f Field) DisplayValue(editing bool) string {
 	switch f.Type {
 	case FieldToggle:
 		return strconv.FormatBool(f.BoolValue())
+	case FieldAction:
+		return f.Value + "  [→ Enter]"
 	default:
 		return f.Value
 	}
