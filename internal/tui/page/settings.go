@@ -7,12 +7,17 @@ import (
 	"strconv"
 	"strings"
 
+	"context"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	pandoapp "github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
+	"github.com/digiogithub/pando/internal/skills/catalog"
+	"github.com/digiogithub/pando/internal/tui/components/dialog"
 	"github.com/digiogithub/pando/internal/tui/components/settings"
 	"github.com/digiogithub/pando/internal/tui/layout"
 	"github.com/digiogithub/pando/internal/tui/theme"
@@ -20,10 +25,11 @@ import (
 )
 
 type settingsPage struct {
-	width    int
-	height   int
-	app      *pandoapp.App
-	settings settings.SettingsCmp
+	width         int
+	height        int
+	app           *pandoapp.App
+	settings      settings.SettingsCmp
+	catalogDialog *dialog.SkillsCatalogDialog
 }
 
 func (p *settingsPage) Init() tea.Cmd {
