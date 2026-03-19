@@ -214,6 +214,10 @@ type InternalToolsConfig struct {
 	PerplexitySearchEnabled bool   `json:"perplexitySearchEnabled,omitempty"`
 	PerplexityAPIKey        string `json:"perplexityApiKey,omitempty"`
 
+	// Exa AI Search
+	ExaSearchEnabled bool   `json:"exaSearchEnabled,omitempty"`
+	ExaAPIKey        string `json:"exaApiKey,omitempty"`
+
 	// Context7 library docs (no API key required)
 	Context7Enabled bool `json:"context7Enabled,omitempty"`
 
