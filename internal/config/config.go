@@ -214,6 +214,10 @@ type InternalToolsConfig struct {
 	PerplexitySearchEnabled bool   `json:"perplexitySearchEnabled,omitempty"`
 	PerplexityAPIKey        string `json:"perplexityApiKey,omitempty"`
 
+	// Exa AI Search
+	ExaSearchEnabled bool   `json:"exaSearchEnabled,omitempty"`
+	ExaAPIKey        string `json:"exaApiKey,omitempty"`
+
 	// Context7 library docs (no API key required)
 	Context7Enabled bool `json:"context7Enabled,omitempty"`
 
@@ -712,6 +716,11 @@ func setProviderDefaults() {
 		viper.SetDefault("internalTools.perplexityApiKey", apiKey)
 	} else if apiKey := os.Getenv("PERPLEXITY_API_KEY"); apiKey != "" {
 		viper.SetDefault("internalTools.perplexityApiKey", apiKey)
+	}
+	if apiKey := os.Getenv("PANDO_EXA_API_KEY"); apiKey != "" {
+		viper.SetDefault("internalTools.exaApiKey", apiKey)
+	} else if apiKey := os.Getenv("EXA_API_KEY"); apiKey != "" {
+		viper.SetDefault("internalTools.exaApiKey", apiKey)
 	}
 
 	// Use this order to set the default models
