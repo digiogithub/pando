@@ -13,6 +13,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/digiogithub/pando/internal/app"
+	"github.com/digiogithub/pando/internal/cliassist"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/format"
@@ -182,6 +183,18 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 
 		// Initialize MCP tools early for both modes
 		initMCPTools(ctx, app)
+
+		// CLI-assist mode
+		cliAssistMode, _ := cmd.Flags().GetBool("cli-assist")
+		if cliAssistMode {
+			cliArgs := cmd.Flags().Args()
+			if len(cliArgs) == 0 {
+				fmt.Fprintln(os.Stderr, "Usage: pando --cli-assist <what you want to do>")
+				os.Exit(1)
+			}
+			cliassist.Run(ctx, config.Get(), cliArgs)
+			return nil
+		}
 
 		// Non-interactive mode
 		if prompt != "" {
@@ -427,6 +440,9 @@ func init() {
 
 	// Add ACP server flag
 	rootCmd.Flags().Bool("acp-server", false, "Run as ACP server (allows other agents to connect)")
+
+	// Add CLI assist flag
+	rootCmd.Flags().Bool("cli-assist", false, "Generate and run a shell command using AI")
 
 	// Register custom validation for the format flag
 	rootCmd.RegisterFlagCompletionFunc("output-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
