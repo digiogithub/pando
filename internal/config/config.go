@@ -465,6 +465,10 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 		return cfg, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	// Restore WorkingDir after unmarshal: it's a runtime parameter, not a config file setting,
+	// so viper.Unmarshal would reset it to empty string if not present in the config file.
+	cfg.WorkingDir = workingDir
+
 	applyDefaultValues()
 
 	// Apply logFile from CLI argument if provided
