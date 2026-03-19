@@ -825,6 +825,19 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 			Masked: true,
 		},
 		{
+			Label: "Exa Search Enabled",
+			Key:   "internalTools.exaSearchEnabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(it.ExaSearchEnabled),
+		},
+		{
+			Label:  "Exa API Key",
+			Key:    "internalTools.exaApiKey",
+			Type:   settings.FieldText,
+			Value:  it.ExaAPIKey,
+			Masked: true,
+		},
+		{
 			Label: "Context7 Enabled",
 			Key:   "internalTools.context7Enabled",
 			Type:  settings.FieldToggle,
@@ -872,7 +885,7 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 			Label:    "Info",
 			Key:      "internalTools.info",
 			Type:     settings.FieldText,
-			Value:    "Search tools are only active when their API key is configured. Env vars: GOOGLE_API_KEY, BRAVE_API_KEY, PERPLEXITY_API_KEY",
+			Value:    "Search tools are only active when their API key is configured. Env vars: GOOGLE_API_KEY, BRAVE_API_KEY, PERPLEXITY_API_KEY, EXA_API_KEY",
 			ReadOnly: true,
 		},
 	}
@@ -1858,6 +1871,14 @@ func saveInternalTools(field settings.Field) error {
 		itCfg.PerplexitySearchEnabled = enabled
 	case "internalTools.perplexityApiKey":
 		itCfg.PerplexityAPIKey = strings.TrimSpace(field.Value)
+	case "internalTools.exaSearchEnabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Exa Search Enabled value: %w", err)
+		}
+		itCfg.ExaSearchEnabled = enabled
+	case "internalTools.exaApiKey":
+		itCfg.ExaAPIKey = strings.TrimSpace(field.Value)
 	case "internalTools.context7Enabled":
 		enabled, err := parseBoolValue(field.Value)
 		if err != nil {

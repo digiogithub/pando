@@ -441,6 +441,15 @@
           "description": "Perplexity AI Search API key",
           "type": "string"
         },
+        "exaSearchEnabled": {
+          "default": true,
+          "description": "Enable Exa AI Search tool",
+          "type": "boolean"
+        },
+        "exaApiKey": {
+          "description": "Exa AI Search API key",
+          "type": "string"
+        },
         "context7Enabled": {
           "default": true,
           "description": "Enable Context7 library docs tool",

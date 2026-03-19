@@ -42,6 +42,9 @@ func CoderAgentTools(
 		if it.PerplexitySearchEnabled && strings.TrimSpace(it.PerplexityAPIKey) != "" {
 			otherTools = append(otherTools, tools.NewPerplexitySearchTool(permissions))
 		}
+		if it.ExaSearchEnabled && strings.TrimSpace(it.ExaAPIKey) != "" {
+			otherTools = append(otherTools, tools.NewExaSearchTool(permissions))
+		}
 		if it.Context7Enabled {
 			otherTools = append(otherTools, tools.NewContext7Tools()...)
 		}

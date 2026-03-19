@@ -48,7 +48,12 @@ func renderMarkdown(content string, width int) string {
 		}
 	}
 
-	return strings.TrimRight(strings.Join(parts, "\n"), "\n")
+	result := strings.Join(parts, "\n")
+	// Collapse 3+ consecutive newlines to at most 2 (preserve paragraph breaks, remove excess)
+	for strings.Contains(result, "\n\n\n") {
+		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
+	}
+	return strings.Trim(result, "\n")
 }
 
 func renderMarkdownText(renderer *glamour.TermRenderer, content string) string {
@@ -61,7 +66,7 @@ func renderMarkdownText(renderer *glamour.TermRenderer, content string) string {
 		rendered = content
 	}
 
-	rendered = strings.TrimRight(rendered, "\n")
+	rendered = strings.Trim(rendered, "\n")
 	rendered = styles.ForceReplaceBackgroundWithLipgloss(rendered, theme.CurrentTheme().Background())
 	return hyperlinkMarkdownURLs(rendered)
 }
