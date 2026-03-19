@@ -7,23 +7,39 @@ import (
 	"strconv"
 	"strings"
 
+	"context"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	pandoapp "github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
+	"github.com/digiogithub/pando/internal/skills/catalog"
+	"github.com/digiogithub/pando/internal/tui/components/dialog"
 	"github.com/digiogithub/pando/internal/tui/components/settings"
 	"github.com/digiogithub/pando/internal/tui/layout"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
 )
 
+type skillUninstalledMsg struct {
+	skillName string
+	err       error
+}
+
+type skillUpdatedMsg struct {
+	skillName string
+	err       error
+}
+
 type settingsPage struct {
-	width    int
-	height   int
-	app      *pandoapp.App
-	settings settings.SettingsCmp
+	width         int
+	height        int
+	app           *pandoapp.App
+	settings      settings.SettingsCmp
+	catalogDialog *dialog.SkillsCatalogDialog
 }
 
 func (p *settingsPage) Init() tea.Cmd {
@@ -31,13 +47,63 @@ func (p *settingsPage) Init() tea.Cmd {
 }
 
 func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle catalog dialog result messages at this level regardless of dialog state
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		p.width = msg.Width
 		p.height = msg.Height
 		return p, p.SetSize(msg.Width, msg.Height)
 	case settings.SaveFieldMsg:
+		if msg.Field.Key == "action:open_skills_catalog" {
+			return p, p.openCatalogDialog()
+		}
+		if strings.HasPrefix(msg.Field.Key, "action:uninstall_skill:") {
+			name := strings.TrimPrefix(msg.Field.Key, "action:uninstall_skill:")
+			return p, p.uninstallSkill(name)
+		}
+		if strings.HasPrefix(msg.Field.Key, "action:update_skill:") {
+			name := strings.TrimPrefix(msg.Field.Key, "action:update_skill:")
+			return p, p.updateSkill(name)
+		}
 		return p, p.saveField(msg)
+	case skillUninstalledMsg:
+		p.settings.SetSections(buildSections(p.app))
+		p.settings.SetSize(p.width, p.height)
+		if msg.err != nil {
+			return p, util.ReportError(msg.err)
+		}
+		return p, util.ReportInfo("Skill uninstalled: " + msg.skillName)
+	case skillUpdatedMsg:
+		p.settings.SetSections(buildSections(p.app))
+		p.settings.SetSize(p.width, p.height)
+		if msg.err != nil {
+			return p, util.ReportError(msg.err)
+		}
+		return p, util.ReportInfo("Skill updated: " + msg.skillName)
+	case dialog.InstallSkillMsg:
+		return p, p.installSkill(msg)
+	case dialog.SkillInstalledMsg:
+		p.catalogDialog = nil
+		p.settings.SetSections(buildSections(p.app))
+		p.settings.SetSize(p.width, p.height)
+		if msg.Err != nil {
+			return p, util.ReportError(msg.Err)
+		}
+		successMsg := fmt.Sprintf("Skill '%s' installed to %s", msg.SkillName, msg.InstallDir)
+		return p, util.ReportInfo(successMsg)
+	case dialog.CloseSkillsCatalogMsg:
+		p.catalogDialog = nil
+		return p, nil
+	}
+
+	// Forward key events to catalog dialog when active
+	if p.catalogDialog != nil {
+		if _, ok := msg.(tea.KeyMsg); ok {
+			updated, cmd := p.catalogDialog.Update(msg)
+			d := updated.(dialog.SkillsCatalogDialog)
+			p.catalogDialog = &d
+			return p, cmd
+		}
 	}
 
 	updated, cmd := p.settings.Update(msg)
@@ -46,7 +112,20 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (p *settingsPage) View() string {
-	return p.settings.View()
+	base := p.settings.View()
+	if p.catalogDialog != nil {
+		overlay := p.catalogDialog.View()
+		x := (p.width - dialog.DialogDialogWidth) / 2
+		y := (p.height - dialog.DialogDialogHeight) / 2
+		if x < 0 {
+			x = 0
+		}
+		if y < 0 {
+			y = 0
+		}
+		return layout.PlaceOverlay(x, y, overlay, base, true)
+	}
+	return base
 }
 
 func (p *settingsPage) SetSize(width, height int) tea.Cmd {
@@ -77,6 +156,113 @@ func (p *settingsPage) saveField(msg settings.SaveFieldMsg) tea.Cmd {
 	return util.ReportInfo("Setting saved: " + msg.Field.Label)
 }
 
+func (p *settingsPage) openCatalogDialog() tea.Cmd {
+	baseURL := "https://skills.sh"
+	if cfg := config.Get(); cfg != nil && cfg.SkillsCatalog.BaseURL != "" {
+		baseURL = cfg.SkillsCatalog.BaseURL
+	}
+	client := catalog.NewClient(baseURL)
+	d := dialog.NewSkillsCatalogDialog(dialog.DialogDialogWidth, dialog.DialogDialogHeight, client)
+	p.catalogDialog = &d
+	return p.catalogDialog.Init()
+}
+
+func (p *settingsPage) installSkill(msg dialog.InstallSkillMsg) tea.Cmd {
+	skill := msg.Skill
+	global := msg.Global
+	baseURL := "https://skills.sh"
+	if cfg := config.Get(); cfg != nil && cfg.SkillsCatalog.BaseURL != "" {
+		baseURL = cfg.SkillsCatalog.BaseURL
+	}
+	client := catalog.NewClient(baseURL)
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		content, err := client.GetContent(ctx, skill.SkillID)
+		if err != nil {
+			return dialog.SkillInstalledMsg{SkillName: skill.Name, Err: err}
+		}
+		targetDir := catalog.ResolveSkillsDir(!global)
+		if err := catalog.InstallSkill(content, skill.Name, targetDir); err != nil {
+			return dialog.SkillInstalledMsg{SkillName: skill.Name, Err: err}
+		}
+		scope := "project"
+		if global {
+			scope = "global"
+		}
+		entry := catalog.LockEntry{
+			Name:        skill.Name,
+			Source:      skill.Source,
+			SkillID:     skill.SkillID,
+			Scope:       scope,
+			InstalledAt: time.Now(),
+			Checksum:    catalog.ChecksumContent(content),
+		}
+		_ = catalog.AddLockEntry(targetDir, entry)
+		return dialog.SkillInstalledMsg{SkillName: skill.Name, InstallDir: targetDir}
+	}
+}
+
+func (p *settingsPage) uninstallSkill(name string) tea.Cmd {
+	return func() tea.Msg {
+		dirs := []string{
+			catalog.ResolveSkillsDir(false),
+			catalog.ResolveSkillsDir(true),
+		}
+		for _, dir := range dirs {
+			if catalog.IsSkillInstalled(name, dir) {
+				err := catalog.UninstallSkill(name, dir)
+				if err == nil {
+					_ = catalog.RemoveLockEntry(dir, name)
+				}
+				return skillUninstalledMsg{skillName: name, err: err}
+			}
+		}
+		return skillUninstalledMsg{skillName: name, err: fmt.Errorf("skill %q not found in any skills directory", name)}
+	}
+}
+
+func (p *settingsPage) updateSkill(name string) tea.Cmd {
+	return func() tea.Msg {
+		dirs := []string{
+			catalog.ResolveSkillsDir(false),
+			catalog.ResolveSkillsDir(true),
+		}
+		for _, dir := range dirs {
+			lock, err := catalog.ReadLock(dir)
+			if err != nil || lock == nil {
+				continue
+			}
+			entry, ok := lock.Skills[name]
+			if !ok {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			content, err := catalog.FetchSkillContent(ctx, entry.Source, name)
+			if err != nil {
+				return skillUpdatedMsg{skillName: name, err: err}
+			}
+			// Force overwrite: uninstall first, then reinstall
+			_ = catalog.UninstallSkill(name, dir)
+			err = catalog.InstallSkill(content, name, dir)
+			if err == nil {
+				newEntry := catalog.LockEntry{
+					Name:        name,
+					Source:      entry.Source,
+					SkillID:     entry.SkillID,
+					Scope:       entry.Scope,
+					InstalledAt: time.Now(),
+					Checksum:    catalog.ChecksumContent(content),
+				}
+				_ = catalog.AddLockEntry(dir, newEntry)
+			}
+			return skillUpdatedMsg{skillName: name, err: err}
+		}
+		return skillUpdatedMsg{skillName: name, err: fmt.Errorf("skill %q not found in catalog lock", name)}
+	}
+}
+
 func buildSections(app *pandoapp.App) []settings.Section {
 	cfg := config.Get()
 	if cfg == nil {
@@ -86,6 +272,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 	return []settings.Section{
 		buildGeneralSection(cfg),
 		buildSkillsSection(app, cfg),
+		buildSkillsCatalogSection(cfg),
 		buildProvidersSection(cfg),
 		buildAgentsSection(cfg),
 		buildMCPServersSection(cfg),
@@ -289,6 +476,16 @@ func buildSkillsSection(app *pandoapp.App, cfg *config.Config) settings.Section 
 		},
 	}
 
+	if cfg.SkillsCatalog.Enabled {
+		fields = append(fields, settings.Field{
+			Label:    "Browse Catalog",
+			Key:      "action:open_skills_catalog",
+			Value:    "↵ Enter to search and install from skills.sh",
+			Type:     settings.FieldAction,
+			ReadOnly: true,
+		})
+	}
+
 	if !cfg.Skills.Enabled || app == nil || app.SkillManager == nil {
 		fields = append(fields, settings.Field{
 			Label:    "Info",
@@ -312,6 +509,14 @@ func buildSkillsSection(app *pandoapp.App, cfg *config.Config) settings.Section 
 		return settings.Section{Title: "Skills", Fields: fields}
 	}
 
+	// Read lock file to get catalog source info (try project-local first, then global)
+	var catalogLock *catalog.CatalogLock
+	if lock, err := catalog.ReadLock(catalog.ResolveSkillsDir(false)); err == nil && len(lock.Skills) > 0 {
+		catalogLock = lock
+	} else if lock, err := catalog.ReadLock(catalog.ResolveSkillsDir(true)); err == nil {
+		catalogLock = lock
+	}
+
 	for _, m := range metadata {
 		displayName := m.Name
 		if version := strings.TrimSpace(m.Version); version != "" {
@@ -324,6 +529,17 @@ func buildSkillsSection(app *pandoapp.App, cfg *config.Config) settings.Section 
 		}
 
 		isLoaded := app.SkillManager.IsLoaded(m.Name)
+
+		// Determine catalog lock entry if skill was installed from catalog
+		sourceValue := "(local)"
+		var lockEntry *catalog.LockEntry
+		if catalogLock != nil {
+			if entry, ok := catalogLock.Skills[m.Name]; ok {
+				lockEntry = &entry
+				sourceValue = entry.Source + "@" + m.Name
+			}
+		}
+
 		fields = append(fields,
 			settings.Field{
 				Label:    displayName,
@@ -345,12 +561,84 @@ func buildSkillsSection(app *pandoapp.App, cfg *config.Config) settings.Section 
 				Value: boolString(isLoaded),
 				Type:  settings.FieldToggle,
 			},
+			settings.Field{
+				Label:    fmt.Sprintf("%s Source", m.Name),
+				Key:      "skills.source." + m.Name,
+				Value:    sourceValue,
+				Type:     settings.FieldText,
+				ReadOnly: true,
+			},
+			settings.Field{
+				Label:    fmt.Sprintf("%s Uninstall", m.Name),
+				Key:      "action:uninstall_skill:" + m.Name,
+				Value:    "Remove skill files",
+				Type:     settings.FieldAction,
+				ReadOnly: true,
+			},
 		)
+
+		if lockEntry != nil {
+			fields = append(fields, settings.Field{
+				Label:    fmt.Sprintf("%s Update", m.Name),
+				Key:      "action:update_skill:" + m.Name,
+				Value:    "Re-fetch from " + lockEntry.Source,
+				Type:     settings.FieldAction,
+				ReadOnly: true,
+			})
+		}
 	}
 
 	return settings.Section{
 		Title:  "Skills",
 		Fields: fields,
+	}
+}
+
+func buildSkillsCatalogSection(cfg *config.Config) settings.Section {
+	baseURL := cfg.SkillsCatalog.BaseURL
+	if baseURL == "" {
+		baseURL = "https://skills.sh"
+	}
+	scope := cfg.SkillsCatalog.DefaultScope
+	if scope == "" {
+		scope = "global"
+	}
+	return settings.Section{
+		Title: "Skills Catalog",
+		Fields: []settings.Field{
+			{
+				Label: "Catalog Enabled",
+				Key:   "skillsCatalog.enabled",
+				Value: boolString(cfg.SkillsCatalog.Enabled),
+				Type:  settings.FieldToggle,
+			},
+			{
+				Label: "Catalog URL",
+				Key:   "skillsCatalog.baseUrl",
+				Value: baseURL,
+				Type:  settings.FieldText,
+			},
+			{
+				Label:   "Default Scope",
+				Key:     "skillsCatalog.defaultScope",
+				Value:   scope,
+				Type:    settings.FieldSelect,
+				Options: []string{"global", "project"},
+			},
+			{
+				Label: "Auto Update",
+				Key:   "skillsCatalog.autoUpdate",
+				Value: boolString(cfg.SkillsCatalog.AutoUpdate),
+				Type:  settings.FieldToggle,
+			},
+			{
+				Label:    "Lock File Location",
+				Key:      "skillsCatalog.lockFile.info",
+				Value:    "~/.pando/skills/catalog-lock.json",
+				Type:     settings.FieldText,
+				ReadOnly: true,
+			},
+		},
 	}
 }
 
@@ -1335,6 +1623,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveBash(field)
 	case strings.HasPrefix(field.Key, "evaluator."):
 		return saveEvaluator(field)
+	case strings.HasPrefix(field.Key, "skillsCatalog."):
+		return saveSkillsCatalog(field)
 	default:
 		return fmt.Errorf("unsupported setting %q", field.Key)
 	}
@@ -2298,6 +2588,48 @@ func saveEvaluator(field settings.Field) error {
 	}
 
 	return config.UpdateEvaluator(evalCfg)
+}
+
+func saveSkillsCatalog(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	scCfg := cfg.SkillsCatalog
+	switch field.Key {
+	case "skillsCatalog.enabled":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid catalog enabled value: %w", err)
+		}
+		scCfg.Enabled = v
+	case "skillsCatalog.baseUrl":
+		url := strings.TrimSpace(field.Value)
+		if url == "" {
+			return fmt.Errorf("catalog URL cannot be empty")
+		}
+		scCfg.BaseURL = url
+	case "skillsCatalog.defaultScope":
+		scope := strings.TrimSpace(field.Value)
+		if scope != "global" && scope != "project" {
+			return fmt.Errorf("default scope must be \"global\" or \"project\"")
+		}
+		scCfg.DefaultScope = scope
+	case "skillsCatalog.autoUpdate":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid auto update value: %w", err)
+		}
+		scCfg.AutoUpdate = v
+	case "skillsCatalog.lockFile.info":
+		// read-only informational field, nothing to save
+		return nil
+	default:
+		return fmt.Errorf("unsupported skillsCatalog setting %q", field.Key)
+	}
+
+	return config.UpdateSkillsCatalog(scCfg)
 }
 
 func normalizeRemembrancesConfig(remCfg config.RemembrancesConfig) config.RemembrancesConfig {
