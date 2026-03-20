@@ -45,11 +45,12 @@ type MCPServer struct {
 type AgentName string
 
 const (
-	AgentCoder      AgentName = "coder"
-	AgentSummarizer AgentName = "summarizer"
-	AgentTask       AgentName = "task"
-	AgentTitle      AgentName = "title"
-	AgentCLIAssist  AgentName = "cli-assist"
+	AgentCoder           AgentName = "coder"
+	AgentSummarizer      AgentName = "summarizer"
+	AgentTask            AgentName = "task"
+	AgentTitle           AgentName = "title"
+	AgentCLIAssist       AgentName = "cli-assist"
+	AgentPersonaSelector AgentName = "persona-selector"
 )
 
 // CLIAssistConfig defines configuration for the CLI assist mode.
@@ -83,10 +84,14 @@ type Data struct {
 
 // LSPConfig defines configuration for Language Server Protocol integration.
 type LSPConfig struct {
-	Disabled bool     `json:"enabled"`
-	Command  string   `json:"command"`
-	Args     []string `json:"args"`
-	Options  any      `json:"options"`
+	Disabled  bool     `json:"disabled"`
+	Command   string   `json:"command"`
+	Args      []string `json:"args"`
+	Options   any      `json:"options"`
+	// Languages is a list of file extensions (e.g. ".go", ".ts") or language IDs
+	// this server handles. Used to filter which LSP clients are queried for a
+	// given file. If empty, the server is queried for all files.
+	Languages []string `json:"languages,omitempty"`
 }
 
 // TUIConfig defines the configuration for the Terminal User Interface.
@@ -263,6 +268,17 @@ type SnapshotsConfig struct {
 	AutoCleanupDays int      `json:"autoCleanupDays,omitempty"`
 }
 
+// PersonaAutoSelectConfig configures automatic persona selection for the main session.
+// When enabled, a lite model analyses each user prompt and prepends the most relevant
+// persona's content before the message is sent to the main conversation model.
+type PersonaAutoSelectConfig struct {
+	// Enabled activates automatic persona selection. Default: false.
+	Enabled bool `json:"enabled,omitempty"`
+	// PersonaPath is the directory containing persona .md files.
+	// When empty, falls back to mesnada.orchestrator.personaPath.
+	PersonaPath string `json:"personaPath,omitempty"`
+}
+
 // EvaluatorConfig controls the self-improvement evaluation loop.
 type EvaluatorConfig struct {
 	// Enabled activates the evaluation loop. Default: false (opt-in).
@@ -351,8 +367,9 @@ type Config struct {
 	MCPGateway    MCPGatewayConfig                  `json:"mcpGateway,omitempty"`
 	InternalTools InternalToolsConfig               `json:"internalTools,omitempty"`
 	Snapshots     SnapshotsConfig                   `json:"snapshots,omitempty"`
-	Evaluator     EvaluatorConfig                   `json:"evaluator,omitempty" toml:"evaluator"`
-	CLIAssist     CLIAssistConfig                   `json:"cliAssist,omitempty" toml:"cliAssist"`
+	Evaluator          EvaluatorConfig                   `json:"evaluator,omitempty" toml:"evaluator"`
+	CLIAssist          CLIAssistConfig                   `json:"cliAssist,omitempty" toml:"cliAssist"`
+	PersonaAutoSelect  PersonaAutoSelectConfig           `json:"personaAutoSelect,omitempty"`
 }
 
 // Application constants
@@ -2285,6 +2302,25 @@ func UpdateSkillsCatalog(sc SkillsCatalogConfig) error {
 		config.SkillsCatalog = sc
 	}); err != nil {
 		cfg.SkillsCatalog = oldSC
+		return err
+	}
+
+	return nil
+}
+
+// UpdatePersonaAutoSelect updates persona auto-select configuration and persists it.
+func UpdatePersonaAutoSelect(pasCfg PersonaAutoSelectConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	old := cfg.PersonaAutoSelect
+	cfg.PersonaAutoSelect = pasCfg
+
+	if err := updateCfgFile(func(config *Config) {
+		config.PersonaAutoSelect = pasCfg
+	}); err != nil {
+		cfg.PersonaAutoSelect = old
 		return err
 	}
 

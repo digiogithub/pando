@@ -285,6 +285,25 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 	}
 	logging.Debug("Coder agent created", "model", app.CoderAgent.Model().ID)
 
+	// Initialize automatic persona selector for the main session when enabled.
+	if cfg.PersonaAutoSelect.Enabled {
+		personaPath := cfg.PersonaAutoSelect.PersonaPath
+		if personaPath == "" {
+			personaPath = expandMesnadaPath(cfg.Mesnada.Orchestrator.PersonaPath)
+		}
+		if personaPath != "" {
+			ps, psErr := agent.NewPersonaSelector(personaPath)
+			if psErr != nil {
+				logging.Warn("Auto persona selector disabled", "reason", psErr)
+			} else {
+				agent.SetPersonaSelector(ps)
+				logging.Debug("Auto persona selector enabled", "personaPath", personaPath)
+			}
+		} else {
+			logging.Warn("Auto persona selector enabled but no personaPath configured")
+		}
+	}
+
 	logging.Debug("App created", "workingDir", config.WorkingDirectory())
 	return app, nil
 }
