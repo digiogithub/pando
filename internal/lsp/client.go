@@ -25,6 +25,10 @@ type Client struct {
 	stdout *bufio.Reader
 	stderr io.ReadCloser
 
+	// Languages this client handles (file extensions like ".go", ".ts").
+	// If empty, the client is used for all files.
+	Languages []string
+
 	// Request ID counter
 	nextID atomic.Int32
 
@@ -50,6 +54,24 @@ type Client struct {
 
 	// Server state
 	serverState atomic.Value
+}
+
+// HandlesFile reports whether this client should handle the given file path
+// based on its Languages list. Returns true when Languages is empty (handles all).
+func (c *Client) HandlesFile(filePath string) bool {
+	if len(c.Languages) == 0 {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(filePath))
+	if ext == "" {
+		return true
+	}
+	for _, lang := range c.Languages {
+		if strings.ToLower(lang) == ext {
+			return true
+		}
+	}
+	return false
 }
 
 func NewClient(ctx context.Context, command string, args ...string) (*Client, error) {

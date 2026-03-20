@@ -34,6 +34,11 @@ type skillUpdatedMsg struct {
 	err       error
 }
 
+type lspPresetAddedMsg struct {
+	presetName string
+	err        error
+}
+
 type settingsPage struct {
 	width         int
 	height        int
@@ -65,6 +70,10 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			name := strings.TrimPrefix(msg.Field.Key, "action:update_skill:")
 			return p, p.updateSkill(name)
 		}
+		if strings.HasPrefix(msg.Field.Key, "action:lsp_preset:") {
+			presetName := strings.TrimPrefix(msg.Field.Key, "action:lsp_preset:")
+			return p, p.addLSPPreset(presetName)
+		}
 		return p, p.saveField(msg)
 	case skillUninstalledMsg:
 		p.settings.SetSections(buildSections(p.app))
@@ -94,6 +103,13 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dialog.CloseSkillsCatalogMsg:
 		p.catalogDialog = nil
 		return p, nil
+	case lspPresetAddedMsg:
+		p.settings.SetSections(buildSections(p.app))
+		p.settings.SetSize(p.width, p.height)
+		if msg.err != nil {
+			return p, util.ReportError(msg.err)
+		}
+		return p, util.ReportInfo("LSP server added: " + msg.presetName)
 	}
 
 	// Forward ALL events to catalog dialog when active (keys, ticks, search results, blinks)
@@ -273,6 +289,17 @@ func (p *settingsPage) updateSkill(name string) tea.Cmd {
 	}
 }
 
+func (p *settingsPage) addLSPPreset(presetName string) tea.Cmd {
+	return func() tea.Msg {
+		preset, ok := config.LSPPresetByName(presetName)
+		if !ok {
+			return lspPresetAddedMsg{presetName: presetName, err: fmt.Errorf("unknown LSP preset %q", presetName)}
+		}
+		err := config.UpdateLSP(preset.Name, preset.Config)
+		return lspPresetAddedMsg{presetName: presetName, err: err}
+	}
+}
+
 func buildSections(app *pandoapp.App) []settings.Section {
 	cfg := config.Get()
 	if cfg == nil {
@@ -280,22 +307,34 @@ func buildSections(app *pandoapp.App) []settings.Section {
 	}
 
 	return []settings.Section{
-		buildGeneralSection(cfg),
-		buildSkillsSection(app, cfg),
-		buildSkillsCatalogSection(cfg),
-		buildProvidersSection(cfg),
-		buildAgentsSection(cfg),
-		buildMCPServersSection(cfg),
-		buildLSPSection(cfg),
-		buildMesnadaSection(cfg),
-		buildRemembrancesSection(cfg),
-		buildInternalToolsSection(cfg),
-		buildServerSection(cfg),
-		buildLuaSection(cfg),
-		buildMCPGatewaySection(cfg),
-		buildSnapshotsSection(cfg),
-		buildBashSection(cfg),
-		buildEvaluatorSection(cfg),
+		// ── Core ──
+		withGroup(buildGeneralSection(cfg), "Core"),
+
+		// ── AI ──
+		withGroup(buildProvidersSection(cfg), "AI"),
+		withGroup(buildAgentsSection(cfg), "AI"),
+		withGroup(buildPersonaAutoSelectSection(cfg), "AI"),
+		withGroup(buildEvaluatorSection(cfg), "AI"),
+
+		// ── Extensions ──
+		withGroup(buildSkillsSection(app, cfg), "Extensions"),
+		withGroup(buildSkillsCatalogSection(cfg), "Extensions"),
+		withGroup(buildLuaSection(cfg), "Extensions"),
+
+		// ── Integrations ──
+		withGroup(buildMCPServersSection(cfg), "Integrations"),
+		withGroup(buildMCPGatewaySection(cfg), "Integrations"),
+		withGroup(buildLSPSection(cfg), "Integrations"),
+
+		// ── Tools ──
+		withGroup(buildInternalToolsSection(cfg), "Tools"),
+		withGroup(buildBashSection(cfg), "Tools"),
+
+		// ── Services ──
+		withGroup(buildMesnadaSection(cfg), "Services"),
+		withGroup(buildRemembrancesSection(cfg), "Services"),
+		withGroup(buildServerSection(cfg), "Services"),
+		withGroup(buildSnapshotsSection(cfg), "Services"),
 	}
 }
 
@@ -658,6 +697,7 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 		config.AgentSummarizer,
 		config.AgentTask,
 		config.AgentTitle,
+		config.AgentPersonaSelector,
 	}
 
 	modelOptions := supportedModelOptions(cfg)
@@ -783,41 +823,61 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 }
 
 func buildLSPSection(cfg *config.Config) settings.Section {
-	languages := make([]string, 0, len(cfg.LSP))
-	for language := range cfg.LSP {
-		languages = append(languages, language)
+	names := make([]string, 0, len(cfg.LSP))
+	for name := range cfg.LSP {
+		names = append(names, name)
 	}
-	sort.Strings(languages)
+	sort.Strings(names)
 
-	fields := make([]settings.Field, 0, len(languages)*3)
-	for _, language := range languages {
-		lspCfg := cfg.LSP[language]
+	fields := make([]settings.Field, 0, len(names)*5)
+	for _, name := range names {
+		lspCfg := cfg.LSP[name]
 		fields = append(fields,
 			settings.Field{
-				Label: fmt.Sprintf("%s Language", language),
-				Key:   fmt.Sprintf("lsp.%s.language", language),
-				Value: language,
+				Label: fmt.Sprintf("%s Name", name),
+				Key:   fmt.Sprintf("lsp.%s.language", name),
+				Value: name,
 				Type:  settings.FieldText,
 			},
 			settings.Field{
-				Label: fmt.Sprintf("%s Command", language),
-				Key:   fmt.Sprintf("lsp.%s.command", language),
+				Label: fmt.Sprintf("%s Command", name),
+				Key:   fmt.Sprintf("lsp.%s.command", name),
 				Value: lspCfg.Command,
 				Type:  settings.FieldText,
 			},
 			settings.Field{
-				Label: fmt.Sprintf("%s Args", language),
-				Key:   fmt.Sprintf("lsp.%s.args", language),
+				Label: fmt.Sprintf("%s Args", name),
+				Key:   fmt.Sprintf("lsp.%s.args", name),
 				Value: strings.Join(lspCfg.Args, " "),
 				Type:  settings.FieldText,
 			},
 			settings.Field{
-				Label: fmt.Sprintf("%s Enabled", language),
-				Key:   fmt.Sprintf("lsp.%s.enabled", language),
+				Label: fmt.Sprintf("%s Languages", name),
+				Key:   fmt.Sprintf("lsp.%s.languages", name),
+				Value: strings.Join(lspCfg.Languages, " "),
+				Type:  settings.FieldText,
+			},
+			settings.Field{
+				Label: fmt.Sprintf("%s Enabled", name),
+				Key:   fmt.Sprintf("lsp.%s.enabled", name),
 				Value: boolString(!lspCfg.Disabled),
 				Type:  settings.FieldToggle,
 			},
 		)
+	}
+
+	// Show available presets that are not yet configured.
+	presets := config.LSPPresets()
+	for _, preset := range presets {
+		if _, alreadyConfigured := cfg.LSP[preset.Name]; alreadyConfigured {
+			continue
+		}
+		fields = append(fields, settings.Field{
+			Label: fmt.Sprintf("Add %s", preset.Name),
+			Key:   fmt.Sprintf("action:lsp_preset:%s", preset.Name),
+			Value: preset.Description,
+			Type:  settings.FieldAction,
+		})
 	}
 
 	return settings.Section{
@@ -1363,6 +1423,35 @@ func buildBashSection(cfg *config.Config) settings.Section {
 	}
 }
 
+func buildPersonaAutoSelectSection(cfg *config.Config) settings.Section {
+	pas := cfg.PersonaAutoSelect
+	return settings.Section{
+		Title: "Persona Auto-Select",
+		Fields: []settings.Field{
+			{
+				Label: "Enabled",
+				Key:   "personaAutoSelect.enabled",
+				Type:  settings.FieldToggle,
+				Value: boolString(pas.Enabled),
+			},
+			{
+				Label:    "Persona Path",
+				Key:      "personaAutoSelect.personaPath",
+				Type:     settings.FieldText,
+				Value:    pas.PersonaPath,
+				Disabled: !pas.Enabled,
+			},
+			{
+				Label: "Info",
+				Key:   "personaAutoSelect.info",
+				Type:     settings.FieldText,
+				Value:    "Uses agents[\"persona-selector\"] model. Falls back to mesnada.orchestrator.personaPath when empty.",
+				Disabled: true,
+			},
+		},
+	}
+}
+
 func buildEvaluatorSection(cfg *config.Config) settings.Section {
 	eval := cfg.Evaluator
 	fields := []settings.Field{
@@ -1548,6 +1637,11 @@ func ensureOption(options []string, value string) []string {
 	return append(withValue, value)
 }
 
+func withGroup(s settings.Section, group string) settings.Section {
+	s.Group = group
+	return s
+}
+
 func boolString(value bool) string {
 	if value {
 		return "true"
@@ -1635,6 +1729,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveEvaluator(field)
 	case strings.HasPrefix(field.Key, "skillsCatalog."):
 		return saveSkillsCatalog(field)
+	case strings.HasPrefix(field.Key, "personaAutoSelect."):
+		return savePersonaAutoSelect(field)
 	default:
 		return fmt.Errorf("unsupported setting %q", field.Key)
 	}
@@ -1899,6 +1995,8 @@ func saveLSP(field settings.Field) error {
 		lspCfg.Command = strings.TrimSpace(field.Value)
 	case "args":
 		lspCfg.Args = strings.Fields(field.Value)
+	case "languages":
+		lspCfg.Languages = strings.Fields(field.Value)
 	case "enabled":
 		enabled, err := parseBoolValue(field.Value)
 		if err != nil {
@@ -2598,6 +2696,31 @@ func saveEvaluator(field settings.Field) error {
 	}
 
 	return config.UpdateEvaluator(evalCfg)
+}
+
+func savePersonaAutoSelect(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	pasCfg := cfg.PersonaAutoSelect
+	switch field.Key {
+	case "personaAutoSelect.enabled":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid personaAutoSelect enabled value: %w", err)
+		}
+		pasCfg.Enabled = v
+	case "personaAutoSelect.personaPath":
+		pasCfg.PersonaPath = strings.TrimSpace(field.Value)
+	case "personaAutoSelect.info":
+		return nil
+	default:
+		return fmt.Errorf("unsupported personaAutoSelect setting %q", field.Key)
+	}
+
+	return config.UpdatePersonaAutoSelect(pasCfg)
 }
 
 func saveSkillsCatalog(field settings.Field) error {
