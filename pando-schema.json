@@ -489,6 +489,21 @@
     "wd": {
       "description": "Working directory for the application",
       "type": "string"
+    },
+    "personaAutoSelect": {
+      "description": "Automatic persona selection for the main conversation session",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Activate automatic persona selection before each user message. Uses agents[\"persona-selector\"] model.",
+          "type": "boolean"
+        },
+        "personaPath": {
+          "description": "Directory containing persona .md files. Falls back to mesnada.orchestrator.personaPath when empty.",
+          "type": "string"
+        }
+      },
+      "type": "object"
     }
   },
   "title": "Pando Configuration",
