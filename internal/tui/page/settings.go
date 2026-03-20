@@ -185,15 +185,10 @@ func (p *settingsPage) openCatalogDialog() tea.Cmd {
 func (p *settingsPage) installSkill(msg dialog.InstallSkillMsg) tea.Cmd {
 	skill := msg.Skill
 	global := msg.Global
-	baseURL := "https://skills.sh"
-	if cfg := config.Get(); cfg != nil && cfg.SkillsCatalog.BaseURL != "" {
-		baseURL = cfg.SkillsCatalog.BaseURL
-	}
-	client := catalog.NewClient(baseURL)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		content, err := client.GetContent(ctx, skill.SkillID)
+		content, err := catalog.FetchSkillContent(ctx, skill.Source, skill.Name)
 		if err != nil {
 			return dialog.SkillInstalledMsg{SkillName: skill.Name, Err: err}
 		}
