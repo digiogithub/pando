@@ -280,22 +280,34 @@ func buildSections(app *pandoapp.App) []settings.Section {
 	}
 
 	return []settings.Section{
-		buildGeneralSection(cfg),
-		buildSkillsSection(app, cfg),
-		buildSkillsCatalogSection(cfg),
-		buildProvidersSection(cfg),
-		buildAgentsSection(cfg),
-		buildMCPServersSection(cfg),
-		buildLSPSection(cfg),
-		buildMesnadaSection(cfg),
-		buildRemembrancesSection(cfg),
-		buildInternalToolsSection(cfg),
-		buildServerSection(cfg),
-		buildLuaSection(cfg),
-		buildMCPGatewaySection(cfg),
-		buildSnapshotsSection(cfg),
-		buildBashSection(cfg),
-		buildEvaluatorSection(cfg),
+		// ── Core ──
+		withGroup(buildGeneralSection(cfg), "Core"),
+
+		// ── AI ──
+		withGroup(buildProvidersSection(cfg), "AI"),
+		withGroup(buildAgentsSection(cfg), "AI"),
+		withGroup(buildPersonaAutoSelectSection(cfg), "AI"),
+		withGroup(buildEvaluatorSection(cfg), "AI"),
+
+		// ── Extensions ──
+		withGroup(buildSkillsSection(app, cfg), "Extensions"),
+		withGroup(buildSkillsCatalogSection(cfg), "Extensions"),
+		withGroup(buildLuaSection(cfg), "Extensions"),
+
+		// ── Integrations ──
+		withGroup(buildMCPServersSection(cfg), "Integrations"),
+		withGroup(buildMCPGatewaySection(cfg), "Integrations"),
+		withGroup(buildLSPSection(cfg), "Integrations"),
+
+		// ── Tools ──
+		withGroup(buildInternalToolsSection(cfg), "Tools"),
+		withGroup(buildBashSection(cfg), "Tools"),
+
+		// ── Services ──
+		withGroup(buildMesnadaSection(cfg), "Services"),
+		withGroup(buildRemembrancesSection(cfg), "Services"),
+		withGroup(buildServerSection(cfg), "Services"),
+		withGroup(buildSnapshotsSection(cfg), "Services"),
 	}
 }
 
@@ -658,6 +670,7 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 		config.AgentSummarizer,
 		config.AgentTask,
 		config.AgentTitle,
+		config.AgentPersonaSelector,
 	}
 
 	modelOptions := supportedModelOptions(cfg)
@@ -1363,6 +1376,35 @@ func buildBashSection(cfg *config.Config) settings.Section {
 	}
 }
 
+func buildPersonaAutoSelectSection(cfg *config.Config) settings.Section {
+	pas := cfg.PersonaAutoSelect
+	return settings.Section{
+		Title: "Persona Auto-Select",
+		Fields: []settings.Field{
+			{
+				Label: "Enabled",
+				Key:   "personaAutoSelect.enabled",
+				Type:  settings.FieldToggle,
+				Value: boolString(pas.Enabled),
+			},
+			{
+				Label:    "Persona Path",
+				Key:      "personaAutoSelect.personaPath",
+				Type:     settings.FieldText,
+				Value:    pas.PersonaPath,
+				Disabled: !pas.Enabled,
+			},
+			{
+				Label: "Info",
+				Key:   "personaAutoSelect.info",
+				Type:     settings.FieldText,
+				Value:    "Uses agents[\"persona-selector\"] model. Falls back to mesnada.orchestrator.personaPath when empty.",
+				Disabled: true,
+			},
+		},
+	}
+}
+
 func buildEvaluatorSection(cfg *config.Config) settings.Section {
 	eval := cfg.Evaluator
 	fields := []settings.Field{
@@ -1548,6 +1590,11 @@ func ensureOption(options []string, value string) []string {
 	return append(withValue, value)
 }
 
+func withGroup(s settings.Section, group string) settings.Section {
+	s.Group = group
+	return s
+}
+
 func boolString(value bool) string {
 	if value {
 		return "true"
@@ -1635,6 +1682,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveEvaluator(field)
 	case strings.HasPrefix(field.Key, "skillsCatalog."):
 		return saveSkillsCatalog(field)
+	case strings.HasPrefix(field.Key, "personaAutoSelect."):
+		return savePersonaAutoSelect(field)
 	default:
 		return fmt.Errorf("unsupported setting %q", field.Key)
 	}
@@ -2598,6 +2647,31 @@ func saveEvaluator(field settings.Field) error {
 	}
 
 	return config.UpdateEvaluator(evalCfg)
+}
+
+func savePersonaAutoSelect(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	pasCfg := cfg.PersonaAutoSelect
+	switch field.Key {
+	case "personaAutoSelect.enabled":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid personaAutoSelect enabled value: %w", err)
+		}
+		pasCfg.Enabled = v
+	case "personaAutoSelect.personaPath":
+		pasCfg.PersonaPath = strings.TrimSpace(field.Value)
+	case "personaAutoSelect.info":
+		return nil
+	default:
+		return fmt.Errorf("unsupported personaAutoSelect setting %q", field.Key)
+	}
+
+	return config.UpdatePersonaAutoSelect(pasCfg)
 }
 
 func saveSkillsCatalog(field settings.Field) error {
