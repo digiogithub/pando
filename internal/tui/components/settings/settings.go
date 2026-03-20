@@ -82,8 +82,8 @@ func (m SettingsCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle left-click for navigation
 		if mouseMsg.Action == tea.MouseActionPress && mouseMsg.Button == tea.MouseButtonLeft {
 			if mouseMsg.X < sidebarWidth {
-				// Sidebar click: y=0 top padding, y=1 "Settings" title, y=2+ sections
-				sectionIdx := mouseMsg.Y - 2
+				// Sidebar click: account for group header lines
+				sectionIdx := m.sidebarYToSectionIdx(mouseMsg.Y)
 				if sectionIdx >= 0 && sectionIdx < len(m.sections) {
 					m.activeSectionIdx = sectionIdx
 					m.syncSectionWidths()
@@ -212,7 +212,19 @@ func (m SettingsCmp) renderSidebar() string {
 			Foreground(t.TextMuted()).
 			Render("No sections"))
 	} else {
+		lastGroup := ""
 		for i, section := range m.sections {
+			// Show group header when the group changes
+			if section.Group != "" && section.Group != lastGroup {
+				groupHeader := lipgloss.NewStyle().
+					Width(width - 2).
+					Padding(0, 1).
+					Foreground(t.TextMuted()).
+					Render("─ " + section.Group)
+				items = append(items, groupHeader)
+				lastGroup = section.Group
+			}
+
 			style := lipgloss.NewStyle().
 				Width(width-2).
 				Padding(0, 1).
@@ -338,11 +350,35 @@ func (m *SettingsCmp) activeSection() *Section {
 	return &m.sections[m.activeSectionIdx]
 }
 
+// sidebarYToSectionIdx maps a sidebar Y coordinate to a section index,
+// accounting for group header lines inserted between sections.
+func (m SettingsCmp) sidebarYToSectionIdx(y int) int {
+	// y=0: top padding, y=1: "Settings" title
+	currentY := 2
+	lastGroup := ""
+	for i, section := range m.sections {
+		if section.Group != "" && section.Group != lastGroup {
+			// Group header line
+			if y == currentY {
+				return -1 // clicked on group header, not a section
+			}
+			currentY++
+			lastGroup = section.Group
+		}
+		if y == currentY {
+			return i
+		}
+		currentY++
+	}
+	return -1
+}
+
 func cloneSections(sections []Section) []Section {
 	cloned := make([]Section, len(sections))
 	for i, section := range sections {
 		cloned[i] = Section{
 			Title:          section.Title,
+			Group:          section.Group,
 			Fields:         append([]Field(nil), section.Fields...),
 			activeFieldIdx: section.activeFieldIdx,
 		}

@@ -33,6 +33,12 @@ func (app *App) createAndStartLSPClient(ctx context.Context, name string, comman
 		return
 	}
 
+	// Propagate the language filter from config
+	cfg2 := config.Get()
+	if lspCfg, ok := cfg2.LSP[name]; ok {
+		lspClient.Languages = lspCfg.Languages
+	}
+
 	// Create a longer timeout for initialization (some servers take time to start)
 	initCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
