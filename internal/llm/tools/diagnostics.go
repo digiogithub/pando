@@ -77,7 +77,17 @@ func (b *diagnosticsTool) Run(ctx context.Context, call ToolCall) (ToolResponse,
 		return NewTextErrorResponse("no LSP clients available"), nil
 	}
 
+	// When a specific file is requested, restrict to clients that handle it.
 	if params.FilePath != "" {
+		filtered := make(map[string]*lsp.Client, len(lsps))
+		for name, client := range lsps {
+			if client.HandlesFile(params.FilePath) {
+				filtered[name] = client
+			}
+		}
+		if len(filtered) > 0 {
+			lsps = filtered
+		}
 		notifyLspOpenFile(ctx, params.FilePath, lsps)
 		waitForLspDiagnostics(ctx, params.FilePath, lsps)
 	}
