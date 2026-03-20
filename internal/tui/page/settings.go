@@ -96,14 +96,19 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return p, nil
 	}
 
-	// Forward key events to catalog dialog when active
+	// Forward ALL events to catalog dialog when active (keys, ticks, search results, blinks)
 	if p.catalogDialog != nil {
+		updated, cmd := p.catalogDialog.Update(msg)
+		d := updated.(dialog.SkillsCatalogDialog)
+		p.catalogDialog = &d
+		// For key messages, the dialog is the sole handler — block settings component
 		if _, ok := msg.(tea.KeyMsg); ok {
-			updated, cmd := p.catalogDialog.Update(msg)
-			d := updated.(dialog.SkillsCatalogDialog)
-			p.catalogDialog = &d
 			return p, cmd
 		}
+		// For non-key messages (ticks, search results, blink), also forward to settings
+		settingsUpdated, settingsCmd := p.settings.Update(msg)
+		p.settings = settingsUpdated.(settings.SettingsCmp)
+		return p, tea.Batch(cmd, settingsCmd)
 	}
 
 	updated, cmd := p.settings.Update(msg)
@@ -137,6 +142,16 @@ func (p *settingsPage) SetSize(width, height int) tea.Cmd {
 
 func (p *settingsPage) GetSize() (int, int) {
 	return p.width, p.height
+}
+
+// HasActiveModal reports whether the settings page currently has an active modal dialog.
+func (p *settingsPage) HasActiveModal() bool {
+	return p.catalogDialog != nil
+}
+
+// ClearModals closes any open modal dialogs on the settings page.
+func (p *settingsPage) ClearModals() {
+	p.catalogDialog = nil
 }
 
 func NewSettingsPage(app *pandoapp.App) tea.Model {

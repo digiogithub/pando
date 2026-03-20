@@ -123,6 +123,7 @@ func NewSkillsCatalogDialog(width, height int, client *catalog.Client) SkillsCat
 	ti := textinput.New()
 	ti.Placeholder = "type to search..."
 	ti.CharLimit = 64
+	ti.Focus()
 
 	return SkillsCatalogDialog{
 		width:  width,

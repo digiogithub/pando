@@ -769,6 +769,12 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a, a.moveToPage(page.ChatPage)
 				}
 				if a.currentPage == page.SettingsPage {
+					// If the settings page has an active modal (e.g. skills catalog dialog),
+					// forward Esc to it so the dialog can close instead of navigating away.
+					if mp, ok := a.pages[a.currentPage].(page.ModalPage); ok && mp.HasActiveModal() {
+						a.pages[a.currentPage], cmd = a.pages[a.currentPage].Update(msg)
+						return a, cmd
+					}
 					return a, a.moveToPage(page.ChatPage)
 				}
 				if a.currentPage == page.OrchestratorPage {
@@ -1078,6 +1084,12 @@ func (a *appModel) moveToPage(pageID page.PageID) tea.Cmd {
 		cmd := a.pages[pageID].Init()
 		cmds = append(cmds, cmd)
 		a.loadedPages[pageID] = true
+	}
+	// Clear any active modals on the page being navigated away from.
+	if a.currentPage != pageID {
+		if mp, ok := a.pages[a.currentPage].(page.ModalPage); ok {
+			mp.ClearModals()
+		}
 	}
 	a.previousPage = a.currentPage
 	a.currentPage = pageID
