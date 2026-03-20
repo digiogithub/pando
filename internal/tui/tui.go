@@ -16,6 +16,7 @@ import (
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/lsp/protocol"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"
@@ -1521,6 +1522,54 @@ func (a appModel) View() string {
 	return tuizone.Manager.Scan(appView)
 }
 
+// buildDiagnosticsSummary returns a human-readable summary of LSP diagnostics.
+func (a *appModel) buildDiagnosticsSummary() string {
+	if a.app == nil || len(a.app.LSPClients) == 0 {
+		return "LSP: No language servers active"
+	}
+
+	var errors, warnings, hints, infos int
+	var fileCount int
+	for _, client := range a.app.LSPClients {
+		for _, diags := range client.GetDiagnostics() {
+			if len(diags) > 0 {
+				fileCount++
+			}
+			for _, d := range diags {
+				switch d.Severity {
+				case protocol.SeverityError:
+					errors++
+				case protocol.SeverityWarning:
+					warnings++
+				case protocol.SeverityHint:
+					hints++
+				case protocol.SeverityInformation:
+					infos++
+				}
+			}
+		}
+	}
+
+	if errors == 0 && warnings == 0 && hints == 0 && infos == 0 {
+		return "LSP: No diagnostics"
+	}
+
+	var parts []string
+	if errors > 0 {
+		parts = append(parts, fmt.Sprintf("%d errors", errors))
+	}
+	if warnings > 0 {
+		parts = append(parts, fmt.Sprintf("%d warnings", warnings))
+	}
+	if hints > 0 {
+		parts = append(parts, fmt.Sprintf("%d hints", hints))
+	}
+	if infos > 0 {
+		parts = append(parts, fmt.Sprintf("%d info", infos))
+	}
+	return fmt.Sprintf("LSP Diagnostics (%d files): %s", fileCount, strings.Join(parts, ", "))
+}
+
 func (a *appModel) handleMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
 	if a.showQuit || a.showPermissions || a.showSessionDialog || a.showCommandDialog ||
 		a.showModelDialog || a.showInitDialog || a.showFilepicker || a.showThemeDialog ||
@@ -1563,6 +1612,18 @@ func (a *appModel) handleMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
 
 	if tuizone.InBounds(tuizone.StatusHelp, msg) {
 		a.showHelp = !a.showHelp
+		return nil, true
+	}
+
+	if tuizone.InBounds(tuizone.StatusDiagnostics, msg) {
+		summary := a.buildDiagnosticsSummary()
+		if summary != "" {
+			return util.CmdHandler(util.InfoMsg{
+				Type: util.InfoTypeInfo,
+				Msg:  summary,
+				TTL:  15 * time.Second,
+			}), true
+		}
 		return nil, true
 	}
 
