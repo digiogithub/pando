@@ -15,3 +15,11 @@ const (
 type PageChangeMsg struct {
 	ID PageID
 }
+
+// ModalPage is implemented by pages that host modal dialogs, allowing the
+// app-level key handler to check whether a modal is active before intercepting
+// navigation keys like Esc.
+type ModalPage interface {
+	HasActiveModal() bool
+	ClearModals()
+}
