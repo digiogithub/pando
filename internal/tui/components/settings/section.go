@@ -14,6 +14,7 @@ type SaveFieldMsg struct {
 
 type Section struct {
 	Title          string
+	Group          string // optional group label shown as header in sidebar
 	Fields         []Field
 	activeFieldIdx int
 	width          int

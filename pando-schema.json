@@ -151,7 +151,7 @@
     },
     "lsp": {
       "additionalProperties": {
-        "description": "LSP configuration for a language",
+        "description": "LSP server configuration. The map key is the server name (e.g. 'gopls', 'rust-analyzer').",
         "properties": {
           "args": {
             "description": "Command arguments for the LSP server",
@@ -166,11 +166,18 @@
           },
           "disabled": {
             "default": false,
-            "description": "Whether the LSP is disabled",
+            "description": "Whether the LSP server is disabled",
             "type": "boolean"
           },
+          "languages": {
+            "description": "File extensions this server handles (e.g. [\".go\", \".mod\"]). When empty the server is used for all files.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "options": {
-            "description": "Additional options for the LSP server",
+            "description": "Additional initialization options forwarded to the LSP server",
             "type": "object"
           }
         },
@@ -179,7 +186,7 @@
         ],
         "type": "object"
       },
-      "description": "Language Server Protocol configurations",
+      "description": "Language Server Protocol server configurations. Multiple servers can be configured simultaneously. Use the built-in presets or provide custom entries.",
       "type": "object"
     },
     "mcpServers": {
@@ -489,6 +496,21 @@
     "wd": {
       "description": "Working directory for the application",
       "type": "string"
+    },
+    "personaAutoSelect": {
+      "description": "Automatic persona selection for the main conversation session",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Activate automatic persona selection before each user message. Uses agents[\"persona-selector\"] model.",
+          "type": "boolean"
+        },
+        "personaPath": {
+          "description": "Directory containing persona .md files. Falls back to mesnada.orchestrator.personaPath when empty.",
+          "type": "string"
+        }
+      },
+      "type": "object"
     }
   },
   "title": "Pando Configuration",

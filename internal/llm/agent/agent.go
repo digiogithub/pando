@@ -323,9 +323,9 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	// Hook 4: hook_conversation_start — may inject context into user content
 	if a.luaMgr != nil && a.luaMgr.IsEnabled() {
 		hookData := map[string]interface{}{
-			"session_id":      sessionID,
-			"is_new_session":  len(msgs) == 0,
-			"message_count":   len(msgs),
+			"session_id":     sessionID,
+			"is_new_session": len(msgs) == 0,
+			"message_count":  len(msgs),
 		}
 		result, _ := a.luaMgr.ExecuteHook(ctx, luaengine.HookConversationStart, hookData)
 		if result != nil && result.Modified {
@@ -333,6 +333,11 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 				content = injected + "\n\n" + content
 			}
 		}
+	}
+
+	// Auto persona selection: a lite model picks the best persona and prepends it.
+	if globalPersonaSelector != nil {
+		content = globalPersonaSelector.SelectAndApply(ctx, content)
 	}
 
 	userMsg, err := a.createUserMessage(ctx, sessionID, content, attachmentParts)
