@@ -193,7 +193,7 @@ Compila el binario de pando y lo copia a `~/bin/`.
 ```bash
 # Get version from last git tag
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
-go build -ldflags "-X github.com/digiogithub/pando/internal/version.Version=$VERSION" -o pando .
+go build -ldflags "-s -w -X github.com/digiogithub/pando/internal/version.Version=$VERSION" -o pando .
 rm -f ~/bin/pando
 upx -1 pando
 cp pando ~/bin/pando

@@ -78,6 +78,37 @@ func (m SettingsCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if mouseMsg, ok := msg.(tea.MouseMsg); ok {
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(mouseMsg)
+
+		// Handle left-click for navigation
+		if mouseMsg.Action == tea.MouseActionPress && mouseMsg.Button == tea.MouseButtonLeft {
+			if mouseMsg.X < sidebarWidth {
+				// Sidebar click: y=0 top padding, y=1 "Settings" title, y=2+ sections
+				sectionIdx := mouseMsg.Y - 2
+				if sectionIdx >= 0 && sectionIdx < len(m.sections) {
+					m.activeSectionIdx = sectionIdx
+					m.syncSectionWidths()
+					m.syncViewport()
+					m.autoScrollToActiveField()
+				}
+			} else {
+				// Content area click: Padding(1,2) + header(1) + empty(1) = viewport at y=3
+				const viewportStartY = 3
+				relY := mouseMsg.Y - viewportStartY
+				if relY >= 0 && relY < m.viewport.Height {
+					contentY := relY + m.viewport.YOffset
+					// Each field is 3 lines: top border + content + bottom border
+					fieldIdx := contentY / 3
+					if activeSection := m.activeSection(); activeSection != nil {
+						if fieldIdx >= 0 && fieldIdx < len(activeSection.Fields) {
+							activeSection.activeFieldIdx = fieldIdx
+							m.syncViewport()
+							m.autoScrollToActiveField()
+						}
+					}
+				}
+			}
+		}
+
 		return m, cmd
 	}
 
