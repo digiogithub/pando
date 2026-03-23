@@ -1,0 +1,1403 @@
+{
+  "version": "2.9",
+  "children": [
+    {
+      "type": "frame",
+      "id": "bi8Au",
+      "x": 0,
+      "y": 0,
+      "name": "main-view",
+      "clip": true,
+      "width": 1200,
+      "height": 714,
+      "fill": [
+        {
+          "type": "gradient",
+          "gradientType": "linear",
+          "enabled": true,
+          "rotation": 180,
+          "size": {
+            "height": 1
+          },
+          "colors": [
+            {
+              "color": "#FFFDF8",
+              "position": 0
+            },
+            {
+              "color": "$color-bg",
+              "position": 1
+            }
+          ]
+        },
+        "$color-bg"
+      ],
+      "gap": 20,
+      "padding": 20,
+      "children": [
+        {
+          "type": "frame",
+          "id": "h2vIh",
+          "name": "left-rail",
+          "width": 264,
+          "height": "fill_container",
+          "fill": "$color-panel",
+          "cornerRadius": "$radius-lg",
+          "stroke": {
+            "thickness": 1,
+            "fill": "$color-border"
+          },
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "$color-shadow",
+            "offset": {
+              "x": 0,
+              "y": 10
+            },
+            "blur": 20
+          },
+          "layout": "vertical",
+          "gap": 18,
+          "padding": [
+            18,
+            16,
+            16,
+            16
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "JRDqp",
+              "name": "brandRow",
+              "width": "fill_container",
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "n9Wxe",
+                  "name": "brandMark",
+                  "width": 44,
+                  "height": 44,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "./assets/pando-favicon.png",
+                    "mode": "fit"
+                  },
+                  "cornerRadius": 14,
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color-border"
+                  },
+                  "justifyContent": "center",
+                  "alignItems": "center"
+                },
+                {
+                  "type": "frame",
+                  "id": "Z9PsE",
+                  "name": "brandText",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 4,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "QgNEB",
+                      "name": "brandLogo",
+                      "width": 146,
+                      "height": 36,
+                      "fill": {
+                        "type": "image",
+                        "enabled": true,
+                        "url": "./assets/pando-logo.png",
+                        "mode": "fit"
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "id": "9nwc0",
+                      "name": "brandMeta",
+                      "fill": "$color-text-muted",
+                      "content": "AI cowork for code, tools and agents",
+                      "fontFamily": "Inter",
+                      "fontSize": 10,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "BrbCN",
+              "name": "modeToggle",
+              "width": "fill_container",
+              "fill": "$color-bg",
+              "cornerRadius": 14,
+              "stroke": {
+                "thickness": 1,
+                "fill": "$color-border"
+              },
+              "gap": 4,
+              "padding": 4,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "0tQIJ",
+                  "name": "modeChat",
+                  "width": "fill_container",
+                  "fill": "$color-panel-strong",
+                  "cornerRadius": 10,
+                  "padding": [
+                    10,
+                    14
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "NQPay",
+                      "name": "modeChatText",
+                      "fill": "$color-text",
+                      "content": "Chat",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "7vL61",
+                  "name": "modeCowork",
+                  "width": "fill_container",
+                  "cornerRadius": 10,
+                  "padding": [
+                    10,
+                    14
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "dSBJ2",
+                      "name": "modeCoworkText",
+                      "fill": "$color-text-muted",
+                      "content": "Cowork",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "BzVdP",
+              "name": "newTask",
+              "width": "fill_container",
+              "fill": "$color-gold",
+              "cornerRadius": 14,
+              "effect": {
+                "type": "shadow",
+                "shadowType": "outer",
+                "color": "#D6A21D33",
+                "offset": {
+                  "x": 0,
+                  "y": 8
+                },
+                "blur": 16
+              },
+              "gap": 10,
+              "padding": [
+                12,
+                14
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "FdeUs",
+                  "name": "newTaskText",
+                  "fill": "#FFFDF8",
+                  "content": "＋  New task",
+                  "fontFamily": "Inter",
+                  "fontSize": 15,
+                  "fontWeight": "700"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "cV0h7",
+              "name": "leftList",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 12,
+              "justifyContent": "space_between",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "2d6mm",
+                  "name": "recentHeader",
+                  "width": "fill_container",
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "U8TY8",
+                      "name": "recentTitle",
+                      "fill": "$color-text",
+                      "content": "Recent workspaces",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "OmyJx",
+                      "name": "recentBadge",
+                      "fill": "$color-surface",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color-border"
+                      },
+                      "padding": [
+                        6,
+                        10
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "ebTIK",
+                          "name": "recentBadgeText",
+                          "fill": "$color-text-muted",
+                          "content": "12",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "p4KR4",
+                  "name": "leftTop",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "N6CU3",
+                      "name": "ws1",
+                      "width": "fill_container",
+                      "fill": "$color-panel-strong",
+                      "cornerRadius": 14,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color-border"
+                      },
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 14,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "uESCB",
+                          "name": "ws1t",
+                          "fill": "$color-text",
+                          "content": "Review AI assistant implementation",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "2Vtzl",
+                          "name": "ws1m",
+                          "fill": "$color-text-muted",
+                          "content": "Chat · Explorer · Tools",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "AoVHa",
+                      "name": "ws2",
+                      "width": "fill_container",
+                      "fill": "#FFFFFFB8",
+                      "cornerRadius": 14,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color-border"
+                      },
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 14,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "JvlhO",
+                          "name": "ws2t",
+                          "fill": "$color-text",
+                          "content": "Ship Web UI MVP",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "XOms4",
+                          "name": "ws2m",
+                          "fill": "$color-text-muted",
+                          "content": "Agents · Sessions · Artifacts",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "AvpYF",
+                      "name": "ws3",
+                      "width": "fill_container",
+                      "fill": "#FFFFFFB8",
+                      "cornerRadius": 14,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color-border"
+                      },
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 14,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "9KCpb",
+                          "name": "ws3t",
+                          "fill": "$color-text",
+                          "content": "Audit MCP favorites",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "mL1SS",
+                          "name": "ws3m",
+                          "fill": "$color-text-muted",
+                          "content": "Gateway · Stats · Registry",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "UcN0a",
+                  "name": "profileCard",
+                  "width": "fill_container",
+                  "fill": "$color-surface",
+                  "cornerRadius": 16,
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color-border"
+                  },
+                  "gap": 10,
+                  "padding": 12,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "CuHFX",
+                      "name": "avatar",
+                      "width": 36,
+                      "height": 36,
+                      "fill": "$color-panel-strong",
+                      "cornerRadius": 10,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "3TXOS",
+                          "name": "avatarText",
+                          "fill": "$color-text",
+                          "content": "SR",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "LWiNg",
+                      "name": "profMeta",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 2,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "hYkYA",
+                          "name": "profName",
+                          "fill": "$color-text",
+                          "content": "Sarah Rives",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "text",
+                          "id": "DZejX",
+                          "name": "profRole",
+                          "fill": "$color-text-muted",
+                          "content": "Maintainer · Acme Co.",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "h6FZn",
+          "name": "workspace-shell",
+          "width": "fill_container",
+          "height": "fill_container",
+          "layout": "vertical",
+          "gap": 16,
+          "children": [
+            {
+              "type": "frame",
+              "id": "WAsTq",
+              "name": "centerHeader",
+              "width": "fill_container",
+              "padding": [
+                4,
+                4,
+                0,
+                4
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "CbAIK",
+                  "name": "headLeft",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "h23JI",
+                      "name": "workspacePill",
+                      "fill": "$color-surface",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color-border"
+                      },
+                      "padding": [
+                        8,
+                        12
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "sxr6o",
+                          "name": "workspacePillText",
+                          "fill": "$color-text-muted",
+                          "content": "Workspace · /www/MCP/Pando/pando",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "StXOF",
+                      "name": "headTitle",
+                      "fill": "$color-text",
+                      "content": "Pando cowork cockpit",
+                      "fontFamily": "Inter",
+                      "fontSize": 24,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "z631w",
+                  "name": "headActions",
+                  "gap": 8,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "woNI0",
+                      "name": "act1",
+                      "fill": "$color-forest",
+                      "cornerRadius": 999,
+                      "padding": [
+                        9,
+                        12
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "0ptvI",
+                          "name": "act1t",
+                          "fill": "$color-bg",
+                          "content": "Chat only",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "E6NWA",
+                      "name": "act2",
+                      "fill": "$color-surface",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color-border"
+                      },
+                      "padding": [
+                        9,
+                        12
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "PQjRO",
+                          "name": "act2t",
+                          "fill": "$color-text",
+                          "content": "Panels on demand",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "pyzaP",
+                      "name": "act3",
+                      "fill": "$color-surface",
+                      "cornerRadius": 999,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color-border"
+                      },
+                      "padding": [
+                        9,
+                        12
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "stvWD",
+                          "name": "act3t",
+                          "fill": "$color-text",
+                          "content": "Responsive web",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "on8WF",
+              "name": "workspace-body",
+              "width": "fill_container",
+              "height": "fill_container",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "btaJv",
+                  "name": "chat-stage",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": "$color-panel",
+                  "cornerRadius": "$radius-lg",
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color-border"
+                  },
+                  "effect": {
+                    "type": "shadow",
+                    "shadowType": "outer",
+                    "color": "$color-shadow",
+                    "offset": {
+                      "x": 0,
+                      "y": 10
+                    },
+                    "blur": 18
+                  },
+                  "layout": "vertical",
+                  "gap": 16,
+                  "padding": 20,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Axbmj",
+                      "name": "topBar",
+                      "width": "fill_container",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "MGRje",
+                          "name": "topMeta",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 6,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "zxepR",
+                              "name": "topTitle",
+                              "fill": "$color-text",
+                              "content": "Review AI assistant implementation",
+                              "fontFamily": "Inter",
+                              "fontSize": 26,
+                              "fontWeight": "700"
+                            },
+                            {
+                              "type": "text",
+                              "id": "jwXiU",
+                              "name": "topDesc",
+                              "fill": "$color-text-muted",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "Pando keeps the core chat visible while opening Explorer, Context, Artifacts and Sessions only when the task needs them.",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "1e34G",
+                              "name": "centerLogo",
+                              "width": 168,
+                              "height": 42,
+                              "fill": {
+                                "type": "image",
+                                "enabled": true,
+                                "url": "./assets/pando-logo.png",
+                                "mode": "fit"
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "cazrJ",
+                          "name": "livePill",
+                          "fill": "#EAF2E3",
+                          "cornerRadius": 999,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "#B8C9A5"
+                          },
+                          "padding": [
+                            8,
+                            12
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "ntHtS",
+                              "name": "liveText",
+                              "fill": "$color-success",
+                              "content": "● Live workspace",
+                              "fontFamily": "Inter",
+                              "fontSize": 12,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "iUGNi",
+                      "name": "transcript",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "layout": "vertical",
+                      "gap": 14,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "J5Wao",
+                          "name": "assistantBubble",
+                          "width": "fill_container",
+                          "fill": "$color-bg",
+                          "cornerRadius": 18,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$color-border"
+                          },
+                          "layout": "vertical",
+                          "gap": 12,
+                          "padding": 16,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "YLSFj",
+                              "name": "assistantText",
+                              "fill": "$color-text",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "I found the main product surfaces for Pando: streaming chat, sessions, files and diffs, tool orchestration, MCP favorites, auth/providers, stats and review workflows. You can stay in chat-only mode, then reveal the right panels as contextual drawers.",
+                              "lineHeight": 1.45,
+                              "fontFamily": "Inter",
+                              "fontSize": 15,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "IROvD",
+                              "name": "toolRow",
+                              "width": "fill_container",
+                              "gap": 8,
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "GeXQL",
+                                  "name": "tool1",
+                                  "fill": "$color-surface",
+                                  "cornerRadius": 999,
+                                  "stroke": {
+                                    "thickness": 1,
+                                    "fill": "$color-border"
+                                  },
+                                  "padding": [
+                                    8,
+                                    12
+                                  ],
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "NPmR8",
+                                      "name": "tool1t",
+                                      "fill": "$color-text",
+                                      "content": "Explorer",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 12,
+                                      "fontWeight": "600"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "3iPJ1",
+                                  "name": "tool2",
+                                  "fill": "$color-surface",
+                                  "cornerRadius": 999,
+                                  "stroke": {
+                                    "thickness": 1,
+                                    "fill": "$color-border"
+                                  },
+                                  "padding": [
+                                    8,
+                                    12
+                                  ],
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "HkeEn",
+                                      "name": "tool2t",
+                                      "fill": "$color-text",
+                                      "content": "Artifacts",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 12,
+                                      "fontWeight": "600"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "v3w2G",
+                                  "name": "tool3",
+                                  "fill": "$color-gold-soft",
+                                  "cornerRadius": 999,
+                                  "padding": [
+                                    8,
+                                    12
+                                  ],
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "2NxtK",
+                                      "name": "tool3t",
+                                      "fill": "$color-text",
+                                      "content": "MCP favorites",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 12,
+                                      "fontWeight": "700"
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "w0mBy",
+                      "name": "composer",
+                      "width": "fill_container",
+                      "fill": "$color-bg",
+                      "cornerRadius": 18,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color-border"
+                      },
+                      "layout": "vertical",
+                      "gap": 12,
+                      "padding": 16,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "zcoaT",
+                          "name": "suggestRow",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "FsHrw",
+                              "name": "sug1",
+                              "fill": "#FFFFFFB8",
+                              "cornerRadius": 999,
+                              "stroke": {
+                                "thickness": 1,
+                                "fill": "$color-border"
+                              },
+                              "padding": [
+                                8,
+                                12
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "T6lBv",
+                                  "name": "sug1t",
+                                  "fill": "$color-text",
+                                  "content": "Prep the day",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "rDyPf",
+                          "name": "inputRow",
+                          "width": "fill_container",
+                          "fill": "$color-panel",
+                          "cornerRadius": 16,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$color-border"
+                          },
+                          "gap": 12,
+                          "padding": 12,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Vlzxe",
+                              "name": "inputText",
+                              "fill": "$color-text-muted",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "Type a task, attach project context, or ask Pando to open panels on demand…",
+                              "fontFamily": "Inter",
+                              "fontSize": 14,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "woIgi",
+                              "name": "sendBtn",
+                              "fill": "$color-amber",
+                              "cornerRadius": 12,
+                              "padding": [
+                                10,
+                                14
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "wB7xp",
+                                  "name": "sendText",
+                                  "fill": "#FFFDF8",
+                                  "content": "Start →",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 14,
+                                  "fontWeight": "700"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "1lOtO",
+                  "name": "panel-dock",
+                  "width": 52,
+                  "height": "fill_container",
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": [
+                    12,
+                    0
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "XQpiN",
+                      "name": "dockBubble",
+                      "width": 44,
+                      "height": 44,
+                      "fill": "$color-surface",
+                      "cornerRadius": 16,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color-border"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "MiUa6",
+                          "name": "dock1t",
+                          "fill": "$color-forest",
+                          "content": "P",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ggoGV",
+                      "name": "dock2",
+                      "width": 44,
+                      "height": 44,
+                      "fill": "$color-surface",
+                      "cornerRadius": 16,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color-border"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "aQWT6",
+                          "name": "dock2t",
+                          "fill": "$color-text",
+                          "content": "A",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "1GVSC",
+                      "name": "dock3",
+                      "width": 44,
+                      "height": 44,
+                      "fill": "$color-surface",
+                      "cornerRadius": 16,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color-border"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Uf9sD",
+                          "name": "dock3t",
+                          "fill": "$color-text",
+                          "content": "C",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "y6ivD",
+                      "name": "dock4",
+                      "width": 44,
+                      "height": 44,
+                      "fill": "$color-surface",
+                      "cornerRadius": 16,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$color-border"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "fDhi7",
+                          "name": "dock4t",
+                          "fill": "$color-text",
+                          "content": "⋯",
+                          "fontFamily": "Inter",
+                          "fontSize": 18,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "u6Hc0",
+          "name": "utility-shell",
+          "width": 292,
+          "height": "fill_container",
+          "layout": "vertical",
+          "gap": 14,
+          "children": [
+            {
+              "type": "frame",
+              "id": "DGPlg",
+              "name": "rightStack",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 14,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "3WKBF",
+                  "name": "progressCard",
+                  "width": "fill_container",
+                  "fill": "$color-panel",
+                  "cornerRadius": "$radius-lg",
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color-border"
+                  },
+                  "effect": {
+                    "type": "shadow",
+                    "shadowType": "outer",
+                    "color": "$color-shadow",
+                    "offset": {
+                      "x": 0,
+                      "y": 8
+                    },
+                    "blur": 14
+                  },
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "xCSLH",
+                      "name": "progressTitle",
+                      "fill": "$color-text",
+                      "content": "Progress",
+                      "fontFamily": "Inter",
+                      "fontSize": 20,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "0di15",
+                      "name": "progressDesc",
+                      "fill": "$color-text-muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "3 visible steps for the current task, with the rest of the orchestration living behind collapsible panels.",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "2yxov",
+                  "name": "artifactCard",
+                  "width": "fill_container",
+                  "fill": "$color-panel",
+                  "cornerRadius": "$radius-lg",
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color-border"
+                  },
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "wzgDn",
+                      "name": "artifactTitle",
+                      "fill": "$color-text",
+                      "content": "Artifacts",
+                      "fontFamily": "Inter",
+                      "fontSize": 20,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "d3rGc",
+                      "name": "artifactDesc",
+                      "fill": "$color-text-muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Exports, diffs, screenshots and generated files land here without stealing focus from the core conversation.",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "viwot",
+                  "name": "contextCard",
+                  "width": "fill_container",
+                  "fill": "$color-panel",
+                  "cornerRadius": "$radius-lg",
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color-border"
+                  },
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "8iT8W",
+                      "name": "contextTitle",
+                      "fill": "$color-text",
+                      "content": "Context",
+                      "fontFamily": "Inter",
+                      "fontSize": 20,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "dcJv8",
+                      "name": "contextDesc",
+                      "fill": "$color-text-muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Tracks tools, files, MCP favorites, providers and workspace state so Pando can stay grounded while you stay fast.",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "depSJ",
+                  "name": "insightCard",
+                  "width": "fill_container",
+                  "fill": "$color-panel",
+                  "cornerRadius": "$radius-lg",
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$color-border"
+                  },
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "ZOLWf",
+                      "name": "insightTitle",
+                      "fill": "$color-text",
+                      "content": "Adaptive layout",
+                      "fontFamily": "Inter",
+                      "fontSize": 20,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "NQdI1",
+                      "name": "insightDesc",
+                      "fill": "$color-text-muted",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Desktop keeps three zones. Tablet collapses utilities to the dock. Mobile starts in chat-only and opens everything else as sheets.",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variables": {
+    "color-amber": {
+      "type": "color",
+      "value": "#C87E1D"
+    },
+    "color-bg": {
+      "type": "color",
+      "value": "#F6F0E3"
+    },
+    "color-border": {
+      "type": "color",
+      "value": "#D8C7AC"
+    },
+    "color-forest": {
+      "type": "color",
+      "value": "#2F3A24"
+    },
+    "color-forest-soft": {
+      "type": "color",
+      "value": "#506148"
+    },
+    "color-gold": {
+      "type": "color",
+      "value": "#D6A21D"
+    },
+    "color-gold-soft": {
+      "type": "color",
+      "value": "#E8C94B"
+    },
+    "color-panel": {
+      "type": "color",
+      "value": "#FBF8F1"
+    },
+    "color-panel-strong": {
+      "type": "color",
+      "value": "#F2EAD8"
+    },
+    "color-shadow": {
+      "type": "color",
+      "value": "#00000014"
+    },
+    "color-success": {
+      "type": "color",
+      "value": "#6A8B4F"
+    },
+    "color-surface": {
+      "type": "color",
+      "value": "#EEE5D2"
+    },
+    "color-text": {
+      "type": "color",
+      "value": "#2B241D"
+    },
+    "color-text-muted": {
+      "type": "color",
+      "value": "#6E655A"
+    },
+    "radius-lg": {
+      "type": "number",
+      "value": 20
+    },
+    "radius-md": {
+      "type": "number",
+      "value": 14
+    },
+    "radius-sm": {
+      "type": "number",
+      "value": 10
+    },
+    "space-lg": {
+      "type": "number",
+      "value": 20
+    },
+    "space-md": {
+      "type": "number",
+      "value": 16
+    },
+    "space-sm": {
+      "type": "number",
+      "value": 12
+    },
+    "space-xl": {
+      "type": "number",
+      "value": 28
+    },
+    "space-xs": {
+      "type": "number",
+      "value": 8
+    }
+  }
+}
