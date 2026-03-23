@@ -1,0 +1,17 @@
+{
+  "version": "2.9",
+  "children": [
+    {
+      "type": "frame",
+      "id": "bi8Au",
+      "x": 0,
+      "y": 0,
+      "name": "main-view",
+      "clip": true,
+      "width": 1200,
+      "height": 714,
+      "fill": "#FFFFFF",
+      "layout": "none"
+    }
+  ]
+}
