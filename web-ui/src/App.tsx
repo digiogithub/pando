@@ -49,7 +49,7 @@ function App() {
         <SplashScreen status={splashStatus} onDone={() => setShowSplash(false)} />
       )}
 
-      <BrowserRouter>
+      {!showSplash && <BrowserRouter>
         <Suspense
           fallback={
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
@@ -82,7 +82,7 @@ function App() {
             </Routes>
           </ErrorBoundary>
         </Suspense>
-      </BrowserRouter>
+      </BrowserRouter>}
 
       <ToastContainer />
     </>

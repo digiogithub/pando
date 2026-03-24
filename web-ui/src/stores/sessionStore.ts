@@ -23,8 +23,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   fetchSessions: async () => {
     set({ loading: true })
     try {
-      const sessions = await api.get<Session[]>('/api/v1/sessions')
-      set({ sessions: sessions ?? [] })
+      const data = await api.get<{ sessions: Session[] }>('/api/v1/sessions')
+      set({ sessions: data.sessions ?? [] })
     } finally {
       set({ loading: false })
     }
