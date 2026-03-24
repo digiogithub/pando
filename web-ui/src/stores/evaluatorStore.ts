@@ -19,12 +19,12 @@ export const useEvaluatorStore = create<EvaluatorStore>((set) => ({
   fetchAll: async () => {
     set({ loading: true })
     try {
-      const [metrics, templates, skills] = await Promise.all([
+      const [metrics, templatesData, skillsData] = await Promise.all([
         api.get<EvaluatorMetrics>('/api/v1/evaluator/metrics').catch(() => null),
-        api.get<PromptTemplate[]>('/api/v1/evaluator/templates').catch(() => []),
-        api.get<Skill[]>('/api/v1/evaluator/skills').catch(() => []),
+        api.get<{ templates: PromptTemplate[] }>('/api/v1/evaluator/templates').catch(() => ({ templates: [] })),
+        api.get<{ skills: Skill[] }>('/api/v1/evaluator/skills').catch(() => ({ skills: [] })),
       ])
-      set({ metrics, templates: templates ?? [], skills: skills ?? [] })
+      set({ metrics, templates: templatesData.templates ?? [], skills: skillsData.skills ?? [] })
     } finally {
       set({ loading: false })
     }
