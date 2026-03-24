@@ -17,6 +17,12 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/files/", s.handleFileByPath)
 	mux.HandleFunc("/api/v1/chat", s.handleChat)
 	mux.HandleFunc("/api/v1/chat/stream", s.handleChatStream)
+	// Settings
+	mux.HandleFunc("/api/v1/settings", s.handleSettings)
+	mux.HandleFunc("/api/v1/settings/providers", s.handleGetProviders)
+	// Logs
+	mux.HandleFunc("/api/v1/logs", s.handleGetLogs)
+	mux.HandleFunc("/api/v1/logs/stream", s.handleLogsStream)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
