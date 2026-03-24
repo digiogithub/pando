@@ -1,9 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
+	"time"
 
+	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 )
@@ -17,61 +21,80 @@ type ModelInfo struct {
 	Badges      []string `json:"badges"`
 }
 
-// hardcodedModels is the list of well-known models returned by GET /api/v1/models.
-var hardcodedModels = []ModelInfo{
-	{
-		ID:          "claude-opus-4-6",
-		Name:        "Claude Opus 4.6",
-		Provider:    "anthropic",
-		Description: "Most capable Anthropic model",
-		Badges:      []string{"capable", "fast"},
-	},
-	{
-		ID:          "claude-sonnet-4-6",
-		Name:        "Claude Sonnet 4.6",
-		Provider:    "anthropic",
-		Description: "Balanced performance and cost",
-		Badges:      []string{"fast", "cost"},
-	},
-	{
-		ID:          "claude-haiku-4-5",
-		Name:        "Claude Haiku 4.5",
-		Provider:    "anthropic",
-		Description: "Fastest Anthropic model",
-		Badges:      []string{"fast", "cost"},
-	},
-	{
-		ID:          "gpt-4o",
-		Name:        "GPT-4o",
-		Provider:    "openai",
-		Description: "OpenAI flagship multimodal model",
-		Badges:      []string{"fast", "capable"},
-	},
-	{
-		ID:          "gpt-4o-mini",
-		Name:        "GPT-4o Mini",
-		Provider:    "openai",
-		Description: "Smaller, cost-efficient GPT-4o",
-		Badges:      []string{"fast", "cost"},
-	},
-	{
-		ID:          "gemini-2.0-flash",
-		Name:        "Gemini 2.0 Flash",
-		Provider:    "google",
-		Description: "Google fast and efficient model",
-		Badges:      []string{"fast", "cost"},
-	},
+// badgesForModel returns heuristic badges based on model ID.
+func badgesForModel(id string) []string {
+	id = strings.ToLower(id)
+	switch {
+	case strings.Contains(id, "opus") || strings.Contains(id, "gpt-4o") && !strings.Contains(id, "mini") || strings.Contains(id, "large"):
+		return []string{"capable"}
+	case strings.Contains(id, "haiku") || strings.Contains(id, "mini") || strings.Contains(id, "flash") || strings.Contains(id, "small"):
+		return []string{"fast", "cost"}
+	case strings.Contains(id, "sonnet") || strings.Contains(id, "gpt-4"):
+		return []string{"fast", "cost"}
+	default:
+		return []string{"fast"}
+	}
 }
 
 // handleListModels handles GET /api/v1/models.
+// It dynamically queries each configured (non-disabled) provider for their models.
 func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
+	cfg := config.Get()
+	if cfg == nil {
+		writeError(w, http.StatusInternalServerError, "configuration not loaded")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	result := make([]ModelInfo, 0)
+
+	for provider, providerCfg := range cfg.Providers {
+		if providerCfg.Disabled {
+			continue
+		}
+
+		// Get bearer token for Copilot
+		bearerToken := ""
+		if provider == models.ProviderCopilot {
+			if token, err := auth.LoadGitHubOAuthToken(); err == nil && token != "" {
+				bearerToken = token
+			} else if session, err := auth.LoadCopilotSession(); err == nil && session != nil {
+				bearerToken = session.Token
+			}
+			if bearerToken == "" {
+				continue
+			}
+		}
+
+		fetched, err := models.FetchModelsFromProvider(ctx, provider, providerCfg.APIKey, bearerToken, providerCfg.BaseURL)
+		if err != nil {
+			continue
+		}
+
+		for _, m := range fetched {
+			name := m.Name
+			if name == "" {
+				name = m.ID
+			}
+			result = append(result, ModelInfo{
+				ID:          m.ID,
+				Name:        name,
+				Provider:    string(provider),
+				Description: m.Description,
+				Badges:      badgesForModel(m.ID),
+			})
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"models": hardcodedModels,
+		"models": result,
 	})
 }
 
