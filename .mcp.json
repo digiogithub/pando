@@ -2,15 +2,33 @@
   "mcpServers": {
     "hyper-mcp": {
       "command": "hyper-mcp",
-      "args": ["--config-file", "/home/sevir/.config/hyper-mcp/search.yaml"]
+      "args": [
+        "--config-file",
+        "/home/sevir/.config/hyper-mcp/search.yaml"
+      ]
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ]
     },
     "mesnada": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "http://127.0.0.1:9767/mcp"]
+      "args": [
+        "-y",
+        "mcp-remote",
+        "http://127.0.0.1:9767/mcp"
+      ]
     },
     "remembrances": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "http://127.0.0.1:4030/mcp"]
+      "args": [
+        "-y",
+        "mcp-remote",
+        "http://127.0.0.1:4030/mcp"
+      ]
     }
   }
 }
