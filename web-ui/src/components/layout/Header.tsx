@@ -1,0 +1,147 @@
+import { NavLink } from 'react-router-dom'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import {
+  faComments, faPuzzlePiece, faFileLines, faNetworkWired,
+  faCamera, faStar, faCog, faMoon, faSun, faBars
+} from '@fortawesome/free-solid-svg-icons'
+import { useLayoutStore } from '@/stores/layoutStore'
+import { useTheme } from '@/hooks/useTheme'
+import { useServerStore } from '@/stores/serverStore'
+
+const TABS = [
+  { path: '/', label: 'Chat', icon: faComments, end: true },
+  { path: '/orchestrator', label: 'Add-ons', icon: faPuzzlePiece },
+  { path: '/logs', label: 'Logs', icon: faFileLines },
+  { path: '/orchestrator', label: 'Orchestrator', icon: faNetworkWired },
+  { path: '/snapshots', label: 'Snapshots', icon: faCamera },
+  { path: '/evaluator', label: 'Evaluator', icon: faStar },
+]
+
+export default function Header() {
+  const { toggleSidebar } = useLayoutStore()
+  const { theme, toggleTheme } = useTheme()
+  const connected = useServerStore((s) => s.connected)
+
+  return (
+    <header
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        height: 48,
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--sidebar-bg)',
+        paddingLeft: '0.75rem',
+        paddingRight: '1rem',
+        gap: '0.5rem',
+        flexShrink: 0,
+        zIndex: 10,
+      }}
+    >
+      {/* Logo + sidebar toggle */}
+      <button
+        onClick={toggleSidebar}
+        style={{
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          color: 'var(--fg-muted)',
+          padding: '0.25rem 0.5rem',
+          borderRadius: 'var(--radius-sm)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+        }}
+        title="Toggle sidebar (Ctrl+B)"
+      >
+        <img src="/pando.svg" alt="Pando" style={{ width: 20, height: 20 }} />
+        <FontAwesomeIcon icon={faBars} style={{ fontSize: 12 }} />
+      </button>
+
+      {/* Tab navigation */}
+      <nav style={{ display: 'flex', flex: 1, gap: 2 }} className="header-nav">
+        {TABS.map((tab) => (
+          <NavLink
+            key={tab.label}
+            to={tab.path}
+            end={tab.end}
+            title={tab.label}
+            style={({ isActive }) => ({
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              padding: '0.25rem 0.75rem',
+              borderRadius: 'var(--radius-sm)',
+              textDecoration: 'none',
+              fontSize: 13,
+              fontWeight: isActive ? 600 : 400,
+              color: isActive ? 'var(--primary)' : 'var(--fg-muted)',
+              borderBottom: isActive ? '2px solid var(--primary)' : '2px solid transparent',
+              background: isActive ? 'var(--selected)' : 'transparent',
+              transition: 'all 0.15s',
+            })}
+          >
+            <FontAwesomeIcon icon={tab.icon} style={{ fontSize: 11 }} />
+            <span className="header-tab-label">{tab.label}</span>
+          </NavLink>
+        ))}
+      </nav>
+      <style>{`
+        @media (max-width: 768px) {
+          .header-tab-label { display: none; }
+          .header-nav a { padding: 0.25rem 0.5rem !important; }
+        }
+        @media (max-width: 480px) {
+          .header-nav { gap: 0 !important; }
+        }
+      `}</style>
+
+      {/* Right actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        {/* Connection status */}
+        <div
+          title={connected ? 'Connected' : 'Disconnected'}
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: connected ? 'var(--success)' : 'var(--error)',
+          }}
+        />
+
+        {/* Theme toggle */}
+        <button
+          onClick={toggleTheme}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--fg-muted)',
+            padding: '0.25rem 0.5rem',
+            borderRadius: 'var(--radius-sm)',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+          title="Toggle theme"
+        >
+          <FontAwesomeIcon icon={theme === 'light' ? faMoon : faSun} style={{ fontSize: 14 }} />
+        </button>
+
+        {/* Settings */}
+        <NavLink
+          to="/settings"
+          style={({ isActive }) => ({
+            display: 'flex',
+            alignItems: 'center',
+            color: isActive ? 'var(--primary)' : 'var(--fg-muted)',
+            padding: '0.25rem 0.5rem',
+            borderRadius: 'var(--radius-sm)',
+            background: isActive ? 'var(--selected)' : 'transparent',
+          })}
+          title="Settings"
+        >
+          <FontAwesomeIcon icon={faCog} style={{ fontSize: 14 }} />
+        </NavLink>
+      </div>
+    </header>
+  )
+}
