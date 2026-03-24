@@ -25,8 +25,8 @@ export const useSnapshotsStore = create<SnapshotsStore>((set, get) => ({
   fetchSnapshots: async () => {
     set({ loading: true })
     try {
-      const snapshots = await api.get<Snapshot[]>('/api/v1/snapshots')
-      set({ snapshots: snapshots ?? [] })
+      const data = await api.get<{ snapshots: Snapshot[] }>('/api/v1/snapshots')
+      set({ snapshots: data.snapshots ?? [] })
     } catch {
       set({ snapshots: [] })
     } finally {
