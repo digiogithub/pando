@@ -1,0 +1,56 @@
+@import './styles/tokens.css';
+@import 'tailwindcss';
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--bg);
+  color: var(--fg);
+  min-height: 100vh;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-dim);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.markdown-content { line-height: 1.6; }
+.markdown-content p { margin: 0.25rem 0; }
+.markdown-content ul, .markdown-content ol { padding-left: 1.25rem; margin: 0.25rem 0; }
+.markdown-content li { margin: 0.1rem 0; }
+.markdown-content h1, .markdown-content h2, .markdown-content h3 {
+  margin: 0.75rem 0 0.25rem; font-weight: 600; color: var(--fg);
+}
+.markdown-content table { border-collapse: collapse; width: 100%; margin: 0.5rem 0; }
+.markdown-content th, .markdown-content td {
+  border: 1px solid var(--border); padding: 0.375rem 0.625rem; text-align: left; font-size: 13px;
+}
+.markdown-content th { background: var(--surface); font-weight: 600; }
+.markdown-content blockquote {
+  border-left: 3px solid var(--primary); padding-left: 0.75rem; margin: 0.5rem 0; color: var(--fg-muted);
+}
