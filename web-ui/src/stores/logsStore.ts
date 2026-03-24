@@ -35,8 +35,8 @@ export const useLogsStore = create<LogsStore>((set) => ({
   fetchLogs: async () => {
     set({ loading: true })
     try {
-      const entries = await api.get<LogEntry[]>('/api/v1/logs?limit=200')
-      set({ entries: entries ?? [] })
+      const data = await api.get<{ logs: LogEntry[]; total: number }>('/api/v1/logs?limit=200')
+      set({ entries: data.logs ?? [] })
     } catch {
       set({ entries: [] })
     } finally {
