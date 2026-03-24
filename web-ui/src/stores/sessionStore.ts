@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Session, Message } from '@/types'
 import api from '@/services/api'
+import { mapSession, mapMessage } from '@/services/mappers'
 
 interface SessionStore {
   sessions: Session[]
@@ -14,6 +15,11 @@ interface SessionStore {
   updateLastMessage: (content: string) => void
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type RawSessions = { sessions: any[] }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type RawSessionDetail = { session: any; messages: any[] }
+
 export const useSessionStore = create<SessionStore>((set, get) => ({
   sessions: [],
   activeSessionId: null,
@@ -23,8 +29,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   fetchSessions: async () => {
     set({ loading: true })
     try {
-      const sessions = await api.get<Session[]>('/api/v1/sessions')
-      set({ sessions: sessions ?? [] })
+      const data = await api.get<RawSessions>('/api/v1/sessions')
+      const sessions = (data.sessions ?? []).map(mapSession)
+      set({ sessions })
     } finally {
       set({ loading: false })
     }
@@ -33,8 +40,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setActiveSession: async (id: string) => {
     set({ activeSessionId: id, messages: [] })
     try {
-      const data = await api.get<{ session: Session; messages: Message[] }>(`/api/v1/sessions/${id}`)
-      set({ messages: data.messages ?? [] })
+      const data = await api.get<RawSessionDetail>(`/api/v1/sessions/${id}`)
+      const messages = (data.messages ?? []).map(mapMessage)
+      set({ messages })
     } catch {
       set({ messages: [] })
     }

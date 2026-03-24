@@ -23,8 +23,8 @@ export const useOrchestratorStore = create<OrchestratorStore>((set, get) => ({
   fetchTasks: async () => {
     set({ loading: true })
     try {
-      const tasks = await api.get<OrchestratorTask[]>('/api/v1/orchestrator/tasks')
-      set({ tasks: tasks ?? [] })
+      const data = await api.get<{ tasks: OrchestratorTask[]; total: number }>('/api/v1/orchestrator/tasks')
+      set({ tasks: data.tasks ?? [] })
     } catch {
       set({ tasks: [] })
     } finally {
