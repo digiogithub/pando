@@ -1,0 +1,213 @@
+import { useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faRobot, faUser, faWrench, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons'
+import { format } from 'date-fns'
+import 'highlight.js/styles/github-dark-dimmed.css'
+import type { Message, ContentPart } from '@/types'
+
+// ─── Markdown renderer ───────────────────────────────────────────────────────
+
+function MarkdownContent({ text, streaming }: { text: string; streaming?: boolean }) {
+  return (
+    <div className="markdown-content">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+        {text}
+      </ReactMarkdown>
+      {streaming && (
+        <span
+          style={{
+            display: 'inline-block',
+            width: 2,
+            height: '1em',
+            background: 'var(--primary)',
+            marginLeft: 2,
+            verticalAlign: 'text-bottom',
+            animation: 'blink 1s step-start infinite',
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Tool call block ─────────────────────────────────────────────────────────
+
+function ToolCallBlock({ part }: { part: ContentPart }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div
+      style={{
+        marginTop: '0.5rem',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-sm)',
+        overflow: 'hidden',
+        fontSize: 12,
+      }}
+    >
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          width: '100%',
+          padding: '0.375rem 0.625rem',
+          background: 'var(--surface)',
+          border: 'none',
+          cursor: 'pointer',
+          color: 'var(--fg-muted)',
+          textAlign: 'left',
+        }}
+      >
+        <FontAwesomeIcon icon={faWrench} style={{ fontSize: 10 }} />
+        <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>
+          {part.tool_name ?? 'tool_call'}
+        </span>
+        <FontAwesomeIcon
+          icon={expanded ? faChevronDown : faChevronRight}
+          style={{ fontSize: 9, marginLeft: 'auto' }}
+        />
+      </button>
+
+      {expanded && (
+        <div
+          style={{
+            padding: '0.5rem 0.625rem',
+            background: 'var(--bg-secondary)',
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          {part.tool_input && (
+            <div>
+              <div style={{ color: 'var(--fg-muted)', marginBottom: 4, fontWeight: 500 }}>Input:</div>
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                  fontSize: 11,
+                  color: 'var(--fg)',
+                }}
+              >
+                {JSON.stringify(part.tool_input, null, 2)}
+              </pre>
+            </div>
+          )}
+          {part.tool_result && (
+            <div style={{ marginTop: part.tool_input ? '0.5rem' : 0 }}>
+              <div style={{ color: 'var(--fg-muted)', marginBottom: 4, fontWeight: 500 }}>Result:</div>
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                  fontSize: 11,
+                  color: 'var(--fg)',
+                }}
+              >
+                {part.tool_result}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+interface MessageBubbleProps {
+  message: Message
+  streaming?: boolean
+}
+
+export default function MessageBubble({ message, streaming }: MessageBubbleProps) {
+  const isUser = message.role === 'user'
+  const timestamp = format(new Date(message.created_at), 'HH:mm')
+
+  const textContent = message.content
+    .filter((p) => p.type === 'text')
+    .map((p) => p.text ?? '')
+    .join('')
+
+  const toolParts = message.content.filter(
+    (p) => p.type === 'tool_call' || p.type === 'tool_result',
+  )
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: isUser ? 'row-reverse' : 'row',
+        alignItems: 'flex-start',
+        gap: '0.625rem',
+        padding: '0.5rem 1rem',
+        maxWidth: '100%',
+      }}
+    >
+      {/* Avatar */}
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: '50%',
+          background: isUser ? 'var(--primary)' : 'var(--card-bg)',
+          border: isUser ? 'none' : '1px solid var(--border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          color: isUser ? 'var(--primary-fg)' : 'var(--fg-muted)',
+        }}
+      >
+        <FontAwesomeIcon icon={isUser ? faUser : faRobot} style={{ fontSize: 13 }} />
+      </div>
+
+      {/* Bubble */}
+      <div
+        style={{
+          maxWidth: 'min(680px, 80%)',
+          background: isUser ? 'var(--primary)' : 'var(--card-bg)',
+          color: isUser ? 'var(--primary-fg)' : 'var(--fg)',
+          border: isUser ? 'none' : '1px solid var(--border)',
+          borderRadius: isUser
+            ? 'var(--radius-md) var(--radius-sm) var(--radius-md) var(--radius-md)'
+            : 'var(--radius-sm) var(--radius-md) var(--radius-md) var(--radius-md)',
+          padding: '0.625rem 0.875rem',
+          fontSize: 14,
+          lineHeight: 1.55,
+          wordBreak: 'break-word',
+        }}
+      >
+        {textContent && (
+          isUser ? (
+            <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{textContent}</p>
+          ) : (
+            <MarkdownContent text={textContent} streaming={streaming} />
+          )
+        )}
+
+        {toolParts.map((part, i) => (
+          <ToolCallBlock key={i} part={part} />
+        ))}
+
+        {/* Timestamp */}
+        <div
+          style={{
+            fontSize: 10,
+            marginTop: '0.375rem',
+            color: isUser ? 'rgba(255,255,255,0.65)' : 'var(--fg-dim)',
+            textAlign: isUser ? 'left' : 'right',
+          }}
+        >
+          {timestamp}
+        </div>
+      </div>
+    </div>
+  )
+}
