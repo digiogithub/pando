@@ -1,0 +1,233 @@
+import { useEffect, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faArrowLeft, faFileMedical, faFileCode } from '@fortawesome/free-solid-svg-icons'
+import type { FileNode } from '@/types'
+import { useEditorStore } from '@/stores/editorStore'
+import api from '@/services/api'
+import FileExplorer from './FileExplorer'
+import EditorTabs from './EditorTabs'
+import CodeEditor from './CodeEditor'
+import EditorStatusBar from './EditorStatusBar'
+
+interface FilesResponse {
+  path: string
+  files: Array<{
+    name: string
+    path: string
+    isDir: boolean
+    size: number
+  }>
+}
+
+async function buildFileTree(dirPath: string): Promise<FileNode[]> {
+  const data = await api.get<FilesResponse>(`/api/v1/files?path=${encodeURIComponent(dirPath)}`)
+  const nodes: FileNode[] = []
+
+  for (const file of data.files ?? []) {
+    const node: FileNode = {
+      name: file.name,
+      path: file.path,
+      is_dir: file.isDir,
+      size: file.size,
+    }
+    if (file.isDir) {
+      // Lazily load children only when expanded — for now return empty children
+      node.children = []
+    }
+    nodes.push(node)
+  }
+
+  return nodes
+}
+
+export default function CodeEditorView() {
+  const navigate = useNavigate()
+  const { openFiles, activeFilePath } = useEditorStore()
+  const [files, setFiles] = useState<FileNode[]>([])
+  const [gitBranch, setGitBranch] = useState('main')
+
+  const activeFile = activeFilePath ? openFiles.find((f) => f.path === activeFilePath) : null
+
+  const fetchFiles = useCallback(async () => {
+    try {
+      const tree = await buildFileTree('.')
+      setFiles(tree)
+    } catch (err) {
+      console.error('Failed to fetch file tree:', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchFiles()
+
+    // Try to detect git branch from terminal or just keep default
+    const detectBranch = async () => {
+      try {
+        const result = await api.post<{ stdout: string; stderr: string }>(
+          '/api/v1/terminal/exec',
+          { command: 'git rev-parse --abbrev-ref HEAD' }
+        )
+        const branch = result.stdout?.trim()
+        if (branch && branch !== 'HEAD') {
+          setGitBranch(branch)
+        }
+      } catch {
+        // Keep default 'main'
+      }
+    }
+    detectBranch()
+  }, [fetchFiles])
+
+  const handleNewFile = useCallback(async () => {
+    const name = window.prompt('New file name:')
+    if (!name) return
+    try {
+      await api.post('/api/v1/files', { path: name, content: '' })
+      fetchFiles()
+    } catch (err) {
+      console.error('Failed to create file:', err)
+    }
+  }, [fetchFiles])
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        background: 'var(--bg)',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Header bar */}
+      <div
+        style={{
+          height: 40,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 16px',
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--sidebar-bg)',
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={() => navigate('/chat')}
+            title="Back to Chat"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--fg-muted, #a0a0b0)',
+              fontSize: 13,
+              padding: '4px 8px',
+              borderRadius: 'var(--radius-sm)',
+              fontFamily: 'inherit',
+            }}
+            onMouseEnter={(e) => {
+              ;(e.currentTarget as HTMLButtonElement).style.background = 'var(--hover-bg)'
+              ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--fg)'
+            }}
+            onMouseLeave={(e) => {
+              ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+              ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--fg-muted, #a0a0b0)'
+            }}
+          >
+            <FontAwesomeIcon icon={faArrowLeft} style={{ fontSize: 12 }} />
+            Back
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <FontAwesomeIcon icon={faFileCode} style={{ fontSize: 14, color: 'var(--primary)' }} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>Code Editor</span>
+          </div>
+        </div>
+
+        <button
+          onClick={handleNewFile}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '5px 12px',
+            borderRadius: 'var(--radius-sm)',
+            border: 'none',
+            background: 'var(--primary)',
+            color: 'white',
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          <FontAwesomeIcon icon={faFileMedical} style={{ fontSize: 11 }} />
+          New File
+        </button>
+      </div>
+
+      {/* Main content: file explorer + editor */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+        {/* File explorer (250px) */}
+        <FileExplorer files={files} onRefresh={fetchFiles} />
+
+        {/* Editor area */}
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            minWidth: 0,
+          }}
+        >
+          {/* Tabs */}
+          <EditorTabs />
+
+          {/* Editor or empty state */}
+          {activeFile ? (
+            <CodeEditor
+              filePath={activeFile.path}
+              content={activeFile.content}
+              language={activeFile.language}
+            />
+          ) : (
+            <EmptyEditorState />
+          )}
+        </div>
+      </div>
+
+      {/* Status bar */}
+      <EditorStatusBar gitBranch={gitBranch} />
+    </div>
+  )
+}
+
+function EmptyEditorState() {
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#1e1e2e',
+        color: '#6c7086',
+      }}
+    >
+      <FontAwesomeIcon icon={faFileCode} style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }} />
+      <p style={{ fontSize: 16, fontWeight: 500, marginBottom: 8, color: '#585b70' }}>
+        Open a file from the tree
+      </p>
+      <p style={{ fontSize: 13, color: '#45475a' }}>
+        Select a file in the explorer to start editing
+      </p>
+    </div>
+  )
+}
