@@ -33,8 +33,13 @@ async function fetchApi<T>(path: string, options: FetchOptions = {}): Promise<T>
   const response = await fetch(path, { ...init, headers })
 
   if (response.status === 401) {
+    const hadToken = !!getToken()
     removeToken()
-    window.location.reload()
+    // Only reload if the user had a token that expired — avoid infinite loop on initial load
+    if (hadToken) {
+      window.location.reload()
+    }
+    throw new Error('Unauthorized')
   }
 
   if (!response.ok) {
