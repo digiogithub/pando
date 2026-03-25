@@ -65,7 +65,7 @@ function addToRecent(id: string) {
 
 export default function QuickMenu() {
   const navigate = useNavigate()
-  const { setQuickMenuOpen, setModelSwitcherOpen } = useLayoutStore()
+  const { setQuickMenuOpen } = useLayoutStore()
   const { toggleTheme } = useTheme()
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)

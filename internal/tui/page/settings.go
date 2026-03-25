@@ -24,6 +24,11 @@ import (
 	"github.com/digiogithub/pando/internal/tui/util"
 )
 
+// configExternalChangeMsg is sent to the settings page when the config file
+// changes from an external source (file write or Web-UI save). This triggers a
+// sections rebuild without causing a save-loop.
+type configExternalChangeMsg struct{}
+
 type skillUninstalledMsg struct {
 	skillName string
 	err       error
@@ -40,15 +45,32 @@ type lspPresetAddedMsg struct {
 }
 
 type settingsPage struct {
-	width         int
-	height        int
-	app           *pandoapp.App
-	settings      settings.SettingsCmp
-	catalogDialog *dialog.SkillsCatalogDialog
+	width           int
+	height          int
+	app             *pandoapp.App
+	settings        settings.SettingsCmp
+	catalogDialog   *dialog.SkillsCatalogDialog
+	configChangeCh  chan config.ConfigChangeEvent
+}
+
+// waitForConfigChange returns a blocking tea.Cmd that resolves when an
+// external (non-TUI) config change event arrives on the channel.
+func waitForConfigChange(ch <-chan config.ConfigChangeEvent) tea.Cmd {
+	return func() tea.Msg {
+		for ev := range ch {
+			if ev.Source != "tui" {
+				return configExternalChangeMsg{}
+			}
+		}
+		return nil
+	}
 }
 
 func (p *settingsPage) Init() tea.Cmd {
-	return p.settings.Init()
+	// Subscribe to the config event bus so external changes are reflected live.
+	p.configChangeCh = make(chan config.ConfigChangeEvent, 8)
+	config.Bus.Subscribe(p.configChangeCh)
+	return tea.Batch(p.settings.Init(), waitForConfigChange(p.configChangeCh))
 }
 
 func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -110,6 +132,16 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, util.ReportError(msg.err)
 		}
 		return p, util.ReportInfo("LSP server added: " + msg.presetName)
+	case configExternalChangeMsg:
+		// Config changed from outside TUI (file or Web-UI): rebuild sections and
+		// re-arm the listener command so we keep receiving future events.
+		p.settings.SetSections(buildSections(p.app))
+		p.settings.SetSize(p.width, p.height)
+		var rearm tea.Cmd
+		if p.configChangeCh != nil {
+			rearm = waitForConfigChange(p.configChangeCh)
+		}
+		return p, rearm
 	}
 
 	// Forward ALL events to catalog dialog when active (keys, ticks, search results, blinks)
@@ -173,7 +205,10 @@ func (p *settingsPage) ClearModals() {
 func NewSettingsPage(app *pandoapp.App) tea.Model {
 	cmp := settings.NewSettingsCmp()
 	cmp.SetSections(buildSections(app))
-	return &settingsPage{app: app, settings: cmp}
+	return &settingsPage{
+		app:      app,
+		settings: cmp,
+	}
 }
 
 func (p *settingsPage) saveField(msg settings.SaveFieldMsg) tea.Cmd {

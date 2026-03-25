@@ -121,6 +121,116 @@ export interface OrchestratorTask {
   output?: string
 }
 
+// Provider config types (matching backend ProviderConfigItem)
+export interface ProviderConfigItem {
+  name: string
+  apiKey: string // masked in GET responses (e.g. "••••last4")
+  baseUrl: string
+  disabled: boolean
+  useOAuth: boolean
+}
+
+export interface ProvidersConfigResponse {
+  providers: ProviderConfigItem[]
+}
+
+// Agent config types (matching backend AgentConfigItem)
+export interface AgentConfigItem {
+  name: string
+  model: string
+  maxTokens: number
+  reasoningEffort: string
+  autoCompact: boolean
+  autoCompactThreshold: number
+}
+
+export interface AgentsConfigResponse {
+  agents: AgentConfigItem[]
+}
+
+// MCP / LSP config types
+export type MCPType = 'stdio' | 'sse' | 'streamable-http'
+
+export interface MCPServerConfig {
+  name: string
+  command: string
+  args: string[]
+  env: string[]
+  type: MCPType
+  url: string
+  headers: Record<string, string>
+}
+
+export interface MCPGatewayConfig {
+  enabled: boolean
+  favorite_threshold: number
+  max_favorites: number
+  favorite_window_days: number
+  decay_days: number
+}
+
+export interface LSPConfig {
+  language: string
+  disabled: boolean
+  command: string
+  args: string[]
+  languages: string[]
+}
+
+// Extensions config types
+export interface SkillsConfig {
+  enabled: boolean
+  paths: string[]
+}
+
+export interface SkillsCatalogConfig {
+  enabled: boolean
+  baseUrl: string
+  autoUpdate: boolean
+  defaultScope: string // "session" | "global" | "project"
+}
+
+export interface LuaConfig {
+  enabled: boolean
+  script_path: string
+  timeout: string  // e.g. "30s"
+  strict_mode: boolean
+  hot_reload: boolean
+  log_filtered_data: boolean
+}
+
+export interface ExtensionsConfig {
+  skills: SkillsConfig
+  skillsCatalog: SkillsCatalogConfig
+  lua: LuaConfig
+}
+
+// Evaluator config types (matches backend EvaluatorConfig)
+export interface EvaluatorSettingsConfig {
+  enabled: boolean
+  model: string
+  provider: string
+  alphaWeight: number
+  betaWeight: number
+  explorationC: number
+  minSessionsForUCB: number
+  correctionsPatterns: string[]
+  maxTokensBaseline: number
+  maxSkills: number
+  judgePromptTemplate: string
+  async: boolean
+}
+
+// Skills catalog item (from GET /api/v1/skills/catalog)
+export interface SkillCatalogItem {
+  name: string
+  description: string
+  version: string
+  author?: string
+  tags?: string[]
+  installed?: boolean
+}
+
 // Settings / config types
 export interface SettingsConfig {
   home_directory: string
@@ -131,4 +241,122 @@ export interface SettingsConfig {
   auto_save: boolean
   markdown_preview: boolean
   custom_instructions: string
+}
+
+// Tools config (matching ToolsConfigResponse in handlers_config.go)
+export interface ToolsConfig {
+  fetchEnabled: boolean
+  fetchMaxSizeMB: number
+
+  googleSearchEnabled: boolean
+  googleApiKey: string
+  googleSearchEngineId: string
+
+  braveSearchEnabled: boolean
+  braveApiKey: string
+
+  perplexitySearchEnabled: boolean
+  perplexityApiKey: string
+
+  exaSearchEnabled: boolean
+  exaApiKey: string
+
+  context7Enabled: boolean
+
+  browserEnabled: boolean
+  browserHeadless: boolean
+  browserTimeout: number
+  browserUserDataDir: string
+  browserMaxSessions: number
+}
+
+// Bash config (matching BashConfig in config.go)
+export interface BashConfig {
+  bannedCommands: string[]
+  allowedCommands: string[]
+}
+
+// Services config types (matching backend Go structs)
+
+export interface MesnadaServerConfig {
+  host: string
+  port: number
+}
+
+export interface MesnadaOrchestratorConfig {
+  storePath: string
+  logDir: string
+  maxParallel: number
+  defaultEngine: string
+  defaultModel: string
+  defaultMcpConfig: string
+  personaPath: string
+}
+
+export interface MesnadaACPServerConfig {
+  enabled: boolean
+  transports: string[]
+  host: string
+  port: number
+  maxSessions: number
+  sessionTimeout: string
+  requireAuth: boolean
+}
+
+export interface MesnadaACPConfig {
+  enabled: boolean
+  defaultAgent: string
+  autoPermission: boolean
+  server: MesnadaACPServerConfig
+}
+
+export interface MesnadaTUIConfig {
+  enabled: boolean
+  webui: boolean
+}
+
+export interface MesnadaConfig {
+  enabled: boolean
+  server: MesnadaServerConfig
+  orchestrator: MesnadaOrchestratorConfig
+  acp: MesnadaACPConfig
+  tui: MesnadaTUIConfig
+}
+
+export interface RemembrancesConfig {
+  enabled: boolean
+  document_embedding_provider: string
+  document_embedding_model: string
+  document_embedding_base_url: string
+  document_embedding_api_key: string
+  code_embedding_provider: string
+  code_embedding_model: string
+  code_embedding_base_url: string
+  code_embedding_api_key: string
+  use_same_model: boolean
+  chunk_size: number
+  chunk_overlap: number
+  index_workers: number
+}
+
+export interface SnapshotsConfig {
+  enabled: boolean
+  maxSnapshots: number
+  maxFileSize: string
+  excludePatterns: string[]
+  autoCleanupDays: number
+}
+
+export interface APIServerConfig {
+  enabled: boolean
+  host: string
+  port: number
+  requireAuth: boolean
+}
+
+export interface ServicesConfig {
+  mesnada: MesnadaConfig
+  remembrances: RemembrancesConfig
+  snapshots: SnapshotsConfig
+  server: APIServerConfig
 }

@@ -1,8 +1,10 @@
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
-  faComments, faPuzzlePiece, faFileLines, faNetworkWired,
-  faCamera, faStar, faCog, faMoon, faSun, faBars
+  faComments, faFileLines, faNetworkWired,
+  faCamera, faStar, faCog, faMoon, faSun,
+  faChevronLeft, faChevronRight,
 } from '@fortawesome/free-solid-svg-icons'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
@@ -10,55 +12,120 @@ import { useServerStore } from '@/stores/serverStore'
 
 const TABS = [
   { path: '/', label: 'Chat', icon: faComments, end: true },
-  { path: '/orchestrator', label: 'Add-ons', icon: faPuzzlePiece },
-  { path: '/logs', label: 'Logs', icon: faFileLines },
   { path: '/orchestrator', label: 'Orchestrator', icon: faNetworkWired },
-  { path: '/snapshots', label: 'Snapshots', icon: faCamera },
   { path: '/evaluator', label: 'Evaluator', icon: faStar },
+  { path: '/snapshots', label: 'Snapshots', icon: faCamera },
+  { path: '/logs', label: 'Logs', icon: faFileLines },
 ]
 
 export default function Header() {
-  const { toggleSidebar } = useLayoutStore()
+  const { toggleSidebar, sidebarOpen } = useLayoutStore()
   const { theme, toggleTheme } = useTheme()
   const connected = useServerStore((s) => s.connected)
+  const [version, setVersion] = useState<string>('')
+
+  useEffect(() => {
+    fetch('/health')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.version && d.version !== 'unknown') {
+          // Strip build metadata (+dirty, +...) and ensure single "v" prefix
+          const clean = d.version.replace(/\+.*$/, '')
+          setVersion(clean.startsWith('v') ? clean : `v${clean}`)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   return (
     <header
       style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'stretch',
         height: 48,
         borderBottom: '1px solid var(--border)',
         background: 'var(--sidebar-bg)',
-        paddingLeft: '0.75rem',
-        paddingRight: '1rem',
-        gap: '0.5rem',
+        paddingRight: '0.75rem',
         flexShrink: 0,
         zIndex: 10,
       }}
     >
-      {/* Logo + sidebar toggle */}
+      {/* Toggle sidebar */}
       <button
         onClick={toggleSidebar}
+        title="Toggle sidebar (Ctrl+B)"
         style={{
           background: 'none',
           border: 'none',
           cursor: 'pointer',
           color: 'var(--fg-muted)',
-          padding: '0.25rem 0.5rem',
-          borderRadius: 'var(--radius-sm)',
+          padding: '0 0.625rem',
           display: 'flex',
           alignItems: 'center',
-          gap: '0.5rem',
+          flexShrink: 0,
         }}
-        title="Toggle sidebar (Ctrl+B)"
       >
-        <img src="/pando.svg" alt="Pando" style={{ width: 20, height: 20 }} />
-        <FontAwesomeIcon icon={faBars} style={{ fontSize: 12 }} />
+        <FontAwesomeIcon
+          icon={sidebarOpen ? faChevronLeft : faChevronRight}
+          style={{ fontSize: 12 }}
+        />
       </button>
 
-      {/* Tab navigation */}
-      <nav style={{ display: 'flex', flex: 1, gap: 2 }} className="header-nav">
+      {/* Logo group: favicon + PANDO + version */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '0 20px 0 8px',
+          flexShrink: 0,
+          borderRight: '1px solid var(--border)',
+        }}
+      >
+        <span
+          aria-label="Pando"
+          style={{
+            fontSize: 22,
+            lineHeight: 1,
+            color: 'var(--primary)',
+            fontFamily: 'serif',
+            flexShrink: 0,
+            userSelect: 'none',
+          }}
+        >
+          木
+        </span>
+        <span
+          style={{
+            fontWeight: 800,
+            fontSize: 18,
+            color: 'var(--primary)',
+            letterSpacing: '0.3em',
+            lineHeight: 1,
+          }}
+        >
+          PANDO
+        </span>
+        {version && (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 400,
+              color: 'var(--fg-dim)',
+              fontFamily: 'Inter, sans-serif',
+              marginTop: 1,
+            }}
+          >
+            {version}
+          </span>
+        )}
+      </div>
+
+      {/* Nav tabs — underline style */}
+      <nav
+        style={{ display: 'flex', alignItems: 'stretch', flex: 1, gap: 0 }}
+        className="header-nav"
+      >
         {TABS.map((tab) => (
           <NavLink
             key={tab.label}
@@ -69,15 +136,14 @@ export default function Header() {
               display: 'flex',
               alignItems: 'center',
               gap: '0.375rem',
-              padding: '0.25rem 0.75rem',
-              borderRadius: 'var(--radius-sm)',
+              padding: '0 0.875rem',
               textDecoration: 'none',
               fontSize: 13,
-              fontWeight: isActive ? 600 : 400,
-              color: isActive ? 'var(--primary)' : 'var(--fg-muted)',
+              fontWeight: isActive ? 600 : 500,
+              color: isActive ? 'var(--primary)' : 'var(--fg-dim)',
+              background: isActive ? 'var(--bg-secondary, var(--selected))' : 'transparent',
               borderBottom: isActive ? '2px solid var(--primary)' : '2px solid transparent',
-              background: isActive ? 'var(--selected)' : 'transparent',
-              transition: 'all 0.15s',
+              transition: 'color 0.15s, border-color 0.15s, background 0.15s',
             })}
           >
             <FontAwesomeIcon icon={tab.icon} style={{ fontSize: 11 }} />
@@ -85,61 +151,61 @@ export default function Header() {
           </NavLink>
         ))}
       </nav>
+
       <style>{`
+        .header-nav a:hover:not([style*="var(--primary)"]) { color: var(--fg) !important; }
         @media (max-width: 768px) {
           .header-tab-label { display: none; }
-          .header-nav a { padding: 0.25rem 0.5rem !important; }
-        }
-        @media (max-width: 480px) {
-          .header-nav { gap: 0 !important; }
+          .header-nav a { padding: 0 0.5rem !important; }
         }
       `}</style>
 
       {/* Right actions */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        {/* Connection status */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+        {/* Connection status dot */}
         <div
           title={connected ? 'Connected' : 'Disconnected'}
           style={{
-            width: 8,
-            height: 8,
+            width: 7,
+            height: 7,
             borderRadius: '50%',
             background: connected ? 'var(--success)' : 'var(--error)',
+            marginRight: '0.25rem',
           }}
         />
 
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
+          title="Toggle theme"
           style={{
             background: 'none',
             border: 'none',
             cursor: 'pointer',
             color: 'var(--fg-muted)',
-            padding: '0.25rem 0.5rem',
+            padding: '0.25rem 0.375rem',
             borderRadius: 'var(--radius-sm)',
             display: 'flex',
             alignItems: 'center',
           }}
-          title="Toggle theme"
         >
-          <FontAwesomeIcon icon={theme === 'light' ? faMoon : faSun} style={{ fontSize: 14 }} />
+          <FontAwesomeIcon icon={theme === 'light' ? faMoon : faSun} style={{ fontSize: 13 }} />
         </button>
 
         {/* Settings */}
         <NavLink
           to="/settings"
+          title="Settings"
           style={({ isActive }) => ({
             display: 'flex',
             alignItems: 'center',
             color: isActive ? 'var(--primary)' : 'var(--fg-muted)',
-            padding: '0.25rem 0.5rem',
+            padding: '0.25rem 0.375rem',
             borderRadius: 'var(--radius-sm)',
             background: isActive ? 'var(--selected)' : 'transparent',
           })}
-          title="Settings"
         >
-          <FontAwesomeIcon icon={faCog} style={{ fontSize: 14 }} />
+          <FontAwesomeIcon icon={faCog} style={{ fontSize: 13 }} />
         </NavLink>
       </div>
     </header>
