@@ -22,6 +22,22 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Settings
 	mux.HandleFunc("/api/v1/settings", s.handleSettings)
 	mux.HandleFunc("/api/v1/settings/providers", s.handleGetProviders)
+	// Config hot-reload events (SSE)
+	mux.HandleFunc("GET /api/v1/config/events", s.handleConfigEvents)
+	// Config sections
+	mux.HandleFunc("/api/v1/config/providers", s.handleConfigProviders)
+	mux.HandleFunc("/api/v1/config/agents", s.handleConfigAgents)
+	mux.HandleFunc("/api/v1/config/mcp-servers", s.handleConfigMCPServers)
+	mux.HandleFunc("DELETE /api/v1/config/mcp-servers/{name}", s.handleDeleteConfigMCPServer)
+	mux.HandleFunc("POST /api/v1/config/mcp-servers/{name}/reload", s.handleReloadMCPServer)
+	mux.HandleFunc("/api/v1/config/mcp-gateway", s.handleConfigMCPGateway)
+	mux.HandleFunc("/api/v1/config/lsp", s.handleConfigLSP)
+	mux.HandleFunc("DELETE /api/v1/config/lsp/{language}", s.handleDeleteConfigLSP)
+	mux.HandleFunc("/api/v1/config/tools", s.handleConfigTools)
+	mux.HandleFunc("/api/v1/config/bash", s.handleConfigBash)
+	mux.HandleFunc("/api/v1/config/extensions", s.handleConfigExtensions)
+	mux.HandleFunc("/api/v1/config/services", s.handleConfigServices)
+	mux.HandleFunc("/api/v1/config/evaluator", s.handleConfigEvaluator)
 	// Logs
 	mux.HandleFunc("/api/v1/logs", s.handleGetLogs)
 	mux.HandleFunc("/api/v1/logs/stream", s.handleLogsStream)
