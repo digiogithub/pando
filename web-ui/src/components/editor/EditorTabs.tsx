@@ -1,10 +1,9 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faTimes } from '@fortawesome/free-solid-svg-icons'
 import { useEditorStore } from '@/stores/editorStore'
-import api from '@/services/api'
 
 export default function EditorTabs() {
-  const { openFiles, activeFilePath, setActiveFile, closeFile, markFileSaved } = useEditorStore()
+  const { openFiles, activeFilePath, setActiveFile, closeFile } = useEditorStore()
 
   if (openFiles.length === 0) return null
 
@@ -12,7 +11,7 @@ export default function EditorTabs() {
     e: React.MouseEvent,
     path: string,
     isDirty: boolean,
-    content: string
+    _content: string
   ) => {
     e.stopPropagation()
     if (isDirty) {
@@ -20,15 +19,6 @@ export default function EditorTabs() {
       if (!confirmed) return
     }
     closeFile(path)
-  }
-
-  const handleSave = async (path: string, content: string) => {
-    try {
-      await api.put(`/api/v1/files/${path}`, { content })
-      markFileSaved(path)
-    } catch (err) {
-      console.error('Failed to save file:', err)
-    }
   }
 
   const getFileName = (path: string) => path.split('/').pop() ?? path

@@ -20,7 +20,7 @@ type RawSessions = { sessions: any[] }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RawSessionDetail = { session: any; messages: any[] }
 
-export const useSessionStore = create<SessionStore>((set, get) => ({
+export const useSessionStore = create<SessionStore>((set, _get) => ({
   sessions: [],
   activeSessionId: null,
   messages: [],
