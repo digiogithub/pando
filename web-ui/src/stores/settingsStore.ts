@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import api from '@/services/api'
-import type { SettingsConfig } from '@/types'
+import type { SettingsConfig, ProviderConfigItem, AgentConfigItem } from '@/types'
 import { useToastStore } from './toastStore'
 
 const DEFAULTS: SettingsConfig = {

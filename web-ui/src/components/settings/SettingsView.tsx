@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import GeneralSettings from './GeneralSettings'
+import { useConfigEventsStore } from '@/stores/configEventsStore'
 
 type SettingsCategory =
   | 'general'
@@ -33,6 +34,13 @@ function ComingSoon({ name }: { name: string }) {
 
 export default function SettingsView() {
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>('general')
+  const { connect, disconnect } = useConfigEventsStore()
+
+  // Connect to the config hot-reload SSE stream while this view is mounted.
+  useEffect(() => {
+    connect()
+    return () => { disconnect() }
+  }, [connect, disconnect])
 
   return (
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
