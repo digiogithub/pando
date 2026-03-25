@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faRobot, faUser, faWrench, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons'
+import { faRobot, faUser, faWrench, faCheckCircle, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons'
 import { format } from 'date-fns'
 import 'highlight.js/styles/github-dark-dimmed.css'
 import type { Message, ContentPart } from '@/types'
@@ -37,12 +37,13 @@ function MarkdownContent({ text, streaming }: { text: string; streaming?: boolea
 
 function ToolCallBlock({ part }: { part: ContentPart }) {
   const [expanded, setExpanded] = useState(false)
+  const isResult = part.type === 'tool_result'
 
   return (
     <div
       style={{
         marginTop: '0.5rem',
-        border: '1px solid var(--border)',
+        border: `1px solid ${isResult ? 'var(--success)' : 'var(--border)'}33`,
         borderRadius: 'var(--radius-sm)',
         overflow: 'hidden',
         fontSize: 12,
@@ -56,20 +57,23 @@ function ToolCallBlock({ part }: { part: ContentPart }) {
           gap: '0.5rem',
           width: '100%',
           padding: '0.375rem 0.625rem',
-          background: 'var(--surface)',
+          background: isResult ? 'color-mix(in srgb, var(--success) 8%, var(--surface))' : 'var(--surface)',
           border: 'none',
           cursor: 'pointer',
-          color: 'var(--fg-muted)',
+          color: isResult ? 'var(--success)' : 'var(--fg-muted)',
           textAlign: 'left',
         }}
       >
-        <FontAwesomeIcon icon={faWrench} style={{ fontSize: 10 }} />
+        <FontAwesomeIcon
+          icon={isResult ? faCheckCircle : faWrench}
+          style={{ fontSize: 10, flexShrink: 0 }}
+        />
         <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>
-          {part.tool_name ?? 'tool_call'}
+          {isResult ? 'tool_result' : (part.tool_name ?? 'tool_call')}
         </span>
         <FontAwesomeIcon
           icon={expanded ? faChevronDown : faChevronRight}
-          style={{ fontSize: 9, marginLeft: 'auto' }}
+          style={{ fontSize: 9, marginLeft: 'auto', color: 'var(--fg-dim)' }}
         />
       </button>
 
@@ -78,12 +82,12 @@ function ToolCallBlock({ part }: { part: ContentPart }) {
           style={{
             padding: '0.5rem 0.625rem',
             background: 'var(--bg-secondary)',
-            borderTop: '1px solid var(--border)',
+            borderTop: `1px solid ${isResult ? 'var(--success)' : 'var(--border)'}33`,
           }}
         >
           {part.tool_input && (
             <div>
-              <div style={{ color: 'var(--fg-muted)', marginBottom: 4, fontWeight: 500 }}>Input:</div>
+              <div style={{ color: 'var(--fg-muted)', marginBottom: 4, fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Input</div>
               <pre
                 style={{
                   margin: 0,
@@ -91,6 +95,10 @@ function ToolCallBlock({ part }: { part: ContentPart }) {
                   wordBreak: 'break-all',
                   fontSize: 11,
                   color: 'var(--fg)',
+                  background: 'var(--surface)',
+                  padding: '0.375rem 0.5rem',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border)',
                 }}
               >
                 {JSON.stringify(part.tool_input, null, 2)}
@@ -99,7 +107,7 @@ function ToolCallBlock({ part }: { part: ContentPart }) {
           )}
           {part.tool_result && (
             <div style={{ marginTop: part.tool_input ? '0.5rem' : 0 }}>
-              <div style={{ color: 'var(--fg-muted)', marginBottom: 4, fontWeight: 500 }}>Result:</div>
+              <div style={{ color: 'var(--fg-muted)', marginBottom: 4, fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Output</div>
               <pre
                 style={{
                   margin: 0,
@@ -107,6 +115,12 @@ function ToolCallBlock({ part }: { part: ContentPart }) {
                   wordBreak: 'break-all',
                   fontSize: 11,
                   color: 'var(--fg)',
+                  background: 'var(--surface)',
+                  padding: '0.375rem 0.5rem',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border)',
+                  maxHeight: 300,
+                  overflowY: 'auto',
                 }}
               >
                 {part.tool_result}
