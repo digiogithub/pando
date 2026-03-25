@@ -1,12 +1,22 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCircle } from '@fortawesome/free-solid-svg-icons'
+import { faCircle, faMicrochip } from '@fortawesome/free-solid-svg-icons'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useServerStore } from '@/stores/serverStore'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { useLayoutStore } from '@/stores/layoutStore'
 
 export default function StatusBar() {
   const { activeSessionId, sessions } = useSessionStore()
   const connected = useServerStore((s) => s.connected)
   const activeSession = sessions.find((s) => s.id === activeSessionId)
+  const defaultModel = useSettingsStore((s) => s.config.default_model)
+  const setModelSwitcherOpen = useLayoutStore((s) => s.setModelSwitcherOpen)
+
+  // Format model name for display: shorten common prefixes
+  const modelLabel = defaultModel
+    .replace('claude-', 'Claude ')
+    .replace('gpt-', 'GPT-')
+    .replace('gemini-', 'Gemini ')
 
   return (
     <div
@@ -42,6 +52,32 @@ export default function StatusBar() {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {/* Model selector button */}
+        <button
+          onClick={() => setModelSwitcherOpen(true)}
+          title="Click to switch model (Ctrl+O)"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.375rem',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--fg-muted)',
+            fontSize: 11,
+            padding: '0 0.25rem',
+            borderRadius: 'var(--radius-sm)',
+            transition: 'color 0.15s',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--fg-muted)')}
+        >
+          <FontAwesomeIcon icon={faMicrochip} style={{ fontSize: 10 }} />
+          <span>{modelLabel}</span>
+        </button>
+
+        <span style={{ opacity: 0.4 }}>·</span>
+
         <FontAwesomeIcon
           icon={faCircle}
           style={{
