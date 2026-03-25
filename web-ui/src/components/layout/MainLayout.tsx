@@ -3,7 +3,9 @@ import { useEffect } from 'react'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useServerStore } from '@/stores/serverStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { authenticate } from '@/services/auth'
+import { useTheme } from '@/hooks/useTheme'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import StatusBar from './StatusBar'
@@ -11,8 +13,10 @@ import QuickMenu from '@/components/overlays/QuickMenu'
 import ModelSwitcher from '@/components/overlays/ModelSwitcher'
 
 export default function MainLayout() {
+  const { theme } = useTheme()
   const { sidebarOpen, quickMenuOpen, modelSwitcherOpen, setSidebarOpen } = useLayoutStore()
   const fetchSessions = useSessionStore((s) => s.fetchSessions)
+  const fetchSettings = useSettingsStore((s) => s.fetchSettings)
   const startHealthCheck = useServerStore((s) => s.startHealthCheck)
   const setConnected = useServerStore((s) => s.setConnected)
   const { setQuickMenuOpen, setModelSwitcherOpen, toggleSidebar } = useLayoutStore()
@@ -22,6 +26,7 @@ export default function MainLayout() {
   useEffect(() => {
     authenticate().then(() => {
       fetchSessions()
+      fetchSettings()
       setConnected(true)
     }).catch(() => setConnected(false))
 
@@ -99,29 +104,33 @@ export default function MainLayout() {
             position: 'relative',
           }}
         >
-          <Outlet />
+          {/* Watermark centrado en el área de chat */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: 380,
+              height: 380,
+              backgroundImage: 'url(/pando-logo-watermark.png)',
+              backgroundSize: 'contain',
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'center',
+              opacity: theme === 'dark' ? 0.06 : 0.12,
+              filter: theme === 'dark' ? 'none' : 'invert(1) sepia(1) saturate(2) hue-rotate(5deg)',
+              pointerEvents: 'none',
+              zIndex: 0,
+            }}
+          />
+          {/* Contenido por encima de la marca de agua */}
+          <div style={{ position: 'relative', zIndex: 1, flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <Outlet />
+          </div>
         </main>
       </div>
 
       <StatusBar />
-
-      {/* Watermark */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 60,
-          right: 40,
-          width: 400,
-          height: 400,
-          backgroundImage: 'url(/pando-logo-watermark.png)',
-          backgroundSize: 'contain',
-          backgroundRepeat: 'no-repeat',
-          backgroundPosition: 'center',
-          opacity: 0.04,
-          pointerEvents: 'none',
-          zIndex: 0,
-        }}
-      />
 
       {/* Overlays */}
       {quickMenuOpen && <QuickMenu />}
