@@ -1,0 +1,1 @@
+Usa las tools de kb y code de remembrances para obtener más contexto de cada cosa. Tambien indexa el proyecto pando con las tools de code, esto reindexa de forma incremental, sin tener que borrar y volver a indexar el proyecto. 
