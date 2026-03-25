@@ -152,6 +152,15 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		if err != nil {
 			return err
 		}
+
+		// Start the config file watcher so hot-reload works across TUI and Web-UI.
+		if cfgPath, pathErr := config.ResolveConfigFilePath(); pathErr == nil && cfgPath != "" {
+			// ctx is created below; use a background context here and let the
+			// watcher stop naturally when the process exits.
+			watchCtx, watchCancel := context.WithCancel(context.Background())
+			defer watchCancel()
+			config.WatchConfigFile(watchCtx, cfgPath)
+		}
 		if strings.TrimSpace(modelOverride) != "" {
 			if err := config.OverrideAgentModel(config.AgentCoder, models.ModelID(strings.TrimSpace(modelOverride))); err != nil {
 				return fmt.Errorf("failed to override model %q: %w", modelOverride, err)

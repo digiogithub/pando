@@ -24,6 +24,11 @@ import (
 	"github.com/digiogithub/pando/internal/tui/util"
 )
 
+// configExternalChangeMsg is sent to the settings page when the config file
+// changes from an external source (file write or Web-UI save). This triggers a
+// sections rebuild without causing a save-loop.
+type configExternalChangeMsg struct{}
+
 type skillUninstalledMsg struct {
 	skillName string
 	err       error
@@ -40,11 +45,12 @@ type lspPresetAddedMsg struct {
 }
 
 type settingsPage struct {
-	width         int
-	height        int
-	app           *pandoapp.App
-	settings      settings.SettingsCmp
-	catalogDialog *dialog.SkillsCatalogDialog
+	width           int
+	height          int
+	app             *pandoapp.App
+	settings        settings.SettingsCmp
+	catalogDialog   *dialog.SkillsCatalogDialog
+	configChangeCh  chan config.ConfigChangeEvent
 }
 
 func (p *settingsPage) Init() tea.Cmd {
