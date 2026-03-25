@@ -48,7 +48,7 @@ export default function Sidebar() {
           borderBottom: '1px solid var(--border)',
         }}
       >
-        <img src="/pando.svg" alt="Pando" style={{ width: 24, height: 24 }} />
+        <img src="/pando-favicon.svg" alt="Pando" style={{ width: 24, height: 24 }} />
         <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--primary)' }}>Pando</span>
       </div>
 
