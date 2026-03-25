@@ -8,5 +8,6 @@
         "chown": false,
         "/^Remove-Item\\b/i": false,
         "/.*/": true
-    }
+    },
+    "git.enabled": false
 }
