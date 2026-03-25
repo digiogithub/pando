@@ -121,6 +121,33 @@ export interface OrchestratorTask {
   output?: string
 }
 
+// Provider config types (matching backend ProviderConfigItem)
+export interface ProviderConfigItem {
+  name: string
+  apiKey: string // masked in GET responses (e.g. "••••last4")
+  baseUrl: string
+  disabled: boolean
+  useOAuth: boolean
+}
+
+export interface ProvidersConfigResponse {
+  providers: ProviderConfigItem[]
+}
+
+// Agent config types (matching backend AgentConfigItem)
+export interface AgentConfigItem {
+  name: string
+  model: string
+  maxTokens: number
+  reasoningEffort: string
+  autoCompact: boolean
+  autoCompactThreshold: number
+}
+
+export interface AgentsConfigResponse {
+  agents: AgentConfigItem[]
+}
+
 // Settings / config types
 export interface SettingsConfig {
   home_directory: string

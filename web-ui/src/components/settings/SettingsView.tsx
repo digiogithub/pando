@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import GeneralSettings from './GeneralSettings'
+import { useConfigEventsStore } from '@/stores/configEventsStore'
 
 type SettingsCategory =
   | 'general'
