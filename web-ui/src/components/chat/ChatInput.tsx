@@ -1,9 +1,12 @@
-import { useRef, useState, useCallback, type KeyboardEvent, type ChangeEvent } from 'react'
+import { useRef, useState, useEffect, useCallback, type KeyboardEvent, type ChangeEvent } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPaperPlane, faStop } from '@fortawesome/free-solid-svg-icons'
 
 const MAX_CHARS = 8000
-const MAX_HEIGHT = 200
+// 6 lines × (14px font × 1.5 line-height) = 126px
+const LINE_HEIGHT = 21 // 14px × 1.5
+const MAX_LINES = 6
+const MAX_TEXTAREA_HEIGHT = LINE_HEIGHT * MAX_LINES // 126px
 
 interface ChatInputProps {
   onSend: (text: string) => void
@@ -17,17 +20,25 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled }: Cha
   const [focused, setFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Auto-resize textarea
+  // Auto-resize: grow up to MAX_LINES, then scroll
   const resize = useCallback(() => {
     const el = textareaRef.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`
+    const newHeight = Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)
+    el.style.height = `${newHeight}px`
+    // When at max height, keep scroll at bottom so latest line is visible
+    if (el.scrollHeight > MAX_TEXTAREA_HEIGHT) {
+      el.scrollTop = el.scrollHeight
+    }
   }, [])
+
+  useEffect(() => {
+    resize()
+  }, [value, resize])
 
   const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value)
-    resize()
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -41,9 +52,8 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled }: Cha
     const text = value.trim()
     if (!text || streaming || disabled) return
     setValue('')
-    // Reset height after clearing
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = `${LINE_HEIGHT}px`
     }
     onSend(text)
   }
@@ -55,23 +65,40 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled }: Cha
     <div
       style={{
         flexShrink: 0,
-        padding: '0.625rem 1rem 0.75rem',
+        padding: '0 0 0.75rem',
         background: 'var(--bg)',
         borderTop: '1px solid var(--border)',
       }}
     >
+      {/* Input field styled per design: $ prefix + textarea + send button */}
       <div
         style={{
           display: 'flex',
-          alignItems: 'flex-end',
-          gap: '0.5rem',
-          border: `1.5px solid ${focused ? 'var(--border-focus)' : 'var(--border)'}`,
-          borderRadius: 'var(--radius-md)',
-          background: 'var(--input-bg)',
-          padding: '0.5rem 0.625rem 0.5rem 0.875rem',
+          alignItems: 'flex-start',
+          gap: 8,
+          border: `1px solid ${focused ? 'var(--border-focus)' : 'var(--border)'}`,
+          borderRadius: 12,
+          background: 'var(--panel, var(--input-bg))',
+          padding: '14px 18px',
           transition: 'border-color 0.15s',
         }}
       >
+        {/* $ prompt prefix */}
+        <span
+          style={{
+            color: 'var(--primary)',
+            fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
+            fontSize: 14,
+            fontWeight: 700,
+            lineHeight: `${LINE_HEIGHT}px`,
+            userSelect: 'none',
+            flexShrink: 0,
+            paddingBottom: 1,
+          }}
+        >
+          $
+        </span>
+
         <textarea
           ref={textareaRef}
           value={value}
@@ -79,7 +106,7 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled }: Cha
           onKeyDown={handleKeyDown}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder="Message Pando…"
+          placeholder="type a message..."
           rows={1}
           maxLength={MAX_CHARS}
           disabled={disabled}
@@ -91,10 +118,13 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled }: Cha
             background: 'transparent',
             color: 'var(--fg)',
             fontSize: 14,
-            lineHeight: 1.5,
-            maxHeight: MAX_HEIGHT,
+            lineHeight: `${LINE_HEIGHT}px`,
+            height: LINE_HEIGHT,
+            maxHeight: MAX_TEXTAREA_HEIGHT,
             overflowY: 'auto',
             fontFamily: 'inherit',
+            padding: 0,
+            margin: 0,
           }}
         />
 
@@ -109,7 +139,7 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled }: Cha
               justifyContent: 'center',
               width: 32,
               height: 32,
-              borderRadius: 'var(--radius-sm)',
+              borderRadius: 8,
               border: 'none',
               background: 'var(--error)',
               color: '#fff',
@@ -131,13 +161,14 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled }: Cha
               justifyContent: 'center',
               width: 32,
               height: 32,
-              borderRadius: 'var(--radius-sm)',
+              borderRadius: 8,
               border: 'none',
               background: hasText && !disabled ? 'var(--primary)' : 'var(--surface)',
               color: hasText && !disabled ? 'var(--primary-fg)' : 'var(--fg-dim)',
               cursor: hasText && !disabled ? 'pointer' : 'default',
               flexShrink: 0,
               transition: 'background 0.15s, color 0.15s',
+              boxShadow: hasText && !disabled ? '0 4px 10px rgba(214,162,29,0.2)' : 'none',
             }}
           >
             <FontAwesomeIcon icon={faPaperPlane} style={{ fontSize: 12 }} />
