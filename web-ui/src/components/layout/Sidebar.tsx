@@ -38,20 +38,6 @@ export default function Sidebar() {
         overflow: 'hidden',
       }}
     >
-      {/* Logo */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          padding: '0.75rem 1rem',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <img src="/pando.svg" alt="Pando" style={{ width: 24, height: 24 }} />
-        <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--primary)' }}>Pando</span>
-      </div>
-
       {/* Scrollable content */}
       <div style={{ flex: 1, overflow: 'auto', padding: '0.5rem 0' }}>
 

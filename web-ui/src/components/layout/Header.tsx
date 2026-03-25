@@ -2,7 +2,8 @@ import { NavLink } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faComments, faPuzzlePiece, faFileLines, faNetworkWired,
-  faCamera, faStar, faCog, faMoon, faSun, faBars
+  faCamera, faStar, faCog, faMoon, faSun,
+  faChevronLeft, faChevronRight,
 } from '@fortawesome/free-solid-svg-icons'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
@@ -17,8 +18,12 @@ const TABS = [
   { path: '/evaluator', label: 'Evaluator', icon: faStar },
 ]
 
+// CSS filter for gold color on the favicon SVG (approximates --primary amber/gold)
+const FAVICON_GOLD_FILTER =
+  'brightness(0) saturate(100%) invert(65%) sepia(60%) saturate(500%) hue-rotate(5deg) brightness(92%)'
+
 export default function Header() {
-  const { toggleSidebar } = useLayoutStore()
+  const { toggleSidebar, sidebarOpen } = useLayoutStore()
   const { theme, toggleTheme } = useTheme()
   const connected = useServerStore((s) => s.connected)
 
@@ -30,16 +35,17 @@ export default function Header() {
         height: 48,
         borderBottom: '1px solid var(--border)',
         background: 'var(--sidebar-bg)',
-        paddingLeft: '0.75rem',
+        paddingLeft: '0.5rem',
         paddingRight: '1rem',
-        gap: '0.5rem',
+        gap: '0.25rem',
         flexShrink: 0,
         zIndex: 10,
       }}
     >
-      {/* Logo + sidebar toggle */}
+      {/* Botón flecha para replegar sidebar */}
       <button
         onClick={toggleSidebar}
+        title="Toggle sidebar (Ctrl+B)"
         style={{
           background: 'none',
           border: 'none',
@@ -49,13 +55,35 @@ export default function Header() {
           borderRadius: 'var(--radius-sm)',
           display: 'flex',
           alignItems: 'center',
-          gap: '0.5rem',
+          flexShrink: 0,
         }}
-        title="Toggle sidebar (Ctrl+B)"
       >
-        <img src="/pando.svg" alt="Pando" style={{ width: 20, height: 20 }} />
-        <FontAwesomeIcon icon={faBars} style={{ fontSize: 12 }} />
+        <FontAwesomeIcon
+          icon={sidebarOpen ? faChevronLeft : faChevronRight}
+          style={{ fontSize: 13 }}
+        />
       </button>
+
+      {/* Favicon en color dorado */}
+      <img
+        src="/pando-favicon.svg"
+        alt="Pando"
+        style={{ width: 22, height: 22, filter: FAVICON_GOLD_FILTER, flexShrink: 0 }}
+      />
+
+      {/* Nombre de la app */}
+      <span
+        style={{
+          fontWeight: 700,
+          fontSize: 15,
+          color: 'var(--primary)',
+          letterSpacing: '-0.01em',
+          marginRight: '0.5rem',
+          flexShrink: 0,
+        }}
+      >
+        Pando
+      </span>
 
       {/* Tab navigation */}
       <nav style={{ display: 'flex', flex: 1, gap: 2 }} className="header-nav">
