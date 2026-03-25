@@ -53,7 +53,7 @@ export default function Header() {
         }}
         title="Toggle sidebar (Ctrl+B)"
       >
-        <img src="/pando.svg" alt="Pando" style={{ width: 20, height: 20 }} />
+        <img src="/pando-favicon.svg" alt="Pando" style={{ width: 20, height: 20 }} />
         <FontAwesomeIcon icon={faBars} style={{ fontSize: 12 }} />
       </button>
 

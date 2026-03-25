@@ -4,6 +4,7 @@ import { useLayoutStore } from '@/stores/layoutStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useServerStore } from '@/stores/serverStore'
 import { authenticate } from '@/services/auth'
+import { useTheme } from '@/hooks/useTheme'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import StatusBar from './StatusBar'
@@ -11,6 +12,7 @@ import QuickMenu from '@/components/overlays/QuickMenu'
 import ModelSwitcher from '@/components/overlays/ModelSwitcher'
 
 export default function MainLayout() {
+  const { theme } = useTheme()
   const { sidebarOpen, quickMenuOpen, modelSwitcherOpen, setSidebarOpen } = useLayoutStore()
   const fetchSessions = useSessionStore((s) => s.fetchSessions)
   const startHealthCheck = useServerStore((s) => s.startHealthCheck)
@@ -117,7 +119,8 @@ export default function MainLayout() {
           backgroundSize: 'contain',
           backgroundRepeat: 'no-repeat',
           backgroundPosition: 'center',
-          opacity: 0.04,
+          opacity: theme === 'dark' ? 0.06 : 0.12,
+          filter: theme === 'dark' ? 'none' : 'invert(1) sepia(1) saturate(2) hue-rotate(5deg)',
           pointerEvents: 'none',
           zIndex: 0,
         }}
