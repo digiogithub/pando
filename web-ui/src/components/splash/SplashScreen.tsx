@@ -68,15 +68,19 @@ export default function SplashScreen({ status, onDone }: SplashScreenProps) {
         }
       `}</style>
 
-      {/* Logo tree */}
+      {/* Logo oficial */}
       <div
         style={{
-          fontSize: 72,
-          lineHeight: 1,
+          width: 120,
+          height: 120,
           animation: status !== 'ready' ? 'splash-pulse 2s ease-in-out infinite' : 'none',
         }}
       >
-        🌳
+        <img
+          src="/pando-logo.svg"
+          alt="Pando"
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+        />
       </div>
 
       {/* Title */}
