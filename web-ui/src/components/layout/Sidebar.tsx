@@ -14,7 +14,7 @@ export default function Sidebar() {
   const { t } = useTranslation()
   const [sessionsOpen, setSessionsOpen] = useState(true)
   const [navOpen, setNavOpen] = useState(true)
-  const { sessions, activeSessionId, setActiveSession } = useSessionStore()
+  const { sessions, activeSessionId, setActiveSession, setMessages } = useSessionStore()
 
   const NAV_ITEMS = [
     { path: '/', label: t('nav.chat'), icon: faComments, end: true },
@@ -49,9 +49,16 @@ export default function Sidebar() {
           open={sessionsOpen}
           onToggle={() => setSessionsOpen(!sessionsOpen)}
           action={
-            <NavLink to="/" title={t('nav.newSession')} style={{ color: 'var(--fg-muted)' }}>
+            <button
+              title={t('nav.newSession')}
+              onClick={() => {
+                useSessionStore.setState({ activeSessionId: null })
+                setMessages([])
+              }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: 0, lineHeight: 1 }}
+            >
               <FontAwesomeIcon icon={faPlus} style={{ fontSize: 11 }} />
-            </NavLink>
+            </button>
           }
         />
         {sessionsOpen && (
