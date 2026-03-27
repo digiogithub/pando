@@ -201,7 +201,10 @@ export const useAgentsStore = create<AgentsStore>((set, get) => ({
 
   updateAgent: (name, patch) =>
     set((s) => {
-      const agents = s.agents.map((a) => (a.name === name ? { ...a, ...patch } : a))
+      const exists = s.agents.some((a) => a.name === name)
+      const agents = exists
+        ? s.agents.map((a) => (a.name === name ? { ...a, ...patch } : a))
+        : [...s.agents, { name, model: '', maxTokens: 0, reasoningEffort: '', autoCompact: false, autoCompactThreshold: 0, ...patch }]
       return { agents, dirty: JSON.stringify(agents) !== JSON.stringify(s.original) }
     }),
 
