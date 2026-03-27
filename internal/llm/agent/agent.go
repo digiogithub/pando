@@ -31,12 +31,13 @@ var (
 type AgentEventType string
 
 const (
-	AgentEventTypeError        AgentEventType = "error"
-	AgentEventTypeResponse     AgentEventType = "response"
-	AgentEventTypeSummarize    AgentEventType = "summarize"
-	AgentEventTypeContentDelta AgentEventType = "content_delta"
-	AgentEventTypeToolCall     AgentEventType = "tool_call"
-	AgentEventTypeToolResult   AgentEventType = "tool_result"
+	AgentEventTypeError          AgentEventType = "error"
+	AgentEventTypeResponse       AgentEventType = "response"
+	AgentEventTypeSummarize      AgentEventType = "summarize"
+	AgentEventTypeContentDelta   AgentEventType = "content_delta"
+	AgentEventTypeThinkingDelta  AgentEventType = "thinking_delta"
+	AgentEventTypeToolCall       AgentEventType = "tool_call"
+	AgentEventTypeToolResult     AgentEventType = "tool_result"
 )
 
 type AgentEvent struct {
@@ -252,7 +253,7 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 	if !a.provider.Model().SupportsAttachments && attachments != nil {
 		attachments = nil
 	}
-	events := make(chan AgentEvent)
+	events := make(chan AgentEvent, 256)
 	if a.IsSessionBusy(sessionID) {
 		return nil, ErrSessionBusy
 	}
@@ -269,7 +270,7 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 		for _, attachment := range attachments {
 			attachmentParts = append(attachmentParts, message.BinaryContent{Path: attachment.FilePath, MIMEType: attachment.MimeType, Data: attachment.Content})
 		}
-		result := a.processGeneration(genCtx, sessionID, content, attachmentParts)
+		result := a.processGeneration(genCtx, sessionID, content, attachmentParts, events)
 		if result.Error != nil && !errors.Is(result.Error, ErrRequestCancelled) && !errors.Is(result.Error, context.Canceled) {
 			logging.ErrorPersist(result.Error.Error())
 		}
