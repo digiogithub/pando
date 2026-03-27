@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useAgentsStore } from '@/stores/settingsStore'
+import ModelCombobox from '@/components/shared/ModelCombobox'
 import type { AgentConfigItem } from '@/types'
 
-const AGENT_NAMES = ['coder', 'summarizer', 'task', 'title', 'cliassist', 'persona']
+const AGENT_NAMES = ['coder', 'summarizer', 'task', 'title', 'cliassist', 'persona-selector']
 
 const AGENT_LABELS: Record<string, string> = {
   coder: 'Coder',
@@ -10,7 +11,7 @@ const AGENT_LABELS: Record<string, string> = {
   task: 'Task',
   title: 'Title',
   cliassist: 'CLI Assist',
-  persona: 'Persona Selector',
+  'persona-selector': 'Persona Selector',
 }
 
 const AGENT_DESCRIPTIONS: Record<string, string> = {
@@ -19,7 +20,7 @@ const AGENT_DESCRIPTIONS: Record<string, string> = {
   task: 'Manages and executes tasks',
   title: 'Generates session titles',
   cliassist: 'Assists with CLI and terminal tasks',
-  persona: 'Selects and switches personas automatically',
+  'persona-selector': 'Selects and switches personas automatically',
 }
 
 const REASONING_EFFORT_OPTIONS = [
@@ -160,14 +161,9 @@ function AgentCard({
 
           {/* Model */}
           <Field label="Model">
-            <input
-              type="text"
+            <ModelCombobox
               value={agent.model}
-              placeholder="e.g. claude-sonnet-4-6"
-              onChange={(e) => onUpdate({ model: e.target.value })}
-              style={inputStyle}
-              onFocus={(e) => { e.target.style.borderColor = 'var(--border-focus)' }}
-              onBlur={(e) => { e.target.style.borderColor = 'var(--border)' }}
+              onChange={(v) => onUpdate({ model: v })}
             />
           </Field>
 

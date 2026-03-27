@@ -1,26 +1,7 @@
 import { useEffect } from 'react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { TextInput, SelectInput, Textarea, Toggle } from '@/components/shared/FormInput'
-
-const MODEL_OPTIONS = [
-  { value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6' },
-  { value: 'claude-opus-4-5', label: 'claude-opus-4-5' },
-  { value: 'claude-haiku-4-5', label: 'claude-haiku-4-5' },
-  { value: 'gpt-5', label: 'gpt-5' },
-  { value: 'gpt-5-mini', label: 'gpt-5-mini' },
-  { value: 'gpt-4o', label: 'gpt-4o' },
-  { value: 'gpt-4o-mini', label: 'gpt-4o-mini' },
-  { value: 'gemini-2.5-pro', label: 'gemini-2.5-pro' },
-  { value: 'gemini-2.0-flash', label: 'gemini-2.0-flash' },
-]
-
-const PROVIDER_OPTIONS = [
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'google', label: 'Google' },
-  { value: 'copilot', label: 'GitHub Copilot' },
-  { value: 'ollama', label: 'Ollama (local)' },
-]
+import ModelCombobox from '@/components/shared/ModelCombobox'
 
 const LANGUAGE_OPTIONS = [
   { value: 'en', label: 'English' },
@@ -78,19 +59,15 @@ export default function GeneralSettings() {
           onChange={(e) => updateField('home_directory', e.target.value)}
         />
 
-        <SelectInput
-          label="Default Model"
-          options={MODEL_OPTIONS}
-          value={config.default_model}
-          onChange={(e) => updateField('default_model', e.target.value)}
-        />
-
-        <SelectInput
-          label="Default Provider"
-          options={PROVIDER_OPTIONS}
-          value={config.default_provider}
-          onChange={(e) => updateField('default_provider', e.target.value)}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Default Model
+          </label>
+          <ModelCombobox
+            value={config.default_model}
+            onChange={(v) => updateField('default_model', v)}
+          />
+        </div>
 
         <SelectInput
           label="Language"
