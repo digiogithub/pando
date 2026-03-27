@@ -1,5 +1,5 @@
 import api from './api'
-import type { SSEEvent } from '@/types'
+import type { SSEEvent, SSEToolCall, SSEToolResult } from '@/types'
 
 export function createSSEStream(
   url: string,
@@ -31,6 +31,7 @@ export function createSSEStream(
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let currentEventType = ''
 
       while (true) {
         const { done, value } = await reader.read()
@@ -41,11 +42,33 @@ export function createSSEStream(
         buffer = lines.pop() ?? ''
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
+          if (line.startsWith('event: ')) {
+            currentEventType = line.slice(7).trim()
+          } else if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(line.slice(6)) as SSEEvent
-              onEvent(data)
-              if (data.type === 'done') {
+              const raw = JSON.parse(line.slice(6)) as Record<string, unknown>
+              // Normalize backend field names to SSEEvent shape
+              const eventType = (currentEventType || 'content') as SSEEvent['type']
+              const event: SSEEvent = {
+                type: eventType,
+                session_id: typeof raw.sessionId === 'string' ? raw.sessionId : undefined,
+                content: typeof raw.text === 'string' ? raw.text : undefined,
+                error: typeof raw.error === 'string' ? raw.error : undefined,
+                tool_call: raw.id && raw.name
+                  ? { id: raw.id as string, name: raw.name as string, input: (raw.input as string) ?? '' }
+                  : undefined,
+                tool_result: raw.tool_call_id
+                  ? {
+                      tool_call_id: raw.tool_call_id as string,
+                      name: (raw.name as string) ?? '',
+                      content: (raw.content as string) ?? '',
+                      is_error: Boolean(raw.is_error),
+                    } as SSEToolResult
+                  : undefined,
+              }
+              currentEventType = ''
+              onEvent(event)
+              if (event.type === 'done') {
                 onDone?.()
                 return
               }

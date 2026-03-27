@@ -56,11 +56,26 @@ export interface ChatRequest {
   model?: string
 }
 
+export interface SSEToolCall {
+  id: string
+  name: string
+  input: string
+}
+
+export interface SSEToolResult {
+  tool_call_id: string
+  name: string
+  content: string
+  is_error: boolean
+}
+
 export interface SSEEvent {
-  type: 'session' | 'content' | 'error' | 'done'
+  type: 'session' | 'content' | 'content_delta' | 'thinking_delta' | 'tool_call' | 'tool_result' | 'error' | 'done'
   session_id?: string
   content?: string
   error?: string
+  tool_call?: SSEToolCall
+  tool_result?: SSEToolResult
 }
 
 // Log types

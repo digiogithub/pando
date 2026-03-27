@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faComments } from '@fortawesome/free-solid-svg-icons'
 import type { Message } from '@/types'
+import type { StreamingState } from '@/hooks/useChat'
 import MessageBubble from './MessageBubble'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
 
