@@ -1,40 +1,13 @@
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { TextInput, SelectInput, Textarea, Toggle } from '@/components/shared/FormInput'
-
-const MODEL_OPTIONS = [
-  { value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6' },
-  { value: 'claude-opus-4-5', label: 'claude-opus-4-5' },
-  { value: 'claude-haiku-4-5', label: 'claude-haiku-4-5' },
-  { value: 'gpt-5', label: 'gpt-5' },
-  { value: 'gpt-5-mini', label: 'gpt-5-mini' },
-  { value: 'gpt-4o', label: 'gpt-4o' },
-  { value: 'gpt-4o-mini', label: 'gpt-4o-mini' },
-  { value: 'gemini-2.5-pro', label: 'gemini-2.5-pro' },
-  { value: 'gemini-2.0-flash', label: 'gemini-2.0-flash' },
-]
-
-const PROVIDER_OPTIONS = [
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'google', label: 'Google' },
-  { value: 'copilot', label: 'GitHub Copilot' },
-  { value: 'ollama', label: 'Ollama (local)' },
-]
-
-const LANGUAGE_OPTIONS = [
-  { value: 'en', label: 'English' },
-  { value: 'es', label: 'Spanish' },
-  { value: 'fr', label: 'French' },
-  { value: 'de', label: 'German' },
-  { value: 'pt', label: 'Portuguese' },
-  { value: 'ja', label: 'Japanese' },
-  { value: 'zh', label: 'Chinese' },
-]
+import ModelCombobox from '@/components/shared/ModelCombobox'
+import { SUPPORTED_LANGUAGES } from '@/i18n'
 
 const THEME_OPTIONS = [
-  { value: 'light', label: 'Light' },
-  { value: 'dark', label: 'Dark' },
+  { value: 'light', labelKey: 'settings.general.themeLight' },
+  { value: 'dark', labelKey: 'settings.general.themeDark' },
 ]
 
 const dividerStyle: React.CSSProperties = {
@@ -50,6 +23,7 @@ const sectionTitle: React.CSSProperties = {
 }
 
 export default function GeneralSettings() {
+  const { t } = useTranslation()
   const { config, dirty, loading, saving, error, fetchSettings, updateField, saveSettings, resetSettings } =
     useSettingsStore()
 
@@ -60,48 +34,47 @@ export default function GeneralSettings() {
   if (loading) {
     return (
       <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>
-        Loading settings…
+        {t('settings.general.loadingSettings')}
       </div>
     )
   }
 
+  const languageOptions = SUPPORTED_LANGUAGES.map((l) => ({ value: l.value, label: l.label }))
+  const themeOptions = THEME_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))
+
   return (
     <div style={{ maxWidth: 640 }}>
-      <h2 style={sectionTitle}>General Settings</h2>
+      <h2 style={sectionTitle}>{t('settings.general.title')}</h2>
 
       {/* Text fields */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
         <TextInput
-          label="Working Directory"
-          placeholder="/home/user/project"
+          label={t('settings.general.workingDirectory')}
+          placeholder={t('settings.general.workingDirectoryPlaceholder')}
           value={config.home_directory}
           onChange={(e) => updateField('home_directory', e.target.value)}
         />
 
-        <SelectInput
-          label="Default Model"
-          options={MODEL_OPTIONS}
-          value={config.default_model}
-          onChange={(e) => updateField('default_model', e.target.value)}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            {t('settings.general.defaultModel')}
+          </label>
+          <ModelCombobox
+            value={config.default_model}
+            onChange={(v) => updateField('default_model', v)}
+          />
+        </div>
 
         <SelectInput
-          label="Default Provider"
-          options={PROVIDER_OPTIONS}
-          value={config.default_provider}
-          onChange={(e) => updateField('default_provider', e.target.value)}
-        />
-
-        <SelectInput
-          label="Language"
-          options={LANGUAGE_OPTIONS}
+          label={t('settings.general.language')}
+          options={languageOptions}
           value={config.language}
           onChange={(e) => updateField('language', e.target.value)}
         />
 
         <SelectInput
-          label="Theme"
-          options={THEME_OPTIONS}
+          label={t('settings.general.theme')}
+          options={themeOptions}
           value={config.theme}
           onChange={(e) => updateField('theme', e.target.value as 'light' | 'dark')}
         />
@@ -112,14 +85,14 @@ export default function GeneralSettings() {
       {/* Toggles */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <Toggle
-          label="Auto-save"
-          description="Automatically save session progress"
+          label={t('settings.general.autoSave')}
+          description={t('settings.general.autoSaveDescription')}
           checked={config.auto_save}
           onChange={(v) => updateField('auto_save', v)}
         />
         <Toggle
-          label="Markdown preview"
-          description="Render markdown in chat messages"
+          label={t('settings.general.markdownPreview')}
+          description={t('settings.general.markdownPreviewDescription')}
           checked={config.markdown_preview}
           onChange={(v) => updateField('markdown_preview', v)}
         />
@@ -129,8 +102,8 @@ export default function GeneralSettings() {
 
       {/* Custom instructions */}
       <Textarea
-        label="Custom instructions"
-        placeholder="Add any global instructions for the AI assistant…"
+        label={t('settings.general.customInstructions')}
+        placeholder={t('settings.general.customInstructionsPlaceholder')}
         value={config.custom_instructions}
         rows={5}
         onChange={(e) => updateField('custom_instructions', e.target.value)}
@@ -172,7 +145,7 @@ export default function GeneralSettings() {
             fontFamily: 'inherit',
           }}
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? t('common.saving') : t('common.save')}
         </button>
 
         <button
@@ -191,7 +164,7 @@ export default function GeneralSettings() {
             fontFamily: 'inherit',
           }}
         >
-          Reset
+          {t('common.reset')}
         </button>
       </div>
     </div>

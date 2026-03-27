@@ -1,0 +1,112 @@
+{
+  "common": {
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "reset": "Restablecer",
+    "cancel": "Cancelar",
+    "loading": "Cargando…",
+    "error": "Error",
+    "noResults": "No se encontraron resultados",
+    "connected": "Conectado",
+    "disconnected": "Desconectado",
+    "messages": "mensajes",
+    "tokens": "tokens",
+    "session": "Sesión",
+    "noActiveSession": "Sin sesión activa",
+    "clickToSwitchModel": "Clic para cambiar modelo (Ctrl+O)"
+  },
+  "nav": {
+    "chat": "Chat",
+    "simpleChat": "Chat Simple",
+    "orchestrator": "Orquestador",
+    "logs": "Registros",
+    "snapshots": "Snapshots",
+    "evaluator": "Evaluador",
+    "codeEditor": "Editor de Código",
+    "terminal": "Terminal",
+    "settings": "Configuración",
+    "sections": {
+      "sessions": "Sesiones",
+      "navigate": "Navegar",
+      "services": "Servicios"
+    },
+    "newSession": "Nueva sesión",
+    "untitledSession": "Sesión sin título",
+    "noSessionsYet": "Aún no hay sesiones"
+  },
+  "header": {
+    "toggleSidebar": "Mostrar/ocultar barra lateral (Ctrl+B)",
+    "toggleTheme": "Cambiar tema"
+  },
+  "settings": {
+    "categories": {
+      "general": "General",
+      "providers": "Proveedores",
+      "agents": "Agentes",
+      "mcpServers": "Servidores MCP",
+      "mcpGateway": "Gateway MCP",
+      "lsp": "LSP",
+      "tools": "Herramientas",
+      "bash": "Bash",
+      "skills": "Habilidades",
+      "lua": "Motor Lua",
+      "evaluator": "Evaluador",
+      "mesnada": "Mesnada",
+      "remembrances": "Remembrances",
+      "snapshots": "Snapshots",
+      "apiServer": "Servidor API"
+    },
+    "general": {
+      "title": "Configuración General",
+      "loadingSettings": "Cargando configuración…",
+      "workingDirectory": "Directorio de Trabajo",
+      "workingDirectoryPlaceholder": "/home/usuario/proyecto",
+      "defaultModel": "Modelo Predeterminado",
+      "language": "Idioma",
+      "theme": "Tema",
+      "themeLight": "Claro",
+      "themeDark": "Oscuro",
+      "autoSave": "Autoguardado",
+      "autoSaveDescription": "Guardar automáticamente el progreso de la sesión",
+      "markdownPreview": "Vista previa de Markdown",
+      "markdownPreviewDescription": "Renderizar Markdown en los mensajes del chat",
+      "customInstructions": "Instrucciones personalizadas",
+      "customInstructionsPlaceholder": "Añade instrucciones globales para el asistente de IA…"
+    },
+    "agents": {
+      "title": "Agentes",
+      "description": "Configura el modelo y el comportamiento de cada agente integrado. Los cambios se aplican a las nuevas sesiones.",
+      "loadingAgents": "Cargando agentes…",
+      "model": "Modelo",
+      "maxTokens": "Tokens Máximos",
+      "reasoningEffort": "Esfuerzo de Razonamiento",
+      "reasoningDefault": "Predeterminado",
+      "reasoningNone": "Ninguno",
+      "reasoningLow": "Bajo",
+      "reasoningMedium": "Medio",
+      "reasoningHigh": "Alto",
+      "autoCompact": "Compactación automática",
+      "autoCompactDescription": "Comprimir el contexto automáticamente",
+      "compactThreshold": "Umbral de Compactación"
+    }
+  },
+  "chat": {
+    "messagePlaceholder": "Escribe un mensaje…",
+    "sendMessage": "Enviar mensaje",
+    "cancelStreaming": "Cancelar",
+    "streaming": "Pensando…",
+    "emptyChat": "Inicia una conversación",
+    "emptyChatDescription": "Pregunta lo que quieras para comenzar",
+    "copyMessage": "Copiar",
+    "copied": "¡Copiado!"
+  },
+  "models": {
+    "searchPlaceholder": "Buscar modelos…",
+    "loadingModels": "Cargando modelos…",
+    "noModelsFound": "No se encontraron modelos",
+    "switchModel": "Cambiar Modelo",
+    "navigate": "navegar",
+    "select": "seleccionar",
+    "close": "cerrar"
+  }
+}

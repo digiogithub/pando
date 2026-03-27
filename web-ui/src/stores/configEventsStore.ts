@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import api from '@/services/api'
 import { useSettingsStore } from './settingsStore'
 
 export interface ConfigChangeEvent {
@@ -26,7 +27,13 @@ export const useConfigEventsStore = create<ConfigEventsStore>((set, get) => ({
     if (get()._es) return
 
     const open = () => {
-      const es = new EventSource('/api/v1/config/events')
+      // EventSource cannot send custom headers, so we pass the auth token as a
+      // query parameter (the server auth middleware accepts ?token=...).
+      const token = api.getToken()
+      const url = token
+        ? `/api/v1/config/events?token=${encodeURIComponent(token)}`
+        : '/api/v1/config/events'
+      const es = new EventSource(url)
 
       es.onopen = () => {
         _backoffMs = 1_000
