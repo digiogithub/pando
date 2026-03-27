@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faComments, faFileLines, faNetworkWired,
@@ -10,26 +11,26 @@ import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
 import { useServerStore } from '@/stores/serverStore'
 
-const TABS = [
-  { path: '/', label: 'Chat', icon: faComments, end: true },
-  { path: '/orchestrator', label: 'Orchestrator', icon: faNetworkWired },
-  { path: '/evaluator', label: 'Evaluator', icon: faStar },
-  { path: '/snapshots', label: 'Snapshots', icon: faCamera },
-  { path: '/logs', label: 'Logs', icon: faFileLines },
-]
-
 export default function Header() {
+  const { t } = useTranslation()
   const { toggleSidebar, sidebarOpen } = useLayoutStore()
   const { theme, toggleTheme } = useTheme()
   const connected = useServerStore((s) => s.connected)
   const [version, setVersion] = useState<string>('')
+
+  const TABS = [
+    { path: '/', label: t('nav.chat'), icon: faComments, end: true },
+    { path: '/orchestrator', label: t('nav.orchestrator'), icon: faNetworkWired },
+    { path: '/evaluator', label: t('nav.evaluator'), icon: faStar },
+    { path: '/snapshots', label: t('nav.snapshots'), icon: faCamera },
+    { path: '/logs', label: t('nav.logs'), icon: faFileLines },
+  ]
 
   useEffect(() => {
     fetch('/health')
       .then((r) => r.json())
       .then((d) => {
         if (d.version && d.version !== 'unknown') {
-          // Strip build metadata (+dirty, +...) and ensure single "v" prefix
           const clean = d.version.replace(/\+.*$/, '')
           setVersion(clean.startsWith('v') ? clean : `v${clean}`)
         }
@@ -53,7 +54,7 @@ export default function Header() {
       {/* Toggle sidebar */}
       <button
         onClick={toggleSidebar}
-        title="Toggle sidebar (Ctrl+B)"
+        title={t('header.toggleSidebar')}
         style={{
           background: 'none',
           border: 'none',
@@ -128,7 +129,7 @@ export default function Header() {
       >
         {TABS.map((tab) => (
           <NavLink
-            key={tab.label}
+            key={tab.path}
             to={tab.path}
             end={tab.end}
             title={tab.label}
@@ -164,7 +165,7 @@ export default function Header() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
         {/* Connection status dot */}
         <div
-          title={connected ? 'Connected' : 'Disconnected'}
+          title={connected ? t('common.connected') : t('common.disconnected')}
           style={{
             width: 7,
             height: 7,
@@ -177,7 +178,7 @@ export default function Header() {
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
-          title="Toggle theme"
+          title={t('header.toggleTheme')}
           style={{
             background: 'none',
             border: 'none',
@@ -195,7 +196,7 @@ export default function Header() {
         {/* Settings */}
         <NavLink
           to="/settings"
-          title="Settings"
+          title={t('nav.settings')}
           style={({ isActive }) => ({
             display: 'flex',
             alignItems: 'center',

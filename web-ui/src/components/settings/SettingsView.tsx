@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import GeneralSettings from './GeneralSettings'
 import ProvidersSettings from './ProvidersSettings'
 import AgentsSettings from './AgentsSettings'
@@ -25,50 +26,34 @@ type SettingsCategory =
   | 'lsp'
   | 'tools'
   | 'bash'
-  | 'prompts'
-  | 'models'
   | 'skills'
   | 'lua'
   | 'evaluator'
-  | 'rag'
   | 'mesnada'
   | 'remembrances'
   | 'snapshots'
   | 'api-server'
 
-const CATEGORIES: { id: SettingsCategory; label: string; group?: string }[] = [
-  { id: 'general', label: 'General' },
-  { id: 'providers', label: 'Providers' },
-  { id: 'agents', label: 'Agents' },
-  { id: 'mcp-servers', label: 'MCP Servers' },
-  { id: 'mcp-gateway', label: 'MCP Gateway' },
-  { id: 'lsp', label: 'LSP' },
-  { id: 'tools', label: 'Tools' },
-  { id: 'bash', label: 'Bash' },
-  { id: 'prompts', label: 'Prompts' },
-  { id: 'models', label: 'Models' },
-  { id: 'skills', label: 'Skills' },
-  { id: 'lua', label: 'Lua Engine' },
-  { id: 'evaluator', label: 'Evaluator' },
-  { id: 'rag', label: 'RAG' },
-  { id: 'mesnada', label: 'Mesnada', group: 'services' },
-  { id: 'remembrances', label: 'Remembrances', group: 'services' },
-  { id: 'snapshots', label: 'Snapshots', group: 'services' },
-  { id: 'api-server', label: 'API Server', group: 'services' },
+const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string }[] = [
+  { id: 'general', labelKey: 'settings.categories.general' },
+  { id: 'providers', labelKey: 'settings.categories.providers' },
+  { id: 'agents', labelKey: 'settings.categories.agents' },
+  { id: 'mcp-servers', labelKey: 'settings.categories.mcpServers' },
+  { id: 'mcp-gateway', labelKey: 'settings.categories.mcpGateway' },
+  { id: 'lsp', labelKey: 'settings.categories.lsp' },
+  { id: 'tools', labelKey: 'settings.categories.tools' },
+  { id: 'bash', labelKey: 'settings.categories.bash' },
+  { id: 'skills', labelKey: 'settings.categories.skills' },
+  { id: 'lua', labelKey: 'settings.categories.lua' },
+  { id: 'evaluator', labelKey: 'settings.categories.evaluator' },
+  { id: 'mesnada', labelKey: 'settings.categories.mesnada', group: 'services' },
+  { id: 'remembrances', labelKey: 'settings.categories.remembrances', group: 'services' },
+  { id: 'snapshots', labelKey: 'settings.categories.snapshots', group: 'services' },
+  { id: 'api-server', labelKey: 'settings.categories.apiServer', group: 'services' },
 ]
 
-function ComingSoon({ name }: { name: string }) {
-  return (
-    <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>
-      <p style={{ fontWeight: 600, fontSize: 16, color: 'var(--fg)', marginBottom: '0.5rem' }}>
-        {name}
-      </p>
-      <p>This section is coming soon.</p>
-    </div>
-  )
-}
-
 export default function SettingsView() {
+  const { t } = useTranslation()
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>('general')
   const { connect, disconnect } = useConfigEventsStore()
 
@@ -93,7 +78,7 @@ export default function SettingsView() {
           overflowY: 'auto',
         }}
       >
-        {CATEGORIES.filter((c) => !c.group).map((cat) => {
+        {CATEGORY_KEYS.filter((c) => !c.group).map((cat) => {
           const isActive = activeCategory === cat.id
           return (
             <button
@@ -129,7 +114,7 @@ export default function SettingsView() {
                 }
               }}
             >
-              {cat.label}
+              {t(cat.labelKey)}
             </button>
           )
         })}
@@ -147,9 +132,9 @@ export default function SettingsView() {
             marginTop: '0.5rem',
           }}
         >
-          Services
+          {t('nav.sections.services')}
         </div>
-        {CATEGORIES.filter((c) => c.group === 'services').map((cat) => {
+        {CATEGORY_KEYS.filter((c) => c.group === 'services').map((cat) => {
           const isActive = activeCategory === cat.id
           return (
             <button
@@ -185,7 +170,7 @@ export default function SettingsView() {
                 }
               }}
             >
-              {cat.label}
+              {t(cat.labelKey)}
             </button>
           )
         })}
@@ -215,25 +200,6 @@ export default function SettingsView() {
         {activeCategory === 'remembrances' && <RemembrancesSettings />}
         {activeCategory === 'snapshots' && <SnapshotsSettings />}
         {activeCategory === 'api-server' && <APIServerSettings />}
-        {activeCategory !== 'general' &&
-          activeCategory !== 'providers' &&
-          activeCategory !== 'agents' &&
-          activeCategory !== 'mcp-servers' &&
-          activeCategory !== 'mcp-gateway' &&
-          activeCategory !== 'lsp' &&
-          activeCategory !== 'tools' &&
-          activeCategory !== 'bash' &&
-          activeCategory !== 'skills' &&
-          activeCategory !== 'lua' &&
-          activeCategory !== 'evaluator' &&
-          activeCategory !== 'mesnada' &&
-          activeCategory !== 'remembrances' &&
-          activeCategory !== 'snapshots' &&
-          activeCategory !== 'api-server' && (
-          <ComingSoon
-            name={CATEGORIES.find((c) => c.id === activeCategory)?.label ?? ''}
-          />
-        )}
       </div>
     </div>
   )

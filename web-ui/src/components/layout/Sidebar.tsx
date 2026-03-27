@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faComments, faPlus, faNetworkWired, faFileLines, faCamera,
@@ -9,22 +10,23 @@ import {
 import { useSessionStore } from '@/stores/sessionStore'
 import { format } from 'date-fns'
 
-const NAV_ITEMS = [
-  { path: '/', label: 'Chat', icon: faComments, end: true },
-  { path: '/chat/simple', label: 'Simple Chat', icon: faComments },
-  { path: '/orchestrator', label: 'Orchestrator', icon: faNetworkWired },
-  { path: '/logs', label: 'Logs', icon: faFileLines },
-  { path: '/snapshots', label: 'Snapshots', icon: faCamera },
-  { path: '/evaluator', label: 'Evaluator', icon: faStar },
-  { path: '/editor', label: 'Code Editor', icon: faCode },
-  { path: '/terminal', label: 'Terminal', icon: faTerminal },
-  { path: '/settings', label: 'Settings', icon: faCog },
-]
-
 export default function Sidebar() {
+  const { t } = useTranslation()
   const [sessionsOpen, setSessionsOpen] = useState(true)
   const [navOpen, setNavOpen] = useState(true)
   const { sessions, activeSessionId, setActiveSession } = useSessionStore()
+
+  const NAV_ITEMS = [
+    { path: '/', label: t('nav.chat'), icon: faComments, end: true },
+    { path: '/chat/simple', label: t('nav.simpleChat'), icon: faComments },
+    { path: '/orchestrator', label: t('nav.orchestrator'), icon: faNetworkWired },
+    { path: '/logs', label: t('nav.logs'), icon: faFileLines },
+    { path: '/snapshots', label: t('nav.snapshots'), icon: faCamera },
+    { path: '/evaluator', label: t('nav.evaluator'), icon: faStar },
+    { path: '/editor', label: t('nav.codeEditor'), icon: faCode },
+    { path: '/terminal', label: t('nav.terminal'), icon: faTerminal },
+    { path: '/settings', label: t('nav.settings'), icon: faCog },
+  ]
 
   return (
     <aside
@@ -43,11 +45,11 @@ export default function Sidebar() {
 
         {/* Sessions section */}
         <SectionHeader
-          label="Sessions"
+          label={t('nav.sections.sessions')}
           open={sessionsOpen}
           onToggle={() => setSessionsOpen(!sessionsOpen)}
           action={
-            <NavLink to="/" title="New session" style={{ color: 'var(--fg-muted)' }}>
+            <NavLink to="/" title={t('nav.newSession')} style={{ color: 'var(--fg-muted)' }}>
               <FontAwesomeIcon icon={faPlus} style={{ fontSize: 11 }} />
             </NavLink>
           }
@@ -78,17 +80,17 @@ export default function Sidebar() {
                 />
                 <div style={{ flex: 1, overflow: 'hidden' }}>
                   <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {s.title || 'Untitled session'}
+                    {s.title || t('nav.untitledSession')}
                   </div>
                   <div style={{ fontSize: 10, color: 'var(--fg-muted)' }}>
-                    {s.message_count} msgs · {format(new Date(s.updated_at), 'MMM d')}
+                    {s.message_count} {t('common.messages')} · {format(new Date(s.updated_at), 'MMM d')}
                   </div>
                 </div>
               </button>
             ))}
             {sessions.length === 0 && (
               <div style={{ padding: '0.5rem 1rem', fontSize: 12, color: 'var(--fg-dim)' }}>
-                No sessions yet
+                {t('nav.noSessionsYet')}
               </div>
             )}
           </div>
@@ -96,7 +98,7 @@ export default function Sidebar() {
 
         {/* Navigation section */}
         <SectionHeader
-          label="Navigate"
+          label={t('nav.sections.navigate')}
           open={navOpen}
           onToggle={() => setNavOpen(!navOpen)}
         />
@@ -104,7 +106,7 @@ export default function Sidebar() {
           <div style={{ paddingBottom: '0.25rem' }}>
             {NAV_ITEMS.map((item) => (
               <NavLink
-                key={item.label}
+                key={item.path}
                 to={item.path}
                 end={item.end}
                 style={({ isActive }) => ({
