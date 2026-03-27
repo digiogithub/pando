@@ -4,6 +4,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { TextInput, SelectInput, Textarea, Toggle } from '@/components/shared/FormInput'
 import ModelCombobox from '@/components/shared/ModelCombobox'
 import { SUPPORTED_LANGUAGES } from '@/i18n'
+import { useTheme } from '@/hooks/useTheme'
 
 const THEME_OPTIONS = [
   { value: 'light', labelKey: 'settings.general.themeLight' },
@@ -26,10 +27,18 @@ export default function GeneralSettings() {
   const { t } = useTranslation()
   const { config, dirty, loading, saving, error, fetchSettings, updateField, saveSettings, resetSettings } =
     useSettingsStore()
+  const { setTheme } = useTheme()
 
   useEffect(() => {
     fetchSettings()
   }, [fetchSettings])
+
+  // Apply theme from backend config once settings are loaded
+  useEffect(() => {
+    if (!loading && config.theme) {
+      setTheme(config.theme)
+    }
+  }, [loading, config.theme, setTheme])
 
   if (loading) {
     return (
@@ -76,7 +85,11 @@ export default function GeneralSettings() {
           label={t('settings.general.theme')}
           options={themeOptions}
           value={config.theme}
-          onChange={(e) => updateField('theme', e.target.value as 'light' | 'dark')}
+          onChange={(e) => {
+            const t = e.target.value as 'light' | 'dark'
+            updateField('theme', t)
+            setTheme(t)
+          }}
         />
       </div>
 
