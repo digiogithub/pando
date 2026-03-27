@@ -1,0 +1,112 @@
+{
+  "common": {
+    "save": "保存",
+    "saving": "保存中…",
+    "reset": "重置",
+    "cancel": "取消",
+    "loading": "加载中…",
+    "error": "错误",
+    "noResults": "未找到结果",
+    "connected": "已连接",
+    "disconnected": "已断开",
+    "messages": "消息",
+    "tokens": "tokens",
+    "session": "会话",
+    "noActiveSession": "无活动会话",
+    "clickToSwitchModel": "点击切换模型 (Ctrl+O)"
+  },
+  "nav": {
+    "chat": "聊天",
+    "simpleChat": "简单聊天",
+    "orchestrator": "编排器",
+    "logs": "日志",
+    "snapshots": "快照",
+    "evaluator": "评估器",
+    "codeEditor": "代码编辑器",
+    "terminal": "终端",
+    "settings": "设置",
+    "sections": {
+      "sessions": "会话",
+      "navigate": "导航",
+      "services": "服务"
+    },
+    "newSession": "新建会话",
+    "untitledSession": "未命名会话",
+    "noSessionsYet": "暂无会话"
+  },
+  "header": {
+    "toggleSidebar": "切换侧栏 (Ctrl+B)",
+    "toggleTheme": "切换主题"
+  },
+  "settings": {
+    "categories": {
+      "general": "常规",
+      "providers": "提供商",
+      "agents": "代理",
+      "mcpServers": "MCP 服务器",
+      "mcpGateway": "MCP 网关",
+      "lsp": "LSP",
+      "tools": "工具",
+      "bash": "Bash",
+      "skills": "技能",
+      "lua": "Lua 引擎",
+      "evaluator": "评估器",
+      "mesnada": "Mesnada",
+      "remembrances": "记忆库",
+      "snapshots": "快照",
+      "apiServer": "API 服务器"
+    },
+    "general": {
+      "title": "常规设置",
+      "loadingSettings": "加载设置中…",
+      "workingDirectory": "工作目录",
+      "workingDirectoryPlaceholder": "/home/user/project",
+      "defaultModel": "默认模型",
+      "language": "语言",
+      "theme": "主题",
+      "themeLight": "浅色",
+      "themeDark": "深色",
+      "autoSave": "自动保存",
+      "autoSaveDescription": "自动保存会话进度",
+      "markdownPreview": "Markdown 预览",
+      "markdownPreviewDescription": "在聊天消息中渲染 Markdown",
+      "customInstructions": "自定义指令",
+      "customInstructionsPlaceholder": "为 AI 助手添加全局指令…"
+    },
+    "agents": {
+      "title": "代理",
+      "description": "配置每个内置代理的模型和行为，更改将应用于新会话。",
+      "loadingAgents": "加载代理中…",
+      "model": "模型",
+      "maxTokens": "最大 Token 数",
+      "reasoningEffort": "推理强度",
+      "reasoningDefault": "默认",
+      "reasoningNone": "无",
+      "reasoningLow": "低",
+      "reasoningMedium": "中",
+      "reasoningHigh": "高",
+      "autoCompact": "自动压缩",
+      "autoCompactDescription": "自动压缩上下文",
+      "compactThreshold": "压缩阈值"
+    }
+  },
+  "chat": {
+    "messagePlaceholder": "输入消息…",
+    "sendMessage": "发送消息",
+    "cancelStreaming": "取消",
+    "streaming": "思考中…",
+    "emptyChat": "开始对话",
+    "emptyChatDescription": "提问以开始使用",
+    "copyMessage": "复制",
+    "copied": "已复制！"
+  },
+  "models": {
+    "searchPlaceholder": "搜索模型…",
+    "loadingModels": "加载模型中…",
+    "noModelsFound": "未找到模型",
+    "switchModel": "切换模型",
+    "navigate": "导航",
+    "select": "选择",
+    "close": "关闭"
+  }
+}

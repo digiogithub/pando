@@ -3,10 +3,12 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faRobot, faUser, faWrench, faCheckCircle, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons'
+import { faRobot, faUser, faWrench, faCheckCircle, faChevronDown, faChevronRight, faBrain } from '@fortawesome/free-solid-svg-icons'
 import { format } from 'date-fns'
 import 'highlight.js/styles/github-dark-dimmed.css'
 import type { Message, ContentPart } from '@/types'
+import type { StreamingState } from '@/hooks/useChat'
+import { LiveToolCallBlock } from './MessageList'
 
 // ─── Markdown renderer ───────────────────────────────────────────────────────
 
@@ -138,9 +140,10 @@ function ToolCallBlock({ part }: { part: ContentPart }) {
 interface MessageBubbleProps {
   message: Message
   streaming?: boolean
+  streamingState?: StreamingState
 }
 
-export default function MessageBubble({ message, streaming }: MessageBubbleProps) {
+export default function MessageBubble({ message, streaming, streamingState }: MessageBubbleProps) {
   const isUser = message.role === 'user'
   const timestamp = format(new Date(message.created_at), 'HH:mm')
 
@@ -198,6 +201,60 @@ export default function MessageBubble({ message, streaming }: MessageBubbleProps
           wordBreak: 'break-word',
         }}
       >
+        {/* Thinking: live during streaming or collapsible when done */}
+        {!isUser && streaming && streamingState && streamingState.thinking.length > 0 && (
+          <div
+            style={{
+              border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
+              borderRadius: 'var(--radius-sm)',
+              overflow: 'hidden',
+              fontSize: 12,
+              marginBottom: '0.5rem',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.375rem 0.625rem',
+                background: 'color-mix(in srgb, var(--primary) 8%, var(--surface))',
+                color: 'var(--primary)',
+              }}
+            >
+              <FontAwesomeIcon icon={faBrain} style={{ fontSize: 10 }} />
+              <span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Thinking
+              </span>
+            </div>
+            <div
+              style={{
+                padding: '0.5rem 0.625rem',
+                background: 'var(--bg-secondary)',
+                color: 'var(--fg-muted)',
+                fontFamily: 'monospace',
+                fontSize: 11,
+                lineHeight: 1.55,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                maxHeight: 220,
+                overflowY: 'auto',
+              }}
+            >
+              {streamingState.thinking}
+            </div>
+          </div>
+        )}
+
+        {/* Live tool calls during streaming */}
+        {!isUser && streaming && streamingState && streamingState.toolCalls.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', marginBottom: '0.5rem' }}>
+            {streamingState.toolCalls.map((tc) => (
+              <LiveToolCallBlock key={tc.id} toolCall={tc} />
+            ))}
+          </div>
+        )}
+
         {textContent && (
           isUser ? (
             <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{textContent}</p>

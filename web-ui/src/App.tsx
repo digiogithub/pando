@@ -16,8 +16,10 @@ import SnapshotsView from '@/components/snapshots/SnapshotsView'
 import EvaluatorView from '@/components/evaluator/EvaluatorView'
 import CodeEditorView from '@/components/editor/CodeEditorView'
 import { authenticate, checkHealth } from '@/services/auth'
+import { useLanguageSync } from '@/hooks/useLanguageSync'
 
 function App() {
+  useLanguageSync()
   const [splashStatus, setSplashStatus] = useState<SplashStatus>('connecting')
   const [showSplash, setShowSplash] = useState(true)
 
