@@ -41,7 +41,7 @@ export function useChat({ onNewSession }: UseChatOptions = {}) {
 
       abortRef.current = createSSEStream(
         '/api/v1/chat/stream',
-        { session_id: activeSessionId ?? undefined, message: text },
+        { sessionId: activeSessionId ?? undefined, prompt: text },
         (event: SSEEvent) => {
           if (event.type === 'session' && event.session_id) {
             onNewSession?.(event.session_id)
