@@ -1,0 +1,112 @@
+{
+  "common": {
+    "save": "Speichern",
+    "saving": "Wird gespeichert…",
+    "reset": "Zurücksetzen",
+    "cancel": "Abbrechen",
+    "loading": "Wird geladen…",
+    "error": "Fehler",
+    "noResults": "Keine Ergebnisse gefunden",
+    "connected": "Verbunden",
+    "disconnected": "Getrennt",
+    "messages": "Nachrichten",
+    "tokens": "Tokens",
+    "session": "Sitzung",
+    "noActiveSession": "Keine aktive Sitzung",
+    "clickToSwitchModel": "Klicken zum Wechseln des Modells (Ctrl+O)"
+  },
+  "nav": {
+    "chat": "Chat",
+    "simpleChat": "Einfacher Chat",
+    "orchestrator": "Orchestrator",
+    "logs": "Protokolle",
+    "snapshots": "Snapshots",
+    "evaluator": "Evaluator",
+    "codeEditor": "Code-Editor",
+    "terminal": "Terminal",
+    "settings": "Einstellungen",
+    "sections": {
+      "sessions": "Sitzungen",
+      "navigate": "Navigation",
+      "services": "Dienste"
+    },
+    "newSession": "Neue Sitzung",
+    "untitledSession": "Unbenannte Sitzung",
+    "noSessionsYet": "Noch keine Sitzungen"
+  },
+  "header": {
+    "toggleSidebar": "Seitenleiste ein-/ausblenden (Ctrl+B)",
+    "toggleTheme": "Design wechseln"
+  },
+  "settings": {
+    "categories": {
+      "general": "Allgemein",
+      "providers": "Anbieter",
+      "agents": "Agents",
+      "mcpServers": "MCP-Server",
+      "mcpGateway": "MCP-Gateway",
+      "lsp": "LSP",
+      "tools": "Tools",
+      "bash": "Bash",
+      "skills": "Skills",
+      "lua": "Lua-Engine",
+      "evaluator": "Evaluator",
+      "mesnada": "Mesnada",
+      "remembrances": "Remembrances",
+      "snapshots": "Snapshots",
+      "apiServer": "API-Server"
+    },
+    "general": {
+      "title": "Allgemeine Einstellungen",
+      "loadingSettings": "Einstellungen werden geladen…",
+      "workingDirectory": "Arbeitsverzeichnis",
+      "workingDirectoryPlaceholder": "/home/user/project",
+      "defaultModel": "Standardmodell",
+      "language": "Sprache",
+      "theme": "Design",
+      "themeLight": "Hell",
+      "themeDark": "Dunkel",
+      "autoSave": "Automatisch speichern",
+      "autoSaveDescription": "Sitzungsfortschritt automatisch speichern",
+      "markdownPreview": "Markdown-Vorschau",
+      "markdownPreviewDescription": "Markdown in Chat-Nachrichten rendern",
+      "customInstructions": "Benutzerdefinierte Anweisungen",
+      "customInstructionsPlaceholder": "Globale Anweisungen für den KI-Assistenten hinzufügen…"
+    },
+    "agents": {
+      "title": "Agents",
+      "description": "Modell und Verhalten für jeden integrierten Agent konfigurieren. Änderungen gelten für neue Sitzungen.",
+      "loadingAgents": "Agents werden geladen…",
+      "model": "Modell",
+      "maxTokens": "Maximale Tokens",
+      "reasoningEffort": "Reasoning-Aufwand",
+      "reasoningDefault": "Standard",
+      "reasoningNone": "Keiner",
+      "reasoningLow": "Niedrig",
+      "reasoningMedium": "Mittel",
+      "reasoningHigh": "Hoch",
+      "autoCompact": "Automatisch komprimieren",
+      "autoCompactDescription": "Kontext automatisch komprimieren",
+      "compactThreshold": "Komprimierungsschwellenwert"
+    }
+  },
+  "chat": {
+    "messagePlaceholder": "Nachricht eingeben…",
+    "sendMessage": "Nachricht senden",
+    "cancelStreaming": "Abbrechen",
+    "streaming": "Wird verarbeitet…",
+    "emptyChat": "Gespräch beginnen",
+    "emptyChatDescription": "Stellen Sie eine Frage, um loszulegen",
+    "copyMessage": "Kopieren",
+    "copied": "Kopiert!"
+  },
+  "models": {
+    "searchPlaceholder": "Modelle suchen…",
+    "loadingModels": "Modelle werden geladen…",
+    "noModelsFound": "Keine Modelle gefunden",
+    "switchModel": "Modell wechseln",
+    "navigate": "navigieren",
+    "select": "auswählen",
+    "close": "schließen"
+  }
+}
