@@ -46,15 +46,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = s.app.Messages.Create(r.Context(), sess.ID, message.CreateMessageParams{
-		Role:  message.User,
-		Parts: []message.ContentPart{message.TextContent{Text: req.Prompt}},
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create message")
-		return
-	}
-
 	eventChan, err := s.app.CoderAgent.Run(r.Context(), sess.ID, req.Prompt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("agent error: %v", err))
@@ -123,16 +114,6 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(w, "event: session\ndata: {\"sessionId\":\"%s\"}\n\n", sess.ID)
 	flusher.Flush()
-
-	_, err = s.app.Messages.Create(r.Context(), sess.ID, message.CreateMessageParams{
-		Role:  message.User,
-		Parts: []message.ContentPart{message.TextContent{Text: req.Prompt}},
-	})
-	if err != nil {
-		fmt.Fprintf(w, "event: error\ndata: {\"error\":\"failed to create message\"}\n\n")
-		flusher.Flush()
-		return
-	}
 
 	eventChan, err := s.app.CoderAgent.Run(r.Context(), sess.ID, req.Prompt)
 	if err != nil {
