@@ -1,0 +1,112 @@
+{
+  "common": {
+    "save": "保存",
+    "saving": "保存中…",
+    "reset": "リセット",
+    "cancel": "キャンセル",
+    "loading": "読み込み中…",
+    "error": "エラー",
+    "noResults": "結果が見つかりません",
+    "connected": "接続済み",
+    "disconnected": "切断済み",
+    "messages": "メッセージ",
+    "tokens": "tokens",
+    "session": "セッション",
+    "noActiveSession": "アクティブなセッションがありません",
+    "clickToSwitchModel": "クリックしてモデルを切り替え (Ctrl+O)"
+  },
+  "nav": {
+    "chat": "チャット",
+    "simpleChat": "シンプルチャット",
+    "orchestrator": "オーケストレーター",
+    "logs": "ログ",
+    "snapshots": "スナップショット",
+    "evaluator": "評価器",
+    "codeEditor": "コードエディター",
+    "terminal": "ターミナル",
+    "settings": "設定",
+    "sections": {
+      "sessions": "セッション",
+      "navigate": "ナビゲート",
+      "services": "サービス"
+    },
+    "newSession": "新しいセッション",
+    "untitledSession": "無題のセッション",
+    "noSessionsYet": "セッションがありません"
+  },
+  "header": {
+    "toggleSidebar": "サイドバーの切り替え (Ctrl+B)",
+    "toggleTheme": "テーマの切り替え"
+  },
+  "settings": {
+    "categories": {
+      "general": "一般",
+      "providers": "プロバイダー",
+      "agents": "エージェント",
+      "mcpServers": "MCP サーバー",
+      "mcpGateway": "MCP ゲートウェイ",
+      "lsp": "LSP",
+      "tools": "ツール",
+      "bash": "Bash",
+      "skills": "スキル",
+      "lua": "Lua エンジン",
+      "evaluator": "評価器",
+      "mesnada": "Mesnada",
+      "remembrances": "Remembrances",
+      "snapshots": "スナップショット",
+      "apiServer": "API サーバー"
+    },
+    "general": {
+      "title": "一般設定",
+      "loadingSettings": "設定を読み込み中…",
+      "workingDirectory": "作業ディレクトリ",
+      "workingDirectoryPlaceholder": "/home/user/project",
+      "defaultModel": "デフォルトモデル",
+      "language": "言語",
+      "theme": "テーマ",
+      "themeLight": "ライト",
+      "themeDark": "ダーク",
+      "autoSave": "自動保存",
+      "autoSaveDescription": "セッションの進行状況を自動的に保存する",
+      "markdownPreview": "Markdown プレビュー",
+      "markdownPreviewDescription": "チャットメッセージで Markdown をレンダリングする",
+      "customInstructions": "カスタム指示",
+      "customInstructionsPlaceholder": "AI アシスタントへのグローバル指示を追加…"
+    },
+    "agents": {
+      "title": "エージェント",
+      "description": "各組み込みエージェントのモデルと動作を設定します。変更は新しいセッションに適用されます。",
+      "loadingAgents": "エージェントを読み込み中…",
+      "model": "モデル",
+      "maxTokens": "最大トークン数",
+      "reasoningEffort": "推論の強度",
+      "reasoningDefault": "デフォルト",
+      "reasoningNone": "なし",
+      "reasoningLow": "低",
+      "reasoningMedium": "中",
+      "reasoningHigh": "高",
+      "autoCompact": "自動圧縮",
+      "autoCompactDescription": "コンテキストを自動的に圧縮する",
+      "compactThreshold": "圧縮しきい値"
+    }
+  },
+  "chat": {
+    "messagePlaceholder": "メッセージを入力…",
+    "sendMessage": "メッセージを送信",
+    "cancelStreaming": "キャンセル",
+    "streaming": "考え中…",
+    "emptyChat": "会話を始めましょう",
+    "emptyChatDescription": "何でも質問してください",
+    "copyMessage": "コピー",
+    "copied": "コピーしました！"
+  },
+  "models": {
+    "searchPlaceholder": "モデルを検索…",
+    "loadingModels": "モデルを読み込み中…",
+    "noModelsFound": "モデルが見つかりません",
+    "switchModel": "モデルを切り替え",
+    "navigate": "ナビゲート",
+    "select": "選択",
+    "close": "閉じる"
+  }
+}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
@@ -137,30 +136,50 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 
 	eventChan, err := s.app.CoderAgent.Run(r.Context(), sess.ID, req.Prompt)
 	if err != nil {
-		fmt.Fprintf(w, "event: error\ndata: {\"error\":\"%s\"}\n\n", strings.ReplaceAll(err.Error(), "\"", "\\\""))
-		flusher.Flush()
+		writeSSEEvent(w, flusher, "error", map[string]string{"error": err.Error()})
 		return
 	}
 
 	for event := range eventChan {
 		switch event.Type {
-		case agent.AgentEventTypeResponse:
-			for _, part := range event.Message.Parts {
-				if text, ok := part.(message.TextContent); ok {
-					escaped := strings.ReplaceAll(text.Text, "\n", "\\n")
-					escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
-					fmt.Fprintf(w, "event: content\ndata: {\"text\":\"%s\"}\n\n", escaped)
-					flusher.Flush()
-				}
+		case agent.AgentEventTypeThinkingDelta:
+			writeSSEEvent(w, flusher, "thinking_delta", map[string]string{"text": event.Delta})
+		case agent.AgentEventTypeContentDelta:
+			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": event.Delta})
+		case agent.AgentEventTypeToolCall:
+			if event.ToolCall != nil {
+				writeSSEEvent(w, flusher, "tool_call", map[string]interface{}{
+					"id":    event.ToolCall.ID,
+					"name":  event.ToolCall.Name,
+					"input": event.ToolCall.Input,
+				})
 			}
+		case agent.AgentEventTypeToolResult:
+			if event.ToolResult != nil {
+				writeSSEEvent(w, flusher, "tool_result", map[string]interface{}{
+					"tool_call_id": event.ToolResult.ToolCallID,
+					"name":         event.ToolResult.Name,
+					"content":      event.ToolResult.Content,
+					"is_error":     event.ToolResult.IsError,
+				})
+			}
+		case agent.AgentEventTypeResponse:
+			// Final response — content already streamed via content_delta events
 		case agent.AgentEventTypeError:
-			fmt.Fprintf(w, "event: error\ndata: {\"error\":\"%s\"}\n\n", strings.ReplaceAll(event.Error.Error(), "\"", "\\\""))
-			flusher.Flush()
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": event.Error.Error()})
 			return
 		}
 	}
 
-	fmt.Fprintf(w, "event: done\ndata: {}\n\n")
+	writeSSEEvent(w, flusher, "done", map[string]string{})
+}
+
+func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, eventType string, payload interface{}) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, data)
 	flusher.Flush()
 }
 

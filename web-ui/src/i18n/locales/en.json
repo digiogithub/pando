@@ -1,0 +1,112 @@
+{
+  "common": {
+    "save": "Save",
+    "saving": "Saving…",
+    "reset": "Reset",
+    "cancel": "Cancel",
+    "loading": "Loading…",
+    "error": "Error",
+    "noResults": "No results found",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "messages": "messages",
+    "tokens": "tokens",
+    "session": "Session",
+    "noActiveSession": "No active session",
+    "clickToSwitchModel": "Click to switch model (Ctrl+O)"
+  },
+  "nav": {
+    "chat": "Chat",
+    "simpleChat": "Simple Chat",
+    "orchestrator": "Orchestrator",
+    "logs": "Logs",
+    "snapshots": "Snapshots",
+    "evaluator": "Evaluator",
+    "codeEditor": "Code Editor",
+    "terminal": "Terminal",
+    "settings": "Settings",
+    "sections": {
+      "sessions": "Sessions",
+      "navigate": "Navigate",
+      "services": "Services"
+    },
+    "newSession": "New session",
+    "untitledSession": "Untitled session",
+    "noSessionsYet": "No sessions yet"
+  },
+  "header": {
+    "toggleSidebar": "Toggle sidebar (Ctrl+B)",
+    "toggleTheme": "Toggle theme"
+  },
+  "settings": {
+    "categories": {
+      "general": "General",
+      "providers": "Providers",
+      "agents": "Agents",
+      "mcpServers": "MCP Servers",
+      "mcpGateway": "MCP Gateway",
+      "lsp": "LSP",
+      "tools": "Tools",
+      "bash": "Bash",
+      "skills": "Skills",
+      "lua": "Lua Engine",
+      "evaluator": "Evaluator",
+      "mesnada": "Mesnada",
+      "remembrances": "Remembrances",
+      "snapshots": "Snapshots",
+      "apiServer": "API Server"
+    },
+    "general": {
+      "title": "General Settings",
+      "loadingSettings": "Loading settings…",
+      "workingDirectory": "Working Directory",
+      "workingDirectoryPlaceholder": "/home/user/project",
+      "defaultModel": "Default Model",
+      "language": "Language",
+      "theme": "Theme",
+      "themeLight": "Light",
+      "themeDark": "Dark",
+      "autoSave": "Auto-save",
+      "autoSaveDescription": "Automatically save session progress",
+      "markdownPreview": "Markdown preview",
+      "markdownPreviewDescription": "Render markdown in chat messages",
+      "customInstructions": "Custom instructions",
+      "customInstructionsPlaceholder": "Add any global instructions for the AI assistant…"
+    },
+    "agents": {
+      "title": "Agents",
+      "description": "Configure model and behavior for each built-in agent. Changes apply to new sessions.",
+      "loadingAgents": "Loading agents…",
+      "model": "Model",
+      "maxTokens": "Max Tokens",
+      "reasoningEffort": "Reasoning Effort",
+      "reasoningDefault": "Default",
+      "reasoningNone": "None",
+      "reasoningLow": "Low",
+      "reasoningMedium": "Medium",
+      "reasoningHigh": "High",
+      "autoCompact": "Auto-compact",
+      "autoCompactDescription": "Compress context automatically",
+      "compactThreshold": "Compact Threshold"
+    }
+  },
+  "chat": {
+    "messagePlaceholder": "Type a message…",
+    "sendMessage": "Send message",
+    "cancelStreaming": "Cancel",
+    "streaming": "Thinking…",
+    "emptyChat": "Start a conversation",
+    "emptyChatDescription": "Ask anything to get started",
+    "copyMessage": "Copy",
+    "copied": "Copied!"
+  },
+  "models": {
+    "searchPlaceholder": "Search models…",
+    "loadingModels": "Loading models…",
+    "noModelsFound": "No models found",
+    "switchModel": "Switch Model",
+    "navigate": "navigate",
+    "select": "select",
+    "close": "close"
+  }
+}
