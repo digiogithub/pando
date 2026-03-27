@@ -31,12 +31,13 @@ var (
 type AgentEventType string
 
 const (
-	AgentEventTypeError        AgentEventType = "error"
-	AgentEventTypeResponse     AgentEventType = "response"
-	AgentEventTypeSummarize    AgentEventType = "summarize"
-	AgentEventTypeContentDelta AgentEventType = "content_delta"
-	AgentEventTypeToolCall     AgentEventType = "tool_call"
-	AgentEventTypeToolResult   AgentEventType = "tool_result"
+	AgentEventTypeError          AgentEventType = "error"
+	AgentEventTypeResponse       AgentEventType = "response"
+	AgentEventTypeSummarize      AgentEventType = "summarize"
+	AgentEventTypeContentDelta   AgentEventType = "content_delta"
+	AgentEventTypeThinkingDelta  AgentEventType = "thinking_delta"
+	AgentEventTypeToolCall       AgentEventType = "tool_call"
+	AgentEventTypeToolResult     AgentEventType = "tool_result"
 )
 
 type AgentEvent struct {
