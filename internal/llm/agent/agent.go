@@ -31,12 +31,13 @@ var (
 type AgentEventType string
 
 const (
-	AgentEventTypeError        AgentEventType = "error"
-	AgentEventTypeResponse     AgentEventType = "response"
-	AgentEventTypeSummarize    AgentEventType = "summarize"
-	AgentEventTypeContentDelta AgentEventType = "content_delta"
-	AgentEventTypeToolCall     AgentEventType = "tool_call"
-	AgentEventTypeToolResult   AgentEventType = "tool_result"
+	AgentEventTypeError          AgentEventType = "error"
+	AgentEventTypeResponse       AgentEventType = "response"
+	AgentEventTypeSummarize      AgentEventType = "summarize"
+	AgentEventTypeContentDelta   AgentEventType = "content_delta"
+	AgentEventTypeThinkingDelta  AgentEventType = "thinking_delta"
+	AgentEventTypeToolCall       AgentEventType = "tool_call"
+	AgentEventTypeToolResult     AgentEventType = "tool_result"
 )
 
 type AgentEvent struct {
@@ -252,7 +253,7 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 	if !a.provider.Model().SupportsAttachments && attachments != nil {
 		attachments = nil
 	}
-	events := make(chan AgentEvent)
+	events := make(chan AgentEvent, 256)
 	if a.IsSessionBusy(sessionID) {
 		return nil, ErrSessionBusy
 	}
@@ -269,7 +270,7 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 		for _, attachment := range attachments {
 			attachmentParts = append(attachmentParts, message.BinaryContent{Path: attachment.FilePath, MIMEType: attachment.MimeType, Data: attachment.Content})
 		}
-		result := a.processGeneration(genCtx, sessionID, content, attachmentParts)
+		result := a.processGeneration(genCtx, sessionID, content, attachmentParts, events)
 		if result.Error != nil && !errors.Is(result.Error, ErrRequestCancelled) && !errors.Is(result.Error, context.Canceled) {
 			logging.ErrorPersist(result.Error.Error())
 		}
@@ -283,7 +284,7 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 	return events, nil
 }
 
-func (a *agent) processGeneration(ctx context.Context, sessionID, content string, attachmentParts []message.ContentPart) AgentEvent {
+func (a *agent) processGeneration(ctx context.Context, sessionID, content string, attachmentParts []message.ContentPart, eventCh chan<- AgentEvent) AgentEvent {
 	cfg := config.Get()
 	// List existing messages; if none, start title generation asynchronously.
 	msgs, err := a.messages.List(ctx, sessionID)
@@ -363,7 +364,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			// Continue processing
 		}
 		logging.Debug("processGeneration iteration", "sessionID", sessionID, "historyLength", len(msgHistory))
-		agentMessage, toolResults, err := a.streamAndHandleEvents(ctx, sessionID, msgHistory, requestProvider, sawToolRound)
+		agentMessage, toolResults, err := a.streamAndHandleEvents(ctx, sessionID, msgHistory, requestProvider, eventCh)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				agentMessage.AddFinish(message.FinishReasonCanceled)
@@ -386,10 +387,12 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 
 			// Check if we should auto-compact context before continuing the loop
 			if sess, sessErr := a.sessions.Get(ctx, sessionID); sessErr == nil && a.shouldCompact(sess.PromptTokens) {
-				a.publishEvent(AgentEvent{
-					Type:  AgentEventTypeResponse,
-					Delta: "\n\n⚡ Auto-compacting context to free space...\n",
-				})
+				compactMsg := "\n\n⚡ Auto-compacting context to free space...\n"
+				a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: compactMsg})
+				select {
+				case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: compactMsg}:
+				default:
+				}
 				if compactErr := a.compactContext(ctx, sessionID); compactErr != nil {
 					logging.Warn("Context compaction failed", "error", compactErr)
 				} else {
@@ -406,10 +409,12 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 						}
 						msgHistory = newMsgs
 					}
-					a.publishEvent(AgentEvent{
-						Type:  AgentEventTypeResponse,
-						Delta: "✓ Context compacted. Continuing...\n\n",
-					})
+					doneMsg := "✓ Context compacted. Continuing...\n\n"
+					a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: doneMsg})
+					select {
+					case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: doneMsg}:
+					default:
+					}
 				}
 			}
 
