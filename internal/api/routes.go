@@ -38,6 +38,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/config/extensions", s.handleConfigExtensions)
 	mux.HandleFunc("/api/v1/config/services", s.handleConfigServices)
 	mux.HandleFunc("/api/v1/config/evaluator", s.handleConfigEvaluator)
+	mux.HandleFunc("POST /api/v1/config/api-server/regenerate-token", s.handleRegenerateAPIToken)
+	// Skills catalog (remote install not yet implemented — returns stubs)
+	mux.HandleFunc("GET /api/v1/skills/catalog", s.handleSkillsCatalog)
+	mux.HandleFunc("POST /api/v1/skills/install", s.handleInstallSkill)
+	mux.HandleFunc("DELETE /api/v1/skills/{name}", s.handleUninstallSkill)
 	// Logs
 	mux.HandleFunc("/api/v1/logs", s.handleGetLogs)
 	mux.HandleFunc("/api/v1/logs/stream", s.handleLogsStream)
@@ -50,6 +55,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Terminal
 	mux.HandleFunc("POST /api/v1/terminal/exec", s.handleTerminalExec)
 	// Snapshots
+	mux.HandleFunc("GET /api/v1/snapshots/count", s.handleSnapshotsCount)
 	mux.HandleFunc("GET /api/v1/snapshots", s.handleGetSnapshots)
 	mux.HandleFunc("POST /api/v1/snapshots", s.handleCreateSnapshot)
 	mux.HandleFunc("GET /api/v1/snapshots/{id}", s.handleGetSnapshotByID)
