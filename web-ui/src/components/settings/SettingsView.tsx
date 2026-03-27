@@ -25,12 +25,9 @@ type SettingsCategory =
   | 'lsp'
   | 'tools'
   | 'bash'
-  | 'prompts'
-  | 'models'
   | 'skills'
   | 'lua'
   | 'evaluator'
-  | 'rag'
   | 'mesnada'
   | 'remembrances'
   | 'snapshots'
@@ -45,28 +42,15 @@ const CATEGORIES: { id: SettingsCategory; label: string; group?: string }[] = [
   { id: 'lsp', label: 'LSP' },
   { id: 'tools', label: 'Tools' },
   { id: 'bash', label: 'Bash' },
-  { id: 'prompts', label: 'Prompts' },
-  { id: 'models', label: 'Models' },
   { id: 'skills', label: 'Skills' },
   { id: 'lua', label: 'Lua Engine' },
   { id: 'evaluator', label: 'Evaluator' },
-  { id: 'rag', label: 'RAG' },
   { id: 'mesnada', label: 'Mesnada', group: 'services' },
   { id: 'remembrances', label: 'Remembrances', group: 'services' },
   { id: 'snapshots', label: 'Snapshots', group: 'services' },
   { id: 'api-server', label: 'API Server', group: 'services' },
 ]
 
-function ComingSoon({ name }: { name: string }) {
-  return (
-    <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>
-      <p style={{ fontWeight: 600, fontSize: 16, color: 'var(--fg)', marginBottom: '0.5rem' }}>
-        {name}
-      </p>
-      <p>This section is coming soon.</p>
-    </div>
-  )
-}
 
 export default function SettingsView() {
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>('general')
@@ -215,25 +199,6 @@ export default function SettingsView() {
         {activeCategory === 'remembrances' && <RemembrancesSettings />}
         {activeCategory === 'snapshots' && <SnapshotsSettings />}
         {activeCategory === 'api-server' && <APIServerSettings />}
-        {activeCategory !== 'general' &&
-          activeCategory !== 'providers' &&
-          activeCategory !== 'agents' &&
-          activeCategory !== 'mcp-servers' &&
-          activeCategory !== 'mcp-gateway' &&
-          activeCategory !== 'lsp' &&
-          activeCategory !== 'tools' &&
-          activeCategory !== 'bash' &&
-          activeCategory !== 'skills' &&
-          activeCategory !== 'lua' &&
-          activeCategory !== 'evaluator' &&
-          activeCategory !== 'mesnada' &&
-          activeCategory !== 'remembrances' &&
-          activeCategory !== 'snapshots' &&
-          activeCategory !== 'api-server' && (
-          <ComingSoon
-            name={CATEGORIES.find((c) => c.id === activeCategory)?.label ?? ''}
-          />
-        )}
       </div>
     </div>
   )
