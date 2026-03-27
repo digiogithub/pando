@@ -6,7 +6,7 @@ import ChatInput from './ChatInput'
 
 export default function ChatView() {
   const { messages, fetchSessions } = useSessionStore()
-  const { sendMessage, streaming, error, cancelStreaming } = useChat({
+  const { sendMessage, streaming, error, cancelStreaming, streamingState } = useChat({
     onNewSession: (sessionId) => {
       useSessionStore.setState({ activeSessionId: sessionId })
       fetchSessions()
@@ -20,7 +20,7 @@ export default function ChatView() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <MessageList messages={messages} streaming={streaming} />
+      <MessageList messages={messages} streaming={streaming} streamingState={streamingState} />
 
       {error && (
         <div
