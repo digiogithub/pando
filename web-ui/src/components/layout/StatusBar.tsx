@@ -1,11 +1,13 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCircle, faMicrochip } from '@fortawesome/free-solid-svg-icons'
+import { useTranslation } from 'react-i18next'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useServerStore } from '@/stores/serverStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useLayoutStore } from '@/stores/layoutStore'
 
 export default function StatusBar() {
+  const { t } = useTranslation()
   const { activeSessionId, sessions } = useSessionStore()
   const connected = useServerStore((s) => s.connected)
   const activeSession = sessions.find((s) => s.id === activeSessionId)
@@ -48,25 +50,25 @@ export default function StatusBar() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         {activeSession && (
           <>
-            <span>Session: <code style={{ fontSize: 10 }}>{activeSession.id.slice(0, 8)}…</code></span>
+            <span>{t('common.session')}: <code style={{ fontSize: 10 }}>{activeSession.id.slice(0, 8)}…</code></span>
             <span>·</span>
-            <span>{activeSession.message_count} messages</span>
+            <span>{activeSession.message_count} {t('common.messages')}</span>
             {(activeSession.prompt_tokens > 0 || activeSession.completion_tokens > 0) && (
               <>
                 <span>·</span>
-                <span>{(activeSession.prompt_tokens + activeSession.completion_tokens).toLocaleString()} tokens</span>
+                <span>{(activeSession.prompt_tokens + activeSession.completion_tokens).toLocaleString()} {t('common.tokens')}</span>
               </>
             )}
           </>
         )}
-        {!activeSession && <span>No active session</span>}
+        {!activeSession && <span>{t('common.noActiveSession')}</span>}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         {/* Model selector button */}
         <button
           onClick={() => setModelSwitcherOpen(true)}
-          title="Click to switch model (Ctrl+O)"
+          title={t('common.clickToSwitchModel')}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -96,7 +98,7 @@ export default function StatusBar() {
             color: connected ? 'var(--success)' : 'var(--error)',
           }}
         />
-        <span>{connected ? 'Connected' : 'Disconnected'}</span>
+        <span>{connected ? t('common.connected') : t('common.disconnected')}</span>
       </div>
     </div>
   )

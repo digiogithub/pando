@@ -31,12 +31,13 @@ var (
 type AgentEventType string
 
 const (
-	AgentEventTypeError        AgentEventType = "error"
-	AgentEventTypeResponse     AgentEventType = "response"
-	AgentEventTypeSummarize    AgentEventType = "summarize"
-	AgentEventTypeContentDelta AgentEventType = "content_delta"
-	AgentEventTypeToolCall     AgentEventType = "tool_call"
-	AgentEventTypeToolResult   AgentEventType = "tool_result"
+	AgentEventTypeError          AgentEventType = "error"
+	AgentEventTypeResponse       AgentEventType = "response"
+	AgentEventTypeSummarize      AgentEventType = "summarize"
+	AgentEventTypeContentDelta   AgentEventType = "content_delta"
+	AgentEventTypeThinkingDelta  AgentEventType = "thinking_delta"
+	AgentEventTypeToolCall       AgentEventType = "tool_call"
+	AgentEventTypeToolResult     AgentEventType = "tool_result"
 )
 
 type AgentEvent struct {
@@ -252,7 +253,7 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 	if !a.provider.Model().SupportsAttachments && attachments != nil {
 		attachments = nil
 	}
-	events := make(chan AgentEvent)
+	events := make(chan AgentEvent, 256)
 	if a.IsSessionBusy(sessionID) {
 		return nil, ErrSessionBusy
 	}
@@ -269,7 +270,7 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 		for _, attachment := range attachments {
 			attachmentParts = append(attachmentParts, message.BinaryContent{Path: attachment.FilePath, MIMEType: attachment.MimeType, Data: attachment.Content})
 		}
-		result := a.processGeneration(genCtx, sessionID, content, attachmentParts)
+		result := a.processGeneration(genCtx, sessionID, content, attachmentParts, events)
 		if result.Error != nil && !errors.Is(result.Error, ErrRequestCancelled) && !errors.Is(result.Error, context.Canceled) {
 			logging.ErrorPersist(result.Error.Error())
 		}
@@ -283,7 +284,7 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 	return events, nil
 }
 
-func (a *agent) processGeneration(ctx context.Context, sessionID, content string, attachmentParts []message.ContentPart) AgentEvent {
+func (a *agent) processGeneration(ctx context.Context, sessionID, content string, attachmentParts []message.ContentPart, eventCh chan<- AgentEvent) AgentEvent {
 	cfg := config.Get()
 	// List existing messages; if none, start title generation asynchronously.
 	msgs, err := a.messages.List(ctx, sessionID)
@@ -352,8 +353,6 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		return a.err(fmt.Errorf("failed to prepare agent provider: %w", err))
 	}
 
-	sawToolRound := false
-
 	for {
 		// Check for cancellation before each iteration
 		select {
@@ -363,7 +362,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			// Continue processing
 		}
 		logging.Debug("processGeneration iteration", "sessionID", sessionID, "historyLength", len(msgHistory))
-		agentMessage, toolResults, err := a.streamAndHandleEvents(ctx, sessionID, msgHistory, requestProvider, sawToolRound)
+		agentMessage, toolResults, err := a.streamAndHandleEvents(ctx, sessionID, msgHistory, requestProvider, eventCh)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				agentMessage.AddFinish(message.FinishReasonCanceled)
@@ -381,15 +380,16 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		}
 		if (agentMessage.FinishReason() == message.FinishReasonToolUse) && toolResults != nil {
 			// We are not done, we need to respond with the tool response
-			sawToolRound = true
 			msgHistory = append(msgHistory, agentMessage, *toolResults)
 
 			// Check if we should auto-compact context before continuing the loop
 			if sess, sessErr := a.sessions.Get(ctx, sessionID); sessErr == nil && a.shouldCompact(sess.PromptTokens) {
-				a.publishEvent(AgentEvent{
-					Type:  AgentEventTypeResponse,
-					Delta: "\n\n⚡ Auto-compacting context to free space...\n",
-				})
+				compactMsg := "\n\n⚡ Auto-compacting context to free space...\n"
+				a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: compactMsg})
+				select {
+				case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: compactMsg}:
+				default:
+				}
 				if compactErr := a.compactContext(ctx, sessionID); compactErr != nil {
 					logging.Warn("Context compaction failed", "error", compactErr)
 				} else {
@@ -406,10 +406,12 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 						}
 						msgHistory = newMsgs
 					}
-					a.publishEvent(AgentEvent{
-						Type:  AgentEventTypeResponse,
-						Delta: "✓ Context compacted. Continuing...\n\n",
-					})
+					doneMsg := "✓ Context compacted. Continuing...\n\n"
+					a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: doneMsg})
+					select {
+					case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: doneMsg}:
+					default:
+					}
 				}
 			}
 
@@ -447,13 +449,13 @@ func (a *agent) createUserMessage(ctx context.Context, sessionID, content string
 	})
 }
 
-func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msgHistory []message.Message, requestProvider provider.Provider, emitContentDeltas bool) (message.Message, *message.Message, error) {
+func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msgHistory []message.Message, requestProvider provider.Provider, eventCh chan<- AgentEvent) (message.Message, *message.Message, error) {
 	logging.Debug("streamAndHandleEvents started", "sessionID", sessionID, "historyLength", len(msgHistory), "model", requestProvider.Model().ID)
 	ctx = context.WithValue(ctx, tools.SessionIDContextKey, sessionID)
 	if cache, ok := tools.GetSessionCacheByID(sessionID); ok {
 		ctx = context.WithValue(ctx, tools.SessionCacheContextKey, cache)
 	}
-	eventChan := requestProvider.StreamResponse(ctx, msgHistory, a.tools)
+	providerEventChan := requestProvider.StreamResponse(ctx, msgHistory, a.tools)
 
 	assistantMsg, err := a.messages.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Assistant,
@@ -468,8 +470,8 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 	ctx = context.WithValue(ctx, tools.MessageIDContextKey, assistantMsg.ID)
 
 	// Process each event in the stream.
-	for event := range eventChan {
-		if processErr := a.processEvent(ctx, sessionID, &assistantMsg, event, requestProvider, emitContentDeltas); processErr != nil {
+	for event := range providerEventChan {
+		if processErr := a.processEvent(ctx, sessionID, &assistantMsg, event, requestProvider, eventCh); processErr != nil {
 			a.finishMessage(ctx, &assistantMsg, message.FinishReasonCanceled)
 			return assistantMsg, nil, processErr
 		}
@@ -519,6 +521,10 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 					IsError:    true,
 				}
 				a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]})
+				select {
+				case eventCh <- AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]}:
+				default:
+				}
 				continue
 			}
 			toolResult, toolErr := tool.Run(ctx, tools.ToolCall{
@@ -535,6 +541,10 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 						IsError:    true,
 					}
 					a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]})
+					select {
+					case eventCh <- AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]}:
+					default:
+					}
 					for j := i + 1; j < len(toolCalls); j++ {
 						toolResults[j] = message.ToolResult{
 							ToolCallID: toolCalls[j].ID,
@@ -543,6 +553,10 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 							IsError:    true,
 						}
 						a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[j]})
+						select {
+						case eventCh <- AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[j]}:
+						default:
+						}
 					}
 					a.finishMessage(ctx, &assistantMsg, message.FinishReasonPermissionDenied)
 					break
@@ -562,6 +576,10 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 				IsError:    toolResult.IsError,
 			}
 			a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]})
+			select {
+			case eventCh <- AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]}:
+			default:
+			}
 		}
 	}
 out:
@@ -595,7 +613,7 @@ func (a *agent) processEvent(
 	assistantMsg *message.Message,
 	event provider.ProviderEvent,
 	requestProvider provider.Provider,
-	emitContentDeltas bool,
+	eventCh chan<- AgentEvent,
 ) error {
 	select {
 	case <-ctx.Done():
@@ -608,18 +626,29 @@ func (a *agent) processEvent(
 	case provider.EventThinkingDelta:
 		logging.Debug("Event: ThinkingDelta", "sessionID", sessionID, "contentLength", len(event.Content))
 		assistantMsg.AppendReasoningContent(event.Content)
+		a.publishEvent(AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Content})
+		select {
+		case eventCh <- AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Content}:
+		default:
+		}
 		return a.messages.Update(ctx, *assistantMsg)
 	case provider.EventContentDelta:
 		logging.Debug("Event: ContentDelta", "sessionID", sessionID, "contentLength", len(event.Content))
 		assistantMsg.AppendContent(event.Content)
-		if emitContentDeltas {
-			a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: event.Content})
+		a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: event.Content})
+		select {
+		case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: event.Content}:
+		default:
 		}
 		return a.messages.Update(ctx, *assistantMsg)
 	case provider.EventToolUseStart:
 		logging.Debug("Event: ToolUseStart", "sessionID", sessionID, "toolName", event.ToolCall.Name, "toolID", event.ToolCall.ID)
 		assistantMsg.AddToolCall(*event.ToolCall)
 		a.publishEvent(AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: event.ToolCall})
+		select {
+		case eventCh <- AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: event.ToolCall}:
+		default:
+		}
 		return a.messages.Update(ctx, *assistantMsg)
 	// TODO: see how to handle this
 	// case provider.EventToolUseDelta:

@@ -22,7 +22,7 @@ export default function SimpleChatView() {
   const { config: settingsConfig, fetchSettings } = useSettingsStore()
   const defaultModel = settingsConfig.default_model
   const { modelSwitcherOpen, setModelSwitcherOpen } = useLayoutStore()
-  const { sendMessage, streaming, error, cancelStreaming } = useChat({
+  const { sendMessage, streaming, error, cancelStreaming, streamingState } = useChat({
     onNewSession: (sessionId) => {
       useSessionStore.setState({ activeSessionId: sessionId })
       fetchSessions()
@@ -273,7 +273,7 @@ export default function SimpleChatView() {
               alignSelf: 'stretch',
             }}
           >
-            <MessageList messages={messages} streaming={streaming} />
+            <MessageList messages={messages} streaming={streaming} streamingState={streamingState} />
           </div>
 
           {/* Error banner */}
