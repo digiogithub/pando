@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faRobot, faUser, faWrench, faCheckCircle, faChevronDown, faChevronRight, faBrain } from '@fortawesome/free-solid-svg-icons'
+import { faRobot, faUser, faWrench, faCheckCircle, faChevronDown, faChevronRight, faBrain, faTimesCircle } from '@fortawesome/free-solid-svg-icons'
 import { format } from 'date-fns'
 import 'highlight.js/styles/github-dark-dimmed.css'
 import type { Message, ContentPart } from '@/types'
@@ -35,17 +35,15 @@ function MarkdownContent({ text, streaming }: { text: string; streaming?: boolea
   )
 }
 
-// ─── Tool call block ─────────────────────────────────────────────────────────
+// ─── Reasoning block (completed message) ────────────────────────────────────
 
-function ToolCallBlock({ part }: { part: ContentPart }) {
+function ReasoningBlock({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false)
-  const isResult = part.type === 'tool_result'
-
   return (
     <div
       style={{
-        marginTop: '0.5rem',
-        border: `1px solid ${isResult ? 'var(--success)' : 'var(--border)'}33`,
+        marginBottom: '0.5rem',
+        border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
         borderRadius: 'var(--radius-sm)',
         overflow: 'hidden',
         fontSize: 12,
@@ -59,19 +57,83 @@ function ToolCallBlock({ part }: { part: ContentPart }) {
           gap: '0.5rem',
           width: '100%',
           padding: '0.375rem 0.625rem',
-          background: isResult ? 'color-mix(in srgb, var(--success) 8%, var(--surface))' : 'var(--surface)',
+          background: 'color-mix(in srgb, var(--primary) 8%, var(--surface))',
           border: 'none',
           cursor: 'pointer',
-          color: isResult ? 'var(--success)' : 'var(--fg-muted)',
+          color: 'var(--primary)',
           textAlign: 'left',
         }}
       >
+        <FontAwesomeIcon icon={faBrain} style={{ fontSize: 10, flexShrink: 0 }} />
+        <span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          Thinking
+        </span>
         <FontAwesomeIcon
-          icon={isResult ? faCheckCircle : faWrench}
-          style={{ fontSize: 10, flexShrink: 0 }}
+          icon={expanded ? faChevronDown : faChevronRight}
+          style={{ fontSize: 9, marginLeft: 'auto', color: 'var(--primary)' }}
         />
+      </button>
+      {expanded && (
+        <div
+          style={{
+            padding: '0.5rem 0.625rem',
+            background: 'var(--bg-secondary)',
+            color: 'var(--fg-muted)',
+            fontFamily: 'monospace',
+            fontSize: 11,
+            lineHeight: 1.55,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            maxHeight: 300,
+            overflowY: 'auto',
+          }}
+        >
+          {text}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Tool call block ─────────────────────────────────────────────────────────
+
+function ToolCallBlock({ part }: { part: ContentPart }) {
+  const [expanded, setExpanded] = useState(false)
+  const isError = part.is_error === true
+  const hasResult = part.tool_result != null
+  const accentColor = isError ? 'var(--error, #e55)' : hasResult ? 'var(--success)' : 'var(--border)'
+  const statusIcon = isError ? faTimesCircle : hasResult ? faCheckCircle : faWrench
+
+  return (
+    <div
+      style={{
+        marginTop: '0.5rem',
+        border: `1px solid ${accentColor}33`,
+        borderRadius: 'var(--radius-sm)',
+        overflow: 'hidden',
+        fontSize: 12,
+      }}
+    >
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          width: '100%',
+          padding: '0.375rem 0.625rem',
+          background: hasResult
+            ? `color-mix(in srgb, ${accentColor} 8%, var(--surface))`
+            : 'var(--surface)',
+          border: 'none',
+          cursor: 'pointer',
+          color: hasResult ? accentColor : 'var(--fg-muted)',
+          textAlign: 'left',
+        }}
+      >
+        <FontAwesomeIcon icon={statusIcon} style={{ fontSize: 10, flexShrink: 0 }} />
         <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>
-          {isResult ? 'tool_result' : (part.tool_name ?? 'tool_call')}
+          {part.tool_name ?? 'tool_call'}
         </span>
         <FontAwesomeIcon
           icon={expanded ? faChevronDown : faChevronRight}
@@ -84,7 +146,7 @@ function ToolCallBlock({ part }: { part: ContentPart }) {
           style={{
             padding: '0.5rem 0.625rem',
             background: 'var(--bg-secondary)',
-            borderTop: `1px solid ${isResult ? 'var(--success)' : 'var(--border)'}33`,
+            borderTop: `1px solid ${accentColor}33`,
           }}
         >
           {part.tool_input && (
@@ -109,18 +171,20 @@ function ToolCallBlock({ part }: { part: ContentPart }) {
           )}
           {part.tool_result && (
             <div style={{ marginTop: part.tool_input ? '0.5rem' : 0 }}>
-              <div style={{ color: 'var(--fg-muted)', marginBottom: 4, fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Output</div>
+              <div style={{ color: isError ? accentColor : 'var(--fg-muted)', marginBottom: 4, fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {isError ? 'Error' : 'Output'}
+              </div>
               <pre
                 style={{
                   margin: 0,
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-all',
                   fontSize: 11,
-                  color: 'var(--fg)',
+                  color: isError ? accentColor : 'var(--fg)',
                   background: 'var(--surface)',
                   padding: '0.375rem 0.5rem',
                   borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border)',
+                  border: `1px solid ${accentColor}44`,
                   maxHeight: 300,
                   overflowY: 'auto',
                 }}
@@ -152,6 +216,9 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
     .map((p) => p.text ?? '')
     .join('')
 
+  const reasoningParts = message.content.filter((p) => p.type === 'reasoning')
+
+  // Only show tool_call parts (results are embedded); standalone tool_result kept for legacy
   const toolParts = message.content.filter(
     (p) => p.type === 'tool_call' || p.type === 'tool_result',
   )
