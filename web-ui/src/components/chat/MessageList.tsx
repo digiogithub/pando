@@ -188,6 +188,7 @@ function LiveToolCallBlock({ toolCall }: { toolCall: import('@/hooks/useChat').A
             wordBreak: 'break-all',
           }}
         >
+          <div style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, color: 'var(--fg-dim)' }}>Input</div>
           {(() => {
             try {
               return JSON.stringify(JSON.parse(toolCall.input), null, 2)
@@ -195,6 +196,27 @@ function LiveToolCallBlock({ toolCall }: { toolCall: import('@/hooks/useChat').A
               return toolCall.input
             }
           })()}
+        </div>
+      )}
+      {toolCall.result && (
+        <div
+          style={{
+            padding: '0.375rem 0.625rem',
+            background: 'var(--bg-secondary)',
+            borderTop: `1px solid ${isError ? 'var(--error)' : 'var(--success)'}22`,
+            color: isError ? 'var(--error, #e55)' : 'var(--fg-muted)',
+            fontFamily: 'monospace',
+            fontSize: 11,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            maxHeight: 200,
+            overflowY: 'auto',
+          }}
+        >
+          <div style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, color: isError ? 'var(--error, #e55)' : 'var(--fg-dim)' }}>
+            {isError ? 'Error' : 'Output'}
+          </div>
+          {toolCall.result.content}
         </div>
       )}
     </div>
