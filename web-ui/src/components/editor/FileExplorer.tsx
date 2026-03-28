@@ -11,6 +11,7 @@ import {
   faSearch,
   faPlus,
   faFolderPlus,
+  faXmark,
 } from '@fortawesome/free-solid-svg-icons'
 import type { FileNode } from '@/types'
 import { useEditorStore } from '@/stores/editorStore'
