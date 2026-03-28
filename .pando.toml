@@ -9,7 +9,6 @@ AutoCompact = true
 Directory = './.pando/data'
 
 [MCPServers]
-
 [MCPServers.remembrances]
 Command = ''
 Env = []
@@ -22,16 +21,39 @@ URL = 'http://127.0.0.1:4030/mcp'
 Disabled = false
 Command = 'gopls'
 Args = []
+Languages = []
 
 [Agents]
 [Agents.coder]
-Model = 'ollama.minimax-m2.5:cloud'
-MaxTokens = 4096
+Model = 'copilot.gpt-4.1'
+MaxTokens = 64000
 ReasoningEffort = ''
+AutoCompact = true
+AutoCompactThreshold = 0.0
+
+[Agents.summarizer]
+Model = 'copilot.gpt-4o'
+MaxTokens = 90000
+ReasoningEffort = ''
+AutoCompact = false
+AutoCompactThreshold = 0.0
+
+[Agents.task]
+Model = 'copilot.gpt-4.1'
+MaxTokens = 16384
+ReasoningEffort = 'low'
+AutoCompact = false
+AutoCompactThreshold = 0.0
 
 [Skills]
 Enabled = true
 Paths = ['./agents/skills']
+
+[SkillsCatalog]
+Enabled = false
+BaseURL = ''
+AutoUpdate = false
+DefaultScope = ''
 
 [TUI]
 Theme = ''
@@ -74,41 +96,90 @@ WebUI = false
 Path = ''
 Args = []
 
-[Remembrances]
-Enabled = true
-UseSameModel = false
+[Bash]
+BannedCommands = []
+AllowedCommands = []
 
-# Provider options: ollama | openai | google | anthropic | openai-compatible
+[Remembrances]
+Enabled = false
 DocumentEmbeddingProvider = 'ollama'
 DocumentEmbeddingModel = 'nomic-embed-text'
-# DocumentEmbeddingBaseURL = ''   # required when provider is 'openai-compatible'
-# DocumentEmbeddingAPIKey = ''    # required when provider is 'openai-compatible'
-
-# Use a separate model optimised for code (e.g. CodeRankEmbed via Ollama)
+DocumentEmbeddingBaseURL = ''
+DocumentEmbeddingAPIKey = ''
 CodeEmbeddingProvider = 'ollama'
 CodeEmbeddingModel = 'hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M'
-# CodeEmbeddingBaseURL = ''       # required when provider is 'openai-compatible'
-# CodeEmbeddingAPIKey = ''        # required when provider is 'openai-compatible'
-
+CodeEmbeddingBaseURL = ''
+CodeEmbeddingAPIKey = ''
+UseSameModel = false
 ChunkSize = 800
 ChunkOverlap = 100
 IndexWorkers = 4
 
+[Server]
+Enabled = false
+Host = ''
+Port = 0
+RequireAuth = false
+
+[Lua]
+Enabled = false
+ScriptPath = ''
+Timeout = ''
+StrictMode = false
+HotReload = false
+LogFilteredData = false
+
+[MCPGateway]
+Enabled = false
+FavoriteThreshold = 0
+MaxFavorites = 0
+FavoriteWindowDays = 0
+DecayDays = 0
+
 [InternalTools]
-# FetchEnabled = true
-# FetchMaxSizeMB = 10
-# GoogleSearchEnabled = true
-# GoogleApiKey = ''
-# GoogleSearchEngineId = ''
-# BraveSearchEnabled = true
-# BraveApiKey = ''
-# PerplexitySearchEnabled = true
-# PerplexityApiKey = ''
-# ExaSearchEnabled = true
-# ExaApiKey = ''
-# Context7Enabled = true
-# BrowserEnabled = false
-# BrowserHeadless = true
-# BrowserTimeout = 30
-# BrowserUserDataDir = ''
-# BrowserMaxSessions = 3
+FetchEnabled = false
+FetchMaxSizeMB = 0
+GoogleSearchEnabled = false
+GoogleAPIKey = ''
+GoogleSearchEngineID = ''
+BraveSearchEnabled = false
+BraveAPIKey = ''
+PerplexitySearchEnabled = false
+PerplexityAPIKey = ''
+ExaSearchEnabled = false
+ExaAPIKey = ''
+Context7Enabled = false
+BrowserEnabled = false
+BrowserHeadless = false
+BrowserTimeout = 0
+BrowserUserDataDir = ''
+BrowserMaxSessions = 0
+
+[Snapshots]
+Enabled = false
+MaxSnapshots = 0
+MaxFileSize = ''
+ExcludePatterns = []
+AutoCleanupDays = 0
+
+[evaluator]
+enabled = false
+model = ''
+provider = ''
+alphaWeight = 0.0
+betaWeight = 0.0
+explorationC = 0.0
+minSessionsForUCB = 0
+correctionsPatterns = []
+maxTokensBaseline = 0
+maxSkills = 0
+judgePromptTemplate = ''
+async = false
+
+[cliAssist]
+Model = ''
+Timeout = 0
+
+[PersonaAutoSelect]
+Enabled = false
+PersonaPath = ''
