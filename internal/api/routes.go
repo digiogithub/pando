@@ -16,6 +16,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/files", s.handleFiles)
 	mux.HandleFunc("/api/v1/files/rename", s.handleRenameFile)
 	mux.HandleFunc("/api/v1/files/search", s.handleSearchFiles)
+	mux.HandleFunc("/api/v1/files/raw/", s.handleRawFile)
 	mux.HandleFunc("/api/v1/files/", s.handleFileByPath)
 	mux.HandleFunc("/api/v1/chat", s.handleChat)
 	mux.HandleFunc("/api/v1/chat/stream", s.handleChatStream)

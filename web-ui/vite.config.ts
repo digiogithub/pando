@@ -16,6 +16,15 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8765',
         changeOrigin: true,
+        // No timeout for SSE streams and long-running tool calls
+        timeout: 0,
+        proxyTimeout: 0,
+        configure: (proxy) => {
+          // Disable response buffering so SSE events are forwarded immediately
+          proxy.on('proxyRes', (proxyRes) => {
+            proxyRes.headers['x-accel-buffering'] = 'no'
+          })
+        },
       },
       '/health': {
         target: 'http://localhost:8765',
