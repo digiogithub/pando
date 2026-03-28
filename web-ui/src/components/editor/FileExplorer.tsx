@@ -11,6 +11,7 @@ import {
   faSearch,
   faPlus,
   faFolderPlus,
+  faXmark,
 } from '@fortawesome/free-solid-svg-icons'
 import type { FileNode } from '@/types'
 import { useEditorStore } from '@/stores/editorStore'
@@ -19,6 +20,7 @@ import api from '@/services/api'
 interface FileExplorerProps {
   files: FileNode[]
   onRefresh: () => void
+  onClose?: () => void
 }
 
 interface ContextMenuState {
@@ -159,7 +161,7 @@ function TreeNode({ node, depth, filter, onContextMenu }: TreeNodeProps) {
   )
 }
 
-export default function FileExplorer({ files, onRefresh }: FileExplorerProps) {
+export default function FileExplorer({ files, onRefresh, onClose }: FileExplorerProps) {
   const [filter, setFilter] = useState('')
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
