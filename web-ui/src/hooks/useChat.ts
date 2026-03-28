@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { createSSEStream } from '@/services/sse'
 import { useSessionStore } from '@/stores/sessionStore'
-import type { Message, SSEEvent, SSEToolCall, SSEToolResult } from '@/types'
+import type { Message, SSEEvent, SSEToolCall, SSEToolResult, ContentPart } from '@/types'
 
 export interface ActiveToolCall {
   id: string
