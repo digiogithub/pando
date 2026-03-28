@@ -5,7 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faComments, faFileLines, faNetworkWired,
   faCamera, faStar, faCog, faMoon, faSun,
-  faChevronLeft, faChevronRight,
+  faChevronLeft, faChevronRight, faCode, faTerminal,
 } from '@fortawesome/free-solid-svg-icons'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
