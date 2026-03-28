@@ -5,7 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faComments, faFileLines, faNetworkWired,
   faCamera, faStar, faCog, faMoon, faSun,
-  faChevronLeft, faChevronRight,
+  faChevronLeft, faChevronRight, faCode, faTerminal,
 } from '@fortawesome/free-solid-svg-icons'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
@@ -24,6 +24,8 @@ export default function Header() {
     { path: '/evaluator', label: t('nav.evaluator'), icon: faStar },
     { path: '/snapshots', label: t('nav.snapshots'), icon: faCamera },
     { path: '/logs', label: t('nav.logs'), icon: faFileLines },
+    { path: '/editor', label: t('nav.codeEditor'), icon: faCode },
+    { path: '/terminal', label: t('nav.terminal'), icon: faTerminal },
   ]
 
   useEffect(() => {
