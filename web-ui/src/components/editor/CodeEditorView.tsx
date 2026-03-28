@@ -1,7 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowLeft, faFileMedical, faFileCode } from '@fortawesome/free-solid-svg-icons'
+import {
+  faArrowLeft, faFileMedical, faFileCode,
+  faFloppyDisk, faFolderTree,
+} from '@fortawesome/free-solid-svg-icons'
 import type { FileNode } from '@/types'
 import { useEditorStore } from '@/stores/editorStore'
 import api from '@/services/api'
@@ -43,9 +46,11 @@ async function buildFileTree(dirPath: string): Promise<FileNode[]> {
 
 export default function CodeEditorView() {
   const navigate = useNavigate()
-  const { openFiles, activeFilePath } = useEditorStore()
+  const { openFiles, activeFilePath, markFileSaved } = useEditorStore()
   const [files, setFiles] = useState<FileNode[]>([])
   const [gitBranch, setGitBranch] = useState('main')
+  const [explorerOpen, setExplorerOpen] = useState(() => window.innerWidth >= 768)
+  const [saving, setSaving] = useState(false)
 
   const activeFile = activeFilePath ? openFiles.find((f) => f.path === activeFilePath) : null
 
@@ -89,6 +94,19 @@ export default function CodeEditorView() {
       console.error('Failed to create file:', err)
     }
   }, [fetchFiles])
+
+  const handleSave = useCallback(async () => {
+    if (!activeFile) return
+    setSaving(true)
+    try {
+      await api.put(`/api/v1/files/${activeFile.path}`, { content: activeFile.content })
+      markFileSaved(activeFile.path)
+    } catch (err) {
+      console.error('Failed to save:', err)
+    } finally {
+      setSaving(false)
+    }
+  }, [activeFile, markFileSaved])
 
   return (
     <div
