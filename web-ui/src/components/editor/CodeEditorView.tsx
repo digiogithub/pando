@@ -352,7 +352,8 @@ function EmptyEditorState() {
 }
 
 function ImageViewer({ path }: { path: string }) {
-  const src = `/api/v1/files/raw/${path}`
+  const token = api.getToken()
+  const src = `/api/v1/files/raw/${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`
   return (
     <div
       style={{
@@ -387,7 +388,8 @@ function ImageViewer({ path }: { path: string }) {
 }
 
 function PdfViewer({ path }: { path: string }) {
-  const src = `/api/v1/files/raw/${path}`
+  const token = api.getToken()
+  const src = `/api/v1/files/raw/${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <iframe
