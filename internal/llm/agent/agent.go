@@ -680,11 +680,11 @@ func (a *agent) processEvent(
 
 	switch event.Type {
 	case provider.EventThinkingDelta:
-		logging.Debug("Event: ThinkingDelta", "sessionID", sessionID, "contentLength", len(event.Content))
-		assistantMsg.AppendReasoningContent(event.Content)
-		a.publishEvent(AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Content})
+		logging.Debug("Event: ThinkingDelta", "sessionID", sessionID, "contentLength", len(event.Thinking))
+		assistantMsg.AppendReasoningContent(event.Thinking)
+		a.publishEvent(AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Thinking})
 		select {
-		case eventCh <- AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Content}:
+		case eventCh <- AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Thinking}:
 		default:
 		}
 		return a.messages.Update(ctx, *assistantMsg)
@@ -706,18 +706,23 @@ func (a *agent) processEvent(
 		default:
 		}
 		return a.messages.Update(ctx, *assistantMsg)
-	// TODO: see how to handle this
-	// case provider.EventToolUseDelta:
-	// 	tm := time.Unix(assistantMsg.UpdatedAt, 0)
-	// 	assistantMsg.AppendToolCallInput(event.ToolCall.ID, event.ToolCall.Input)
-	// 	if time.Since(tm) > 1000*time.Millisecond {
-	// 		err := a.messages.Update(ctx, *assistantMsg)
-	// 		assistantMsg.UpdatedAt = time.Now().Unix()
-	// 		return err
-	// 	}
+	case provider.EventToolUseDelta:
+		// Accumulate tool call input without sending to frontend (too frequent)
+		assistantMsg.AppendToolCallInput(event.ToolCall.ID, event.ToolCall.Input)
 	case provider.EventToolUseStop:
 		logging.Debug("Event: ToolUseStop", "sessionID", sessionID, "toolID", event.ToolCall.ID)
 		assistantMsg.FinishToolCall(event.ToolCall.ID)
+		// Send updated tool_call event with complete input to frontend
+		for _, tc := range assistantMsg.ToolCalls() {
+			if tc.ID == event.ToolCall.ID {
+				a.publishEvent(AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tc})
+				select {
+				case eventCh <- AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tc}:
+				default:
+				}
+				break
+			}
+		}
 		return a.messages.Update(ctx, *assistantMsg)
 	case provider.EventError:
 		if errors.Is(event.Error, context.Canceled) {
