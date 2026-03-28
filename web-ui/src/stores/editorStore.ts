@@ -1,9 +1,12 @@
 import { create } from 'zustand'
 
+export type FileType = 'text' | 'image' | 'pdf'
+
 export interface OpenFile {
   path: string
   content: string
   language: string
+  fileType: FileType
   isDirty: boolean
   cursorLine: number
   cursorCol: number
@@ -15,6 +18,7 @@ interface EditorStore {
   fileTreeExpanded: Record<string, boolean>
 
   openFile: (path: string, content: string) => void
+  openBinaryFile: (path: string, fileType: 'image' | 'pdf') => void
   closeFile: (path: string) => void
   setActiveFile: (path: string) => void
   updateFileContent: (path: string, content: string) => void
