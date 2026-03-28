@@ -680,11 +680,11 @@ func (a *agent) processEvent(
 
 	switch event.Type {
 	case provider.EventThinkingDelta:
-		logging.Debug("Event: ThinkingDelta", "sessionID", sessionID, "contentLength", len(event.Content))
-		assistantMsg.AppendReasoningContent(event.Content)
-		a.publishEvent(AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Content})
+		logging.Debug("Event: ThinkingDelta", "sessionID", sessionID, "contentLength", len(event.Thinking))
+		assistantMsg.AppendReasoningContent(event.Thinking)
+		a.publishEvent(AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Thinking})
 		select {
-		case eventCh <- AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Content}:
+		case eventCh <- AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Thinking}:
 		default:
 		}
 		return a.messages.Update(ctx, *assistantMsg)

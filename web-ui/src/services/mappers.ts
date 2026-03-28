@@ -16,7 +16,8 @@ interface RawSession {
 
 interface RawPart {
   text?: string
-  reason?: string
+  thinking?: string   // ReasoningContent.Thinking
+  reason?: string     // Finish.Reason (finish reason, e.g. "end_turn", "tool_use") — skip in UI
   time?: number
   tool_name?: string
   tool_input?: Record<string, unknown>
@@ -54,7 +55,8 @@ export function mapSession(raw: RawSession): Session {
 
 function mapParts(parts: RawPart[]): ContentPart[] {
   return parts
-    .filter((p) => p.text != null || p.tool_name != null || p.image_url != null)
+    .filter((p) => p.text != null || p.thinking != null || p.tool_name != null || p.image_url != null)
+    // Skip Finish parts (reason field only) — they are finish reasons, not displayable content
     .map((p) => {
       if (p.tool_name) {
         return {
@@ -66,6 +68,9 @@ function mapParts(parts: RawPart[]): ContentPart[] {
       }
       if (p.image_url) {
         return { type: 'image' as const, image_url: p.image_url }
+      }
+      if (p.thinking != null) {
+        return { type: 'reasoning' as const, text: p.thinking }
       }
       return { type: 'text' as const, text: p.text ?? '' }
     })
