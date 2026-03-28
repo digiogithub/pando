@@ -13,6 +13,7 @@ interface SessionStore {
   setMessages: (msgs: Message[]) => void
   addMessage: (msg: Message) => void
   updateLastMessage: (content: string) => void
+  updateLastMessageParts: (parts: import('@/types').ContentPart[]) => void
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,6 +60,16 @@ export const useSessionStore = create<SessionStore>((set, _get) => ({
       if (msgs.length === 0) return s
       const last = { ...msgs[msgs.length - 1] }
       last.content = [{ type: 'text', text: content }]
+      msgs[msgs.length - 1] = last
+      return { messages: msgs }
+    }),
+
+  updateLastMessageParts: (parts) =>
+    set((s) => {
+      const msgs = [...s.messages]
+      if (msgs.length === 0) return s
+      const last = { ...msgs[msgs.length - 1] }
+      last.content = parts
       msgs[msgs.length - 1] = last
       return { messages: msgs }
     }),
