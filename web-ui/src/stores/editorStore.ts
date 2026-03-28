@@ -1,9 +1,12 @@
 import { create } from 'zustand'
 
+export type FileType = 'text' | 'image' | 'pdf'
+
 export interface OpenFile {
   path: string
   content: string
   language: string
+  fileType: FileType
   isDirty: boolean
   cursorLine: number
   cursorCol: number
