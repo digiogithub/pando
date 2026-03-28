@@ -54,7 +54,7 @@ export function mapSession(raw: RawSession): Session {
 
 function mapParts(parts: RawPart[]): ContentPart[] {
   return parts
-    .filter((p) => p.text != null || p.tool_name != null || p.image_url != null)
+    .filter((p) => p.text != null || p.reason != null || p.tool_name != null || p.image_url != null)
     .map((p) => {
       if (p.tool_name) {
         return {
@@ -66,6 +66,9 @@ function mapParts(parts: RawPart[]): ContentPart[] {
       }
       if (p.image_url) {
         return { type: 'image' as const, image_url: p.image_url }
+      }
+      if (p.reason != null) {
+        return { type: 'reasoning' as const, text: p.reason }
       }
       return { type: 'text' as const, text: p.text ?? '' }
     })
