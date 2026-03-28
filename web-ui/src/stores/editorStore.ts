@@ -1,9 +1,12 @@
 import { create } from 'zustand'
 
+export type FileType = 'text' | 'image' | 'pdf'
+
 export interface OpenFile {
   path: string
   content: string
   language: string
+  fileType: FileType
   isDirty: boolean
   cursorLine: number
   cursorCol: number
@@ -15,6 +18,7 @@ interface EditorStore {
   fileTreeExpanded: Record<string, boolean>
 
   openFile: (path: string, content: string) => void
+  openBinaryFile: (path: string, fileType: 'image' | 'pdf') => void
   closeFile: (path: string) => void
   setActiveFile: (path: string) => void
   updateFileContent: (path: string, content: string) => void
@@ -63,6 +67,28 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       path,
       content,
       language: detectLanguage(path),
+      fileType: 'text',
+      isDirty: false,
+      cursorLine: 1,
+      cursorCol: 1,
+    }
+    set((s) => ({
+      openFiles: [...s.openFiles, newFile],
+      activeFilePath: path,
+    }))
+  },
+
+  openBinaryFile: (path: string, fileType: 'image' | 'pdf') => {
+    const existing = get().openFiles.find((f) => f.path === path)
+    if (existing) {
+      set({ activeFilePath: path })
+      return
+    }
+    const newFile: OpenFile = {
+      path,
+      content: '',
+      language: 'plaintext',
+      fileType,
       isDirty: false,
       cursorLine: 1,
       cursorCol: 1,

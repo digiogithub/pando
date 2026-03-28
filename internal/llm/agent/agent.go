@@ -284,6 +284,57 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 	return events, nil
 }
 
+// sanitizeToolCallHistory ensures that every assistant message with tool_calls
+// is followed by a tool message that covers all the corresponding tool_call_ids.
+// When a session is interrupted mid-tool-execution the tool results message may
+// never have been saved, leaving an invalid history that OpenAI-compatible APIs
+// reject with a 400 error. This function inserts ephemeral synthetic results for
+// any uncovered tool_call_ids so the resumed conversation is accepted.
+func sanitizeToolCallHistory(msgs []message.Message) []message.Message {
+	result := make([]message.Message, 0, len(msgs))
+	for i, msg := range msgs {
+		result = append(result, msg)
+		if msg.Role != message.Assistant {
+			continue
+		}
+		toolCalls := msg.ToolCalls()
+		if len(toolCalls) == 0 {
+			continue
+		}
+		// Collect tool_call_ids already covered by the immediately following tool message.
+		covered := make(map[string]bool)
+		if i+1 < len(msgs) && msgs[i+1].Role == message.Tool {
+			for _, tr := range msgs[i+1].ToolResults() {
+				covered[tr.ToolCallID] = true
+			}
+		}
+		// Build synthetic results for any uncovered tool_call_ids.
+		var syntheticParts []message.ContentPart
+		for _, tc := range toolCalls {
+			if !covered[tc.ID] {
+				tr := message.ToolResult{
+					ToolCallID: tc.ID,
+					Name:       tc.Name,
+					Content:    "Tool execution was interrupted",
+					IsError:    true,
+				}
+				syntheticParts = append(syntheticParts, tr)
+			}
+		}
+		if len(syntheticParts) > 0 {
+			logging.Debug("sanitizeToolCallHistory: inserting synthetic tool results",
+				"assistantMsgID", msg.ID,
+				"count", len(syntheticParts),
+			)
+			result = append(result, message.Message{
+				Role:  message.Tool,
+				Parts: syntheticParts,
+			})
+		}
+	}
+	return result
+}
+
 func (a *agent) processGeneration(ctx context.Context, sessionID, content string, attachmentParts []message.ContentPart, eventCh chan<- AgentEvent) AgentEvent {
 	cfg := config.Get()
 	// List existing messages; if none, start title generation asynchronously.
@@ -320,6 +371,11 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			msgs[0].Role = message.User
 		}
 	}
+
+	// Sanitize history: if an assistant message has tool_calls but no matching
+	// tool results follow (e.g. the session was interrupted mid-tool-execution),
+	// insert synthetic "interrupted" results so the API does not reject the request.
+	msgs = sanitizeToolCallHistory(msgs)
 
 	// Hook 4: hook_conversation_start — may inject context into user content
 	if a.luaMgr != nil && a.luaMgr.IsEnabled() {

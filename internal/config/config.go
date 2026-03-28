@@ -1466,11 +1466,12 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 }
 
 // ResolveConfigFilePath finds the active config file path.
+// A local config file (in the working directory) takes priority over the global
+// one because mergeLocalConfig applies it after ReadInConfig, overriding any
+// overlapping keys. Writes must go to the highest-priority file so that
+// changes are not silently reverted on the next reload.
 func ResolveConfigFilePath() (string, error) {
-	if configFile := viper.ConfigFileUsed(); configFile != "" {
-		return configFile, nil
-	}
-
+	// Prefer local config if it exists: it has higher merge priority.
 	if cfg != nil && strings.TrimSpace(cfg.WorkingDir) != "" {
 		for _, extension := range []string{"toml", "json"} {
 			localConfig := filepath.Join(cfg.WorkingDir, fmt.Sprintf(".%s.%s", appName, extension))
@@ -1480,6 +1481,10 @@ func ResolveConfigFilePath() (string, error) {
 				return "", fmt.Errorf("failed to stat config file: %w", err)
 			}
 		}
+	}
+
+	if configFile := viper.ConfigFileUsed(); configFile != "" {
+		return configFile, nil
 	}
 
 	homeDir, err := os.UserHomeDir()

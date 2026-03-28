@@ -231,6 +231,36 @@ func (s *Server) handleCreateFile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleRawFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	relativePath := strings.TrimPrefix(r.URL.Path, "/api/v1/files/raw/")
+	if relativePath == "" {
+		writeError(w, http.StatusBadRequest, "file path required")
+		return
+	}
+	fullPath, safe := s.isSafePath(relativePath)
+	if !safe {
+		writeError(w, http.StatusBadRequest, "invalid path")
+		return
+	}
+	info, err := os.Stat(fullPath)
+	if err != nil || info.IsDir() {
+		writeError(w, http.StatusNotFound, "file not found")
+		return
+	}
+	f, err := os.Open(fullPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to open file")
+		return
+	}
+	defer f.Close()
+	// ServeContent detects MIME type from filename and handles range requests
+	http.ServeContent(w, r, info.Name(), info.ModTime(), f)
+}
+
 func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request, relativePath string) {
 	fullPath, safe := s.isSafePath(relativePath)
 	if !safe {
