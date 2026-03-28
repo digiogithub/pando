@@ -11,6 +11,7 @@ import {
   faSearch,
   faPlus,
   faFolderPlus,
+  faXmark,
 } from '@fortawesome/free-solid-svg-icons'
 import type { FileNode } from '@/types'
 import { useEditorStore } from '@/stores/editorStore'
@@ -19,6 +20,7 @@ import api from '@/services/api'
 interface FileExplorerProps {
   files: FileNode[]
   onRefresh: () => void
+  onClose?: () => void
 }
 
 interface ContextMenuState {
@@ -159,7 +161,7 @@ function TreeNode({ node, depth, filter, onContextMenu }: TreeNodeProps) {
   )
 }
 
-export default function FileExplorer({ files, onRefresh }: FileExplorerProps) {
+export default function FileExplorer({ files, onRefresh, onClose }: FileExplorerProps) {
   const [filter, setFilter] = useState('')
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
@@ -334,6 +336,24 @@ export default function FileExplorer({ files, onRefresh }: FileExplorerProps) {
           >
             <FontAwesomeIcon icon={faFolderPlus} style={{ fontSize: 12 }} />
           </button>
+          {onClose && (
+            <button
+              title="Hide explorer"
+              onClick={onClose}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--fg-muted, #a0a0b0)',
+                padding: 2,
+                borderRadius: 3,
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--fg)' }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--fg-muted, #a0a0b0)' }}
+            >
+              <FontAwesomeIcon icon={faXmark} style={{ fontSize: 12 }} />
+            </button>
+          )}
         </div>
       </div>
 
