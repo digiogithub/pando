@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { createSSEStream } from '@/services/sse'
 import { useSessionStore } from '@/stores/sessionStore'
-import type { Message, SSEEvent, SSEToolCall, SSEToolResult } from '@/types'
+import type { Message, SSEEvent, SSEToolCall, SSEToolResult, ContentPart } from '@/types'
 
 export interface ActiveToolCall {
   id: string
@@ -25,7 +25,7 @@ export function useChat({ onNewSession }: UseChatOptions = {}) {
   const [error, setError] = useState<string | null>(null)
   const [streamingState, setStreamingState] = useState<StreamingState>({ thinking: '', toolCalls: [] })
   const abortRef = useRef<AbortController | null>(null)
-  const { activeSessionId, addMessage, updateLastMessage, fetchSessions } = useSessionStore()
+  const { activeSessionId, addMessage, updateLastMessage, updateLastMessageParts, fetchSessions } = useSessionStore()
 
   const sendMessage = useCallback(
     async (text: string) => {
