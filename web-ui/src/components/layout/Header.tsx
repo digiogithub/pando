@@ -5,7 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faComments, faFileLines, faNetworkWired,
   faCamera, faStar, faCog, faMoon, faSun,
-  faChevronLeft, faChevronRight,
+  faChevronLeft, faChevronRight, faCode, faTerminal,
 } from '@fortawesome/free-solid-svg-icons'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
@@ -24,6 +24,8 @@ export default function Header() {
     { path: '/evaluator', label: t('nav.evaluator'), icon: faStar },
     { path: '/snapshots', label: t('nav.snapshots'), icon: faCamera },
     { path: '/logs', label: t('nav.logs'), icon: faFileLines },
+    { path: '/editor', label: t('nav.codeEditor'), icon: faCode },
+    { path: '/terminal', label: t('nav.terminal'), icon: faTerminal },
   ]
 
   useEffect(() => {
@@ -97,6 +99,7 @@ export default function Header() {
           木
         </span>
         <span
+          className="header-logo-text"
           style={{
             fontWeight: 800,
             fontSize: 18,
@@ -109,6 +112,7 @@ export default function Header() {
         </span>
         {version && (
           <span
+            className="header-version"
             style={{
               fontSize: 11,
               fontWeight: 400,
@@ -117,7 +121,8 @@ export default function Header() {
               marginTop: 1,
             }}
           >
-            {version}
+            <span className="header-version-full">{version}</span>
+            <span className="header-version-short">{version.substring(0, 5)}</span>
           </span>
         )}
       </div>
@@ -155,9 +160,13 @@ export default function Header() {
 
       <style>{`
         .header-nav a:hover:not([style*="var(--primary)"]) { color: var(--fg) !important; }
+        .header-version-short { display: none; }
         @media (max-width: 768px) {
           .header-tab-label { display: none; }
-          .header-nav a { padding: 0 0.5rem !important; }
+          .header-nav a { padding: 0 0.4rem !important; }
+          .header-logo-text { display: none; }
+          .header-version-full { display: none; }
+          .header-version-short { display: inline; }
         }
       `}</style>
 
