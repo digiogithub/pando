@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faFolder,
@@ -11,6 +11,7 @@ import {
   faSearch,
   faPlus,
   faFolderPlus,
+  faXmark,
 } from '@fortawesome/free-solid-svg-icons'
 import type { FileNode } from '@/types'
 import { useEditorStore } from '@/stores/editorStore'
@@ -19,6 +20,7 @@ import api from '@/services/api'
 interface FileExplorerProps {
   files: FileNode[]
   onRefresh: () => void
+  onClose?: () => void
 }
 
 interface ContextMenuState {
@@ -77,17 +79,40 @@ function TreeNode({ node, depth, filter, onContextMenu }: TreeNodeProps) {
   const { fileTreeExpanded, toggleTreeNode, openFile, setActiveFile } = useEditorStore()
   const isOpen = fileTreeExpanded[node.path] ?? false
   const { icon, color } = getFileIcon(node.name, node.is_dir, isOpen)
+  const [children, setChildren] = useState<FileNode[]>([])
+  const [childrenLoaded, setChildrenLoaded] = useState(false)
+
+  // Load children when directory is first expanded
+  useEffect(() => {
+    if (!node.is_dir || !isOpen || childrenLoaded) return
+    api
+      .get<{ path: string; files: Array<{ name: string; path: string; isDir: boolean; size: number }> }>(
+        `/api/v1/files?path=${encodeURIComponent(node.path)}`
+      )
+      .then((data) => {
+        const kids: FileNode[] = (data.files ?? []).map((f) => ({
+          name: f.name,
+          path: f.path,
+          is_dir: f.isDir,
+          size: f.size,
+          children: f.isDir ? [] : undefined,
+        }))
+        setChildren(kids)
+        setChildrenLoaded(true)
+      })
+      .catch((err) => console.error('Failed to load children:', err))
+  }, [node.is_dir, node.path, isOpen, childrenLoaded])
 
   const matchesFilter =
     filter === '' || node.name.toLowerCase().includes(filter.toLowerCase())
 
-  const hasMatchingChildren = (n: FileNode): boolean => {
+  const hasMatchingChildren = (n: FileNode, kids: FileNode[]): boolean => {
     if (filter === '') return true
     if (n.name.toLowerCase().includes(filter.toLowerCase())) return true
-    return (n.children ?? []).some(hasMatchingChildren)
+    return kids.some((c) => hasMatchingChildren(c, []))
   }
 
-  if (!matchesFilter && !hasMatchingChildren(node)) return null
+  if (!matchesFilter && !hasMatchingChildren(node, children)) return null
 
   const handleClick = async () => {
     if (node.is_dir) {
@@ -142,9 +167,9 @@ function TreeNode({ node, depth, filter, onContextMenu }: TreeNodeProps) {
           {node.name}
         </span>
       </div>
-      {node.is_dir && isOpen && node.children && (
+      {node.is_dir && isOpen && (
         <div>
-          {node.children.map((child) => (
+          {children.map((child) => (
             <TreeNode
               key={child.path}
               node={child}
@@ -153,13 +178,27 @@ function TreeNode({ node, depth, filter, onContextMenu }: TreeNodeProps) {
               onContextMenu={onContextMenu}
             />
           ))}
+          {childrenLoaded && children.length === 0 && (
+            <div
+              style={{
+                paddingLeft: (depth + 1) * 16 + 8,
+                paddingTop: 3,
+                paddingBottom: 3,
+                fontSize: 12,
+                color: 'var(--fg-muted, #a0a0b0)',
+                fontStyle: 'italic',
+              }}
+            >
+              Empty folder
+            </div>
+          )}
         </div>
       )}
     </div>
   )
 }
 
-export default function FileExplorer({ files, onRefresh }: FileExplorerProps) {
+export default function FileExplorer({ files, onRefresh, onClose }: FileExplorerProps) {
   const [filter, setFilter] = useState('')
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
@@ -334,6 +373,24 @@ export default function FileExplorer({ files, onRefresh }: FileExplorerProps) {
           >
             <FontAwesomeIcon icon={faFolderPlus} style={{ fontSize: 12 }} />
           </button>
+          {onClose && (
+            <button
+              title="Hide explorer"
+              onClick={onClose}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--fg-muted, #a0a0b0)',
+                padding: 2,
+                borderRadius: 3,
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--fg)' }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--fg-muted, #a0a0b0)' }}
+            >
+              <FontAwesomeIcon icon={faXmark} style={{ fontSize: 12 }} />
+            </button>
+          )}
         </div>
       </div>
 
