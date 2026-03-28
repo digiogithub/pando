@@ -12,11 +12,13 @@ export interface Session {
 }
 
 export interface ContentPart {
-  type: 'text' | 'tool_call' | 'tool_result' | 'image'
+  type: 'text' | 'tool_call' | 'tool_result' | 'image' | 'reasoning'
   text?: string
   tool_name?: string
+  tool_call_id?: string
   tool_input?: Record<string, unknown>
   tool_result?: string
+  is_error?: boolean
   image_url?: string
 }
 
