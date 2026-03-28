@@ -1,7 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowLeft, faFileMedical, faFileCode } from '@fortawesome/free-solid-svg-icons'
+import {
+  faArrowLeft, faFileMedical, faFileCode,
+  faFloppyDisk, faFolderTree,
+} from '@fortawesome/free-solid-svg-icons'
 import type { FileNode } from '@/types'
 import { useEditorStore } from '@/stores/editorStore'
 import api from '@/services/api'
@@ -43,9 +46,11 @@ async function buildFileTree(dirPath: string): Promise<FileNode[]> {
 
 export default function CodeEditorView() {
   const navigate = useNavigate()
-  const { openFiles, activeFilePath } = useEditorStore()
+  const { openFiles, activeFilePath, markFileSaved } = useEditorStore()
   const [files, setFiles] = useState<FileNode[]>([])
   const [gitBranch, setGitBranch] = useState('main')
+  const [explorerOpen, setExplorerOpen] = useState(() => window.innerWidth >= 768)
+  const [saving, setSaving] = useState(false)
 
   const activeFile = activeFilePath ? openFiles.find((f) => f.path === activeFilePath) : null
 
@@ -90,6 +95,19 @@ export default function CodeEditorView() {
     }
   }, [fetchFiles])
 
+  const handleSave = useCallback(async () => {
+    if (!activeFile) return
+    setSaving(true)
+    try {
+      await api.put(`/api/v1/files/${activeFile.path}`, { content: activeFile.content })
+      markFileSaved(activeFile.path)
+    } catch (err) {
+      console.error('Failed to save:', err)
+    } finally {
+      setSaving(false)
+    }
+  }, [activeFile, markFileSaved])
+
   return (
     <div
       style={{
@@ -113,7 +131,8 @@ export default function CodeEditorView() {
           flexShrink: 0,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Back button */}
           <button
             onClick={() => navigate('/chat')}
             title="Back to Chat"
@@ -140,35 +159,90 @@ export default function CodeEditorView() {
             }}
           >
             <FontAwesomeIcon icon={faArrowLeft} style={{ fontSize: 12 }} />
-            Back
+            <span className="editor-back-label">Back</span>
+          </button>
+
+          {/* Explorer toggle */}
+          <button
+            onClick={() => setExplorerOpen((v) => !v)}
+            title={explorerOpen ? 'Hide file explorer' : 'Show file explorer'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: explorerOpen ? 'var(--selected)' : 'transparent',
+              border: '1px solid var(--border)',
+              cursor: 'pointer',
+              color: explorerOpen ? 'var(--primary)' : 'var(--fg-muted, #a0a0b0)',
+              fontSize: 13,
+              padding: '4px 8px',
+              borderRadius: 'var(--radius-sm)',
+              fontFamily: 'inherit',
+            }}
+          >
+            <FontAwesomeIcon icon={faFolderTree} style={{ fontSize: 12 }} />
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <FontAwesomeIcon icon={faFileCode} style={{ fontSize: 14, color: 'var(--primary)' }} />
-            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>Code Editor</span>
+            <span className="editor-title-label" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>
+              Code Editor
+            </span>
           </div>
         </div>
 
-        <button
-          onClick={handleNewFile}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '5px 12px',
-            borderRadius: 'var(--radius-sm)',
-            border: 'none',
-            background: 'var(--primary)',
-            color: 'white',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          <FontAwesomeIcon icon={faFileMedical} style={{ fontSize: 11 }} />
-          New File
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Save button */}
+          {activeFile && (
+            <button
+              onClick={handleSave}
+              disabled={saving || !activeFile.isDirty}
+              title={activeFile.isDirty ? 'Save file (Ctrl+S)' : 'No unsaved changes'}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '5px 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border)',
+                background: activeFile.isDirty ? 'var(--primary)' : 'var(--bg)',
+                color: activeFile.isDirty ? 'white' : 'var(--fg-muted)',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: activeFile.isDirty ? 'pointer' : 'default',
+                fontFamily: 'inherit',
+                opacity: saving ? 0.6 : 1,
+                transition: 'background 0.15s, color 0.15s',
+              }}
+            >
+              <FontAwesomeIcon icon={faFloppyDisk} style={{ fontSize: 11 }} />
+              <span className="editor-save-label">{saving ? 'Saving…' : 'Save'}</span>
+            </button>
+          )}
+
+          {/* New file button */}
+          <button
+            onClick={handleNewFile}
+            title="New file"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '5px 12px',
+              borderRadius: 'var(--radius-sm)',
+              border: 'none',
+              background: 'var(--primary)',
+              color: 'white',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            <FontAwesomeIcon icon={faFileMedical} style={{ fontSize: 11 }} />
+            <span className="editor-new-label">New File</span>
+          </button>
+        </div>
       </div>
 
       {/* Main content: file explorer + editor */}
