@@ -13,6 +13,7 @@ interface SessionStore {
   setMessages: (msgs: Message[]) => void
   addMessage: (msg: Message) => void
   updateLastMessage: (content: string) => void
+  updateLastMessageParts: (parts: import('@/types').ContentPart[]) => void
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
