@@ -70,7 +70,19 @@ type App struct {
 	watcherWG          sync.WaitGroup
 }
 
-func New(ctx context.Context, conn *sql.DB) (*App, error) {
+// AppOptions configures optional behaviour for New().
+type AppOptions struct {
+	// SkipLSP disables LSP client initialisation. Set this to true in headless
+	// modes (e.g. ACP stdio) where the editor manages its own language servers.
+	SkipLSP bool
+}
+
+func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
+	opt := AppOptions{}
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
 	q := db.New(conn)
 	sessions := session.NewService(q)
 	messages := message.NewService(q)
@@ -95,9 +107,11 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 		app.SkillManager = skillManager
 	}
 
-	// Initialize LSP clients in the background
-	go app.initLSPClients(ctx)
-	logging.Debug("LSP clients initialization started")
+	// Initialize LSP clients in the background (skipped in headless/ACP mode).
+	if !opt.SkipLSP {
+		go app.initLSPClients(ctx)
+		logging.Debug("LSP clients initialization started")
+	}
 
 	// Refresh dynamic models from configured providers in the background
 	go app.refreshDynamicModels(ctx)
