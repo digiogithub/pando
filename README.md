@@ -239,43 +239,88 @@ build_and_zip darwin arm64 darwin-arm64 ""
 echo "Release builds completed in dist/"
 ```
 
-## ACP Server
+## ACP Support
 
-Pando can act as an **ACP (Agent Client Protocol) server**, allowing other ACP-compatible clients to connect and execute conversations. This enables Pando to be used as a backend service for various AI agent applications.
+Pando supports the [Agent Client Protocol](https://agentclientprotocol.com), allowing it to be used directly in compatible editors as an AI coding assistant.
 
 ### Quick Start
 
-Run Pando as an ACP server:
+Run Pando as an ACP server (stdio mode, for editors):
 
 ```bash
-# Stdio mode (for process-based communication)
-pando --acp-server
-
-# HTTP mode (configure in .pando.toml first)
-pando acp start
+pando acp
 ```
 
-### Configuration
+### Editor Configuration
 
-Add to your `.pando.toml`:
+#### VS Code
+
+Add to your `settings.json`:
+
+```json
+{
+  "agent_servers": {
+    "Pando": {
+      "command": "pando",
+      "args": ["acp"]
+    }
+  }
+}
+```
+
+#### Zed
+
+Add to `~/.config/zed/settings.json`:
+
+```json
+{
+  "agent_servers": {
+    "Pando": {
+      "command": "pando",
+      "args": ["acp"]
+    }
+  }
+}
+```
+
+#### JetBrains IDEs
+
+Add to your `acp.json`:
+
+```json
+{
+  "agent_servers": {
+    "Pando": {
+      "command": "/path/to/pando",
+      "args": ["acp"]
+    }
+  }
+}
+```
+
+### ACP Configuration
+
+Configure ACP behavior in `.pando.toml`:
 
 ```toml
-[mesnada.acp_server]
+[acp]
 enabled = true
-transports = ["http"]
-host = "0.0.0.0"
-port = 8765
-max_sessions = 100
+max_sessions = 10
 idle_timeout = "30m"
+log_level = "info"
+auto_permission = false  # set true for CI/batch environments
 ```
 
 ### Management Commands
 
 ```bash
-# Start ACP server
-pando acp start
+# Start ACP server (stdio, for editors)
+pando acp
 
-# Check server status
+# Start with explicit flags
+pando acp start --debug --cwd /path/to/project
+
+# Check server status (HTTP mode)
 pando acp status
 
 # List active sessions
@@ -299,6 +344,7 @@ Examples are provided for:
 For comprehensive documentation, see [docs/acp-server.md](docs/acp-server.md)
 
 Features:
+- Stdio transport for editor subprocess mode
 - HTTP+SSE transport for real-time updates
 - Multiple concurrent sessions
 - Security boundaries (path validation)

@@ -7,7 +7,9 @@ import (
 // ACPAgent is the interface that ACP agents must implement.
 // This allows the HTTP transport to work with different agent implementations.
 type ACPAgent interface {
-	acpsdk.Agent // Embeds the SDK's Agent interface
+	acpsdk.Agent            // Embeds the core SDK Agent interface
+	acpsdk.AgentLoader      // Embeds the optional LoadSession capability
+	acpsdk.AgentExperimental // Embeds the experimental SetSessionModel capability
 
 	// GetVersion returns the agent version
 	GetVersion() string
@@ -19,4 +21,5 @@ type ACPAgent interface {
 // Ensure SimpleACPAgent implements the interface
 var _ ACPAgent = (*SimpleACPAgent)(nil)
 
-// PandoACPAgent will also implement this interface once Fase 3 is complete
+// Ensure PandoACPAgent implements ACPAgent interface
+var _ ACPAgent = (*PandoACPAgent)(nil)
