@@ -417,5 +417,40 @@ func generateSchema() map[string]any {
 		},
 	}
 
+	// Add ACP configuration (stdio server for editor integrations)
+	schema["properties"].(map[string]any)["acp"] = map[string]any{
+		"type":        "object",
+		"description": "ACP (Agent Client Protocol) server configuration. Controls how Pando behaves when launched as a subprocess by editors like VS Code, Zed, or JetBrains.",
+		"properties": map[string]any{
+			"enabled": map[string]any{
+				"type":        "boolean",
+				"description": "Enable ACP server mode",
+				"default":     true,
+			},
+			"max_sessions": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of concurrent ACP sessions",
+				"default":     10,
+				"minimum":     1,
+			},
+			"idle_timeout": map[string]any{
+				"type":        "string",
+				"description": "Duration before an idle session is cleaned up (e.g. '30m', '1h')",
+				"default":     "30m",
+			},
+			"log_level": map[string]any{
+				"type":        "string",
+				"description": "Logging verbosity for the ACP server",
+				"default":     "info",
+				"enum":        []string{"debug", "info", "warn", "error"},
+			},
+			"auto_permission": map[string]any{
+				"type":        "boolean",
+				"description": "Automatically approve tool permission requests (for CI/batch environments)",
+				"default":     false,
+			},
+		},
+	}
+
 	return schema
 }

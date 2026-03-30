@@ -26,6 +26,10 @@ func NewStdioTransport(agent *PandoACPAgent, logger *log.Logger) *StdioTransport
 	// peerInput is where we write to (stdout), peerOutput is where we read from (stdin)
 	conn := acpsdk.NewAgentSideConnection(agent, os.Stdout, os.Stdin)
 
+	// Give the agent a reference to the connection so it can stream updates
+	// back to the client while processing prompts.
+	agent.SetConnection(conn)
+
 	return &StdioTransport{
 		agent:  agent,
 		logger: logger,
