@@ -76,6 +76,16 @@ func (a *SimpleACPAgent) SetSessionMode(ctx context.Context, req acpsdk.SetSessi
 	return acpsdk.SetSessionModeResponse{}, nil
 }
 
+// LoadSession implements AgentLoader (stub).
+func (a *SimpleACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionRequest) (acpsdk.LoadSessionResponse, error) {
+	return acpsdk.LoadSessionResponse{}, nil
+}
+
+// SetSessionModel implements AgentExperimental (stub).
+func (a *SimpleACPAgent) SetSessionModel(ctx context.Context, req acpsdk.SetSessionModelRequest) (acpsdk.SetSessionModelResponse, error) {
+	return acpsdk.SetSessionModelResponse{}, nil
+}
+
 // GetVersion returns the agent version.
 func (a *SimpleACPAgent) GetVersion() string {
 	return a.version

@@ -121,6 +121,8 @@ func CoderAgentToolsWithMesnada(
 			baseTools = append(baseTools, tools.NewDiagnosticsTool(lspClients))
 		}
 	} else {
+		// CoderAgentTools already includes MCP server tools and internal tools
+		// (Google/Brave/Perplexity/Context7/Browser), so we skip adding them again below.
 		baseTools = CoderAgentTools(
 			permissions,
 			sessions,
@@ -130,34 +132,38 @@ func CoderAgentToolsWithMesnada(
 			skillManager,
 		)
 	}
-	cfg := config.Get()
-	if cfg != nil {
-		it := cfg.InternalTools
-		if it.GoogleSearchEnabled && strings.TrimSpace(it.GoogleAPIKey) != "" {
-			baseTools = append(baseTools, tools.NewGoogleSearchTool(permissions))
-		}
-		if it.BraveSearchEnabled && strings.TrimSpace(it.BraveAPIKey) != "" {
-			baseTools = append(baseTools, tools.NewBraveSearchTool(permissions))
-		}
-		if it.PerplexitySearchEnabled && strings.TrimSpace(it.PerplexityAPIKey) != "" {
-			baseTools = append(baseTools, tools.NewPerplexitySearchTool(permissions))
-		}
-		if it.Context7Enabled {
-			baseTools = append(baseTools, tools.NewContext7Tools()...)
-		}
-		if it.BrowserEnabled {
-			baseTools = append(baseTools,
-				tools.NewBrowserNavigateTool(),
-				tools.NewBrowserScreenshotTool(),
-				tools.NewBrowserGetContentTool(),
-				tools.NewBrowserEvaluateTool(),
-				tools.NewBrowserClickTool(),
-				tools.NewBrowserFillTool(),
-				tools.NewBrowserScrollTool(),
-				tools.NewBrowserConsoleLogsTool(),
-				tools.NewBrowserNetworkTool(),
-				tools.NewBrowserPDFTool(),
-			)
+	// Only add internal tools when using the gateway path; CoderAgentTools already
+	// adds them when gateway is nil.
+	if gateway != nil {
+		cfg := config.Get()
+		if cfg != nil {
+			it := cfg.InternalTools
+			if it.GoogleSearchEnabled && strings.TrimSpace(it.GoogleAPIKey) != "" {
+				baseTools = append(baseTools, tools.NewGoogleSearchTool(permissions))
+			}
+			if it.BraveSearchEnabled && strings.TrimSpace(it.BraveAPIKey) != "" {
+				baseTools = append(baseTools, tools.NewBraveSearchTool(permissions))
+			}
+			if it.PerplexitySearchEnabled && strings.TrimSpace(it.PerplexityAPIKey) != "" {
+				baseTools = append(baseTools, tools.NewPerplexitySearchTool(permissions))
+			}
+			if it.Context7Enabled {
+				baseTools = append(baseTools, tools.NewContext7Tools()...)
+			}
+			if it.BrowserEnabled {
+				baseTools = append(baseTools,
+					tools.NewBrowserNavigateTool(),
+					tools.NewBrowserScreenshotTool(),
+					tools.NewBrowserGetContentTool(),
+					tools.NewBrowserEvaluateTool(),
+					tools.NewBrowserClickTool(),
+					tools.NewBrowserFillTool(),
+					tools.NewBrowserScrollTool(),
+					tools.NewBrowserConsoleLogsTool(),
+					tools.NewBrowserNetworkTool(),
+					tools.NewBrowserPDFTool(),
+				)
+			}
 		}
 	}
 	if mesnadaOrchestrator != nil {
