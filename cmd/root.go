@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	// "log" // Commented out - used in runACPServer which is TODO
+	"log"
 	"os"
 	"sort"
 	"strings"
@@ -19,8 +19,10 @@ import (
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
-	// "github.com/digiogithub/pando/internal/mesnada/acp" // Commented out - used in runACPServer which is TODO
+	acpPkg "github.com/digiogithub/pando/internal/mesnada/acp"
+	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui"
 	"github.com/digiogithub/pando/internal/version"
 	zone "github.com/lrstanley/bubblezone"
@@ -372,41 +374,200 @@ func setupSubscriptions(app *app.App, parentCtx context.Context) (chan tea.Msg, 
 	return ch, cleanupFunc
 }
 
-// runACPServer starts Pando in ACP server mode.
-// TODO: Re-enable once Fase 3 (PandoACPAgent with stdio transport) is complete
+// runACPServer starts Pando in ACP server mode (stdio transport) using default settings.
 func runACPServer() error {
-	return fmt.Errorf("ACP stdio transport not yet implemented - use HTTP/SSE transport via 'pando server' instead")
-
-	/* TODO: Uncomment once Fase 3 is complete
-	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current working directory: %v", err)
+		return fmt.Errorf("failed to get current working directory: %w", err)
+	}
+	return runACPServerWithOptions(cwd, false, false)
+}
+
+// runACPServerWithOptions starts Pando in ACP server mode (stdio transport).
+// Editors like VS Code, Zed, and JetBrains spawn this as a subprocess and
+// communicate via JSON-RPC over stdin/stdout.
+func runACPServerWithOptions(cwd string, debug bool, autoPerm bool) error {
+	if cwd == "" {
+		var err error
+		cwd, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current working directory: %w", err)
+		}
 	}
 
-	// Create logger for ACP agent
-	logger := log.New(os.Stderr, "[ACP] ", log.LstdFlags)
-	logger.Printf("Starting Pando ACP Agent v%s", version.Version)
+	logFlags := log.LstdFlags
+	if debug {
+		logFlags |= log.Lshortfile
+	}
+	logger := log.New(os.Stderr, "[ACP] ", logFlags)
+	logger.Printf("Starting Pando ACP Agent v%s (cwd=%s, debug=%v, autoPerm=%v)", version.Version, cwd, debug, autoPerm)
 
-	// Create ACP agent
-	agent := acp.NewPandoACPAgent(version.Version, cwd, logger)
+	// Load config (required to connect DB and initialize agent)
+	cfg, err := config.Load(cwd, debug, "")
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
 
-	// Create stdio transport
-	transport := acp.NewStdioTransport(agent, logger)
+	// Command-line flags override config file settings
+	if autoPerm {
+		cfg.ACP.AutoPermission = true
+	}
 
-	// Create context with cancellation
+	// Connect to database
+	conn, err := db.Connect()
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	// Create app with all services (sessions, messages, agent, etc.).
+	// LSP is skipped: in ACP stdio mode the editor manages its own language servers.
 	ctx := context.Background()
+	pandoApp, err := app.New(ctx, conn, app.AppOptions{SkipLSP: true})
+	if err != nil {
+		return fmt.Errorf("failed to initialize app: %w", err)
+	}
+	defer pandoApp.Shutdown()
 
-	// Run the transport loop
+	// Build adapters (defined below) that bridge internal services to ACP interfaces,
+	// avoiding import cycles between internal/mesnada/acp and internal/llm/agent.
+	agentAdapter := &acpAgentAdapter{svc: pandoApp.CoderAgent}
+	sessionAdapter := &acpSessionAdapter{svc: pandoApp.Sessions}
+
+	pandoAgent := acpPkg.NewPandoACPAgent(
+		version.Version,
+		cwd,
+		logger,
+		agentAdapter,
+		sessionAdapter,
+	)
+
+	transport := acpPkg.NewStdioTransport(pandoAgent, logger)
 	logger.Printf("ACP agent listening on stdio")
-	if err := transport.Run(ctx); err != nil {
-		logger.Printf("ACP agent error: %v", err)
-		return fmt.Errorf("ACP agent error: %w", err)
+	return transport.Run(ctx)
+}
+
+// acpAgentAdapter adapts agent.Service to acpPkg.AgentService.
+// Defined here to avoid import cycles between internal/mesnada/acp and internal/llm/agent.
+type acpAgentAdapter struct {
+	svc agent.Service
+}
+
+func (a *acpAgentAdapter) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan acpPkg.AgentEvent, error) {
+	realCh, err := a.svc.Run(ctx, sessionID, content, attachments...)
+	if err != nil {
+		return nil, err
 	}
 
-	logger.Printf("ACP agent shutdown complete")
-	return nil
-	*/
+	acpCh := make(chan acpPkg.AgentEvent)
+	go func() {
+		defer close(acpCh)
+		for ev := range realCh {
+			var acpEv acpPkg.AgentEvent
+			switch ev.Type {
+			case agent.AgentEventTypeError:
+				acpEv.Type = acpPkg.AgentEventTypeError
+				acpEv.Error = ev.Error
+			case agent.AgentEventTypeResponse:
+				acpEv.Type = acpPkg.AgentEventTypeResponse
+				acpEv.Message = ev.Message
+			case agent.AgentEventTypeSummarize:
+				acpEv.Type = acpPkg.AgentEventTypeSummarize
+			case agent.AgentEventTypeContentDelta:
+				acpEv.Type = acpPkg.AgentEventTypeContentDelta
+				acpEv.Delta = ev.Delta
+			case agent.AgentEventTypeThinkingDelta:
+				acpEv.Type = acpPkg.AgentEventTypeThinkingDelta
+				acpEv.Delta = ev.Delta
+			case agent.AgentEventTypeToolCall:
+				acpEv.Type = acpPkg.AgentEventTypeToolCall
+				acpEv.ToolCall = ev.ToolCall
+			case agent.AgentEventTypeToolResult:
+				acpEv.Type = acpPkg.AgentEventTypeToolResult
+				acpEv.ToolResult = ev.ToolResult
+			default:
+				continue
+			}
+			select {
+			case acpCh <- acpEv:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return acpCh, nil
+}
+
+func (a *acpAgentAdapter) Cancel(sessionID string) {
+	a.svc.Cancel(sessionID)
+}
+
+// CurrentModelID returns the ID of the currently active model for the coder agent.
+func (a *acpAgentAdapter) CurrentModelID() string {
+	return string(a.svc.Model().ID)
+}
+
+// AvailableModels returns all registered models with name metadata.
+func (a *acpAgentAdapter) AvailableModels() []acpPkg.ACPModelInfo {
+	allModels := models.GetAllModels()
+	result := make([]acpPkg.ACPModelInfo, 0, len(allModels))
+	for _, m := range allModels {
+		result = append(result, acpPkg.ACPModelInfo{
+			ID:   string(m.ID),
+			Name: m.Name,
+		})
+	}
+	return result
+}
+
+// SetModelOverride temporarily overrides the active model for the coder agent.
+// The change is in-memory only and is not persisted to the config file.
+func (a *acpAgentAdapter) SetModelOverride(modelID string) error {
+	if modelID == "" {
+		return nil
+	}
+	return config.OverrideAgentModel(config.AgentCoder, models.ModelID(modelID))
+}
+
+// acpSessionAdapter adapts session.Service to acpPkg.SessionService.
+type acpSessionAdapter struct {
+	svc session.Service
+}
+
+func (a *acpSessionAdapter) CreateSession(ctx context.Context, title string) (string, error) {
+	sess, err := a.svc.Create(ctx, title)
+	if err != nil {
+		return "", err
+	}
+	return sess.ID, nil
+}
+
+func (a *acpSessionAdapter) GetSession(ctx context.Context, id string) (acpPkg.ACPSessionInfo, error) {
+	sess, err := a.svc.Get(ctx, id)
+	if err != nil {
+		return acpPkg.ACPSessionInfo{}, err
+	}
+	return acpPkg.ACPSessionInfo{
+		ID:        sess.ID,
+		Title:     sess.Title,
+		UpdatedAt: sess.UpdatedAt,
+	}, nil
+}
+
+func (a *acpSessionAdapter) ListSessions(ctx context.Context) ([]acpPkg.ACPSessionInfo, error) {
+	sessions, err := a.svc.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]acpPkg.ACPSessionInfo, len(sessions))
+	for i, s := range sessions {
+		result[i] = acpPkg.ACPSessionInfo{
+			ID:        s.ID,
+			Title:     s.Title,
+			UpdatedAt: s.UpdatedAt,
+		}
+	}
+	return result, nil
 }
 
 func Execute() {
