@@ -20,8 +20,8 @@ type ACPServerSession struct {
 	// CreatedAt is when the session was created
 	CreatedAt time.Time
 
-	// clientConn is the connection to the client for sending notifications
-	clientConn *acpsdk.ClientSideConnection
+	// agentConn is the agent-side connection for sending notifications to the client
+	agentConn *acpsdk.AgentSideConnection
 
 	// ctx is the context for this session (for cancellation)
 	ctx context.Context
@@ -32,6 +32,15 @@ type ACPServerSession struct {
 	// pandoSessionID is the internal Pando session ID
 	pandoSessionID string
 
+	// mode is the current session mode (set via SetSessionMode)
+	mode string
+
+	// model is the model ID requested by the client (set via SetSessionModel)
+	model string
+
+	// variant is the session variant (reserved for future use)
+	variant string
+
 	// mu protects concurrent access to session state
 	mu sync.Mutex
 }
@@ -40,7 +49,7 @@ type ACPServerSession struct {
 func NewACPServerSession(
 	sessionID acpsdk.SessionId,
 	workDir string,
-	clientConn *acpsdk.ClientSideConnection,
+	agentConn *acpsdk.AgentSideConnection,
 	pandoSessionID string,
 ) *ACPServerSession {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -49,7 +58,7 @@ func NewACPServerSession(
 		ID:             sessionID,
 		WorkDir:        workDir,
 		CreatedAt:      time.Now(),
-		clientConn:     clientConn,
+		agentConn:      agentConn,
 		ctx:            ctx,
 		cancel:         cancel,
 		pandoSessionID: pandoSessionID,
@@ -72,15 +81,15 @@ func (s *ACPServerSession) Cancel() {
 	}
 }
 
-// SendUpdate sends a SessionUpdate notification to the client.
+// SendUpdate sends a SessionUpdate notification to the client via the AgentSideConnection.
 func (s *ACPServerSession) SendUpdate(update acpsdk.SessionUpdate) error {
 	s.mu.Lock()
-	clientConn := s.clientConn
+	agentConn := s.agentConn
 	sessionID := s.ID
 	s.mu.Unlock()
 
-	if clientConn == nil {
-		return nil // No client connection, skip notification
+	if agentConn == nil {
+		return nil // No agent connection, skip notification
 	}
 
 	notification := acpsdk.SessionNotification{
@@ -88,7 +97,7 @@ func (s *ACPServerSession) SendUpdate(update acpsdk.SessionUpdate) error {
 		Update:    update,
 	}
 
-	return clientConn.Notify(s.ctx, "session/update", notification)
+	return agentConn.SessionUpdate(s.ctx, notification)
 }
 
 // PandoSessionID returns the internal Pando session ID.
@@ -96,4 +105,46 @@ func (s *ACPServerSession) PandoSessionID() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.pandoSessionID
+}
+
+// SetMode stores the session mode.
+func (s *ACPServerSession) SetMode(mode string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mode = mode
+}
+
+// Mode returns the current session mode.
+func (s *ACPServerSession) Mode() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mode
+}
+
+// SetModel stores the requested model ID.
+func (s *ACPServerSession) SetModel(model string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.model = model
+}
+
+// Model returns the current model ID.
+func (s *ACPServerSession) Model() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.model
+}
+
+// SetVariant stores the session variant.
+func (s *ACPServerSession) SetVariant(variant string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.variant = variant
+}
+
+// Variant returns the session variant.
+func (s *ACPServerSession) Variant() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.variant
 }
