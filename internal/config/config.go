@@ -308,6 +308,22 @@ type EvaluatorConfig struct {
 	Async bool `toml:"async"`
 }
 
+// ACPConfig defines the configuration for the ACP (Agent Client Protocol) stdio server.
+// This controls how Pando behaves when launched as a subprocess by editors like VS Code, Zed, or JetBrains.
+type ACPConfig struct {
+	// Enabled controls whether the ACP server mode is available. Default: true.
+	Enabled bool `toml:"enabled" json:"enabled,omitempty"`
+	// MaxSessions limits the number of concurrent ACP sessions. Default: 10.
+	MaxSessions int `toml:"max_sessions" json:"max_sessions,omitempty"`
+	// IdleTimeout is the duration before an idle session is cleaned up. Default: "30m".
+	IdleTimeout string `toml:"idle_timeout" json:"idle_timeout,omitempty"`
+	// LogLevel controls logging verbosity for the ACP server. Default: "info".
+	LogLevel string `toml:"log_level" json:"log_level,omitempty"`
+	// AutoPermission enables automatic approval of tool permission requests.
+	// Set to true for CI/batch environments. Default: false.
+	AutoPermission bool `toml:"auto_permission" json:"auto_permission,omitempty"`
+}
+
 // ParseMaxFileSize parses the MaxFileSize string to bytes.
 // Supports suffixes: KB, MB, GB (case-insensitive). Default is 10MB.
 func (c *SnapshotsConfig) ParseMaxFileSize() int64 {
@@ -370,6 +386,7 @@ type Config struct {
 	Evaluator          EvaluatorConfig                   `json:"evaluator,omitempty" toml:"evaluator"`
 	CLIAssist          CLIAssistConfig                   `json:"cliAssist,omitempty" toml:"cliAssist"`
 	PersonaAutoSelect  PersonaAutoSelectConfig           `json:"personaAutoSelect,omitempty"`
+	ACP                ACPConfig                         `json:"acp,omitempty" toml:"acp"`
 }
 
 // Application constants
@@ -651,6 +668,13 @@ func setDefaults(debug bool) {
 		`(?i)\bno era eso\b`,
 		`(?i)\bte equivocaste\b`,
 	})
+
+	// ACP (Agent Client Protocol) stdio server defaults
+	viper.SetDefault("acp.enabled", true)
+	viper.SetDefault("acp.max_sessions", 10)
+	viper.SetDefault("acp.idle_timeout", "30m")
+	viper.SetDefault("acp.log_level", "info")
+	viper.SetDefault("acp.auto_permission", false)
 
 	// MCP Gateway defaults
 	viper.SetDefault("mcpGateway.enabled", false)
