@@ -17,7 +17,32 @@ var acpCmd = &cobra.Command{
 	Long: `Manage the Pando ACP (Agent Client Protocol) server.
 
 The ACP server allows other clients to connect to Pando and execute conversations.
-Use these commands to start, stop, and monitor the ACP server.`,
+Use these commands to start, stop, and monitor the ACP server.
+
+When called without a subcommand, starts the ACP server (equivalent to "pando acp start").
+This is the mode used by editors like VS Code, Zed, and JetBrains.`,
+	Example: `
+  # Start ACP server (stdio mode, for editors)
+  pando acp
+
+  # Start with explicit subcommand
+  pando acp start
+
+  # Start with debug logging
+  pando acp --debug`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, _ := cmd.Flags().GetString("cwd")
+		if cwd == "" {
+			var err error
+			cwd, err = os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current working directory: %w", err)
+			}
+		}
+		debug, _ := cmd.Flags().GetBool("debug")
+		autoPerm, _ := cmd.Flags().GetBool("auto-permission")
+		return runACPServerWithOptions(cwd, debug, autoPerm)
+	},
 }
 
 var acpStartCmd = &cobra.Command{
@@ -43,9 +68,17 @@ Configuration is read from .pando.toml or can be overridden with flags.`,
   # Start with debug logging
   pando acp start --debug`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// This would start the ACP server
-		// For now, it calls the existing --acp-server flag logic
-		return runACPServer()
+		cwd, _ := cmd.Flags().GetString("cwd")
+		if cwd == "" {
+			var err error
+			cwd, err = os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current working directory: %w", err)
+			}
+		}
+		debug, _ := cmd.Flags().GetBool("debug")
+		autoPerm, _ := cmd.Flags().GetBool("auto-permission")
+		return runACPServerWithOptions(cwd, debug, autoPerm)
 	},
 }
 
@@ -235,12 +268,16 @@ func init() {
 	acpCmd.AddCommand(acpStatsCmd)
 	acpCmd.AddCommand(acpStopCmd)
 
-	// Flags for start command
-	acpStartCmd.Flags().String("host", "localhost", "Host to bind to")
-	acpStartCmd.Flags().Int("port", 8765, "Port to listen on")
-	acpStartCmd.Flags().String("transport", "http", "Transport mode (stdio, http)")
-	acpStartCmd.Flags().Bool("debug", false, "Enable debug logging")
-	acpStartCmd.Flags().Int("max-sessions", 100, "Maximum concurrent sessions")
+	// Persistent flags available to all acp subcommands
+	acpCmd.PersistentFlags().String("cwd", "", "Working directory (default: current directory)")
+	acpCmd.PersistentFlags().Bool("debug", false, "Enable debug logging")
+	acpCmd.PersistentFlags().Bool("auto-permission", false, "Automatically approve tool permission requests")
+
+	// Flags for start command (start-specific options)
+	acpStartCmd.Flags().String("host", "localhost", "Host to bind to (HTTP transport)")
+	acpStartCmd.Flags().Int("port", 8765, "Port to listen on (HTTP transport)")
+	acpStartCmd.Flags().String("transport", "stdio", "Transport mode (stdio, http)")
+	acpStartCmd.Flags().Int("max-sessions", 10, "Maximum concurrent sessions")
 	acpStartCmd.Flags().String("idle-timeout", "30m", "Session idle timeout")
 
 	// Flags for status/sessions/stats/stop commands (connection info)
