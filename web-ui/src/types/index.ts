@@ -168,6 +168,11 @@ export interface AgentsConfigResponse {
 // MCP / LSP config types
 export type MCPType = 'stdio' | 'sse' | 'streamable-http'
 
+export interface MCPToolInfo {
+  name: string
+  description: string
+}
+
 export interface MCPServerConfig {
   name: string
   command: string
@@ -176,6 +181,7 @@ export interface MCPServerConfig {
   type: MCPType
   url: string
   headers: Record<string, string>
+  tools?: MCPToolInfo[]
 }
 
 export interface MCPGatewayConfig {
