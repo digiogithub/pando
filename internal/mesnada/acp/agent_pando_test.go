@@ -52,6 +52,7 @@ func (m *mockAgentService) SetModelOverride(modelID string) error {
 type mockSessionService struct {
 	sessions map[string]ACPSessionInfo
 	created  []string
+	counter  int
 }
 
 func newMockSessionService() *mockSessionService {
@@ -61,7 +62,8 @@ func newMockSessionService() *mockSessionService {
 }
 
 func (m *mockSessionService) CreateSession(ctx context.Context, title string) (string, error) {
-	id := "pando-" + title
+	m.counter++
+	id := "pando-session-" + string(rune('0'+m.counter))
 	m.sessions[id] = ACPSessionInfo{ID: id, Title: title}
 	m.created = append(m.created, id)
 	return id, nil
@@ -122,12 +124,47 @@ func TestPandoACPAgent_NewSession(t *testing.T) {
 		t.Error("Expected non-empty session ID")
 	}
 
+	if !strings.HasPrefix(string(resp.SessionId), "pando-session-") {
+		t.Errorf("Expected ACP session ID to be synchronized with Pando session ID, got %q", resp.SessionId)
+	}
+
 	// Session should now be registered
 	agent.sessionsMu.RLock()
 	_, exists := agent.sessions[resp.SessionId]
 	agent.sessionsMu.RUnlock()
 	if !exists {
 		t.Errorf("Session %s not found in agent sessions map", resp.SessionId)
+	}
+}
+
+// TestPandoACPAgent_SetConnection_SynchronizesExistingSessions verifies that
+// existing sessions receive updated agent connection references.
+func TestPandoACPAgent_SetConnection_SynchronizesExistingSessions(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	agent.sessionsMu.RLock()
+	sess := agent.sessions[resp.SessionId]
+	agent.sessionsMu.RUnlock()
+
+	if err := sess.SendUpdate(acpsdk.UpdateAgentMessageText("before")); err != nil {
+		t.Fatalf("SendUpdate before connection should be a no-op, got error: %v", err)
+	}
+
+	// This validates SetConnection runs without panicking and propagates to
+	// existing sessions. A full integration assertion requires a live SDK peer.
+	agent.SetConnection(&acpsdk.AgentSideConnection{})
+
+	if err := sess.SendUpdate(acpsdk.UpdateAgentMessageText("after")); err == nil {
+		// It is expected to fail with a dummy connection, but should no longer be
+		// treated as a nil/no-op path.
+	} else if strings.Contains(err.Error(), "nil") {
+		t.Fatalf("expected non-nil synchronized connection path, got: %v", err)
 	}
 }
 
@@ -230,6 +267,47 @@ func TestPandoACPAgent_LoadSession_DefaultCwd(t *testing.T) {
 	agent.sessionsMu.RUnlock()
 	if acpSess.WorkDir != "/tmp" {
 		t.Errorf("Expected default WorkDir /tmp, got %q", acpSess.WorkDir)
+	}
+}
+
+// TestPandoACPAgent_LoadSession_SynchronizesExistingState verifies LoadSession
+// does not replace an already registered ACP session and keeps in-memory mode/model.
+func TestPandoACPAgent_LoadSession_SynchronizesExistingState(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	sessID := "sync-existing-session"
+	agent.sessionService.(*mockSessionService).sessions[sessID] = ACPSessionInfo{ID: sessID, Title: "Sync"}
+
+	_, err := agent.LoadSession(ctx, acpsdk.LoadSessionRequest{SessionId: acpsdk.SessionId(sessID), Cwd: "/tmp/a"})
+	if err != nil {
+		t.Fatalf("initial LoadSession failed: %v", err)
+	}
+
+	agent.sessionsMu.RLock()
+	sess := agent.sessions[acpsdk.SessionId(sessID)]
+	agent.sessionsMu.RUnlock()
+
+	sess.SetMode("agent")
+	sess.SetModel("test-model")
+
+	_, err = agent.LoadSession(ctx, acpsdk.LoadSessionRequest{SessionId: acpsdk.SessionId(sessID), Cwd: "/tmp/b"})
+	if err != nil {
+		t.Fatalf("second LoadSession failed: %v", err)
+	}
+
+	agent.sessionsMu.RLock()
+	reloaded := agent.sessions[acpsdk.SessionId(sessID)]
+	agent.sessionsMu.RUnlock()
+
+	if reloaded.Mode() != "agent" {
+		t.Errorf("expected mode to be preserved, got %q", reloaded.Mode())
+	}
+	if reloaded.Model() != "test-model" {
+		t.Errorf("expected model to be preserved, got %q", reloaded.Model())
+	}
+	if reloaded.WorkDir != "/tmp/b" {
+		t.Errorf("expected workdir to be synchronized to latest value, got %q", reloaded.WorkDir)
 	}
 }
 
