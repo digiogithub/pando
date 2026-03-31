@@ -83,6 +83,29 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			if name == "" {
 				name = m.ID
 			}
+
+			// Register the model in SupportedModels using the raw ID so that
+			// handleSetActiveModel can find it when the web-ui sends the model ID back.
+			modelID := models.ModelID(m.ID)
+			if _, exists := models.SupportedModels[modelID]; !exists {
+				contextWindow := m.ContextWindow
+				if contextWindow <= 0 {
+					contextWindow = 128_000
+				}
+				maxTokens := int64(4096)
+				if contextWindow < maxTokens {
+					maxTokens = contextWindow / 2
+				}
+				models.RegisterDynamicModel(models.Model{
+					ID:               modelID,
+					Name:             name,
+					Provider:         provider,
+					APIModel:         m.ID,
+					ContextWindow:    contextWindow,
+					DefaultMaxTokens: maxTokens,
+				})
+			}
+
 			result = append(result, ModelInfo{
 				ID:          m.ID,
 				Name:        name,
