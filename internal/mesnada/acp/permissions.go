@@ -13,9 +13,8 @@ import (
 // It queues requests that need manual approval and allows resolution
 // via API endpoints or automatic policies.
 type PermissionQueue struct {
-	mu       sync.RWMutex
-	pending  map[string]*PendingPermission
-	resolved chan string // Channel to notify when a permission is resolved
+	mu      sync.RWMutex
+	pending map[string]*PendingPermission
 }
 
 // PendingPermission represents a permission request awaiting resolution.
@@ -28,13 +27,16 @@ type PendingPermission struct {
 	Outcome    *acpsdk.RequestPermissionOutcome `json:"outcome,omitempty"` // nil = pending, non-nil = resolved
 	CreatedAt  time.Time                        `json:"created_at"`
 	ResolvedAt *time.Time                       `json:"resolved_at,omitempty"`
+
+	// done is closed when this permission is resolved, enabling zero-latency
+	// notification without polling.
+	done chan struct{}
 }
 
 // NewPermissionQueue creates a new permission queue.
 func NewPermissionQueue() *PermissionQueue {
 	return &PermissionQueue{
-		pending:  make(map[string]*PendingPermission),
-		resolved: make(chan string, 10), // Buffered channel for notifications
+		pending: make(map[string]*PendingPermission),
 	}
 }
 
@@ -54,6 +56,7 @@ func (q *PermissionQueue) QueuePermission(taskID string, sessionID acpsdk.Sessio
 		Options:   req.Options,
 		Outcome:   nil, // Pending
 		CreatedAt: time.Now(),
+		done:      make(chan struct{}),
 	}
 
 	q.pending[requestID] = perm
@@ -80,12 +83,8 @@ func (q *PermissionQueue) ResolvePermission(requestID string, outcome acpsdk.Req
 	perm.Outcome = &outcome
 	perm.ResolvedAt = &now
 
-	// Notify waiting goroutines
-	select {
-	case q.resolved <- requestID:
-	default:
-		// Channel full, but that's okay - we'll still return the resolution
-	}
+	// Unblock any goroutine waiting in WaitForResolution with zero latency.
+	close(perm.done)
 
 	return nil
 }

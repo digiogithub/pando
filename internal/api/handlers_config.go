@@ -181,6 +181,12 @@ func (s *Server) handlePutConfigAgents(w http.ResponseWriter, r *http.Request) {
 
 // --- MCP Servers ---
 
+// MCPToolInfo is a lightweight tool descriptor returned alongside server config.
+type MCPToolInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
 // MCPServerConfigItem is the JSON representation of a single MCP server entry.
 type MCPServerConfigItem struct {
 	Name    string            `json:"name"`
@@ -190,6 +196,7 @@ type MCPServerConfigItem struct {
 	Type    config.MCPType    `json:"type"`
 	URL     string            `json:"url"`
 	Headers map[string]string `json:"headers"`
+	Tools   []MCPToolInfo     `json:"tools"`
 }
 
 func (s *Server) handleConfigMCPServers(w http.ResponseWriter, r *http.Request) {
@@ -210,8 +217,31 @@ func (s *Server) handleGetConfigMCPServers(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Load tool registry from DB grouped by server_name.
+	toolsByServer := map[string][]MCPToolInfo{}
+	if s.config.DB != nil {
+		rows, err := s.config.DB.QueryContext(r.Context(), `
+			SELECT server_name, tool_name, COALESCE(description, '')
+			FROM mcp_tool_registry
+			ORDER BY server_name, tool_name
+		`)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var srvName, toolName, desc string
+				if rows.Scan(&srvName, &toolName, &desc) == nil {
+					toolsByServer[srvName] = append(toolsByServer[srvName], MCPToolInfo{Name: toolName, Description: desc})
+				}
+			}
+		}
+	}
+
 	items := make([]MCPServerConfigItem, 0, len(cfg.MCPServers))
 	for name, srv := range cfg.MCPServers {
+		tools := toolsByServer[name]
+		if tools == nil {
+			tools = []MCPToolInfo{}
+		}
 		items = append(items, MCPServerConfigItem{
 			Name:    name,
 			Command: srv.Command,
@@ -220,6 +250,7 @@ func (s *Server) handleGetConfigMCPServers(w http.ResponseWriter, r *http.Reques
 			Type:    srv.Type,
 			URL:     srv.URL,
 			Headers: srv.Headers,
+			Tools:   tools,
 		})
 	}
 
