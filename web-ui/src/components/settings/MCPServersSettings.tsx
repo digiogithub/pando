@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMCPServersStore } from '@/stores/mcpServersStore'
-import type { MCPServerConfig, MCPType } from '@/types'
+import type { MCPServerConfig, MCPToolInfo, MCPType } from '@/types'
 import TagListEditor from '@/components/shared/TagListEditor'
 import KeyValueEditor, { envToKV, kvToEnv, type KVPair } from '@/components/shared/KeyValueEditor'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
@@ -90,6 +90,42 @@ function formToServer(f: ModalFormState): MCPServerConfig {
   }
 }
 
+function ToolsOverlay({ tools, serverName, onClose }: { tools: MCPToolInfo[]; serverName: string; onClose: () => void }) {
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.5rem', width: 520, maxWidth: '95vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg)', margin: 0 }}>
+            Tools — <span style={{ fontFamily: 'monospace' }}>{serverName}</span>
+            <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: 'var(--fg-muted)' }}>({tools.length})</span>
+          </h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg-muted)', fontSize: 18, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          {tools.length === 0 ? (
+            <div style={{ color: 'var(--fg-muted)', fontSize: 13, padding: '0.5rem 0' }}>No tools discovered yet. Try reloading the server.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+              {tools.map((t) => (
+                <div key={t.name} style={{ padding: '0.625rem 0.75rem', background: 'var(--input-bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                  <div style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--fg)', marginBottom: t.description ? 4 : 0 }}>{t.name}</div>
+                  {t.description && <div style={{ fontSize: 12, color: 'var(--fg-muted)', lineHeight: 1.5 }}>{t.description}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function MCPServersSettings() {
   const { servers, loading, saving, fetchServers, saveServer, deleteServer, reloadServer } =
     useMCPServersStore()
@@ -100,6 +136,7 @@ export default function MCPServersSettings() {
   const [form, setForm] = useState<ModalFormState>(emptyForm())
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [reloading, setReloading] = useState<string | null>(null)
+  const [toolsOverlay, setToolsOverlay] = useState<{ name: string; tools: MCPToolInfo[] } | null>(null)
 
   useEffect(() => {
     fetchServers()
