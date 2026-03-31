@@ -30,3 +30,17 @@ const (
 func IsCopilotAnthropicModel(apiModel string) bool {
 	return strings.Contains(strings.ToLower(apiModel), "claude")
 }
+
+// IsCopilotResponsesAPIModel returns true if the model must use the OpenAI Responses API
+// (/v1/responses) instead of Chat Completions (/v1/chat/completions).
+// GPT-5+ models (except gpt-5-mini variants) require the Responses API.
+func IsCopilotResponsesAPIModel(apiModel string) bool {
+	re := regexp.MustCompile(`^gpt-(\d+)`)
+	m := re.FindStringSubmatch(strings.ToLower(apiModel))
+	if m == nil {
+		return false
+	}
+	major := 0
+	fmt.Sscanf(m[1], "%d", &major)
+	return major >= 5 && !strings.HasPrefix(strings.ToLower(apiModel), "gpt-5-mini")
+}
