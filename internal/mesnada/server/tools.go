@@ -678,7 +678,7 @@ func (s *Server) getToolDefinitions() []Tool {
 		},
 		{
 			Name:        "acp_session_control",
-			Description: "Control an active ACP session. Send follow-up prompts, change mode, or get session status.",
+			Description: "Control an active ACP session. Send follow-ups, change mode, cancel/status, and manage pending tool permissions.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -688,7 +688,7 @@ func (s *Server) getToolDefinitions() []Tool {
 					},
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []string{"follow_up", "set_mode", "cancel", "status"},
+						"enum":        []string{"follow_up", "set_mode", "cancel", "status", "list_permissions", "resolve_permission"},
 						"description": "Action to perform",
 					},
 					"message": map[string]interface{}{
@@ -699,6 +699,19 @@ func (s *Server) getToolDefinitions() []Tool {
 						"type":        "string",
 						"description": "New mode (for 'set_mode' action)",
 						"enum":        []string{"code", "ask", "architect"},
+					},
+					"request_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Permission request ID (for 'resolve_permission' action)",
+					},
+					"decision": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"approve", "deny"},
+						"description": "Permission decision (for 'resolve_permission' action)",
+					},
+					"option_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Specific permission option to approve (optional for 'resolve_permission')",
 					},
 				},
 				"required": []string{"task_id", "action"},
@@ -1129,10 +1142,13 @@ func (s *Server) toolSetProgress(ctx context.Context, params json.RawMessage) (i
 
 func (s *Server) toolACPSessionControl(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req struct {
-		TaskID  string `json:"task_id"`
-		Action  string `json:"action"`
-		Message string `json:"message"`
-		Mode    string `json:"mode"`
+		TaskID    string `json:"task_id"`
+		Action    string `json:"action"`
+		Message   string `json:"message"`
+		Mode      string `json:"mode"`
+		RequestID string `json:"request_id"`
+		Decision  string `json:"decision"`
+		OptionID  string `json:"option_id"`
 	}
 
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -1147,13 +1163,15 @@ func (s *Server) toolACPSessionControl(ctx context.Context, params json.RawMessa
 	}
 
 	validActions := map[string]bool{
-		"follow_up": true,
-		"set_mode":  true,
-		"cancel":    true,
-		"status":    true,
+		"follow_up":          true,
+		"set_mode":           true,
+		"cancel":             true,
+		"status":             true,
+		"list_permissions":   true,
+		"resolve_permission": true,
 	}
 	if !validActions[req.Action] {
-		return nil, fmt.Errorf("invalid action: %s (valid: follow_up, set_mode, cancel, status)", req.Action)
+		return nil, fmt.Errorf("invalid action: %s (valid: follow_up, set_mode, cancel, status, list_permissions, resolve_permission)", req.Action)
 	}
 
 	if req.Action == "set_mode" {
@@ -1168,6 +1186,29 @@ func (s *Server) toolACPSessionControl(ctx context.Context, params json.RawMessa
 
 	if req.Action == "follow_up" && req.Message == "" {
 		return nil, fmt.Errorf("message parameter required for follow_up action")
+	}
+
+	if req.Action == "resolve_permission" {
+		if req.RequestID == "" {
+			return nil, fmt.Errorf("request_id parameter required for resolve_permission action")
+		}
+		if req.Decision == "" {
+			return nil, fmt.Errorf("decision parameter required for resolve_permission action")
+		}
+		if req.Decision != "approve" && req.Decision != "deny" {
+			return nil, fmt.Errorf("invalid decision: %s (valid: approve, deny)", req.Decision)
+		}
+
+		payload := map[string]string{
+			"request_id": req.RequestID,
+			"action":     req.Decision,
+			"option_id":  req.OptionID,
+		}
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode resolve_permission payload: %w", err)
+		}
+		req.Message = string(raw)
 	}
 
 	return s.orchestrator.ACPSessionControl(req.TaskID, req.Action, req.Message, req.Mode)
