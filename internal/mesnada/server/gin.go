@@ -80,6 +80,8 @@ func (s *Server) newGinEngine() *gin.Engine {
 		api.POST("/tasks/:id/acp/prompt", s.handleAPIACPFollowUp)
 		api.POST("/tasks/:id/acp/mode", s.handleAPIACPSetMode)
 		api.GET("/tasks/:id/acp/status", s.handleAPIACPStatus)
+		api.GET("/tasks/:id/acp/permissions", s.handleAPIACPListPermissions)
+		api.POST("/tasks/:id/acp/permissions/:req_id", s.handleAPIACPResolvePermission)
 	}
 
 	return r
@@ -381,6 +383,46 @@ func (s *Server) handleAPIACPStatus(c *gin.Context) {
 	taskID := c.Param("id")
 
 	result, err := s.orchestrator.ACPSessionControl(taskID, "status", "", "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (s *Server) handleAPIACPListPermissions(c *gin.Context) {
+	taskID := c.Param("id")
+
+	result, err := s.orchestrator.ACPSessionControl(taskID, "list_permissions", "", "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (s *Server) handleAPIACPResolvePermission(c *gin.Context) {
+	taskID := c.Param("id")
+	reqID := c.Param("req_id")
+
+	var req struct {
+		Action   string `json:"action"`
+		OptionID string `json:"option_id,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	if req.Action != "approve" && req.Action != "deny" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "action must be 'approve' or 'deny'"})
+		return
+	}
+
+	data := fmt.Sprintf(`{"request_id":"%s","action":"%s","option_id":"%s"}`, reqID, req.Action, req.OptionID)
+	result, err := s.orchestrator.ACPSessionControl(taskID, "resolve_permission", data, "")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
