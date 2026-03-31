@@ -11,7 +11,6 @@ import (
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/digiogithub/pando/internal/message"
-	"github.com/google/uuid"
 )
 
 // AgentEventType represents the type of agent event
@@ -223,19 +222,21 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 		a.logger.Printf("[ACP AGENT] Warning: %d MCP server(s) requested by client but per-session MCP is not yet supported — ignoring", len(req.McpServers))
 	}
 
-	sessionID := acpsdk.SessionId(uuid.New().String())
-
 	workDir := a.workDir
 	if req.Cwd != "" {
 		workDir = req.Cwd
 	}
 
 	// Create internal Pando session via the minimal SessionService interface
-	pandoSessionID, err := a.sessionService.CreateSession(ctx, fmt.Sprintf("ACP Session %s", sessionID))
+	pandoSessionID, err := a.sessionService.CreateSession(ctx, "ACP Session")
 	if err != nil {
 		a.logger.Printf("[ACP AGENT] Failed to create Pando session: %v", err)
 		return acpsdk.NewSessionResponse{}, fmt.Errorf("failed to create session: %w", err)
 	}
+
+	// Keep ACP session ID synchronized with Pando session ID so clients can
+	// reliably LoadSession with the same identifier.
+	sessionID := acpsdk.SessionId(pandoSessionID)
 
 	acpSession := NewACPServerSession(
 		sessionID,
@@ -245,7 +246,13 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 	)
 
 	a.sessionsMu.Lock()
-	a.sessions[sessionID] = acpSession
+	if existing, exists := a.sessions[sessionID]; exists {
+		existing.SetWorkDir(workDir)
+		existing.SetAgentConnection(a.conn)
+		a.logger.Printf("[ACP AGENT] NewSession reused existing ACP session mapping: SessionID=%s", sessionID)
+	} else {
+		a.sessions[sessionID] = acpSession
+	}
 	a.sessionsMu.Unlock()
 
 	a.logger.Printf("[ACP AGENT] NewSession created: SessionID=%s, PandoSessionID=%s, WorkDir=%s",
@@ -602,7 +609,13 @@ func (a *PandoACPAgent) SetSessionMode(ctx context.Context, req acpsdk.SetSessio
 // stream session updates back to the client.  Called by transport_stdio.go
 // immediately after NewAgentSideConnection() returns.
 func (a *PandoACPAgent) SetConnection(conn *acpsdk.AgentSideConnection) {
+	a.sessionsMu.Lock()
+	defer a.sessionsMu.Unlock()
+
 	a.conn = conn
+	for _, sess := range a.sessions {
+		sess.SetAgentConnection(conn)
+	}
 }
 
 // GetVersion returns the agent version.
@@ -638,13 +651,18 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 		workDir = req.Cwd
 	}
 
-	acpSession := NewACPServerSession(req.SessionId, workDir, a.conn, string(req.SessionId))
-
 	a.sessionsMu.Lock()
-	a.sessions[req.SessionId] = acpSession
+	if existing, exists := a.sessions[req.SessionId]; exists {
+		existing.SetWorkDir(workDir)
+		existing.SetAgentConnection(a.conn)
+		a.logger.Printf("[ACP AGENT] LoadSession: synchronized existing session %s", req.SessionId)
+	} else {
+		acpSession := NewACPServerSession(req.SessionId, workDir, a.conn, string(req.SessionId))
+		a.sessions[req.SessionId] = acpSession
+		a.logger.Printf("[ACP AGENT] LoadSession: registered session %s", req.SessionId)
+	}
 	a.sessionsMu.Unlock()
 
-	a.logger.Printf("[ACP AGENT] LoadSession: registered session %s", req.SessionId)
 	return acpsdk.LoadSessionResponse{
 		Modes:  buildSessionModeState("code"),
 		Models: buildSessionModelState(a.agentService),
