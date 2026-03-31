@@ -1,6 +1,10 @@
 package models
 
-import "strings"
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
 
 const (
 	ProviderCopilot ModelProvider = "copilot"
@@ -29,4 +33,20 @@ const (
 // served through the GitHub Copilot API (detected by name containing "claude").
 func IsCopilotAnthropicModel(apiModel string) bool {
 	return strings.Contains(strings.ToLower(apiModel), "claude")
+}
+
+// responsesAPIModelRE matches models like "gpt-5", "gpt-5.4"; compiled once at package level.
+var responsesAPIModelRE = regexp.MustCompile(`(?i)^gpt-(\d+)`)
+
+// IsCopilotResponsesAPIModel returns true if the model must use the OpenAI Responses API
+// (/v1/responses) instead of Chat Completions (/v1/chat/completions).
+// GPT-5+ models (except gpt-5-mini variants) require the Responses API.
+func IsCopilotResponsesAPIModel(apiModel string) bool {
+	m := responsesAPIModelRE.FindStringSubmatch(apiModel)
+	if m == nil {
+		return false
+	}
+	major := 0
+	fmt.Sscanf(m[1], "%d", &major)
+	return major >= 5 && !strings.HasPrefix(strings.ToLower(apiModel), "gpt-5-mini")
 }
