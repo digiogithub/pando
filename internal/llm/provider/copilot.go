@@ -18,6 +18,7 @@ import (
 	"github.com/digiogithub/pando/internal/version"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/responses"
 	"github.com/openai/openai-go/shared"
 )
 
