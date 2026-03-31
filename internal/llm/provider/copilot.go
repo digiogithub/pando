@@ -16,8 +16,10 @@ import (
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/version"
+	"github.com/google/uuid"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/responses"
 	"github.com/openai/openai-go/shared"
 )
 
@@ -41,6 +43,10 @@ type CopilotClient ProviderClient
 
 func (c *copilotClient) isAnthropicModel() bool {
 	return models.IsCopilotAnthropicModel(c.providerOptions.model.APIModel)
+}
+
+func (c *copilotClient) isResponsesAPIModel() bool {
+	return models.IsCopilotResponsesAPIModel(c.providerOptions.model.APIModel)
 }
 
 func loadCopilotCredentials(savedToken, configuredToken, configuredBaseURL string) (string, string, error) {
@@ -78,6 +84,7 @@ func newCopilotOpenAIClient(accessToken, baseURL string, headers map[string]stri
 	options := []option.RequestOption{
 		option.WithBaseURL(baseURL),
 		option.WithAPIKey(accessToken),
+		option.WithMiddleware(sseNormalizeMimeMiddleware),
 	}
 	for key, value := range headers {
 		options = append(options, option.WithHeader(key, value))
@@ -322,6 +329,9 @@ func (c *copilotClient) preparedParams(messages []openai.ChatCompletionMessagePa
 }
 
 func (c *copilotClient) send(ctx context.Context, messages []message.Message, tools []toolsPkg.BaseTool) (response *ProviderResponse, err error) {
+	if c.isResponsesAPIModel() {
+		return c.sendWithResponsesAPI(ctx, messages, tools)
+	}
 	params := c.preparedParams(c.convertMessages(messages), c.convertTools(tools))
 	cfg := config.Get()
 	var sessionId string
@@ -393,6 +403,9 @@ func (c *copilotClient) send(ctx context.Context, messages []message.Message, to
 }
 
 func (c *copilotClient) stream(ctx context.Context, messages []message.Message, tools []toolsPkg.BaseTool) <-chan ProviderEvent {
+	if c.isResponsesAPIModel() {
+		return c.streamWithResponsesAPI(ctx, messages, tools)
+	}
 	params := c.preparedParams(c.convertMessages(messages), c.convertTools(tools))
 	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{
 		IncludeUsage: openai.Bool(true),
@@ -540,8 +553,6 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 				close(eventChan)
 				return
 			}
-			// shouldRetry is not catching the max retries...
-			// TODO: Figure out why
 			if attempts > maxRetries {
 				logging.Warn("Maximum retry attempts reached for rate limit", "attempts", attempts, "max_retries", maxRetries)
 				retry = false
@@ -560,6 +571,312 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 					continue
 				}
 			}
+			// Max retries exceeded — retryErr may be nil here when the error is a
+			// rate-limit (429/500) that exhausted attempts; wrap it to avoid sending
+			// a nil error downstream which callers cannot distinguish from success.
+			if retryErr == nil {
+				retryErr = fmt.Errorf("maximum retry attempts (%d) exceeded for rate limit", maxRetries)
+			}
+			eventChan <- ProviderEvent{Type: EventError, Error: retryErr}
+			close(eventChan)
+			return
+		}
+	}()
+
+	return eventChan
+}
+
+// convertMessagesToResponsesInput converts the internal message format to the
+// OpenAI Responses API input format (used by GPT-5+ models).
+func (c *copilotClient) convertMessagesToResponsesInput(msgs []message.Message) responses.ResponseInputParam {
+	var input responses.ResponseInputParam
+
+	for _, msg := range msgs {
+		switch msg.Role {
+		case message.User:
+			var contentList responses.ResponseInputMessageContentListParam
+			textPart := responses.ResponseInputContentParamOfInputText(msg.Content().String())
+			contentList = append(contentList, textPart)
+			for _, bin := range msg.BinaryContent() {
+				imgPart := responses.ResponseInputContentUnionParam{
+					OfInputImage: &responses.ResponseInputImageParam{
+						ImageURL: openai.String(bin.String(models.ProviderCopilot)),
+						Detail:   responses.ResponseInputImageDetailAuto,
+					},
+				}
+				contentList = append(contentList, imgPart)
+			}
+			item := responses.ResponseInputItemParamOfMessage(contentList, responses.EasyInputMessageRoleUser)
+			input = append(input, item)
+
+		case message.Assistant:
+			if len(msg.ToolCalls()) > 0 {
+				// Each tool call becomes a separate function_call input item
+				for _, tc := range msg.ToolCalls() {
+					callID := tc.ID
+					if callID == "" {
+						callID = "call_" + uuid.New().String()
+					}
+					item := responses.ResponseInputItemParamOfFunctionCall(tc.Input, callID, tc.Name)
+					input = append(input, item)
+				}
+			} else if msg.Content().String() != "" {
+				textContent := responses.ResponseOutputMessageContentUnionParam{
+					OfOutputText: &responses.ResponseOutputTextParam{
+						Text: msg.Content().String(),
+					},
+				}
+				item := responses.ResponseInputItemParamOfOutputMessage(
+					[]responses.ResponseOutputMessageContentUnionParam{textContent},
+					"msg_"+uuid.New().String(),
+					responses.ResponseOutputMessageStatusCompleted,
+				)
+				input = append(input, item)
+			}
+
+		case message.Tool:
+			for _, result := range msg.ToolResults() {
+				callID := result.ToolCallID
+				if callID == "" {
+					callID = "call_" + uuid.New().String()
+				}
+				item := responses.ResponseInputItemParamOfFunctionCallOutput(callID, result.Content)
+				input = append(input, item)
+			}
+		}
+	}
+
+	return input
+}
+
+func (c *copilotClient) convertToolsToResponses(tools []toolsPkg.BaseTool) []responses.ToolUnionParam {
+	result := make([]responses.ToolUnionParam, len(tools))
+	for i, tool := range tools {
+		info := tool.Info()
+		required := info.Required
+		if required == nil {
+			required = []string{}
+		}
+		params := map[string]interface{}{
+			"type":       "object",
+			"properties": info.Parameters,
+			"required":   required,
+		}
+		result[i] = responses.ToolParamOfFunction(info.Name, params, false)
+		if info.Description != "" {
+			result[i].OfFunction.Description = openai.String(info.Description)
+		}
+	}
+	return result
+}
+
+func (c *copilotClient) responsesFinishReason(status string) message.FinishReason {
+	switch status {
+	case "completed":
+		return message.FinishReasonEndTurn
+	case "max_output_tokens":
+		return message.FinishReasonMaxTokens
+	default:
+		return message.FinishReasonUnknown
+	}
+}
+
+func (c *copilotClient) sendWithResponsesAPI(ctx context.Context, msgs []message.Message, tools []toolsPkg.BaseTool) (*ProviderResponse, error) {
+	input := c.convertMessagesToResponsesInput(msgs)
+	respTools := c.convertToolsToResponses(tools)
+
+	params := responses.ResponseNewParams{
+		Model:           shared.ResponsesModel(c.providerOptions.model.APIModel),
+		Input:           responses.ResponseNewParamsInputUnion{OfInputItemList: input},
+		Instructions:    openai.String(c.providerOptions.systemMessage),
+		MaxOutputTokens: openai.Int(c.providerOptions.maxTokens),
+	}
+	if len(respTools) > 0 {
+		params.Tools = respTools
+	}
+
+	cfg := config.Get()
+	attempts := 0
+	for {
+		attempts++
+		client := c.requestClient(msgs)
+		resp, err := client.Responses.New(ctx, params)
+		if err != nil {
+			retry, after, retryErr := c.shouldRetry(attempts, err)
+			if retryErr != nil {
+				return nil, retryErr
+			}
+			if retry {
+				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(time.Duration(after) * time.Millisecond):
+					continue
+				}
+			}
+			return nil, retryErr
+		}
+
+		content := ""
+		var toolCalls []message.ToolCall
+
+		for _, item := range resp.Output {
+			switch item.Type {
+			case "message":
+				msg := item.AsMessage()
+				for _, part := range msg.Content {
+					if part.Type == "output_text" {
+						content += part.AsOutputText().Text
+					}
+				}
+			case "function_call":
+				fc := item.AsFunctionCall()
+				toolCalls = append(toolCalls, message.ToolCall{
+					ID:       fc.CallID,
+					Name:     fc.Name,
+					Input:    fc.Arguments,
+					Type:     "function",
+					Finished: true,
+				})
+			}
+		}
+
+		finishReason := c.responsesFinishReason(string(resp.Status))
+		if len(toolCalls) > 0 {
+			finishReason = message.FinishReasonToolUse
+		}
+
+		if cfg.Debug {
+			logging.Debug("Copilot Responses API send completed", "model", c.providerOptions.model.APIModel, "content_length", len(content))
+		}
+
+		return &ProviderResponse{
+			Content:   content,
+			ToolCalls: toolCalls,
+			Usage: TokenUsage{
+				InputTokens:     resp.Usage.InputTokens - resp.Usage.InputTokensDetails.CachedTokens,
+				OutputTokens:    resp.Usage.OutputTokens,
+				CacheReadTokens: resp.Usage.InputTokensDetails.CachedTokens,
+			},
+			FinishReason: finishReason,
+		}, nil
+	}
+}
+
+func (c *copilotClient) streamWithResponsesAPI(ctx context.Context, msgs []message.Message, tools []toolsPkg.BaseTool) <-chan ProviderEvent {
+	input := c.convertMessagesToResponsesInput(msgs)
+	respTools := c.convertToolsToResponses(tools)
+
+	params := responses.ResponseNewParams{
+		Model:           shared.ResponsesModel(c.providerOptions.model.APIModel),
+		Input:           responses.ResponseNewParamsInputUnion{OfInputItemList: input},
+		Instructions:    openai.String(c.providerOptions.systemMessage),
+		MaxOutputTokens: openai.Int(c.providerOptions.maxTokens),
+	}
+	if len(respTools) > 0 {
+		params.Tools = respTools
+	}
+
+	cfg := config.Get()
+	attempts := 0
+	eventChan := make(chan ProviderEvent)
+
+	go func() {
+		for {
+			attempts++
+			if cfg.Debug {
+				logging.Debug("Copilot Responses API stream started", "model", c.providerOptions.model.APIModel, "attempt", attempts)
+			}
+			client := c.requestClient(msgs)
+			stream := client.Responses.NewStreaming(ctx, params)
+
+			currentContent := ""
+			var completedResp responses.Response
+
+			for stream.Next() {
+				event := stream.Current()
+
+				switch event.Type {
+				case "response.output_text.delta":
+					delta := event.AsResponseOutputTextDelta()
+					eventChan <- ProviderEvent{Type: EventContentDelta, Content: delta.Delta}
+					currentContent += delta.Delta
+
+				case "response.completed":
+					completedResp = event.AsResponseCompleted().Response
+				}
+			}
+
+			err := stream.Err()
+			if err == nil || errors.Is(err, io.EOF) {
+				// Extract tool calls from the complete response output
+				var toolCalls []message.ToolCall
+				for _, item := range completedResp.Output {
+					if item.Type == "function_call" {
+						toolCalls = append(toolCalls, message.ToolCall{
+							ID:       item.CallID,
+							Name:     item.Name,
+							Input:    item.Arguments,
+							Type:     "function",
+							Finished: true,
+						})
+					}
+				}
+
+				finishReason := c.responsesFinishReason(string(completedResp.Status))
+				if len(toolCalls) > 0 {
+					finishReason = message.FinishReasonToolUse
+				}
+				usage := TokenUsage{
+					InputTokens:     completedResp.Usage.InputTokens - completedResp.Usage.InputTokensDetails.CachedTokens,
+					OutputTokens:    completedResp.Usage.OutputTokens,
+					CacheReadTokens: completedResp.Usage.InputTokensDetails.CachedTokens,
+				}
+				if cfg.Debug {
+					logging.Debug("Copilot Responses API stream completed", "model", c.providerOptions.model.APIModel, "finishReason", finishReason, "toolCallCount", len(toolCalls))
+				}
+				eventChan <- ProviderEvent{
+					Type: EventComplete,
+					Response: &ProviderResponse{
+						Content:      currentContent,
+						ToolCalls:    toolCalls,
+						Usage:        usage,
+						FinishReason: finishReason,
+					},
+				}
+				close(eventChan)
+				return
+			}
+
+			retry, after, retryErr := c.shouldRetry(attempts, err)
+			if retryErr != nil {
+				eventChan <- ProviderEvent{Type: EventError, Error: retryErr}
+				close(eventChan)
+				return
+			}
+			if attempts > maxRetries {
+				retry = false
+			}
+			if retry {
+				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d (paused for %d ms)", attempts, maxRetries, after), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				select {
+				case <-ctx.Done():
+					if ctx.Err() == nil {
+						eventChan <- ProviderEvent{Type: EventError, Error: ctx.Err()}
+					}
+					close(eventChan)
+					return
+				case <-time.After(time.Duration(after) * time.Millisecond):
+					continue
+				}
+			}
+			// Max retries exceeded — retryErr may be nil here when the error is a
+			// rate-limit (429/500) that exhausted attempts; wrap it to avoid sending
+			// a nil error downstream which callers cannot distinguish from success.
+			if retryErr == nil {
+				retryErr = fmt.Errorf("maximum retry attempts (%d) exceeded for rate limit", maxRetries)
+			}
 			eventChan <- ProviderEvent{Type: EventError, Error: retryErr}
 			close(eventChan)
 			return
@@ -570,52 +887,6 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 }
 
 func (c *copilotClient) shouldRetry(attempts int, err error) (bool, int64, error) {
-	var apierr *openai.Error
-	if !errors.As(err, &apierr) {
-		return false, 0, err
-	}
-
-	// Check for token expiration (401 Unauthorized)
-	if apierr.StatusCode == 401 {
-		if c.reloadCredentials() {
-			logging.Info("Reloaded GitHub Copilot credentials from the latest login state")
-			return true, 1000, nil
-		}
-		return false, 0, fmt.Errorf("authentication failed: %w. Run `pando auth copilot login`", err)
-	}
-	logging.Debug("Copilot API Error", "status", apierr.StatusCode, "headers", apierr.Response.Header, "body", apierr.RawJSON())
-
-	if apierr.StatusCode != 429 && apierr.StatusCode != 500 {
-		return false, 0, err
-	}
-
-	if apierr.StatusCode == 500 {
-		logging.Warn("Copilot API returned 500 error, retrying", "error", err)
-	}
-
-	if cfg := config.Get(); cfg != nil && cfg.Debug {
-		logging.Debug("Copilot retry evaluation", "attempts", attempts, "statusCode", apierr.StatusCode)
-	}
-
-	if attempts > maxRetries {
-		return false, 0, fmt.Errorf("maximum retry attempts reached for rate limit: %d retries", maxRetries)
-	}
-
-	retryMs := 0
-	retryAfterValues := apierr.Response.Header.Values("Retry-After")
-
-	backoffMs := 2000 * (1 << (attempts - 1))
-	jitterMs := int(float64(backoffMs) * 0.2)
-	retryMs = backoffMs + jitterMs
-	if len(retryAfterValues) > 0 {
-		if _, err := fmt.Sscanf(retryAfterValues[0], "%d", &retryMs); err == nil {
-			retryMs = retryMs * 1000
-		}
-	}
-	return true, int64(retryMs), nil
-}
-
-func (c *copilotClient) toolCalls(completion openai.ChatCompletion) []message.ToolCall {
 	var toolCalls []message.ToolCall
 
 	if len(completion.Choices) > 0 && len(completion.Choices[0].Message.ToolCalls) > 0 {

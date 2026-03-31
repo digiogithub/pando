@@ -428,6 +428,13 @@ func runACPServerWithOptions(cwd string, debug bool, autoPerm bool) error {
 	}
 	defer pandoApp.Shutdown()
 
+	// Apply auto-permission setting from config or --auto-permission flag.
+	// Without this, tool calls that require permission in ACP mode would block indefinitely
+	// since there is no UI to approve them.
+	if cfg.ACP.AutoPermission {
+		pandoApp.Permissions.SetGlobalAutoApprove(true)
+	}
+
 	// Build adapters (defined below) that bridge internal services to ACP interfaces,
 	// avoiding import cycles between internal/mesnada/acp and internal/llm/agent.
 	agentAdapter := &acpAgentAdapter{svc: pandoApp.CoderAgent}
