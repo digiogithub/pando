@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -52,6 +53,24 @@ type uiPanelVM struct {
 	ACPAgentName  string
 	ACPToolCalls  int
 	ACPSessionID  string
+	Permissions   []uiPermission
+}
+
+type uiPermission struct {
+	RequestID string             `json:"request_id"`
+	ToolCall  uiPermissionTool   `json:"tool_call"`
+	Options   []uiPermissionItem `json:"options"`
+}
+
+type uiPermissionTool struct {
+	Kind  string `json:"kind"`
+	Title string `json:"title"`
+}
+
+type uiPermissionItem struct {
+	OptionID string `json:"option_id"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
 }
 
 type uiLogVM struct {
@@ -196,6 +215,11 @@ func (s *Server) handleUIPanel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	permissions := make([]uiPermission, 0)
+	if isACP && task.Status == models.TaskStatusRunning {
+		permissions = s.getUIPermissions(task.ID)
+	}
+
 	vm := uiPanelVM{
 		Task:          task,
 		Engine:        engine,
@@ -214,6 +238,7 @@ func (s *Server) handleUIPanel(w http.ResponseWriter, r *http.Request) {
 		ACPAgentName:  acpAgentName,
 		ACPToolCalls:  acpToolCalls,
 		ACPSessionID:  acpSessionID,
+		Permissions:   permissions,
 	}
 
 	tpl, err := s.getUITemplates()
@@ -376,4 +401,25 @@ func readLastBytes(path string, max int64) string {
 		return ""
 	}
 	return string(b)
+}
+
+func (s *Server) getUIPermissions(taskID string) []uiPermission {
+	result, err := s.orchestrator.ACPSessionControl(taskID, "list_permissions", "", "")
+	if err != nil {
+		return nil
+	}
+
+	b, err := json.Marshal(result)
+	if err != nil {
+		return nil
+	}
+
+	var payload struct {
+		Permissions []uiPermission `json:"permissions"`
+	}
+	if err := json.Unmarshal(b, &payload); err != nil {
+		return nil
+	}
+
+	return payload.Permissions
 }

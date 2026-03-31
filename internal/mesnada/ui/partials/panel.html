@@ -1,5 +1,5 @@
 {{/* Right panel content for a selected task */}}
-<div class="panel-inner">
+<div class="panel-inner" hx-get="/ui/partials/panel?task_id={{.Task.ID}}" hx-trigger="every 5s" hx-swap="outerHTML">
     <div class="card-h">
         <div>
             <div style="font-weight: 650">{{.Task.ID}}</div>
@@ -8,7 +8,8 @@
         <div class="panel-meta">
             <div class="kv">
                 <span class="muted">Engine</span>
-                <b><span class="tag {{.EngineClass}}">{{.Engine}}{{if .IsACP}}<span class="acp-badge">ACP</span>{{end}}</span></b>
+                <b><span class="tag {{.EngineClass}}">{{.Engine}}{{if .IsACP}}<span
+                            class="acp-badge">ACP</span>{{end}}</span></b>
             </div>
             {{if .IsACP}}
             {{if ne .ACPMode ""}}
@@ -63,84 +64,36 @@
             </div>
 
             {{if eq .Task.Status "running"}}
-            <button
-                class="btn-ghost"
-                title="Pause"
-                aria-label="Pause"
-                @click="Alpine.store('ui').pauseTask('{{.Task.ID}}')"
-            >
-                <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
+            <button class="btn-ghost" title="Pause" aria-label="Pause"
+                @click="Alpine.store('ui').pauseTask('{{.Task.ID}}')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
                     <path d="M6 4h4v16H6z" />
                     <path d="M14 4h4v16h-4z" />
                 </svg>
             </button>
             {{end}} {{if eq .Task.Status "paused"}}
-            <button
-                class="btn-ghost"
-                title="Resume"
-                aria-label="Resume"
-                @click="Alpine.store('ui').openResume('{{.Task.ID}}')"
-            >
-                <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
+            <button class="btn-ghost" title="Resume" aria-label="Resume"
+                @click="Alpine.store('ui').openResume('{{.Task.ID}}')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
                     <path d="M8 5v14l11-7z" />
                 </svg>
             </button>
             {{end}} {{if eq .Task.Status "failed"}}
-            <button
-                class="btn-ghost"
-                title="Retry"
-                aria-label="Retry"
-                @click="Alpine.store('ui').retryTask('{{.Task.ID}}')"
-            >
-                <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
+            <button class="btn-ghost" title="Retry" aria-label="Retry"
+                @click="Alpine.store('ui').retryTask('{{.Task.ID}}')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="23 4 23 10 17 10" />
                     <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
                 </svg>
             </button>
             {{end}} {{if eq .Task.Status "pending"}}
-            <button
-                class="btn-ghost"
-                title="Replay"
-                aria-label="Replay"
-                @click="Alpine.store('ui').replayTask('{{.Task.ID}}')"
-            >
-                <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
+            <button class="btn-ghost" title="Replay" aria-label="Replay"
+                @click="Alpine.store('ui').replayTask('{{.Task.ID}}')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
                     <path d="M8 5v14l11-7z" />
                 </svg>
             </button>
@@ -148,33 +101,17 @@
         </div>
     </div>
 
-    <div
-        class="card-b"
-        style="padding: 10px 14px 10px"
-        x-data="{ expanded: false }"
-    >
-        <div
-            style="
+    <div class="card-b" style="padding: 10px 14px 10px" x-data="{ expanded: false }">
+        <div style="
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
                 cursor: pointer;
-            "
-            @click="expanded = !expanded"
-        >
+            " @click="expanded = !expanded">
             <div class="muted">Prompt</div>
-            <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                style="transition: transform 0.2s"
-                :style="expanded ? 'transform: rotate(180deg)' : ''"
-            >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s"
+                :style="expanded ? 'transform: rotate(180deg)' : ''">
                 <path d="M6 9l6 6 6-6" />
             </svg>
         </div>
@@ -183,14 +120,43 @@
         </div>
     </div>
 
-    <div class="log-wrap">
+    {{if and .IsACP (gt (len .Permissions) 0)}}
+    <div class="card-b" style="padding: 10px 14px 10px; border-top: 1px solid var(--border)">
+        <div class="muted" style="margin-bottom: 8px">
+            Pending permissions: <b style="color: var(--warn)">{{len .Permissions}}</b>
+        </div>
+        {{range .Permissions}}
+        {{$perm := .}}
         <div
-            id="log-content"
-            class="log"
-            hx-get="/ui/partials/log?task_id={{.Task.ID}}"
-            hx-trigger="load, every 5s"
-            hx-swap="innerHTML"
-        >
+            style="border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 8px; background: rgba(245, 158, 11, 0.08)">
+            <div style="font-weight: 600; margin-bottom: 6px">
+                {{if .ToolCall.Title}}{{.ToolCall.Title}}{{else}}Tool permission request{{end}}
+            </div>
+            {{if .ToolCall.Kind}}
+            <div class="muted" style="margin-bottom: 8px">Kind: {{.ToolCall.Kind}}</div>
+            {{end}}
+
+            <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                {{range $perm.Options}}
+                <button class="btn" type="button" title="Approve option {{.OptionID}}"
+                    @click="Alpine.store('ui').resolveACPPermission('{{$.Task.ID}}', '{{$perm.RequestID}}', 'approve', '{{.OptionID}}')">
+                    Approve {{if .Name}}({{.Name}}){{else}}({{.OptionID}}){{end}}
+                </button>
+                {{end}}
+                <button class="btn" type="button" title="Deny request"
+                    style="border-color: rgba(239, 68, 68, 0.55); color: var(--bad)"
+                    @click="Alpine.store('ui').resolveACPPermission('{{$.Task.ID}}', '{{$perm.RequestID}}', 'deny')">
+                    Deny
+                </button>
+            </div>
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+
+    <div class="log-wrap">
+        <div id="log-content" class="log" hx-get="/ui/partials/log?task_id={{.Task.ID}}" hx-trigger="load, every 5s"
+            hx-swap="innerHTML">
             Loading log…
         </div>
         <div class="log-fade"></div>

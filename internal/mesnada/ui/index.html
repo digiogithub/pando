@@ -1,1233 +1,1196 @@
 <!doctype html>
 <html lang="en" class="h-full">
-    <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Mesnada · Agent Team Management</title>
 
-        <link rel="icon" type="image/x-icon" href="/ui/assets/favicon.ico" />
-        <link
-            rel="icon"
-            type="image/png"
-            sizes="32x32"
-            href="/ui/assets/favicon.png"
-        />
-        <link
-            rel="icon"
-            type="image/png"
-            sizes="16x16"
-            href="/ui/assets/favicon-16.png"
-        />
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mesnada · Agent Team Management</title>
 
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-        <link
-            href="https://fonts.googleapis.com/css2?family=Space+Mono&display=swap"
-            rel="stylesheet"
-        />
+    <link rel="icon" type="image/x-icon" href="/ui/assets/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/ui/assets/favicon.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/ui/assets/favicon-16.png" />
 
-        <script
-            defer
-            src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js"
-        ></script>
-        <script
-            defer
-            src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"
-        ></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono&display=swap" rel="stylesheet" />
 
-        <style>
-            :root {
-                --bg: #0b0f17;
-                --panel: #0f1624;
-                --panel2: #0c1220;
-                --border: #1f2a3d;
-                --text: #e8eef9;
-                --muted: #98a6bf;
-                --brand: #7c5cff;
-                --good: #22c55e;
-                --warn: #f59e0b;
-                --bad: #ef4444;
-                --info: #38bdf8;
-                --mono:
-                    "Space Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
-                    Consolas, "Liberation Mono", "Courier New", monospace;
-                --radius: 14px;
-            }
+    <script defer src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
 
-            * {
-                box-sizing: border-box;
-            }
+    <style>
+        :root {
+            --bg: #0b0f17;
+            --panel: #0f1624;
+            --panel2: #0c1220;
+            --border: #1f2a3d;
+            --text: #e8eef9;
+            --muted: #98a6bf;
+            --brand: #7c5cff;
+            --good: #22c55e;
+            --warn: #f59e0b;
+            --bad: #ef4444;
+            --info: #38bdf8;
+            --mono:
+                "Space Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+                Consolas, "Liberation Mono", "Courier New", monospace;
+            --radius: 14px;
+        }
 
-            html,
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background:
+                radial-gradient(1200px 800px at 20% -20%,
+                    rgba(124, 92, 255, 0.25),
+                    transparent 60%),
+                var(--bg);
+            color: var(--text);
+            font:
+                14px/1.4 ui-sans-serif,
+                system-ui,
+                -apple-system,
+                Segoe UI,
+                Roboto,
+                Helvetica,
+                Arial,
+                "Apple Color Emoji",
+                "Segoe UI Emoji";
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .wrap {
+            max-width: none;
+            width: 100%;
+            height: 100%;
+            margin: 0 auto;
+            padding: 18px 18px 18px;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 14px;
+        }
+
+        .title {
+            font-weight: 650;
+            letter-spacing: 0.2px;
+        }
+
+        .title span {
+            color: var(--brand);
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            background: rgba(15, 22, 36, 0.7);
+            border-radius: 999px;
+            color: var(--muted);
+        }
+
+        /* Two-pane layout with draggable splitter (desktop). */
+        .layout {
+            --left-pane: 620px;
+            display: flex;
+            gap: 0;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .left-pane {
+            flex: 0 0 var(--left-pane);
+            min-width: 340px;
+            max-width: 65vw;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .right-pane {
+            flex: 1 1 auto;
+            min-width: 420px;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .splitter {
+            width: 12px;
+            cursor: col-resize;
+            display: flex;
+            align-items: stretch;
+            justify-content: center;
+            user-select: none;
+            touch-action: none;
+        }
+
+        .splitter::before {
+            content: "";
+            width: 2px;
+            border-radius: 999px;
+            background: rgba(152, 166, 191, 0.18);
+            margin: 10px 0;
+        }
+
+        .splitter:hover::before {
+            background: rgba(124, 92, 255, 0.45);
+        }
+
+        .splitter.dragging::before {
+            background: rgba(124, 92, 255, 0.75);
+        }
+
+        .card {
+            border: 1px solid var(--border);
+            background: linear-gradient(180deg,
+                    rgba(15, 22, 36, 0.92),
+                    rgba(12, 18, 32, 0.92));
+            border-radius: var(--radius);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
+
+        .card {
+            overflow: hidden;
+        }
+
+        .card-h {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .card-b {
+            padding: 10px 10px 12px;
+        }
+
+        .filters {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        select {
+            appearance: none;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 34px 8px 10px;
+            border-radius: 10px;
+            outline: none;
+        }
+
+        option {
+            background: var(--panel);
+            color: var(--text);
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .tasks {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .tasks-scroll {
+            height: 100%;
+            overflow: auto;
+            padding-right: 6px;
+        }
+
+        .tasks-scroll::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        .tasks-scroll::-webkit-scrollbar-thumb {
+            background: rgba(124, 92, 255, 0.25);
+            border: 2px solid rgba(0, 0, 0, 0);
+            background-clip: padding-box;
+            border-radius: 999px;
+        }
+
+        .task {
+            border: 1px solid var(--border);
+            background: rgba(11, 15, 23, 0.55);
+            border-radius: 12px;
+            padding: 10px 10px;
+            transition:
+                border-color 0.15s,
+                background 0.15s;
+        }
+
+        .task:hover {
+            border-color: rgba(124, 92, 255, 0.55);
+            background: rgba(12, 18, 32, 0.65);
+        }
+
+        .task.selected {
+            border-color: rgba(124, 92, 255, 0.9);
+            box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.25) inset;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 90px 190px 120px 38px;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .id {
+            font-weight: 650;
+        }
+
+        .pct {
+            font-variant-numeric: tabular-nums;
+        }
+
+        .when {
+            font-variant-numeric: tabular-nums;
+            color: var(--muted);
+        }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 99px;
+            background: var(--muted);
+            box-shadow: 0 0 0 3px rgba(152, 166, 191, 0.1);
+        }
+
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .tag {
+            font-size: 12px;
+            color: var(--muted);
+            border: 1px solid var(--border);
+            padding: 3px 7px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.12);
+        }
+
+        .tag.engine-claude {
+            background: #ff8c42;
+            color: #000;
+            /* Use black text for better contrast on light background */
+            border-color: #ff8c42;
+            font-weight: 500;
+        }
+
+        .tag.engine-copilot {
+            background: #004ff8;
+            color: white;
+            border-color: #004ff8;
+            font-weight: 500;
+        }
+
+        .tag.engine-gemini {
+            background: #fbbf24;
+            color: #78350f;
+            border-color: #fbbf24;
+            font-weight: 500;
+        }
+
+        .tag.engine-opencode {
+            background: #10b981;
+            color: white;
+            border-color: #10b981;
+            font-weight: 500;
+        }
+
+        .tag.engine-ollama-claude {
+            background: #ffb380;
+            color: #000;
+            border-color: #ffb380;
+            font-weight: 500;
+        }
+
+        .tag.engine-ollama-opencode {
+            background: #34d399;
+            color: #000;
+            border-color: #34d399;
+            font-weight: 500;
+        }
+
+        .tag.engine-mistral {
+            background: #003399;
+            color: #ffcc00;
+            border-color: #003399;
+            font-weight: 500;
+        }
+
+        .tag.engine-acp {
+            background: #9333ea;
+            color: white;
+            border-color: #9333ea;
+            font-weight: 500;
+        }
+
+        .acp-badge {
+            display: inline-block;
+            font-size: 10px;
+            color: #fff;
+            background: #9333ea;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+            margin-left: 4px;
+            vertical-align: middle;
+        }
+
+        .acp-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            background: rgba(147, 51, 234, 0.15);
+            color: #a855f7;
+            font-size: 11px;
+            font-weight: 700;
+            margin-right: 6px;
+        }
+
+        .model-badge {
+            display: inline-block;
+            font-size: 11px;
+            color: var(--muted);
+            background: rgba(0, 0, 0, 0.08);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 500;
+            margin-right: 4px;
+        }
+
+        .prompt {
+            margin-top: 8px;
+            color: var(--muted);
+        }
+
+        .btn-ghost {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.12);
+            cursor: pointer;
+            color: #fff;
+        }
+
+        .btn-ghost svg {
+            stroke: currentColor;
+        }
+
+        .btn-ghost:hover {
+            border-color: rgba(239, 68, 68, 0.75);
+        }
+
+        .panel {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* The swapped panel fragment must also be a flex column to allow log-wrap flex sizing. */
+        .panel-inner {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .panel-meta {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .kv {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            color: var(--muted);
+        }
+
+        .kv b {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        .log-wrap {
+            position: relative;
+            flex: 1;
+            min-height: 0;
+            border-top: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .log {
+            height: 100%;
+            overflow: auto;
+            scrollbar-gutter: stable both-edges;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(124, 92, 255, 0.35) rgba(0, 0, 0, 0);
+            padding: 12px 12px 14px;
+            font-family: var(--mono);
+            font-size: 12.5px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: rgba(0, 0, 0, 0.12);
+        }
+
+        .log::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        .log::-webkit-scrollbar-thumb {
+            background: rgba(124, 92, 255, 0.25);
+            border: 2px solid rgba(0, 0, 0, 0);
+            background-clip: padding-box;
+            border-radius: 999px;
+        }
+
+        .log-fade {
+            pointer-events: none;
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 46px;
+            background: linear-gradient(to bottom,
+                    transparent,
+                    rgba(0, 0, 0, 0.35));
+        }
+
+        .toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--muted);
+            user-select: none;
+        }
+
+        .toggle input {
+            accent-color: var(--brand);
+        }
+
+        .empty {
+            padding: 18px;
+            color: var(--muted);
+        }
+
+        .logo-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            padding: 40px;
+        }
+
+        .logo-placeholder img {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            opacity: 0.6;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        [x-cloak] {
+            display: none !important;
+        }
+
+        /* status colors */
+        .st-pending .dot {
+            background: var(--warn);
+            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.14);
+        }
+
+        .st-running .dot {
+            background: var(--info);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.14);
+        }
+
+        .st-paused .dot {
+            background: var(--brand);
+            box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.16);
+        }
+
+        .st-completed .dot {
+            background: var(--good);
+            box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14);
+        }
+
+        .st-failed .dot {
+            background: var(--bad);
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.14);
+        }
+
+        .st-cancelled .dot {
+            background: #a3a3a3;
+            box-shadow: 0 0 0 3px rgba(163, 163, 163, 0.14);
+        }
+
+        /* modal */
+        .modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 18px;
+        }
+
+        .modal-card {
+            width: min(560px, 100%);
+            border: 1px solid var(--border);
+            background: linear-gradient(180deg,
+                    rgba(15, 22, 36, 0.98),
+                    rgba(12, 18, 32, 0.98));
+            border-radius: 16px;
+            box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+        }
+
+        .modal-card .card-h {
+            border-bottom: 1px solid var(--border);
+        }
+
+        .modal-card .card-b {
+            padding: 14px;
+        }
+
+        .kbd {
+            font-family: var(--mono);
+            font-size: 12px;
+            border: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.18);
+            padding: 1px 6px;
+            border-radius: 8px;
+            color: var(--muted);
+        }
+
+        textarea {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.12);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 10px 12px;
+            border-radius: 12px;
+            outline: none;
+            font-family: var(--mono);
+            font-size: 12.5px;
+            line-height: 1.5;
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        textarea:focus {
+            border-color: rgba(124, 92, 255, 0.75);
+            box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.22) inset;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 9px 12px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.12);
+            color: var(--text);
+            cursor: pointer;
+        }
+
+        .btn:hover {
+            border-color: rgba(124, 92, 255, 0.55);
+        }
+
+        .btn-primary {
+            background: rgba(124, 92, 255, 0.18);
+            border-color: rgba(124, 92, 255, 0.55);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .row-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        @media (max-width: 980px) {
             body {
-                height: 100%;
-            }
-
-            body {
-                margin: 0;
-                overflow: hidden;
-                background:
-                    radial-gradient(
-                        1200px 800px at 20% -20%,
-                        rgba(124, 92, 255, 0.25),
-                        transparent 60%
-                    ),
-                    var(--bg);
-                color: var(--text);
-                font:
-                    14px/1.4 ui-sans-serif,
-                    system-ui,
-                    -apple-system,
-                    Segoe UI,
-                    Roboto,
-                    Helvetica,
-                    Arial,
-                    "Apple Color Emoji",
-                    "Segoe UI Emoji";
-            }
-
-            a {
-                color: inherit;
-                text-decoration: none;
+                overflow: auto;
             }
 
             .wrap {
-                max-width: none;
-                width: 100%;
-                height: 100%;
-                margin: 0 auto;
-                padding: 18px 18px 18px;
-                display: flex;
-                flex-direction: column;
-                min-height: 0;
+                overflow: auto;
             }
 
-            .topbar {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 16px;
-                margin-bottom: 14px;
-            }
-
-            .title {
-                font-weight: 650;
-                letter-spacing: 0.2px;
-            }
-
-            .title span {
-                color: var(--brand);
-            }
-
-            .pill {
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-                padding: 8px 10px;
-                border: 1px solid var(--border);
-                background: rgba(15, 22, 36, 0.7);
-                border-radius: 999px;
-                color: var(--muted);
-            }
-
-            /* Two-pane layout with draggable splitter (desktop). */
             .layout {
-                --left-pane: 620px;
-                display: flex;
-                gap: 0;
-                flex: 1;
-                min-height: 0;
+                flex-direction: column;
+            }
+
+            .splitter {
+                display: none;
             }
 
             .left-pane {
-                flex: 0 0 var(--left-pane);
-                min-width: 340px;
-                max-width: 65vw;
-                display: flex;
-                flex-direction: column;
-                min-height: 0;
+                flex: 0 0 auto;
+                max-width: none;
+                min-width: 0;
             }
 
             .right-pane {
                 flex: 1 1 auto;
-                min-width: 420px;
-                display: flex;
-                flex-direction: column;
-                min-height: 0;
-            }
-
-            .splitter {
-                width: 12px;
-                cursor: col-resize;
-                display: flex;
-                align-items: stretch;
-                justify-content: center;
-                user-select: none;
-                touch-action: none;
-            }
-
-            .splitter::before {
-                content: "";
-                width: 2px;
-                border-radius: 999px;
-                background: rgba(152, 166, 191, 0.18);
-                margin: 10px 0;
-            }
-
-            .splitter:hover::before {
-                background: rgba(124, 92, 255, 0.45);
-            }
-
-            .splitter.dragging::before {
-                background: rgba(124, 92, 255, 0.75);
-            }
-
-            .card {
-                border: 1px solid var(--border);
-                background: linear-gradient(
-                    180deg,
-                    rgba(15, 22, 36, 0.92),
-                    rgba(12, 18, 32, 0.92)
-                );
-                border-radius: var(--radius);
-                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-            }
-
-            .card {
-                overflow: hidden;
-            }
-
-            .card-h {
-                padding: 12px 14px;
-                border-bottom: 1px solid var(--border);
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 10px;
-            }
-
-            .card-b {
-                padding: 10px 10px 12px;
-            }
-
-            .filters {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-            }
-
-            select {
-                appearance: none;
-                background: var(--panel);
-                border: 1px solid var(--border);
-                color: var(--text);
-                padding: 8px 34px 8px 10px;
-                border-radius: 10px;
-                outline: none;
-            }
-
-            option {
-                background: var(--panel);
-                color: var(--text);
-            }
-
-            .muted {
-                color: var(--muted);
-            }
-
-            .tasks {
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-            }
-
-            .tasks-scroll {
-                height: 100%;
-                overflow: auto;
-                padding-right: 6px;
-            }
-
-            .tasks-scroll::-webkit-scrollbar {
-                width: 10px;
-            }
-
-            .tasks-scroll::-webkit-scrollbar-thumb {
-                background: rgba(124, 92, 255, 0.25);
-                border: 2px solid rgba(0, 0, 0, 0);
-                background-clip: padding-box;
-                border-radius: 999px;
-            }
-
-            .task {
-                border: 1px solid var(--border);
-                background: rgba(11, 15, 23, 0.55);
-                border-radius: 12px;
-                padding: 10px 10px;
-                transition:
-                    border-color 0.15s,
-                    background 0.15s;
-            }
-
-            .task:hover {
-                border-color: rgba(124, 92, 255, 0.55);
-                background: rgba(12, 18, 32, 0.65);
-            }
-
-            .task.selected {
-                border-color: rgba(124, 92, 255, 0.9);
-                box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.25) inset;
-            }
-
-            .row {
-                display: grid;
-                grid-template-columns: 1fr 90px 190px 120px 38px;
-                gap: 10px;
-                align-items: center;
-            }
-
-            .id {
-                font-weight: 650;
-            }
-
-            .pct {
-                font-variant-numeric: tabular-nums;
-            }
-
-            .when {
-                font-variant-numeric: tabular-nums;
-                color: var(--muted);
-            }
-
-            .status {
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-            }
-
-            .dot {
-                width: 9px;
-                height: 9px;
-                border-radius: 99px;
-                background: var(--muted);
-                box-shadow: 0 0 0 3px rgba(152, 166, 191, 0.1);
-            }
-
-            .tags {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 6px;
-                margin-top: 8px;
-            }
-
-            .tag {
-                font-size: 12px;
-                color: var(--muted);
-                border: 1px solid var(--border);
-                padding: 3px 7px;
-                border-radius: 999px;
-                background: rgba(0, 0, 0, 0.12);
-            }
-
-            .tag.engine-claude {
-                background: #ff8c42;
-                color: #000;
-                /* Use black text for better contrast on light background */
-                border-color: #ff8c42;
-                font-weight: 500;
-            }
-
-            .tag.engine-copilot {
-                background: #004ff8;
-                color: white;
-                border-color: #004ff8;
-                font-weight: 500;
-            }
-
-            .tag.engine-gemini {
-                background: #fbbf24;
-                color: #78350f;
-                border-color: #fbbf24;
-                font-weight: 500;
-            }
-
-            .tag.engine-opencode {
-                background: #10b981;
-                color: white;
-                border-color: #10b981;
-                font-weight: 500;
-            }
-
-            .tag.engine-ollama-claude {
-                background: #ffb380;
-                color: #000;
-                border-color: #ffb380;
-                font-weight: 500;
-            }
-
-            .tag.engine-ollama-opencode {
-                background: #34d399;
-                color: #000;
-                border-color: #34d399;
-                font-weight: 500;
-            }
-
-            .tag.engine-mistral {
-                background: #003399;
-                color: #ffcc00;
-                border-color: #003399;
-                font-weight: 500;
-            }
-
-            .tag.engine-acp {
-                background: #9333ea;
-                color: white;
-                border-color: #9333ea;
-                font-weight: 500;
-            }
-
-            .acp-badge {
-                display: inline-block;
-                font-size: 10px;
-                color: #fff;
-                background: #9333ea;
-                padding: 2px 6px;
-                border-radius: 4px;
-                font-weight: 600;
-                margin-left: 4px;
-                vertical-align: middle;
-            }
-
-            .acp-icon {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 18px;
-                height: 18px;
-                border-radius: 4px;
-                background: rgba(147, 51, 234, 0.15);
-                color: #a855f7;
-                font-size: 11px;
-                font-weight: 700;
-                margin-right: 6px;
-            }
-
-            .model-badge {
-                display: inline-block;
-                font-size: 11px;
-                color: var(--muted);
-                background: rgba(0, 0, 0, 0.08);
-                padding: 2px 6px;
-                border-radius: 4px;
-                font-weight: 500;
-                margin-right: 4px;
-            }
-
-            .prompt {
-                margin-top: 8px;
-                color: var(--muted);
-            }
-
-            .btn-ghost {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 32px;
-                height: 32px;
-                border-radius: 10px;
-                border: 1px solid var(--border);
-                background: rgba(0, 0, 0, 0.12);
-                cursor: pointer;
-                color: #fff;
-            }
-
-            .btn-ghost svg {
-                stroke: currentColor;
-            }
-
-            .btn-ghost:hover {
-                border-color: rgba(239, 68, 68, 0.75);
-            }
-
-            .panel {
-                height: 100%;
-                display: flex;
-                flex-direction: column;
-            }
-
-            /* The swapped panel fragment must also be a flex column to allow log-wrap flex sizing. */
-            .panel-inner {
-                height: 100%;
-                display: flex;
-                flex-direction: column;
-                min-height: 0;
-            }
-
-            .panel-meta {
-                display: flex;
-                gap: 10px;
-                flex-wrap: wrap;
-            }
-
-            .kv {
-                display: flex;
-                gap: 6px;
-                align-items: center;
-                color: var(--muted);
-            }
-
-            .kv b {
-                color: var(--text);
-                font-weight: 600;
-            }
-
-            .log-wrap {
-                position: relative;
-                flex: 1;
-                min-height: 0;
-                border-top: 1px solid var(--border);
-                overflow: hidden;
-            }
-
-            .log {
-                height: 100%;
-                overflow: auto;
-                scrollbar-gutter: stable both-edges;
-                scrollbar-width: thin;
-                scrollbar-color: rgba(124, 92, 255, 0.35) rgba(0, 0, 0, 0);
-                padding: 12px 12px 14px;
-                font-family: var(--mono);
-                font-size: 12.5px;
-                line-height: 1.5;
-                white-space: pre-wrap;
-                word-break: break-word;
-                background: rgba(0, 0, 0, 0.12);
-            }
-
-            .log::-webkit-scrollbar {
-                width: 10px;
-                height: 10px;
-            }
-
-            .log::-webkit-scrollbar-thumb {
-                background: rgba(124, 92, 255, 0.25);
-                border: 2px solid rgba(0, 0, 0, 0);
-                background-clip: padding-box;
-                border-radius: 999px;
-            }
-
-            .log-fade {
-                pointer-events: none;
-                position: absolute;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                height: 46px;
-                background: linear-gradient(
-                    to bottom,
-                    transparent,
-                    rgba(0, 0, 0, 0.35)
-                );
-            }
-
-            .toggle {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                color: var(--muted);
-                user-select: none;
-            }
-
-            .toggle input {
-                accent-color: var(--brand);
-            }
-
-            .empty {
-                padding: 18px;
-                color: var(--muted);
-            }
-
-            .logo-placeholder {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                height: 100%;
-                padding: 40px;
-            }
-
-            .logo-placeholder img {
-                max-width: 100%;
-                max-height: 100%;
-                width: auto;
-                height: auto;
-                object-fit: contain;
-                opacity: 0.6;
-                border-radius: 20px;
-                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-            }
-
-            [x-cloak] {
-                display: none !important;
-            }
-
-            /* status colors */
-            .st-pending .dot {
-                background: var(--warn);
-                box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.14);
-            }
-
-            .st-running .dot {
-                background: var(--info);
-                box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.14);
-            }
-
-            .st-paused .dot {
-                background: var(--brand);
-                box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.16);
-            }
-
-            .st-completed .dot {
-                background: var(--good);
-                box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14);
-            }
-
-            .st-failed .dot {
-                background: var(--bad);
-                box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.14);
-            }
-
-            .st-cancelled .dot {
-                background: #a3a3a3;
-                box-shadow: 0 0 0 3px rgba(163, 163, 163, 0.14);
-            }
-
-            /* modal */
-            .modal {
-                position: fixed;
-                inset: 0;
-                background: rgba(0, 0, 0, 0.55);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                padding: 18px;
-            }
-
-            .modal-card {
-                width: min(560px, 100%);
-                border: 1px solid var(--border);
-                background: linear-gradient(
-                    180deg,
-                    rgba(15, 22, 36, 0.98),
-                    rgba(12, 18, 32, 0.98)
-                );
-                border-radius: 16px;
-                box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
-            }
-
-            .modal-card .card-h {
-                border-bottom: 1px solid var(--border);
-            }
-
-            .modal-card .card-b {
-                padding: 14px;
-            }
-
-            .kbd {
-                font-family: var(--mono);
-                font-size: 12px;
-                border: 1px solid var(--border);
-                background: rgba(0, 0, 0, 0.18);
-                padding: 1px 6px;
-                border-radius: 8px;
-                color: var(--muted);
-            }
-
-            textarea {
-                width: 100%;
-                background: rgba(0, 0, 0, 0.12);
-                border: 1px solid var(--border);
-                color: var(--text);
-                padding: 10px 12px;
-                border-radius: 12px;
-                outline: none;
-                font-family: var(--mono);
-                font-size: 12.5px;
-                line-height: 1.5;
-                resize: vertical;
-                min-height: 120px;
-            }
-
-            textarea:focus {
-                border-color: rgba(124, 92, 255, 0.75);
-                box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.22) inset;
-            }
-
-            .btn {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                gap: 8px;
-                padding: 9px 12px;
-                border-radius: 12px;
-                border: 1px solid var(--border);
-                background: rgba(0, 0, 0, 0.12);
-                color: var(--text);
-                cursor: pointer;
-            }
-
-            .btn:hover {
-                border-color: rgba(124, 92, 255, 0.55);
-            }
-
-            .btn-primary {
-                background: rgba(124, 92, 255, 0.18);
-                border-color: rgba(124, 92, 255, 0.55);
-            }
-
-            .btn-primary:disabled {
-                opacity: 0.55;
-                cursor: not-allowed;
-            }
-
-            .row-actions {
-                display: flex;
-                justify-content: flex-end;
-                gap: 10px;
-                margin-top: 12px;
-            }
-
-            @media (max-width: 980px) {
-                body {
-                    overflow: auto;
-                }
-
-                .wrap {
-                    overflow: auto;
-                }
-
-                .layout {
-                    flex-direction: column;
-                }
-
-                .splitter {
-                    display: none;
-                }
-
-                .left-pane {
-                    flex: 0 0 auto;
-                    max-width: none;
-                    min-width: 0;
-                }
-
-                .right-pane {
-                    flex: 1 1 auto;
-                    min-width: 0;
-                }
-            }
-        </style>
-    </head>
-
-    <body>
-        <div class="wrap" x-data>
-            <div class="topbar">
-                <div class="title">Mesnada · Agent Team Management</div>
-                <label
-                    class="toggle"
-                    title="Auto-scroll log to bottom on updates"
-                >
-                    <input
-                        type="checkbox"
-                        x-model="$store.ui.autoscroll"
-                        checked
-                    />
-                    <span>Autoscroll</span>
-                </label>
-                <div class="pill" id="version-pill">
-                    <span class="muted">Mesnada</span>
-                    <span id="version-text">v— (—)</span>
-                </div>
-            </div>
-
-            <div class="layout" id="layout">
-                <section class="card left-pane">
-                    <div class="card-h">
-                        <div class="filters">
-                            <div class="muted">Filter:</div>
-                            <select id="status-filter" name="status">
-                                <option value="all" selected>all</option>
-                                <option value="pending">pending</option>
-                                <option value="running">running</option>
-                                <option value="completed">completed</option>
-                                <option value="failed">failed</option>
-                                <option value="cancelled">cancelled</option>
-                                <option value="paused">paused</option>
-                            </select>
-                        </div>
-                        <div class="muted">Newest → Oldest</div>
-                    </div>
-
-                    <div
-                        class="card-b"
-                        style="flex: 1; min-height: 0; overflow: hidden"
-                    >
-                        <div
-                            id="tasks-list"
-                            hx-get="/ui/partials/tasks"
-                            hx-include="#status-filter"
-                            hx-trigger="load, every 5s, change from:#status-filter, refreshTasks from:body"
-                            hx-swap="innerHTML"
-                            class="tasks tasks-scroll"
-                        >
-                            <div class="empty">Loading tasks…</div>
-                        </div>
-                    </div>
-                </section>
-
-                <div
-                    class="splitter"
-                    id="splitter"
-                    aria-label="Resize panels"
-                    title="Drag to resize"
-                ></div>
-
-                <aside class="card panel right-pane" id="right-panel">
-                    <div class="card-h">
-                        <div class="muted">Task details</div>
-                    </div>
-                    <div class="logo-placeholder">
-                        <img src="/ui/assets/logo.jpg" alt="Mesnada Logo" />
-                    </div>
-                </aside>
-            </div>
-
-            <!-- Resume modal -->
-            <div
-                x-show="$store.ui.showResumeModal"
-                x-cloak
-                class="modal"
-                @keydown.escape.window="$store.ui.closeResume()"
-            >
-                <div class="modal-card" @click.stop>
-                    <div class="card-h">
-                        <div>
-                            <b>Resume task</b>
-                            <span
-                                class="muted"
-                                x-text="$store.ui.resumeTaskId"
-                            ></span>
-                        </div>
-                        <button
-                            class="btn-ghost"
-                            @click="$store.ui.closeResume()"
-                            aria-label="Close"
-                        >
-                            <svg
-                                width="16"
-                                height="16"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                stroke-linecap="round"
-                            >
-                                <path d="M18 6 6 18" />
-                                <path d="M6 6l12 12" />
-                            </svg>
-                        </button>
-                    </div>
-                    <div class="card-b">
-                        <form @submit.prevent="$store.ui.submitResume()">
-                            <div class="muted">Resume prompt</div>
-                            <textarea
-                                id="resume-prompt"
-                                x-model="$store.ui.resumePrompt"
-                                placeholder="What should the agent do next?"
-                                :disabled="$store.ui.resumeBusy"
-                            ></textarea>
-                            <div class="row-actions">
-                                <button
-                                    type="button"
-                                    class="btn"
-                                    @click="$store.ui.closeResume()"
-                                    :disabled="$store.ui.resumeBusy"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    class="btn btn-primary"
-                                    :disabled="$store.ui.resumeBusy || !$store.ui.resumePrompt.trim()"
-                                >
-                                    Resume
-                                </button>
-                            </div>
-                            <div style="margin-top: 10px" class="muted">
-                                Tip: <span class="kbd">Esc</span> to close.
-                            </div>
-                        </form>
-                    </div>
-                </div>
+                min-width: 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap" x-data>
+        <div class="topbar">
+            <div class="title">Mesnada · Agent Team Management</div>
+            <label class="toggle" title="Auto-scroll log to bottom on updates">
+                <input type="checkbox" x-model="$store.ui.autoscroll" checked />
+                <span>Autoscroll</span>
+            </label>
+            <div class="pill" id="version-pill">
+                <span class="muted">Mesnada</span>
+                <span id="version-text">v— (—)</span>
             </div>
         </div>
 
-        <script>
-            document.addEventListener("alpine:init", () => {
-                Alpine.store("ui", {
-                    selectedTask: null,
-                    autoscroll: true,
-                    showResumeModal: false,
-                    resumeTaskId: null,
-                    resumePrompt: "",
-                    resumeBusy: false,
+        <div class="layout" id="layout">
+            <section class="card left-pane">
+                <div class="card-h">
+                    <div class="filters">
+                        <div class="muted">Filter:</div>
+                        <select id="status-filter" name="status">
+                            <option value="all" selected>all</option>
+                            <option value="pending">pending</option>
+                            <option value="running">running</option>
+                            <option value="completed">completed</option>
+                            <option value="failed">failed</option>
+                            <option value="cancelled">cancelled</option>
+                            <option value="paused">paused</option>
+                        </select>
+                    </div>
+                    <div class="muted">Newest → Oldest</div>
+                </div>
 
-                    refreshTasks() {
-                        document.body.dispatchEvent(new Event("refreshTasks"));
-                    },
+                <div class="card-b" style="flex: 1; min-height: 0; overflow: hidden">
+                    <div id="tasks-list" hx-get="/ui/partials/tasks" hx-include="#status-filter"
+                        hx-trigger="load, every 5s, change from:#status-filter, refreshTasks from:body"
+                        hx-swap="innerHTML" class="tasks tasks-scroll">
+                        <div class="empty">Loading tasks…</div>
+                    </div>
+                </div>
+            </section>
 
-                    showPanel(taskId) {
-                        if (!taskId) return;
-                        this.selectedTask = taskId;
-                        if (window.htmx) {
-                            htmx.ajax(
-                                "GET",
-                                `/ui/partials/panel?task_id=${encodeURIComponent(taskId)}`,
-                                "#right-panel",
+            <div class="splitter" id="splitter" aria-label="Resize panels" title="Drag to resize"></div>
+
+            <aside class="card panel right-pane" id="right-panel">
+                <div class="card-h">
+                    <div class="muted">Task details</div>
+                </div>
+                <div class="logo-placeholder">
+                    <img src="/ui/assets/logo.jpg" alt="Mesnada Logo" />
+                </div>
+            </aside>
+        </div>
+
+        <!-- Resume modal -->
+        <div x-show="$store.ui.showResumeModal" x-cloak class="modal" @keydown.escape.window="$store.ui.closeResume()">
+            <div class="modal-card" @click.stop>
+                <div class="card-h">
+                    <div>
+                        <b>Resume task</b>
+                        <span class="muted" x-text="$store.ui.resumeTaskId"></span>
+                    </div>
+                    <button class="btn-ghost" @click="$store.ui.closeResume()" aria-label="Close">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round">
+                            <path d="M18 6 6 18" />
+                            <path d="M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="card-b">
+                    <form @submit.prevent="$store.ui.submitResume()">
+                        <div class="muted">Resume prompt</div>
+                        <textarea id="resume-prompt" x-model="$store.ui.resumePrompt"
+                            placeholder="What should the agent do next?" :disabled="$store.ui.resumeBusy"></textarea>
+                        <div class="row-actions">
+                            <button type="button" class="btn" @click="$store.ui.closeResume()"
+                                :disabled="$store.ui.resumeBusy">
+                                Cancel
+                            </button>
+                            <button type="submit" class="btn btn-primary"
+                                :disabled="$store.ui.resumeBusy || !$store.ui.resumePrompt.trim()">
+                                Resume
+                            </button>
+                        </div>
+                        <div style="margin-top: 10px" class="muted">
+                            Tip: <span class="kbd">Esc</span> to close.
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener("alpine:init", () => {
+            Alpine.store("ui", {
+                selectedTask: null,
+                autoscroll: true,
+                showResumeModal: false,
+                resumeTaskId: null,
+                resumePrompt: "",
+                resumeBusy: false,
+
+                refreshTasks() {
+                    document.body.dispatchEvent(new Event("refreshTasks"));
+                },
+
+                showPanel(taskId) {
+                    if (!taskId) return;
+                    this.selectedTask = taskId;
+                    if (window.htmx) {
+                        htmx.ajax(
+                            "GET",
+                            `/ui/partials/panel?task_id=${encodeURIComponent(taskId)}`,
+                            "#right-panel",
+                        );
+                    }
+                },
+
+                async pauseTask(taskId) {
+                    if (!taskId) return;
+                    try {
+                        const res = await fetch(
+                            `/api/tasks/${encodeURIComponent(taskId)}/pause`,
+                            { method: "POST" },
+                        );
+                        if (!res.ok) {
+                            const txt = await res.text();
+                            throw new Error(
+                                txt || `pause failed (${res.status})`,
                             );
                         }
-                    },
+                        this.refreshTasks();
+                        this.showPanel(taskId);
+                    } catch (e) {
+                        alert(`Pause failed: ${e.message || e}`);
+                    }
+                },
 
-                    async pauseTask(taskId) {
-                        if (!taskId) return;
-                        try {
-                            const res = await fetch(
-                                `/api/tasks/${encodeURIComponent(taskId)}/pause`,
-                                { method: "POST" },
-                            );
-                            if (!res.ok) {
-                                const txt = await res.text();
-                                throw new Error(
-                                    txt || `pause failed (${res.status})`,
-                                );
-                            }
-                            this.refreshTasks();
-                            this.showPanel(taskId);
-                        } catch (e) {
-                            alert(`Pause failed: ${e.message || e}`);
-                        }
-                    },
-
-                    openResume(taskId) {
-                        this.resumeTaskId = taskId;
-                        this.resumePrompt = "";
-                        this.showResumeModal = true;
-                        setTimeout(() => {
-                            const el = document.getElementById("resume-prompt");
-                            if (el) el.focus();
-                        }, 0);
-                    },
-
-                    closeResume() {
-                        if (this.resumeBusy) return;
-                        this.showResumeModal = false;
-                        this.resumeTaskId = null;
-                        this.resumePrompt = "";
-                    },
-
-                    async retryTask(taskId) {
-                        if (!taskId) return;
-                        try {
-                            const res = await fetch(
-                                `/api/tasks/${encodeURIComponent(taskId)}/retry`,
-                                {
-                                    method: "POST",
-                                    headers: {
-                                        "Content-Type": "application/json",
-                                    },
-                                    body: JSON.stringify({
-                                        background: true,
-                                    }),
+                async resolveACPPermission(
+                    taskId,
+                    requestId,
+                    action,
+                    optionId = "",
+                ) {
+                    if (!taskId || !requestId) return;
+                    try {
+                        const res = await fetch(
+                            `/api/tasks/${encodeURIComponent(taskId)}/acp/permissions/${encodeURIComponent(requestId)}`,
+                            {
+                                method: "POST",
+                                headers: {
+                                    "Content-Type": "application/json",
                                 },
-                            );
-                            const data = await res.json().catch(() => null);
-                            if (!res.ok) {
-                                const err =
-                                    data && data.error
-                                        ? data.error
-                                        : `retry failed (${res.status})`;
-                                throw new Error(err);
-                            }
-                            const newId = data && data.task && data.task.id;
-                            this.refreshTasks();
-                            if (newId) {
-                                this.showPanel(newId);
-                            }
-                        } catch (e) {
-                            alert(`Retry failed: ${e.message || e}`);
+                                body: JSON.stringify({
+                                    action,
+                                    option_id: optionId,
+                                }),
+                            },
+                        );
+                        const data = await res.json().catch(() => null);
+                        if (!res.ok) {
+                            const err =
+                                data && data.error
+                                    ? data.error
+                                    : `permission update failed (${res.status})`;
+                            throw new Error(err);
                         }
-                    },
+                        this.refreshTasks();
+                        this.showPanel(taskId);
+                    } catch (e) {
+                        alert(
+                            `Permission action failed: ${e.message || e}`,
+                        );
+                    }
+                },
 
-                    async replayTask(taskId) {
-                        if (!taskId) return;
-                        try {
-                            const res = await fetch(
-                                `/api/tasks/${encodeURIComponent(taskId)}/retry`,
-                                {
-                                    method: "POST",
-                                    headers: {
-                                        "Content-Type": "application/json",
-                                    },
-                                    body: JSON.stringify({
-                                        background: true,
-                                    }),
+                openResume(taskId) {
+                    this.resumeTaskId = taskId;
+                    this.resumePrompt = "";
+                    this.showResumeModal = true;
+                    setTimeout(() => {
+                        const el = document.getElementById("resume-prompt");
+                        if (el) el.focus();
+                    }, 0);
+                },
+
+                closeResume() {
+                    if (this.resumeBusy) return;
+                    this.showResumeModal = false;
+                    this.resumeTaskId = null;
+                    this.resumePrompt = "";
+                },
+
+                async retryTask(taskId) {
+                    if (!taskId) return;
+                    try {
+                        const res = await fetch(
+                            `/api/tasks/${encodeURIComponent(taskId)}/retry`,
+                            {
+                                method: "POST",
+                                headers: {
+                                    "Content-Type": "application/json",
                                 },
-                            );
-                            const data = await res.json().catch(() => null);
-                            if (!res.ok) {
-                                const err =
-                                    data && data.error
-                                        ? data.error
-                                        : `replay failed (${res.status})`;
-                                throw new Error(err);
-                            }
-                            this.refreshTasks();
-                            const id =
-                                data && data.task ? data.task.id : taskId;
-                            this.showPanel(id);
-                        } catch (e) {
-                            alert(`Replay failed: ${e.message || e}`);
+                                body: JSON.stringify({
+                                    background: true,
+                                }),
+                            },
+                        );
+                        const data = await res.json().catch(() => null);
+                        if (!res.ok) {
+                            const err =
+                                data && data.error
+                                    ? data.error
+                                    : `retry failed (${res.status})`;
+                            throw new Error(err);
                         }
-                    },
+                        const newId = data && data.task && data.task.id;
+                        this.refreshTasks();
+                        if (newId) {
+                            this.showPanel(newId);
+                        }
+                    } catch (e) {
+                        alert(`Retry failed: ${e.message || e}`);
+                    }
+                },
 
-                    async submitResume() {
-                        const taskId = this.resumeTaskId;
-                        const prompt = (this.resumePrompt || "").trim();
-                        if (!taskId || !prompt) return;
-
-                        this.resumeBusy = true;
-                        try {
-                            const res = await fetch(
-                                `/api/tasks/${encodeURIComponent(taskId)}/resume`,
-                                {
-                                    method: "POST",
-                                    headers: {
-                                        "Content-Type": "application/json",
-                                    },
-                                    body: JSON.stringify({
-                                        prompt,
-                                        background: true,
-                                    }),
+                async replayTask(taskId) {
+                    if (!taskId) return;
+                    try {
+                        const res = await fetch(
+                            `/api/tasks/${encodeURIComponent(taskId)}/retry`,
+                            {
+                                method: "POST",
+                                headers: {
+                                    "Content-Type": "application/json",
                                 },
-                            );
-                            const data = await res.json().catch(() => null);
-                            if (!res.ok) {
-                                const err =
-                                    data && data.error
-                                        ? data.error
-                                        : `resume failed (${res.status})`;
-                                throw new Error(err);
-                            }
-
-                            const newId = data && data.task && data.task.id;
-                            this.resumeBusy = false;
-                            this.closeResume();
-                            this.refreshTasks();
-                            if (newId) {
-                                this.showPanel(newId);
-                            }
-                        } catch (e) {
-                            alert(`Resume failed: ${e.message || e}`);
-                        } finally {
-                            this.resumeBusy = false;
+                                body: JSON.stringify({
+                                    background: true,
+                                }),
+                            },
+                        );
+                        const data = await res.json().catch(() => null);
+                        if (!res.ok) {
+                            const err =
+                                data && data.error
+                                    ? data.error
+                                    : `replay failed (${res.status})`;
+                            throw new Error(err);
                         }
-                    },
+                        this.refreshTasks();
+                        const id =
+                            data && data.task ? data.task.id : taskId;
+                        this.showPanel(id);
+                    } catch (e) {
+                        alert(`Replay failed: ${e.message || e}`);
+                    }
+                },
+
+                async submitResume() {
+                    const taskId = this.resumeTaskId;
+                    const prompt = (this.resumePrompt || "").trim();
+                    if (!taskId || !prompt) return;
+
+                    this.resumeBusy = true;
+                    try {
+                        const res = await fetch(
+                            `/api/tasks/${encodeURIComponent(taskId)}/resume`,
+                            {
+                                method: "POST",
+                                headers: {
+                                    "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({
+                                    prompt,
+                                    background: true,
+                                }),
+                            },
+                        );
+                        const data = await res.json().catch(() => null);
+                        if (!res.ok) {
+                            const err =
+                                data && data.error
+                                    ? data.error
+                                    : `resume failed (${res.status})`;
+                            throw new Error(err);
+                        }
+
+                        const newId = data && data.task && data.task.id;
+                        this.resumeBusy = false;
+                        this.closeResume();
+                        this.refreshTasks();
+                        if (newId) {
+                            this.showPanel(newId);
+                        }
+                    } catch (e) {
+                        alert(`Resume failed: ${e.message || e}`);
+                    } finally {
+                        this.resumeBusy = false;
+                    }
+                },
+            });
+        });
+
+        // Load server version/commit for header.
+        (() => {
+            const el = document.getElementById("version-text");
+            if (!el) return;
+            fetch("/api/version")
+                .then((r) => (r.ok ? r.json() : null))
+                .then((data) => {
+                    if (!data) return;
+                    const v = (data.version || "").trim() || "unknown";
+                    const c = (data.commit || "").trim() || "unknown";
+                    el.textContent = `${v} (${c})`;
+                })
+                .catch(() => { });
+        })();
+
+        // Draggable splitter (desktop): updates --left-pane on .layout.
+        (() => {
+            const layout = document.getElementById("layout");
+            const splitter = document.getElementById("splitter");
+            if (!layout || !splitter) return;
+
+            const minLeft = 340;
+            const minRight = 420;
+
+            let startX = 0;
+            let startLeft = 0;
+            let dragging = false;
+
+            const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+            const onMove = (e) => {
+                if (!dragging) return;
+                const dx = e.clientX - startX;
+                const next = startLeft + dx;
+                const maxLeft =
+                    window.innerWidth -
+                    minRight -
+                    splitter.offsetWidth -
+                    36; /* padding-ish */
+                const w = clamp(next, minLeft, Math.max(minLeft, maxLeft));
+                layout.style.setProperty(
+                    "--left-pane",
+                    `${Math.round(w)}px`,
+                );
+            };
+
+            const stop = () => {
+                if (!dragging) return;
+                dragging = false;
+                splitter.classList.remove("dragging");
+                window.removeEventListener("pointermove", onMove);
+                window.removeEventListener("pointerup", stop);
+                window.removeEventListener("pointercancel", stop);
+            };
+
+            splitter.addEventListener("pointerdown", (e) => {
+                // Only left mouse / primary pointer.
+                if (e.button !== undefined && e.button !== 0) return;
+                dragging = true;
+                splitter.classList.add("dragging");
+                startX = e.clientX;
+                const left = layout.querySelector(".left-pane");
+                startLeft = left ? left.getBoundingClientRect().width : 520;
+                try {
+                    splitter.setPointerCapture(e.pointerId);
+                } catch (_) { }
+                window.addEventListener("pointermove", onMove);
+                window.addEventListener("pointerup", stop);
+                window.addEventListener("pointercancel", stop);
+                e.preventDefault();
+            });
+        })();
+
+        const scrollLogToBottom = () => {
+            const panel = document.getElementById("right-panel");
+            if (!panel) return;
+            const log = panel.querySelector("#log-content");
+            if (!log) return;
+            // Let the browser layout the swapped content first.
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    log.scrollTop = log.scrollHeight;
                 });
             });
+        };
 
-            // Load server version/commit for header.
-            (() => {
-                const el = document.getElementById("version-text");
-                if (!el) return;
-                fetch("/api/version")
-                    .then((r) => (r.ok ? r.json() : null))
-                    .then((data) => {
-                        if (!data) return;
-                        const v = (data.version || "").trim() || "unknown";
-                        const c = (data.commit || "").trim() || "unknown";
-                        el.textContent = `${v} (${c})`;
-                    })
-                    .catch(() => {});
-            })();
+        // Some browsers/OS combinations (overlay scrollbars + nested flex) can end up with
+        // a log element that expands to content height, hiding the scrollbar. To make it
+        // deterministic we compute the available log space and set an explicit px height.
+        const fitLogHeight = (() => {
+            let raf = 0;
+            let ro = null;
 
-            // Draggable splitter (desktop): updates --left-pane on .layout.
-            (() => {
-                const layout = document.getElementById("layout");
-                const splitter = document.getElementById("splitter");
-                if (!layout || !splitter) return;
-
-                const minLeft = 340;
-                const minRight = 420;
-
-                let startX = 0;
-                let startLeft = 0;
-                let dragging = false;
-
-                const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-
-                const onMove = (e) => {
-                    if (!dragging) return;
-                    const dx = e.clientX - startX;
-                    const next = startLeft + dx;
-                    const maxLeft =
-                        window.innerWidth -
-                        minRight -
-                        splitter.offsetWidth -
-                        36; /* padding-ish */
-                    const w = clamp(next, minLeft, Math.max(minLeft, maxLeft));
-                    layout.style.setProperty(
-                        "--left-pane",
-                        `${Math.round(w)}px`,
-                    );
-                };
-
-                const stop = () => {
-                    if (!dragging) return;
-                    dragging = false;
-                    splitter.classList.remove("dragging");
-                    window.removeEventListener("pointermove", onMove);
-                    window.removeEventListener("pointerup", stop);
-                    window.removeEventListener("pointercancel", stop);
-                };
-
-                splitter.addEventListener("pointerdown", (e) => {
-                    // Only left mouse / primary pointer.
-                    if (e.button !== undefined && e.button !== 0) return;
-                    dragging = true;
-                    splitter.classList.add("dragging");
-                    startX = e.clientX;
-                    const left = layout.querySelector(".left-pane");
-                    startLeft = left ? left.getBoundingClientRect().width : 520;
-                    try {
-                        splitter.setPointerCapture(e.pointerId);
-                    } catch (_) {}
-                    window.addEventListener("pointermove", onMove);
-                    window.addEventListener("pointerup", stop);
-                    window.addEventListener("pointercancel", stop);
-                    e.preventDefault();
-                });
-            })();
-
-            const scrollLogToBottom = () => {
+            const measureAndFix = () => {
                 const panel = document.getElementById("right-panel");
                 if (!panel) return;
+                const logWrap = panel.querySelector(".log-wrap");
                 const log = panel.querySelector("#log-content");
-                if (!log) return;
-                // Let the browser layout the swapped content first.
+                if (!logWrap || !log) return;
+
+                // 1) Start from 100% to let layout settle.
+                logWrap.style.height = "100%";
+                log.style.height = "100%";
+
+                // 2) After layout, read the exact px height and pin it.
                 requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                        log.scrollTop = log.scrollHeight;
-                    });
+                    const h = Math.floor(
+                        logWrap.getBoundingClientRect().height,
+                    );
+                    if (h > 0) {
+                        const px = `${h}px`;
+                        logWrap.style.height = px;
+                        logWrap.style.maxHeight = px;
+                        log.style.height = px;
+                    }
                 });
             };
 
-            // Some browsers/OS combinations (overlay scrollbars + nested flex) can end up with
-            // a log element that expands to content height, hiding the scrollbar. To make it
-            // deterministic we compute the available log space and set an explicit px height.
-            const fitLogHeight = (() => {
-                let raf = 0;
-                let ro = null;
+            const schedule = () => {
+                if (raf) cancelAnimationFrame(raf);
+                raf = requestAnimationFrame(() => {
+                    raf = 0;
+                    measureAndFix();
+                });
+            };
 
-                const measureAndFix = () => {
-                    const panel = document.getElementById("right-panel");
-                    if (!panel) return;
-                    const logWrap = panel.querySelector(".log-wrap");
-                    const log = panel.querySelector("#log-content");
-                    if (!logWrap || !log) return;
+            const ensureObserver = () => {
+                if (ro) return;
+                if (!("ResizeObserver" in window)) return;
+                ro = new ResizeObserver(() => schedule());
+                const panel = document.getElementById("right-panel");
+                if (panel) ro.observe(panel);
+            };
 
-                    // 1) Start from 100% to let layout settle.
-                    logWrap.style.height = "100%";
-                    log.style.height = "100%";
+            return {
+                schedule,
+                ensureObserver,
+            };
+        })();
 
-                    // 2) After layout, read the exact px height and pin it.
-                    requestAnimationFrame(() => {
-                        const h = Math.floor(
-                            logWrap.getBoundingClientRect().height,
-                        );
-                        if (h > 0) {
-                            const px = `${h}px`;
-                            logWrap.style.height = px;
-                            logWrap.style.maxHeight = px;
-                            log.style.height = px;
-                        }
-                    });
-                };
+        document.body.addEventListener("htmx:afterSwap", (e) => {
+            if (!window.Alpine) return;
+            try {
+                // When log content updates OR panel swaps, keep scroll pinned if enabled.
+                const tgt = e.target;
+                if (!tgt) return;
+                if (tgt.id === "log-content" || tgt.id === "right-panel") {
+                    fitLogHeight.ensureObserver();
+                    fitLogHeight.schedule();
+                    if (Alpine.store("ui").autoscroll) scrollLogToBottom();
+                }
+            } catch (_) { }
+        });
 
-                const schedule = () => {
-                    if (raf) cancelAnimationFrame(raf);
-                    raf = requestAnimationFrame(() => {
-                        raf = 0;
-                        measureAndFix();
-                    });
-                };
+        document.body.addEventListener("htmx:afterSettle", (e) => {
+            if (!window.Alpine) return;
+            try {
+                const tgt = e.target;
+                if (!tgt) return;
+                if (tgt.id === "log-content" || tgt.id === "right-panel") {
+                    fitLogHeight.ensureObserver();
+                    fitLogHeight.schedule();
+                    if (Alpine.store("ui").autoscroll) scrollLogToBottom();
+                }
+            } catch (_) { }
+        });
 
-                const ensureObserver = () => {
-                    if (ro) return;
-                    if (!("ResizeObserver" in window)) return;
-                    ro = new ResizeObserver(() => schedule());
-                    const panel = document.getElementById("right-panel");
-                    if (panel) ro.observe(panel);
-                };
-
-                return {
-                    schedule,
-                    ensureObserver,
-                };
-            })();
-
-            document.body.addEventListener("htmx:afterSwap", (e) => {
-                if (!window.Alpine) return;
-                try {
-                    // When log content updates OR panel swaps, keep scroll pinned if enabled.
-                    const tgt = e.target;
-                    if (!tgt) return;
-                    if (tgt.id === "log-content" || tgt.id === "right-panel") {
-                        fitLogHeight.ensureObserver();
-                        fitLogHeight.schedule();
-                        if (Alpine.store("ui").autoscroll) scrollLogToBottom();
-                    }
-                } catch (_) {}
-            });
-
-            document.body.addEventListener("htmx:afterSettle", (e) => {
-                if (!window.Alpine) return;
-                try {
-                    const tgt = e.target;
-                    if (!tgt) return;
-                    if (tgt.id === "log-content" || tgt.id === "right-panel") {
-                        fitLogHeight.ensureObserver();
-                        fitLogHeight.schedule();
-                        if (Alpine.store("ui").autoscroll) scrollLogToBottom();
-                    }
-                } catch (_) {}
-            });
-
-            window.addEventListener("resize", () => {
-                fitLogHeight.ensureObserver();
-                fitLogHeight.schedule();
-            });
-
-            // First paint (in case a task is pre-selected in the future).
+        window.addEventListener("resize", () => {
             fitLogHeight.ensureObserver();
             fitLogHeight.schedule();
+        });
 
-            // If user clicks inside the log, jump to the end (helps when opening a long log).
-            document.addEventListener("click", (e) => {
-                const panel = document.getElementById("right-panel");
-                if (!panel) return;
-                const log = panel.querySelector("#log-content");
-                if (!log) return;
-                if (log.contains(e.target)) {
-                    scrollLogToBottom();
-                }
-            });
-        </script>
-    </body>
+        // First paint (in case a task is pre-selected in the future).
+        fitLogHeight.ensureObserver();
+        fitLogHeight.schedule();
+
+        // If user clicks inside the log, jump to the end (helps when opening a long log).
+        document.addEventListener("click", (e) => {
+            const panel = document.getElementById("right-panel");
+            if (!panel) return;
+            const log = panel.querySelector("#log-content");
+            if (!log) return;
+            if (log.contains(e.target)) {
+                scrollLogToBottom();
+            }
+        });
+    </script>
+</body>
+
 </html>
