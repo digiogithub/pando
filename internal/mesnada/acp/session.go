@@ -45,6 +45,27 @@ type ACPServerSession struct {
 	mu sync.Mutex
 }
 
+// SetAgentConnection updates the agent-side connection used to stream updates.
+func (s *ACPServerSession) SetAgentConnection(conn *acpsdk.AgentSideConnection) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.agentConn = conn
+}
+
+// SetWorkDir updates the working directory associated with this session.
+func (s *ACPServerSession) SetWorkDir(workDir string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.WorkDir = workDir
+}
+
+// HasAgentConnection reports whether the session has an attached agent connection.
+func (s *ACPServerSession) HasAgentConnection() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.agentConn != nil
+}
+
 // NewACPServerSession creates a new ACP server session.
 func NewACPServerSession(
 	sessionID acpsdk.SessionId,
