@@ -915,6 +915,44 @@
                         }
                     },
 
+                    async resolveACPPermission(
+                        taskId,
+                        requestId,
+                        action,
+                        optionId = "",
+                    ) {
+                        if (!taskId || !requestId) return;
+                        try {
+                            const res = await fetch(
+                                `/api/tasks/${encodeURIComponent(taskId)}/acp/permissions/${encodeURIComponent(requestId)}`,
+                                {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                    },
+                                    body: JSON.stringify({
+                                        action,
+                                        option_id: optionId,
+                                    }),
+                                },
+                            );
+                            const data = await res.json().catch(() => null);
+                            if (!res.ok) {
+                                const err =
+                                    data && data.error
+                                        ? data.error
+                                        : `permission update failed (${res.status})`;
+                                throw new Error(err);
+                            }
+                            this.refreshTasks();
+                            this.showPanel(taskId);
+                        } catch (e) {
+                            alert(
+                                `Permission action failed: ${e.message || e}`,
+                            );
+                        }
+                    },
+
                     openResume(taskId) {
                         this.resumeTaskId = taskId;
                         this.resumePrompt = "";

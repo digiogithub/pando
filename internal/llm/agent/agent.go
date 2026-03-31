@@ -733,7 +733,12 @@ func (a *agent) processEvent(
 		return event.Error
 	case provider.EventComplete:
 		logging.Debug("Event: Complete", "sessionID", sessionID, "finishReason", event.Response.FinishReason, "toolCallCount", len(event.Response.ToolCalls), "inputTokens", event.Response.Usage.InputTokens, "outputTokens", event.Response.Usage.OutputTokens)
-		assistantMsg.SetToolCalls(event.Response.ToolCalls)
+		resolvedToolCalls := resolveToolCallsOnComplete(
+			assistantMsg.ToolCalls(),
+			event.Response.ToolCalls,
+			event.Response.FinishReason,
+		)
+		assistantMsg.SetToolCalls(resolvedToolCalls)
 		assistantMsg.AddFinish(event.Response.FinishReason)
 		if err := a.messages.Update(ctx, *assistantMsg); err != nil {
 			return fmt.Errorf("failed to update message: %w", err)
@@ -752,6 +757,18 @@ func (a *agent) processEvent(
 	}
 
 	return nil
+}
+
+func resolveToolCallsOnComplete(existingToolCalls, responseToolCalls []message.ToolCall, finishReason message.FinishReason) []message.ToolCall {
+	if len(responseToolCalls) > 0 {
+		return responseToolCalls
+	}
+
+	if finishReason == message.FinishReasonToolUse && len(existingToolCalls) > 0 {
+		return existingToolCalls
+	}
+
+	return responseToolCalls
 }
 
 func (a *agent) TrackUsage(ctx context.Context, sessionID string, model models.Model, usage provider.TokenUsage) error {
