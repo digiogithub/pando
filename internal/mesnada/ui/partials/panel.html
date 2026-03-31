@@ -1,5 +1,10 @@
 {{/* Right panel content for a selected task */}}
-<div class="panel-inner">
+<div
+    class="panel-inner"
+    hx-get="/ui/partials/panel?task_id={{.Task.ID}}"
+    hx-trigger="every 5s"
+    hx-swap="outerHTML"
+>
     <div class="card-h">
         <div>
             <div style="font-weight: 650">{{.Task.ID}}</div>
@@ -182,6 +187,46 @@
             {{.Prompt}}
         </div>
     </div>
+
+    {{if and .IsACP (gt (len .Permissions) 0)}}
+    <div class="card-b" style="padding: 10px 14px 10px; border-top: 1px solid var(--border)">
+        <div class="muted" style="margin-bottom: 8px">
+            Pending permissions: <b style="color: var(--warn)">{{len .Permissions}}</b>
+        </div>
+        {{range .Permissions}}
+        <div style="border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 8px; background: rgba(245, 158, 11, 0.08)">
+            <div style="font-weight: 600; margin-bottom: 6px">
+                {{if .ToolCall.Title}}{{.ToolCall.Title}}{{else}}Tool permission request{{end}}
+            </div>
+            {{if .ToolCall.Kind}}
+            <div class="muted" style="margin-bottom: 8px">Kind: {{.ToolCall.Kind}}</div>
+            {{end}}
+
+            <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                {{range .Options}}
+                <button
+                    class="btn"
+                    type="button"
+                    title="Approve option {{.OptionID}}"
+                    @click="Alpine.store('ui').resolveACPPermission('{{$.Task.ID}}', '{{$.Task.ID}}', '{{$.RequestID}}', 'approve', '{{.OptionID}}')"
+                >
+                    Approve {{if .Name}}({{.Name}}){{else}}({{.OptionID}}){{end}}
+                </button>
+                {{end}}
+                <button
+                    class="btn"
+                    type="button"
+                    title="Deny request"
+                    style="border-color: rgba(239, 68, 68, 0.55); color: var(--bad)"
+                    @click="Alpine.store('ui').resolveACPPermission('{{$.Task.ID}}', '{{$.Task.ID}}', '{{$.RequestID}}', 'deny')"
+                >
+                    Deny
+                </button>
+            </div>
+        </div>
+        {{end}}
+    </div>
+    {{end}}
 
     <div class="log-wrap">
         <div
