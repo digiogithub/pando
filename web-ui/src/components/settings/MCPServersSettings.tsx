@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMCPServersStore } from '@/stores/mcpServersStore'
-import type { MCPServerConfig, MCPType } from '@/types'
+import type { MCPServerConfig, MCPToolInfo, MCPType } from '@/types'
 import TagListEditor from '@/components/shared/TagListEditor'
 import KeyValueEditor, { envToKV, kvToEnv, type KVPair } from '@/components/shared/KeyValueEditor'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
