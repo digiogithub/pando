@@ -674,19 +674,9 @@ func availableModes() []acpsdk.SessionMode {
 	descPtr := func(s string) *string { return &s }
 	return []acpsdk.SessionMode{
 		{
-			Id:          "code",
-			Name:        "Code",
+			Id:          "agent",
+			Name:        "Agent",
 			Description: descPtr("Full agent with all tools enabled"),
-		},
-		{
-			Id:          "ask",
-			Name:        "Ask",
-			Description: descPtr("Chat only, no tool execution"),
-		},
-		{
-			Id:          "architect",
-			Name:        "Architect",
-			Description: descPtr("Planning and design assistance"),
 		},
 	}
 }
@@ -694,7 +684,7 @@ func availableModes() []acpsdk.SessionMode {
 // buildSessionModeState constructs the SessionModeState for ACP responses.
 func buildSessionModeState(currentModeID string) *acpsdk.SessionModeState {
 	if currentModeID == "" {
-		currentModeID = "code"
+		currentModeID = "agent"
 	}
 	return &acpsdk.SessionModeState{
 		AvailableModes: availableModes(),
