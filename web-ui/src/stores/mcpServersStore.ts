@@ -63,6 +63,6 @@ export const useMCPServersStore = create<MCPServersStore>((set, get) => ({
   },
 
   reloadServer: async (name: string) => {
-    await api.post(`/api/v1/mcp-servers/${encodeURIComponent(name)}/reload`, {})
+    await api.post(`/api/v1/config/mcp-servers/${encodeURIComponent(name)}/reload`, {})
   },
 }))
