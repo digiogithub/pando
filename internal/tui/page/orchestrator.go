@@ -39,6 +39,8 @@ type orchestratorPage struct {
 
 	showSpawnDialog bool
 	spawnInput      textinput.Model
+	spawnEngine     textinput.Model
+	spawnACPAgent   textinput.Model
 }
 
 type taskRow struct {
@@ -115,12 +117,22 @@ func NewOrchestratorPage(app *app.App) tea.Model {
 
 	input := textinput.New()
 	input.Placeholder = "Describe the task to spawn..."
-	input.Prompt = "> "
+	input.Prompt = "prompt> "
+
+	engineInput := textinput.New()
+	engineInput.Placeholder = "copilot | claude | gemini | opencode | ollama-claude | ollama-opencode | mistral | acp"
+	engineInput.Prompt = "engine> "
+
+	agentInput := textinput.New()
+	agentInput.Placeholder = "ACP agent name (e.g. pando). Used only when engine=acp"
+	agentInput.Prompt = "acp_agent> "
 
 	return &orchestratorPage{
-		app:        app,
-		table:      tableModel,
-		spawnInput: input,
+		app:          app,
+		table:        tableModel,
+		spawnInput:   input,
+		spawnEngine:  engineInput,
+		spawnACPAgent: agentInput,
 	}
 }
 
@@ -174,19 +186,30 @@ func (p *orchestratorPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, orchestratorKeys.Close):
 				p.showSpawnDialog = false
 				p.spawnInput.Blur()
+				p.spawnEngine.Blur()
+				p.spawnACPAgent.Blur()
 				return p, nil
 			case key.Matches(msg, orchestratorKeys.Enter):
 				prompt := strings.TrimSpace(p.spawnInput.Value())
 				if prompt == "" {
 					return p, util.ReportWarn("Task prompt cannot be empty")
 				}
+				engine := strings.TrimSpace(p.spawnEngine.Value())
+				acpAgent := strings.TrimSpace(p.spawnACPAgent.Value())
+				if strings.EqualFold(engine, "acp") && acpAgent == "" {
+					return p, util.ReportWarn("acp_agent is required when engine is acp")
+				}
 				p.showSpawnDialog = false
 				p.spawnInput.Blur()
-				return p, p.spawnTaskCmd(prompt)
+				p.spawnEngine.Blur()
+				p.spawnACPAgent.Blur()
+				return p, p.spawnTaskCmd(prompt, engine, acpAgent)
 			}
 
 			var cmd tea.Cmd
 			p.spawnInput, cmd = p.spawnInput.Update(msg)
+			p.spawnEngine, _ = p.spawnEngine.Update(msg)
+			p.spawnACPAgent, _ = p.spawnACPAgent.Update(msg)
 			return p, cmd
 		}
 
@@ -203,6 +226,8 @@ func (p *orchestratorPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			p.showSpawnDialog = true
 			p.spawnInput.SetValue("")
+			p.spawnEngine.SetValue("")
+			p.spawnACPAgent.SetValue("")
 			p.spawnInput.Focus()
 			return p, textinput.Blink
 		case key.Matches(msg, orchestratorKeys.Cancel):
@@ -341,13 +366,20 @@ func (p *orchestratorPage) refreshCmd() tea.Cmd {
 	}
 }
 
-func (p *orchestratorPage) spawnTaskCmd(prompt string) tea.Cmd {
+func (p *orchestratorPage) spawnTaskCmd(prompt, engine, acpAgent string) tea.Cmd {
 	return func() tea.Msg {
-		task, err := p.app.MesnadaOrchestrator.Spawn(context.Background(), mesnadaModels.SpawnRequest{
+		spawnReq := mesnadaModels.SpawnRequest{
 			Prompt:     prompt,
 			WorkDir:    ".",
 			Background: true,
-		})
+		}
+		if engine != "" {
+			spawnReq.Engine = mesnadaModels.Engine(engine)
+		}
+		if acpAgent != "" {
+			spawnReq.ACPAgent = acpAgent
+		}
+		task, err := p.app.MesnadaOrchestrator.Spawn(context.Background(), spawnReq)
 		if err != nil {
 			return orchestratorActionDoneMsg{err: err}
 		}
@@ -538,12 +570,22 @@ func (p *orchestratorPage) renderSpawnDialog() string {
 		Width(maxWidth).
 		Render(p.spawnInput.View())
 
+	engine := lipgloss.NewStyle().
+		Foreground(t.Text()).
+		Width(maxWidth).
+		Render(p.spawnEngine.View())
+
+	acpAgent := lipgloss.NewStyle().
+		Foreground(t.Text()).
+		Width(maxWidth).
+		Render(p.spawnACPAgent.View())
+
 	footer := lipgloss.NewStyle().
 		Foreground(t.TextMuted()).
 		Width(maxWidth).
-		Render("Enter confirm • Esc cancel")
+		Render("Use engine=acp + acp_agent=pando for Pando subagent via ACP • Enter confirm • Esc cancel")
 
-	content := lipgloss.JoinVertical(lipgloss.Left, title, "", description, "", input, "", footer)
+	content := lipgloss.JoinVertical(lipgloss.Left, title, "", description, "", input, "", engine, "", acpAgent, "", footer)
 	return baseStyle.Padding(1, 2).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(t.BorderFocused()).
