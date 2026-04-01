@@ -174,6 +174,15 @@ DefaultScope = ''
 Theme = ''
 
 # =============================================================================
+# Permissions
+# Controls whether the assistant should ask before applying tool-based file edits.
+# =============================================================================
+[Permissions]
+# true  = apply file/tool changes directly without per-action confirmation
+# false = require confirmation before applying file/tool changes (default)
+AutoApproveTools = false
+
+# =============================================================================
 # Mesnada — Multi-Agent Orchestrator
 # Mesnada lets you spawn and coordinate multiple AI agents in parallel.
 # =============================================================================
