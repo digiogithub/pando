@@ -126,6 +126,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			app.Remembrances = remembrances
 			if remembrances != nil {
 				logging.Info("Remembrances service initialized")
+				app.initRemembrancesKBSync(ctx, remembrances, &cfg.Remembrances)
 			}
 		}
 	}
