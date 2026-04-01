@@ -262,13 +262,27 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		}
 	}
 
+	// For ACP engines, ACPAgent is the agent identifier stored in Model.
+	// If both req.Model and req.ACPAgent are set, req.Model takes precedence.
+	// EnginePando is a shorthand for engine=acp with acp_agent=pando.
+	model := req.Model
+	acpAgent := req.ACPAgent
+	if engine == models.EnginePando {
+		engine = models.EngineACP
+		if model == "" {
+			model = "pando"
+		}
+	} else if acpAgent != "" && model == "" {
+		model = acpAgent
+	}
+
 	task := &models.Task{
 		ID:           generateID(),
 		Prompt:       prompt,
 		WorkDir:      workDir,
 		Status:       models.TaskStatusPending,
 		Engine:       engine,
-		Model:        req.Model,
+		Model:        model,
 		Dependencies: req.Dependencies,
 		Tags:         req.Tags,
 		Priority:     req.Priority,
