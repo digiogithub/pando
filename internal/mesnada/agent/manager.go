@@ -71,7 +71,7 @@ func (m *Manager) Spawn(ctx context.Context, task *models.Task) error {
 		return m.ollamaOpenCodeSpawner.Spawn(ctx, task)
 	case models.EngineMistral:
 		return m.mistralSpawner.Spawn(ctx, task)
-	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom:
+	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom, models.EnginePando:
 		if m.acpSpawner == nil {
 			return fmt.Errorf("ACP engine requested but ACP is not enabled in configuration")
 		}
@@ -107,7 +107,7 @@ func (m *Manager) Cancel(taskID string) error {
 		return m.ollamaOpenCodeSpawner.Cancel(taskID)
 	case models.EngineMistral:
 		return m.mistralSpawner.Cancel(taskID)
-	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom:
+	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom, models.EnginePando:
 		if m.acpSpawner != nil {
 			return m.acpSpawner.Cancel(taskID)
 		}
@@ -138,7 +138,7 @@ func (m *Manager) Pause(taskID string) error {
 		return m.ollamaOpenCodeSpawner.Cancel(taskID)
 	case models.EngineMistral:
 		return m.mistralSpawner.Pause(taskID)
-	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom:
+	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom, models.EnginePando:
 		if m.acpSpawner != nil {
 			return m.acpSpawner.Pause(taskID)
 		}
