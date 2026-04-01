@@ -136,6 +136,21 @@ func (t *HTTPTransport) HandleRequest(w http.ResponseWriter, r *http.Request) {
 	t.requestsProcessed++
 	t.statsMu.Unlock()
 
+	// Handle "session/list" inline: the Go SDK v0.6.3 does not implement this
+	// method, so we intercept it here before forwarding to the SDK pipe.
+	if method, _ := jsonrpcReq["method"].(string); method == "session/list" {
+		if pandoAgent, ok := t.agent.(*PandoACPAgent); ok {
+			var reqMsg jsonRPCMsg
+			if err := json.Unmarshal(body, &reqMsg); err == nil {
+				t.logger.Printf("[ACP HTTP] Intercepting session/list")
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("ACP-Session-Id", sessionID)
+				handleSessionListRPC(reqMsg, w, pandoAgent, t.logger)
+				return
+			}
+		}
+	}
+
 	// Write request to the pipe (this goes to the ACP SDK connection)
 	session.mu.Lock()
 	if session.closed {

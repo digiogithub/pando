@@ -562,14 +562,15 @@ func TestPandoACPAgent_Cancel_Unknown(t *testing.T) {
 	}
 }
 
-// TestPandoACPAgent_SessionService_ListSessions verifies the session service adapter.
-func TestPandoACPAgent_SessionService_ListSessions(t *testing.T) {
+// TestPandoACPAgent_ListSessions verifies historical session listing from the service.
+func TestPandoACPAgent_ListSessions(t *testing.T) {
 	sessions := newMockSessionService()
 	sessions.sessions["s1"] = ACPSessionInfo{ID: "s1", Title: "First"}
 	sessions.sessions["s2"] = ACPSessionInfo{ID: "s2", Title: "Second"}
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), &mockAgentService{}, sessions, nil)
 
 	ctx := context.Background()
-	list, err := sessions.ListSessions(ctx)
+	list, err := agent.ListSessions(ctx)
 	if err != nil {
 		t.Fatalf("ListSessions failed: %v", err)
 	}
