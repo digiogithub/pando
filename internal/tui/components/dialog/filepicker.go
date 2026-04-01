@@ -373,13 +373,17 @@ func (f *filepickerCmp) BindingKeys() []key.Binding {
 }
 
 func NewFilepickerCmp(app *app.App) FilepickerCmp {
-	homepath, err := os.UserHomeDir()
-	if err != nil {
-		logging.Error("error loading user files")
-		return nil
+	startPath := config.WorkingDirectory()
+	if startPath == "" {
+		homepath, err := os.UserHomeDir()
+		if err != nil {
+			logging.Error("error loading user files")
+			return nil
+		}
+		startPath = homepath
 	}
-	baseDir := DirNode{parent: nil, directory: homepath}
-	dirs := readDir(homepath, false)
+	baseDir := DirNode{parent: nil, directory: startPath}
+	dirs := readDir(startPath, false)
 	viewport := viewport.New(0, 0)
 	currentDirectory := textinput.New()
 	currentDirectory.CharLimit = 200
@@ -417,7 +421,7 @@ func (f *filepickerCmp) getCurrentFileBelowCursor() {
 }
 
 func readDir(path string, showHidden bool) []os.DirEntry {
-	logging.Info(fmt.Sprintf("Reading directory: %s", path))
+	logging.Debug(fmt.Sprintf("Reading directory: %s", path))
 
 	entriesChan := make(chan []os.DirEntry, 1)
 	errChan := make(chan error, 1)

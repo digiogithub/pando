@@ -34,6 +34,9 @@ const DEFAULT_MESNADA: MesnadaConfig = {
 
 const DEFAULT_REMEMBRANCES: RemembrancesConfig = {
   enabled: false,
+  kb_path: '',
+  kb_watch: true,
+  kb_auto_import: true,
   document_embedding_provider: '',
   document_embedding_model: '',
   document_embedding_base_url: '',
