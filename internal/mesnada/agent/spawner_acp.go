@@ -22,18 +22,31 @@ import (
 	"github.com/digiogithub/pando/pkg/mesnada/models"
 )
 
+// followUpRequest carries a follow-up prompt message and a channel for the result.
+type followUpRequest struct {
+	message  string
+	resultCh chan followUpResult
+}
+
+// followUpResult holds the outcome of a follow-up prompt call.
+type followUpResult struct {
+	stopReason acpsdk.StopReason
+	err        error
+}
+
 // ACPProcess represents a running ACP agent process.
 type ACPProcess struct {
-	task      *models.Task
-	cmd       *exec.Cmd
-	conn      *acpsdk.ClientSideConnection
-	sessionID acpsdk.SessionId
-	client    *acp.MesnadaACPClient
-	output    *strings.Builder
-	logFile   *os.File
-	cancel    context.CancelFunc
-	done      chan struct{}
-	mu        sync.Mutex
+	task       *models.Task
+	cmd        *exec.Cmd
+	conn       *acpsdk.ClientSideConnection
+	sessionID  acpsdk.SessionId
+	client     *acp.MesnadaACPClient
+	output     *strings.Builder
+	logFile    *os.File
+	cancel     context.CancelFunc
+	done       chan struct{}
+	mu         sync.Mutex
+	followUpCh chan followUpRequest // receives follow-up prompts after initial prompt completes
 }
 
 // ACPSpawner manages ACP agent process spawning.
@@ -177,14 +190,15 @@ func (s *ACPSpawner) Spawn(ctx context.Context, task *models.Task) error {
 
 	// Create process record
 	proc := &ACPProcess{
-		task:    task,
-		cmd:     cmd,
-		conn:    conn,
-		client:  client,
-		output:  output,
-		logFile: logFile,
-		cancel:  cancel,
-		done:    make(chan struct{}),
+		task:       task,
+		cmd:        cmd,
+		conn:       conn,
+		client:     client,
+		output:     output,
+		logFile:    logFile,
+		cancel:     cancel,
+		done:       make(chan struct{}),
+		followUpCh: make(chan followUpRequest, 1),
 	}
 
 	s.mu.Lock()
@@ -297,47 +311,91 @@ func (s *ACPSpawner) runACPSession(ctx context.Context, proc *ACPProcess, agentC
 	proc.task.ACPSessionID = string(sessionResp.SessionId)
 	fmt.Fprintf(proc.logFile, "[ACP] Session created: %s\n", proc.sessionID)
 
-	// Step 3: Prompt - send the task prompt (prepend task_id like other spawners)
+	// Step 3: Send the initial prompt (prepend task_id like other spawners).
 	promptWithTaskID := fmt.Sprintf("You are the task_id: %s\n\n%s", proc.task.ID, proc.task.Prompt)
-	fmt.Fprintf(proc.logFile, "[ACP] Sending prompt...\n")
+	fmt.Fprintf(proc.logFile, "[ACP] Sending initial prompt...\n")
 
-	promptResp, err := proc.conn.Prompt(ctx, acpsdk.PromptRequest{
-		SessionId: proc.sessionID,
-		Prompt: []acpsdk.ContentBlock{
-			acpsdk.TextBlock(promptWithTaskID),
-		},
-	})
-
+	lastStopReason, err := s.sendPrompt(ctx, proc, promptWithTaskID)
 	if err != nil {
-		fmt.Fprintf(proc.logFile, "[ACP] Prompt failed: %v\n", err)
+		fmt.Fprintf(proc.logFile, "[ACP] Initial prompt failed: %v\n", err)
+		proc.mu.Lock()
 		proc.task.Status = models.TaskStatusFailed
 		proc.task.Error = fmt.Sprintf("ACP Prompt failed: %v", err)
+		proc.mu.Unlock()
+		return
+	}
+	fmt.Fprintf(proc.logFile, "[ACP] Initial prompt stop reason: %s\n", lastStopReason)
+
+	if lastStopReason == acpsdk.StopReasonCancelled {
+		proc.mu.Lock()
+		proc.task.Status = models.TaskStatusCancelled
+		proc.mu.Unlock()
 		return
 	}
 
-	fmt.Fprintf(proc.logFile, "[ACP] Prompt completed with stop reason: %s\n", promptResp.StopReason)
+	// Step 4: Follow-up loop — wait for additional prompts until context is
+	// cancelled or the session ends.
+	for {
+		select {
+		case <-ctx.Done():
+			proc.mu.Lock()
+			if proc.task.Status != models.TaskStatusFailed {
+				proc.task.Status = models.TaskStatusCancelled
+			}
+			proc.mu.Unlock()
+			return
+		case req, ok := <-proc.followUpCh:
+			if !ok {
+				// Channel closed — no more follow-ups, fall through to set final status.
+				goto setFinalStatus
+			}
+			fmt.Fprintf(proc.logFile, "[ACP] Sending follow-up prompt...\n")
+			stopReason, err := s.sendPrompt(ctx, proc, req.message)
+			if err != nil {
+				fmt.Fprintf(proc.logFile, "[ACP] Follow-up prompt failed: %v\n", err)
+				req.resultCh <- followUpResult{err: err}
+				return
+			}
+			fmt.Fprintf(proc.logFile, "[ACP] Follow-up stop reason: %s\n", stopReason)
+			lastStopReason = stopReason
+			req.resultCh <- followUpResult{stopReason: stopReason}
+			if stopReason == acpsdk.StopReasonCancelled {
+				proc.mu.Lock()
+				proc.task.Status = models.TaskStatusCancelled
+				proc.mu.Unlock()
+				return
+			}
+		}
+	}
 
-	// Map stop reason to task status
+setFinalStatus:
 	proc.mu.Lock()
-	switch promptResp.StopReason {
+	switch lastStopReason {
 	case acpsdk.StopReasonEndTurn:
-		// Normal completion
 		if proc.task.Status != models.TaskStatusFailed {
 			proc.task.Status = models.TaskStatusCompleted
 		}
 	case acpsdk.StopReasonCancelled:
 		proc.task.Status = models.TaskStatusCancelled
 	default:
-		// Unknown stop reason - log but treat as completed if no error
-		fmt.Fprintf(proc.logFile, "[ACP] Stop reason: %s\n", promptResp.StopReason)
+		fmt.Fprintf(proc.logFile, "[ACP] Unrecognised stop reason: %s\n", lastStopReason)
 		if proc.task.Status != models.TaskStatusFailed {
 			proc.task.Status = models.TaskStatusCompleted
 		}
 	}
 	proc.mu.Unlock()
+}
 
-	// The agent will send updates via SessionUpdate notifications (handled in the client callback)
-	// The Prompt call blocks until the agent completes the turn
+// sendPrompt sends a single prompt to the ACP agent and returns the stop reason.
+func (s *ACPSpawner) sendPrompt(ctx context.Context, proc *ACPProcess, text string) (acpsdk.StopReason, error) {
+	resp, err := proc.conn.Prompt(ctx, acpsdk.PromptRequest{
+		SessionId: proc.sessionID,
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock(text)},
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.StopReason, nil
 }
 
 // waitForCompletion waits for the process to complete and updates task status.
@@ -593,9 +651,34 @@ func (s *ACPSpawner) SessionControl(taskID, action, message, mode string) (inter
 		return status, nil
 
 	case "follow_up":
-		// Send additional message to session
-		// TODO: Implement in Phase 6 - requires ACP SDK enhancement
-		return nil, fmt.Errorf("follow_up action not yet implemented (Phase 6)")
+		if message == "" {
+			return nil, fmt.Errorf("message is required for follow_up action")
+		}
+		resultCh := make(chan followUpResult, 1)
+		req := followUpRequest{message: message, resultCh: resultCh}
+		// Send the request to the running goroutine; time out if the initial prompt
+		// is still executing or if the session has already finished.
+		select {
+		case proc.followUpCh <- req:
+		case <-proc.done:
+			return nil, fmt.Errorf("follow_up: session has already completed")
+		case <-time.After(30 * time.Second):
+			return nil, fmt.Errorf("follow_up: session not ready to accept messages (initial prompt still running?)")
+		}
+		// Wait for the agent to finish processing the follow-up.
+		select {
+		case result := <-resultCh:
+			if result.err != nil {
+				return nil, fmt.Errorf("follow_up prompt failed: %w", result.err)
+			}
+			return map[string]interface{}{
+				"task_id":     taskID,
+				"stop_reason": string(result.stopReason),
+				"output":      proc.client.GetOutput(),
+			}, nil
+		case <-proc.done:
+			return nil, fmt.Errorf("follow_up: session ended before response arrived")
+		}
 
 	case "set_mode":
 		// Change session mode
