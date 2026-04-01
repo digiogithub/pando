@@ -23,3 +23,12 @@ type SearchResult struct {
 	Score        float64
 	Rank         int
 }
+
+// SyncStats contains counters from a filesystem-to-KB synchronization run.
+type SyncStats struct {
+	Scanned   int `json:"scanned"`
+	Added     int `json:"added"`
+	Updated   int `json:"updated"`
+	Unchanged int `json:"unchanged"`
+	Deleted   int `json:"deleted"`
+}
