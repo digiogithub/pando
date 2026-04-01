@@ -139,6 +139,40 @@ engines:
       - id: "local"
         description: "Local model: connects to a local OpenAI-compatible server at localhost:8080 for fully offline/private deployments"
 
+# ACP (Agent Client Protocol) configuration
+# Enables spawning external ACP-compatible agents as subagents via the orchestrator.
+# Use engine=pando (or engine=acp + acp_agent=pando) to launch Pando as a subagent.
+acp:
+  enabled: false
+  # Default ACP agent to use when engine=acp with no explicit acp_agent.
+  default_agent: "pando"
+  # Auto-approve permission requests from subagents (set false for interactive mode).
+  auto_permission: false
+
+  # ACP agent definitions. Each key is the agent name used in engine=acp + acp_agent=<name>
+  # or directly via engine=<name> (e.g. engine=pando).
+  agents:
+    # Pando subagent: launches another Pando instance communicating via ACP stdio.
+    pando:
+      name: pando
+      title: "Pando Subagent"
+      command: "pando"
+      args: ["--acp"]
+      capabilities:
+        terminals: true
+        file_access: true
+        permissions: true
+    # Claude Code subagent via ACP.
+    claude-code:
+      name: claude-code
+      title: "Claude Code Subagent"
+      command: "claude"
+      args: ["--acp"]
+      capabilities:
+        terminals: true
+        file_access: true
+        permissions: true
+
 # Server configuration
 server:
   host: "127.0.0.1"

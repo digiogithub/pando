@@ -120,11 +120,11 @@ func NewOrchestratorPage(app *app.App) tea.Model {
 	input.Prompt = "prompt> "
 
 	engineInput := textinput.New()
-	engineInput.Placeholder = "copilot | claude | gemini | opencode | ollama-claude | ollama-opencode | mistral | acp"
+	engineInput.Placeholder = "copilot | claude | gemini | opencode | mistral | acp | pando"
 	engineInput.Prompt = "engine> "
 
 	agentInput := textinput.New()
-	agentInput.Placeholder = "ACP agent name (e.g. pando). Used only when engine=acp"
+	agentInput.Placeholder = "ACP agent name (e.g. pando). Used only when engine=acp; omit if engine=pando"
 	agentInput.Prompt = "acp_agent> "
 
 	return &orchestratorPage{
@@ -197,7 +197,7 @@ func (p *orchestratorPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				engine := strings.TrimSpace(p.spawnEngine.Value())
 				acpAgent := strings.TrimSpace(p.spawnACPAgent.Value())
 				if strings.EqualFold(engine, "acp") && acpAgent == "" {
-					return p, util.ReportWarn("acp_agent is required when engine is acp")
+					return p, util.ReportWarn("acp_agent is required when engine=acp (or use engine=pando as shorthand)")
 				}
 				p.showSpawnDialog = false
 				p.spawnInput.Blur()
@@ -583,7 +583,7 @@ func (p *orchestratorPage) renderSpawnDialog() string {
 	footer := lipgloss.NewStyle().
 		Foreground(t.TextMuted()).
 		Width(maxWidth).
-		Render("Use engine=acp + acp_agent=pando for Pando subagent via ACP • Enter confirm • Esc cancel")
+		Render("engine=pando spawns Pando as ACP subagent (or engine=acp + acp_agent=<name>) • Enter confirm • Esc cancel")
 
 	content := lipgloss.JoinVertical(lipgloss.Left, title, "", description, "", input, "", engine, "", acpAgent, "", footer)
 	return baseStyle.Padding(1, 2).
