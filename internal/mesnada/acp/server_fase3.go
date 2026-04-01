@@ -95,10 +95,12 @@ type PermissionService interface {
 	UnregisterSessionHandler(sessionID string)
 }
 
-// editToolInput is used to parse file_path from tool call input JSON.
+// editToolInput is used to parse fields from tool call input JSON for edit/write tools.
 type editToolInput struct {
-	FilePath string `json:"file_path"`
-	Content  string `json:"content"` // write tool
+	FilePath  string `json:"file_path"`
+	Content   string `json:"content"`    // write tool
+	OldString string `json:"old_string"` // edit tool
+	NewString string `json:"new_string"` // edit tool
 }
 
 // PandoACPAgent implements the ACP Agent interface.
