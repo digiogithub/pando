@@ -421,6 +421,12 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Type:  settings.FieldToggle,
 			},
 			{
+				Label: "Auto-Approve Tool Changes",
+				Key:   "permissions.autoApproveTools",
+				Value: boolString(cfg.Permissions.AutoApproveTools),
+				Type:  settings.FieldToggle,
+			},
+			{
 				Label: "Debug",
 				Key:   "debug",
 				Value: boolString(cfg.Debug),
@@ -1779,6 +1785,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveInternalTools(field)
 	case strings.HasPrefix(field.Key, "general."):
 		return saveGeneral(field)
+	case strings.HasPrefix(field.Key, "permissions."):
+		return savePermissions(field)
 	case strings.HasPrefix(field.Key, "server."):
 		return saveServer(field)
 	case strings.HasPrefix(field.Key, "lua."):
@@ -2453,6 +2461,27 @@ func saveGeneral(field settings.Field) error {
 	}
 
 	return config.UpdateGeneral(workingDir, logFile, debugLSP, contextPaths, dataDir)
+}
+
+func savePermissions(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	perms := cfg.Permissions
+	switch field.Key {
+	case "permissions.autoApproveTools":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid permissions auto approve tools value: %w", err)
+		}
+		perms.AutoApproveTools = enabled
+	default:
+		return fmt.Errorf("unsupported permissions setting %q", field.Key)
+	}
+
+	return config.UpdatePermissions(perms)
 }
 
 func saveServer(field settings.Field) error {
