@@ -39,6 +39,8 @@ type orchestratorPage struct {
 
 	showSpawnDialog bool
 	spawnInput      textinput.Model
+	spawnEngine     textinput.Model
+	spawnACPAgent   textinput.Model
 }
 
 type taskRow struct {
@@ -115,12 +117,22 @@ func NewOrchestratorPage(app *app.App) tea.Model {
 
 	input := textinput.New()
 	input.Placeholder = "Describe the task to spawn..."
-	input.Prompt = "> "
+	input.Prompt = "prompt> "
+
+	engineInput := textinput.New()
+	engineInput.Placeholder = "copilot | claude | gemini | opencode | ollama-claude | ollama-opencode | mistral | acp"
+	engineInput.Prompt = "engine> "
+
+	agentInput := textinput.New()
+	agentInput.Placeholder = "ACP agent name (e.g. pando). Used only when engine=acp"
+	agentInput.Prompt = "acp_agent> "
 
 	return &orchestratorPage{
-		app:        app,
-		table:      tableModel,
-		spawnInput: input,
+		app:          app,
+		table:        tableModel,
+		spawnInput:   input,
+		spawnEngine:  engineInput,
+		spawnACPAgent: agentInput,
 	}
 }
 
