@@ -66,6 +66,7 @@ func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*Rememb
 
 	workers := cfg.IndexWorkers
 	kbStore := kb.NewKBStore(db, docEmbedder, cfg.ChunkSize, cfg.ChunkOverlap)
+	kbStore.SetSyncWorkers(workers)
 	eventStore := events.NewEventStore(db, docEmbedder)
 	codeIndexer := code.NewCodeIndexer(db, codeEmbedder, workers)
 
@@ -110,9 +111,9 @@ func resolveProviderCredentials(provider string) (apiKey, baseURL string) {
 		}
 	case "ollama":
 		if p, ok := cfg.Providers[models.ProviderOllama]; ok {
-			return "", models.ResolveOllamaBaseURL(p.BaseURL)
+			return "", models.ResolveOllamaRawBaseURL(p.BaseURL)
 		}
-		return "", models.ResolveOllamaBaseURL("")
+		return "", models.ResolveOllamaRawBaseURL("")
 	}
 	return "", ""
 }

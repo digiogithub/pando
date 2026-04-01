@@ -35,6 +35,7 @@ func (s *Server) registerTools() {
 
 	if s.remembrances != nil {
 		s.tools["kb_add_document"] = s.toolKBAddDocument
+		s.tools["kb_import_path"] = s.toolKBImportPath
 		s.tools["kb_search_documents"] = s.toolKBSearchDocuments
 		s.tools["kb_get_document"] = s.toolKBGetDocument
 		s.tools["kb_delete_document"] = s.toolKBDeleteDocument
@@ -102,6 +103,25 @@ func (s *Server) getRemembrancesToolDefinitions() []Tool {
 					},
 				},
 				"required": []string{"path", "content"},
+			},
+		},
+		{
+			Name:        "kb_import_path",
+			Description: "Import and synchronize all markdown files from a directory path (recursive) into the knowledge base.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "Absolute or relative directory path to scan recursively for .md files",
+					},
+					"delete_missing": map[string]interface{}{
+						"type":        "boolean",
+						"description": "When true (default), remove KB docs that were imported from this path but no longer exist on disk",
+						"default":     true,
+					},
+				},
+				"required": []string{"path"},
 			},
 		},
 		{
