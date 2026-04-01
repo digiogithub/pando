@@ -348,6 +348,9 @@ export interface MesnadaConfig {
 
 export interface RemembrancesConfig {
   enabled: boolean
+  kb_path: string
+  kb_watch: boolean
+  kb_auto_import: boolean
   document_embedding_provider: string
   document_embedding_model: string
   document_embedding_base_url: string
