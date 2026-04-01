@@ -35,6 +35,9 @@ const (
 
 	// codeEmbeddingsTimeout bounds a single embedding batch request.
 	codeEmbeddingsTimeout = 90 * time.Second
+
+	// maxJobWarnings is the maximum number of per-file warnings retained in-memory per indexing job.
+	maxJobWarnings = 100
 )
 
 // CodeIndexer manages code indexing projects using tree-sitter for parsing
@@ -185,7 +188,7 @@ func (c *CodeIndexer) indexProjectSync(ctx context.Context, job *IndexingJob, la
 	for i := 0; i < c.workers; i++ {
 		go func() {
 			for item := range workCh {
-				err := c.indexFile(ctx, job.ProjectID, job.ProjectPath, item.path)
+				err := c.safeIndexFile(ctx, job.ProjectID, job.ProjectPath, item.path)
 				resultCh <- workResult{path: item.path, err: err}
 			}
 		}()
@@ -197,21 +200,46 @@ func (c *CodeIndexer) indexProjectSync(ctx context.Context, job *IndexingJob, la
 	close(workCh)
 
 	indexed := 0
+	failed := 0
+	processed := 0
 	for range files {
 		result := <-resultCh
 		if result.err == nil {
 			indexed++
+		} else {
+			failed++
 		}
+		processed++
 		c.jobsMu.Lock()
 		job.FilesIndexed = indexed
+		job.FilesFailed = failed
 		if job.FilesTotal > 0 {
-			job.Progress = float64(indexed) / float64(job.FilesTotal) * 100
+			job.Progress = float64(processed) / float64(job.FilesTotal) * 100
+		}
+		if result.err != nil && len(job.Warnings) < maxJobWarnings {
+			relPath, relErr := filepath.Rel(job.ProjectPath, result.path)
+			if relErr != nil {
+				relPath = result.path
+			}
+			job.Warnings = append(job.Warnings, fmt.Sprintf("index warning (%s): %v", relPath, result.err))
 		}
 		c.jobsMu.Unlock()
 	}
 
 	// Update language stats
 	return c.updateLanguageStats(ctx, job.ProjectID)
+}
+
+// safeIndexFile protects project indexing from non-fatal panics in per-file processing.
+// NOTE: fatal runtime crashes (e.g. SIGSEGV inside cgo) cannot be recovered here.
+func (c *CodeIndexer) safeIndexFile(ctx context.Context, projectID, rootPath, filePath string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic while indexing %s: %v", filePath, r)
+		}
+	}()
+
+	return c.indexFile(ctx, projectID, rootPath, filePath)
 }
 
 // indexFile indexes a single file within a project.
@@ -412,6 +440,37 @@ func (c *CodeIndexer) ReindexFile(ctx context.Context, projectID, filePath strin
 
 	absPath := filepath.Join(rootPath, filePath)
 	return c.indexFile(ctx, projectID, rootPath, absPath)
+}
+
+// DeleteProject removes an indexed project and all related indexed data.
+func (c *CodeIndexer) DeleteProject(ctx context.Context, projectID string) error {
+	if strings.TrimSpace(projectID) == "" {
+		return fmt.Errorf("code: project_id is required")
+	}
+
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("code: begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM code_projects WHERE project_id = ?`, projectID); err != nil {
+		return fmt.Errorf("code: delete project: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("code: commit delete project: %w", err)
+	}
+
+	c.jobsMu.Lock()
+	for id, job := range c.jobs {
+		if job.ProjectID == projectID {
+			delete(c.jobs, id)
+		}
+	}
+	c.jobsMu.Unlock()
+
+	return nil
 }
 
 // GetJob returns the current status of an indexing job.
