@@ -7,10 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/rag/embeddings"
@@ -500,58 +497,8 @@ func (s *KBStore) CountDocuments(ctx context.Context) (int64, error) {
 // SyncDirectory imports or syncs all .md files from a directory.
 // Existing documents are updated, new files are added.
 func (s *KBStore) SyncDirectory(ctx context.Context, dirPath string) error {
-	// Walk directory for .md files
-	var files []string
-	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && strings.HasSuffix(strings.ToLower(path), ".md") {
-			files = append(files, path)
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("kb: walk directory: %w", err)
-	}
-
-	// Process each file
-	for _, path := range files {
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("kb: read file %s: %w", path, err)
-		}
-
-		// Use relative path from dirPath as file_path
-		relPath, err := filepath.Rel(dirPath, path)
-		if err != nil {
-			relPath = path
-		}
-
-		// Check if document exists
-		existing, err := s.GetDocument(ctx, relPath)
-		if err != nil {
-			return fmt.Errorf("kb: check existing %s: %w", relPath, err)
-		}
-
-		metadata := map[string]interface{}{
-			"source_path": path,
-		}
-
-		if existing != nil {
-			// Update existing
-			if err := s.UpdateDocument(ctx, relPath, string(content), metadata); err != nil {
-				return fmt.Errorf("kb: update %s: %w", relPath, err)
-			}
-		} else {
-			// Add new
-			if err := s.AddDocument(ctx, relPath, string(content), metadata); err != nil {
-				return fmt.Errorf("kb: add %s: %w", relPath, err)
-			}
-		}
-	}
-
-	return nil
+	_, err := s.SyncDirectoryWithStats(ctx, dirPath, true)
+	return err
 }
 
 // RebuildFTS rebuilds the FTS5 index from kb_chunks.
