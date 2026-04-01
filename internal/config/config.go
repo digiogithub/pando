@@ -99,6 +99,11 @@ type TUIConfig struct {
 	Theme string `json:"theme,omitempty"`
 }
 
+// PermissionsConfig defines runtime permission behavior for local interactive sessions.
+type PermissionsConfig struct {
+	AutoApproveTools bool `json:"autoApproveTools,omitempty"`
+}
+
 // MesnadaServerConfig holds mesnada HTTP server configuration
 type MesnadaServerConfig struct {
 	Host string `json:"host,omitempty"`
@@ -182,6 +187,9 @@ type SkillsCatalogConfig struct {
 // RemembrancesConfig defines configuration for the remembrances system.
 type RemembrancesConfig struct {
 	Enabled                   bool   `json:"enabled" toml:"Enabled"`
+	KBPath                    string `json:"kb_path" toml:"KBPath"`
+	KBWatch                   bool   `json:"kb_watch" toml:"KBWatch"`
+	KBAutoImport             bool   `json:"kb_auto_import" toml:"KBAutoImport"`
 	DocumentEmbeddingProvider string `json:"document_embedding_provider" toml:"DocumentEmbeddingProvider"`
 	DocumentEmbeddingModel    string `json:"document_embedding_model" toml:"DocumentEmbeddingModel"`
 	// DocumentEmbeddingBaseURL and DocumentEmbeddingAPIKey are used when DocumentEmbeddingProvider is "openai-compatible".
@@ -373,6 +381,7 @@ type Config struct {
 	Skills        SkillsConfig                      `json:"skills,omitempty"`
 	SkillsCatalog SkillsCatalogConfig               `json:"skillsCatalog,omitempty"`
 	TUI           TUIConfig                         `json:"tui"`
+	Permissions   PermissionsConfig                 `json:"permissions,omitempty"`
 	Mesnada      MesnadaConfig                     `json:"mesnada,omitempty"`
 	Shell        ShellConfig                       `json:"shell,omitempty"`
 	Bash         BashConfig                        `json:"bash,omitempty"`
@@ -619,6 +628,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("skillsCatalog.autoUpdate", false)
 	viper.SetDefault("skillsCatalog.defaultScope", "global")
 	viper.SetDefault("tui.theme", "pando")
+	viper.SetDefault("permissions.autoApproveTools", false)
 	viper.SetDefault("mesnada.enabled", false)
 	viper.SetDefault("mesnada.server.host", "127.0.0.1")
 	viper.SetDefault("mesnada.server.port", 9767)
@@ -685,6 +695,8 @@ func setDefaults(debug bool) {
 
 	// Remembrances defaults
 	viper.SetDefault("remembrances.enabled", false)
+	viper.SetDefault("remembrances.kb_watch", true)
+	viper.SetDefault("remembrances.kb_auto_import", true)
 	viper.SetDefault("remembrances.document_embedding_provider", "ollama")
 	viper.SetDefault("remembrances.document_embedding_model", "nomic-embed-text")
 	viper.SetDefault("remembrances.code_embedding_provider", "ollama")
@@ -998,6 +1010,7 @@ func applyDefaultValues() {
 
 func normalizeRemembrancesDefaults() {
 	rem := cfg.Remembrances
+	rem.KBPath = strings.TrimSpace(rem.KBPath)
 
 	if strings.TrimSpace(rem.DocumentEmbeddingProvider) == "" {
 		rem.DocumentEmbeddingProvider = "ollama"
@@ -1729,6 +1742,24 @@ func UpdateAutoCompact(enabled bool) error {
 		config.AutoCompact = enabled
 	}); err != nil {
 		cfg.AutoCompact = oldValue
+		return err
+	}
+
+	return nil
+}
+
+func UpdatePermissions(perms PermissionsConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldPerms := cfg.Permissions
+	cfg.Permissions = perms
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Permissions = perms
+	}); err != nil {
+		cfg.Permissions = oldPerms
 		return err
 	}
 

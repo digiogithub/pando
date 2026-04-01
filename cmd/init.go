@@ -174,6 +174,15 @@ DefaultScope = ''
 Theme = ''
 
 # =============================================================================
+# Permissions
+# Controls whether the assistant should ask before applying tool-based file edits.
+# =============================================================================
+[Permissions]
+# true  = apply file/tool changes directly without per-action confirmation
+# false = require confirmation before applying file/tool changes (default)
+AutoApproveTools = false
+
+# =============================================================================
 # Mesnada — Multi-Agent Orchestrator
 # Mesnada lets you spawn and coordinate multiple AI agents in parallel.
 # =============================================================================
@@ -232,6 +241,16 @@ AllowedCommands = []
 # =============================================================================
 [Remembrances]
 Enabled = true
+
+# Optional local KB mirror/sync directory. When set, pando can import .md files
+# recursively from this path and keep DB/filesystem synchronized.
+KBPath = ''
+
+# Import markdown files from KBPath on startup.
+KBAutoImport = true
+
+# Watch KBPath in real-time and reindex changed/created/deleted .md files.
+KBWatch = true
 
 # Embedding model for documents (markdown, text files).
 DocumentEmbeddingProvider = 'ollama'
