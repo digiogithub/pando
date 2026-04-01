@@ -35,6 +35,9 @@ type MesnadaACPClient struct {
 	// mu protects concurrent access to output and onUpdate
 	mu sync.Mutex
 
+	// toolCalls tracks started tool calls to enrich subsequent updates
+	toolCalls map[string]ToolCallInfo
+
 	// terminals tracks active terminal sessions
 	terminals map[string]*terminalState
 
@@ -91,6 +94,7 @@ func NewMesnadaACPClient(taskID string, workDir string, logFile *os.File, onUpda
 		logFile:         logFile,
 		output:          &strings.Builder{},
 		onUpdate:        onUpdate,
+		toolCalls:       make(map[string]ToolCallInfo),
 		terminals:       make(map[string]*terminalState),
 		autoPermission:  false, // Default to requiring manual approval
 		permissionQueue: NewPermissionQueue(),
@@ -614,24 +618,27 @@ func (c *MesnadaACPClient) processAgentMessageChunk(chunk *acpsdk.SessionUpdateA
 
 // processAgentThoughtChunk handles chunks of agent thinking/reasoning.
 func (c *MesnadaACPClient) processAgentThoughtChunk(chunk *acpsdk.SessionUpdateAgentThoughtChunk) {
-	// Extract text from content block
 	text := c.extractTextFromContentBlock(chunk.Content)
 	if text == "" {
 		return
 	}
 
-	// Log thinking but don't include in main output
 	if c.logFile != nil {
 		fmt.Fprintf(c.logFile, "[THINKING] %s", text)
+	}
+
+	if c.onUpdate != nil {
+		c.onUpdate(SessionUpdateInfo{
+			TaskID:      c.taskID,
+			MessageText: text,
+		})
 	}
 }
 
 // processToolCall handles tool call start notifications.
 func (c *MesnadaACPClient) processToolCall(toolCall *acpsdk.SessionUpdateToolCall) {
-	// Increment tool call counter
 	c.toolCallCount++
 
-	// Log tool call start
 	if c.logFile != nil {
 		fmt.Fprintf(c.logFile, "[TOOL_CALL] %s (id=%s, status=%s)\n", toolCall.Title, toolCall.ToolCallId, toolCall.Status)
 		if toolCall.RawInput != nil {
@@ -639,7 +646,6 @@ func (c *MesnadaACPClient) processToolCall(toolCall *acpsdk.SessionUpdateToolCal
 		}
 	}
 
-	// Extract arguments from RawInput
 	var args map[string]interface{}
 	if toolCall.RawInput != nil {
 		if m, ok := toolCall.RawInput.(map[string]interface{}); ok {
@@ -647,15 +653,18 @@ func (c *MesnadaACPClient) processToolCall(toolCall *acpsdk.SessionUpdateToolCal
 		}
 	}
 
-	// Notify callback
+	info := ToolCallInfo{
+		Name:      toolCall.Title,
+		Arguments: args,
+		Status:    string(toolCall.Status),
+	}
+	c.toolCalls[string(toolCall.ToolCallId)] = info
+
 	if c.onUpdate != nil {
+		infoCopy := info
 		c.onUpdate(SessionUpdateInfo{
-			TaskID: c.taskID,
-			ToolCall: &ToolCallInfo{
-				Name:      toolCall.Title,
-				Arguments: args,
-				Status:    string(toolCall.Status),
-			},
+			TaskID:   c.taskID,
+			ToolCall: &infoCopy,
 		})
 	}
 }
