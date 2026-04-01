@@ -179,6 +179,7 @@ func CoderAgentToolsWithMesnada(
 	if remembrances != nil {
 		baseTools = append(baseTools,
 			tools.NewKBAddDocumentTool(remembrances.KB),
+			tools.NewKBImportPathTool(remembrances.KB),
 			tools.NewKBSearchDocumentsTool(remembrances.KB),
 			tools.NewKBGetDocumentTool(remembrances.KB),
 			tools.NewKBDeleteDocumentTool(remembrances.KB),
