@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 )
 
 // OllamaEmbedder generates embeddings using a local Ollama instance.
@@ -45,7 +46,7 @@ func NewOllamaEmbedder(model, baseURL string) (*OllamaEmbedder, error) {
 	return &OllamaEmbedder{
 		model:   model,
 		baseURL: baseURL,
-		client:  &http.Client{},
+		client:  &http.Client{Timeout: 90 * time.Second},
 	}, nil
 }
 
