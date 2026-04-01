@@ -32,6 +32,9 @@ const (
 
 	// maxEmbeddingBatch is the max symbols to embed in one batch.
 	maxEmbeddingBatch = 50
+
+	// codeEmbeddingsTimeout bounds a single embedding batch request.
+	codeEmbeddingsTimeout = 90 * time.Second
 )
 
 // CodeIndexer manages code indexing projects using tree-sitter for parsing
@@ -333,6 +336,9 @@ func (c *CodeIndexer) embedSymbols(ctx context.Context, projectID string, fileID
 	if c.embedder == nil || len(symbols) == 0 {
 		return nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	_ = projectID
 	_ = fileID
@@ -371,7 +377,9 @@ func (c *CodeIndexer) embedSymbols(ctx context.Context, projectID string, fileID
 		batch := texts[i:end]
 		syms := symbols[i:end]
 
-		vecs, err := c.embedder.EmbedDocuments(ctx, batch)
+		embedCtx, cancel := context.WithTimeout(ctx, codeEmbeddingsTimeout)
+		vecs, err := c.embedder.EmbedDocuments(embedCtx, batch)
+		cancel()
 		if err != nil {
 			return fmt.Errorf("code: embed symbols batch: %w", err)
 		}
