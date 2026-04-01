@@ -66,6 +66,7 @@ func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*Rememb
 
 	workers := cfg.IndexWorkers
 	kbStore := kb.NewKBStore(db, docEmbedder, cfg.ChunkSize, cfg.ChunkOverlap)
+	kbStore.SetSyncWorkers(workers)
 	eventStore := events.NewEventStore(db, docEmbedder)
 	codeIndexer := code.NewCodeIndexer(db, codeEmbedder, workers)
 
