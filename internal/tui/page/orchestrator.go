@@ -120,7 +120,7 @@ func NewOrchestratorPage(app *app.App) tea.Model {
 	input.Prompt = "prompt> "
 
 	engineInput := textinput.New()
-	engineInput.Placeholder = "copilot | claude | gemini | opencode | ollama-claude | ollama-opencode | mistral | acp"
+	engineInput.Placeholder = "copilot | claude | gemini | opencode | mistral | acp | pando"
 	engineInput.Prompt = "engine> "
 
 	agentInput := textinput.New()
