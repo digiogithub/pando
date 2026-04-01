@@ -421,6 +421,12 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Type:  settings.FieldToggle,
 			},
 			{
+				Label: "Auto-Approve Tool Changes",
+				Key:   "permissions.autoApproveTools",
+				Value: boolString(cfg.Permissions.AutoApproveTools),
+				Type:  settings.FieldToggle,
+			},
+			{
 				Label: "Debug",
 				Key:   "debug",
 				Value: boolString(cfg.Debug),
@@ -1152,6 +1158,24 @@ func buildRemembrancesSection(cfg *config.Config) settings.Section {
 
 	fields = append(fields,
 		settings.Field{
+			Label: "KB Path",
+			Key:   "remembrances.kb_path",
+			Type:  settings.FieldText,
+			Value: rem.KBPath,
+		},
+		settings.Field{
+			Label: "KB Watch",
+			Key:   "remembrances.kb_watch",
+			Type:  settings.FieldToggle,
+			Value: boolString(rem.KBWatch),
+		},
+		settings.Field{
+			Label: "KB Auto Import",
+			Key:   "remembrances.kb_auto_import",
+			Type:  settings.FieldToggle,
+			Value: boolString(rem.KBAutoImport),
+		},
+		settings.Field{
 			Label: "Chunk Size",
 			Key:   "remembrances.chunk_size",
 			Type:  settings.FieldText,
@@ -1779,6 +1803,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveInternalTools(field)
 	case strings.HasPrefix(field.Key, "general."):
 		return saveGeneral(field)
+	case strings.HasPrefix(field.Key, "permissions."):
+		return savePermissions(field)
 	case strings.HasPrefix(field.Key, "server."):
 		return saveServer(field)
 	case strings.HasPrefix(field.Key, "lua."):
@@ -2245,6 +2271,20 @@ func saveRemembrances(field settings.Field) error {
 		remCfg.CodeEmbeddingBaseURL = strings.TrimSpace(field.Value)
 	case "remembrances.code_embedding_api_key":
 		remCfg.CodeEmbeddingAPIKey = strings.TrimSpace(field.Value)
+	case "remembrances.kb_path":
+		remCfg.KBPath = strings.TrimSpace(field.Value)
+	case "remembrances.kb_watch":
+		watch, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid KB watch value: %w", err)
+		}
+		remCfg.KBWatch = watch
+	case "remembrances.kb_auto_import":
+		autoImport, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid KB auto import value: %w", err)
+		}
+		remCfg.KBAutoImport = autoImport
 	case "remembrances.chunk_size":
 		size, err := parseIntValue(field.Value)
 		if err != nil {
@@ -2453,6 +2493,27 @@ func saveGeneral(field settings.Field) error {
 	}
 
 	return config.UpdateGeneral(workingDir, logFile, debugLSP, contextPaths, dataDir)
+}
+
+func savePermissions(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	perms := cfg.Permissions
+	switch field.Key {
+	case "permissions.autoApproveTools":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid permissions auto approve tools value: %w", err)
+		}
+		perms.AutoApproveTools = enabled
+	default:
+		return fmt.Errorf("unsupported permissions setting %q", field.Key)
+	}
+
+	return config.UpdatePermissions(perms)
 }
 
 func saveServer(field settings.Field) error {

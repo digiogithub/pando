@@ -7,14 +7,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
+	"runtime"
 	"sort"
-	"strings"
+	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 )
+
+const kbEmbeddingsTimeout = 45 * time.Second
 
 // KBStore manages knowledge base documents with chunking, embeddings, and hybrid search.
 // It uses SQLite for storage with FTS5 for full-text search and in-memory vector search.
@@ -23,6 +25,14 @@ type KBStore struct {
 	embedder     embeddings.Embedder
 	chunkSize    int
 	chunkOverlap int
+	syncWorkers  int
+	fsMirrorPath string
+	fsMu         sync.RWMutex
+}
+
+type documentMetadata struct {
+	FilePath string
+	Metadata map[string]interface{}
 }
 
 // NewKBStore creates a new KBStore instance.
@@ -48,7 +58,39 @@ func NewKBStore(db *sql.DB, embedder embeddings.Embedder, chunkSize, chunkOverla
 		embedder:     embedder,
 		chunkSize:    chunkSize,
 		chunkOverlap: chunkOverlap,
+		syncWorkers:  defaultSyncWorkers(),
 	}
+}
+
+func defaultSyncWorkers() int {
+	n := runtime.NumCPU() / 2
+	if n < 2 {
+		return 2
+	}
+	if n > 8 {
+		return 8
+	}
+	return n
+}
+
+// SetSyncWorkers configures how many concurrent workers are used for KB filesystem
+// import preprocessing (file reads and in-memory preparation). SQLite writes remain
+// serialized through a single writer goroutine.
+func (s *KBStore) SetSyncWorkers(workers int) {
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > 32 {
+		workers = 32
+	}
+	s.syncWorkers = workers
+}
+
+func (s *KBStore) getSyncWorkers() int {
+	if s.syncWorkers < 1 {
+		return 1
+	}
+	return s.syncWorkers
 }
 
 // AddDocument adds a new document to the knowledge base.
@@ -98,11 +140,28 @@ func (s *KBStore) AddDocument(ctx context.Context, filePath, content string, met
 		return tx.Commit()
 	}
 
+	logging.Debug("kb add: embedding start", "file_path", filePath, "chunks", len(chunks), "bytes", len(content))
+	embedStartedAt := time.Now()
+	embedCtx, embedCancel := context.WithTimeout(ctx, kbEmbeddingsTimeout)
+	defer embedCancel()
+
 	// Generate embeddings for all chunks
-	embedVecs, err := s.embedder.EmbedDocuments(ctx, chunks)
+	embedVecs, err := s.embedder.EmbedDocuments(embedCtx, chunks)
 	if err != nil {
+		logging.Debug("kb add: embedding failed",
+			"file_path", filePath,
+			"chunks", len(chunks),
+			"elapsed", time.Since(embedStartedAt).String(),
+			"error", err,
+		)
 		return fmt.Errorf("kb: embed chunks: %w", err)
 	}
+	logging.Debug("kb add: embedding completed",
+		"file_path", filePath,
+		"chunks", len(chunks),
+		"vectors", len(embedVecs),
+		"elapsed", time.Since(embedStartedAt).String(),
+	)
 
 	if len(embedVecs) != len(chunks) {
 		return fmt.Errorf("kb: embedding count mismatch: got %d, expected %d", len(embedVecs), len(chunks))
@@ -169,6 +228,72 @@ func (s *KBStore) GetDocument(ctx context.Context, filePath string) (*Document, 
 	}
 
 	return &doc, nil
+}
+
+// getDocumentMetadata retrieves only metadata for a document by file path.
+// It avoids loading full content, which is expensive for large KB files.
+func (s *KBStore) getDocumentMetadata(ctx context.Context, filePath string) (*documentMetadata, error) {
+	var metaJSON string
+	var meta documentMetadata
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT file_path, metadata
+		FROM kb_documents
+		WHERE file_path = ?`,
+		filePath,
+	).Scan(&meta.FilePath, &metaJSON)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("kb: get document metadata: %w", err)
+	}
+
+	if metaJSON != "" && metaJSON != "{}" {
+		if err := json.Unmarshal([]byte(metaJSON), &meta.Metadata); err != nil {
+			return nil, fmt.Errorf("kb: unmarshal metadata: %w", err)
+		}
+	}
+
+	return &meta, nil
+}
+
+// listDocumentMetadata returns paginated file paths + metadata only.
+func (s *KBStore) listDocumentMetadata(ctx context.Context, limit, offset int) ([]documentMetadata, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT file_path, metadata
+		FROM kb_documents
+		ORDER BY id
+		LIMIT ? OFFSET ?`,
+		limit, offset,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("kb: list document metadata: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]documentMetadata, 0, limit)
+	for rows.Next() {
+		var filePath, metaJSON string
+		if err := rows.Scan(&filePath, &metaJSON); err != nil {
+			return nil, fmt.Errorf("kb: scan document metadata: %w", err)
+		}
+
+		item := documentMetadata{FilePath: filePath}
+		if metaJSON != "" && metaJSON != "{}" {
+			if err := json.Unmarshal([]byte(metaJSON), &item.Metadata); err != nil {
+				return nil, fmt.Errorf("kb: unmarshal metadata: %w", err)
+			}
+		}
+		items = append(items, item)
+	}
+
+	return items, rows.Err()
 }
 
 // DeleteDocument removes a document and all its chunks from the knowledge base.
@@ -500,58 +625,8 @@ func (s *KBStore) CountDocuments(ctx context.Context) (int64, error) {
 // SyncDirectory imports or syncs all .md files from a directory.
 // Existing documents are updated, new files are added.
 func (s *KBStore) SyncDirectory(ctx context.Context, dirPath string) error {
-	// Walk directory for .md files
-	var files []string
-	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && strings.HasSuffix(strings.ToLower(path), ".md") {
-			files = append(files, path)
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("kb: walk directory: %w", err)
-	}
-
-	// Process each file
-	for _, path := range files {
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("kb: read file %s: %w", path, err)
-		}
-
-		// Use relative path from dirPath as file_path
-		relPath, err := filepath.Rel(dirPath, path)
-		if err != nil {
-			relPath = path
-		}
-
-		// Check if document exists
-		existing, err := s.GetDocument(ctx, relPath)
-		if err != nil {
-			return fmt.Errorf("kb: check existing %s: %w", relPath, err)
-		}
-
-		metadata := map[string]interface{}{
-			"source_path": path,
-		}
-
-		if existing != nil {
-			// Update existing
-			if err := s.UpdateDocument(ctx, relPath, string(content), metadata); err != nil {
-				return fmt.Errorf("kb: update %s: %w", relPath, err)
-			}
-		} else {
-			// Add new
-			if err := s.AddDocument(ctx, relPath, string(content), metadata); err != nil {
-				return fmt.Errorf("kb: add %s: %w", relPath, err)
-			}
-		}
-	}
-
-	return nil
+	_, err := s.SyncDirectoryWithStats(ctx, dirPath, true)
+	return err
 }
 
 // RebuildFTS rebuilds the FTS5 index from kb_chunks.

@@ -2,7 +2,9 @@ package embeddings
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 )
 
 // TestNewEmbedder verifies that the factory creates embedders correctly.
@@ -184,6 +186,27 @@ func TestChunkText(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestChunkText_ProgressWhenBoundarySmallerThanOverlap(t *testing.T) {
+	text := "A. \"" + strings.Repeat("x", 500)
+
+	done := make(chan []string, 1)
+	go func() {
+		done <- ChunkText(text, 80, 50)
+	}()
+
+	select {
+	case chunks := <-done:
+		if len(chunks) == 0 {
+			t.Fatalf("expected non-empty chunks")
+		}
+		if len(chunks) > 100 {
+			t.Fatalf("unexpectedly high chunk count (possible low progress): %d", len(chunks))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("ChunkText appears stuck (no forward progress)")
 	}
 }
 
