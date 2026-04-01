@@ -96,6 +96,10 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			presetName := strings.TrimPrefix(msg.Field.Key, "action:lsp_preset:")
 			return p, p.addLSPPreset(presetName)
 		}
+		if strings.HasPrefix(msg.Field.Key, "action:delete_mcp_server:") {
+			serverName := strings.TrimPrefix(msg.Field.Key, "action:delete_mcp_server:")
+			return p, p.deleteMCPServer(serverName)
+		}
 		return p, p.saveField(msg)
 	case skillUninstalledMsg:
 		p.settings.SetSections(buildSections(p.app))
@@ -220,6 +224,25 @@ func (p *settingsPage) saveField(msg settings.SaveFieldMsg) tea.Cmd {
 	p.settings.SetSize(p.width, p.height)
 	p.settings.SetActiveField(msg.SectionTitle, savedFieldKey(msg.Field))
 	return util.ReportInfo("Setting saved: " + msg.Field.Label)
+}
+
+func (p *settingsPage) deleteMCPServer(name string) tea.Cmd {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return util.ReportError(fmt.Errorf("MCP server name cannot be empty"))
+	}
+	if err := config.DeleteMCPServer(name); err != nil {
+		return util.ReportError(err)
+	}
+	if p.app != nil && p.app.MCPGateway != nil {
+		if err := p.app.MCPGateway.DeleteServerData(context.Background(), name); err != nil {
+			return util.ReportError(err)
+		}
+	}
+
+	p.settings.SetSections(buildSections(p.app))
+	p.settings.SetSize(p.width, p.height)
+	return util.ReportInfo("MCP server deleted: " + name)
 }
 
 func (p *settingsPage) openCatalogDialog() tea.Cmd {
@@ -805,6 +828,12 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 				Key:   fmt.Sprintf("mcpServers.%s.name", name),
 				Value: name,
 				Type:  settings.FieldText,
+			},
+			settings.Field{
+				Label: fmt.Sprintf("%s Delete", name),
+				Key:   fmt.Sprintf("action:delete_mcp_server:%s", name),
+				Value: "Delete server and gateway registry data",
+				Type:  settings.FieldAction,
 			},
 			settings.Field{
 				Label: fmt.Sprintf("%s Command", name),

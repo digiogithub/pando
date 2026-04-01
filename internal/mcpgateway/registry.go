@@ -154,6 +154,15 @@ func (r *Registry) GetAllTools(ctx context.Context) ([]RegisteredTool, error) {
 	return scanTools(rows)
 }
 
+// DeleteServer removes all registry rows for a server; usage rows are cascade-deleted by FK.
+func (r *Registry) DeleteServer(ctx context.Context, serverName string) error {
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM mcp_tool_registry
+		WHERE server_name = ?
+	`, serverName)
+	return err
+}
+
 // GetToolsByIDs returns tools matching the given IDs.
 func (r *Registry) GetToolsByIDs(ctx context.Context, ids []string) ([]RegisteredTool, error) {
 	if len(ids) == 0 {
