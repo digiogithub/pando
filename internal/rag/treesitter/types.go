@@ -185,6 +185,10 @@ type IndexingJob struct {
 	// File counts
 	FilesTotal   int `json:"files_total"`
 	FilesIndexed int `json:"files_indexed"`
+	FilesFailed  int `json:"files_failed,omitempty"`
+
+	// Non-fatal warnings collected during indexing (e.g. per-file parse failures)
+	Warnings []string `json:"warnings,omitempty"`
 
 	// Timing
 	StartedAt   time.Time  `json:"started_at"`
