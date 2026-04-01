@@ -67,6 +67,31 @@ export default function RemembrancesSettings() {
 
       <div style={dividerStyle} />
 
+      {/* KB Filesystem Sync */}
+      <p style={subSectionTitle}>KB Filesystem Sync</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <TextInput
+          label="KB Path"
+          value={rem.kb_path}
+          onChange={(e) => updateRemembrances('kb_path', e.target.value)}
+          placeholder="./.kb"
+        />
+        <Toggle
+          label="Watch KB Path"
+          description="Monitor markdown changes in real time and re-index automatically"
+          checked={rem.kb_watch}
+          onChange={(v) => updateRemembrances('kb_watch', v)}
+        />
+        <Toggle
+          label="Auto Import on Startup"
+          description="Import markdown files from KB path when Pando starts"
+          checked={rem.kb_auto_import}
+          onChange={(v) => updateRemembrances('kb_auto_import', v)}
+        />
+      </div>
+
+      <div style={dividerStyle} />
+
       {/* Document Embeddings */}
       <p style={subSectionTitle}>Document Embeddings</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
