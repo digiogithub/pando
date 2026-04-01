@@ -150,7 +150,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			}
 			cwd = c
 		}
-		_, err := config.Load(cwd, debug, logFile)
+		cfg, err := config.Load(cwd, debug, logFile)
 		if err != nil {
 			return err
 		}
@@ -188,8 +188,6 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			return err
 		}
 		logging.Debug("App initialized")
-		// Defer shutdown here so it runs for both interactive and non-interactive modes
-		defer app.Shutdown()
 
 		// Initialize MCP tools early for both modes
 		initMCPTools(ctx, app)
@@ -197,12 +195,13 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		// Non-interactive mode
 		if prompt != "" {
 			quiet = true
+			defer app.Shutdown()
 			// Run non-interactive flow using the App method
 			return app.RunNonInteractive(ctx, prompt, outputFormat, quiet, yoloMode)
 		}
 
 		// Interactive mode
-		if yoloMode {
+		if yoloMode || (cfg != nil && cfg.Permissions.AutoApproveTools) {
 			app.Permissions.SetGlobalAutoApprove(true)
 		}
 
@@ -245,6 +244,10 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 
 		// Cleanup function for when the program exits
 		cleanup := func() {
+			// Cancel root context first so background tasks (e.g. KB import/index)
+			// stop promptly before waiting in app shutdown.
+			cancel()
+
 			// Shutdown the app
 			app.Shutdown()
 
