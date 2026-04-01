@@ -35,6 +35,9 @@ type MesnadaACPClient struct {
 	// mu protects concurrent access to output and onUpdate
 	mu sync.Mutex
 
+	// toolCalls tracks started tool calls to enrich subsequent updates
+	toolCalls map[string]ToolCallInfo
+
 	// terminals tracks active terminal sessions
 	terminals map[string]*terminalState
 
