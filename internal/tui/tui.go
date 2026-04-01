@@ -382,14 +382,11 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 
 			case "warn":
-				s, cmd := a.status.Update(util.InfoMsg{
-					Type: util.InfoTypeWarn,
-					Msg:  msg.Payload.Message,
-					TTL:  msg.Payload.PersistTime,
-				})
-
-				a.status = s.(core.StatusCmp)
-				cmds = append(cmds, cmd)
+				// Show warnings as bubbleup overlay alerts (top-right toast style)
+				cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.WarnKey, msg.Payload.Message))
+				outAlert, outCmd := a.alert.Update(msg)
+				a.alert = outAlert.(bubbleup.AlertModel)
+				cmds = append(cmds, outCmd)
 			default:
 				s, cmd := a.status.Update(util.InfoMsg{
 					Type: util.InfoTypeInfo,
