@@ -17,6 +17,7 @@ const (
 	codeFindSymbolToolName      = "code_find_symbol"
 	codeGetSymbolsOverviewName  = "code_get_symbols_overview"
 	codeGetProjectStatsToolName = "code_get_project_stats"
+	codeDeleteProjectToolName   = "code_delete_project"
 	codeReindexFileToolName     = "code_reindex_file"
 	codeListProjectsToolName    = "code_list_projects"
 	codeSearchPatternToolName   = "code_search_pattern"
@@ -43,6 +44,9 @@ type CodeGetSymbolsOverviewTool struct{ codeToolBase }
 
 // CodeGetProjectStatsTool returns statistics for an indexed project.
 type CodeGetProjectStatsTool struct{ codeToolBase }
+
+// CodeDeleteProjectTool deletes an indexed project and its data.
+type CodeDeleteProjectTool struct{ codeToolBase }
 
 // CodeReindexFileTool re-indexes a single file.
 type CodeReindexFileTool struct{ codeToolBase }
@@ -72,6 +76,9 @@ func NewCodeGetSymbolsOverviewTool(indexer *code.CodeIndexer) BaseTool {
 }
 func NewCodeGetProjectStatsTool(indexer *code.CodeIndexer) BaseTool {
 	return &CodeGetProjectStatsTool{codeToolBase{indexer}}
+}
+func NewCodeDeleteProjectTool(indexer *code.CodeIndexer) BaseTool {
+	return &CodeDeleteProjectTool{codeToolBase{indexer}}
 }
 func NewCodeReindexFileTool(indexer *code.CodeIndexer) BaseTool {
 	return &CodeReindexFileTool{codeToolBase{indexer}}
@@ -519,6 +526,44 @@ func (t *CodeGetProjectStatsTool) Run(ctx context.Context, params ToolCall) (Too
 	}
 
 	out, _ := json.MarshalIndent(stats, "", "  ")
+	return NewTextResponse(string(out)), nil
+}
+
+// ---- CodeDeleteProjectTool ----
+
+func (t *CodeDeleteProjectTool) Info() ToolInfo {
+	return ToolInfo{
+		Name:        codeDeleteProjectToolName,
+		Description: "Deletes an indexed code project and all associated indexed files and symbols.",
+		Parameters: map[string]any{
+			"project_id": map[string]any{
+				"type":        "string",
+				"description": "The project ID to delete.",
+			},
+		},
+		Required: []string{"project_id"},
+	}
+}
+
+func (t *CodeDeleteProjectTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
+	var req struct {
+		ProjectID string `json:"project_id"`
+	}
+	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
+	}
+	if req.ProjectID == "" {
+		return NewTextErrorResponse("project_id is required"), nil
+	}
+
+	if err := t.indexer.DeleteProject(ctx, req.ProjectID); err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("delete project error: %v", err)), nil
+	}
+
+	out, _ := json.MarshalIndent(map[string]any{
+		"project_id": req.ProjectID,
+		"deleted":    true,
+	}, "", "  ")
 	return NewTextResponse(string(out)), nil
 }
 

@@ -195,7 +195,7 @@ Host = ''     # Leave empty to bind to localhost
 Port = 5005
 
 [Mesnada.Orchestrator]
-StorePath      = './.pando/mesnada'          # Root directory for orchestrator data
+StorePath      = './.pando/mesnada/tasks.json' # Task store file (JSON)
 LogDir         = './.pando/mesnada/logs'     # Task execution logs
 MaxParallel    = 5                           # Maximum concurrent sub-agents
 DefaultEngine  = 'claude'                    # Default AI engine: 'claude' | 'copilot'
