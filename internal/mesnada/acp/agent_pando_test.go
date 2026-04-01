@@ -1,6 +1,7 @@
 package acp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,11 +15,11 @@ import (
 
 // mockAgentService is a test double for AgentService.
 type mockAgentService struct {
-	runCalled         bool
-	cancelCalled      bool
-	runErr            error
-	modelOverride     string
-	modelOverrideErr  error
+	runCalled        bool
+	cancelCalled     bool
+	runErr           error
+	modelOverride    string
+	modelOverrideErr error
 }
 
 func (m *mockAgentService) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
@@ -87,10 +88,42 @@ func (m *mockSessionService) ListSessions(ctx context.Context) ([]ACPSessionInfo
 	return result, nil
 }
 
+type mockPermissionService struct {
+	autoApproved []string
+	removed      []string
+	registered   []string
+	unregistered []string
+	handlers     map[string]func(sessionID, toolName, description string) bool
+}
+
+func newMockPermissionService() *mockPermissionService {
+	return &mockPermissionService{
+		handlers: make(map[string]func(sessionID, toolName, description string) bool),
+	}
+}
+
+func (m *mockPermissionService) AutoApproveSession(sessionID string) {
+	m.autoApproved = append(m.autoApproved, sessionID)
+}
+
+func (m *mockPermissionService) RemoveAutoApproveSession(sessionID string) {
+	m.removed = append(m.removed, sessionID)
+}
+
+func (m *mockPermissionService) RegisterSessionHandler(sessionID string, handler func(sessionID, toolName, description string) bool) {
+	m.registered = append(m.registered, sessionID)
+	m.handlers[sessionID] = handler
+}
+
+func (m *mockPermissionService) UnregisterSessionHandler(sessionID string) {
+	m.unregistered = append(m.unregistered, sessionID)
+	delete(m.handlers, sessionID)
+}
+
 func newTestPandoAgent() *PandoACPAgent {
 	agent := &mockAgentService{}
 	sessions := newMockSessionService()
-	return NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), agent, sessions)
+	return NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), agent, sessions, nil)
 }
 
 // TestPandoACPAgent_Initialize verifies the initialization response.
@@ -321,7 +354,7 @@ func TestPandoACPAgent_SetSessionMode(t *testing.T) {
 
 	_, err = agent.SetSessionMode(ctx, acpsdk.SetSessionModeRequest{
 		SessionId: resp.SessionId,
-		ModeId:    "auto",
+		ModeId:    "ask",
 	})
 	if err != nil {
 		t.Fatalf("SetSessionMode failed: %v", err)
@@ -331,8 +364,140 @@ func TestPandoACPAgent_SetSessionMode(t *testing.T) {
 	acpSess := agent.sessions[resp.SessionId]
 	agent.sessionsMu.RUnlock()
 
-	if acpSess.Mode() != "auto" {
-		t.Errorf("Expected mode 'auto', got %q", acpSess.Mode())
+	if acpSess.Mode() != "ask" {
+		t.Errorf("Expected mode 'ask', got %q", acpSess.Mode())
+	}
+}
+
+func TestPandoACPAgent_SetSessionMode_LogsNextPromptApplication(t *testing.T) {
+	var logs bytes.Buffer
+	logger := log.New(&logs, "", 0)
+	mockAgent := &mockAgentService{}
+	sessions := newMockSessionService()
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", logger, mockAgent, sessions, nil)
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	_, err = agent.SetSessionMode(ctx, acpsdk.SetSessionModeRequest{
+		SessionId: resp.SessionId,
+		ModeId:    "ask",
+	})
+	if err != nil {
+		t.Fatalf("SetSessionMode failed: %v", err)
+	}
+
+	if !strings.Contains(logs.String(), "mode will take effect on next prompt") {
+		t.Fatalf("expected SetSessionMode log to mention next prompt, got logs:\n%s", logs.String())
+	}
+}
+
+func TestPandoACPAgent_Prompt_AgentModeAutoApprovesSession(t *testing.T) {
+	mockAgent := &mockAgentService{}
+	sessions := newMockSessionService()
+	permSvc := newMockPermissionService()
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), mockAgent, sessions, permSvc)
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	_, err = agent.Prompt(ctx, acpsdk.PromptRequest{
+		SessionId: resp.SessionId,
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("hello")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt failed: %v", err)
+	}
+
+	if len(permSvc.autoApproved) != 1 || permSvc.autoApproved[0] != string(resp.SessionId) {
+		t.Fatalf("expected session %s to be auto-approved once, got %+v", resp.SessionId, permSvc.autoApproved)
+	}
+	if len(permSvc.registered) != 0 {
+		t.Fatalf("did not expect ask-mode handler registration, got %+v", permSvc.registered)
+	}
+}
+
+func TestPandoACPAgent_Prompt_AskModeRegistersAndUnregistersHandler(t *testing.T) {
+	mockAgent := &mockAgentService{}
+	sessions := newMockSessionService()
+	permSvc := newMockPermissionService()
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), mockAgent, sessions, permSvc)
+	agent.SetConnection(&acpsdk.AgentSideConnection{})
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	_, err = agent.SetSessionMode(ctx, acpsdk.SetSessionModeRequest{
+		SessionId: resp.SessionId,
+		ModeId:    "ask",
+	})
+	if err != nil {
+		t.Fatalf("SetSessionMode failed: %v", err)
+	}
+
+	_, err = agent.Prompt(ctx, acpsdk.PromptRequest{
+		SessionId: resp.SessionId,
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("hello")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt failed: %v", err)
+	}
+
+	if len(permSvc.removed) != 1 || permSvc.removed[0] != string(resp.SessionId) {
+		t.Fatalf("expected auto-approve removal for session %s, got %+v", resp.SessionId, permSvc.removed)
+	}
+	if len(permSvc.registered) != 1 || permSvc.registered[0] != string(resp.SessionId) {
+		t.Fatalf("expected handler registration for session %s, got %+v", resp.SessionId, permSvc.registered)
+	}
+	if len(permSvc.unregistered) != 1 || permSvc.unregistered[0] != string(resp.SessionId) {
+		t.Fatalf("expected handler unregistration for session %s, got %+v", resp.SessionId, permSvc.unregistered)
+	}
+}
+
+func TestPandoACPAgent_Prompt_AskModeWithoutConnectionLogsWarning(t *testing.T) {
+	var logs bytes.Buffer
+	logger := log.New(&logs, "", 0)
+	mockAgent := &mockAgentService{}
+	sessions := newMockSessionService()
+	permSvc := newMockPermissionService()
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", logger, mockAgent, sessions, permSvc)
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	_, err = agent.SetSessionMode(ctx, acpsdk.SetSessionModeRequest{
+		SessionId: resp.SessionId,
+		ModeId:    "ask",
+	})
+	if err != nil {
+		t.Fatalf("SetSessionMode failed: %v", err)
+	}
+
+	_, err = agent.Prompt(ctx, acpsdk.PromptRequest{
+		SessionId: resp.SessionId,
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("hello")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt failed: %v", err)
+	}
+
+	if len(permSvc.registered) != 0 {
+		t.Fatalf("did not expect handler registration without ACP connection, got %+v", permSvc.registered)
+	}
+	if !strings.Contains(logs.String(), "no ACP connection is available") {
+		t.Fatalf("expected ask-mode warning about missing ACP connection, got logs:\n%s", logs.String())
 	}
 }
 
@@ -367,7 +532,7 @@ func TestPandoACPAgent_SetSessionModel(t *testing.T) {
 func TestPandoACPAgent_Cancel_Existing(t *testing.T) {
 	mockAgent := &mockAgentService{}
 	sessions := newMockSessionService()
-	agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), mockAgent, sessions)
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), mockAgent, sessions, nil)
 
 	ctx := context.Background()
 
