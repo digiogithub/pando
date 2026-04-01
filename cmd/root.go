@@ -150,7 +150,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			}
 			cwd = c
 		}
-		_, err := config.Load(cwd, debug, logFile)
+		cfg, err := config.Load(cwd, debug, logFile)
 		if err != nil {
 			return err
 		}
@@ -202,7 +202,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		}
 
 		// Interactive mode
-		if yoloMode {
+		if yoloMode || (cfg != nil && cfg.Permissions.AutoApproveTools) {
 			app.Permissions.SetGlobalAutoApprove(true)
 		}
 
