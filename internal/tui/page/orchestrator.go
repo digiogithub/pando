@@ -120,11 +120,11 @@ func NewOrchestratorPage(app *app.App) tea.Model {
 	input.Prompt = "prompt> "
 
 	engineInput := textinput.New()
-	engineInput.Placeholder = "copilot | claude | gemini | opencode | ollama-claude | ollama-opencode | mistral | acp"
+	engineInput.Placeholder = "copilot | claude | gemini | opencode | mistral | acp | pando"
 	engineInput.Prompt = "engine> "
 
 	agentInput := textinput.New()
-	agentInput.Placeholder = "ACP agent name (e.g. pando). Used only when engine=acp"
+	agentInput.Placeholder = "ACP agent name (e.g. pando). Used only when engine=acp; omit if engine=pando"
 	agentInput.Prompt = "acp_agent> "
 
 	return &orchestratorPage{
