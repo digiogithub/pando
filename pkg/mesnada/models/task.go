@@ -45,11 +45,13 @@ const (
 	EngineACPCustom Engine = "acp-custom"
 	// EngineACPServer represents ACP sessions managed by the Pando ACP server.
 	EngineACPServer Engine = "acp-server"
+	// EnginePando uses Pando itself as an ACP subagent (shorthand for engine=acp + acp_agent=pando).
+	EnginePando Engine = "pando"
 )
 
 // ValidEngine checks if an engine is valid.
 func ValidEngine(e Engine) bool {
-	return e == EngineCopilot || e == EngineClaude || e == EngineGemini || e == EngineOpenCode || e == EngineOllamaClaude || e == EngineOllamaOpenCode || e == EngineMistral || e == EngineACP || e == EngineACPClaudeCode || e == EngineACPCodex || e == EngineACPCustom || e == EngineACPServer || e == ""
+	return e == EngineCopilot || e == EngineClaude || e == EngineGemini || e == EngineOpenCode || e == EngineOllamaClaude || e == EngineOllamaOpenCode || e == EngineMistral || e == EngineACP || e == EngineACPClaudeCode || e == EngineACPCodex || e == EngineACPCustom || e == EngineACPServer || e == EnginePando || e == ""
 }
 
 // DefaultEngine returns the default engine.
