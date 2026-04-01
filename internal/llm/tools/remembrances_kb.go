@@ -11,6 +11,7 @@ import (
 // KB tool names
 const (
 	kbAddDocumentToolName     = "kb_add_document"
+	kbImportPathToolName      = "kb_import_path"
 	kbSearchDocumentsToolName = "kb_search_documents"
 	kbGetDocumentToolName     = "kb_get_document"
 	kbDeleteDocumentToolName  = "kb_delete_document"
@@ -18,6 +19,11 @@ const (
 
 // KBAddDocumentTool adds a document to the knowledge base.
 type KBAddDocumentTool struct {
+	store *kb.KBStore
+}
+
+// KBImportPathTool imports/syncs markdown files from a filesystem path.
+type KBImportPathTool struct {
 	store *kb.KBStore
 }
 
@@ -39,6 +45,11 @@ type KBDeleteDocumentTool struct {
 // NewKBAddDocumentTool creates a new KBAddDocumentTool.
 func NewKBAddDocumentTool(store *kb.KBStore) BaseTool {
 	return &KBAddDocumentTool{store: store}
+}
+
+// NewKBImportPathTool creates a new KBImportPathTool.
+func NewKBImportPathTool(store *kb.KBStore) BaseTool {
+	return &KBImportPathTool{store: store}
 }
 
 // NewKBSearchDocumentsTool creates a new KBSearchDocumentsTool.
@@ -106,14 +117,78 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 		if err := t.store.UpdateDocument(ctx, req.FilePath, req.Content, req.Metadata); err != nil {
 			return NewTextErrorResponse(fmt.Sprintf("kb update error: %v", err)), nil
 		}
+		if err := t.store.WriteDocumentToFilesystem(req.FilePath, req.Content); err != nil {
+			return NewTextErrorResponse(fmt.Sprintf("kb filesystem mirror error: %v", err)), nil
+		}
 		return NewTextResponse(fmt.Sprintf("Document updated: %s", req.FilePath)), nil
 	}
 
 	if err := t.store.AddDocument(ctx, req.FilePath, req.Content, req.Metadata); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("kb add error: %v", err)), nil
 	}
+	if err := t.store.WriteDocumentToFilesystem(req.FilePath, req.Content); err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("kb filesystem mirror error: %v", err)), nil
+	}
 
 	return NewTextResponse(fmt.Sprintf("Document added: %s", req.FilePath)), nil
+}
+
+// ---- KBImportPathTool ----
+
+func (t *KBImportPathTool) Info() ToolInfo {
+	return ToolInfo{
+		Name:        kbImportPathToolName,
+		Description: "Imports and synchronizes all .md files from a directory (including subdirectories) into the knowledge base. Can optionally delete KB docs that no longer exist on disk.",
+		Parameters: map[string]any{
+			"path": map[string]any{
+				"type":        "string",
+				"description": "Absolute or relative directory path to scan recursively for .md files.",
+			},
+			"delete_missing": map[string]any{
+				"type":        "boolean",
+				"description": "When true (default), remove KB documents previously imported from this path that no longer exist on disk.",
+			},
+		},
+		Required: []string{"path"},
+	}
+}
+
+func (t *KBImportPathTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
+	var req struct {
+		Path          string `json:"path"`
+		DeleteMissing *bool  `json:"delete_missing"`
+	}
+	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
+	}
+	if req.Path == "" {
+		return NewTextErrorResponse("path is required"), nil
+	}
+
+	deleteMissing := true
+	if req.DeleteMissing != nil {
+		deleteMissing = *req.DeleteMissing
+	}
+
+	stats, err := t.store.SyncDirectoryWithStats(ctx, req.Path, deleteMissing)
+	if err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("kb import error: %v", err)), nil
+	}
+
+	out, err := json.MarshalIndent(map[string]any{
+		"path":           req.Path,
+		"delete_missing": deleteMissing,
+		"scanned":        stats.Scanned,
+		"added":          stats.Added,
+		"updated":        stats.Updated,
+		"unchanged":      stats.Unchanged,
+		"deleted":        stats.Deleted,
+	}, "", "  ")
+	if err != nil {
+		return NewTextErrorResponse("failed to marshal import result"), nil
+	}
+
+	return NewTextResponse(string(out)), nil
 }
 
 // ---- KBSearchDocumentsTool ----
@@ -269,6 +344,9 @@ func (t *KBDeleteDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRe
 
 	if err := t.store.DeleteDocument(ctx, req.FilePath); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("kb delete error: %v", err)), nil
+	}
+	if err := t.store.DeleteDocumentFromFilesystem(req.FilePath); err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("kb filesystem mirror error: %v", err)), nil
 	}
 
 	return NewTextResponse(fmt.Sprintf("Document deleted: %s", req.FilePath)), nil

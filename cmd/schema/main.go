@@ -141,6 +141,18 @@ func generateSchema() map[string]any {
 		},
 	}
 
+	schema["properties"].(map[string]any)["permissions"] = map[string]any{
+		"type":        "object",
+		"description": "Runtime permissions behavior",
+		"properties": map[string]any{
+			"autoApproveTools": map[string]any{
+				"type":        "boolean",
+				"description": "Automatically approve tool-driven file changes in local interactive sessions",
+				"default":     false,
+			},
+		},
+	}
+
 	schema["properties"].(map[string]any)["mesnada"] = map[string]any{
 		"type":        "object",
 		"description": "Mesnada integration configuration",
