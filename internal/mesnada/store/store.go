@@ -44,6 +44,10 @@ type FileStore struct {
 
 // NewFileStore creates a new file-based store.
 func NewFileStore(path string) (*FileStore, error) {
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		path = filepath.Join(path, "tasks.json")
+	}
+
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create store directory: %w", err)
