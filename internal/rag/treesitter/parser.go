@@ -16,6 +16,7 @@ import (
 type Parser struct {
 	// Cache of parsers per language
 	parsers map[Language]*sitter.Parser
+	locks   map[Language]*sync.Mutex
 	mu      sync.RWMutex
 }
 
@@ -23,6 +24,7 @@ type Parser struct {
 func NewParser() *Parser {
 	return &Parser{
 		parsers: make(map[Language]*sitter.Parser),
+		locks:   make(map[Language]*sync.Mutex),
 	}
 }
 
@@ -32,6 +34,7 @@ func (p *Parser) getParser(lang Language) (*sitter.Parser, error) {
 	parser, ok := p.parsers[lang]
 	p.mu.RUnlock()
 	if ok {
+		p.ensureLock(lang)
 		return parser, nil
 	}
 
@@ -46,9 +49,37 @@ func (p *Parser) getParser(lang Language) (*sitter.Parser, error) {
 
 	p.mu.Lock()
 	p.parsers[lang] = parser
+	if _, ok := p.locks[lang]; !ok {
+		p.locks[lang] = &sync.Mutex{}
+	}
 	p.mu.Unlock()
 
 	return parser, nil
+}
+
+// ensureLock guarantees there is a language-specific parse lock.
+func (p *Parser) ensureLock(lang Language) {
+	p.mu.RLock()
+	_, ok := p.locks[lang]
+	p.mu.RUnlock()
+	if ok {
+		return
+	}
+
+	p.mu.Lock()
+	if _, ok := p.locks[lang]; !ok {
+		p.locks[lang] = &sync.Mutex{}
+	}
+	p.mu.Unlock()
+}
+
+// getLock returns the language-specific parse lock.
+func (p *Parser) getLock(lang Language) *sync.Mutex {
+	p.ensureLock(lang)
+	p.mu.RLock()
+	lock := p.locks[lang]
+	p.mu.RUnlock()
+	return lock
 }
 
 // ParseFile parses a source file and returns the syntax tree
@@ -76,6 +107,9 @@ func (p *Parser) Parse(ctx context.Context, sourceCode []byte, lang Language) (*
 	if err != nil {
 		return nil, err
 	}
+	lock := p.getLock(lang)
+	lock.Lock()
+	defer lock.Unlock()
 
 	tree, err := parser.ParseCtx(ctx, nil, sourceCode)
 	if err != nil {
@@ -91,6 +125,9 @@ func (p *Parser) ParseWithPreviousTree(ctx context.Context, sourceCode []byte, l
 	if err != nil {
 		return nil, err
 	}
+	lock := p.getLock(lang)
+	lock.Lock()
+	defer lock.Unlock()
 
 	tree, err := parser.ParseCtx(ctx, oldTree, sourceCode)
 	if err != nil {
@@ -175,6 +212,7 @@ func (p *Parser) Close() {
 		parser.Close()
 	}
 	p.parsers = make(map[Language]*sitter.Parser)
+	p.locks = make(map[Language]*sync.Mutex)
 }
 
 // NodeIterator provides iteration over nodes in a tree

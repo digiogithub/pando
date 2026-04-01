@@ -392,6 +392,28 @@ func (s *Server) toolCodeGetProjectStats(ctx context.Context, params json.RawMes
 	return stats, nil
 }
 
+// toolCodeDeleteProject deletes an indexed project and all related indexed data.
+func (s *Server) toolCodeDeleteProject(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req struct {
+		ProjectID string `json:"project_id"`
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+	if req.ProjectID == "" {
+		return nil, fmt.Errorf("project_id is required")
+	}
+
+	if err := s.remembrances.Code.DeleteProject(ctx, req.ProjectID); err != nil {
+		return nil, fmt.Errorf("delete project error: %w", err)
+	}
+
+	return map[string]interface{}{
+		"project_id": req.ProjectID,
+		"status":     "deleted",
+	}, nil
+}
+
 // toolCodeReindexFile re-indexes a single file in a project.
 func (s *Server) toolCodeReindexFile(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req struct {

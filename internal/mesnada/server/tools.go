@@ -46,6 +46,7 @@ func (s *Server) registerTools() {
 		s.tools["code_find_symbol"] = s.toolCodeFindSymbol
 		s.tools["code_get_symbols_overview"] = s.toolCodeGetSymbolsOverview
 		s.tools["code_get_project_stats"] = s.toolCodeGetProjectStats
+		s.tools["code_delete_project"] = s.toolCodeDeleteProject
 		s.tools["code_reindex_file"] = s.toolCodeReindexFile
 		s.tools["code_list_projects"] = s.toolCodeListProjects
 	}
@@ -318,6 +319,20 @@ func (s *Server) getRemembrancesToolDefinitions() []Tool {
 					"project_id": map[string]interface{}{
 						"type":        "string",
 						"description": "Project ID to get stats for",
+					},
+				},
+				"required": []string{"project_id"},
+			},
+		},
+		{
+			Name:        "code_delete_project",
+			Description: "Delete an indexed project and all its indexed code data.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"project_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Project ID to delete",
 					},
 				},
 				"required": []string{"project_id"},
