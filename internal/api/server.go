@@ -31,6 +31,10 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 		return nil, err
 	}
 
+	// The HTTP API/Web UI flow does not provide the terminal permission dialog,
+	// so permission requests must be auto-approved to avoid deadlocks.
+	application.Permissions.SetGlobalAutoApprove(true)
+
 	s := &Server{
 		app:    application,
 		config: cfg,
