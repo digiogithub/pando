@@ -96,6 +96,10 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			presetName := strings.TrimPrefix(msg.Field.Key, "action:lsp_preset:")
 			return p, p.addLSPPreset(presetName)
 		}
+		if strings.HasPrefix(msg.Field.Key, "action:delete_mcp_server:") {
+			serverName := strings.TrimPrefix(msg.Field.Key, "action:delete_mcp_server:")
+			return p, p.deleteMCPServer(serverName)
+		}
 		return p, p.saveField(msg)
 	case skillUninstalledMsg:
 		p.settings.SetSections(buildSections(p.app))
@@ -805,6 +809,12 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 				Key:   fmt.Sprintf("mcpServers.%s.name", name),
 				Value: name,
 				Type:  settings.FieldText,
+			},
+			settings.Field{
+				Label: fmt.Sprintf("%s Delete", name),
+				Key:   fmt.Sprintf("action:delete_mcp_server:%s", name),
+				Value: "Delete server and gateway registry data",
+				Type:  settings.FieldAction,
 			},
 			settings.Field{
 				Label: fmt.Sprintf("%s Command", name),

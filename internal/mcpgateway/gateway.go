@@ -103,6 +103,11 @@ func (g *Gateway) RecordUsage(ctx context.Context, toolID, sessionID string, dur
 	}
 }
 
+// DeleteServerData removes registry and usage data associated with one MCP server.
+func (g *Gateway) DeleteServerData(ctx context.Context, serverName string) error {
+	return g.registry.DeleteServer(ctx, serverName)
+}
+
 // callMCPTool uses the client pool to obtain an initialized MCP client for the
 // given server and invokes the named tool. On error the pool entry is evicted
 // so the next call will reconnect transparently.
