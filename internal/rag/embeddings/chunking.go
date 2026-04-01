@@ -36,8 +36,19 @@ func ChunkText(text string, maxSize, overlap int) []string {
 
 	var chunks []string
 	start := 0
+	step := maxSize - overlap
+	if step <= 0 {
+		step = 1
+	}
+	maxChunks := (len(text) / step) + 2
 
 	for start < len(text) {
+		if len(chunks) >= maxChunks {
+			chunks = append(chunks, text[start:])
+			break
+		}
+
+		prevStart := start
 		end := start + maxSize
 		if end >= len(text) {
 			// Last chunk
@@ -49,12 +60,12 @@ func ChunkText(text string, maxSize, overlap int) []string {
 		chunk := text[start:end]
 		splitIdx := findSentenceBoundary(chunk)
 
-		if splitIdx > 0 {
+		if splitIdx > overlap {
 			// Found a good sentence boundary
 			chunks = append(chunks, text[start:start+splitIdx])
 			start = start + splitIdx - overlap
 		} else {
-			// No sentence boundary found, split at maxSize
+			// No usable sentence boundary found, split at maxSize
 			chunks = append(chunks, chunk)
 			start = end - overlap
 		}
@@ -62,6 +73,16 @@ func ChunkText(text string, maxSize, overlap int) []string {
 		// Ensure we don't go backwards
 		if start < 0 {
 			start = 0
+		}
+
+		// Safety: enforce forward progress to avoid infinite loops when
+		// split index is too small compared to overlap.
+		if start <= prevStart {
+			fallback := prevStart + (maxSize - overlap)
+			if fallback <= prevStart {
+				fallback = prevStart + 1
+			}
+			start = fallback
 		}
 	}
 
