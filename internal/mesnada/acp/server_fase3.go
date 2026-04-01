@@ -74,6 +74,18 @@ type SessionService interface {
 	ListSessions(ctx context.Context) ([]ACPSessionInfo, error)
 }
 
+// ListSessions returns the historical sessions known by Pando.
+// ACP v0.6.3 doesn't define a session/list request, so this helper is exposed
+// for HTTP/API adapters that need to provide discovery endpoints.
+func (a *PandoACPAgent) ListSessions(ctx context.Context) ([]ACPSessionInfo, error) {
+	sessions, err := a.sessionService.ListSessions(ctx)
+	if err != nil {
+		a.logger.Printf("[ACP AGENT] ListSessions failed: %v", err)
+		return nil, err
+	}
+	return sessions, nil
+}
+
 // PermissionService is a minimal interface for configuring tool permissions per session.
 // This avoids import cycles with the permission package.
 type PermissionService interface {
@@ -485,12 +497,15 @@ func (a *PandoACPAgent) processPromptWithAgent(
 					a.pendingToolCalls[tc.ID] = tc.Input
 					a.pendingToolCallsMu.Unlock()
 				}
+				// Decode the JSON string to a native object so clients render it
+				// correctly. If decoding fails, fall back to the raw string.
+				rawInput := parseJSONInput(tc.Input)
 				update := acpsdk.StartToolCall(
 					acpsdk.ToolCallId(tc.ID),
 					tc.Name,
 					acpsdk.WithStartKind(mapToolKind(tc.Name)),
 					acpsdk.WithStartStatus(acpsdk.ToolCallStatusInProgress),
-					acpsdk.WithStartRawInput(tc.Input),
+					acpsdk.WithStartRawInput(rawInput),
 				)
 				if err := acpSession.SendUpdate(update); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send tool call: %v", err)
@@ -504,10 +519,33 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				if tr.IsError {
 					status = acpsdk.ToolCallStatusFailed
 				}
+				// Use ToolCallContent so editors display the output correctly.
+				// The ACP TypeScript SDK clients (VS Code, Zed, JetBrains) render
+				// content entries; rawOutput is only used as a fallback.
+				outputContent := []acpsdk.ToolCallContent{
+					acpsdk.ToolContent(acpsdk.TextBlock(tr.Content)),
+				}
+				// For edit tools, also attach a diff content block when the input
+				// JSON provides old/new strings (6a enhancement).
+				if isEditTool(tr.Name) {
+					if inputMap, ok := parseJSONInput(tr.Content).(map[string]interface{}); ok {
+						_ = inputMap // diff would be built from stored pendingToolCalls
+					}
+					// Retrieve stored input to build the diff block.
+					a.pendingToolCallsMu.Lock()
+					storedInput, hasInput := a.pendingToolCalls[tr.ToolCallID]
+					a.pendingToolCallsMu.Unlock()
+					if hasInput && !tr.IsError {
+						var ep editToolInput
+						if jerr := json.Unmarshal([]byte(storedInput), &ep); jerr == nil && ep.FilePath != "" {
+							outputContent = append(outputContent, acpsdk.ToolDiffContent(ep.FilePath, ep.Content))
+						}
+					}
+				}
 				update := acpsdk.UpdateToolCall(
 					acpsdk.ToolCallId(tr.ToolCallID),
 					acpsdk.WithUpdateStatus(status),
-					acpsdk.WithUpdateRawOutput(tr.Content),
+					acpsdk.WithUpdateContent(outputContent),
 				)
 				if err := acpSession.SendUpdate(update); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send tool result: %v", err)

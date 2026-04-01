@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"net/http"
 
+	"github.com/digiogithub/pando/internal/mesnada/acp"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,15 +25,22 @@ func (s *Server) registerACPAPI(api *gin.RouterGroup) {
 	}
 }
 
-// apiACPListSessions lists all active ACP sessions.
+// apiACPListSessions lists historical sessions from Pando's session store.
 func (s *Server) apiACPListSessions(c *gin.Context) {
-	transport := s.acpHandler.GetTransport()
-	sessions := transport.ListSessions()
+	agent := s.acpHandler.GetAgent()
+	if lister, ok := agent.(interface {
+		ListSessions(ctx context.Context) ([]acp.ACPSessionInfo, error)
+	}); ok {
+		sessions, err := lister.ListSessions(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"sessions": sessions, "count": len(sessions)})
+		return
+	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"sessions": sessions,
-		"count":    len(sessions),
-	})
+	c.JSON(http.StatusNotImplemented, gin.H{"error": "agent does not support listing historical sessions"})
 }
 
 // apiACPGetSession retrieves details about a specific ACP session.
