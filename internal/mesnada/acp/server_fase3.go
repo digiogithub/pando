@@ -74,6 +74,18 @@ type SessionService interface {
 	ListSessions(ctx context.Context) ([]ACPSessionInfo, error)
 }
 
+// ListSessions returns the historical sessions known by Pando.
+// ACP v0.6.3 doesn't define a session/list request, so this helper is exposed
+// for HTTP/API adapters that need to provide discovery endpoints.
+func (a *PandoACPAgent) ListSessions(ctx context.Context) ([]ACPSessionInfo, error) {
+	sessions, err := a.sessionService.ListSessions(ctx)
+	if err != nil {
+		a.logger.Printf("[ACP AGENT] ListSessions failed: %v", err)
+		return nil, err
+	}
+	return sessions, nil
+}
+
 // PermissionService is a minimal interface for configuring tool permissions per session.
 // This avoids import cycles with the permission package.
 type PermissionService interface {

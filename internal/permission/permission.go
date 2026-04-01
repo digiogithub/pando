@@ -85,23 +85,25 @@ func (s *permissionService) Deny(permission PermissionRequest) {
 
 func (s *permissionService) Request(opts CreatePermissionRequest) bool {
 	logging.Debug("Permission requested", "sessionID", opts.SessionID, "toolName", opts.ToolName, "action", opts.Action, "path", opts.Path)
-	if s.globalAutoApprove {
-		logging.Debug("Permission result", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", true)
-		return true
-	}
-	if slices.Contains(s.autoApproveSessions, opts.SessionID) {
-		logging.Debug("Permission result", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", true)
-		return true
-	}
 
-	// Check for ACP session handler (registered by ACP server for "ask" mode).
+	// Session handlers are checked first — they represent explicit per-session
+	// overrides (e.g. ACP "ask" mode) and must take precedence over global flags.
 	s.sessionHandlersMu.RLock()
 	handler, hasHandler := s.sessionHandlers[opts.SessionID]
 	s.sessionHandlersMu.RUnlock()
 	if hasHandler {
 		resp := handler(opts.SessionID, opts.ToolName, opts.Description)
-		logging.Debug("Permission result", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", resp)
+		logging.Debug("Permission result via session handler", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", resp)
 		return resp
+	}
+
+	if slices.Contains(s.autoApproveSessions, opts.SessionID) {
+		logging.Debug("Permission result via auto-approve session", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", true)
+		return true
+	}
+	if s.globalAutoApprove {
+		logging.Debug("Permission result via global auto-approve", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", true)
+		return true
 	}
 
 	dir := filepath.Dir(opts.Path)
