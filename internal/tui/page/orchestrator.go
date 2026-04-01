@@ -39,6 +39,8 @@ type orchestratorPage struct {
 
 	showSpawnDialog bool
 	spawnInput      textinput.Model
+	spawnEngine     textinput.Model
+	spawnACPAgent   textinput.Model
 }
 
 type taskRow struct {
