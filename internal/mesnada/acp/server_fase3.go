@@ -95,10 +95,12 @@ type PermissionService interface {
 	UnregisterSessionHandler(sessionID string)
 }
 
-// editToolInput is used to parse file_path from tool call input JSON.
+// editToolInput is used to parse fields from tool call input JSON for edit/write tools.
 type editToolInput struct {
-	FilePath string `json:"file_path"`
-	Content  string `json:"content"` // write tool
+	FilePath  string `json:"file_path"`
+	Content   string `json:"content"`    // write tool
+	OldString string `json:"old_string"` // edit tool
+	NewString string `json:"new_string"` // edit tool
 }
 
 // PandoACPAgent implements the ACP Agent interface.
@@ -515,13 +517,21 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				// 2. Immediately follow with "in_progress" + actual input so the client
 				// can render the tool arguments while it executes.
 				rawInput := parseJSONInput(tc.Input)
-				inProgressUpdate := acpsdk.UpdateToolCall(
-					acpsdk.ToolCallId(tc.ID),
+				inProgressOpts := []acpsdk.ToolCallUpdateOpt{
 					acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
 					acpsdk.WithUpdateKind(kind),
 					acpsdk.WithUpdateTitle(tc.Name),
 					acpsdk.WithUpdateRawInput(rawInput),
-				)
+				}
+				// For edit/write tools, attach the file path as a location so editors can
+				// show which file is being modified while the tool runs.
+				if isEditTool(tc.Name) {
+					var ep editToolInput
+					if jerr := json.Unmarshal([]byte(tc.Input), &ep); jerr == nil && ep.FilePath != "" {
+						inProgressOpts = append(inProgressOpts, acpsdk.WithUpdateLocations([]acpsdk.ToolCallLocation{{Path: ep.FilePath}}))
+					}
+				}
+				inProgressUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tc.ID), inProgressOpts...)
 				if err := acpSession.SendUpdate(inProgressUpdate); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send tool call in_progress: %v", err)
 				}
