@@ -37,6 +37,9 @@ func (s *Server) toolKBAddDocument(ctx context.Context, params json.RawMessage) 
 		if err := s.remembrances.KB.UpdateDocument(ctx, req.Path, req.Content, req.Metadata); err != nil {
 			return nil, fmt.Errorf("kb update error: %w", err)
 		}
+		if err := s.remembrances.KB.WriteDocumentToFilesystem(req.Path, req.Content); err != nil {
+			return nil, fmt.Errorf("kb filesystem mirror error: %w", err)
+		}
 		return map[string]interface{}{
 			"path":   req.Path,
 			"status": "updated",
@@ -46,9 +49,46 @@ func (s *Server) toolKBAddDocument(ctx context.Context, params json.RawMessage) 
 	if err := s.remembrances.KB.AddDocument(ctx, req.Path, req.Content, req.Metadata); err != nil {
 		return nil, fmt.Errorf("kb add error: %w", err)
 	}
+	if err := s.remembrances.KB.WriteDocumentToFilesystem(req.Path, req.Content); err != nil {
+		return nil, fmt.Errorf("kb filesystem mirror error: %w", err)
+	}
 	return map[string]interface{}{
 		"path":   req.Path,
 		"status": "added",
+	}, nil
+}
+
+// toolKBImportPath imports markdown files from a path recursively into the KB.
+func (s *Server) toolKBImportPath(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req struct {
+		Path          string `json:"path"`
+		DeleteMissing *bool  `json:"delete_missing"`
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid parameters: %w", err)
+	}
+	if req.Path == "" {
+		return nil, fmt.Errorf("path is required")
+	}
+
+	deleteMissing := true
+	if req.DeleteMissing != nil {
+		deleteMissing = *req.DeleteMissing
+	}
+
+	stats, err := s.remembrances.KB.SyncDirectoryWithStats(ctx, req.Path, deleteMissing)
+	if err != nil {
+		return nil, fmt.Errorf("kb import error: %w", err)
+	}
+
+	return map[string]interface{}{
+		"path":           req.Path,
+		"delete_missing": deleteMissing,
+		"scanned":        stats.Scanned,
+		"added":          stats.Added,
+		"updated":        stats.Updated,
+		"unchanged":      stats.Unchanged,
+		"deleted":        stats.Deleted,
 	}, nil
 }
 
@@ -126,6 +166,9 @@ func (s *Server) toolKBDeleteDocument(ctx context.Context, params json.RawMessag
 
 	if err := s.remembrances.KB.DeleteDocument(ctx, req.Path); err != nil {
 		return nil, fmt.Errorf("kb delete error: %w", err)
+	}
+	if err := s.remembrances.KB.DeleteDocumentFromFilesystem(req.Path); err != nil {
+		return nil, fmt.Errorf("kb filesystem mirror error: %w", err)
 	}
 	return map[string]interface{}{
 		"path":   req.Path,

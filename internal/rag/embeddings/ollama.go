@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 )
 
 // OllamaEmbedder generates embeddings using a local Ollama instance.
@@ -24,12 +25,13 @@ type OllamaEmbedder struct {
 // ollamaEmbeddingRequest is the request structure for Ollama embeddings API.
 type ollamaEmbeddingRequest struct {
 	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
+	Input  string `json:"input"`
 }
 
 // ollamaEmbeddingResponse is the response structure from Ollama embeddings API.
 type ollamaEmbeddingResponse struct {
-	Embedding []float64 `json:"embedding"`
+	Embedding  []float64   `json:"embedding"`
+	Embeddings [][]float64 `json:"embeddings"`
 }
 
 // NewOllamaEmbedder creates a new Ollama embedder.
@@ -45,7 +47,7 @@ func NewOllamaEmbedder(model, baseURL string) (*OllamaEmbedder, error) {
 	return &OllamaEmbedder{
 		model:   model,
 		baseURL: baseURL,
-		client:  &http.Client{},
+		client:  &http.Client{Timeout: 90 * time.Second},
 	}, nil
 }
 
@@ -108,7 +110,7 @@ func (e *OllamaEmbedder) Dimension() int {
 func (e *OllamaEmbedder) embedSingle(ctx context.Context, text string) ([]float32, error) {
 	reqBody := ollamaEmbeddingRequest{
 		Model:  e.model,
-		Prompt: text,
+		Input:  text,
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)
@@ -116,12 +118,38 @@ func (e *OllamaEmbedder) embedSingle(ctx context.Context, text string) ([]float3
 		return nil, fmt.Errorf("ollama: marshal request: %w", err)
 	}
 
-	url := e.baseURL + "/api/embed"
+	embedding, err := e.requestEmbed(ctx, e.baseURL+"/api/embed", bodyBytes)
+	if err != nil {
+		// Fallback for legacy Ollama endpoint.
+		type legacyReq struct {
+			Model  string `json:"model"`
+			Prompt string `json:"prompt"`
+		}
+		legacyBody, mErr := json.Marshal(legacyReq{Model: e.model, Prompt: text})
+		if mErr != nil {
+			return nil, fmt.Errorf("ollama: marshal legacy request: %w", mErr)
+		}
+		embedding, err = e.requestEmbed(ctx, e.baseURL+"/api/embeddings", legacyBody)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Auto-detect dimension on first successful call
+	if e.Dimension() == 0 && len(embedding) > 0 {
+		e.mu.Lock()
+		e.dim = len(embedding)
+		e.mu.Unlock()
+	}
+
+	return embedding, nil
+}
+
+func (e *OllamaEmbedder) requestEmbed(ctx context.Context, url string, bodyBytes []byte) ([]float32, error) {
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("ollama: create request: %w", err)
 	}
-
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := e.client.Do(req)
@@ -144,18 +172,17 @@ func (e *OllamaEmbedder) embedSingle(ctx context.Context, text string) ([]float3
 		return nil, fmt.Errorf("ollama: unmarshal response: %w", err)
 	}
 
-	// Convert float64 to float32
-	embedding := make([]float32, len(embResp.Embedding))
-	for i, v := range embResp.Embedding {
+	raw := embResp.Embedding
+	if len(raw) == 0 && len(embResp.Embeddings) > 0 {
+		raw = embResp.Embeddings[0]
+	}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("ollama: empty embedding vector from %s", url)
+	}
+
+	embedding := make([]float32, len(raw))
+	for i, v := range raw {
 		embedding[i] = float32(v)
 	}
-
-	// Auto-detect dimension on first successful call
-	if e.Dimension() == 0 && len(embedding) > 0 {
-		e.mu.Lock()
-		e.dim = len(embedding)
-		e.mu.Unlock()
-	}
-
 	return embedding, nil
 }
