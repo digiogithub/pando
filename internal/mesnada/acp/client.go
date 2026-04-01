@@ -35,6 +35,9 @@ type MesnadaACPClient struct {
 	// mu protects concurrent access to output and onUpdate
 	mu sync.Mutex
 
+	// toolCalls tracks started tool calls to enrich subsequent updates
+	toolCalls map[string]ToolCallInfo
+
 	// terminals tracks active terminal sessions
 	terminals map[string]*terminalState
 
@@ -91,6 +94,7 @@ func NewMesnadaACPClient(taskID string, workDir string, logFile *os.File, onUpda
 		logFile:         logFile,
 		output:          &strings.Builder{},
 		onUpdate:        onUpdate,
+		toolCalls:       make(map[string]ToolCallInfo),
 		terminals:       make(map[string]*terminalState),
 		autoPermission:  false, // Default to requiring manual approval
 		permissionQueue: NewPermissionQueue(),
