@@ -209,3 +209,88 @@ func TestResolveProjectInitializationContextPath(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadSupportsLegacyGlobalConfigYAML(t *testing.T) {
+	cfg = nil
+	viper.Reset()
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	homeDir := t.TempDir()
+	configDir := filepath.Join(homeDir, ".config", "pando")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+
+	configPath := filepath.Join(configDir, "config.yaml")
+	content := []byte(`providers:
+  gemini:
+    apiKey: test-gemini-key
+    disabled: false
+agents:
+  coder:
+    model: gemini.gemini-2.5-pro-preview-05-06
+    maxTokens: 4096
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("write legacy config file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("GEMINI_API_KEY", "")
+
+	loaded, err := Load(t.TempDir(), false)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	providerCfg, ok := loaded.Providers[models.ProviderGemini]
+	if !ok {
+		t.Fatalf("gemini provider not loaded from legacy config")
+	}
+	if providerCfg.APIKey != "test-gemini-key" {
+		t.Fatalf("gemini api key = %q, want %q", providerCfg.APIKey, "test-gemini-key")
+	}
+
+	if got := viper.ConfigFileUsed(); got != configPath {
+		t.Fatalf("ConfigFileUsed() = %q, want %q", got, configPath)
+	}
+}
+
+func TestResolveConfigFilePathPrefersLegacyGlobalConfigYAML(t *testing.T) {
+	cfg = nil
+	viper.Reset()
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	homeDir := t.TempDir()
+	configDir := filepath.Join(homeDir, ".config", "pando")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+
+	configPath := filepath.Join(configDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte("providers: {}\n"), 0o644); err != nil {
+		t.Fatalf("write legacy config file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	if _, err := Load(t.TempDir(), false); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	resolved, err := ResolveConfigFilePath()
+	if err != nil {
+		t.Fatalf("ResolveConfigFilePath() error = %v", err)
+	}
+	if resolved != configPath {
+		t.Fatalf("ResolveConfigFilePath() = %q, want %q", resolved, configPath)
+	}
+}

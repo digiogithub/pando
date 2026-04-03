@@ -494,7 +494,7 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	setDefaults(debug)
 
 	// Read global config
-	if err := readConfig(viper.ReadInConfig()); err != nil {
+	if err := readGlobalConfig(); err != nil {
 		return cfg, err
 	}
 
@@ -604,6 +604,31 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 		MaxTokens: 80,
 	}
 	return cfg, nil
+}
+
+func readGlobalConfig() error {
+	if err := readConfig(viper.ReadInConfig()); err != nil {
+		return err
+	}
+
+	if viper.ConfigFileUsed() != "" {
+		return nil
+	}
+
+	legacyConfigPath, err := resolveLegacyGlobalConfigPath()
+	if err != nil {
+		return err
+	}
+	if legacyConfigPath == "" {
+		return nil
+	}
+
+	viper.SetConfigFile(legacyConfigPath)
+	if err := readConfig(viper.ReadInConfig()); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // configureViper sets up viper's configuration paths and environment variables.
@@ -986,6 +1011,37 @@ func mergeLocalConfig(workingDir string) {
 	if err := local.ReadInConfig(); err == nil {
 		viper.MergeConfigMap(local.AllSettings())
 	}
+}
+
+func resolveLegacyGlobalConfigPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	searchDirs := make([]string, 0, 2)
+	xdgConfigHome := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME"))
+	if xdgConfigHome != "" {
+		searchDirs = append(searchDirs, filepath.Join(xdgConfigHome, appName))
+	}
+	homeConfigDir := filepath.Join(homeDir, ".config", appName)
+	if len(searchDirs) == 0 || searchDirs[len(searchDirs)-1] != homeConfigDir {
+		searchDirs = append(searchDirs, homeConfigDir)
+	}
+
+	extensions := []string{"yaml", "yml", "toml", "json"}
+	for _, dir := range searchDirs {
+		for _, extension := range extensions {
+			candidate := filepath.Join(dir, fmt.Sprintf("config.%s", extension))
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			} else if err != nil && !os.IsNotExist(err) {
+				return "", fmt.Errorf("failed to stat config file: %w", err)
+			}
+		}
+	}
+
+	return "", nil
 }
 
 // applyDefaultValues sets default values for configuration fields that need processing.
@@ -1536,6 +1592,14 @@ func ResolveConfigFilePath() (string, error) {
 		} else if err != nil && !os.IsNotExist(err) {
 			return "", fmt.Errorf("failed to stat config file: %w", err)
 		}
+	}
+
+	legacyConfig, err := resolveLegacyGlobalConfigPath()
+	if err != nil {
+		return "", err
+	}
+	if legacyConfig != "" {
+		return legacyConfig, nil
 	}
 
 	return "", nil
