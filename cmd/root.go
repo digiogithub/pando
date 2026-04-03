@@ -21,6 +21,7 @@ import (
 	"github.com/digiogithub/pando/internal/logging"
 	acpPkg "github.com/digiogithub/pando/internal/mesnada/acp"
 	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui"
@@ -443,6 +444,7 @@ func runACPServerWithOptions(cwd string, debug bool, autoPerm bool) error {
 	// avoiding import cycles between internal/mesnada/acp and internal/llm/agent.
 	agentAdapter := &acpAgentAdapter{svc: pandoApp.CoderAgent}
 	sessionAdapter := &acpSessionAdapter{svc: pandoApp.Sessions}
+	permAdapter := &acpPermissionAdapter{svc: pandoApp.Permissions}
 
 	pandoAgent := acpPkg.NewPandoACPAgent(
 		version.Version,
@@ -450,7 +452,7 @@ func runACPServerWithOptions(cwd string, debug bool, autoPerm bool) error {
 		logger,
 		agentAdapter,
 		sessionAdapter,
-		pandoApp.Permissions,
+		permAdapter,
 	)
 
 	transport := acpPkg.NewStdioTransport(pandoAgent, logger)
@@ -580,6 +582,38 @@ func (a *acpSessionAdapter) ListSessions(ctx context.Context) ([]acpPkg.ACPSessi
 		}
 	}
 	return result, nil
+}
+
+// acpPermissionAdapter adapts permission.Service to acpPkg.PermissionService.
+// It converts between permission.CreatePermissionRequest and acpPkg.PermissionRequestData
+// so the ACP layer does not need to import the permission package directly.
+type acpPermissionAdapter struct {
+	svc permission.Service
+}
+
+func (a *acpPermissionAdapter) AutoApproveSession(sessionID string) {
+	a.svc.AutoApproveSession(sessionID)
+}
+
+func (a *acpPermissionAdapter) RemoveAutoApproveSession(sessionID string) {
+	a.svc.RemoveAutoApproveSession(sessionID)
+}
+
+func (a *acpPermissionAdapter) RegisterSessionHandler(sessionID string, handler func(req acpPkg.PermissionRequestData) bool) {
+	a.svc.RegisterSessionHandler(sessionID, func(req permission.CreatePermissionRequest) bool {
+		return handler(acpPkg.PermissionRequestData{
+			SessionID:   req.SessionID,
+			ToolName:    req.ToolName,
+			Description: req.Description,
+			Action:      req.Action,
+			Path:        req.Path,
+			Params:      req.Params,
+		})
+	})
+}
+
+func (a *acpPermissionAdapter) UnregisterSessionHandler(sessionID string) {
+	a.svc.UnregisterSessionHandler(sessionID)
 }
 
 func Execute() {
