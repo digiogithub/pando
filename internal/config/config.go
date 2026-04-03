@@ -61,12 +61,23 @@ type CLIAssistConfig struct {
 	Timeout int            `toml:"Timeout"` // seconds, default 30
 }
 
+// ThinkingMode controls extended thinking for Anthropic models that support it.
+type ThinkingMode string
+
+const (
+	ThinkingDisabled ThinkingMode = "disabled"
+	ThinkingLow      ThinkingMode = "low"
+	ThinkingMedium   ThinkingMode = "medium"
+	ThinkingHigh     ThinkingMode = "high"
+)
+
 // Agent defines configuration for different LLM models and their token limits.
 type Agent struct {
 	Model                models.ModelID `json:"model"`
 	MaxTokens            int64          `json:"maxTokens"`
-	ReasoningEffort      string         `json:"reasoningEffort"`          // For openai models low,medium,heigh
-	AutoCompact          bool           `json:"autoCompact,omitempty"`    // enable auto-compaction when context fills up
+	ReasoningEffort      string         `json:"reasoningEffort"`               // For openai models low,medium,high
+	ThinkingMode         ThinkingMode   `json:"thinkingMode,omitempty"`         // For anthropic models: disabled,low,medium,high
+	AutoCompact          bool           `json:"autoCompact,omitempty"`          // enable auto-compaction when context fills up
 	AutoCompactThreshold float64        `json:"autoCompactThreshold,omitempty"` // 0.0-1.0, default 0.85
 }
 
@@ -1319,6 +1330,35 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 		// Update the agent to remove reasoning effort
 		updatedAgent := cfg.Agents[name]
 		updatedAgent.ReasoningEffort = ""
+		cfg.Agents[name] = updatedAgent
+	}
+
+	// Validate thinking mode for Anthropic models that support reasoning
+	if model.CanReason && provider == models.ProviderAnthropic {
+		switch agent.ThinkingMode {
+		case ThinkingDisabled, ThinkingLow, ThinkingMedium, ThinkingHigh:
+			// valid, keep as-is
+		case "":
+			// Set default thinking mode to medium for Anthropic reasoning models
+			logging.Info("setting default thinking mode for anthropic reasoning model",
+				"agent", name,
+				"model", agent.Model)
+			updatedAgent := cfg.Agents[name]
+			updatedAgent.ThinkingMode = ThinkingMedium
+			cfg.Agents[name] = updatedAgent
+		default:
+			logging.Warn("invalid thinking mode, setting to medium",
+				"agent", name,
+				"model", agent.Model,
+				"thinking_mode", agent.ThinkingMode)
+			updatedAgent := cfg.Agents[name]
+			updatedAgent.ThinkingMode = ThinkingMedium
+			cfg.Agents[name] = updatedAgent
+		}
+	} else if provider != models.ProviderAnthropic && agent.ThinkingMode != "" {
+		// Non-Anthropic model has thinking mode set, clear it
+		updatedAgent := cfg.Agents[name]
+		updatedAgent.ThinkingMode = ""
 		cfg.Agents[name] = updatedAgent
 	}
 
