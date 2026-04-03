@@ -61,12 +61,23 @@ type CLIAssistConfig struct {
 	Timeout int            `toml:"Timeout"` // seconds, default 30
 }
 
+// ThinkingMode controls extended thinking for Anthropic models that support it.
+type ThinkingMode string
+
+const (
+	ThinkingDisabled ThinkingMode = "disabled"
+	ThinkingLow      ThinkingMode = "low"
+	ThinkingMedium   ThinkingMode = "medium"
+	ThinkingHigh     ThinkingMode = "high"
+)
+
 // Agent defines configuration for different LLM models and their token limits.
 type Agent struct {
 	Model                models.ModelID `json:"model"`
 	MaxTokens            int64          `json:"maxTokens"`
-	ReasoningEffort      string         `json:"reasoningEffort"`          // For openai models low,medium,heigh
-	AutoCompact          bool           `json:"autoCompact,omitempty"`    // enable auto-compaction when context fills up
+	ReasoningEffort      string         `json:"reasoningEffort"`               // For openai models low,medium,high
+	ThinkingMode         ThinkingMode   `json:"thinkingMode,omitempty"`         // For anthropic models: disabled,low,medium,high
+	AutoCompact          bool           `json:"autoCompact,omitempty"`          // enable auto-compaction when context fills up
 	AutoCompactThreshold float64        `json:"autoCompactThreshold,omitempty"` // 0.0-1.0, default 0.85
 }
 
