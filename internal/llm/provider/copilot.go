@@ -104,6 +104,9 @@ func (c *copilotClient) requestHeaders(messages []message.Message) map[string]st
 	if c.hasVisionInput(messages) {
 		headers["Copilot-Vision-Request"] = "true"
 	}
+	if c.isAnthropicModel() {
+		headers["anthropic-beta"] = "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"
+	}
 	for key, value := range c.options.extraHeaders {
 		headers[key] = value
 	}
