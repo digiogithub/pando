@@ -10,7 +10,6 @@ import (
 	"math/rand/v2"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -27,7 +26,7 @@ import (
 type anthropicOptions struct {
 	useBedrock   bool
 	disableCache bool
-	shouldThink  func(userMessage string) bool
+	thinkingMode config.ThinkingMode
 	oauthToken   string // Bearer access token (if using OAuth instead of API key)
 }
 
@@ -50,13 +49,14 @@ func newAnthropicClient(opts providerClientOptions) AnthropicClient {
 	anthropicClientOptions := []option.RequestOption{}
 	if opts.apiKey != "" {
 		anthropicClientOptions = append(anthropicClientOptions, option.WithAPIKey(opts.apiKey))
-		// claude-code-20250219 enables first-party API features (matches claude-code-cli behaviour).
-		anthropicClientOptions = append(anthropicClientOptions, option.WithHeader("anthropic-beta", "claude-code-20250219"))
+		// Enable Anthropic beta features (matches claude-code-cli behaviour).
+		anthropicClientOptions = append(anthropicClientOptions, option.WithHeader("anthropic-beta",
+			"claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"))
 	} else if anthropicOpts.oauthToken != "" {
 		anthropicClientOptions = append(anthropicClientOptions, option.WithAuthToken(anthropicOpts.oauthToken))
-		// Combine OAuth beta with claude-code-20250219 identifier beta.
+		// Combine OAuth beta with Anthropic beta feature identifiers.
 		anthropicClientOptions = append(anthropicClientOptions, option.WithHeader("anthropic-beta",
-			auth.ClaudeOAuthBetaHeader+",claude-code-20250219"))
+			auth.ClaudeOAuthBetaHeader+",claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"))
 	}
 	if anthropicOpts.useBedrock {
 		anthropicClientOptions = append(anthropicClientOptions, bedrock.WithLoadDefaultConfig(context.Background()))
@@ -177,20 +177,10 @@ func (a *anthropicClient) finishReason(reason string) message.FinishReason {
 
 func (a *anthropicClient) preparedMessages(messages []anthropic.MessageParam, tools []anthropic.ToolUnionParam) anthropic.MessageNewParams {
 	var thinkingParam anthropic.ThinkingConfigParamUnion
-	lastMessage := messages[len(messages)-1]
-	isUser := lastMessage.Role == anthropic.MessageParamRoleUser
-	messageContent := ""
 	temperature := anthropic.Float(0)
-	if isUser {
-		for _, m := range lastMessage.Content {
-			if m.OfText != nil && m.OfText.Text != "" {
-				messageContent = m.OfText.Text
-			}
-		}
-		if messageContent != "" && a.options.shouldThink != nil && a.options.shouldThink(messageContent) {
-			thinkingParam = anthropic.ThinkingConfigParamOfEnabled(int64(float64(a.providerOptions.maxTokens) * 0.8))
-			temperature = anthropic.Float(1)
-		}
+	if budgetTokens := thinkingBudgetTokens(a.options.thinkingMode, a.providerOptions.maxTokens); budgetTokens > 0 {
+		thinkingParam = anthropic.ThinkingConfigParamOfEnabled(budgetTokens)
+		temperature = anthropic.Float(1)
 	}
 
 	return anthropic.MessageNewParams{
@@ -631,13 +621,37 @@ func WithAnthropicDisableCache() AnthropicOption {
 	}
 }
 
-func DefaultShouldThinkFn(s string) bool {
-	return strings.Contains(strings.ToLower(s), "think")
+// thinkingBudgetTokens returns the number of budget tokens for the given thinking mode.
+// Returns 0 when thinking is disabled or mode is empty.
+func thinkingBudgetTokens(mode config.ThinkingMode, maxTokens int64) int64 {
+	const minBudget = int64(1024)
+	switch mode {
+	case config.ThinkingLow:
+		budget := int64(float64(maxTokens) * 0.2)
+		if budget < minBudget {
+			budget = minBudget
+		}
+		return budget
+	case config.ThinkingMedium:
+		budget := int64(float64(maxTokens) * 0.5)
+		if budget < minBudget*2 {
+			budget = minBudget * 2
+		}
+		return budget
+	case config.ThinkingHigh:
+		budget := int64(float64(maxTokens) * 0.8)
+		if budget < minBudget*4 {
+			budget = minBudget * 4
+		}
+		return budget
+	default:
+		return 0
+	}
 }
 
-func WithAnthropicShouldThinkFn(fn func(string) bool) AnthropicOption {
+func WithAnthropicThinkingMode(mode config.ThinkingMode) AnthropicOption {
 	return func(options *anthropicOptions) {
-		options.shouldThink = fn
+		options.thinkingMode = mode
 	}
 }
 
