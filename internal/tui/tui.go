@@ -95,6 +95,9 @@ type appModel struct {
 	claudeLoginDialog     dialog.ClaudeLoginDialogCmp
 	claudeLoginSession    *auth.ClaudeLoginSession
 
+	showInfoDialog bool
+	infoDialog     dialog.InfoDialogCmp
+
 	isCompacting      bool
 	compactingMessage string
 
