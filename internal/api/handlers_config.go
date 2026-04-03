@@ -112,12 +112,13 @@ func (s *Server) handlePutConfigProviders(w http.ResponseWriter, r *http.Request
 
 // AgentConfigItem is the JSON representation of a single agent configuration.
 type AgentConfigItem struct {
-	Name                 string         `json:"name"`
-	Model                models.ModelID `json:"model"`
-	MaxTokens            int64          `json:"maxTokens"`
-	ReasoningEffort      string         `json:"reasoningEffort"`
-	AutoCompact          bool           `json:"autoCompact"`
-	AutoCompactThreshold float64        `json:"autoCompactThreshold"`
+	Name                 string              `json:"name"`
+	Model                models.ModelID      `json:"model"`
+	MaxTokens            int64               `json:"maxTokens"`
+	ReasoningEffort      string              `json:"reasoningEffort"`
+	ThinkingMode         config.ThinkingMode `json:"thinkingMode,omitempty"`
+	AutoCompact          bool                `json:"autoCompact"`
+	AutoCompactThreshold float64             `json:"autoCompactThreshold"`
 }
 
 func (s *Server) handleConfigAgents(w http.ResponseWriter, r *http.Request) {
