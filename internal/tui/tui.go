@@ -95,6 +95,9 @@ type appModel struct {
 	claudeLoginDialog     dialog.ClaudeLoginDialogCmp
 	claudeLoginSession    *auth.ClaudeLoginSession
 
+	showInfoDialog bool
+	infoDialog     dialog.InfoDialogCmp
+
 	isCompacting      bool
 	compactingMessage string
 
@@ -1685,6 +1688,7 @@ func New(app *app.App) tea.Model {
 		permissions:   dialog.NewPermissionDialogCmp(),
 		initDialog:    dialog.NewInitDialogCmp(),
 		themeDialog:   dialog.NewThemeDialogCmp(),
+		infoDialog:    dialog.NewInfoDialogCmp(),
 		app:           app,
 		commands:      []dialog.Command{},
 		chatPage:      chatPage,
