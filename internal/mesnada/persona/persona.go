@@ -3,8 +3,10 @@ package persona
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -14,6 +16,7 @@ type Manager struct {
 	personaPath      string
 	personas         map[string]string // name -> content
 	personaMCPConfig map[string]string // name -> mcp-config.json path
+	activePersona    string            // currently selected persona name (empty = auto/none)
 	mu               sync.RWMutex
 }
 
@@ -33,6 +36,63 @@ func NewManager(personaPath string) (*Manager, error) {
 	}
 
 	return m, nil
+}
+
+// NewManagerWithBuiltins creates a persona manager that first loads built-in personas
+// from the provided embed.FS, then overlays any user-defined personas from personaPath.
+// personaPath may be empty (only built-ins will be loaded).
+func NewManagerWithBuiltins(builtinFS fs.ReadDirFS, personaPath string) (*Manager, error) {
+	m := &Manager{
+		personaPath:      personaPath,
+		personas:         make(map[string]string),
+		personaMCPConfig: make(map[string]string),
+	}
+
+	// Load built-in personas first.
+	if err := m.loadBuiltinPersonas(builtinFS); err != nil {
+		return nil, fmt.Errorf("failed to load built-in personas: %w", err)
+	}
+
+	// Overlay with user-defined personas (may override built-ins).
+	if personaPath != "" {
+		if err := m.loadPersonas(); err != nil {
+			return nil, fmt.Errorf("failed to load user personas: %w", err)
+		}
+	}
+
+	return m, nil
+}
+
+// loadBuiltinPersonas reads all .md files from the given embed.FS.
+func (m *Manager) loadBuiltinPersonas(fsys fs.ReadDirFS) error {
+	entries, err := fsys.ReadDir(".")
+	if err != nil {
+		return fmt.Errorf("failed to read built-in persona directory: %w", err)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(strings.ToLower(name), ".md") {
+			continue
+		}
+
+		personaName := strings.TrimSuffix(name, filepath.Ext(name))
+
+		content, err := fs.ReadFile(fsys, name)
+		if err != nil {
+			return fmt.Errorf("failed to read built-in persona %s: %w", name, err)
+		}
+
+		m.personas[personaName] = string(content)
+	}
+
+	return nil
 }
 
 // loadPersonas reads all .md files from the persona directory.
@@ -107,7 +167,7 @@ func (m *Manager) GetPersona(name string) string {
 	return content
 }
 
-// ListPersonas returns a list of available persona names.
+// ListPersonas returns a sorted list of available persona names.
 func (m *Manager) ListPersonas() []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -116,6 +176,7 @@ func (m *Manager) ListPersonas() []string {
 	for name := range m.personas {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 
 	return names
 }
@@ -161,4 +222,20 @@ func (m *Manager) ApplyPersona(personaName, prompt string) string {
 
 	// Prepend persona content + blank line + original prompt
 	return content + "\n\n" + prompt
+}
+
+// SetActivePersona sets the manually selected persona.
+// Pass empty string to clear the active persona (revert to auto-select or none).
+func (m *Manager) SetActivePersona(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.activePersona = name
+}
+
+// GetActivePersona returns the currently active persona name.
+// Empty string means no persona is manually set (auto-select or none).
+func (m *Manager) GetActivePersona() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.activePersona
 }
