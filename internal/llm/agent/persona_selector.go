@@ -16,9 +16,89 @@ import (
 // globalPersonaSelector is the package-level persona selector for the main session.
 var globalPersonaSelector *PersonaSelector
 
+// globalPersonaManager is the persona manager that holds all available personas
+// (built-ins + user-defined). It is always initialised when personas are available,
+// independently of whether auto-selection is configured.
+var globalPersonaManager *persona.Manager
+
+// activePersonaName stores the currently active persona name (empty = none).
+var activePersonaName string
+
 // SetPersonaSelector sets the global persona selector used in the main conversation agent.
 func SetPersonaSelector(ps *PersonaSelector) {
 	globalPersonaSelector = ps
+}
+
+// SetPersonaManager sets the global persona manager used for persona listing and
+// manual persona selection. This should be called during app initialisation.
+func SetPersonaManager(mgr *persona.Manager) {
+	globalPersonaManager = mgr
+}
+
+// GetPersonaManager returns the global persona manager, or nil if not initialised.
+func GetPersonaManager() *persona.Manager {
+	return globalPersonaManager
+}
+
+// ListAvailablePersonas returns the names of all loaded personas.
+// Uses the global persona manager when available; falls back to the selector's manager.
+func ListAvailablePersonas() []string {
+	if globalPersonaManager != nil {
+		return globalPersonaManager.ListPersonas()
+	}
+	if globalPersonaSelector != nil {
+		return globalPersonaSelector.manager.ListPersonas()
+	}
+	return []string{}
+}
+
+// GetActivePersona returns the currently active persona name.
+// An empty string means no persona is active (auto-select or none).
+func GetActivePersona() string {
+	return activePersonaName
+}
+
+// SetActivePersona sets the active persona by name.
+// Pass an empty string to clear the active persona (revert to auto-select or none).
+// Returns an error if the named persona does not exist (and name is non-empty).
+func SetActivePersona(name string) error {
+	if name == "" {
+		activePersonaName = ""
+		return nil
+	}
+	// Validate persona exists in manager or selector
+	mgr := globalPersonaManager
+	if mgr == nil && globalPersonaSelector != nil {
+		mgr = globalPersonaSelector.manager
+	}
+	if mgr == nil || !mgr.HasPersona(name) {
+		return fmt.Errorf("persona %q not found", name)
+	}
+	activePersonaName = name
+	return nil
+}
+
+// applyActiveOrSelectPersona applies the persona to the user prompt.
+// Priority: manually set active persona > auto-selector > no-op.
+func applyActiveOrSelectPersona(ctx context.Context, content string) string {
+	// Manual persona takes priority over auto-selection.
+	if activePersonaName != "" {
+		mgr := globalPersonaManager
+		if mgr == nil && globalPersonaSelector != nil {
+			mgr = globalPersonaSelector.manager
+		}
+		if mgr != nil {
+			logging.Debug("Persona: applying manually set persona", "persona", activePersonaName)
+			return mgr.ApplyPersona(activePersonaName, content)
+		}
+	}
+
+	// Fall back to automatic persona selection.
+	if globalPersonaSelector != nil {
+		return globalPersonaSelector.SelectAndApply(ctx, content)
+	}
+
+	return content
 }
 
 // PersonaSelector automatically selects and applies a persona for each user prompt.
