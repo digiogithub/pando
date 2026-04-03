@@ -16,7 +16,11 @@ import (
 
 type EventType string
 
-const maxRetries = 8
+const (
+	maxRetries  = 10    // matches claude-code DEFAULT_MAX_RETRIES
+	baseDelayMs = 500   // matches claude-code BASE_DELAY_MS (was 2000)
+	maxDelayMs  = 32000 // matches claude-code default cap
+)
 
 const (
 	EventContentStart  EventType = "content_start"
