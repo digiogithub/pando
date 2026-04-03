@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -409,6 +410,42 @@ func (a *anthropicClient) stream(ctx context.Context, messages []message.Message
 	return eventChan
 }
 
+// rateLimitClaimNames maps anthropic-ratelimit-unified-representative-claim header values to human-readable descriptions.
+var rateLimitClaimNames = map[string]string{
+	"five_hour":        "5-hour session limit",
+	"seven_day":        "weekly limit",
+	"seven_day_sonnet": "Sonnet weekly limit",
+	"seven_day_opus":   "Opus weekly limit",
+	"overage":          "extra usage limit",
+}
+
+// buildRateLimitError constructs a user-friendly error message from a 429 response.
+// It reads unified rate limit headers to identify limit type and reset time.
+func (a *anthropicClient) buildRateLimitError(attempts int, apierr *anthropic.Error) error {
+	claim := ""
+	resetsMsg := ""
+	if apierr.Response != nil {
+		claim = apierr.Response.Header.Get("anthropic-ratelimit-unified-representative-claim")
+		if resetStr := apierr.Response.Header.Get("anthropic-ratelimit-unified-reset"); resetStr != "" {
+			if ts, parseErr := strconv.ParseInt(resetStr, 10, 64); parseErr == nil {
+				resetTime := time.Unix(ts, 0).Local()
+				resetsMsg = fmt.Sprintf(", resets at %s", resetTime.Format("15:04 on Jan 2"))
+			}
+		}
+	}
+
+	limitDesc := "rate limit"
+	if name, ok := rateLimitClaimNames[claim]; ok {
+		limitDesc = name
+	}
+
+	msg := fmt.Sprintf("%s reached after %d attempts%s", limitDesc, attempts, resetsMsg)
+	if claim == "seven_day_sonnet" || claim == "seven_day_opus" {
+		msg += ". Consider switching to a different model (e.g. Claude Haiku)"
+	}
+	return errors.New(msg)
+}
+
 func (a *anthropicClient) shouldRetry(attempts int, err error) (bool, int64, error) {
 	var apierr *anthropic.Error
 	if !errors.As(err, &apierr) {
@@ -419,13 +456,22 @@ func (a *anthropicClient) shouldRetry(attempts int, err error) (bool, int64, err
 		return false, 0, err
 	}
 
+	// Per-model weekly quota errors (seven_day_sonnet, seven_day_opus) will not
+	// resolve by retrying — fail fast with an informative message.
+	if apierr.Response != nil {
+		claim := apierr.Response.Header.Get("anthropic-ratelimit-unified-representative-claim")
+		if claim == "seven_day_sonnet" || claim == "seven_day_opus" || claim == "seven_day" {
+			return false, 0, a.buildRateLimitError(attempts, apierr)
+		}
+	}
+
 	retry := attempts <= maxRetries
 	if cfg := config.Get(); cfg != nil && cfg.Debug {
 		logging.Debug("Anthropic retry evaluation", "attempts", attempts, "statusCode", apierr.StatusCode, "willRetry", retry)
 	}
 
 	if !retry {
-		return false, 0, fmt.Errorf("maximum retry attempts reached for rate limit: %d retries", maxRetries)
+		return false, 0, a.buildRateLimitError(attempts, apierr)
 	}
 
 	retryMs := 0
@@ -435,7 +481,7 @@ func (a *anthropicClient) shouldRetry(attempts int, err error) (bool, int64, err
 	jitterMs := int(float64(backoffMs) * 0.2)
 	retryMs = backoffMs + jitterMs
 	if len(retryAfterValues) > 0 {
-		if _, err := fmt.Sscanf(retryAfterValues[0], "%d", &retryMs); err == nil {
+		if _, parseErr := fmt.Sscanf(retryAfterValues[0], "%d", &retryMs); parseErr == nil {
 			retryMs = retryMs * 1000
 		}
 	}

@@ -95,6 +95,9 @@ type appModel struct {
 	claudeLoginDialog     dialog.ClaudeLoginDialogCmp
 	claudeLoginSession    *auth.ClaudeLoginSession
 
+	showInfoDialog bool
+	infoDialog     dialog.InfoDialogCmp
+
 	isCompacting      bool
 	compactingMessage string
 
@@ -332,11 +335,18 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Claude account messages
 	case dialog.ClaudeStatsMsg:
-		cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.InfoKey, msg.Content))
-		outAlert, outCmd := a.alert.Update(msg)
-		a.alert = outAlert.(bubbleup.AlertModel)
-		cmds = append(cmds, outCmd)
-		return a, tea.Batch(cmds...)
+		a.infoDialog.SetContent("Usage Statistics", msg.Content)
+		a.showInfoDialog = true
+		return a, nil
+
+	case dialog.ShowInfoDialogMsg:
+		a.infoDialog.SetContent(msg.Title, msg.Content)
+		a.showInfoDialog = true
+		return a, nil
+
+	case dialog.CloseInfoDialogMsg:
+		a.showInfoDialog = false
+		return a, nil
 
 	case dialog.ClaudeLoginDoneMsg:
 		if msg.Err != nil {
@@ -1685,6 +1695,7 @@ func New(app *app.App) tea.Model {
 		permissions:   dialog.NewPermissionDialogCmp(),
 		initDialog:    dialog.NewInitDialogCmp(),
 		themeDialog:   dialog.NewThemeDialogCmp(),
+		infoDialog:    dialog.NewInfoDialogCmp(),
 		app:           app,
 		commands:      []dialog.Command{},
 		chatPage:      chatPage,
