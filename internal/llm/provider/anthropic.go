@@ -27,7 +27,7 @@ import (
 type anthropicOptions struct {
 	useBedrock   bool
 	disableCache bool
-	shouldThink  func(userMessage string) bool
+	thinkingMode config.ThinkingMode
 	oauthToken   string // Bearer access token (if using OAuth instead of API key)
 }
 
@@ -177,20 +177,10 @@ func (a *anthropicClient) finishReason(reason string) message.FinishReason {
 
 func (a *anthropicClient) preparedMessages(messages []anthropic.MessageParam, tools []anthropic.ToolUnionParam) anthropic.MessageNewParams {
 	var thinkingParam anthropic.ThinkingConfigParamUnion
-	lastMessage := messages[len(messages)-1]
-	isUser := lastMessage.Role == anthropic.MessageParamRoleUser
-	messageContent := ""
 	temperature := anthropic.Float(0)
-	if isUser {
-		for _, m := range lastMessage.Content {
-			if m.OfText != nil && m.OfText.Text != "" {
-				messageContent = m.OfText.Text
-			}
-		}
-		if messageContent != "" && a.options.shouldThink != nil && a.options.shouldThink(messageContent) {
-			thinkingParam = anthropic.ThinkingConfigParamOfEnabled(int64(float64(a.providerOptions.maxTokens) * 0.8))
-			temperature = anthropic.Float(1)
-		}
+	if budgetTokens := thinkingBudgetTokens(a.options.thinkingMode, a.providerOptions.maxTokens); budgetTokens > 0 {
+		thinkingParam = anthropic.ThinkingConfigParamOfEnabled(budgetTokens)
+		temperature = anthropic.Float(1)
 	}
 
 	return anthropic.MessageNewParams{
