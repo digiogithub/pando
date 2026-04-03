@@ -79,15 +79,15 @@ func TestRequest_SessionHandler_DoesNotBlockAndUsesHandlerResult(t *testing.T) {
 	svc := NewPermissionService()
 	called := make(chan struct{}, 1)
 
-	svc.RegisterSessionHandler("session-handler", func(sessionID, toolName, description string) bool {
-		if sessionID != "session-handler" {
-			t.Fatalf("unexpected sessionID: %s", sessionID)
+	svc.RegisterSessionHandler("session-handler", func(req CreatePermissionRequest) bool {
+		if req.SessionID != "session-handler" {
+			t.Fatalf("unexpected sessionID: %s", req.SessionID)
 		}
-		if toolName != "bash" {
-			t.Fatalf("unexpected toolName: %s", toolName)
+		if req.ToolName != "bash" {
+			t.Fatalf("unexpected toolName: %s", req.ToolName)
 		}
-		if description != "run command" {
-			t.Fatalf("unexpected description: %s", description)
+		if req.Description != "run command" {
+			t.Fatalf("unexpected description: %s", req.Description)
 		}
 		called <- struct{}{}
 		return true
@@ -122,7 +122,7 @@ func TestRequest_SessionHandler_DoesNotBlockAndUsesHandlerResult(t *testing.T) {
 
 func TestRequest_UnregisterSessionHandler_RemovesCustomHandler(t *testing.T) {
 	svc := NewPermissionService()
-	svc.RegisterSessionHandler("session-handler", func(sessionID, toolName, description string) bool {
+	svc.RegisterSessionHandler("session-handler", func(req CreatePermissionRequest) bool {
 		return true
 	})
 	svc.UnregisterSessionHandler("session-handler")
