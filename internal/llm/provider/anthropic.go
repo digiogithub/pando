@@ -27,7 +27,7 @@ import (
 type anthropicOptions struct {
 	useBedrock   bool
 	disableCache bool
-	shouldThink  func(userMessage string) bool
+	thinkingMode config.ThinkingMode
 	oauthToken   string // Bearer access token (if using OAuth instead of API key)
 }
 
