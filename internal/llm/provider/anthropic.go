@@ -6,6 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"math/rand/v2"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,9 +50,13 @@ func newAnthropicClient(opts providerClientOptions) AnthropicClient {
 	anthropicClientOptions := []option.RequestOption{}
 	if opts.apiKey != "" {
 		anthropicClientOptions = append(anthropicClientOptions, option.WithAPIKey(opts.apiKey))
+		// claude-code-20250219 enables first-party API features (matches claude-code-cli behaviour).
+		anthropicClientOptions = append(anthropicClientOptions, option.WithHeader("anthropic-beta", "claude-code-20250219"))
 	} else if anthropicOpts.oauthToken != "" {
 		anthropicClientOptions = append(anthropicClientOptions, option.WithAuthToken(anthropicOpts.oauthToken))
-		anthropicClientOptions = append(anthropicClientOptions, option.WithHeader("anthropic-beta", auth.ClaudeOAuthBetaHeader))
+		// Combine OAuth beta with claude-code-20250219 identifier beta.
+		anthropicClientOptions = append(anthropicClientOptions, option.WithHeader("anthropic-beta",
+			auth.ClaudeOAuthBetaHeader+",claude-code-20250219"))
 	}
 	if anthropicOpts.useBedrock {
 		anthropicClientOptions = append(anthropicClientOptions, bedrock.WithLoadDefaultConfig(context.Background()))
@@ -221,12 +229,27 @@ func (a *anthropicClient) send(ctx context.Context, messages []message.Message, 
 		// If there is an error we are going to see if we can retry the call
 		if err != nil {
 			logging.Error("Error in Anthropic API call", "error", err)
+
+			// Context-window overflow: adjust max_tokens and retry immediately.
+			if inputTokens, contextLimit, ok := parseContextOverflowError(err); ok {
+				const safetyBuffer = 1000
+				const floorOutputTokens = 3000
+				available := contextLimit - inputTokens - safetyBuffer
+				if available >= floorOutputTokens {
+					adjusted := max(int64(floorOutputTokens), available)
+					logging.Warn("Context window overflow — reducing max_tokens for retry",
+						"input_tokens", inputTokens, "context_limit", contextLimit, "new_max_tokens", adjusted)
+					preparedMessages.MaxTokens = adjusted
+					continue
+				}
+			}
+
 			retry, after, retryErr := a.shouldRetry(attempts, err)
 			if retryErr != nil {
 				return nil, retryErr
 			}
 			if retry {
-				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				logging.WarnPersist(fmt.Sprintf("Retrying (attempt %d/%d)...", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
@@ -377,6 +400,22 @@ func (a *anthropicClient) stream(ctx context.Context, messages []message.Message
 				close(eventChan)
 				return
 			}
+			// Context-window overflow: adjust max_tokens and restart stream immediately.
+			if inputTokens, contextLimit, ok := parseContextOverflowError(err); ok {
+				const safetyBuffer = 1000
+				const floorOutputTokens = 3000
+				available := contextLimit - inputTokens - safetyBuffer
+				if available >= floorOutputTokens {
+					adjusted := max(int64(floorOutputTokens), available)
+					logging.Warn("Context window overflow — reducing max_tokens for retry",
+						"input_tokens", inputTokens, "context_limit", contextLimit, "new_max_tokens", adjusted)
+					preparedMessages.MaxTokens = adjusted
+					accumulatedMessage = anthropic.Message{}
+					currentToolCallID = ""
+					continue
+				}
+			}
+
 			// If there is an error we are going to see if we can retry the call
 			retry, after, retryErr := a.shouldRetry(attempts, err)
 			if retryErr != nil {
@@ -385,7 +424,7 @@ func (a *anthropicClient) stream(ctx context.Context, messages []message.Message
 				return
 			}
 			if retry {
-				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				logging.WarnPersist(fmt.Sprintf("Retrying (attempt %d/%d)...", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
 				select {
 				case <-ctx.Done():
 					// context cancelled
@@ -409,37 +448,146 @@ func (a *anthropicClient) stream(ctx context.Context, messages []message.Message
 	return eventChan
 }
 
+// rateLimitClaimNames maps anthropic-ratelimit-unified-representative-claim header values to human-readable descriptions.
+var rateLimitClaimNames = map[string]string{
+	"five_hour":        "5-hour session limit",
+	"seven_day":        "weekly limit",
+	"seven_day_sonnet": "Sonnet weekly limit",
+	"seven_day_opus":   "Opus weekly limit",
+	"overage":          "extra usage limit",
+}
+
+// contextOverflowRe matches the API error: "input length and `max_tokens` exceed context limit: X + Y > Z"
+var contextOverflowRe = regexp.MustCompile(`input length and .max_tokens. exceed context limit: (\d+) \+ (\d+) > (\d+)`)
+
+// buildRateLimitError constructs a user-friendly error message from a 429/529 response,
+// reading unified rate limit headers to identify the limit type and reset time.
+func (a *anthropicClient) buildRateLimitError(attempts int, apierr *anthropic.Error) error {
+	claim := ""
+	resetsMsg := ""
+	if apierr.Response != nil {
+		claim = apierr.Response.Header.Get("anthropic-ratelimit-unified-representative-claim")
+		if resetStr := apierr.Response.Header.Get("anthropic-ratelimit-unified-reset"); resetStr != "" {
+			if ts, parseErr := strconv.ParseInt(resetStr, 10, 64); parseErr == nil {
+				resetTime := time.Unix(ts, 0).Local()
+				resetsMsg = fmt.Sprintf(", resets at %s", resetTime.Format("15:04 on Jan 2"))
+			}
+		}
+	}
+
+	limitDesc := "rate limit"
+	if name, ok := rateLimitClaimNames[claim]; ok {
+		limitDesc = name
+	}
+
+	msg := fmt.Sprintf("%s reached after %d attempts%s", limitDesc, attempts, resetsMsg)
+	if claim == "seven_day_sonnet" || claim == "seven_day_opus" {
+		msg += ". Consider switching to a different model (e.g. Claude Haiku)"
+	}
+	return errors.New(msg)
+}
+
+// parseContextOverflowError checks if err is a 400 context-window overflow and returns
+// (inputTokens, contextLimit, true) so the caller can compute a safe maxTokens.
+func parseContextOverflowError(err error) (inputTokens, contextLimit int64, ok bool) {
+	var apierr *anthropic.Error
+	if !errors.As(err, &apierr) || apierr.StatusCode != 400 {
+		return 0, 0, false
+	}
+	m := contextOverflowRe.FindStringSubmatch(apierr.Message)
+	if len(m) != 4 {
+		return 0, 0, false
+	}
+	in, _ := strconv.ParseInt(m[1], 10, 64)
+	lim, _ := strconv.ParseInt(m[3], 10, 64)
+	if in == 0 || lim == 0 {
+		return 0, 0, false
+	}
+	return in, lim, true
+}
+
+// retryDelay computes exponential backoff with ±25% jitter, capped at maxDelayMs.
+// If the response contains a Retry-After header it is honoured (up to the cap).
+func retryDelay(attempt int, apierr *anthropic.Error) int64 {
+	// Honour Retry-After header when present.
+	if apierr != nil && apierr.Response != nil {
+		for _, v := range apierr.Response.Header.Values("Retry-After") {
+			var secs int
+			if _, err := fmt.Sscanf(v, "%d", &secs); err == nil && secs > 0 {
+				ms := int64(secs) * 1000
+				if ms > maxDelayMs {
+					ms = maxDelayMs
+				}
+				return ms
+			}
+		}
+	}
+	base := math.Min(float64(baseDelayMs)*math.Pow(2, float64(attempt-1)), float64(maxDelayMs))
+	jitter := base * 0.25 * rand.Float64()
+	return int64(base + jitter)
+}
+
+// shouldRetry analyses err after an API call and returns (retry, delayMs, surfacedError).
+//
+// Design principles (aligned with claude-code's withRetry.ts):
+//   - Honour x-should-retry header — the API knows best.
+//   - Per-model weekly quota 429s (seven_day_sonnet/opus/seven_day) never resolve by retrying;
+//     fail immediately with a clear message.
+//   - Retry 408 (request timeout), 409 (lock timeout), 529 (overloaded), and 5xx.
+//   - Use 500ms base delay × 2^attempt, capped at 32 s, with ±25% jitter.
 func (a *anthropicClient) shouldRetry(attempts int, err error) (bool, int64, error) {
 	var apierr *anthropic.Error
 	if !errors.As(err, &apierr) {
 		return false, 0, err
 	}
 
-	if apierr.StatusCode != 429 && apierr.StatusCode != 529 {
-		return false, 0, err
-	}
-
-	retry := attempts <= maxRetries
-	if cfg := config.Get(); cfg != nil && cfg.Debug {
-		logging.Debug("Anthropic retry evaluation", "attempts", attempts, "statusCode", apierr.StatusCode, "willRetry", retry)
-	}
-
-	if !retry {
-		return false, 0, fmt.Errorf("maximum retry attempts reached for rate limit: %d retries", maxRetries)
-	}
-
-	retryMs := 0
-	retryAfterValues := apierr.Response.Header.Values("Retry-After")
-
-	backoffMs := 2000 * (1 << (attempts - 1))
-	jitterMs := int(float64(backoffMs) * 0.2)
-	retryMs = backoffMs + jitterMs
-	if len(retryAfterValues) > 0 {
-		if _, err := fmt.Sscanf(retryAfterValues[0], "%d", &retryMs); err == nil {
-			retryMs = retryMs * 1000
+	// The API signals explicitly whether a retry makes sense.
+	if apierr.Response != nil {
+		if apierr.Response.Header.Get("x-should-retry") == "false" {
+			return false, 0, err
 		}
 	}
-	return true, int64(retryMs), nil
+
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Anthropic retry evaluation", "attempts", attempts, "statusCode", apierr.StatusCode)
+	}
+
+	switch apierr.StatusCode {
+	case 408, 409:
+		// Request timeout / lock timeout — transient, always retry.
+		if attempts <= maxRetries {
+			return true, retryDelay(attempts, apierr), nil
+		}
+		return false, 0, err
+
+	case 429:
+		// Per-model weekly quota errors will not resolve by retrying.
+		if apierr.Response != nil {
+			claim := apierr.Response.Header.Get("anthropic-ratelimit-unified-representative-claim")
+			if claim == "seven_day_sonnet" || claim == "seven_day_opus" || claim == "seven_day" {
+				return false, 0, a.buildRateLimitError(attempts, apierr)
+			}
+		}
+		// 5-hour session limit or overage — retry with backoff.
+		if attempts <= maxRetries {
+			return true, retryDelay(attempts, apierr), nil
+		}
+		return false, 0, a.buildRateLimitError(attempts, apierr)
+
+	case 529:
+		// API overloaded — retry.
+		if attempts <= maxRetries {
+			return true, retryDelay(attempts, apierr), nil
+		}
+		return false, 0, a.buildRateLimitError(attempts, apierr)
+	}
+
+	// Retry on 5xx server errors.
+	if apierr.StatusCode >= 500 && attempts <= maxRetries {
+		return true, retryDelay(attempts, apierr), nil
+	}
+
+	return false, 0, err
 }
 
 func (a *anthropicClient) toolCalls(msg anthropic.Message) []message.ToolCall {
