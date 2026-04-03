@@ -909,15 +909,50 @@ func mapToolKind(toolName string) acpsdk.ToolKind {
 	switch toolName {
 	case "bash", "execute_command":
 		return acpsdk.ToolKindExecute
-	case "edit", "write", "multiedit":
+	case "edit", "write", "multiedit", "patch":
 		return acpsdk.ToolKindEdit
-	case "read":
+	case "read", "view", "ls":
 		return acpsdk.ToolKindRead
-	case "glob", "grep":
+	case "glob", "grep",
+		"c7_resolve_library_id", "c7_get_library_docs",
+		"brave_search", "google_search", "perplexity_search", "exa_search":
 		return acpsdk.ToolKindSearch
 	case "web_search", "web_fetch", "fetch":
 		return acpsdk.ToolKindFetch
 	default:
 		return acpsdk.ToolKindOther
 	}
+}
+
+// toolLocationInput holds fields used to extract file/directory path from a tool
+// call input for different tool types. Each field corresponds to the JSON key used
+// by the respective tool.
+type toolLocationInput struct {
+	FilePath string `json:"file_path"` // edit, write, view, read
+	Path     string `json:"path"`      // glob, grep, ls
+}
+
+// toLocations extracts file/directory locations from a tool call input JSON string.
+// This mirrors opencode's toLocations() function and is used so ACP clients (VS Code,
+// Zed, JetBrains) can show which files are being accessed while a tool runs.
+func toLocations(toolName, inputJSON string) []acpsdk.ToolCallLocation {
+	if inputJSON == "" {
+		return nil
+	}
+	var inp toolLocationInput
+	if err := json.Unmarshal([]byte(inputJSON), &inp); err != nil {
+		return nil
+	}
+
+	switch toolName {
+	case "edit", "write", "patch", "multiedit", "view", "read":
+		if inp.FilePath != "" {
+			return []acpsdk.ToolCallLocation{{Path: inp.FilePath}}
+		}
+	case "glob", "grep", "ls":
+		if inp.Path != "" {
+			return []acpsdk.ToolCallLocation{{Path: inp.Path}}
+		}
+	}
+	return nil
 }
