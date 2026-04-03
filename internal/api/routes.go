@@ -71,6 +71,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Models
 	mux.HandleFunc("GET /api/v1/models", s.handleListModels)
 	mux.HandleFunc("PUT /api/v1/models/active", s.handleSetActiveModel)
+	// Personas
+	mux.HandleFunc("GET /api/v1/personas", s.handleListPersonas)
+	mux.HandleFunc("GET /api/v1/personas/active", s.handleGetActivePersona)
+	mux.HandleFunc("PUT /api/v1/personas/active", s.handleSetActivePersona)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
