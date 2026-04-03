@@ -305,6 +305,7 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 			for _, part := range lastMsg.Parts {
 				lastMsgParts = append(lastMsgParts, *part)
 			}
+			retryStream := false
 			for resp, err := range chat.SendMessageStream(ctx, lastMsgParts...) {
 				if err != nil {
 					retry, after, retryErr := g.shouldRetry(attempts, err)
@@ -322,12 +323,19 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 
 							return
 						case <-time.After(time.Duration(after) * time.Millisecond):
+							retryStream = true
+						}
+						if retryStream {
 							break
 						}
 					} else {
 						eventChan <- ProviderEvent{Type: EventError, Error: err}
 						return
 					}
+				}
+
+				if resp == nil {
+					continue
 				}
 
 				finalResp = resp
@@ -369,6 +377,10 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 						}
 					}
 				}
+			}
+
+			if retryStream {
+				continue
 			}
 
 			eventChan <- ProviderEvent{Type: EventContentStop}
