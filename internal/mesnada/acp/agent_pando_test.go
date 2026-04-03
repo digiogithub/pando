@@ -93,12 +93,12 @@ type mockPermissionService struct {
 	removed      []string
 	registered   []string
 	unregistered []string
-	handlers     map[string]func(sessionID, toolName, description string) bool
+	handlers     map[string]func(req PermissionRequestData) bool
 }
 
 func newMockPermissionService() *mockPermissionService {
 	return &mockPermissionService{
-		handlers: make(map[string]func(sessionID, toolName, description string) bool),
+		handlers: make(map[string]func(req PermissionRequestData) bool),
 	}
 }
 
@@ -110,7 +110,7 @@ func (m *mockPermissionService) RemoveAutoApproveSession(sessionID string) {
 	m.removed = append(m.removed, sessionID)
 }
 
-func (m *mockPermissionService) RegisterSessionHandler(sessionID string, handler func(sessionID, toolName, description string) bool) {
+func (m *mockPermissionService) RegisterSessionHandler(sessionID string, handler func(req PermissionRequestData) bool) {
 	m.registered = append(m.registered, sessionID)
 	m.handlers[sessionID] = handler
 }
