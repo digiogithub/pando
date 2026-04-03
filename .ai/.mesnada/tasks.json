@@ -317,6 +317,26 @@
     "timeout": "30m0s",
     "mcp_config": "@.github/mcp-config.json"
   },
+  "task-140639c3": {
+    "id": "task-140639c3",
+    "prompt": "You are the task_id: task-140639c3\n\nImplement Gemini provider fix plan phase 1 in the Pando repository.\n\nRepository: /www/MCP/Pando/pando\nProject ID for remembrances code tools: www_MCP_Pando_pando\nUser/project ID for remembrances KB/facts/events: pando\n\nTask scope:\n- Phase: 1\n- Fact key: gemini_fix_phase1_sdk_update\n- Goal: upgrade google.golang.org/genai from v1.3.0 to v1.51.0 and tidy modules.\n\nRelevant context already verified:\n- Files expected to change: go.mod, go.sum\n- Reason: v1.51.0 exposes ThinkingLevel in genai.ThinkingConfig, needed by later Gemini phases.\n\nExecution instructions:\n- Use remembrances KB/code tools if useful for extra context.\n- Inspect go.mod and any impacted Gemini code if needed before changing dependencies.\n- Perform the dependency upgrade cleanly and run go mod tidy.\n- Validate with go build ./... and report any follow-up compiler fallout caused by the SDK update.\n- Do not implement the later Gemini code phases in this task; keep scope to dependency update plus any required trivial compile-fix directly caused by the upgrade.\n\nSuccess criteria:\n- google.golang.org/genai is upgraded to v1.51.0.\n- Module files are tidy.\n- Repository builds or any remaining blocker is clearly documented.\n- Return a concise summary of files changed and validation performed.",
+    "work_dir": "/www/MCP/Pando/pando",
+    "status": "running",
+    "engine": "copilot",
+    "pid": 201317,
+    "model": "gpt-5.3-codex",
+    "log_file": "/www/MCP/Pando/pando/.ai/.mesnada/logs/task-140639c3.log",
+    "created_at": "2026-04-06T15:09:11.39683507+02:00",
+    "started_at": "2026-04-06T15:09:11.397470838+02:00",
+    "tags": [
+      "pando",
+      "provider-fix",
+      "gemini",
+      "phase1"
+    ],
+    "timeout": "45m0s",
+    "mcp_config": "@.github/mcp-config.json"
+  },
   "task-1754f2a1": {
     "id": "task-1754f2a1",
     "prompt": "You are the task_id: task-1754f2a1\n\nYou are implementing Phase 5 of the browser internal tools plan for the Pando project.\n\n## Your task: TUI Configuration Panel Integration\n\nWorking directory: /www/MCP/Pando/pando\n\nFIRST: Retrieve the detailed spec by calling the remembrances MCP tool `get_fact` with user_id=\"pando\" and key=\"browser_tools_phase5_tui_config\". Also check the KB document \"plans/browser_tools_chromedp_plan.md\" using `kb_get_document`.\n\n## What you must implement:\n\nThe InternalToolsConfig struct was extended in Phase 1 with 5 new browser fields:\n- BrowserEnabled bool\n- BrowserHeadless bool\n- BrowserTimeout int\n- BrowserUserDataDir string\n- BrowserMaxSessions int\n\nYour job is to expose these fields in the TUI settings panel.\n\n### Find the settings TUI file\nLook for the file that contains `buildInternalToolsSection` — it's likely at:\n`internal/tui/components/settings/settings.go`\nRead it fully before editing.\n\n### Add browser fields to buildInternalToolsSection()\n\nFind the `buildInternalToolsSection` function and add the browser fields BEFORE the existing readonly info field at the bottom of the section. Follow the exact same pattern as existing fields (same Field struct, same save lambda style).\n\nAdd a separator comment `// --- Browser Automation ---` before the block.\n\nFields to add:\n1. Label: \"Browser Enabled\", Type: FieldToggle, bound to cfg.InternalTools.BrowserEnabled → persists \"InternalTools.BrowserEnabled\"\n2. Label: \"Browser Headless\", Type: FieldToggle, bound to cfg.InternalTools.BrowserHeadless → persists \"InternalTools.BrowserHeadless\"\n3. Label: \"Browser Timeout (s)\", Type: FieldText, bound to strconv.Itoa(cfg.InternalTools.BrowserTimeout) → persists \"InternalTools.BrowserTimeout\"\n4. Label: \"Browser User Data Dir\", Type: FieldText, bound to cfg.InternalTools.BrowserUserDataDir → persists \"InternalTools.BrowserUserDataDir\"\n5. Label: \"Browser Max Sessions\", Type: FieldText, bound to strconv.Itoa(cfg.InternalTools.BrowserMaxSessions) → persists \"InternalTools.BrowserMaxSessions\"\n6. Label: \"Browser Info\", Type: FieldReadOnly, Value: \"Requires Chrome/Chromium in PATH. Tools: navigate, screenshot, get_content, evaluate, click, fill, scroll, console_logs, network, pdf\"\n\n### Update persistSetting() if needed\nLook for where other integer fields like \"FetchMaxSizeMB\" are persisted. If there's a special handler for integer fields, add analogous handling for:\n- \"InternalTools.BrowserTimeout\" → strconv.Atoi, assign to cfg.InternalTools.BrowserTimeout\n- \"InternalTools.BrowserMaxSessions\" → strconv.Atoi, assign to cfg.InternalTools.BrowserMaxSessions\n\n### Important\n- Read all relevant files before editing\n- Follow existing patterns EXACTLY (field types, save lambda style, strconv usage)\n- Do NOT change anything outside of buildInternalToolsSection and persistSetting\n- Run `go build ./...` to verify compilation\n\nWhen done, confirm the changes and report the line numbers where you added the fields.",
@@ -3343,6 +3363,26 @@
       "regex-cache"
     ],
     "timeout": "20m0s",
+    "mcp_config": "@.github/mcp-config.json"
+  },
+  "task-ff516a4d": {
+    "id": "task-ff516a4d",
+    "prompt": "You are the task_id: task-ff516a4d\n\nImplement Anthropic provider fix plan phase 1 in the Pando repository.\n\nRepository: /www/MCP/Pando/pando\nProject ID for remembrances code tools: www_MCP_Pando_pando\nUser/project ID for remembrances KB/facts/events: pando\n\nTask scope:\n- Phase: 1\n- Fact key: anthropic_fix_phase1_beta_headers\n- Goal: inject the missing Anthropic beta headers for all Anthropic requests.\n\nRelevant code context already verified:\n- File to edit: internal/llm/provider/anthropic.go\n- Function: newAnthropicClient()\n- Current behavior: API key mode sends anthropic-beta=claude-code-20250219; OAuth mode sends auth.ClaudeOAuthBetaHeader + ,claude-code-20250219.\n- Required new header values:\n  - API key mode: claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14\n  - OAuth mode: auth.ClaudeOAuthBetaHeader + ,claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14\n\nExecution instructions:\n- Use remembrances KB/code tools if useful for more context; you are encouraged to consult KB facts/documents and code search.\n- Inspect the target file before editing.\n- Make only the minimal code changes required for this phase.\n- Preserve existing style and APIs.\n- Run focused validation after editing: go test ./internal/llm/provider/... if feasible, otherwise at least go build ./...\n- If tests need to be added and can be done cheaply within scope, add only a focused unit test for the header behavior; otherwise leave that for later phases.\n- Do not implement later Anthropic phases in this task.\n\nSuccess criteria:\n- The new beta headers are included in both API key and OAuth initialization paths.\n- The code builds cleanly.\n- Return a concise summary of files changed and validation performed.",
+    "work_dir": "/www/MCP/Pando/pando",
+    "status": "running",
+    "engine": "copilot",
+    "pid": 201316,
+    "model": "gpt-5.3-codex",
+    "log_file": "/www/MCP/Pando/pando/.ai/.mesnada/logs/task-ff516a4d.log",
+    "created_at": "2026-04-06T15:09:11.395438469+02:00",
+    "started_at": "2026-04-06T15:09:11.397591206+02:00",
+    "tags": [
+      "pando",
+      "provider-fix",
+      "anthropic",
+      "phase1"
+    ],
+    "timeout": "45m0s",
     "mcp_config": "@.github/mcp-config.json"
   }
 }
