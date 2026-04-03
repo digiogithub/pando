@@ -792,6 +792,13 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 				Options: []string{"", "low", "medium", "high"},
 			},
 			settings.Field{
+				Label:   fmt.Sprintf("%s Thinking Mode", string(agentName)),
+				Key:     fmt.Sprintf("agents.%s.thinkingMode", agentName),
+				Value:   string(agentCfg.ThinkingMode),
+				Type:    settings.FieldSelect,
+				Options: []string{"", "disabled", "low", "medium", "high"},
+			},
+			settings.Field{
 				Label: fmt.Sprintf("%s Auto Compact", string(agentName)),
 				Key:   fmt.Sprintf("agents.%s.autoCompact", agentName),
 				Value: boolString(agentCfg.AutoCompact),
