@@ -1163,11 +1163,12 @@ func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillM
 				provider.WithOpenAIBaseURL(models.ResolveOllamaBaseURL(providerCfg.BaseURL)),
 			),
 		)
-	} else if model.Provider == models.ProviderAnthropic && model.CanReason && agentName == config.AgentCoder {
+	} else if model.Provider == models.ProviderAnthropic && model.CanReason {
 		opts = append(
 			opts,
 			provider.WithAnthropicOptions(
-				provider.WithAnthropicShouldThinkFn(provider.DefaultShouldThinkFn),
+				provider.WithAnthropicThinkingMode(agentConfig.ThinkingMode),
+				provider.WithAnthropicReasoningEffort(agentConfig.ReasoningEffort),
 			),
 		)
 	}
