@@ -31,20 +31,20 @@ var (
 type AgentEventType string
 
 const (
-	AgentEventTypeError          AgentEventType = "error"
-	AgentEventTypeResponse       AgentEventType = "response"
-	AgentEventTypeSummarize      AgentEventType = "summarize"
-	AgentEventTypeContentDelta   AgentEventType = "content_delta"
-	AgentEventTypeThinkingDelta  AgentEventType = "thinking_delta"
-	AgentEventTypeToolCall       AgentEventType = "tool_call"
-	AgentEventTypeToolResult     AgentEventType = "tool_result"
+	AgentEventTypeError         AgentEventType = "error"
+	AgentEventTypeResponse      AgentEventType = "response"
+	AgentEventTypeSummarize     AgentEventType = "summarize"
+	AgentEventTypeContentDelta  AgentEventType = "content_delta"
+	AgentEventTypeThinkingDelta AgentEventType = "thinking_delta"
+	AgentEventTypeToolCall      AgentEventType = "tool_call"
+	AgentEventTypeToolResult    AgentEventType = "tool_result"
 )
 
 type AgentEvent struct {
-	Type    AgentEventType
-	Message message.Message
-	Error   error
-	Delta   string
+	Type       AgentEventType
+	Message    message.Message
+	Error      error
+	Delta      string
 	ToolCall   *message.ToolCall
 	ToolResult *message.ToolResult
 
@@ -1163,11 +1163,12 @@ func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillM
 				provider.WithOpenAIBaseURL(models.ResolveOllamaBaseURL(providerCfg.BaseURL)),
 			),
 		)
-	} else if model.Provider == models.ProviderAnthropic && model.CanReason && agentName == config.AgentCoder {
+	} else if model.Provider == models.ProviderAnthropic && model.CanReason {
 		opts = append(
 			opts,
 			provider.WithAnthropicOptions(
-				provider.WithAnthropicShouldThinkFn(provider.DefaultShouldThinkFn),
+				provider.WithAnthropicThinkingMode(agentConfig.ThinkingMode),
+				provider.WithAnthropicReasoningEffort(agentConfig.ReasoningEffort),
 			),
 		)
 	}
