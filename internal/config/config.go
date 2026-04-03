@@ -2,6 +2,7 @@
 package config
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	toml "github.com/pelletier/go-toml/v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/llm/models"
@@ -494,7 +496,7 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	setDefaults(debug)
 
 	// Read global config
-	if err := readConfig(viper.ReadInConfig()); err != nil {
+	if err := readGlobalConfig(); err != nil {
 		return cfg, err
 	}
 
@@ -604,6 +606,116 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 		MaxTokens: 80,
 	}
 	return cfg, nil
+}
+
+func readGlobalConfig() error {
+	if err := readConfig(viper.ReadInConfig()); err != nil {
+		return err
+	}
+
+	if viper.ConfigFileUsed() != "" {
+		return nil
+	}
+
+	legacyConfigPath, err := resolveLegacyGlobalConfigPath()
+	if err != nil {
+		return err
+	}
+	if legacyConfigPath == "" {
+		return nil
+	}
+
+	viper.SetConfigFile(legacyConfigPath)
+	if err := readLegacyGlobalConfig(legacyConfigPath); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func readLegacyGlobalConfig(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	type parser struct {
+		name  string
+		parse func([]byte) error
+	}
+
+	parsers := []parser{
+		{
+			name: "yaml",
+			parse: func(raw []byte) error {
+				loader := viper.New()
+				loader.SetConfigType("yaml")
+				if err := loader.ReadConfig(bytes.NewReader(raw)); err != nil {
+					return err
+				}
+				return viper.MergeConfigMap(loader.AllSettings())
+			},
+		},
+		{
+			name: "toml",
+			parse: func(raw []byte) error {
+				loader := viper.New()
+				loader.SetConfigType("toml")
+				if err := loader.ReadConfig(bytes.NewReader(raw)); err != nil {
+					return err
+				}
+				return viper.MergeConfigMap(loader.AllSettings())
+			},
+		},
+		{
+			name: "json",
+			parse: func(raw []byte) error {
+				loader := viper.New()
+				loader.SetConfigType("json")
+				if err := loader.ReadConfig(bytes.NewReader(raw)); err != nil {
+					return err
+				}
+				return viper.MergeConfigMap(loader.AllSettings())
+			},
+		},
+	}
+
+	// Try parser based on extension first for speed and clearer behavior.
+	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
+	ordered := make([]parser, 0, len(parsers))
+	for _, p := range parsers {
+		if p.name == ext {
+			ordered = append(ordered, p)
+			break
+		}
+	}
+	for _, p := range parsers {
+		if p.name != ext {
+			ordered = append(ordered, p)
+		}
+	}
+
+	var parseErrs []string
+	for _, p := range ordered {
+		if err := p.parse(data); err != nil {
+			parseErrs = append(parseErrs, fmt.Sprintf("%s: %v", p.name, err))
+			continue
+		}
+
+		viper.SetConfigFile(path)
+		return nil
+	}
+
+	// Include a direct yaml unmarshal hint in case all viper attempts fail.
+	var yamlCheck map[string]any
+	if err := yaml.Unmarshal(data, &yamlCheck); err == nil {
+		return fmt.Errorf("failed to load config %s with viper parsers", path)
+	}
+
+	return fmt.Errorf("failed to parse legacy config file %s: %s", path, strings.Join(parseErrs, "; "))
 }
 
 // configureViper sets up viper's configuration paths and environment variables.
@@ -986,6 +1098,37 @@ func mergeLocalConfig(workingDir string) {
 	if err := local.ReadInConfig(); err == nil {
 		viper.MergeConfigMap(local.AllSettings())
 	}
+}
+
+func resolveLegacyGlobalConfigPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	searchDirs := make([]string, 0, 2)
+	xdgConfigHome := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME"))
+	if xdgConfigHome != "" {
+		searchDirs = append(searchDirs, filepath.Join(xdgConfigHome, appName))
+	}
+	homeConfigDir := filepath.Join(homeDir, ".config", appName)
+	if len(searchDirs) == 0 || searchDirs[len(searchDirs)-1] != homeConfigDir {
+		searchDirs = append(searchDirs, homeConfigDir)
+	}
+
+	extensions := []string{"yaml", "yml", "toml", "json"}
+	for _, dir := range searchDirs {
+		for _, extension := range extensions {
+			candidate := filepath.Join(dir, fmt.Sprintf("config.%s", extension))
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			} else if err != nil && !os.IsNotExist(err) {
+				return "", fmt.Errorf("failed to stat config file: %w", err)
+			}
+		}
+	}
+
+	return "", nil
 }
 
 // applyDefaultValues sets default values for configuration fields that need processing.
@@ -1536,6 +1679,14 @@ func ResolveConfigFilePath() (string, error) {
 		} else if err != nil && !os.IsNotExist(err) {
 			return "", fmt.Errorf("failed to stat config file: %w", err)
 		}
+	}
+
+	legacyConfig, err := resolveLegacyGlobalConfigPath()
+	if err != nil {
+		return "", err
+	}
+	if legacyConfig != "" {
+		return legacyConfig, nil
 	}
 
 	return "", nil
