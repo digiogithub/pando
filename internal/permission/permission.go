@@ -44,8 +44,8 @@ type Service interface {
 	SetGlobalAutoApprove(enabled bool)
 	// RegisterSessionHandler installs a custom approval function for a specific session.
 	// When set, this handler is called instead of the TUI dialog for that session.
-	// The handler receives (sessionID, toolName, description string) and returns true to approve.
-	RegisterSessionHandler(sessionID string, handler func(sessionID, toolName, description string) bool)
+	// The handler receives the full CreatePermissionRequest and returns true to approve.
+	RegisterSessionHandler(sessionID string, handler func(req CreatePermissionRequest) bool)
 	// UnregisterSessionHandler removes the custom handler for a session.
 	UnregisterSessionHandler(sessionID string)
 }
@@ -57,7 +57,7 @@ type permissionService struct {
 	pendingRequests     sync.Map
 	autoApproveSessions []string
 	globalAutoApprove   bool
-	sessionHandlers     map[string]func(sessionID, toolName, description string) bool
+	sessionHandlers     map[string]func(req CreatePermissionRequest) bool
 	sessionHandlersMu   sync.RWMutex
 }
 
@@ -92,7 +92,7 @@ func (s *permissionService) Request(opts CreatePermissionRequest) bool {
 	handler, hasHandler := s.sessionHandlers[opts.SessionID]
 	s.sessionHandlersMu.RUnlock()
 	if hasHandler {
-		resp := handler(opts.SessionID, opts.ToolName, opts.Description)
+		resp := handler(opts)
 		logging.Debug("Permission result via session handler", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", resp)
 		return resp
 	}
@@ -153,7 +153,7 @@ func (s *permissionService) SetGlobalAutoApprove(enabled bool) {
 	s.globalAutoApprove = enabled
 }
 
-func (s *permissionService) RegisterSessionHandler(sessionID string, handler func(sessionID, toolName, description string) bool) {
+func (s *permissionService) RegisterSessionHandler(sessionID string, handler func(req CreatePermissionRequest) bool) {
 	s.sessionHandlersMu.Lock()
 	defer s.sessionHandlersMu.Unlock()
 	s.sessionHandlers[sessionID] = handler
@@ -169,6 +169,6 @@ func NewPermissionService() Service {
 	return &permissionService{
 		Broker:             pubsub.NewBroker[PermissionRequest](),
 		sessionPermissions: make([]PermissionRequest, 0),
-		sessionHandlers:    make(map[string]func(sessionID, toolName, description string) bool),
+		sessionHandlers:    make(map[string]func(req CreatePermissionRequest) bool),
 	}
 }

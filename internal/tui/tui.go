@@ -95,6 +95,9 @@ type appModel struct {
 	claudeLoginDialog     dialog.ClaudeLoginDialogCmp
 	claudeLoginSession    *auth.ClaudeLoginSession
 
+	showInfoDialog bool
+	infoDialog     dialog.InfoDialogCmp
+
 	isCompacting      bool
 	compactingMessage string
 
@@ -332,11 +335,18 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Claude account messages
 	case dialog.ClaudeStatsMsg:
-		cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.InfoKey, msg.Content))
-		outAlert, outCmd := a.alert.Update(msg)
-		a.alert = outAlert.(bubbleup.AlertModel)
-		cmds = append(cmds, outCmd)
-		return a, tea.Batch(cmds...)
+		a.infoDialog.SetContent("Usage Statistics", msg.Content)
+		a.showInfoDialog = true
+		return a, nil
+
+	case dialog.ShowInfoDialogMsg:
+		a.infoDialog.SetContent(msg.Title, msg.Content)
+		a.showInfoDialog = true
+		return a, nil
+
+	case dialog.CloseInfoDialogMsg:
+		a.showInfoDialog = false
+		return a, nil
 
 	case dialog.ClaudeLoginDoneMsg:
 		if msg.Err != nil {
@@ -689,6 +699,9 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.showMultiArgumentsDialog {
 				a.showMultiArgumentsDialog = false
 			}
+			if a.showInfoDialog {
+				a.showInfoDialog = false
+			}
 			return a, nil
 		case key.Matches(msg, a.keys.Editor.EditExternal):
 			if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions {
@@ -911,6 +924,16 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		d, themeCmd := a.themeDialog.Update(msg)
 		a.themeDialog = d.(dialog.ThemeDialog)
 		cmds = append(cmds, themeCmd)
+		// Only block key messages send all other messages down
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return a, tea.Batch(cmds...)
+		}
+	}
+
+	if a.showInfoDialog {
+		d, infoCmd := a.infoDialog.Update(msg)
+		a.infoDialog = d.(dialog.InfoDialogCmp)
+		cmds = append(cmds, infoCmd)
 		// Only block key messages send all other messages down
 		if _, ok := msg.(tea.KeyMsg); ok {
 			return a, tea.Batch(cmds...)
@@ -1513,6 +1536,21 @@ func (a appModel) View() string {
 		)
 	}
 
+	if a.showInfoDialog {
+		overlay := a.infoDialog.View()
+		row := lipgloss.Height(appView) / 2
+		row -= lipgloss.Height(overlay) / 2
+		col := lipgloss.Width(appView) / 2
+		col -= lipgloss.Width(overlay) / 2
+		appView = layout.PlaceOverlay(
+			col,
+			row,
+			overlay,
+			appView,
+			true,
+		)
+	}
+
 	// Render bubbleup alert overlay as the final layer
 	appView = a.alert.Render(appView)
 
@@ -1685,6 +1723,7 @@ func New(app *app.App) tea.Model {
 		permissions:   dialog.NewPermissionDialogCmp(),
 		initDialog:    dialog.NewInitDialogCmp(),
 		themeDialog:   dialog.NewThemeDialogCmp(),
+		infoDialog:    dialog.NewInfoDialogCmp(),
 		app:           app,
 		commands:      []dialog.Command{},
 		chatPage:      chatPage,
