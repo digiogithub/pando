@@ -16,9 +16,42 @@ import (
 // globalPersonaSelector is the package-level persona selector for the main session.
 var globalPersonaSelector *PersonaSelector
 
+// activePersonaName stores the currently active persona name (empty = none).
+var activePersonaName string
+
 // SetPersonaSelector sets the global persona selector used in the main conversation agent.
 func SetPersonaSelector(ps *PersonaSelector) {
 	globalPersonaSelector = ps
+}
+
+// ListAvailablePersonas returns the names of all loaded personas.
+// Returns an empty slice if no persona selector has been initialised.
+func ListAvailablePersonas() []string {
+	if globalPersonaSelector == nil {
+		return []string{}
+	}
+	return globalPersonaSelector.manager.ListPersonas()
+}
+
+// GetActivePersona returns the currently active persona name.
+// An empty string means no persona is active.
+func GetActivePersona() string {
+	return activePersonaName
+}
+
+// SetActivePersona sets the active persona by name.
+// Pass an empty string to clear the active persona.
+// Returns an error if the named persona does not exist (and name is non-empty).
+func SetActivePersona(name string) error {
+	if name == "" {
+		activePersonaName = ""
+		return nil
+	}
+	if globalPersonaSelector == nil || !globalPersonaSelector.manager.HasPersona(name) {
+		return fmt.Errorf("persona %q not found", name)
+	}
+	activePersonaName = name
+	return nil
 }
 
 // PersonaSelector automatically selects and applies a persona for each user prompt.
