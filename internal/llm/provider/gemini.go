@@ -61,9 +61,8 @@ func (g *geminiClient) convertMessages(messages []message.Message) []*genai.Cont
 			var parts []*genai.Part
 			parts = append(parts, &genai.Part{Text: msg.Content().String()})
 			for _, binaryContent := range msg.BinaryContent() {
-				imageFormat := strings.Split(binaryContent.MIMEType, "/")
 				parts = append(parts, &genai.Part{InlineData: &genai.Blob{
-					MIMEType: imageFormat[1],
+					MIMEType: binaryContent.MIMEType,
 					Data:     binaryContent.Data,
 				}})
 			}
@@ -141,13 +140,15 @@ func (g *geminiClient) convertTools(tools []tools.BaseTool) []*genai.Tool {
 
 	for _, tool := range tools {
 		info := tool.Info()
+		properties := convertSchemaProperties(info.Parameters)
+		required := sanitizeRequired(info.Required, properties)
 		declaration := &genai.FunctionDeclaration{
 			Name:        info.Name,
 			Description: info.Description,
 			Parameters: &genai.Schema{
 				Type:       genai.TypeObject,
-				Properties: convertSchemaProperties(info.Parameters),
-				Required:   info.Required,
+				Properties: properties,
+				Required:   required,
 			},
 		}
 
@@ -168,9 +169,31 @@ func (g *geminiClient) finishReason(reason genai.FinishReason) message.FinishRea
 	}
 }
 
+func (g *geminiClient) buildThinkingConfig() *genai.ThinkingConfig {
+	model := strings.ToLower(strings.TrimPrefix(g.providerOptions.model.APIModel, "models/"))
+
+	switch {
+	case strings.HasPrefix(model, "gemini-3"):
+		return &genai.ThinkingConfig{
+			IncludeThoughts: true,
+			ThinkingLevel:   genai.ThinkingLevelHigh,
+		}
+	case strings.HasPrefix(model, "gemini-2.5"):
+		return &genai.ThinkingConfig{
+			IncludeThoughts: true,
+			ThinkingBudget:  int32Ptr(2000),
+		}
+	default:
+		return nil
+	}
+}
+
 func (g *geminiClient) send(ctx context.Context, messages []message.Message, tools []tools.BaseTool) (*ProviderResponse, error) {
 	// Convert messages
 	geminiMessages := g.convertMessages(messages)
+	if len(geminiMessages) == 0 {
+		return nil, errors.New("no messages to send to Gemini")
+	}
 
 	cfg := config.Get()
 	if cfg.Debug {
@@ -189,7 +212,10 @@ func (g *geminiClient) send(ctx context.Context, messages []message.Message, too
 	if len(tools) > 0 {
 		config.Tools = g.convertTools(tools)
 	}
-	chat, _ := g.client.Chats.Create(ctx, g.providerOptions.model.APIModel, config, history)
+	chat, err := g.client.Chats.Create(ctx, g.providerOptions.model.APIModel, config, history)
+	if err != nil {
+		return nil, err
+	}
 
 	attempts := 0
 	for {
@@ -224,8 +250,8 @@ func (g *geminiClient) send(ctx context.Context, messages []message.Message, too
 		if len(resp.Candidates) > 0 && resp.Candidates[0].Content != nil {
 			for _, part := range resp.Candidates[0].Content.Parts {
 				switch {
-				case part.Text != "":
-					content = string(part.Text)
+				case part.Text != "" && !part.Thought:
+					content += string(part.Text)
 				case part.FunctionCall != nil:
 					id := "call_" + uuid.New().String()
 					args, _ := json.Marshal(part.FunctionCall.Args)
@@ -260,8 +286,17 @@ func (g *geminiClient) send(ctx context.Context, messages []message.Message, too
 }
 
 func (g *geminiClient) stream(ctx context.Context, messages []message.Message, tools []tools.BaseTool) <-chan ProviderEvent {
+	eventChan := make(chan ProviderEvent)
+
 	// Convert messages
 	geminiMessages := g.convertMessages(messages)
+	if len(geminiMessages) == 0 {
+		go func() {
+			defer close(eventChan)
+			eventChan <- ProviderEvent{Type: EventError, Error: errors.New("no messages to send to Gemini")}
+		}()
+		return eventChan
+	}
 
 	cfg := config.Get()
 	if cfg.Debug {
@@ -276,14 +311,21 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 		SystemInstruction: &genai.Content{
 			Parts: []*genai.Part{{Text: g.providerOptions.systemMessage}},
 		},
+		ThinkingConfig: &genai.ThinkingConfig{IncludeThoughts: true},
 	}
 	if len(tools) > 0 {
 		config.Tools = g.convertTools(tools)
 	}
-	chat, _ := g.client.Chats.Create(ctx, g.providerOptions.model.APIModel, config, history)
+	chat, err := g.client.Chats.Create(ctx, g.providerOptions.model.APIModel, config, history)
+	if err != nil {
+		go func() {
+			defer close(eventChan)
+			eventChan <- ProviderEvent{Type: EventError, Error: err}
+		}()
+		return eventChan
+	}
 
 	attempts := 0
-	eventChan := make(chan ProviderEvent)
 
 	go func() {
 		defer close(eventChan)
@@ -305,6 +347,7 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 			for _, part := range lastMsg.Parts {
 				lastMsgParts = append(lastMsgParts, *part)
 			}
+			retryStream := false
 			for resp, err := range chat.SendMessageStream(ctx, lastMsgParts...) {
 				if err != nil {
 					retry, after, retryErr := g.shouldRetry(attempts, err)
@@ -322,6 +365,9 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 
 							return
 						case <-time.After(time.Duration(after) * time.Millisecond):
+							retryStream = true
+						}
+						if retryStream {
 							break
 						}
 					} else {
@@ -330,12 +376,16 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 					}
 				}
 
+				if resp == nil {
+					continue
+				}
+
 				finalResp = resp
 
 				if len(resp.Candidates) > 0 && resp.Candidates[0].Content != nil {
 					for _, part := range resp.Candidates[0].Content.Parts {
 						switch {
-						case part.Text != "":
+						case part.Text != "" && !part.Thought:
 							delta := string(part.Text)
 							if delta != "" {
 								eventChan <- ProviderEvent{
@@ -369,6 +419,10 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 						}
 					}
 				}
+			}
+
+			if retryStream {
+				continue
 			}
 
 			eventChan <- ProviderEvent{Type: EventContentStop}
@@ -486,7 +540,8 @@ func convertSchemaProperties(parameters map[string]interface{}) map[string]*gena
 	properties := make(map[string]*genai.Schema)
 
 	for name, param := range parameters {
-		properties[name] = convertToSchema(param)
+		sanitized := sanitizeGeminiSchema(param)
+		properties[name] = convertToSchema(sanitized)
 	}
 
 	return properties
@@ -502,6 +557,26 @@ func convertToSchema(param interface{}) *genai.Schema {
 
 	if desc, ok := paramMap["description"].(string); ok {
 		schema.Description = desc
+	}
+
+	if format, ok := paramMap["format"].(string); ok {
+		schema.Format = format
+	}
+
+	if enumVals, ok := paramMap["enum"].([]interface{}); ok {
+		enum := make([]string, 0, len(enumVals))
+		for _, v := range enumVals {
+			enum = append(enum, fmt.Sprint(v))
+		}
+		schema.Enum = enum
+	}
+
+	if anyOfVals, ok := paramMap["anyOf"].([]interface{}); ok {
+		anyOf := make([]*genai.Schema, 0, len(anyOfVals))
+		for _, item := range anyOfVals {
+			anyOf = append(anyOf, convertToSchema(item))
+		}
+		schema.AnyOf = anyOf
 	}
 
 	typeVal, hasType := paramMap["type"]
@@ -522,6 +597,7 @@ func convertToSchema(param interface{}) *genai.Schema {
 	case "object":
 		if props, ok := paramMap["properties"].(map[string]interface{}); ok {
 			schema.Properties = convertSchemaProperties(props)
+			schema.Required = sanitizeRequired(readStringSlice(paramMap["required"]), schema.Properties)
 		}
 	}
 
@@ -531,10 +607,122 @@ func convertToSchema(param interface{}) *genai.Schema {
 func processArrayItems(paramMap map[string]interface{}) *genai.Schema {
 	items, ok := paramMap["items"].(map[string]interface{})
 	if !ok {
-		return nil
+		return &genai.Schema{Type: genai.TypeString}
 	}
 
 	return convertToSchema(items)
+}
+
+func sanitizeGeminiSchema(param interface{}) interface{} {
+	paramMap, ok := param.(map[string]interface{})
+	if !ok {
+		return param
+	}
+
+	sanitized := map[string]interface{}{}
+	for key, value := range paramMap {
+		switch typed := value.(type) {
+		case map[string]interface{}:
+			sanitized[key] = sanitizeGeminiSchema(typed)
+		case []interface{}:
+			arr := make([]interface{}, 0, len(typed))
+			for _, item := range typed {
+				arr = append(arr, sanitizeGeminiSchema(item))
+			}
+			sanitized[key] = arr
+		default:
+			sanitized[key] = value
+		}
+	}
+
+	typeStr, _ := sanitized["type"].(string)
+	if enumVals, ok := sanitized["enum"].([]interface{}); ok {
+		strEnum := make([]interface{}, 0, len(enumVals))
+		for _, v := range enumVals {
+			strEnum = append(strEnum, fmt.Sprint(v))
+		}
+		sanitized["enum"] = strEnum
+		if typeStr == "integer" || typeStr == "number" {
+			sanitized["type"] = "string"
+			typeStr = "string"
+		}
+	}
+
+	if typeStr == "array" {
+		items, hasItems := sanitized["items"]
+		if !hasItems || items == nil {
+			sanitized["items"] = map[string]interface{}{"type": "string"}
+		} else if itemsMap, ok := items.(map[string]interface{}); ok {
+			if len(itemsMap) == 0 {
+				sanitized["items"] = map[string]interface{}{"type": "string"}
+			}
+		}
+	}
+
+	hasCombiner := sanitized["anyOf"] != nil || sanitized["oneOf"] != nil || sanitized["allOf"] != nil
+	if typeStr != "" && typeStr != "object" && !hasCombiner {
+		delete(sanitized, "properties")
+		delete(sanitized, "required")
+	}
+
+	if typeStr == "object" {
+		if props, ok := sanitized["properties"].(map[string]interface{}); ok {
+			if requiredRaw, ok := sanitized["required"].([]interface{}); ok {
+				required := make([]interface{}, 0, len(requiredRaw))
+				for _, r := range requiredRaw {
+					name, ok := r.(string)
+					if ok {
+						if _, exists := props[name]; exists {
+							required = append(required, name)
+						}
+					}
+				}
+				sanitized["required"] = required
+			}
+		}
+	}
+
+	return sanitized
+}
+
+func readStringSlice(value interface{}) []string {
+	if value == nil {
+		return nil
+	}
+
+	switch v := value.(type) {
+	case []string:
+		return v
+	case []interface{}:
+		result := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func sanitizeRequired(required []string, properties map[string]*genai.Schema) []string {
+	if len(required) == 0 || len(properties) == 0 {
+		return nil
+	}
+
+	sanitized := make([]string, 0, len(required))
+	for _, name := range required {
+		if _, ok := properties[name]; ok {
+			sanitized = append(sanitized, name)
+		}
+	}
+
+	if len(sanitized) == 0 {
+		return nil
+	}
+
+	return sanitized
 }
 
 func mapJSONTypeToGenAI(jsonType string) genai.Type {
@@ -563,4 +751,8 @@ func contains(s string, substrs ...string) bool {
 		}
 	}
 	return false
+}
+
+func int32Ptr(v int32) *int32 {
+	return &v
 }
