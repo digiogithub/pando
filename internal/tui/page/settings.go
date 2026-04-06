@@ -391,6 +391,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		// ── Services ──
 		withGroup(buildMesnadaSection(cfg), "Services"),
 		withGroup(buildRemembrancesSection(cfg), "Services"),
+		withGroup(buildOpenLitSection(cfg), "Services"),
 		withGroup(buildServerSection(cfg), "Services"),
 		withGroup(buildSnapshotsSection(cfg), "Services"),
 	}
@@ -1375,6 +1376,25 @@ func buildServerSection(cfg *config.Config) settings.Section {
 	}
 }
 
+func buildOpenLitSection(cfg *config.Config) settings.Section {
+	ol := cfg.OpenLit
+	fields := []settings.Field{
+		{Label: "Enabled", Key: "openlit.enabled", Type: settings.FieldToggle, Value: boolString(ol.Enabled)},
+		{Label: "Endpoint", Key: "openlit.endpoint", Type: settings.FieldText, Value: ol.Endpoint},
+		{Label: "Service Name", Key: "openlit.serviceName", Type: settings.FieldText, Value: ol.ServiceName},
+		{Label: "Insecure TLS", Key: "openlit.insecure", Type: settings.FieldToggle, Value: boolString(ol.Insecure)},
+	}
+	if !ol.Enabled {
+		for i := 1; i < len(fields); i++ {
+			fields[i].Disabled = true
+		}
+	}
+	return settings.Section{
+		Title:  "OpenLit Observability",
+		Fields: fields,
+	}
+}
+
 func buildLuaSection(cfg *config.Config) settings.Section {
 	fields := []settings.Field{
 		{Label: "Enabled", Key: "lua.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Lua.Enabled)},
@@ -1806,6 +1826,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveMesnada(field)
 	case strings.HasPrefix(field.Key, "remembrances."):
 		return saveRemembrances(field)
+	case strings.HasPrefix(field.Key, "openlit."):
+		return saveOpenLit(field)
 	case strings.HasPrefix(field.Key, "internalTools."):
 		return saveInternalTools(field)
 	case strings.HasPrefix(field.Key, "general."):
@@ -2575,6 +2597,35 @@ func saveServer(field settings.Field) error {
 	}
 
 	return config.UpdateServer(serverCfg)
+}
+
+func saveOpenLit(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	ol := cfg.OpenLit
+	switch field.Key {
+	case "openlit.enabled":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid OpenLit enabled value: %w", err)
+		}
+		ol.Enabled = v
+	case "openlit.endpoint":
+		ol.Endpoint = strings.TrimSpace(field.Value)
+	case "openlit.serviceName":
+		ol.ServiceName = strings.TrimSpace(field.Value)
+	case "openlit.insecure":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid OpenLit insecure value: %w", err)
+		}
+		ol.Insecure = v
+	default:
+		return fmt.Errorf("unsupported OpenLit setting %q", field.Key)
+	}
+	return config.UpdateOpenLit(ol)
 }
 
 func saveLua(field settings.Field) error {

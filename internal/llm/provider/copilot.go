@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -88,6 +89,11 @@ func newCopilotOpenAIClient(accessToken, baseURL string, headers map[string]stri
 	}
 	for key, value := range headers {
 		options = append(options, option.WithHeader(key, value))
+	}
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		// Inject the debug HTTP transport so every API call is logged to disk.
+		options = append(options,
+			option.WithHTTPClient(&http.Client{Transport: newDebugRoundTripper(nil)}))
 	}
 	return openai.NewClient(options...)
 }

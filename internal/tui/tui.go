@@ -88,6 +88,9 @@ type appModel struct {
 	showThemeDialog bool
 	themeDialog     dialog.ThemeDialog
 
+	showPersonaDialog bool
+	personaDialog     dialog.PersonaDialog
+
 	showMultiArgumentsDialog bool
 	multiArgumentsDialog     dialog.MultiArgumentsDialogCmp
 
@@ -131,6 +134,8 @@ func (a appModel) Init() tea.Cmd {
 	cmd = a.filepicker.Init()
 	cmds = append(cmds, cmd)
 	cmd = a.themeDialog.Init()
+	cmds = append(cmds, cmd)
+	cmd = a.personaDialog.Init()
 	cmds = append(cmds, cmd)
 
 	// Check if we should show the init dialog
@@ -497,6 +502,10 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.showThemeDialog = false
 		return a, nil
 
+	case dialog.ClosePersonaDialogMsg:
+		a.showPersonaDialog = false
+		return a, nil
+
 	case dialog.ThemeChangedMsg:
 		a.pages[a.currentPage], cmd = a.pages[a.currentPage].Update(msg)
 		a.showThemeDialog = false
@@ -581,6 +590,24 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.openThemeDialog()
 		}
 		return a, nil
+
+	case dialog.OpenPersonaDialogMsg:
+		if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+			return a, a.openPersonaDialog()
+		}
+		return a, nil
+
+	case dialog.PersonaSelectedMsg:
+		if err := agent.SetActivePersona(msg.Name); err != nil {
+			return a, util.ReportWarn("Persona not found: " + msg.Name)
+		}
+		a.showPersonaDialog = false
+		return a, util.ReportInfo("Persona: " + msg.Name)
+
+	case dialog.PersonaClearedMsg:
+		_ = agent.SetActivePersona("")
+		a.showPersonaDialog = false
+		return a, util.ReportInfo("Persona cleared (auto-select)")
 
 	case dialog.OpenFilepickerMsg:
 		if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
@@ -930,6 +957,16 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if a.showPersonaDialog {
+		d, personaCmd := a.personaDialog.Update(msg)
+		a.personaDialog = d.(dialog.PersonaDialog)
+		cmds = append(cmds, personaCmd)
+		// Only block key messages send all other messages down
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return a, tea.Batch(cmds...)
+		}
+	}
+
 	if a.showInfoDialog {
 		d, infoCmd := a.infoDialog.Update(msg)
 		a.infoDialog = d.(dialog.InfoDialogCmp)
@@ -1000,6 +1037,14 @@ func (a *appModel) openModelDialog() tea.Cmd {
 func (a *appModel) openThemeDialog() tea.Cmd {
 	a.showThemeDialog = true
 	return a.themeDialog.Init()
+}
+
+func (a *appModel) openPersonaDialog() tea.Cmd {
+	personas := agent.ListAvailablePersonas()
+	active := agent.GetActivePersona()
+	a.personaDialog.SetPersonas(personas, active)
+	a.showPersonaDialog = true
+	return a.personaDialog.Init()
 }
 
 func (a *appModel) openFilepicker() tea.Cmd {
@@ -1506,6 +1551,21 @@ func (a appModel) View() string {
 		)
 	}
 
+	if a.showPersonaDialog {
+		overlay := a.personaDialog.View()
+		row := lipgloss.Height(appView) / 2
+		row -= lipgloss.Height(overlay) / 2
+		col := lipgloss.Width(appView) / 2
+		col -= lipgloss.Width(overlay) / 2
+		appView = layout.PlaceOverlay(
+			col,
+			row,
+			overlay,
+			appView,
+			true,
+		)
+	}
+
 	if a.showMultiArgumentsDialog {
 		overlay := a.multiArgumentsDialog.View()
 		row := lipgloss.Height(appView) / 2
@@ -1723,6 +1783,7 @@ func New(app *app.App) tea.Model {
 		permissions:   dialog.NewPermissionDialogCmp(),
 		initDialog:    dialog.NewInitDialogCmp(),
 		themeDialog:   dialog.NewThemeDialogCmp(),
+		personaDialog: dialog.NewPersonaDialogCmp(),
 		infoDialog:    dialog.NewInfoDialogCmp(),
 		app:           app,
 		commands:      []dialog.Command{},
@@ -1799,6 +1860,15 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Category:    dialog.CommandCategoryModels,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(dialog.OpenModelDialogMsg{})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "select-persona",
+		Title:       "Select Persona",
+		Description: "Choose the active assistant persona",
+		Category:    dialog.CommandCategoryGeneral,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(dialog.OpenPersonaDialogMsg{})
 		},
 	})
 	model.RegisterCommand(dialog.Command{

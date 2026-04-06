@@ -33,6 +33,8 @@ import (
 	mesnadaConfig "github.com/digiogithub/pando/internal/mesnada/config"
 	mesnadaOrch "github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	mesnadaServer "github.com/digiogithub/pando/internal/mesnada/server"
+	"github.com/digiogithub/pando/internal/mesnada/persona"
+	"github.com/digiogithub/pando/internal/mesnada/persona/builtin"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -43,6 +45,7 @@ import (
 	"github.com/digiogithub/pando/internal/version"
 	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/mcpgateway"
+	"github.com/digiogithub/pando/internal/observability"
 )
 
 type App struct {
@@ -62,6 +65,8 @@ type App struct {
 	LuaManager          *luaengine.FilterManager
 	MCPGateway          *mcpgateway.Gateway
 	Evaluator           *evaluator.EvaluatorService
+
+	openlitShutdown func(context.Context) error
 
 	clientsMutex sync.RWMutex
 
@@ -119,6 +124,16 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	// Initialize Remembrances service if enabled
 	cfg := config.Get()
 	if cfg != nil {
+		// --- OpenLit Observability Init ---
+		{
+			shutdownFn, err := observability.Init(cfg.OpenLit, version.Version)
+			if err != nil {
+				logging.Warn("OpenLit observability init failed", "error", err)
+				shutdownFn = func(ctx context.Context) error { return nil }
+			}
+			app.openlitShutdown = shutdownFn
+		}
+
 		remembrances, err := rag.NewRemembrancesService(conn, &cfg.Remembrances)
 		if err != nil {
 			logging.Error("Failed to create remembrances service", "error", err)
@@ -300,6 +315,23 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	}
 	logging.Debug("Coder agent created", "model", app.CoderAgent.Model().ID)
 
+	// Initialize the global persona manager with built-in personas, then overlay
+	// any user-defined personas from the configured path. This is always done so
+	// that built-in personas are available even without auto-selection configured.
+	{
+		userPersonaPath := cfg.PersonaAutoSelect.PersonaPath
+		if userPersonaPath == "" {
+			userPersonaPath = expandMesnadaPath(cfg.Mesnada.Orchestrator.PersonaPath)
+		}
+		personaMgr, pmErr := persona.NewManagerWithBuiltins(builtin.FS, userPersonaPath)
+		if pmErr != nil {
+			logging.Warn("Failed to initialize persona manager", "reason", pmErr)
+		} else {
+			agent.SetPersonaManager(personaMgr)
+			logging.Debug("Persona manager initialized", "userPath", userPersonaPath, "count", len(personaMgr.ListPersonas()))
+		}
+	}
+
 	// Initialize automatic persona selector for the main session when enabled.
 	if cfg.PersonaAutoSelect.Enabled {
 		personaPath := cfg.PersonaAutoSelect.PersonaPath
@@ -317,6 +349,11 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		} else {
 			logging.Warn("Auto persona selector enabled but no personaPath configured")
 		}
+	}
+
+	// Default active persona to "assistant" if none is configured.
+	if agent.GetActivePersona() == "" {
+		_ = agent.SetActivePersona("assistant")
 	}
 
 	logging.Debug("App created", "workingDir", config.WorkingDirectory())
@@ -929,6 +966,12 @@ func (app *App) Shutdown() {
 			logging.Error("Failed to shutdown LSP client", "name", name, "error", err)
 		}
 		cancel()
+	}
+	// Shutdown OpenLit OTLP exporter (flush traces before exit)
+	if app.openlitShutdown != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = app.openlitShutdown(ctx)
 	}
 	logging.Debug("App shutdown completed")
 }
