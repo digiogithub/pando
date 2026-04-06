@@ -33,6 +33,8 @@ import (
 	mesnadaConfig "github.com/digiogithub/pando/internal/mesnada/config"
 	mesnadaOrch "github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	mesnadaServer "github.com/digiogithub/pando/internal/mesnada/server"
+	"github.com/digiogithub/pando/internal/mesnada/persona"
+	"github.com/digiogithub/pando/internal/mesnada/persona/builtin"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -300,6 +302,23 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	}
 	logging.Debug("Coder agent created", "model", app.CoderAgent.Model().ID)
 
+	// Initialize the global persona manager with built-in personas, then overlay
+	// any user-defined personas from the configured path. This is always done so
+	// that built-in personas are available even without auto-selection configured.
+	{
+		userPersonaPath := cfg.PersonaAutoSelect.PersonaPath
+		if userPersonaPath == "" {
+			userPersonaPath = expandMesnadaPath(cfg.Mesnada.Orchestrator.PersonaPath)
+		}
+		personaMgr, pmErr := persona.NewManagerWithBuiltins(builtin.FS, userPersonaPath)
+		if pmErr != nil {
+			logging.Warn("Failed to initialize persona manager", "reason", pmErr)
+		} else {
+			agent.SetPersonaManager(personaMgr)
+			logging.Debug("Persona manager initialized", "userPath", userPersonaPath, "count", len(personaMgr.ListPersonas()))
+		}
+	}
+
 	// Initialize automatic persona selector for the main session when enabled.
 	if cfg.PersonaAutoSelect.Enabled {
 		personaPath := cfg.PersonaAutoSelect.PersonaPath
@@ -317,6 +336,11 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		} else {
 			logging.Warn("Auto persona selector enabled but no personaPath configured")
 		}
+	}
+
+	// Default active persona to "assistant" if none is configured.
+	if agent.GetActivePersona() == "" {
+		_ = agent.SetActivePersona("assistant")
 	}
 
 	logging.Debug("App created", "workingDir", config.WorkingDirectory())

@@ -205,3 +205,46 @@ func WriteToolResultsJson(sessionId string, requestSeqId int, toolResults any) s
 	filename := fmt.Sprintf("%d_tool_results.json", requestSeqId)
 	return AppendToSessionLogFile(sessionId, filename, string(toolResultsJson))
 }
+
+// WriteHTTPRequest writes raw HTTP request data (method, url, headers, body)
+// to {seqId}_http_req.json in the session log directory.
+// Used by the debug transport to record exactly what was sent to the provider API.
+func WriteHTTPRequest(sessionId string, seqId int, data any) string {
+	if MessageDir == "" || sessionId == "" || seqId <= 0 {
+		return ""
+	}
+	dataJson, err := json.Marshal(data)
+	if err != nil {
+		Error("Failed to marshal HTTP request data", "session_id", sessionId, "seq_id", seqId, "error", err)
+		return ""
+	}
+	filename := fmt.Sprintf("%d_http_req.json", seqId)
+	return AppendToSessionLogFile(sessionId, filename, string(dataJson))
+}
+
+// WriteHTTPResponse writes raw HTTP response data (status, headers, body)
+// to {seqId}_http_resp.json in the session log directory.
+// Used by the debug transport to record exactly what the provider API returned.
+func WriteHTTPResponse(sessionId string, seqId int, data any) string {
+	if MessageDir == "" || sessionId == "" || seqId <= 0 {
+		return ""
+	}
+	dataJson, err := json.Marshal(data)
+	if err != nil {
+		Error("Failed to marshal HTTP response data", "session_id", sessionId, "seq_id", seqId, "error", err)
+		return ""
+	}
+	filename := fmt.Sprintf("%d_http_resp.json", seqId)
+	return AppendToSessionLogFile(sessionId, filename, string(dataJson))
+}
+
+// AppendHTTPStream appends a raw SSE stream chunk to {seqId}_http_stream.log
+// in the session log directory.
+// Used by the debug transport for streaming (text/event-stream) responses.
+func AppendHTTPStream(sessionId string, seqId int, chunk string) string {
+	if MessageDir == "" || sessionId == "" || seqId <= 0 {
+		return ""
+	}
+	filename := fmt.Sprintf("%d_http_stream.log", seqId)
+	return AppendToSessionLogFile(sessionId, filename, chunk)
+}

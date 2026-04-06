@@ -10,6 +10,7 @@ import {
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
 import { useServerStore } from '@/stores/serverStore'
+import PersonaSelector from '@/components/shared/PersonaSelector'
 
 export default function Header() {
   const { t } = useTranslation()
@@ -201,6 +202,9 @@ export default function Header() {
         >
           <FontAwesomeIcon icon={theme === 'light' ? faMoon : faSun} style={{ fontSize: 13 }} />
         </button>
+
+        {/* Persona selector */}
+        <PersonaSelector />
 
         {/* Settings */}
         <NavLink

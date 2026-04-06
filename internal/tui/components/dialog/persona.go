@@ -31,6 +31,9 @@ type PersonaSelectedMsg struct {
 // PersonaClearedMsg is fired when "None (auto)" is selected.
 type PersonaClearedMsg struct{}
 
+// ClosePersonaDialogMsg is sent when the persona dialog is closed without selection.
+type ClosePersonaDialogMsg struct{}
+
 // PersonaDialog interface for the persona selection dialog.
 type PersonaDialog interface {
 	tea.Model
@@ -158,7 +161,7 @@ func (p *personaDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return p, util.CmdHandler(PersonaSelectedMsg{Name: selected})
 		case key.Matches(msg, personaKeys.Escape):
-			return p, util.CmdHandler(CompletionDialogCloseMsg{})
+			return p, util.CmdHandler(ClosePersonaDialogMsg{})
 		case key.Matches(msg, personaKeys.Up) || key.Matches(msg, personaKeys.K):
 			p.moveSelection(-1)
 			return p, nil
