@@ -392,10 +392,8 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		}
 	}
 
-	// Auto persona selection: a lite model picks the best persona and prepends it.
-	if globalPersonaSelector != nil {
-		content = globalPersonaSelector.SelectAndApply(ctx, content)
-	}
+	// Apply persona: manually set active persona takes priority over auto-selection.
+	content = applyActiveOrSelectPersona(ctx, content)
 
 	userMsg, err := a.createUserMessage(ctx, sessionID, content, attachmentParts)
 	if err != nil {

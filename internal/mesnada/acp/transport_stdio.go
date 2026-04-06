@@ -123,6 +123,24 @@ func interceptStdin(in io.Reader, out *syncWriter, fwd *io.PipeWriter, agent *Pa
 			continue
 		}
 
+		if msg.Method == "persona/list" {
+			logger.Printf("[ACP INTERCEPT] Handling persona/list (id=%s)", string(msg.ID))
+			handlePersonaListRPC(msg, out, agent, logger)
+			continue
+		}
+
+		if msg.Method == "persona/get" {
+			logger.Printf("[ACP INTERCEPT] Handling persona/get (id=%s)", string(msg.ID))
+			handlePersonaGetRPC(msg, out, agent, logger)
+			continue
+		}
+
+		if msg.Method == "persona/set" {
+			logger.Printf("[ACP INTERCEPT] Handling persona/set (id=%s)", string(msg.ID))
+			handlePersonaSetRPC(msg, out, agent, logger)
+			continue
+		}
+
 		// Forward everything else to the SDK connection.
 		fwd.Write(line)
 		fwd.Write([]byte("\n"))
@@ -222,6 +240,60 @@ func handleSessionListRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAgent, l
 	writeRPCResult(out, req.ID, result)
 	if logger != nil {
 		logger.Printf("[ACP INTERCEPT] session/list: returned %d sessions (hasMore=%v)", len(entries), hasMore)
+	}
+}
+
+// ---- persona/* helpers -------------------------------------------------------
+
+// personaListResult is the result payload for a persona/list response.
+type personaListResult struct {
+	Personas []string `json:"personas"`
+}
+
+// personaGetResult is the result payload for a persona/get response.
+type personaGetResult struct {
+	Active string `json:"active"`
+}
+
+// personaSetParams are the request params for persona/set.
+type personaSetParams struct {
+	Name string `json:"name"`
+}
+
+// handlePersonaListRPC returns all available persona names.
+func handlePersonaListRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAgent, logger *log.Logger) {
+	personas := agent.agentService.ListPersonas()
+	if personas == nil {
+		personas = []string{}
+	}
+	writeRPCResult(out, req.ID, personaListResult{Personas: personas})
+	if logger != nil {
+		logger.Printf("[ACP INTERCEPT] persona/list: returned %d personas", len(personas))
+	}
+}
+
+// handlePersonaGetRPC returns the currently active persona name.
+func handlePersonaGetRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAgent, logger *log.Logger) {
+	active := agent.agentService.GetActivePersona()
+	writeRPCResult(out, req.ID, personaGetResult{Active: active})
+	if logger != nil {
+		logger.Printf("[ACP INTERCEPT] persona/get: active=%q", active)
+	}
+}
+
+// handlePersonaSetRPC sets the active persona by name.
+func handlePersonaSetRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAgent, logger *log.Logger) {
+	var params personaSetParams
+	if len(req.Params) > 0 {
+		_ = json.Unmarshal(req.Params, &params)
+	}
+	if err := agent.agentService.SetActivePersona(params.Name); err != nil {
+		writeRPCError(out, req.ID, -32602, "invalid persona: "+err.Error())
+		return
+	}
+	writeRPCResult(out, req.ID, personaGetResult{Active: params.Name})
+	if logger != nil {
+		logger.Printf("[ACP INTERCEPT] persona/set: active=%q", params.Name)
 	}
 }
 
