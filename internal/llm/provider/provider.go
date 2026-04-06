@@ -91,6 +91,13 @@ type baseProvider[C ProviderClient] struct {
 	client  C
 }
 
+func wrapInstrumented(p Provider, err error) (Provider, error) {
+	if err != nil || p == nil {
+		return nil, err
+	}
+	return NewInstrumentedProvider(p), nil
+}
+
 func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption) (Provider, error) {
 	clientOptions := providerClientOptions{}
 	for _, o := range opts {
@@ -101,10 +108,10 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 	}
 	switch providerName {
 	case models.ProviderCopilot:
-		return &baseProvider[CopilotClient]{
+		return wrapInstrumented(&baseProvider[CopilotClient]{
 			options: clientOptions,
 			client:  newCopilotClient(clientOptions),
-		}, nil
+		}, nil)
 	case models.ProviderAnthropic:
 		anthropicOpts := clientOptions.anthropicOptions
 		if clientOptions.apiKey == "" {
@@ -120,7 +127,7 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 				}
 			}
 		}
-		return &baseProvider[AnthropicClient]{
+		return wrapInstrumented(&baseProvider[AnthropicClient]{
 			options: clientOptions,
 			client: newAnthropicClient(providerClientOptions{
 				apiKey:           clientOptions.apiKey,
@@ -129,12 +136,12 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 				systemMessage:    clientOptions.systemMessage,
 				anthropicOptions: anthropicOpts,
 			}),
-		}, nil
+		}, nil)
 	case models.ProviderOpenAI:
-		return &baseProvider[OpenAIClient]{
+		return wrapInstrumented(&baseProvider[OpenAIClient]{
 			options: clientOptions,
 			client:  newOpenAIClient(clientOptions),
-		}, nil
+		}, nil)
 	case models.ProviderOllama:
 		// Ollama's current /v1/chat/completions and /v1/models endpoints are compatible
 		// with the OpenAI client flow already used throughout Pando.
@@ -142,38 +149,38 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 			clientOptions.openaiOptions,
 			models.ResolveOllamaBaseURL(""),
 		)
-		return &baseProvider[OpenAIClient]{
+		return wrapInstrumented(&baseProvider[OpenAIClient]{
 			options: clientOptions,
 			client:  newOpenAIClient(clientOptions),
-		}, nil
+		}, nil)
 	case models.ProviderGemini:
-		return &baseProvider[GeminiClient]{
+		return wrapInstrumented(&baseProvider[GeminiClient]{
 			options: clientOptions,
 			client:  newGeminiClient(clientOptions),
-		}, nil
+		}, nil)
 	case models.ProviderBedrock:
-		return &baseProvider[BedrockClient]{
+		return wrapInstrumented(&baseProvider[BedrockClient]{
 			options: clientOptions,
 			client:  newBedrockClient(clientOptions),
-		}, nil
+		}, nil)
 	case models.ProviderGROQ:
 		clientOptions.openaiOptions = append(clientOptions.openaiOptions,
 			WithOpenAIBaseURL("https://api.groq.com/openai/v1"),
 		)
-		return &baseProvider[OpenAIClient]{
+		return wrapInstrumented(&baseProvider[OpenAIClient]{
 			options: clientOptions,
 			client:  newOpenAIClient(clientOptions),
-		}, nil
+		}, nil)
 	case models.ProviderAzure:
-		return &baseProvider[AzureClient]{
+		return wrapInstrumented(&baseProvider[AzureClient]{
 			options: clientOptions,
 			client:  newAzureClient(clientOptions),
-		}, nil
+		}, nil)
 	case models.ProviderVertexAI:
-		return &baseProvider[VertexAIClient]{
+		return wrapInstrumented(&baseProvider[VertexAIClient]{
 			options: clientOptions,
 			client:  newVertexAIClient(clientOptions),
-		}, nil
+		}, nil)
 	case models.ProviderOpenRouter:
 		clientOptions.openaiOptions = append(clientOptions.openaiOptions,
 			WithOpenAIBaseURL("https://openrouter.ai/api/v1"),
@@ -182,26 +189,26 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 				"X-Title":      "Pando",
 			}),
 		)
-		return &baseProvider[OpenAIClient]{
+		return wrapInstrumented(&baseProvider[OpenAIClient]{
 			options: clientOptions,
 			client:  newOpenAIClient(clientOptions),
-		}, nil
+		}, nil)
 	case models.ProviderXAI:
 		clientOptions.openaiOptions = append(clientOptions.openaiOptions,
 			WithOpenAIBaseURL("https://api.x.ai/v1"),
 		)
-		return &baseProvider[OpenAIClient]{
+		return wrapInstrumented(&baseProvider[OpenAIClient]{
 			options: clientOptions,
 			client:  newOpenAIClient(clientOptions),
-		}, nil
+		}, nil)
 	case models.ProviderLocal:
 		clientOptions.openaiOptions = append(clientOptions.openaiOptions,
 			WithOpenAIBaseURL(os.Getenv("LOCAL_ENDPOINT")),
 		)
-		return &baseProvider[OpenAIClient]{
+		return wrapInstrumented(&baseProvider[OpenAIClient]{
 			options: clientOptions,
 			client:  newOpenAIClient(clientOptions),
-		}, nil
+		}, nil)
 	case models.ProviderMock:
 		// TODO: implement mock client for test
 		panic("not implemented")

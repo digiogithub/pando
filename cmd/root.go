@@ -543,6 +543,21 @@ func (a *acpAgentAdapter) SetModelOverride(modelID string) error {
 	return config.OverrideAgentModel(config.AgentCoder, models.ModelID(modelID))
 }
 
+// ListPersonas returns all available persona names.
+func (a *acpAgentAdapter) ListPersonas() []string {
+	return agent.ListAvailablePersonas()
+}
+
+// GetActivePersona returns the currently active persona name.
+func (a *acpAgentAdapter) GetActivePersona() string {
+	return agent.GetActivePersona()
+}
+
+// SetActivePersona sets the active persona by name (empty = clear).
+func (a *acpAgentAdapter) SetActivePersona(name string) error {
+	return agent.SetActivePersona(name)
+}
+
 // acpSessionAdapter adapts session.Service to acpPkg.SessionService.
 type acpSessionAdapter struct {
 	svc session.Service

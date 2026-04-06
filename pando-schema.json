@@ -400,6 +400,37 @@
       },
       "type": "object"
     },
+    "openlit": {
+      "description": "OpenLit LLM observability via OTLP",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Enable OpenLit integration",
+          "type": "boolean",
+          "default": false
+        },
+        "endpoint": {
+          "description": "OTLP endpoint for OpenLit (e.g. http://localhost:4318)",
+          "type": "string",
+          "default": "http://localhost:4318"
+        },
+        "serviceName": {
+          "description": "Service name for OpenLit traces",
+          "type": "string",
+          "default": "pando"
+        },
+        "insecure": {
+          "description": "Allow insecure OTLP connection",
+          "type": "boolean",
+          "default": true
+        },
+        "customHeaders": {
+          "description": "Custom headers for OTLP exporter",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
     "providers": {
       "additionalProperties": {
         "description": "Provider configuration",

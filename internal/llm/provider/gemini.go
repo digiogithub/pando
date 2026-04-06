@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -37,7 +38,13 @@ func newGeminiClient(opts providerClientOptions) GeminiClient {
 		o(&geminiOpts)
 	}
 
-	client, err := genai.NewClient(context.Background(), &genai.ClientConfig{APIKey: opts.apiKey, Backend: genai.BackendGeminiAPI})
+	genaiConfig := &genai.ClientConfig{APIKey: opts.apiKey, Backend: genai.BackendGeminiAPI}
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		// Inject the debug HTTP transport so every API call is logged to disk.
+		genaiConfig.HTTPClient = &http.Client{Transport: newDebugRoundTripper(nil)}
+	}
+
+	client, err := genai.NewClient(context.Background(), genaiConfig)
 	if err != nil {
 		logging.Error("Failed to create Gemini client", "error", err)
 		return nil
