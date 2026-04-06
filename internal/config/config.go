@@ -197,6 +197,15 @@ type SkillsCatalogConfig struct {
 	DefaultScope string `json:"defaultScope" yaml:"defaultScope"` // "global" | "project"
 }
 
+// OpenLitConfig holds configuration for OpenLit LLM observability via OTLP
+type OpenLitConfig struct {
+	Enabled       bool              `json:"enabled" toml:"Enabled"`
+	Endpoint      string            `json:"endpoint" toml:"Endpoint"`       // e.g. "http://localhost:4318"
+	ServiceName   string            `json:"serviceName" toml:"ServiceName"` // e.g. "pando"
+	Insecure      bool              `json:"insecure" toml:"Insecure"`
+	CustomHeaders map[string]string `json:"customHeaders,omitempty" toml:"CustomHeaders"`
+}
+
 // RemembrancesConfig defines configuration for the remembrances system.
 type RemembrancesConfig struct {
 	Enabled                   bool   `json:"enabled" toml:"Enabled"`
@@ -409,6 +418,7 @@ type Config struct {
 	CLIAssist          CLIAssistConfig                   `json:"cliAssist,omitempty" toml:"cliAssist"`
 	PersonaAutoSelect  PersonaAutoSelectConfig           `json:"personaAutoSelect,omitempty"`
 	ACP                ACPConfig                         `json:"acp,omitempty" toml:"acp"`
+	OpenLit            OpenLitConfig                     `json:"openlit,omitempty" toml:"OpenLit"`
 }
 
 // Application constants
@@ -743,6 +753,12 @@ func configureViper() {
 
 // setDefaults configures default values for configuration options.
 func setDefaults(debug bool) {
+	// OpenLit observability defaults
+	viper.SetDefault("openlit.enabled", false)
+	viper.SetDefault("openlit.endpoint", "http://localhost:4318")
+	viper.SetDefault("openlit.serviceName", "pando")
+	viper.SetDefault("openlit.insecure", true)
+
 	viper.SetDefault("data.directory", defaultDataDirectory)
 	viper.SetDefault("contextPaths", defaultContextPaths)
 	viper.SetDefault("skills.enabled", true)
@@ -2024,6 +2040,26 @@ func UpdateRemembrances(remembrancesCfg RemembrancesConfig) error {
 		config.Remembrances = remembrancesCfg
 	}); err != nil {
 		cfg.Remembrances = oldRemembrances
+		return err
+	}
+
+	return nil
+}
+
+
+// UpdateOpenLit updates OpenLit configuration and persists it to the config file.
+func UpdateOpenLit(openLitCfg OpenLitConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldOpenLit := cfg.OpenLit
+	cfg.OpenLit = openLitCfg
+
+	if err := updateCfgFile(func(config *Config) {
+		config.OpenLit = openLitCfg
+	}); err != nil {
+		cfg.OpenLit = oldOpenLit
 		return err
 	}
 

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"net/http"
+
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -64,6 +66,12 @@ func newAnthropicClient(opts providerClientOptions) AnthropicClient {
 	}
 	if anthropicOpts.useBedrock {
 		anthropicClientOptions = append(anthropicClientOptions, bedrock.WithLoadDefaultConfig(context.Background()))
+	}
+
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		// Inject the debug HTTP transport so every API call is logged to disk.
+		anthropicClientOptions = append(anthropicClientOptions,
+			option.WithHTTPClient(&http.Client{Transport: newDebugRoundTripper(nil)}))
 	}
 
 	client := anthropic.NewClient(anthropicClientOptions...)

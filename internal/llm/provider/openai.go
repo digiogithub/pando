@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"time"
 
 	"github.com/openai/openai-go"
@@ -55,6 +56,12 @@ func newOpenAIClient(opts providerClientOptions) OpenAIClient {
 		for key, value := range openaiOpts.extraHeaders {
 			openaiClientOptions = append(openaiClientOptions, option.WithHeader(key, value))
 		}
+	}
+
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		// Inject the debug HTTP transport so every API call is logged to disk.
+		openaiClientOptions = append(openaiClientOptions,
+			option.WithHTTPClient(&http.Client{Transport: newDebugRoundTripper(nil)}))
 	}
 
 	client := openai.NewClient(openaiClientOptions...)

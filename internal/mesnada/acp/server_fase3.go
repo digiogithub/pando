@@ -55,6 +55,12 @@ type AgentService interface {
 	// SetModelOverride temporarily changes the active model (in-memory only).
 	// Pass empty string to clear any previous override.
 	SetModelOverride(modelID string) error
+	// ListPersonas returns the names of all available personas.
+	ListPersonas() []string
+	// GetActivePersona returns the currently active persona name (empty = none).
+	GetActivePersona() string
+	// SetActivePersona sets the active persona by name. Pass empty string to clear.
+	SetActivePersona(name string) error
 }
 
 // ACPSessionInfo is a minimal session descriptor used by the ACP layer.

@@ -553,6 +553,33 @@ func (s *Server) handlePutConfigTools(w http.ResponseWriter, r *http.Request) {
 	s.handleGetConfigTools(w, r)
 }
 
+// --- OpenLit ---
+
+func (s *Server) handleConfigOpenLit(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		cfg := config.Get()
+		if cfg == nil {
+			writeError(w, http.StatusInternalServerError, "configuration not loaded")
+			return
+		}
+		writeJSON(w, http.StatusOK, cfg.OpenLit)
+	case http.MethodPut:
+		var req config.OpenLitConfig
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if err := config.UpdateOpenLit(req); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update OpenLit config: "+err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, config.Get().OpenLit)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
 // --- Bash ---
 
 func (s *Server) handleConfigBash(w http.ResponseWriter, r *http.Request) {
