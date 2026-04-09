@@ -108,5 +108,12 @@
     "navigate": "导航",
     "select": "选择",
     "close": "关闭"
+  },
+  "pwa": {
+    "installTitle": "安装 Pando 应用",
+    "installDescription": "将 Pando 添加到主屏幕，获得更快的应用体验 — 支持离线使用。",
+    "installButton": "安装",
+    "dismissButton": "暂不",
+    "installing": "安装中…"
   }
 }

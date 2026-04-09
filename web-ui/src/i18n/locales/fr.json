@@ -108,5 +108,12 @@
     "navigate": "naviguer",
     "select": "sélectionner",
     "close": "fermer"
+  },
+  "pwa": {
+    "installTitle": "Installer l'app Pando",
+    "installDescription": "Ajoutez Pando à votre écran d'accueil pour une expérience plus rapide — fonctionne aussi hors ligne.",
+    "installButton": "Installer",
+    "dismissButton": "Pas maintenant",
+    "installing": "Installation…"
   }
 }

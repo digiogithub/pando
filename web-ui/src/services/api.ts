@@ -1,5 +1,18 @@
 const TOKEN_KEY = 'pando_token'
 
+let baseURL = ''
+
+export function setBaseURL(url: string): void {
+  baseURL = url
+}
+
+export function initDesktopMode(config: { apiBase: string; token: string }): void {
+  setBaseURL(config.apiBase)
+  if (config.token) {
+    setToken(config.token)
+  }
+}
+
 function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
@@ -30,7 +43,7 @@ async function fetchApi<T>(path: string, options: FetchOptions = {}): Promise<T>
     }
   }
 
-  const response = await fetch(path, { ...init, headers })
+  const response = await fetch(baseURL + path, { ...init, headers })
 
   if (response.status === 401) {
     const hadToken = !!getToken()

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Pando
+Comment=AI assistant for software developers
+Exec=/usr/local/bin/pando-desktop
+Icon=pando
+Terminal=false
+Categories=Development;IDE;
+Keywords=ai;assistant;code;developer;
+StartupWMClass=pando-desktop

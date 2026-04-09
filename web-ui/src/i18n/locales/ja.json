@@ -108,5 +108,12 @@
     "navigate": "ナビゲート",
     "select": "選択",
     "close": "閉じる"
+  },
+  "pwa": {
+    "installTitle": "Pandoアプリをインストール",
+    "installDescription": "ホーム画面にPandoを追加して、より快適なアプリ体験を — オフラインでも利用できます。",
+    "installButton": "インストール",
+    "dismissButton": "後で",
+    "installing": "インストール中…"
   }
 }

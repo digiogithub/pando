@@ -108,6 +108,20 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 		}
 	}
 
+	// 3b. Workflow guidelines (shared behavioral rules)
+	if b.registry.Exists("base/workflow") {
+		if s := b.renderSection(ctx, "base/workflow"); s.Content != "" {
+			sections = append(sections, s)
+		}
+	}
+
+	// 3c. Coding conventions (language-agnostic code style rules)
+	if b.registry.Exists("base/conventions") {
+		if s := b.renderSection(ctx, "base/conventions"); s.Content != "" {
+			sections = append(sections, s)
+		}
+	}
+
 	// 4. Environment
 	if s := b.renderSection(ctx, "base/environment"); s.Content != "" {
 		sections = append(sections, s)

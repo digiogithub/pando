@@ -23,7 +23,26 @@ Analyze the transcript and respond ONLY with a valid JSON object (no markdown, n
   "confidence": 0.0
 }
 
-Focus on: clarity of instructions, efficiency, whether the agent understood user intent correctly.
+Focus on the following quality dimensions:
+
+1. **Scope compliance**: Did the agent respect explicit boundaries set by the user? Look for phrases like "NO", "NEVER", "only change X", "do it directly", "don't write a script". Violations (e.g., generating a script when told not to) are serious failures.
+
+2. **Step-by-step adherence**: When the user provided numbered or bulleted steps, did the agent follow them in order without skipping?
+
+3. **Constraint handling**: Did the agent treat ALL-CAPS instructions and explicit prohibitions as hard constraints, or did it silently work around them?
+
+4. **Anti-patterns to penalise**:
+   - Generating automation scripts when the user asked for a direct action ("hazlo directamente", "do it yourself")
+   - Adding unrequested features, refactors, or improvements outside the task scope
+   - Substituting a different tool or approach than the one explicitly specified
+   - Providing verbose summaries or post-action explanations when not requested
+   - Asking redundant clarifying questions after sufficient context was already given
+
+5. **Iterative correction handling**: When the user provided feedback or corrections (including in Spanish: "arréglalo", "así no", "está mal", "no era eso"), did the agent incorporate them precisely without drifting?
+
+6. **Context utilisation**: Did the agent make use of provided file references, error messages, and project context, or did it ignore them?
+
+If you identify a recurring pattern that caused quality issues, encode it as a concise rule in "new_skill" (e.g., "Never generate a shell script when the user explicitly requests a direct action; perform the action using available tools instead.").
 
 TRANSCRIPT:
 {{.Transcript}}`

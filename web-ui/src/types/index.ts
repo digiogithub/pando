@@ -244,14 +244,24 @@ export interface EvaluatorSettingsConfig {
   async: boolean
 }
 
-// Skills catalog item (from GET /api/v1/skills/catalog)
+// Skills catalog item (from GET /api/v1/skills/catalog?q=... → skills.sh CatalogSkill)
 export interface SkillCatalogItem {
+  id: string
+  skillId: string
+  name: string
+  installs: number
+  source: string // "owner/repo" GitHub source
+}
+
+// Installed skill (from GET /api/v1/skills/installed)
+export interface InstalledSkill {
   name: string
   description: string
   version: string
-  author?: string
-  tags?: string[]
-  installed?: boolean
+  source: string   // "owner/repo" or "(local)"
+  scope: string    // "global" | "project" | "(local)"
+  active: boolean  // loaded in running SkillManager
+  skillId: string
 }
 
 // Settings / config types
