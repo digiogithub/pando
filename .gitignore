@@ -56,3 +56,11 @@ pando
 .ai/.mesnada/task.json
 messages/*
 CLAUDE.md
+
+# Wails desktop build artifacts
+desktop/frontend/*
+!desktop/frontend/.gitkeep
+desktop/build/bin/
+desktop/build/darwin/
+!desktop/build/darwin/Info.plist
+desktop/build/windows/*.syso

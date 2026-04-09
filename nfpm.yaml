@@ -1,0 +1,23 @@
+# nfpm.yaml — Linux package config for nfpm (https://nfpm.goreleaser.com)
+# Usage: nfpm package --config nfpm.yaml --packager deb --target dist/
+name: pando-desktop
+arch: amd64
+platform: linux
+version: "0.1.0"
+section: utils
+priority: optional
+maintainer: "José F. Rives"
+description: |
+  Pando is an AI assistant for software developers.
+  This package provides the native desktop application.
+homepage: https://github.com/digiogithub/pando
+license: MIT
+contents:
+  - src: desktop/build/bin/pando-desktop
+    dst: /usr/local/bin/pando-desktop
+    file_info:
+      mode: 0755
+  - src: desktop/build/linux/icon.png
+    dst: /usr/share/pixmaps/pando.png
+  - src: desktop/build/linux/pando-desktop.desktop
+    dst: /usr/share/applications/pando-desktop.desktop

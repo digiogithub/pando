@@ -16,7 +16,10 @@ import SnapshotsView from '@/components/snapshots/SnapshotsView'
 import EvaluatorView from '@/components/evaluator/EvaluatorView'
 import CodeEditorView from '@/components/editor/CodeEditorView'
 import { authenticate, checkHealth } from '@/services/auth'
+import { isDesktop, getDesktopConfig } from '@/services/desktop'
+import { initDesktopMode } from '@/services/api'
 import { useLanguageSync } from '@/hooks/useLanguageSync'
+import PWAInstallPrompt from '@/components/shared/PWAInstallPrompt'
 
 function App() {
   useLanguageSync()
@@ -26,6 +29,10 @@ function App() {
   const initApp = useCallback(async () => {
     setSplashStatus('connecting')
     try {
+      if (isDesktop) {
+        const cfg = await getDesktopConfig()
+        if (cfg) initDesktopMode(cfg)
+      }
       const healthy = await checkHealth()
       if (!healthy) {
         setSplashStatus('error')
@@ -87,6 +94,7 @@ function App() {
       </BrowserRouter>}
 
       <ToastContainer />
+      <PWAInstallPrompt />
     </>
   )
 }

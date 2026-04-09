@@ -3,7 +3,7 @@ import { useExtensionsStore } from '@/stores/extensionsStore'
 import { Toggle, TextInput, SelectInput } from '@/components/shared/FormInput'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
 import api from '@/services/api'
-import type { SkillCatalogItem } from '@/types'
+import type { InstalledSkill, SkillCatalogItem } from '@/types'
 
 const SCOPE_OPTIONS = [
   { value: 'session', label: 'Session' },
@@ -168,41 +168,64 @@ function CatalogModal({
   onClose,
   installedNames,
   onInstall,
+  defaultScope,
 }: {
   onClose: () => void
   installedNames: string[]
   onInstall: (name: string) => void
+  defaultScope: string
 }) {
   const [items, setItems] = useState<SkillCatalogItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [installing, setInstalling] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Debounced search: fires 300 ms after the user stops typing (min 2 chars)
   useEffect(() => {
-    api
-      .get<{ skills: SkillCatalogItem[] }>('/api/v1/skills/catalog')
-      .then((data) => setItems(data.skills ?? []))
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load catalog'))
-      .finally(() => setLoading(false))
-  }, [])
+    const q = search.trim()
+    if (q.length < 2) {
+      setItems([])
+      setError(null)
+      return
+    }
 
-  const filtered = items.filter(
-    (item) =>
-      item.name.toLowerCase().includes(search.toLowerCase()) ||
-      item.description?.toLowerCase().includes(search.toLowerCase()),
-  )
+    setLoading(true)
+    setError(null)
 
-  const handleInstall = async (name: string) => {
-    setInstalling(name)
+    const timer = setTimeout(() => {
+      api
+        .get<{ skills: SkillCatalogItem[] }>(`/api/v1/skills/catalog?q=${encodeURIComponent(q)}`)
+        .then((data) => setItems(data.skills ?? []))
+        .catch((e) => setError(e instanceof Error ? e.message : 'Search failed'))
+        .finally(() => setLoading(false))
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [search])
+
+  const handleInstall = async (item: SkillCatalogItem) => {
+    setInstalling(item.name)
+    setError(null)
     try {
-      await api.post('/api/v1/skills/install', { name })
-      onInstall(name)
+      await api.post('/api/v1/skills/install', {
+        name: item.name,
+        source: item.source,
+        skillId: item.skillId,
+        scope: defaultScope === 'project' ? 'project' : 'global',
+      })
+      onInstall(item.name)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Install failed')
     } finally {
       setInstalling(null)
     }
+  }
+
+  const formatInstalls = (n: number) => {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M installs`
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K installs`
+    return `${n} installs`
   }
 
   return (
@@ -264,9 +287,10 @@ function CatalogModal({
         {/* Search */}
         <div style={{ padding: '0.75rem 1.5rem', borderBottom: '1px solid var(--border)' }}>
           <input
+            autoFocus
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search skills…"
+            placeholder="Type to search skills… (min 2 chars)"
             style={{
               width: '100%',
               background: 'var(--input-bg)',
@@ -279,28 +303,33 @@ function CatalogModal({
               fontFamily: 'inherit',
               boxSizing: 'border-box',
             }}
+            onFocus={(e) => { e.target.style.borderColor = 'var(--border-focus)' }}
+            onBlur={(e) => { e.target.style.borderColor = 'var(--border)' }}
           />
         </div>
 
         {/* Content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '0.75rem 1.5rem' }}>
+          {search.trim().length < 2 && (
+            <p style={{ color: 'var(--fg-muted)', fontSize: 14 }}>
+              Start typing to search the skills catalog.
+            </p>
+          )}
           {loading && (
-            <p style={{ color: 'var(--fg-muted)', fontSize: 14 }}>Loading catalog…</p>
+            <p style={{ color: 'var(--fg-muted)', fontSize: 14 }}>Searching…</p>
           )}
           {error && (
             <p style={{ color: 'var(--error, #e55)', fontSize: 14 }}>{error}</p>
           )}
-          {!loading && !error && filtered.length === 0 && (
-            <p style={{ color: 'var(--fg-muted)', fontSize: 14 }}>
-              {search ? 'No skills match your search.' : 'Catalog is empty.'}
-            </p>
+          {!loading && !error && search.trim().length >= 2 && items.length === 0 && (
+            <p style={{ color: 'var(--fg-muted)', fontSize: 14 }}>No skills found.</p>
           )}
           {!loading &&
-            filtered.map((item) => {
+            items.map((item) => {
               const isInstalled = installedNames.includes(item.name)
               return (
                 <div
-                  key={item.name}
+                  key={item.skillId || item.name}
                   style={{
                     display: 'flex',
                     alignItems: 'flex-start',
@@ -313,17 +342,13 @@ function CatalogModal({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>
                       {item.name}
-                      {item.version && (
-                        <span style={{ marginLeft: '0.5rem', fontSize: 12, color: 'var(--fg-muted)' }}>
-                          v{item.version}
-                        </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--fg-muted)', marginTop: '0.15rem' }}>
+                      {item.source}
+                      {item.installs > 0 && (
+                        <span style={{ marginLeft: '0.75rem' }}>{formatInstalls(item.installs)}</span>
                       )}
                     </div>
-                    {item.description && (
-                      <div style={{ fontSize: 13, color: 'var(--fg-muted)', marginTop: '0.2rem' }}>
-                        {item.description}
-                      </div>
-                    )}
                   </div>
                   {isInstalled ? (
                     <span
@@ -341,7 +366,7 @@ function CatalogModal({
                     </span>
                   ) : (
                     <button
-                      onClick={() => handleInstall(item.name)}
+                      onClick={() => handleInstall(item)}
                       disabled={installing === item.name}
                       style={{
                         padding: '0.25rem 0.75rem',
@@ -367,6 +392,112 @@ function CatalogModal({
   )
 }
 
+// ---- Installed Skills List ----
+function InstalledSkillsList({
+  skills: installed,
+  loading,
+  error,
+  onUninstall,
+}: {
+  skills: InstalledSkill[]
+  loading: boolean
+  error: string | null
+  onUninstall: (name: string) => void
+}) {
+  if (loading) {
+    return <p style={{ color: 'var(--fg-muted)', fontSize: 14 }}>Loading installed skills…</p>
+  }
+  if (error) {
+    return <p style={{ color: 'var(--error, #e55)', fontSize: 14 }}>{error}</p>
+  }
+  if (installed.length === 0) {
+    return (
+      <p style={{ color: 'var(--fg-muted)', fontSize: 14 }}>
+        No skills installed. Skills are loaded from ~/.pando/skills/ and .pando/skills/.
+      </p>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+      {installed.map((skill) => (
+        <div
+          key={skill.name}
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            padding: '0.75rem 0',
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>
+                {skill.name}
+              </span>
+              {skill.version && (
+                <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>v{skill.version}</span>
+              )}
+              <span
+                style={{
+                  fontSize: 11,
+                  padding: '0.1rem 0.4rem',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--selected)',
+                  color: 'var(--fg-muted)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                {skill.scope}
+              </span>
+              {skill.active && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '0.1rem 0.4rem',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--primary)',
+                    color: 'var(--primary-fg)',
+                  }}
+                >
+                  active
+                </span>
+              )}
+            </div>
+            {skill.description && (
+              <div style={{ fontSize: 13, color: 'var(--fg-muted)', marginTop: '0.2rem' }}>
+                {skill.description}
+              </div>
+            )}
+            {skill.source && skill.source !== '(local)' && (
+              <div style={{ fontSize: 12, color: 'var(--fg-dim, var(--fg-muted))', marginTop: '0.15rem' }}>
+                {skill.source}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => onUninstall(skill.name)}
+            style={{
+              padding: '0.25rem 0.75rem',
+              background: 'transparent',
+              color: 'var(--error, #e55)',
+              border: '1px solid var(--error, #e55)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 13,
+              cursor: 'pointer',
+              flexShrink: 0,
+              fontFamily: 'inherit',
+            }}
+          >
+            Uninstall
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ---- Main component ----
 export default function SkillsSettings() {
   const {
@@ -383,11 +514,28 @@ export default function SkillsSettings() {
 
   const [uninstallTarget, setUninstallTarget] = useState<string | null>(null)
   const [showCatalog, setShowCatalog] = useState(false)
-  const [installedSkills, setInstalledSkills] = useState<string[]>([])
+  const [installedSkills, setInstalledSkills] = useState<InstalledSkill[]>([])
+  const [installedLoading, setInstalledLoading] = useState(true)
+  const [installedError, setInstalledError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchExtensions()
   }, [fetchExtensions])
+
+  // Load installed skills from disk on mount.
+  const loadInstalled = () => {
+    setInstalledLoading(true)
+    setInstalledError(null)
+    api
+      .get<{ skills: InstalledSkill[] }>('/api/v1/skills/installed')
+      .then((data) => setInstalledSkills(data.skills ?? []))
+      .catch((e) => setInstalledError(e instanceof Error ? e.message : 'Failed to load installed skills'))
+      .finally(() => setInstalledLoading(false))
+  }
+
+  useEffect(() => {
+    loadInstalled()
+  }, [])
 
   const skills = extensions.skills
   const catalog = extensions.skillsCatalog
@@ -408,16 +556,23 @@ export default function SkillsSettings() {
     if (!uninstallTarget) return
     try {
       await api.delete(`/api/v1/skills/${encodeURIComponent(uninstallTarget)}`)
-      setInstalledSkills((prev) => prev.filter((n) => n !== uninstallTarget))
-    } catch {
-      // silently ignore — uninstall endpoint may not be available
+      setInstalledSkills((prev) => prev.filter((s) => s.name !== uninstallTarget))
+    } catch (e) {
+      setInstalledError(e instanceof Error ? e.message : 'Uninstall failed')
     } finally {
       setUninstallTarget(null)
     }
   }
 
   const handleInstalled = (name: string) => {
-    setInstalledSkills((prev) => (prev.includes(name) ? prev : [...prev, name]))
+    // Refresh installed list so the newly installed skill appears.
+    loadInstalled()
+    // Also mark as installed in the catalog modal so the button flips to "Installed".
+    setInstalledSkills((prev) =>
+      prev.some((s) => s.name === name)
+        ? prev
+        : [...prev, { name, description: '', version: '', source: '', scope: 'global', active: false, skillId: '' }],
+    )
   }
 
   if (extensionsLoading) {
@@ -441,6 +596,35 @@ export default function SkillsSettings() {
         checked={skills.enabled}
         onChange={handleSkillsEnabledToggle}
       />
+
+      <div style={dividerStyle} />
+
+      {/* ---- Installed Skills ---- */}
+      <div style={{ marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+          <p style={{ ...subTitle, margin: 0 }}>Installed Skills</p>
+          <button
+            onClick={loadInstalled}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--fg-muted)',
+              fontSize: 12,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              padding: '0.2rem 0.5rem',
+            }}
+          >
+            Refresh
+          </button>
+        </div>
+        <InstalledSkillsList
+          skills={installedSkills}
+          loading={installedLoading}
+          error={installedError}
+          onUninstall={(name) => setUninstallTarget(name)}
+        />
+      </div>
 
       <div style={dividerStyle} />
 
@@ -580,8 +764,9 @@ export default function SkillsSettings() {
       {showCatalog && (
         <CatalogModal
           onClose={() => setShowCatalog(false)}
-          installedNames={installedSkills}
+          installedNames={installedSkills.map((s) => s.name)}
           onInstall={handleInstalled}
+          defaultScope={catalog.defaultScope || 'global'}
         />
       )}
     </div>

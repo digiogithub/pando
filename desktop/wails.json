@@ -1,0 +1,23 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "Pando",
+  "outputfilename": "pando-desktop",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build:desktop",
+  "frontend:dir": "../web-ui",
+  "frontend:devServerUrl": "http://localhost:5173",
+  "author": {
+    "name": "José F. Rives",
+    "email": ""
+  },
+  "info": {
+    "productName": "Pando",
+    "productVersion": "0.1.0",
+    "copyright": "Copyright (c) 2024 José F. Rives",
+    "comments": "AI assistant for software developers",
+    "companyName": "Pando"
+  },
+  "nsisType": "multiple",
+  "obfuscated": false,
+  "garbleArgs": ""
+}
