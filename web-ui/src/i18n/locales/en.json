@@ -108,5 +108,12 @@
     "navigate": "navigate",
     "select": "select",
     "close": "close"
+  },
+  "pwa": {
+    "installTitle": "Install Pando App",
+    "installDescription": "Add Pando to your home screen for a faster, app-like experience — works offline too.",
+    "installButton": "Install",
+    "dismissButton": "Not now",
+    "installing": "Installing…"
   }
 }

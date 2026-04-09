@@ -108,5 +108,12 @@
     "navigate": "navigieren",
     "select": "auswählen",
     "close": "schließen"
+  },
+  "pwa": {
+    "installTitle": "Pando App installieren",
+    "installDescription": "Füge Pando zu deinem Startbildschirm hinzu — schneller, app-ähnlich und auch offline verfügbar.",
+    "installButton": "Installieren",
+    "dismissButton": "Nicht jetzt",
+    "installing": "Wird installiert…"
   }
 }

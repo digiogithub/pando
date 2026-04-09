@@ -806,16 +806,41 @@ func setDefaults(debug bool) {
 	viper.SetDefault("evaluator.maxSkills", 100)
 	viper.SetDefault("evaluator.async", true)
 	viper.SetDefault("evaluator.correctionsPatterns", []string{
-		`(?i)\bno[,.]?\b`,
+		// English — generic negation / correction signals
 		`(?i)\bwrong\b`,
 		`(?i)\bincorrect\b`,
 		`(?i)that'?s not`,
 		`(?i)not what i`,
 		`(?i)\bmistake\b`,
 		`(?i)\bfix that\b`,
-		`(?i)\bvuelve a\b`,
+		`(?i)\bdon'?t do that\b`,
+		`(?i)\bstop doing\b`,
+		`(?i)\bthat'?s not right\b`,
+		`(?i)\bnot what i asked\b`,
+		`(?i)\byou'?re wrong\b`,
+		`(?i)\byou missed\b`,
+		`(?i)\bthat'?s wrong\b`,
+		// English — scope/constraint violation signals
+		`(?i)\bdo it directly\b`,
+		`(?i)\bno script\b`,
+		`(?i)\bdon'?t generate\b`,
+		`(?i)\bi said don'?t\b`,
+		// Spanish — generic correction signals
+		`(?i)\barréglalo\b`,
 		`(?i)\bno era eso\b`,
+		`(?i)\bno lo hagas\b`,
+		`(?i)\basí no\b`,
+		`(?i)\bestá mal\b`,
+		`(?i)\beso no es\b`,
 		`(?i)\bte equivocaste\b`,
+		`(?i)\bvuelve a\b`,
+		`(?i)\bno hagas\b`,
+		`(?i)\beso no era\b`,
+		`(?i)\bno es correcto\b`,
+		// Spanish — scope/constraint violation signals
+		`(?i)\bhazlo directamente\b`,
+		`(?i)\bno hagas ningún script\b`,
+		`(?i)\bno intentes\b`,
 	})
 
 	// ACP (Agent Client Protocol) stdio server defaults
