@@ -51,6 +51,18 @@ func (m *mockAgentService) SetModelOverride(modelID string) error {
 	return m.modelOverrideErr
 }
 
+func (m *mockAgentService) ListPersonas() []string {
+	return []string{"default", "assistant"}
+}
+
+func (m *mockAgentService) GetActivePersona() string {
+	return "default"
+}
+
+func (m *mockAgentService) SetActivePersona(name string) error {
+	return nil
+}
+
 // mockSessionService is a test double for SessionService.
 type mockSessionService struct {
 	sessions map[string]ACPSessionInfo

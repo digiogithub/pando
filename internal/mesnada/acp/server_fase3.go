@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 
 	acpsdk "github.com/coder/acp-go-sdk"
@@ -518,34 +519,38 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				a.pendingToolCallsMu.Unlock()
 
 				kind := mapToolKind(tc.Name)
+				rawInput := parseJSONInput(tc.Input)
+				title := toolDisplayTitle(tc.Name, rawInput)
+				content := toolCallContent(tc.Name, rawInput)
+				locations := toLocations(tc.Name, tc.Input)
 
-				// 1. Send "pending" state first — matches opencode's toolStart() behaviour.
-				// Clients need to see the tool registered before input arrives.
+				// Send the initial tool_call with the real title/kind/rawInput so clients
+				// can register and render the tool immediately without depending on a
+				// near-simultaneous update that may arrive out of order.
 				pendingUpdate := acpsdk.StartToolCall(
 					acpsdk.ToolCallId(tc.ID),
-					tc.Name,
+					title,
 					acpsdk.WithStartKind(kind),
 					acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
-					acpsdk.WithStartRawInput(map[string]interface{}{}),
+					acpsdk.WithStartRawInput(rawInput),
 				)
 				if err := acpSession.SendUpdate(pendingUpdate); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send tool call pending: %v", err)
 				}
 
-				// 2. Immediately follow with "in_progress" + actual input so the client
-				// can render the tool arguments while it executes.
-				rawInput := parseJSONInput(tc.Input)
+				// Move the tool to in_progress after the initial registration event.
 				inProgressOpts := []acpsdk.ToolCallUpdateOpt{
 					acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
 					acpsdk.WithUpdateKind(kind),
-					acpsdk.WithUpdateTitle(tc.Name),
+					acpsdk.WithUpdateTitle(title),
 					acpsdk.WithUpdateRawInput(rawInput),
+					acpsdk.WithUpdateContent(content),
 				}
 				// Attach file/directory locations for all tool types so editors can show
 				// which file or path is being accessed while the tool runs.
 				// This mirrors opencode's toLocations() behaviour.
-				if locs := toLocations(tc.Name, tc.Input); len(locs) > 0 {
-					inProgressOpts = append(inProgressOpts, acpsdk.WithUpdateLocations(locs))
+				if len(locations) > 0 {
+					inProgressOpts = append(inProgressOpts, acpsdk.WithUpdateLocations(locations))
 				}
 				inProgressUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tc.ID), inProgressOpts...)
 				if err := acpSession.SendUpdate(inProgressUpdate); err != nil {
@@ -590,9 +595,7 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				// Use ToolCallContent so editors display the output correctly.
 				// The ACP TypeScript SDK clients (VS Code, Zed, JetBrains) render
 				// content entries; rawOutput is used as structured fallback.
-				outputContent := []acpsdk.ToolCallContent{
-					acpsdk.ToolContent(acpsdk.TextBlock(tr.Content)),
-				}
+				outputContent := toolResultContent(tr.Name, tr.Content, tr.IsError)
 
 				// For edit tools, also attach a diff content block so editors can display
 				// exactly what changed. write uses Content (full file); edit uses OldString/NewString.
@@ -609,10 +612,11 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				}
 
 				kind := mapToolKind(tr.Name)
+				title := toolDisplayTitle(tr.Name, rawInput)
 				resultOpts := []acpsdk.ToolCallUpdateOpt{
 					acpsdk.WithUpdateStatus(status),
 					acpsdk.WithUpdateKind(kind),
-					acpsdk.WithUpdateTitle(tr.Name),
+					acpsdk.WithUpdateTitle(title),
 					acpsdk.WithUpdateContent(outputContent),
 					acpsdk.WithUpdateRawInput(rawInput),
 					acpsdk.WithUpdateRawOutput(rawOutput),
@@ -941,6 +945,123 @@ func mapToolKind(toolName string) acpsdk.ToolKind {
 	default:
 		return acpsdk.ToolKindOther
 	}
+}
+
+func toolDisplayTitle(toolName string, rawInput interface{}) string {
+	switch strings.ToLower(toolName) {
+	case "bash", "execute_command":
+		if m, ok := rawInput.(map[string]interface{}); ok {
+			if command, ok := m["command"].(string); ok && strings.TrimSpace(command) != "" {
+				return command
+			}
+		}
+		return toolName
+	case "read", "view":
+		if path := toolInputString(rawInput, "file_path"); path != "" {
+			return "Read " + path
+		}
+		return "Read"
+	case "write":
+		if path := toolInputString(rawInput, "file_path"); path != "" {
+			return "Write " + path
+		}
+		return "Write"
+	case "edit", "multiedit", "patch":
+		if path := toolInputString(rawInput, "file_path"); path != "" {
+			return "Edit " + path
+		}
+		return "Edit"
+	case "glob":
+		path := toolInputString(rawInput, "path")
+		pattern := toolInputString(rawInput, "pattern")
+		if path != "" && pattern != "" {
+			return fmt.Sprintf("Find `%s` `%s`", path, pattern)
+		}
+		if pattern != "" {
+			return fmt.Sprintf("Find `%s`", pattern)
+		}
+		return "Find"
+	case "grep":
+		pattern := toolInputString(rawInput, "pattern")
+		path := toolInputString(rawInput, "path")
+		if pattern != "" && path != "" {
+			return fmt.Sprintf("grep %q %s", pattern, path)
+		}
+		if pattern != "" {
+			return fmt.Sprintf("grep %q", pattern)
+		}
+		return "grep"
+	case "web_fetch", "fetch":
+		if url := toolInputString(rawInput, "url"); url != "" {
+			return "Fetch " + url
+		}
+		return "Fetch"
+	case "web_search":
+		if query := toolInputString(rawInput, "query"); query != "" {
+			return fmt.Sprintf("%q", query)
+		}
+		return "WebSearch"
+	default:
+		return toolName
+	}
+}
+
+func toolCallContent(toolName string, rawInput interface{}) []acpsdk.ToolCallContent {
+	switch strings.ToLower(toolName) {
+	case "write":
+		path := toolInputString(rawInput, "file_path")
+		content := toolInputString(rawInput, "content")
+		if path != "" && content != "" {
+			return []acpsdk.ToolCallContent{acpsdk.ToolDiffContent(path, content)}
+		}
+	case "edit", "multiedit", "patch":
+		path := toolInputString(rawInput, "file_path")
+		oldString := toolInputString(rawInput, "old_string")
+		newString := toolInputString(rawInput, "new_string")
+		if path != "" && (oldString != "" || newString != "") {
+			return []acpsdk.ToolCallContent{acpsdk.ToolDiffContent(path, newString, oldString)}
+		}
+	case "bash", "execute_command":
+		if description := toolInputString(rawInput, "description"); description != "" {
+			return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(description))}
+		}
+	case "agent", "task":
+		if prompt := toolInputString(rawInput, "prompt"); prompt != "" {
+			return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(prompt))}
+		}
+	case "web_fetch", "fetch":
+		if prompt := toolInputString(rawInput, "prompt"); prompt != "" {
+			return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(prompt))}
+		}
+	}
+	return nil
+}
+
+func toolResultContent(toolName, content string, isError bool) []acpsdk.ToolCallContent {
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+	text := content
+	if isError {
+		text = "```\n" + content + "\n```"
+	}
+	return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(text))}
+}
+
+func toolInputString(rawInput interface{}, key string) string {
+	m, ok := rawInput.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	v, ok := m[key]
+	if !ok {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
 }
 
 // toolLocationInput holds fields used to extract file/directory path from a tool
