@@ -80,6 +80,7 @@ func (s *Server) newGinEngine() *gin.Engine {
 		api.DELETE("/tasks/:id/purge", s.handleAPITaskPurge)
 		api.POST("/tasks/:id/acp/prompt", s.handleAPIACPFollowUp)
 		api.POST("/tasks/:id/acp/mode", s.handleAPIACPSetMode)
+		api.POST("/tasks/:id/acp/persona", s.handleAPIACPSetPersona)
 		api.GET("/tasks/:id/acp/status", s.handleAPIACPStatus)
 		api.GET("/tasks/:id/acp/permissions", s.handleAPIACPListPermissions)
 		api.POST("/tasks/:id/acp/permissions/:req_id", s.handleAPIACPResolvePermission)
@@ -372,6 +373,27 @@ func (s *Server) handleAPIACPSetMode(c *gin.Context) {
 	}
 
 	result, err := s.orchestrator.ACPSessionControl(taskID, "set_mode", "", req.Mode)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (s *Server) handleAPIACPSetPersona(c *gin.Context) {
+	taskID := c.Param("id")
+
+	var req struct {
+		Persona string `json:"persona"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	result, err := s.orchestrator.ACPSessionControl(taskID, "set_persona", "", req.Persona)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

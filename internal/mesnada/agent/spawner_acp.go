@@ -688,6 +688,22 @@ func (s *ACPSpawner) SessionControl(taskID, action, message, mode string) (inter
 		}
 		return nil, fmt.Errorf("set_mode action not yet implemented (Phase 6)")
 
+	case "set_persona":
+		// Change session persona (Pando-specific extension)
+		if mode == "" {
+			return nil, fmt.Errorf("persona parameter required for set_persona action")
+		}
+		// Store persona on the ACP session via the agent service
+		ctx := context.Background()
+		if err := s.agentService.SetSessionPersona(ctx, proc.sessionID, mode); err != nil {
+			return nil, fmt.Errorf("failed to set persona: %w", err)
+		}
+		return map[string]interface{}{
+			"task_id":    taskID,
+			"session_id": string(proc.sessionID),
+			"persona":    mode,
+		}, nil
+
 	case "cancel":
 		// Cancel the session gracefully
 		return nil, s.Cancel(taskID)
