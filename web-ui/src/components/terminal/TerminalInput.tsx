@@ -1,24 +1,29 @@
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPlay } from '@fortawesome/free-solid-svg-icons'
+import type { TerminalTab } from '@/stores/terminalStore'
 import { useTerminalStore } from '@/stores/terminalStore'
 
-export default function TerminalInput() {
-  const { execCommand, running, history, historyIndex, setHistoryIndex } = useTerminalStore()
+interface TerminalInputProps {
+  tab: TerminalTab
+  focusKey?: number
+}
+
+export default function TerminalInput({ tab, focusKey = 0 }: TerminalInputProps) {
+  const { execCommand, setHistoryIndex } = useTerminalStore()
   const [value, setValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Focus input on mount
   useEffect(() => {
     inputRef.current?.focus()
-  }, [])
+  }, [tab.id, focusKey])
 
   function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault()
-    if (!value.trim() || running) return
-    execCommand(value.trim())
+    if (!value.trim() || tab.running) return
+    void execCommand(value.trim(), tab.id)
     setValue('')
-    setHistoryIndex(-1)
+    setHistoryIndex(-1, tab.id)
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -29,20 +34,19 @@ export default function TerminalInput() {
 
     if (e.key === 'ArrowUp') {
       e.preventDefault()
-      const nextIndex = Math.min(historyIndex + 1, history.length - 1)
-      setHistoryIndex(nextIndex)
-      if (history[nextIndex] !== undefined) {
-        setValue(history[nextIndex])
+      const nextIndex = Math.min(tab.historyIndex + 1, tab.history.length - 1)
+      setHistoryIndex(nextIndex, tab.id)
+      if (tab.history[nextIndex] !== undefined) {
+        setValue(tab.history[nextIndex])
       }
       return
     }
 
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      const nextIndex = Math.max(historyIndex - 1, -1)
-      setHistoryIndex(nextIndex)
-      setValue(nextIndex === -1 ? '' : history[nextIndex] ?? '')
-      return
+      const nextIndex = Math.max(tab.historyIndex - 1, -1)
+      setHistoryIndex(nextIndex, tab.id)
+      setValue(nextIndex === -1 ? '' : tab.history[nextIndex] ?? '')
     }
   }
 
@@ -77,7 +81,7 @@ export default function TerminalInput() {
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="type a command..."
-        disabled={running}
+        disabled={tab.running}
         style={{
           flex: 1,
           background: 'transparent',
@@ -95,17 +99,17 @@ export default function TerminalInput() {
       />
       <button
         type="submit"
-        disabled={running || !value.trim()}
+        disabled={tab.running || !value.trim()}
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: '0.3rem',
           padding: '0.35rem 0.75rem',
-          background: running || !value.trim() ? '#21262d' : 'var(--primary)',
+          background: tab.running || !value.trim() ? '#21262d' : 'var(--primary)',
           border: 'none',
           borderRadius: 'var(--radius-sm)',
-          cursor: running || !value.trim() ? 'not-allowed' : 'pointer',
-          color: running || !value.trim() ? '#6e7681' : 'white',
+          cursor: tab.running || !value.trim() ? 'not-allowed' : 'pointer',
+          color: tab.running || !value.trim() ? '#6e7681' : 'white',
           fontSize: 12,
           fontWeight: 600,
           flexShrink: 0,
