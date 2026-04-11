@@ -3,6 +3,7 @@ package acp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -12,6 +13,66 @@ import (
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/digiogithub/pando/internal/message"
 )
+
+func TestToDisplayPath(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		cwd  string
+		want string
+	}{
+		{name: "relative to cwd", path: "/workspace/project/file.go", cwd: "/workspace/project", want: "file.go"},
+		{name: "nested relative to cwd", path: "/workspace/project/internal/acp.go", cwd: "/workspace/project", want: "internal/acp.go"},
+		{name: "outside cwd keeps absolute", path: "/other/place/file.go", cwd: "/workspace/project", want: "/other/place/file.go"},
+		{name: "empty cwd keeps path", path: "/workspace/project/file.go", cwd: "", want: "/workspace/project/file.go"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := toDisplayPath(tt.path, tt.cwd); got != tt.want {
+				t.Fatalf("toDisplayPath(%q, %q) = %q, want %q", tt.path, tt.cwd, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestToolDisplayTitle(t *testing.T) {
+	cwd := "/workspace/project"
+
+	readInput := map[string]interface{}{"file_path": "/workspace/project/file.go", "offset": float64(10), "limit": float64(5)}
+	if got := toolDisplayTitle("read", readInput, cwd); got != "Read file.go (10 - 14)" {
+		t.Fatalf("unexpected read title: %q", got)
+	}
+
+	grepInput := map[string]interface{}{
+		"pattern":     "toolInfo",
+		"path":        "/workspace/project/internal",
+		"output_mode": "count",
+		"head_limit":  float64(20),
+		"type":        "go",
+		"multiline":   true,
+	}
+	if got := toolDisplayTitle("grep", grepInput, cwd); got != "grep -c | head -20 --type=go -P \"toolInfo\" internal" {
+		t.Fatalf("unexpected grep title: %q", got)
+	}
+
+	todoInput := map[string]interface{}{"todos": []interface{}{
+		map[string]interface{}{"content": "first task"},
+		map[string]interface{}{"content": "second task"},
+	}}
+	if got := toolDisplayTitle("TodoWrite", todoInput, cwd); got != "Update TODOs: first task, second task" {
+		t.Fatalf("unexpected todo title: %q", got)
+	}
+}
+
+func TestMapToolKind(t *testing.T) {
+	if got := mapToolKind("TodoWrite"); got != acpsdk.ToolKindThink {
+		t.Fatalf("TodoWrite kind = %q, want %q", got, acpsdk.ToolKindThink)
+	}
+	if got := mapToolKind("ExitPlanMode"); got != acpsdk.ToolKindSwitchMode {
+		t.Fatalf("ExitPlanMode kind = %q, want %q", got, acpsdk.ToolKindSwitchMode)
+	}
+}
 
 // mockAgentService is a test double for AgentService.
 type mockAgentService struct {
@@ -49,6 +110,18 @@ func (m *mockAgentService) AvailableModels() []ACPModelInfo {
 func (m *mockAgentService) SetModelOverride(modelID string) error {
 	m.modelOverride = modelID
 	return m.modelOverrideErr
+}
+
+func (m *mockAgentService) ListPersonas() []string {
+	return []string{"default", "assistant"}
+}
+
+func (m *mockAgentService) GetActivePersona() string {
+	return "default"
+}
+
+func (m *mockAgentService) SetActivePersona(name string) error {
+	return nil
 }
 
 // mockSessionService is a test double for SessionService.
@@ -124,6 +197,68 @@ func newTestPandoAgent() *PandoACPAgent {
 	agent := &mockAgentService{}
 	sessions := newMockSessionService()
 	return NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), agent, sessions, nil)
+}
+
+func TestProcessAgentResponse_ToolCallsIncludeRenderingMetadata(t *testing.T) {
+	agent := newTestPandoAgent()
+	input := map[string]any{"file_path": "/workspace/project/main.go", "offset": 10, "limit": 5}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+
+	msg := message.Message{Parts: []message.ContentPart{
+		message.ToolCall{ID: "tool-1", Name: "view", Input: string(inputJSON)},
+	}}
+
+	acpSession := NewACPServerSession(acpsdk.SessionId("session-1"), "/workspace/project", nil, "session-1")
+	if err := agent.processAgentResponse(acpSession, msg); err != nil {
+		t.Fatalf("processAgentResponse failed: %v", err)
+	}
+
+	stored := agent.pendingToolCalls["tool-1"]
+	if stored != string(inputJSON) {
+		t.Fatalf("expected pending tool input to be stored, got %q", stored)
+	}
+
+	rawInput := parseJSONInput(stored)
+	title := toolDisplayTitle("view", rawInput, "/workspace/project")
+	if title != "Read main.go (10 - 14)" {
+		t.Fatalf("unexpected title: %q", title)
+	}
+	if kind := mapToolKind("view"); kind != acpsdk.ToolKindRead {
+		t.Fatalf("unexpected kind: %q", kind)
+	}
+	locations := toLocations("view", stored)
+	if len(locations) != 1 || locations[0].Path != "/workspace/project/main.go" {
+		t.Fatalf("unexpected locations: %+v", locations)
+	}
+	start := acpsdk.StartToolCall(
+		acpsdk.ToolCallId("tool-1"),
+		title,
+		acpsdk.WithStartKind(mapToolKind("view")),
+		acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
+		acpsdk.WithStartRawInput(rawInput),
+		acpsdk.WithStartLocations(locations),
+	)
+	if start.ToolCall == nil {
+		t.Fatal("expected tool_call payload")
+	}
+	if start.ToolCall.Title != title {
+		t.Fatalf("unexpected tool_call title: %q", start.ToolCall.Title)
+	}
+	if start.ToolCall.Kind != acpsdk.ToolKindRead {
+		t.Fatalf("unexpected tool_call kind: %q", start.ToolCall.Kind)
+	}
+	if start.ToolCall.Status != acpsdk.ToolCallStatusPending {
+		t.Fatalf("unexpected tool_call status: %q", start.ToolCall.Status)
+	}
+	if len(start.ToolCall.Locations) != 1 || start.ToolCall.Locations[0].Path != "/workspace/project/main.go" {
+		t.Fatalf("unexpected tool_call locations: %+v", start.ToolCall.Locations)
+	}
+	if rawMap, ok := start.ToolCall.RawInput.(map[string]interface{}); !ok || rawMap["file_path"] != "/workspace/project/main.go" {
+		t.Fatalf("unexpected tool_call raw input: %#v", start.ToolCall.RawInput)
+	}
 }
 
 // TestPandoACPAgent_Initialize verifies the initialization response.
@@ -593,5 +728,77 @@ func TestPandoACPAgent_GetCapabilities(t *testing.T) {
 	caps := agent.GetCapabilities()
 	if !caps.LoadSession {
 		t.Error("PandoACPAgent should advertise LoadSession: true")
+	}
+}
+
+// TestPandoACPAgent_SetSessionPersona verifies persona updates per session.
+func TestPandoACPAgent_SetSessionPersona(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	// Create session first
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	// Set persona to "assistant"
+	err = agent.SetSessionPersona(ctx, resp.SessionId, "assistant")
+	if err != nil {
+		t.Fatalf("SetSessionPersona failed: %v", err)
+	}
+
+	agent.sessionsMu.RLock()
+	acpSess := agent.sessions[resp.SessionId]
+	agent.sessionsMu.RUnlock()
+
+	if acpSess.Persona() != "assistant" {
+		t.Errorf("Expected persona 'assistant', got %q", acpSess.Persona())
+	}
+
+	// Clear persona
+	err = agent.SetSessionPersona(ctx, resp.SessionId, "")
+	if err != nil {
+		t.Fatalf("SetSessionPersona (clear) failed: %v", err)
+	}
+
+	if acpSess.Persona() != "" {
+		t.Errorf("Expected persona cleared, got %q", acpSess.Persona())
+	}
+
+	// Invalid persona should fail
+	err = agent.SetSessionPersona(ctx, resp.SessionId, "nonexistent")
+	if err == nil {
+		t.Error("Expected error for nonexistent persona, got nil")
+	}
+}
+
+// TestPandoACPAgent_NewSessionResponse_IncludesPersonaState verifies that
+// NewSession and LoadSession responses include persona state in Meta.
+func TestPandoACPAgent_NewSessionResponse_IncludesPersonaState(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	// Meta should contain persona state (since the mock returns personas)
+	if resp.Meta == nil {
+		t.Fatal("Expected Meta with persona state, got nil")
+	}
+
+	personaState, ok := resp.Meta.(*SessionPersonaState)
+	if !ok {
+		t.Fatalf("Expected Meta to be *SessionPersonaState, got %T", resp.Meta)
+	}
+
+	if len(personaState.AvailablePersonas) != 2 {
+		t.Errorf("Expected 2 available personas, got %d", len(personaState.AvailablePersonas))
+	}
+
+	if personaState.CurrentPersonaId != "default" {
+		t.Errorf("Expected current persona 'default', got %q", personaState.CurrentPersonaId)
 	}
 }

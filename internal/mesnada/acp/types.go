@@ -104,12 +104,21 @@ type ToolCallInfo struct {
 	// Name is the name of the tool being called
 	Name string
 
+	// Kind is the ACP tool kind used by clients for rendering
+	Kind string
+
 	// Arguments are the arguments passed to the tool
 	Arguments map[string]interface{}
+
+	// Locations references files or paths associated with the tool call
+	Locations []string
 
 	// Status is the status of the tool call: "started", "progress", "completed", "failed"
 	Status string
 
 	// Result is the result of the tool call (if completed)
 	Result string
+
+	// Title is the rendered title shown by ACP clients
+	Title string
 }

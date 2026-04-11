@@ -653,9 +653,24 @@ func (c *MesnadaACPClient) processToolCall(toolCall *acpsdk.SessionUpdateToolCal
 		}
 	}
 
+	locations := make([]string, 0, len(toolCall.Locations))
+	for _, loc := range toolCall.Locations {
+		if loc.Path != "" {
+			locations = append(locations, loc.Path)
+		}
+	}
+
+	title := toolCall.Title
+	if title == "" {
+		title = string(toolCall.ToolCallId)
+	}
+
 	info := ToolCallInfo{
-		Name:      toolCall.Title,
+		Name:      title,
+		Title:     title,
+		Kind:      string(toolCall.Kind),
 		Arguments: args,
+		Locations: locations,
 		Status:    string(toolCall.Status),
 	}
 	c.toolCalls[string(toolCall.ToolCallId)] = info
@@ -691,11 +706,27 @@ func (c *MesnadaACPClient) processToolCallUpdate(update *acpsdk.SessionToolCallU
 	if update.Status != nil {
 		info.Status = string(*update.Status)
 	}
+	if update.Title != nil && *update.Title != "" {
+		info.Name = *update.Title
+		info.Title = *update.Title
+	}
+	if update.Kind != nil {
+		info.Kind = string(*update.Kind)
+	}
 	// Update arguments if rawInput is provided (e.g., on the in_progress update).
 	if update.RawInput != nil {
 		if m, ok := update.RawInput.(map[string]interface{}); ok && len(m) > 0 {
 			info.Arguments = m
 		}
+	}
+	if len(update.Locations) > 0 {
+		locations := make([]string, 0, len(update.Locations))
+		for _, loc := range update.Locations {
+			if loc.Path != "" {
+				locations = append(locations, loc.Path)
+			}
+		}
+		info.Locations = locations
 	}
 	if update.RawOutput != nil {
 		info.Result = fmt.Sprintf("%v", update.RawOutput)

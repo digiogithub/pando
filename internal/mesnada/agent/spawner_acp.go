@@ -688,6 +688,15 @@ func (s *ACPSpawner) SessionControl(taskID, action, message, mode string) (inter
 		}
 		return nil, fmt.Errorf("set_mode action not yet implemented (Phase 6)")
 
+	case "set_persona":
+		// Change session persona (Pando-specific extension)
+		// For external ACP processes, persona control requires sending a persona/set_session
+		// RPC via the ACP connection. This is only fully supported for Pando's built-in agent.
+		if mode == "" {
+			return nil, fmt.Errorf("persona parameter required for set_persona action")
+		}
+		return nil, fmt.Errorf("set_persona action not yet supported for external ACP processes")
+
 	case "cancel":
 		// Cancel the session gracefully
 		return nil, s.Cancel(taskID)
@@ -746,7 +755,7 @@ func (s *ACPSpawner) SessionControl(taskID, action, message, mode string) (inter
 		}, nil
 
 	default:
-		return nil, fmt.Errorf("unsupported action: %s (supported: follow_up, set_mode, cancel, status, list_permissions, resolve_permission)", action)
+		return nil, fmt.Errorf("unsupported action: %s (supported: follow_up, set_mode, set_persona, cancel, status, list_permissions, resolve_permission)", action)
 	}
 }
 

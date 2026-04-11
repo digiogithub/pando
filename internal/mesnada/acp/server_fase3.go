@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	acpsdk "github.com/coder/acp-go-sdk"
@@ -315,6 +317,7 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 		SessionId: sessionID,
 		Modes:     buildSessionModeState(currentMode),
 		Models:    buildSessionModelState(a.agentService),
+		Meta:      buildSessionPersonaState(a.agentService),
 	}, nil
 }
 
@@ -347,6 +350,18 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 		} else {
 			a.logger.Printf("[ACP AGENT] Applied model override %q for session %s", modelID, req.SessionId)
 		}
+	}
+
+	// Apply per-session persona override if set.
+	if personaName := acpSession.Persona(); personaName != "" {
+		if err := a.agentService.SetActivePersona(personaName); err != nil {
+			a.logger.Printf("[ACP AGENT] Warning: could not apply persona %q: %v", personaName, err)
+		} else {
+			a.logger.Printf("[ACP AGENT] Applied persona %q for session %s", personaName, req.SessionId)
+		}
+	} else {
+		// Clear any previous persona override so the default behaviour (auto-select or none) applies.
+		_ = a.agentService.SetActivePersona("")
 	}
 
 	// Enforce session mode: configure permissions based on Agent vs Ask mode.
@@ -518,34 +533,38 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				a.pendingToolCallsMu.Unlock()
 
 				kind := mapToolKind(tc.Name)
+				rawInput := parseJSONInput(tc.Input)
+				title := toolDisplayTitle(tc.Name, rawInput, acpSession.WorkDir)
+				content := toolCallContent(tc.Name, rawInput)
+				locations := toLocations(tc.Name, tc.Input)
 
-				// 1. Send "pending" state first — matches opencode's toolStart() behaviour.
-				// Clients need to see the tool registered before input arrives.
+				// Send the initial tool_call with the real title/kind/rawInput so clients
+				// can register and render the tool immediately without depending on a
+				// near-simultaneous update that may arrive out of order.
 				pendingUpdate := acpsdk.StartToolCall(
 					acpsdk.ToolCallId(tc.ID),
-					tc.Name,
+					title,
 					acpsdk.WithStartKind(kind),
 					acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
-					acpsdk.WithStartRawInput(map[string]interface{}{}),
+					acpsdk.WithStartRawInput(rawInput),
 				)
 				if err := acpSession.SendUpdate(pendingUpdate); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send tool call pending: %v", err)
 				}
 
-				// 2. Immediately follow with "in_progress" + actual input so the client
-				// can render the tool arguments while it executes.
-				rawInput := parseJSONInput(tc.Input)
+				// Move the tool to in_progress after the initial registration event.
 				inProgressOpts := []acpsdk.ToolCallUpdateOpt{
 					acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
 					acpsdk.WithUpdateKind(kind),
-					acpsdk.WithUpdateTitle(tc.Name),
+					acpsdk.WithUpdateTitle(title),
 					acpsdk.WithUpdateRawInput(rawInput),
+					acpsdk.WithUpdateContent(content),
 				}
 				// Attach file/directory locations for all tool types so editors can show
 				// which file or path is being accessed while the tool runs.
 				// This mirrors opencode's toLocations() behaviour.
-				if locs := toLocations(tc.Name, tc.Input); len(locs) > 0 {
-					inProgressOpts = append(inProgressOpts, acpsdk.WithUpdateLocations(locs))
+				if len(locations) > 0 {
+					inProgressOpts = append(inProgressOpts, acpsdk.WithUpdateLocations(locations))
 				}
 				inProgressUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tc.ID), inProgressOpts...)
 				if err := acpSession.SendUpdate(inProgressUpdate); err != nil {
@@ -590,9 +609,7 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				// Use ToolCallContent so editors display the output correctly.
 				// The ACP TypeScript SDK clients (VS Code, Zed, JetBrains) render
 				// content entries; rawOutput is used as structured fallback.
-				outputContent := []acpsdk.ToolCallContent{
-					acpsdk.ToolContent(acpsdk.TextBlock(tr.Content)),
-				}
+				outputContent := toolResultContent(tr.Name, tr.Content, tr.IsError)
 
 				// For edit tools, also attach a diff content block so editors can display
 				// exactly what changed. write uses Content (full file); edit uses OldString/NewString.
@@ -609,10 +626,11 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				}
 
 				kind := mapToolKind(tr.Name)
+				title := toolDisplayTitle(tr.Name, rawInput, acpSession.WorkDir)
 				resultOpts := []acpsdk.ToolCallUpdateOpt{
 					acpsdk.WithUpdateStatus(status),
 					acpsdk.WithUpdateKind(kind),
-					acpsdk.WithUpdateTitle(tr.Name),
+					acpsdk.WithUpdateTitle(title),
 					acpsdk.WithUpdateContent(outputContent),
 					acpsdk.WithUpdateRawInput(rawInput),
 					acpsdk.WithUpdateRawOutput(rawOutput),
@@ -717,12 +735,91 @@ func (a *PandoACPAgent) processAgentResponse(
 	}
 
 	for _, toolCall := range msg.ToolCalls() {
+		a.pendingToolCallsMu.Lock()
+		a.pendingToolCalls[toolCall.ID] = toolCall.Input
+		a.pendingToolCallsMu.Unlock()
+
+		rawInput := parseJSONInput(toolCall.Input)
+		title := toolDisplayTitle(toolCall.Name, rawInput, acpSession.WorkDir)
+		kind := mapToolKind(toolCall.Name)
+		content := toolCallContent(toolCall.Name, rawInput)
+		locations := toLocations(toolCall.Name, toolCall.Input)
+
+		startOpts := []acpsdk.ToolCallStartOpt{
+			acpsdk.WithStartKind(kind),
+			acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
+			acpsdk.WithStartRawInput(rawInput),
+		}
+		if len(content) > 0 {
+			startOpts = append(startOpts, acpsdk.WithStartContent(content))
+		}
+		if len(locations) > 0 {
+			startOpts = append(startOpts, acpsdk.WithStartLocations(locations))
+		}
+
 		update := acpsdk.StartToolCall(
 			acpsdk.ToolCallId(toolCall.ID),
-			toolCall.Name,
+			title,
+			startOpts...,
 		)
 		if err := acpSession.SendUpdate(update); err != nil {
 			a.logger.Printf("[ACP AGENT] Failed to send tool call update: %v", err)
+		}
+	}
+
+	for _, toolResult := range msg.ToolResults() {
+		status := acpsdk.ToolCallStatusCompleted
+		if toolResult.IsError {
+			status = acpsdk.ToolCallStatusFailed
+		}
+
+		a.pendingToolCallsMu.Lock()
+		storedInput := a.pendingToolCalls[toolResult.ToolCallID]
+		if !isEditTool(toolResult.Name) {
+			delete(a.pendingToolCalls, toolResult.ToolCallID)
+		}
+		a.pendingToolCallsMu.Unlock()
+
+		rawInput := parseJSONInput(storedInput)
+		rawOutput := map[string]interface{}{"output": toolResult.Content}
+		if toolResult.Metadata != "" {
+			var meta interface{}
+			if err := json.Unmarshal([]byte(toolResult.Metadata), &meta); err == nil {
+				rawOutput["metadata"] = meta
+			} else {
+				rawOutput["metadata"] = toolResult.Metadata
+			}
+		}
+
+		content := toolResultContent(toolResult.Name, toolResult.Content, toolResult.IsError)
+		if isEditTool(toolResult.Name) && !toolResult.IsError && storedInput != "" {
+			var ep editToolInput
+			if err := json.Unmarshal([]byte(storedInput), &ep); err == nil && ep.FilePath != "" {
+				if toolResult.Name == "write" {
+					content = append(content, acpsdk.ToolDiffContent(ep.FilePath, ep.Content))
+				} else {
+					content = append(content, acpsdk.ToolDiffContent(ep.FilePath, ep.NewString, ep.OldString))
+				}
+			}
+		}
+
+		kind := mapToolKind(toolResult.Name)
+		title := toolDisplayTitle(toolResult.Name, rawInput, acpSession.WorkDir)
+		resultOpts := []acpsdk.ToolCallUpdateOpt{
+			acpsdk.WithUpdateStatus(status),
+			acpsdk.WithUpdateKind(kind),
+			acpsdk.WithUpdateTitle(title),
+			acpsdk.WithUpdateContent(content),
+			acpsdk.WithUpdateRawInput(rawInput),
+			acpsdk.WithUpdateRawOutput(rawOutput),
+		}
+		if locs := toLocations(toolResult.Name, storedInput); len(locs) > 0 {
+			resultOpts = append(resultOpts, acpsdk.WithUpdateLocations(locs))
+		}
+
+		update := acpsdk.UpdateToolCall(acpsdk.ToolCallId(toolResult.ToolCallID), resultOpts...)
+		if err := acpSession.SendUpdate(update); err != nil {
+			a.logger.Printf("[ACP AGENT] Failed to send tool result update: %v", err)
 		}
 	}
 
@@ -837,6 +934,7 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 	return acpsdk.LoadSessionResponse{
 		Modes:  buildSessionModeState(currentMode),
 		Models: buildSessionModelState(a.agentService),
+		Meta:   buildSessionPersonaState(a.agentService),
 	}, nil
 }
 
@@ -856,6 +954,39 @@ func (a *PandoACPAgent) SetSessionModel(ctx context.Context, req acpsdk.SetSessi
 	acpSession.SetModel(string(req.ModelId))
 	a.logger.Printf("[ACP AGENT] SetSessionModel: model set to %s for session %s", req.ModelId, req.SessionId)
 	return acpsdk.SetSessionModelResponse{}, nil
+}
+
+// SetSessionPersona stores the requested persona on the ACP session for use in future prompts.
+// This is a Pando-specific extension, not part of the standard ACP protocol.
+func (a *PandoACPAgent) SetSessionPersona(ctx context.Context, sessionID acpsdk.SessionId, personaName string) error {
+	a.logger.Printf("[ACP AGENT] SetSessionPersona: SessionID=%s, Persona=%s", sessionID, personaName)
+
+	a.sessionsMu.RLock()
+	acpSession, exists := a.sessions[sessionID]
+	a.sessionsMu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	// Validate persona exists (empty string means "clear / auto").
+	if personaName != "" {
+		available := a.agentService.ListPersonas()
+		found := false
+		for _, p := range available {
+			if p == personaName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("unknown persona: %s", personaName)
+		}
+	}
+
+	acpSession.SetPersona(personaName)
+	a.logger.Printf("[ACP AGENT] SetSessionPersona: persona set to %q for session %s", personaName, sessionID)
+	return nil
 }
 
 // availableModes returns the fixed set of session modes supported by Pando.
@@ -909,6 +1040,40 @@ func buildSessionModelState(svc AgentService) *acpsdk.SessionModelState {
 	}
 }
 
+// PersonaInfo describes a single available persona for ACP responses.
+type PersonaInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// SessionPersonaState represents the persona selection state for a session,
+// analogous to SessionModelState. It is carried via the _meta extension field
+// in ACP responses since the ACP spec does not yet define a native persona type.
+type SessionPersonaState struct {
+	AvailablePersonas []PersonaInfo `json:"availablePersonas"`
+	CurrentPersonaId  string        `json:"currentPersonaId"`
+}
+
+// buildSessionPersonaState constructs the SessionPersonaState from the AgentService.
+func buildSessionPersonaState(svc AgentService) *SessionPersonaState {
+	available := svc.ListPersonas()
+	active := svc.GetActivePersona()
+
+	infos := make([]PersonaInfo, 0, len(available))
+	for _, name := range available {
+		infos = append(infos, PersonaInfo{
+			ID:   name,
+			Name: name,
+		})
+	}
+
+	return &SessionPersonaState{
+		AvailablePersonas: infos,
+		CurrentPersonaId:  active,
+	}
+}
+
 // parseJSONInput attempts to decode a JSON string into a native map or slice.
 // ACP clients expect rawInput to be a JSON object, not an encoded string.
 // If decoding fails the original string is returned as-is.
@@ -923,9 +1088,37 @@ func parseJSONInput(s string) interface{} {
 	return s
 }
 
+func toDisplayPath(path string, cwd string) string {
+	if strings.TrimSpace(path) == "" {
+		return path
+	}
+	if strings.TrimSpace(cwd) == "" {
+		return path
+	}
+	resolvedCwd, err := filepath.Abs(cwd)
+	if err != nil {
+		return path
+	}
+	resolvedPath, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	rel, err := filepath.Rel(resolvedCwd, resolvedPath)
+	if err != nil {
+		return path
+	}
+	if rel == "." {
+		return rel
+	}
+	if strings.HasPrefix(rel, "..") {
+		return path
+	}
+	return rel
+}
+
 // mapToolKind maps a Pando tool name to the corresponding ACP ToolKind.
 func mapToolKind(toolName string) acpsdk.ToolKind {
-	switch toolName {
+	switch strings.ToLower(toolName) {
 	case "bash", "execute_command":
 		return acpsdk.ToolKindExecute
 	case "edit", "write", "multiedit", "patch":
@@ -938,9 +1131,248 @@ func mapToolKind(toolName string) acpsdk.ToolKind {
 		return acpsdk.ToolKindSearch
 	case "web_search", "web_fetch", "fetch":
 		return acpsdk.ToolKindFetch
+	case "agent", "task", "todowrite":
+		return acpsdk.ToolKindThink
+	case "exitplanmode":
+		return acpsdk.ToolKindSwitchMode
 	default:
 		return acpsdk.ToolKindOther
 	}
+}
+
+func toolDisplayTitle(toolName string, rawInput interface{}, cwd string) string {
+	switch strings.ToLower(toolName) {
+	case "bash", "execute_command":
+		if m, ok := rawInput.(map[string]interface{}); ok {
+			if command, ok := m["command"].(string); ok && strings.TrimSpace(command) != "" {
+				return command
+			}
+		}
+		return toolName
+	case "read", "view":
+		if path := toolInputString(rawInput, "file_path"); path != "" {
+			displayPath := toDisplayPath(path, cwd)
+			if limit := readRangeLabel(rawInput); limit != "" {
+				return "Read " + displayPath + limit
+			}
+			return "Read " + displayPath
+		}
+		return "Read"
+	case "write":
+		if path := toolInputString(rawInput, "file_path"); path != "" {
+			return "Write " + toDisplayPath(path, cwd)
+		}
+		return "Write"
+	case "edit", "multiedit", "patch":
+		if path := toolInputString(rawInput, "file_path"); path != "" {
+			return "Edit " + toDisplayPath(path, cwd)
+		}
+		return "Edit"
+	case "glob":
+		path := toolInputString(rawInput, "path")
+		pattern := toolInputString(rawInput, "pattern")
+		displayPath := toDisplayPath(path, cwd)
+		if path != "" && pattern != "" {
+			return fmt.Sprintf("Find `%s` `%s`", displayPath, pattern)
+		}
+		if pattern != "" {
+			return fmt.Sprintf("Find `%s`", pattern)
+		}
+		return "Find"
+	case "grep":
+		return grepDisplayTitle(rawInput, cwd)
+	case "web_fetch", "fetch":
+		if url := toolInputString(rawInput, "url"); url != "" {
+			return "Fetch " + url
+		}
+		return "Fetch"
+	case "web_search":
+		if query := toolInputString(rawInput, "query"); query != "" {
+			return fmt.Sprintf("%q", query)
+		}
+		return "WebSearch"
+	case "todowrite":
+		if todos := todoSummary(rawInput); todos != "" {
+			return "Update TODOs: " + todos
+		}
+		return "Update TODOs"
+	case "exitplanmode":
+		return "Ready to code?"
+	default:
+		return toolName
+	}
+}
+
+func readRangeLabel(rawInput interface{}) string {
+	limit := toolInputInt(rawInput, "limit")
+	offset := toolInputInt(rawInput, "offset")
+	if limit > 0 {
+		start := offset
+		if start <= 0 {
+			start = 1
+		}
+		return fmt.Sprintf(" (%d - %d)", start, start+limit-1)
+	}
+	if offset > 0 {
+		return fmt.Sprintf(" (from line %d)", offset)
+	}
+	return ""
+}
+
+func grepDisplayTitle(rawInput interface{}, cwd string) string {
+	parts := []string{"grep"}
+	for _, key := range []string{"-i", "-n"} {
+		if toolInputBool(rawInput, key) {
+			parts = append(parts, key)
+		}
+	}
+	for _, key := range []string{"-A", "-B", "-C"} {
+		if v := toolInputInt(rawInput, key); v > 0 {
+			parts = append(parts, key, fmt.Sprintf("%d", v))
+		}
+	}
+	switch toolInputString(rawInput, "output_mode") {
+	case "files_with_matches":
+		parts = append(parts, "-l")
+	case "count":
+		parts = append(parts, "-c")
+	}
+	if headLimit := toolInputInt(rawInput, "head_limit"); headLimit > 0 {
+		parts = append(parts, fmt.Sprintf("| head -%d", headLimit))
+	}
+	if glob := toolInputString(rawInput, "glob"); glob != "" {
+		parts = append(parts, fmt.Sprintf("--include=%q", glob))
+	}
+	if include := toolInputString(rawInput, "include"); include != "" {
+		parts = append(parts, fmt.Sprintf("--include=%q", include))
+	}
+	if fileType := toolInputString(rawInput, "type"); fileType != "" {
+		parts = append(parts, "--type="+fileType)
+	}
+	if toolInputBool(rawInput, "multiline") {
+		parts = append(parts, "-P")
+	}
+	if pattern := toolInputString(rawInput, "pattern"); pattern != "" {
+		parts = append(parts, fmt.Sprintf("%q", pattern))
+	}
+	if path := toolInputString(rawInput, "path"); path != "" {
+		parts = append(parts, toDisplayPath(path, cwd))
+	}
+	return strings.Join(parts, " ")
+}
+
+func todoSummary(rawInput interface{}) string {
+	m, ok := rawInput.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	rawTodos, ok := m["todos"].([]interface{})
+	if !ok || len(rawTodos) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(rawTodos))
+	for _, rawTodo := range rawTodos {
+		todo, ok := rawTodo.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if content, ok := todo["content"].(string); ok && strings.TrimSpace(content) != "" {
+			parts = append(parts, content)
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func toolCallContent(toolName string, rawInput interface{}) []acpsdk.ToolCallContent {
+	switch strings.ToLower(toolName) {
+	case "write":
+		path := toolInputString(rawInput, "file_path")
+		content := toolInputString(rawInput, "content")
+		if path != "" && content != "" {
+			return []acpsdk.ToolCallContent{acpsdk.ToolDiffContent(path, content)}
+		}
+	case "edit", "multiedit", "patch":
+		path := toolInputString(rawInput, "file_path")
+		oldString := toolInputString(rawInput, "old_string")
+		newString := toolInputString(rawInput, "new_string")
+		if path != "" && (oldString != "" || newString != "") {
+			return []acpsdk.ToolCallContent{acpsdk.ToolDiffContent(path, newString, oldString)}
+		}
+	case "bash", "execute_command":
+		if description := toolInputString(rawInput, "description"); description != "" {
+			return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(description))}
+		}
+	case "agent", "task":
+		if prompt := toolInputString(rawInput, "prompt"); prompt != "" {
+			return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(prompt))}
+		}
+	case "web_fetch", "fetch":
+		if prompt := toolInputString(rawInput, "prompt"); prompt != "" {
+			return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(prompt))}
+		}
+	}
+	return nil
+}
+
+func toolResultContent(toolName, content string, isError bool) []acpsdk.ToolCallContent {
+	if strings.TrimSpace(content) == "" {
+		return nil
+	}
+	text := content
+	if isError {
+		text = "```\n" + content + "\n```"
+	}
+	return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(text))}
+}
+
+func toolInputString(rawInput interface{}, key string) string {
+	m, ok := rawInput.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	v, ok := m[key]
+	if !ok {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
+}
+
+func toolInputInt(rawInput interface{}, key string) int {
+	m, ok := rawInput.(map[string]interface{})
+	if !ok {
+		return 0
+	}
+	v, ok := m[key]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case int64:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
+func toolInputBool(rawInput interface{}, key string) bool {
+	m, ok := rawInput.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	v, ok := m[key]
+	if !ok {
+		return false
+	}
+	b, ok := v.(bool)
+	return ok && b
 }
 
 // toolLocationInput holds fields used to extract file/directory path from a tool

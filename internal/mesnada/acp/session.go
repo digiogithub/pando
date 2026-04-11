@@ -38,6 +38,9 @@ type ACPServerSession struct {
 	// model is the model ID requested by the client (set via SetSessionModel)
 	model string
 
+	// persona is the persona name requested by the client (set via SetSessionPersona)
+	persona string
+
 	// variant is the session variant (reserved for future use)
 	variant string
 
@@ -154,6 +157,20 @@ func (s *ACPServerSession) Model() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.model
+}
+
+// SetPersona stores the requested persona name.
+func (s *ACPServerSession) SetPersona(persona string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.persona = persona
+}
+
+// Persona returns the current persona name.
+func (s *ACPServerSession) Persona() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.persona
 }
 
 // SetVariant stores the session variant.

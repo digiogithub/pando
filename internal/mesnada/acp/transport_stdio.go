@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,6 +47,45 @@ type StdioTransport struct {
 	conn   *acpsdk.AgentSideConnection
 }
 
+func logACPJSONRPC(logger *log.Logger, dir string, payload []byte) {
+	if logger == nil {
+		return
+	}
+
+	trimmed := strings.TrimSpace(string(payload))
+	if trimmed == "" {
+		return
+	}
+
+	const maxLen = 1200
+	if len(trimmed) > maxLen {
+		trimmed = trimmed[:maxLen] + "…(truncated)"
+	}
+
+	var msg map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &msg); err == nil {
+		method, _ := msg["method"].(string)
+		logger.Printf("[ACP JSONRPC %s] method=%s payload=%s", dir, method, trimmed)
+		return
+	}
+
+	logger.Printf("[ACP JSONRPC %s] payload=%s", dir, trimmed)
+}
+
+func newLoggingWriter(w io.Writer, logger *log.Logger) io.Writer {
+	return &loggingWriter{w: w, logger: logger}
+}
+
+type loggingWriter struct {
+	w      io.Writer
+	logger *log.Logger
+}
+
+func (lw *loggingWriter) Write(p []byte) (int, error) {
+	logACPJSONRPC(lw.logger, "out", p)
+	return lw.w.Write(p)
+}
+
 // NewStdioTransport creates a new stdio transport for the ACP agent.
 // A thin interceptor layer sits between raw stdin and the SDK connection to
 // handle protocol methods that the Go SDK v0.6.3 does not yet implement
@@ -64,7 +104,7 @@ func NewStdioTransport(agent *PandoACPAgent, logger *log.Logger) *StdioTransport
 
 	go interceptStdin(os.Stdin, stdout, pipeWriter, agent, logger)
 
-	conn := acpsdk.NewAgentSideConnection(agent, stdout, pipeReader)
+	conn := acpsdk.NewAgentSideConnection(agent, newLoggingWriter(stdout, logger), pipeReader)
 	agent.SetConnection(conn)
 
 	return &StdioTransport{
@@ -111,11 +151,13 @@ func interceptStdin(in io.Reader, out *syncWriter, fwd *io.PipeWriter, agent *Pa
 
 		var msg jsonRPCMsg
 		if err := json.Unmarshal(line, &msg); err != nil {
+			logACPJSONRPC(logger, "in", line)
 			// Unparseable: forward as-is so the SDK can log/handle it.
 			fwd.Write(line)
 			fwd.Write([]byte("\n"))
 			continue
 		}
+		logACPJSONRPC(logger, "in", line)
 
 		if msg.Method == "session/list" {
 			logger.Printf("[ACP INTERCEPT] Handling session/list (id=%s)", string(msg.ID))
@@ -138,6 +180,12 @@ func interceptStdin(in io.Reader, out *syncWriter, fwd *io.PipeWriter, agent *Pa
 		if msg.Method == "persona/set" {
 			logger.Printf("[ACP INTERCEPT] Handling persona/set (id=%s)", string(msg.ID))
 			handlePersonaSetRPC(msg, out, agent, logger)
+			continue
+		}
+
+		if msg.Method == "persona/set_session" {
+			logger.Printf("[ACP INTERCEPT] Handling persona/set_session (id=%s)", string(msg.ID))
+			handlePersonaSetSessionRPC(msg, out, agent, logger)
 			continue
 		}
 
@@ -294,6 +342,35 @@ func handlePersonaSetRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAgent, lo
 	writeRPCResult(out, req.ID, personaGetResult{Active: params.Name})
 	if logger != nil {
 		logger.Printf("[ACP INTERCEPT] persona/set: active=%q", params.Name)
+	}
+}
+
+// personaSetSessionParams are the request params for persona/set_session.
+// It sets the persona for a specific ACP session (per-session override),
+// analogous to the SDK's SetSessionModel.
+type personaSetSessionParams struct {
+	SessionID string `json:"sessionId"`
+	Name      string `json:"name"`
+}
+
+// handlePersonaSetSessionRPC sets the persona for a specific ACP session.
+func handlePersonaSetSessionRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAgent, logger *log.Logger) {
+	var params personaSetSessionParams
+	if len(req.Params) > 0 {
+		_ = json.Unmarshal(req.Params, &params)
+	}
+	if params.SessionID == "" {
+		writeRPCError(out, req.ID, -32602, "sessionId is required")
+		return
+	}
+	ctx := context.Background()
+	if err := agent.SetSessionPersona(ctx, acpsdk.SessionId(params.SessionID), params.Name); err != nil {
+		writeRPCError(out, req.ID, -32602, "set persona: "+err.Error())
+		return
+	}
+	writeRPCResult(out, req.ID, personaGetResult{Active: params.Name})
+	if logger != nil {
+		logger.Printf("[ACP INTERCEPT] persona/set_session: sessionId=%q persona=%q", params.SessionID, params.Name)
 	}
 }
 
