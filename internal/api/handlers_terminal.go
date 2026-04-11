@@ -4,19 +4,29 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/digiogithub/pando/internal/config"
 )
 
 const (
-	terminalExecTimeout = 30 * time.Second
-	terminalMaxOutput   = 64 * 1024 // 64 KB
+	terminalExecTimeout      = 30 * time.Second
+	terminalSessionIdleTTL   = 30 * time.Minute
+	terminalMaxOutput        = 64 * 1024
+	terminalMaxCombinedBytes = 256 * 1024
 )
 
-// dangerousPrefixes is the list of command prefixes that are never allowed.
 var dangerousPrefixes = []string{
 	"rm -rf /",
 	"rm -fr /",
@@ -33,20 +43,32 @@ var dangerousPrefixes = []string{
 	"fdisk /dev/",
 }
 
-// ExecRequest is the body for POST /api/v1/terminal/exec.
 type ExecRequest struct {
-	Command string `json:"command"`
-	Dir     string `json:"dir,omitempty"`
+	Command   string `json:"command"`
+	Dir       string `json:"dir,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
-// ExecResponse is the JSON result returned after executing a command.
 type ExecResponse struct {
-	Output   string `json:"output"`
-	Error    string `json:"error,omitempty"`
-	ExitCode int    `json:"exit_code"`
+	Output    string `json:"output"`
+	Error     string `json:"error,omitempty"`
+	ExitCode  int    `json:"exit_code"`
+	SessionID string `json:"session_id,omitempty"`
+	Shell     string `json:"shell,omitempty"`
+	Dir       string `json:"dir,omitempty"`
 }
 
-// isCommandDangerous returns true if the command matches any forbidden prefix.
+type terminalSession struct {
+	ID         string
+	Dir        string
+	LastUsedAt time.Time
+}
+
+var terminalSessions = struct {
+	sync.Mutex
+	items map[string]*terminalSession
+}{items: map[string]*terminalSession{}}
+
 func isCommandDangerous(command string) bool {
 	trimmed := strings.TrimSpace(command)
 	lower := strings.ToLower(trimmed)
@@ -58,31 +80,152 @@ func isCommandDangerous(command string) bool {
 	return false
 }
 
-// resolveWorkDir sanitizes the requested directory so it always stays inside
-// the project CWD. An empty dir defaults to the CWD itself.
 func resolveWorkDir(cwd, dir string) string {
 	if strings.TrimSpace(dir) == "" {
 		return cwd
 	}
-
-	// If the caller passed an absolute path, ignore it and use cwd.
 	if filepath.IsAbs(dir) {
 		return cwd
 	}
-
-	// Join and clean to prevent "../../../" traversal.
 	candidate := filepath.Clean(filepath.Join(cwd, dir))
-
-	// Ensure the resolved path is still inside the project cwd.
 	if !strings.HasPrefix(candidate, cwd) {
 		return cwd
 	}
-
 	return candidate
 }
 
-// handleTerminalExec executes a shell command inside the project directory.
-// POST /api/v1/terminal/exec
+func pruneTerminalSessionsLocked() {
+	cutoff := time.Now().Add(-terminalSessionIdleTTL)
+	for id, session := range terminalSessions.items {
+		if session.LastUsedAt.Before(cutoff) {
+			delete(terminalSessions.items, id)
+		}
+	}
+}
+
+func getOrCreateTerminalSession(cwd string, req ExecRequest) *terminalSession {
+	terminalSessions.Lock()
+	defer terminalSessions.Unlock()
+
+	pruneTerminalSessionsLocked()
+
+	if req.SessionID != "" {
+		if session, ok := terminalSessions.items[req.SessionID]; ok {
+			if strings.TrimSpace(req.Dir) != "" {
+				session.Dir = resolveWorkDir(cwd, req.Dir)
+			}
+			session.LastUsedAt = time.Now()
+			return session
+		}
+	}
+
+	sessionID := req.SessionID
+	if sessionID == "" {
+		sessionID = uuid.NewString()
+	}
+	session := &terminalSession{
+		ID:         sessionID,
+		Dir:        resolveWorkDir(cwd, req.Dir),
+		LastUsedAt: time.Now(),
+	}
+	terminalSessions.items[sessionID] = session
+	return session
+}
+
+func resolveShellFromConfig() (string, []string) {
+	if cfg := config.Get(); cfg != nil {
+		if shell := strings.TrimSpace(cfg.Shell.Path); shell != "" {
+			args := append([]string(nil), cfg.Shell.Args...)
+			if len(args) == 0 {
+				args = []string{"-i", "-c"}
+			}
+			return shell, args
+		}
+	}
+	return "", nil
+}
+
+func choosePreferredShell() string {
+	if shell := strings.TrimSpace(os.Getenv("SHELL")); shell != "" {
+		return shell
+	}
+	if runtime.GOOS == "darwin" {
+		if path, err := exec.LookPath("zsh"); err == nil {
+			return path
+		}
+	}
+	if path, err := exec.LookPath("bash"); err == nil {
+		return path
+	}
+	if runtime.GOOS == "darwin" {
+		if path, err := exec.LookPath("sh"); err == nil {
+			return path
+		}
+	}
+	if path, err := exec.LookPath("zsh"); err == nil {
+		return path
+	}
+	return "/bin/sh"
+}
+
+func shellCommandForExec() (string, []string) {
+	if shell, args := resolveShellFromConfig(); shell != "" {
+		return shell, args
+	}
+	return choosePreferredShell(), []string{"-i", "-c"}
+}
+
+func buildShellEnv(base []string) []string {
+	env := append([]string(nil), base...)
+	termSet := false
+	for i, entry := range env {
+		if strings.HasPrefix(entry, "TERM=") {
+			env[i] = "TERM=xterm-256color"
+			termSet = true
+			break
+		}
+	}
+	if !termSet {
+		env = append(env, "TERM=xterm-256color")
+	}
+	return env
+}
+
+func quoteShellArg(value string) string {
+	if value == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+}
+
+func makeShellCommand(workDir, command string) string {
+	return fmt.Sprintf("cd %s && %s", quoteShellArg(workDir), command)
+}
+
+func classifyExecError(runErr error, output string) (int, string) {
+	if runErr == nil {
+		return 0, ""
+	}
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) {
+		return exitErr.ExitCode(), ""
+	}
+	if output != "" {
+		return -1, ""
+	}
+	return -1, runErr.Error()
+}
+
+func truncateTerminalOutput(output string) string {
+	if len(output) > terminalMaxCombinedBytes {
+		output = output[:terminalMaxCombinedBytes] + "\n... [output truncated]"
+	}
+	if len(output) > terminalMaxOutput {
+		output = output[:terminalMaxOutput] + "\n... [output truncated]"
+	}
+	return output
+}
+
 func (s *Server) handleTerminalExec(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -94,51 +237,47 @@ func (s *Server) handleTerminalExec(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-
 	if strings.TrimSpace(req.Command) == "" {
 		writeError(w, http.StatusBadRequest, "command is required")
 		return
 	}
-
 	if isCommandDangerous(req.Command) {
 		writeError(w, http.StatusForbidden, "command is not allowed for security reasons")
 		return
 	}
 
-	workDir := resolveWorkDir(s.config.CWD, req.Dir)
+	session := getOrCreateTerminalSession(s.config.CWD, req)
+	workDir := session.Dir
+	shell, shellArgs := shellCommandForExec()
+	args := append([]string(nil), shellArgs...)
+	args = append(args, makeShellCommand(workDir, req.Command))
 
 	ctx, cancel := context.WithTimeout(r.Context(), terminalExecTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", req.Command)
-	cmd.Dir = workDir
+	cmd := exec.CommandContext(ctx, shell, args...)
+	cmd.Env = buildShellEnv(os.Environ())
 
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
 	runErr := cmd.Run()
-
-	// Truncate output to avoid oversized responses.
-	output := buf.String()
-	if len(output) > terminalMaxOutput {
-		output = output[:terminalMaxOutput] + "\n... [output truncated]"
+	combinedOutput := stdout.String()
+	if stderr.Len() > 0 {
+		combinedOutput += stderr.String()
 	}
+	combinedOutput = truncateTerminalOutput(combinedOutput)
 
+	exitCode, execError := classifyExecError(runErr, combinedOutput)
 	resp := ExecResponse{
-		Output:   output,
-		ExitCode: 0,
+		Output:    combinedOutput,
+		Error:     execError,
+		ExitCode:  exitCode,
+		SessionID: session.ID,
+		Shell:     shell,
+		Dir:       workDir,
 	}
-
-	if runErr != nil {
-		if exitErr, ok := runErr.(*exec.ExitError); ok {
-			resp.ExitCode = exitErr.ExitCode()
-		} else {
-			// Timeout or other execution error.
-			resp.ExitCode = -1
-			resp.Error = runErr.Error()
-		}
-	}
-
 	writeJSON(w, http.StatusOK, resp)
 }
