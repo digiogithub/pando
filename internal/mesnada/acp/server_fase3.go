@@ -518,23 +518,23 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				a.pendingToolCallsMu.Unlock()
 
 				kind := mapToolKind(tc.Name)
+				rawInput := parseJSONInput(tc.Input)
 
-				// 1. Send "pending" state first — matches opencode's toolStart() behaviour.
-				// Clients need to see the tool registered before input arrives.
+				// Send the initial tool_call with the real title/kind/rawInput so clients
+				// can register and render the tool immediately without depending on a
+				// near-simultaneous update that may arrive out of order.
 				pendingUpdate := acpsdk.StartToolCall(
 					acpsdk.ToolCallId(tc.ID),
 					tc.Name,
 					acpsdk.WithStartKind(kind),
 					acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
-					acpsdk.WithStartRawInput(map[string]interface{}{}),
+					acpsdk.WithStartRawInput(rawInput),
 				)
 				if err := acpSession.SendUpdate(pendingUpdate); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send tool call pending: %v", err)
 				}
 
-				// 2. Immediately follow with "in_progress" + actual input so the client
-				// can render the tool arguments while it executes.
-				rawInput := parseJSONInput(tc.Input)
+				// Move the tool to in_progress after the initial registration event.
 				inProgressOpts := []acpsdk.ToolCallUpdateOpt{
 					acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
 					acpsdk.WithUpdateKind(kind),

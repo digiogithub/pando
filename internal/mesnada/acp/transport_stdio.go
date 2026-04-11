@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,6 +47,45 @@ type StdioTransport struct {
 	conn   *acpsdk.AgentSideConnection
 }
 
+func logACPJSONRPC(logger *log.Logger, dir string, payload []byte) {
+	if logger == nil {
+		return
+	}
+
+	trimmed := strings.TrimSpace(string(payload))
+	if trimmed == "" {
+		return
+	}
+
+	const maxLen = 1200
+	if len(trimmed) > maxLen {
+		trimmed = trimmed[:maxLen] + "…(truncated)"
+	}
+
+	var msg map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &msg); err == nil {
+		method, _ := msg["method"].(string)
+		logger.Printf("[ACP JSONRPC %s] method=%s payload=%s", dir, method, trimmed)
+		return
+	}
+
+	logger.Printf("[ACP JSONRPC %s] payload=%s", dir, trimmed)
+}
+
+func newLoggingWriter(w io.Writer, logger *log.Logger) io.Writer {
+	return &loggingWriter{w: w, logger: logger}
+}
+
+type loggingWriter struct {
+	w      io.Writer
+	logger *log.Logger
+}
+
+func (lw *loggingWriter) Write(p []byte) (int, error) {
+	logACPJSONRPC(lw.logger, "out", p)
+	return lw.w.Write(p)
+}
+
 // NewStdioTransport creates a new stdio transport for the ACP agent.
 // A thin interceptor layer sits between raw stdin and the SDK connection to
 // handle protocol methods that the Go SDK v0.6.3 does not yet implement
@@ -64,7 +104,7 @@ func NewStdioTransport(agent *PandoACPAgent, logger *log.Logger) *StdioTransport
 
 	go interceptStdin(os.Stdin, stdout, pipeWriter, agent, logger)
 
-	conn := acpsdk.NewAgentSideConnection(agent, stdout, pipeReader)
+	conn := acpsdk.NewAgentSideConnection(agent, newLoggingWriter(stdout, logger), pipeReader)
 	agent.SetConnection(conn)
 
 	return &StdioTransport{
@@ -111,11 +151,13 @@ func interceptStdin(in io.Reader, out *syncWriter, fwd *io.PipeWriter, agent *Pa
 
 		var msg jsonRPCMsg
 		if err := json.Unmarshal(line, &msg); err != nil {
+			logACPJSONRPC(logger, "in", line)
 			// Unparseable: forward as-is so the SDK can log/handle it.
 			fwd.Write(line)
 			fwd.Write([]byte("\n"))
 			continue
 		}
+		logACPJSONRPC(logger, "in", line)
 
 		if msg.Method == "session/list" {
 			logger.Printf("[ACP INTERCEPT] Handling session/list (id=%s)", string(msg.ID))
