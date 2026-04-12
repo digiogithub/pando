@@ -530,6 +530,9 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	if err := viper.Unmarshal(cfg); err != nil {
 		return cfg, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+	if err := decryptSensitiveConfigFields(cfg); err != nil {
+		return cfg, fmt.Errorf("failed to decrypt sensitive config fields: %w", err)
+	}
 
 	// Restore WorkingDir after unmarshal: it's a runtime parameter, not a config file setting,
 	// so viper.Unmarshal would reset it to empty string if not present in the config file.
@@ -1704,16 +1707,21 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 
 	updateCfg(userCfg)
 
+	persistedCfg, err := encryptSensitiveConfigFields(userCfg)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt sensitive config fields: %w", err)
+	}
+
 	// Write the updated config back to file in the same format
 	var updatedData []byte
 	switch format {
 	case "toml":
-		updatedData, err = toml.Marshal(userCfg)
+		updatedData, err = toml.Marshal(persistedCfg)
 		if err != nil {
 			return fmt.Errorf("failed to marshal TOML config: %w", err)
 		}
 	default:
-		updatedData, err = json.MarshalIndent(userCfg, "", "  ")
+		updatedData, err = json.MarshalIndent(persistedCfg, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal JSON config: %w", err)
 		}

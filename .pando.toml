@@ -1,0 +1,225 @@
+WorkingDir = ''
+Debug = false
+LogFile = ''
+DebugLSP = false
+ContextPaths = []
+AutoCompact = true
+
+[Data]
+Directory = './.pando/data'
+
+[MCPServers]
+
+[LSP]
+[LSP.gopls]
+Disabled = false
+Command = 'gopls'
+Args = []
+Languages = []
+
+[Agents]
+[Agents.cliassist]
+Model = 'gpt-4.1'
+MaxTokens = 0
+ReasoningEffort = ''
+ThinkingMode = ''
+AutoCompact = true
+AutoCompactThreshold = 0.0
+
+[Agents.coder]
+Model = 'z-ai/glm-5.1'
+MaxTokens = 4096
+ReasoningEffort = ''
+ThinkingMode = ''
+AutoCompact = false
+AutoCompactThreshold = 0.0
+
+[Agents.persona-selector]
+Model = 'gpt-4.1'
+MaxTokens = 0
+ReasoningEffort = ''
+ThinkingMode = ''
+AutoCompact = false
+AutoCompactThreshold = 0.0
+
+[Agents.summarizer]
+Model = 'copilot.gpt-4o'
+MaxTokens = 64000
+ReasoningEffort = ''
+ThinkingMode = ''
+AutoCompact = false
+AutoCompactThreshold = 0.0
+
+[Agents.task]
+Model = 'copilot.gpt-4.1'
+MaxTokens = 16384
+ReasoningEffort = ''
+ThinkingMode = ''
+AutoCompact = false
+AutoCompactThreshold = 0.0
+
+[Agents.title]
+Model = 'gemini.gemini-2.5-flash-preview-04-17'
+MaxTokens = 80
+ReasoningEffort = ''
+ThinkingMode = ''
+AutoCompact = false
+AutoCompactThreshold = 0.0
+
+[Skills]
+Enabled = true
+Paths = ['./agents/skills']
+
+[SkillsCatalog]
+Enabled = true
+BaseURL = ''
+AutoUpdate = false
+DefaultScope = ''
+
+[TUI]
+Theme = ''
+
+[Permissions]
+AutoApproveTools = true
+
+[Mesnada]
+Enabled = true
+
+[Mesnada.Server]
+Host = ''
+Port = 5005
+
+[Mesnada.Orchestrator]
+StorePath = './.pando/mesnada'
+LogDir = './.pando/mesnada/logs'
+MaxParallel = 5
+DefaultEngine = 'claude'
+DefaultModel = 'sonnet'
+DefaultMCPConfig = '.github/mcp-config.json'
+PersonaPath = './.pando/mesnada/personas'
+
+[Mesnada.ACP]
+Enabled = true
+DefaultAgent = 'copilot'
+AutoPermission = true
+
+[Mesnada.ACP.Server]
+Enabled = false
+Transports = ['http']
+Host = '0.0.0.0'
+Port = 8766
+MaxSessions = 100
+SessionTimeout = '30m'
+RequireAuth = false
+
+[Mesnada.TUI]
+Enabled = true
+WebUI = false
+
+[Shell]
+Path = ''
+Args = []
+
+[Bash]
+BannedCommands = []
+AllowedCommands = []
+
+[Remembrances]
+Enabled = true
+KBPath = './.kb'
+KBWatch = true
+KBAutoImport = true
+DocumentEmbeddingProvider = 'ollama'
+DocumentEmbeddingModel = 'nomic-embed-text'
+DocumentEmbeddingBaseURL = ''
+DocumentEmbeddingAPIKey = ''
+CodeEmbeddingProvider = 'ollama'
+CodeEmbeddingModel = 'hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M'
+CodeEmbeddingBaseURL = ''
+CodeEmbeddingAPIKey = ''
+UseSameModel = false
+ChunkSize = 800
+ChunkOverlap = 100
+IndexWorkers = 4
+
+[Server]
+Enabled = true
+Host = 'localhost'
+Port = 9999
+RequireAuth = false
+
+[Lua]
+Enabled = false
+ScriptPath = ''
+Timeout = ''
+StrictMode = false
+HotReload = false
+LogFilteredData = false
+
+[MCPGateway]
+Enabled = true
+FavoriteThreshold = 3
+MaxFavorites = 10
+FavoriteWindowDays = 7
+DecayDays = 30
+
+[InternalTools]
+FetchEnabled = true
+FetchMaxSizeMB = 0
+GoogleSearchEnabled = true
+GoogleAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBqN3dUOHdETlRkMXJ0RTNVOVR0Y2o2cGlBRXhndzBVTEVCVmx2TG1DRUNvClprSnVRMlFYOHJ2bEJqYVBjcit5Y3VRTUdUbGYvL3YxQlBUVjRRaWxRMGcKLS0tIGc1amtvenVDNGczOXJYOHREMHpLN1lIemJURElUSnJsOEJ4YkVUK1VFTVEKBPoDwT/Uw6xgAOSmoIdwG//xmxWRiRNwxLx4kjswMntpGzcaajaKPzKPf33VdzehWwp+RKOoGxzzMhsCqFkk69Knq13iPoY='
+GoogleSearchEngineID = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB3VkJGTFBXaFB3TysvckIvVnVsVkpqajk4eDl5amxCTzF5b2J1TWlmcXhzCllUSjZmWHJzL20yeXFiWEhRZXZhK1JPSTBLand1WHlxNTJMelEvTEt3MTQKLS0tIGZLbmtiRFcrU0IzYmJEQUlpc1lqWmdDWkVIbzlsZWpkRU9aUktMSFpnL00K3x1S6K4cYUEnXf2gRFqTvGyqtw3dRTcXNIhypurH6peBjFLjg8j8LHQZgtqQUhAerA=='
+BraveSearchEnabled = true
+BraveAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBtU1p1L0FVQmVEK1MrRkZOODRyOUU3elBVeUU1MStEdzE2ZkdEZWF1QWxnCjhraFJ5ZnkzZGJpNHZzNzZ4WjNTY3ZXdXNrYVFmWEZ5cml0Z0dCL3JKZlkKLS0tIDhGdHBObEpLRlN2YjArNG9tUytNb1FWZjZkejRwTjMwYTZFRHprc3A4SXMKhk11In7rUc9cSPzp1g5IzZvMs8i4e6C8cj9BMrONMaY4xohm0o7c1wYjQxVoItdIP7YTIwQrDl9ZRBGkgvzS'
+PerplexitySearchEnabled = false
+PerplexityAPIKey = ''
+ExaSearchEnabled = true
+ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBMU2ZTaTNvQzUxR0NkMXNTU3lHNnpYY0FOY3lsd0V1SHlETnJ6d3M5aEZVCndMcVZnalRRdTFvSytRUkc3N1lva2FpWGVxVWlHQ256QTV5SitqUnZydFkKLS0tIDJqS0NjckdXWGJ5RjBsaHNNS2pEcTVLc0hOQit2bkc5Ny9Pa1RFdnZlOEUKNsAiaI5AGEcvmwDljF0m9SPAJT0K0id0bKduYtedMri+7WG9bjCWa5qcolihPABsmbnx7LnDPphmbzkBRDsoz8fARJY='
+Context7Enabled = true
+BrowserEnabled = true
+BrowserHeadless = false
+BrowserTimeout = 0
+BrowserUserDataDir = ''
+BrowserMaxSessions = 0
+
+[Snapshots]
+Enabled = true
+MaxSnapshots = 5
+MaxFileSize = '10MB'
+ExcludePatterns = []
+AutoCleanupDays = 5
+
+[evaluator]
+enabled = true
+model = 'copilot.gpt-4o-mini'
+provider = 'copilot'
+alphaWeight = 0.8
+betaWeight = 0.2
+explorationC = 1.41
+minSessionsForUCB = 5
+correctionsPatterns = ['(?i)\\bno[,.]?\\b', '(?i)\\bwrong\\b', '(?i)\\bincorrect\\b', "(?i)that'?s not", '(?i)not what i', '(?i)\\bmistake\\b', '(?i)\\bfix that\\b', '(?i)\\bvuelve a\\b', '(?i)\\bno era eso\\b', '(?i)\\bte equivocaste\\b']
+maxTokensBaseline = 50
+maxSkills = 100
+judgePromptTemplate = ''
+async = true
+
+[cliAssist]
+Model = ''
+Timeout = 0
+
+[PersonaAutoSelect]
+Enabled = false
+PersonaPath = ''
+
+[acp]
+enabled = false
+max_sessions = 0
+idle_timeout = ''
+log_level = ''
+auto_permission = false
+
+[OpenLit]
+Enabled = false
+Endpoint = ''
+ServiceName = ''
+Insecure = false
