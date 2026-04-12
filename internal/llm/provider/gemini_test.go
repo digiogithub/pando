@@ -208,3 +208,45 @@ func TestGeminiToolCallsPreserveThoughtSignature(t *testing.T) {
 		t.Fatalf("toolCalls()[0].Input project_id = %v, want %q", args["project_id"], "pando")
 	}
 }
+
+func TestGeminiConvertMessagesUsesUserRoleForToolResponses(t *testing.T) {
+	client := &geminiClient{}
+	messages := []message.Message{
+		{
+			Role: message.Assistant,
+			Parts: []message.ContentPart{
+				message.ToolCall{
+					ID:       "tool-call-id",
+					Name:     "code_list_projects",
+					Input:    `{"project_id":"pando"}`,
+					Type:     "function",
+					Finished: true,
+				},
+			},
+		},
+		{
+			Role: message.Tool,
+			Parts: []message.ContentPart{
+				message.ToolResult{
+					ToolCallID: "tool-call-id",
+					Name:       "code_list_projects",
+					Content:    `{"projects":[]}`,
+				},
+			},
+		},
+	}
+
+	contents := client.convertMessages(messages)
+	if len(contents) != 2 {
+		t.Fatalf("len(convertMessages()) = %d, want 2", len(contents))
+	}
+	if contents[1].Role != "user" {
+		t.Fatalf("convertMessages()[1].Role = %q, want %q", contents[1].Role, "user")
+	}
+	if len(contents[1].Parts) != 1 || contents[1].Parts[0].FunctionResponse == nil {
+		t.Fatal("convertMessages()[1] missing FunctionResponse")
+	}
+	if contents[1].Parts[0].FunctionResponse.Name != "code_list_projects" {
+		t.Fatalf("FunctionResponse.Name = %q, want %q", contents[1].Parts[0].FunctionResponse.Name, "code_list_projects")
+	}
+}

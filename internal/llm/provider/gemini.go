@@ -134,7 +134,7 @@ func (g *geminiClient) convertMessages(messages []message.Message) []*genai.Cont
 							},
 						},
 					},
-					Role: "function",
+					Role: "user",
 				})
 			}
 		}

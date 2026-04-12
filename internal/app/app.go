@@ -1065,6 +1065,19 @@ func (a *appACPAgentAdapter) ListPersonas() []string   { return agent.ListAvaila
 func (a *appACPAgentAdapter) GetActivePersona() string  { return agent.GetActivePersona() }
 func (a *appACPAgentAdapter) SetActivePersona(name string) error { return agent.SetActivePersona(name) }
 
+func (a *appACPAgentAdapter) ListAvailableTools() []mesnadaACP.ACPToolInfo {
+	baseTools := a.svc.GetTools()
+	result := make([]mesnadaACP.ACPToolInfo, 0, len(baseTools))
+	for _, t := range baseTools {
+		info := t.Info()
+		result = append(result, mesnadaACP.ACPToolInfo{
+			Name:        info.Name,
+			Description: info.Description,
+		})
+	}
+	return result
+}
+
 // ---------------------------------------------------------------------------
 
 type appACPSessionAdapter struct{ svc session.Service }

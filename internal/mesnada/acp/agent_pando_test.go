@@ -124,6 +124,13 @@ func (m *mockAgentService) SetActivePersona(name string) error {
 	return nil
 }
 
+func (m *mockAgentService) ListAvailableTools() []ACPToolInfo {
+	return []ACPToolInfo{
+		{Name: "bash", Description: "Execute bash commands"},
+		{Name: "edit", Description: "Edit files"},
+	}
+}
+
 // mockSessionService is a test double for SessionService.
 type mockSessionService struct {
 	sessions map[string]ACPSessionInfo

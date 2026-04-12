@@ -64,6 +64,8 @@ type Service interface {
 	Update(agentName config.AgentName, modelID models.ModelID) (models.Model, error)
 	Summarize(ctx context.Context, sessionID string) error
 	SetLuaManager(fm *luaengine.FilterManager)
+	// GetTools returns the tools available to this agent instance.
+	GetTools() []tools.BaseTool
 }
 
 type agent struct {
@@ -150,6 +152,10 @@ func (a *agent) Model() models.Model {
 		return models.Model{}
 	}
 	return a.provider.Model()
+}
+
+func (a *agent) GetTools() []tools.BaseTool {
+	return a.tools
 }
 
 func (a *agent) SetLuaManager(fm *luaengine.FilterManager) {

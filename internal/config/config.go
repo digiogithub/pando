@@ -211,7 +211,8 @@ type RemembrancesConfig struct {
 	Enabled                   bool   `json:"enabled" toml:"Enabled"`
 	KBPath                    string `json:"kb_path" toml:"KBPath"`
 	KBWatch                   bool   `json:"kb_watch" toml:"KBWatch"`
-	KBAutoImport             bool   `json:"kb_auto_import" toml:"KBAutoImport"`
+	KBAutoImport              bool   `json:"kb_auto_import" toml:"KBAutoImport"`
+	AutoIndexSessions         bool   `json:"auto_index_sessions" toml:"AutoIndexSessions"`
 	DocumentEmbeddingProvider string `json:"document_embedding_provider" toml:"DocumentEmbeddingProvider"`
 	DocumentEmbeddingModel    string `json:"document_embedding_model" toml:"DocumentEmbeddingModel"`
 	// DocumentEmbeddingBaseURL and DocumentEmbeddingAPIKey are used when DocumentEmbeddingProvider is "openai-compatible".
@@ -864,6 +865,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("remembrances.enabled", false)
 	viper.SetDefault("remembrances.kb_watch", true)
 	viper.SetDefault("remembrances.kb_auto_import", true)
+	viper.SetDefault("remembrances.auto_index_sessions", true)
 	viper.SetDefault("remembrances.document_embedding_provider", "ollama")
 	viper.SetDefault("remembrances.document_embedding_model", "nomic-embed-text")
 	viper.SetDefault("remembrances.code_embedding_provider", "ollama")

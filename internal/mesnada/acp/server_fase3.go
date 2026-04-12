@@ -45,6 +45,13 @@ type ACPModelInfo struct {
 	Name string
 }
 
+// ACPToolInfo holds minimal tool metadata for ACP available_commands_update.
+// Defined here to avoid importing internal/llm/tools from this package.
+type ACPToolInfo struct {
+	Name        string
+	Description string
+}
+
 // AgentService defines the interface for interacting with Pando's LLM agent.
 // This is intentionally minimal to avoid import cycles.
 type AgentService interface {
@@ -63,6 +70,8 @@ type AgentService interface {
 	GetActivePersona() string
 	// SetActivePersona sets the active persona by name. Pass empty string to clear.
 	SetActivePersona(name string) error
+	// ListAvailableTools returns the name and description of all tools available to the agent.
+	ListAvailableTools() []ACPToolInfo
 }
 
 // ACPSessionInfo is a minimal session descriptor used by the ACP layer.
@@ -312,6 +321,10 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 
 	a.logger.Printf("[ACP AGENT] NewSession created: SessionID=%s, PandoSessionID=%s, WorkDir=%s",
 		sessionID, pandoSessionID, workDir)
+
+	// Send available_commands_update asynchronously after session creation so
+	// clients (Zed, multicoder, etc.) can display the tool names and descriptions.
+	go a.sendAvailableCommandsUpdate(context.Background(), sessionID)
 
 	return acpsdk.NewSessionResponse{
 		SessionId: sessionID,
@@ -1074,6 +1087,9 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 	}
 	a.sessionsMu.RUnlock()
 
+	// Send available_commands_update asynchronously so clients can display tool names.
+	go a.sendAvailableCommandsUpdate(context.Background(), req.SessionId)
+
 	return acpsdk.LoadSessionResponse{
 		Modes:  buildSessionModeState(a.agentService, currentMode, currentPersona),
 		Models: buildSessionModelState(a.agentService),
@@ -1246,6 +1262,46 @@ func buildSessionPersonaState(svc AgentService) *SessionPersonaState {
 		AvailablePersonas: infos,
 		CurrentPersonaId:  active,
 	}
+}
+
+// sendAvailableCommandsUpdate sends an available_commands_update SessionUpdate to the
+// connected ACP client so that clients (Zed, multicoder, etc.) can display the tool
+// names and descriptions. This mirrors how opencode sends the update after session
+// creation/loading.
+func (a *PandoACPAgent) sendAvailableCommandsUpdate(ctx context.Context, sessionID acpsdk.SessionId) {
+	if a.conn == nil {
+		return
+	}
+
+	tools := a.agentService.ListAvailableTools()
+	commands := make([]acpsdk.AvailableCommand, 0, len(tools))
+	for _, t := range tools {
+		commands = append(commands, acpsdk.AvailableCommand{
+			Name:        t.Name,
+			Description: t.Description,
+		})
+	}
+
+	update := acpsdk.SessionNotification{
+		SessionId: sessionID,
+		Update: acpsdk.SessionUpdate{
+			AvailableCommandsUpdate: &acpsdk.SessionAvailableCommandsUpdate{
+				AvailableCommands: commands,
+				SessionUpdate:     "available_commands_update",
+			},
+		},
+	}
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				a.logger.Printf("[ACP AGENT] sendAvailableCommandsUpdate: recovered from panic for session %s: %v", sessionID, r)
+			}
+		}()
+		if err := a.conn.SessionUpdate(ctx, update); err != nil {
+			a.logger.Printf("[ACP AGENT] sendAvailableCommandsUpdate: failed for session %s: %v", sessionID, err)
+		}
+	}()
 }
 
 // parseJSONInput attempts to decode a JSON string into a native map or slice.

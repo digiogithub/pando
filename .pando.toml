@@ -27,8 +27,8 @@ AutoCompact = true
 AutoCompactThreshold = 0.0
 
 [Agents.coder]
-Model = 'gemini.gemini-3-flash-preview'
-MaxTokens = 8192
+Model = 'copilot.gpt-5.4-mini'
+MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false
