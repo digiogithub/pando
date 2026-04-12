@@ -315,7 +315,7 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 
 	return acpsdk.NewSessionResponse{
 		SessionId: sessionID,
-		Modes:     buildSessionModeState(currentMode),
+		Modes:     buildSessionModeState(a.agentService, currentMode, acpSession.Persona()),
 		Models:    buildSessionModelState(a.agentService),
 		Meta:      buildSessionPersonaState(a.agentService),
 	}, nil
@@ -855,13 +855,38 @@ func (a *PandoACPAgent) SetSessionMode(ctx context.Context, req acpsdk.SetSessio
 		return acpsdk.SetSessionModeResponse{}, fmt.Errorf("session not found: %s", req.SessionId)
 	}
 
+	modeID := strings.TrimSpace(string(req.ModeId))
+	baseMode := modeID
+	personaName := ""
+
+	if strings.Contains(modeID, ":") {
+		parts := strings.SplitN(modeID, ":", 2)
+		personaName = strings.TrimSpace(parts[0])
+		baseMode = strings.TrimSpace(parts[1])
+	}
+
 	validModes := map[string]bool{"agent": true, "ask": true}
-	if !validModes[string(req.ModeId)] {
+	if !validModes[baseMode] {
 		return acpsdk.SetSessionModeResponse{}, fmt.Errorf("unknown mode: %s", req.ModeId)
 	}
 
-	acpSession.SetMode(string(req.ModeId))
-	a.logger.Printf("[ACP AGENT] Session mode set: SessionID=%s, Mode=%s (mode will take effect on next prompt)", req.SessionId, req.ModeId)
+	if personaName != "" {
+		available := a.agentService.ListPersonas()
+		found := false
+		for _, p := range available {
+			if p == personaName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return acpsdk.SetSessionModeResponse{}, fmt.Errorf("unknown persona: %s", personaName)
+		}
+	}
+
+	acpSession.SetPersona(personaName)
+	acpSession.SetMode(baseMode)
+	a.logger.Printf("[ACP AGENT] Session mode set: SessionID=%s, Mode=%s, Persona=%q (mode will take effect on next prompt)", req.SessionId, baseMode, personaName)
 
 	return acpsdk.SetSessionModeResponse{}, nil
 }
@@ -931,8 +956,15 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 	}
 	a.sessionsMu.Unlock()
 
+	var currentPersona string
+	a.sessionsMu.RLock()
+	if sess, ok := a.sessions[req.SessionId]; ok {
+		currentPersona = sess.Persona()
+	}
+	a.sessionsMu.RUnlock()
+
 	return acpsdk.LoadSessionResponse{
-		Modes:  buildSessionModeState(currentMode),
+		Modes:  buildSessionModeState(a.agentService, currentMode, currentPersona),
 		Models: buildSessionModelState(a.agentService),
 		Meta:   buildSessionPersonaState(a.agentService),
 	}, nil
@@ -989,10 +1021,11 @@ func (a *PandoACPAgent) SetSessionPersona(ctx context.Context, sessionID acpsdk.
 	return nil
 }
 
-// availableModes returns the fixed set of session modes supported by Pando.
-func availableModes() []acpsdk.SessionMode {
+// availableModes returns the fixed set of session modes supported by Pando,
+// plus persona-specific combinations exposed as ACP modes.
+func availableModes(svc AgentService) []acpsdk.SessionMode {
 	descPtr := func(s string) *string { return &s }
-	return []acpsdk.SessionMode{
+	modes := []acpsdk.SessionMode{
 		{
 			Id:          "agent",
 			Name:        "Agent",
@@ -1004,16 +1037,46 @@ func availableModes() []acpsdk.SessionMode {
 			Description: descPtr("Ask for permission before each tool use"),
 		},
 	}
+
+	if svc == nil {
+		return modes
+	}
+
+	for _, persona := range svc.ListPersonas() {
+		persona = strings.TrimSpace(persona)
+		if persona == "" {
+			continue
+		}
+
+		modes = append(modes,
+			acpsdk.SessionMode{
+				Id:          acpsdk.SessionModeId(persona + ":agent"),
+				Name:        persona + ": yolo",
+				Description: descPtr("Agent mode with persona " + persona),
+			},
+			acpsdk.SessionMode{
+				Id:          acpsdk.SessionModeId(persona + ":ask"),
+				Name:        persona + ": ask",
+				Description: descPtr("Ask mode with persona " + persona),
+			},
+		)
+	}
+
+	return modes
 }
 
 // buildSessionModeState constructs the SessionModeState for ACP responses.
-func buildSessionModeState(currentModeID string) *acpsdk.SessionModeState {
+func buildSessionModeState(svc AgentService, currentModeID string, currentPersona string) *acpsdk.SessionModeState {
 	if currentModeID == "" {
 		currentModeID = "agent"
 	}
+	currentModeKey := currentModeID
+	if currentPersona != "" {
+		currentModeKey = currentPersona + ":" + currentModeID
+	}
 	return &acpsdk.SessionModeState{
-		AvailableModes: availableModes(),
-		CurrentModeId:  acpsdk.SessionModeId(currentModeID),
+		AvailableModes: availableModes(svc),
+		CurrentModeId:  acpsdk.SessionModeId(currentModeKey),
 	}
 }
 
