@@ -185,6 +185,7 @@ func CoderAgentToolsWithMesnada(
 			tools.NewKBDeleteDocumentTool(remembrances.KB),
 			tools.NewSaveEventTool(remembrances.Events),
 			tools.NewSearchEventsTool(remembrances.Events),
+			tools.NewHybridSearchRemembrancesTool(remembrances),
 			tools.NewCodeIndexProjectTool(remembrances.Code),
 			tools.NewCodeIndexStatusTool(remembrances.Code),
 			tools.NewCodeHybridSearchTool(remembrances.Code),

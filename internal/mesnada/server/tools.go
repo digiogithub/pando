@@ -41,6 +41,7 @@ func (s *Server) registerTools() {
 		s.tools["kb_delete_document"] = s.toolKBDeleteDocument
 		s.tools["save_event"] = s.toolSaveEvent
 		s.tools["search_events"] = s.toolSearchEvents
+		s.tools["hybrid_search_remembrances"] = s.toolHybridSearchRemembrances
 		s.tools["code_index_project"] = s.toolCodeIndexProject
 		s.tools["code_hybrid_search"] = s.toolCodeHybridSearch
 		s.tools["code_find_symbol"] = s.toolCodeFindSymbol
@@ -222,6 +223,33 @@ func (s *Server) getRemembrancesToolDefinitions() []Tool {
 						"description": "Filter by subject/category",
 					},
 				},
+			},
+		},
+		{
+			Name:        "hybrid_search_remembrances",
+			Description: "Search remembrances across KB, conversation sessions stored as events, and indexed code projects.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "Natural language query to search across remembrances",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Maximum number of results to return (default: 10)",
+						"default":     10,
+					},
+					"project_ids": map[string]interface{}{
+						"type":        "array",
+						"description": "Optional code project IDs to include in code search",
+						"items":       map[string]interface{}{"type": "string"},
+					},
+					"include_kb":       map[string]interface{}{"type": "boolean", "description": "Include KB results", "default": true},
+					"include_sessions": map[string]interface{}{"type": "boolean", "description": "Include indexed sessions stored as events", "default": true},
+					"include_code":     map[string]interface{}{"type": "boolean", "description": "Include code search results", "default": true},
+				},
+				"required": []string{"query"},
 			},
 		},
 		{

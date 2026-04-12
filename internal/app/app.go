@@ -20,32 +20,32 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/evaluator"
-	"github.com/digiogithub/pando/internal/snapshot"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
-	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/llm/prompt"
+	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
+	"github.com/digiogithub/pando/internal/luaengine"
+	"github.com/digiogithub/pando/internal/mcpgateway"
 	mesnadaACP "github.com/digiogithub/pando/internal/mesnada/acp"
 	mesnadaConfig "github.com/digiogithub/pando/internal/mesnada/config"
 	mesnadaOrch "github.com/digiogithub/pando/internal/mesnada/orchestrator"
-	mesnadaServer "github.com/digiogithub/pando/internal/mesnada/server"
 	"github.com/digiogithub/pando/internal/mesnada/persona"
 	"github.com/digiogithub/pando/internal/mesnada/persona/builtin"
+	mesnadaServer "github.com/digiogithub/pando/internal/mesnada/server"
 	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/observability"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
+	"github.com/digiogithub/pando/internal/snapshot"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/version"
-	"github.com/digiogithub/pando/internal/luaengine"
-	"github.com/digiogithub/pando/internal/mcpgateway"
-	"github.com/digiogithub/pando/internal/observability"
 )
 
 type App struct {
@@ -142,6 +142,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			if remembrances != nil {
 				logging.Info("Remembrances service initialized")
 				app.initRemembrancesKBSync(ctx, remembrances, &cfg.Remembrances)
+				app.initRemembrancesSessionIndexing(ctx, remembrances, &cfg.Remembrances)
 			}
 		}
 	}
@@ -572,12 +573,12 @@ func (app *App) initTheme() {
 }
 
 type assistantTextStreamer struct {
-	output             io.Writer
-	sessionID          string
-	currentSection     string
+	output               io.Writer
+	sessionID            string
+	currentSection       string
 	lastEndedWithNewline bool
-	wrote              bool
-	wroteContent       bool
+	wrote                bool
+	wroteContent         bool
 }
 
 func newAssistantTextStreamer(output io.Writer, sessionID string) *assistantTextStreamer {
@@ -1061,8 +1062,8 @@ func (a *appACPAgentAdapter) SetModelOverride(modelID string) error {
 	return config.OverrideAgentModel(config.AgentCoder, models.ModelID(modelID))
 }
 
-func (a *appACPAgentAdapter) ListPersonas() []string   { return agent.ListAvailablePersonas() }
-func (a *appACPAgentAdapter) GetActivePersona() string  { return agent.GetActivePersona() }
+func (a *appACPAgentAdapter) ListPersonas() []string             { return agent.ListAvailablePersonas() }
+func (a *appACPAgentAdapter) GetActivePersona() string           { return agent.GetActivePersona() }
 func (a *appACPAgentAdapter) SetActivePersona(name string) error { return agent.SetActivePersona(name) }
 
 func (a *appACPAgentAdapter) ListAvailableTools() []mesnadaACP.ACPToolInfo {

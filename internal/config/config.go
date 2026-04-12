@@ -75,7 +75,7 @@ const (
 type Agent struct {
 	Model                models.ModelID `json:"model"`
 	MaxTokens            int64          `json:"maxTokens"`
-	ReasoningEffort      string         `json:"reasoningEffort"`               // For openai models low,medium,high
+	ReasoningEffort      string         `json:"reasoningEffort"`                // For openai models low,medium,high
 	ThinkingMode         ThinkingMode   `json:"thinkingMode,omitempty"`         // For anthropic models: disabled,low,medium,high
 	AutoCompact          bool           `json:"autoCompact,omitempty"`          // enable auto-compaction when context fills up
 	AutoCompactThreshold float64        `json:"autoCompactThreshold,omitempty"` // 0.0-1.0, default 0.85
@@ -97,10 +97,10 @@ type Data struct {
 
 // LSPConfig defines configuration for Language Server Protocol integration.
 type LSPConfig struct {
-	Disabled  bool     `json:"disabled"`
-	Command   string   `json:"command"`
-	Args      []string `json:"args"`
-	Options   any      `json:"options"`
+	Disabled bool     `json:"disabled"`
+	Command  string   `json:"command"`
+	Args     []string `json:"args"`
+	Options  any      `json:"options"`
 	// Languages is a list of file extensions (e.g. ".go", ".ts") or language IDs
 	// this server handles. Used to filter which LSP clients are queried for a
 	// given file. If empty, the server is queried for all files.
@@ -284,7 +284,7 @@ type InternalToolsConfig struct {
 type LuaConfig struct {
 	Enabled         bool   `json:"enabled,omitempty" toml:"Enabled"`
 	ScriptPath      string `json:"script_path,omitempty" toml:"ScriptPath"`
-	Timeout         string `json:"timeout,omitempty" toml:"Timeout"`       // e.g. "5s"
+	Timeout         string `json:"timeout,omitempty" toml:"Timeout"` // e.g. "5s"
 	StrictMode      bool   `json:"strict_mode,omitempty" toml:"StrictMode"`
 	HotReload       bool   `json:"hot_reload,omitempty" toml:"HotReload"`
 	LogFilteredData bool   `json:"log_filtered_data,omitempty" toml:"LogFilteredData"`
@@ -391,35 +391,35 @@ func (c *SnapshotsConfig) ParseMaxFileSize() int64 {
 
 // Config is the main configuration structure for the application.
 type Config struct {
-	Data         Data                              `json:"data"`
-	WorkingDir   string                            `json:"wd,omitempty"`
-	MCPServers   map[string]MCPServer              `json:"mcpServers,omitempty"`
-	Providers    map[models.ModelProvider]Provider `json:"providers,omitempty"`
-	LSP          map[string]LSPConfig              `json:"lsp,omitempty"`
-	Agents       map[AgentName]Agent               `json:"agents,omitempty"`
-	Debug        bool                              `json:"debug,omitempty"`
-	LogFile      string                            `json:"logFile,omitempty"`
-	DebugLSP     bool                              `json:"debugLSP,omitempty"`
-	ContextPaths []string                          `json:"contextPaths,omitempty"`
-	Skills        SkillsConfig                      `json:"skills,omitempty"`
-	SkillsCatalog SkillsCatalogConfig               `json:"skillsCatalog,omitempty"`
-	TUI           TUIConfig                         `json:"tui"`
-	Permissions   PermissionsConfig                 `json:"permissions,omitempty"`
-	Mesnada      MesnadaConfig                     `json:"mesnada,omitempty"`
-	Shell        ShellConfig                       `json:"shell,omitempty"`
-	Bash         BashConfig                        `json:"bash,omitempty"`
-	AutoCompact  bool                              `json:"autoCompact,omitempty"`
-	Remembrances RemembrancesConfig                `json:"remembrances,omitempty"`
-	Server       APIServerConfig                   `json:"server,omitempty"`
-	Lua           LuaConfig                         `json:"lua,omitempty"`
-	MCPGateway    MCPGatewayConfig                  `json:"mcpGateway,omitempty"`
-	InternalTools InternalToolsConfig               `json:"internalTools,omitempty"`
-	Snapshots     SnapshotsConfig                   `json:"snapshots,omitempty"`
-	Evaluator          EvaluatorConfig                   `json:"evaluator,omitempty" toml:"evaluator"`
-	CLIAssist          CLIAssistConfig                   `json:"cliAssist,omitempty" toml:"cliAssist"`
-	PersonaAutoSelect  PersonaAutoSelectConfig           `json:"personaAutoSelect,omitempty"`
-	ACP                ACPConfig                         `json:"acp,omitempty" toml:"acp"`
-	OpenLit            OpenLitConfig                     `json:"openlit,omitempty" toml:"OpenLit"`
+	Data              Data                              `json:"data"`
+	WorkingDir        string                            `json:"wd,omitempty"`
+	MCPServers        map[string]MCPServer              `json:"mcpServers,omitempty"`
+	Providers         map[models.ModelProvider]Provider `json:"providers,omitempty"`
+	LSP               map[string]LSPConfig              `json:"lsp,omitempty"`
+	Agents            map[AgentName]Agent               `json:"agents,omitempty"`
+	Debug             bool                              `json:"debug,omitempty"`
+	LogFile           string                            `json:"logFile,omitempty"`
+	DebugLSP          bool                              `json:"debugLSP,omitempty"`
+	ContextPaths      []string                          `json:"contextPaths,omitempty"`
+	Skills            SkillsConfig                      `json:"skills,omitempty"`
+	SkillsCatalog     SkillsCatalogConfig               `json:"skillsCatalog,omitempty"`
+	TUI               TUIConfig                         `json:"tui"`
+	Permissions       PermissionsConfig                 `json:"permissions,omitempty"`
+	Mesnada           MesnadaConfig                     `json:"mesnada,omitempty"`
+	Shell             ShellConfig                       `json:"shell,omitempty"`
+	Bash              BashConfig                        `json:"bash,omitempty"`
+	AutoCompact       bool                              `json:"autoCompact,omitempty"`
+	Remembrances      RemembrancesConfig                `json:"remembrances,omitempty"`
+	Server            APIServerConfig                   `json:"server,omitempty"`
+	Lua               LuaConfig                         `json:"lua,omitempty"`
+	MCPGateway        MCPGatewayConfig                  `json:"mcpGateway,omitempty"`
+	InternalTools     InternalToolsConfig               `json:"internalTools,omitempty"`
+	Snapshots         SnapshotsConfig                   `json:"snapshots,omitempty"`
+	Evaluator         EvaluatorConfig                   `json:"evaluator,omitempty" toml:"evaluator"`
+	CLIAssist         CLIAssistConfig                   `json:"cliAssist,omitempty" toml:"cliAssist"`
+	PersonaAutoSelect PersonaAutoSelectConfig           `json:"personaAutoSelect,omitempty"`
+	ACP               ACPConfig                         `json:"acp,omitempty" toml:"acp"`
+	OpenLit           OpenLitConfig                     `json:"openlit,omitempty" toml:"OpenLit"`
 }
 
 // Application constants
@@ -2081,7 +2081,6 @@ func UpdateRemembrances(remembrancesCfg RemembrancesConfig) error {
 
 	return nil
 }
-
 
 // UpdateOpenLit updates OpenLit configuration and persists it to the config file.
 func UpdateOpenLit(openLitCfg OpenLitConfig) error {

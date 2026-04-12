@@ -45,12 +45,12 @@ type lspPresetAddedMsg struct {
 }
 
 type settingsPage struct {
-	width           int
-	height          int
-	app             *pandoapp.App
-	settings        settings.SettingsCmp
-	catalogDialog   *dialog.SkillsCatalogDialog
-	configChangeCh  chan config.ConfigChangeEvent
+	width          int
+	height         int
+	app            *pandoapp.App
+	settings       settings.SettingsCmp
+	catalogDialog  *dialog.SkillsCatalogDialog
+	configChangeCh chan config.ConfigChangeEvent
 }
 
 // waitForConfigChange returns a blocking tea.Cmd that resolves when an
@@ -1184,6 +1184,12 @@ func buildRemembrancesSection(cfg *config.Config) settings.Section {
 			Value: boolString(rem.KBAutoImport),
 		},
 		settings.Field{
+			Label: "Auto Index Sessions",
+			Key:   "remembrances.auto_index_sessions",
+			Type:  settings.FieldToggle,
+			Value: boolString(rem.AutoIndexSessions),
+		},
+		settings.Field{
 			Label: "Chunk Size",
 			Key:   "remembrances.chunk_size",
 			Type:  settings.FieldText,
@@ -1516,15 +1522,15 @@ func buildBashSection(cfg *config.Config) settings.Section {
 		Title: "Bash",
 		Fields: []settings.Field{
 			{
-				Label:    "Banned Commands",
-				Key:      "bash.bannedCommands",
-				Type:     settings.FieldText,
-				Value:    bannedValue,
+				Label: "Banned Commands",
+				Key:   "bash.bannedCommands",
+				Type:  settings.FieldText,
+				Value: bannedValue,
 			},
 			{
-				Label:    "Allowed Commands",
-				Key:      "bash.allowedCommands",
-				Type:     settings.FieldText,
+				Label: "Allowed Commands",
+				Key:   "bash.allowedCommands",
+				Type:  settings.FieldText,
 				Value: allowedValue,
 			},
 			{
@@ -1557,8 +1563,8 @@ func buildPersonaAutoSelectSection(cfg *config.Config) settings.Section {
 				Disabled: !pas.Enabled,
 			},
 			{
-				Label: "Info",
-				Key:   "personaAutoSelect.info",
+				Label:    "Info",
+				Key:      "personaAutoSelect.info",
 				Type:     settings.FieldText,
 				Value:    "Uses agents[\"persona-selector\"] model. Falls back to mesnada.orchestrator.personaPath when empty.",
 				Disabled: true,
@@ -2323,6 +2329,12 @@ func saveRemembrances(field settings.Field) error {
 			return fmt.Errorf("invalid KB auto import value: %w", err)
 		}
 		remCfg.KBAutoImport = autoImport
+	case "remembrances.auto_index_sessions":
+		autoIndex, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid auto index sessions value: %w", err)
+		}
+		remCfg.AutoIndexSessions = autoIndex
 	case "remembrances.chunk_size":
 		size, err := parseIntValue(field.Value)
 		if err != nil {
