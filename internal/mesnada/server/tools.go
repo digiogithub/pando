@@ -628,8 +628,8 @@ func (s *Server) getToolDefinitions() []Tool {
 					},
 					"model": map[string]interface{}{
 						"type":        "string",
-						"description": "AI model to use (optional; defaults to previous task model)",
-						"enum":        []string{"claude-sonnet-4.5", "claude-haiku-4.5", "claude-opus-4.5", "claude-sonnet-4", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5.1-codex-mini", "gpt-5-mini", "gpt-4.1", "gemini-3-pro-preview"},
+						"description": "AI model to use (optional; defaults to previous task model). Use fully qualified IDs like anthropic.claude-sonnet-4-5-20250929; Claude shorthands like sonnet/opus/haiku are also accepted where supported by the engine.",
+						"enum":        []string{"anthropic.claude-sonnet-4-5-20250929", "anthropic.claude-haiku-4-5-20251001", "anthropic.claude-opus-4-5-20251101", "anthropic.claude-sonnet-4-20250514", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5.1-codex-mini", "gpt-5-mini", "gpt-4.1", "gemini-3-pro-preview"},
 					},
 					"background": map[string]interface{}{
 						"type":        "boolean",

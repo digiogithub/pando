@@ -501,9 +501,16 @@ func (p *orchestratorPage) renderDetail() string {
 		fmt.Sprintf("Engine: %s", fallbackString(string(task.Engine), "-")),
 		fmt.Sprintf("Model: %s", fallbackString(task.Model, "-")),
 		fmt.Sprintf("Progress: %s", taskProgressLabel(task)),
+	}
+
+	if task.CurrentTool != "" {
+		lines = append(lines, fmt.Sprintf("Current Tool: %s", task.CurrentTool))
+	}
+
+	lines = append(lines,
 		fmt.Sprintf("WorkDir: %s", fallbackString(task.WorkDir, ".")),
 		fmt.Sprintf("Created: %s", formatTime(task.CreatedAt)),
-	}
+	)
 
 	if task.StartedAt != nil {
 		lines = append(lines, fmt.Sprintf("Started: %s", formatTime(*task.StartedAt)))
@@ -519,6 +526,39 @@ func (p *orchestratorPage) renderDetail() string {
 	}
 	if task.Error != "" {
 		lines = append(lines, "Error: "+task.Error)
+	}
+
+	if len(task.ToolCalls) > 0 {
+		lines = append(lines, "", "Tool Call History:")
+		for _, tc := range task.ToolCalls {
+			status := tc.Status
+			if status == "" {
+				status = "unknown"
+			}
+			title := tc.Title
+			if title == "" {
+				title = tc.Name
+			}
+			line := fmt.Sprintf("  [%s] %s", status, title)
+			if len(tc.Locations) > 0 {
+				line += fmt.Sprintf(" (%s)", strings.Join(tc.Locations, ", "))
+			}
+			lines = append(lines, line)
+
+			// Show arguments and diffs if in detail mode
+			if p.showDetail {
+				if len(tc.Arguments) > 0 {
+					for k, v := range tc.Arguments {
+						lines = append(lines, fmt.Sprintf("    %s: %v", k, v))
+					}
+				}
+				if len(tc.Diffs) > 0 {
+					for path, diff := range tc.Diffs {
+						lines = append(lines, fmt.Sprintf("    Diff for %s: %s", path, diff))
+					}
+				}
+			}
+		}
 	}
 
 	prompt := strings.TrimSpace(task.Prompt)

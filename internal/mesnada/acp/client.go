@@ -591,6 +591,30 @@ func (c *MesnadaACPClient) GetProgress() (int, string) {
 	return c.currentProgress, c.currentPlanDescription
 }
 
+// ExtractDiffsFromContent extracts file modification diffs from a slice of ToolCallContent.
+func (c *MesnadaACPClient) ExtractDiffsFromContent(content []acpsdk.ToolCallContent) map[string]string {
+	diffs := make(map[string]string)
+	for _, block := range content {
+		if block.Diff != nil {
+			path := block.Diff.Path
+			newText := block.Diff.NewText
+			oldText := ""
+			if block.Diff.OldText != nil {
+				oldText = *block.Diff.OldText
+			}
+
+			// For now, we just store the new text or a simple representation.
+			// In a real TUI we would compute a proper unified diff here.
+			if oldText == "" {
+				diffs[path] = fmt.Sprintf("Create file: %s (%d bytes)", path, len(newText))
+			} else {
+				diffs[path] = fmt.Sprintf("Modify file: %s (new length: %d bytes)", path, len(newText))
+			}
+		}
+	}
+	return diffs
+}
+
 // processAgentMessageChunk handles chunks of agent messages.
 func (c *MesnadaACPClient) processAgentMessageChunk(chunk *acpsdk.SessionUpdateAgentMessageChunk) {
 	// Extract text from content block
@@ -666,12 +690,16 @@ func (c *MesnadaACPClient) processToolCall(toolCall *acpsdk.SessionUpdateToolCal
 	}
 
 	info := ToolCallInfo{
+		ID:        string(toolCall.ToolCallId),
 		Name:      title,
 		Title:     title,
 		Kind:      string(toolCall.Kind),
 		Arguments: args,
+		RawInput:  toolCall.RawInput,
 		Locations: locations,
 		Status:    string(toolCall.Status),
+		Content:   toolCall.Content,
+		Diffs:     c.ExtractDiffsFromContent(toolCall.Content),
 	}
 	c.toolCalls[string(toolCall.ToolCallId)] = info
 
@@ -715,6 +743,7 @@ func (c *MesnadaACPClient) processToolCallUpdate(update *acpsdk.SessionToolCallU
 	}
 	// Update arguments if rawInput is provided (e.g., on the in_progress update).
 	if update.RawInput != nil {
+		info.RawInput = update.RawInput
 		if m, ok := update.RawInput.(map[string]interface{}); ok && len(m) > 0 {
 			info.Arguments = m
 		}
@@ -729,7 +758,12 @@ func (c *MesnadaACPClient) processToolCallUpdate(update *acpsdk.SessionToolCallU
 		info.Locations = locations
 	}
 	if update.RawOutput != nil {
+		info.RawOutput = update.RawOutput
 		info.Result = fmt.Sprintf("%v", update.RawOutput)
+	}
+	if len(update.Content) > 0 {
+		info.Content = update.Content
+		info.Diffs = c.ExtractDiffsFromContent(update.Content)
 	}
 	c.toolCalls[toolCallID] = info
 

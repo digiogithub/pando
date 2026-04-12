@@ -1823,12 +1823,13 @@ func WorkingDirectory() string {
 }
 
 func UpdateAgentModel(agentName AgentName, modelID models.ModelID) error {
-	return setAgentModel(agentName, modelID, true)
+	return setAgentModel(agentName, models.NormalizeModelID(string(modelID)), true)
 }
 
 // OverrideAgentModel updates the selected agent model only for the current
 // process. The change is kept in memory and is not persisted to the config file.
 func OverrideAgentModel(agentName AgentName, modelID models.ModelID) error {
+	modelID = models.NormalizeModelID(string(modelID))
 	if cfg == nil {
 		panic("config not loaded")
 	}

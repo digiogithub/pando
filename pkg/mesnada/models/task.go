@@ -100,12 +100,30 @@ type Task struct {
 	Timeout      Duration      `json:"timeout,omitempty"`
 	MCPConfig    string        `json:"mcp_config,omitempty"`
 	ExtraArgs    []string      `json:"extra_args,omitempty"`
-	Persona      string        `json:"persona,omitempty"`
+	Persona      string     `json:"persona,omitempty"`
 	// ACP-specific fields
-	ACPSessionID string     `json:"acp_session_id,omitempty"`
-	ACPMode      string     `json:"acp_mode,omitempty"`
-	ACPStatus    *ACPStatus `json:"acp_status,omitempty"`
+	ACPSessionID string      `json:"acp_session_id,omitempty"`
+	ACPMode      string      `json:"acp_mode,omitempty"`
+	ACPStatus    *ACPStatus  `json:"acp_status,omitempty"`
+	CurrentTool  string      `json:"current_tool,omitempty"`
+	ToolCalls    []*ToolCall `json:"tool_calls,omitempty"`
 }
+
+// ToolCall represents a single tool execution within a task.
+type ToolCall struct {
+	ID        string                 `json:"id"`
+	Name      string                 `json:"name"`
+	Title     string                 `json:"title"`
+	Kind      string                 `json:"kind"`
+	Arguments map[string]interface{} `json:"arguments,omitempty"`
+	Result    string                 `json:"result,omitempty"`
+	Status    string                 `json:"status"`
+	Locations []string               `json:"locations,omitempty"`
+	Diffs     map[string]string      `json:"diffs,omitempty"`
+	StartedAt time.Time              `json:"started_at"`
+	EndedAt   *time.Time             `json:"ended_at,omitempty"`
+}
+
 
 // Duration is a wrapper around time.Duration for JSON marshaling.
 type Duration time.Duration
@@ -150,6 +168,14 @@ func (t *Task) IsRunning() bool {
 // IsPending returns true if the task is pending execution.
 func (t *Task) IsPending() bool {
 	return t.Status == TaskStatusPending
+}
+
+// GetProgress returns the current progress percentage and description.
+func (t *Task) GetProgress() (int, string) {
+	if t.Progress == nil {
+		return 0, ""
+	}
+	return t.Progress.Percentage, t.Progress.Description
 }
 
 // TaskSummary provides a condensed view of a task for listing.

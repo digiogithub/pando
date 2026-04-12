@@ -82,11 +82,12 @@ func (bc BinaryContent) String(provider models.ModelProvider) string {
 func (BinaryContent) isPart() {}
 
 type ToolCall struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Input    string `json:"input"`
-	Type     string `json:"type"`
-	Finished bool   `json:"finished"`
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Input            string `json:"input"`
+	Type             string `json:"type"`
+	Finished         bool   `json:"finished"`
+	ThoughtSignature []byte `json:"thought_signature,omitempty"`
 }
 
 func (ToolCall) isPart() {}

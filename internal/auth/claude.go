@@ -443,8 +443,8 @@ func SaveClaudeCredentials(creds *ClaudeCredentials) error {
 // LoadClaudeCredentials loads Claude credentials with the following priority:
 //  1. CLAUDE_CODE_OAUTH_TOKEN env var → synthetic credentials
 //  2. ANTHROPIC_API_KEY env var → nil (API key mode)
-//  3. ~/.config/pando/auth/claude.json (pando's own store)
-//  4. ~/.claude/.credentials.json (read-only fallback from Claude Code)
+//  3. ~/.claude/.credentials.json (preferred read-only source from Claude Code)
+//  4. ~/.config/pando/auth/claude.json (pando's own store fallback)
 //
 // Returns (creds, source, error) where source is "env", "pando", or "claude-code".
 func LoadClaudeCredentials() (*ClaudeCredentials, string, error) {
@@ -464,18 +464,7 @@ func LoadClaudeCredentials() (*ClaudeCredentials, string, error) {
 		return nil, "env", nil
 	}
 
-	// 3. Try pando's own credential file.
-	pandoPath, err := claudeCredentialFilePath()
-	if err == nil {
-		if data, readErr := os.ReadFile(pandoPath); readErr == nil {
-			var creds ClaudeCredentials
-			if jsonErr := json.Unmarshal(data, &creds); jsonErr == nil && creds.ClaudeAiOauth != nil && creds.ClaudeAiOauth.AccessToken != "" {
-				return &creds, "pando", nil
-			}
-		}
-	}
-
-	// 4. Try Claude Code's own credentials file (~/.claude/.credentials.json).
+	// 3. Try Claude Code's own credentials file (~/.claude/.credentials.json).
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
 		claudeCodePath := filepath.Join(homeDir, ".claude", claudeCodeCredentialFile)
@@ -483,6 +472,17 @@ func LoadClaudeCredentials() (*ClaudeCredentials, string, error) {
 			var creds ClaudeCredentials
 			if jsonErr := json.Unmarshal(data, &creds); jsonErr == nil && creds.ClaudeAiOauth != nil && creds.ClaudeAiOauth.AccessToken != "" {
 				return &creds, "claude-code", nil
+			}
+		}
+	}
+
+	// 4. Try pando's own credential file.
+	pandoPath, err := claudeCredentialFilePath()
+	if err == nil {
+		if data, readErr := os.ReadFile(pandoPath); readErr == nil {
+			var creds ClaudeCredentials
+			if jsonErr := json.Unmarshal(data, &creds); jsonErr == nil && creds.ClaudeAiOauth != nil && creds.ClaudeAiOauth.AccessToken != "" {
+				return &creds, "pando", nil
 			}
 		}
 	}

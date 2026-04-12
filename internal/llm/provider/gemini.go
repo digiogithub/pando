@@ -91,7 +91,9 @@ func (g *geminiClient) convertMessages(messages []message.Message) []*genai.Cont
 						FunctionCall: &genai.FunctionCall{
 							Name: call.Name,
 							Args: args,
+							ID:   call.ID,
 						},
+						ThoughtSignature: call.ThoughtSignature,
 					})
 				}
 			}
@@ -180,12 +182,19 @@ func (g *geminiClient) buildThinkingConfig() *genai.ThinkingConfig {
 	model := strings.ToLower(strings.TrimPrefix(g.providerOptions.model.APIModel, "models/"))
 
 	switch {
-	case strings.HasPrefix(model, "gemini-3"):
+	case strings.HasPrefix(model, "gemini-3") && !strings.Contains(model, "flash") && !strings.Contains(model, "lite"):
+		// Gemini 3 Pro models support ThinkingLevel.
 		return &genai.ThinkingConfig{
 			IncludeThoughts: true,
 			ThinkingLevel:   genai.ThinkingLevelHigh,
 		}
-	case strings.HasPrefix(model, "gemini-2.5"):
+	case strings.HasPrefix(model, "gemini-3"):
+		// Gemini 3 Flash / Flash-Lite models use a thinking budget like 2.5.
+		return &genai.ThinkingConfig{
+			IncludeThoughts: true,
+			ThinkingBudget:  int32Ptr(8192),
+		}
+	case strings.HasPrefix(model, "gemini-2.5") && !strings.Contains(model, "flash-lite"):
 		return &genai.ThinkingConfig{
 			IncludeThoughts: true,
 			ThinkingBudget:  int32Ptr(2000),
@@ -263,11 +272,12 @@ func (g *geminiClient) send(ctx context.Context, messages []message.Message, too
 					id := "call_" + uuid.New().String()
 					args, _ := json.Marshal(part.FunctionCall.Args)
 					toolCalls = append(toolCalls, message.ToolCall{
-						ID:       id,
-						Name:     part.FunctionCall.Name,
-						Input:    string(args),
-						Type:     "function",
-						Finished: true,
+						ID:               coalesceString(part.FunctionCall.ID, id),
+						Name:             part.FunctionCall.Name,
+						Input:            string(args),
+						Type:             "function",
+						Finished:         true,
+						ThoughtSignature: cloneBytes(part.ThoughtSignature),
 					})
 				}
 			}
@@ -404,11 +414,12 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 							id := "call_" + uuid.New().String()
 							args, _ := json.Marshal(part.FunctionCall.Args)
 							newCall := message.ToolCall{
-								ID:       id,
-								Name:     part.FunctionCall.Name,
-								Input:    string(args),
-								Type:     "function",
-								Finished: true,
+								ID:               coalesceString(part.FunctionCall.ID, id),
+								Name:             part.FunctionCall.Name,
+								Input:            string(args),
+								Type:             "function",
+								Finished:         true,
+								ThoughtSignature: cloneBytes(part.ThoughtSignature),
 							}
 
 							isNew := true
@@ -504,10 +515,11 @@ func (g *geminiClient) toolCalls(resp *genai.GenerateContentResponse) []message.
 				id := "call_" + uuid.New().String()
 				args, _ := json.Marshal(part.FunctionCall.Args)
 				toolCalls = append(toolCalls, message.ToolCall{
-					ID:    id,
-					Name:  part.FunctionCall.Name,
-					Input: string(args),
-					Type:  "function",
+					ID:               coalesceString(part.FunctionCall.ID, id),
+					Name:             part.FunctionCall.Name,
+					Input:            string(args),
+					Type:             "function",
+					ThoughtSignature: cloneBytes(part.ThoughtSignature),
 				})
 			}
 		}
@@ -771,6 +783,22 @@ func visibleTextParts(parts []*genai.Part) []string {
 
 func joinVisibleTextParts(parts []*genai.Part) string {
 	return strings.Join(visibleTextParts(parts), "")
+}
+
+func cloneBytes(src []byte) []byte {
+	if len(src) == 0 {
+		return nil
+	}
+	cloned := make([]byte, len(src))
+	copy(cloned, src)
+	return cloned
+}
+
+func coalesceString(value, fallback string) string {
+	if value != "" {
+		return value
+	}
+	return fallback
 }
 
 func int32Ptr(v int32) *int32 {

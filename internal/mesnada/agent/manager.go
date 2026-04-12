@@ -26,7 +26,7 @@ type Manager struct {
 }
 
 // NewManager creates a new agent manager.
-func NewManager(cfg *mesnadaconfig.Config, logDir string, onComplete func(task *models.Task)) *Manager {
+func NewManager(cfg *mesnadaconfig.Config, logDir string, onComplete func(task *models.Task), onProgress func(taskID string, percentage int, description string) error) *Manager {
 	m := &Manager{
 		copilotSpawner:        NewCopilotSpawner(logDir, onComplete),
 		claudeSpawner:         NewClaudeSpawner(logDir, onComplete),
@@ -40,7 +40,7 @@ func NewManager(cfg *mesnadaconfig.Config, logDir string, onComplete func(task *
 
 	// Initialize ACP spawner if enabled in config
 	if cfg != nil && cfg.ACP.Enabled {
-		m.acpSpawner = NewACPSpawner(&cfg.ACP, logDir, onComplete)
+		m.acpSpawner = NewACPSpawner(&cfg.ACP, logDir, onComplete, onProgress)
 	}
 
 	return m

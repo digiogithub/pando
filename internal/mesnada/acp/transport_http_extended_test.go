@@ -1,6 +1,7 @@
 package acp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -322,8 +323,12 @@ func TestReadJSONRPCResponse_MultipleReads(t *testing.T) {
 		chunk: 5, // Read 5 bytes at a time
 	}
 
+	session := &httpSession{
+		eventCh: make(chan []byte, 10),
+	}
+
 	transport := &HTTPTransport{}
-	response, err := transport.readJSONRPCResponse(reader)
+	response, err := transport.readJSONRPCResponse(session, bufio.NewReader(reader))
 	if err != nil {
 		t.Fatalf("Failed to read response: %v", err)
 	}

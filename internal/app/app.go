@@ -234,8 +234,21 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			// Initialize ACP handler if ACP server is enabled
 			var acpHandler *mesnadaServer.ACPHandler
 			if mesnadaCfg.AppConfig != nil && mesnadaCfg.AppConfig.ACP.Server.Enabled {
-				// Import ACP package
-				acpAgent := mesnadaACP.NewSimpleACPAgent(version.Version, nil)
+				// Build ACP agent adapters so PandoACPAgent can use the live app services
+				// without causing import cycles (the ACP package defines narrow interfaces).
+				agentAdapter := &appACPAgentAdapter{svc: app.CoderAgent}
+				sessionAdapter := &appACPSessionAdapter{svc: app.Sessions}
+				permAdapter := &appACPPermissionAdapter{svc: app.Permissions}
+
+				cwd, _ := os.Getwd()
+				acpAgent := mesnadaACP.NewPandoACPAgent(
+					version.Version,
+					cwd,
+					nil,
+					agentAdapter,
+					sessionAdapter,
+					permAdapter,
+				)
 
 				// Parse session timeout
 				sessionTimeout := 30 * time.Minute
@@ -974,4 +987,141 @@ func (app *App) Shutdown() {
 		_ = app.openlitShutdown(ctx)
 	}
 	logging.Debug("App shutdown completed")
+}
+
+// ---------------------------------------------------------------------------
+// ACP adapter types — bridge app services to the narrow interfaces that
+// PandoACPAgent requires, avoiding import cycles between mesnada/acp and
+// internal/llm/agent, internal/session, and internal/permission.
+// ---------------------------------------------------------------------------
+
+type appACPAgentAdapter struct{ svc agent.Service }
+
+func (a *appACPAgentAdapter) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan mesnadaACP.AgentEvent, error) {
+	realCh, err := a.svc.Run(ctx, sessionID, content, attachments...)
+	if err != nil {
+		return nil, err
+	}
+	acpCh := make(chan mesnadaACP.AgentEvent)
+	go func() {
+		defer close(acpCh)
+		for ev := range realCh {
+			var acpEv mesnadaACP.AgentEvent
+			switch ev.Type {
+			case agent.AgentEventTypeError:
+				acpEv.Type = mesnadaACP.AgentEventTypeError
+				acpEv.Error = ev.Error
+			case agent.AgentEventTypeResponse:
+				acpEv.Type = mesnadaACP.AgentEventTypeResponse
+				acpEv.Message = ev.Message
+			case agent.AgentEventTypeSummarize:
+				acpEv.Type = mesnadaACP.AgentEventTypeSummarize
+			case agent.AgentEventTypeContentDelta:
+				acpEv.Type = mesnadaACP.AgentEventTypeContentDelta
+				acpEv.Delta = ev.Delta
+			case agent.AgentEventTypeThinkingDelta:
+				acpEv.Type = mesnadaACP.AgentEventTypeThinkingDelta
+				acpEv.Delta = ev.Delta
+			case agent.AgentEventTypeToolCall:
+				acpEv.Type = mesnadaACP.AgentEventTypeToolCall
+				acpEv.ToolCall = ev.ToolCall
+			case agent.AgentEventTypeToolResult:
+				acpEv.Type = mesnadaACP.AgentEventTypeToolResult
+				acpEv.ToolResult = ev.ToolResult
+			default:
+				continue
+			}
+			select {
+			case acpCh <- acpEv:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return acpCh, nil
+}
+
+func (a *appACPAgentAdapter) Cancel(sessionID string) { a.svc.Cancel(sessionID) }
+
+func (a *appACPAgentAdapter) CurrentModelID() string { return string(a.svc.Model().ID) }
+
+func (a *appACPAgentAdapter) AvailableModels() []mesnadaACP.ACPModelInfo {
+	all := models.GetAllModels()
+	result := make([]mesnadaACP.ACPModelInfo, 0, len(all))
+	for _, m := range all {
+		result = append(result, mesnadaACP.ACPModelInfo{ID: string(m.ID), Name: m.Name})
+	}
+	return result
+}
+
+func (a *appACPAgentAdapter) SetModelOverride(modelID string) error {
+	if modelID == "" {
+		return nil
+	}
+	return config.OverrideAgentModel(config.AgentCoder, models.ModelID(modelID))
+}
+
+func (a *appACPAgentAdapter) ListPersonas() []string   { return agent.ListAvailablePersonas() }
+func (a *appACPAgentAdapter) GetActivePersona() string  { return agent.GetActivePersona() }
+func (a *appACPAgentAdapter) SetActivePersona(name string) error { return agent.SetActivePersona(name) }
+
+// ---------------------------------------------------------------------------
+
+type appACPSessionAdapter struct{ svc session.Service }
+
+func (a *appACPSessionAdapter) CreateSession(ctx context.Context, title string) (string, error) {
+	sess, err := a.svc.Create(ctx, title)
+	if err != nil {
+		return "", err
+	}
+	return sess.ID, nil
+}
+
+func (a *appACPSessionAdapter) GetSession(ctx context.Context, id string) (mesnadaACP.ACPSessionInfo, error) {
+	sess, err := a.svc.Get(ctx, id)
+	if err != nil {
+		return mesnadaACP.ACPSessionInfo{}, err
+	}
+	return mesnadaACP.ACPSessionInfo{ID: sess.ID, Title: sess.Title, UpdatedAt: sess.UpdatedAt}, nil
+}
+
+func (a *appACPSessionAdapter) ListSessions(ctx context.Context) ([]mesnadaACP.ACPSessionInfo, error) {
+	sessions, err := a.svc.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]mesnadaACP.ACPSessionInfo, len(sessions))
+	for i, s := range sessions {
+		result[i] = mesnadaACP.ACPSessionInfo{ID: s.ID, Title: s.Title, UpdatedAt: s.UpdatedAt}
+	}
+	return result, nil
+}
+
+// ---------------------------------------------------------------------------
+
+type appACPPermissionAdapter struct{ svc permission.Service }
+
+func (a *appACPPermissionAdapter) AutoApproveSession(sessionID string) {
+	a.svc.AutoApproveSession(sessionID)
+}
+
+func (a *appACPPermissionAdapter) RemoveAutoApproveSession(sessionID string) {
+	a.svc.RemoveAutoApproveSession(sessionID)
+}
+
+func (a *appACPPermissionAdapter) RegisterSessionHandler(sessionID string, handler func(req mesnadaACP.PermissionRequestData) bool) {
+	a.svc.RegisterSessionHandler(sessionID, func(req permission.CreatePermissionRequest) bool {
+		return handler(mesnadaACP.PermissionRequestData{
+			SessionID:   req.SessionID,
+			ToolName:    req.ToolName,
+			Description: req.Description,
+			Action:      req.Action,
+			Path:        req.Path,
+			Params:      req.Params,
+		})
+	})
+}
+
+func (a *appACPPermissionAdapter) UnregisterSessionHandler(sessionID string) {
+	a.svc.UnregisterSessionHandler(sessionID)
 }

@@ -53,16 +53,19 @@ func newAnthropicClient(opts providerClientOptions) AnthropicClient {
 	}
 
 	anthropicClientOptions := []option.RequestOption{}
+	anthropicBetaHeader := "claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"
 	if opts.apiKey != "" {
 		anthropicClientOptions = append(anthropicClientOptions, option.WithAPIKey(opts.apiKey))
-		// Enable Anthropic beta features (matches claude-code-cli behaviour).
-		anthropicClientOptions = append(anthropicClientOptions, option.WithHeader("anthropic-beta",
-			"claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"))
+		anthropicClientOptions = append(anthropicClientOptions,
+			option.WithHeader("anthropic-beta", anthropicBetaHeader),
+			option.WithHeader("User-Agent", "claude-cli/1.0.0 pando/1.0"),
+		)
 	} else if anthropicOpts.oauthToken != "" {
 		anthropicClientOptions = append(anthropicClientOptions, option.WithAuthToken(anthropicOpts.oauthToken))
-		// Combine OAuth beta with Anthropic beta feature identifiers.
-		anthropicClientOptions = append(anthropicClientOptions, option.WithHeader("anthropic-beta",
-			auth.ClaudeOAuthBetaHeader+",claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"))
+		anthropicClientOptions = append(anthropicClientOptions,
+			option.WithHeader("anthropic-beta", auth.ClaudeOAuthBetaHeader+","+anthropicBetaHeader),
+			option.WithHeader("User-Agent", "claude-cli/1.0.0 pando/1.0"),
+		)
 	}
 	if anthropicOpts.useBedrock {
 		anthropicClientOptions = append(anthropicClientOptions, bedrock.WithLoadDefaultConfig(context.Background()))

@@ -56,10 +56,11 @@ type ACPSpawner struct {
 	processes  map[string]*ACPProcess
 	mu         sync.RWMutex
 	onComplete func(task *models.Task)
+	onProgress func(taskID string, percentage int, description string) error
 }
 
 // NewACPSpawner creates a new spawner for ACP agents.
-func NewACPSpawner(acpConfig *mesnadaconfig.ACPConfig, logDir string, onComplete func(task *models.Task)) *ACPSpawner {
+func NewACPSpawner(acpConfig *mesnadaconfig.ACPConfig, logDir string, onComplete func(task *models.Task), onProgress func(taskID string, percentage int, description string) error) *ACPSpawner {
 	if logDir == "" {
 		home, _ := os.UserHomeDir()
 		logDir = filepath.Join(home, defaultLogDir)
@@ -74,6 +75,7 @@ func NewACPSpawner(acpConfig *mesnadaconfig.ACPConfig, logDir string, onComplete
 		logDir:     logDir,
 		processes:  make(map[string]*ACPProcess),
 		onComplete: onComplete,
+		onProgress: onProgress,
 	}
 }
 
@@ -141,6 +143,67 @@ func (s *ACPSpawner) Spawn(ctx context.Context, task *models.Task) error {
 		if update.MessageText != "" {
 			output.WriteString(update.MessageText)
 		}
+
+		// Handle tool calls for real-time progress reporting
+		if update.ToolCall != nil {
+			tc := update.ToolCall
+			task.CurrentTool = tc.Title
+			if task.CurrentTool == "" {
+				task.CurrentTool = tc.Name
+			}
+
+			// Update or add to tool call history
+			var found bool
+			for _, existing := range task.ToolCalls {
+				if existing.ID == tc.ID {
+					existing.Status = tc.Status
+					existing.Result = tc.Result
+					existing.Arguments = tc.Arguments
+					existing.Locations = tc.Locations
+					existing.Diffs = tc.Diffs
+					if tc.Status == "completed" || tc.Status == "failed" {
+						now := time.Now()
+						existing.EndedAt = &now
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				task.ToolCalls = append(task.ToolCalls, &models.ToolCall{
+					ID:        tc.ID,
+					Name:      tc.Name,
+					Title:     tc.Title,
+					Kind:      tc.Kind,
+					Arguments: tc.Arguments,
+					Status:    tc.Status,
+					Locations: tc.Locations,
+					Diffs:     tc.Diffs,
+					StartedAt: time.Now(),
+				})
+			}
+
+			// Report progress via callback if available
+			if s.onProgress != nil {
+				percentage, _ := task.GetProgress()
+				description := task.CurrentTool
+				if update.ToolCall.Status != "" {
+					description = fmt.Sprintf("[%s] %s", update.ToolCall.Status, description)
+				}
+				if err := s.onProgress(task.ID, percentage, description); err != nil {
+					fmt.Fprintf(logFile, "[ACP] Warning: progress update failed: %v\n", err)
+				}
+			}
+			}
+
+			// Handle plan updates for progress reporting
+			if update.Plan != "" && s.onProgress != nil {
+			percentage, _ := task.GetProgress()
+			if err := s.onProgress(task.ID, percentage, update.Plan); err != nil {
+				fmt.Fprintf(logFile, "[ACP] Warning: progress update failed: %v\n", err)
+			}
+			}
+
 	}
 
 	client := acp.NewMesnadaACPClient(task.ID, task.WorkDir, logFile, onUpdate)

@@ -84,9 +84,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 				name = m.ID
 			}
 
-			// Register the model in SupportedModels using the raw ID so that
-			// handleSetActiveModel can find it when the web-ui sends the model ID back.
-			modelID := models.ModelID(m.ID)
+			modelID := models.NormalizeModelID(m.ID)
 			if _, exists := models.SupportedModels[modelID]; !exists {
 				contextWindow := m.ContextWindow
 				if contextWindow <= 0 {
@@ -107,7 +105,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			}
 
 			result = append(result, ModelInfo{
-				ID:          m.ID,
+				ID:          string(modelID),
 				Name:        name,
 				Provider:    string(provider),
 				Description: m.Description,

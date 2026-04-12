@@ -1,6 +1,7 @@
 package acp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -46,9 +47,10 @@ type httpSession struct {
 	mu        sync.Mutex
 
 	// For bridging HTTP to ACP SDK connection
-	reqPipe  *io.PipeWriter
-	respPipe *io.PipeReader
-	conn     *acpsdk.AgentSideConnection
+	reqPipe    *io.PipeWriter
+	respReader *bufio.Reader // buffered reader over the response pipe
+	respPipe   *io.PipeReader
+	conn       *acpsdk.AgentSideConnection
 }
 
 // HTTPTransportConfig holds configuration for the HTTP transport.
@@ -169,9 +171,9 @@ func (t *HTTPTransport) HandleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read response from the pipe (this comes from the ACP SDK connection)
-	// We need to read until we get a complete JSON-RPC response
-	response, err := t.readJSONRPCResponse(session.respPipe)
+	// Read response from the pipe. Notifications that arrive before the
+	// actual response are automatically routed to the SSE eventCh.
+	response, err := t.readJSONRPCResponse(session, session.respReader)
 	if err != nil {
 		t.logger.Printf("[ACP HTTP] Error reading response: %v", err)
 		t.writeError(w, sessionID, -32603, "Internal error", err.Error())
@@ -276,6 +278,7 @@ func (t *HTTPTransport) getOrCreateSession(sessionID string) (*httpSession, erro
 
 	session.reqPipe = reqWriter
 	session.respPipe = respReader
+	session.respReader = bufio.NewReaderSize(respReader, 256*1024)
 
 	// Create ACP SDK connection
 	// Agent writes responses to respWriter, reads requests from reqReader
@@ -293,30 +296,59 @@ func (t *HTTPTransport) getOrCreateSession(sessionID string) (*httpSession, erro
 	return session, nil
 }
 
-// readJSONRPCResponse reads a complete JSON-RPC response from the pipe.
-func (t *HTTPTransport) readJSONRPCResponse(r io.Reader) ([]byte, error) {
-	// Read until we get a complete JSON object
-	// The ACP SDK writes newline-delimited JSON
-	buf := &bytes.Buffer{}
-	tempBuf := make([]byte, 4096)
-
+// readJSONRPCResponse reads newline-delimited JSON messages from the SDK pipe.
+// The ACP SDK writes both JSON-RPC responses (with "id") and notifications
+// (without "id", e.g. session/update) to the same writer. This method reads
+// messages one by one, routing notifications to the SSE eventCh and returning
+// only the actual JSON-RPC response to the caller.
+func (t *HTTPTransport) readJSONRPCResponse(session *httpSession, r *bufio.Reader) ([]byte, error) {
 	for {
-		n, err := r.Read(tempBuf)
+		line, err := r.ReadBytes('\n')
 		if err != nil {
 			return nil, err
 		}
 
-		buf.Write(tempBuf[:n])
-
-		// Check if we have a complete JSON object
-		// Look for newline which indicates end of JSON-RPC message
-		if bytes.Contains(tempBuf[:n], []byte{'\n'}) {
-			break
+		trimmed := bytes.TrimSpace(line)
+		if len(trimmed) == 0 {
+			continue
 		}
-	}
 
-	// Return without the trailing newline
-	return bytes.TrimSpace(buf.Bytes()), nil
+		// Quick check: is this a response (has "id") or a notification?
+		if isJSONRPCNotification(trimmed) {
+			// Route to SSE channel for connected clients.
+			session.mu.Lock()
+			closed := session.closed
+			session.mu.Unlock()
+			if !closed {
+				select {
+				case session.eventCh <- trimmed:
+				default:
+					t.logger.Printf("[ACP HTTP] SSE event buffer full, dropping notification")
+				}
+			}
+			continue
+		}
+
+		// This is a JSON-RPC response — return it.
+		return trimmed, nil
+	}
+}
+
+// isJSONRPCNotification returns true if the raw JSON is a JSON-RPC notification
+// (has "method" but no "id" field, or has "id": null).
+func isJSONRPCNotification(data []byte) bool {
+	var probe struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return false
+	}
+	// Notifications have method but no id (or null id).
+	if probe.Method != "" && (len(probe.ID) == 0 || string(probe.ID) == "null") {
+		return true
+	}
+	return false
 }
 
 // writeError writes a JSON-RPC error response.

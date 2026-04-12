@@ -27,8 +27,8 @@ AutoCompact = true
 AutoCompactThreshold = 0.0
 
 [Agents.coder]
-Model = 'z-ai/glm-5.1'
-MaxTokens = 4096
+Model = 'gemini.gemini-3-flash-preview'
+MaxTokens = 8192
 ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false

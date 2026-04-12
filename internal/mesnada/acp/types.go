@@ -101,6 +101,9 @@ type SessionUpdateInfo struct {
 
 // ToolCallInfo represents information about a tool call from the ACP agent.
 type ToolCallInfo struct {
+	// ID is the unique identifier for this tool call
+	ID string
+
 	// Name is the name of the tool being called
 	Name string
 
@@ -121,4 +124,16 @@ type ToolCallInfo struct {
 
 	// Title is the rendered title shown by ACP clients
 	Title string
+
+	// Content contains rich content blocks for the tool call (e.g. diffs, text)
+	Content []acpsdk.ToolCallContent
+
+	// Diffs contains extracted file modification diffs for quick access
+	Diffs map[string]string
+
+	// RawInput is the original input to the tool
+	RawInput interface{}
+
+	// RawOutput is the original output from the tool
+	RawOutput interface{}
 }

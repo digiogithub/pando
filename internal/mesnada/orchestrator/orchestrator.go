@@ -81,7 +81,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		cancel:           cancel,
 	}
 
-	o.manager = agent.NewManager(cfg.AppConfig, cfg.LogDir, o.onTaskComplete)
+	o.manager = agent.NewManager(cfg.AppConfig, cfg.LogDir, o.onTaskComplete, o.SetProgress)
 
 	return o, nil
 }

@@ -115,11 +115,11 @@ func DefaultConfig() *Config {
 	mesnadaDir := filepath.Join(home, ".mesnada")
 
 	return &Config{
-		DefaultModel: "claude-sonnet-4.5",
+		DefaultModel: "anthropic.claude-sonnet-4-5-20250929",
 		Models: []ModelConfig{
-			{ID: "claude-sonnet-4.5", Description: "Balanced performance and speed for general tasks"},
-			{ID: "claude-opus-4.5", Description: "Highest capability for complex reasoning and analysis"},
-			{ID: "claude-haiku-4.5", Description: "Fast responses for simple tasks and quick iterations"},
+			{ID: "anthropic.claude-sonnet-4-5-20250929", Description: "Balanced performance and speed for general tasks"},
+			{ID: "anthropic.claude-opus-4-5-20251101", Description: "Highest capability for complex reasoning and analysis"},
+			{ID: "anthropic.claude-haiku-4-5-20251001", Description: "Fast responses for simple tasks and quick iterations"},
 			{ID: "gpt-5.1-codex-max", Description: "Advanced coding capabilities with extended context"},
 			{ID: "gpt-5.1-codex", Description: "Optimized for code generation and refactoring"},
 			{ID: "gpt-5.2", Description: "Latest GPT model with improved reasoning"},

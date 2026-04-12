@@ -526,11 +526,19 @@ func (a *PandoACPAgent) processPromptWithAgent(
 		case AgentEventTypeToolCall:
 			if event.ToolCall != nil {
 				tc := event.ToolCall
-				// Store input for ALL tools so we can send rawInput in the tool result.
-				// For edit tools this is also used by sendWriteTextFile (6a).
+				// Always update the stored input; for edit tools sendWriteTextFile also reads it.
 				a.pendingToolCallsMu.Lock()
 				a.pendingToolCalls[tc.ID] = tc.Input
 				a.pendingToolCallsMu.Unlock()
+
+				// The agent emits AgentEventTypeToolCall TWICE per tool:
+				//   1. ToolUseStart (Finished=false) — input is incomplete/streaming
+				//   2. ToolUseStop  (Finished=true)  — input is fully assembled
+				//
+				// Send exactly one ACP event per phase to avoid duplicate tool_call
+				// messages that confuse client-side state machines (e.g. Zed):
+				//   • ToolUseStart  → tool_call(pending)         — registers the entry
+				//   • ToolUseStop   → tool_call_update(in_progress) — updates with complete input
 
 				kind := mapToolKind(tc.Name)
 				rawInput := parseJSONInput(tc.Input)
@@ -538,37 +546,47 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				content := toolCallContent(tc.Name, rawInput)
 				locations := toLocations(tc.Name, tc.Input)
 
-				// Send the initial tool_call with the real title/kind/rawInput so clients
-				// can register and render the tool immediately without depending on a
-				// near-simultaneous update that may arrive out of order.
-				pendingUpdate := acpsdk.StartToolCall(
-					acpsdk.ToolCallId(tc.ID),
-					title,
-					acpsdk.WithStartKind(kind),
-					acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
-					acpsdk.WithStartRawInput(rawInput),
-				)
-				if err := acpSession.SendUpdate(pendingUpdate); err != nil {
-					a.logger.Printf("[ACP AGENT] Failed to send tool call pending: %v", err)
+				toolMeta := map[string]any{
+					"pando": map[string]any{"toolName": tc.Name},
+				}
+				if isBashTool(tc.Name) {
+					toolMeta["terminal_info"] = map[string]any{"terminal_id": tc.ID}
+					content = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(tc.ID)}
 				}
 
-				// Move the tool to in_progress after the initial registration event.
-				inProgressOpts := []acpsdk.ToolCallUpdateOpt{
-					acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
-					acpsdk.WithUpdateKind(kind),
-					acpsdk.WithUpdateTitle(title),
-					acpsdk.WithUpdateRawInput(rawInput),
-					acpsdk.WithUpdateContent(content),
-				}
-				// Attach file/directory locations for all tool types so editors can show
-				// which file or path is being accessed while the tool runs.
-				// This mirrors opencode's toLocations() behaviour.
-				if len(locations) > 0 {
-					inProgressOpts = append(inProgressOpts, acpsdk.WithUpdateLocations(locations))
-				}
-				inProgressUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tc.ID), inProgressOpts...)
-				if err := acpSession.SendUpdate(inProgressUpdate); err != nil {
-					a.logger.Printf("[ACP AGENT] Failed to send tool call in_progress: %v", err)
+				if !tc.Finished {
+					// ToolUseStart: register the tool call entry as pending.
+					startUpdate := acpsdk.StartToolCall(
+						acpsdk.ToolCallId(tc.ID),
+						title,
+						acpsdk.WithStartKind(kind),
+						acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
+					)
+					if startUpdate.ToolCall != nil {
+						startUpdate.ToolCall.Meta = toolMeta
+					}
+					if err := acpSession.SendUpdate(startUpdate); err != nil {
+						a.logger.Printf("[ACP AGENT] Failed to send tool call pending: %v", err)
+					}
+				} else {
+					// ToolUseStop: input is complete — move to in_progress with full data.
+					inProgressOpts := []acpsdk.ToolCallUpdateOpt{
+						acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
+						acpsdk.WithUpdateKind(kind),
+						acpsdk.WithUpdateTitle(title),
+						acpsdk.WithUpdateRawInput(rawInput),
+						acpsdk.WithUpdateContent(content),
+					}
+					if len(locations) > 0 {
+						inProgressOpts = append(inProgressOpts, acpsdk.WithUpdateLocations(locations))
+					}
+					inProgressUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tc.ID), inProgressOpts...)
+					if inProgressUpdate.ToolCallUpdate != nil {
+						inProgressUpdate.ToolCallUpdate.Meta = toolMeta
+					}
+					if err := acpSession.SendUpdate(inProgressUpdate); err != nil {
+						a.logger.Printf("[ACP AGENT] Failed to send tool call in_progress: %v", err)
+					}
 				}
 			}
 
@@ -607,19 +625,15 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				}
 
 				// Use ToolCallContent so editors display the output correctly.
-				// The ACP TypeScript SDK clients (VS Code, Zed, JetBrains) render
-				// content entries; rawOutput is used as structured fallback.
 				outputContent := toolResultContent(tr.Name, tr.Content, tr.IsError)
 
-				// For edit tools, also attach a diff content block so editors can display
-				// exactly what changed. write uses Content (full file); edit uses OldString/NewString.
+				// For edit tools, attach a diff content block for visual diffs.
 				if isEditTool(tr.Name) && !tr.IsError && storedInput != "" {
 					var ep editToolInput
 					if jerr := json.Unmarshal([]byte(storedInput), &ep); jerr == nil && ep.FilePath != "" {
 						if tr.Name == "write" {
 							outputContent = append(outputContent, acpsdk.ToolDiffContent(ep.FilePath, ep.Content))
 						} else {
-							// edit / multiedit: pass oldText so the client can render a proper diff
 							outputContent = append(outputContent, acpsdk.ToolDiffContent(ep.FilePath, ep.NewString, ep.OldString))
 						}
 					}
@@ -627,6 +641,64 @@ func (a *PandoACPAgent) processPromptWithAgent(
 
 				kind := mapToolKind(tr.Name)
 				title := toolDisplayTitle(tr.Name, rawInput, acpSession.WorkDir)
+
+				// Build _meta for the result update.
+				resultMeta := map[string]any{
+					"pando": map[string]any{
+						"toolName": tr.Name,
+					},
+				}
+
+				// For Bash tools, send terminal_output + terminal_exit via _meta
+				// so editors can display the output in their terminal widgets.
+				// This matches claude-agent-acp's streaming lifecycle:
+				//   1. tool_call       → _meta.terminal_info  (sent above in ToolCall)
+				//   2. tool_call_update → _meta.terminal_output (sent here)
+				//   3. tool_call_update → _meta.terminal_exit   (sent here)
+				if isBashTool(tr.Name) {
+					// Step 2: send terminal_output as a separate notification.
+					termOutput := strings.TrimSpace(tr.Content)
+					if termOutput != "" {
+						termOutputMeta := map[string]any{
+							"terminal_output": map[string]any{
+								"terminal_id": tr.ToolCallID,
+								"data":        termOutput,
+							},
+						}
+						termOutputUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tr.ToolCallID))
+						if termOutputUpdate.ToolCallUpdate != nil {
+							termOutputUpdate.ToolCallUpdate.Meta = termOutputMeta
+							termOutputUpdate.ToolCallUpdate.Content = []acpsdk.ToolCallContent{
+								acpsdk.ToolTerminalRef(tr.ToolCallID),
+							}
+						}
+						if err := acpSession.SendUpdate(termOutputUpdate); err != nil {
+							a.logger.Printf("[ACP AGENT] Failed to send terminal output: %v", err)
+						}
+					}
+
+					// Step 3: attach terminal_exit to the final result update.
+					exitCode := 0
+					if tr.IsError {
+						exitCode = 1
+					}
+					resultMeta["terminal_exit"] = map[string]any{
+						"terminal_id": tr.ToolCallID,
+						"exit_code":   exitCode,
+						"signal":      nil,
+					}
+
+					// Bash tool result content: use terminal ref + console output.
+					outputContent = []acpsdk.ToolCallContent{
+						acpsdk.ToolTerminalRef(tr.ToolCallID),
+					}
+					if termOutput != "" {
+						outputContent = append(outputContent, acpsdk.ToolContent(acpsdk.TextBlock(
+							"```console\n"+termOutput+"\n```",
+						)))
+					}
+				}
+
 				resultOpts := []acpsdk.ToolCallUpdateOpt{
 					acpsdk.WithUpdateStatus(status),
 					acpsdk.WithUpdateKind(kind),
@@ -638,8 +710,12 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				if locs := toLocations(tr.Name, storedInput); len(locs) > 0 {
 					resultOpts = append(resultOpts, acpsdk.WithUpdateLocations(locs))
 				}
-				update := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tr.ToolCallID), resultOpts...)
-				if err := acpSession.SendUpdate(update); err != nil {
+				resultUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tr.ToolCallID), resultOpts...)
+				// Inject _meta into the result update.
+				if resultUpdate.ToolCallUpdate != nil {
+					resultUpdate.ToolCallUpdate.Meta = resultMeta
+				}
+				if err := acpSession.SendUpdate(resultUpdate); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send tool result: %v", err)
 				}
 
@@ -666,6 +742,15 @@ func (a *PandoACPAgent) processPromptWithAgent(
 func isEditTool(name string) bool {
 	switch name {
 	case "edit", "write", "patch", "multiedit":
+		return true
+	}
+	return false
+}
+
+// isBashTool returns true for tool names that execute shell commands.
+func isBashTool(name string) bool {
+	switch strings.ToLower(name) {
+	case "bash", "execute_command":
 		return true
 	}
 	return false
@@ -734,37 +819,17 @@ func (a *PandoACPAgent) processAgentResponse(
 		}
 	}
 
+	// Ensure pendingToolCalls is populated for every tool call in the assembled message.
+	// The streaming path (AgentEventTypeToolCall) normally does this, but some providers
+	// may not emit streaming events.  We do NOT re-send ACP tool_call events here because
+	// the streaming path already sent them — re-emitting would produce duplicates that
+	// break client-side rendering (e.g. Zed shows tools twice or ignores subsequent updates).
 	for _, toolCall := range msg.ToolCalls() {
 		a.pendingToolCallsMu.Lock()
-		a.pendingToolCalls[toolCall.ID] = toolCall.Input
+		if a.pendingToolCalls[toolCall.ID] == "" {
+			a.pendingToolCalls[toolCall.ID] = toolCall.Input
+		}
 		a.pendingToolCallsMu.Unlock()
-
-		rawInput := parseJSONInput(toolCall.Input)
-		title := toolDisplayTitle(toolCall.Name, rawInput, acpSession.WorkDir)
-		kind := mapToolKind(toolCall.Name)
-		content := toolCallContent(toolCall.Name, rawInput)
-		locations := toLocations(toolCall.Name, toolCall.Input)
-
-		startOpts := []acpsdk.ToolCallStartOpt{
-			acpsdk.WithStartKind(kind),
-			acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
-			acpsdk.WithStartRawInput(rawInput),
-		}
-		if len(content) > 0 {
-			startOpts = append(startOpts, acpsdk.WithStartContent(content))
-		}
-		if len(locations) > 0 {
-			startOpts = append(startOpts, acpsdk.WithStartLocations(locations))
-		}
-
-		update := acpsdk.StartToolCall(
-			acpsdk.ToolCallId(toolCall.ID),
-			title,
-			startOpts...,
-		)
-		if err := acpSession.SendUpdate(update); err != nil {
-			a.logger.Printf("[ACP AGENT] Failed to send tool call update: %v", err)
-		}
 	}
 
 	for _, toolResult := range msg.ToolResults() {
@@ -805,6 +870,49 @@ func (a *PandoACPAgent) processAgentResponse(
 
 		kind := mapToolKind(toolResult.Name)
 		title := toolDisplayTitle(toolResult.Name, rawInput, acpSession.WorkDir)
+
+		resultMeta := map[string]any{
+			"pando": map[string]any{"toolName": toolResult.Name},
+		}
+
+		// Terminal streaming for Bash results (same as streaming path).
+		if isBashTool(toolResult.Name) {
+			termOutput := strings.TrimSpace(toolResult.Content)
+			if termOutput != "" {
+				termOutputUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(toolResult.ToolCallID))
+				if termOutputUpdate.ToolCallUpdate != nil {
+					termOutputUpdate.ToolCallUpdate.Meta = map[string]any{
+						"terminal_output": map[string]any{
+							"terminal_id": toolResult.ToolCallID,
+							"data":        termOutput,
+						},
+					}
+					termOutputUpdate.ToolCallUpdate.Content = []acpsdk.ToolCallContent{
+						acpsdk.ToolTerminalRef(toolResult.ToolCallID),
+					}
+				}
+				if err := acpSession.SendUpdate(termOutputUpdate); err != nil {
+					a.logger.Printf("[ACP AGENT] Failed to send terminal output: %v", err)
+				}
+			}
+
+			exitCode := 0
+			if toolResult.IsError {
+				exitCode = 1
+			}
+			resultMeta["terminal_exit"] = map[string]any{
+				"terminal_id": toolResult.ToolCallID,
+				"exit_code":   exitCode,
+				"signal":      nil,
+			}
+			content = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(toolResult.ToolCallID)}
+			if termOutput != "" {
+				content = append(content, acpsdk.ToolContent(acpsdk.TextBlock(
+					"```console\n"+termOutput+"\n```",
+				)))
+			}
+		}
+
 		resultOpts := []acpsdk.ToolCallUpdateOpt{
 			acpsdk.WithUpdateStatus(status),
 			acpsdk.WithUpdateKind(kind),
@@ -817,8 +925,11 @@ func (a *PandoACPAgent) processAgentResponse(
 			resultOpts = append(resultOpts, acpsdk.WithUpdateLocations(locs))
 		}
 
-		update := acpsdk.UpdateToolCall(acpsdk.ToolCallId(toolResult.ToolCallID), resultOpts...)
-		if err := acpSession.SendUpdate(update); err != nil {
+		resultUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(toolResult.ToolCallID), resultOpts...)
+		if resultUpdate.ToolCallUpdate != nil {
+			resultUpdate.ToolCallUpdate.Meta = resultMeta
+		}
+		if err := acpSession.SendUpdate(resultUpdate); err != nil {
 			a.logger.Printf("[ACP AGENT] Failed to send tool result update: %v", err)
 		}
 	}
@@ -1381,11 +1492,59 @@ func toolResultContent(toolName, content string, isError bool) []acpsdk.ToolCall
 	if strings.TrimSpace(content) == "" {
 		return nil
 	}
-	text := content
+
 	if isError {
-		text = "```\n" + content + "\n```"
+		return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(
+			"```\n" + content + "\n```",
+		))}
 	}
-	return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(text))}
+
+	// Format output by tool type to match claude-agent-acp behaviour.
+	switch strings.ToLower(toolName) {
+	case "read", "view":
+		// Wrap file content in fenced code block (markdown escape).
+		return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(
+			markdownEscapeCodeBlock(content),
+		))}
+
+	case "bash", "execute_command":
+		// Bash output is handled separately via terminal_output _meta.
+		// Return a console code block as fallback for clients that don't support terminals.
+		trimmed := strings.TrimSpace(content)
+		if trimmed == "" {
+			return nil
+		}
+		return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(
+			"```console\n" + trimmed + "\n```",
+		))}
+
+	case "glob", "grep", "ls":
+		// Search results: wrap in code block for readability.
+		return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(
+			"```\n" + content + "\n```",
+		))}
+
+	default:
+		return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(content))}
+	}
+}
+
+// markdownEscapeCodeBlock wraps text in a fenced code block, choosing a fence
+// string that doesn't collide with any backtick sequences inside the text.
+// This mirrors claude-agent-acp's markdownEscape() function.
+func markdownEscapeCodeBlock(text string) string {
+	fence := "```"
+	for {
+		if !strings.Contains(text, fence) {
+			break
+		}
+		fence += "`"
+	}
+	suffix := ""
+	if !strings.HasSuffix(text, "\n") {
+		suffix = "\n"
+	}
+	return fence + "\n" + text + suffix + fence
 }
 
 func toolInputString(rawInput interface{}, key string) string {
