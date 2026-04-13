@@ -9,9 +9,11 @@ import (
 	"math"
 	"math/rand/v2"
 	"os"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"net/http"
@@ -47,6 +49,55 @@ type anthropicClient struct {
 
 type AnthropicClient ProviderClient
 
+// claudeInstallVersion detects the version of the locally installed claude
+// binary so that Pando can present the same User-Agent to the Anthropic API.
+// The result is cached after the first successful detection.
+var (
+	detectedClaudeVersion     string
+	detectedClaudeVersionOnce sync.Once
+)
+
+func claudeInstallVersion() string {
+	detectedClaudeVersionOnce.Do(func() {
+		// Allow explicit override via environment variable.
+		if v := strings.TrimSpace(os.Getenv("CLAUDE_CODE_VERSION")); v != "" {
+			detectedClaudeVersion = v
+			return
+		}
+
+		// Search common installation paths for the claude binary.
+		candidates := []string{}
+		if home, err := os.UserHomeDir(); err == nil {
+			candidates = append(candidates, home+"/.local/bin/claude")
+		}
+		candidates = append(candidates, "/usr/local/bin/claude", "/usr/bin/claude")
+		if p, err := exec.LookPath("claude"); err == nil {
+			candidates = append([]string{p}, candidates...)
+		}
+
+		for _, p := range candidates {
+			if _, err := os.Stat(p); err != nil {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			out, err := exec.CommandContext(ctx, p, "--version").Output()
+			cancel()
+			if err != nil {
+				continue
+			}
+			// Output is like "2.1.96 (Claude Code)" — take the first token.
+			if parts := strings.Fields(strings.TrimSpace(string(out))); len(parts) > 0 {
+				detectedClaudeVersion = parts[0]
+				return
+			}
+		}
+	})
+	if detectedClaudeVersion != "" {
+		return detectedClaudeVersion
+	}
+	return version.Version
+}
+
 func claudeCodeUserAgent() string {
 	userType := strings.TrimSpace(os.Getenv("USER_TYPE"))
 	if userType == "" {
@@ -58,7 +109,7 @@ func claudeCodeUserAgent() string {
 		entrypoint = "cli"
 	}
 
-	return fmt.Sprintf("claude-cli/%s (%s, %s)", version.Version, userType, entrypoint)
+	return fmt.Sprintf("claude-cli/%s (%s, %s)", claudeInstallVersion(), userType, entrypoint)
 }
 
 func claudeCodeSessionID() string {
@@ -468,6 +519,10 @@ func (a *anthropicClient) stream(ctx context.Context, messages []message.Message
 					continue
 				}
 			}
+
+			// Log the error before deciding whether to retry so it always
+			// appears in the debug log / log file even when a retry follows.
+			logging.Error("Anthropic stream error", "error", err, "attempt", attempts, "model", a.providerOptions.model.APIModel)
 
 			// If there is an error we are going to see if we can retry the call
 			retry, after, retryErr := a.shouldRetry(attempts, err)

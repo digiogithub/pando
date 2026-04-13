@@ -3,13 +3,7 @@ import { useExtensionsStore } from '@/stores/extensionsStore'
 import { Toggle, TextInput, SelectInput } from '@/components/shared/FormInput'
 import ModelCombobox from '@/components/shared/ModelCombobox'
 
-const PROVIDER_OPTIONS = [
-  { value: '', label: '— inherit from General —' },
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'google', label: 'Google' },
-  { value: 'copilot', label: 'GitHub Copilot' },
-]
+
 
 const dividerStyle: React.CSSProperties = {
   borderTop: '1px solid var(--border)',
@@ -261,12 +255,7 @@ export default function EvaluatorSettings() {
           </p>
         </div>
 
-        <SelectInput
-          label="Judge Provider"
-          options={PROVIDER_OPTIONS}
-          value={evaluator.provider}
-          onChange={(e) => updateEvaluator({ provider: e.target.value })}
-        />
+
 
         <div style={dividerStyle} />
 

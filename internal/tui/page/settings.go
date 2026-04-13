@@ -1599,12 +1599,7 @@ func buildEvaluatorSection(cfg *config.Config) settings.Section {
 			Value:   string(eval.Model),
 			Options: ensureOption(supportedModelOptions(cfg), string(eval.Model)),
 		},
-		{
-			Label: "Judge Provider",
-			Key:   "evaluator.provider",
-			Type:  settings.FieldText,
-			Value: eval.Provider,
-		},
+
 		{
 			Label: "Alpha Weight",
 			Key:   "evaluator.alphaWeight",
@@ -2816,9 +2811,11 @@ func saveEvaluator(field settings.Field) error {
 		}
 		evalCfg.Enabled = enabled
 	case "evaluator.model":
-		evalCfg.Model = models.ModelID(strings.TrimSpace(field.Value))
-	case "evaluator.provider":
-		evalCfg.Provider = strings.TrimSpace(field.Value)
+		modelID := models.ModelID(strings.TrimSpace(field.Value))
+		evalCfg.Model = modelID
+		if model, ok := models.SupportedModels[modelID]; ok {
+			evalCfg.Provider = string(model.Provider)
+		}
 	case "evaluator.alphaWeight":
 		v, err := strconv.ParseFloat(strings.TrimSpace(field.Value), 64)
 		if err != nil {

@@ -463,9 +463,12 @@ func SaveClaudeCodeCredentials(creds *ClaudeCredentials) error {
 
 // LoadClaudeCredentials loads Claude credentials with the following priority:
 //  1. CLAUDE_CODE_OAUTH_TOKEN env var → synthetic credentials
-//  2. ANTHROPIC_API_KEY env var → nil (API key mode)
-//  3. ~/.claude/.credentials.json (preferred read-only source from Claude Code)
-//  4. ~/.config/pando/auth/claude.json (pando's own store fallback)
+//  2. ~/.claude/.credentials.json (preferred read-only source from Claude Code)
+//  3. ~/.config/pando/auth/claude.json (pando's own store fallback)
+//
+// Note: ANTHROPIC_API_KEY is intentionally NOT checked here — OAuth credentials
+// are always preferred over API keys because Claude Max/Pro OAuth tokens receive
+// higher rate limits than standard API keys.
 //
 // Returns (creds, source, error) where source is "env", "pando", or "claude-code".
 func LoadClaudeCredentials() (*ClaudeCredentials, string, error) {
@@ -480,12 +483,7 @@ func LoadClaudeCredentials() (*ClaudeCredentials, string, error) {
 		return creds, "env", nil
 	}
 
-	// 2. Check ANTHROPIC_API_KEY — caller uses API key mode.
-	if strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")) != "" {
-		return nil, "env", nil
-	}
-
-	// 3. Try Claude Code's own credentials file (~/.claude/.credentials.json).
+	// 2. Try Claude Code's own credentials file (~/.claude/.credentials.json).
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
 		claudeCodePath := filepath.Join(homeDir, ".claude", claudeCodeCredentialFile)
