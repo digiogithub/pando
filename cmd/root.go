@@ -683,6 +683,8 @@ func init() {
 
 	// Add ACP server flag
 	rootCmd.Flags().Bool("acp-server", false, "Run as ACP server (allows other agents to connect)")
+	rootCmd.PersistentFlags().String("host", "localhost", "Host to bind the app/api server to")
+	rootCmd.PersistentFlags().Int("port", 8765, "Port to bind the app/api server to")
 
 	// Register custom validation for the format flag
 	rootCmd.RegisterFlagCompletionFunc("output-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

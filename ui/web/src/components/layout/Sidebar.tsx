@@ -1,4 +1,4 @@
-import { type Component, For, createSignal, Show, onMount } from "solid-js";
+import { type Component, type JSX, For, createSignal, Show, onMount } from "solid-js";
 import { useServer } from "@/hooks/useServer";
 import type { Session, FileNode } from "@/types";
 

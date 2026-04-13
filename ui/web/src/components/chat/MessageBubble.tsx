@@ -1,5 +1,5 @@
-import { type Component, Show } from "solid-js";
-import type { Message } from "@/types";
+import { type Component, For, Show } from "solid-js";
+import type { Message, ToolResult } from "@/types";
 
 interface MessageBubbleProps {
   message: Message;
@@ -24,10 +24,34 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
             <p class="m-0">{props.message.content}</p>
           </Show>
           <Show when={!isUser()}>
+            <Show when={props.message.thinking}>
+              <div class="mb-2 rounded-md border border-dashed border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap">
+                {props.message.thinking}
+              </div>
+            </Show>
             <div
               class="m-0 whitespace-pre-wrap"
               innerHTML={formatContent(props.message.content)}
             />
+            <Show when={props.message.toolCalls?.length}>
+              <div class="mt-3 space-y-2">
+                <For each={props.message.toolCalls}>
+                  {(toolCall) => (
+                    <div class="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+                      <div class="font-medium text-foreground">{toolCall.name}</div>
+                      <pre class="mt-2 overflow-x-auto whitespace-pre-wrap text-muted-foreground">{formatStructured(toolCall.input)}</pre>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
+            <Show when={props.message.toolResults?.length}>
+              <div class="mt-3 space-y-2">
+                <For each={props.message.toolResults}>
+                  {(toolResult) => <ToolResultBlock result={toolResult} />}
+                </For>
+              </div>
+            </Show>
             <Show when={props.message.isStreaming}>
               <span class="ml-1 inline-block h-4 w-1 animate-pulse bg-current" />
             </Show>
@@ -44,6 +68,32 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
     </div>
   );
 };
+
+const ToolResultBlock: Component<{ result: ToolResult }> = (props) => {
+  return (
+    <div class={`rounded-md border px-3 py-2 text-xs ${
+      props.result.is_error ? "border-destructive/40 bg-destructive/5" : "border-border bg-muted/20"
+    }`}>
+      <div class="font-medium text-foreground">{props.result.name}</div>
+      <pre class="mt-2 overflow-x-auto whitespace-pre-wrap text-muted-foreground">{props.result.content}</pre>
+      <Show when={props.result.metadata !== undefined}>
+        <pre class="mt-2 overflow-x-auto whitespace-pre-wrap rounded bg-background/70 p-2 text-[11px] text-muted-foreground">{formatStructured(props.result.metadata)}</pre>
+      </Show>
+    </div>
+  );
+};
+
+function formatStructured(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
 
 function formatContent(content: string): string {
   let formatted = content

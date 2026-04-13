@@ -1,4 +1,4 @@
-import { type Component } from "solid-js";
+import { Show, type Component } from "solid-js";
 
 interface HeaderProps {
   sidebarOpen: boolean;

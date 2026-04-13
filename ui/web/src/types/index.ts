@@ -1,9 +1,26 @@
+export interface ToolCall {
+  id: string;
+  name: string;
+  input: unknown;
+}
+
+export interface ToolResult {
+  tool_call_id: string;
+  name: string;
+  content: string;
+  metadata?: unknown;
+  is_error?: boolean;
+}
+
 export interface Message {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   timestamp: Date;
   isStreaming?: boolean;
+  thinking?: string;
+  toolCalls?: ToolCall[];
+  toolResults?: ToolResult[];
 }
 
 export interface Session {
@@ -46,9 +63,15 @@ export interface ChatRequest {
 }
 
 export interface SSEEvent {
-  type: "content_delta" | "tool_use" | "complete" | "error";
+  type?: "session" | "thinking_delta" | "content_delta" | "tool_call" | "tool_result" | "done" | "error";
+  sessionId?: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
+  tool_call_id?: string;
   content?: string;
-  tool_name?: string;
-  tool_args?: Record<string, unknown>;
+  metadata?: unknown;
+  is_error?: boolean;
   error?: string;
 }

@@ -5,9 +5,17 @@ import {
   useContext,
   createSignal,
   onCleanup,
-  Show,
 } from "solid-js";
 import type { ServerStatus } from "@/types";
+
+const apiBase = (window as typeof window & { __PANDO_API_BASE__?: string }).__PANDO_API_BASE__ || "";
+
+const withAPIBase = (endpoint: string) => {
+  if (/^https?:\/\//.test(endpoint)) {
+    return endpoint;
+  }
+  return `${apiBase}${endpoint}`;
+};
 
 interface ServerContextValue {
   connected: () => boolean;
@@ -40,7 +48,7 @@ export const ServerProvider: Component<{ children: JSX.Element }> = (props) => {
       ...options?.headers,
     };
 
-    const response = await fetch(endpoint, {
+    const response = await fetch(withAPIBase(endpoint), {
       ...options,
       headers,
     });
@@ -56,7 +64,7 @@ export const ServerProvider: Component<{ children: JSX.Element }> = (props) => {
   const checkHealth = async (): Promise<boolean> => {
     try {
       const t = token();
-      const response = await fetch("/health", {
+      const response = await fetch(withAPIBase("/health"), {
         headers: t ? { "X-Pando-Token": t } : {},
       });
 

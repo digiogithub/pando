@@ -691,6 +691,11 @@ func (c *MesnadaACPClient) processToolCall(toolCall *acpsdk.SessionUpdateToolCal
 		title = string(toolCall.ToolCallId)
 	}
 
+	var meta map[string]interface{}
+	if m, ok := toolCall.Meta.(map[string]interface{}); ok {
+		meta = m
+	}
+
 	info := ToolCallInfo{
 		ID:        string(toolCall.ToolCallId),
 		Name:      title,
@@ -702,6 +707,7 @@ func (c *MesnadaACPClient) processToolCall(toolCall *acpsdk.SessionUpdateToolCal
 		Status:    string(toolCall.Status),
 		Content:   toolCall.Content,
 		Diffs:     c.ExtractDiffsFromContent(toolCall.Content),
+		Meta:      meta,
 	}
 	c.toolCalls[string(toolCall.ToolCallId)] = info
 
@@ -762,6 +768,9 @@ func (c *MesnadaACPClient) processToolCallUpdate(update *acpsdk.SessionToolCallU
 	if update.RawOutput != nil {
 		info.RawOutput = update.RawOutput
 		info.Result = fmt.Sprintf("%v", update.RawOutput)
+	}
+	if meta, ok := update.Meta.(map[string]interface{}); ok {
+		info.Meta = meta
 	}
 	if len(update.Content) > 0 {
 		info.Content = update.Content

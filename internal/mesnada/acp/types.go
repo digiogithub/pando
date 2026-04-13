@@ -140,4 +140,7 @@ type ToolCallInfo struct {
 
 	// RawOutput is the original output from the tool
 	RawOutput interface{}
+
+	// Meta carries ACP-specific metadata associated with the tool update.
+	Meta map[string]interface{}
 }

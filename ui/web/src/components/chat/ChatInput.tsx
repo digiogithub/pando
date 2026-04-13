@@ -1,4 +1,4 @@
-import { type Component, createSignal, onMount, onCleanup } from "solid-js";
+import { Show, type Component, createSignal, onMount } from "solid-js";
 
 interface ChatInputProps {
   onSend: (content: string) => void;
