@@ -116,14 +116,18 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 		anthropicOpts := clientOptions.anthropicOptions
 		if clientOptions.apiKey == "" {
 			// Try to load Claude OAuth credentials automatically
-			if creds, _, err := auth.LoadClaudeCredentials(); err == nil && creds != nil {
+			if creds, source, err := auth.LoadClaudeCredentials(); err == nil && creds != nil {
 				if token, updatedCreds, err := auth.GetValidClaudeToken(creds); err == nil && token != "" {
-					// Save updated creds if refreshed
+					// Save refreshed token back to the same source it came from
 					if updatedCreds != nil {
-						_ = auth.SaveClaudeCredentials(updatedCreds)
+						if source == "claude-code" {
+							_ = auth.SaveClaudeCodeCredentials(updatedCreds)
+						} else {
+							_ = auth.SaveClaudeCredentials(updatedCreds)
+						}
 					}
 					anthropicOpts = append(anthropicOpts, WithAnthropicOAuthToken(token))
-					logging.Debug("Using Claude OAuth token for authentication")
+					logging.Debug("Using Claude OAuth token for authentication", "source", source)
 				}
 			}
 		}

@@ -168,6 +168,10 @@ func (m *mockSessionService) ListSessions(ctx context.Context) ([]ACPSessionInfo
 	return result, nil
 }
 
+func (m *mockSessionService) GetMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
+	return nil, nil
+}
+
 type mockPermissionService struct {
 	autoApproved []string
 	removed      []string

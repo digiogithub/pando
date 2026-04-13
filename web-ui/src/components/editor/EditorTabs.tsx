@@ -42,6 +42,17 @@ export default function EditorTabs() {
           <div
             key={file.path}
             onClick={() => setActiveFile(file.path)}
+            onMouseDown={(e) => {
+              if (e.button === 1) {
+                e.preventDefault()
+                e.stopPropagation()
+                if (file.isDirty) {
+                  const confirmed = window.confirm('File has unsaved changes. Close without saving?')
+                  if (!confirmed) return
+                }
+                closeFile(file.path)
+              }
+            }}
             title={file.path}
             style={{
               display: 'flex',

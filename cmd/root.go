@@ -443,7 +443,7 @@ func runACPServerWithOptions(cwd string, debug bool, autoPerm bool) error {
 	// Build adapters (defined below) that bridge internal services to ACP interfaces,
 	// avoiding import cycles between internal/mesnada/acp and internal/llm/agent.
 	agentAdapter := &acpAgentAdapter{svc: pandoApp.CoderAgent}
-	sessionAdapter := &acpSessionAdapter{svc: pandoApp.Sessions}
+	sessionAdapter := &acpSessionAdapter{svc: pandoApp.Sessions, msgSvc: pandoApp.Messages}
 	permAdapter := &acpPermissionAdapter{svc: pandoApp.Permissions}
 
 	pandoAgent := acpPkg.NewPandoACPAgent(
@@ -526,9 +526,15 @@ func (a *acpAgentAdapter) AvailableModels() []acpPkg.ACPModelInfo {
 	allModels := models.GetAllModels()
 	result := make([]acpPkg.ACPModelInfo, 0, len(allModels))
 	for _, m := range allModels {
+		provider := string(m.Provider)
+		displayName := m.Name
+		if provider != "" && provider != "__mock" {
+			providerLabel := strings.ToUpper(provider[:1]) + provider[1:]
+			displayName = providerLabel + ": " + m.Name
+		}
 		result = append(result, acpPkg.ACPModelInfo{
 			ID:   string(m.ID),
-			Name: m.Name,
+			Name: displayName,
 		})
 	}
 	return result
@@ -574,7 +580,8 @@ func (a *acpAgentAdapter) ListAvailableTools() []acpPkg.ACPToolInfo {
 
 // acpSessionAdapter adapts session.Service to acpPkg.SessionService.
 type acpSessionAdapter struct {
-	svc session.Service
+	svc    session.Service
+	msgSvc message.Service
 }
 
 func (a *acpSessionAdapter) CreateSession(ctx context.Context, title string) (string, error) {
@@ -611,6 +618,10 @@ func (a *acpSessionAdapter) ListSessions(ctx context.Context) ([]acpPkg.ACPSessi
 		}
 	}
 	return result, nil
+}
+
+func (a *acpSessionAdapter) GetMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
+	return a.msgSvc.List(ctx, sessionID)
 }
 
 // acpPermissionAdapter adapts permission.Service to acpPkg.PermissionService.

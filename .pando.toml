@@ -27,8 +27,8 @@ AutoCompact = true
 AutoCompactThreshold = 0.0
 
 [Agents.coder]
-Model = 'copilot.gpt-5.4-mini'
-MaxTokens = 4096
+Model = 'anthropic.claude-sonnet-4-6'
+MaxTokens = 32000
 ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false
@@ -113,7 +113,7 @@ SessionTimeout = '30m'
 RequireAuth = false
 
 [Mesnada.TUI]
-Enabled = true
+Enabled = false
 WebUI = false
 
 [Shell]
@@ -129,6 +129,7 @@ Enabled = true
 KBPath = './.kb'
 KBWatch = true
 KBAutoImport = true
+AutoIndexSessions = false
 DocumentEmbeddingProvider = 'ollama'
 DocumentEmbeddingModel = 'nomic-embed-text'
 DocumentEmbeddingBaseURL = ''
@@ -191,7 +192,7 @@ AutoCleanupDays = 5
 
 [evaluator]
 enabled = true
-model = 'copilot.gpt-4o-mini'
+model = 'copilot.gpt-4.1'
 provider = 'copilot'
 alphaWeight = 0.8
 betaWeight = 0.2
@@ -208,7 +209,7 @@ Model = ''
 Timeout = 0
 
 [PersonaAutoSelect]
-Enabled = false
+Enabled = true
 PersonaPath = ''
 
 [acp]

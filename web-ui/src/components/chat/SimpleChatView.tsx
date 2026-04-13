@@ -29,8 +29,8 @@ export default function SimpleChatView() {
     },
   })
 
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [sessionsOpen, setSessionsOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sessionsOpen, setSessionsOpen] = useState(false)
 
   const activeSession = sessions.find((s) => s.id === activeSessionId)
 
@@ -152,19 +152,15 @@ export default function SimpleChatView() {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '0.375rem',
-            padding: '0.25rem 0.625rem',
+            padding: '0.25rem 0.5rem',
             background: 'var(--selected)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-sm)',
             cursor: 'pointer',
             color: 'var(--primary)',
-            fontSize: 12,
-            fontWeight: 500,
           }}
         >
-          <FontAwesomeIcon icon={faColumns} style={{ fontSize: 11 }} />
-          Advanced view
+          <FontAwesomeIcon icon={faColumns} style={{ fontSize: 13 }} />
         </button>
       </div>
 

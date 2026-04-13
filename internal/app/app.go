@@ -238,7 +238,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 				// Build ACP agent adapters so PandoACPAgent can use the live app services
 				// without causing import cycles (the ACP package defines narrow interfaces).
 				agentAdapter := &appACPAgentAdapter{svc: app.CoderAgent}
-				sessionAdapter := &appACPSessionAdapter{svc: app.Sessions}
+				sessionAdapter := &appACPSessionAdapter{svc: app.Sessions, msgSvc: app.Messages}
 				permAdapter := &appACPPermissionAdapter{svc: app.Permissions}
 
 				cwd, _ := os.Getwd()
@@ -1050,7 +1050,13 @@ func (a *appACPAgentAdapter) AvailableModels() []mesnadaACP.ACPModelInfo {
 	all := models.GetAllModels()
 	result := make([]mesnadaACP.ACPModelInfo, 0, len(all))
 	for _, m := range all {
-		result = append(result, mesnadaACP.ACPModelInfo{ID: string(m.ID), Name: m.Name})
+		provider := string(m.Provider)
+		displayName := m.Name
+		if provider != "" && provider != "__mock" {
+			providerLabel := strings.ToUpper(provider[:1]) + provider[1:]
+			displayName = providerLabel + ": " + m.Name
+		}
+		result = append(result, mesnadaACP.ACPModelInfo{ID: string(m.ID), Name: displayName})
 	}
 	return result
 }
@@ -1081,7 +1087,10 @@ func (a *appACPAgentAdapter) ListAvailableTools() []mesnadaACP.ACPToolInfo {
 
 // ---------------------------------------------------------------------------
 
-type appACPSessionAdapter struct{ svc session.Service }
+type appACPSessionAdapter struct {
+	svc    session.Service
+	msgSvc message.Service
+}
 
 func (a *appACPSessionAdapter) CreateSession(ctx context.Context, title string) (string, error) {
 	sess, err := a.svc.Create(ctx, title)
@@ -1109,6 +1118,10 @@ func (a *appACPSessionAdapter) ListSessions(ctx context.Context) ([]mesnadaACP.A
 		result[i] = mesnadaACP.ACPSessionInfo{ID: s.ID, Title: s.Title, UpdatedAt: s.UpdatedAt}
 	}
 	return result, nil
+}
+
+func (a *appACPSessionAdapter) GetMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
+	return a.msgSvc.List(ctx, sessionID)
 }
 
 // ---------------------------------------------------------------------------

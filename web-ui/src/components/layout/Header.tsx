@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faComments, faFileLines, faNetworkWired,
   faCamera, faStar, faCog, faMoon, faSun,
-  faChevronLeft, faChevronRight, faCode, faTerminal,
+  faChevronLeft, faChevronRight, faCode, faTerminal, faComment,
 } from '@fortawesome/free-solid-svg-icons'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
@@ -14,6 +14,7 @@ import PersonaSelector from '@/components/shared/PersonaSelector'
 
 export default function Header() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const { toggleSidebar, sidebarOpen } = useLayoutStore()
   const { theme, toggleTheme } = useTheme()
   const connected = useServerStore((s) => s.connected)
@@ -205,6 +206,24 @@ export default function Header() {
 
         {/* Persona selector */}
         <PersonaSelector />
+
+        {/* Simple Chat */}
+        <button
+          onClick={() => navigate('/chat/simple')}
+          title={t('header.simpleChat', 'Simple Chat')}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--fg-muted)',
+            padding: '0.25rem 0.375rem',
+            borderRadius: 'var(--radius-sm)',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          <FontAwesomeIcon icon={faComment} style={{ fontSize: 13 }} />
+        </button>
 
         {/* Settings */}
         <NavLink

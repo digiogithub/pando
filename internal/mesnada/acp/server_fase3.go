@@ -89,6 +89,9 @@ type SessionService interface {
 	CreateSession(ctx context.Context, title string) (string, error)
 	GetSession(ctx context.Context, id string) (ACPSessionInfo, error)
 	ListSessions(ctx context.Context) ([]ACPSessionInfo, error)
+	// GetMessages returns the messages for a session in chronological order.
+	// Used by LoadSession to replay conversation history to connecting clients.
+	GetMessages(ctx context.Context, sessionID string) ([]message.Message, error)
 }
 
 // ListSessions returns the historical sessions known by Pando.
@@ -1090,6 +1093,10 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 	// Send available_commands_update asynchronously so clients can display tool names.
 	go a.sendAvailableCommandsUpdate(context.Background(), req.SessionId)
 
+	// Stream the full conversation history back to the client as required by the ACP protocol:
+	// "Stream the entire conversation history back to the client via notifications"
+	go a.streamSessionHistory(context.Background(), req.SessionId, string(req.SessionId))
+
 	return acpsdk.LoadSessionResponse{
 		Modes:  buildSessionModeState(a.agentService, currentMode, currentPersona),
 		Models: buildSessionModelState(a.agentService),
@@ -1302,6 +1309,248 @@ func (a *PandoACPAgent) sendAvailableCommandsUpdate(ctx context.Context, session
 			a.logger.Printf("[ACP AGENT] sendAvailableCommandsUpdate: failed for session %s: %v", sessionID, err)
 		}
 	}()
+}
+
+// streamSessionHistory replays a session's conversation history to the connected ACP client.
+// It sends each message as a sequence of SessionUpdate notifications so that the client
+// (e.g. Zed) can reconstruct the conversation view when loading an existing session.
+// This is called asynchronously after LoadSession returns its response.
+func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acpsdk.SessionId, pandoSessionID string) {
+	if a.conn == nil {
+		a.logger.Printf("[ACP AGENT] streamSessionHistory: no connection available for session %s", sessionID)
+		return
+	}
+
+	msgs, err := a.sessionService.GetMessages(ctx, pandoSessionID)
+	if err != nil {
+		a.logger.Printf("[ACP AGENT] streamSessionHistory: failed to get messages for session %s: %v", sessionID, err)
+		return
+	}
+
+	if len(msgs) == 0 {
+		a.logger.Printf("[ACP AGENT] streamSessionHistory: no messages to replay for session %s", sessionID)
+		return
+	}
+
+	a.logger.Printf("[ACP AGENT] streamSessionHistory: replaying %d messages for session %s", len(msgs), sessionID)
+
+	sendUpdate := func(update acpsdk.SessionUpdate) {
+		notification := acpsdk.SessionNotification{
+			SessionId: sessionID,
+			Update:    update,
+		}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					a.logger.Printf("[ACP AGENT] streamSessionHistory: recovered from panic for session %s: %v", sessionID, r)
+				}
+			}()
+			if err := a.conn.SessionUpdate(ctx, notification); err != nil {
+				a.logger.Printf("[ACP AGENT] streamSessionHistory: failed to send update for session %s: %v", sessionID, err)
+			}
+		}()
+	}
+
+	// Retrieve the session's working directory for display-path formatting.
+	a.sessionsMu.RLock()
+	acpSession := a.sessions[sessionID]
+	a.sessionsMu.RUnlock()
+	workDir := a.workDir
+	if acpSession != nil {
+		workDir = acpSession.WorkDir
+	}
+
+	for _, msg := range msgs {
+		switch msg.Role {
+		case message.User:
+			// Send user message text parts
+			for _, part := range msg.Parts {
+				switch p := part.(type) {
+				case message.TextContent:
+					if p.Text != "" {
+						sendUpdate(acpsdk.UpdateUserMessageText(p.Text))
+					}
+				}
+			}
+
+		case message.Assistant:
+			// Send assistant message: text parts, thinking parts, and tool calls
+			for _, part := range msg.Parts {
+				switch p := part.(type) {
+				case message.TextContent:
+					if p.Text != "" {
+						sendUpdate(acpsdk.UpdateAgentMessageText(p.Text))
+					}
+				case message.ReasoningContent:
+					if p.Thinking != "" {
+						sendUpdate(acpsdk.UpdateAgentThoughtText(p.Thinking))
+					}
+				case message.ToolCall:
+					// Replay the tool call with full metadata so clients display
+					// proper title, kind, content, and locations.
+					rawInput := parseJSONInput(p.Input)
+					toolCallID := acpsdk.ToolCallId(p.ID)
+					kind := mapToolKind(p.Name)
+					title := toolDisplayTitle(p.Name, rawInput, workDir)
+					content := toolCallContent(p.Name, rawInput)
+					locations := toLocations(p.Name, p.Input)
+
+					startOpts := []acpsdk.ToolCallStartOpt{
+						acpsdk.WithStartKind(kind),
+						acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
+						acpsdk.WithStartRawInput(rawInput),
+					}
+					if len(content) > 0 {
+						startOpts = append(startOpts, acpsdk.WithStartContent(content))
+					}
+					if len(locations) > 0 {
+						startOpts = append(startOpts, acpsdk.WithStartLocations(locations))
+					}
+					startUpdate := acpsdk.StartToolCall(toolCallID, title, startOpts...)
+
+					// Add _meta with toolName and terminal_info for Bash tools.
+					toolMeta := map[string]any{
+						"pando": map[string]any{"toolName": p.Name},
+					}
+					if isBashTool(p.Name) {
+						toolMeta["terminal_info"] = map[string]any{"terminal_id": p.ID}
+						if startUpdate.ToolCall != nil {
+							startUpdate.ToolCall.Content = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(p.ID)}
+						}
+					}
+					if startUpdate.ToolCall != nil {
+						startUpdate.ToolCall.Meta = toolMeta
+					}
+					sendUpdate(startUpdate)
+				}
+			}
+
+		case message.Tool:
+			// Tool results: update existing tool calls with full output details.
+			for _, part := range msg.Parts {
+				if tr, ok := part.(message.ToolResult); ok {
+					status := acpsdk.ToolCallStatusCompleted
+					if tr.IsError {
+						status = acpsdk.ToolCallStatusFailed
+					}
+
+					// Build structured rawOutput matching the streaming path.
+					rawOutput := map[string]interface{}{"output": tr.Content}
+					if tr.Metadata != "" {
+						var meta interface{}
+						if jerr := json.Unmarshal([]byte(tr.Metadata), &meta); jerr == nil {
+							rawOutput["metadata"] = meta
+						} else {
+							rawOutput["metadata"] = tr.Metadata
+						}
+					}
+
+					// Use the tool name to reconstruct rich content.
+					outputContent := toolResultContent(tr.Name, tr.Content, tr.IsError)
+
+					kind := mapToolKind(tr.Name)
+					// Retrieve stored input from the matching tool call, if available.
+					storedInput := ""
+					for _, assistMsg := range msgs {
+						if assistMsg.Role != message.Assistant {
+							continue
+						}
+						for _, ap := range assistMsg.Parts {
+							if tc, ok := ap.(message.ToolCall); ok && tc.ID == tr.ToolCallID {
+								storedInput = tc.Input
+								break
+							}
+						}
+						if storedInput != "" {
+							break
+						}
+					}
+
+					rawInput := parseJSONInput(storedInput)
+					title := toolDisplayTitle(tr.Name, rawInput, workDir)
+
+					// For edit tools, attach a diff content block.
+					if isEditTool(tr.Name) && !tr.IsError && storedInput != "" {
+						var ep editToolInput
+						if jerr := json.Unmarshal([]byte(storedInput), &ep); jerr == nil && ep.FilePath != "" {
+							if tr.Name == "write" {
+								outputContent = append(outputContent, acpsdk.ToolDiffContent(ep.FilePath, ep.Content))
+							} else {
+								outputContent = append(outputContent, acpsdk.ToolDiffContent(ep.FilePath, ep.NewString, ep.OldString))
+							}
+						}
+					}
+
+					// Build _meta for the result.
+					resultMeta := map[string]any{
+						"pando": map[string]any{"toolName": tr.Name},
+					}
+
+					// For Bash tools, send terminal_output + terminal_exit via _meta
+					// so clients display the output in their terminal widgets.
+					if isBashTool(tr.Name) {
+						termOutput := strings.TrimSpace(tr.Content)
+						if termOutput != "" {
+							// Step 2: send terminal_output as a separate notification.
+							termOutputUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tr.ToolCallID))
+							if termOutputUpdate.ToolCallUpdate != nil {
+								termOutputUpdate.ToolCallUpdate.Meta = map[string]any{
+									"terminal_output": map[string]any{
+										"terminal_id": tr.ToolCallID,
+										"data":        termOutput,
+									},
+								}
+								termOutputUpdate.ToolCallUpdate.Content = []acpsdk.ToolCallContent{
+									acpsdk.ToolTerminalRef(tr.ToolCallID),
+								}
+							}
+							sendUpdate(termOutputUpdate)
+						}
+
+						// Step 3: attach terminal_exit to the final result.
+						exitCode := 0
+						if tr.IsError {
+							exitCode = 1
+						}
+						resultMeta["terminal_exit"] = map[string]any{
+							"terminal_id": tr.ToolCallID,
+							"exit_code":   exitCode,
+							"signal":      nil,
+						}
+
+						// Bash tool result content: terminal ref + console output.
+						outputContent = []acpsdk.ToolCallContent{
+							acpsdk.ToolTerminalRef(tr.ToolCallID),
+						}
+						if termOutput != "" {
+							outputContent = append(outputContent, acpsdk.ToolContent(acpsdk.TextBlock(
+								"```console\n"+termOutput+"\n```",
+							)))
+						}
+					}
+
+					resultOpts := []acpsdk.ToolCallUpdateOpt{
+						acpsdk.WithUpdateStatus(status),
+						acpsdk.WithUpdateKind(kind),
+						acpsdk.WithUpdateTitle(title),
+						acpsdk.WithUpdateContent(outputContent),
+						acpsdk.WithUpdateRawInput(rawInput),
+						acpsdk.WithUpdateRawOutput(rawOutput),
+					}
+					if locs := toLocations(tr.Name, storedInput); len(locs) > 0 {
+						resultOpts = append(resultOpts, acpsdk.WithUpdateLocations(locs))
+					}
+					resultUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tr.ToolCallID), resultOpts...)
+					if resultUpdate.ToolCallUpdate != nil {
+						resultUpdate.ToolCallUpdate.Meta = resultMeta
+					}
+					sendUpdate(resultUpdate)
+				}
+			}
+		}
+	}
+
+	a.logger.Printf("[ACP AGENT] streamSessionHistory: completed replaying history for session %s", sessionID)
 }
 
 // parseJSONInput attempts to decode a JSON string into a native map or slice.

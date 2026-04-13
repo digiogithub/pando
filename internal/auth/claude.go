@@ -440,6 +440,27 @@ func SaveClaudeCredentials(creds *ClaudeCredentials) error {
 	return nil
 }
 
+// SaveClaudeCodeCredentials writes refreshed credentials back to Claude Code's own
+// credential file (~/.claude/.credentials.json), keeping both tools in sync.
+func SaveClaudeCodeCredentials(creds *ClaudeCredentials) error {
+	if creds == nil || creds.ClaudeAiOauth == nil {
+		return fmt.Errorf("credentials cannot be nil")
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve home dir: %w", err)
+	}
+	filePath := filepath.Join(homeDir, ".claude", claudeCodeCredentialFile)
+	data, err := json.MarshalIndent(creds, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal claude credentials: %w", err)
+	}
+	if err := os.WriteFile(filePath, data, 0o600); err != nil {
+		return fmt.Errorf("write claude-code credentials: %w", err)
+	}
+	return nil
+}
+
 // LoadClaudeCredentials loads Claude credentials with the following priority:
 //  1. CLAUDE_CODE_OAUTH_TOKEN env var → synthetic credentials
 //  2. ANTHROPIC_API_KEY env var → nil (API key mode)

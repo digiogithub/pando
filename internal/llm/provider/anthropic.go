@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"math/rand/v2"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,6 +25,8 @@ import (
 	toolsPkg "github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/version"
+	"github.com/google/uuid"
 )
 
 type anthropicOptions struct {
@@ -44,6 +47,51 @@ type anthropicClient struct {
 
 type AnthropicClient ProviderClient
 
+func claudeCodeUserAgent() string {
+	userType := strings.TrimSpace(os.Getenv("USER_TYPE"))
+	if userType == "" {
+		userType = "external"
+	}
+
+	entrypoint := strings.TrimSpace(os.Getenv("CLAUDE_CODE_ENTRYPOINT"))
+	if entrypoint == "" {
+		entrypoint = "cli"
+	}
+
+	return fmt.Sprintf("claude-cli/%s (%s, %s)", version.Version, userType, entrypoint)
+}
+
+func claudeCodeSessionID() string {
+	if sessionID := strings.TrimSpace(os.Getenv("X_CLAUDE_CODE_SESSION_ID")); sessionID != "" {
+		return sessionID
+	}
+	return uuid.NewString()
+}
+
+func claudeCodeHeaders(betaHeader string) []option.RequestOption {
+	headers := []option.RequestOption{
+		option.WithHeader("anthropic-beta", betaHeader),
+		option.WithHeader("User-Agent", claudeCodeUserAgent()),
+		option.WithHeader("x-app", "cli"),
+		option.WithHeader("X-Claude-Code-Session-Id", claudeCodeSessionID()),
+	}
+
+	if clientApp := strings.TrimSpace(os.Getenv("CLAUDE_AGENT_SDK_CLIENT_APP")); clientApp != "" {
+		headers = append(headers, option.WithHeader("x-client-app", clientApp))
+	}
+	if containerID := strings.TrimSpace(os.Getenv("CLAUDE_CODE_CONTAINER_ID")); containerID != "" {
+		headers = append(headers, option.WithHeader("x-claude-remote-container-id", containerID))
+	}
+	if remoteSessionID := strings.TrimSpace(os.Getenv("CLAUDE_CODE_REMOTE_SESSION_ID")); remoteSessionID != "" {
+		headers = append(headers, option.WithHeader("x-claude-remote-session-id", remoteSessionID))
+	}
+	if additionalProtection := strings.TrimSpace(os.Getenv("CLAUDE_CODE_ADDITIONAL_PROTECTION")); additionalProtection == "1" || strings.EqualFold(additionalProtection, "true") {
+		headers = append(headers, option.WithHeader("x-anthropic-additional-protection", "true"))
+	}
+
+	return headers
+}
+
 func newAnthropicClient(opts providerClientOptions) AnthropicClient {
 	anthropicOpts := anthropicOptions{
 		reasoningEffort: "medium",
@@ -56,16 +104,10 @@ func newAnthropicClient(opts providerClientOptions) AnthropicClient {
 	anthropicBetaHeader := "claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"
 	if opts.apiKey != "" {
 		anthropicClientOptions = append(anthropicClientOptions, option.WithAPIKey(opts.apiKey))
-		anthropicClientOptions = append(anthropicClientOptions,
-			option.WithHeader("anthropic-beta", anthropicBetaHeader),
-			option.WithHeader("User-Agent", "claude-cli/1.0.0 pando/1.0"),
-		)
+		anthropicClientOptions = append(anthropicClientOptions, claudeCodeHeaders(anthropicBetaHeader)...)
 	} else if anthropicOpts.oauthToken != "" {
 		anthropicClientOptions = append(anthropicClientOptions, option.WithAuthToken(anthropicOpts.oauthToken))
-		anthropicClientOptions = append(anthropicClientOptions,
-			option.WithHeader("anthropic-beta", auth.ClaudeOAuthBetaHeader+","+anthropicBetaHeader),
-			option.WithHeader("User-Agent", "claude-cli/1.0.0 pando/1.0"),
-		)
+		anthropicClientOptions = append(anthropicClientOptions, claudeCodeHeaders(auth.ClaudeOAuthBetaHeader+","+anthropicBetaHeader)...)
 	}
 	if anthropicOpts.useBedrock {
 		anthropicClientOptions = append(anthropicClientOptions, bedrock.WithLoadDefaultConfig(context.Background()))
