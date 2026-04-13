@@ -3,7 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faComments } from '@fortawesome/free-solid-svg-icons'
 import type { Message } from '@/types'
 import type { StreamingState } from '@/hooks/useChat'
-import MessageBubble from './MessageBubble'
+import MessageBubble, { EventRow } from './MessageBubble'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
@@ -40,6 +40,7 @@ function LoadingBubble({ streamingState }: { streamingState: StreamingState }) {
   const hasThinking = streamingState.thinking.length > 0
   const hasTools = streamingState.toolCalls.length > 0
 
+  // If nothing yet, show simple spinner
   if (!hasThinking && !hasTools) {
     return (
       <div
@@ -69,156 +70,23 @@ function LoadingBubble({ streamingState }: { streamingState: StreamingState }) {
     )
   }
 
+  // Show event rows for live thinking + tool calls
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '0.625rem',
-        padding: '0.5rem 1rem',
-      }}
-    >
-      <div style={{ width: 32, height: 32, flexShrink: 0 }} />
-      <div style={{ maxWidth: 'min(680px, 80%)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        {hasThinking && (
-          <ThinkingBlock text={streamingState.thinking} live />
-        )}
-        {streamingState.toolCalls.map((tc) => (
-          <LiveToolCallBlock key={tc.id} toolCall={tc} />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ─── Live thinking block ──────────────────────────────────────────────────────
-
-function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
-  return (
-    <div
-      style={{
-        border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
-        borderRadius: 'var(--radius-sm)',
-        overflow: 'hidden',
-        fontSize: 12,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          padding: '0.375rem 0.625rem',
-          background: 'color-mix(in srgb, var(--primary) 8%, var(--surface))',
-          color: 'var(--primary)',
-        }}
-      >
-        {live && <LoadingSpinner size={11} />}
-        <span style={{ fontWeight: 600, fontSize: 11, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-          Thinking
-        </span>
-      </div>
-      <div
-        style={{
-          padding: '0.5rem 0.625rem',
-          background: 'var(--bg-secondary)',
-          color: 'var(--fg-muted)',
-          fontFamily: 'monospace',
-          fontSize: 11,
-          lineHeight: 1.55,
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-          maxHeight: 220,
-          overflowY: 'auto',
-        }}
-      >
-        {text}
-      </div>
-    </div>
-  )
-}
-
-// ─── Live tool call block ─────────────────────────────────────────────────────
-
-function LiveToolCallBlock({ toolCall }: { toolCall: import('@/hooks/useChat').ActiveToolCall }) {
-  const isDone = toolCall.result !== undefined
-  const isError = toolCall.is_error
-
-  return (
-    <div
-      style={{
-        border: `1px solid ${isError ? 'var(--error)' : isDone ? 'var(--success)' : 'var(--border)'}33`,
-        borderRadius: 'var(--radius-sm)',
-        overflow: 'hidden',
-        fontSize: 12,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          padding: '0.375rem 0.625rem',
-          background: isError
-            ? 'color-mix(in srgb, var(--error) 8%, var(--surface))'
-            : isDone
-              ? 'color-mix(in srgb, var(--success) 8%, var(--surface))'
-              : 'var(--surface)',
-          color: isError ? 'var(--error)' : isDone ? 'var(--success)' : 'var(--fg-muted)',
-        }}
-      >
-        {!isDone && <LoadingSpinner size={11} />}
-        <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{toolCall.name}</span>
-        {isDone && (
-          <span style={{ fontSize: 10, marginLeft: 'auto' }}>
-            {isError ? '✗ error' : '✓ done'}
-          </span>
-        )}
-      </div>
-      {toolCall.input && (
-        <div
-          style={{
-            padding: '0.375rem 0.625rem',
-            background: 'var(--bg-secondary)',
-            borderTop: '1px solid var(--border)',
-            color: 'var(--fg-muted)',
-            fontFamily: 'monospace',
-            fontSize: 11,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-          }}
-        >
-          <div style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, color: 'var(--fg-dim)' }}>Input</div>
-          {(() => {
-            try {
-              return JSON.stringify(JSON.parse(toolCall.input), null, 2)
-            } catch {
-              return toolCall.input
-            }
-          })()}
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', padding: '0.375rem 0' }}>
+      {hasThinking && (
+        <EventRow kind="thinking" thinking={streamingState.thinking} isLive />
       )}
-      {toolCall.result && (
-        <div
-          style={{
-            padding: '0.375rem 0.625rem',
-            background: 'var(--bg-secondary)',
-            borderTop: `1px solid ${isError ? 'var(--error)' : 'var(--success)'}22`,
-            color: isError ? 'var(--error, #e55)' : 'var(--fg-muted)',
-            fontFamily: 'monospace',
-            fontSize: 11,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-            maxHeight: 200,
-            overflowY: 'auto',
-          }}
-        >
-          <div style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, color: isError ? 'var(--error, #e55)' : 'var(--fg-dim)' }}>
-            {isError ? 'Error' : 'Output'}
-          </div>
-          {toolCall.result.content}
-        </div>
-      )}
+      {streamingState.toolCalls.map((tc) => (
+        <EventRow
+          key={tc.id}
+          kind="tool"
+          toolName={tc.name}
+          toolInput={(() => { try { return JSON.parse(tc.input) } catch { return null } })()}
+          toolResult={tc.result?.content}
+          isError={tc.is_error}
+          isLive={tc.result === undefined}
+        />
+      ))}
     </div>
   )
 }
@@ -234,7 +102,6 @@ interface MessageListProps {
 export default function MessageList({ messages, streaming, streamingState }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll when messages change or last message content updates
   const lastContent = messages[messages.length - 1]?.content[0]?.text ?? ''
   const thinkingLen = streamingState.thinking.length
   const toolCount = streamingState.toolCalls.length
@@ -277,5 +144,3 @@ export default function MessageList({ messages, streaming, streamingState }: Mes
     </div>
   )
 }
-
-export { ThinkingBlock, LiveToolCallBlock }

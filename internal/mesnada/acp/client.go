@@ -641,6 +641,8 @@ func (c *MesnadaACPClient) processAgentMessageChunk(chunk *acpsdk.SessionUpdateA
 }
 
 // processAgentThoughtChunk handles chunks of agent thinking/reasoning.
+// Thinking is delivered separately from message text via ThinkingText so
+// callers can render it with a distinct visual style (e.g., collapsed block).
 func (c *MesnadaACPClient) processAgentThoughtChunk(chunk *acpsdk.SessionUpdateAgentThoughtChunk) {
 	text := c.extractTextFromContentBlock(chunk.Content)
 	if text == "" {
@@ -653,8 +655,8 @@ func (c *MesnadaACPClient) processAgentThoughtChunk(chunk *acpsdk.SessionUpdateA
 
 	if c.onUpdate != nil {
 		c.onUpdate(SessionUpdateInfo{
-			TaskID:      c.taskID,
-			MessageText: text,
+			TaskID:       c.taskID,
+			ThinkingText: text,
 		})
 	}
 }

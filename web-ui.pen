@@ -1,5 +1,5 @@
 {
-  "version": "2.9",
+  "version": "2.10",
   "children": [
     {
       "type": "frame",
@@ -40,30 +40,25 @@
               "alignItems": "center",
               "children": [
                 {
-                  "type": "frame",
-                  "id": "702j9",
-                  "name": "logoFavicon",
-                  "width": 22,
-                  "height": 22,
-                  "fill": {
-                    "type": "image",
-                    "enabled": true,
-                    "url": "./assets/pando-favicon-gold.png",
-                    "mode": "fit"
-                  }
+                  "type": "text",
+                  "id": "E7xEQ",
+                  "name": "logoIcon",
+                  "fill": "$fg",
+                  "content": "木",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "bold"
                 },
                 {
-                  "type": "frame",
-                  "id": "VamDr",
-                  "name": "logoName",
-                  "width": 80,
-                  "height": 22,
-                  "fill": {
-                    "type": "image",
-                    "enabled": true,
-                    "url": "./assets/pando-name-gold.png",
-                    "mode": "fit"
-                  }
+                  "type": "text",
+                  "id": "xzuiN",
+                  "name": "logoText",
+                  "fill": "$fg",
+                  "content": "PANDO",
+                  "fontFamily": "Inter",
+                  "fontSize": 18,
+                  "fontWeight": "bold",
+                  "letterSpacing": 2
                 },
                 {
                   "type": "text",
@@ -230,7 +225,6 @@
                   "name": "proj1",
                   "width": "fill_container",
                   "fill": "$selected",
-                  "cornerRadius": 4,
                   "gap": 8,
                   "padding": [
                     6,
@@ -891,7 +885,6 @@
                   "id": "11IZQ",
                   "name": "modelBadge",
                   "fill": "$bg-secondary",
-                  "cornerRadius": 4,
                   "gap": 6,
                   "padding": [
                     4,
@@ -959,7 +952,6 @@
                       "width": 28,
                       "height": 28,
                       "fill": "$primary",
-                      "cornerRadius": 4,
                       "justifyContent": "center",
                       "alignItems": "center",
                       "children": [
@@ -1024,7 +1016,6 @@
                       "width": 28,
                       "height": 28,
                       "fill": "$accent",
-                      "cornerRadius": 4,
                       "justifyContent": "center",
                       "alignItems": "center",
                       "children": [
@@ -1155,7 +1146,6 @@
                           "name": "Code Block",
                           "width": "fill_container",
                           "fill": "$surface",
-                          "cornerRadius": 4,
                           "stroke": {
                             "align": "inside",
                             "thickness": 1,
@@ -1242,7 +1232,6 @@
                   "name": "inputField",
                   "width": "fill_container",
                   "fill": "$bg-secondary",
-                  "cornerRadius": 6,
                   "stroke": {
                     "align": "inside",
                     "thickness": 1,
@@ -1287,7 +1276,6 @@
                       "id": "a7tXH",
                       "name": "sendBtn",
                       "fill": "$primary",
-                      "cornerRadius": 4,
                       "padding": [
                         4,
                         12
@@ -1416,7 +1404,6 @@
                       "id": "WN8NE",
                       "name": "modeBadge",
                       "fill": "$bg-tertiary",
-                      "cornerRadius": 3,
                       "gap": 4,
                       "padding": [
                         2,
@@ -1503,7 +1490,6 @@
                   "id": "peD9d",
                   "name": "stLow",
                   "fill": "$warning",
-                  "cornerRadius": 2,
                   "gap": 4,
                   "padding": [
                     1,
@@ -1528,7 +1514,6 @@
                   "id": "P9thY",
                   "name": "Simple Toggle",
                   "fill": "$color-forest",
-                  "cornerRadius": 14,
                   "effect": {
                     "type": "shadow",
                     "shadowType": "outer",
@@ -1585,8 +1570,8 @@
           "fill": {
             "type": "image",
             "enabled": true,
-            "url": "./assets/pando-logo-watermark.png",
-            "mode": "fit"
+            "url": "./images/generated-1776114108439.png",
+            "mode": "fill"
           }
         }
       ]
@@ -1630,30 +1615,25 @@
               "alignItems": "center",
               "children": [
                 {
-                  "type": "frame",
-                  "id": "0Vwk1",
-                  "name": "logoFavicon",
-                  "width": 22,
-                  "height": 22,
-                  "fill": {
-                    "type": "image",
-                    "enabled": true,
-                    "url": "./assets/pando-favicon-gold.png",
-                    "mode": "fit"
-                  }
+                  "type": "text",
+                  "id": "HJhGc",
+                  "name": "logoIcon",
+                  "fill": "$fg",
+                  "content": "木",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "bold"
                 },
                 {
-                  "type": "frame",
-                  "id": "OWo1D",
-                  "name": "logoName",
-                  "width": 80,
-                  "height": 22,
-                  "fill": {
-                    "type": "image",
-                    "enabled": true,
-                    "url": "./assets/pando-name-gold.png",
-                    "mode": "fit"
-                  }
+                  "type": "text",
+                  "id": "5yPBo",
+                  "name": "logoText",
+                  "fill": "$fg",
+                  "content": "PANDO",
+                  "fontFamily": "Inter",
+                  "fontSize": 18,
+                  "fontWeight": "bold",
+                  "letterSpacing": 2
                 },
                 {
                   "type": "text",
@@ -1820,7 +1800,6 @@
                   "name": "proj1",
                   "width": "fill_container",
                   "fill": "$selected",
-                  "cornerRadius": 4,
                   "gap": 8,
                   "padding": [
                     6,
@@ -2486,7 +2465,6 @@
                   "id": "9AyR3",
                   "name": "modelBadge",
                   "fill": "$bg-secondary",
-                  "cornerRadius": 4,
                   "gap": 6,
                   "padding": [
                     4,
@@ -2827,7 +2805,6 @@
                           "name": "fg1Input",
                           "width": "fill_container",
                           "fill": "$input-bg",
-                          "cornerRadius": 4,
                           "stroke": {
                             "align": "inside",
                             "thickness": 1,
@@ -2877,7 +2854,6 @@
                           "name": "fg2Select",
                           "width": "fill_container",
                           "fill": "$input-bg",
-                          "cornerRadius": 4,
                           "stroke": {
                             "align": "inside",
                             "thickness": 1,
@@ -2945,7 +2921,6 @@
                           "name": "fg3Select",
                           "width": "fill_container",
                           "fill": "$input-bg",
-                          "cornerRadius": 4,
                           "stroke": {
                             "align": "inside",
                             "thickness": 1,
@@ -3013,7 +2988,6 @@
                           "name": "fg4Select",
                           "width": "fill_container",
                           "fill": "$input-bg",
-                          "cornerRadius": 4,
                           "stroke": {
                             "align": "inside",
                             "thickness": 1,
@@ -3072,7 +3046,6 @@
                           "width": 36,
                           "height": 20,
                           "fill": "$success",
-                          "cornerRadius": 10,
                           "padding": 2,
                           "justifyContent": "end",
                           "alignItems": "center",
@@ -3114,7 +3087,6 @@
                           "width": 36,
                           "height": 20,
                           "fill": "$success",
-                          "cornerRadius": 10,
                           "padding": 2,
                           "justifyContent": "end",
                           "alignItems": "center",
@@ -3156,7 +3128,6 @@
                           "width": 36,
                           "height": 20,
                           "fill": "$secondary",
-                          "cornerRadius": 10,
                           "padding": 2,
                           "alignItems": "center",
                           "children": [
@@ -3206,7 +3177,6 @@
                           "name": "apiInput",
                           "width": "fill_container",
                           "fill": "$input-bg",
-                          "cornerRadius": 4,
                           "stroke": {
                             "align": "inside",
                             "thickness": 1,
@@ -3281,7 +3251,6 @@
                   "id": "u0vmV",
                   "name": "Simple Toggle",
                   "fill": "$color-forest",
-                  "cornerRadius": 14,
                   "effect": {
                     "type": "shadow",
                     "shadowType": "outer",
@@ -3338,8 +3307,8 @@
           "fill": {
             "type": "image",
             "enabled": true,
-            "url": "./assets/pando-logo-watermark.png",
-            "mode": "fit"
+            "url": "./images/generated-1776114065801.png",
+            "mode": "fill"
           }
         }
       ]
@@ -3383,30 +3352,25 @@
               "alignItems": "center",
               "children": [
                 {
-                  "type": "frame",
-                  "id": "ierwa",
-                  "name": "logoFavicon",
-                  "width": 22,
-                  "height": 22,
-                  "fill": {
-                    "type": "image",
-                    "enabled": true,
-                    "url": "./assets/pando-favicon-gold.png",
-                    "mode": "fit"
-                  }
+                  "type": "text",
+                  "id": "qZeuv",
+                  "name": "logoIcon",
+                  "fill": "$fg",
+                  "content": "木",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "bold"
                 },
                 {
-                  "type": "frame",
-                  "id": "rCcev",
-                  "name": "logoName",
-                  "width": 80,
-                  "height": 22,
-                  "fill": {
-                    "type": "image",
-                    "enabled": true,
-                    "url": "./assets/pando-name-gold.png",
-                    "mode": "fit"
-                  }
+                  "type": "text",
+                  "id": "1fmkz",
+                  "name": "logoText",
+                  "fill": "$fg",
+                  "content": "PANDO",
+                  "fontFamily": "Inter",
+                  "fontSize": 18,
+                  "fontWeight": "bold",
+                  "letterSpacing": 2
                 },
                 {
                   "type": "text",
@@ -3573,7 +3537,6 @@
                   "name": "proj1",
                   "width": "fill_container",
                   "fill": "$selected",
-                  "cornerRadius": 4,
                   "gap": 8,
                   "padding": [
                     6,
@@ -4239,7 +4202,6 @@
                   "id": "WSqXN",
                   "name": "modelBadge",
                   "fill": "$bg-secondary",
-                  "cornerRadius": 4,
                   "gap": 6,
                   "padding": [
                     4,
@@ -4322,7 +4284,6 @@
                       "id": "tghuC",
                       "name": "filterAll",
                       "fill": "$bg-tertiary",
-                      "cornerRadius": 3,
                       "padding": [
                         4,
                         10
@@ -4344,7 +4305,6 @@
                       "type": "frame",
                       "id": "tJjqp",
                       "name": "filterInfo",
-                      "cornerRadius": 3,
                       "padding": [
                         4,
                         10
@@ -4366,7 +4326,6 @@
                       "type": "frame",
                       "id": "ckTFQ",
                       "name": "filterWarn",
-                      "cornerRadius": 3,
                       "padding": [
                         4,
                         10
@@ -4388,7 +4347,6 @@
                       "type": "frame",
                       "id": "41reQ",
                       "name": "filterErr",
-                      "cornerRadius": 3,
                       "padding": [
                         4,
                         10
@@ -4418,7 +4376,6 @@
                       "id": "VseeE",
                       "name": "searchBox",
                       "fill": "$input-bg",
-                      "cornerRadius": 3,
                       "stroke": {
                         "align": "inside",
                         "thickness": 1,
@@ -4647,7 +4604,6 @@
                               "type": "frame",
                               "id": "tJnrl",
                               "name": "r1Badge",
-                              "cornerRadius": 2,
                               "padding": [
                                 2,
                                 6
@@ -4768,7 +4724,6 @@
                               "type": "frame",
                               "id": "qLNkS",
                               "name": "r2Badge",
-                              "cornerRadius": 2,
                               "padding": [
                                 2,
                                 6
@@ -4889,7 +4844,6 @@
                               "type": "frame",
                               "id": "5XvgY",
                               "name": "r3Badge",
-                              "cornerRadius": 2,
                               "padding": [
                                 2,
                                 6
@@ -5010,7 +4964,6 @@
                               "type": "frame",
                               "id": "THewg",
                               "name": "r4Badge",
-                              "cornerRadius": 2,
                               "padding": [
                                 2,
                                 6
@@ -5132,7 +5085,6 @@
                               "type": "frame",
                               "id": "8Tmw4",
                               "name": "r5Badge",
-                              "cornerRadius": 2,
                               "padding": [
                                 2,
                                 6
@@ -5319,7 +5271,6 @@
                   "id": "5WrVI",
                   "name": "Simple Toggle",
                   "fill": "$color-forest",
-                  "cornerRadius": 14,
                   "effect": {
                     "type": "shadow",
                     "shadowType": "outer",
@@ -5421,30 +5372,25 @@
               "alignItems": "center",
               "children": [
                 {
-                  "type": "frame",
-                  "id": "IMF9q",
-                  "name": "logoFavicon",
-                  "width": 22,
-                  "height": 22,
-                  "fill": {
-                    "type": "image",
-                    "enabled": true,
-                    "url": "./assets/pando-favicon-gold.png",
-                    "mode": "fit"
-                  }
+                  "type": "text",
+                  "id": "ZGLbd",
+                  "name": "logoIcon",
+                  "fill": "$fg",
+                  "content": "木",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "bold"
                 },
                 {
-                  "type": "frame",
-                  "id": "sod70",
-                  "name": "logoName",
-                  "width": 80,
-                  "height": 22,
-                  "fill": {
-                    "type": "image",
-                    "enabled": true,
-                    "url": "./assets/pando-name-gold.png",
-                    "mode": "fit"
-                  }
+                  "type": "text",
+                  "id": "4K0ot",
+                  "name": "logoText",
+                  "fill": "$fg",
+                  "content": "PANDO",
+                  "fontFamily": "Inter",
+                  "fontSize": 18,
+                  "fontWeight": "bold",
+                  "letterSpacing": 2
                 },
                 {
                   "type": "text",
@@ -5611,7 +5557,6 @@
                   "name": "proj1",
                   "width": "fill_container",
                   "fill": "$selected",
-                  "cornerRadius": 4,
                   "gap": 8,
                   "padding": [
                     6,
@@ -6277,7 +6222,6 @@
                   "id": "d5ZnS",
                   "name": "modelBadge",
                   "fill": "$bg-secondary",
-                  "cornerRadius": 4,
                   "gap": 6,
                   "padding": [
                     4,
@@ -6367,7 +6311,6 @@
                       "id": "Fvjwn",
                       "name": "orchNewBtn",
                       "fill": "$primary",
-                      "cornerRadius": 4,
                       "gap": 6,
                       "padding": [
                         6,
@@ -6391,7 +6334,6 @@
                       "type": "frame",
                       "id": "8m88R",
                       "name": "orchRefresh",
-                      "cornerRadius": 4,
                       "stroke": {
                         "align": "inside",
                         "thickness": 1,
@@ -6633,7 +6575,6 @@
                               "id": "haje7",
                               "name": "tr1StBadge",
                               "fill": "$success",
-                              "cornerRadius": 3,
                               "padding": [
                                 2,
                                 8
@@ -6716,7 +6657,6 @@
                               "width": 60,
                               "height": 4,
                               "fill": "$bg-tertiary",
-                              "cornerRadius": 2,
                               "children": [
                                 {
                                   "type": "frame",
@@ -6724,8 +6664,7 @@
                                   "name": "tr1PrgFill",
                                   "width": 42,
                                   "height": 4,
-                                  "fill": "$primary",
-                                  "cornerRadius": 2
+                                  "fill": "$primary"
                                 }
                               ]
                             },
@@ -6821,7 +6760,6 @@
                               "id": "Lj9vg",
                               "name": "tr2StBadge",
                               "fill": "$warning",
-                              "cornerRadius": 3,
                               "padding": [
                                 2,
                                 8
@@ -6904,7 +6842,6 @@
                               "width": 60,
                               "height": 4,
                               "fill": "$bg-tertiary",
-                              "cornerRadius": 2,
                               "children": [
                                 {
                                   "type": "frame",
@@ -6912,8 +6849,7 @@
                                   "name": "tr2PrgFill",
                                   "width": 24,
                                   "height": 4,
-                                  "fill": "$warning",
-                                  "cornerRadius": 2
+                                  "fill": "$warning"
                                 }
                               ]
                             },
@@ -7008,7 +6944,6 @@
                               "type": "frame",
                               "id": "ShzGW",
                               "name": "tr3StBadge",
-                              "cornerRadius": 3,
                               "stroke": {
                                 "align": "inside",
                                 "thickness": 1,
@@ -7095,8 +7030,7 @@
                               "name": "tr3PrgBar",
                               "width": 60,
                               "height": 4,
-                              "fill": "$success",
-                              "cornerRadius": 2
+                              "fill": "$success"
                             },
                             {
                               "type": "text",
@@ -7185,7 +7119,6 @@
                   "id": "FGRZM",
                   "name": "Simple Toggle",
                   "fill": "$color-forest",
-                  "cornerRadius": 14,
                   "effect": {
                     "type": "shadow",
                     "shadowType": "outer",
@@ -7477,7 +7410,6 @@
                   "name": "proj1",
                   "width": "fill_container",
                   "fill": "$selected",
-                  "cornerRadius": 4,
                   "gap": 8,
                   "padding": [
                     6,
@@ -8143,7 +8075,6 @@
                   "id": "U0zWG",
                   "name": "modelBadge",
                   "fill": "$bg-secondary",
-                  "cornerRadius": 4,
                   "gap": 6,
                   "padding": [
                     4,
@@ -8233,7 +8164,6 @@
                       "id": "rxvOD",
                       "name": "snapCreate",
                       "fill": "$primary",
-                      "cornerRadius": 4,
                       "gap": 6,
                       "padding": [
                         6,
@@ -8492,7 +8422,6 @@
                               "id": "kE2iU",
                               "name": "sr1TypeBadge",
                               "fill": "$primary",
-                              "cornerRadius": 3,
                               "padding": [
                                 2,
                                 8
@@ -8655,7 +8584,6 @@
                               "type": "frame",
                               "id": "xfxaW",
                               "name": "sr2TypeBadge",
-                              "cornerRadius": 3,
                               "stroke": {
                                 "align": "inside",
                                 "thickness": 1,
@@ -8824,7 +8752,6 @@
                               "id": "QiQLZ",
                               "name": "sr3TypeBadge",
                               "fill": "$primary",
-                              "cornerRadius": 3,
                               "padding": [
                                 2,
                                 8
@@ -8961,7 +8888,6 @@
                   "id": "9nuvX",
                   "name": "Simple Toggle",
                   "fill": "$color-forest",
-                  "cornerRadius": 14,
                   "effect": {
                     "type": "shadow",
                     "shadowType": "outer",
@@ -9253,7 +9179,6 @@
                   "name": "proj1",
                   "width": "fill_container",
                   "fill": "$selected",
-                  "cornerRadius": 4,
                   "gap": 8,
                   "padding": [
                     6,
@@ -9919,7 +9844,6 @@
                   "id": "fiVDv",
                   "name": "modelBadge",
                   "fill": "$bg-secondary",
-                  "cornerRadius": 4,
                   "gap": 6,
                   "padding": [
                     4,
@@ -11133,7 +11057,6 @@
                   "id": "smwrg",
                   "name": "Simple Toggle",
                   "fill": "$color-forest",
-                  "cornerRadius": 14,
                   "effect": {
                     "type": "shadow",
                     "shadowType": "outer",
@@ -11235,52 +11158,25 @@
               "alignItems": "center",
               "children": [
                 {
-                  "type": "frame",
-                  "id": "QAaFu",
-                  "name": "Logo Icon",
-                  "width": 28,
-                  "height": 28,
-                  "fill": {
-                    "type": "image",
-                    "enabled": true,
-                    "url": "./assets/pando-favicon-gold.png",
-                    "mode": "fit"
-                  },
-                  "cornerRadius": 4,
-                  "stroke": {
-                    "thickness": 0,
-                    "fill": "$color-gold-soft"
-                  },
-                  "justifyContent": "center",
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "p11ia",
-                      "name": "faviconImg",
-                      "width": 20,
-                      "height": 20,
-                      "fill": {
-                        "type": "image",
-                        "enabled": true,
-                        "url": "./assets/pando-favicon-gold.png",
-                        "mode": "fit"
-                      }
-                    }
-                  ]
+                  "type": "text",
+                  "id": "Nr2oM",
+                  "name": "logoIcon",
+                  "fill": "$fg",
+                  "content": "木",
+                  "fontFamily": "Inter",
+                  "fontSize": 24,
+                  "fontWeight": "bold"
                 },
                 {
-                  "type": "frame",
-                  "id": "IjuOu",
-                  "name": "nameImg",
-                  "width": 80,
-                  "height": 22,
-                  "fill": {
-                    "type": "image",
-                    "enabled": true,
-                    "url": "./assets/pando-name-gold.png",
-                    "mode": "fit"
-                  }
+                  "type": "text",
+                  "id": "Ao91o",
+                  "name": "logoText",
+                  "fill": "$fg",
+                  "content": "PANDO",
+                  "fontFamily": "Inter",
+                  "fontSize": 20,
+                  "fontWeight": "bold",
+                  "letterSpacing": 2
                 }
               ]
             },
@@ -11296,7 +11192,6 @@
                   "id": "hNNcM",
                   "name": "Model Badge",
                   "fill": "$color-surface",
-                  "cornerRadius": 14,
                   "stroke": {
                     "align": "inside",
                     "thickness": 1,
@@ -11380,7 +11275,6 @@
                       "width": 32,
                       "height": 32,
                       "fill": "$color-gold",
-                      "cornerRadius": 16,
                       "justifyContent": "center",
                       "alignItems": "center",
                       "children": [
@@ -11445,7 +11339,6 @@
                       "width": 32,
                       "height": 32,
                       "fill": "$color-amber",
-                      "cornerRadius": 16,
                       "justifyContent": "center",
                       "alignItems": "center",
                       "children": [
@@ -11598,7 +11491,6 @@
                   "name": "Input Field",
                   "width": "fill_container",
                   "fill": "$color-panel",
-                  "cornerRadius": 12,
                   "stroke": {
                     "align": "inside",
                     "thickness": 1,
@@ -11643,7 +11535,6 @@
                       "id": "F6iap",
                       "name": "Send Button",
                       "fill": "$color-gold",
-                      "cornerRadius": 8,
                       "effect": {
                         "type": "shadow",
                         "shadowType": "outer",
@@ -11802,7 +11693,6 @@
               "id": "eqGww",
               "name": "View Toggle",
               "fill": "$color-forest",
-              "cornerRadius": 14,
               "effect": {
                 "type": "shadow",
                 "shadowType": "outer",
@@ -11857,8 +11747,8 @@
           "fill": {
             "type": "image",
             "enabled": true,
-            "url": "./assets/pando-logo-watermark.png",
-            "mode": "fit"
+            "url": "./images/generated-1776114130129.png",
+            "mode": "fill"
           }
         }
       ]
@@ -13934,7 +13824,6 @@
                       "children": [
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "W2aRb",
                           "name": "mm1",
                           "opacity": 0.5,
@@ -13952,7 +13841,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "X0iDS",
                           "name": "mm3",
                           "opacity": 0.5,
@@ -13962,7 +13850,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "xkliV",
                           "name": "mm4",
                           "opacity": 0.4,
@@ -13972,7 +13859,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "fOpj0",
                           "name": "mm5",
                           "opacity": 0.4,
@@ -13982,7 +13868,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "9vWZB",
                           "name": "mm6",
                           "opacity": 0.4,
@@ -13992,7 +13877,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "MWN4z",
                           "name": "mm7",
                           "opacity": 0.3,
@@ -14010,7 +13894,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "5Dexk",
                           "name": "mm9",
                           "opacity": 0.3,
@@ -14020,7 +13903,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "N8bOa",
                           "name": "mm10",
                           "opacity": 0.3,
@@ -14038,7 +13920,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "dLs3o",
                           "name": "mm12",
                           "opacity": 0.5,
@@ -14048,7 +13929,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "LEU6I",
                           "name": "mm13",
                           "opacity": 0.3,
@@ -14058,7 +13938,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "DL8LZ",
                           "name": "mm14",
                           "opacity": 0.3,
@@ -14068,7 +13947,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "3A22Z",
                           "name": "mm15",
                           "opacity": 0.3,
@@ -14078,7 +13956,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "830zy",
                           "name": "mm16",
                           "opacity": 0.3,
@@ -14096,7 +13973,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "LjmdL",
                           "name": "mm18",
                           "opacity": 0.3,
@@ -14106,7 +13982,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "zOmlx",
                           "name": "mm19",
                           "opacity": 0.3,
@@ -14116,7 +13991,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "mfPd3",
                           "name": "mm20",
                           "opacity": 0.3,
@@ -14126,7 +14000,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "5A1X0",
                           "name": "mm21",
                           "opacity": 0.3,
@@ -14144,7 +14017,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "kakUL",
                           "name": "mm23",
                           "opacity": 0.3,
@@ -14154,7 +14026,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "Thj57",
                           "name": "mm24",
                           "opacity": 0.3,
@@ -14164,7 +14035,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "lHldG",
                           "name": "mm25",
                           "opacity": 0.3,
@@ -14174,7 +14044,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 2,
                           "id": "zbufi",
                           "layoutPosition": "absolute",
                           "x": 0,
@@ -14332,8 +14201,8 @@
           "fill": {
             "type": "image",
             "enabled": true,
-            "url": "./assets/pando-logo-watermark.png",
-            "mode": "fit"
+            "url": "./images/generated-1776114098224.png",
+            "mode": "fill"
           }
         }
       ]
@@ -14377,30 +14246,25 @@
               "alignItems": "center",
               "children": [
                 {
-                  "type": "frame",
-                  "id": "nPGyj",
-                  "name": "logoFavicon",
-                  "width": 22,
-                  "height": 22,
-                  "fill": {
-                    "type": "image",
-                    "enabled": true,
-                    "url": "./assets/pando-favicon-gold.png",
-                    "mode": "fit"
-                  }
+                  "type": "text",
+                  "id": "iBHXg",
+                  "name": "logoIcon",
+                  "fill": "$fg",
+                  "content": "木",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "bold"
                 },
                 {
-                  "type": "frame",
-                  "id": "gnCfN",
-                  "name": "logoName",
-                  "width": 80,
-                  "height": 22,
-                  "fill": {
-                    "type": "image",
-                    "enabled": true,
-                    "url": "./assets/pando-name-gold.png",
-                    "mode": "fit"
-                  }
+                  "type": "text",
+                  "id": "jULL4",
+                  "name": "logoText",
+                  "fill": "$fg",
+                  "content": "PANDO",
+                  "fontFamily": "Inter",
+                  "fontSize": 18,
+                  "fontWeight": "bold",
+                  "letterSpacing": 2
                 },
                 {
                   "type": "text",
@@ -14567,7 +14431,6 @@
                   "name": "proj1",
                   "width": "fill_container",
                   "fill": "$selected",
-                  "cornerRadius": 4,
                   "gap": 8,
                   "padding": [
                     6,
@@ -15228,7 +15091,6 @@
                   "id": "n2zjH",
                   "name": "modelBadge",
                   "fill": "$bg-secondary",
-                  "cornerRadius": 4,
                   "gap": 6,
                   "padding": [
                     4,
@@ -15296,7 +15158,6 @@
                       "width": 28,
                       "height": 28,
                       "fill": "$primary",
-                      "cornerRadius": 4,
                       "justifyContent": "center",
                       "alignItems": "center",
                       "children": [
@@ -15361,7 +15222,6 @@
                       "width": 28,
                       "height": 28,
                       "fill": "$accent",
-                      "cornerRadius": 4,
                       "justifyContent": "center",
                       "alignItems": "center",
                       "children": [
@@ -15829,7 +15689,6 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 1,
                           "id": "Vl5X4",
                           "name": "cursor",
                           "fill": "$fg",
@@ -15897,7 +15756,6 @@
                   "id": "c2LvI",
                   "name": "stLow",
                   "fill": "$warning",
-                  "cornerRadius": 2,
                   "gap": 4,
                   "padding": [
                     1,
@@ -15922,7 +15780,6 @@
                   "id": "2YVms",
                   "name": "Simple Toggle",
                   "fill": "$color-forest",
-                  "cornerRadius": 14,
                   "effect": {
                     "type": "shadow",
                     "shadowType": "outer",
@@ -15979,8 +15836,8 @@
           "fill": {
             "type": "image",
             "enabled": true,
-            "url": "./assets/pando-logo-watermark.png",
-            "mode": "fit"
+            "url": "./images/generated-1776114105665.png",
+            "mode": "fill"
           }
         }
       ]
@@ -16100,7 +15957,6 @@
                       "width": "fill_container",
                       "height": 36,
                       "fill": "$selected",
-                      "cornerRadius": 6,
                       "padding": [
                         8,
                         12
@@ -16125,7 +15981,6 @@
                       "name": "chatItem2",
                       "width": "fill_container",
                       "height": 36,
-                      "cornerRadius": 6,
                       "padding": [
                         8,
                         12
@@ -16150,7 +16005,6 @@
                       "name": "chatItem3",
                       "width": "fill_container",
                       "height": 36,
-                      "cornerRadius": 6,
                       "padding": [
                         8,
                         12
@@ -16224,7 +16078,6 @@
                           "id": "7hYO1",
                           "name": "modelBadge",
                           "fill": "$bg-secondary",
-                          "cornerRadius": 6,
                           "gap": 6,
                           "padding": [
                             4,
@@ -16275,7 +16128,6 @@
                           "width": 28,
                           "height": 28,
                           "fill": "$primary",
-                          "cornerRadius": 14,
                           "justifyContent": "center",
                           "alignItems": "center",
                           "children": [
@@ -16319,7 +16171,6 @@
                           "width": 28,
                           "height": 28,
                           "fill": "$accent",
-                          "cornerRadius": 14,
                           "justifyContent": "center",
                           "alignItems": "center",
                           "children": [
@@ -16610,7 +16461,6 @@
                       "id": "8cSG8",
                       "name": "file2Mod",
                       "fill": "$warning",
-                      "cornerRadius": 4,
                       "padding": [
                         2,
                         6
@@ -16980,7 +16830,6 @@
                       "id": "n801g",
                       "name": "cmd1Badge",
                       "fill": "$bg-tertiary",
-                      "cornerRadius": 4,
                       "padding": [
                         3,
                         8
@@ -17048,7 +16897,6 @@
                       "id": "omAnq",
                       "name": "cmd2Badge",
                       "fill": "$bg-tertiary",
-                      "cornerRadius": 4,
                       "padding": [
                         3,
                         8
@@ -17116,7 +16964,6 @@
                       "id": "4gXyq",
                       "name": "cmd3Badge",
                       "fill": "$bg-tertiary",
-                      "cornerRadius": 4,
                       "padding": [
                         3,
                         8
@@ -17184,7 +17031,6 @@
                       "id": "v1t5H",
                       "name": "cmd4Badge",
                       "fill": "$bg-tertiary",
-                      "cornerRadius": 4,
                       "padding": [
                         3,
                         8
@@ -17397,7 +17243,6 @@
                       "width": "fill_container",
                       "height": 36,
                       "fill": "$selected",
-                      "cornerRadius": 6,
                       "padding": [
                         8,
                         12
@@ -17422,7 +17267,6 @@
                       "name": "chat2",
                       "width": "fill_container",
                       "height": 36,
-                      "cornerRadius": 6,
                       "padding": [
                         8,
                         12
@@ -17510,7 +17354,6 @@
                           "id": "O6UHX",
                           "name": "userBubble",
                           "fill": "$bg-tertiary",
-                          "cornerRadius": 12,
                           "layout": "vertical",
                           "padding": [
                             10,
@@ -17543,7 +17386,6 @@
                           "type": "frame",
                           "id": "WncIq",
                           "name": "assistBubble",
-                          "cornerRadius": 12,
                           "layout": "vertical",
                           "padding": [
                             10,
@@ -17594,7 +17436,6 @@
                       "width": "fill_container",
                       "height": 36,
                       "fill": "$bg-secondary",
-                      "cornerRadius": 8,
                       "padding": [
                         8,
                         12
@@ -17709,7 +17550,6 @@
                   "width": "fill_container",
                   "height": 36,
                   "fill": "$bg-secondary",
-                  "cornerRadius": 6,
                   "stroke": {
                     "thickness": 1,
                     "fill": "$border"
@@ -17801,7 +17641,6 @@
                       "name": "model-claude-sonnet",
                       "width": "fill_container",
                       "fill": "$selected",
-                      "cornerRadius": 4,
                       "gap": 8,
                       "padding": [
                         8,
@@ -17843,7 +17682,6 @@
                       "id": "U8tuJ",
                       "name": "model-claude-opus",
                       "width": "fill_container",
-                      "cornerRadius": 4,
                       "gap": 8,
                       "padding": [
                         8,
@@ -17868,7 +17706,6 @@
                       "id": "nf3MP",
                       "name": "model-claude-haiku",
                       "width": "fill_container",
-                      "cornerRadius": 4,
                       "gap": 8,
                       "padding": [
                         8,
@@ -17898,7 +17735,6 @@
                           "id": "E9N1a",
                           "name": "badge-fast",
                           "fill": "$success",
-                          "cornerRadius": 4,
                           "padding": [
                             2,
                             6
@@ -17956,7 +17792,6 @@
                       "id": "WIl1x",
                       "name": "model-gpt4.1",
                       "width": "fill_container",
-                      "cornerRadius": 4,
                       "gap": 8,
                       "padding": [
                         8,
@@ -17982,7 +17817,6 @@
                       "name": "model-gpt4.1-mini",
                       "width": "fill_container",
                       "fill": "$hover",
-                      "cornerRadius": 4,
                       "gap": 8,
                       "padding": [
                         8,
@@ -18012,7 +17846,6 @@
                           "id": "mFAu5",
                           "name": "badge-fast-oai",
                           "fill": "$success",
-                          "cornerRadius": 4,
                           "padding": [
                             2,
                             6
@@ -18037,7 +17870,6 @@
                       "id": "TcT8y",
                       "name": "model-o3",
                       "width": "fill_container",
-                      "cornerRadius": 4,
                       "gap": 8,
                       "padding": [
                         8,
@@ -18067,7 +17899,6 @@
                           "id": "okD9E",
                           "name": "badge-reasoning",
                           "fill": "$accent",
-                          "cornerRadius": 4,
                           "padding": [
                             2,
                             6
@@ -18125,7 +17956,6 @@
                       "id": "MoIQV",
                       "name": "model-gemini-pro",
                       "width": "fill_container",
-                      "cornerRadius": 4,
                       "gap": 8,
                       "padding": [
                         8,
@@ -18150,7 +17980,6 @@
                       "id": "Vgf5K",
                       "name": "model-gemini-flash",
                       "width": "fill_container",
-                      "cornerRadius": 4,
                       "gap": 8,
                       "padding": [
                         8,
@@ -18180,7 +18009,6 @@
                           "id": "HwCf8",
                           "name": "badge-fast-google",
                           "fill": "$success",
-                          "cornerRadius": 4,
                           "padding": [
                             2,
                             6
@@ -18238,7 +18066,6 @@
                       "id": "Asef4",
                       "name": "model-ollama",
                       "width": "fill_container",
-                      "cornerRadius": 4,
                       "gap": 8,
                       "padding": [
                         8,
@@ -18268,7 +18095,6 @@
                           "id": "GVWae",
                           "name": "badge-local",
                           "fill": "$warning",
-                          "cornerRadius": 4,
                           "padding": [
                             2,
                             6
@@ -18491,11 +18317,9 @@
               "width": 200,
               "height": 3,
               "fill": "#D8C7AC",
-              "cornerRadius": 2,
               "children": [
                 {
                   "type": "rectangle",
-                  "cornerRadius": 2,
                   "id": "CIxEy",
                   "name": "loading-bar-fill",
                   "fill": {
@@ -18618,8 +18442,7 @@
                         "enabled": true,
                         "url": "./assets/pando-favicon-gold.png",
                         "mode": "fit"
-                      },
-                      "cornerRadius": 10
+                      }
                     },
                     {
                       "type": "frame",
@@ -18648,7 +18471,6 @@
                       "id": "VVmjh",
                       "name": "newTask",
                       "fill": "$color-gold",
-                      "cornerRadius": 12,
                       "effect": {
                         "type": "shadow",
                         "shadowType": "outer",
@@ -18711,7 +18533,6 @@
                   "name": "modeToggle",
                   "width": "fill_container",
                   "fill": "$color-bg",
-                  "cornerRadius": 12,
                   "stroke": {
                     "thickness": 1,
                     "fill": "$color-border"
@@ -18725,7 +18546,6 @@
                       "name": "modeChat",
                       "width": "fill_container",
                       "fill": "$color-panel-strong",
-                      "cornerRadius": 10,
                       "padding": [
                         8,
                         12
@@ -18750,7 +18570,6 @@
                       "id": "i7Avl",
                       "name": "modeCowork",
                       "width": "fill_container",
-                      "cornerRadius": 10,
                       "padding": [
                         8,
                         12
@@ -18837,7 +18656,6 @@
                           "id": "kgGwj",
                           "name": "badge",
                           "fill": "$color-surface",
-                          "cornerRadius": 999,
                           "stroke": {
                             "thickness": 1,
                             "fill": "$color-border"
@@ -18889,7 +18707,6 @@
                           "name": "aiMsg",
                           "width": "fill_container",
                           "fill": "$color-bg",
-                          "cornerRadius": 14,
                           "layout": "vertical",
                           "gap": 8,
                           "padding": 14,
@@ -18920,7 +18737,6 @@
                               "id": "urzEK",
                               "name": "tab1",
                               "fill": "$color-surface",
-                              "cornerRadius": 999,
                               "stroke": {
                                 "thickness": 1,
                                 "fill": "$color-border"
@@ -18947,7 +18763,6 @@
                               "id": "u1bIQ",
                               "name": "tab2",
                               "fill": "$color-surface",
-                              "cornerRadius": 999,
                               "stroke": {
                                 "thickness": 1,
                                 "fill": "$color-border"
@@ -18974,7 +18789,6 @@
                               "id": "iH4An",
                               "name": "tab3",
                               "fill": "$color-gold",
-                              "cornerRadius": 999,
                               "padding": [
                                 6,
                                 12
@@ -19002,7 +18816,6 @@
                       "name": "composer",
                       "width": "fill_container",
                       "fill": "$color-bg",
-                      "cornerRadius": 14,
                       "stroke": {
                         "thickness": 1,
                         "fill": "$color-border"
@@ -19037,7 +18850,6 @@
                               "id": "w82Wz",
                               "name": "startBtn",
                               "fill": "$color-gold",
-                              "cornerRadius": 10,
                               "padding": [
                                 8,
                                 16
@@ -19311,7 +19123,6 @@
                       "id": "lW3Fu",
                       "name": "modelBadge",
                       "fill": "$bg-secondary",
-                      "cornerRadius": 4,
                       "gap": 6,
                       "padding": [
                         4,
@@ -19505,7 +19316,6 @@
                       "width": 28,
                       "height": 28,
                       "fill": "$primary",
-                      "cornerRadius": 4,
                       "justifyContent": "center",
                       "alignItems": "center",
                       "children": [
@@ -19569,7 +19379,6 @@
                       "width": 28,
                       "height": 28,
                       "fill": "$accent",
-                      "cornerRadius": 4,
                       "justifyContent": "center",
                       "alignItems": "center",
                       "children": [
@@ -19621,7 +19430,6 @@
                           "name": "codeBlock",
                           "width": "fill_container",
                           "fill": "$bg-secondary",
-                          "cornerRadius": 8,
                           "layout": "vertical",
                           "padding": 12,
                           "children": [
@@ -19670,7 +19478,6 @@
                   "name": "inputField",
                   "width": "fill_container",
                   "fill": "$bg-secondary",
-                  "cornerRadius": 6,
                   "stroke": {
                     "align": "inside",
                     "thickness": 1,
@@ -19715,7 +19522,6 @@
                       "id": "FYMuH",
                       "name": "sendBtn",
                       "fill": "$primary",
-                      "cornerRadius": 4,
                       "padding": [
                         4,
                         12
@@ -19794,7 +19600,6 @@
                   "id": "pvtBX",
                   "name": "simpleToggle",
                   "fill": "$color-forest",
-                  "cornerRadius": 14,
                   "effect": {
                     "type": "shadow",
                     "shadowType": "outer",
@@ -20120,7 +19925,6 @@
                       "name": "input1",
                       "width": "fill_container",
                       "fill": "$input-bg",
-                      "cornerRadius": 4,
                       "stroke": {
                         "align": "inside",
                         "thickness": 1,
@@ -20169,7 +19973,6 @@
                       "name": "select2",
                       "width": "fill_container",
                       "fill": "$input-bg",
-                      "cornerRadius": 4,
                       "stroke": {
                         "align": "inside",
                         "thickness": 1,
@@ -20230,7 +20033,6 @@
                       "name": "select3",
                       "width": "fill_container",
                       "fill": "$input-bg",
-                      "cornerRadius": 4,
                       "stroke": {
                         "align": "inside",
                         "thickness": 1,
@@ -20282,7 +20084,6 @@
                       "width": 36,
                       "height": 20,
                       "fill": "$success",
-                      "cornerRadius": 10,
                       "padding": 2,
                       "justifyContent": "end",
                       "alignItems": "center",
@@ -20324,7 +20125,6 @@
                       "width": 36,
                       "height": 20,
                       "fill": "$success",
-                      "cornerRadius": 10,
                       "padding": 2,
                       "justifyContent": "end",
                       "alignItems": "center",
@@ -20366,7 +20166,6 @@
                       "width": 36,
                       "height": 20,
                       "fill": "$secondary",
-                      "cornerRadius": 10,
                       "padding": 2,
                       "alignItems": "center",
                       "children": [
@@ -20686,7 +20485,6 @@
                   "id": "ln5sC",
                   "name": "filterAll",
                   "fill": "$bg-tertiary",
-                  "cornerRadius": 3,
                   "padding": [
                     4,
                     10
@@ -20708,7 +20506,6 @@
                   "type": "frame",
                   "id": "7420O",
                   "name": "filterInfo",
-                  "cornerRadius": 3,
                   "padding": [
                     4,
                     10
@@ -20730,7 +20527,6 @@
                   "type": "frame",
                   "id": "vuWC5",
                   "name": "filterWarn",
-                  "cornerRadius": 3,
                   "padding": [
                     4,
                     10
@@ -20752,7 +20548,6 @@
                   "type": "frame",
                   "id": "Yp7J7",
                   "name": "filterErr",
-                  "cornerRadius": 3,
                   "padding": [
                     4,
                     10
@@ -20822,7 +20617,6 @@
                       "id": "BxLcv",
                       "name": "levelBadge",
                       "fill": "$info",
-                      "cornerRadius": 3,
                       "padding": [
                         2,
                         6
@@ -20888,7 +20682,6 @@
                       "id": "r3iGv",
                       "name": "lvl",
                       "fill": "$warning",
-                      "cornerRadius": 3,
                       "padding": [
                         2,
                         6
@@ -20954,7 +20747,6 @@
                       "id": "isrds",
                       "name": "lvl",
                       "fill": "$info",
-                      "cornerRadius": 3,
                       "padding": [
                         2,
                         6
@@ -21020,7 +20812,6 @@
                       "id": "m6CW2",
                       "name": "lvl",
                       "fill": "$success",
-                      "cornerRadius": 3,
                       "padding": [
                         2,
                         6
@@ -21087,7 +20878,6 @@
                       "id": "0dGYC",
                       "name": "lvl",
                       "fill": "$error",
-                      "cornerRadius": 3,
                       "padding": [
                         2,
                         6
@@ -21287,7 +21077,6 @@
                   "id": "oRkiz",
                   "name": "newBtn",
                   "fill": "$primary",
-                  "cornerRadius": 4,
                   "padding": [
                     6,
                     12
@@ -21356,7 +21145,6 @@
                           "id": "8l17M",
                           "name": "badge",
                           "fill": "$success",
-                          "cornerRadius": 3,
                           "padding": [
                             2,
                             8
@@ -21457,7 +21245,6 @@
                           "id": "Mo3fW",
                           "name": "badge",
                           "fill": "$warning",
-                          "cornerRadius": 3,
                           "padding": [
                             2,
                             8
@@ -21558,7 +21345,6 @@
                           "id": "XafO4",
                           "name": "badge",
                           "fill": "$fg-dim",
-                          "cornerRadius": 3,
                           "padding": [
                             2,
                             8
@@ -21779,7 +21565,6 @@
                   "id": "kKmqI",
                   "name": "newBtn",
                   "fill": "$primary",
-                  "cornerRadius": 4,
                   "padding": [
                     6,
                     12
@@ -21848,7 +21633,6 @@
                           "id": "YWVYZ",
                           "name": "typeBadge",
                           "fill": "$bg-tertiary",
-                          "cornerRadius": 3,
                           "padding": [
                             2,
                             8
@@ -21957,7 +21741,6 @@
                           "id": "j7din",
                           "name": "typeBadge",
                           "fill": "$primary",
-                          "cornerRadius": 3,
                           "padding": [
                             2,
                             8
@@ -22066,7 +21849,6 @@
                           "id": "UM68o",
                           "name": "typeBadge",
                           "fill": "$bg-tertiary",
-                          "cornerRadius": 3,
                           "padding": [
                             2,
                             8
@@ -22491,7 +22273,6 @@
                   "name": "ucbRow1",
                   "width": "fill_container",
                   "fill": "$card-bg",
-                  "cornerRadius": 6,
                   "stroke": {
                     "thickness": 1,
                     "fill": "$border"
@@ -22551,7 +22332,6 @@
                   "name": "ucbRow2",
                   "width": "fill_container",
                   "fill": "$card-bg",
-                  "cornerRadius": 6,
                   "stroke": {
                     "thickness": 1,
                     "fill": "$border"
@@ -22621,7 +22401,6 @@
                   "name": "skill1",
                   "width": "fill_container",
                   "fill": "$card-bg",
-                  "cornerRadius": 6,
                   "stroke": {
                     "thickness": 1,
                     "fill": "$border"
@@ -22663,7 +22442,6 @@
                   "name": "skill2",
                   "width": "fill_container",
                   "fill": "$card-bg",
-                  "cornerRadius": 6,
                   "stroke": {
                     "thickness": 1,
                     "fill": "$border"
@@ -22862,7 +22640,6 @@
                           "width": 28,
                           "height": 28,
                           "fill": "$color-gold",
-                          "cornerRadius": 14,
                           "justifyContent": "center",
                           "alignItems": "center",
                           "children": [
@@ -22926,7 +22703,6 @@
                           "width": 28,
                           "height": 28,
                           "fill": "$color-forest",
-                          "cornerRadius": 14,
                           "justifyContent": "center",
                           "alignItems": "center",
                           "children": [
@@ -23005,7 +22781,6 @@
                   "name": "inputField",
                   "width": "fill_container",
                   "fill": "$color-panel",
-                  "cornerRadius": 10,
                   "stroke": {
                     "thickness": 1,
                     "fill": "$color-border"
@@ -23039,7 +22814,6 @@
                       "id": "s31nZ",
                       "name": "sendBtn",
                       "fill": "$color-gold",
-                      "cornerRadius": 8,
                       "padding": [
                         6,
                         12
@@ -23138,7 +22912,6 @@
                   "id": "VAYKH",
                   "name": "viewToggle",
                   "fill": "$color-forest",
-                  "cornerRadius": 14,
                   "effect": {
                     "type": "shadow",
                     "shadowType": "outer",
@@ -23806,7 +23579,6 @@
                       "width": 24,
                       "height": 24,
                       "fill": "$accent",
-                      "cornerRadius": 4,
                       "justifyContent": "center",
                       "alignItems": "center",
                       "children": [
@@ -23878,7 +23650,6 @@
               "children": [
                 {
                   "type": "rectangle",
-                  "cornerRadius": 2,
                   "id": "SzBZf",
                   "name": "tHandleBar",
                   "fill": "$fg-dim",
@@ -24382,7 +24153,6 @@
                       "name": "searchField",
                       "width": "fill_container",
                       "fill": "$input-bg",
-                      "cornerRadius": 6,
                       "stroke": {
                         "thickness": 1,
                         "fill": "$border"
@@ -24706,11 +24476,9 @@
                   "width": 160,
                   "height": 3,
                   "fill": "#D8C7AC",
-                  "cornerRadius": 2,
                   "children": [
                     {
                       "type": "rectangle",
-                      "cornerRadius": 2,
                       "id": "yUvN2",
                       "name": "barFill",
                       "fill": "$color-gold",
@@ -24739,19 +24507,19 @@
   "variables": {
     "color-amber": {
       "type": "color",
-      "value": "#C87E1D"
+      "value": "#A62121"
     },
     "color-bg": {
       "type": "color",
-      "value": "#F6F0E3"
+      "value": "#FFFFFF"
     },
     "color-border": {
       "type": "color",
-      "value": "#D8C7AC"
+      "value": "#DDDDDD"
     },
     "color-forest": {
       "type": "color",
-      "value": "#2F3A24"
+      "value": "#121212"
     },
     "color-forest-soft": {
       "type": "color",
@@ -24759,7 +24527,7 @@
     },
     "color-gold": {
       "type": "color",
-      "value": "#D6A21D"
+      "value": "#222222"
     },
     "color-gold-soft": {
       "type": "color",
@@ -24767,7 +24535,7 @@
     },
     "color-panel": {
       "type": "color",
-      "value": "#FBF8F1"
+      "value": "#FFFFFF"
     },
     "color-panel-strong": {
       "type": "color",
@@ -24787,23 +24555,23 @@
     },
     "color-text": {
       "type": "color",
-      "value": "#2B241D"
+      "value": "#222222"
     },
     "color-text-muted": {
       "type": "color",
-      "value": "#6E655A"
+      "value": "#777777"
     },
     "radius-lg": {
       "type": "number",
-      "value": 20
+      "value": 0
     },
     "radius-md": {
       "type": "number",
-      "value": 14
+      "value": 0
     },
     "radius-sm": {
       "type": "number",
-      "value": 10
+      "value": 0
     },
     "space-lg": {
       "type": "number",
@@ -24827,124 +24595,47 @@
     },
     "accent": {
       "type": "color",
-      "value": [
-        {
-          "value": "#cba6f7"
-        },
-        {
-          "value": "#C87E1D"
-        }
-      ]
+      "value": "#A62121"
     },
     "bg": {
       "type": "color",
-      "value": [
-        {
-          "value": "#1e1e2e"
-        },
-        {
-          "value": "#F6F0E3"
-        }
-      ]
+      "value": "#FFFFFF"
     },
     "bg-secondary": {
       "type": "color",
-      "value": [
-        {
-          "value": "#313244"
-        },
-        {
-          "value": "#F2EAD8"
-        }
-      ]
+      "value": "#F5F5F5"
     },
     "bg-tertiary": {
       "type": "color",
-      "value": [
-        {
-          "value": "#45475a"
-        },
-        {
-          "value": "#EEE5D2"
-        }
-      ]
+      "value": "#E0E0E0"
     },
     "border": {
       "type": "color",
-      "value": [
-        {
-          "value": "#45475a"
-        },
-        {
-          "value": "#D8C7AC"
-        }
-      ]
+      "value": "#DDDDDD"
     },
     "border-focus": {
       "type": "color",
-      "value": [
-        {
-          "value": "#89b4fa"
-        },
-        {
-          "value": "#D6A21D"
-        }
-      ]
+      "value": "#000000"
     },
     "card-bg": {
       "type": "color",
-      "value": [
-        {
-          "value": "#313244"
-        },
-        {
-          "value": "#FBF8F1"
-        }
-      ]
+      "value": "#FFFFFF"
     },
     "error": {
       "type": "color",
-      "value": [
-        {
-          "value": "#f38ba8"
-        },
-        {
-          "value": "#C0392B"
-        }
-      ]
+      "value": "#A62121"
     },
     "fg": {
       "type": "color",
-      "value": [
-        {
-          "value": "#cdd6f4"
-        },
-        {
-          "value": "#2B241D"
-        }
-      ]
+      "value": "#222222"
     },
     "fg-dim": {
       "type": "color",
-      "value": [
-        {
-          "value": "#6c7086"
-        },
-        {
-          "value": "#8A8175"
-        }
-      ]
+      "value": "#666666"
     },
     "fg-muted": {
       "type": "color",
-      "value": [
-        {
-          "value": "#a6adc8"
-        },
-        {
-          "value": "#6E655A"
-        }
-      ]
+      "value": "#777777"
     },
     "hover": {
       "type": "color",
@@ -24992,14 +24683,7 @@
     },
     "primary": {
       "type": "color",
-      "value": [
-        {
-          "value": "#89b4fa"
-        },
-        {
-          "value": "#D6A21D"
-        }
-      ]
+      "value": "#222222"
     },
     "primary-fg": {
       "type": "color",
@@ -25014,36 +24698,15 @@
     },
     "secondary": {
       "type": "color",
-      "value": [
-        {
-          "value": "#585b70"
-        },
-        {
-          "value": "#6E655A"
-        }
-      ]
+      "value": "#777777"
     },
     "selected": {
       "type": "color",
-      "value": [
-        {
-          "value": "#45475a80"
-        },
-        {
-          "value": "#D6A21D22"
-        }
-      ]
+      "value": "#F0F0F0"
     },
     "sidebar-bg": {
       "type": "color",
-      "value": [
-        {
-          "value": "#181825"
-        },
-        {
-          "value": "#FBF8F1"
-        }
-      ]
+      "value": "#F9F9F9"
     },
     "success": {
       "type": "color",
@@ -25058,14 +24721,7 @@
     },
     "surface": {
       "type": "color",
-      "value": [
-        {
-          "value": "#181825"
-        },
-        {
-          "value": "#EEE5D2"
-        }
-      ]
+      "value": "#F5F5F5"
     },
     "warning": {
       "type": "color",

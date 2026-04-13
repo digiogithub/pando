@@ -307,7 +307,7 @@ export default function ModelSwitcher() {
                                 fontSize: 10,
                                 fontWeight: 600,
                                 padding: '1px 6px',
-                                borderRadius: 4,
+                                borderRadius: 0,
                                 background: `${BADGE_COLORS[badge] ?? 'var(--fg-dim)'}22`,
                                 color: BADGE_COLORS[badge] ?? 'var(--fg-dim)',
                                 border: `1px solid ${BADGE_COLORS[badge] ?? 'var(--fg-dim)'}44`,
@@ -338,9 +338,9 @@ export default function ModelSwitcher() {
             color: 'var(--fg-dim)',
           }}
         >
-          <span><kbd style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '0 4px' }}>↑↓</kbd> navigate</span>
-          <span><kbd style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '0 4px' }}>Enter</kbd> select</span>
-          <span><kbd style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '0 4px' }}>Esc</kbd> close</span>
+          <span><kbd style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }}>↑↓</kbd> navigate</span>
+          <span><kbd style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }}>Enter</kbd> select</span>
+          <span><kbd style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }}>Esc</kbd> close</span>
         </div>
       </div>
     </div>

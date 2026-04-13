@@ -183,7 +183,7 @@ export function Toggle({
         style={{
           width: 36,
           height: 20,
-          borderRadius: 10,
+          borderRadius: 0,
           background: checked ? 'var(--primary)' : 'var(--border)',
           position: 'relative',
           transition: 'background 0.2s',

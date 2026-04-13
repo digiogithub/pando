@@ -36,10 +36,12 @@ const inputStyle: React.CSSProperties = {
 export default function ModelCombobox({
   value,
   onChange,
+  onSelect,
   placeholder = 'e.g. claude-sonnet-4-6',
 }: {
   value: string
   onChange: (v: string) => void
+  onSelect?: (m: ModelInfo) => void
   placeholder?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -104,11 +106,12 @@ export default function ModelCombobox({
   }, [selectedIndex, open])
 
   const selectModel = useCallback(
-    (id: string) => {
-      onChange(id)
+    (m: ModelInfo) => {
+      onChange(m.id)
+      onSelect?.(m)
       closeDropdown()
     },
-    [onChange, closeDropdown],
+    [onChange, onSelect, closeDropdown],
   )
 
   return (
@@ -154,7 +157,7 @@ export default function ModelCombobox({
             } else if (e.key === 'Enter') {
               e.preventDefault()
               const m = flatModels[selectedIndex]
-              if (m) selectModel(m.id)
+              if (m) selectModel(m)
             }
           }}
         >
@@ -221,7 +224,7 @@ export default function ModelCombobox({
                         <div
                           key={model.id}
                           data-selected={isSelected ? 'true' : undefined}
-                          onClick={() => selectModel(model.id)}
+                          onClick={() => selectModel(model)}
                           onMouseEnter={() => setSelectedIndex(flatIdx)}
                           style={{
                             display: 'flex',

@@ -139,10 +139,14 @@ func (s *ACPSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	// Create MesnadaACPClient with a simple callback that just writes to output
 	// The client already logs everything to the logFile
 	onUpdate := func(update acp.SessionUpdateInfo) {
-		// Append messages to output (but don't add extra newline - already in text)
+		// Append regular message text to output.
 		if update.MessageText != "" {
 			output.WriteString(update.MessageText)
 		}
+
+		// Thinking text (agent_thought_chunk) is already logged by MesnadaACPClient.
+		// It is intentionally excluded from task.Output to avoid polluting the
+		// final result; it can be found in the log file under the [THINKING] prefix.
 
 		// Handle tool calls for real-time progress reporting
 		if update.ToolCall != nil {

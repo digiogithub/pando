@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { Session, Message } from '@/types'
 import api from '@/services/api'
-import { mapSession, mapMessage } from '@/services/mappers'
+import { mapSession, mapMessages } from '@/services/mappers'
 
 interface SessionStore {
   sessions: Session[]
@@ -42,7 +42,7 @@ export const useSessionStore = create<SessionStore>((set, _get) => ({
     set({ activeSessionId: id, messages: [] })
     try {
       const data = await api.get<RawSessionDetail>(`/api/v1/sessions/${id}`)
-      const messages = (data.messages ?? []).map(mapMessage)
+      const messages = mapMessages(data.messages ?? [])
       set({ messages })
     } catch {
       set({ messages: [] })

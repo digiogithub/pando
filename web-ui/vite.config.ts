@@ -27,6 +27,12 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
+            src: 'pando-icon.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+            purpose: 'any',
+          },
+          {
             src: 'pwa-icon-192.png',
             sizes: '192x192',
             type: 'image/png',

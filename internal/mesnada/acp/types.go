@@ -86,6 +86,10 @@ type SessionUpdateInfo struct {
 	// MessageText is the text content from the agent (for text blocks)
 	MessageText string
 
+	// ThinkingText is the model's reasoning/thinking content (agent_thought_chunk).
+	// This is distinct from MessageText and represents extended thinking output.
+	ThinkingText string
+
 	// ToolCall contains information about tool calls made by the agent
 	ToolCall *ToolCallInfo
 

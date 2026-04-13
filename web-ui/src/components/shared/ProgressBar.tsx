@@ -6,7 +6,7 @@ export default function ProgressBar({ value, max = 100 }: { value: number; max?:
         width: '100%',
         height: 6,
         background: 'var(--border)',
-        borderRadius: 3,
+        borderRadius: 0,
         overflow: 'hidden',
       }}
     >
@@ -15,7 +15,7 @@ export default function ProgressBar({ value, max = 100 }: { value: number; max?:
           height: '100%',
           width: `${pct}%`,
           background: pct === 100 ? 'var(--success)' : 'var(--primary)',
-          borderRadius: 3,
+          borderRadius: 0,
           transition: 'width 0.3s ease',
         }}
       />

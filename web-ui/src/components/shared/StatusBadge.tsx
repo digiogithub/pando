@@ -18,7 +18,7 @@ export default function StatusBadge({ status }: { status: Status }) {
         display: 'inline-flex',
         alignItems: 'center',
         padding: '0.125rem 0.5rem',
-        borderRadius: 9999,
+        borderRadius: 0,
         fontSize: 11,
         fontWeight: 600,
         background: cfg.bg,

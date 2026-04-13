@@ -1,103 +1,104 @@
-/* Pando design tokens — dual theme: light (Pando gold/earth) + dark (Catppuccin Mocha) */
+/* Pando design tokens — sober Zen-inspired theme */
 
 :root {
-  /* Backgrounds */
-  --bg: #F6F0E3;
-  --sidebar-bg: #FBF8F1;
-  --bg-secondary: #F2EAD8;
-  --bg-tertiary: #EEE5D2;
-  --card-bg: #FBF8F1;
-  --surface: #EEE5D2;
-  --overlay: #F2EAD8;
+  /* Backgrounds — Washi paper inspired */
+  --bg: #FCFAF2;
+  --sidebar-bg: #F5F2E8;
+  --bg-secondary: #EAE5D8;
+  --bg-tertiary: #E1DAC8;
+  --card-bg: #FFFFFF;
+  --surface: #F5F2E8;
+  --overlay: #EAE5D8;
 
-  /* Foregrounds */
-  --fg: #2B241D;
-  --fg-muted: #6E655A;
-  --fg-dim: #8A8175;
+  /* Foregrounds — Sumi-e ink inspired */
+  --fg: #1A1A1A;
+  --fg-muted: #4A4A48;
+  --fg-dim: #7A7A78;
 
-  /* Borders */
-  --border: #D8C7AC;
-  --border-focus: #D6A21D;
+  /* Borders — Traditional structure */
+  --border: #C8C5B9;
+  --border-focus: #D4AF37;
 
-  /* Brand / Interactive */
-  --primary: #D6A21D;
+  /* Brand / Interactive — Kintsugi Gold */
+  --primary: #D4AF37;
   --primary-fg: #FFFFFF;
-  --accent: #C87E1D;
-  --secondary: #6E655A;
+  --accent: #B08D3E;
+  --secondary: #4A4A48;
 
   /* Inputs */
   --input-bg: #FFFFFF;
 
   /* States */
-  --hover: #F2EAD8;
-  --selected: #D6A21D22;
+  --hover: #F2F1E9;
+  --selected: #D4AF371A;
 
   /* Semantic */
-  --error: #C0392B;
-  --warning: #E8C94B;
-  --success: #6A8B4F;
-  --info: #2980B9;
+  --error: #A62D21;
+  --warning: #B8961D;
+  --success: #3E5A28;
+  --info: #2E5A88;
 
-  /* Radii */
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
+  /* Radii — Sharp edges for sober look */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
 
   /* Spacing */
   --space-xs: 8px;
   --space-sm: 12px;
   --space-md: 16px;
-  --space-lg: 20px;
-  --space-xl: 28px;
+  --space-lg: 24px;
+  --space-xl: 32px;
 }
 
 [data-theme="dark"] {
-  /* Backgrounds */
-  --bg: #1e1e2e;
-  --sidebar-bg: #181825;
-  --bg-secondary: #313244;
-  --bg-tertiary: #45475a;
-  --card-bg: #313244;
-  --surface: #181825;
-  --overlay: #313244;
+  /* Backgrounds — Midnight ink */
+  --bg: #121214;
+  --sidebar-bg: #0A0A0C;
+  --bg-secondary: #1C1C1E;
+  --bg-tertiary: #252527;
+  --card-bg: #1C1C1E;
+  --surface: #0A0A0C;
+  --overlay: #1C1C1E;
 
-  /* Foregrounds */
-  --fg: #cdd6f4;
-  --fg-muted: #a6adc8;
-  --fg-dim: #6c7086;
+  /* Foregrounds — Silver moon */
+  --fg: #E0E0E0;
+  --fg-muted: #B0B0B0;
+  --fg-dim: #808080;
 
-  /* Borders */
-  --border: #45475a;
-  --border-focus: #89b4fa;
+  /* Borders — Charcoal structure */
+  --border: #2C2C2E;
+  --border-focus: #D4AF37;
 
-  /* Brand / Interactive */
-  --primary: #89b4fa;
-  --primary-fg: #1e1e2e;
-  --accent: #cba6f7;
-  --secondary: #585b70;
+  /* Brand / Interactive — Gold remains central */
+  --primary: #D4AF37;
+  --primary-fg: #121214;
+  --accent: #E5C365;
+  --secondary: #808080;
 
   /* Inputs */
-  --input-bg: #45475a;
+  --input-bg: #1C1C1E;
 
   /* States */
-  --hover: #585b70;
-  --selected: #45475a80;
+  --hover: #212123;
+  --selected: #D4AF3726;
 
   /* Semantic */
-  --error: #f38ba8;
-  --warning: #f9e2af;
-  --success: #a6e3a1;
-  --info: #89dceb;
+  --error: #E57373;
+  --warning: #FFD54F;
+  --success: #81C784;
+  --info: #64B5F6;
 
-  /* Radii — same for both themes */
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
+  /* Radii — Always sharp */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
 
-  /* Spacing — same for both themes */
+  /* Spacing */
   --space-xs: 8px;
   --space-sm: 12px;
   --space-md: 16px;
-  --space-lg: 20px;
-  --space-xl: 28px;
+  --space-lg: 24px;
+  --space-xl: 32px;
 }
+

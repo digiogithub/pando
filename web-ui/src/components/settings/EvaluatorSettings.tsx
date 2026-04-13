@@ -1,15 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useExtensionsStore } from '@/stores/extensionsStore'
 import { Toggle, TextInput, SelectInput } from '@/components/shared/FormInput'
-
-const MODEL_OPTIONS = [
-  { value: '', label: '— inherit from General —' },
-  { value: 'claude-haiku-4-5', label: 'claude-haiku-4-5' },
-  { value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6' },
-  { value: 'gpt-5-mini', label: 'gpt-5-mini' },
-  { value: 'gpt-4o-mini', label: 'gpt-4o-mini' },
-  { value: 'gemini-2.0-flash', label: 'gemini-2.0-flash' },
-]
+import ModelCombobox from '@/components/shared/ModelCombobox'
 
 const PROVIDER_OPTIONS = [
   { value: '', label: '— inherit from General —' },
@@ -247,12 +239,27 @@ export default function EvaluatorSettings() {
           onChange={(v) => updateEvaluator({ enabled: v })}
         />
 
-        <SelectInput
-          label="Judge Model"
-          options={MODEL_OPTIONS}
-          value={evaluator.model}
-          onChange={(e) => updateEvaluator({ model: e.target.value })}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+          <label
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: 'var(--fg-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+            }}
+          >
+            Judge Model
+          </label>
+          <ModelCombobox
+            value={evaluator.model}
+            onChange={(v) => updateEvaluator({ model: v })}
+            onSelect={(m) => updateEvaluator({ provider: m.provider })}
+          />
+          <p style={{ fontSize: 12, color: 'var(--fg-dim)', margin: 0 }}>
+            Select the model that will act as the judge for performance metrics.
+          </p>
+        </div>
 
         <SelectInput
           label="Judge Provider"

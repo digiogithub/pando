@@ -42,55 +42,60 @@ export default function SplashScreen({ status, onDone }: SplashScreenProps) {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '1rem',
+        gap: '1.5rem',
         background: isDark
-          ? '#1e1e2e'
-          : 'radial-gradient(ellipse at center, #FFFDF8 0%, #F6F0E3 50%, #EEE5D2 100%)',
+          ? 'var(--bg)'
+          : 'var(--bg)', // Using the new clean paper background from tokens
         opacity: fadeOut ? 0 : 1,
-        transform: fadeOut ? 'scale(1.02)' : 'scale(1)',
-        transition: 'opacity 0.4s ease, transform 0.4s ease',
+        transform: fadeOut ? 'scale(1.01)' : 'scale(1)',
+        transition: 'opacity 0.6s ease, transform 0.6s ease',
       }}
     >
       <style>{`
         @keyframes splash-pulse {
           0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.75; transform: scale(0.97); }
+          50% { opacity: 0.8; transform: scale(0.99); }
         }
         @keyframes splash-fadein {
-          from { opacity: 0; transform: translateY(12px); }
+          from { opacity: 0; transform: translateY(8px); }
           to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes splash-dots {
-          0%   { content: ''; }
-          33%  { content: '.'; }
-          66%  { content: '..'; }
-          100% { content: '...'; }
         }
       `}</style>
 
-      {/* Logo oficial */}
+      {/* Logo oficial — Oriental Symbol 木 */}
       <div
         style={{
-          width: 120,
-          height: 120,
-          animation: status !== 'ready' ? 'splash-pulse 2s ease-in-out infinite' : 'none',
+          width: 140,
+          height: 140,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          animation: status !== 'ready' ? 'splash-pulse 2.5s ease-in-out infinite' : 'none',
         }}
       >
-        <img
-          src="/pando-logo.svg"
-          alt="Pando"
-          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-        />
+        <span
+          style={{
+            fontSize: 120,
+            lineHeight: 1,
+            color: 'var(--primary)',
+            fontFamily: 'serif',
+            userSelect: 'none',
+          }}
+        >
+          木
+        </span>
       </div>
 
       {/* Title */}
       <div
         style={{
-          fontSize: '3rem',
+          fontSize: '3.5rem',
           fontWeight: 800,
-          letterSpacing: '0.3em',
+          letterSpacing: '0.4em',
           color: 'var(--primary)',
-          animation: 'splash-fadein 0.5s ease',
+          fontFamily: 'serif',
+          animation: 'splash-fadein 0.7s ease',
+          userSelect: 'none',
         }}
       >
         PANDO
@@ -99,10 +104,11 @@ export default function SplashScreen({ status, onDone }: SplashScreenProps) {
       {/* Subtitle */}
       <div
         style={{
-          fontSize: 14,
+          fontSize: 13,
           color: 'var(--fg-muted)',
-          letterSpacing: '0.04em',
-          animation: 'splash-fadein 0.5s ease 0.1s both',
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          animation: 'splash-fadein 0.7s ease 0.15s both',
         }}
       >
         AI assistant for code that grows with you
@@ -112,9 +118,10 @@ export default function SplashScreen({ status, onDone }: SplashScreenProps) {
       <div
         style={{
           marginTop: '1.5rem',
-          fontSize: 13,
+          fontSize: 12,
           color: status === 'error' ? 'var(--error)' : 'var(--fg-dim)',
-          animation: 'splash-fadein 0.5s ease 0.2s both',
+          fontFamily: 'monospace',
+          animation: 'splash-fadein 0.7s ease 0.3s both',
           minWidth: 160,
           textAlign: 'center',
         }}
@@ -122,14 +129,14 @@ export default function SplashScreen({ status, onDone }: SplashScreenProps) {
         {STATUS_TEXT[status]}
       </div>
 
-      {/* Progress bar for non-error states */}
+      {/* Progress bar for non-error states — sharp edges */}
       {status !== 'error' && (
         <div
           style={{
-            width: 200,
-            height: 3,
+            width: 240,
+            height: 2,
             background: 'var(--border)',
-            borderRadius: 2,
+            borderRadius: 0,
             overflow: 'hidden',
           }}
         >
@@ -137,18 +144,19 @@ export default function SplashScreen({ status, onDone }: SplashScreenProps) {
             style={{
               height: '100%',
               background: 'var(--primary)',
-              borderRadius: 2,
+              borderRadius: 0,
               width:
                 status === 'connecting'
                   ? '30%'
                   : status === 'authenticating'
                   ? '65%'
                   : '100%',
-              transition: 'width 0.5s ease',
+              transition: 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
           />
         </div>
       )}
+
     </div>
   )
 }

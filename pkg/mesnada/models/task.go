@@ -55,8 +55,10 @@ func ValidEngine(e Engine) bool {
 }
 
 // DefaultEngine returns the default engine.
+// Pando is the default engine since it is the host application and provides
+// native ACP support without requiring external process configuration.
 func DefaultEngine() Engine {
-	return EngineCopilot
+	return EnginePando
 }
 
 // TaskProgress represents the progress of a task.

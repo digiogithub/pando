@@ -449,9 +449,6 @@ func convertToMesnadaAppConfig(cfg *config.Config) *mesnadaConfig.Config {
 	}
 	mesnadaCfg.ACP.Server.RequireAuth = cfg.Mesnada.ACP.Server.RequireAuth
 
-	mesnadaCfg.TUI.Enabled = cfg.Mesnada.TUI.Enabled
-	mesnadaCfg.TUI.WebUI = cfg.Mesnada.TUI.WebUI
-
 	return mesnadaCfg
 }
 

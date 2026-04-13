@@ -975,24 +975,34 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 			Key:     "mesnada.orchestrator.defaultEngine",
 			Type:    settings.FieldSelect,
 			Value:   cfg.Mesnada.Orchestrator.DefaultEngine,
-			Options: []string{"copilot", "claude", "gemini", "opencode", "mistral"},
+			Options: []string{"pando", "copilot", "claude", "gemini", "opencode", "mistral", "acp", "acp-claude", "acp-codex"},
 		},
 		{Label: "Persona Path", Key: "mesnada.orchestrator.personaPath", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.PersonaPath},
 		{Label: "ACP Enabled", Key: "mesnada.acp.enabled", Type: settings.FieldToggle, Value: fmt.Sprint(cfg.Mesnada.ACP.Enabled)},
 		{Label: "ACP Auto Permission", Key: "mesnada.acp.autoPermission", Type: settings.FieldToggle, Value: fmt.Sprint(cfg.Mesnada.ACP.AutoPermission)},
 		{Label: "Orchestrator Store Path", Key: "mesnada.orchestrator.storePath", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.StorePath},
 		{Label: "Orchestrator Log Dir", Key: "mesnada.orchestrator.logDir", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.LogDir},
-		{Label: "Orchestrator Default Model", Key: "mesnada.orchestrator.defaultModel", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.DefaultModel},
+		{
+			Label:   "Orchestrator Default Model",
+			Key:     "mesnada.orchestrator.defaultModel",
+			Type:    settings.FieldSelect,
+			Value:   cfg.Mesnada.Orchestrator.DefaultModel,
+			Options: ensureOption(supportedModelOptions(cfg), cfg.Mesnada.Orchestrator.DefaultModel),
+		},
 		{Label: "Orchestrator MCP Config", Key: "mesnada.orchestrator.defaultMcpConfig", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.DefaultMCPConfig},
-		{Label: "ACP Default Agent", Key: "mesnada.acp.defaultAgent", Type: settings.FieldText, Value: cfg.Mesnada.ACP.DefaultAgent},
+		{
+			Label:   "ACP Default Agent",
+			Key:     "mesnada.acp.defaultAgent",
+			Type:    settings.FieldSelect,
+			Value:   cfg.Mesnada.ACP.DefaultAgent,
+			Options: ensureOption([]string{"pando"}, cfg.Mesnada.ACP.DefaultAgent),
+		},
 		{Label: "ACP Server Enabled", Key: "mesnada.acp.server.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.ACP.Server.Enabled)},
 		{Label: "ACP Server Host", Key: "mesnada.acp.server.host", Type: settings.FieldText, Value: cfg.Mesnada.ACP.Server.Host},
 		{Label: "ACP Server Port", Key: "mesnada.acp.server.port", Type: settings.FieldText, Value: fmt.Sprint(cfg.Mesnada.ACP.Server.Port)},
 		{Label: "ACP Server Max Sessions", Key: "mesnada.acp.server.maxSessions", Type: settings.FieldText, Value: fmt.Sprint(cfg.Mesnada.ACP.Server.MaxSessions)},
 		{Label: "ACP Server Session Timeout", Key: "mesnada.acp.server.sessionTimeout", Type: settings.FieldText, Value: cfg.Mesnada.ACP.Server.SessionTimeout},
 		{Label: "ACP Server Require Auth", Key: "mesnada.acp.server.requireAuth", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.ACP.Server.RequireAuth)},
-		{Label: "TUI Enabled", Key: "mesnada.tui.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.TUI.Enabled)},
-		{Label: "TUI Web UI", Key: "mesnada.tui.webui", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.TUI.WebUI)},
 	}
 
 	if !cfg.Mesnada.Enabled {
@@ -2254,18 +2264,6 @@ func saveMesnada(field settings.Field) error {
 			return fmt.Errorf("invalid ACP server require auth value: %w", err)
 		}
 		mesnadaCfg.ACP.Server.RequireAuth = requireAuth
-	case "mesnada.tui.enabled":
-		enabled, err := parseBoolValue(field.Value)
-		if err != nil {
-			return fmt.Errorf("invalid Mesnada TUI enabled value: %w", err)
-		}
-		mesnadaCfg.TUI.Enabled = enabled
-	case "mesnada.tui.webui":
-		webui, err := parseBoolValue(field.Value)
-		if err != nil {
-			return fmt.Errorf("invalid Mesnada TUI webui value: %w", err)
-		}
-		mesnadaCfg.TUI.WebUI = webui
 	default:
 		return fmt.Errorf("unsupported Mesnada setting %q", field.Key)
 	}

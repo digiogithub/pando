@@ -267,7 +267,7 @@ export default function QuickMenu() {
               color: 'var(--fg-dim)',
               background: 'var(--surface)',
               border: '1px solid var(--border)',
-              borderRadius: 4,
+              borderRadius: 0,
               padding: '1px 5px',
             }}
           >
