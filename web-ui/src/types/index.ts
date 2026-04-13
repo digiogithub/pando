@@ -126,6 +126,20 @@ export interface EvaluatorMetrics {
 }
 
 // Orchestrator types
+export interface OrchestratorToolCall {
+  id: string
+  name: string
+  title: string
+  kind: string
+  arguments?: Record<string, unknown>
+  result?: string
+  status: string
+  locations?: string[]
+  diffs?: Record<string, string>
+  started_at: string
+  ended_at?: string
+}
+
 export interface OrchestratorTask {
   id: string
   name: string
@@ -136,6 +150,8 @@ export interface OrchestratorTask {
   tokens: number
   created_at: string
   output?: string
+  current_tool?: string
+  tool_calls?: OrchestratorToolCall[]
 }
 
 // Provider config types (matching backend ProviderConfigItem)

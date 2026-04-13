@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useExtensionsStore } from '@/stores/extensionsStore'
-import { Toggle, TextInput, SelectInput } from '@/components/shared/FormInput'
+import { Toggle, TextInput } from '@/components/shared/FormInput'
 import ModelCombobox from '@/components/shared/ModelCombobox'
 
 

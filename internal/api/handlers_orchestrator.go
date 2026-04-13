@@ -19,6 +19,8 @@ type TaskResponse struct {
 	Progress  int       `json:"progress"`
 	Tokens    int       `json:"tokens"`
 	Output    string    `json:"output,omitempty"`
+	CurrentTool string   `json:"current_tool,omitempty"`
+	ToolCalls []*mesnadaModels.ToolCall `json:"tool_calls,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -45,6 +47,8 @@ func taskToResponse(t *mesnadaModels.Task) TaskResponse {
 		Status:    string(t.Status),
 		Progress:  progress,
 		Output:    t.Output,
+		CurrentTool: t.CurrentTool,
+		ToolCalls: t.ToolCalls,
 		CreatedAt: t.CreatedAt,
 		UpdatedAt: updatedAt,
 	}

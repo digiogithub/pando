@@ -12,7 +12,7 @@ import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import { format } from 'date-fns'
 import 'highlight.js/styles/github-dark-dimmed.css'
 import type { Message, ContentPart } from '@/types'
-import type { StreamingState, ActiveToolCall } from '@/hooks/useChat'
+import type { StreamingState } from '@/hooks/useChat'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -282,9 +282,9 @@ function ToolContent({
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {input?.pattern && <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>pattern: {input.pattern as string}</div>}
-          {input?.path && <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>path: {input.path as string}</div>}
-          {input?.glob && <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>glob: {input.glob as string}</div>}
+          {typeof input?.pattern === 'string' && <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>pattern: {input.pattern}</div>}
+          {typeof input?.path === 'string' && <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>path: {input.path}</div>}
+          {typeof input?.glob === 'string' && <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>glob: {input.glob}</div>}
         </div>
         {result && (
           <pre style={{ ...codeBlockStyle, maxHeight: 320, overflowY: 'auto', color: 'var(--fg-muted)' }}>

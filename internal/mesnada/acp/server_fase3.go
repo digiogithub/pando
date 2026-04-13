@@ -572,11 +572,21 @@ func (a *PandoACPAgent) processPromptWithAgent(
 
 				if !tc.Finished {
 					// ToolUseStart: register the tool call entry as pending.
+					startOpts := []acpsdk.ToolCallStartOpt{
+						acpsdk.WithStartKind(kind),
+						acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
+						acpsdk.WithStartRawInput(rawInput),
+					}
+					if len(locations) > 0 {
+						startOpts = append(startOpts, acpsdk.WithStartLocations(locations))
+					}
+					if len(content) > 0 {
+						startOpts = append(startOpts, acpsdk.WithStartContent(content))
+					}
 					startUpdate := acpsdk.StartToolCall(
 						acpsdk.ToolCallId(tc.ID),
 						title,
-						acpsdk.WithStartKind(kind),
-						acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
+						startOpts...,
 					)
 					if startUpdate.ToolCall != nil {
 						startUpdate.ToolCall.Meta = toolMeta
@@ -835,17 +845,67 @@ func (a *PandoACPAgent) processAgentResponse(
 		}
 	}
 
-	// Ensure pendingToolCalls is populated for every tool call in the assembled message.
-	// The streaming path (AgentEventTypeToolCall) normally does this, but some providers
-	// may not emit streaming events.  We do NOT re-send ACP tool_call events here because
-	// the streaming path already sent them — re-emitting would produce duplicates that
-	// break client-side rendering (e.g. Zed shows tools twice or ignores subsequent updates).
+	// Ensure pendingToolCalls is populated and StartToolCall is sent for every tool
+	// call in the assembled message.
+	//
+	// Some providers (Copilot/OpenAI/Gemini) do not emit streaming ToolUseStart/Stop
+	// events, so AgentEventTypeToolCall is never received and StartToolCall is never
+	// sent to the client.  Without a prior StartToolCall the client has no record of
+	// the tool and cannot show its name — it receives an UpdateToolCall for an unknown
+	// tool call ID and silently discards or renders it blank.
+	//
+	// We detect this by checking for key existence (not value equality) in the map:
+	// the streaming path always inserts the key (even with an empty-string value) when
+	// it sends StartToolCall, so a missing key means StartToolCall was never sent.
 	for _, toolCall := range msg.ToolCalls() {
 		a.pendingToolCallsMu.Lock()
-		if a.pendingToolCalls[toolCall.ID] == "" {
+		_, alreadyRegistered := a.pendingToolCalls[toolCall.ID]
+		if !alreadyRegistered {
+			a.pendingToolCalls[toolCall.ID] = toolCall.Input
+		} else if a.pendingToolCalls[toolCall.ID] == "" {
+			// Registered by ToolUseStart with empty input; update to full input now.
 			a.pendingToolCalls[toolCall.ID] = toolCall.Input
 		}
 		a.pendingToolCallsMu.Unlock()
+
+		if alreadyRegistered {
+			// StartToolCall was already sent by the streaming path; skip to avoid duplicates.
+			continue
+		}
+
+		// Non-streaming provider: send StartToolCall now so the client knows the tool name.
+		kind := mapToolKind(toolCall.Name)
+		rawInput := parseJSONInput(toolCall.Input)
+		title := toolDisplayTitle(toolCall.Name, rawInput, acpSession.WorkDir)
+		content := toolCallContent(toolCall.Name, rawInput)
+		locations := toLocations(toolCall.Name, toolCall.Input)
+
+		toolMeta := map[string]any{
+			"pando": map[string]any{"toolName": toolCall.Name},
+		}
+		if isBashTool(toolCall.Name) {
+			toolMeta["terminal_info"] = map[string]any{"terminal_id": toolCall.ID}
+			content = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(toolCall.ID)}
+		}
+
+		startOpts := []acpsdk.ToolCallStartOpt{
+			acpsdk.WithStartKind(kind),
+			acpsdk.WithStartStatus(acpsdk.ToolCallStatusInProgress),
+			acpsdk.WithStartRawInput(rawInput),
+		}
+		if len(locations) > 0 {
+			startOpts = append(startOpts, acpsdk.WithStartLocations(locations))
+		}
+		if len(content) > 0 {
+			startOpts = append(startOpts, acpsdk.WithStartContent(content))
+		}
+		startUpdate := acpsdk.StartToolCall(acpsdk.ToolCallId(toolCall.ID), title, startOpts...)
+		if startUpdate.ToolCall != nil {
+			startUpdate.ToolCall.Meta = toolMeta
+		}
+		if err := acpSession.SendUpdate(startUpdate); err != nil {
+			a.logger.Printf("[ACP AGENT] Failed to send tool call start (non-streaming): %v", err)
+		}
 	}
 
 	for _, toolResult := range msg.ToolResults() {
