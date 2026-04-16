@@ -7,8 +7,8 @@ VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/digiogithub/pando/internal/version.Version=$(VERSION)
 DIST_DIR := dist
 WEB_UI_DIR := web-ui
-WEB_UI_INSTALL_CMD ?= npm install
-WEB_UI_EMBEDDED_BUILD_CMD ?= npm run build:embedded
+WEB_UI_INSTALL_CMD ?= bun install
+WEB_UI_EMBEDDED_BUILD_CMD ?= bun run build:embedded
 CGO_ENABLED ?= 1
 ZIG ?= zig
 CC_LINUX_ARM64 ?= $(ZIG) cc -target aarch64-linux-gnu
@@ -39,7 +39,7 @@ desktop-deps:
 
 ## Build only the web-ui frontend in desktop mode
 desktop-ui:
-	cd $(WEB_UI_DIR) && $(WEB_UI_INSTALL_CMD) && npm run build:desktop
+	cd $(WEB_UI_DIR) && $(WEB_UI_INSTALL_CMD) && bun run build:desktop
 
 ## Build embedded web-ui assets used by the API binary
 web-ui-embedded:

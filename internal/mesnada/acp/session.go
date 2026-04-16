@@ -32,6 +32,10 @@ type ACPServerSession struct {
 	// pandoSessionID is the internal Pando session ID
 	pandoSessionID string
 
+	// updateMu serializes outbound session/update notifications so tool starts
+	// are observed by the client before follow-up updates for the same tool call.
+	updateMu sync.Mutex
+
 	// mode is the current session mode (set via SetSessionMode)
 	mode string
 
@@ -107,6 +111,9 @@ func (s *ACPServerSession) Cancel() {
 
 // SendUpdate sends a SessionUpdate notification to the client via the AgentSideConnection.
 func (s *ACPServerSession) SendUpdate(update acpsdk.SessionUpdate) error {
+	s.updateMu.Lock()
+	defer s.updateMu.Unlock()
+
 	s.mu.Lock()
 	agentConn := s.agentConn
 	sessionID := s.ID

@@ -178,6 +178,11 @@ type PandoACPAgent struct {
 	// Used to extract the file path when sending WriteTextFile after a successful tool result.
 	pendingToolCallsMu sync.Mutex
 	pendingToolCalls   map[string]string
+
+	// startedToolCalls tracks tool calls already announced to the client in the
+	// live streaming path so we can guarantee a tool_call exists before any
+	// tool_call_update for the same ID.
+	startedToolCalls map[string]bool
 }
 
 // NewPandoACPAgent creates a new ACP agent instance.
@@ -199,6 +204,7 @@ func NewPandoACPAgent(
 		logger:            logger,
 		sessions:          make(map[acpsdk.SessionId]*ACPServerSession),
 		pendingToolCalls:  make(map[string]string),
+		startedToolCalls:  make(map[string]bool),
 		agentService:      agentService,
 		sessionService:    sessionService,
 		permissionService: permSvc,
@@ -509,6 +515,9 @@ func (a *PandoACPAgent) processPromptWithAgent(
 	}
 
 	var finalStopReason acpsdk.StopReason
+	// Track whether streaming deltas were sent so processAgentResponse can skip
+	// re-sending the full content (which would cause duplicate text in the client).
+	var sentContentDeltas, sentThinkingDeltas bool
 	for event := range eventChan {
 		switch event.Type {
 		case AgentEventTypeError:
@@ -518,7 +527,7 @@ func (a *PandoACPAgent) processPromptWithAgent(
 			}
 
 		case AgentEventTypeResponse:
-			err := a.processAgentResponse(acpSession, event.Message)
+			err := a.processAgentResponse(acpSession, event.Message, sentContentDeltas, sentThinkingDeltas)
 			if err != nil {
 				a.logger.Printf("[ACP AGENT] Failed to process response: %v", err)
 				return acpsdk.StopReasonRefusal, err
@@ -529,6 +538,8 @@ func (a *PandoACPAgent) processPromptWithAgent(
 			if event.Delta != "" {
 				if err := acpSession.SendUpdate(acpsdk.UpdateAgentMessageText(event.Delta)); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send content delta: %v", err)
+				} else {
+					sentContentDeltas = true
 				}
 			}
 
@@ -536,26 +547,14 @@ func (a *PandoACPAgent) processPromptWithAgent(
 			if event.Delta != "" {
 				if err := acpSession.SendUpdate(acpsdk.UpdateAgentThoughtText(event.Delta)); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send thinking delta: %v", err)
+				} else {
+					sentThinkingDeltas = true
 				}
 			}
 
 		case AgentEventTypeToolCall:
 			if event.ToolCall != nil {
 				tc := event.ToolCall
-				// Always update the stored input; for edit tools sendWriteTextFile also reads it.
-				a.pendingToolCallsMu.Lock()
-				a.pendingToolCalls[tc.ID] = tc.Input
-				a.pendingToolCallsMu.Unlock()
-
-				// The agent emits AgentEventTypeToolCall TWICE per tool:
-				//   1. ToolUseStart (Finished=false) — input is incomplete/streaming
-				//   2. ToolUseStop  (Finished=true)  — input is fully assembled
-				//
-				// Send exactly one ACP event per phase to avoid duplicate tool_call
-				// messages that confuse client-side state machines (e.g. Zed):
-				//   • ToolUseStart  → tool_call(pending)         — registers the entry
-				//   • ToolUseStop   → tool_call_update(in_progress) — updates with complete input
-
 				kind := mapToolKind(tc.Name)
 				rawInput := parseJSONInput(tc.Input)
 				title := toolDisplayTitle(tc.Name, rawInput, acpSession.WorkDir)
@@ -570,11 +569,10 @@ func (a *PandoACPAgent) processPromptWithAgent(
 					content = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(tc.ID)}
 				}
 
-				if !tc.Finished {
-					// ToolUseStart: register the tool call entry as pending.
+				sendStart := func(status acpsdk.ToolCallStatus) error {
 					startOpts := []acpsdk.ToolCallStartOpt{
 						acpsdk.WithStartKind(kind),
-						acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
+						acpsdk.WithStartStatus(status),
 						acpsdk.WithStartRawInput(rawInput),
 					}
 					if len(locations) > 0 {
@@ -583,19 +581,40 @@ func (a *PandoACPAgent) processPromptWithAgent(
 					if len(content) > 0 {
 						startOpts = append(startOpts, acpsdk.WithStartContent(content))
 					}
-					startUpdate := acpsdk.StartToolCall(
-						acpsdk.ToolCallId(tc.ID),
-						title,
-						startOpts...,
-					)
+					startUpdate := acpsdk.StartToolCall(acpsdk.ToolCallId(tc.ID), title, startOpts...)
 					if startUpdate.ToolCall != nil {
 						startUpdate.ToolCall.Meta = toolMeta
 					}
-					if err := acpSession.SendUpdate(startUpdate); err != nil {
-						a.logger.Printf("[ACP AGENT] Failed to send tool call pending: %v", err)
+					return acpSession.SendUpdate(startUpdate)
+				}
+
+				// Always update the stored input; for edit tools sendWriteTextFile also reads it.
+				a.pendingToolCallsMu.Lock()
+				a.pendingToolCalls[tc.ID] = tc.Input
+				started := a.startedToolCalls[tc.ID]
+				a.pendingToolCallsMu.Unlock()
+
+				if !tc.Finished {
+					if !started {
+						if err := sendStart(acpsdk.ToolCallStatusPending); err != nil {
+							a.logger.Printf("[ACP AGENT] Failed to send tool call pending: %v", err)
+						} else {
+							a.pendingToolCallsMu.Lock()
+							a.startedToolCalls[tc.ID] = true
+							a.pendingToolCallsMu.Unlock()
+						}
 					}
 				} else {
-					// ToolUseStop: input is complete — move to in_progress with full data.
+					if !started {
+						if err := sendStart(acpsdk.ToolCallStatusInProgress); err != nil {
+							a.logger.Printf("[ACP AGENT] Failed to send synthetic tool call start: %v", err)
+						} else {
+							a.pendingToolCallsMu.Lock()
+							a.startedToolCalls[tc.ID] = true
+							a.pendingToolCallsMu.Unlock()
+						}
+					}
+
 					inProgressOpts := []acpsdk.ToolCallUpdateOpt{
 						acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
 						acpsdk.WithUpdateKind(kind),
@@ -629,10 +648,53 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				// For all other tools we clean up immediately to avoid leaking memory.
 				a.pendingToolCallsMu.Lock()
 				storedInput := a.pendingToolCalls[tr.ToolCallID]
+				// Capture wasStarted BEFORE deleting — if false it means StartToolCall
+				// was never sent (e.g. AgentEventTypeToolCall events were dropped because
+				// the 256-slot eventCh buffer overflowed with ThinkingDelta events, or
+				// because the provider does not stream tool-use start/stop events).
+				wasStarted := a.startedToolCalls[tr.ToolCallID]
+				delete(a.startedToolCalls, tr.ToolCallID)
 				if !isEditTool(tr.Name) {
 					delete(a.pendingToolCalls, tr.ToolCallID)
 				}
 				a.pendingToolCallsMu.Unlock()
+
+				// Guarantee that a tool_call (start) always precedes the first
+				// tool_call_update for the same toolCallId.  Without it Zed (and other
+				// ACP clients) have no entry for the tool call and silently ignore the
+				// update, so the tool never appears in the conversation panel.
+				if !wasStarted {
+					synthKind := mapToolKind(tr.Name)
+					synthRawInput := parseJSONInput(storedInput)
+					synthTitle := toolDisplayTitle(tr.Name, synthRawInput, acpSession.WorkDir)
+					synthContent := toolCallContent(tr.Name, synthRawInput)
+					synthLocations := toLocations(tr.Name, storedInput)
+					synthMeta := map[string]any{"pando": map[string]any{"toolName": tr.Name}}
+					if isBashTool(tr.Name) {
+						synthMeta["terminal_info"] = map[string]any{"terminal_id": tr.ToolCallID}
+						synthContent = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(tr.ToolCallID)}
+					}
+					synthStartOpts := []acpsdk.ToolCallStartOpt{
+						acpsdk.WithStartKind(synthKind),
+						acpsdk.WithStartStatus(acpsdk.ToolCallStatusInProgress),
+						acpsdk.WithStartRawInput(synthRawInput),
+					}
+					if len(synthLocations) > 0 {
+						synthStartOpts = append(synthStartOpts, acpsdk.WithStartLocations(synthLocations))
+					}
+					if len(synthContent) > 0 {
+						synthStartOpts = append(synthStartOpts, acpsdk.WithStartContent(synthContent))
+					}
+					synthStartUpdate := acpsdk.StartToolCall(acpsdk.ToolCallId(tr.ToolCallID), synthTitle, synthStartOpts...)
+					if synthStartUpdate.ToolCall != nil {
+						synthStartUpdate.ToolCall.Meta = synthMeta
+					}
+					if err := acpSession.SendUpdate(synthStartUpdate); err != nil {
+						a.logger.Printf("[ACP AGENT] Failed to send synthetic tool call start (wasStarted=false): %v", err)
+					} else {
+						a.logger.Printf("[ACP AGENT] Sent synthetic tool call start for %s (id=%s): start events were dropped or not streamed", tr.Name, tr.ToolCallID)
+					}
+				}
 
 				// Rebuild rawInput so clients can display tool arguments alongside the result.
 				rawInput := parseJSONInput(storedInput)
@@ -683,19 +745,17 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				//   3. tool_call_update → _meta.terminal_exit   (sent here)
 				if isBashTool(tr.Name) {
 					// Step 2: send terminal_output as a separate notification.
+					// Only _meta carries the output data — no content field, matching
+					// claude-agent-acp behavior so clients don't render it twice.
 					termOutput := strings.TrimSpace(tr.Content)
 					if termOutput != "" {
-						termOutputMeta := map[string]any{
-							"terminal_output": map[string]any{
-								"terminal_id": tr.ToolCallID,
-								"data":        termOutput,
-							},
-						}
 						termOutputUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tr.ToolCallID))
 						if termOutputUpdate.ToolCallUpdate != nil {
-							termOutputUpdate.ToolCallUpdate.Meta = termOutputMeta
-							termOutputUpdate.ToolCallUpdate.Content = []acpsdk.ToolCallContent{
-								acpsdk.ToolTerminalRef(tr.ToolCallID),
+							termOutputUpdate.ToolCallUpdate.Meta = map[string]any{
+								"terminal_output": map[string]any{
+									"terminal_id": tr.ToolCallID,
+									"data":        termOutput,
+								},
 							}
 						}
 						if err := acpSession.SendUpdate(termOutputUpdate); err != nil {
@@ -714,14 +774,12 @@ func (a *PandoACPAgent) processPromptWithAgent(
 						"signal":      nil,
 					}
 
-					// Bash tool result content: use terminal ref + console output.
+					// Bash tool result content: only terminal ref (output already sent
+					// via terminal_output _meta above). Text block fallback is omitted
+					// because it causes duplicate display in clients that support terminal
+					// widgets — matching claude-agent-acp's approach.
 					outputContent = []acpsdk.ToolCallContent{
 						acpsdk.ToolTerminalRef(tr.ToolCallID),
-					}
-					if termOutput != "" {
-						outputContent = append(outputContent, acpsdk.ToolContent(acpsdk.TextBlock(
-							"```console\n"+termOutput+"\n```",
-						)))
 					}
 				}
 
@@ -827,21 +885,29 @@ func (a *PandoACPAgent) sendWriteTextFile(ctx context.Context, sessionID acpsdk.
 }
 
 // processAgentResponse processes an agent response message and sends updates to the client.
+// sentContentDeltas and sentThinkingDeltas indicate whether streaming deltas were already sent
+// for this turn; when true the full content/reasoning blobs are skipped to avoid duplicates.
 func (a *PandoACPAgent) processAgentResponse(
 	acpSession *ACPServerSession,
 	msg message.Message,
+	sentContentDeltas bool,
+	sentThinkingDeltas bool,
 ) error {
-	if content := msg.Content(); content.String() != "" {
-		update := acpsdk.UpdateAgentMessageText(content.String())
-		if err := acpSession.SendUpdate(update); err != nil {
-			a.logger.Printf("[ACP AGENT] Failed to send message update: %v", err)
+	if !sentContentDeltas {
+		if content := msg.Content(); content.String() != "" {
+			update := acpsdk.UpdateAgentMessageText(content.String())
+			if err := acpSession.SendUpdate(update); err != nil {
+				a.logger.Printf("[ACP AGENT] Failed to send message update: %v", err)
+			}
 		}
 	}
 
-	if reasoning := msg.ReasoningContent(); reasoning.String() != "" {
-		update := acpsdk.UpdateAgentThoughtText(reasoning.String())
-		if err := acpSession.SendUpdate(update); err != nil {
-			a.logger.Printf("[ACP AGENT] Failed to send thought update: %v", err)
+	if !sentThinkingDeltas {
+		if reasoning := msg.ReasoningContent(); reasoning.String() != "" {
+			update := acpsdk.UpdateAgentThoughtText(reasoning.String())
+			if err := acpSession.SendUpdate(update); err != nil {
+				a.logger.Printf("[ACP AGENT] Failed to send thought update: %v", err)
+			}
 		}
 	}
 
@@ -860,6 +926,12 @@ func (a *PandoACPAgent) processAgentResponse(
 	for _, toolCall := range msg.ToolCalls() {
 		a.pendingToolCallsMu.Lock()
 		_, alreadyRegistered := a.pendingToolCalls[toolCall.ID]
+		// hadEmptyInput is true when EventToolUseStart stored "" (empty) and
+		// EventToolUseStop was silently dropped because the 256-slot event buffer
+		// was full (non-blocking send with default:). In that case the streaming
+		// path sent StartToolCall with title="<toolname>" and rawInput={}, so we
+		// must send a corrective UpdateToolCall here with the full command info.
+		hadEmptyInput := alreadyRegistered && a.pendingToolCalls[toolCall.ID] == ""
 		if !alreadyRegistered {
 			a.pendingToolCalls[toolCall.ID] = toolCall.Input
 		} else if a.pendingToolCalls[toolCall.ID] == "" {
@@ -869,7 +941,42 @@ func (a *PandoACPAgent) processAgentResponse(
 		a.pendingToolCallsMu.Unlock()
 
 		if alreadyRegistered {
-			// StartToolCall was already sent by the streaming path; skip to avoid duplicates.
+			// StartToolCall was already sent by the streaming path.
+			// If EventToolUseStop was dropped (hadEmptyInput), send a corrective
+			// UpdateToolCall so the client displays the correct command title and
+			// rawInput instead of just the tool name (e.g. "bash").
+			if hadEmptyInput && toolCall.Input != "" {
+				kind := mapToolKind(toolCall.Name)
+				rawInput := parseJSONInput(toolCall.Input)
+				title := toolDisplayTitle(toolCall.Name, rawInput, acpSession.WorkDir)
+				content := toolCallContent(toolCall.Name, rawInput)
+				locations := toLocations(toolCall.Name, toolCall.Input)
+				toolMeta := map[string]any{"pando": map[string]any{"toolName": toolCall.Name}}
+				if isBashTool(toolCall.Name) {
+					toolMeta["terminal_info"] = map[string]any{"terminal_id": toolCall.ID}
+					content = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(toolCall.ID)}
+				}
+				correctiveOpts := []acpsdk.ToolCallUpdateOpt{
+					acpsdk.WithUpdateKind(kind),
+					acpsdk.WithUpdateTitle(title),
+					acpsdk.WithUpdateRawInput(rawInput),
+				}
+				if len(content) > 0 {
+					correctiveOpts = append(correctiveOpts, acpsdk.WithUpdateContent(content))
+				}
+				if len(locations) > 0 {
+					correctiveOpts = append(correctiveOpts, acpsdk.WithUpdateLocations(locations))
+				}
+				correctiveUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(toolCall.ID), correctiveOpts...)
+				if correctiveUpdate.ToolCallUpdate != nil {
+					correctiveUpdate.ToolCallUpdate.Meta = toolMeta
+				}
+				if err := acpSession.SendUpdate(correctiveUpdate); err != nil {
+					a.logger.Printf("[ACP AGENT] Failed to send corrective tool call update for %s (id=%s): %v", toolCall.Name, toolCall.ID, err)
+				} else {
+					a.logger.Printf("[ACP AGENT] Sent corrective tool call update for %s (id=%s): EventToolUseStop was dropped from event buffer", toolCall.Name, toolCall.ID)
+				}
+			}
 			continue
 		}
 
@@ -963,9 +1070,8 @@ func (a *PandoACPAgent) processAgentResponse(
 							"data":        termOutput,
 						},
 					}
-					termOutputUpdate.ToolCallUpdate.Content = []acpsdk.ToolCallContent{
-						acpsdk.ToolTerminalRef(toolResult.ToolCallID),
-					}
+					// No content field — output is carried in _meta only,
+					// matching claude-agent-acp to avoid double rendering.
 				}
 				if err := acpSession.SendUpdate(termOutputUpdate); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send terminal output: %v", err)
@@ -981,12 +1087,9 @@ func (a *PandoACPAgent) processAgentResponse(
 				"exit_code":   exitCode,
 				"signal":      nil,
 			}
+			// Only terminal ref in content — no text block fallback, matching
+			// claude-agent-acp behavior for terminal-capable clients.
 			content = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(toolResult.ToolCallID)}
-			if termOutput != "" {
-				content = append(content, acpsdk.ToolContent(acpsdk.TextBlock(
-					"```console\n"+termOutput+"\n```",
-				)))
-			}
 		}
 
 		resultOpts := []acpsdk.ToolCallUpdateOpt{
@@ -1551,7 +1654,8 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 					if isBashTool(tr.Name) {
 						termOutput := strings.TrimSpace(tr.Content)
 						if termOutput != "" {
-							// Step 2: send terminal_output as a separate notification.
+							// Step 2: terminal_output notification — only _meta, no content
+							// field, matching claude-agent-acp to avoid double rendering.
 							termOutputUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tr.ToolCallID))
 							if termOutputUpdate.ToolCallUpdate != nil {
 								termOutputUpdate.ToolCallUpdate.Meta = map[string]any{
@@ -1559,9 +1663,6 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 										"terminal_id": tr.ToolCallID,
 										"data":        termOutput,
 									},
-								}
-								termOutputUpdate.ToolCallUpdate.Content = []acpsdk.ToolCallContent{
-									acpsdk.ToolTerminalRef(tr.ToolCallID),
 								}
 							}
 							sendUpdate(termOutputUpdate)
@@ -1578,14 +1679,10 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 							"signal":      nil,
 						}
 
-						// Bash tool result content: terminal ref + console output.
+						// Only terminal ref in content — no text block fallback,
+						// matching claude-agent-acp behavior.
 						outputContent = []acpsdk.ToolCallContent{
 							acpsdk.ToolTerminalRef(tr.ToolCallID),
-						}
-						if termOutput != "" {
-							outputContent = append(outputContent, acpsdk.ToolContent(acpsdk.TextBlock(
-								"```console\n"+termOutput+"\n```",
-							)))
 						}
 					}
 

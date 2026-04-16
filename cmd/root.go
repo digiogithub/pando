@@ -472,7 +472,10 @@ func (a *acpAgentAdapter) Run(ctx context.Context, sessionID string, content str
 		return nil, err
 	}
 
-	acpCh := make(chan acpPkg.AgentEvent)
+	// Buffered to decouple the event-drain goroutine from the ACP handler.
+	// Without a buffer, each SendUpdate (RPC write) stalls the goroutine and
+	// prevents it from draining agent.eventCh, causing overflow and lost events.
+	acpCh := make(chan acpPkg.AgentEvent, 512)
 	go func() {
 		defer close(acpCh)
 		for ev := range realCh {

@@ -36,7 +36,7 @@ go install github.com/digiogithub/pando@latest
 ```bash
 git clone https://github.com/your-repo/pando.git
 cd pando
-cd web-ui && npm install && npm run build:embedded && cd ..
+cd web-ui && bun install && bun run build:embedded && cd ..
 go build -o pando
 ./pando app
 ```
@@ -182,7 +182,7 @@ Compila la web-ui embebida y luego el binario de pando.
 
 ```bash
 # Build embedded web-ui assets
-cd web-ui && npm install && npm run build:embedded && cd ..
+cd web-ui && bun install && bun run build:embedded && cd ..
 
 # Get version from last git tag
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
@@ -196,7 +196,7 @@ Compila la web-ui embebida, genera el binario de pando y lo copia a `~/bin/`.
 
 ```bash
 # Build embedded web-ui assets
-cd web-ui && npm install && npm run build:embedded && cd ..
+cd web-ui && bun install && bun run build:embedded && cd ..
 
 # Get version from last git tag
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")

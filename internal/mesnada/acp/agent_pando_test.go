@@ -223,7 +223,7 @@ func TestProcessAgentResponse_ToolCallsIncludeRenderingMetadata(t *testing.T) {
 	}}
 
 	acpSession := NewACPServerSession(acpsdk.SessionId("session-1"), "/workspace/project", nil, "session-1")
-	if err := agent.processAgentResponse(acpSession, msg); err != nil {
+	if err := agent.processAgentResponse(acpSession, msg, false, false); err != nil {
 		t.Fatalf("processAgentResponse failed: %v", err)
 	}
 
