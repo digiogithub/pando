@@ -27,8 +27,8 @@ AutoCompact = true
 AutoCompactThreshold = 0.0
 
 [Agents.coder]
-Model = 'anthropic.claude-sonnet-4-6'
-MaxTokens = 32000
+Model = 'gemini.gemini-3.1-flash-lite-preview'
+MaxTokens = 8192
 ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false

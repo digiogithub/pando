@@ -57,6 +57,11 @@ var (
 	detectedClaudeVersionOnce sync.Once
 )
 
+func isEnvTruthy(val string) bool {
+	val = strings.ToLower(strings.TrimSpace(val))
+	return val == "1" || val == "true" || val == "yes"
+}
+
 func claudeInstallVersion() string {
 	detectedClaudeVersionOnce.Do(func() {
 		// Allow explicit override via environment variable.
@@ -162,6 +167,11 @@ func newAnthropicClient(opts providerClientOptions) AnthropicClient {
 	}
 	if anthropicOpts.useBedrock {
 		anthropicClientOptions = append(anthropicClientOptions, bedrock.WithLoadDefaultConfig(context.Background()))
+		if isEnvTruthy(os.Getenv("CLAUDE_CODE_SKIP_BEDROCK_AUTH")) {
+			anthropicClientOptions = append(anthropicClientOptions, option.WithHeader("X-Claude-Code-Skip-Auth", "true"))
+		}
+	} else if isEnvTruthy(os.Getenv("CLAUDE_CODE_SKIP_FOUNDRY_AUTH")) {
+		anthropicClientOptions = append(anthropicClientOptions, option.WithHeader("X-Claude-Code-Skip-Auth", "true"))
 	}
 
 	if cfg := config.Get(); cfg != nil && cfg.Debug {

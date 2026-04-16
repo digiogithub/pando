@@ -117,7 +117,7 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 		// Always try OAuth first — Claude Max/Pro OAuth tokens get higher rate limits
 		// than standard API keys, so prefer OAuth even when an API key is configured.
 		if creds, source, err := auth.LoadClaudeCredentials(); err == nil && creds != nil {
-			if token, updatedCreds, err := auth.GetValidClaudeToken(creds); err == nil && token != "" {
+			if token, updatedCreds, err := auth.GetClaudeToken(creds); err == nil && token != "" {
 				// Save refreshed token back to the same source it came from.
 				if updatedCreds != nil {
 					if source == "claude-code" {
