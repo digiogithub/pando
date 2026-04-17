@@ -20,6 +20,8 @@ Parallelize tasks when possible, but always ensure that you are not losing conte
 - **Implementation**: Write code in small, testable increments. After each increment, run tests to ensure functionality.
 - **Code Style**: Follow Go best practices and project-specific coding standards
 - **Testing**: Create tests in `tests/` folder (Python files, not in root)
+- **Verified commands**:
+  - Agent/API targeted tests: `go test ./internal/llm/agent ./internal/api`
 - **Documentation**: Update documentation as needed, especially if you are adding new features or making significant changes. Use always for documentation the tools of kb of remembrances to save any relevant information about the project, the changes you are making, and the reasons behind those changes.
 
 ### External Research

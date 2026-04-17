@@ -204,6 +204,7 @@ go build -ldflags "-s -w -X github.com/digiogithub/pando/internal/version.Versio
 rm -f ~/bin/pando
 upx -1 pando
 cp pando ~/bin/pando
+rm *.upx
 ```
 
 ### release

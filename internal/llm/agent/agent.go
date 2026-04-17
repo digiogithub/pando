@@ -92,12 +92,13 @@ type agent struct {
 	tools    []tools.BaseTool
 	provider provider.Provider
 
-	titleProvider     provider.Provider
-	summarizeProvider provider.Provider
-	agentName         config.AgentName
-	skillManager      *skills.SkillManager
-	contextManager    *skills.ContextManager
-	luaMgr            *luaengine.FilterManager
+	titleProvider            provider.Provider
+	summarizeProvider        provider.Provider
+	summarizeFallbackProvider provider.Provider
+	agentName                config.AgentName
+	skillManager             *skills.SkillManager
+	contextManager           *skills.ContextManager
+	luaMgr                   *luaengine.FilterManager
 
 	activeRequests sync.Map
 }
@@ -150,12 +151,13 @@ func NewAgent(
 		provider:          agentProvider,
 		messages:          messages,
 		sessions:          sessions,
-		tools:             agentTools,
-		titleProvider:     titleProvider,
-		summarizeProvider: summarizeProvider,
-		agentName:         agentName,
-		skillManager:      skillManager,
-		contextManager:    contextManager,
+		tools:                     agentTools,
+		titleProvider:             titleProvider,
+		summarizeProvider:         summarizeProvider,
+		summarizeFallbackProvider: agentProvider,
+		agentName:                 agentName,
+		skillManager:              skillManager,
+		contextManager:            contextManager,
 		activeRequests:    sync.Map{},
 	}
 
@@ -262,6 +264,19 @@ func (a *agent) err(err error) AgentEvent {
 
 func (a *agent) publishEvent(event AgentEvent) {
 	a.Publish(pubsub.CreatedEvent, event)
+}
+
+func (a *agent) emitCompactionError(sessionID string, err error, eventCh chan<- AgentEvent) {
+	if err == nil {
+		return
+	}
+	logging.WarnPersist("Context compaction failed", "sessionID", sessionID, "error", err)
+	event := AgentEvent{Type: AgentEventTypeError, SessionID: sessionID, Error: err}
+	a.publishEvent(event)
+	select {
+	case eventCh <- event:
+	default:
+	}
 }
 
 // ErrNoModel is returned when the agent has no model configured.
@@ -475,7 +490,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 				default:
 				}
 				if compactErr := a.compactContext(ctx, sessionID); compactErr != nil {
-					logging.Warn("Context compaction failed", "error", compactErr)
+					a.emitCompactionError(sessionID, compactErr, eventCh)
 				} else {
 					// Reload msgHistory from DB using the same SummaryMessageID logic
 					if newMsgs, listErr := a.messages.List(ctx, sessionID); listErr == nil {
@@ -1039,11 +1054,31 @@ func (a *agent) shouldCompact(usedTokens int64) bool {
 // compactContext summarizes the conversation history to reduce context size.
 // It creates a summary message and sets it as the session's SummaryMessageID so
 // subsequent calls to processGeneration will start from the summary.
-func (a *agent) compactContext(ctx context.Context, sessionID string) error {
-	if a.summarizeProvider == nil {
-		return fmt.Errorf("no summarizer provider available for compaction")
+func (a *agent) sendCompactionSummary(ctx context.Context, messages []message.Message) (*provider.ProviderResponse, provider.Provider, error) {
+	providerToUse := a.summarizeProvider
+	if providerToUse == nil {
+		providerToUse = a.summarizeFallbackProvider
+	}
+	if providerToUse == nil {
+		return nil, nil, fmt.Errorf("no summarizer provider available for compaction")
 	}
 
+	response, err := providerToUse.SendMessages(ctx, messages, []tools.BaseTool{})
+	if err == nil {
+		return response, providerToUse, nil
+	}
+	if a.summarizeProvider != nil && a.summarizeFallbackProvider != nil && providerToUse == a.summarizeProvider {
+		logging.WarnPersist("Configured compaction model failed, retrying with current agent model", "error", err, "fallbackModel", a.summarizeFallbackProvider.Model().ID)
+		response, fallbackErr := a.summarizeFallbackProvider.SendMessages(ctx, messages, []tools.BaseTool{})
+		if fallbackErr == nil {
+			return response, a.summarizeFallbackProvider, nil
+		}
+		return nil, nil, fmt.Errorf("configured compaction model failed: %w; fallback with current agent model failed: %w", err, fallbackErr)
+	}
+	return nil, nil, err
+}
+
+func (a *agent) compactContext(ctx context.Context, sessionID string) error {
 	msgs, err := a.messages.List(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to list messages for compaction: %w", err)
@@ -1075,16 +1110,13 @@ func (a *agent) compactContext(ctx context.Context, sessionID string) error {
 Be concise but complete. This summary will replace the conversation history.`
 
 	sendCtx := context.WithValue(ctx, tools.SessionIDContextKey, sessionID)
-	response, err := a.summarizeProvider.SendMessages(
-		sendCtx,
-		[]message.Message{
-			{
-				Role:  message.User,
-				Parts: []message.ContentPart{message.TextContent{Text: compactionPrompt + "\n\nConversation to summarize:\n" + convText.String()}},
-			},
+	messages := []message.Message{
+		{
+			Role:  message.User,
+			Parts: []message.ContentPart{message.TextContent{Text: compactionPrompt + "\n\nConversation to summarize:\n" + convText.String()}},
 		},
-		[]tools.BaseTool{},
-	)
+	}
+	response, usedProvider, err := a.sendCompactionSummary(sendCtx, messages)
 	if err != nil {
 		return fmt.Errorf("failed to generate compaction summary: %w", err)
 	}
@@ -1105,7 +1137,7 @@ Be concise but complete. This summary will replace the conversation history.`
 				Time:   time.Now().Unix(),
 			},
 		},
-		Model: a.summarizeProvider.Model().ID,
+		Model: usedProvider.Model().ID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create compaction summary message: %w", err)
