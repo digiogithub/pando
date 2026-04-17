@@ -44,6 +44,12 @@ type lspPresetAddedMsg struct {
 	err        error
 }
 
+type codeIndexStartedMsg struct {
+	projectID string
+	jobID     string
+	err       error
+}
+
 type settingsPage struct {
 	width          int
 	height         int
@@ -100,6 +106,9 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			serverName := strings.TrimPrefix(msg.Field.Key, "action:delete_mcp_server:")
 			return p, p.deleteMCPServer(serverName)
 		}
+		if msg.Field.Key == "action:remembrances_index_workdir" {
+			return p, p.indexWorkingDirectory()
+		}
 		return p, p.saveField(msg)
 	case skillUninstalledMsg:
 		p.settings.SetSections(buildSections(p.app))
@@ -136,6 +145,13 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, util.ReportError(msg.err)
 		}
 		return p, util.ReportInfo("LSP server added: " + msg.presetName)
+	case codeIndexStartedMsg:
+		p.settings.SetSections(buildSections(p.app))
+		p.settings.SetSize(p.width, p.height)
+		if msg.err != nil {
+			return p, util.ReportError(msg.err)
+		}
+		return p, util.ReportInfo(fmt.Sprintf("Indexing started for project %q (job: %s)", msg.projectID, msg.jobID))
 	case configExternalChangeMsg:
 		// Config changed from outside TUI (file or Web-UI): rebuild sections and
 		// re-arm the listener command so we keep receiving future events.
@@ -243,6 +259,39 @@ func (p *settingsPage) deleteMCPServer(name string) tea.Cmd {
 	p.settings.SetSections(buildSections(p.app))
 	p.settings.SetSize(p.width, p.height)
 	return util.ReportInfo("MCP server deleted: " + name)
+}
+
+// indexWorkingDirectory starts a code indexing job for the current working directory.
+func (p *settingsPage) indexWorkingDirectory() tea.Cmd {
+	return func() tea.Msg {
+		if p.app == nil || p.app.Remembrances == nil || p.app.Remembrances.Code == nil {
+			return codeIndexStartedMsg{err: fmt.Errorf("remembrances code indexer not initialized")}
+		}
+		cwd := config.WorkingDirectory()
+		projectID := sanitizeTUIProjectID(cwd)
+		jobID, err := p.app.Remembrances.Code.IndexProject(context.Background(), projectID, cwd, nil)
+		return codeIndexStartedMsg{projectID: projectID, jobID: jobID, err: err}
+	}
+}
+
+// sanitizeTUIProjectID converts an absolute path into a safe project identifier.
+func sanitizeTUIProjectID(path string) string {
+	clean := strings.TrimRight(path, "/\\")
+	if idx := strings.LastIndexAny(clean, "/\\"); idx >= 0 {
+		clean = clean[idx+1:]
+	}
+	if clean == "" {
+		clean = "project"
+	}
+	out := make([]byte, 0, len(clean))
+	for _, b := range []byte(clean) {
+		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '-' || b == '_' {
+			out = append(out, b)
+		} else {
+			out = append(out, '-')
+		}
+	}
+	return string(out)
 }
 
 func (p *settingsPage) openCatalogDialog() tea.Cmd {
@@ -390,7 +439,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 
 		// ── Services ──
 		withGroup(buildMesnadaSection(cfg), "Services"),
-		withGroup(buildRemembrancesSection(cfg), "Services"),
+		withGroup(buildRemembrancesSection(app, cfg), "Services"),
 		withGroup(buildOpenLitSection(cfg), "Services"),
 		withGroup(buildServerSection(cfg), "Services"),
 		withGroup(buildSnapshotsSection(cfg), "Services"),
@@ -1017,7 +1066,7 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 	}
 }
 
-func buildRemembrancesSection(cfg *config.Config) settings.Section {
+func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Section {
 	rem := cfg.Remembrances
 	useSameModel := rem.UseSameModel
 
@@ -1218,6 +1267,79 @@ func buildRemembrancesSection(cfg *config.Config) settings.Section {
 			Value: fmt.Sprint(rem.IndexWorkers),
 		},
 	)
+
+	// ── Context Enrichment ──
+	// Build the list of indexed project IDs for the selector.
+	projectOptions := []string{""}
+	projectIDDisplay := map[string]string{"": "(none — KB only)"}
+	if app != nil && app.Remembrances != nil && app.Remembrances.Code != nil {
+		if projects, err := app.Remembrances.Code.ListProjects(context.Background()); err == nil {
+			for _, p := range projects {
+				projectOptions = append(projectOptions, p.ProjectID)
+				label := p.ProjectID
+				if p.Name != "" && p.Name != p.ProjectID {
+					label = p.Name + " (" + p.ProjectID + ")"
+				}
+				projectIDDisplay[p.ProjectID] = label
+			}
+		}
+	}
+	// Build display-friendly options (keeps values as project IDs)
+	projectDisplayOptions := make([]string, len(projectOptions))
+	for i, id := range projectOptions {
+		if disp, ok := projectIDDisplay[id]; ok {
+			projectDisplayOptions[i] = disp
+		} else {
+			projectDisplayOptions[i] = id
+		}
+	}
+	_ = projectDisplayOptions // used below in select Value resolution
+
+	currentProject := rem.ContextEnrichmentCodeProject
+	enrichEnabled := rem.ContextEnrichmentEnabled
+
+	fields = append(fields,
+		settings.Field{
+			Label: "Context Enrichment",
+			Key:   "remembrances.context_enrichment_enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(enrichEnabled),
+		},
+	)
+
+	if enrichEnabled {
+		projectSelectValue := currentProject
+		if projectSelectValue == "" {
+			projectSelectValue = projectOptions[0]
+		}
+		fields = append(fields,
+			settings.Field{
+				Label:   "Code Project",
+				Key:     "remembrances.context_enrichment_code_project",
+				Type:    settings.FieldSelect,
+				Value:   projectSelectValue,
+				Options: projectOptions,
+			},
+			settings.Field{
+				Label: "KB Results",
+				Key:   "remembrances.context_enrichment_kb_results",
+				Type:  settings.FieldText,
+				Value: fmt.Sprint(rem.ContextEnrichmentKBResults),
+			},
+			settings.Field{
+				Label: "Code Results",
+				Key:   "remembrances.context_enrichment_code_results",
+				Type:  settings.FieldText,
+				Value: fmt.Sprint(rem.ContextEnrichmentCodeResults),
+			},
+			settings.Field{
+				Label: "Index working directory",
+				Key:   "action:remembrances_index_workdir",
+				Type:  settings.FieldAction,
+				Value: config.WorkingDirectory(),
+			},
+		)
+	}
 
 	validationMessage := "Configuration looks valid."
 	if err := validateRemembrancesConfig(cfg, rem); err != nil {
@@ -2355,6 +2477,32 @@ func saveRemembrances(field settings.Field) error {
 			return fmt.Errorf("index workers must be between 1 and 32")
 		}
 		remCfg.IndexWorkers = workers
+	case "remembrances.context_enrichment_enabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid context enrichment enabled value: %w", err)
+		}
+		remCfg.ContextEnrichmentEnabled = enabled
+	case "remembrances.context_enrichment_code_project":
+		remCfg.ContextEnrichmentCodeProject = strings.TrimSpace(field.Value)
+	case "remembrances.context_enrichment_kb_results":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid KB results value: %w", err)
+		}
+		if n < 1 || n > 20 {
+			return fmt.Errorf("KB results must be between 1 and 20")
+		}
+		remCfg.ContextEnrichmentKBResults = n
+	case "remembrances.context_enrichment_code_results":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid code results value: %w", err)
+		}
+		if n < 1 || n > 20 {
+			return fmt.Errorf("code results must be between 1 and 20")
+		}
+		remCfg.ContextEnrichmentCodeResults = n
 	default:
 		return fmt.Errorf("unsupported Remembrances setting %q", field.Key)
 	}

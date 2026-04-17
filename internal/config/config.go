@@ -227,6 +227,12 @@ type RemembrancesConfig struct {
 	ChunkSize            int    `json:"chunk_size" toml:"ChunkSize"`
 	ChunkOverlap         int    `json:"chunk_overlap" toml:"ChunkOverlap"`
 	IndexWorkers         int    `json:"index_workers" toml:"IndexWorkers"`
+
+	// ContextEnrichment enables pre-prompt KB and code search to inject relevant context.
+	ContextEnrichmentEnabled     bool   `json:"context_enrichment_enabled" toml:"ContextEnrichmentEnabled"`
+	ContextEnrichmentKBResults   int    `json:"context_enrichment_kb_results" toml:"ContextEnrichmentKBResults"`
+	ContextEnrichmentCodeResults int    `json:"context_enrichment_code_results" toml:"ContextEnrichmentCodeResults"`
+	ContextEnrichmentCodeProject string `json:"context_enrichment_code_project" toml:"ContextEnrichmentCodeProject"`
 }
 
 // APIServerConfig holds configuration for the HTTP API server (WebUI backend).
@@ -874,6 +880,10 @@ func setDefaults(debug bool) {
 	viper.SetDefault("remembrances.chunk_size", 800)
 	viper.SetDefault("remembrances.chunk_overlap", 100)
 	viper.SetDefault("remembrances.index_workers", 4)
+	viper.SetDefault("remembrances.context_enrichment_enabled", false)
+	viper.SetDefault("remembrances.context_enrichment_kb_results", 3)
+	viper.SetDefault("remembrances.context_enrichment_code_results", 5)
+	viper.SetDefault("remembrances.context_enrichment_code_project", "")
 
 	// Internal Tools defaults
 	viper.SetDefault("internalTools.fetchEnabled", true)

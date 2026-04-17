@@ -94,16 +94,13 @@ export default function ModelCombobox({
 
   const providers = [...new Set(filtered.map((m) => m.provider))]
   const flatModels = providers.flatMap((p) => filtered.filter((m) => m.provider === p))
-
-  useEffect(() => {
-    setSelectedIndex(0)
-  }, [query])
+  const normalizedSelectedIndex = query ? 0 : selectedIndex
 
   useEffect(() => {
     if (!open) return
     const el = listRef.current?.querySelector<HTMLElement>('[data-selected="true"]')
     el?.scrollIntoView({ block: 'nearest' })
-  }, [selectedIndex, open])
+  }, [normalizedSelectedIndex, open])
 
   const selectModel = useCallback(
     (m: ModelInfo) => {
@@ -156,7 +153,7 @@ export default function ModelCombobox({
               setSelectedIndex((i) => Math.max(i - 1, 0))
             } else if (e.key === 'Enter') {
               e.preventDefault()
-              const m = flatModels[selectedIndex]
+              const m = flatModels[normalizedSelectedIndex]
               if (m) selectModel(m)
             }
           }}
@@ -218,7 +215,7 @@ export default function ModelCombobox({
                     </div>
                     {pModels.map((model, idx) => {
                       const flatIdx = pOffset + idx
-                      const isSelected = selectedIndex === flatIdx
+                      const isSelected = normalizedSelectedIndex === flatIdx
                       const isActive = model.id === value
                       return (
                         <div

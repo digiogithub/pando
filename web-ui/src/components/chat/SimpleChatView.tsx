@@ -36,7 +36,7 @@ export default function SimpleChatView() {
 
   // Initialize auth + health check on standalone mount
   useEffect(() => {
-    authenticate()
+    void authenticate()
       .then(() => {
         fetchSessions()
         fetchSettings()
@@ -46,7 +46,7 @@ export default function SimpleChatView() {
 
     const stop = startHealthCheck()
     return stop
-  }, [])
+  }, [fetchSessions, fetchSettings, setConnected, startHealthCheck])
 
   const totalTokens = activeSession
     ? activeSession.prompt_tokens + activeSession.completion_tokens

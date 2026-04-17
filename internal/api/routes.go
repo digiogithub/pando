@@ -41,6 +41,12 @@ mux.HandleFunc("/api/v1/config/bash", s.handleConfigBash)
 	mux.HandleFunc("/api/v1/config/services", s.handleConfigServices)
 	mux.HandleFunc("/api/v1/config/evaluator", s.handleConfigEvaluator)
 	mux.HandleFunc("POST /api/v1/config/api-server/regenerate-token", s.handleRegenerateAPIToken)
+	// First-run / config generation
+	mux.HandleFunc("GET /api/v1/config/init-status", s.handleConfigInitStatus)
+	mux.HandleFunc("POST /api/v1/config/generate", s.handleConfigGenerate)
+	// Remembrances
+	mux.HandleFunc("GET /api/v1/remembrances/projects", s.handleListCodeProjects)
+	mux.HandleFunc("POST /api/v1/remembrances/projects/index", s.handleIndexCodeProject)
 	// Skills
 	mux.HandleFunc("GET /api/v1/skills/installed", s.handleListInstalledSkills)
 	mux.HandleFunc("GET /api/v1/skills/catalog", s.handleSkillsCatalog)

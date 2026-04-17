@@ -389,6 +389,18 @@ export interface RemembrancesConfig {
   chunk_size: number
   chunk_overlap: number
   index_workers: number
+  // Context Enrichment
+  context_enrichment_enabled: boolean
+  context_enrichment_kb_results: number
+  context_enrichment_code_results: number
+  context_enrichment_code_project: string
+}
+
+export interface CodeProjectInfo {
+  project_id: string
+  name: string
+  root_path: string
+  status: string
 }
 
 export interface SnapshotsConfig {

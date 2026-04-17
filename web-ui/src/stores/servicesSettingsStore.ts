@@ -49,6 +49,10 @@ const DEFAULT_REMEMBRANCES: RemembrancesConfig = {
   chunk_size: 512,
   chunk_overlap: 64,
   index_workers: 2,
+  context_enrichment_enabled: false,
+  context_enrichment_kb_results: 3,
+  context_enrichment_code_results: 5,
+  context_enrichment_code_project: '',
 }
 
 const DEFAULT_SNAPSHOTS: SnapshotsConfig = {

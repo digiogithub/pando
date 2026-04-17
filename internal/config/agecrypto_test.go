@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/digiogithub/pando/internal/llm/models"
 )
 
 func TestEncryptDecryptSensitiveConfigFields(t *testing.T) {
@@ -15,7 +17,7 @@ func TestEncryptDecryptSensitiveConfigFields(t *testing.T) {
 	cfg := &Config{
 		MCPServers: map[string]MCPServer{
 			"demo": {
-				Env: []string{"TOKEN=plain-token", "DEBUG=true"},
+				Env:     []string{"TOKEN=plain-token", "DEBUG=true"},
 				Headers: map[string]string{"Authorization": "Bearer abc123"},
 			},
 		},
@@ -25,6 +27,14 @@ func TestEncryptDecryptSensitiveConfigFields(t *testing.T) {
 			BraveAPIKey:          "brave-secret",
 			PerplexityAPIKey:     "pplx-secret",
 			ExaAPIKey:            "exa-secret",
+		},
+		Providers: map[models.ModelProvider]Provider{
+			models.ProviderAnthropic: {APIKey: "anthropic-secret"},
+			models.ProviderOpenAI:    {APIKey: "openai-secret"},
+		},
+		Remembrances: RemembrancesConfig{
+			DocumentEmbeddingAPIKey: "doc-embed-secret",
+			CodeEmbeddingAPIKey:     "code-embed-secret",
 		},
 	}
 
@@ -44,6 +54,19 @@ func TestEncryptDecryptSensitiveConfigFields(t *testing.T) {
 	if !strings.HasPrefix(encrypted.MCPServers["demo"].Headers["Authorization"], encryptedValuePrefix) {
 		t.Fatal("MCP header was not encrypted")
 	}
+	if !strings.HasPrefix(encrypted.Providers[models.ProviderAnthropic].APIKey, encryptedValuePrefix) {
+		t.Fatal("anthropic provider API key was not encrypted")
+	}
+	if !strings.HasPrefix(encrypted.Providers[models.ProviderOpenAI].APIKey, encryptedValuePrefix) {
+		t.Fatal("openai provider API key was not encrypted")
+	}
+	if !strings.HasPrefix(encrypted.Remembrances.DocumentEmbeddingAPIKey, encryptedValuePrefix) {
+		t.Fatal("document embedding API key was not encrypted")
+	}
+	if !strings.HasPrefix(encrypted.Remembrances.CodeEmbeddingAPIKey, encryptedValuePrefix) {
+		t.Fatal("code embedding API key was not encrypted")
+	}
+
 	if err := decryptSensitiveConfigFields(encrypted); err != nil {
 		t.Fatalf("decryptSensitiveConfigFields() error = %v", err)
 	}
@@ -58,6 +81,18 @@ func TestEncryptDecryptSensitiveConfigFields(t *testing.T) {
 	}
 	if encrypted.MCPServers["demo"].Headers["Authorization"] != "Bearer abc123" {
 		t.Fatal("MCP header was not restored after decryption")
+	}
+	if encrypted.Providers[models.ProviderAnthropic].APIKey != "anthropic-secret" {
+		t.Fatal("anthropic provider API key was not restored after decryption")
+	}
+	if encrypted.Providers[models.ProviderOpenAI].APIKey != "openai-secret" {
+		t.Fatal("openai provider API key was not restored after decryption")
+	}
+	if encrypted.Remembrances.DocumentEmbeddingAPIKey != "doc-embed-secret" {
+		t.Fatal("document embedding API key was not restored after decryption")
+	}
+	if encrypted.Remembrances.CodeEmbeddingAPIKey != "code-embed-secret" {
+		t.Fatal("code embedding API key was not restored after decryption")
 	}
 }
 

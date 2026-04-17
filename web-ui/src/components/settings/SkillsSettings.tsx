@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useExtensionsStore } from '@/stores/extensionsStore'
 import { Toggle, TextInput, SelectInput } from '@/components/shared/FormInput'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
@@ -181,28 +181,27 @@ function CatalogModal({
   const [installing, setInstalling] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const trimmedSearch = search.trim()
+  const shouldSearch = trimmedSearch.length >= 2
+  const searchRequestKey = shouldSearch ? trimmedSearch : null
+
   // Debounced search: fires 300 ms after the user stops typing (min 2 chars)
   useEffect(() => {
-    const q = search.trim()
-    if (q.length < 2) {
-      setItems([])
-      setError(null)
-      return
-    }
+    if (!searchRequestKey) return
 
     setLoading(true)
     setError(null)
 
     const timer = setTimeout(() => {
       api
-        .get<{ skills: SkillCatalogItem[] }>(`/api/v1/skills/catalog?q=${encodeURIComponent(q)}`)
+        .get<{ skills: SkillCatalogItem[] }>(`/api/v1/skills/catalog?q=${encodeURIComponent(searchRequestKey)}`)
         .then((data) => setItems(data.skills ?? []))
         .catch((e) => setError(e instanceof Error ? e.message : 'Search failed'))
         .finally(() => setLoading(false))
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [search])
+  }, [searchRequestKey])
 
   const handleInstall = async (item: SkillCatalogItem) => {
     setInstalling(item.name)
@@ -523,7 +522,7 @@ export default function SkillsSettings() {
   }, [fetchExtensions])
 
   // Load installed skills from disk on mount.
-  const loadInstalled = () => {
+  const loadInstalled = useCallback(() => {
     setInstalledLoading(true)
     setInstalledError(null)
     api
@@ -531,11 +530,16 @@ export default function SkillsSettings() {
       .then((data) => setInstalledSkills(data.skills ?? []))
       .catch((e) => setInstalledError(e instanceof Error ? e.message : 'Failed to load installed skills'))
       .finally(() => setInstalledLoading(false))
-  }
+  }, [])
+
+  const installedRequest = useMemo(() => api.get<{ skills: InstalledSkill[] }>('/api/v1/skills/installed'), [])
 
   useEffect(() => {
-    loadInstalled()
-  }, [])
+    installedRequest
+      .then((data) => setInstalledSkills(data.skills ?? []))
+      .catch((e) => setInstalledError(e instanceof Error ? e.message : 'Failed to load installed skills'))
+      .finally(() => setInstalledLoading(false))
+  }, [installedRequest])
 
   const skills = extensions.skills
   const catalog = extensions.skillsCatalog

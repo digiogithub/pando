@@ -140,10 +140,7 @@ export default function QuickMenu() {
   // Flat list for keyboard nav
   const flatItems = groups.flatMap((g) => g.items)
 
-  // Reset selected when filter changes
-  useEffect(() => {
-    setSelectedIndex(0)
-  }, [query])
+  const normalizedSelectedIndex = query ? 0 : selectedIndex
 
   const execute = useCallback(
     (item: MenuItem) => {
@@ -177,20 +174,20 @@ export default function QuickMenu() {
       }
       if (e.key === 'Enter') {
         e.preventDefault()
-        const item = flatItems[selectedIndex]
+        const item = flatItems[normalizedSelectedIndex]
         if (item) execute(item)
         return
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [flatItems, selectedIndex, execute, close])
+  }, [flatItems, normalizedSelectedIndex, execute, close])
 
   // Scroll selected item into view
   useEffect(() => {
     const el = listRef.current?.querySelector<HTMLElement>('[data-selected="true"]')
     el?.scrollIntoView({ block: 'nearest' })
-  }, [selectedIndex])
+  }, [normalizedSelectedIndex])
 
   return (
     <div
@@ -310,7 +307,7 @@ export default function QuickMenu() {
                     {group.label}
                   </div>
                   {group.items.map((item, idx) => {
-                    const isSelected = selectedIndex === flatOffset + idx
+                    const isSelected = normalizedSelectedIndex === flatOffset + idx
                     return (
                       <div
                         key={`${group.label}-${item.id}`}

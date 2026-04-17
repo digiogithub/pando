@@ -138,8 +138,18 @@ func (a appModel) Init() tea.Cmd {
 	cmd = a.personaDialog.Init()
 	cmds = append(cmds, cmd)
 
-	// Check if we should show the init dialog
+	// Check if we should show the init dialog.
+	// If .pando/ already exists but .pando.toml is missing, skip the dialog and
+	// auto-generate the config file, then navigate to settings.
 	cmds = append(cmds, func() tea.Msg {
+		if config.HasPandoDirectory() && config.ShouldGenerateLocalConfig() {
+			// Pre-initialised project: silently generate config and open settings.
+			if err := config.GenerateLocalConfigFile(config.DefaultConfigTemplate); err != nil {
+				return util.InfoMsg{Type: util.InfoTypeError, Msg: "Failed to generate config: " + err.Error()}
+			}
+			return dialog.ConfigGeneratedMsg{Path: ".pando.toml"}
+		}
+
 		shouldShow, err := config.ShouldShowInitDialog()
 		if err != nil {
 			return util.InfoMsg{
@@ -531,28 +541,45 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dialog.CloseInitDialogMsg:
 		a.showInitDialog = false
-		if msg.Initialize {
-			// Run the initialization command
-			for _, cmd := range a.commands {
-				if cmd.ID == "init" {
-					// Mark the project as initialized
-					if err := config.MarkProjectInitialized(); err != nil {
-						return a, util.ReportError(err)
-					}
-					return a, cmd.Handler(cmd)
-				}
-			}
-		} else {
-			// Mark the project as initialized without running the command
-			if err := config.MarkProjectInitialized(); err != nil {
-				return a, util.ReportError(err)
+		var cmds []tea.Cmd
+
+		// Mark the project as initialized (prevents the dialog from reappearing).
+		if err := config.MarkProjectInitialized(); err != nil {
+			cmds = append(cmds, util.ReportError(err))
+		}
+
+		// Generate .pando.toml when the user opted in.
+		if msg.GenerateConfig {
+			if err := config.GenerateLocalConfigFile(config.DefaultConfigTemplate); err != nil {
+				cmds = append(cmds, util.ReportError(err))
+			} else {
+				cmds = append(cmds, util.CmdHandler(dialog.ConfigGeneratedMsg{Path: ".pando.toml"}))
 			}
 		}
-		return a, nil
+
+		if msg.Initialize {
+			// Run the initialization command (creates AGENTS.md).
+			for _, cmd := range a.commands {
+				if cmd.ID == "init" {
+					cmds = append(cmds, cmd.Handler(cmd))
+					break
+				}
+			}
+		}
+
+		return a, tea.Batch(cmds...)
 
 	case chat.SessionSelectedMsg:
 		a.selectedSession = msg
 		a.sessionDialog.SetSelectedSession(msg.ID)
+
+	case dialog.ConfigGeneratedMsg:
+		// .pando.toml has been generated — navigate to Settings so the user can
+		// configure providers, models, and API keys.
+		return a, tea.Batch(
+			util.ReportInfo(fmt.Sprintf("Config file generated at %s — configure your settings below.", msg.Path)),
+			a.moveToPage(page.SettingsPage),
+		)
 
 	case pubsub.Event[session.Session]:
 		if msg.Type == pubsub.UpdatedEvent && msg.Payload.ID == a.selectedSession.ID {

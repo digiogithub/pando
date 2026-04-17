@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 	"github.com/digiogithub/pando/internal/rag/treesitter"
 )
@@ -850,9 +851,27 @@ func (c *CodeIndexer) vectorSearch(ctx context.Context, projectID string, queryE
 	return results, nil
 }
 
+// sanitizeFTSQuery converts a natural language query to a safe FTS5 MATCH expression.
+// Each word is wrapped in double quotes to prevent FTS5 syntax errors from
+// special characters such as (, ), *, ^, AND, OR, NOT.
+func sanitizeFTSQuery(query string) string {
+	words := strings.Fields(query)
+	if len(words) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(words))
+	for _, w := range words {
+		w = strings.ReplaceAll(w, `"`, `""`)
+		if w != "" {
+			parts = append(parts, `"`+w+`"`)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 // ftsSearch performs full-text search over code symbols.
 func (c *CodeIndexer) ftsSearch(ctx context.Context, projectID, query string, limit int, langs []Language, symbolTypes []SymbolType) ([]HybridSearchResult, error) {
-	escapedQuery := strings.ReplaceAll(query, `"`, `""`)
+	escapedQuery := sanitizeFTSQuery(query)
 
 	var args []interface{}
 	args = append(args, escapedQuery)
@@ -887,6 +906,7 @@ func (c *CodeIndexer) ftsSearch(ctx context.Context, projectID, query string, li
 
 	rows, err := c.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
+		logging.Debug("code: fts search query failed (non-fatal)", "error", err)
 		return nil, nil
 	}
 	defer rows.Close()

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"filippo.io/age"
+	"github.com/digiogithub/pando/internal/llm/models"
 )
 
 const encryptedValuePrefix = "age1:"
@@ -181,6 +182,23 @@ func encryptSensitiveConfigFields(in *Config) (*Config, error) {
 	if err != nil { return nil, err }
 	out.InternalTools.ExaAPIKey, err = encryptSecretString(in.InternalTools.ExaAPIKey)
 	if err != nil { return nil, err }
+	// Encrypt provider API keys
+	if len(in.Providers) > 0 {
+		out.Providers = make(map[models.ModelProvider]Provider, len(in.Providers))
+		for name, p := range in.Providers {
+			cloned := p
+			cloned.APIKey, err = encryptSecretString(p.APIKey)
+			if err != nil {
+				return nil, fmt.Errorf("encrypt provider %s APIKey: %w", name, err)
+			}
+			out.Providers[name] = cloned
+		}
+	}
+	// Encrypt remembrances embedding API keys
+	out.Remembrances.DocumentEmbeddingAPIKey, err = encryptSecretString(in.Remembrances.DocumentEmbeddingAPIKey)
+	if err != nil { return nil, err }
+	out.Remembrances.CodeEmbeddingAPIKey, err = encryptSecretString(in.Remembrances.CodeEmbeddingAPIKey)
+	if err != nil { return nil, err }
 	return &out, nil
 }
 
@@ -198,6 +216,20 @@ func decryptSensitiveConfigFields(in *Config) error {
 	in.InternalTools.PerplexityAPIKey, err = decryptSecretString(in.InternalTools.PerplexityAPIKey)
 	if err != nil { return err }
 	in.InternalTools.ExaAPIKey, err = decryptSecretString(in.InternalTools.ExaAPIKey)
+	if err != nil { return err }
+	// Decrypt provider API keys
+	for name, p := range in.Providers {
+		decrypted, err := decryptSecretString(p.APIKey)
+		if err != nil {
+			return fmt.Errorf("decrypt provider %s APIKey: %w", name, err)
+		}
+		p.APIKey = decrypted
+		in.Providers[name] = p
+	}
+	// Decrypt remembrances embedding API keys
+	in.Remembrances.DocumentEmbeddingAPIKey, err = decryptSecretString(in.Remembrances.DocumentEmbeddingAPIKey)
+	if err != nil { return err }
+	in.Remembrances.CodeEmbeddingAPIKey, err = decryptSecretString(in.Remembrances.CodeEmbeddingAPIKey)
 	if err != nil { return err }
 	for name, server := range in.MCPServers {
 		updated := server

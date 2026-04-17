@@ -15,8 +15,8 @@ export default function ChatView() {
 
   // Load sessions on mount if not already loaded
   useEffect(() => {
-    fetchSessions()
-  }, [])
+    void fetchSessions()
+  }, [fetchSessions])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>

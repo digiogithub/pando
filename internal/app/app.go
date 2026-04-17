@@ -143,6 +143,23 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 				logging.Info("Remembrances service initialized")
 				app.initRemembrancesKBSync(ctx, remembrances, &cfg.Remembrances)
 				app.initRemembrancesSessionIndexing(ctx, remembrances, &cfg.Remembrances)
+
+				// Initialize context enricher if enabled: searches KB and code index
+				// before every user prompt and prepends relevant context.
+				if cfg.Remembrances.ContextEnrichmentEnabled {
+					enricher := rag.NewContextEnricher(
+						remembrances,
+						cfg.Remembrances.ContextEnrichmentKBResults,
+						cfg.Remembrances.ContextEnrichmentCodeResults,
+						cfg.Remembrances.ContextEnrichmentCodeProject,
+					)
+					agent.SetContextEnricher(enricher)
+					logging.Info("remembrances: context enricher enabled",
+						"kb_results", cfg.Remembrances.ContextEnrichmentKBResults,
+						"code_results", cfg.Remembrances.ContextEnrichmentCodeResults,
+						"code_project", cfg.Remembrances.ContextEnrichmentCodeProject,
+					)
+				}
 			}
 		}
 	}

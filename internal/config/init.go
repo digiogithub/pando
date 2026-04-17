@@ -9,6 +9,12 @@ import (
 const (
 	// InitFlagFilename is the name of the file that indicates whether the project has been initialized
 	InitFlagFilename = "init"
+
+	// localConfigFilename is the default local config filename generated during first-run.
+	localConfigFilename = ".pando.toml"
+
+	// pandoDirName is the name of the pando data directory.
+	pandoDirName = ".pando"
 )
 
 // ProjectInitFlag represents the initialization status for a project directory
@@ -57,5 +63,346 @@ func MarkProjectInitialized() error {
 	defer file.Close()
 
 	return nil
+}
+
+// HasLocalConfigFile returns true if a .pando.toml or .pando.json file exists
+// in the current working directory. It does NOT check profile/home locations.
+func HasLocalConfigFile() bool {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	for _, ext := range []string{"toml", "json"} {
+		candidate := filepath.Join(cwd, fmt.Sprintf(".%s.%s", appName, ext))
+		if _, err := os.Stat(candidate); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// HasPandoDirectory returns true if the .pando directory already exists in
+// the current working directory (meaning the project was previously initialised
+// but the config file may have been deleted or never generated locally).
+func HasPandoDirectory() bool {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(cwd, pandoDirName))
+	return err == nil && info.IsDir()
+}
+
+// DefaultConfigTemplate is the annotated .pando.toml written when no local
+// config exists. It is kept here (rather than in cmd/) so both the CLI init
+// command and the TUI first-run flow can share it without import cycles.
+// API keys and provider-specific model selections are intentionally left blank.
+const DefaultConfigTemplate = `# =============================================================================
+# Pando Configuration File
+# =============================================================================
+# Pando looks for this file in (highest priority first):
+#   1. Current working directory  (.pando.toml)
+#   2. $HOME/.config/pando/.pando.toml
+#   3. $HOME/.pando.toml
+#
+# Environment variables prefixed with PANDO_ override any value here.
+# Example: PANDO_DEBUG=true overrides Debug = false
+# =============================================================================
+
+WorkingDir = ''
+Debug      = false
+LogFile    = ''
+DebugLSP   = false
+ContextPaths = []
+AutoCompact  = true
+
+[Data]
+Directory = './.pando/data'
+
+# =============================================================================
+# MCP Servers (Model Context Protocol)
+# =============================================================================
+# [MCPServers]
+# [MCPServers.my-tool]
+# Type    = 'stdio'
+# Command = 'my-mcp-server'
+# Args    = []
+
+# =============================================================================
+# LLM Providers — add API keys here or use environment variables.
+# =============================================================================
+[Providers]
+
+[Providers.anthropic]
+APIKey   = ''
+BaseURL  = ''
+Disabled = false
+UseOAuth = true
+
+# [Providers.openai]
+# APIKey   = ''
+# Disabled = false
+
+# [Providers.copilot]
+# Disabled = false
+
+# [Providers.ollama]
+# BaseURL  = 'http://localhost:11434'
+# Disabled = false
+
+# =============================================================================
+# Language Server Protocol (LSP)
+# =============================================================================
+[LSP]
+
+[LSP.gopls]
+Disabled  = false
+Command   = 'gopls'
+Args      = []
+Languages = []
+
+# =============================================================================
+# Agents — configure the model for each role.
+# Model format: '<provider>.<model-id>'
+# =============================================================================
+[Agents]
+
+[Agents.coder]
+Model     = ''
+MaxTokens = 32000
+AutoCompact = false
+
+[Agents.summarizer]
+Model     = ''
+MaxTokens = 90000
+
+[Agents.task]
+Model     = ''
+MaxTokens = 16384
+
+# =============================================================================
+# Skills
+# =============================================================================
+[Skills]
+Enabled = true
+Paths   = ['./agents/skills']
+
+[SkillsCatalog]
+Enabled    = false
+BaseURL    = ''
+AutoUpdate = false
+
+# =============================================================================
+# TUI
+# =============================================================================
+[TUI]
+Theme = ''
+
+# =============================================================================
+# Permissions
+# =============================================================================
+[Permissions]
+AutoApproveTools = false
+
+# =============================================================================
+# Mesnada — Multi-Agent Orchestrator
+# =============================================================================
+[Mesnada]
+Enabled = true
+
+[Mesnada.Server]
+Host = ''
+Port = 5005
+
+[Mesnada.Orchestrator]
+StorePath        = './.pando/mesnada/tasks.json'
+LogDir           = './.pando/mesnada/logs'
+MaxParallel      = 5
+DefaultEngine    = 'claude'
+DefaultModel     = 'sonnet'
+DefaultMCPConfig = '.github/mcp-config.json'
+PersonaPath      = './.pando/mesnada/personas'
+
+[Mesnada.ACP]
+Enabled        = true
+DefaultAgent   = 'claude'
+AutoPermission = true
+
+[Mesnada.ACP.Server]
+Enabled        = false
+Transports     = ['http']
+Host           = '0.0.0.0'
+Port           = 8766
+MaxSessions    = 100
+SessionTimeout = '30m'
+RequireAuth    = false
+
+[Mesnada.TUI]
+Enabled = true
+WebUI   = false
+
+# =============================================================================
+# Shell & Bash
+# =============================================================================
+[Shell]
+Path = ''
+Args = []
+
+[Bash]
+BannedCommands  = []
+AllowedCommands = []
+
+# =============================================================================
+# Remembrances — Semantic memory and knowledge base
+# =============================================================================
+[Remembrances]
+Enabled = true
+KBPath  = ''
+KBAutoImport = true
+KBWatch      = true
+
+DocumentEmbeddingProvider = 'ollama'
+DocumentEmbeddingModel    = 'nomic-embed-text'
+DocumentEmbeddingBaseURL  = ''
+DocumentEmbeddingAPIKey   = ''
+
+CodeEmbeddingProvider = 'ollama'
+CodeEmbeddingModel    = 'hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M'
+CodeEmbeddingBaseURL  = ''
+CodeEmbeddingAPIKey   = ''
+
+UseSameModel = false
+ChunkSize    = 800
+ChunkOverlap = 100
+IndexWorkers = 4
+
+# =============================================================================
+# API Server (Web UI backend)
+# =============================================================================
+[Server]
+Enabled     = true
+Host        = 'localhost'
+Port        = 9999
+RequireAuth = false
+
+# =============================================================================
+# Lua scripting
+# =============================================================================
+[Lua]
+Enabled         = false
+ScriptPath      = ''
+Timeout         = ''
+StrictMode      = false
+HotReload       = false
+LogFilteredData = false
+
+# =============================================================================
+# MCP Gateway
+# =============================================================================
+[MCPGateway]
+Enabled            = true
+FavoriteThreshold  = 3
+MaxFavorites       = 10
+FavoriteWindowDays = 7
+DecayDays          = 30
+
+# =============================================================================
+# Internal Tools
+# =============================================================================
+[InternalTools]
+FetchEnabled            = false
+FetchMaxSizeMB          = 0
+GoogleSearchEnabled     = false
+GoogleAPIKey            = ''
+GoogleSearchEngineID    = ''
+BraveSearchEnabled      = false
+BraveAPIKey             = ''
+PerplexitySearchEnabled = false
+PerplexityAPIKey        = ''
+ExaSearchEnabled        = false
+ExaAPIKey               = ''
+Context7Enabled         = false
+BrowserEnabled          = false
+BrowserHeadless         = false
+BrowserTimeout          = 0
+BrowserUserDataDir      = ''
+BrowserMaxSessions      = 0
+
+# =============================================================================
+# Snapshots
+# =============================================================================
+[Snapshots]
+Enabled          = true
+MaxSnapshots     = 50
+MaxFileSize      = '10MB'
+ExcludePatterns  = []
+AutoCleanupDays  = 30
+
+# =============================================================================
+# Evaluator
+# =============================================================================
+[evaluator]
+enabled              = true
+model                = ''
+provider             = ''
+alphaWeight          = 0.8
+betaWeight           = 0.2
+explorationC         = 1.41
+minSessionsForUCB    = 5
+maxTokensBaseline    = 50
+maxSkills            = 100
+async                = true
+judgePromptTemplate  = ''
+
+# =============================================================================
+# CLI Assist
+# =============================================================================
+[cliAssist]
+Model   = ''
+Timeout = 0
+
+# =============================================================================
+# Persona Auto-Select
+# =============================================================================
+[PersonaAutoSelect]
+Enabled     = false
+PersonaPath = ''
+
+# =============================================================================
+# ACP (Agent Client Protocol)
+# =============================================================================
+[acp]
+enabled         = false
+max_sessions    = 0
+idle_timeout    = ''
+log_level       = ''
+auto_permission = false
+`
+
+// GenerateLocalConfigFile writes the annotated default .pando.toml template
+// into the current working directory. It returns an error if the file already
+// exists to prevent accidental overwrites.
+func GenerateLocalConfigFile(template string) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+	dest := filepath.Join(cwd, localConfigFilename)
+	if _, statErr := os.Stat(dest); statErr == nil {
+		return fmt.Errorf("config file already exists at %s", dest)
+	}
+	if err := os.WriteFile(dest, []byte(template), 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	return nil
+}
+
+// ShouldGenerateLocalConfig returns true when pando is running in a directory
+// that has no local .pando.toml/.pando.json but does have (or should have) one.
+// The rules are:
+//   - If a local config already exists → false (nothing to do).
+//   - Otherwise → true (we should offer/auto-generate one).
+func ShouldGenerateLocalConfig() bool {
+	return !HasLocalConfigFile()
 }
 

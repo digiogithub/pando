@@ -28,6 +28,22 @@ var (
 	ErrSessionBusy      = errors.New("session is currently processing another request")
 )
 
+// ContextEnricher is the interface used by the agent to enrich the user's prompt with
+// context retrieved from the KB and code index before sending it to the LLM.
+// A local interface is used to avoid import cycles between agent and rag packages.
+type ContextEnricher interface {
+	EnrichContext(ctx context.Context, query string) string
+}
+
+// globalContextEnricher is the package-level enricher injected from app.go.
+var globalContextEnricher ContextEnricher
+
+// SetContextEnricher sets the context enricher used to prepend KB/code context to user messages.
+// Pass nil to disable context enrichment.
+func SetContextEnricher(e ContextEnricher) {
+	globalContextEnricher = e
+}
+
 type AgentEventType string
 
 const (
@@ -395,6 +411,14 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			if injected, ok := result.Data["injected_context"].(string); ok && injected != "" {
 				content = injected + "\n\n" + content
 			}
+		}
+	}
+
+	// Context enrichment: if the KB/code enricher is active, prepend retrieved context.
+	if globalContextEnricher != nil {
+		enriched := globalContextEnricher.EnrichContext(ctx, content)
+		if enriched != "" {
+			content = enriched + "\n\n" + content
 		}
 	}
 

@@ -49,7 +49,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    initApp()
+    void initApp()
   }, [initApp])
 
   return (

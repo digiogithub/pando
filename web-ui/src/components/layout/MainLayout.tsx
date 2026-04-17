@@ -11,6 +11,7 @@ import Header from './Header'
 import StatusBar from './StatusBar'
 import QuickMenu from '@/components/overlays/QuickMenu'
 import ModelSwitcher from '@/components/overlays/ModelSwitcher'
+import ConfigInitBanner from '@/components/overlays/ConfigInitBanner'
 
 export default function MainLayout() {
   const { theme } = useTheme()
@@ -24,7 +25,7 @@ export default function MainLayout() {
 
   // Initialize auth + health check
   useEffect(() => {
-    authenticate().then(() => {
+    void authenticate().then(() => {
       fetchSessions()
       fetchSettings()
       setConnected(true)
@@ -32,7 +33,7 @@ export default function MainLayout() {
 
     const stop = startHealthCheck()
     return stop
-  }, [])
+  }, [fetchSessions, fetchSettings, setConnected, startHealthCheck])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -52,7 +53,7 @@ export default function MainLayout() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [setModelSwitcherOpen, setQuickMenuOpen, toggleSidebar])
 
   // Close sidebar on mobile when navigating
   useEffect(() => {
@@ -60,7 +61,7 @@ export default function MainLayout() {
     if (isMobile) {
       setSidebarOpen(false)
     }
-  }, [navigate])
+  }, [navigate, setSidebarOpen])
 
   return (
     <div
@@ -74,6 +75,7 @@ export default function MainLayout() {
       }}
     >
       <Header />
+      <ConfigInitBanner />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
         {/* Sidebar — desktop: normal flow, mobile: overlay drawer */}
@@ -91,11 +93,14 @@ export default function MainLayout() {
                 background: 'rgba(0,0,0,0.4)',
               }}
             />
-            <Sidebar />
+            <div className="sidebar-container">
+              <Sidebar />
+            </div>
           </>
         )}
 
         <main
+          className="main-content"
           style={{
             flex: 1,
             overflow: 'hidden',
@@ -142,13 +147,20 @@ export default function MainLayout() {
             display: block !important;
           }
           /* sidebar itself becomes fixed drawer on mobile */
-          aside {
+          .sidebar-container {
             position: fixed !important;
             top: 48px !important;
             left: 0 !important;
             bottom: 40px !important;
+            right: 0 !important;
             z-index: 100 !important;
-            box-shadow: 4px 0 24px rgba(0,0,0,0.2) !important;
+            width: 100% !important;
+          }
+          aside {
+            width: 100% !important;
+          }
+          .main-content {
+            display: ${sidebarOpen ? 'none !important' : 'flex !important'};
           }
         }
       `}</style>

@@ -11,7 +11,7 @@ interface LayoutStore {
 }
 
 export const useLayoutStore = create<LayoutStore>((set) => ({
-  sidebarOpen: true,
+  sidebarOpen: window.innerWidth > 768,
   quickMenuOpen: false,
   modelSwitcherOpen: false,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),

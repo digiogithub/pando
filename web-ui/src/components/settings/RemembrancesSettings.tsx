@@ -1,9 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useServicesSettingsStore } from '@/stores/servicesSettingsStore'
 import { TextInput, Toggle } from '@/components/shared/FormInput'
 import MaskedInput from '@/components/shared/MaskedInput'
 import { useToastStore } from '@/stores/toastStore'
 import api from '@/services/api'
+import type { CodeProjectInfo } from '@/types'
 
 const dividerStyle: React.CSSProperties = {
   borderTop: '1px solid var(--border)',
@@ -26,15 +27,40 @@ const subSectionTitle: React.CSSProperties = {
   letterSpacing: '0.05em',
 }
 
+const selectStyle: React.CSSProperties = {
+  background: 'var(--input-bg)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-sm)',
+  color: 'var(--fg)',
+  fontSize: 14,
+  padding: '0.5rem 0.75rem',
+  outline: 'none',
+  width: '100%',
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+}
+
 const EMBEDDING_PROVIDERS = ['', 'openai', 'openai-compatible', 'anthropic', 'ollama', 'nomic']
 
 export default function RemembrancesSettings() {
   const { config, dirty, loading, saving, error, fetchServices, updateRemembrances, saveServices, resetServices } =
     useServicesSettingsStore()
 
+  const [projects, setProjects] = useState<CodeProjectInfo[]>([])
+  const [indexing, setIndexing] = useState(false)
+
   useEffect(() => {
     fetchServices()
   }, [fetchServices])
+
+  useEffect(() => {
+    if (config.remembrances.enabled) {
+      api
+        .get<CodeProjectInfo[]>('/api/v1/remembrances/projects')
+        .then(setProjects)
+        .catch(() => setProjects([]))
+    }
+  }, [config.remembrances.enabled])
 
   if (loading) {
     return <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>Loading…</div>
@@ -51,6 +77,29 @@ export default function RemembrancesSettings() {
         e instanceof Error ? e.message : 'Re-index failed',
         'error',
       )
+    }
+  }
+
+  async function handleIndexWorkdir() {
+    setIndexing(true)
+    try {
+      const result = await api.post<{ project_id: string; job_id: string }>('/api/v1/remembrances/projects/index', {})
+      useToastStore.getState().addToast(
+        `Indexing started — project: ${result.project_id}`,
+        'success',
+      )
+      // Set the newly created project as the selected one
+      updateRemembrances('context_enrichment_code_project', result.project_id)
+      // Reload project list
+      const updated = await api.get<CodeProjectInfo[]>('/api/v1/remembrances/projects')
+      setProjects(updated)
+    } catch (e) {
+      useToastStore.getState().addToast(
+        e instanceof Error ? e.message : 'Indexing failed',
+        'error',
+      )
+    } finally {
+      setIndexing(false)
     }
   }
 
@@ -102,18 +151,7 @@ export default function RemembrancesSettings() {
           <select
             value={rem.document_embedding_provider}
             onChange={(e) => updateRemembrances('document_embedding_provider', e.target.value)}
-            style={{
-              background: 'var(--input-bg)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--fg)',
-              fontSize: 14,
-              padding: '0.5rem 0.75rem',
-              outline: 'none',
-              width: '100%',
-              fontFamily: 'inherit',
-              cursor: 'pointer',
-            }}
+            style={selectStyle}
             onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--border-focus)')}
             onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
           >
@@ -167,18 +205,7 @@ export default function RemembrancesSettings() {
               <select
                 value={rem.code_embedding_provider}
                 onChange={(e) => updateRemembrances('code_embedding_provider', e.target.value)}
-                style={{
-                  background: 'var(--input-bg)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--fg)',
-                  fontSize: 14,
-                  padding: '0.5rem 0.75rem',
-                  outline: 'none',
-                  width: '100%',
-                  fontFamily: 'inherit',
-                  cursor: 'pointer',
-                }}
+                style={selectStyle}
                 onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--border-focus)')}
                 onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
               >
@@ -273,6 +300,90 @@ export default function RemembrancesSettings() {
         >
           Re-index All
         </button>
+      </div>
+
+      <div style={dividerStyle} />
+
+      {/* Context Enrichment */}
+      <p style={subSectionTitle}>Context Enrichment</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <Toggle
+          label="Enable Context Enrichment"
+          description="Before each prompt, search KB and code index and prepend relevant context automatically"
+          checked={rem.context_enrichment_enabled}
+          onChange={(v) => updateRemembrances('context_enrichment_enabled', v)}
+        />
+
+        {rem.context_enrichment_enabled && (
+          <>
+            {/* Code Project selector */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Code Project
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <select
+                  value={rem.context_enrichment_code_project}
+                  onChange={(e) => updateRemembrances('context_enrichment_code_project', e.target.value)}
+                  style={{ ...selectStyle, flex: 1 }}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--border-focus)')}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
+                >
+                  <option value="">— none (KB only) —</option>
+                  {projects.map((p) => (
+                    <option key={p.project_id} value={p.project_id}>
+                      {p.name || p.project_id} ({p.root_path})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleIndexWorkdir}
+                  disabled={indexing}
+                  title="Index the current working directory as a new code project"
+                  style={{
+                    padding: '0.5rem 0.875rem',
+                    background: 'transparent',
+                    color: indexing ? 'var(--fg-dim)' : 'var(--primary)',
+                    border: `1px solid ${indexing ? 'var(--border)' : 'var(--primary)'}`,
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: indexing ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {indexing ? 'Indexing…' : '+ Index workdir'}
+                </button>
+              </div>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--fg-muted)' }}>
+                Select a previously indexed project to include code search results, or index the working directory.
+              </p>
+            </div>
+
+            {/* Results count */}
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <div style={{ flex: 1 }}>
+                <TextInput
+                  label="KB Results"
+                  type="number"
+                  value={String(rem.context_enrichment_kb_results)}
+                  onChange={(e) => updateRemembrances('context_enrichment_kb_results', Number(e.target.value))}
+                  placeholder="3"
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <TextInput
+                  label="Code Results"
+                  type="number"
+                  value={String(rem.context_enrichment_code_results)}
+                  onChange={(e) => updateRemembrances('context_enrichment_code_results', Number(e.target.value))}
+                  placeholder="5"
+                />
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div style={dividerStyle} />

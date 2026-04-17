@@ -88,7 +88,8 @@ func (s *RemembrancesService) HybridSearch(ctx context.Context, opts HybridSearc
 		for _, projectID := range opts.ProjectIDs {
 			codeResults, err := s.Code.HybridSearch(ctx, projectID, opts.Query, opts.Limit, nil, nil)
 			if err != nil {
-				return nil, err
+				// Non-fatal: skip this project and continue with others.
+				continue
 			}
 			for _, r := range codeResults {
 				if r.Symbol == nil {

@@ -8,6 +8,7 @@ import {
   faCircle
 } from '@fortawesome/free-solid-svg-icons'
 import { useSessionStore } from '@/stores/sessionStore'
+import { useLayoutStore } from '@/stores/layoutStore'
 import { format } from 'date-fns'
 
 export default function Sidebar() {
@@ -15,6 +16,13 @@ export default function Sidebar() {
   const [sessionsOpen, setSessionsOpen] = useState(true)
   const [navOpen, setNavOpen] = useState(true)
   const { sessions, activeSessionId, setActiveSession, setMessages } = useSessionStore()
+  const setSidebarOpen = useLayoutStore((s) => s.setSidebarOpen)
+
+  const closeSidebarOnMobile = () => {
+    if (window.matchMedia('(max-width: 768px)').matches) {
+      setSidebarOpen(false)
+    }
+  }
 
   const NAV_ITEMS = [
     { path: '/', label: t('nav.chat'), icon: faComments, end: true },
@@ -54,6 +62,7 @@ export default function Sidebar() {
               onClick={() => {
                 useSessionStore.setState({ activeSessionId: null })
                 setMessages([])
+                closeSidebarOnMobile()
               }}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: 0, lineHeight: 1 }}
             >
@@ -66,7 +75,10 @@ export default function Sidebar() {
             {sessions.slice(0, 20).map((s) => (
               <button
                 key={s.id}
-                onClick={() => setActiveSession(s.id)}
+                onClick={() => {
+                  setActiveSession(s.id)
+                  closeSidebarOnMobile()
+                }}
                 style={{
                   width: 'calc(100% - 1rem)',
                   background: s.id === activeSessionId ? 'var(--selected)' : 'transparent',
@@ -116,6 +128,7 @@ export default function Sidebar() {
                 key={item.path}
                 to={item.path}
                 end={item.end}
+                onClick={closeSidebarOnMobile}
                 style={({ isActive }) => ({
                   display: 'flex',
                   alignItems: 'center',

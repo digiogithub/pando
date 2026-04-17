@@ -11,7 +11,6 @@ export default function EditorTabs() {
     e: React.MouseEvent,
     path: string,
     isDirty: boolean,
-    _content: string
   ) => {
     e.stopPropagation()
     if (isDirty) {
@@ -104,7 +103,7 @@ export default function EditorTabs() {
               )}
             </span>
             <button
-              onClick={(e) => handleClose(e, file.path, file.isDirty, file.content)}
+              onClick={(e) => handleClose(e, file.path, file.isDirty)}
               title="Close tab"
               style={{
                 background: 'transparent',

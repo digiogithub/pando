@@ -49,12 +49,14 @@ export default function ModelSwitcher() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const hasLoadedRef = useRef(false)
 
   const close = useCallback(() => setModelSwitcherOpen(false), [setModelSwitcherOpen])
 
   useEffect(() => {
     inputRef.current?.focus()
-    setLoading(true)
+    if (hasLoadedRef.current) return
+    hasLoadedRef.current = true
     api
       .get<ModelsResponse>('/api/v1/models')
       .then((resp) => setModels(resp.models))
@@ -76,9 +78,7 @@ export default function ModelSwitcher() {
 
   const flatModels = providers.flatMap((p) => filtered.filter((m) => m.provider === p))
 
-  useEffect(() => {
-    setSelectedIndex(0)
-  }, [query])
+  const normalizedSelectedIndex = query ? 0 : selectedIndex
 
   const selectModel = useCallback(
     async (modelId: string) => {
@@ -109,19 +109,19 @@ export default function ModelSwitcher() {
       }
       if (e.key === 'Enter') {
         e.preventDefault()
-        const m = flatModels[selectedIndex]
+        const m = flatModels[normalizedSelectedIndex]
         if (m) selectModel(m.id)
         return
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [flatModels, selectedIndex, selectModel, close])
+  }, [flatModels, normalizedSelectedIndex, selectModel, close])
 
   useEffect(() => {
     const el = listRef.current?.querySelector<HTMLElement>('[data-selected="true"]')
     el?.scrollIntoView({ block: 'nearest' })
-  }, [selectedIndex])
+  }, [normalizedSelectedIndex])
 
   const activeModel = config.default_model
 
@@ -254,7 +254,7 @@ export default function ModelSwitcher() {
                   </div>
                   {providerModels.map((model, idx) => {
                     const flatIdx = providerOffset + idx
-                    const isSelected = selectedIndex === flatIdx
+                    const isSelected = normalizedSelectedIndex === flatIdx
                     const isActive = model.id === activeModel
                     return (
                       <div
