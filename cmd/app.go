@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -130,7 +131,11 @@ func runAppMode(cmd *cobra.Command) error {
 		}
 	}()
 
-	fmt.Printf("Pando app v%s listening on %s\n", version.Version, baseURL)
+	versionPrefix := ""
+	if !strings.HasPrefix(version.Version, "v") {
+		versionPrefix = "v"
+	}
+	fmt.Printf("Pando app %s%s listening on %s\n", versionPrefix, version.Version, baseURL)
 	fmt.Println("Press Ctrl+C to stop")
 
 	go func() {

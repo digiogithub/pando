@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -121,7 +122,12 @@ This is the backend for the Pando Desktop/Web UI.`,
 
 		addr := fmt.Sprintf("%s:%d", host, port)
 		logging.Info("Pando API server starting on %s", addr)
-		fmt.Printf("Pando API server v%s listening on %s\n", version.Version, baseURL)
+
+		versionPrefix := ""
+		if !strings.HasPrefix(version.Version, "v") {
+			versionPrefix = "v"
+		}
+		fmt.Printf("Pando API server %s%s listening on %s\n", versionPrefix, version.Version, baseURL)
 		fmt.Println("Press Ctrl+C to stop")
 
 		if err := server.Start(); err != nil && err != http.ErrServerClosed {
