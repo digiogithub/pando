@@ -138,6 +138,30 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getEvaluatorStatsStmt, err = db.PrepareContext(ctx, getEvaluatorStats); err != nil {
 		return nil, fmt.Errorf("error preparing query GetEvaluatorStats: %w", err)
 	}
+	if q.createProjectStmt, err = db.PrepareContext(ctx, createProject); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateProject: %w", err)
+	}
+	if q.getProjectStmt, err = db.PrepareContext(ctx, getProject); err != nil {
+		return nil, fmt.Errorf("error preparing query GetProject: %w", err)
+	}
+	if q.getProjectByPathStmt, err = db.PrepareContext(ctx, getProjectByPath); err != nil {
+		return nil, fmt.Errorf("error preparing query GetProjectByPath: %w", err)
+	}
+	if q.listProjectsStmt, err = db.PrepareContext(ctx, listProjects); err != nil {
+		return nil, fmt.Errorf("error preparing query ListProjects: %w", err)
+	}
+	if q.updateProjectStatusStmt, err = db.PrepareContext(ctx, updateProjectStatus); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateProjectStatus: %w", err)
+	}
+	if q.updateProjectLastOpenedStmt, err = db.PrepareContext(ctx, updateProjectLastOpened); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateProjectLastOpened: %w", err)
+	}
+	if q.markProjectInitializedStmt, err = db.PrepareContext(ctx, markProjectInitialized); err != nil {
+		return nil, fmt.Errorf("error preparing query MarkProjectInitialized: %w", err)
+	}
+	if q.deleteProjectStmt, err = db.PrepareContext(ctx, deleteProject); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteProject: %w", err)
+	}
 	return &q, nil
 }
 
@@ -333,6 +357,46 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getEvaluatorStatsStmt: %w", cerr)
 		}
 	}
+	if q.createProjectStmt != nil {
+		if cerr := q.createProjectStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createProjectStmt: %w", cerr)
+		}
+	}
+	if q.getProjectStmt != nil {
+		if cerr := q.getProjectStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getProjectStmt: %w", cerr)
+		}
+	}
+	if q.getProjectByPathStmt != nil {
+		if cerr := q.getProjectByPathStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getProjectByPathStmt: %w", cerr)
+		}
+	}
+	if q.listProjectsStmt != nil {
+		if cerr := q.listProjectsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listProjectsStmt: %w", cerr)
+		}
+	}
+	if q.updateProjectStatusStmt != nil {
+		if cerr := q.updateProjectStatusStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateProjectStatusStmt: %w", cerr)
+		}
+	}
+	if q.updateProjectLastOpenedStmt != nil {
+		if cerr := q.updateProjectLastOpenedStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateProjectLastOpenedStmt: %w", cerr)
+		}
+	}
+	if q.markProjectInitializedStmt != nil {
+		if cerr := q.markProjectInitializedStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing markProjectInitializedStmt: %w", cerr)
+		}
+	}
+	if q.deleteProjectStmt != nil {
+		if cerr := q.deleteProjectStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteProjectStmt: %w", cerr)
+		}
+	}
 	return err
 }
 
@@ -410,6 +474,14 @@ type Queries struct {
 	incrementSkillUsageStmt          *sql.Stmt
 	listUCBRankingStmt               *sql.Stmt
 	getEvaluatorStatsStmt            *sql.Stmt
+	createProjectStmt               *sql.Stmt
+	getProjectStmt                  *sql.Stmt
+	getProjectByPathStmt            *sql.Stmt
+	listProjectsStmt                *sql.Stmt
+	updateProjectStatusStmt         *sql.Stmt
+	updateProjectLastOpenedStmt     *sql.Stmt
+	markProjectInitializedStmt      *sql.Stmt
+	deleteProjectStmt               *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -454,5 +526,13 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		incrementSkillUsageStmt:          q.incrementSkillUsageStmt,
 		listUCBRankingStmt:               q.listUCBRankingStmt,
 		getEvaluatorStatsStmt:            q.getEvaluatorStatsStmt,
+		createProjectStmt:               q.createProjectStmt,
+		getProjectStmt:                  q.getProjectStmt,
+		getProjectByPathStmt:            q.getProjectByPathStmt,
+		listProjectsStmt:                q.listProjectsStmt,
+		updateProjectStatusStmt:         q.updateProjectStatusStmt,
+		updateProjectLastOpenedStmt:     q.updateProjectLastOpenedStmt,
+		markProjectInitializedStmt:      q.markProjectInitializedStmt,
+		deleteProjectStmt:               q.deleteProjectStmt,
 	}
 }

@@ -377,6 +377,14 @@ max_sessions    = 0
 idle_timeout    = ''
 log_level       = ''
 auto_permission = false
+
+# =============================================================================
+# Projects — Multi-project management
+# =============================================================================
+[Projects]
+Enabled     = true
+AutoRestore = false
+MaxProjects = 20
 `
 
 // GenerateLocalConfigFile writes the annotated default .pando.toml template
@@ -404,5 +412,101 @@ func GenerateLocalConfigFile(template string) error {
 //   - Otherwise → true (we should offer/auto-generate one).
 func ShouldGenerateLocalConfig() bool {
 	return !HasLocalConfigFile()
+}
+
+// DefaultPersonaTemplate is the starter persona written to personas/default.md
+// during project initialisation. It is exported here so both cmd/init.go and
+// the headless InitializeProjectAt function can share a single source of truth
+// without creating import cycles.
+const DefaultPersonaTemplate = `# Default Persona
+
+## Role
+You are a helpful, senior software engineer with deep knowledge of the codebase.
+
+## Behaviour
+- Prefer minimal, readable, idiomatic code over clever one-liners.
+- Always explain *why* before *how* when introducing non-obvious solutions.
+- Ask clarifying questions before starting work on ambiguous tasks.
+- Point out potential security issues even when not explicitly asked.
+
+## Communication style
+- Be concise but thorough — no unnecessary filler phrases.
+- Use code blocks for all code snippets, commands, and file paths.
+- Prefer bullet lists over long paragraphs for multi-step explanations.
+`
+
+// HasConfigFileAt returns true if a .pando.toml or .pando.json file exists
+// in the given directory. It does NOT search parent directories or profiles.
+func HasConfigFileAt(dir string) bool {
+	for _, name := range []string{".pando.toml", ".pando.json"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// HasPandoDirectoryAt returns true if the .pando/ subdirectory exists in dir.
+func HasPandoDirectoryAt(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, pandoDirName))
+	return err == nil && info.IsDir()
+}
+
+// InitializeProjectAt creates the full Pando directory structure and writes
+// the default configuration at the given path. It is the path-aware equivalent
+// of the "pando init --target project" command, suitable for use by the
+// ProjectManager when a new project directory has no existing configuration.
+//
+// Created layout:
+//
+//	<dir>/.pando.toml
+//	<dir>/.pando/data/
+//	<dir>/.pando/data/init          (init flag)
+//	<dir>/.pando/mesnada/logs/
+//	<dir>/.pando/mesnada/personas/
+//	<dir>/.pando/mesnada/personas/default.md
+//	<dir>/agents/skills/
+//
+// Returns an error if any step fails. It is idempotent: existing files/dirs
+// are not overwritten (same behaviour as "pando init" without --force).
+func InitializeProjectAt(dir string) error {
+	dataDir := filepath.Join(dir, pandoDirName, "data")
+	mesnadaDir := filepath.Join(dir, pandoDirName, "mesnada")
+	logsDir := filepath.Join(mesnadaDir, "logs")
+	personasDir := filepath.Join(mesnadaDir, "personas")
+	skillsDir := filepath.Join(dir, "agents", "skills")
+
+	// Create all required directories.
+	for _, d := range []string{dataDir, logsDir, personasDir, skillsDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			return fmt.Errorf("InitializeProjectAt: create directory %s: %w", d, err)
+		}
+	}
+
+	// Write .pando.toml only when it does not already exist.
+	configPath := filepath.Join(dir, localConfigFilename)
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if err := os.WriteFile(configPath, []byte(DefaultConfigTemplate), 0644); err != nil {
+			return fmt.Errorf("InitializeProjectAt: write config file: %w", err)
+		}
+	}
+
+	// Write the default persona only when it does not already exist.
+	personaPath := filepath.Join(personasDir, "default.md")
+	if _, err := os.Stat(personaPath); os.IsNotExist(err) {
+		if err := os.WriteFile(personaPath, []byte(DefaultPersonaTemplate), 0644); err != nil {
+			return fmt.Errorf("InitializeProjectAt: write persona file: %w", err)
+		}
+	}
+
+	// Touch the init flag file to mark the project as initialised.
+	initFlag := filepath.Join(dataDir, InitFlagFilename)
+	f, err := os.OpenFile(initFlag, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("InitializeProjectAt: write init flag: %w", err)
+	}
+	_ = f.Close()
+
+	return nil
 }
 

@@ -280,6 +280,19 @@ export interface InstalledSkill {
   skillId: string
 }
 
+// Project types
+export interface Project {
+  id: string
+  name: string
+  path: string
+  status: 'running' | 'stopped' | 'error' | 'initializing' | 'missing'
+  initialized: boolean
+  acp_pid?: number
+  last_opened?: number
+  created_at: number
+  updated_at: number
+}
+
 // Settings / config types
 export interface SettingsConfig {
   home_directory: string

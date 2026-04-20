@@ -1044,11 +1044,23 @@ func (a *agent) shouldCompact(usedTokens int64) bool {
 	if threshold <= 0 {
 		threshold = 0.85
 	}
-	contextWindow := a.provider.Model().ContextWindow
+	// Use config override if set, otherwise fall back to model's reported context window.
+	contextWindow := agentCfg.ContextWindowOverride
+	if contextWindow <= 0 {
+		contextWindow = a.provider.Model().ContextWindow
+	}
 	if contextWindow <= 0 {
 		return false
 	}
-	return float64(usedTokens) >= float64(contextWindow)*threshold
+	compactAt := int64(float64(contextWindow) * threshold)
+	should := usedTokens >= compactAt
+	if should {
+		logging.InfoPersist(fmt.Sprintf(
+			"Auto-compact triggered: used=%d tokens, window=%d tokens, threshold=%.0f%% (%d tokens)",
+			usedTokens, contextWindow, threshold*100, compactAt,
+		))
+	}
+	return should
 }
 
 // compactContext summarizes the conversation history to reduce context size.

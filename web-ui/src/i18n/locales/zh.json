@@ -25,6 +25,7 @@
     "codeEditor": "代码编辑器",
     "terminal": "终端",
     "settings": "设置",
+    "projects": "项目",
     "sections": {
       "sessions": "会话",
       "navigate": "导航",

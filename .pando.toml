@@ -27,8 +27,8 @@ AutoCompact = true
 AutoCompactThreshold = 0.0
 
 [Agents.coder]
-Model = 'gemini.gemini-3.1-flash-lite-preview'
-MaxTokens = 8192
+Model = 'ollama.qwen36-coder:latest'
+MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false

@@ -5,7 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faComments, faPlus, faNetworkWired, faFileLines, faCamera,
   faStar, faCode, faTerminal, faCog, faChevronDown, faChevronRight,
-  faCircle
+  faCircle, faFolderOpen
 } from '@fortawesome/free-solid-svg-icons'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useLayoutStore } from '@/stores/layoutStore'
@@ -34,6 +34,7 @@ export default function Sidebar() {
     { path: '/editor', label: t('nav.codeEditor'), icon: faCode },
     { path: '/terminal', label: t('nav.terminal'), icon: faTerminal },
     { path: '/settings', label: t('nav.settings'), icon: faCog },
+    { path: '/projects', label: t('nav.projects'), icon: faFolderOpen },
   ]
 
   return (

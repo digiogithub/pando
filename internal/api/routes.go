@@ -83,6 +83,16 @@ mux.HandleFunc("/api/v1/config/bash", s.handleConfigBash)
 	mux.HandleFunc("GET /api/v1/personas", s.handleListPersonas)
 	mux.HandleFunc("GET /api/v1/personas/active", s.handleGetActivePersona)
 	mux.HandleFunc("PUT /api/v1/personas/active", s.handleSetActivePersona)
+	// Projects — specific paths registered before {id} wildcard (Go 1.22 precedence)
+	mux.HandleFunc("GET /api/v1/projects", s.handleListProjects)
+	mux.HandleFunc("POST /api/v1/projects", s.handleCreateProject)
+	mux.HandleFunc("GET /api/v1/projects/active", s.handleGetActiveProject)
+	mux.HandleFunc("GET /api/v1/projects/events", s.handleProjectEvents)
+	mux.HandleFunc("GET /api/v1/projects/{id}", s.handleGetProject)
+	mux.HandleFunc("DELETE /api/v1/projects/{id}", s.handleDeleteProject)
+	mux.HandleFunc("POST /api/v1/projects/{id}/activate", s.handleActivateProject)
+	mux.HandleFunc("POST /api/v1/projects/{id}/deactivate", s.handleDeactivateProject)
+	mux.HandleFunc("POST /api/v1/projects/{id}/init", s.handleInitProject)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

@@ -15,6 +15,7 @@ import TerminalView from '@/components/terminal/TerminalView'
 import SnapshotsView from '@/components/snapshots/SnapshotsView'
 import EvaluatorView from '@/components/evaluator/EvaluatorView'
 import CodeEditorView from '@/components/editor/CodeEditorView'
+import ProjectsView from '@/components/projects/ProjectsView'
 import { authenticate, checkHealth } from '@/services/auth'
 import { isDesktop, getDesktopConfig } from '@/services/desktop'
 import { initDesktopMode } from '@/services/api'
@@ -83,6 +84,7 @@ function App() {
                 <Route path="editor" element={<Navigate to="/editor" replace />} />
                 <Route path="terminal" element={<TerminalView />} />
                 <Route path="settings" element={<SettingsView />} />
+                <Route path="projects" element={<ProjectsView />} />
                 <Route path="*" element={<NotFound />} />
               </Route>
 

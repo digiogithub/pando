@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -39,6 +40,7 @@ import (
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/observability"
 	"github.com/digiogithub/pando/internal/permission"
+	"github.com/digiogithub/pando/internal/project"
 	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/session"
@@ -56,6 +58,8 @@ type App struct {
 
 	CoderAgent agent.Service
 
+	Projects            project.Service
+	ProjectManager      *project.Manager
 	Snapshots           snapshot.Service
 	LSPClients          map[string]*lsp.Client
 	SkillManager        *skills.SkillManager
@@ -82,6 +86,31 @@ type AppOptions struct {
 	SkipLSP bool
 }
 
+// findFreePort returns the first available TCP port starting at preferred, trying
+// up to 10 sequential candidates, then falling back to an OS-assigned port.
+func findFreePort(host string, preferred int) int {
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	for offset := 0; offset <= 10; offset++ {
+		port := preferred + offset
+		ln, err := net.Listen("tcp", net.JoinHostPort(host, fmt.Sprintf("%d", port)))
+		if err == nil {
+			_ = ln.Close()
+			return port
+		}
+	}
+	ln, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
+	if err != nil {
+		return preferred // give up, let the server fail with a clear error
+	}
+	defer ln.Close()
+	if addr, ok := ln.Addr().(*net.TCPAddr); ok {
+		return addr.Port
+	}
+	return preferred
+}
+
 func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	opt := AppOptions{}
 	if len(opts) > 0 {
@@ -92,14 +121,23 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	sessions := session.NewService(q)
 	messages := message.NewService(q)
 	files := history.NewService(q, conn)
+	projects := project.NewService(q)
 
 	app := &App{
 		Sessions:    sessions,
 		Messages:    messages,
 		History:     files,
 		Permissions: permission.NewPermissionService(),
+		Projects:    projects,
 		LSPClients:  make(map[string]*lsp.Client),
 	}
+
+	// Initialize project manager (Phase 2).
+	mgr, mgrErr := project.NewManager(ctx, projects)
+	if mgrErr != nil {
+		return nil, fmt.Errorf("failed to initialize project manager: %w", mgrErr)
+	}
+	app.ProjectManager = mgr
 
 	// Initialize theme based on configuration
 	app.initTheme()
@@ -294,8 +332,17 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 				logging.Info("ACP server enabled", "host", mesnadaCfg.AppConfig.ACP.Server.Host, "port", mesnadaCfg.AppConfig.ACP.Server.Port)
 			}
 
-			// Create and start HTTP server
-			addr := fmt.Sprintf("%s:%d", cfg.Mesnada.Server.Host, cfg.Mesnada.Server.Port)
+			// Find a free port for the mesnada server; fall back if preferred is busy.
+			mesnadaPort := findFreePort(cfg.Mesnada.Server.Host, cfg.Mesnada.Server.Port)
+			if mesnadaPort != cfg.Mesnada.Server.Port {
+				logging.Warn("Mesnada preferred port unavailable, using alternative",
+					"preferred", cfg.Mesnada.Server.Port, "actual", mesnadaPort)
+				cfg.Mesnada.Server.Port = mesnadaPort
+				if mesnadaCfg.AppConfig != nil {
+					mesnadaCfg.AppConfig.Server.Port = mesnadaPort
+				}
+			}
+			addr := fmt.Sprintf("%s:%d", cfg.Mesnada.Server.Host, mesnadaPort)
 			srv := mesnadaServer.New(mesnadaServer.Config{
 				Addr:         addr,
 				Orchestrator: orch,
@@ -1000,6 +1047,10 @@ func (app *App) Shutdown() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = app.openlitShutdown(ctx)
+	}
+	// Shutdown project manager and all child project ACP processes.
+	if app.ProjectManager != nil {
+		app.ProjectManager.Shutdown()
 	}
 	logging.Debug("App shutdown completed")
 }

@@ -25,6 +25,7 @@
     "codeEditor": "Editor de Código",
     "terminal": "Terminal",
     "settings": "Configuración",
+    "projects": "Proyectos",
     "sections": {
       "sessions": "Sesiones",
       "navigate": "Navegar",

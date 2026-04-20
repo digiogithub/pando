@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/spf13/cobra"
 )
@@ -440,24 +441,6 @@ log_level       = ''
 auto_permission = false
 `
 
-// defaultPersonaTemplate is a starter persona created in the personas directory.
-const defaultPersonaTemplate = `# Default Persona
-
-## Role
-You are a helpful, senior software engineer with deep knowledge of the codebase.
-
-## Behaviour
-- Prefer minimal, readable, idiomatic code over clever one-liners.
-- Always explain *why* before *how* when introducing non-obvious solutions.
-- Ask clarifying questions before starting work on ambiguous tasks.
-- Point out potential security issues even when not explicitly asked.
-
-## Communication style
-- Be concise but thorough — no unnecessary filler phrases.
-- Use code blocks for all code snippets, commands, and file paths.
-- Prefer bullet lists over long paragraphs for multi-step explanations.
-`
-
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize a Pando configuration with recommended settings",
@@ -650,7 +633,7 @@ func writePersonaFile(path string, force bool) error {
 		fmt.Printf("  skipped  %s  (already exists)\n", path)
 		return nil
 	}
-	if err := os.WriteFile(path, []byte(defaultPersonaTemplate), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(config.DefaultPersonaTemplate), 0644); err != nil {
 		return fmt.Errorf("failed to write persona file %s: %w", path, err)
 	}
 	fmt.Printf("  created  %s\n", path)

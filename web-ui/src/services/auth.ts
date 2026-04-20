@@ -1,4 +1,4 @@
-import api from './api'
+import api, { getBaseURL } from './api'
 import { isDesktop } from './desktop'
 
 interface TokenResponse {
@@ -23,7 +23,10 @@ export async function checkHealth(): Promise<boolean> {
   if (isDesktop) return true
 
   try {
-    await fetch('/health')
+    // Use configured base URL when set (e.g. after backend HTML injection or dev mode env var).
+    // Falls back to relative path when served from the same origin.
+    const base = getBaseURL()
+    await fetch(base + '/health')
     return true
   } catch {
     return false

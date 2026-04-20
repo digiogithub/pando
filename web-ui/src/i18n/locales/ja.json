@@ -25,6 +25,7 @@
     "codeEditor": "コードエディター",
     "terminal": "ターミナル",
     "settings": "設定",
+    "projects": "プロジェクト",
     "sections": {
       "sessions": "セッション",
       "navigate": "ナビゲート",

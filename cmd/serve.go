@@ -45,6 +45,17 @@ This is the backend for the Pando Desktop/Web UI.`,
 		host, _ := cmd.Flags().GetString("host")
 		port, _ := cmd.Flags().GetInt("port")
 		debug, _ := cmd.Flags().GetBool("debug")
+		preferredPort := port
+
+		selectedPort, err := chooseAvailablePort(host, preferredPort)
+		if err != nil {
+			return err
+		}
+		if selectedPort != preferredPort {
+			logging.Warn("Preferred port %d unavailable, using %d", preferredPort, selectedPort)
+			fmt.Printf("Port %d in use, switching to %d\n", preferredPort, selectedPort)
+		}
+		port = selectedPort
 
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -66,12 +77,14 @@ This is the backend for the Pando Desktop/Web UI.`,
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
+		baseURL := fmt.Sprintf("http://%s:%d", host, port)
 		cfg := api.ServerConfig{
-			Host:    host,
-			Port:    port,
-			Version: version.Version,
-			DB:      conn,
-			CWD:     cwd,
+			Host:      host,
+			Port:      port,
+			Version:   version.Version,
+			DB:        conn,
+			CWD:       cwd,
+			UIBaseURL: baseURL,
 		}
 
 		server, err := api.NewServer(ctx, cfg)
@@ -96,7 +109,7 @@ This is the backend for the Pando Desktop/Web UI.`,
 
 		addr := fmt.Sprintf("%s:%d", host, port)
 		logging.Info("Pando API server starting on %s", addr)
-		fmt.Printf("Pando API server v%s listening on http://%s\n", version.Version, addr)
+		fmt.Printf("Pando API server v%s listening on %s\n", version.Version, baseURL)
 		fmt.Println("Press Ctrl+C to stop")
 
 		if err := server.Start(); err != nil && err != http.ErrServerClosed {

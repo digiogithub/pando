@@ -48,6 +48,15 @@ type Querier interface {
 	IncrementSkillUsage(ctx context.Context, id string) error
 	ListUCBRanking(ctx context.Context) ([]ListUCBRankingRow, error)
 	GetEvaluatorStats(ctx context.Context) (GetEvaluatorStatsRow, error)
+	// Project queries
+	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
+	GetProject(ctx context.Context, id string) (Project, error)
+	GetProjectByPath(ctx context.Context, path string) (Project, error)
+	ListProjects(ctx context.Context) ([]Project, error)
+	UpdateProjectStatus(ctx context.Context, arg UpdateProjectStatusParams) error
+	UpdateProjectLastOpened(ctx context.Context, arg UpdateProjectLastOpenedParams) error
+	MarkProjectInitialized(ctx context.Context, id string) error
+	DeleteProject(ctx context.Context, id string) error
 }
 
 var _ Querier = (*Queries)(nil)

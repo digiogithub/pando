@@ -8,6 +8,19 @@ import (
 	"database/sql"
 )
 
+type Project struct {
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Path        string        `json:"path"`
+	Status      string        `json:"status"`
+	Initialized int64         `json:"initialized"`
+	AcpPid      sql.NullInt64 `json:"acp_pid"`
+	AcpPort     sql.NullInt64 `json:"acp_port"`
+	LastOpened  sql.NullInt64 `json:"last_opened"`
+	CreatedAt   int64         `json:"created_at"`
+	UpdatedAt   int64         `json:"updated_at"`
+}
+
 type PromptTemplate struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`

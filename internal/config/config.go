@@ -77,8 +77,9 @@ type Agent struct {
 	MaxTokens            int64          `json:"maxTokens"`
 	ReasoningEffort      string         `json:"reasoningEffort"`                // For openai models low,medium,high
 	ThinkingMode         ThinkingMode   `json:"thinkingMode,omitempty"`         // For anthropic models: disabled,low,medium,high
-	AutoCompact          bool           `json:"autoCompact,omitempty"`          // enable auto-compaction when context fills up
-	AutoCompactThreshold float64        `json:"autoCompactThreshold,omitempty"` // 0.0-1.0, default 0.85
+	AutoCompact             bool           `json:"autoCompact,omitempty"`             // enable auto-compaction when context fills up
+	AutoCompactThreshold    float64        `json:"autoCompactThreshold,omitempty"`    // 0.0-1.0, default 0.85
+	ContextWindowOverride   int64          `json:"contextWindowOverride,omitempty"`   // override model's reported context window (tokens); 0 = use model default
 }
 
 // Provider defines configuration for an LLM provider.
@@ -395,6 +396,16 @@ func (c *SnapshotsConfig) ParseMaxFileSize() int64 {
 	return n
 }
 
+// ProjectsConfig controls the multi-project management feature.
+type ProjectsConfig struct {
+	// Enabled activates the Projects feature. Default: true.
+	Enabled bool `json:"enabled,omitempty" toml:"Enabled"`
+	// AutoRestore re-activates the last active project on startup. Default: false.
+	AutoRestore bool `json:"autoRestore,omitempty" toml:"AutoRestore"`
+	// MaxProjects limits how many projects can be registered. 0 means no limit. Default: 20.
+	MaxProjects int `json:"maxProjects,omitempty" toml:"MaxProjects"`
+}
+
 // Config is the main configuration structure for the application.
 type Config struct {
 	Data              Data                              `json:"data"`
@@ -426,6 +437,7 @@ type Config struct {
 	PersonaAutoSelect PersonaAutoSelectConfig           `json:"personaAutoSelect,omitempty"`
 	ACP               ACPConfig                         `json:"acp,omitempty" toml:"acp"`
 	OpenLit           OpenLitConfig                     `json:"openlit,omitempty" toml:"OpenLit"`
+	Projects          ProjectsConfig                    `json:"projects,omitempty" toml:"Projects"`
 }
 
 // Application constants

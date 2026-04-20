@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp/protocol"
 	"github.com/digiogithub/pando/internal/permission"
+	"github.com/digiogithub/pando/internal/project"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui/components/chat"
@@ -91,6 +94,11 @@ type appModel struct {
 	showPersonaDialog bool
 	personaDialog     dialog.PersonaDialog
 
+	showProjectsDialog    bool
+	projectsDialog        dialog.ProjectsDialog
+	showProjectInitDialog bool
+	projectInitDialog     dialog.ProjectInitConfirmDialog
+
 	showMultiArgumentsDialog bool
 	multiArgumentsDialog     dialog.MultiArgumentsDialogCmp
 
@@ -136,6 +144,10 @@ func (a appModel) Init() tea.Cmd {
 	cmd = a.themeDialog.Init()
 	cmds = append(cmds, cmd)
 	cmd = a.personaDialog.Init()
+	cmds = append(cmds, cmd)
+	cmd = a.projectsDialog.Init()
+	cmds = append(cmds, cmd)
+	cmd = a.projectInitDialog.Init()
 	cmds = append(cmds, cmd)
 
 	// Check if we should show the init dialog.
@@ -636,6 +648,47 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.showPersonaDialog = false
 		return a, util.ReportInfo("Persona cleared (auto-select)")
 
+	case dialog.OpenProjectsDialogMsg:
+		if !a.showQuit && !a.showPermissions {
+			return a, a.openProjectsDialog()
+		}
+		return a, nil
+
+	case dialog.CloseProjectsDialogMsg:
+		a.showProjectsDialog = false
+
+	case dialog.ProjectActivatedMsg:
+		a.showProjectsDialog = false
+		return a, a.activateProject(msg.ProjectID, msg.Path)
+
+	case dialog.ProjectAddConfirmMsg:
+		a.showProjectsDialog = false
+		return a, a.registerProject(msg.Path, msg.Name)
+
+	case dialog.ProjectRemoveMsg:
+		return a, a.unregisterProject(msg.ProjectID)
+
+	case showProjectInitConfirmMsg:
+		a.projectInitDialog.SetProject(msg.ProjectID, msg.Path)
+		a.showProjectInitDialog = true
+		return a, a.projectInitDialog.Init()
+
+	case dialog.ProjectInitYesMsg:
+		a.showProjectInitDialog = false
+		return a, a.completeProjectInit(msg.ProjectID, msg.Path)
+
+	case dialog.ProjectInitNoMsg:
+		a.showProjectInitDialog = false
+
+	case core.ProjectActiveMsg:
+		s, sCmd := a.status.Update(msg)
+		a.status = s.(core.StatusCmp)
+		cmds = append(cmds, sCmd)
+		if msg.Name != "" {
+			cmds = append(cmds, util.ReportInfo("Project activated: "+msg.Name))
+		}
+		return a, tea.Batch(cmds...)
+
 	case dialog.OpenFilepickerMsg:
 		if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
 			a.filepickerMode = "attach"
@@ -861,6 +914,11 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, a.moveToPage(page.EvaluatorPage)
 			}
 			return a, nil
+		case key.Matches(msg, a.keys.Global.Projects):
+			if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+				return a, a.openProjectsDialog()
+			}
+			return a, nil
 		case key.Matches(msg, a.keys.Global.Help):
 			if a.showQuit {
 				return a, nil
@@ -994,6 +1052,24 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if a.showProjectsDialog {
+		d, projCmd := a.projectsDialog.Update(msg)
+		a.projectsDialog = d.(dialog.ProjectsDialog)
+		cmds = append(cmds, projCmd)
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return a, tea.Batch(cmds...)
+		}
+	}
+
+	if a.showProjectInitDialog {
+		d, initCmd := a.projectInitDialog.Update(msg)
+		a.projectInitDialog = d.(dialog.ProjectInitConfirmDialog)
+		cmds = append(cmds, initCmd)
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return a, tea.Batch(cmds...)
+		}
+	}
+
 	if a.showInfoDialog {
 		d, infoCmd := a.infoDialog.Update(msg)
 		a.infoDialog = d.(dialog.InfoDialogCmp)
@@ -1072,6 +1148,71 @@ func (a *appModel) openPersonaDialog() tea.Cmd {
 	a.personaDialog.SetPersonas(personas, active)
 	a.showPersonaDialog = true
 	return a.personaDialog.Init()
+}
+
+func (a *appModel) openProjectsDialog() tea.Cmd {
+	if a.app.ProjectManager == nil {
+		return util.ReportWarn("Project manager not available")
+	}
+	projects, err := a.app.ProjectManager.List(context.Background())
+	if err != nil {
+		return util.ReportError(err)
+	}
+	a.projectsDialog.SetProjects(projects, a.app.ProjectManager.ActiveID())
+	a.showProjectsDialog = true
+	return a.projectsDialog.Init()
+}
+
+// showProjectInitConfirmMsg is an internal message to trigger the project init confirmation dialog.
+type showProjectInitConfirmMsg struct {
+	ProjectID string
+	Path      string
+}
+
+func (a *appModel) activateProject(projectID, path string) tea.Cmd {
+	return func() tea.Msg {
+		err := a.app.ProjectManager.Activate(context.Background(), projectID)
+		if errors.Is(err, project.ErrProjectNeedsInit) {
+			return showProjectInitConfirmMsg{ProjectID: projectID, Path: path}
+		}
+		if err != nil {
+			return util.InfoMsg{Type: util.InfoTypeError, Msg: "Failed to activate project: " + err.Error()}
+		}
+		return core.ProjectActiveMsg{Name: filepath.Base(path)}
+	}
+}
+
+func (a *appModel) registerProject(path, name string) tea.Cmd {
+	return func() tea.Msg {
+		if path == "" {
+			return util.InfoMsg{Type: util.InfoTypeWarn, Msg: "Path cannot be empty"}
+		}
+		_, err := a.app.ProjectManager.Register(context.Background(), name, path)
+		if err != nil {
+			return util.InfoMsg{Type: util.InfoTypeError, Msg: "Failed to register project: " + err.Error()}
+		}
+		return util.InfoMsg{Type: util.InfoTypeInfo, Msg: "Project registered: " + path}
+	}
+}
+
+func (a *appModel) unregisterProject(projectID string) tea.Cmd {
+	return func() tea.Msg {
+		err := a.app.ProjectManager.Unregister(context.Background(), projectID)
+		if err != nil {
+			return util.InfoMsg{Type: util.InfoTypeError, Msg: "Failed to remove project: " + err.Error()}
+		}
+		return util.InfoMsg{Type: util.InfoTypeInfo, Msg: "Project removed"}
+	}
+}
+
+func (a *appModel) completeProjectInit(projectID, path string) tea.Cmd {
+	return func() tea.Msg {
+		err := a.app.ProjectManager.CompleteInit(context.Background(), projectID)
+		if err != nil {
+			return util.InfoMsg{Type: util.InfoTypeError, Msg: "Init failed: " + err.Error()}
+		}
+		return core.ProjectActiveMsg{Name: filepath.Base(path)}
+	}
 }
 
 func (a *appModel) openFilepicker() tea.Cmd {
@@ -1593,6 +1734,20 @@ func (a appModel) View() string {
 		)
 	}
 
+	if a.showProjectsDialog {
+		overlay := a.projectsDialog.View()
+		row := lipgloss.Height(appView)/2 - lipgloss.Height(overlay)/2
+		col := lipgloss.Width(appView)/2 - lipgloss.Width(overlay)/2
+		appView = layout.PlaceOverlay(col, row, overlay, appView, true)
+	}
+
+	if a.showProjectInitDialog {
+		overlay := a.projectInitDialog.View()
+		row := lipgloss.Height(appView)/2 - lipgloss.Height(overlay)/2
+		col := lipgloss.Width(appView)/2 - lipgloss.Width(overlay)/2
+		appView = layout.PlaceOverlay(col, row, overlay, appView, true)
+	}
+
 	if a.showMultiArgumentsDialog {
 		overlay := a.multiArgumentsDialog.View()
 		row := lipgloss.Height(appView) / 2
@@ -1809,9 +1964,11 @@ func New(app *app.App) tea.Model {
 		modelDialog:   dialog.NewModelDialogCmp(),
 		permissions:   dialog.NewPermissionDialogCmp(),
 		initDialog:    dialog.NewInitDialogCmp(),
-		themeDialog:   dialog.NewThemeDialogCmp(),
-		personaDialog: dialog.NewPersonaDialogCmp(),
-		infoDialog:    dialog.NewInfoDialogCmp(),
+		themeDialog:       dialog.NewThemeDialogCmp(),
+		personaDialog:     dialog.NewPersonaDialogCmp(),
+		projectsDialog:    dialog.NewProjectsDialogCmp(),
+		projectInitDialog: dialog.NewProjectInitConfirmDialogCmp(),
+		infoDialog:        dialog.NewInfoDialogCmp(),
 		app:           app,
 		commands:      []dialog.Command{},
 		chatPage:      chatPage,
@@ -1896,6 +2053,16 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Category:    dialog.CommandCategoryGeneral,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(dialog.OpenPersonaDialogMsg{})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "switch-project",
+		Title:       "Switch Project",
+		Description: "Open the project switcher",
+		Shortcut:    "Ctrl+Alt+P",
+		Category:    dialog.CommandCategoryGeneral,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(dialog.OpenProjectsDialogMsg{})
 		},
 	})
 	model.RegisterCommand(dialog.Command{

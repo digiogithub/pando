@@ -50,6 +50,13 @@ type MCPGatewayMsg struct {
 	FavoritesCount int
 }
 
+// ProjectActiveMsg is sent when the active project changes.
+// Name is the display name (filepath.Base(path) or custom name).
+// An empty Name means no project is active.
+type ProjectActiveMsg struct {
+	Name string
+}
+
 const maxBreadcrumbs = 5
 const maxBreadcrumbNameLen = 20
 
@@ -65,6 +72,7 @@ type statusCmp struct {
 	session            session.Session
 	breadcrumbs        []string // recently edited file paths
 	mcpFavoritesCount  int      // number of MCP gateway favorite tools (0 = gateway off)
+	activeProject      string   // display name of the active project ("" = none)
 }
 
 // clearMessageCmd is a command that clears status messages after a timeout
@@ -110,6 +118,8 @@ func (m statusCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case MCPGatewayMsg:
 		m.mcpFavoritesCount = msg.FavoritesCount
+	case ProjectActiveMsg:
+		m.activeProject = msg.Name
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			return m.handleMouseClick(msg)
@@ -237,6 +247,15 @@ func (m statusCmp) View() string {
 	breadcrumbs := m.renderBreadcrumbs()
 	if breadcrumbs != "" {
 		status += breadcrumbs
+	}
+
+	// Render active project badge (if any).
+	if m.activeProject != "" {
+		projectBadge := styles.Padded().
+			Background(t.Primary()).
+			Foreground(t.Background()).
+			Render("⬡ " + m.activeProject)
+		status += projectBadge
 	}
 
 	tokenInfoWidth := 0

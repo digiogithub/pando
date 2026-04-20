@@ -1,9 +1,25 @@
 const TOKEN_KEY = 'pando_token'
 
-let baseURL = ''
+// Resolve initial base URL from injected runtime config or dev-mode env var.
+// Priority: window.__PANDO_API_BASE__ (injected by backend) > VITE_API_BASE_URL (dev override) > '' (same origin)
+function resolveInitialBaseURL(): string {
+  if (typeof window !== 'undefined' && (window as Window & { __PANDO_API_BASE__?: string }).__PANDO_API_BASE__) {
+    return (window as Window & { __PANDO_API_BASE__?: string }).__PANDO_API_BASE__!
+  }
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL as string
+  }
+  return ''
+}
+
+let baseURL = resolveInitialBaseURL()
 
 export function setBaseURL(url: string): void {
   baseURL = url
+}
+
+export function getBaseURL(): string {
+  return baseURL
 }
 
 export function initDesktopMode(config: { apiBase: string; token: string }): void {

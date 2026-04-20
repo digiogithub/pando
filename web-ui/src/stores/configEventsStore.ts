@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import api from '@/services/api'
+import api, { getBaseURL } from '@/services/api'
 import { useSettingsStore } from './settingsStore'
 
 export interface ConfigChangeEvent {
@@ -30,9 +30,10 @@ export const useConfigEventsStore = create<ConfigEventsStore>((set, get) => ({
       // EventSource cannot send custom headers, so we pass the auth token as a
       // query parameter (the server auth middleware accepts ?token=...).
       const token = api.getToken()
+      const base = getBaseURL()
       const url = token
-        ? `/api/v1/config/events?token=${encodeURIComponent(token)}`
-        : '/api/v1/config/events'
+        ? `${base}/api/v1/config/events?token=${encodeURIComponent(token)}`
+        : `${base}/api/v1/config/events`
       const es = new EventSource(url)
 
       es.onopen = () => {
