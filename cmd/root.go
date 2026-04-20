@@ -266,7 +266,19 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 
 		// Run the TUI
 		result, err := program.Run()
-		cleanup()
+
+		cleanupDone := make(chan struct{})
+		go func() {
+			defer close(cleanupDone)
+			cleanup()
+		}()
+
+		select {
+		case <-cleanupDone:
+		case <-time.After(10 * time.Second):
+			logging.Error("TUI cleanup timed out; forcing process exit")
+			os.Exit(1)
+		}
 
 		if err != nil {
 			logging.Error("TUI error: %v", err)

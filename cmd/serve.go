@@ -92,19 +92,31 @@ This is the backend for the Pando Desktop/Web UI.`,
 			return fmt.Errorf("failed to create API server: %w", err)
 		}
 
+		sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stopSignals()
+
 		go func() {
-			sigChan := make(chan os.Signal, 1)
-			signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-			<-sigChan
+			<-sigCtx.Done()
 			logging.Info("Shutdown signal received")
+			cancel()
 
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer shutdownCancel()
 
-			if err := server.Shutdown(shutdownCtx); err != nil {
-				logging.Error("Server shutdown error: %v", err)
+			shutdownDone := make(chan struct{})
+			go func() {
+				defer close(shutdownDone)
+				if err := server.Shutdown(shutdownCtx); err != nil {
+					logging.Error("Server shutdown error: %v", err)
+				}
+			}()
+
+			select {
+			case <-shutdownDone:
+			case <-shutdownCtx.Done():
+				logging.Error("Server shutdown timed out; forcing process exit")
+				os.Exit(1)
 			}
-			cancel()
 		}()
 
 		addr := fmt.Sprintf("%s:%d", host, port)

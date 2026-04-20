@@ -77,8 +77,22 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
-	s.app.Shutdown()
-	return s.httpServer.Shutdown(ctx)
+	shutdownDone := make(chan struct{})
+	go func() {
+		defer close(shutdownDone)
+		s.app.Shutdown()
+	}()
+
+	serverErr := s.httpServer.Shutdown(ctx)
+	select {
+	case <-shutdownDone:
+	case <-ctx.Done():
+		if serverErr == nil {
+			serverErr = ctx.Err()
+		}
+	}
+
+	return serverErr
 }
 
 func (s *Server) GetToken() string {

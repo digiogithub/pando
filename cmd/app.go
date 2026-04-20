@@ -104,15 +104,30 @@ func runAppMode(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to create app server: %w", err)
 	}
 
+	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
+
 	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		<-sigChan
+		<-sigCtx.Done()
+		cancel()
 
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
-		_ = server.Shutdown(shutdownCtx)
-		cancel()
+
+		shutdownDone := make(chan struct{})
+		go func() {
+			defer close(shutdownDone)
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				logging.Error("App server shutdown error: %v", err)
+			}
+		}()
+
+		select {
+		case <-shutdownDone:
+		case <-shutdownCtx.Done():
+			logging.Error("App server shutdown timed out; forcing process exit")
+			os.Exit(1)
+		}
 	}()
 
 	fmt.Printf("Pando app v%s listening on %s\n", version.Version, baseURL)
