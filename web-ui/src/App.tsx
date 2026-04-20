@@ -13,7 +13,7 @@ import LogsView from '@/components/logs/LogsView'
 import OrchestratorView from '@/components/orchestrator/OrchestratorView'
 import TerminalView from '@/components/terminal/TerminalView'
 import SnapshotsView from '@/components/snapshots/SnapshotsView'
-import EvaluatorView from '@/components/evaluator/EvaluatorView'
+import SelfImprovementView from '@/components/evaluator/SelfImprovementView'
 import CodeEditorView from '@/components/editor/CodeEditorView'
 import ProjectsView from '@/components/projects/ProjectsView'
 import { authenticate, checkHealth } from '@/services/auth'
@@ -80,7 +80,7 @@ function App() {
                 <Route path="orchestrator" element={<OrchestratorView />} />
                 <Route path="logs" element={<LogsView />} />
                 <Route path="snapshots" element={<SnapshotsView />} />
-                <Route path="evaluator" element={<EvaluatorView />} />
+                <Route path="evaluator" element={<SelfImprovementView />} />
                 <Route path="editor" element={<Navigate to="/editor" replace />} />
                 <Route path="terminal" element={<TerminalView />} />
                 <Route path="settings" element={<SettingsView />} />

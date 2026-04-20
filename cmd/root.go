@@ -13,6 +13,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/digiogithub/pando/internal/app"
+	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/format"
@@ -366,6 +367,12 @@ func setupSubscriptions(app *app.App, parentCtx context.Context) (chan tea.Msg, 
 	setupSubscriber(ctx, &wg, "messages", app.Messages.Subscribe, ch)
 	setupSubscriber(ctx, &wg, "permissions", app.Permissions.Subscribe, ch)
 	setupSubscriber(ctx, &wg, "coderAgent", app.CoderAgent.Subscribe, ch)
+	if app.CronService != nil {
+		setupSubscriber(ctx, &wg, "cronjobs", app.CronService.Subscribe, ch)
+	}
+	if app.Snapshots != nil {
+		setupSubscriber(ctx, &wg, "snapshots", app.Snapshots.Subscribe, ch)
+	}
 
 	cleanupFunc := func() {
 		logging.Info("Cancelling all subscriptions")
@@ -457,6 +464,16 @@ func runACPServerWithOptions(cwd string, debug bool, autoPerm bool) error {
 	agentAdapter := &acpAgentAdapter{svc: pandoApp.CoderAgent}
 	sessionAdapter := &acpSessionAdapter{svc: pandoApp.Sessions, msgSvc: pandoApp.Messages}
 	permAdapter := &acpPermissionAdapter{svc: pandoApp.Permissions}
+
+	// Start the CronService in ACP mode so headless background jobs run even
+	// when Pando is used as an IDE extension without the TUI.
+	if pandoApp.CronService != nil && cfg.CronJobs.Enabled {
+		if err := pandoApp.CronService.Start(ctx, cfg.CronJobs); err != nil {
+			logging.Warn("cronjob: failed to start in ACP mode", "error", err)
+		} else {
+			defer pandoApp.CronService.Stop()
+		}
+	}
 
 	pandoAgent := acpPkg.NewPandoACPAgent(
 		version.Version,
@@ -591,6 +608,22 @@ func (a *acpAgentAdapter) ListAvailableTools() []acpPkg.ACPToolInfo {
 		})
 	}
 	return result
+}
+
+func (a *acpAgentAdapter) OpenCopilotUsage() error {
+	status := auth.GetCopilotAuthStatus()
+	if !status.Authenticated {
+		return fmt.Errorf("/copilot-usage is only available when the copilot provider is authenticated")
+	}
+	return auth.OpenBrowser("https://github.com/settings/copilot/features")
+}
+
+func (a *acpAgentAdapter) OpenClaudeUsage() error {
+	status, err := auth.GetClaudeAuthStatus()
+	if err != nil || status == nil || !status.Authenticated || status.Source == "env" {
+		return fmt.Errorf("/claude-usage is only available when Claude OAuth is authenticated")
+	}
+	return auth.OpenBrowser("https://claude.ai/settings/usage")
 }
 
 // acpSessionAdapter adapts session.Service to acpPkg.SessionService.

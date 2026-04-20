@@ -19,6 +19,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/cronjob"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/evaluator"
 	"github.com/digiogithub/pando/internal/format"
@@ -64,6 +65,7 @@ type App struct {
 	LSPClients          map[string]*lsp.Client
 	SkillManager        *skills.SkillManager
 	MesnadaOrchestrator *mesnadaOrch.Orchestrator
+	CronService         *cronjob.Service
 	MesnadaServer       *mesnadaServer.Server
 	Remembrances        *rag.RemembrancesService
 	LuaManager          *luaengine.FilterManager
@@ -286,6 +288,10 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			logging.Error("Failed to create mesnada orchestrator", "error", err)
 		} else {
 			app.MesnadaOrchestrator = orch
+			app.CronService = cronjob.NewService(orch, cfg.WorkingDir, nil)
+			if err := app.CronService.Start(ctx, cfg.CronJobs); err != nil {
+				logging.Error("Failed to start cronjob service", "error", err)
+			}
 
 			// Initialize ACP handler if ACP server is enabled
 			var acpHandler *mesnadaServer.ACPHandler
@@ -1000,6 +1006,9 @@ func (app *App) Shutdown() {
 		}
 		cancel()
 	}
+	if app.CronService != nil {
+		app.CronService.Stop()
+	}
 	if app.MesnadaOrchestrator != nil {
 		if err := app.MesnadaOrchestrator.Shutdown(); err != nil {
 			logging.Error("Failed to shutdown Mesnada orchestrator", "error", err)
@@ -1151,6 +1160,22 @@ func (a *appACPAgentAdapter) ListAvailableTools() []mesnadaACP.ACPToolInfo {
 		})
 	}
 	return result
+}
+
+func (a *appACPAgentAdapter) OpenCopilotUsage() error {
+	status := auth.GetCopilotAuthStatus()
+	if !status.Authenticated {
+		return fmt.Errorf("/copilot-usage is only available when the copilot provider is authenticated")
+	}
+	return auth.OpenBrowser("https://github.com/settings/copilot/features")
+}
+
+func (a *appACPAgentAdapter) OpenClaudeUsage() error {
+	status, err := auth.GetClaudeAuthStatus()
+	if err != nil || status == nil || !status.Authenticated || status.Source == "env" {
+		return fmt.Errorf("/claude-usage is only available when Claude OAuth is authenticated")
+	}
+	return auth.OpenBrowser("https://claude.ai/settings/usage")
 }
 
 // ---------------------------------------------------------------------------

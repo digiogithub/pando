@@ -210,6 +210,20 @@ AutoApproveTools = false
 [Mesnada]
 Enabled = true
 
+# =============================================================================
+# CronJobs — scheduled Mesnada/Pando tasks
+# =============================================================================
+# [CronJobs]
+# Enabled = true
+# [[CronJobs.Jobs]]
+# Name = 'daily-review'
+# Schedule = '0 9 * * 1-5'
+# Prompt = 'Review today''s git log and summarize in DAILY_REPORT.md'
+# Enabled = true
+# Engine = 'pando'
+# Tags = ['daily']
+# Timeout = '10m'
+
 [Mesnada.Server]
 Host = ''
 Port = 5005
@@ -509,4 +523,3 @@ func InitializeProjectAt(dir string) error {
 
 	return nil
 }
-

@@ -164,7 +164,7 @@ func BenchmarkPermissionQueue(b *testing.B) {
 
 	req := acpsdk.RequestPermissionRequest{
 		SessionId: "session-1",
-		ToolCall: acpsdk.RequestPermissionToolCall{
+		ToolCall: acpsdk.ToolCallUpdate{
 			Title: &title,
 		},
 		Options: []acpsdk.PermissionOption{
@@ -187,7 +187,7 @@ func BenchmarkPermissionQueue_Concurrent(b *testing.B) {
 
 	req := acpsdk.RequestPermissionRequest{
 		SessionId: "session-1",
-		ToolCall: acpsdk.RequestPermissionToolCall{
+		ToolCall: acpsdk.ToolCallUpdate{
 			Title: &title,
 		},
 		Options: []acpsdk.PermissionOption{

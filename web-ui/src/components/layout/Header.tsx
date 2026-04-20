@@ -24,7 +24,7 @@ export default function Header() {
     { path: '/', label: t('nav.chat'), icon: faComments, end: true },
     { path: '/projects', label: t('nav.projects'), icon: faFolderOpen },
     { path: '/orchestrator', label: t('nav.orchestrator'), icon: faNetworkWired },
-    { path: '/evaluator', label: t('nav.evaluator'), icon: faStar },
+    { path: '/evaluator', label: t('nav.selfImprovement'), icon: faStar },
     { path: '/snapshots', label: t('nav.snapshots'), icon: faCamera },
     { path: '/logs', label: t('nav.logs'), icon: faFileLines },
     { path: '/editor', label: t('nav.codeEditor'), icon: faCode },

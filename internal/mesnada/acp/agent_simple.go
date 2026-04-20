@@ -76,14 +76,24 @@ func (a *SimpleACPAgent) SetSessionMode(ctx context.Context, req acpsdk.SetSessi
 	return acpsdk.SetSessionModeResponse{}, nil
 }
 
+// ListSessions implements Agent — returns an empty list.
+func (a *SimpleACPAgent) ListSessions(_ context.Context, _ acpsdk.ListSessionsRequest) (acpsdk.ListSessionsResponse, error) {
+	return acpsdk.ListSessionsResponse{Sessions: []acpsdk.SessionInfo{}}, nil
+}
+
+// SetSessionConfigOption implements Agent (stub).
+func (a *SimpleACPAgent) SetSessionConfigOption(_ context.Context, _ acpsdk.SetSessionConfigOptionRequest) (acpsdk.SetSessionConfigOptionResponse, error) {
+	return acpsdk.SetSessionConfigOptionResponse{}, nil
+}
+
 // LoadSession implements AgentLoader (stub).
 func (a *SimpleACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionRequest) (acpsdk.LoadSessionResponse, error) {
 	return acpsdk.LoadSessionResponse{}, nil
 }
 
-// SetSessionModel implements AgentExperimental (stub).
-func (a *SimpleACPAgent) SetSessionModel(ctx context.Context, req acpsdk.SetSessionModelRequest) (acpsdk.SetSessionModelResponse, error) {
-	return acpsdk.SetSessionModelResponse{}, nil
+// UnstableSetSessionModel implements AgentExperimental (stub).
+func (a *SimpleACPAgent) UnstableSetSessionModel(ctx context.Context, req acpsdk.UnstableSetSessionModelRequest) (acpsdk.UnstableSetSessionModelResponse, error) {
+	return acpsdk.UnstableSetSessionModelResponse{}, nil
 }
 
 // GetVersion returns the agent version.

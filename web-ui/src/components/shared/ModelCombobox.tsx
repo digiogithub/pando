@@ -47,6 +47,7 @@ export default function ModelCombobox({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [models, setModels] = useState<ModelInfo[]>([])
+  const [providerErrors, setProviderErrors] = useState<Record<string, string>>({})
   const [selectedIndex, setSelectedIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -60,8 +61,11 @@ export default function ModelCombobox({
     if (!fetchedRef.current) {
       fetchedRef.current = true
       api
-        .get<{ models: ModelInfo[] }>('/api/v1/models')
-        .then((r) => setModels(r.models))
+        .get<{ models: ModelInfo[]; errors?: Record<string, string> }>('/api/v1/models')
+        .then((r) => {
+          setModels(r.models)
+          setProviderErrors(r.errors ?? {})
+        })
         .catch(() => {})
     }
     setTimeout(() => searchRef.current?.focus(), 0)
@@ -84,13 +88,22 @@ export default function ModelCombobox({
   }, [open, closeDropdown])
 
   const q = query.toLowerCase()
-  const filtered = models.filter(
-    (m) =>
-      !q ||
-      m.name.toLowerCase().includes(q) ||
-      m.id.toLowerCase().includes(q) ||
-      m.provider.toLowerCase().includes(q),
-  )
+  // Support "provider.model" syntax: if query contains a dot, split into provider prefix and model filter
+  const dotIdx = q.indexOf('.')
+  const providerPrefix = dotIdx > 0 ? q.slice(0, dotIdx) : null
+  const modelSuffix = dotIdx > 0 ? q.slice(dotIdx + 1) : q
+
+  const filtered = models.filter((m) => {
+    if (!q) return true
+    const provider = m.provider.toLowerCase()
+    const id = m.id.toLowerCase()
+    const name = m.name.toLowerCase()
+    if (providerPrefix !== null) {
+      // Must match provider prefix AND model suffix
+      return provider.includes(providerPrefix) && (modelSuffix === '' || id.includes(modelSuffix) || name.includes(modelSuffix))
+    }
+    return id.includes(q) || name.includes(q) || provider.includes(q)
+  })
 
   const providers = [...new Set(filtered.map((m) => m.provider))]
   const flatModels = providers.flatMap((p) => filtered.filter((m) => m.provider === p))
@@ -120,8 +133,22 @@ export default function ModelCombobox({
         onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
         onBlur={(e) => { if (!open) e.currentTarget.style.borderColor = 'var(--border)' }}
       >
-        <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {value || <span style={{ color: 'var(--fg-dim)' }}>{placeholder}</span>}
+        <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+          {value ? (
+            <>
+              {(() => {
+                const activeModel = models.find((m) => m.id === value)
+                return activeModel ? (
+                  <span style={{ fontSize: 11, color: 'var(--fg-dim)', background: 'var(--sidebar-bg)', border: '1px solid var(--border)', borderRadius: 3, padding: '0 4px', flexShrink: 0 }}>
+                    {activeModel.provider}
+                  </span>
+                ) : null
+              })()}
+              <span>{value}</span>
+            </>
+          ) : (
+            <span style={{ color: 'var(--fg-dim)' }}>{placeholder}</span>
+          )}
         </span>
         <span style={{ color: 'var(--fg-dim)', fontSize: 11, marginLeft: '0.5rem', flexShrink: 0 }}>▼</span>
       </button>
@@ -184,6 +211,29 @@ export default function ModelCombobox({
               }}
             />
           </div>
+
+          {/* Per-provider error warnings */}
+          {Object.keys(providerErrors).length > 0 && (
+            <div style={{ borderBottom: '1px solid var(--border)' }}>
+              {Object.entries(providerErrors).map(([prov, msg]) => (
+                <div
+                  key={prov}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '0.4rem',
+                    padding: '0.35rem 0.75rem',
+                    fontSize: 11,
+                    color: '#ca8a04',
+                    background: 'rgba(234,179,8,0.06)',
+                  }}
+                >
+                  <span style={{ flexShrink: 0, fontWeight: 700 }}>⚠ {prov}:</span>
+                  <span style={{ color: 'var(--fg-muted)' }}>{msg}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div ref={listRef} style={{ overflowY: 'auto', flex: 1 }}>
             {models.length === 0 ? (

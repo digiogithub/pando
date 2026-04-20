@@ -19,16 +19,16 @@ Languages = []
 
 [Agents]
 [Agents.cliassist]
-Model = 'gpt-4.1'
-MaxTokens = 0
-ReasoningEffort = ''
+Model = 'gpt-4.1-2025-04-14'
+MaxTokens = 5000
+ReasoningEffort = 'none'
 ThinkingMode = ''
 AutoCompact = true
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'gpt-4.1-2025-04-14'
+Model = 'gemma4-e2b:latest'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -37,38 +37,38 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.persona-selector]
-Model = 'gpt-4.1'
-MaxTokens = 0
-ReasoningEffort = ''
+Model = 'gpt-4.1-2025-04-14'
+MaxTokens = 5000
+ReasoningEffort = 'none'
 ThinkingMode = ''
-AutoCompact = false
+AutoCompact = true
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.summarizer]
-Model = 'copilot.gpt-4o'
+Model = 'gpt-4.1-2025-04-14'
 MaxTokens = 64000
-ReasoningEffort = ''
+ReasoningEffort = 'none'
 ThinkingMode = ''
-AutoCompact = false
+AutoCompact = true
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.task]
-Model = 'copilot.gpt-4.1'
+Model = 'gpt-4.1-2025-04-14'
 MaxTokens = 16384
-ReasoningEffort = ''
+ReasoningEffort = 'none'
 ThinkingMode = ''
-AutoCompact = false
+AutoCompact = true
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.title]
-Model = 'gemini.gemini-2.5-flash-preview-04-17'
+Model = 'gpt-4.1-2025-04-14'
 MaxTokens = 80
-ReasoningEffort = ''
+ReasoningEffort = 'none'
 ThinkingMode = ''
-AutoCompact = false
+AutoCompact = true
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
@@ -93,14 +93,14 @@ Enabled = true
 
 [Mesnada.Server]
 Host = ''
-Port = 5005
+Port = 5009
 
 [Mesnada.Orchestrator]
 StorePath = './.pando/mesnada'
 LogDir = './.pando/mesnada/logs'
 MaxParallel = 5
-DefaultEngine = 'claude'
-DefaultModel = 'sonnet'
+DefaultEngine = 'copilot'
+DefaultModel = ''
 DefaultMCPConfig = '.github/mcp-config.json'
 PersonaPath = './.pando/mesnada/personas'
 
@@ -110,7 +110,7 @@ DefaultAgent = 'copilot'
 AutoPermission = true
 
 [Mesnada.ACP.Server]
-Enabled = false
+Enabled = true
 Transports = ['http']
 Host = '0.0.0.0'
 Port = 8766
@@ -120,7 +120,7 @@ RequireAuth = false
 
 [Mesnada.TUI]
 Enabled = true
-WebUI = false
+WebUI = true
 
 [Shell]
 Path = ''

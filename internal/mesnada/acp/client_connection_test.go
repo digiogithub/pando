@@ -9,13 +9,13 @@ import (
 
 // mockAgentSideConnection is a mock implementation for testing.
 type mockAgentSideConnection struct {
-	readTextFileFunc       func(ctx context.Context, req acpsdk.ReadTextFileRequest) (acpsdk.ReadTextFileResponse, error)
-	writeTextFileFunc      func(ctx context.Context, req acpsdk.WriteTextFileRequest) (acpsdk.WriteTextFileResponse, error)
-	createTerminalFunc     func(ctx context.Context, req acpsdk.CreateTerminalRequest) (acpsdk.CreateTerminalResponse, error)
-	terminalOutputFunc     func(ctx context.Context, req acpsdk.TerminalOutputRequest) (acpsdk.TerminalOutputResponse, error)
+	readTextFileFunc        func(ctx context.Context, req acpsdk.ReadTextFileRequest) (acpsdk.ReadTextFileResponse, error)
+	writeTextFileFunc       func(ctx context.Context, req acpsdk.WriteTextFileRequest) (acpsdk.WriteTextFileResponse, error)
+	createTerminalFunc      func(ctx context.Context, req acpsdk.CreateTerminalRequest) (acpsdk.CreateTerminalResponse, error)
+	terminalOutputFunc      func(ctx context.Context, req acpsdk.TerminalOutputRequest) (acpsdk.TerminalOutputResponse, error)
 	waitForTerminalExitFunc func(ctx context.Context, req acpsdk.WaitForTerminalExitRequest) (acpsdk.WaitForTerminalExitResponse, error)
-	killTerminalCommandFunc func(ctx context.Context, req acpsdk.KillTerminalCommandRequest) (acpsdk.KillTerminalCommandResponse, error)
-	releaseTerminalFunc    func(ctx context.Context, req acpsdk.ReleaseTerminalRequest) (acpsdk.ReleaseTerminalResponse, error)
+	killTerminalFunc        func(ctx context.Context, req acpsdk.KillTerminalRequest) (acpsdk.KillTerminalResponse, error)
+	releaseTerminalFunc     func(ctx context.Context, req acpsdk.ReleaseTerminalRequest) (acpsdk.ReleaseTerminalResponse, error)
 }
 
 func (m *mockAgentSideConnection) ReadTextFile(ctx context.Context, req acpsdk.ReadTextFileRequest) (acpsdk.ReadTextFileResponse, error) {
@@ -54,11 +54,11 @@ func (m *mockAgentSideConnection) WaitForTerminalExit(ctx context.Context, req a
 	return acpsdk.WaitForTerminalExitResponse{ExitCode: &exitCode}, nil
 }
 
-func (m *mockAgentSideConnection) KillTerminalCommand(ctx context.Context, req acpsdk.KillTerminalCommandRequest) (acpsdk.KillTerminalCommandResponse, error) {
-	if m.killTerminalCommandFunc != nil {
-		return m.killTerminalCommandFunc(ctx, req)
+func (m *mockAgentSideConnection) KillTerminal(ctx context.Context, req acpsdk.KillTerminalRequest) (acpsdk.KillTerminalResponse, error) {
+	if m.killTerminalFunc != nil {
+		return m.killTerminalFunc(ctx, req)
 	}
-	return acpsdk.KillTerminalCommandResponse{}, nil
+	return acpsdk.KillTerminalResponse{}, nil
 }
 
 func (m *mockAgentSideConnection) ReleaseTerminal(ctx context.Context, req acpsdk.ReleaseTerminalRequest) (acpsdk.ReleaseTerminalResponse, error) {
@@ -218,11 +218,11 @@ func TestWaitForTerminalExit(t *testing.T) {
 
 func TestKillTerminal(t *testing.T) {
 	mock := &mockAgentSideConnection{
-		killTerminalCommandFunc: func(ctx context.Context, req acpsdk.KillTerminalCommandRequest) (acpsdk.KillTerminalCommandResponse, error) {
+		killTerminalFunc: func(ctx context.Context, req acpsdk.KillTerminalRequest) (acpsdk.KillTerminalResponse, error) {
 			if req.TerminalId != "terminal-123" {
 				t.Errorf("expected terminal ID 'terminal-123', got '%s'", req.TerminalId)
 			}
-			return acpsdk.KillTerminalCommandResponse{}, nil
+			return acpsdk.KillTerminalResponse{}, nil
 		},
 	}
 

@@ -437,3 +437,28 @@ export interface ServicesConfig {
   snapshots: SnapshotsConfig
   server: APIServerConfig
 }
+
+export interface CronJob {
+  name: string
+  schedule: string
+  enabled: boolean
+  prompt?: string
+  engine?: string
+  model?: string
+  workDir?: string
+  tags?: string[]
+  timeout?: string
+  nextRun?: string
+}
+
+export interface CronJobCreate {
+  name: string
+  schedule: string
+  prompt: string
+  enabled: boolean
+  engine?: string
+  model?: string
+  workDir?: string
+  tags?: string[]
+  timeout?: string
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/digiogithub/pando/internal/auth"
@@ -36,8 +37,16 @@ func badgesForModel(id string) []string {
 	}
 }
 
+// providerResult holds models or an error for a single provider fetch.
+type providerResult struct {
+	provider models.ModelProvider
+	items    []ModelInfo
+	err      string
+}
+
 // handleListModels handles GET /api/v1/models.
-// It dynamically queries each configured (non-disabled) provider for their models.
+// Fetches models from all configured (non-disabled) providers in parallel and
+// returns both the model list and a per-provider error map for diagnostics.
 func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -53,69 +62,113 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	result := make([]ModelInfo, 0)
+	type providerEntry struct {
+		provider    models.ModelProvider
+		cfg         config.Provider
+		bearerToken string
+		skip        bool
+		skipReason  string
+	}
 
+	entries := make([]providerEntry, 0, len(cfg.Providers))
 	for provider, providerCfg := range cfg.Providers {
 		if providerCfg.Disabled {
 			continue
 		}
 
-		// Get bearer token for Copilot
-		bearerToken := ""
+		entry := providerEntry{provider: provider, cfg: providerCfg}
+
 		if provider == models.ProviderCopilot {
 			if token, err := auth.LoadGitHubOAuthToken(); err == nil && token != "" {
-				bearerToken = token
+				entry.bearerToken = token
 			} else if session, err := auth.LoadCopilotSession(); err == nil && session != nil {
-				bearerToken = session.AccessToken
+				entry.bearerToken = session.AccessToken
 			}
-			if bearerToken == "" {
-				continue
+			if entry.bearerToken == "" {
+				entry.skip = true
+				entry.skipReason = "no GitHub OAuth token found — run 'pando auth login'"
 			}
 		}
 
-		fetched, err := models.FetchModelsFromProvider(ctx, provider, providerCfg.APIKey, bearerToken, providerCfg.BaseURL)
-		if err != nil {
-			continue
-		}
+		entries = append(entries, entry)
+	}
 
-		for _, m := range fetched {
-			name := m.Name
-			if name == "" {
-				name = m.ID
+	resultCh := make(chan providerResult, len(entries))
+	var wg sync.WaitGroup
+
+	for _, e := range entries {
+		e := e
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			if e.skip {
+				resultCh <- providerResult{provider: e.provider, err: e.skipReason}
+				return
 			}
 
-			modelID := models.NormalizeModelID(m.ID)
-			if _, exists := models.SupportedModels[modelID]; !exists {
-				contextWindow := m.ContextWindow
-				if contextWindow <= 0 {
-					contextWindow = 128_000
+			fetched, err := models.FetchModelsFromProvider(ctx, e.provider, e.cfg.APIKey, e.bearerToken, e.cfg.BaseURL)
+			if err != nil {
+				resultCh <- providerResult{provider: e.provider, err: err.Error()}
+				return
+			}
+
+			items := make([]ModelInfo, 0, len(fetched))
+			for _, m := range fetched {
+				name := m.Name
+				if name == "" {
+					name = m.ID
 				}
-				maxTokens := int64(4096)
-				if contextWindow < maxTokens {
-					maxTokens = contextWindow / 2
+
+				modelID := models.NormalizeModelID(m.ID)
+				if _, exists := models.SupportedModels[modelID]; !exists {
+					contextWindow := m.ContextWindow
+					if contextWindow <= 0 {
+						contextWindow = 128_000
+					}
+					maxTokens := int64(4096)
+					if contextWindow < maxTokens {
+						maxTokens = contextWindow / 2
+					}
+					models.RegisterDynamicModel(models.Model{
+						ID:               modelID,
+						Name:             name,
+						Provider:         e.provider,
+						APIModel:         m.ID,
+						ContextWindow:    contextWindow,
+						DefaultMaxTokens: maxTokens,
+					})
 				}
-				models.RegisterDynamicModel(models.Model{
-					ID:               modelID,
-					Name:             name,
-					Provider:         provider,
-					APIModel:         m.ID,
-					ContextWindow:    contextWindow,
-					DefaultMaxTokens: maxTokens,
+
+				items = append(items, ModelInfo{
+					ID:          string(modelID),
+					Name:        name,
+					Provider:    string(e.provider),
+					Description: m.Description,
+					Badges:      badgesForModel(m.ID),
 				})
 			}
+			resultCh <- providerResult{provider: e.provider, items: items}
+		}()
+	}
 
-			result = append(result, ModelInfo{
-				ID:          string(modelID),
-				Name:        name,
-				Provider:    string(provider),
-				Description: m.Description,
-				Badges:      badgesForModel(m.ID),
-			})
+	wg.Wait()
+	close(resultCh)
+
+	allModels := make([]ModelInfo, 0)
+	providerErrors := make(map[string]string)
+
+	for res := range resultCh {
+		if res.err != "" {
+			providerErrors[string(res.provider)] = res.err
+		} else {
+			allModels = append(allModels, res.items...)
 		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"models": result,
+		"models": allModels,
+		"errors": providerErrors,
 	})
 }
 

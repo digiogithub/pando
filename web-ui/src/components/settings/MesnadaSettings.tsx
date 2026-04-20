@@ -3,7 +3,7 @@ import { useServicesSettingsStore } from '@/stores/servicesSettingsStore'
 import { TextInput, Toggle } from '@/components/shared/FormInput'
 import type { MesnadaACPConfig, MesnadaACPServerConfig, MesnadaOrchestratorConfig, MesnadaTUIConfig, MesnadaServerConfig } from '@/types'
 
-const ENGINE_OPTIONS = ['claude', 'copilot', 'openai', 'google', 'ollama']
+const ENGINE_OPTIONS = ['pando', 'claude', 'copilot', 'openai', 'google', 'ollama']
 
 const dividerStyle: React.CSSProperties = {
   borderTop: '1px solid var(--border)',
@@ -160,7 +160,7 @@ export default function MesnadaSettings() {
           label="Default Model"
           value={mesnada.orchestrator.defaultModel}
           onChange={(e) => setOrchestrator('defaultModel', e.target.value)}
-          placeholder="claude-sonnet-4-6"
+          placeholder="(empty = engine default)"
         />
         <TextInput
           label="Persona Path"

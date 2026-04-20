@@ -70,7 +70,20 @@ func (c *skillsCmp) View() string {
 	selectedStyle := lipgloss.NewStyle().Foreground(t.Primary()).Bold(true)
 
 	var rows []string
-	for i, sk := range c.skills {
+	availableRows := c.height
+	if availableRows <= 0 {
+		availableRows = len(c.skills)
+	}
+	if availableRows < 1 {
+		availableRows = 1
+	}
+	start := 0
+	if c.cursor >= availableRows {
+		start = c.cursor - availableRows + 1
+	}
+	end := min(len(c.skills), start+availableRows)
+	for i := start; i < end; i++ {
+		sk := c.skills[i]
 		content := sk.Content
 		if len(content) > maxContentWidth {
 			content = content[:maxContentWidth-3] + "..."

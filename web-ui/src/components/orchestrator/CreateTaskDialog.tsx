@@ -1,21 +1,13 @@
 import { useState } from 'react'
 import { useOrchestratorStore } from '@/stores/orchestratorStore'
+import ModelCombobox from '@/components/shared/ModelCombobox'
 import api from '@/services/api'
-
-const COMMON_MODELS = [
-  'claude-sonnet-4-5',
-  'claude-opus-4',
-  'gpt-4o',
-  'gpt-4o-mini',
-  'gpt-5',
-  'gpt-5-mini',
-]
 
 export default function CreateTaskDialog() {
   const { setCreateDialogOpen, fetchTasks } = useOrchestratorStore()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [model, setModel] = useState(COMMON_MODELS[0])
+  const [model, setModel] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -123,15 +115,11 @@ export default function CreateTaskDialog() {
             {/* Model */}
             <div>
               <label style={labelStyle}>Model</label>
-              <select
+              <ModelCombobox
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-              >
-                {COMMON_MODELS.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+                onChange={setModel}
+                placeholder="Default model"
+              />
             </div>
 
             {/* Error */}

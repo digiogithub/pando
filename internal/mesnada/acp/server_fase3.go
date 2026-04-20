@@ -72,6 +72,10 @@ type AgentService interface {
 	SetActivePersona(name string) error
 	// ListAvailableTools returns the name and description of all tools available to the agent.
 	ListAvailableTools() []ACPToolInfo
+	// OpenCopilotUsage opens the Copilot usage/features page when Copilot auth is available.
+	OpenCopilotUsage() error
+	// OpenClaudeUsage opens the Claude usage page when Claude OAuth auth is available.
+	OpenClaudeUsage() error
 }
 
 // ACPSessionInfo is a minimal session descriptor used by the ACP layer.
@@ -95,15 +99,23 @@ type SessionService interface {
 }
 
 // ListSessions returns the historical sessions known by Pando.
-// ACP v0.6.3 doesn't define a session/list request, so this helper is exposed
-// for HTTP/API adapters that need to provide discovery endpoints.
-func (a *PandoACPAgent) ListSessions(ctx context.Context) ([]ACPSessionInfo, error) {
+// Implements the acpsdk.Agent interface (session/list method).
+func (a *PandoACPAgent) ListSessions(ctx context.Context, _ acpsdk.ListSessionsRequest) (acpsdk.ListSessionsResponse, error) {
 	sessions, err := a.sessionService.ListSessions(ctx)
 	if err != nil {
 		a.logger.Printf("[ACP AGENT] ListSessions failed: %v", err)
-		return nil, err
+		return acpsdk.ListSessionsResponse{}, err
 	}
-	return sessions, nil
+
+	infos := make([]acpsdk.SessionInfo, 0, len(sessions))
+	for _, s := range sessions {
+		title := s.Title
+		infos = append(infos, acpsdk.SessionInfo{
+			SessionId: acpsdk.SessionId(s.ID),
+			Title:     &title,
+		})
+	}
+	return acpsdk.ListSessionsResponse{Sessions: infos}, nil
 }
 
 // PermissionRequestData carries the full details of a tool permission request.
@@ -339,7 +351,7 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 		SessionId: sessionID,
 		Modes:     buildSessionModeState(a.agentService, currentMode, acpSession.Persona()),
 		Models:    buildSessionModelState(a.agentService),
-		Meta:      buildSessionPersonaState(a.agentService),
+		Meta:      personaStateToMeta(buildSessionPersonaState(a.agentService)),
 	}, nil
 }
 
@@ -1181,6 +1193,13 @@ func (a *PandoACPAgent) SetSessionMode(ctx context.Context, req acpsdk.SetSessio
 	return acpsdk.SetSessionModeResponse{}, nil
 }
 
+// SetSessionConfigOption handles runtime configuration changes from the client.
+// Currently treated as a no-op; individual options are not yet mapped to agent settings.
+func (a *PandoACPAgent) SetSessionConfigOption(_ context.Context, req acpsdk.SetSessionConfigOptionRequest) (acpsdk.SetSessionConfigOptionResponse, error) {
+	a.logger.Printf("[ACP AGENT] SetSessionConfigOption: (not implemented)")
+	return acpsdk.SetSessionConfigOptionResponse{}, nil
+}
+
 // SetConnection stores a reference to the AgentSideConnection so the agent can
 // stream session updates back to the client.  Called by transport_stdio.go
 // immediately after NewAgentSideConnection() returns.
@@ -1263,13 +1282,13 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 	return acpsdk.LoadSessionResponse{
 		Modes:  buildSessionModeState(a.agentService, currentMode, currentPersona),
 		Models: buildSessionModelState(a.agentService),
-		Meta:   buildSessionPersonaState(a.agentService),
+		Meta:   personaStateToMeta(buildSessionPersonaState(a.agentService)),
 	}, nil
 }
 
-// SetSessionModel implements AgentExperimental.
+// UnstableSetSessionModel implements AgentExperimental.
 // It stores the requested model on the ACP session for use in future prompts.
-func (a *PandoACPAgent) SetSessionModel(ctx context.Context, req acpsdk.SetSessionModelRequest) (acpsdk.SetSessionModelResponse, error) {
+func (a *PandoACPAgent) UnstableSetSessionModel(ctx context.Context, req acpsdk.UnstableSetSessionModelRequest) (acpsdk.UnstableSetSessionModelResponse, error) {
 	a.logger.Printf("[ACP AGENT] SetSessionModel: SessionID=%s, ModelID=%s", req.SessionId, req.ModelId)
 
 	a.sessionsMu.RLock()
@@ -1277,12 +1296,12 @@ func (a *PandoACPAgent) SetSessionModel(ctx context.Context, req acpsdk.SetSessi
 	a.sessionsMu.RUnlock()
 
 	if !exists {
-		return acpsdk.SetSessionModelResponse{}, fmt.Errorf("session not found: %s", req.SessionId)
+		return acpsdk.UnstableSetSessionModelResponse{}, fmt.Errorf("session not found: %s", req.SessionId)
 	}
 
 	acpSession.SetModel(string(req.ModelId))
 	a.logger.Printf("[ACP AGENT] SetSessionModel: model set to %s for session %s", req.ModelId, req.SessionId)
-	return acpsdk.SetSessionModelResponse{}, nil
+	return acpsdk.UnstableSetSessionModelResponse{}, nil
 }
 
 // SetSessionPersona stores the requested persona on the ACP session for use in future prompts.
@@ -1413,6 +1432,21 @@ type PersonaInfo struct {
 type SessionPersonaState struct {
 	AvailablePersonas []PersonaInfo `json:"availablePersonas"`
 	CurrentPersonaId  string        `json:"currentPersonaId"`
+}
+
+// personaStateToMeta serialises SessionPersonaState into a map[string]any
+// suitable for placement in ACP _meta fields (which changed from any to
+// map[string]any in SDK v0.12).
+func personaStateToMeta(s *SessionPersonaState) map[string]any {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil
+	}
+	return m
 }
 
 // buildSessionPersonaState constructs the SessionPersonaState from the AgentService.

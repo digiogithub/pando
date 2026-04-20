@@ -86,7 +86,7 @@ func (b *ACPPermissionBridge) Handle(req PermissionRequestData) bool {
 
 	permReq := acpsdk.RequestPermissionRequest{
 		SessionId: b.sessionID,
-		ToolCall: acpsdk.RequestPermissionToolCall{
+		ToolCall: acpsdk.ToolCallUpdate{
 			ToolCallId: acpsdk.ToolCallId(fmt.Sprintf("%s-%s-%d", req.SessionID, req.ToolName, time.Now().UnixNano())),
 			Status:     &status,
 			Title:      &title,

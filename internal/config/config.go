@@ -16,6 +16,7 @@ import (
 	"time"
 
 	toml "github.com/pelletier/go-toml/v2"
+	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
 
 	"github.com/digiogithub/pando/internal/auth"
@@ -73,13 +74,13 @@ const (
 
 // Agent defines configuration for different LLM models and their token limits.
 type Agent struct {
-	Model                models.ModelID `json:"model"`
-	MaxTokens            int64          `json:"maxTokens"`
-	ReasoningEffort      string         `json:"reasoningEffort"`                // For openai models low,medium,high
-	ThinkingMode         ThinkingMode   `json:"thinkingMode,omitempty"`         // For anthropic models: disabled,low,medium,high
-	AutoCompact             bool           `json:"autoCompact,omitempty"`             // enable auto-compaction when context fills up
-	AutoCompactThreshold    float64        `json:"autoCompactThreshold,omitempty"`    // 0.0-1.0, default 0.85
-	ContextWindowOverride   int64          `json:"contextWindowOverride,omitempty"`   // override model's reported context window (tokens); 0 = use model default
+	Model                 models.ModelID `json:"model"`
+	MaxTokens             int64          `json:"maxTokens"`
+	ReasoningEffort       string         `json:"reasoningEffort"`                 // For openai models low,medium,high
+	ThinkingMode          ThinkingMode   `json:"thinkingMode,omitempty"`          // For anthropic models: disabled,low,medium,high
+	AutoCompact           bool           `json:"autoCompact,omitempty"`           // enable auto-compaction when context fills up
+	AutoCompactThreshold  float64        `json:"autoCompactThreshold,omitempty"`  // 0.0-1.0, default 0.85
+	ContextWindowOverride int64          `json:"contextWindowOverride,omitempty"` // override model's reported context window (tokens); 0 = use model default
 }
 
 // Provider defines configuration for an LLM provider.
@@ -406,6 +407,25 @@ type ProjectsConfig struct {
 	MaxProjects int `json:"maxProjects,omitempty" toml:"MaxProjects"`
 }
 
+// CronJob defines a scheduled prompt execution.
+type CronJob struct {
+	Name     string   `json:"name,omitempty" toml:"Name"`
+	Schedule string   `json:"schedule,omitempty" toml:"Schedule"`
+	Prompt   string   `json:"prompt,omitempty" toml:"Prompt"`
+	Enabled  bool     `json:"enabled,omitempty" toml:"Enabled"`
+	Engine   string   `json:"engine,omitempty" toml:"Engine"`
+	Model    string   `json:"model,omitempty" toml:"Model"`
+	WorkDir  string   `json:"workDir,omitempty" toml:"WorkDir"`
+	Tags     []string `json:"tags,omitempty" toml:"Tags"`
+	Timeout  string   `json:"timeout,omitempty" toml:"Timeout"`
+}
+
+// CronJobsConfig controls scheduled Mesnada runs.
+type CronJobsConfig struct {
+	Enabled bool      `json:"enabled,omitempty" toml:"Enabled"`
+	Jobs    []CronJob `json:"jobs,omitempty" toml:"Jobs"`
+}
+
 // Config is the main configuration structure for the application.
 type Config struct {
 	Data              Data                              `json:"data"`
@@ -438,6 +458,7 @@ type Config struct {
 	ACP               ACPConfig                         `json:"acp,omitempty" toml:"acp"`
 	OpenLit           OpenLitConfig                     `json:"openlit,omitempty" toml:"OpenLit"`
 	Projects          ProjectsConfig                    `json:"projects,omitempty" toml:"Projects"`
+	CronJobs          CronJobsConfig                    `json:"cronJobs,omitempty" toml:"CronJobs"`
 }
 
 // Application constants
@@ -1439,6 +1460,10 @@ func Validate() error {
 		return fmt.Errorf("config not loaded")
 	}
 
+	if err := validateCronJobs(cfg.CronJobs); err != nil {
+		return err
+	}
+
 	// Validate agent models
 	for name, agent := range cfg.Agents {
 		if err := validateAgent(cfg, name, agent); err != nil {
@@ -1682,6 +1707,43 @@ func configFileFormat(path string) string {
 		return "toml"
 	}
 	return "json"
+}
+
+func ParseCronExpression(s string) error {
+	schedule := strings.TrimSpace(s)
+	if schedule == "" {
+		return fmt.Errorf("cron schedule is required")
+	}
+	_, err := cron.ParseStandard(schedule)
+	if err != nil {
+		return fmt.Errorf("invalid cron schedule %q: %w", schedule, err)
+	}
+	return nil
+}
+
+func validateCronJobs(cronJobs CronJobsConfig) error {
+	seen := make(map[string]struct{}, len(cronJobs.Jobs))
+	for i, job := range cronJobs.Jobs {
+		name := strings.TrimSpace(job.Name)
+		if name == "" {
+			return fmt.Errorf("cronjobs.jobs[%d].name is required", i)
+		}
+		if _, exists := seen[name]; exists {
+			return fmt.Errorf("duplicate cronjob name %q", name)
+		}
+		seen[name] = struct{}{}
+		if err := ParseCronExpression(job.Schedule); err != nil {
+			return fmt.Errorf("cronjob %q: %w", name, err)
+		}
+		if strings.TrimSpace(job.Prompt) == "" {
+			return fmt.Errorf("cronjob %q: prompt is required", name)
+		}
+	}
+	return nil
+}
+
+func ValidateCronJobsConfig(cronJobs CronJobsConfig) error {
+	return validateCronJobs(cronJobs)
 }
 
 func updateCfgFile(updateCfg func(config *Config)) error {
@@ -2591,6 +2653,27 @@ func UpdateSnapshots(snap SnapshotsConfig) error {
 		config.Snapshots = snap
 	}); err != nil {
 		cfg.Snapshots = oldSnap
+		return err
+	}
+
+	return nil
+}
+
+func UpdateCronJobs(cronJobs CronJobsConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	if err := validateCronJobs(cronJobs); err != nil {
+		return err
+	}
+
+	oldCronJobs := cfg.CronJobs
+	cfg.CronJobs = cronJobs
+
+	if err := updateCfgFile(func(config *Config) {
+		config.CronJobs = cronJobs
+	}); err != nil {
+		cfg.CronJobs = oldCronJobs
 		return err
 	}
 

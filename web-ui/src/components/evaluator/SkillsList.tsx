@@ -37,7 +37,7 @@ export default function SkillsList({ skills }: SkillsListProps) {
       {top.length === 0 ? (
         <EmptyState
           title="No skills learned yet"
-          description="Skills are discovered as the evaluator processes sessions."
+          description="Skills are discovered as self-improvement processes sessions."
         />
       ) : (
         <div style={{ overflowY: 'auto', flex: 1 }}>

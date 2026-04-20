@@ -304,7 +304,7 @@ func TestPermissionQueue_ManualApproval(t *testing.T) {
 	title := "Test Tool"
 	req := acpsdk.RequestPermissionRequest{
 		SessionId: "session-1",
-		ToolCall: acpsdk.RequestPermissionToolCall{
+		ToolCall: acpsdk.ToolCallUpdate{
 			Title: &title,
 		},
 		Options: []acpsdk.PermissionOption{
@@ -345,7 +345,7 @@ func TestPermissionQueue_AutoApproval(t *testing.T) {
 	title := "Test Tool"
 	req := acpsdk.RequestPermissionRequest{
 		SessionId: "session-1",
-		ToolCall: acpsdk.RequestPermissionToolCall{
+		ToolCall: acpsdk.ToolCallUpdate{
 			Title: &title,
 		},
 		Options: []acpsdk.PermissionOption{

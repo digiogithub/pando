@@ -34,6 +34,7 @@ type orchestratorPage struct {
 	selectedIdx     int
 	showDetail      bool
 	pendingSelectID string
+	filterTag       string // when non-empty, only tasks with this tag are shown
 
 	table table.Model
 
@@ -53,12 +54,13 @@ type taskRow struct {
 }
 
 type orchestratorKeyMap struct {
-	Enter   key.Binding
-	Spawn   key.Binding
-	Cancel  key.Binding
-	Delete  key.Binding
-	Refresh key.Binding
-	Close   key.Binding
+	Enter      key.Binding
+	Spawn      key.Binding
+	Cancel     key.Binding
+	Delete     key.Binding
+	Refresh    key.Binding
+	Close      key.Binding
+	FilterCron key.Binding
 }
 
 var orchestratorKeys = orchestratorKeyMap{
@@ -71,8 +73,8 @@ var orchestratorKeys = orchestratorKeyMap{
 		key.WithHelp("s", "spawn task"),
 	),
 	Cancel: key.NewBinding(
-		key.WithKeys("c"),
-		key.WithHelp("c", "cancel task"),
+		key.WithKeys("x"),
+		key.WithHelp("x", "cancel task"),
 	),
 	Delete: key.NewBinding(
 		key.WithKeys("d"),
@@ -85,6 +87,10 @@ var orchestratorKeys = orchestratorKeyMap{
 	Close: key.NewBinding(
 		key.WithKeys("esc"),
 		key.WithHelp("esc", "close dialog"),
+	),
+	FilterCron: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "filter cronjob tasks"),
 	),
 }
 
@@ -128,10 +134,10 @@ func NewOrchestratorPage(app *app.App) tea.Model {
 	agentInput.Prompt = "acp_agent> "
 
 	return &orchestratorPage{
-		app:          app,
-		table:        tableModel,
-		spawnInput:   input,
-		spawnEngine:  engineInput,
+		app:           app,
+		table:         tableModel,
+		spawnInput:    input,
+		spawnEngine:   engineInput,
 		spawnACPAgent: agentInput,
 	}
 }
@@ -244,6 +250,14 @@ func (p *orchestratorPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, p.deleteTaskCmd(task.ID)
 		case key.Matches(msg, orchestratorKeys.Refresh):
 			return p, p.refreshCmd()
+		case key.Matches(msg, orchestratorKeys.FilterCron):
+			if p.filterTag == "cronjob" {
+				p.filterTag = ""
+			} else {
+				p.filterTag = "cronjob"
+			}
+			p.setTasks(p.rawTasks, p.selectedTaskID())
+			return p, nil
 		}
 	}
 
@@ -278,11 +292,15 @@ func (p *orchestratorPage) View() string {
 		)
 	}
 
+	headerText := fmt.Sprintf("Orchestrator Dashboard (%d tasks)", len(p.rawTasks))
+	if p.filterTag != "" {
+		headerText += fmt.Sprintf(" [filter: %s]", p.filterTag)
+	}
 	header := lipgloss.NewStyle().
 		Foreground(t.Primary()).
 		Bold(true).
 		Width(p.width).
-		Render(fmt.Sprintf("Orchestrator Dashboard (%d tasks)", len(p.rawTasks)))
+		Render(headerText)
 
 	subtitle := lipgloss.NewStyle().
 		Foreground(t.TextMuted()).
@@ -296,6 +314,7 @@ func (p *orchestratorPage) View() string {
 		BorderBackground(t.Background()).
 		Width(max(0, p.width-2)).
 		Height(max(0, tableHeight-2)).
+		MaxHeight(max(0, tableHeight-2)).
 		Render(styles.ForceReplaceBackgroundWithLipgloss(p.table.View(), t.Background()))
 
 	detailPane := lipgloss.NewStyle().
@@ -304,10 +323,11 @@ func (p *orchestratorPage) View() string {
 		BorderBackground(t.Background()).
 		Width(max(0, p.width-2)).
 		Height(max(0, detailHeight-2)).
+		MaxHeight(max(0, detailHeight-2)).
 		Render(p.renderDetail())
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, subtitle, tablePane, detailPane)
-	view := baseStyle.Width(p.width).Height(p.height).Render(content)
+	view := baseStyle.Width(p.width).Height(p.height).MaxHeight(p.height).Render(content)
 
 	if p.showSpawnDialog {
 		overlay := p.renderSpawnDialog()
@@ -413,12 +433,35 @@ func (p *orchestratorPage) deleteTaskCmd(taskID string) tea.Cmd {
 	}
 }
 
+// SetFilterTag applies a tag filter. Call with empty string to clear the filter.
+func (p *orchestratorPage) SetFilterTag(tag string) {
+	p.filterTag = tag
+	p.setTasks(p.rawTasks, p.selectedTaskID())
+}
+
+func (p *orchestratorPage) filteredTasks() []*mesnadaModels.Task {
+	if p.filterTag == "" {
+		return p.rawTasks
+	}
+	var filtered []*mesnadaModels.Task
+	for _, task := range p.rawTasks {
+		for _, tag := range task.Tags {
+			if tag == p.filterTag {
+				filtered = append(filtered, task)
+				break
+			}
+		}
+	}
+	return filtered
+}
+
 func (p *orchestratorPage) setTasks(tasks []*mesnadaModels.Task, selectedID string) {
 	p.rawTasks = tasks
-	p.tasks = make([]taskRow, 0, len(tasks))
+	visible := p.filteredTasks()
+	p.tasks = make([]taskRow, 0, len(visible))
 
-	rows := make([]table.Row, 0, len(tasks))
-	for _, task := range tasks {
+	rows := make([]table.Row, 0, len(visible))
+	for _, task := range visible {
 		row := taskRow{
 			ID:       task.ID,
 			Status:   string(task.Status),
@@ -439,14 +482,14 @@ func (p *orchestratorPage) setTasks(tasks []*mesnadaModels.Task, selectedID stri
 	}
 
 	p.table.SetRows(rows)
-	if len(tasks) == 0 {
+	if len(visible) == 0 {
 		p.selectedIdx = 0
 		p.table.SetCursor(0)
 		return
 	}
 
 	if !p.setSelectedByID(selectedID) {
-		p.selectedIdx = min(p.selectedIdx, len(tasks)-1)
+		p.selectedIdx = min(p.selectedIdx, len(visible)-1)
 		p.table.SetCursor(p.selectedIdx)
 	}
 }
@@ -456,7 +499,7 @@ func (p *orchestratorPage) setSelectedByID(taskID string) bool {
 		return false
 	}
 
-	for idx, task := range p.rawTasks {
+	for idx, task := range p.filteredTasks() {
 		if task.ID == taskID {
 			p.selectedIdx = idx
 			p.table.SetCursor(idx)
@@ -476,12 +519,13 @@ func (p *orchestratorPage) selectedTaskID() string {
 }
 
 func (p *orchestratorPage) selectedTask() *mesnadaModels.Task {
-	if len(p.rawTasks) == 0 {
+	visible := p.filteredTasks()
+	if len(visible) == 0 {
 		return nil
 	}
 
-	p.selectedIdx = util.Clamp(p.table.Cursor(), 0, len(p.rawTasks)-1)
-	return p.rawTasks[p.selectedIdx]
+	p.selectedIdx = util.Clamp(p.table.Cursor(), 0, len(visible)-1)
+	return visible[p.selectedIdx]
 }
 
 func (p *orchestratorPage) renderDetail() string {

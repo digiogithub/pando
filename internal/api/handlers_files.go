@@ -333,6 +333,58 @@ func (s *Server) handleRenameFile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleFSBrowse handles GET /api/v1/fs/browse?path=...
+// Returns subdirectories at the given absolute path (expands ~).
+func (s *Server) handleFSBrowse(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "/"
+		}
+		path = home
+	}
+
+	// Expand ~ to home directory
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			path = filepath.Join(home, strings.TrimPrefix(path, "~"))
+		}
+	}
+
+	path = filepath.Clean(path)
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "cannot read directory: "+err.Error())
+		return
+	}
+
+	dirs := []string{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			dirs = append(dirs, entry.Name())
+		}
+	}
+
+	parent := filepath.Dir(path)
+	if parent == path {
+		parent = ""
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"path":   path,
+		"parent": parent,
+		"dirs":   dirs,
+	})
+}
+
 func (s *Server) handleSearchFiles(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")

@@ -22,7 +22,7 @@ type PendingPermission struct {
 	TaskID     string                           `json:"task_id"`
 	SessionID  acpsdk.SessionId                 `json:"session_id"`
 	RequestID  string                           `json:"request_id"`
-	ToolCall   acpsdk.RequestPermissionToolCall `json:"tool_call"`
+	ToolCall   acpsdk.ToolCallUpdate            `json:"tool_call"`
 	Options    []acpsdk.PermissionOption        `json:"options"`
 	Outcome    *acpsdk.RequestPermissionOutcome `json:"outcome,omitempty"` // nil = pending, non-nil = resolved
 	CreatedAt  time.Time                        `json:"created_at"`

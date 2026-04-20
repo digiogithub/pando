@@ -5,7 +5,7 @@ import MetricsCards from './MetricsCards'
 import UCBRankingTable from './UCBRankingTable'
 import SkillsList from './SkillsList'
 
-export default function EvaluatorView() {
+export default function SelfImprovementView() {
   const { metrics, templates, skills, loading, fetchAll } = useEvaluatorStore()
 
   useEffect(() => {
@@ -29,7 +29,7 @@ export default function EvaluatorView() {
           flexShrink: 0,
         }}
       >
-        <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)' }}>Evaluator</h2>
+        <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)' }}>Self-Improvement</h2>
       </div>
 
       {loading && !metrics && templates.length === 0 ? (

@@ -17,7 +17,7 @@ type ACPClientCallbacks interface {
 	CreateTerminal(ctx context.Context, req acpsdk.CreateTerminalRequest) (acpsdk.CreateTerminalResponse, error)
 	TerminalOutput(ctx context.Context, req acpsdk.TerminalOutputRequest) (acpsdk.TerminalOutputResponse, error)
 	WaitForTerminalExit(ctx context.Context, req acpsdk.WaitForTerminalExitRequest) (acpsdk.WaitForTerminalExitResponse, error)
-	KillTerminalCommand(ctx context.Context, req acpsdk.KillTerminalCommandRequest) (acpsdk.KillTerminalCommandResponse, error)
+	KillTerminal(ctx context.Context, req acpsdk.KillTerminalRequest) (acpsdk.KillTerminalResponse, error)
 	ReleaseTerminal(ctx context.Context, req acpsdk.ReleaseTerminalRequest) (acpsdk.ReleaseTerminalResponse, error)
 }
 
@@ -208,8 +208,8 @@ func (c *ACPClientConnection) KillTerminal(ctx context.Context, terminalID strin
 		fmt.Fprintf(c.logFile, "[CLIENT CALLBACK] KillTerminal: terminalId=%s\n", terminalID)
 	}
 
-	// Call the client's KillTerminalCommand method
-	_, err := c.conn.KillTerminalCommand(ctx, acpsdk.KillTerminalCommandRequest{
+	// Call the client's KillTerminal method
+	_, err := c.conn.KillTerminal(ctx, acpsdk.KillTerminalRequest{
 		TerminalId: terminalID,
 	})
 	if err != nil {

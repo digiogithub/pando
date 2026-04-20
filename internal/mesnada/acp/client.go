@@ -529,8 +529,8 @@ func (c *MesnadaACPClient) WaitForTerminalExit(ctx context.Context, params acpsd
 	}
 }
 
-// KillTerminalCommand kills a running terminal command.
-func (c *MesnadaACPClient) KillTerminalCommand(ctx context.Context, params acpsdk.KillTerminalCommandRequest) (acpsdk.KillTerminalCommandResponse, error) {
+// KillTerminal kills a running terminal command.
+func (c *MesnadaACPClient) KillTerminal(ctx context.Context, params acpsdk.KillTerminalRequest) (acpsdk.KillTerminalResponse, error) {
 	c.terminalsMu.Lock()
 	term, exists := c.terminals[params.TerminalId]
 	c.terminalsMu.Unlock()
@@ -539,7 +539,7 @@ func (c *MesnadaACPClient) KillTerminalCommand(ctx context.Context, params acpsd
 		if c.logFile != nil {
 			fmt.Fprintf(c.logFile, "[KILL TERMINAL ERROR] Terminal not found: %s\n", params.TerminalId)
 		}
-		return acpsdk.KillTerminalCommandResponse{}, fmt.Errorf("terminal not found: %s", params.TerminalId)
+		return acpsdk.KillTerminalResponse{}, fmt.Errorf("terminal not found: %s", params.TerminalId)
 	}
 
 	if c.logFile != nil {
@@ -567,7 +567,7 @@ func (c *MesnadaACPClient) KillTerminalCommand(ctx context.Context, params acpsd
 	delete(c.terminals, params.TerminalId)
 	c.terminalsMu.Unlock()
 
-	return acpsdk.KillTerminalCommandResponse{}, nil
+	return acpsdk.KillTerminalResponse{}, nil
 }
 
 // GetOutput returns the accumulated output from the agent session.
@@ -691,10 +691,7 @@ func (c *MesnadaACPClient) processToolCall(toolCall *acpsdk.SessionUpdateToolCal
 		title = string(toolCall.ToolCallId)
 	}
 
-	var meta map[string]interface{}
-	if m, ok := toolCall.Meta.(map[string]interface{}); ok {
-		meta = m
-	}
+	meta := toolCall.Meta
 
 	info := ToolCallInfo{
 		ID:        string(toolCall.ToolCallId),
@@ -769,8 +766,8 @@ func (c *MesnadaACPClient) processToolCallUpdate(update *acpsdk.SessionToolCallU
 		info.RawOutput = update.RawOutput
 		info.Result = fmt.Sprintf("%v", update.RawOutput)
 	}
-	if meta, ok := update.Meta.(map[string]interface{}); ok {
-		info.Meta = meta
+	if update.Meta != nil {
+		info.Meta = update.Meta
 	}
 	if len(update.Content) > 0 {
 		info.Content = update.Content

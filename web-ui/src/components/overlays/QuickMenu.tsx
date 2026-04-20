@@ -37,7 +37,7 @@ const VIEWS: Omit<MenuItem, 'group'>[] = [
   { id: 'logs', label: 'Logs', icon: faFileLines, path: '/logs', description: '/logs' },
   { id: 'orchestrator', label: 'Orchestrator', icon: faNetworkWired, path: '/orchestrator', description: '/orchestrator' },
   { id: 'snapshots', label: 'Snapshots', icon: faCamera, path: '/snapshots', description: '/snapshots' },
-  { id: 'evaluator', label: 'Evaluator', icon: faStar, path: '/evaluator', description: '/evaluator' },
+  { id: 'evaluator', label: 'Self-Improvement', icon: faStar, path: '/evaluator', description: '/evaluator' },
   { id: 'editor', label: 'Code Editor', icon: faCode, path: '/editor', description: '/editor' },
   { id: 'terminal', label: 'Terminal', icon: faTerminal, path: '/terminal', description: '/terminal' },
 ]

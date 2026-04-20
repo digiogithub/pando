@@ -10,7 +10,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 )
@@ -189,6 +188,18 @@ func interceptStdin(in io.Reader, out *syncWriter, fwd *io.PipeWriter, agent *Pa
 			continue
 		}
 
+		if msg.Method == "copilot/usage" {
+			logger.Printf("[ACP INTERCEPT] Handling copilot/usage (id=%s)", string(msg.ID))
+			handleCopilotUsageRPC(msg, out, agent, logger)
+			continue
+		}
+
+		if msg.Method == "claude/usage" {
+			logger.Printf("[ACP INTERCEPT] Handling claude/usage (id=%s)", string(msg.ID))
+			handleClaudeUsageRPC(msg, out, agent, logger)
+			continue
+		}
+
 		// Forward everything else to the SDK connection.
 		fwd.Write(line)
 		fwd.Write([]byte("\n"))
@@ -234,60 +245,35 @@ func handleSessionListRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAgent, l
 		_ = json.Unmarshal(req.Params, &params)
 	}
 
-	allSessions, err := agent.ListSessions(ctx)
+	listResp, err := agent.ListSessions(ctx, acpsdk.ListSessionsRequest{
+		Cursor: params.Cursor,
+		Cwd:    params.Cwd,
+	})
 	if err != nil {
 		logger.Printf("[ACP INTERCEPT] session/list error: %v", err)
 		writeRPCError(out, req.ID, -32603, "failed to list sessions: "+err.Error())
 		return
 	}
 
-	// Apply cursor-based pagination (cursor = last session ID of previous page).
-	startIdx := 0
-	if params.Cursor != nil && *params.Cursor != "" {
-		for i, s := range allSessions {
-			if s.ID == *params.Cursor {
-				startIdx = i + 1
-				break
-			}
-		}
-	}
-
-	end := startIdx + sessionListPageSize
-	hasMore := false
-	if end < len(allSessions) {
-		hasMore = true
-	} else {
-		end = len(allSessions)
-	}
-
-	page := allSessions[startIdx:end]
-	entries := make([]sessionInfoEntry, 0, len(page))
 	workDir := agent.workDir
-	for _, s := range page {
+	entries := make([]sessionInfoEntry, 0, len(listResp.Sessions))
+	for _, s := range listResp.Sessions {
 		entry := sessionInfoEntry{
-			SessionID: s.ID,
+			SessionID: string(s.SessionId),
 			Cwd:       workDir,
 		}
-		if s.Title != "" {
-			t := s.Title
-			entry.Title = &t
-		}
-		if s.UpdatedAt != 0 {
-			ts := time.Unix(s.UpdatedAt, 0).UTC().Format(time.RFC3339)
-			entry.UpdatedAt = &ts
+		if s.Title != nil && *s.Title != "" {
+			entry.Title = s.Title
 		}
 		entries = append(entries, entry)
 	}
 
 	result := sessionListResult{Sessions: entries}
-	if hasMore && len(page) > 0 {
-		cursor := page[len(page)-1].ID
-		result.NextCursor = &cursor
-	}
+	result.NextCursor = listResp.NextCursor
 
 	writeRPCResult(out, req.ID, result)
 	if logger != nil {
-		logger.Printf("[ACP INTERCEPT] session/list: returned %d sessions (hasMore=%v)", len(entries), hasMore)
+		logger.Printf("[ACP INTERCEPT] session/list: returned %d sessions (hasMore=%v)", len(entries), listResp.NextCursor != nil)
 	}
 }
 
@@ -353,6 +339,11 @@ type personaSetSessionParams struct {
 	Name      string `json:"name"`
 }
 
+type usageOpenResult struct {
+	Opened bool   `json:"opened"`
+	URL    string `json:"url"`
+}
+
 // handlePersonaSetSessionRPC sets the persona for a specific ACP session.
 func handlePersonaSetSessionRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAgent, logger *log.Logger) {
 	var params personaSetSessionParams
@@ -371,6 +362,30 @@ func handlePersonaSetSessionRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAg
 	writeRPCResult(out, req.ID, personaGetResult{Active: params.Name})
 	if logger != nil {
 		logger.Printf("[ACP INTERCEPT] persona/set_session: sessionId=%q persona=%q", params.SessionID, params.Name)
+	}
+}
+
+func handleCopilotUsageRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAgent, logger *log.Logger) {
+	const url = "https://github.com/settings/copilot/features"
+	if err := agent.agentService.OpenCopilotUsage(); err != nil {
+		writeRPCError(out, req.ID, -32602, err.Error())
+		return
+	}
+	writeRPCResult(out, req.ID, usageOpenResult{Opened: true, URL: url})
+	if logger != nil {
+		logger.Printf("[ACP INTERCEPT] copilot/usage: opened=%q", url)
+	}
+}
+
+func handleClaudeUsageRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAgent, logger *log.Logger) {
+	const url = "https://claude.ai/settings/usage"
+	if err := agent.agentService.OpenClaudeUsage(); err != nil {
+		writeRPCError(out, req.ID, -32602, err.Error())
+		return
+	}
+	writeRPCResult(out, req.ID, usageOpenResult{Opened: true, URL: url})
+	if logger != nil {
+		logger.Printf("[ACP INTERCEPT] claude/usage: opened=%q", url)
 	}
 }
 

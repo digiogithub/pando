@@ -82,6 +82,7 @@ function AgentCard({
   onUpdate: (patch: Partial<AgentConfigItem>) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [modelProvider, setModelProvider] = useState('')
   const label = AGENT_LABELS[agent.name.toLowerCase()] ?? agent.name
   const description = AGENT_DESCRIPTIONS[agent.name.toLowerCase()] ?? ''
 
@@ -120,6 +121,9 @@ function AgentCard({
         {agent.model && (
           <span
             style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.3rem',
               fontSize: 11,
               fontWeight: 600,
               padding: '0.2rem 0.5rem',
@@ -129,6 +133,9 @@ function AgentCard({
               fontFamily: 'monospace',
             }}
           >
+            {modelProvider && (
+              <span style={{ color: 'var(--fg-dim)', fontWeight: 400 }}>{modelProvider}/</span>
+            )}
             {agent.model}
           </span>
         )}
@@ -164,6 +171,7 @@ function AgentCard({
             <ModelCombobox
               value={agent.model}
               onChange={(v) => onUpdate({ model: v })}
+              onSelect={(m) => setModelProvider(m.provider)}
             />
           </Field>
 

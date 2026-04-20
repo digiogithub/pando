@@ -42,7 +42,7 @@ export default function UCBRankingTable({ templates }: UCBRankingTableProps) {
       </div>
 
       {sorted.length === 0 ? (
-        <EmptyState title="No prompt templates yet" description="Templates will appear here once the evaluator has run sessions." />
+        <EmptyState title="No prompt templates yet" description="Templates will appear here once self-improvement has evaluated sessions." />
       ) : (
         <div style={{ overflowX: 'auto', flex: 1 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>

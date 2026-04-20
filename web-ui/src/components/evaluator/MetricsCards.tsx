@@ -24,7 +24,7 @@ export default function MetricsCards({ metrics }: MetricsCardsProps) {
         label="Sessions Evaluated"
         value={metrics?.total_sessions ?? 0}
         icon={<FontAwesomeIcon icon={faFlask} />}
-        description="Total sessions scored by the evaluator"
+        description="Total sessions scored by self-improvement"
       />
       <MetricCard
         label="Prompt Templates"

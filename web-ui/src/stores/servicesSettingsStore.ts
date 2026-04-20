@@ -10,7 +10,7 @@ const DEFAULT_MESNADA: MesnadaConfig = {
     storePath: '',
     logDir: '',
     maxParallel: 4,
-    defaultEngine: 'claude',
+    defaultEngine: 'pando',
     defaultModel: '',
     defaultMcpConfig: '',
     personaPath: '',

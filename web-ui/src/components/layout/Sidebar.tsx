@@ -30,7 +30,7 @@ export default function Sidebar() {
     { path: '/orchestrator', label: t('nav.orchestrator'), icon: faNetworkWired },
     { path: '/logs', label: t('nav.logs'), icon: faFileLines },
     { path: '/snapshots', label: t('nav.snapshots'), icon: faCamera },
-    { path: '/evaluator', label: t('nav.evaluator'), icon: faStar },
+    { path: '/evaluator', label: t('nav.selfImprovement'), icon: faStar },
     { path: '/editor', label: t('nav.codeEditor'), icon: faCode },
     { path: '/terminal', label: t('nav.terminal'), icon: faTerminal },
     { path: '/settings', label: t('nav.settings'), icon: faCog },

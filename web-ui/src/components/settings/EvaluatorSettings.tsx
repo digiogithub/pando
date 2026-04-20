@@ -343,7 +343,6 @@ function JudgePromptTemplateField({
             width: '100%',
             background: 'var(--code-bg, var(--input-bg))',
             border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
             color: 'var(--fg-muted)',
             fontSize: 12,
             padding: '0.75rem',
@@ -359,7 +358,7 @@ function JudgePromptTemplateField({
 }
 
 // ---- Main component ----
-export default function EvaluatorSettings() {
+export default function SelfImprovementSettings() {
   const {
     evaluator,
     evaluatorDirty,
@@ -390,7 +389,7 @@ export default function EvaluatorSettings() {
   return (
     <div style={{ maxWidth: 640 }}>
       <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', marginBottom: '1.25rem' }}>
-        Evaluator
+        Self-Improvement
       </h2>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>

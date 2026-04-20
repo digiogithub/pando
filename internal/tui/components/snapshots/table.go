@@ -60,12 +60,12 @@ func (c *tableCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		c.syncRows()
-		return c, nil
+		return c, c.selectedSnapshotCmd()
 
 	case SnapshotListMsg:
 		c.rows = msg.Snapshots
 		c.syncRows()
-		return c, nil
+		return c, c.selectedSnapshotCmd()
 	}
 
 	prevSelected := c.table.SelectedRow()
@@ -95,6 +95,27 @@ func (c *tableCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return c, tea.Batch(cmds...)
+}
+
+func (c *tableCmp) selectedSnapshotCmd() tea.Cmd {
+	if len(c.rows) == 0 {
+		c.table.SetCursor(0)
+		return util.CmdHandler(SelectedSnapshotMsg{})
+	}
+
+	cursor := util.Clamp(c.table.Cursor(), 0, len(c.rows)-1)
+	c.table.SetCursor(cursor)
+	row := c.rows[cursor]
+	return util.CmdHandler(SelectedSnapshotMsg{
+		ID:          row.ID,
+		SessionID:   row.SessionID,
+		Type:        row.Type,
+		Description: row.Description,
+		WorkingDir:  row.WorkingDir,
+		FileCount:   row.FileCount,
+		TotalSize:   row.TotalSize,
+		CreatedAt:   row.CreatedAt,
+	})
 }
 
 func (c *tableCmp) View() string {

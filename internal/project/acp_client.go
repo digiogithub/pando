@@ -49,9 +49,9 @@ func (c *projectACPClient) CreateTerminal(_ context.Context, _ acpsdk.CreateTerm
 	return acpsdk.CreateTerminalResponse{}, nil
 }
 
-// KillTerminalCommand is a no-op — project manager does not manage terminals.
-func (c *projectACPClient) KillTerminalCommand(_ context.Context, _ acpsdk.KillTerminalCommandRequest) (acpsdk.KillTerminalCommandResponse, error) {
-	return acpsdk.KillTerminalCommandResponse{}, nil
+// KillTerminal is a no-op — project manager does not manage terminals.
+func (c *projectACPClient) KillTerminal(_ context.Context, _ acpsdk.KillTerminalRequest) (acpsdk.KillTerminalResponse, error) {
+	return acpsdk.KillTerminalResponse{}, nil
 }
 
 // TerminalOutput is a no-op — project manager does not manage terminals.

@@ -318,7 +318,7 @@ func (s *ACPSpawner) runACPSession(ctx context.Context, proc *ACPProcess, agentC
 		},
 		ClientCapabilities: acpsdk.ClientCapabilities{
 			// Declare what mesnada supports as a client
-			Fs: acpsdk.FileSystemCapability{
+			Fs: acpsdk.FileSystemCapabilities{
 				ReadTextFile:  true,
 				WriteTextFile: true,
 			},

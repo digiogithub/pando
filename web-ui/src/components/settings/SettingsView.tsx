@@ -28,7 +28,7 @@ type SettingsCategory =
   | 'bash'
   | 'skills'
   | 'lua'
-  | 'evaluator'
+  | 'self-improvement'
   | 'mesnada'
   | 'remembrances'
   | 'snapshots'
@@ -45,7 +45,7 @@ const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string }[
   { id: 'bash', labelKey: 'settings.categories.bash' },
   { id: 'skills', labelKey: 'settings.categories.skills' },
   { id: 'lua', labelKey: 'settings.categories.lua' },
-  { id: 'evaluator', labelKey: 'settings.categories.evaluator' },
+  { id: 'self-improvement', labelKey: 'settings.categories.selfImprovement' },
   { id: 'mesnada', labelKey: 'settings.categories.mesnada', group: 'services' },
   { id: 'remembrances', labelKey: 'settings.categories.remembrances', group: 'services' },
   { id: 'snapshots', labelKey: 'settings.categories.snapshots', group: 'services' },
@@ -195,7 +195,7 @@ export default function SettingsView() {
         {activeCategory === 'bash' && <BashSettings />}
         {activeCategory === 'skills' && <SkillsSettings />}
         {activeCategory === 'lua' && <LuaSettings />}
-        {activeCategory === 'evaluator' && <EvaluatorSettings />}
+        {activeCategory === 'self-improvement' && <EvaluatorSettings />}
         {activeCategory === 'mesnada' && <MesnadaSettings />}
         {activeCategory === 'remembrances' && <RemembrancesSettings />}
         {activeCategory === 'snapshots' && <SnapshotsSettings />}

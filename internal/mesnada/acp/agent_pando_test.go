@@ -74,6 +74,48 @@ func TestMapToolKind(t *testing.T) {
 	}
 }
 
+func TestHandleCopilotUsageRPC(t *testing.T) {
+	agent := newTestPandoAgent()
+	mockSvc := agent.agentService.(*mockAgentService)
+	var out bytes.Buffer
+
+	handleCopilotUsageRPC(jsonRPCMsg{ID: json.RawMessage("1")}, &out, agent, log.Default())
+
+	var resp struct {
+		Result usageOpenResult `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !resp.Result.Opened || resp.Result.URL != "https://github.com/settings/copilot/features" {
+		t.Fatalf("unexpected result: %+v", resp.Result)
+	}
+	if mockSvc.copilotUsageErr != nil {
+		t.Fatalf("unexpected mock error: %v", mockSvc.copilotUsageErr)
+	}
+}
+
+func TestHandleClaudeUsageRPCError(t *testing.T) {
+	mockSvc := &mockAgentService{claudeUsageErr: errors.New("oauth required")}
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), mockSvc, newMockSessionService(), nil)
+	var out bytes.Buffer
+
+	handleClaudeUsageRPC(jsonRPCMsg{ID: json.RawMessage("1")}, &out, agent, log.Default())
+
+	var resp struct {
+		Error struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal error response: %v", err)
+	}
+	if resp.Error.Code != -32602 || resp.Error.Message != "oauth required" {
+		t.Fatalf("unexpected error response: %+v", resp.Error)
+	}
+}
+
 // mockAgentService is a test double for AgentService.
 type mockAgentService struct {
 	runCalled        bool
@@ -81,6 +123,8 @@ type mockAgentService struct {
 	runErr           error
 	modelOverride    string
 	modelOverrideErr error
+	copilotUsageErr  error
+	claudeUsageErr   error
 }
 
 func (m *mockAgentService) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
@@ -129,6 +173,14 @@ func (m *mockAgentService) ListAvailableTools() []ACPToolInfo {
 		{Name: "bash", Description: "Execute bash commands"},
 		{Name: "edit", Description: "Edit files"},
 	}
+}
+
+func (m *mockAgentService) OpenCopilotUsage() error {
+	return m.copilotUsageErr
+}
+
+func (m *mockAgentService) OpenClaudeUsage() error {
+	return m.claudeUsageErr
 }
 
 // mockSessionService is a test double for SessionService.
@@ -657,12 +709,12 @@ func TestPandoACPAgent_SetSessionModel(t *testing.T) {
 		t.Fatalf("NewSession failed: %v", err)
 	}
 
-	_, err = agent.SetSessionModel(ctx, acpsdk.SetSessionModelRequest{
+	_, err = agent.UnstableSetSessionModel(ctx, acpsdk.UnstableSetSessionModelRequest{
 		SessionId: resp.SessionId,
 		ModelId:   "claude-sonnet-4-6",
 	})
 	if err != nil {
-		t.Fatalf("SetSessionModel failed: %v", err)
+		t.Fatalf("UnstableSetSessionModel failed: %v", err)
 	}
 
 	agent.sessionsMu.RLock()
@@ -716,12 +768,12 @@ func TestPandoACPAgent_ListSessions(t *testing.T) {
 	agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), &mockAgentService{}, sessions, nil)
 
 	ctx := context.Background()
-	list, err := agent.ListSessions(ctx)
+	list, err := agent.ListSessions(ctx, acpsdk.ListSessionsRequest{})
 	if err != nil {
 		t.Fatalf("ListSessions failed: %v", err)
 	}
-	if len(list) != 2 {
-		t.Errorf("Expected 2 sessions, got %d", len(list))
+	if len(list.Sessions) != 2 {
+		t.Errorf("Expected 2 sessions, got %d", len(list.Sessions))
 	}
 }
 
@@ -800,9 +852,9 @@ func TestPandoACPAgent_NewSessionResponse_IncludesPersonaState(t *testing.T) {
 		t.Fatal("Expected Meta with persona state, got nil")
 	}
 
-	personaState, ok := resp.Meta.(*SessionPersonaState)
-	if !ok {
-		t.Fatalf("Expected Meta to be *SessionPersonaState, got %T", resp.Meta)
+	personaState := buildSessionPersonaState(agent.agentService)
+	if personaState == nil {
+		t.Fatal("Expected persona state, got nil")
 	}
 
 	if len(personaState.AvailablePersonas) != 2 {

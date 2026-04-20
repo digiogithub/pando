@@ -102,7 +102,7 @@ func (p *evaluatorPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (p *evaluatorPage) resizeComponents() error {
 	if p.table != nil {
 		halfW := p.width / 2
-		panelH := p.height - 4 // leave room for metrics + help bar
+		panelH := p.panelHeight()
 		if panelH < 1 {
 			panelH = 1
 		}
@@ -152,7 +152,7 @@ func (p *evaluatorPage) View() string {
 			BorderForeground(t.BorderNormal())
 
 		halfW := p.width / 2
-		panelH := p.height - 4
+		panelH := p.panelHeight()
 		if panelH < 1 {
 			panelH = 1
 		}
@@ -182,6 +182,26 @@ func (p *evaluatorPage) SetSize(width int, height int) tea.Cmd {
 	p.height = height
 	_ = p.resizeComponents()
 	return nil
+}
+
+func (p *evaluatorPage) panelHeight() int {
+	metricsHeight := 0
+	if p.metrics != nil {
+		metricsHeight = lipgloss.Height(p.metrics.View())
+	}
+	helpHeight := lipgloss.Height(renderEvaluatorHelp())
+	available := p.height - metricsHeight - helpHeight
+	if metricsHeight > 0 {
+		available--
+	}
+	if helpHeight > 0 {
+		available--
+	}
+	available -= 2
+	if available < 1 {
+		return 1
+	}
+	return available
 }
 
 func (p *evaluatorPage) BindingKeys() []key.Binding {

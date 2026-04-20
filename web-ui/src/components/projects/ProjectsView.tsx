@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faTimes, faFolderOpen, faSpinner } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faTimes, faFolderOpen, faSpinner, faFolder } from '@fortawesome/free-solid-svg-icons'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/projectStore'
 import type { Project } from '@/types'
 import ProjectInitWizard from './ProjectInitWizard'
+import DirBrowserDialog from '@/components/shared/DirBrowserDialog'
 
 /** Replace leading /home/<user> or /Users/<user> with ~. */
 function shortenPath(path: string): string {
@@ -79,6 +80,7 @@ export default function ProjectsView() {
   const [newName, setNewName] = useState('')
   const [adding, setAdding] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [showBrowser, setShowBrowser] = useState(false)
 
   const mountedRef = useRef(false)
 
@@ -215,7 +217,7 @@ export default function ProjectsView() {
             onKeyDown={(e) => { if (e.key === 'Enter') void handleAdd() }}
             style={{
               flex: 2,
-              minWidth: 180,
+              minWidth: 140,
               padding: '0.4rem 0.6rem',
               borderRadius: 'var(--radius-sm)',
               border: '1px solid var(--border)',
@@ -226,6 +228,24 @@ export default function ProjectsView() {
             }}
             autoFocus
           />
+          <button
+            type="button"
+            onClick={() => setShowBrowser(true)}
+            title="Browse for directory"
+            style={{
+              padding: '0.4rem 0.6rem',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)',
+              background: 'var(--bg)',
+              color: 'var(--fg-muted)',
+              fontSize: 13,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              flexShrink: 0,
+            }}
+          >
+            <FontAwesomeIcon icon={faFolder} />
+          </button>
           <input
             type="text"
             placeholder="Name (optional)"
@@ -379,6 +399,15 @@ export default function ProjectsView() {
           </table>
         )}
       </div>
+
+      {/* Directory browser modal */}
+      {showBrowser && (
+        <DirBrowserDialog
+          initialPath={newPath || '~'}
+          onSelect={(path) => setNewPath(path)}
+          onClose={() => setShowBrowser(false)}
+        />
+      )}
 
       {/* Init wizard modal */}
       {initDialogProject && (

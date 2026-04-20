@@ -173,7 +173,7 @@ export const useExtensionsStore = create<ExtensionsStore>((set, get) => ({
         evaluatorOriginal: { ...s.evaluator },
         evaluatorDirty: false,
       }))
-      useToastStore.getState().addToast('Evaluator settings saved', 'success')
+      useToastStore.getState().addToast('Self-improvement settings saved', 'success')
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Save failed'
       set({ evaluatorError: msg })

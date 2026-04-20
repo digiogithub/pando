@@ -13,8 +13,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/auth"
-	"go.dalton.dog/bubbleup"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/cronjob"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
@@ -34,6 +34,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
 	tuizone "github.com/digiogithub/pando/internal/tui/zone"
+	"go.dalton.dog/bubbleup"
 )
 
 type startCompactSessionMsg struct{}
@@ -98,6 +99,9 @@ type appModel struct {
 	projectsDialog        dialog.ProjectsDialog
 	showProjectInitDialog bool
 	projectInitDialog     dialog.ProjectInitConfirmDialog
+
+	showCronJobsDialog bool
+	cronJobsDialog     dialog.CronJobsDialog
 
 	showMultiArgumentsDialog bool
 	multiArgumentsDialog     dialog.MultiArgumentsDialogCmp
@@ -458,6 +462,12 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case page.PageChangeMsg:
 		return a, a.moveToPage(msg.ID)
 
+	case page.OrchestratorFilterMsg:
+		if filterable, ok := a.pages[page.OrchestratorPage].(page.TagFilterable); ok {
+			filterable.SetFilterTag(msg.Tag)
+		}
+		return a, a.moveToPage(page.OrchestratorPage)
+
 	case dialog.CloseQuitMsg:
 		a.showQuit = false
 		return a, nil
@@ -679,6 +689,32 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dialog.ProjectInitNoMsg:
 		a.showProjectInitDialog = false
+
+	// CronJobs dialog messages
+	case dialog.OpenCronJobsDialogMsg:
+		if !a.showQuit && !a.showPermissions {
+			return a, a.openCronJobsDialog()
+		}
+		return a, nil
+
+	case dialog.CloseCronJobsDialogMsg:
+		a.showCronJobsDialog = false
+
+	case dialog.CronJobRunNowMsg:
+		a.showCronJobsDialog = false
+		return a, a.runCronJobNow(msg.Name)
+
+	case dialog.CronJobViewTasksMsg:
+		a.showCronJobsDialog = false
+		return a, a.viewCronJobTasks(msg.Name)
+
+	case pubsub.Event[cronjob.CronJobFiredPayload]:
+		notification := fmt.Sprintf("CronJob fired: %s (task %s)", msg.Payload.JobName, msg.Payload.TaskID)
+		cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.InfoKey, notification))
+		outAlert, outCmd := a.alert.Update(msg)
+		a.alert = outAlert.(bubbleup.AlertModel)
+		cmds = append(cmds, outCmd)
+		return a, tea.Batch(cmds...)
 
 	case core.ProjectActiveMsg:
 		s, sCmd := a.status.Update(msg)
@@ -919,6 +955,11 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, a.openProjectsDialog()
 			}
 			return a, nil
+		case key.Matches(msg, a.keys.Global.CronJobs):
+			if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+				return a, a.openCronJobsDialog()
+			}
+			return a, nil
 		case key.Matches(msg, a.keys.Global.Help):
 			if a.showQuit {
 				return a, nil
@@ -1061,6 +1102,15 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if a.showCronJobsDialog {
+		d, cronCmd := a.cronJobsDialog.Update(msg)
+		a.cronJobsDialog = d.(dialog.CronJobsDialog)
+		cmds = append(cmds, cronCmd)
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return a, tea.Batch(cmds...)
+		}
+	}
+
 	if a.showProjectInitDialog {
 		d, initCmd := a.projectInitDialog.Update(msg)
 		a.projectInitDialog = d.(dialog.ProjectInitConfirmDialog)
@@ -1161,6 +1211,35 @@ func (a *appModel) openProjectsDialog() tea.Cmd {
 	a.projectsDialog.SetProjects(projects, a.app.ProjectManager.ActiveID())
 	a.showProjectsDialog = true
 	return a.projectsDialog.Init()
+}
+
+func (a *appModel) openCronJobsDialog() tea.Cmd {
+	if a.app.CronService == nil {
+		return util.ReportWarn("CronJob service not enabled")
+	}
+	jobs := a.app.CronService.ListJobs()
+	a.cronJobsDialog.SetJobs(jobs)
+	a.showCronJobsDialog = true
+	return a.cronJobsDialog.Init()
+}
+
+func (a *appModel) runCronJobNow(name string) tea.Cmd {
+	return func() tea.Msg {
+		if a.app.CronService == nil {
+			return util.InfoMsg{Type: util.InfoTypeWarn, Msg: "CronJob service not enabled"}
+		}
+		task, err := a.app.CronService.RunNow(context.Background(), name)
+		if err != nil {
+			return util.InfoMsg{Type: util.InfoTypeError, Msg: "Failed to run cronjob: " + err.Error()}
+		}
+		return util.InfoMsg{Type: util.InfoTypeInfo, Msg: fmt.Sprintf("CronJob %q started (task %s)", name, task.ID)}
+	}
+}
+
+func (a *appModel) viewCronJobTasks(name string) tea.Cmd {
+	return func() tea.Msg {
+		return page.OrchestratorFilterMsg{Tag: "cronjob:" + name}
+	}
 }
 
 // showProjectInitConfirmMsg is an internal message to trigger the project init confirmation dialog.
@@ -1741,6 +1820,13 @@ func (a appModel) View() string {
 		appView = layout.PlaceOverlay(col, row, overlay, appView, true)
 	}
 
+	if a.showCronJobsDialog {
+		overlay := a.cronJobsDialog.View()
+		row := lipgloss.Height(appView)/2 - lipgloss.Height(overlay)/2
+		col := lipgloss.Width(appView)/2 - lipgloss.Width(overlay)/2
+		appView = layout.PlaceOverlay(col, row, overlay, appView, true)
+	}
+
 	if a.showProjectInitDialog {
 		overlay := a.projectInitDialog.View()
 		row := lipgloss.Height(appView)/2 - lipgloss.Height(overlay)/2
@@ -1953,35 +2039,36 @@ func New(app *app.App) tea.Model {
 	startPage := page.ChatPage
 	chatPage := page.NewChatPage(app)
 	model := &appModel{
-		currentPage:   startPage,
-		loadedPages:   make(map[page.PageID]bool),
-		keys:          DefaultKeyMap(),
-		status:        core.NewStatusCmp(app.LSPClients),
-		help:          dialog.NewHelpCmp(),
-		quit:          dialog.NewQuitCmp(),
-		sessionDialog: dialog.NewSessionDialogCmp(),
-		commandDialog: dialog.NewCommandDialogCmp(),
-		modelDialog:   dialog.NewModelDialogCmp(),
-		permissions:   dialog.NewPermissionDialogCmp(),
-		initDialog:    dialog.NewInitDialogCmp(),
+		currentPage:       startPage,
+		loadedPages:       make(map[page.PageID]bool),
+		keys:              DefaultKeyMap(),
+		status:            core.NewStatusCmp(app.LSPClients),
+		help:              dialog.NewHelpCmp(),
+		quit:              dialog.NewQuitCmp(),
+		sessionDialog:     dialog.NewSessionDialogCmp(),
+		commandDialog:     dialog.NewCommandDialogCmp(),
+		modelDialog:       dialog.NewModelDialogCmp(),
+		permissions:       dialog.NewPermissionDialogCmp(),
+		initDialog:        dialog.NewInitDialogCmp(),
 		themeDialog:       dialog.NewThemeDialogCmp(),
 		personaDialog:     dialog.NewPersonaDialogCmp(),
 		projectsDialog:    dialog.NewProjectsDialogCmp(),
 		projectInitDialog: dialog.NewProjectInitConfirmDialogCmp(),
+		cronJobsDialog:    dialog.NewCronJobsDialogCmp(),
 		infoDialog:        dialog.NewInfoDialogCmp(),
-		app:           app,
-		commands:      []dialog.Command{},
-		chatPage:      chatPage,
-		fileTree:      chatPage.FileTree(),
-		viewer:        chatPage.Viewer(),
-		tabBar:        chatPage.TabBar(),
-		layoutMode:    chatPage.LayoutMode(),
+		app:               app,
+		commands:          []dialog.Command{},
+		chatPage:          chatPage,
+		fileTree:          chatPage.FileTree(),
+		viewer:            chatPage.Viewer(),
+		tabBar:            chatPage.TabBar(),
+		layoutMode:        chatPage.LayoutMode(),
 		pages: map[page.PageID]tea.Model{
 			page.ChatPage:         chatPage,
 			page.LogsPage:         page.NewLogsPage(),
 			page.SettingsPage:     page.NewSettingsPage(app),
 			page.OrchestratorPage: page.NewOrchestratorPage(app),
-			page.SnapshotsPage:    page.NewSnapshotsPage(),
+			page.SnapshotsPage:    page.NewSnapshotsPage(app),
 			page.EvaluatorPage:    page.NewEvaluatorPage(app.Evaluator),
 		},
 		filepicker:    dialog.NewFilepickerCmp(app),
@@ -2203,33 +2290,43 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 			return util.CmdHandler(page.PageChangeMsg{ID: page.OrchestratorPage})
 		},
 	})
-	       model.RegisterCommand(dialog.Command{
-		       ID:          "copilot-login",
-		       Title:       "Copilot Login",
-		       Description: "Authenticate with GitHub Copilot",
-		       Category:    dialog.CommandCategoryGeneral,
-		       Handler: func(cmd dialog.Command) tea.Cmd {
-				return copilotLoginCommand()
-		       },
-	       })
-	       model.RegisterCommand(dialog.Command{
-		       ID:          "copilot-logout",
-		       Title:       "Copilot Logout",
-		       Description: "Remove Copilot authentication",
-		       Category:    dialog.CommandCategoryGeneral,
-		       Handler: func(cmd dialog.Command) tea.Cmd {
-				return copilotLogoutCommand()
-		       },
-	       })
-	       model.RegisterCommand(dialog.Command{
-		       ID:          "copilot-status",
-		       Title:       "Copilot Status",
-		       Description: "Show Copilot authentication status",
-		       Category:    dialog.CommandCategoryGeneral,
-		       Handler: func(cmd dialog.Command) tea.Cmd {
-				return copilotStatusCommand()
-		       },
-	       })
+	model.RegisterCommand(dialog.Command{
+		ID:          "cronjobs",
+		Title:       "CronJobs",
+		Description: "Open the cronjob manager dialog",
+		Shortcut:    "Ctrl+Alt+J",
+		Category:    dialog.CommandCategoryView,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(dialog.OpenCronJobsDialogMsg{})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "copilot-login",
+		Title:       "Copilot Login",
+		Description: "Authenticate with GitHub Copilot",
+		Category:    dialog.CommandCategoryGeneral,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return copilotLoginCommand()
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "copilot-logout",
+		Title:       "Copilot Logout",
+		Description: "Remove Copilot authentication",
+		Category:    dialog.CommandCategoryGeneral,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return copilotLogoutCommand()
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "copilot-status",
+		Title:       "Copilot Status",
+		Description: "Show Copilot authentication status",
+		Category:    dialog.CommandCategoryGeneral,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return copilotStatusCommand()
+		},
+	})
 	model.RegisterCommand(dialog.Command{
 		ID:          "open-terminal",
 		Title:       "Open Terminal Emulator Embedded",

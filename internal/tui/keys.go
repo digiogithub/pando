@@ -19,6 +19,7 @@ type GlobalKeys struct {
 	Snapshots      key.Binding
 	Evaluator      key.Binding
 	Projects       key.Binding
+	CronJobs       key.Binding
 	Quit           key.Binding
 	Help           key.Binding
 	Settings       key.Binding
@@ -121,6 +122,10 @@ func DefaultKeyMap() KeyMap {
 			Projects: key.NewBinding(
 				key.WithKeys("ctrl+alt+p"),
 				key.WithHelp("ctrl+alt+p", "projects"),
+			),
+			CronJobs: key.NewBinding(
+				key.WithKeys("ctrl+alt+j"),
+				key.WithHelp("ctrl+alt+j", "cronjobs"),
 			),
 			Quit: key.NewBinding(
 				key.WithKeys("ctrl+c"),
@@ -297,7 +302,7 @@ func (k GlobalKeys) FullHelp() [][]key.Binding {
 	return compactHelpGroups(
 		filterHelpBindings(k.Help, k.Quit),
 		filterHelpBindings(k.Logs, k.Orchestrator, k.Snapshots, k.Evaluator, k.Settings),
-		filterHelpBindings(k.Projects, k.Filepicker, k.SwitchTheme),
+		filterHelpBindings(k.Projects, k.CronJobs, k.Filepicker, k.SwitchTheme),
 		filterHelpBindings(k.ToggleTerminal, k.NewTerminal, k.NextTerminal),
 	)
 }
