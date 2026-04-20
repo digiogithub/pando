@@ -5,7 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faComments, faFileLines, faNetworkWired,
   faCamera, faStar, faCog, faMoon, faSun,
-  faChevronLeft, faChevronRight, faCode, faTerminal, faComment,
+  faChevronLeft, faChevronRight, faCode, faTerminal, faComment, faFolderOpen,
 } from '@fortawesome/free-solid-svg-icons'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
@@ -22,6 +22,7 @@ export default function Header() {
 
   const TABS = [
     { path: '/', label: t('nav.chat'), icon: faComments, end: true },
+    { path: '/projects', label: t('nav.projects'), icon: faFolderOpen },
     { path: '/orchestrator', label: t('nav.orchestrator'), icon: faNetworkWired },
     { path: '/evaluator', label: t('nav.evaluator'), icon: faStar },
     { path: '/snapshots', label: t('nav.snapshots'), icon: faCamera },

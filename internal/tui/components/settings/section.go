@@ -146,12 +146,21 @@ func (s *Section) View(width int, active bool) string {
 			valueStyle.Render(value),
 		)
 
+		fieldContent := row
+		if field.Hint != "" {
+			hintStyle := lipgloss.NewStyle().
+				Foreground(t.TextMuted()).
+				Italic(true).
+				PaddingLeft(1)
+			fieldContent = lipgloss.JoinVertical(lipgloss.Left, row, hintStyle.Render(field.Hint))
+		}
+
 		fieldViews[i] = lipgloss.NewStyle().
 			Width(max(1, width)).
 			Padding(0, 1).
 			Border(lipgloss.NormalBorder()).
 			BorderForeground(borderColor).
-			Render(row)
+			Render(fieldContent)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, fieldViews...)

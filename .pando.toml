@@ -25,14 +25,16 @@ ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = true
 AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'ollama.qwen36-coder:latest'
+Model = 'gpt-4.1-2025-04-14'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false
 AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
 
 [Agents.persona-selector]
 Model = 'gpt-4.1'
@@ -41,6 +43,7 @@ ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false
 AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
 
 [Agents.summarizer]
 Model = 'copilot.gpt-4o'
@@ -49,6 +52,7 @@ ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false
 AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
 
 [Agents.task]
 Model = 'copilot.gpt-4.1'
@@ -57,6 +61,7 @@ ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false
 AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
 
 [Agents.title]
 Model = 'gemini.gemini-2.5-flash-preview-04-17'
@@ -65,6 +70,7 @@ ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false
 AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
 
 [Skills]
 Enabled = true
@@ -228,3 +234,8 @@ Enabled = false
 Endpoint = ''
 ServiceName = ''
 Insecure = false
+
+[Projects]
+Enabled = false
+AutoRestore = false
+MaxProjects = 0

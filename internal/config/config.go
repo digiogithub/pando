@@ -2597,6 +2597,42 @@ func UpdateSnapshots(snap SnapshotsConfig) error {
 	return nil
 }
 
+// EvaluatorWithDefaults returns a copy of eval with zero/empty values replaced
+// by the recommended defaults. This ensures the TUI and Web-UI always display
+// sensible values even when the user has not explicitly configured the evaluator.
+func EvaluatorWithDefaults(eval EvaluatorConfig) EvaluatorConfig {
+	// Detect a fully zero-initialised struct (user has never configured the evaluator).
+	// CorrectionsPatterns being nil is a reliable signal because viper always populates
+	// it from the default slice when the config is properly loaded.
+	fullyUnset := len(eval.CorrectionsPatterns) == 0 &&
+		eval.AlphaWeight == 0 && eval.BetaWeight == 0 && eval.ExplorationC == 0
+
+	if eval.AlphaWeight == 0 {
+		eval.AlphaWeight = 0.8
+	}
+	if eval.BetaWeight == 0 {
+		eval.BetaWeight = 0.2
+	}
+	if eval.ExplorationC == 0 {
+		eval.ExplorationC = 1.41
+	}
+	if eval.MinSessionsForUCB == 0 {
+		eval.MinSessionsForUCB = 5
+	}
+	if eval.MaxTokensBaseline == 0 {
+		eval.MaxTokensBaseline = 50
+	}
+	if eval.MaxSkills == 0 {
+		eval.MaxSkills = 100
+	}
+	// Async defaults to true but bool zero-value is false; only apply the default
+	// when the struct is fully unset so we don't override a deliberate false.
+	if fullyUnset {
+		eval.Async = true
+	}
+	return eval
+}
+
 func UpdateEvaluator(eval EvaluatorConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")

@@ -28,6 +28,8 @@ type Field struct {
 	Masked   bool
 	ReadOnly bool
 	Disabled bool
+	// Hint is optional helper text shown below the field row (e.g. recommended default).
+	Hint string
 }
 
 func (f Field) DisplayValue(editing bool) string {

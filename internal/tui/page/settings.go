@@ -1706,7 +1706,16 @@ func buildPersonaAutoSelectSection(cfg *config.Config) settings.Section {
 }
 
 func buildEvaluatorSection(cfg *config.Config) settings.Section {
-	eval := cfg.Evaluator
+	// Apply recommended defaults for any zero/unset values so the TUI always
+	// shows meaningful values even on a fresh installation.
+	eval := config.EvaluatorWithDefaults(cfg.Evaluator)
+
+	judgeTemplateValue := eval.JudgePromptTemplate
+	judgeTemplateHint := "(built-in default — leave empty to use it)"
+	if eval.JudgePromptTemplate != "" {
+		judgeTemplateHint = "custom template path"
+	}
+
 	fields := []settings.Field{
 		{
 			Label: "Enabled",
@@ -1727,48 +1736,56 @@ func buildEvaluatorSection(cfg *config.Config) settings.Section {
 			Key:   "evaluator.alphaWeight",
 			Type:  settings.FieldText,
 			Value: fmt.Sprintf("%.2f", eval.AlphaWeight),
+			Hint:  "recommended: 0.80 (accuracy importance)",
 		},
 		{
 			Label: "Beta Weight",
 			Key:   "evaluator.betaWeight",
 			Type:  settings.FieldText,
 			Value: fmt.Sprintf("%.2f", eval.BetaWeight),
+			Hint:  "recommended: 0.20 (token efficiency importance; α+β should sum to 1.0)",
 		},
 		{
 			Label: "Exploration C",
 			Key:   "evaluator.explorationC",
 			Type:  settings.FieldText,
 			Value: fmt.Sprintf("%.4f", eval.ExplorationC),
+			Hint:  "recommended: 1.4142 (UCB1 exploration factor, √2)",
 		},
 		{
 			Label: "Min Sessions UCB",
 			Key:   "evaluator.minSessionsForUCB",
 			Type:  settings.FieldText,
 			Value: fmt.Sprint(eval.MinSessionsForUCB),
+			Hint:  "recommended: 5 (min sessions before UCB selection activates)",
 		},
 		{
 			Label: "Max Tokens Baseline",
 			Key:   "evaluator.maxTokensBaseline",
 			Type:  settings.FieldText,
 			Value: fmt.Sprint(eval.MaxTokensBaseline),
+			Hint:  "recommended: 50 (rolling window size for token efficiency)",
 		},
 		{
 			Label: "Max Skills",
 			Key:   "evaluator.maxSkills",
 			Type:  settings.FieldText,
 			Value: fmt.Sprint(eval.MaxSkills),
+			Hint:  "recommended: 100 (max active skills in the library)",
 		},
 		{
 			Label: "Judge Prompt Template",
 			Key:   "evaluator.judgePromptTemplate",
 			Type:  settings.FieldText,
-			Value: eval.JudgePromptTemplate,
+			Value: judgeTemplateValue,
+			Hint:  judgeTemplateHint,
 		},
 		{
 			Label: "Async Evaluation",
 			Key:   "evaluator.async",
 			Type:  settings.FieldToggle,
 			Value: boolString(eval.Async),
+			Hint:  "recommended: true (run evaluation in background after session end)",
 		},
 		{
 			Label: "Corrections Patterns",

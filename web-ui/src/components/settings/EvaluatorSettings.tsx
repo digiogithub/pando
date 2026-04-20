@@ -1,7 +1,29 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useExtensionsStore } from '@/stores/extensionsStore'
-import { Toggle, TextInput } from '@/components/shared/FormInput'
+import { Toggle } from '@/components/shared/FormInput'
 import ModelCombobox from '@/components/shared/ModelCombobox'
+
+// Default judge prompt template shown in the UI when no custom path is configured.
+const DEFAULT_JUDGE_PROMPT = `You are an expert AI assistant evaluator. Analyze this conversation transcript between an AI coding assistant and a user.
+
+Template used: {{.TemplateName}} (version {{.TemplateVersion}})
+User corrections detected: {{.Corrections}}
+Total tokens used: {{.Tokens}}
+
+Analyze the transcript and respond ONLY with a valid JSON object (no markdown, no explanation outside JSON):
+{
+  "reasoning": "brief explanation of what worked or did not work",
+  "key_points": ["point1", "point2", "point3"],
+  "new_skill": "optional: a 1-2 line instruction rule that would improve future sessions (empty string if none)",
+  "task_type": "one of: code, refactor, debug, explain, general",
+  "confidence": 0.0
+}
+
+Focus on quality dimensions: scope compliance, step-by-step adherence, constraint handling,
+anti-patterns (unrequested scripts/features), iterative corrections, and context utilisation.
+
+TRANSCRIPT:
+{{.Transcript}}`
 
 
 
@@ -190,6 +212,152 @@ function SliderInput({
   )
 }
 
+// ---- Judge Prompt Template field ----
+function JudgePromptTemplateField({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  const [showDefault, setShowDefault] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: 12,
+    fontWeight: 600,
+    color: 'var(--fg-muted)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <label style={labelStyle}>Judge Prompt Template</label>
+
+      {/* Path input + Browse button */}
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Leave empty to use built-in default template"
+          style={{
+            flex: 1,
+            background: 'var(--input-bg)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--fg)',
+            fontSize: 14,
+            padding: '0.5rem 0.75rem',
+            outline: 'none',
+            fontFamily: 'monospace',
+            boxSizing: 'border-box',
+          }}
+          onFocus={(e) => (e.target.style.borderColor = 'var(--border-focus)')}
+          onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
+        />
+        {/* Hidden native file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".md,.txt,.tmpl,.tpl"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) {
+              // In a browser we only get the filename; show it so the user knows
+              // which file was selected and can type/confirm the full path.
+              onChange(file.name)
+            }
+            // Reset so the same file can be re-selected if needed
+            e.target.value = ''
+          }}
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          title="Browse for a template file"
+          style={{
+            padding: '0.5rem 0.875rem',
+            background: 'var(--input-bg)',
+            color: 'var(--fg)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 13,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Browse…
+        </button>
+        {value && (
+          <button
+            onClick={() => onChange('')}
+            title="Revert to built-in default"
+            style={{
+              padding: '0.5rem 0.75rem',
+              background: 'transparent',
+              color: 'var(--fg-muted)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 13,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
+      <p style={{ fontSize: 12, color: 'var(--fg-dim)', margin: 0 }}>
+        Path to a custom Go template file (<code>.md</code> or <code>.txt</code>). Leave empty to
+        use the built-in default template.
+      </p>
+
+      {/* Toggle to preview the built-in default template */}
+      <button
+        onClick={() => setShowDefault((v) => !v)}
+        style={{
+          alignSelf: 'flex-start',
+          background: 'transparent',
+          border: 'none',
+          color: 'var(--fg-muted)',
+          fontSize: 12,
+          cursor: 'pointer',
+          padding: 0,
+          fontFamily: 'inherit',
+          textDecoration: 'underline',
+        }}
+      >
+        {showDefault ? 'Hide' : 'Show'} built-in default template
+      </button>
+
+      {showDefault && (
+        <textarea
+          readOnly
+          value={DEFAULT_JUDGE_PROMPT}
+          rows={12}
+          style={{
+            width: '100%',
+            background: 'var(--code-bg, var(--input-bg))',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--fg-muted)',
+            fontSize: 12,
+            padding: '0.75rem',
+            fontFamily: 'monospace',
+            resize: 'vertical',
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
 // ---- Main component ----
 export default function EvaluatorSettings() {
   const {
@@ -352,11 +520,10 @@ export default function EvaluatorSettings() {
           />
         </div>
 
-        <TextInput
-          label="Judge Prompt Template"
-          placeholder="/path/to/judge-prompt.md"
+        {/* Judge Prompt Template */}
+        <JudgePromptTemplateField
           value={evaluator.judgePromptTemplate}
-          onChange={(e) => updateEvaluator({ judgePromptTemplate: e.target.value })}
+          onChange={(v) => updateEvaluator({ judgePromptTemplate: v })}
         />
 
         <Toggle
