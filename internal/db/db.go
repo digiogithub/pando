@@ -108,6 +108,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.countSessionScoresStmt, err = db.PrepareContext(ctx, countSessionScores); err != nil {
 		return nil, fmt.Errorf("error preparing query CountSessionScores: %w", err)
 	}
+	if q.listSessionScoresStmt, err = db.PrepareContext(ctx, listSessionScores); err != nil {
+		return nil, fmt.Errorf("error preparing query ListSessionScores: %w", err)
+	}
 	if q.getTokenBaselineStmt, err = db.PrepareContext(ctx, getTokenBaseline); err != nil {
 		return nil, fmt.Errorf("error preparing query GetTokenBaseline: %w", err)
 	}
@@ -307,6 +310,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing countSessionScoresStmt: %w", cerr)
 		}
 	}
+	if q.listSessionScoresStmt != nil {
+		if cerr := q.listSessionScoresStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listSessionScoresStmt: %w", cerr)
+		}
+	}
 	if q.getTokenBaselineStmt != nil {
 		if cerr := q.getTokenBaselineStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getTokenBaselineStmt: %w", cerr)
@@ -434,26 +442,26 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                          DBTX
-	tx                          *sql.Tx
-	createFileStmt              *sql.Stmt
-	createMessageStmt           *sql.Stmt
-	createSessionStmt           *sql.Stmt
-	deleteFileStmt              *sql.Stmt
-	deleteMessageStmt           *sql.Stmt
-	deleteSessionStmt           *sql.Stmt
-	deleteSessionFilesStmt      *sql.Stmt
-	deleteSessionMessagesStmt   *sql.Stmt
-	getFileStmt                 *sql.Stmt
-	getFileByPathAndSessionStmt *sql.Stmt
-	getMessageStmt              *sql.Stmt
-	getSessionByIDStmt          *sql.Stmt
-	listFilesByPathStmt         *sql.Stmt
-	listFilesBySessionStmt      *sql.Stmt
-	listLatestSessionFilesStmt  *sql.Stmt
-	listMessagesBySessionStmt   *sql.Stmt
-	listNewFilesStmt            *sql.Stmt
-	listSessionsStmt            *sql.Stmt
+	db                               DBTX
+	tx                               *sql.Tx
+	createFileStmt                   *sql.Stmt
+	createMessageStmt                *sql.Stmt
+	createSessionStmt                *sql.Stmt
+	deleteFileStmt                   *sql.Stmt
+	deleteMessageStmt                *sql.Stmt
+	deleteSessionStmt                *sql.Stmt
+	deleteSessionFilesStmt           *sql.Stmt
+	deleteSessionMessagesStmt        *sql.Stmt
+	getFileStmt                      *sql.Stmt
+	getFileByPathAndSessionStmt      *sql.Stmt
+	getMessageStmt                   *sql.Stmt
+	getSessionByIDStmt               *sql.Stmt
+	listFilesByPathStmt              *sql.Stmt
+	listFilesBySessionStmt           *sql.Stmt
+	listLatestSessionFilesStmt       *sql.Stmt
+	listMessagesBySessionStmt        *sql.Stmt
+	listNewFilesStmt                 *sql.Stmt
+	listSessionsStmt                 *sql.Stmt
 	updateFileStmt                   *sql.Stmt
 	updateMessageStmt                *sql.Stmt
 	updateSessionStmt                *sql.Stmt
@@ -464,6 +472,7 @@ type Queries struct {
 	insertSessionScoreStmt           *sql.Stmt
 	getSessionScoreStmt              *sql.Stmt
 	countSessionScoresStmt           *sql.Stmt
+	listSessionScoresStmt            *sql.Stmt
 	getTokenBaselineStmt             *sql.Stmt
 	getUCBStatsStmt                  *sql.Stmt
 	insertSkillStmt                  *sql.Stmt
@@ -474,38 +483,38 @@ type Queries struct {
 	incrementSkillUsageStmt          *sql.Stmt
 	listUCBRankingStmt               *sql.Stmt
 	getEvaluatorStatsStmt            *sql.Stmt
-	createProjectStmt               *sql.Stmt
-	getProjectStmt                  *sql.Stmt
-	getProjectByPathStmt            *sql.Stmt
-	listProjectsStmt                *sql.Stmt
-	updateProjectStatusStmt         *sql.Stmt
-	updateProjectLastOpenedStmt     *sql.Stmt
-	markProjectInitializedStmt      *sql.Stmt
-	deleteProjectStmt               *sql.Stmt
+	createProjectStmt                *sql.Stmt
+	getProjectStmt                   *sql.Stmt
+	getProjectByPathStmt             *sql.Stmt
+	listProjectsStmt                 *sql.Stmt
+	updateProjectStatusStmt          *sql.Stmt
+	updateProjectLastOpenedStmt      *sql.Stmt
+	markProjectInitializedStmt       *sql.Stmt
+	deleteProjectStmt                *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                          tx,
-		tx:                          tx,
-		createFileStmt:              q.createFileStmt,
-		createMessageStmt:           q.createMessageStmt,
-		createSessionStmt:           q.createSessionStmt,
-		deleteFileStmt:              q.deleteFileStmt,
-		deleteMessageStmt:           q.deleteMessageStmt,
-		deleteSessionStmt:           q.deleteSessionStmt,
-		deleteSessionFilesStmt:      q.deleteSessionFilesStmt,
-		deleteSessionMessagesStmt:   q.deleteSessionMessagesStmt,
-		getFileStmt:                 q.getFileStmt,
-		getFileByPathAndSessionStmt: q.getFileByPathAndSessionStmt,
-		getMessageStmt:              q.getMessageStmt,
-		getSessionByIDStmt:          q.getSessionByIDStmt,
-		listFilesByPathStmt:         q.listFilesByPathStmt,
-		listFilesBySessionStmt:      q.listFilesBySessionStmt,
-		listLatestSessionFilesStmt:  q.listLatestSessionFilesStmt,
-		listMessagesBySessionStmt:   q.listMessagesBySessionStmt,
-		listNewFilesStmt:            q.listNewFilesStmt,
-		listSessionsStmt:            q.listSessionsStmt,
+		db:                               tx,
+		tx:                               tx,
+		createFileStmt:                   q.createFileStmt,
+		createMessageStmt:                q.createMessageStmt,
+		createSessionStmt:                q.createSessionStmt,
+		deleteFileStmt:                   q.deleteFileStmt,
+		deleteMessageStmt:                q.deleteMessageStmt,
+		deleteSessionStmt:                q.deleteSessionStmt,
+		deleteSessionFilesStmt:           q.deleteSessionFilesStmt,
+		deleteSessionMessagesStmt:        q.deleteSessionMessagesStmt,
+		getFileStmt:                      q.getFileStmt,
+		getFileByPathAndSessionStmt:      q.getFileByPathAndSessionStmt,
+		getMessageStmt:                   q.getMessageStmt,
+		getSessionByIDStmt:               q.getSessionByIDStmt,
+		listFilesByPathStmt:              q.listFilesByPathStmt,
+		listFilesBySessionStmt:           q.listFilesBySessionStmt,
+		listLatestSessionFilesStmt:       q.listLatestSessionFilesStmt,
+		listMessagesBySessionStmt:        q.listMessagesBySessionStmt,
+		listNewFilesStmt:                 q.listNewFilesStmt,
+		listSessionsStmt:                 q.listSessionsStmt,
 		updateFileStmt:                   q.updateFileStmt,
 		updateMessageStmt:                q.updateMessageStmt,
 		updateSessionStmt:                q.updateSessionStmt,
@@ -516,6 +525,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		insertSessionScoreStmt:           q.insertSessionScoreStmt,
 		getSessionScoreStmt:              q.getSessionScoreStmt,
 		countSessionScoresStmt:           q.countSessionScoresStmt,
+		listSessionScoresStmt:            q.listSessionScoresStmt,
 		getTokenBaselineStmt:             q.getTokenBaselineStmt,
 		getUCBStatsStmt:                  q.getUCBStatsStmt,
 		insertSkillStmt:                  q.insertSkillStmt,
@@ -526,13 +536,13 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		incrementSkillUsageStmt:          q.incrementSkillUsageStmt,
 		listUCBRankingStmt:               q.listUCBRankingStmt,
 		getEvaluatorStatsStmt:            q.getEvaluatorStatsStmt,
-		createProjectStmt:               q.createProjectStmt,
-		getProjectStmt:                  q.getProjectStmt,
-		getProjectByPathStmt:            q.getProjectByPathStmt,
-		listProjectsStmt:                q.listProjectsStmt,
-		updateProjectStatusStmt:         q.updateProjectStatusStmt,
-		updateProjectLastOpenedStmt:     q.updateProjectLastOpenedStmt,
-		markProjectInitializedStmt:      q.markProjectInitializedStmt,
-		deleteProjectStmt:               q.deleteProjectStmt,
+		createProjectStmt:                q.createProjectStmt,
+		getProjectStmt:                   q.getProjectStmt,
+		getProjectByPathStmt:             q.getProjectByPathStmt,
+		listProjectsStmt:                 q.listProjectsStmt,
+		updateProjectStatusStmt:          q.updateProjectStatusStmt,
+		updateProjectLastOpenedStmt:      q.updateProjectLastOpenedStmt,
+		markProjectInitializedStmt:       q.markProjectInitializedStmt,
+		deleteProjectStmt:                q.deleteProjectStmt,
 	}
 }

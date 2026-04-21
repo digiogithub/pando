@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/cronjob"
@@ -240,7 +242,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	// Initialize Evaluator service (self-improvement loop, disabled by default).
 	cfg = config.Get()
 	if cfg != nil && cfg.Evaluator.Enabled {
-		evalSvc, err := evaluator.New(cfg.Evaluator, conn)
+		evalSvc, err := evaluator.New(cfg.Evaluator, q, messages)
 		if err != nil {
 			logging.Warn("evaluator: failed to initialize, continuing without it", "err", err)
 		} else if evalSvc != nil {
@@ -250,6 +252,13 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			// Wire evaluator into prompt builder via adapter (UCB template selection + skill injection).
 			prompt.SetGlobalEvaluator(&evaluatorPromptAdapter{svc: evalSvc})
 			logging.Info("evaluator: self-improvement system initialized", "model", cfg.Evaluator.Model)
+		}
+	}
+
+	// Seed default prompt templates so UCB selection has a baseline to compare against.
+	if app.Evaluator != nil {
+		if err := seedEvaluatorTemplates(context.Background(), q); err != nil {
+			logging.Warn("evaluator: template seeding failed", "err", err)
 		}
 	}
 
@@ -586,6 +595,58 @@ func newSkillManager(cfg *config.Config) (*skills.SkillManager, error) {
 	logging.Info("Loaded skills", "count", len(discoveredSkills), "search_paths", discoveryPaths)
 	logging.Debug("Skill manager initialized", "skillCount", len(discoveredSkills))
 	return skillManager, nil
+}
+
+// seedEvaluatorTemplates inserts the embedded prompt templates into the DB
+// as default (is_default=1) entries so UCB selection has a baseline.
+// Uses INSERT OR IGNORE so re-runs are safe.
+func seedEvaluatorTemplates(ctx context.Context, q db.Querier) error {
+	// Key template sections to seed.
+	sections := []struct {
+		name    string
+		section string
+	}{
+		{"base/identity", "base"},
+		{"base/environment", "base"},
+		{"base/workflow", "base"},
+		{"base/conventions", "base"},
+		{"agents/coder", "agents"},
+		{"agents/task", "agents"},
+		{"capabilities/remembrances", "capabilities"},
+		{"capabilities/web_search", "capabilities"},
+		{"capabilities/code_indexing", "capabilities"},
+	}
+
+	registry := prompt.NewTemplateRegistry()
+	seeded := 0
+	for _, s := range sections {
+		content, err := registry.Render(s.name, nil)
+		if err != nil {
+			// Template might not exist — skip silently.
+			continue
+		}
+		if content == "" {
+			continue
+		}
+		_, err = q.InsertPromptTemplate(ctx, db.InsertPromptTemplateParams{
+			ID:        uuid.New().String(),
+			Name:      s.name,
+			Section:   s.section,
+			Content:   content,
+			Version:   1,
+			IsActive:  1,
+			IsDefault: 1,
+		})
+		if err != nil {
+			// UNIQUE constraint violation means it's already seeded — skip.
+			continue
+		}
+		seeded++
+	}
+	if seeded > 0 {
+		logging.Info("evaluator: seeded default prompt templates", "count", seeded)
+	}
+	return nil
 }
 
 // evaluatorPromptAdapter adapts *evaluator.EvaluatorService to prompt.PromptEvaluator.

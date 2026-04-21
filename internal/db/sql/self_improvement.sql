@@ -43,6 +43,14 @@ SELECT * FROM session_scores WHERE session_id = ? LIMIT 1;
 -- name: CountSessionScores :one
 SELECT COUNT(*) FROM session_scores;
 
+-- name: ListSessionScores :many
+SELECT id, session_id, template_id, reward, success_score, efficiency_score,
+       judge_analysis, judge_model, prompt_tokens, completion_tokens,
+       message_count, user_corrections, evaluated_at, created_at
+FROM session_scores
+ORDER BY created_at DESC
+LIMIT ?;
+
 -- name: GetTokenBaseline :one
 SELECT COALESCE(AVG(prompt_tokens + completion_tokens), 0) as baseline
 FROM (

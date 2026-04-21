@@ -38,6 +38,7 @@ type Querier interface {
 	InsertSessionScore(ctx context.Context, arg InsertSessionScoreParams) (SessionScore, error)
 	GetSessionScore(ctx context.Context, sessionID string) (SessionScore, error)
 	CountSessionScores(ctx context.Context) (int64, error)
+	ListSessionScores(ctx context.Context, limit int64) ([]SessionScore, error)
 	GetTokenBaseline(ctx context.Context, limit int64) (float64, error)
 	GetUCBStats(ctx context.Context, templateID string) (PromptUcbStat, error)
 	InsertSkill(ctx context.Context, arg InsertSkillParams) (SkillLibrary, error)

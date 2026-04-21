@@ -165,8 +165,36 @@ func (s *Server) handleGetEvaluatorSessions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// TODO: implement full session scores listing when a ListSessionScores SQLC
-	// query is added. Currently only GetSessionScore (by session_id) and
-	// CountSessionScores are available in the querier.
-	writeJSON(w, http.StatusOK, map[string]interface{}{"sessions": []interface{}{}})
+	if s.config.DB == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"sessions": []interface{}{}})
+		return
+	}
+
+	q := db.New(s.config.DB)
+
+	rows, err := q.ListSessionScores(r.Context(), 50)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"sessions": []interface{}{}})
+		return
+	}
+
+	sessions := make([]EvaluatorSessionResponse, 0, len(rows))
+	for _, row := range rows {
+		templateID := ""
+		if row.TemplateID.Valid {
+			templateID = row.TemplateID.String
+		}
+		sessions = append(sessions, EvaluatorSessionResponse{
+			ID:              row.ID,
+			SessionID:       row.SessionID,
+			TemplateID:      templateID,
+			Reward:          row.Reward,
+			SuccessScore:    row.SuccessScore,
+			EfficiencyScore: row.EfficiencyScore,
+			MessageCount:    row.MessageCount,
+			EvaluatedAt:     row.EvaluatedAt,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"sessions": sessions})
 }

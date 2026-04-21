@@ -2,10 +2,16 @@ package evaluator
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"text/template"
+
+	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/llm/provider"
+	"github.com/digiogithub/pando/internal/message"
 )
 
 const defaultJudgePrompt = `You are an expert AI assistant evaluator. Analyze this conversation transcript between an AI coding assistant and a user.
@@ -88,4 +94,86 @@ func parseJudgeOutput(raw string) (*JudgeOutput, error) {
 		return &JudgeOutput{Reasoning: raw, Confidence: 0}, nil
 	}
 	return &out, nil
+}
+
+// Judge calls an LLM model to evaluate session quality.
+type Judge struct {
+	p provider.Provider
+}
+
+// newJudge creates a Judge from evaluator config.
+// Returns nil (not an error) if no model is configured.
+func newJudge(cfg config.EvaluatorConfig) (*Judge, error) {
+	if cfg.Model == "" {
+		return nil, nil
+	}
+
+	globalCfg := config.Get()
+	if globalCfg == nil {
+		return nil, nil
+	}
+
+	// Look up model in supported models; fall back to a minimal model struct for dynamic models.
+	model, ok := models.SupportedModels[cfg.Model]
+	if !ok {
+		providerName := models.ModelProvider(cfg.Provider)
+		model = models.Model{
+			ID:               cfg.Model,
+			Name:             string(cfg.Model),
+			Provider:         providerName,
+			APIModel:         string(cfg.Model),
+			DefaultMaxTokens: 1024,
+		}
+	}
+
+	// Override provider if explicitly configured.
+	providerName := model.Provider
+	if cfg.Provider != "" {
+		providerName = models.ModelProvider(cfg.Provider)
+	}
+
+	providerCfg, ok := globalCfg.Providers[providerName]
+	if !ok {
+		return nil, fmt.Errorf("evaluator judge: provider %q not configured", providerName)
+	}
+	if providerCfg.Disabled {
+		return nil, fmt.Errorf("evaluator judge: provider %q is disabled", providerName)
+	}
+
+	p, err := provider.NewProvider(providerName,
+		provider.WithAPIKey(providerCfg.APIKey),
+		provider.WithModel(model),
+		provider.WithMaxTokens(1024),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("evaluator judge: create provider: %w", err)
+	}
+
+	return &Judge{p: p}, nil
+}
+
+// Evaluate calls the judge model with the session transcript and returns structured output.
+func (j *Judge) Evaluate(ctx context.Context, meta JudgeMeta, customPromptTemplate string) (*JudgeOutput, error) {
+	if j == nil {
+		return nil, nil
+	}
+
+	prompt, err := renderJudgePrompt(customPromptTemplate, meta)
+	if err != nil {
+		return nil, fmt.Errorf("judge evaluate: render prompt: %w", err)
+	}
+
+	msgs := []message.Message{
+		{
+			Role:  message.User,
+			Parts: []message.ContentPart{message.TextContent{Text: prompt}},
+		},
+	}
+
+	resp, err := j.p.SendMessages(ctx, msgs, nil)
+	if err != nil {
+		return nil, fmt.Errorf("judge evaluate: send messages: %w", err)
+	}
+
+	return parseJudgeOutput(resp.Content)
 }

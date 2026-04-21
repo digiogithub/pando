@@ -251,6 +251,53 @@ func (q *Queries) CountSessionScores(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const listSessionScores = `-- name: ListSessionScores :many
+SELECT id, session_id, template_id, reward, success_score, efficiency_score,
+       judge_analysis, judge_model, prompt_tokens, completion_tokens,
+       message_count, user_corrections, evaluated_at, created_at
+FROM session_scores
+ORDER BY created_at DESC
+LIMIT ?
+`
+
+func (q *Queries) ListSessionScores(ctx context.Context, limit int64) ([]SessionScore, error) {
+	rows, err := q.query(ctx, q.listSessionScoresStmt, listSessionScores, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SessionScore{}
+	for rows.Next() {
+		var i SessionScore
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.TemplateID,
+			&i.Reward,
+			&i.SuccessScore,
+			&i.EfficiencyScore,
+			&i.JudgeAnalysis,
+			&i.JudgeModel,
+			&i.PromptTokens,
+			&i.CompletionTokens,
+			&i.MessageCount,
+			&i.UserCorrections,
+			&i.EvaluatedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTokenBaseline = `-- name: GetTokenBaseline :one
 SELECT COALESCE(AVG(prompt_tokens + completion_tokens), 0) as baseline
 FROM (
