@@ -360,6 +360,12 @@ func (s *Server) handleFSBrowse(w http.ResponseWriter, r *http.Request) {
 
 	path = filepath.Clean(path)
 
+	// Reject non-absolute paths after cleaning to prevent traversal via relative segments.
+	if !filepath.IsAbs(path) {
+		writeError(w, http.StatusBadRequest, "path must be absolute")
+		return
+	}
+
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "cannot read directory: "+err.Error())

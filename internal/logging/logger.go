@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 )
@@ -71,7 +72,9 @@ func RecoverPanic(name string, cleanup func()) {
 
 		// Create a timestamped panic log file
 		timestamp := time.Now().Format("20060102-150405")
-		filename := fmt.Sprintf("pando-panic-%s-%s.log", name, timestamp)
+		// Sanitize name to prevent path separators from affecting the filename.
+		safeName := strings.NewReplacer("/", "_", "\\", "_", "..", "_").Replace(name)
+		filename := fmt.Sprintf("pando-panic-%s-%s.log", safeName, timestamp)
 
 		file, err := os.Create(filename)
 		if err != nil {

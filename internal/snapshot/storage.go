@@ -97,9 +97,24 @@ func (s *storage) SaveSnapshot(m Manifest) error {
 	return nil
 }
 
+// safeSnapshotPath returns the absolute path for a snapshot subdirectory,
+// verifying that it stays within the storage root to prevent path traversal.
+func (s *storage) safeSnapshotPath(snapshotID string) (string, error) {
+	p := filepath.Clean(filepath.Join(s.root, snapshotID))
+	root := filepath.Clean(s.root)
+	if p == root || !strings.HasPrefix(p, root+string(os.PathSeparator)) {
+		return "", fmt.Errorf("storage: invalid snapshot ID %q", snapshotID)
+	}
+	return p, nil
+}
+
 // LoadManifest reads and returns the manifest for the given snapshot ID.
 func (s *storage) LoadManifest(snapshotID string) (Manifest, error) {
-	manifestPath := filepath.Join(s.root, snapshotID, "manifest.json")
+	snapDir, err := s.safeSnapshotPath(snapshotID)
+	if err != nil {
+		return Manifest{}, err
+	}
+	manifestPath := filepath.Join(snapDir, "manifest.json")
 	var m Manifest
 	if err := readJSON(manifestPath, &m); err != nil {
 		return Manifest{}, fmt.Errorf("storage: load manifest %s: %w", snapshotID, err)
@@ -132,7 +147,10 @@ func (s *storage) LoadBlob(hash string) ([]byte, error) {
 // DeleteSnapshot removes the snapshot directory for the given ID and updates
 // the index. Blobs are shared and must be cleaned separately via CleanOrphanBlobs.
 func (s *storage) DeleteSnapshot(snapshotID string) error {
-	snapDir := filepath.Join(s.root, snapshotID)
+	snapDir, err := s.safeSnapshotPath(snapshotID)
+	if err != nil {
+		return err
+	}
 	if err := os.RemoveAll(snapDir); err != nil {
 		return fmt.Errorf("storage: delete snapshot dir %s: %w", snapshotID, err)
 	}

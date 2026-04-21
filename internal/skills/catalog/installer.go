@@ -2,16 +2,29 @@ package catalog
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ErrSkillAlreadyInstalled is returned when a skill is already installed at the target location.
 var ErrSkillAlreadyInstalled = errors.New("skill already installed")
 
+// validateSkillName rejects names that contain path separators or parent-directory references.
+func validateSkillName(name string) error {
+	if name == "" || strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
+		return fmt.Errorf("invalid skill name: %q", name)
+	}
+	return nil
+}
+
 // InstallSkill writes SKILL.md content to {targetDir}/{skillName}/SKILL.md.
 // Returns ErrSkillAlreadyInstalled if the file already exists.
 func InstallSkill(content, skillName, targetDir string) error {
+	if err := validateSkillName(skillName); err != nil {
+		return err
+	}
 	skillDir := filepath.Join(targetDir, skillName)
 	skillFile := filepath.Join(skillDir, "SKILL.md")
 
@@ -28,6 +41,9 @@ func InstallSkill(content, skillName, targetDir string) error {
 
 // UninstallSkill removes the {targetDir}/{skillName}/ directory and all its contents.
 func UninstallSkill(skillName, targetDir string) error {
+	if err := validateSkillName(skillName); err != nil {
+		return err
+	}
 	skillDir := filepath.Join(targetDir, skillName)
 	if err := os.RemoveAll(skillDir); err != nil {
 		return err
@@ -37,6 +53,9 @@ func UninstallSkill(skillName, targetDir string) error {
 
 // IsSkillInstalled reports whether {targetDir}/{skillName}/SKILL.md exists.
 func IsSkillInstalled(skillName, targetDir string) bool {
+	if err := validateSkillName(skillName); err != nil {
+		return false
+	}
 	skillFile := filepath.Join(targetDir, skillName, "SKILL.md")
 	_, err := os.Stat(skillFile)
 	return err == nil
