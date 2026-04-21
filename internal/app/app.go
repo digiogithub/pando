@@ -464,6 +464,58 @@ func convertMesnadaConfig(cfg *config.Config) mesnadaOrch.Config {
 		DefaultEngine:    appCfg.Orchestrator.DefaultEngine,
 		PersonaPath:      appCfg.Orchestrator.PersonaPath,
 		AppConfig:        appCfg,
+		ModelResolver:    makePandoModelResolver(cfg),
+	}
+}
+
+// makePandoModelResolver returns a function that converts a model ID (possibly
+// empty or shorthand) into the full "provider.model" string expected by pando's
+// -m flag when spawning CLI subagents.
+//
+// Resolution rules:
+//  1. If modelID is non-empty and already contains "." or "/", return as-is.
+//  2. If modelID is non-empty and exists in SupportedModels, return the canonical ID
+//     (which already encodes the provider as a prefix, e.g. "anthropic.claude-sonnet-4-6").
+//  3. If modelID is non-empty but unknown, prepend the provider of the currently
+//     active AgentCoder model so that the pando CLI can look it up correctly.
+//  4. If modelID is empty, return the currently active AgentCoder model ID.
+func makePandoModelResolver(cfg *config.Config) func(string) string {
+	return func(modelID string) string {
+		// Determine the currently active model for the coder agent.
+		activeModel := ""
+		if cfg != nil {
+			if coderAgent, ok := cfg.Agents[config.AgentCoder]; ok && coderAgent.Model != "" {
+				activeModel = string(coderAgent.Model)
+			}
+		}
+
+		if modelID == "" {
+			// No model requested – use whatever pando itself is configured to use.
+			return activeModel
+		}
+
+		// If the ID already encodes a provider (contains "." or "/"), use it directly.
+		if strings.ContainsAny(modelID, "./") {
+			return modelID
+		}
+
+		// Try to normalize via the models registry (handles shorthands like "sonnet").
+		normalized := models.NormalizeModelID(modelID)
+		if _, ok := models.SupportedModels[normalized]; ok {
+			return string(normalized)
+		}
+
+		// Unknown model ID – prepend the provider from the active model so the
+		// pando CLI can resolve it against the configured provider.
+		if activeModel != "" {
+			sepIdx := strings.IndexAny(activeModel, "./")
+			if sepIdx > 0 {
+				provider := activeModel[:sepIdx]
+				return provider + "." + modelID
+			}
+		}
+
+		return modelID
 	}
 }
 

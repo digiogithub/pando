@@ -42,6 +42,10 @@ type Config struct {
 	DefaultEngine    string
 	PersonaPath      string
 	AppConfig        *mesnadaconfig.Config // Full app config for passing to managers
+	// ModelResolver converts a model ID (possibly empty or shorthand) into the
+	// full "provider.model" string expected by the pando CLI's -m flag.
+	// When nil, model IDs are forwarded as-is to the pando CLI spawner.
+	ModelResolver func(string) string
 }
 
 // New creates a new Orchestrator.
@@ -81,7 +85,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		cancel:           cancel,
 	}
 
-	o.manager = agent.NewManager(cfg.AppConfig, cfg.LogDir, o.onTaskComplete, o.SetProgress)
+	o.manager = agent.NewManager(cfg.AppConfig, cfg.LogDir, o.onTaskComplete, o.SetProgress, cfg.ModelResolver)
 
 	return o, nil
 }
