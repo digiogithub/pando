@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "build:desktop": "tsc -b && vite build --mode desktop",
-    "build:embedded": "tsc -b && vite build && bun run ./scripts/compress-dist.mjs",
+    "build": "tsc -b && bunx --bun vite build",
+    "build:desktop": "tsc -b && bunx --bun vite build --mode desktop",
+    "build:embedded": "tsc -b && bunx --bun vite build && bun run ./scripts/compress-dist.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "bunx --bun eslint ."
