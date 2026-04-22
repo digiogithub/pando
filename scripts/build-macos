@@ -61,7 +61,7 @@ build_archive() {
 
     local out="$DIST_DIR/pando-${artifact_name}"
     echo "Building ${goos}/${goarch} → pando-${artifact_name}.zip ..."
-    env GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=1 "${env_vars[@]}" "${sysroot_env[@]}" \
+    env GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=1 "${env_vars[@]}" ${sysroot_env[@]+"${sysroot_env[@]}"} \
         go build -ldflags "$LDFLAGS" -o "$out" .
     (cd "$DIST_DIR" && zip -qm "pando-${artifact_name}.zip" "pando-${artifact_name}")
     echo "  → dist/pando-${artifact_name}.zip"
