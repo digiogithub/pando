@@ -68,6 +68,7 @@ type Provider interface {
 
 type providerClientOptions struct {
 	apiKey        string
+	useOAuth      bool
 	model         models.Model
 	maxTokens     int64
 	systemMessage string
@@ -114,21 +115,26 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 		}, nil)
 	case models.ProviderAnthropic:
 		anthropicOpts := clientOptions.anthropicOptions
-		// Always try OAuth first — Claude Max/Pro OAuth tokens get higher rate limits
-		// than standard API keys, so prefer OAuth even when an API key is configured.
-		if creds, source, err := auth.LoadClaudeCredentials(); err == nil && creds != nil {
-			if token, updatedCreds, err := auth.GetClaudeToken(creds); err == nil && token != "" {
-				// Save refreshed token back to the same source it came from.
-				if updatedCreds != nil {
-					if source == "claude-code" {
-						_ = auth.SaveClaudeCodeCredentials(updatedCreds)
-					} else {
-						_ = auth.SaveClaudeCredentials(updatedCreds)
+		// Use OAuth when explicitly requested via UseOAuth config flag, or as a
+		// fallback when no API key is configured.
+		// When UseOAuth is true, Claude Code credentials take priority over any
+		// configured API key (the key is cleared so the OAuth path is used).
+		useOAuth := clientOptions.useOAuth || clientOptions.apiKey == ""
+		if useOAuth {
+			if creds, source, err := auth.LoadClaudeCredentials(); err == nil && creds != nil {
+				if token, updatedCreds, err := auth.GetClaudeToken(creds); err == nil && token != "" {
+					// Save refreshed token back to the same source it came from.
+					if updatedCreds != nil {
+						if source == "claude-code" {
+							_ = auth.SaveClaudeCodeCredentials(updatedCreds)
+						} else {
+							_ = auth.SaveClaudeCredentials(updatedCreds)
+						}
 					}
+					anthropicOpts = append(anthropicOpts, WithAnthropicOAuthToken(token))
+					clientOptions.apiKey = "" // OAuth takes over — clear API key
+					logging.Debug("Using Claude OAuth token for authentication", "source", source, "explicit", clientOptions.useOAuth)
 				}
-				anthropicOpts = append(anthropicOpts, WithAnthropicOAuthToken(token))
-				clientOptions.apiKey = "" // OAuth takes priority — clear API key
-				logging.Debug("Using Claude OAuth token for authentication (preferred over API key)", "source", source)
 			}
 		}
 		return wrapInstrumented(&baseProvider[AnthropicClient]{
@@ -254,6 +260,12 @@ func (p *baseProvider[C]) StreamResponse(ctx context.Context, messages []message
 func WithAPIKey(apiKey string) ProviderClientOption {
 	return func(options *providerClientOptions) {
 		options.apiKey = apiKey
+	}
+}
+
+func WithUseOAuth(useOAuth bool) ProviderClientOption {
+	return func(options *providerClientOptions) {
+		options.useOAuth = useOAuth
 	}
 }
 

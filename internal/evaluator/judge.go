@@ -142,6 +142,7 @@ func newJudge(cfg config.EvaluatorConfig) (*Judge, error) {
 
 	p, err := provider.NewProvider(providerName,
 		provider.WithAPIKey(providerCfg.APIKey),
+		provider.WithUseOAuth(providerCfg.UseOAuth),
 		provider.WithModel(model),
 		provider.WithMaxTokens(1024),
 	)

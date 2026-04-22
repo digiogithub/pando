@@ -1228,6 +1228,7 @@ func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillM
 	}
 	opts := []provider.ProviderClientOption{
 		provider.WithAPIKey(providerCfg.APIKey),
+		provider.WithUseOAuth(providerCfg.UseOAuth),
 		provider.WithModel(model),
 		provider.WithSystemMessage(buildSystemMessage(agentName, model.Provider, skillManager, activeSkillInstructions)),
 		provider.WithMaxTokens(maxTokens),

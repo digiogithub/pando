@@ -57,6 +57,7 @@ func FetchCommand(ctx context.Context, cfg *config.Config, systemPrompt, userPro
 	p, err := provider.NewProvider(
 		model.Provider,
 		provider.WithAPIKey(providerCfg.APIKey),
+		provider.WithUseOAuth(providerCfg.UseOAuth),
 		provider.WithModel(model),
 		provider.WithSystemMessage(systemPrompt),
 		provider.WithMaxTokens(model.DefaultMaxTokens),

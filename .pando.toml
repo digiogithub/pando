@@ -10,6 +10,13 @@ Directory = './.pando/data'
 
 [MCPServers]
 
+[Providers]
+[Providers.anthropic]
+APIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBWVFQwemdEWldkM2JtZ2t4WkY3RHhhcUhpSlpvRGJMa2NsaktVYWNzdEVFCmExdE5VaHZ5VVdEb2Z0eFUzRWpXZUpyOHZGTHdqVi9Rcjc5Zzhob0RpaGcKLS0tIHQra0xnUXJQa0Ftd3hmY3JodmpSTTJtd2VXb1I1dS9ESWdwa3pEem40S1kKrA22of8LtXXYVpbQeiE4iTXYgOFYhu/GzP8tEXLqK1S9mGzyT1GvhD0ubPb04+4aQhAc2YXCB8+mcXoKgEdmhmaE1kHUv85DuxHU3XSSmn8L6+9i1OH82LLbZ4oW+sqAFF6/8MMQktiYISYzM4KdKVhRzlvg2fxe7dAEQgDSDsSP2fsGmfO2qZKlyJQ='
+BaseURL = ''
+Disabled = false
+UseOAuth = false
+
 [LSP]
 [LSP.gopls]
 Disabled = false
@@ -28,8 +35,8 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'gemma4-e2b:latest'
-MaxTokens = 4096
+Model = 'anthropic.claude-sonnet-4-6'
+MaxTokens = 32000
 ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false
@@ -152,6 +159,9 @@ ContextEnrichmentEnabled = true
 ContextEnrichmentKBResults = 5
 ContextEnrichmentCodeResults = 5
 ContextEnrichmentCodeProject = 'pando'
+ContextEnrichmentEventsResults = 0
+ContextEnrichmentEventsSubject = ''
+ContextEnrichmentEventsLastDays = 0
 
 [Server]
 Enabled = true
@@ -239,3 +249,7 @@ Insecure = false
 Enabled = false
 AutoRestore = false
 MaxProjects = 0
+
+[CronJobs]
+Enabled = false
+Jobs = []

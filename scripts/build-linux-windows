@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Build release archives for Linux (amd64, arm64) and Windows (amd64)
+# Run scripts/release first to bump and tag the version.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DIST_DIR="$REPO_ROOT/dist"
+WEB_UI_DIR="$REPO_ROOT/web-ui"
+ZIG="${ZIG:-zig}"
+
+cd "$REPO_ROOT"
+
+# Ensure zig is available (needed for cross-compilation)
+if ! command -v "$ZIG" >/dev/null 2>&1; then
+    echo "Error: zig not found. Install it from https://ziglang.org/download/" >&2
+    exit 1
+fi
+
+# Get version from latest git tag (same as Makefile)
+VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo dev)"
+LDFLAGS="-s -w -X github.com/digiogithub/pando/internal/version.Version=${VERSION}"
+
+echo "Version: ${VERSION}"
+
+# Build embedded web-ui assets
+echo "Building web-ui embedded assets..."
+cd "$WEB_UI_DIR"
+bun install
+bun run build:embedded
+cd "$REPO_ROOT"
+
+mkdir -p "$DIST_DIR"
+
+build_archive() {
+    local goos="$1"
+    local goarch="$2"
+    local artifact_name="$3"
+    local ext="${4:-}"
+    shift 4
+    local env_vars=("$@")
+
+    local out="$DIST_DIR/pando-${artifact_name}${ext}"
+    echo "Building ${goos}/${goarch} → pando-${artifact_name}.zip ..."
+    env GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=1 "${env_vars[@]}" \
+        go build -ldflags "$LDFLAGS" -o "$out" .
+    (cd "$DIST_DIR" && zip -qm "pando-${artifact_name}.zip" "pando-${artifact_name}${ext}")
+    echo "  → dist/pando-${artifact_name}.zip"
+}
+
+# Linux amd64 (no cross-compiler needed when host is linux/amd64)
+build_archive linux amd64 linux-x64 ""
+
+# Linux arm64 (cross-compiled via zig)
+CC_LINUX_ARM64="${ZIG} cc -target aarch64-linux-gnu"
+CXX_LINUX_ARM64="${ZIG} c++ -target aarch64-linux-gnu"
+build_archive linux arm64 linux-arm64 "" \
+    CC="$CC_LINUX_ARM64" CXX="$CXX_LINUX_ARM64"
+
+# Windows amd64 (cross-compiled via zig)
+CC_WINDOWS_AMD64="${ZIG} cc -target x86_64-windows-gnu"
+CXX_WINDOWS_AMD64="${ZIG} c++ -target x86_64-windows-gnu"
+build_archive windows amd64 windows-x64 ".exe" \
+    CC="$CC_WINDOWS_AMD64" CXX="$CXX_WINDOWS_AMD64"
+
+echo ""
+echo "Done. Artifacts in dist/:"
+ls -lh "$DIST_DIR"/*.zip

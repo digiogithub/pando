@@ -555,6 +555,11 @@ func GetClaudeToken(creds *ClaudeCredentials) (string, *ClaudeCredentials, error
 	if creds == nil || creds.ClaudeAiOauth == nil {
 		return "", nil, fmt.Errorf("credentials cannot be nil")
 	}
+	// Tokens provided via environment variable have no refresh token and no
+	// expiry — return them as-is without attempting a refresh.
+	if creds.ClaudeAiOauth.RefreshToken == "" {
+		return creds.ClaudeAiOauth.AccessToken, nil, nil
+	}
 	if time.Now().UnixMilli() > creds.ClaudeAiOauth.ExpiresAt {
 		newCreds, err := RefreshOAuthToken(creds.ClaudeAiOauth.RefreshToken, creds.ClaudeAiOauth.Scopes)
 		if err != nil {

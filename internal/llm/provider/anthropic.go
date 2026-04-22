@@ -157,7 +157,14 @@ func newAnthropicClient(opts providerClientOptions) AnthropicClient {
 	}
 
 	anthropicClientOptions := []option.RequestOption{}
-	anthropicBetaHeader := "claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"
+	// Base beta headers for the standard Anthropic API (firstParty), synced with
+	// Claude Code's getAllModelBetas() for Claude 4+ interactive sessions.
+	// Removed: fine-grained-tool-streaming-2025-05-14 (no longer in Claude Code).
+	// Added:   context-1m-2025-08-07           (1M-context models)
+	//          context-management-2025-06-27    (thinking preservation, Claude 4+)
+	//          prompt-caching-scope-2026-01-05  (always sent for firstParty; no-op without scope)
+	//          redact-thinking-2026-02-12       (return redacted_thinking stubs, reduces bandwidth)
+	anthropicBetaHeader := "claude-code-20250219,interleaved-thinking-2025-05-14,context-1m-2025-08-07,context-management-2025-06-27,prompt-caching-scope-2026-01-05,redact-thinking-2026-02-12"
 	if opts.apiKey != "" {
 		anthropicClientOptions = append(anthropicClientOptions, option.WithAPIKey(opts.apiKey))
 		anthropicClientOptions = append(anthropicClientOptions, claudeCodeHeaders(anthropicBetaHeader)...)
