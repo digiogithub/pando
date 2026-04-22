@@ -47,15 +47,23 @@ cd "$REPO_ROOT"
 
 mkdir -p "$DIST_DIR"
 
-# Build sysroot env vars when SDKROOT is set.
-# -isysroot sets header search path; -L flags are needed for zig to locate
-# dynamic system libraries (.tbd stubs) like libresolv.
+# Zig needs --sysroot passed to it directly (not via CGO_LDFLAGS) so it can
+# locate both dynamic libraries (.tbd) and frameworks (CoreFoundation, Security)
+# from the macOS SDK. CGO_LDFLAGS only carries extra flags for the linker stage
+# but zig resolves system paths from its own --sysroot before that.
+ZIG_SYSROOT=""
+if [ -n "$SDKROOT" ]; then
+    ZIG_SYSROOT="--sysroot=$SDKROOT"
+fi
+
+# CGO flags: headers via -isysroot; explicit -L/-F for libs/frameworks so zig
+# doesn't rely solely on path_first strategy which yields "searched paths: none".
 sysroot_env=()
 if [ -n "$SDKROOT" ]; then
     sysroot_env+=(
         CGO_CFLAGS="-isysroot $SDKROOT"
         CGO_CXXFLAGS="-isysroot $SDKROOT"
-        CGO_LDFLAGS="-isysroot $SDKROOT -L${SDKROOT}/usr/lib -L${SDKROOT}/usr/lib/system"
+        CGO_LDFLAGS="-isysroot $SDKROOT -L${SDKROOT}/usr/lib -L${SDKROOT}/usr/lib/system -F${SDKROOT}/System/Library/Frameworks"
     )
 fi
 
@@ -75,14 +83,15 @@ build_archive() {
 }
 
 # macOS amd64 (cross-compiled via zig)
-CC_DARWIN_AMD64="${ZIG} cc -target x86_64-macos.${MACOS_MIN_VERSION}"
-CXX_DARWIN_AMD64="${ZIG} c++ -target x86_64-macos.${MACOS_MIN_VERSION}"
+# --sysroot is passed directly to zig so it resolves system libs and frameworks
+CC_DARWIN_AMD64="${ZIG} cc -target x86_64-macos.${MACOS_MIN_VERSION} ${ZIG_SYSROOT}"
+CXX_DARWIN_AMD64="${ZIG} c++ -target x86_64-macos.${MACOS_MIN_VERSION} ${ZIG_SYSROOT}"
 build_archive darwin amd64 darwin-x64 \
     CC="$CC_DARWIN_AMD64" CXX="$CXX_DARWIN_AMD64"
 
 # macOS arm64 / Apple Silicon (cross-compiled via zig)
-CC_DARWIN_ARM64="${ZIG} cc -target aarch64-macos.${MACOS_MIN_VERSION}"
-CXX_DARWIN_ARM64="${ZIG} c++ -target aarch64-macos.${MACOS_MIN_VERSION}"
+CC_DARWIN_ARM64="${ZIG} cc -target aarch64-macos.${MACOS_MIN_VERSION} ${ZIG_SYSROOT}"
+CXX_DARWIN_ARM64="${ZIG} c++ -target aarch64-macos.${MACOS_MIN_VERSION} ${ZIG_SYSROOT}"
 build_archive darwin arm64 darwin-arm64 \
     CC="$CC_DARWIN_ARM64" CXX="$CXX_DARWIN_ARM64"
 
