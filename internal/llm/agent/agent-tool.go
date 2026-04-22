@@ -53,26 +53,26 @@ func (b *agentTool) Run(ctx context.Context, call tools.ToolCall) (tools.ToolRes
 
 	sessionID, messageID := tools.GetContextValues(ctx)
 	if sessionID == "" || messageID == "" {
-		return tools.ToolResponse{}, fmt.Errorf("session_id and message_id are required")
+		return tools.NewTextErrorResponse("session_id and message_id are required"), nil
 	}
 
 	agent, err := NewAgent(config.AgentTask, b.sessions, b.messages, TaskAgentTools(b.lspClients), b.skillManager)
 	if err != nil {
-		return tools.ToolResponse{}, fmt.Errorf("error creating agent: %s", err)
+		return tools.NewTextErrorResponse(fmt.Sprintf("error creating agent: %s", err)), nil
 	}
 
 	session, err := b.sessions.CreateTaskSession(ctx, call.ID, sessionID, "New Agent Session")
 	if err != nil {
-		return tools.ToolResponse{}, fmt.Errorf("error creating session: %s", err)
+		return tools.NewTextErrorResponse(fmt.Sprintf("error creating session: %s", err)), nil
 	}
 
 	done, err := agent.Run(ctx, session.ID, params.Prompt)
 	if err != nil {
-		return tools.ToolResponse{}, fmt.Errorf("error generating agent: %s", err)
+		return tools.NewTextErrorResponse(fmt.Sprintf("error generating agent: %s", err)), nil
 	}
 	result := <-done
 	if result.Error != nil {
-		return tools.ToolResponse{}, fmt.Errorf("error generating agent: %s", result.Error)
+		return tools.NewTextErrorResponse(fmt.Sprintf("error generating agent: %s", result.Error)), nil
 	}
 
 	response := result.Message
@@ -82,18 +82,18 @@ func (b *agentTool) Run(ctx context.Context, call tools.ToolCall) (tools.ToolRes
 
 	updatedSession, err := b.sessions.Get(ctx, session.ID)
 	if err != nil {
-		return tools.ToolResponse{}, fmt.Errorf("error getting session: %s", err)
+		return tools.NewTextErrorResponse(fmt.Sprintf("error getting session: %s", err)), nil
 	}
 	parentSession, err := b.sessions.Get(ctx, sessionID)
 	if err != nil {
-		return tools.ToolResponse{}, fmt.Errorf("error getting parent session: %s", err)
+		return tools.NewTextErrorResponse(fmt.Sprintf("error getting parent session: %s", err)), nil
 	}
 
 	parentSession.Cost += updatedSession.Cost
 
 	_, err = b.sessions.Save(ctx, parentSession)
 	if err != nil {
-		return tools.ToolResponse{}, fmt.Errorf("error saving parent session: %s", err)
+		return tools.NewTextErrorResponse(fmt.Sprintf("error saving parent session: %s", err)), nil
 	}
 	return tools.NewTextResponse(response.Content().String()), nil
 }

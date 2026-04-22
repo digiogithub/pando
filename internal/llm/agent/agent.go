@@ -660,6 +660,18 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 					a.finishMessage(ctx, &assistantMsg, message.FinishReasonPermissionDenied)
 					break
 				}
+				toolResults[i] = message.ToolResult{
+					ToolCallID: toolCall.ID,
+					Name:       toolCall.Name,
+					Content:    toolErr.Error(),
+					IsError:    true,
+				}
+				a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]})
+				select {
+				case eventCh <- AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]}:
+				default:
+				}
+				continue
 			}
 			// Auto-cache large responses to reduce context token usage
 			if toolErr == nil {
