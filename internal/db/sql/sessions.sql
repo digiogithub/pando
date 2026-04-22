@@ -32,6 +32,7 @@ WHERE id = ? LIMIT 1;
 SELECT *
 FROM sessions
 WHERE parent_session_id is NULL
+  AND message_count > 0
 ORDER BY created_at DESC;
 
 -- name: UpdateSession :one

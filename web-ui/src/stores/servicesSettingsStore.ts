@@ -53,6 +53,9 @@ const DEFAULT_REMEMBRANCES: RemembrancesConfig = {
   context_enrichment_kb_results: 3,
   context_enrichment_code_results: 5,
   context_enrichment_code_project: '',
+  context_enrichment_events_results: 3,
+  context_enrichment_events_subject: '',
+  context_enrichment_events_last_days: 30,
 }
 
 const DEFAULT_SNAPSHOTS: SnapshotsConfig = {

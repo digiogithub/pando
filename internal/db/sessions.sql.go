@@ -110,6 +110,7 @@ const listSessions = `-- name: ListSessions :many
 SELECT id, parent_session_id, title, message_count, prompt_tokens, completion_tokens, cost, updated_at, created_at, summary_message_id
 FROM sessions
 WHERE parent_session_id is NULL
+  AND message_count > 0
 ORDER BY created_at DESC
 `
 

@@ -194,12 +194,18 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 						cfg.Remembrances.ContextEnrichmentKBResults,
 						cfg.Remembrances.ContextEnrichmentCodeResults,
 						cfg.Remembrances.ContextEnrichmentCodeProject,
+						cfg.Remembrances.ContextEnrichmentEventsResults,
+						cfg.Remembrances.ContextEnrichmentEventsSubject,
+						cfg.Remembrances.ContextEnrichmentEventsLastDays,
 					)
 					agent.SetContextEnricher(enricher)
 					logging.Info("remembrances: context enricher enabled",
 						"kb_results", cfg.Remembrances.ContextEnrichmentKBResults,
 						"code_results", cfg.Remembrances.ContextEnrichmentCodeResults,
 						"code_project", cfg.Remembrances.ContextEnrichmentCodeProject,
+						"events_results", cfg.Remembrances.ContextEnrichmentEventsResults,
+						"events_subject", cfg.Remembrances.ContextEnrichmentEventsSubject,
+						"events_last_days", cfg.Remembrances.ContextEnrichmentEventsLastDays,
 					)
 				}
 			}

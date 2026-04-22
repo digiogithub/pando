@@ -1333,6 +1333,24 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 				Value: fmt.Sprint(rem.ContextEnrichmentCodeResults),
 			},
 			settings.Field{
+				Label: "Events Results",
+				Key:   "remembrances.context_enrichment_events_results",
+				Type:  settings.FieldText,
+				Value: fmt.Sprint(rem.ContextEnrichmentEventsResults),
+			},
+			settings.Field{
+				Label: "Events Subject Filter",
+				Key:   "remembrances.context_enrichment_events_subject",
+				Type:  settings.FieldText,
+				Value: rem.ContextEnrichmentEventsSubject,
+			},
+			settings.Field{
+				Label: "Events Last Days",
+				Key:   "remembrances.context_enrichment_events_last_days",
+				Type:  settings.FieldText,
+				Value: fmt.Sprint(rem.ContextEnrichmentEventsLastDays),
+			},
+			settings.Field{
 				Label: "Index working directory",
 				Key:   "action:remembrances_index_workdir",
 				Type:  settings.FieldAction,
@@ -2520,6 +2538,26 @@ func saveRemembrances(field settings.Field) error {
 			return fmt.Errorf("code results must be between 1 and 20")
 		}
 		remCfg.ContextEnrichmentCodeResults = n
+	case "remembrances.context_enrichment_events_results":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid events results value: %w", err)
+		}
+		if n < 1 || n > 20 {
+			return fmt.Errorf("events results must be between 1 and 20")
+		}
+		remCfg.ContextEnrichmentEventsResults = n
+	case "remembrances.context_enrichment_events_subject":
+		remCfg.ContextEnrichmentEventsSubject = strings.TrimSpace(field.Value)
+	case "remembrances.context_enrichment_events_last_days":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid events last days value: %w", err)
+		}
+		if n < 1 || n > 365 {
+			return fmt.Errorf("events last days must be between 1 and 365")
+		}
+		remCfg.ContextEnrichmentEventsLastDays = n
 	default:
 		return fmt.Errorf("unsupported Remembrances setting %q", field.Key)
 	}

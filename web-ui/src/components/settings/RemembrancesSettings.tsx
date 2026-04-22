@@ -361,7 +361,7 @@ export default function RemembrancesSettings() {
               </p>
             </div>
 
-            {/* Results count */}
+            {/* Results count — KB and Code */}
             <div style={{ display: 'flex', gap: '1rem' }}>
               <div style={{ flex: 1 }}>
                 <TextInput
@@ -382,6 +382,42 @@ export default function RemembrancesSettings() {
                 />
               </div>
             </div>
+
+            {/* Events enrichment */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Past Session Events
+              </label>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--fg-muted)' }}>
+                Search saved events from previous sessions and prepend relevant ones as context.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <div style={{ flex: 1 }}>
+                <TextInput
+                  label="Events Results"
+                  type="number"
+                  value={String(rem.context_enrichment_events_results)}
+                  onChange={(e) => updateRemembrances('context_enrichment_events_results', Number(e.target.value))}
+                  placeholder="3"
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <TextInput
+                  label="Last Days"
+                  type="number"
+                  value={String(rem.context_enrichment_events_last_days)}
+                  onChange={(e) => updateRemembrances('context_enrichment_events_last_days', Number(e.target.value))}
+                  placeholder="30"
+                />
+              </div>
+            </div>
+            <TextInput
+              label="Subject Filter"
+              value={rem.context_enrichment_events_subject}
+              onChange={(e) => updateRemembrances('context_enrichment_events_subject', e.target.value)}
+              placeholder="e.g. pando  (leave empty for all subjects)"
+            />
           </>
         )}
       </div>

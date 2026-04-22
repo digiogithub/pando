@@ -407,6 +407,9 @@ export interface RemembrancesConfig {
   context_enrichment_kb_results: number
   context_enrichment_code_results: number
   context_enrichment_code_project: string
+  context_enrichment_events_results: number
+  context_enrichment_events_subject: string
+  context_enrichment_events_last_days: number
 }
 
 export interface CodeProjectInfo {

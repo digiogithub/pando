@@ -230,11 +230,14 @@ type RemembrancesConfig struct {
 	ChunkOverlap         int    `json:"chunk_overlap" toml:"ChunkOverlap"`
 	IndexWorkers         int    `json:"index_workers" toml:"IndexWorkers"`
 
-	// ContextEnrichment enables pre-prompt KB and code search to inject relevant context.
-	ContextEnrichmentEnabled     bool   `json:"context_enrichment_enabled" toml:"ContextEnrichmentEnabled"`
-	ContextEnrichmentKBResults   int    `json:"context_enrichment_kb_results" toml:"ContextEnrichmentKBResults"`
-	ContextEnrichmentCodeResults int    `json:"context_enrichment_code_results" toml:"ContextEnrichmentCodeResults"`
-	ContextEnrichmentCodeProject string `json:"context_enrichment_code_project" toml:"ContextEnrichmentCodeProject"`
+	// ContextEnrichment enables pre-prompt KB, events and code search to inject relevant context.
+	ContextEnrichmentEnabled        bool   `json:"context_enrichment_enabled" toml:"ContextEnrichmentEnabled"`
+	ContextEnrichmentKBResults      int    `json:"context_enrichment_kb_results" toml:"ContextEnrichmentKBResults"`
+	ContextEnrichmentCodeResults    int    `json:"context_enrichment_code_results" toml:"ContextEnrichmentCodeResults"`
+	ContextEnrichmentCodeProject    string `json:"context_enrichment_code_project" toml:"ContextEnrichmentCodeProject"`
+	ContextEnrichmentEventsResults  int    `json:"context_enrichment_events_results" toml:"ContextEnrichmentEventsResults"`
+	ContextEnrichmentEventsSubject  string `json:"context_enrichment_events_subject" toml:"ContextEnrichmentEventsSubject"`
+	ContextEnrichmentEventsLastDays int    `json:"context_enrichment_events_last_days" toml:"ContextEnrichmentEventsLastDays"`
 }
 
 // APIServerConfig holds configuration for the HTTP API server (WebUI backend).

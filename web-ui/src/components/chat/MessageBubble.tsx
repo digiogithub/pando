@@ -6,7 +6,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faRobot, faUser, faWrench, faChevronDown, faChevronRight,
   faBrain, faTerminal, faPen, faEye, faFolder, faGlobe,
-  faFileLines, faMagnifyingGlass,
+  faFileLines, faMagnifyingGlass, faUserSecret,
 } from '@fortawesome/free-solid-svg-icons'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import { format } from 'date-fns'
@@ -456,6 +456,66 @@ function MarkdownContent({ text, streaming }: { text: string; streaming?: boolea
   )
 }
 
+// ─── Persona / System message (collapsible) ───────────────────────────────────
+
+function PersonaRow({ text, timestamp }: { text: string; timestamp: string }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <div
+      style={{
+        margin: '1px 1rem',
+        borderLeft: `2px solid var(--fg-dim)`,
+        borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
+        overflow: 'hidden',
+        fontSize: 12,
+      }}
+    >
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          width: '100%',
+          padding: '0.25rem 0.625rem',
+          background: 'var(--surface)',
+          border: 'none',
+          cursor: 'pointer',
+          color: 'var(--fg-muted)',
+          textAlign: 'left',
+          minHeight: 26,
+        }}
+      >
+        <FontAwesomeIcon icon={faUserSecret} style={{ fontSize: 10, color: 'var(--fg-dim)', flexShrink: 0 }} />
+        <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 11, color: 'var(--fg)', flexShrink: 0 }}>
+          persona
+        </span>
+        <span style={{ flex: 1 }} />
+        <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--fg-dim)', flexShrink: 0 }}>
+          {timestamp}
+        </span>
+        <FontAwesomeIcon
+          icon={expanded ? faChevronDown : faChevronRight}
+          style={{ fontSize: 9, color: 'var(--fg-dim)', flexShrink: 0 }}
+        />
+      </button>
+      {expanded && (
+        <div
+          style={{
+            padding: '0.5rem 0.625rem',
+            background: 'var(--bg-secondary)',
+            borderTop: '1px solid color-mix(in srgb, var(--fg-dim) 20%, var(--border))',
+          }}
+        >
+          <pre style={{ ...codeBlockStyle, color: 'var(--fg-muted)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {text}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 interface MessageBubbleProps {
@@ -466,6 +526,7 @@ interface MessageBubbleProps {
 
 export default function MessageBubble({ message, streaming, streamingState }: MessageBubbleProps) {
   const isUser = message.role === 'user'
+  const isSystem = message.role === 'system'
   const timestamp = format(new Date(message.created_at), 'HH:mm')
 
   const textContent = message.content
@@ -478,7 +539,12 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
     (p) => p.type === 'tool_call' || p.type === 'tool_result',
   )
 
-  // ── User message: simple bubble
+  // ── System / Persona message: collapsible, hidden by default
+  if (isSystem) {
+    return <PersonaRow text={textContent} timestamp={timestamp} />
+  }
+
+  // ── User message: border-only style with light background
   if (isUser) {
     return (
       <div
@@ -493,9 +559,11 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
         <div
           style={{
             width: 32, height: 32, borderRadius: '50%',
-            background: 'var(--primary)', flexShrink: 0,
+            background: 'color-mix(in srgb, var(--primary) 15%, var(--bg))',
+            border: '2px solid var(--primary)',
+            flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--primary-fg)',
+            color: 'var(--accent)',
           }}
         >
           <FontAwesomeIcon icon={faUser} style={{ fontSize: 13 }} />
@@ -503,8 +571,9 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
         <div
           style={{
             maxWidth: 'min(680px, 80%)',
-            background: 'var(--primary)',
-            color: 'var(--primary-fg)',
+            background: 'color-mix(in srgb, var(--primary) 8%, var(--bg))',
+            color: 'var(--fg)',
+            border: '2px solid var(--primary)',
             borderRadius: 'var(--radius-md) var(--radius-sm) var(--radius-md) var(--radius-md)',
             padding: '0.625rem 0.875rem',
             fontSize: 14,
@@ -512,8 +581,8 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
             wordBreak: 'break-word',
           }}
         >
-          <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{textContent}</p>
-          <div style={{ fontSize: 10, marginTop: '0.375rem', color: 'rgba(255,255,255,0.65)', textAlign: 'left' }}>
+          <MarkdownContent text={textContent} />
+          <div style={{ fontSize: 10, marginTop: '0.375rem', color: 'var(--fg-dim)', textAlign: 'left' }}>
             {timestamp}
           </div>
         </div>
@@ -565,7 +634,7 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
         />
       ))}
 
-      {/* Text bubble — only if there is text content */}
+      {/* Text content — full width, no bubble constraint */}
       {(textContent || (streaming && !liveThinking && !liveTools)) && (
         <div
           style={{
@@ -577,17 +646,18 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
         >
           <div
             style={{
-              width: 32, height: 32, borderRadius: '50%',
+              width: 28, height: 28, borderRadius: '50%',
               background: 'var(--card-bg)', border: '1px solid var(--border)',
               flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--fg-muted)',
+              color: 'var(--fg-muted)', marginTop: 2,
             }}
           >
-            <FontAwesomeIcon icon={faRobot} style={{ fontSize: 13 }} />
+            <FontAwesomeIcon icon={faRobot} style={{ fontSize: 12 }} />
           </div>
           <div
             style={{
-              maxWidth: 'min(680px, 80%)',
+              flex: 1,
+              minWidth: 0,
               background: 'var(--card-bg)',
               color: 'var(--fg)',
               border: '1px solid var(--border)',
