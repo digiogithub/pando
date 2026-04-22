@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Build release archives for macOS using the native toolchain.
+# Must be run directly on a Mac (no cross-compilation).
+# Produces both arm64 and amd64 binaries using the local Xcode clang.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DIST_DIR="$REPO_ROOT/dist"
+WEB_UI_DIR="$REPO_ROOT/web-ui"
+MACOS_MIN_VERSION="${MACOS_MIN_VERSION:-11.0}"
+
+cd "$REPO_ROOT"
+
+if [[ "$(uname)" != "Darwin" ]]; then
+    echo "Error: this script must be run on macOS." >&2
+    exit 1
+fi
+
+if ! command -v clang >/dev/null 2>&1; then
+    echo "Error: clang not found. Install Xcode Command Line Tools: xcode-select --install" >&2
+    exit 1
+fi
+
+VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo dev)"
+LDFLAGS="-s -w -X github.com/digiogithub/pando/internal/version.Version=${VERSION}"
+
+echo "Version: ${VERSION}"
+echo "macOS minimum deployment target: ${MACOS_MIN_VERSION}"
+
+# Build embedded web-ui assets
+echo "Building web-ui embedded assets..."
+cd "$WEB_UI_DIR"
+bun install
+bun run build:embedded
+cd "$REPO_ROOT"
+
+mkdir -p "$DIST_DIR"
+
+build_archive() {
+    local goarch="$1"
+    local artifact_name="$2"
+
+    local out="$DIST_DIR/pando-${artifact_name}"
+    echo "Building darwin/${goarch} → pando-${artifact_name}.zip ..."
+    env GOOS=darwin GOARCH="$goarch" CGO_ENABLED=1 \
+        CGO_CFLAGS="-mmacosx-version-min=${MACOS_MIN_VERSION}" \
+        CGO_LDFLAGS="-mmacosx-version-min=${MACOS_MIN_VERSION}" \
+        go build -ldflags "$LDFLAGS" -o "$out" .
+    (cd "$DIST_DIR" && zip -qm "pando-${artifact_name}.zip" "pando-${artifact_name}")
+    echo "  → dist/pando-${artifact_name}.zip"
+}
+
+# Native arch (fast path — matches the machine running this script)
+HOST_ARCH="$(uname -m)"
+case "$HOST_ARCH" in
+    arm64)  build_archive arm64 darwin-arm64 ;;
+    x86_64) build_archive amd64 darwin-x64 ;;
+esac
+
+# Cross arch — clang on Apple Silicon can target x86_64 and vice-versa
+# via GOARCH + CGO compiler flags without zig.
+case "$HOST_ARCH" in
+    arm64)
+        echo "Building darwin/amd64 (cross via clang -arch x86_64) ..."
+        out="$DIST_DIR/pando-darwin-x64"
+        env GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 \
+            CC="clang -arch x86_64 -mmacosx-version-min=${MACOS_MIN_VERSION}" \
+            CXX="clang++ -arch x86_64 -mmacosx-version-min=${MACOS_MIN_VERSION}" \
+            CGO_CFLAGS="-arch x86_64 -mmacosx-version-min=${MACOS_MIN_VERSION}" \
+            CGO_LDFLAGS="-arch x86_64 -mmacosx-version-min=${MACOS_MIN_VERSION}" \
+            go build -ldflags "$LDFLAGS" -o "$out" .
+        (cd "$DIST_DIR" && zip -qm "pando-darwin-x64.zip" "pando-darwin-x64")
+        echo "  → dist/pando-darwin-x64.zip"
+        ;;
+    x86_64)
+        echo "Building darwin/arm64 (cross via clang -arch arm64) ..."
+        out="$DIST_DIR/pando-darwin-arm64"
+        env GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 \
+            CC="clang -arch arm64 -mmacosx-version-min=${MACOS_MIN_VERSION}" \
+            CXX="clang++ -arch arm64 -mmacosx-version-min=${MACOS_MIN_VERSION}" \
+            CGO_CFLAGS="-arch arm64 -mmacosx-version-min=${MACOS_MIN_VERSION}" \
+            CGO_LDFLAGS="-arch arm64 -mmacosx-version-min=${MACOS_MIN_VERSION}" \
+            go build -ldflags "$LDFLAGS" -o "$out" .
+        (cd "$DIST_DIR" && zip -qm "pando-darwin-arm64.zip" "pando-darwin-arm64")
+        echo "  → dist/pando-darwin-arm64.zip"
+        ;;
+esac
+
+echo ""
+echo "Done. Artifacts in dist/:"
+ls -lh "$DIST_DIR"/*.zip

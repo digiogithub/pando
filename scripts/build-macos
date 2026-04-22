@@ -47,23 +47,23 @@ cd "$REPO_ROOT"
 
 mkdir -p "$DIST_DIR"
 
-# Zig needs --sysroot passed to it directly (not via CGO_LDFLAGS) so it can
-# locate both dynamic libraries (.tbd) and frameworks (CoreFoundation, Security)
-# from the macOS SDK. CGO_LDFLAGS only carries extra flags for the linker stage
-# but zig resolves system paths from its own --sysroot before that.
+# When zig has --sysroot set, it prepends the sysroot to any absolute path
+# passed via -L/-F flags. So CGO_LDFLAGS must use sysroot-relative paths
+# (e.g. -L/usr/lib, not -L${SDKROOT}/usr/lib) to avoid doubled paths like
+# $SDKROOT/$SDKROOT/usr/lib which fail to open and yield "searched paths: none".
+#
+# CC/CXX carry --sysroot so zig resolves:
+#   -L/usr/lib                    → $SDKROOT/usr/lib        (libresolv.tbd)
+#   -L/usr/lib/system             → $SDKROOT/usr/lib/system
+#   -F/System/Library/Frameworks  → $SDKROOT/System/Library/Frameworks
 ZIG_SYSROOT=""
-if [ -n "$SDKROOT" ]; then
-    ZIG_SYSROOT="--sysroot=$SDKROOT"
-fi
-
-# CGO flags: headers via -isysroot; explicit -L/-F for libs/frameworks so zig
-# doesn't rely solely on path_first strategy which yields "searched paths: none".
 sysroot_env=()
 if [ -n "$SDKROOT" ]; then
+    ZIG_SYSROOT="--sysroot=$SDKROOT"
     sysroot_env+=(
         CGO_CFLAGS="-isysroot $SDKROOT"
         CGO_CXXFLAGS="-isysroot $SDKROOT"
-        CGO_LDFLAGS="-isysroot $SDKROOT -L${SDKROOT}/usr/lib -L${SDKROOT}/usr/lib/system -F${SDKROOT}/System/Library/Frameworks"
+        CGO_LDFLAGS="-L/usr/lib -L/usr/lib/system -F/System/Library/Frameworks"
     )
 fi
 
@@ -83,7 +83,7 @@ build_archive() {
 }
 
 # macOS amd64 (cross-compiled via zig)
-# --sysroot is passed directly to zig so it resolves system libs and frameworks
+# --sysroot in CC/CXX tells zig where to resolve system libs and frameworks.
 CC_DARWIN_AMD64="${ZIG} cc -target x86_64-macos.${MACOS_MIN_VERSION} ${ZIG_SYSROOT}"
 CXX_DARWIN_AMD64="${ZIG} c++ -target x86_64-macos.${MACOS_MIN_VERSION} ${ZIG_SYSROOT}"
 build_archive darwin amd64 darwin-x64 \
