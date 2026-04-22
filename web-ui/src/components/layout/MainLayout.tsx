@@ -93,7 +93,7 @@ export default function MainLayout() {
                 background: 'rgba(0,0,0,0.4)',
               }}
             />
-            <div className="sidebar-container">
+            <div className="sidebar-container" style={{ overflow: 'hidden', display: 'flex' }}>
               <Sidebar />
             </div>
           </>

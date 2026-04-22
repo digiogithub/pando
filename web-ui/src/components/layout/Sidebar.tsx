@@ -47,6 +47,7 @@ export default function Sidebar() {
         background: 'var(--sidebar-bg)',
         borderRight: '1px solid var(--border)',
         overflow: 'hidden',
+        height: '100%',
       }}
     >
       {/* Scrollable content */}
