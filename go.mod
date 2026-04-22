@@ -211,4 +211,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-replace github.com/madeindigio/go-tree-sitter => ~/www/MCP/Remembrances/go-tree-sitter
+replace github.com/madeindigio/go-tree-sitter => /www/MCP/Remembrances/go-tree-sitter

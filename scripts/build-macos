@@ -15,6 +15,11 @@ DIST_DIR="$REPO_ROOT/dist"
 WEB_UI_DIR="$REPO_ROOT/web-ui"
 ZIG="${ZIG:-zig}"
 MACOS_MIN_VERSION="${MACOS_MIN_VERSION:-11.0}"
+
+# Auto-detect SDKROOT on macOS if not set
+if [ -z "${SDKROOT:-}" ] && command -v xcrun >/dev/null 2>&1; then
+    SDKROOT="$(xcrun --show-sdk-path 2>/dev/null || true)"
+fi
 SDKROOT="${SDKROOT:-}"
 
 cd "$REPO_ROOT"
@@ -42,13 +47,15 @@ cd "$REPO_ROOT"
 
 mkdir -p "$DIST_DIR"
 
-# Build sysroot env vars when SDKROOT is set
+# Build sysroot env vars when SDKROOT is set.
+# -isysroot sets header search path; -L flags are needed for zig to locate
+# dynamic system libraries (.tbd stubs) like libresolv.
 sysroot_env=()
 if [ -n "$SDKROOT" ]; then
     sysroot_env+=(
         CGO_CFLAGS="-isysroot $SDKROOT"
         CGO_CXXFLAGS="-isysroot $SDKROOT"
-        CGO_LDFLAGS="-isysroot $SDKROOT"
+        CGO_LDFLAGS="-isysroot $SDKROOT -L${SDKROOT}/usr/lib -L${SDKROOT}/usr/lib/system"
     )
 fi
 
