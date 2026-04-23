@@ -1,0 +1,3 @@
+# Pando README
+
+Pando is a Go-based terminal AI assistant for developers. Key features documented here include: interactive TUI built with Bubble Tea; multi-provider model support (OpenAI, Anthropic Claude, Google Gemini, AWS Bedrock, Groq, Azure OpenAI, OpenRouter); session management; tool integration for commands, file search and code modification; vim-like editor; persistent SQLite storage; LSP integration; file change tracking; external editor support; named arguments for custom commands; JSON/TOML configuration; ACP server mode with HTTP+SSE, multiple sessions, permission system and auto-approval; Go and Python ACP client examples; API/project/session/tools/files/chat endpoints.

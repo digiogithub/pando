@@ -20,7 +20,6 @@ require (
 	github.com/charmbracelet/x/vt v0.0.0-20260305213658-fe36e8c10185
 	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327
 	github.com/chromedp/chromedp v0.14.2
-	github.com/madeindigio/acp-go-sdk v0.13.1
 	github.com/creack/pty v1.1.24
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gin-gonic/gin v1.10.0
@@ -28,6 +27,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/layeh/gopher-json v0.0.0-20201124131017-552bb3c4c3bf
 	github.com/lrstanley/bubblezone v0.0.0-20250315020633-c249a3fe1231
+	github.com/madeindigio/acp-go-sdk v0.13.1
 	github.com/madeindigio/go-tree-sitter v0.1.0
 	github.com/mark3labs/mcp-go v0.45.0
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6
@@ -82,6 +82,7 @@ require (
 	github.com/leaanthony/u v1.1.1 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mistakenelf/teacup v0.4.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/samber/lo v1.49.1 // indirect
 	github.com/tkrajina/go-reflector v0.5.8 // indirect

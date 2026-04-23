@@ -896,7 +896,7 @@ func NewChatPage(app *app.App) *ChatPageModel {
 		layout.WithBorder(false, true, false, false),
 	)
 
-	viewer := editor.NewFileViewer()
+	viewer := editor.NewSmartFileViewer()
 	tabBar := editor.NewTabBar()
 	editorWorkspace := newEditorWorkspace(viewer, tabBar)
 	editorPanel := layout.NewContainer(editorWorkspace)

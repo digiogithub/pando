@@ -1,0 +1,3 @@
+# Pando Lua Hooks
+
+Prompt composition can be customized with Lua hooks at multiple stages: provider selection, per-template section mutation, capability checks, prompt composition, and final system prompt modification. Helper functions expose config values, git status, local file loading, MCP server listing, and tool listing. Lua configuration supports script path, timeout, strict mode, and hot reload.

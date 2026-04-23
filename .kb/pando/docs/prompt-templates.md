@@ -1,0 +1,3 @@
+# Pando Prompt Template System
+
+Pando builds prompts through a layered composition pipeline: identity, provider template, agent template, base sections, conditional capabilities, and dynamic context. It supports multiple agent templates (coder, task, planner, explorer, title, summarizer), provider-specific templates (anthropic, openai, gemini, ollama), runtime capability detection (remembrances, orchestration, web search, code indexing, LSP), project/user template overrides, and Lua-based prompt customization.
