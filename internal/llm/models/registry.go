@@ -85,6 +85,71 @@ func capitalizeProvider(s string) string {
 	return string(runes)
 }
 
+// AccountModelRefreshParams holds the parameters needed to refresh models for a named account.
+type AccountModelRefreshParams struct {
+	AccountID    string
+	ProviderType ModelProvider
+	APIKey       string
+	BearerToken  string
+	BaseURL      string
+	ExtraHeaders map[string]string
+	// AllAccountsOfType is the count of non-disabled accounts sharing ProviderType,
+	// used to decide whether to prefix the model ID with AccountID.
+	AllAccountsOfType int
+}
+
+// RefreshProviderModelsForAccount fetches and registers models for a named provider account.
+// Model IDs are prefixed with accountID when AllAccountsOfType > 1 (disambiguates multiple accounts of same type).
+func RefreshProviderModelsForAccount(ctx context.Context, params AccountModelRefreshParams) error {
+	fetched, err := FetchModelsFromProvider(ctx, params.ProviderType, params.APIKey, params.BearerToken, params.BaseURL)
+	if err != nil {
+		return fmt.Errorf("fetch models from account %s (%s): %w", params.AccountID, params.ProviderType, err)
+	}
+
+	// Determine the prefix for model IDs
+	prefix := string(params.ProviderType)
+	if params.AllAccountsOfType > 1 {
+		prefix = params.AccountID
+	}
+
+	for _, fm := range fetched {
+		modelID := ModelID(fmt.Sprintf("%s.%s", prefix, fm.ID))
+
+		// Don't overwrite statically defined models (only relevant when prefix = provider type)
+		if _, exists := SupportedModels[modelID]; exists {
+			continue
+		}
+
+		name := fm.Name
+		if name == "" {
+			name = fm.ID
+		}
+
+		contextWindow := fm.ContextWindow
+		if contextWindow <= 0 {
+			contextWindow = 128_000
+		}
+		maxTokens := int64(4096)
+		if contextWindow < maxTokens {
+			maxTokens = contextWindow / 2
+		}
+
+		model := Model{
+			ID:               modelID,
+			Name:             fmt.Sprintf("%s: %s", capitalizeProvider(string(params.ProviderType)), name),
+			Provider:         params.ProviderType,
+			APIModel:         fm.ID,
+			ContextWindow:    contextWindow,
+			DefaultMaxTokens: maxTokens,
+			AccountID:        params.AccountID,
+		}
+
+		RegisterDynamicModel(model)
+	}
+
+	return nil
+}
+
 // GetAllModels returns both static and dynamic models
 func GetAllModels() map[ModelID]Model {
 	result := make(map[ModelID]Model, len(SupportedModels))

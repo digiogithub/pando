@@ -1215,56 +1215,69 @@ func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillM
 	}
 	logging.Debug("createAgentProvider", "agentName", string(agentName), "model", agentConfig.Model, "provider", model.Provider)
 
-	providerCfg, ok := cfg.Providers[model.Provider]
-	if !ok {
-		return nil, fmt.Errorf("provider %s not supported", model.Provider)
+	// Resolve the provider account: by AccountID if set, otherwise by provider type.
+	var acc *config.ProviderAccount
+	var err error
+	if model.AccountID != "" {
+		acc, err = config.ResolveProviderAccountByID(model.AccountID)
+	} else {
+		acc, err = config.ResolveProviderAccountForType(model.Provider)
 	}
-	if providerCfg.Disabled {
-		return nil, fmt.Errorf("provider %s is not enabled", model.Provider)
+	if err != nil {
+		return nil, fmt.Errorf("could not resolve provider account: %w", err)
 	}
+	if acc.Disabled {
+		return nil, fmt.Errorf("provider account %q is disabled", acc.ID)
+	}
+
 	maxTokens := model.DefaultMaxTokens
 	if agentConfig.MaxTokens > 0 {
 		maxTokens = agentConfig.MaxTokens
 	}
-	opts := []provider.ProviderClientOption{
-		provider.WithAPIKey(providerCfg.APIKey),
-		provider.WithUseOAuth(providerCfg.UseOAuth),
-		provider.WithModel(model),
-		provider.WithSystemMessage(buildSystemMessage(agentName, model.Provider, skillManager, activeSkillInstructions)),
-		provider.WithMaxTokens(maxTokens),
-	}
-	if model.Provider == models.ProviderOpenAI || model.Provider == models.ProviderLocal && model.CanReason {
-		opts = append(
-			opts,
-			provider.WithOpenAIOptions(
+
+	systemMessage := buildSystemMessage(agentName, model.Provider, skillManager, activeSkillInstructions)
+
+	// For models with special provider options (reasoning effort, thinking mode),
+	// build opts explicitly using resolved account credentials.
+	needsExtraOpts := (model.Provider == models.ProviderOpenAI && model.CanReason) ||
+		(model.Provider == models.ProviderLocal && model.CanReason) ||
+		(model.Provider == models.ProviderAnthropic && model.CanReason)
+
+	if needsExtraOpts {
+		opts := []provider.ProviderClientOption{
+			provider.WithAPIKey(acc.APIKey),
+			provider.WithUseOAuth(acc.UseOAuth),
+			provider.WithModel(model),
+			provider.WithSystemMessage(systemMessage),
+			provider.WithMaxTokens(maxTokens),
+		}
+		if (model.Provider == models.ProviderOpenAI || model.Provider == models.ProviderLocal) && model.CanReason {
+			opts = append(opts, provider.WithOpenAIOptions(
 				provider.WithReasoningEffort(agentConfig.ReasoningEffort),
-			),
-		)
-	}
-	if model.Provider == models.ProviderOllama {
-		opts = append(
-			opts,
-			provider.WithOpenAIOptions(
-				provider.WithOpenAIBaseURL(models.ResolveOllamaBaseURL(providerCfg.BaseURL)),
-			),
-		)
-	} else if model.Provider == models.ProviderAnthropic && model.CanReason {
-		opts = append(
-			opts,
-			provider.WithAnthropicOptions(
+			))
+		}
+		if model.Provider == models.ProviderAnthropic && model.CanReason {
+			opts = append(opts, provider.WithAnthropicOptions(
 				provider.WithAnthropicThinkingMode(defaultAnthropicThinkingMode(model, agentConfig.ThinkingMode)),
 				provider.WithAnthropicReasoningEffort(agentConfig.ReasoningEffort),
-			),
-		)
-	}
-	agentProvider, err := provider.NewProvider(
-		model.Provider,
-		opts...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("could not create provider: %v", err)
+			))
+		}
+		if acc.BaseURL != "" && model.Provider == models.ProviderOllama {
+			opts = append(opts, provider.WithOpenAIOptions(
+				provider.WithOpenAIBaseURL(models.ResolveOllamaBaseURL(acc.BaseURL)),
+			))
+		}
+		agentProvider, err := provider.NewProvider(model.Provider, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("could not create provider: %v", err)
+		}
+		return agentProvider, nil
 	}
 
+	agentProvider, err := provider.NewProviderFromAccount(*acc, model, maxTokens, systemMessage)
+	if err != nil {
+		return nil, fmt.Errorf("could not create provider: %w", err)
+	}
 	return agentProvider, nil
 }
 

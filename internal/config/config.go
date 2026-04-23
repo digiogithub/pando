@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/robfig/cron/v3"
@@ -429,11 +430,31 @@ type CronJobsConfig struct {
 	Jobs    []CronJob `json:"jobs,omitempty" toml:"Jobs"`
 }
 
+// ProviderAccount defines a named provider configuration (account).
+// It allows multiple accounts of the same provider type (e.g., two Anthropic API keys).
+// The ID field is a unique slug used to identify the account (e.g., "anthropic-work").
+type ProviderAccount struct {
+	ID           string               `json:"id" toml:"id"`
+	DisplayName  string               `json:"displayName,omitempty" toml:"displayName,omitempty"`
+	Type         models.ModelProvider `json:"type" toml:"type"`
+	APIKey       string               `json:"apiKey,omitempty" toml:"apiKey,omitempty"`
+	BaseURL      string               `json:"baseUrl,omitempty" toml:"baseUrl,omitempty"`
+	ExtraHeaders map[string]string    `json:"extraHeaders,omitempty" toml:"extraHeaders,omitempty"`
+	Disabled     bool                 `json:"disabled,omitempty" toml:"disabled,omitempty"`
+	UseOAuth     bool                 `json:"useOAuth,omitempty" toml:"useOAuth,omitempty"`
+}
+
 // Config is the main configuration structure for the application.
 type Config struct {
 	Data              Data                              `json:"data"`
 	WorkingDir        string                            `json:"wd,omitempty"`
 	MCPServers        map[string]MCPServer              `json:"mcpServers,omitempty"`
+	// ProviderAccounts is the new multi-account provider configuration.
+	// It supersedes the Providers map. On load, if empty and Providers is non-empty,
+	// the old map is automatically migrated to this list.
+	ProviderAccounts []ProviderAccount                 `json:"providerAccounts,omitempty" toml:"providerAccounts,omitempty"`
+	// Providers is the legacy single-account provider map. Kept for backward compatibility.
+	// New code should use ProviderAccounts instead.
 	Providers         map[models.ModelProvider]Provider `json:"providers,omitempty"`
 	LSP               map[string]LSPConfig              `json:"lsp,omitempty"`
 	Agents            map[AgentName]Agent               `json:"agents,omitempty"`
@@ -573,6 +594,7 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	if err := viper.Unmarshal(cfg); err != nil {
 		return cfg, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+	migrateProvidersToAccounts(cfg)
 	if err := decryptSensitiveConfigFields(cfg); err != nil {
 		return cfg, fmt.Errorf("failed to decrypt sensitive config fields: %w", err)
 	}
@@ -1494,6 +1516,23 @@ func Validate() error {
 		}
 	}
 
+	// Validate new-style provider accounts
+	for i, acc := range cfg.ProviderAccounts {
+		if acc.Disabled {
+			continue
+		}
+		if acc.Type == models.ProviderCopilot && hasCopilotCredentials() {
+			continue
+		}
+		if acc.Type == models.ProviderAnthropic && hasClaudeCredentials() {
+			continue
+		}
+		if providerAccountRequiresAPIKey(acc.Type) && strings.TrimSpace(acc.APIKey) == "" {
+			logging.Warn("provider account has no API key, marking as disabled", "account", acc.ID, "type", acc.Type)
+			cfg.ProviderAccounts[i].Disabled = true
+		}
+	}
+
 	// Validate LSP configurations
 	for language, lspConfig := range cfg.LSP {
 		if lspConfig.Command == "" && !lspConfig.Disabled {
@@ -1509,6 +1548,265 @@ func Validate() error {
 	}
 
 	return nil
+}
+
+// migrateProvidersToAccounts migrates the legacy Providers map to the new
+// ProviderAccounts slice if ProviderAccounts is empty and Providers has entries.
+// The migration is applied in memory only; it is persisted the next time
+// the config is saved via updateCfgFile.
+func migrateProvidersToAccounts(c *Config) {
+	if len(c.ProviderAccounts) > 0 {
+		return // already using new format
+	}
+	if len(c.Providers) == 0 {
+		return // nothing to migrate
+	}
+
+	providerNames := make([]string, 0, len(c.Providers))
+	for name := range c.Providers {
+		providerNames = append(providerNames, string(name))
+	}
+	sort.Strings(providerNames)
+
+	for _, name := range providerNames {
+		p := c.Providers[models.ModelProvider(name)]
+		c.ProviderAccounts = append(c.ProviderAccounts, ProviderAccount{
+			ID:          name,
+			DisplayName: capitalizeFirst(name),
+			Type:        models.ModelProvider(name),
+			APIKey:      p.APIKey,
+			BaseURL:     p.BaseURL,
+			Disabled:    p.Disabled,
+			UseOAuth:    p.UseOAuth,
+		})
+	}
+	logging.Info("migrated legacy providers to provider accounts", "count", len(c.ProviderAccounts))
+}
+
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
+}
+
+// GetProviderAccounts returns all configured provider accounts.
+func GetProviderAccounts() []ProviderAccount {
+	if cfg == nil {
+		return nil
+	}
+	migrateProvidersToAccounts(cfg)
+	result := make([]ProviderAccount, len(cfg.ProviderAccounts))
+	copy(result, cfg.ProviderAccounts)
+	return result
+}
+
+// GetProviderAccount returns the provider account with the given ID.
+func GetProviderAccount(id string) (*ProviderAccount, bool) {
+	if cfg == nil {
+		return nil, false
+	}
+	for i := range cfg.ProviderAccounts {
+		if cfg.ProviderAccounts[i].ID == id {
+			acc := cfg.ProviderAccounts[i]
+			return &acc, true
+		}
+	}
+	return nil, false
+}
+
+// AddProviderAccount adds a new provider account and persists the change.
+func AddProviderAccount(account ProviderAccount) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	if account.ID == "" {
+		return fmt.Errorf("provider account ID is required")
+	}
+	if account.Type == "" {
+		return fmt.Errorf("provider account type is required")
+	}
+	for _, existing := range cfg.ProviderAccounts {
+		if existing.ID == account.ID {
+			return fmt.Errorf("provider account with ID %q already exists", account.ID)
+		}
+	}
+	cfg.ProviderAccounts = append(cfg.ProviderAccounts, account)
+	if err := updateCfgFile(func(c *Config) {
+		c.ProviderAccounts = append(c.ProviderAccounts, account)
+	}); err != nil {
+		cfg.ProviderAccounts = cfg.ProviderAccounts[:len(cfg.ProviderAccounts)-1]
+		return err
+	}
+	return nil
+}
+
+// UpdateProviderAccount updates an existing provider account by ID.
+// If the APIKey in updated is empty, the existing key is preserved.
+func UpdateProviderAccount(id string, updated ProviderAccount) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	idx := -1
+	for i := range cfg.ProviderAccounts {
+		if cfg.ProviderAccounts[i].ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("provider account %q not found", id)
+	}
+	if strings.TrimSpace(updated.APIKey) == "" {
+		updated.APIKey = cfg.ProviderAccounts[idx].APIKey
+	}
+	updated.ID = id
+	old := cfg.ProviderAccounts[idx]
+	cfg.ProviderAccounts[idx] = updated
+	if err := updateCfgFile(func(c *Config) {
+		for i := range c.ProviderAccounts {
+			if c.ProviderAccounts[i].ID == id {
+				c.ProviderAccounts[i] = updated
+				return
+			}
+		}
+	}); err != nil {
+		cfg.ProviderAccounts[idx] = old
+		return err
+	}
+	return nil
+}
+
+// DeleteProviderAccount removes the provider account with the given ID.
+func DeleteProviderAccount(id string) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	idx := -1
+	for i := range cfg.ProviderAccounts {
+		if cfg.ProviderAccounts[i].ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("provider account %q not found", id)
+	}
+	removed := cfg.ProviderAccounts[idx]
+	cfg.ProviderAccounts = append(cfg.ProviderAccounts[:idx], cfg.ProviderAccounts[idx+1:]...)
+	if err := updateCfgFile(func(c *Config) {
+		for i := range c.ProviderAccounts {
+			if c.ProviderAccounts[i].ID == id {
+				c.ProviderAccounts = append(c.ProviderAccounts[:i], c.ProviderAccounts[i+1:]...)
+				return
+			}
+		}
+	}); err != nil {
+		newSlice := make([]ProviderAccount, len(cfg.ProviderAccounts)+1)
+		copy(newSlice[:idx], cfg.ProviderAccounts[:idx])
+		newSlice[idx] = removed
+		copy(newSlice[idx+1:], cfg.ProviderAccounts[idx:])
+		cfg.ProviderAccounts = newSlice
+		return err
+	}
+	return nil
+}
+
+// SetProviderAccountDisabled enables or disables the provider account with the given ID.
+func SetProviderAccountDisabled(id string, disabled bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	for i := range cfg.ProviderAccounts {
+		if cfg.ProviderAccounts[i].ID == id {
+			old := cfg.ProviderAccounts[i]
+			cfg.ProviderAccounts[i].Disabled = disabled
+			if err := updateCfgFile(func(c *Config) {
+				for j := range c.ProviderAccounts {
+					if c.ProviderAccounts[j].ID == id {
+						c.ProviderAccounts[j].Disabled = disabled
+						return
+					}
+				}
+			}); err != nil {
+				cfg.ProviderAccounts[i] = old
+				return err
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("provider account %q not found", id)
+}
+
+// providerAccountRequiresAPIKey returns true if the given provider type requires an API key.
+func providerAccountRequiresAPIKey(providerType models.ModelProvider) bool {
+	switch providerType {
+	case models.ProviderCopilot, models.ProviderOllama:
+		return false
+	default:
+		return true
+	}
+}
+
+// ResolveProviderAccountByID returns the ProviderAccount with the given ID.
+// Returns an error if the config is not loaded or no account with that ID exists.
+func ResolveProviderAccountByID(id string) (*ProviderAccount, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config not loaded")
+	}
+	if id == "" {
+		return nil, fmt.Errorf("account ID is empty")
+	}
+	for i := range cfg.ProviderAccounts {
+		if cfg.ProviderAccounts[i].ID == id {
+			acc := cfg.ProviderAccounts[i]
+			return &acc, nil
+		}
+	}
+	return nil, fmt.Errorf("provider account %q not found", id)
+}
+
+// ResolveProviderAccountForType returns the first non-disabled ProviderAccount of the given
+// provider type. It first checks the legacy Providers map for backward compatibility, then
+// looks in ProviderAccounts. Returns an error if no suitable account is found.
+func ResolveProviderAccountForType(providerType models.ModelProvider) (*ProviderAccount, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config not loaded")
+	}
+	// First check legacy Providers map for backward compatibility
+	if p, ok := cfg.Providers[providerType]; ok && !p.Disabled {
+		return &ProviderAccount{
+			ID:       string(providerType),
+			Type:     providerType,
+			APIKey:   p.APIKey,
+			BaseURL:  p.BaseURL,
+			Disabled: p.Disabled,
+			UseOAuth: p.UseOAuth,
+		}, nil
+	}
+	for i := range cfg.ProviderAccounts {
+		acc := cfg.ProviderAccounts[i]
+		if acc.Type == providerType && !acc.Disabled {
+			return &acc, nil
+		}
+	}
+	return nil, fmt.Errorf("no configured account for provider %s", providerType)
+}
+
+// AccountsForProviderType returns all non-disabled accounts of the given provider type.
+func AccountsForProviderType(providerType models.ModelProvider) []ProviderAccount {
+	if cfg == nil {
+		return nil
+	}
+	var result []ProviderAccount
+	for _, acc := range cfg.ProviderAccounts {
+		if acc.Type == providerType && !acc.Disabled {
+			result = append(result, acc)
+		}
+	}
+	return result
 }
 
 // getProviderAPIKey gets the API key for a provider from environment variables

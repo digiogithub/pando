@@ -339,3 +339,109 @@ MaxTokens = 4096
 		t.Fatalf("gemini api key = %q, want %q", providerCfg.APIKey, "toml-in-yaml-file-key")
 	}
 }
+
+func TestMigrateProvidersToAccounts(t *testing.T) {
+	t.Cleanup(func() { cfg = nil; viper.Reset() })
+
+	cfg = &Config{
+		Providers: map[models.ModelProvider]Provider{
+			models.ProviderAnthropic: {APIKey: "sk-ant-test"},
+			models.ProviderOpenAI:    {APIKey: "sk-openai-test", BaseURL: "https://api.openai.com"},
+		},
+		Agents: make(map[AgentName]Agent),
+		LSP:    make(map[string]LSPConfig),
+	}
+
+	migrateProvidersToAccounts(cfg)
+
+	if len(cfg.ProviderAccounts) != 2 {
+		t.Fatalf("expected 2 accounts after migration, got %d", len(cfg.ProviderAccounts))
+	}
+
+	var anthAcc *ProviderAccount
+	for i := range cfg.ProviderAccounts {
+		if cfg.ProviderAccounts[i].ID == "anthropic" {
+			anthAcc = &cfg.ProviderAccounts[i]
+		}
+	}
+	if anthAcc == nil {
+		t.Fatal("expected account with ID 'anthropic' after migration")
+	}
+	if anthAcc.APIKey != "sk-ant-test" {
+		t.Fatalf("expected APIKey 'sk-ant-test', got %q", anthAcc.APIKey)
+	}
+	if anthAcc.Type != models.ProviderAnthropic {
+		t.Fatalf("expected Type %q, got %q", models.ProviderAnthropic, anthAcc.Type)
+	}
+}
+
+func TestMigrateProvidersToAccountsSkipsIfAlreadyMigrated(t *testing.T) {
+	t.Cleanup(func() { cfg = nil; viper.Reset() })
+
+	cfg = &Config{
+		Providers: map[models.ModelProvider]Provider{
+			models.ProviderAnthropic: {APIKey: "sk-old"},
+		},
+		ProviderAccounts: []ProviderAccount{
+			{ID: "my-account", Type: models.ProviderAnthropic, APIKey: "sk-new"},
+		},
+		Agents: make(map[AgentName]Agent),
+		LSP:    make(map[string]LSPConfig),
+	}
+
+	migrateProvidersToAccounts(cfg)
+
+	if len(cfg.ProviderAccounts) != 1 {
+		t.Fatalf("expected 1 account (no migration), got %d", len(cfg.ProviderAccounts))
+	}
+	if cfg.ProviderAccounts[0].APIKey != "sk-new" {
+		t.Fatal("migration incorrectly overwrote existing ProviderAccounts")
+	}
+}
+
+func TestGetProviderAccountCRUD(t *testing.T) {
+	t.Cleanup(func() { cfg = nil; viper.Reset() })
+
+	cfg = &Config{
+		ProviderAccounts: []ProviderAccount{},
+		Agents:           make(map[AgentName]Agent),
+		LSP:              make(map[string]LSPConfig),
+	}
+
+	// Directly add to bypass disk writes in tests
+	cfg.ProviderAccounts = append(cfg.ProviderAccounts, ProviderAccount{
+		ID:          "test-anthropic",
+		DisplayName: "Test Anthropic",
+		Type:        models.ProviderAnthropic,
+		APIKey:      "sk-ant-xxx",
+	})
+
+	found, ok := GetProviderAccount("test-anthropic")
+	if !ok {
+		t.Fatal("expected to find account 'test-anthropic'")
+	}
+	if found.APIKey != "sk-ant-xxx" {
+		t.Fatalf("expected APIKey 'sk-ant-xxx', got %q", found.APIKey)
+	}
+
+	all := GetProviderAccounts()
+	if len(all) != 1 {
+		t.Fatalf("expected 1 account, got %d", len(all))
+	}
+
+	byType := AccountsForProviderType(models.ProviderAnthropic)
+	if len(byType) != 1 {
+		t.Fatalf("expected 1 anthropic account, got %d", len(byType))
+	}
+
+	_, notFound := GetProviderAccount("nonexistent")
+	if notFound {
+		t.Fatal("expected not to find account 'nonexistent'")
+	}
+}
+
+func TestProviderOpenAICompatibleExists(t *testing.T) {
+	if models.ProviderOpenAICompatible != "openai-compatible" {
+		t.Fatalf("expected ProviderOpenAICompatible = 'openai-compatible', got %q", models.ProviderOpenAICompatible)
+	}
+}

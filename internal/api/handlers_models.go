@@ -18,6 +18,7 @@ type ModelInfo struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
 	Provider    string   `json:"provider"`
+	AccountID   string   `json:"accountId,omitempty"`
 	Description string   `json:"description"`
 	Badges      []string `json:"badges"`
 }
@@ -37,16 +38,9 @@ func badgesForModel(id string) []string {
 	}
 }
 
-// providerResult holds models or an error for a single provider fetch.
-type providerResult struct {
-	provider models.ModelProvider
-	items    []ModelInfo
-	err      string
-}
-
 // handleListModels handles GET /api/v1/models.
-// Fetches models from all configured (non-disabled) providers in parallel and
-// returns both the model list and a per-provider error map for diagnostics.
+// Fetches models from all configured (non-disabled) provider accounts in parallel and
+// returns both the model list and a per-account error map for diagnostics.
 func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -62,23 +56,30 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	type providerEntry struct {
-		provider    models.ModelProvider
-		cfg         config.Provider
+	accounts := config.GetProviderAccounts()
+
+	// Count non-disabled accounts per provider type (for display label disambiguation)
+	typeCount := make(map[models.ModelProvider]int)
+	for _, acc := range accounts {
+		if !acc.Disabled {
+			typeCount[acc.Type]++
+		}
+	}
+
+	type accountEntry struct {
+		account     config.ProviderAccount
 		bearerToken string
 		skip        bool
 		skipReason  string
 	}
 
-	entries := make([]providerEntry, 0, len(cfg.Providers))
-	for provider, providerCfg := range cfg.Providers {
-		if providerCfg.Disabled {
+	entries := make([]accountEntry, 0, len(accounts))
+	for _, acc := range accounts {
+		if acc.Disabled {
 			continue
 		}
-
-		entry := providerEntry{provider: provider, cfg: providerCfg}
-
-		if provider == models.ProviderCopilot {
+		entry := accountEntry{account: acc}
+		if acc.Type == models.ProviderCopilot {
 			if token, err := auth.LoadGitHubOAuthToken(); err == nil && token != "" {
 				entry.bearerToken = token
 			} else if session, err := auth.LoadCopilotSession(); err == nil && session != nil {
@@ -89,11 +90,17 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 				entry.skipReason = "no GitHub OAuth token found — run 'pando auth login'"
 			}
 		}
-
 		entries = append(entries, entry)
 	}
 
-	resultCh := make(chan providerResult, len(entries))
+	type accountResult struct {
+		accountID string
+		provider  models.ModelProvider
+		items     []ModelInfo
+		err       string
+	}
+
+	resultCh := make(chan accountResult, len(entries))
 	var wg sync.WaitGroup
 
 	for _, e := range entries {
@@ -101,18 +108,19 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-
+			acc := e.account
 			if e.skip {
-				resultCh <- providerResult{provider: e.provider, err: e.skipReason}
+				resultCh <- accountResult{accountID: acc.ID, provider: acc.Type, err: e.skipReason}
 				return
 			}
 
-			fetched, err := models.FetchModelsFromProvider(ctx, e.provider, e.cfg.APIKey, e.bearerToken, e.cfg.BaseURL)
+			fetched, err := models.FetchModelsFromProvider(ctx, acc.Type, acc.APIKey, e.bearerToken, acc.BaseURL)
 			if err != nil {
-				resultCh <- providerResult{provider: e.provider, err: err.Error()}
+				resultCh <- accountResult{accountID: acc.ID, provider: acc.Type, err: err.Error()}
 				return
 			}
 
+			sameTypeCount := typeCount[acc.Type]
 			items := make([]ModelInfo, 0, len(fetched))
 			for _, m := range fetched {
 				name := m.Name
@@ -133,22 +141,29 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 					models.RegisterDynamicModel(models.Model{
 						ID:               modelID,
 						Name:             name,
-						Provider:         e.provider,
+						Provider:         acc.Type,
 						APIModel:         m.ID,
 						ContextWindow:    contextWindow,
 						DefaultMaxTokens: maxTokens,
+						AccountID:        acc.ID,
 					})
 				}
 
+				// Disambiguate display name when multiple accounts share the same provider type
+				displayName := name
+				if sameTypeCount > 1 {
+					displayName = acc.ID + ": " + name
+				}
 				items = append(items, ModelInfo{
 					ID:          string(modelID),
-					Name:        name,
-					Provider:    string(e.provider),
+					Name:        displayName,
+					Provider:    string(acc.Type),
+					AccountID:   acc.ID,
 					Description: m.Description,
 					Badges:      badgesForModel(m.ID),
 				})
 			}
-			resultCh <- providerResult{provider: e.provider, items: items}
+			resultCh <- accountResult{accountID: acc.ID, provider: acc.Type, items: items}
 		}()
 	}
 
@@ -160,7 +175,11 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 
 	for res := range resultCh {
 		if res.err != "" {
-			providerErrors[string(res.provider)] = res.err
+			key := res.accountID
+			if key == "" {
+				key = string(res.provider)
+			}
+			providerErrors[key] = res.err
 		} else {
 			allModels = append(allModels, res.items...)
 		}

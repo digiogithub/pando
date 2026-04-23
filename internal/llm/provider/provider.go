@@ -219,11 +219,60 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 			options: clientOptions,
 			client:  newOpenAIClient(clientOptions),
 		}, nil)
+	case models.ProviderOpenAICompatible:
+		// openai-compatible endpoints use the standard OpenAI client with a custom base URL.
+		// BaseURL and ExtraHeaders must be set via WithOpenAIOptions before calling NewProvider.
+		return wrapInstrumented(&baseProvider[OpenAIClient]{
+			options: clientOptions,
+			client:  newOpenAIClient(clientOptions),
+		}, nil)
 	case models.ProviderMock:
 		// TODO: implement mock client for test
 		panic("not implemented")
 	}
 	return nil, fmt.Errorf("provider not supported: %s", providerName)
+}
+
+// NewProviderFromAccount creates a Provider from a named ProviderAccount configuration.
+// This is the preferred way to create providers when using the multi-account system.
+func NewProviderFromAccount(account config.ProviderAccount, model models.Model, maxTokens int64, systemMessage string) (Provider, error) {
+	opts := []ProviderClientOption{
+		WithAPIKey(account.APIKey),
+		WithUseOAuth(account.UseOAuth),
+		WithModel(model),
+		WithMaxTokens(maxTokens),
+		WithSystemMessage(systemMessage),
+	}
+
+	providerType := account.Type
+
+	// For openai-compatible, apply baseURL and extraHeaders via OpenAI options
+	if providerType == models.ProviderOpenAICompatible {
+		var openaiOpts []OpenAIOption
+		if account.BaseURL != "" {
+			openaiOpts = append(openaiOpts, WithOpenAIBaseURL(account.BaseURL))
+		}
+		if len(account.ExtraHeaders) > 0 {
+			openaiOpts = append(openaiOpts, WithOpenAIExtraHeaders(account.ExtraHeaders))
+		}
+		if len(openaiOpts) > 0 {
+			opts = append(opts, WithOpenAIOptions(openaiOpts...))
+		}
+		// openai-compatible uses the OpenAI client
+		return NewProvider(models.ProviderOpenAICompatible, opts...)
+	}
+
+	// For providers that support a custom BaseURL (ollama, openai, etc.), pass it via their option
+	if account.BaseURL != "" {
+		switch providerType {
+		case models.ProviderOllama:
+			opts = append(opts, WithOpenAIOptions(WithOpenAIBaseURL(account.BaseURL)))
+		case models.ProviderOpenAI:
+			opts = append(opts, WithOpenAIOptions(WithOpenAIBaseURL(account.BaseURL)))
+		}
+	}
+
+	return NewProvider(providerType, opts...)
 }
 
 func (p *baseProvider[C]) cleanMessages(messages []message.Message) (cleaned []message.Message) {

@@ -21,6 +21,19 @@ type Model struct {
 	CanReason               bool          `json:"can_reason"`
 	SupportsReasoningEffort bool          `json:"supports_reasoning_effort"`
 	SupportsAttachments     bool          `json:"supports_attachments"`
+	// AccountID is the ProviderAccount.ID that this model belongs to.
+	// Empty means the model comes from the legacy single-account system.
+	AccountID string `json:"account_id,omitempty"`
+}
+
+// DisplayLabel returns the display label for a model.
+// sameTypeAccountCount is how many non-disabled accounts share this model's provider type.
+// If > 1, the account ID is prefixed to disambiguate.
+func (m Model) DisplayLabel(sameTypeAccountCount int) string {
+	if m.AccountID == "" || sameTypeAccountCount <= 1 {
+		return m.Name
+	}
+	return m.AccountID + ": " + m.Name
 }
 
 // Model IDs
@@ -44,9 +57,10 @@ var ProviderPopularity = map[ModelProvider]int{
 	ProviderGemini:     5,
 	ProviderGROQ:       6,
 	ProviderOpenRouter: 7,
-	ProviderBedrock:    8,
-	ProviderAzure:      9,
-	ProviderVertexAI:   10,
+	ProviderBedrock:          8,
+	ProviderAzure:            9,
+	ProviderVertexAI:         10,
+	ProviderOpenAICompatible: 11,
 }
 
 var SupportedModels = map[ModelID]Model{

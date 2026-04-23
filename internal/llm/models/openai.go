@@ -1,7 +1,8 @@
 package models
 
 const (
-	ProviderOpenAI ModelProvider = "openai"
+	ProviderOpenAI           ModelProvider = "openai"
+	ProviderOpenAICompatible ModelProvider = "openai-compatible"
 
 	// Model IDs match the dynamic format: "openai.{api-id}"
 	GPT41        ModelID = "openai.gpt-4.1"

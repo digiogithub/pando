@@ -1078,36 +1078,61 @@ func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat
 	return nil
 }
 
-// refreshDynamicModels fetches model lists from configured providers asynchronously.
+// refreshDynamicModels fetches model lists from configured provider accounts asynchronously.
 func (app *App) refreshDynamicModels(ctx context.Context) {
 	cfg := config.Get()
 	if cfg == nil {
 		return
 	}
-	logging.Debug("Refreshing dynamic models", "providerCount", len(cfg.Providers))
 
-	for providerID, providerCfg := range cfg.Providers {
-		if providerCfg.Disabled {
+	accounts := config.GetProviderAccounts()
+	logging.Debug("Refreshing dynamic models", "accountCount", len(accounts))
+
+	// Count non-disabled accounts per provider type (needed for model ID prefix logic)
+	typeCount := make(map[models.ModelProvider]int)
+	for _, acc := range accounts {
+		if !acc.Disabled {
+			typeCount[acc.Type]++
+		}
+	}
+
+	for _, acc := range accounts {
+		if acc.Disabled {
 			continue
 		}
 
-		apiKey := providerCfg.APIKey
+		apiKey := acc.APIKey
 		var bearerToken string
-		if providerID == models.ProviderCopilot {
+
+		switch acc.Type {
+		case models.ProviderCopilot:
 			token, err := auth.LoadGitHubOAuthToken()
 			if err != nil || token == "" {
 				continue
 			}
 			bearerToken = token
 			apiKey = ""
-		} else if providerID != models.ProviderOllama && apiKey == "" {
-			continue
+		case models.ProviderOllama:
+			// Ollama does not require an API key
+		default:
+			if apiKey == "" {
+				continue
+			}
 		}
 
-		if err := models.RefreshProviderModels(ctx, providerID, apiKey, bearerToken, providerCfg.BaseURL); err != nil {
-			logging.Debug("Failed to refresh models from provider", "provider", providerID, "error", err)
+		params := models.AccountModelRefreshParams{
+			AccountID:         acc.ID,
+			ProviderType:      acc.Type,
+			APIKey:            apiKey,
+			BearerToken:       bearerToken,
+			BaseURL:           acc.BaseURL,
+			ExtraHeaders:      acc.ExtraHeaders,
+			AllAccountsOfType: typeCount[acc.Type],
+		}
+		if err := models.RefreshProviderModelsForAccount(ctx, params); err != nil {
+			logging.Debug("Failed to refresh models from account", "account", acc.ID, "error", err)
 		} else {
-			logging.Debug("Refreshed models from provider", "provider", providerID)
+			logging.Debug("Refreshed models from account", "account", acc.ID)
 			if err := models.SaveModelCache(); err != nil {
 				logging.Debug("Failed to save model cache", "error", err)
 			}

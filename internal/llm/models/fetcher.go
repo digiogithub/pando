@@ -39,6 +39,8 @@ func FetchModelsFromProvider(ctx context.Context, provider ModelProvider, apiKey
 		return fetchOpenRouterModels(ctx, apiKey)
 	case ProviderXAI:
 		return fetchXAIModels(ctx, apiKey)
+	case ProviderOpenAICompatible:
+		return fetchOpenAICompatibleModels(ctx, apiKey, baseURL)
 	default:
 		return nil, fmt.Errorf("provider %s does not support model listing", provider)
 	}
@@ -393,6 +395,39 @@ func fetchOpenRouterModels(ctx context.Context, apiKey string) ([]FetchedModel, 
 			})
 		}
 		return result, nil
+	})
+}
+
+func fetchOpenAICompatibleModels(ctx context.Context, apiKey, baseURL string) ([]FetchedModel, error) {
+	if strings.TrimSpace(baseURL) == "" {
+		return nil, fmt.Errorf("openai-compatible provider requires a base URL")
+	}
+	endpoint := strings.TrimRight(baseURL, "/") + "/models"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
+		var result struct {
+			Data []struct {
+				ID      string `json:"id"`
+				Created int64  `json:"created"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("decode response: %w", err)
+		}
+
+		fetched := make([]FetchedModel, 0, len(result.Data))
+		for _, m := range result.Data {
+			fetched = append(fetched, FetchedModel{ID: m.ID, Created: m.Created})
+		}
+		return fetched, nil
 	})
 }
 
