@@ -43,9 +43,8 @@ Thumbs.db
 
 **/node_modules/
 node_modules/
-
-
 .pando/
+/pando
 
 *.db
 dist/
