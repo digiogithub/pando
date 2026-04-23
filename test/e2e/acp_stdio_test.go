@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // pandoBin is the path to the built pando binary, built once per test run.

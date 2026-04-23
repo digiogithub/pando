@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 func main() {

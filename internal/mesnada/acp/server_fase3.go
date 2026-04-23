@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
-	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/digiogithub/pando/internal/message"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // AgentEventType represents the type of agent event
@@ -85,6 +85,12 @@ type ACPSessionInfo struct {
 	ID        string
 	Title     string
 	UpdatedAt int64
+	// PromptTokens are the tokens consumed by the prompt (input + cache writes).
+	PromptTokens int64
+	// CompletionTokens are the tokens produced by the model (output + cache reads).
+	CompletionTokens int64
+	// ContextWindow is the total context window size for the current model (0 = unknown).
+	ContextWindow int64
 }
 
 // SessionService defines the minimal interface needed by the ACP agent.
@@ -435,6 +441,33 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 		return acpsdk.PromptResponse{}, fmt.Errorf("prompt processing failed: %w", err)
 	}
 
+	// Send usage_update and session_info_update after the prompt completes.
+	// Fetch the latest session state so we have accurate token counts and title.
+	if sessionInfo, sessErr := a.sessionService.GetSession(ctx, acpSession.PandoSessionID()); sessErr == nil {
+		// usage_update: report tokens currently in context.
+		// used = input + output tokens for this turn; size = model context window.
+		used := int(sessionInfo.PromptTokens + sessionInfo.CompletionTokens)
+		size := int(sessionInfo.ContextWindow)
+		if size == 0 {
+			size = 200000 // safe default for modern frontier models
+		}
+		if used > 0 {
+			if sendErr := acpSession.SendUpdate(acpsdk.UpdateUsage(used, size)); sendErr != nil {
+				a.logger.Printf("[ACP AGENT] Failed to send usage_update: %v", sendErr)
+			}
+		}
+
+		// session_info_update: send the current session title so clients can
+		// display it in session lists without requiring a full ListSessions call.
+		if sessionInfo.Title != "" && sessionInfo.Title != "ACP Session" {
+			if sendErr := acpSession.SendUpdate(acpsdk.UpdateSessionTitle(sessionInfo.Title)); sendErr != nil {
+				a.logger.Printf("[ACP AGENT] Failed to send session_info_update: %v", sendErr)
+			}
+		}
+	} else {
+		a.logger.Printf("[ACP AGENT] Could not fetch session for post-prompt updates: %v", sessErr)
+	}
+
 	a.logger.Printf("[ACP AGENT] Prompt completed: SessionID=%s, StopReason=%s",
 		req.SessionId, stopReason)
 
@@ -517,10 +550,6 @@ func (a *PandoACPAgent) processPromptWithAgent(
 ) (acpsdk.StopReason, error) {
 	pandoSessionID := acpSession.PandoSessionID()
 
-	// 6c: TODO: send token usage update via SessionUpdate after prompt completion.
-	// The current acpsdk v0.6.3 SessionUpdate type does not include a usage/token variant.
-	// When the SDK adds UsageUpdate support, send it here after the event loop completes.
-
 	eventChan, err := a.agentService.Run(ctx, pandoSessionID, promptText, attachments...)
 	if err != nil {
 		return "", fmt.Errorf("failed to start agent: %w", err)
@@ -567,6 +596,25 @@ func (a *PandoACPAgent) processPromptWithAgent(
 		case AgentEventTypeToolCall:
 			if event.ToolCall != nil {
 				tc := event.ToolCall
+
+				// TodoWrite → plan: suppress all tool_call notifications and emit
+				// a plan only when the full input is assembled (Finished=true).
+				if strings.EqualFold(tc.Name, "TodoWrite") {
+					a.pendingToolCallsMu.Lock()
+					a.pendingToolCalls[tc.ID] = tc.Input
+					// Mark as registered so processAgentResponse skips it.
+					a.startedToolCalls[tc.ID] = true
+					a.pendingToolCallsMu.Unlock()
+					if tc.Finished {
+						if entries := parseTodoWritePlan(tc.Input); len(entries) > 0 {
+							if err := acpSession.SendUpdate(acpsdk.UpdatePlan(entries...)); err != nil {
+								a.logger.Printf("[ACP AGENT] Failed to send plan update (streaming): %v", err)
+							}
+						}
+					}
+					continue
+				}
+
 				kind := mapToolKind(tc.Name)
 				rawInput := parseJSONInput(tc.Input)
 				title := toolDisplayTitle(tc.Name, rawInput, acpSession.WorkDir)
@@ -650,6 +698,17 @@ func (a *PandoACPAgent) processPromptWithAgent(
 		case AgentEventTypeToolResult:
 			if event.ToolResult != nil {
 				tr := event.ToolResult
+
+				// TodoWrite results are suppressed — the plan notification already
+				// carries all relevant information. Clean up pending state and skip.
+				if strings.EqualFold(tr.Name, "TodoWrite") {
+					a.pendingToolCallsMu.Lock()
+					delete(a.pendingToolCalls, tr.ToolCallID)
+					delete(a.startedToolCalls, tr.ToolCallID)
+					a.pendingToolCallsMu.Unlock()
+					continue
+				}
+
 				status := acpsdk.ToolCallStatusCompleted
 				if tr.IsError {
 					status = acpsdk.ToolCallStatusFailed
@@ -936,6 +995,21 @@ func (a *PandoACPAgent) processAgentResponse(
 	// the streaming path always inserts the key (even with an empty-string value) when
 	// it sends StartToolCall, so a missing key means StartToolCall was never sent.
 	for _, toolCall := range msg.ToolCalls() {
+		// TodoWrite → plan: convert todo list into an ACP plan notification so
+		// clients render it as a structured plan instead of a plain tool call.
+		if strings.EqualFold(toolCall.Name, "TodoWrite") {
+			if entries := parseTodoWritePlan(toolCall.Input); len(entries) > 0 {
+				if err := acpSession.SendUpdate(acpsdk.UpdatePlan(entries...)); err != nil {
+					a.logger.Printf("[ACP AGENT] Failed to send plan update: %v", err)
+				}
+			}
+			// Mark as registered so the streaming path does not also emit StartToolCall.
+			a.pendingToolCallsMu.Lock()
+			a.pendingToolCalls[toolCall.ID] = toolCall.Input
+			a.pendingToolCallsMu.Unlock()
+			continue
+		}
+
 		a.pendingToolCallsMu.Lock()
 		_, alreadyRegistered := a.pendingToolCalls[toolCall.ID]
 		// hadEmptyInput is true when EventToolUseStart stored "" (empty) and
@@ -1028,6 +1102,16 @@ func (a *PandoACPAgent) processAgentResponse(
 	}
 
 	for _, toolResult := range msg.ToolResults() {
+		// TodoWrite results are suppressed — the plan notification already
+		// carries all the relevant information; an UpdateToolCall would reference
+		// a toolCallId that was never sent as a StartToolCall.
+		if strings.EqualFold(toolResult.Name, "TodoWrite") {
+			a.pendingToolCallsMu.Lock()
+			delete(a.pendingToolCalls, toolResult.ToolCallID)
+			a.pendingToolCallsMu.Unlock()
+			continue
+		}
+
 		status := acpsdk.ToolCallStatusCompleted
 		if toolResult.IsError {
 			status = acpsdk.ToolCallStatusFailed
@@ -1583,6 +1667,15 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 						sendUpdate(acpsdk.UpdateAgentThoughtText(p.Thinking))
 					}
 				case message.ToolCall:
+					// TodoWrite → plan: emit a plan notification instead of a
+					// regular tool_call so history playback matches live behaviour.
+					if strings.EqualFold(p.Name, "TodoWrite") {
+						if entries := parseTodoWritePlan(p.Input); len(entries) > 0 {
+							sendUpdate(acpsdk.UpdatePlan(entries...))
+						}
+						continue
+					}
+
 					// Replay the tool call with full metadata so clients display
 					// proper title, kind, content, and locations.
 					rawInput := parseJSONInput(p.Input)
@@ -1626,6 +1719,12 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 			// Tool results: update existing tool calls with full output details.
 			for _, part := range msg.Parts {
 				if tr, ok := part.(message.ToolResult); ok {
+					// TodoWrite results are suppressed in history — the plan notification
+					// emitted above already carries all relevant information.
+					if strings.EqualFold(tr.Name, "TodoWrite") {
+						continue
+					}
+
 					status := acpsdk.ToolCallStatusCompleted
 					if tr.IsError {
 						status = acpsdk.ToolCallStatusFailed
@@ -2124,4 +2223,63 @@ func toLocations(toolName, inputJSON string) []acpsdk.ToolCallLocation {
 		}
 	}
 	return nil
+}
+
+// parseTodoWritePlan converts the JSON input of a TodoWrite tool call into a slice
+// of ACP PlanEntry values. The input schema is:
+//
+//	{"todos": [{"content": "...", "status": "pending|in_progress|completed", "priority": "high|medium|low"}, ...]}
+//
+// Unknown status/priority values fall back to "pending" / "medium".
+func parseTodoWritePlan(inputJSON string) []acpsdk.PlanEntry {
+	if inputJSON == "" {
+		return nil
+	}
+	var raw struct {
+		Todos []struct {
+			Content  string `json:"content"`
+			Status   string `json:"status"`
+			Priority string `json:"priority"`
+		} `json:"todos"`
+	}
+	if err := json.Unmarshal([]byte(inputJSON), &raw); err != nil {
+		return nil
+	}
+	if len(raw.Todos) == 0 {
+		return nil
+	}
+	entries := make([]acpsdk.PlanEntry, 0, len(raw.Todos))
+	for _, t := range raw.Todos {
+		content := strings.TrimSpace(t.Content)
+		if content == "" {
+			continue
+		}
+
+		var status acpsdk.PlanEntryStatus
+		switch strings.ToLower(t.Status) {
+		case "in_progress":
+			status = acpsdk.PlanEntryStatusInProgress
+		case "completed":
+			status = acpsdk.PlanEntryStatusCompleted
+		default:
+			status = acpsdk.PlanEntryStatusPending
+		}
+
+		var priority acpsdk.PlanEntryPriority
+		switch strings.ToLower(t.Priority) {
+		case "high":
+			priority = acpsdk.PlanEntryPriorityHigh
+		case "low":
+			priority = acpsdk.PlanEntryPriorityLow
+		default:
+			priority = acpsdk.PlanEntryPriorityMedium
+		}
+
+		entries = append(entries, acpsdk.PlanEntry{
+			Content:  content,
+			Status:   status,
+			Priority: priority,
+		})
+	}
+	return entries
 }

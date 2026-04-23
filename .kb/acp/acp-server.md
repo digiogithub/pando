@@ -422,7 +422,7 @@ import (
     "fmt"
     "os/exec"
 
-    acpsdk "github.com/coder/acp-go-sdk"
+    acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 func main() {
@@ -902,7 +902,7 @@ A: Use the SSE stream for progress updates:
 ## References
 
 - [Agent Client Protocol Specification](https://github.com/coder/acp-spec)
-- [ACP Go SDK](https://github.com/coder/acp-go-sdk)
+- [ACP Go SDK](https://github.com/madeindigio/acp-go-sdk)
 - [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification)
 - [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
 

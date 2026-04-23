@@ -53,7 +53,7 @@ func NewPandoCLISpawner(logDir string, onComplete func(task *models.Task), resol
 
 // Spawn starts a new pando CLI subprocess with the task prompt.
 func (s *PandoCLISpawner) Spawn(ctx context.Context, task *models.Task) error {
-	args, prompt := s.buildArgs(task)
+	args, _ := s.buildArgs(task)
 
 	procCtx, cancel := context.WithCancel(ctx)
 	if task.Timeout > 0 {
@@ -67,9 +67,6 @@ func (s *PandoCLISpawner) Spawn(ctx context.Context, task *models.Task) error {
 	}
 
 	cmd := exec.CommandContext(procCtx, pandoBin, args...)
-	if task.WorkDir != "" {
-		cmd.Dir = task.WorkDir
-	}
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 
 	logFile, err := openOrCreateLogFile(s.logDir, task)
@@ -79,13 +76,6 @@ func (s *PandoCLISpawner) Spawn(ctx context.Context, task *models.Task) error {
 	}
 
 	output := &strings.Builder{}
-
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		cancel()
-		logFile.Close()
-		return fmt.Errorf("failed to create stdin pipe: %w", err)
-	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -106,12 +96,6 @@ func (s *PandoCLISpawner) Spawn(ctx context.Context, task *models.Task) error {
 		logFile.Close()
 		return fmt.Errorf("failed to start pando: %w", err)
 	}
-
-	// Write prompt to stdin and close it.
-	go func() {
-		defer stdin.Close()
-		stdin.Write([]byte(prompt))
-	}()
 
 	task.PID = cmd.Process.Pid
 	now := time.Now()
@@ -157,6 +141,12 @@ func (s *PandoCLISpawner) buildArgs(task *models.Task) (args []string, prompt st
 	args = []string{
 		"--yolo",
 		"--output-format", "text",
+		"-p", prompt,
+	}
+
+	// Pass working directory via -c flag when set.
+	if task.WorkDir != "" {
+		args = append(args, "-c", task.WorkDir)
 	}
 
 	// Resolve model to "provider.model" format.

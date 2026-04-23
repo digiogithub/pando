@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 func TestNewPandoACPAgent(t *testing.T) {

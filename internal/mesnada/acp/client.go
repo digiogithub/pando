@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // MesnadaACPClient implements the ACP client interface required by the SDK.

@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/pubsub"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // ManagerEventType identifies the kind of ManagerEvent.

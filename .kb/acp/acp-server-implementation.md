@@ -168,6 +168,6 @@ All Phase 1 success criteria met:
 
 ## References
 
-- ACP SDK: `github.com/coder/acp-go-sdk`
+- ACP SDK: `github.com/madeindigio/acp-go-sdk`
 - Existing client implementation: `internal/mesnada/acp/client.go`
 - Protocol documentation: https://agentclientprotocol.com/

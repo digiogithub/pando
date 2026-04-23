@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // ACPServerSession represents an active ACP session on the server side.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // mockAgentSideConnection is a mock implementation for testing.

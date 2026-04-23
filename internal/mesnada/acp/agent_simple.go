@@ -4,7 +4,7 @@ import (
 	"context"
 	"log"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // SimpleACPAgent is a minimal ACP agent for testing HTTP transport.

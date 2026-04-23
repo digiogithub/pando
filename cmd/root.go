@@ -646,9 +646,14 @@ func (a *acpSessionAdapter) GetSession(ctx context.Context, id string) (acpPkg.A
 		return acpPkg.ACPSessionInfo{}, err
 	}
 	return acpPkg.ACPSessionInfo{
-		ID:        sess.ID,
-		Title:     sess.Title,
-		UpdatedAt: sess.UpdatedAt,
+		ID:               sess.ID,
+		Title:            sess.Title,
+		UpdatedAt:        sess.UpdatedAt,
+		PromptTokens:     sess.PromptTokens,
+		CompletionTokens: sess.CompletionTokens,
+		// ContextWindow is not stored at session level; the ACP usage_update
+		// handler falls back to 200000 when this is 0.
+		ContextWindow: 0,
 	}, nil
 }
 
@@ -660,9 +665,11 @@ func (a *acpSessionAdapter) ListSessions(ctx context.Context) ([]acpPkg.ACPSessi
 	result := make([]acpPkg.ACPSessionInfo, len(sessions))
 	for i, s := range sessions {
 		result[i] = acpPkg.ACPSessionInfo{
-			ID:        s.ID,
-			Title:     s.Title,
-			UpdatedAt: s.UpdatedAt,
+			ID:               s.ID,
+			Title:            s.Title,
+			UpdatedAt:        s.UpdatedAt,
+			PromptTokens:     s.PromptTokens,
+			CompletionTokens: s.CompletionTokens,
 		}
 	}
 	return result, nil

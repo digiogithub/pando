@@ -14,7 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // HTTPTransport implements HTTP/SSE transport for ACP.

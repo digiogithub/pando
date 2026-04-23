@@ -165,4 +165,4 @@ func (c *ExampleACPClient) RequestPermission(ctx context.Context, req acpsdk.Req
 
 - [Pando ACP Server Documentation](../../../docs/acp-server.md)
 - [ACP Specification](https://github.com/coder/acp-spec)
-- [ACP Go SDK](https://github.com/coder/acp-go-sdk)
+- [ACP Go SDK](https://github.com/madeindigio/acp-go-sdk)

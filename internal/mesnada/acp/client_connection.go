@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // ACPClientCallbacks defines the interface for calling back to the client.

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"

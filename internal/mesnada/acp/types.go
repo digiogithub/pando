@@ -5,7 +5,7 @@ import (
 	"context"
 	"os/exec"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // ACPAgentConfig represents the configuration of an ACP agent in config.yaml.

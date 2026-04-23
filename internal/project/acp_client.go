@@ -3,7 +3,7 @@ package project
 import (
 	"context"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // projectACPClient is a minimal ACP client implementation used by ProjectManager

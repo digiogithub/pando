@@ -98,7 +98,7 @@ ok      github.com/digiogithub/pando/internal/mesnada/acp       0.311s
            ▼
 ┌─────────────────────────────────────────┐
 │   ACP SDK AgentSideConnection           │
-│  (github.com/coder/acp-go-sdk)          │
+│  (github.com/madeindigio/acp-go-sdk)          │
 │                                         │
 │  - JSON-RPC Protocol Handling           │
 │  - Message Serialization                │

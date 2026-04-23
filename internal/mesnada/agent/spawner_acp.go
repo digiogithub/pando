@@ -16,10 +16,10 @@ import (
 	"syscall"
 	"time"
 
-	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/digiogithub/pando/internal/mesnada/acp"
-	"github.com/digiogithub/pando/internal/mesnada/config"
+	mesnadaconfig "github.com/digiogithub/pando/internal/mesnada/config"
 	"github.com/digiogithub/pando/pkg/mesnada/models"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // followUpRequest carries a follow-up prompt message and a channel for the result.
@@ -198,15 +198,15 @@ func (s *ACPSpawner) Spawn(ctx context.Context, task *models.Task) error {
 					fmt.Fprintf(logFile, "[ACP] Warning: progress update failed: %v\n", err)
 				}
 			}
-			}
+		}
 
-			// Handle plan updates for progress reporting
-			if update.Plan != "" && s.onProgress != nil {
+		// Handle plan updates for progress reporting
+		if update.Plan != "" && s.onProgress != nil {
 			percentage, _ := task.GetProgress()
 			if err := s.onProgress(task.ID, percentage, update.Plan); err != nil {
 				fmt.Fprintf(logFile, "[ACP] Warning: progress update failed: %v\n", err)
 			}
-			}
+		}
 
 	}
 

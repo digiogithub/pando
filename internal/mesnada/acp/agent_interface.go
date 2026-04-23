@@ -1,7 +1,7 @@
 package acp
 
 import (
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // ACPAgent is the interface that ACP agents must implement.

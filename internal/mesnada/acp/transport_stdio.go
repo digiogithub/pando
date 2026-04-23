@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // syncWriter wraps an io.Writer with a mutex so the SDK's connection and our

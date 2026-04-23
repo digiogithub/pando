@@ -93,7 +93,8 @@ func (t *MesnadaSpawnTool) Info() ToolInfo {
 			},
 			"engine": map[string]any{
 				"type":        "string",
-				"description": "CLI engine to use for the task.",
+				"description": "CLI engine to use for the task. Available engines: pando (default, runs Pando itself as a subagent via CLI), copilot, claude, gemini, opencode, mistral, acp (requires acp_agent), acp-claude, acp-codex, ollama-claude, ollama-opencode.",
+				"enum":        []string{"pando", "copilot", "claude", "gemini", "opencode", "mistral", "acp", "acp-claude", "acp-codex", "ollama-claude", "ollama-opencode"},
 			},
 			"model": map[string]any{
 				"type":        "string",

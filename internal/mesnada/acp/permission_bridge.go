@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // ACPPermissionBridge translates Pando tool permission requests into ACP

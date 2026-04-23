@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	orchestratorMinPromptWidth = 20
-	orchestratorPromptMaxLen   = 80
+	orchestratorMinPromptWidth  = 20
+	orchestratorPromptMaxLen    = 80
+	orchestratorRefreshInterval = 3 * time.Second
 )
 
 type orchestratorPage struct {
@@ -105,6 +106,14 @@ type orchestratorActionDoneMsg struct {
 	selectTaskID string
 }
 
+type orchestratorTickMsg struct{}
+
+func orchestratorTick() tea.Cmd {
+	return tea.Tick(orchestratorRefreshInterval, func(time.Time) tea.Msg {
+		return orchestratorTickMsg{}
+	})
+}
+
 func NewOrchestratorPage(app *app.App) tea.Model {
 	columns := []table.Column{
 		{Title: "ID", Width: 12},
@@ -146,7 +155,7 @@ func (p *orchestratorPage) Init() tea.Cmd {
 	if p.app == nil || p.app.MesnadaOrchestrator == nil {
 		return nil
 	}
-	return p.refreshCmd()
+	return tea.Batch(p.refreshCmd(), orchestratorTick())
 }
 
 func (p *orchestratorPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -170,6 +179,9 @@ func (p *orchestratorPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		p.setTasks(msg.tasks, selectedID)
 		return p, nil
+
+	case orchestratorTickMsg:
+		return p, tea.Batch(p.refreshCmd(), orchestratorTick())
 
 	case orchestratorActionDoneMsg:
 		if msg.err != nil {

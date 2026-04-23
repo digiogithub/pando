@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/digiogithub/pando/internal/message"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 func TestToDisplayPath(t *testing.T) {

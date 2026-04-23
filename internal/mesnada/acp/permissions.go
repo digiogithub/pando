@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // PermissionQueue manages permission requests from ACP agents.

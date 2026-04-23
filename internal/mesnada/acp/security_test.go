@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 func TestPathTraversalPrevention_Client(t *testing.T) {
