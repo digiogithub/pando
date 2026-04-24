@@ -430,6 +430,13 @@ type CronJobsConfig struct {
 	Jobs    []CronJob `json:"jobs,omitempty" toml:"Jobs"`
 }
 
+// LLMCacheConfig controls whether LLM prompt caching is enabled.
+// Currently has real effect only on Anthropic (removes CacheControl headers).
+// OpenAI and Gemini use server-side automatic caching that cannot be disabled via API.
+type LLMCacheConfig struct {
+	Enabled bool `json:"enabled" toml:"Enabled"`
+}
+
 // ProviderAccount defines a named provider configuration (account).
 // It allows multiple accounts of the same provider type (e.g., two Anthropic API keys).
 // The ID field is a unique slug used to identify the account (e.g., "anthropic-work").
@@ -483,6 +490,7 @@ type Config struct {
 	OpenLit           OpenLitConfig                     `json:"openlit,omitempty" toml:"OpenLit"`
 	Projects          ProjectsConfig                    `json:"projects,omitempty" toml:"Projects"`
 	CronJobs          CronJobsConfig                    `json:"cronJobs,omitempty" toml:"CronJobs"`
+	LLMCache          LLMCacheConfig                    `json:"llmCache,omitempty" toml:"LLMCache"`
 }
 
 // Application constants
@@ -831,6 +839,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("contextPaths", defaultContextPaths)
 	viper.SetDefault("skills.enabled", true)
 	viper.SetDefault("skillsCatalog.enabled", true)
+	viper.SetDefault("llmCache.enabled", true) // LLM prompt caching enabled by default
 	viper.SetDefault("skillsCatalog.baseUrl", "https://skills.sh")
 	viper.SetDefault("skillsCatalog.autoUpdate", false)
 	viper.SetDefault("skillsCatalog.defaultScope", "global")
@@ -2370,6 +2379,25 @@ func UpdateAutoCompact(enabled bool) error {
 		config.AutoCompact = enabled
 	}); err != nil {
 		cfg.AutoCompact = oldValue
+		return err
+	}
+
+	return nil
+}
+
+// UpdateLLMCache updates the LLM cache enabled flag and persists it to the config file.
+func UpdateLLMCache(enabled bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldValue := cfg.LLMCache.Enabled
+	cfg.LLMCache.Enabled = enabled
+
+	if err := updateCfgFile(func(config *Config) {
+		config.LLMCache.Enabled = enabled
+	}); err != nil {
+		cfg.LLMCache.Enabled = oldValue
 		return err
 	}
 

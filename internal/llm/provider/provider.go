@@ -244,6 +244,18 @@ func NewProviderFromAccount(account config.ProviderAccount, model models.Model, 
 		WithSystemMessage(systemMessage),
 	}
 
+	// Apply cache-disable options based on global config
+	anthCacheOpts, oaiCacheOpts, gemCacheOpts := CacheDisabledOptions()
+	if len(anthCacheOpts) > 0 {
+		opts = append(opts, WithAnthropicOptions(anthCacheOpts...))
+	}
+	if len(oaiCacheOpts) > 0 {
+		opts = append(opts, WithOpenAIOptions(oaiCacheOpts...))
+	}
+	if len(gemCacheOpts) > 0 {
+		opts = append(opts, WithGeminiOptions(gemCacheOpts...))
+	}
+
 	providerType := account.Type
 
 	// For openai-compatible, apply baseURL and extraHeaders via OpenAI options
@@ -364,6 +376,20 @@ func WithCopilotOptions(copilotOptions ...CopilotOption) ProviderClientOption {
 	return func(options *providerClientOptions) {
 		options.copilotOptions = copilotOptions
 	}
+}
+
+// CacheDisabledOptions returns provider options that disable LLM prompt caching,
+// based on the global config. Returns nil slices if caching is enabled.
+func CacheDisabledOptions() (anthropicOpts []AnthropicOption, openaiOpts []OpenAIOption, geminiOpts []GeminiOption) {
+	cfg := config.Get()
+	if cfg == nil || cfg.LLMCache.Enabled {
+		return // caching enabled, no extra options needed
+	}
+	// Caching disabled — apply disable-cache options per provider
+	anthropicOpts = append(anthropicOpts, WithAnthropicDisableCache())
+	openaiOpts = append(openaiOpts, WithOpenAIDisableCache())
+	geminiOpts = append(geminiOpts, WithGeminiDisableCache())
+	return
 }
 
 func ensureOpenAIBaseURL(options []OpenAIOption, baseURL string) []OpenAIOption {

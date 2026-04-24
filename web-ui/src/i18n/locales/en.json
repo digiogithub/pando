@@ -73,7 +73,9 @@
       "markdownPreview": "Markdown preview",
       "markdownPreviewDescription": "Render markdown in chat messages",
       "customInstructions": "Custom instructions",
-      "customInstructionsPlaceholder": "Add any global instructions for the AI assistant…"
+      "customInstructionsPlaceholder": "Add any global instructions for the AI assistant…",
+      "llmCache": "LLM Prompt Cache",
+      "llmCacheDescription": "Enable prompt caching for LLM providers (mainly affects Anthropic)"
     },
     "agents": {
       "title": "Agents",

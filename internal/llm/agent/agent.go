@@ -1267,6 +1267,17 @@ func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillM
 				provider.WithOpenAIBaseURL(models.ResolveOllamaBaseURL(acc.BaseURL)),
 			))
 		}
+		// Apply cache-disable options from global config
+		anthCacheOpts, oaiCacheOpts, gemCacheOpts := provider.CacheDisabledOptions()
+		if len(anthCacheOpts) > 0 {
+			opts = append(opts, provider.WithAnthropicOptions(anthCacheOpts...))
+		}
+		if len(oaiCacheOpts) > 0 {
+			opts = append(opts, provider.WithOpenAIOptions(oaiCacheOpts...))
+		}
+		if len(gemCacheOpts) > 0 {
+			opts = append(opts, provider.WithGeminiOptions(gemCacheOpts...))
+		}
 		agentProvider, err := provider.NewProvider(model.Provider, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("could not create provider: %v", err)

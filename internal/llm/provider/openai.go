@@ -20,7 +20,11 @@ import (
 )
 
 type openaiOptions struct {
-	baseURL         string
+	baseURL string
+	// disableCache is wired to the global LLMCache config but has no real effect:
+	// OpenAI uses automatic server-side prefix caching (≥1024 tokens) with no API
+	// to disable it. This field is kept for future compatibility if OpenAI adds
+	// an opt-out mechanism.
 	disableCache    bool
 	reasoningEffort string
 	extraHeaders    map[string]string
@@ -437,6 +441,9 @@ func WithOpenAIExtraHeaders(headers map[string]string) OpenAIOption {
 	}
 }
 
+// WithOpenAIDisableCache sets the disableCache flag for OpenAI providers.
+// NOTE: OpenAI uses automatic server-side caching that cannot be disabled via API.
+// This option has no effect today but is kept for future compatibility.
 func WithOpenAIDisableCache() OpenAIOption {
 	return func(options *openaiOptions) {
 		options.disableCache = true

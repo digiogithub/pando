@@ -19,6 +19,10 @@ import (
 )
 
 type geminiOptions struct {
+	// disableCache is wired to the global LLMCache config but has no real effect
+	// on implicit server-side caching: Gemini 2.5+ caches automatically and there
+	// is no public API to opt out. Explicit Context Caching (a separate paid feature)
+	// is not currently used in Pando. This field is kept for future compatibility.
 	disableCache bool
 }
 
@@ -541,6 +545,10 @@ func (g *geminiClient) usage(resp *genai.GenerateContentResponse) TokenUsage {
 	}
 }
 
+// WithGeminiDisableCache sets the disableCache flag for Gemini providers.
+// NOTE: Gemini uses implicit server-side caching with no public API to disable it.
+// Explicit Context Caching (a separate feature) is not used by Pando.
+// This option is kept for future compatibility when Gemini adds an opt-out mechanism.
 func WithGeminiDisableCache() GeminiOption {
 	return func(options *geminiOptions) {
 		options.disableCache = true

@@ -12,6 +12,7 @@ const DEFAULTS: SettingsConfig = {
   auto_save: true,
   markdown_preview: true,
   custom_instructions: '',
+  llm_cache_enabled: true,
 }
 
 interface SettingsStore {

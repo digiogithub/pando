@@ -445,3 +445,33 @@ func TestProviderOpenAICompatibleExists(t *testing.T) {
 		t.Fatalf("expected ProviderOpenAICompatible = 'openai-compatible', got %q", models.ProviderOpenAICompatible)
 	}
 }
+
+func TestLLMCacheConfigDefault(t *testing.T) {
+	// Test that LLMCacheConfig has correct zero value behavior.
+	// Zero value of bool is false, so without initialization it should be false.
+	c := &Config{}
+	if c.LLMCache.Enabled {
+		t.Error("expected LLMCacheConfig.Enabled to be false by default (zero value)")
+	}
+}
+
+func TestUpdateLLMCache(t *testing.T) {
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+
+	cfg = &Config{
+		LLMCache: LLMCacheConfig{Enabled: true},
+	}
+
+	// Test disabling
+	cfg.LLMCache.Enabled = false
+	if cfg.LLMCache.Enabled {
+		t.Error("expected Enabled to be false after setting to false")
+	}
+
+	// Test enabling
+	cfg.LLMCache.Enabled = true
+	if !cfg.LLMCache.Enabled {
+		t.Error("expected Enabled to be true after setting to true")
+	}
+}

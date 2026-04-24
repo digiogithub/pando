@@ -72,7 +72,9 @@
       "markdownPreview": "Pré-visualização de Markdown",
       "markdownPreviewDescription": "Renderizar Markdown nas mensagens do chat",
       "customInstructions": "Instruções personalizadas",
-      "customInstructionsPlaceholder": "Adicione instruções globais para o assistente de IA…"
+      "customInstructionsPlaceholder": "Adicione instruções globais para o assistente de IA…",
+      "llmCache": "Cache de prompts LLM",
+      "llmCacheDescription": "Habilitar cache de prompts para provedores LLM (principalmente Anthropic)"
     },
     "agents": {
       "title": "Agentes",

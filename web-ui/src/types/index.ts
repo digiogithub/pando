@@ -303,6 +303,7 @@ export interface SettingsConfig {
   auto_save: boolean
   markdown_preview: boolean
   custom_instructions: string
+  llm_cache_enabled: boolean
 }
 
 // Tools config (matching ToolsConfigResponse in handlers_config.go)

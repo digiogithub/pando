@@ -21,6 +21,7 @@ type SettingsResponse struct {
 	AutoCompact      bool   `json:"auto_compact"`
 	SkillsEnabled    bool   `json:"skills_enabled"`
 	DataDirectory    string `json:"data_directory"`
+	LLMCacheEnabled  bool   `json:"llm_cache_enabled"`
 }
 
 // SettingsUpdateRequest contains the fields that can be updated via PUT /api/v1/settings.
@@ -31,6 +32,7 @@ type SettingsUpdateRequest struct {
 	Debug           *bool   `json:"debug,omitempty"`
 	AutoCompact     *bool   `json:"auto_compact,omitempty"`
 	SkillsEnabled   *bool   `json:"skills_enabled,omitempty"`
+	LLMCacheEnabled *bool   `json:"llm_cache_enabled,omitempty"`
 }
 
 // ProviderStatus describes a configured provider and whether it has an API key set.
@@ -77,6 +79,7 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		AutoCompact:      cfg.AutoCompact,
 		SkillsEnabled:    cfg.Skills.Enabled,
 		DataDirectory:    cfg.Data.Directory,
+		LLMCacheEnabled:  cfg.LLMCache.Enabled,
 	}, nil
 }
 
@@ -127,6 +130,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if req.DefaultModel != nil {
 		if err := config.UpdateAgentModel(config.AgentCoder, models.ModelID(*req.DefaultModel)); err != nil {
 			writeError(w, http.StatusBadRequest, "failed to update model: "+err.Error())
+			return
+		}
+	}
+
+	if req.LLMCacheEnabled != nil {
+		if err := config.UpdateLLMCache(*req.LLMCacheEnabled); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update llm cache setting")
 			return
 		}
 	}

@@ -72,7 +72,9 @@
       "markdownPreview": "Markdown プレビュー",
       "markdownPreviewDescription": "チャットメッセージで Markdown をレンダリングする",
       "customInstructions": "カスタム指示",
-      "customInstructionsPlaceholder": "AI アシスタントへのグローバル指示を追加…"
+      "customInstructionsPlaceholder": "AI アシスタントへのグローバル指示を追加…",
+      "llmCache": "LLMプロンプトキャッシュ",
+      "llmCacheDescription": "LLMプロバイダーのプロンプトキャッシュを有効化（主にAnthropic）"
     },
     "agents": {
       "title": "エージェント",

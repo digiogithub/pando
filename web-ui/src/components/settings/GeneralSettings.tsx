@@ -109,6 +109,12 @@ export default function GeneralSettings() {
           checked={config.markdown_preview}
           onChange={(v) => updateField('markdown_preview', v)}
         />
+        <Toggle
+          label={t('settings.general.llmCache')}
+          description={t('settings.general.llmCacheDescription')}
+          checked={config.llm_cache_enabled}
+          onChange={(v) => updateField('llm_cache_enabled', v)}
+        />
       </div>
 
       <div style={dividerStyle} />

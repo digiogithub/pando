@@ -187,6 +187,54 @@ func TestThinkingRequestOptionsAdaptiveOnly(t *testing.T) {
 	}
 }
 
+func TestConvertToolsNoCacheWhenDisabled(t *testing.T) {
+	client := &anthropicClient{
+		options: anthropicOptions{
+			disableCache: true,
+		},
+	}
+	tools := []toolsPkg.BaseTool{
+		testTool{info: toolsPkg.ToolInfo{
+			Name:        "test_tool",
+			Description: "A test tool",
+			Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+		}},
+	}
+	result := client.convertTools(tools)
+	if len(result) == 0 {
+		t.Fatal("expected at least one tool")
+	}
+	// When disableCache is true, the last tool should NOT have CacheControl set.
+	lastTool := result[len(result)-1]
+	if lastTool.OfTool != nil && lastTool.OfTool.CacheControl.Type != "" {
+		t.Error("expected no CacheControl when disableCache is true")
+	}
+}
+
+func TestConvertToolsWithCacheEnabled(t *testing.T) {
+	client := &anthropicClient{
+		options: anthropicOptions{
+			disableCache: false,
+		},
+	}
+	tools := []toolsPkg.BaseTool{
+		testTool{info: toolsPkg.ToolInfo{
+			Name:        "test_tool",
+			Description: "A test tool",
+			Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+		}},
+	}
+	result := client.convertTools(tools)
+	if len(result) == 0 {
+		t.Fatal("expected at least one tool")
+	}
+	// When disableCache is false, the last tool SHOULD have CacheControl set to ephemeral.
+	lastTool := result[len(result)-1]
+	if lastTool.OfTool == nil || lastTool.OfTool.CacheControl.Type != "ephemeral" {
+		t.Error("expected CacheControl=ephemeral on last tool when cache enabled")
+	}
+}
+
 func TestConvertToolsPassesRequiredFields(t *testing.T) {
 	client := &anthropicClient{
 		options: anthropicOptions{

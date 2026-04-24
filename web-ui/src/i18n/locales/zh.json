@@ -72,7 +72,9 @@
       "markdownPreview": "Markdown 预览",
       "markdownPreviewDescription": "在聊天消息中渲染 Markdown",
       "customInstructions": "自定义指令",
-      "customInstructionsPlaceholder": "为 AI 助手添加全局指令…"
+      "customInstructionsPlaceholder": "为 AI 助手添加全局指令…",
+      "llmCache": "LLM提示缓存",
+      "llmCacheDescription": "启用LLM提供商的提示缓存（主要影响Anthropic）"
     },
     "agents": {
       "title": "代理",

@@ -489,6 +489,12 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Type:  settings.FieldToggle,
 			},
 			{
+				Label: "LLM Prompt Cache",
+				Key:   "llmCache.enabled",
+				Value: boolString(cfg.LLMCache.Enabled),
+				Type:  settings.FieldToggle,
+			},
+			{
 				Label: "Auto-Approve Tool Changes",
 				Key:   "permissions.autoApproveTools",
 				Value: boolString(cfg.Permissions.AutoApproveTools),
@@ -2045,6 +2051,12 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 			return fmt.Errorf("invalid AutoCompact value: %w", err)
 		}
 		return config.UpdateAutoCompact(value)
+	case field.Key == "llmCache.enabled":
+		value, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid LLM Cache value: %w", err)
+		}
+		return config.UpdateLLMCache(value)
 	case field.Key == "debug":
 		value, err := parseBoolValue(field.Value)
 		if err != nil {
