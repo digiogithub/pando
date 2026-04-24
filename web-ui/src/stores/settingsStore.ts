@@ -8,7 +8,7 @@ const DEFAULTS: SettingsConfig = {
   default_model: 'claude-sonnet-4-6',
   default_provider: 'anthropic',
   language: 'en',
-  theme: 'light',
+  theme: 'pando-light',
   auto_save: true,
   markdown_preview: true,
   custom_instructions: '',

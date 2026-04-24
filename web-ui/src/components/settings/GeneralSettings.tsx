@@ -3,13 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { TextInput, SelectInput, Textarea, Toggle } from '@/components/shared/FormInput'
 import ModelCombobox from '@/components/shared/ModelCombobox'
+import ThemePicker from '@/components/shared/ThemePicker'
 import { SUPPORTED_LANGUAGES } from '@/i18n'
 import { useTheme } from '@/hooks/useTheme'
-
-const THEME_OPTIONS = [
-  { value: 'light', labelKey: 'settings.general.themeLight' },
-  { value: 'dark', labelKey: 'settings.general.themeDark' },
-]
 
 const dividerStyle: React.CSSProperties = {
   borderTop: '1px solid var(--border)',
@@ -21,6 +17,16 @@ const sectionTitle: React.CSSProperties = {
   fontWeight: 700,
   color: 'var(--fg)',
   marginBottom: '1.25rem',
+}
+
+const fieldLabel: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 600,
+  color: 'var(--fg-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+  marginBottom: '0.5rem',
+  display: 'block',
 }
 
 export default function GeneralSettings() {
@@ -49,7 +55,6 @@ export default function GeneralSettings() {
   }
 
   const languageOptions = SUPPORTED_LANGUAGES.map((l) => ({ value: l.value, label: l.label }))
-  const themeOptions = THEME_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))
 
   return (
     <div style={{ maxWidth: 640 }}>
@@ -81,16 +86,17 @@ export default function GeneralSettings() {
           onChange={(e) => updateField('language', e.target.value)}
         />
 
-        <SelectInput
-          label={t('settings.general.theme')}
-          options={themeOptions}
-          value={config.theme}
-          onChange={(e) => {
-            const t = e.target.value as 'light' | 'dark'
-            updateField('theme', t)
-            setTheme(t)
-          }}
-        />
+        {/* Theme picker */}
+        <div>
+          <label style={fieldLabel}>{t('settings.general.theme')}</label>
+          <ThemePicker
+            value={config.theme || 'pando-light'}
+            onChange={(themeId) => {
+              updateField('theme', themeId)
+              setTheme(themeId)
+            }}
+          />
+        </div>
       </div>
 
       <div style={dividerStyle} />

@@ -197,6 +197,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 						cfg.Remembrances.ContextEnrichmentEventsResults,
 						cfg.Remembrances.ContextEnrichmentEventsSubject,
 						cfg.Remembrances.ContextEnrichmentEventsLastDays,
+						cfg.Remembrances.ContextEnrichmentMinScore,
 					)
 					agent.SetContextEnricher(enricher)
 					logging.Info("remembrances: context enricher enabled",

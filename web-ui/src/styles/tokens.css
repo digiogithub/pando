@@ -1,4 +1,13 @@
-/* Pando design tokens — sober Zen-inspired theme */
+/* ============================================================
+   Pando design tokens — theme system
+   Themes: pando (default), claude, clay, starbucks
+   Modes:  light (default) / dark
+   Applied via:
+     data-theme-name="pando|claude|clay|starbucks"
+     data-theme="light|dark"
+   ============================================================ */
+
+/* ---- PANDO — Zen / Washi paper (default, no selector needed) ----------- */
 
 :root {
   /* Backgrounds — Washi paper inspired */
@@ -51,7 +60,10 @@
   --space-xl: 32px;
 }
 
-[data-theme="dark"] {
+/* Pando dark */
+[data-theme-name="pando"][data-theme="dark"],
+[data-theme="dark"]:not([data-theme-name]),
+[data-theme="dark"][data-theme-name="pando"] {
   /* Backgrounds — Midnight ink */
   --bg: #121214;
   --sidebar-bg: #0A0A0C;
@@ -93,12 +105,227 @@
   --radius-sm: 0px;
   --radius-md: 0px;
   --radius-lg: 0px;
+}
 
-  /* Spacing */
-  --space-xs: 8px;
-  --space-sm: 12px;
-  --space-md: 16px;
-  --space-lg: 24px;
-  --space-xl: 32px;
+/* ---- CLAUDE — Warm parchment / terracotta (Anthropic style) ------------ */
+
+[data-theme-name="claude"] {
+  --bg: #f5f4ed;
+  --sidebar-bg: #faf9f5;
+  --bg-secondary: #e8e6dc;
+  --bg-tertiary: #f0eee6;
+  --card-bg: #faf9f5;
+  --surface: #faf9f5;
+  --overlay: #f0eee6;
+
+  --fg: #141413;
+  --fg-muted: #5e5d59;
+  --fg-dim: #87867f;
+
+  --border: #e8e6dc;
+  --border-focus: #3898ec;
+
+  --primary: #c96442;
+  --primary-fg: #faf9f5;
+  --accent: #d97757;
+  --secondary: #4d4c48;
+
+  --input-bg: #ffffff;
+
+  --hover: #f0eee6;
+  --selected: #c9644220;
+
+  --error: #b53333;
+  --warning: #c96442;
+  --success: #3e5a28;
+  --info: #3898ec;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+[data-theme-name="claude"][data-theme="dark"] {
+  --bg: #141413;
+  --sidebar-bg: #0f0f0e;
+  --bg-secondary: #30302e;
+  --bg-tertiary: #252523;
+  --card-bg: #1e1e1c;
+  --surface: #30302e;
+  --overlay: #30302e;
+
+  --fg: #faf9f5;
+  --fg-muted: #b0aea5;
+  --fg-dim: #87867f;
+
+  --border: #30302e;
+  --border-focus: #3898ec;
+
+  --primary: #c96442;
+  --primary-fg: #faf9f5;
+  --accent: #d97757;
+  --secondary: #b0aea5;
+
+  --input-bg: #1e1e1c;
+
+  --hover: #252523;
+  --selected: #c9644228;
+
+  --error: #e57373;
+  --warning: #d97757;
+  --success: #81c784;
+  --info: #3898ec;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+/* ---- CLAY — Warm cream / colorful swatches (Clay.earth style) ---------- */
+
+[data-theme-name="clay"] {
+  --bg: #faf9f7;
+  --sidebar-bg: #f4f0e8;
+  --bg-secondary: #eee9df;
+  --bg-tertiary: #e5dfd6;
+  --card-bg: #ffffff;
+  --surface: #f4f0e8;
+  --overlay: #eee9df;
+
+  --fg: #111110;
+  --fg-muted: #55534e;
+  --fg-dim: #9f9b93;
+
+  --border: #dad4c8;
+  --border-focus: #146ef5;
+
+  --primary: #fbbd41;
+  --primary-fg: #111110;
+  --accent: #078a52;
+  --secondary: #43089f;
+
+  --input-bg: #ffffff;
+
+  --hover: #eee9df;
+  --selected: #fbbd4124;
+
+  --error: #e8525a;
+  --warning: #fbbd41;
+  --success: #078a52;
+  --info: #3bd3fd;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 24px;
+}
+
+[data-theme-name="clay"][data-theme="dark"] {
+  --bg: #1a1917;
+  --sidebar-bg: #111110;
+  --bg-secondary: #252320;
+  --bg-tertiary: #2e2c29;
+  --card-bg: #1f1e1c;
+  --surface: #252320;
+  --overlay: #252320;
+
+  --fg: #f5f2ee;
+  --fg-muted: #b8b3ac;
+  --fg-dim: #7a7570;
+
+  --border: #3a3730;
+  --border-focus: #146ef5;
+
+  --primary: #fbbd41;
+  --primary-fg: #111110;
+  --accent: #84e7a5;
+  --secondary: #c1b0ff;
+
+  --input-bg: #1f1e1c;
+
+  --hover: #2e2c29;
+  --selected: #fbbd4128;
+
+  --error: #fc7981;
+  --warning: #fbbd41;
+  --success: #84e7a5;
+  --info: #3bd3fd;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 24px;
+}
+
+/* ---- STARBUCKS — Warm cream / forest green (Starbucks style) ----------- */
+
+[data-theme-name="starbucks"] {
+  --bg: #f2f0eb;
+  --sidebar-bg: #edebe9;
+  --bg-secondary: #e3e0d8;
+  --bg-tertiary: #d8d4ca;
+  --card-bg: #ffffff;
+  --surface: #edebe9;
+  --overlay: #edebe9;
+
+  --fg: #1a1a18;
+  --fg-muted: #4a4a42;
+  --fg-dim: #9f9b93;
+
+  --border: #cdc9bf;
+  --border-focus: #00754a;
+
+  --primary: #00754a;
+  --primary-fg: #ffffff;
+  --accent: #006241;
+  --secondary: #1e3932;
+
+  --input-bg: #ffffff;
+
+  --hover: #edebe9;
+  --selected: #00754a20;
+
+  --error: #c82014;
+  --warning: #fbbc05;
+  --success: #006241;
+  --info: #00754a;
+
+  --radius-sm: 20px;
+  --radius-md: 50px;
+  --radius-lg: 50px;
+}
+
+[data-theme-name="starbucks"][data-theme="dark"] {
+  --bg: #1e3932;
+  --sidebar-bg: #162c27;
+  --bg-secondary: #2b5148;
+  --bg-tertiary: #336458;
+  --card-bg: #25453e;
+  --surface: #2b5148;
+  --overlay: #2b5148;
+
+  --fg: #f2f0eb;
+  --fg-muted: #b8c4be;
+  --fg-dim: #7a9a90;
+
+  --border: #2b5148;
+  --border-focus: #00754a;
+
+  --primary: #00a862;
+  --primary-fg: #ffffff;
+  --accent: #d4e9e2;
+  --secondary: #cba258;
+
+  --input-bg: #25453e;
+
+  --hover: #336458;
+  --selected: #00a86224;
+
+  --error: #e57373;
+  --warning: #fbbc05;
+  --success: #d4e9e2;
+  --info: #d4e9e2;
+
+  --radius-sm: 20px;
+  --radius-md: 50px;
+  --radius-lg: 50px;
 }
 

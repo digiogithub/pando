@@ -236,9 +236,12 @@ type RemembrancesConfig struct {
 	ContextEnrichmentKBResults      int    `json:"context_enrichment_kb_results" toml:"ContextEnrichmentKBResults"`
 	ContextEnrichmentCodeResults    int    `json:"context_enrichment_code_results" toml:"ContextEnrichmentCodeResults"`
 	ContextEnrichmentCodeProject    string `json:"context_enrichment_code_project" toml:"ContextEnrichmentCodeProject"`
-	ContextEnrichmentEventsResults  int    `json:"context_enrichment_events_results" toml:"ContextEnrichmentEventsResults"`
-	ContextEnrichmentEventsSubject  string `json:"context_enrichment_events_subject" toml:"ContextEnrichmentEventsSubject"`
-	ContextEnrichmentEventsLastDays int    `json:"context_enrichment_events_last_days" toml:"ContextEnrichmentEventsLastDays"`
+	ContextEnrichmentEventsResults  int     `json:"context_enrichment_events_results" toml:"ContextEnrichmentEventsResults"`
+	ContextEnrichmentEventsSubject  string  `json:"context_enrichment_events_subject" toml:"ContextEnrichmentEventsSubject"`
+	ContextEnrichmentEventsLastDays int     `json:"context_enrichment_events_last_days" toml:"ContextEnrichmentEventsLastDays"`
+	// ContextEnrichmentMinScore is the minimum relevance score (0–1) for a result to be included.
+	// Results below this threshold are discarded; entire sections are dropped if all results fail.
+	ContextEnrichmentMinScore float64 `json:"context_enrichment_min_score" toml:"ContextEnrichmentMinScore"`
 }
 
 // APIServerConfig holds configuration for the HTTP API server (WebUI backend).
@@ -951,6 +954,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("remembrances.context_enrichment_kb_results", 3)
 	viper.SetDefault("remembrances.context_enrichment_code_results", 5)
 	viper.SetDefault("remembrances.context_enrichment_code_project", "")
+	viper.SetDefault("remembrances.context_enrichment_min_score", 0.45)
 
 	// Internal Tools defaults
 	viper.SetDefault("internalTools.fetchEnabled", true)

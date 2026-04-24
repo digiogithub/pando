@@ -14,7 +14,7 @@ import ModelSwitcher from '@/components/overlays/ModelSwitcher'
 import ConfigInitBanner from '@/components/overlays/ConfigInitBanner'
 
 export default function MainLayout() {
-  const { theme } = useTheme()
+  const { themeMode: theme } = useTheme()
   const { sidebarOpen, quickMenuOpen, modelSwitcherOpen, setSidebarOpen } = useLayoutStore()
   const fetchSessions = useSessionStore((s) => s.fetchSessions)
   const fetchSettings = useSettingsStore((s) => s.fetchSettings)

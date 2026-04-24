@@ -66,7 +66,7 @@ function addToRecent(id: string) {
 export default function QuickMenu() {
   const navigate = useNavigate()
   const { setQuickMenuOpen } = useLayoutStore()
-  const { toggleTheme } = useTheme()
+  const { toggleMode: toggleTheme } = useTheme()
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)

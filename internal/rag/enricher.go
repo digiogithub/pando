@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/rag/events"
 )
 
-// ContextEnricher performs pre-prompt KB, events and code searches and formats
-// the results as context to be prepended to the user's message.
+// ContextEnricher performs pre-prompt KB, events and code searches in parallel and
+// formats only relevant results (above minScore) as context to prepend to the user's message.
 type ContextEnricher struct {
 	svc            *RemembrancesService
 	kbResults      int
@@ -20,11 +21,12 @@ type ContextEnricher struct {
 	eventsResults  int
 	eventsSubject  string
 	eventsLastDays int
+	minScore       float64
 }
 
 // NewContextEnricher creates a ContextEnricher from the given RemembrancesService and config values.
 // Returns nil when the service is nil.
-func NewContextEnricher(svc *RemembrancesService, kbResults, codeResults int, codeProject string, eventsResults int, eventsSubject string, eventsLastDays int) *ContextEnricher {
+func NewContextEnricher(svc *RemembrancesService, kbResults, codeResults int, codeProject string, eventsResults int, eventsSubject string, eventsLastDays int, minScore float64) *ContextEnricher {
 	if svc == nil {
 		return nil
 	}
@@ -40,6 +42,9 @@ func NewContextEnricher(svc *RemembrancesService, kbResults, codeResults int, co
 	if eventsLastDays <= 0 {
 		eventsLastDays = 30
 	}
+	if minScore <= 0 {
+		minScore = 0.45
+	}
 	return &ContextEnricher{
 		svc:            svc,
 		kbResults:      kbResults,
@@ -48,40 +53,60 @@ func NewContextEnricher(svc *RemembrancesService, kbResults, codeResults int, co
 		eventsResults:  eventsResults,
 		eventsSubject:  eventsSubject,
 		eventsLastDays: eventsLastDays,
+		minScore:       minScore,
 	}
 }
 
-// EnrichContext searches the KB and code index using the user's query and returns
-// a formatted context block ready to be prepended to the prompt.
-// Returns an empty string when no relevant results are found.
+// EnrichContext searches KB, events, and code index in parallel using the user's query,
+// filters results below minScore, and returns a formatted context block.
+// Sections with no results above the threshold are omitted entirely.
+// Returns an empty string when nothing relevant is found.
 func (e *ContextEnricher) EnrichContext(ctx context.Context, query string) string {
 	if e == nil || e.svc == nil {
 		return ""
 	}
 
-	var parts []string
+	type result struct {
+		content string
+	}
 
-	// KB search
+	var (
+		kbRes     result
+		eventsRes result
+		codeRes   result
+		wg        sync.WaitGroup
+	)
+
 	if e.svc.KB != nil {
-		kbContext := e.searchKB(ctx, query)
-		if kbContext != "" {
-			parts = append(parts, kbContext)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			kbRes.content = e.searchKB(ctx, query)
+		}()
 	}
 
-	// Events search: previous session context for this project
 	if e.svc.Events != nil {
-		eventsContext := e.searchEvents(ctx, query)
-		if eventsContext != "" {
-			parts = append(parts, eventsContext)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			eventsRes.content = e.searchEvents(ctx, query)
+		}()
 	}
 
-	// Code search: only when a project ID is configured
 	if e.svc.Code != nil && e.codeProject != "" {
-		codeContext := e.searchCode(ctx, query)
-		if codeContext != "" {
-			parts = append(parts, codeContext)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codeRes.content = e.searchCode(ctx, query)
+		}()
+	}
+
+	wg.Wait()
+
+	var parts []string
+	for _, c := range []string{kbRes.content, eventsRes.content, codeRes.content} {
+		if c != "" {
+			parts = append(parts, c)
 		}
 	}
 
@@ -91,7 +116,6 @@ func (e *ContextEnricher) EnrichContext(ctx context.Context, query string) strin
 
 	var sb strings.Builder
 	sb.WriteString("<context source=\"remembrances\">\n")
-	sb.WriteString("The following context was retrieved from the knowledge base, past session events, and code index to help answer your query.\n\n")
 	sb.WriteString(strings.Join(parts, "\n\n"))
 	sb.WriteString("\n</context>")
 	return sb.String()
@@ -103,63 +127,72 @@ func (e *ContextEnricher) searchKB(ctx context.Context, query string) string {
 		logging.Debug("context enricher: kb search failed", "error", err)
 		return ""
 	}
-	if len(results) == 0 {
-		return ""
-	}
 
 	var sb strings.Builder
 	sb.WriteString("## Knowledge Base\n")
+	count := 0
 	for i, r := range results {
+		if r.Score < e.minScore {
+			continue
+		}
 		filePath := r.Document.FilePath
 		if filePath == "" {
 			filePath = fmt.Sprintf("document-%d", r.Document.ID)
 		}
-		sb.WriteString(fmt.Sprintf("### [%d] %s (score: %.3f)\n", i+1, filePath, r.Score))
+		sb.WriteString(fmt.Sprintf("### [%d] %s (score: %.2f)\n", i+1, filePath, r.Score))
 		chunk := strings.TrimSpace(r.ChunkContent)
 		if chunk == "" {
 			chunk = strings.TrimSpace(r.Document.Content)
-			// Truncate very long documents to avoid context explosion
 			if len(chunk) > 500 {
 				chunk = chunk[:500] + "..."
 			}
 		}
 		sb.WriteString(chunk)
 		sb.WriteString("\n")
+		count++
+	}
+	if count == 0 {
+		return ""
 	}
 	return sb.String()
 }
 
 func (e *ContextEnricher) searchEvents(ctx context.Context, query string) string {
 	opts := events.SearchOptions{
-		Query:          query,
-		Subject:        e.eventsSubject,
-		Limit:          e.eventsResults,
-		LastDays:       e.eventsLastDays,
+		Query:    query,
+		Subject:  e.eventsSubject,
+		Limit:    e.eventsResults,
+		LastDays: e.eventsLastDays,
 	}
 	results, err := e.svc.Events.SearchEvents(ctx, opts)
 	if err != nil {
 		logging.Debug("context enricher: events search failed", "error", err)
 		return ""
 	}
-	if len(results) == 0 {
-		return ""
-	}
 
 	var sb strings.Builder
 	sb.WriteString("## Past Session Events\n")
+	count := 0
 	for i, r := range results {
+		if r.Score < e.minScore {
+			continue
+		}
 		ts := r.Event.EventAt.Format(time.RFC3339)
 		subject := r.Event.Subject
 		if subject == "" {
 			subject = "general"
 		}
-		sb.WriteString(fmt.Sprintf("### [%d] [%s] subject:%s (score: %.3f)\n", i+1, ts, subject, r.Score))
+		sb.WriteString(fmt.Sprintf("### [%d] [%s] %s (score: %.2f)\n", i+1, ts, subject, r.Score))
 		content := strings.TrimSpace(r.Event.Content)
 		if len(content) > 600 {
 			content = content[:600] + "..."
 		}
 		sb.WriteString(content)
 		sb.WriteString("\n")
+		count++
+	}
+	if count == 0 {
+		return ""
 	}
 	return sb.String()
 }
@@ -170,14 +203,12 @@ func (e *ContextEnricher) searchCode(ctx context.Context, query string) string {
 		logging.Debug("context enricher: code search failed", "project", e.codeProject, "error", err)
 		return ""
 	}
-	if len(results) == 0 {
-		return ""
-	}
 
 	var sb strings.Builder
 	sb.WriteString("## Code Index\n")
+	count := 0
 	for i, r := range results {
-		if r.Symbol == nil {
+		if r.Symbol == nil || r.Score < e.minScore {
 			continue
 		}
 		sym := r.Symbol
@@ -189,7 +220,7 @@ func (e *ContextEnricher) searchCode(ctx context.Context, query string) string {
 				header += fmt.Sprintf(" — %s", sym.FilePath)
 			}
 		}
-		header += fmt.Sprintf(" (score: %.3f)", r.Score)
+		header += fmt.Sprintf(" (score: %.2f)", r.Score)
 		sb.WriteString(header)
 		sb.WriteString("\n")
 		if sym.DocString != "" {
@@ -205,6 +236,10 @@ func (e *ContextEnricher) searchCode(ctx context.Context, query string) string {
 			sb.WriteString(body)
 			sb.WriteString("\n```\n")
 		}
+		count++
+	}
+	if count == 0 {
+		return ""
 	}
 	return sb.String()
 }

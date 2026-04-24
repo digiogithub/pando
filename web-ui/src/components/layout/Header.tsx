@@ -16,7 +16,7 @@ export default function Header() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { toggleSidebar, sidebarOpen } = useLayoutStore()
-  const { theme, toggleTheme } = useTheme()
+  const { themeMode: theme, toggleMode: toggleTheme } = useTheme()
   const connected = useServerStore((s) => s.connected)
   const [version, setVersion] = useState<string>('')
 

@@ -299,7 +299,7 @@ export interface SettingsConfig {
   default_model: string
   default_provider: string
   language: string
-  theme: 'light' | 'dark'
+  theme: string  // combined theme ID: 'pando-light' | 'pando-dark' | 'claude-light' | etc.
   auto_save: boolean
   markdown_preview: boolean
   custom_instructions: string
