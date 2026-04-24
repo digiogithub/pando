@@ -465,3 +465,30 @@ export interface CronJobCreate {
   tags?: string[]
   timeout?: string
 }
+
+// Provider Account types
+export interface ProviderAccount {
+  id: string
+  displayName: string
+  type: string
+  apiKey?: string
+  baseUrl?: string
+  extraHeaders?: Record<string, string>
+  disabled?: boolean
+  useOAuth?: boolean
+}
+
+export interface ProviderTypeInfo {
+  type: string
+  displayName: string
+  requiresAPIKey: boolean
+  requiresBaseUrl: boolean
+  supportsOAuth: boolean
+  supportsExtraHeaders: boolean
+}
+
+export interface ProviderAccountTestResult {
+  ok: boolean
+  modelCount: number
+  error?: string
+}

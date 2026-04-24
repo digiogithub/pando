@@ -43,6 +43,7 @@
     "categories": {
       "general": "General",
       "providers": "Providers",
+      "providerAccounts": "Provider Accounts",
       "agents": "Agents",
       "mcpServers": "MCP Servers",
       "mcpGateway": "MCP Gateway",

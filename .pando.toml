@@ -35,8 +35,8 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'anthropic.claude-sonnet-4-6'
-MaxTokens = 32000
+Model = 'ollama.gemma4-e2b:latest'
+MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false

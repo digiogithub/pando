@@ -15,11 +15,13 @@ import MesnadaSettings from './MesnadaSettings'
 import RemembrancesSettings from './RemembrancesSettings'
 import SnapshotsSettings from './SnapshotsSettings'
 import APIServerSettings from './APIServerSettings'
+import ProviderAccountsSettings from './ProviderAccountsSettings'
 import { useConfigEventsStore } from '@/stores/configEventsStore'
 
 type SettingsCategory =
   | 'general'
   | 'providers'
+  | 'provider-accounts'
   | 'agents'
   | 'mcp-servers'
   | 'mcp-gateway'
@@ -37,6 +39,7 @@ type SettingsCategory =
 const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string }[] = [
   { id: 'general', labelKey: 'settings.categories.general' },
   { id: 'providers', labelKey: 'settings.categories.providers' },
+  { id: 'provider-accounts', labelKey: 'settings.categories.providerAccounts' },
   { id: 'agents', labelKey: 'settings.categories.agents' },
   { id: 'mcp-servers', labelKey: 'settings.categories.mcpServers' },
   { id: 'mcp-gateway', labelKey: 'settings.categories.mcpGateway' },
@@ -187,6 +190,7 @@ export default function SettingsView() {
       >
         {activeCategory === 'general' && <GeneralSettings />}
         {activeCategory === 'providers' && <ProvidersSettings />}
+        {activeCategory === 'provider-accounts' && <ProviderAccountsSettings />}
         {activeCategory === 'agents' && <AgentsSettings />}
         {activeCategory === 'mcp-servers' && <MCPServersSettings />}
         {activeCategory === 'mcp-gateway' && <MCPGatewaySettings />}

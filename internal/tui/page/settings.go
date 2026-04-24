@@ -106,6 +106,10 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			serverName := strings.TrimPrefix(msg.Field.Key, "action:delete_mcp_server:")
 			return p, p.deleteMCPServer(serverName)
 		}
+		if strings.HasPrefix(msg.Field.Key, "action:delete_provider_account:") {
+			id := strings.TrimPrefix(msg.Field.Key, "action:delete_provider_account:")
+			return p, p.deleteProviderAccount(id)
+		}
 		if msg.Field.Key == "action:remembrances_index_workdir" {
 			return p, p.indexWorkingDirectory()
 		}
@@ -259,6 +263,19 @@ func (p *settingsPage) deleteMCPServer(name string) tea.Cmd {
 	p.settings.SetSections(buildSections(p.app))
 	p.settings.SetSize(p.width, p.height)
 	return util.ReportInfo("MCP server deleted: " + name)
+}
+
+func (p *settingsPage) deleteProviderAccount(id string) tea.Cmd {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return util.ReportError(fmt.Errorf("provider account ID cannot be empty"))
+	}
+	if err := config.DeleteProviderAccount(id); err != nil {
+		return util.ReportError(err)
+	}
+	p.settings.SetSections(buildSections(p.app))
+	p.settings.SetSize(p.width, p.height)
+	return util.ReportInfo("Provider account deleted: " + id)
 }
 
 // indexWorkingDirectory starts a code indexing job for the current working directory.
@@ -419,6 +436,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 
 		// ── AI ──
 		withGroup(buildProvidersSection(cfg), "AI"),
+		withGroup(buildProviderAccountsSection(cfg), "AI"),
 		withGroup(buildAgentsSection(cfg), "AI"),
 		withGroup(buildPersonaAutoSelectSection(cfg), "AI"),
 		withGroup(buildEvaluatorSection(cfg), "AI"),
@@ -625,6 +643,67 @@ func buildProvidersSection(cfg *config.Config) settings.Section {
 
 	return settings.Section{
 		Title:  "Providers",
+		Fields: fields,
+	}
+}
+
+func buildProviderAccountsSection(cfg *config.Config) settings.Section {
+	accounts := config.GetProviderAccounts()
+	fields := make([]settings.Field, 0, len(accounts)*6)
+
+	providerOptions := []string{
+		"anthropic", "openai", "openai-compatible",
+		"ollama", "copilot", "gemini", "groq",
+		"openrouter", "xai", "azure", "bedrock", "vertexai",
+	}
+
+	for _, acc := range accounts {
+		accType := string(acc.Type)
+		fields = append(fields,
+			settings.Field{
+				Label: fmt.Sprintf("[%s] Name", acc.ID),
+				Key:   fmt.Sprintf("providerAccount.%s.displayName", acc.ID),
+				Value: acc.DisplayName,
+				Type:  settings.FieldText,
+			},
+			settings.Field{
+				Label:   fmt.Sprintf("[%s] Type", acc.ID),
+				Key:     fmt.Sprintf("providerAccount.%s.type", acc.ID),
+				Value:   accType,
+				Type:    settings.FieldSelect,
+				Options: ensureOption(providerOptions, accType),
+			},
+			settings.Field{
+				Label:  fmt.Sprintf("[%s] API Key", acc.ID),
+				Key:    fmt.Sprintf("providerAccount.%s.apiKey", acc.ID),
+				Value:  acc.APIKey,
+				Type:   settings.FieldText,
+				Masked: true,
+			},
+			settings.Field{
+				Label: fmt.Sprintf("[%s] Base URL", acc.ID),
+				Key:   fmt.Sprintf("providerAccount.%s.baseUrl", acc.ID),
+				Value: acc.BaseURL,
+				Type:  settings.FieldText,
+			},
+			settings.Field{
+				Label: fmt.Sprintf("[%s] Enabled", acc.ID),
+				Key:   fmt.Sprintf("providerAccount.%s.enabled", acc.ID),
+				Value: boolString(!acc.Disabled),
+				Type:  settings.FieldToggle,
+			},
+			settings.Field{
+				Label:    fmt.Sprintf("[%s] Delete", acc.ID),
+				Key:      fmt.Sprintf("action:delete_provider_account:%s", acc.ID),
+				Value:    "Delete this provider account",
+				Type:     settings.FieldAction,
+				ReadOnly: true,
+			},
+		)
+	}
+
+	return settings.Section{
+		Title:  "Provider Accounts",
 		Fields: fields,
 	}
 }
@@ -2018,6 +2097,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveSkillsCatalog(field)
 	case strings.HasPrefix(field.Key, "personaAutoSelect."):
 		return savePersonaAutoSelect(field)
+	case strings.HasPrefix(field.Key, "providerAccount."):
+		return saveProviderAccountField(field)
 	default:
 		return fmt.Errorf("unsupported setting %q", field.Key)
 	}
@@ -2131,6 +2212,42 @@ func saveProvider(field settings.Field) error {
 	}
 
 	return config.UpdateProvider(providerName, providerCfg.APIKey, providerCfg.BaseURL, providerCfg.Disabled)
+}
+
+func saveProviderAccountField(field settings.Field) error {
+	// key format: providerAccount.{id}.{fieldName}
+	parts := strings.SplitN(field.Key, ".", 3)
+	if len(parts) != 3 {
+		return fmt.Errorf("invalid provider account setting key %q", field.Key)
+	}
+	id := parts[1]
+	fieldName := parts[2]
+
+	acc, ok := config.GetProviderAccount(id)
+	if !ok {
+		return fmt.Errorf("provider account %q not found", id)
+	}
+
+	switch fieldName {
+	case "displayName":
+		acc.DisplayName = strings.TrimSpace(field.Value)
+	case "type":
+		acc.Type = models.ModelProvider(strings.TrimSpace(field.Value))
+	case "apiKey":
+		acc.APIKey = strings.TrimSpace(field.Value)
+	case "baseUrl":
+		acc.BaseURL = strings.TrimSpace(field.Value)
+	case "enabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid enabled value: %w", err)
+		}
+		acc.Disabled = !enabled
+	default:
+		return fmt.Errorf("unsupported provider account field %q", fieldName)
+	}
+
+	return config.UpdateProviderAccount(id, *acc)
 }
 
 func saveAgent(field settings.Field) error {
