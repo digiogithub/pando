@@ -300,6 +300,29 @@ Port        = 9999
 RequireAuth = false
 
 # =============================================================================
+# Container Runtime
+# =============================================================================
+[Container]
+Runtime         = 'host'
+Image           = ''
+PullPolicy      = 'if-not-present'
+Socket          = ''
+WorkDir         = ''
+Network         = 'none'
+ReadOnly        = true
+User            = ''
+CPULimit        = ''
+MemLimit        = ''
+PidsLimit       = 512
+NoNewPrivileges = true
+AllowEnv        = []
+AllowMounts     = []
+ExtraEnv        = []
+ExtraMounts     = []
+EmbeddedCacheDir = ''
+EmbeddedGCKeepN  = 5
+
+# =============================================================================
 # Lua scripting
 # =============================================================================
 [Lua]

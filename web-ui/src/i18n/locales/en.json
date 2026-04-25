@@ -49,6 +49,7 @@
       "mcpGateway": "MCP Gateway",
       "lsp": "LSP",
       "tools": "Tools",
+      "containerRuntime": "Container Runtime",
       "bash": "Bash",
       "skills": "Skills",
       "lua": "Lua Engine",

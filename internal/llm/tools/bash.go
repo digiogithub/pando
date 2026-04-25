@@ -12,7 +12,19 @@ import (
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mesnada/acp"
 	"github.com/digiogithub/pando/internal/permission"
+	"github.com/digiogithub/pando/internal/runtime"
 )
+
+// getRuntimeResolver extracts a RuntimeResolver from the context if one was
+// injected (Phase 2+). Returns nil when running on the default host path.
+func getRuntimeResolver(ctx context.Context) runtime.RuntimeResolver {
+	if v := ctx.Value(RuntimeResolverContextKey); v != nil {
+		if r, ok := v.(runtime.RuntimeResolver); ok {
+			return r
+		}
+	}
+	return runtime.NewResolver()
+}
 
 type BashParams struct {
 	Command   string `json:"command"`
@@ -349,8 +361,7 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	}
 	logging.Debug("bash executing", "command", params.Command, "isSafeReadOnly", isSafeReadOnly)
 	startTime := time.Now()
-	shell := shell.GetPersistentShell(config.WorkingDirectory())
-	stdout, stderr, exitCode, interrupted, err := shell.Exec(ctx, params.Command, params.Timeout)
+	stdout, stderr, exitCode, interrupted, err := b.executeCommand(ctx, sessionID, params)
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("error executing command: %w", err)
 	}
@@ -410,6 +421,61 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return WithResponseMetadata(NewTextResponse("no output"), metadata), nil
 	}
 	return WithResponseMetadata(NewTextResponse(stdout), metadata), nil
+}
+
+func (b *bashTool) executeCommand(ctx context.Context, sessionID string, params BashParams) (string, string, int, bool, error) {
+	cfg := config.Get()
+	if cfg == nil {
+		return "", "", 0, false, fmt.Errorf("config not loaded")
+	}
+
+	containerCfg := cfg.Container
+	rt := strings.TrimSpace(strings.ToLower(containerCfg.Runtime))
+	if rt == "" || rt == string(runtime.RuntimeHost) {
+		shell := shell.GetPersistentShell(config.WorkingDirectory())
+		return shell.Exec(ctx, params.Command, params.Timeout)
+	}
+
+	resolver := getRuntimeResolver(ctx)
+	if resolver == nil {
+		return "", "", 0, false, fmt.Errorf("runtime resolver not available")
+	}
+
+	executionRuntime, _, err := resolver.Resolve(containerCfg)
+	if err != nil {
+		return "", "", 0, false, err
+	}
+
+	entry, err := runtime.DefaultSessionManager().GetOrCreate(ctx, sessionID, config.WorkingDirectory(), executionRuntime)
+	if err != nil {
+		runtime.DefaultSessionManager().RecordEvent(runtime.ContainerEvent{
+			SessionID:   sessionID,
+			RuntimeType: executionRuntime.Type(),
+			Event:       "error",
+			Details:     err.Error(),
+		})
+		return "", "", 0, false, err
+	}
+
+	result, err := entry.Runtime.Exec(ctx, sessionID, params.Command, nil)
+	if err != nil {
+		runtime.DefaultSessionManager().RecordEvent(runtime.ContainerEvent{
+			SessionID:   sessionID,
+			RuntimeType: entry.RuntimeType,
+			ContainerID: entry.ContainerID,
+			Event:       "error",
+			Details:     err.Error(),
+		})
+		return "", "", 0, false, err
+	}
+	runtime.DefaultSessionManager().RecordEvent(runtime.ContainerEvent{
+		SessionID:   sessionID,
+		RuntimeType: entry.RuntimeType,
+		ContainerID: entry.ContainerID,
+		Event:       "exec",
+		Details:     params.Command,
+	})
+	return result.Stdout, result.Stderr, result.ExitCode, result.Interrupted, nil
 }
 
 // headLines returns the first n lines of s.

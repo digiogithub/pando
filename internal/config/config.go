@@ -236,9 +236,9 @@ type RemembrancesConfig struct {
 	ContextEnrichmentKBResults      int    `json:"context_enrichment_kb_results" toml:"ContextEnrichmentKBResults"`
 	ContextEnrichmentCodeResults    int    `json:"context_enrichment_code_results" toml:"ContextEnrichmentCodeResults"`
 	ContextEnrichmentCodeProject    string `json:"context_enrichment_code_project" toml:"ContextEnrichmentCodeProject"`
-	ContextEnrichmentEventsResults  int     `json:"context_enrichment_events_results" toml:"ContextEnrichmentEventsResults"`
-	ContextEnrichmentEventsSubject  string  `json:"context_enrichment_events_subject" toml:"ContextEnrichmentEventsSubject"`
-	ContextEnrichmentEventsLastDays int     `json:"context_enrichment_events_last_days" toml:"ContextEnrichmentEventsLastDays"`
+	ContextEnrichmentEventsResults  int    `json:"context_enrichment_events_results" toml:"ContextEnrichmentEventsResults"`
+	ContextEnrichmentEventsSubject  string `json:"context_enrichment_events_subject" toml:"ContextEnrichmentEventsSubject"`
+	ContextEnrichmentEventsLastDays int    `json:"context_enrichment_events_last_days" toml:"ContextEnrichmentEventsLastDays"`
 	// ContextEnrichmentMinScore is the minimum relevance score (0–1) for a result to be included.
 	// Results below this threshold are discarded; entire sections are dropped if all results fail.
 	ContextEnrichmentMinScore float64 `json:"context_enrichment_min_score" toml:"ContextEnrichmentMinScore"`
@@ -440,6 +440,31 @@ type LLMCacheConfig struct {
 	Enabled bool `json:"enabled" toml:"Enabled"`
 }
 
+// ContainerConfig controls container runtime isolation for tool execution.
+// When Runtime is empty or "host" behaviour is identical to the pre-container default.
+type ContainerConfig struct {
+	// Runtime selects the execution backend: host|docker|podman|embedded|auto.
+	// Default "host" keeps existing behaviour unchanged.
+	Runtime          string   `toml:"runtime" json:"runtime"`
+	Image            string   `toml:"image" json:"image"`
+	PullPolicy       string   `toml:"pull_policy" json:"pull_policy"` // always|never|if-not-present
+	Socket           string   `toml:"socket" json:"socket"`           // override docker/podman socket path
+	WorkDir          string   `toml:"work_dir" json:"work_dir"`       // working directory inside container
+	Network          string   `toml:"network" json:"network"`         // default: "none"
+	ReadOnly         bool     `toml:"read_only" json:"read_only"`     // mount root fs read-only
+	User             string   `toml:"user" json:"user"`               // non-root user inside container
+	CPULimit         string   `toml:"cpu_limit" json:"cpu_limit"`
+	MemLimit         string   `toml:"mem_limit" json:"mem_limit"`
+	PidsLimit        int64    `toml:"pids_limit" json:"pids_limit"`
+	NoNewPrivileges  bool     `toml:"no_new_privileges" json:"no_new_privileges"`
+	AllowEnv         []string `toml:"allow_env" json:"allow_env"`
+	AllowMounts      []string `toml:"allow_mounts" json:"allow_mounts"`
+	ExtraEnv         []string `toml:"extra_env" json:"extra_env"`
+	ExtraMounts      []string `toml:"extra_mounts" json:"extra_mounts"`
+	EmbeddedCacheDir string   `toml:"embedded_cache_dir" json:"embedded_cache_dir"`
+	EmbeddedGCKeepN  int      `toml:"embedded_gc_keep_n" json:"embedded_gc_keep_n"`
+}
+
 // ProviderAccount defines a named provider configuration (account).
 // It allows multiple accounts of the same provider type (e.g., two Anthropic API keys).
 // The ID field is a unique slug used to identify the account (e.g., "anthropic-work").
@@ -456,13 +481,13 @@ type ProviderAccount struct {
 
 // Config is the main configuration structure for the application.
 type Config struct {
-	Data              Data                              `json:"data"`
-	WorkingDir        string                            `json:"wd,omitempty"`
-	MCPServers        map[string]MCPServer              `json:"mcpServers,omitempty"`
+	Data       Data                 `json:"data"`
+	WorkingDir string               `json:"wd,omitempty"`
+	MCPServers map[string]MCPServer `json:"mcpServers,omitempty"`
 	// ProviderAccounts is the new multi-account provider configuration.
 	// It supersedes the Providers map. On load, if empty and Providers is non-empty,
 	// the old map is automatically migrated to this list.
-	ProviderAccounts []ProviderAccount                 `json:"providerAccounts,omitempty" toml:"providerAccounts,omitempty"`
+	ProviderAccounts []ProviderAccount `json:"providerAccounts,omitempty" toml:"providerAccounts,omitempty"`
 	// Providers is the legacy single-account provider map. Kept for backward compatibility.
 	// New code should use ProviderAccounts instead.
 	Providers         map[models.ModelProvider]Provider `json:"providers,omitempty"`
@@ -494,6 +519,7 @@ type Config struct {
 	Projects          ProjectsConfig                    `json:"projects,omitempty" toml:"Projects"`
 	CronJobs          CronJobsConfig                    `json:"cronJobs,omitempty" toml:"CronJobs"`
 	LLMCache          LLMCacheConfig                    `json:"llmCache,omitempty" toml:"LLMCache"`
+	Container         ContainerConfig                   `json:"container,omitempty" toml:"Container"`
 }
 
 // Application constants
@@ -2938,6 +2964,29 @@ func UpdateServer(server APIServerConfig) error {
 	return nil
 }
 
+func UpdateContainer(containerCfg ContainerConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	normalized, err := NormalizeContainerConfig(containerCfg)
+	if err != nil {
+		return err
+	}
+
+	oldContainer := cfg.Container
+	cfg.Container = normalized
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Container = normalized
+	}); err != nil {
+		cfg.Container = oldContainer
+		return err
+	}
+
+	return nil
+}
+
 func UpdateLua(lua LuaConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")
@@ -2954,6 +3003,47 @@ func UpdateLua(lua LuaConfig) error {
 	}
 
 	return nil
+}
+
+func NormalizeContainerConfig(containerCfg ContainerConfig) (ContainerConfig, error) {
+	containerCfg.Runtime = strings.ToLower(strings.TrimSpace(containerCfg.Runtime))
+	if containerCfg.Runtime == "" {
+		containerCfg.Runtime = "host"
+	}
+	switch containerCfg.Runtime {
+	case "host", "docker", "podman", "embedded", "auto":
+	default:
+		return ContainerConfig{}, fmt.Errorf("runtime must be one of host, docker, podman, embedded, auto")
+	}
+
+	containerCfg.Image = strings.TrimSpace(containerCfg.Image)
+	containerCfg.PullPolicy = strings.ToLower(strings.TrimSpace(containerCfg.PullPolicy))
+	switch containerCfg.PullPolicy {
+	case "", "always", "never", "if-not-present":
+	default:
+		return ContainerConfig{}, fmt.Errorf("pull_policy must be one of always, never, if-not-present")
+	}
+
+	containerCfg.Socket = strings.TrimSpace(containerCfg.Socket)
+	containerCfg.WorkDir = strings.TrimSpace(containerCfg.WorkDir)
+	containerCfg.Network = strings.TrimSpace(containerCfg.Network)
+	containerCfg.User = strings.TrimSpace(containerCfg.User)
+	containerCfg.CPULimit = strings.TrimSpace(containerCfg.CPULimit)
+	containerCfg.MemLimit = strings.TrimSpace(containerCfg.MemLimit)
+	containerCfg.EmbeddedCacheDir = strings.TrimSpace(containerCfg.EmbeddedCacheDir)
+	if containerCfg.PidsLimit < 0 {
+		return ContainerConfig{}, fmt.Errorf("pids_limit must be non-negative")
+	}
+	if containerCfg.EmbeddedGCKeepN < 0 {
+		return ContainerConfig{}, fmt.Errorf("embedded_gc_keep_n must be non-negative")
+	}
+
+	containerCfg.AllowEnv = normalizeStringSlice(containerCfg.AllowEnv)
+	containerCfg.AllowMounts = normalizeStringSlice(containerCfg.AllowMounts)
+	containerCfg.ExtraEnv = normalizeStringSlice(containerCfg.ExtraEnv)
+	containerCfg.ExtraMounts = normalizeStringSlice(containerCfg.ExtraMounts)
+
+	return containerCfg, nil
 }
 
 func UpdateMCPGateway(gw MCPGatewayConfig) error {
@@ -2990,6 +3080,25 @@ func UpdateSnapshots(snap SnapshotsConfig) error {
 	}
 
 	return nil
+}
+
+func normalizeStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		out = append(out, value)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func UpdateCronJobs(cronJobs CronJobsConfig) error {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -174,18 +173,19 @@ func (e *editTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 
 func (e *editTool) createNewFile(ctx context.Context, filePath, content string) (ToolResponse, error) {
 	logging.Debug("edit creating new file", "filePath", filePath)
-	fileInfo, err := os.Stat(filePath)
+	workspaceFS := getWorkspaceFS(ctx)
+	fileInfo, err := workspaceFS.Stat(ctx, filePath)
 	if err == nil {
 		if fileInfo.IsDir() {
 			return NewTextErrorResponse(fmt.Sprintf("path is a directory, not a file: %s", filePath)), nil
 		}
 		return NewTextErrorResponse(fmt.Sprintf("file already exists: %s", filePath)), nil
-	} else if !os.IsNotExist(err) {
+	} else if !isNotExist(err) {
 		return ToolResponse{}, fmt.Errorf("failed to access file: %w", err)
 	}
 
 	dir := filepath.Dir(filePath)
-	if err = os.MkdirAll(dir, 0o755); err != nil {
+	if err = workspaceFS.MkdirAll(ctx, dir, 0o755); err != nil {
 		return ToolResponse{}, fmt.Errorf("failed to create parent directories: %w", err)
 	}
 
@@ -222,7 +222,7 @@ func (e *editTool) createNewFile(ctx context.Context, filePath, content string) 
 	}
 
 	writeErr := withFileLock(filePath, func() error {
-		if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+		if err := workspaceFS.WriteFile(ctx, filePath, []byte(content), 0o644); err != nil {
 			return fmt.Errorf("failed to write file: %w", err)
 		}
 
@@ -257,9 +257,10 @@ func (e *editTool) createNewFile(ctx context.Context, filePath, content string) 
 
 func (e *editTool) deleteContent(ctx context.Context, filePath, oldString string) (ToolResponse, error) {
 	logging.Debug("edit deleting content", "filePath", filePath, "oldStringLen", len(oldString))
-	fileInfo, err := os.Stat(filePath)
+	workspaceFS := getWorkspaceFS(ctx)
+	fileInfo, err := workspaceFS.Stat(ctx, filePath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if isNotExist(err) {
 			return NewTextErrorResponse(fmt.Sprintf("file not found: %s", filePath)), nil
 		}
 		return ToolResponse{}, fmt.Errorf("failed to access file: %w", err)
@@ -282,7 +283,7 @@ func (e *editTool) deleteContent(ctx context.Context, filePath, oldString string
 			)), nil
 	}
 
-	content, err := os.ReadFile(filePath)
+	content, err := workspaceFS.ReadFile(ctx, filePath)
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("failed to read file: %w", err)
 	}
@@ -332,7 +333,7 @@ func (e *editTool) deleteContent(ctx context.Context, filePath, oldString string
 	}
 
 	writeErr := withFileLock(filePath, func() error {
-		if err := os.WriteFile(filePath, []byte(newContent), 0o644); err != nil {
+		if err := workspaceFS.WriteFile(ctx, filePath, []byte(newContent), 0o644); err != nil {
 			return fmt.Errorf("failed to write file: %w", err)
 		}
 
@@ -374,9 +375,10 @@ func (e *editTool) deleteContent(ctx context.Context, filePath, oldString string
 
 func (e *editTool) replaceContent(ctx context.Context, filePath, oldString, newString string) (ToolResponse, error) {
 	logging.Debug("edit replacing content", "filePath", filePath, "oldStringLen", len(oldString), "newStringLen", len(newString))
-	fileInfo, err := os.Stat(filePath)
+	workspaceFS := getWorkspaceFS(ctx)
+	fileInfo, err := workspaceFS.Stat(ctx, filePath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if isNotExist(err) {
 			return NewTextErrorResponse(fmt.Sprintf("file not found: %s", filePath)), nil
 		}
 		return ToolResponse{}, fmt.Errorf("failed to access file: %w", err)
@@ -399,7 +401,7 @@ func (e *editTool) replaceContent(ctx context.Context, filePath, oldString, newS
 			)), nil
 	}
 
-	content, err := os.ReadFile(filePath)
+	content, err := workspaceFS.ReadFile(ctx, filePath)
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("failed to read file: %w", err)
 	}
@@ -450,7 +452,7 @@ func (e *editTool) replaceContent(ctx context.Context, filePath, oldString, newS
 	}
 
 	writeErr := withFileLock(filePath, func() error {
-		if err := os.WriteFile(filePath, []byte(newContent), 0o644); err != nil {
+		if err := workspaceFS.WriteFile(ctx, filePath, []byte(newContent), 0o644); err != nil {
 			return fmt.Errorf("failed to write file: %w", err)
 		}
 

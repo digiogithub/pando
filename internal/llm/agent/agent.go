@@ -18,6 +18,7 @@ import (
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
 )
@@ -98,13 +99,13 @@ type agent struct {
 	tools    []tools.BaseTool
 	provider provider.Provider
 
-	titleProvider            provider.Provider
-	summarizeProvider        provider.Provider
+	titleProvider             provider.Provider
+	summarizeProvider         provider.Provider
 	summarizeFallbackProvider provider.Provider
-	agentName                config.AgentName
-	skillManager             *skills.SkillManager
-	contextManager           *skills.ContextManager
-	luaMgr                   *luaengine.FilterManager
+	agentName                 config.AgentName
+	skillManager              *skills.SkillManager
+	contextManager            *skills.ContextManager
+	luaMgr                    *luaengine.FilterManager
 
 	activeRequests sync.Map
 }
@@ -153,10 +154,10 @@ func NewAgent(
 	}
 
 	agent := &agent{
-		Broker:            pubsub.NewBroker[AgentEvent](),
-		provider:          agentProvider,
-		messages:          messages,
-		sessions:          sessions,
+		Broker:                    pubsub.NewBroker[AgentEvent](),
+		provider:                  agentProvider,
+		messages:                  messages,
+		sessions:                  sessions,
 		tools:                     agentTools,
 		titleProvider:             titleProvider,
 		summarizeProvider:         summarizeProvider,
@@ -164,7 +165,7 @@ func NewAgent(
 		agentName:                 agentName,
 		skillManager:              skillManager,
 		contextManager:            contextManager,
-		activeRequests:    sync.Map{},
+		activeRequests:            sync.Map{},
 	}
 
 	logging.Debug("Agent created", "name", string(agentName), "model", modelID, "toolCount", len(agentTools))
@@ -588,9 +589,17 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 
 	toolResults := make([]message.ToolResult, len(assistantMsg.ToolCalls()))
 	toolCalls := assistantMsg.ToolCalls()
+	toolCtx := ctx
+	if len(toolCalls) > 0 {
+		var toolCtxErr error
+		toolCtx, toolCtxErr = withToolWorkspaceContext(ctx)
+		if toolCtxErr != nil {
+			return assistantMsg, nil, toolCtxErr
+		}
+	}
 	for i, toolCall := range toolCalls {
 		select {
-		case <-ctx.Done():
+		case <-toolCtx.Done():
 			a.finishMessage(context.Background(), &assistantMsg, message.FinishReasonCanceled)
 			// Make all future tool calls cancelled
 			for j := i; j < len(toolCalls); j++ {
@@ -632,7 +641,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 				}
 				continue
 			}
-			toolResult, toolErr := tool.Run(ctx, tools.ToolCall{
+			toolResult, toolErr := tool.Run(toolCtx, tools.ToolCall{
 				ID:    toolCall.ID,
 				Name:  toolCall.Name,
 				Input: toolCall.Input,
@@ -733,6 +742,25 @@ out:
 	}
 
 	return assistantMsg, &msg, err
+}
+
+func withToolWorkspaceContext(ctx context.Context) (context.Context, error) {
+	resolver, ok := ctx.Value(tools.RuntimeResolverContextKey).(runtime.RuntimeResolver)
+	if !ok || resolver == nil {
+		resolver = runtime.NewResolver()
+		ctx = context.WithValue(ctx, tools.RuntimeResolverContextKey, resolver)
+	}
+
+	cfg := config.ContainerConfig{}
+	if loaded := config.Get(); loaded != nil {
+		cfg = loaded.Container
+	}
+
+	_, workspaceFS, err := resolver.Resolve(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("resolve workspace filesystem: %w", err)
+	}
+	return context.WithValue(ctx, tools.WorkspaceFSContextKey, workspaceFS), nil
 }
 
 func (a *agent) finishMessage(ctx context.Context, msg *message.Message, finishReson message.FinishReason) {

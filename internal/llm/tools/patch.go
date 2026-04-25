@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -97,6 +96,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 	}
 
 	logging.Debug("patch tool called", "patchTextLen", len(params.PatchText))
+	workspaceFS := getWorkspaceFS(ctx)
 
 	// Identify all files needed for the patch and verify they've been read
 	filesToRead := diff.IdentifyFilesNeeded(params.PatchText)
@@ -111,9 +111,9 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 			return NewTextErrorResponse(fmt.Sprintf("you must read the file %s before patching it. Use the FileRead tool first", filePath)), nil
 		}
 
-		fileInfo, err := os.Stat(absPath)
+		fileInfo, err := workspaceFS.Stat(ctx, absPath)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if isNotExist(err) {
 				return NewTextErrorResponse(fmt.Sprintf("file not found: %s", absPath)), nil
 			}
 			return ToolResponse{}, fmt.Errorf("failed to access file: %w", err)
@@ -142,10 +142,10 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 			absPath = filepath.Join(wd, absPath)
 		}
 
-		_, err := os.Stat(absPath)
+		_, err := workspaceFS.Stat(ctx, absPath)
 		if err == nil {
 			return NewTextErrorResponse(fmt.Sprintf("file already exists and cannot be added: %s", absPath)), nil
-		} else if !os.IsNotExist(err) {
+		} else if !isNotExist(err) {
 			return ToolResponse{}, fmt.Errorf("failed to check file: %w", err)
 		}
 	}
@@ -159,7 +159,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 			absPath = filepath.Join(wd, absPath)
 		}
 
-		content, err := os.ReadFile(absPath)
+		content, err := workspaceFS.ReadFile(ctx, absPath)
 		if err != nil {
 			return ToolResponse{}, fmt.Errorf("failed to read file %s: %w", absPath, err)
 		}
@@ -271,18 +271,18 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 
 		// Create parent directories if needed
 		dir := filepath.Dir(absPath)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := workspaceFS.MkdirAll(ctx, dir, 0o755); err != nil {
 			return fmt.Errorf("failed to create parent directories for %s: %w", absPath, err)
 		}
 
-		return os.WriteFile(absPath, []byte(content), 0o644)
+		return workspaceFS.WriteFile(ctx, absPath, []byte(content), 0o644)
 	}, func(path string) error {
 		absPath := path
 		if !filepath.IsAbs(absPath) {
 			wd := config.WorkingDirectory()
 			absPath = filepath.Join(wd, absPath)
 		}
-		return os.Remove(absPath)
+		return workspaceFS.Remove(ctx, absPath)
 	})
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("failed to apply patch: %s", err)), nil

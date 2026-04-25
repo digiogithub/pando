@@ -19,6 +19,8 @@ type (
 	messageIDContextKey       string
 	acpClientConnContextKey   string
 	sessionCacheContextKey    string
+	runtimeResolverContextKey string
+	workspaceFSContextKey     string
 )
 
 const (
@@ -29,6 +31,10 @@ const (
 	MessageIDContextKey     messageIDContextKey     = "message_id"
 	ACPClientConnContextKey acpClientConnContextKey = "acp_client_connection"
 	SessionCacheContextKey  sessionCacheContextKey  = "session_cache"
+	// RuntimeResolverContextKey is the hook point for injecting a non-host
+	// RuntimeResolver in Phase 2 without changing existing execution paths.
+	RuntimeResolverContextKey runtimeResolverContextKey = "runtime_resolver"
+	WorkspaceFSContextKey     workspaceFSContextKey     = "workspace_fs"
 )
 
 type ToolResponse struct {

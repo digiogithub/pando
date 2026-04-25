@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -127,16 +126,17 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	if !filepath.IsAbs(filePath) {
 		filePath = filepath.Join(config.WorkingDirectory(), filePath)
 	}
+	workspaceFS := getWorkspaceFS(ctx)
 
 	// Check if file exists
-	fileInfo, err := os.Stat(filePath)
+	fileInfo, err := workspaceFS.Stat(ctx, filePath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if isNotExist(err) {
 			// Try to offer suggestions for similarly named files
 			dir := filepath.Dir(filePath)
 			base := filepath.Base(filePath)
 
-			dirEntries, dirErr := os.ReadDir(dir)
+			dirEntries, dirErr := workspaceFS.List(ctx, dir)
 			if dirErr == nil {
 				var suggestions []string
 				for _, entry := range dirEntries {
@@ -183,22 +183,21 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return NewTextErrorResponse(fmt.Sprintf("This is an image file of type: %s\nUse a different tool to process images", imageType)), nil
 	}
 
+	fileContent, err := workspaceFS.ReadFile(ctx, filePath)
+	if err != nil {
+		return ToolResponse{}, fmt.Errorf("error reading file: %w", err)
+	}
+
 	// Check for binary content using a sample of up to 4096 bytes
 	{
-		f, err := os.Open(filePath)
-		if err != nil {
-			return ToolResponse{}, fmt.Errorf("error opening file for binary check: %w", err)
-		}
-		sample := make([]byte, binarySampleSize)
-		n, _ := f.Read(sample)
-		f.Close()
-		if isBinaryContent(sample[:n]) {
+		sampleSize := min(len(fileContent), binarySampleSize)
+		if isBinaryContent(fileContent[:sampleSize]) {
 			return NewTextErrorResponse(fmt.Sprintf("File appears to be binary: %s", filePath)), nil
 		}
 	}
 
 	// Read the file content
-	content, lineCount, err := readTextFile(filePath, params.Offset, params.Limit)
+	content, lineCount, err := readTextFile(fileContent, params.Offset, params.Limit)
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("error reading file: %w", err)
 	}
@@ -251,30 +250,26 @@ func addLineNumbers(content string, startLine int) string {
 	return strings.Join(result, "\n")
 }
 
-func readTextFile(filePath string, offset, limit int) (string, int, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", 0, err
-	}
-	defer file.Close()
-
+func readTextFile(content []byte, offset, limit int) (string, int, error) {
 	lineCount := 0
 
-	scanner := NewLineScanner(file)
+	reader := bytes.NewReader(content)
+	scanner := NewLineScanner(reader)
 	if offset > 0 {
 		for lineCount < offset && scanner.Scan() {
 			lineCount++
 		}
-		if err = scanner.Err(); err != nil {
+		if err := scanner.Err(); err != nil {
 			return "", 0, err
 		}
 	}
 
 	if offset == 0 {
-		_, err = file.Seek(0, io.SeekStart)
+		_, err := reader.Seek(0, io.SeekStart)
 		if err != nil {
 			return "", 0, err
 		}
+		scanner = NewLineScanner(reader)
 	}
 
 	var lines []string
@@ -337,6 +332,13 @@ func isImageFile(filePath string) (bool, string) {
 	default:
 		return false, ""
 	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 type LineScanner struct {

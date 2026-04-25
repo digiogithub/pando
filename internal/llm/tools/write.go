@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -123,8 +122,9 @@ func (w *writeTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 	if !filepath.IsAbs(filePath) {
 		filePath = filepath.Join(config.WorkingDirectory(), filePath)
 	}
+	workspaceFS := getWorkspaceFS(ctx)
 
-	fileInfo, err := os.Stat(filePath)
+	fileInfo, err := workspaceFS.Stat(ctx, filePath)
 	if err == nil {
 		if fileInfo.IsDir() {
 			return NewTextErrorResponse(fmt.Sprintf("Path is a directory, not a file: %s", filePath)), nil
@@ -137,22 +137,22 @@ func (w *writeTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 				filePath, modTime.Format(time.RFC3339), lastRead.Format(time.RFC3339))), nil
 		}
 
-		oldContent, readErr := os.ReadFile(filePath)
+		oldContent, readErr := workspaceFS.ReadFile(ctx, filePath)
 		if readErr == nil && string(oldContent) == params.Content {
 			return NewTextErrorResponse(fmt.Sprintf("File %s already contains the exact content. No changes made.", filePath)), nil
 		}
-	} else if !os.IsNotExist(err) {
+	} else if !isNotExist(err) {
 		return ToolResponse{}, fmt.Errorf("error checking file: %w", err)
 	}
 
 	dir := filepath.Dir(filePath)
-	if err = os.MkdirAll(dir, 0o755); err != nil {
+	if err = workspaceFS.MkdirAll(ctx, dir, 0o755); err != nil {
 		return ToolResponse{}, fmt.Errorf("error creating directory: %w", err)
 	}
 
 	oldContent := ""
 	if fileInfo != nil && !fileInfo.IsDir() {
-		oldBytes, readErr := os.ReadFile(filePath)
+		oldBytes, readErr := workspaceFS.ReadFile(ctx, filePath)
 		if readErr == nil {
 			oldContent = string(oldBytes)
 		}
@@ -191,7 +191,7 @@ func (w *writeTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return ToolResponse{}, permission.ErrorPermissionDenied
 	}
 
-	err = os.WriteFile(filePath, []byte(params.Content), 0o644)
+	err = workspaceFS.WriteFile(ctx, filePath, []byte(params.Content), 0o644)
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("error writing file: %w", err)
 	}

@@ -8,7 +8,8 @@ var fileLocks sync.Map // map[string]*sync.Mutex
 
 // withFileLock acquires the mutex for the given file path, executes fn,
 // then releases the mutex. This ensures that concurrent edits to the same
-// file are serialized.
+// file are serialized. Container bind-mount mode keeps host and container
+// paths identical, so the host path remains a stable lock key.
 func withFileLock(path string, fn func() error) error {
 	mu, _ := fileLocks.LoadOrStore(path, &sync.Mutex{})
 	mu.(*sync.Mutex).Lock()

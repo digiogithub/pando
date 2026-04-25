@@ -16,6 +16,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
+	pandoruntime "github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/skills/catalog"
 	"github.com/digiogithub/pando/internal/tui/components/dialog"
 	"github.com/digiogithub/pando/internal/tui/components/settings"
@@ -452,6 +453,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		withGroup(buildLSPSection(cfg), "Integrations"),
 
 		// ── Tools ──
+		withGroup(buildContainerRuntimeSection(cfg), "Tools"),
 		withGroup(buildInternalToolsSection(cfg), "Tools"),
 		withGroup(buildBashSection(cfg), "Tools"),
 
@@ -1094,6 +1096,164 @@ func buildLSPSection(cfg *config.Config) settings.Section {
 
 	return settings.Section{
 		Title:  "LSP",
+		Fields: fields,
+	}
+}
+
+func buildContainerRuntimeSection(cfg *config.Config) settings.Section {
+	containerCfg := cfg.Container
+	currentRuntime := strings.TrimSpace(containerCfg.Runtime)
+	if currentRuntime == "" {
+		currentRuntime = "host"
+	}
+
+	capabilities := pandoruntime.NewResolver().Discover()
+	available := make([]string, 0, len(capabilities))
+	for _, capability := range capabilities {
+		status := "unavailable"
+		if capability.Available {
+			status = "available"
+		}
+		details := []string{status}
+		if capability.Version != "" {
+			details = append(details, "v"+capability.Version)
+		}
+		if capability.Socket != "" {
+			details = append(details, capability.Socket)
+		}
+		available = append(available, fmt.Sprintf("%s (%s)", capability.Type, strings.Join(details, ", ")))
+	}
+
+	fields := []settings.Field{
+		{
+			Label:   "Runtime",
+			Key:     "container.runtime",
+			Type:    settings.FieldSelect,
+			Value:   currentRuntime,
+			Options: []string{"host", "docker", "podman", "embedded", "auto"},
+		},
+		{
+			Label:    "Available Runtimes",
+			Key:      "container.available",
+			Type:     settings.FieldText,
+			Value:    strings.Join(available, " | "),
+			ReadOnly: true,
+		},
+		{
+			Label: "Image",
+			Key:   "container.image",
+			Type:  settings.FieldText,
+			Value: containerCfg.Image,
+		},
+		{
+			Label:   "Pull Policy",
+			Key:     "container.pull_policy",
+			Type:    settings.FieldSelect,
+			Value:   firstNonEmptyString(containerCfg.PullPolicy, "if-not-present"),
+			Options: []string{"if-not-present", "always", "never"},
+		},
+		{
+			Label: "Socket",
+			Key:   "container.socket",
+			Type:  settings.FieldText,
+			Value: containerCfg.Socket,
+		},
+		{
+			Label: "Work Dir",
+			Key:   "container.work_dir",
+			Type:  settings.FieldText,
+			Value: containerCfg.WorkDir,
+		},
+		{
+			Label:   "Network",
+			Key:     "container.network",
+			Type:    settings.FieldSelect,
+			Value:   firstNonEmptyString(containerCfg.Network, "none"),
+			Options: ensureOption([]string{"none", "bridge", "host", "slirp4netns"}, firstNonEmptyString(containerCfg.Network, "none")),
+		},
+		{
+			Label: "Read Only RootFS",
+			Key:   "container.read_only",
+			Type:  settings.FieldToggle,
+			Value: boolString(containerCfg.ReadOnly),
+		},
+		{
+			Label: "No New Privileges",
+			Key:   "container.no_new_privileges",
+			Type:  settings.FieldToggle,
+			Value: boolString(containerCfg.NoNewPrivileges),
+		},
+		{
+			Label: "User",
+			Key:   "container.user",
+			Type:  settings.FieldText,
+			Value: containerCfg.User,
+		},
+		{
+			Label: "CPU Limit",
+			Key:   "container.cpu_limit",
+			Type:  settings.FieldText,
+			Value: containerCfg.CPULimit,
+		},
+		{
+			Label: "Memory Limit",
+			Key:   "container.mem_limit",
+			Type:  settings.FieldText,
+			Value: containerCfg.MemLimit,
+		},
+		{
+			Label: "PIDs Limit",
+			Key:   "container.pids_limit",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(containerCfg.PidsLimit),
+		},
+		{
+			Label: "Allow Env",
+			Key:   "container.allow_env",
+			Type:  settings.FieldText,
+			Value: strings.Join(containerCfg.AllowEnv, ","),
+		},
+		{
+			Label: "Allow Mounts",
+			Key:   "container.allow_mounts",
+			Type:  settings.FieldText,
+			Value: strings.Join(containerCfg.AllowMounts, ","),
+		},
+		{
+			Label: "Extra Env",
+			Key:   "container.extra_env",
+			Type:  settings.FieldText,
+			Value: strings.Join(containerCfg.ExtraEnv, ","),
+		},
+		{
+			Label: "Extra Mounts",
+			Key:   "container.extra_mounts",
+			Type:  settings.FieldText,
+			Value: strings.Join(containerCfg.ExtraMounts, ","),
+		},
+		{
+			Label: "Embedded Cache Dir",
+			Key:   "container.embedded_cache_dir",
+			Type:  settings.FieldText,
+			Value: containerCfg.EmbeddedCacheDir,
+		},
+		{
+			Label: "Embedded GC Keep",
+			Key:   "container.embedded_gc_keep_n",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(containerCfg.EmbeddedGCKeepN),
+		},
+		{
+			Label:    "Security Defaults",
+			Key:      "container.info",
+			Type:     settings.FieldText,
+			Value:    "Auto prefers rootless Podman, then Docker, then host. Recommended defaults: network=none, read_only=true, no_new_privileges=true, pids_limit=512.",
+			ReadOnly: true,
+		},
+	}
+
+	return settings.Section{
+		Title:  "Container Runtime",
 		Fields: fields,
 	}
 }
@@ -2095,6 +2255,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return savePermissions(field)
 	case strings.HasPrefix(field.Key, "server."):
 		return saveServer(field)
+	case strings.HasPrefix(field.Key, "container."):
+		return saveContainer(field)
 	case strings.HasPrefix(field.Key, "lua."):
 		return saveLua(field)
 	case strings.HasPrefix(field.Key, "mcpGateway."):
@@ -2177,6 +2339,73 @@ func saveShell(field settings.Field) error {
 	}
 
 	return config.UpdateShell(path, args)
+}
+
+func saveContainer(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	containerCfg := cfg.Container
+	switch field.Key {
+	case "container.runtime":
+		containerCfg.Runtime = strings.TrimSpace(strings.ToLower(field.Value))
+	case "container.image":
+		containerCfg.Image = strings.TrimSpace(field.Value)
+	case "container.pull_policy":
+		containerCfg.PullPolicy = strings.TrimSpace(strings.ToLower(field.Value))
+	case "container.socket":
+		containerCfg.Socket = strings.TrimSpace(field.Value)
+	case "container.work_dir":
+		containerCfg.WorkDir = strings.TrimSpace(field.Value)
+	case "container.network":
+		containerCfg.Network = strings.TrimSpace(field.Value)
+	case "container.read_only":
+		value, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid read_only value: %w", err)
+		}
+		containerCfg.ReadOnly = value
+	case "container.no_new_privileges":
+		value, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid no_new_privileges value: %w", err)
+		}
+		containerCfg.NoNewPrivileges = value
+	case "container.user":
+		containerCfg.User = strings.TrimSpace(field.Value)
+	case "container.cpu_limit":
+		containerCfg.CPULimit = strings.TrimSpace(field.Value)
+	case "container.mem_limit":
+		containerCfg.MemLimit = strings.TrimSpace(field.Value)
+	case "container.pids_limit":
+		value, err := strconv.ParseInt(strings.TrimSpace(field.Value), 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid pids_limit value: %w", err)
+		}
+		containerCfg.PidsLimit = value
+	case "container.allow_env":
+		containerCfg.AllowEnv = parseCSV(field.Value)
+	case "container.allow_mounts":
+		containerCfg.AllowMounts = parseCSV(field.Value)
+	case "container.extra_env":
+		containerCfg.ExtraEnv = parseCSV(field.Value)
+	case "container.extra_mounts":
+		containerCfg.ExtraMounts = parseCSV(field.Value)
+	case "container.embedded_cache_dir":
+		containerCfg.EmbeddedCacheDir = strings.TrimSpace(field.Value)
+	case "container.embedded_gc_keep_n":
+		value, err := strconv.Atoi(strings.TrimSpace(field.Value))
+		if err != nil {
+			return fmt.Errorf("invalid embedded_gc_keep_n value: %w", err)
+		}
+		containerCfg.EmbeddedGCKeepN = value
+	default:
+		return fmt.Errorf("unsupported container setting %q", field.Key)
+	}
+
+	return config.UpdateContainer(containerCfg)
 }
 
 func saveProvider(field settings.Field) error {
@@ -3294,6 +3523,28 @@ func saveSkillsCatalog(field settings.Field) error {
 	}
 
 	return config.UpdateSkillsCatalog(scCfg)
+}
+
+func parseCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func normalizeRemembrancesConfig(remCfg config.RemembrancesConfig) config.RemembrancesConfig {

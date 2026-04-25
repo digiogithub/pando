@@ -339,6 +339,56 @@ export interface BashConfig {
   allowedCommands: string[]
 }
 
+export interface ContainerConfig {
+  runtime: string
+  image: string
+  pull_policy: string
+  socket: string
+  work_dir: string
+  network: string
+  read_only: boolean
+  user: string
+  cpu_limit: string
+  mem_limit: string
+  pids_limit: number
+  no_new_privileges: boolean
+  allow_env: string[]
+  allow_mounts: string[]
+  extra_env: string[]
+  extra_mounts: string[]
+}
+
+export interface RuntimeCapability {
+  type: string
+  available: boolean
+  exec: boolean
+  fs: boolean
+  version?: string
+  socket?: string
+}
+
+export interface ContainerCapabilitiesResponse {
+  runtimes: RuntimeCapability[]
+  current: string
+}
+
+export interface ContainerSessionInfo {
+  sessionId: string
+  runtime: string
+  containerId?: string
+  workDir: string
+  createdAt: string
+}
+
+export interface ContainerEvent {
+  sessionId: string
+  runtimeType: string
+  containerId?: string
+  event: string
+  timestamp: string
+  details?: string
+}
+
 // Services config types (matching backend Go structs)
 
 export interface MesnadaServerConfig {

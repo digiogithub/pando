@@ -16,6 +16,7 @@ import RemembrancesSettings from './RemembrancesSettings'
 import SnapshotsSettings from './SnapshotsSettings'
 import APIServerSettings from './APIServerSettings'
 import ProviderAccountsSettings from './ProviderAccountsSettings'
+import ContainerRuntimeSettings from './ContainerRuntimeSettings'
 import { useConfigEventsStore } from '@/stores/configEventsStore'
 
 type SettingsCategory =
@@ -35,6 +36,7 @@ type SettingsCategory =
   | 'remembrances'
   | 'snapshots'
   | 'api-server'
+  | 'container-runtime'
 
 const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string }[] = [
   { id: 'general', labelKey: 'settings.categories.general' },
@@ -45,6 +47,7 @@ const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string }[
   { id: 'mcp-gateway', labelKey: 'settings.categories.mcpGateway' },
   { id: 'lsp', labelKey: 'settings.categories.lsp' },
   { id: 'tools', labelKey: 'settings.categories.tools' },
+  { id: 'container-runtime', labelKey: 'settings.categories.containerRuntime' },
   { id: 'bash', labelKey: 'settings.categories.bash' },
   { id: 'skills', labelKey: 'settings.categories.skills' },
   { id: 'lua', labelKey: 'settings.categories.lua' },
@@ -196,6 +199,7 @@ export default function SettingsView() {
         {activeCategory === 'mcp-gateway' && <MCPGatewaySettings />}
         {activeCategory === 'lsp' && <LSPSettings />}
         {activeCategory === 'tools' && <InternalToolsSettings />}
+        {activeCategory === 'container-runtime' && <ContainerRuntimeSettings />}
         {activeCategory === 'bash' && <BashSettings />}
         {activeCategory === 'skills' && <SkillsSettings />}
         {activeCategory === 'lua' && <LuaSettings />}
