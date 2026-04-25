@@ -35,7 +35,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'deepseek/deepseek-v4-pro'
+Model = 'z-ai/glm-5.1'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
