@@ -312,6 +312,8 @@ github.com/lrstanley/bubblezone v0.0.0-20250315020633-c249a3fe1231 h1:9rjt7AfnrX
 github.com/lrstanley/bubblezone v0.0.0-20250315020633-c249a3fe1231/go.mod h1:S5etECMx+sZnW0Gm100Ma9J1PgVCTgNyFaqGu2b08b4=
 github.com/lucasb-eyer/go-colorful v1.3.0 h1:2/yBRLdWBZKrf7gB40FoiKfAWYQ0lqNcbuQwVHXptag=
 github.com/lucasb-eyer/go-colorful v1.3.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
+github.com/madeindigio/acp-go-sdk v0.14.0 h1:5CjZq/ektF569V3RHnOHhoHzgCOpYsCd5Tj4ZtdskPU=
+github.com/madeindigio/acp-go-sdk v0.14.0/go.mod h1:BMZz7xBdQdwbL1NIc+iTSgsehARni3mvmUkwsmCEVyg=
 github.com/madeindigio/go-tree-sitter v0.1.0 h1:+3ZOqFKp6yEqCi69EX5IT4NgDNEBoHEZRNiCvm+1LC8=
 github.com/madeindigio/go-tree-sitter v0.1.0/go.mod h1:MwerNxn0L/AUhOD52tA6f0kVuHySiSFxFRU3p9L48y8=
 github.com/mailru/easyjson v0.7.7 h1:UGYAvKxe3sBsEDzO8ZeWOSlIQfWFlxbzLZe7hwFURr0=

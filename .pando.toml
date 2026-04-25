@@ -35,7 +35,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'ollama.gemma4-e2b:latest'
+Model = 'deepseek/deepseek-v4-pro'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -162,6 +162,7 @@ ContextEnrichmentCodeProject = 'pando'
 ContextEnrichmentEventsResults = 0
 ContextEnrichmentEventsSubject = ''
 ContextEnrichmentEventsLastDays = 0
+ContextEnrichmentMinScore = 0.0
 
 [Server]
 Enabled = true
@@ -253,3 +254,6 @@ MaxProjects = 0
 [CronJobs]
 Enabled = false
 Jobs = []
+
+[LLMCache]
+Enabled = false
