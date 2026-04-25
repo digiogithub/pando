@@ -8,9 +8,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/diff"
 	"github.com/digiogithub/pando/internal/history"
+	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui/styles"
@@ -25,6 +27,8 @@ type sidebarCmp struct {
 		additions int
 		removals  int
 	}
+	// todos holds the latest plan entries from the TodoWrite tool.
+	todos []tools.TodoItem
 }
 
 func (m *sidebarCmp) Init() tea.Cmd {
@@ -55,6 +59,7 @@ func (m *sidebarCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SessionSelectedMsg:
 		if msg.ID != m.session.ID {
 			m.session = msg
+			m.todos = tools.GetSessionTodos(msg.ID)
 			ctx := context.Background()
 			m.loadModifiedFiles(ctx)
 		}
@@ -66,16 +71,17 @@ func (m *sidebarCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case pubsub.Event[history.File]:
 		if msg.Payload.SessionID == m.session.ID {
-			// Process the individual file change instead of reloading all files
 			ctx := context.Background()
 			m.processFileChanges(ctx, msg.Payload)
-
-			// Return a command to continue receiving events
 			return m, func() tea.Msg {
 				ctx := context.Background()
 				filesCh := m.history.Subscribe(ctx)
 				return <-filesCh
 			}
+		}
+	case TodosUpdatedMsg:
+		if msg.SessionID == m.session.ID {
+			m.todos = msg.Todos
 		}
 	}
 	return m, nil
@@ -84,23 +90,66 @@ func (m *sidebarCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *sidebarCmp) View() string {
 	baseStyle := styles.BaseStyle()
 
+	sections := []string{
+		header(m.width),
+		" ",
+		m.sessionSection(),
+		" ",
+		lspsConfigured(m.width),
+	}
+
+	if todosView := m.todosSection(); todosView != "" {
+		sections = append(sections, " ", todosView)
+	}
+
+	sections = append(sections, " ", m.modifiedFiles())
+
 	return baseStyle.
 		Width(m.width).
 		PaddingLeft(4).
 		PaddingRight(2).
 		Height(m.height - 1).
-		Render(
-			lipgloss.JoinVertical(
-				lipgloss.Top,
-				header(m.width),
-				" ",
-				m.sessionSection(),
-				" ",
-				lspsConfigured(m.width),
-				" ",
-				m.modifiedFiles(),
-			),
-		)
+		Render(lipgloss.JoinVertical(lipgloss.Top, sections...))
+}
+
+func (m *sidebarCmp) todosSection() string {
+	if len(m.todos) == 0 {
+		return ""
+	}
+
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+	innerWidth := m.width - 6 // account for sidebar padding
+
+	title := baseStyle.
+		Foreground(t.Primary()).
+		Bold(true).
+		Render("Plan")
+
+	var rows []string
+	rows = append(rows, title)
+
+	for _, item := range m.todos {
+		icon, fg := todoItemStyle(item.Status, t)
+		label := ansi.Truncate(item.Content, innerWidth-3, "…")
+		row := baseStyle.
+			Foreground(fg).
+			Render(fmt.Sprintf("%s %s", icon, label))
+		rows = append(rows, row)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+}
+
+func todoItemStyle(status string, t theme.Theme) (icon string, fg lipgloss.TerminalColor) {
+	switch strings.ToLower(status) {
+	case "completed":
+		return "✓", t.Success()
+	case "in_progress":
+		return "→", t.Warning()
+	default:
+		return "○", t.TextMuted()
+	}
 }
 
 func (m *sidebarCmp) sessionSection() string {

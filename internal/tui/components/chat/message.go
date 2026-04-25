@@ -234,6 +234,8 @@ func toolName(name string) string {
 		return "Write"
 	case tools.PatchToolName:
 		return "Patch"
+	case tools.TodoWriteToolName:
+		return "Plan"
 	}
 	return name
 }
@@ -262,6 +264,8 @@ func getToolAction(name string) string {
 		return "Preparing write..."
 	case tools.PatchToolName:
 		return "Preparing patch..."
+	case tools.TodoWriteToolName:
+		return "Updating plan..."
 	}
 	return "Working..."
 }
@@ -417,6 +421,11 @@ func renderToolParams(paramWidth int, toolCall message.ToolCall) string {
 		json.Unmarshal([]byte(toolCall.Input), &params)
 		filePath := removeWorkingDirPrefix(params.FilePath)
 		return renderParams(paramWidth, filePath)
+	case tools.TodoWriteToolName:
+		var params tools.TodoWriteParams
+		json.Unmarshal([]byte(toolCall.Input), &params)
+		summary := tools.TodoWriteSummary(params.Todos, paramWidth)
+		return renderParams(paramWidth, summary)
 	default:
 		input := strings.ReplaceAll(toolCall.Input, "\n", " ")
 		params = renderParams(paramWidth, input)

@@ -2254,32 +2254,11 @@ func parseTodoWritePlan(inputJSON string) []acpsdk.PlanEntry {
 		if content == "" {
 			continue
 		}
-
-		var status acpsdk.PlanEntryStatus
-		switch strings.ToLower(t.Status) {
-		case "in_progress":
-			status = acpsdk.PlanEntryStatusInProgress
-		case "completed":
-			status = acpsdk.PlanEntryStatusCompleted
-		default:
-			status = acpsdk.PlanEntryStatusPending
-		}
-
-		var priority acpsdk.PlanEntryPriority
-		switch strings.ToLower(t.Priority) {
-		case "high":
-			priority = acpsdk.PlanEntryPriorityHigh
-		case "low":
-			priority = acpsdk.PlanEntryPriorityLow
-		default:
-			priority = acpsdk.PlanEntryPriorityMedium
-		}
-
-		entries = append(entries, acpsdk.PlanEntry{
-			Content:  content,
-			Status:   status,
-			Priority: priority,
-		})
+		entries = append(entries, acpsdk.NewPlanEntry(
+			content,
+			acpsdk.ParsePlanEntryStatus(t.Status),
+			acpsdk.ParsePlanEntryPriority(t.Priority),
+		))
 	}
 	return entries
 }

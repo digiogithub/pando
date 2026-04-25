@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui/styles"
@@ -24,6 +25,12 @@ type SessionSelectedMsg = session.Session
 type SessionClearedMsg struct{}
 
 type EditorFocusMsg bool
+
+// TodosUpdatedMsg is dispatched when the TodoWrite tool updates the plan.
+type TodosUpdatedMsg struct {
+	SessionID string
+	Todos     []tools.TodoItem
+}
 
 func header(width int) string {
 	return lipgloss.JoinVertical(

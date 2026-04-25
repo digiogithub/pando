@@ -54,6 +54,9 @@ const (
 	AgentEventTypeThinkingDelta AgentEventType = "thinking_delta"
 	AgentEventTypeToolCall      AgentEventType = "tool_call"
 	AgentEventTypeToolResult    AgentEventType = "tool_result"
+	// AgentEventTypeTodosUpdated is emitted when the TodoWrite tool runs successfully.
+	// It carries the current todo list for non-ACP consumers (TUI, WebUI).
+	AgentEventTypeTodosUpdated AgentEventType = "todos_updated"
 )
 
 type AgentEvent struct {
@@ -68,6 +71,9 @@ type AgentEvent struct {
 	SessionID string
 	Progress  string
 	Done      bool
+
+	// Todos is populated when Type == AgentEventTypeTodosUpdated.
+	Todos []tools.TodoItem
 }
 
 type Service interface {
@@ -690,6 +696,22 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 			select {
 			case eventCh <- AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]}:
 			default:
+			}
+
+			// Emit todos_updated event so TUI and WebUI can display the current plan.
+			if toolCall.Name == tools.TodoWriteToolName && !toolResult.IsError {
+				if currentTodos := tools.GetSessionTodos(sessionID); currentTodos != nil {
+					todosEvent := AgentEvent{
+						Type:      AgentEventTypeTodosUpdated,
+						SessionID: sessionID,
+						Todos:     currentTodos,
+					}
+					a.publishEvent(todosEvent)
+					select {
+					case eventCh <- todosEvent:
+					default:
+					}
+				}
 			}
 		}
 	}

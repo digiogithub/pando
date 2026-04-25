@@ -516,6 +516,17 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		a.compactingMessage = payload.Progress
 
+		if payload.Type == agent.AgentEventTypeTodosUpdated && len(payload.Todos) > 0 {
+			// Forward plan updates to all pages so the sidebar can re-render.
+			todosMsg := chat.TodosUpdatedMsg{SessionID: payload.SessionID, Todos: payload.Todos}
+			for id, p := range a.pages {
+				updated, cmd := p.Update(todosMsg)
+				a.pages[id] = updated
+				cmds = append(cmds, cmd)
+			}
+			return a, tea.Batch(cmds...)
+		}
+
 		if payload.Done && payload.Type == agent.AgentEventTypeSummarize {
 			a.isCompacting = false
 			return a, util.ReportInfo("Session summarization complete")

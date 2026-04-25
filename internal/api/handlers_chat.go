@@ -144,6 +144,13 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 					"is_error":     event.ToolResult.IsError,
 				})
 			}
+		case agent.AgentEventTypeTodosUpdated:
+			if len(event.Todos) > 0 {
+				writeSSEEvent(w, flusher, "todos_update", map[string]interface{}{
+					"session_id": event.SessionID,
+					"todos":      event.Todos,
+				})
+			}
 		case agent.AgentEventTypeResponse:
 			// Final response — content already streamed via content_delta events
 		case agent.AgentEventTypeError:

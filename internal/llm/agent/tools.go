@@ -77,6 +77,7 @@ func CoderAgentTools(
 			tools.NewCacheStatsTool(),
 			tools.NewPatchTool(lspClients, permissions, history),
 			tools.NewWriteTool(lspClients, permissions, history),
+			tools.NewTodoWriteTool(),
 			NewAgentTool(sessions, messages, lspClients, skillManager),
 		}, otherTools...,
 	)
@@ -113,6 +114,7 @@ func CoderAgentToolsWithMesnada(
 				tools.NewCacheStatsTool(),
 				tools.NewPatchTool(lspClients, permissions, history),
 				tools.NewWriteTool(lspClients, permissions, history),
+				tools.NewTodoWriteTool(),
 				NewAgentTool(sessions, messages, lspClients, skillManager),
 			},
 			gatewayTools...,
