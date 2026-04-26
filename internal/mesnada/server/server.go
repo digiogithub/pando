@@ -16,9 +16,9 @@ import (
 
 	"github.com/google/uuid"
 
+	llmtools "github.com/digiogithub/pando/internal/llm/tools"
 	config "github.com/digiogithub/pando/internal/mesnada/config"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
-	llmtools "github.com/digiogithub/pando/internal/llm/tools"
 	rag "github.com/digiogithub/pando/internal/rag"
 )
 
@@ -49,7 +49,7 @@ type Server struct {
 
 	// Remembrances support (optional)
 	remembrances *rag.RemembrancesService
-	pandoTools    []llmtools.BaseTool
+	pandoTools   []llmtools.BaseTool
 }
 
 // Session represents an MCP session.
@@ -101,9 +101,9 @@ type Config struct {
 	Commit       string
 	UseStdio     bool
 	AppConfig    *config.Config
-	ACPHandler   *ACPHandler                // Optional ACP handler for remote connections
-	Remembrances *rag.RemembrancesService   // Optional remembrances service
-	PandoTools   []llmtools.BaseTool        // Optional native Pando tools exposed as MCP tools
+	ACPHandler   *ACPHandler              // Optional ACP handler for remote connections
+	Remembrances *rag.RemembrancesService // Optional remembrances service
+	PandoTools   []llmtools.BaseTool      // Optional native Pando tools exposed as MCP tools
 }
 
 // New creates a new MCP server.
@@ -268,7 +268,7 @@ func (s *Server) writeStdioError(encoder *json.Encoder, id interface{}, code int
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	stats := map[string]interface{}{}
+	var stats interface{} = map[string]interface{}{}
 	if s.orchestrator != nil {
 		stats = s.orchestrator.GetStats()
 	}
