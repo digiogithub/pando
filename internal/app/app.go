@@ -88,6 +88,9 @@ type AppOptions struct {
 	// SkipLSP disables LSP client initialisation. Set this to true in headless
 	// modes (e.g. ACP stdio) where the editor manages its own language servers.
 	SkipLSP bool
+	// SkipMesnadaServer avoids starting the embedded Mesnada HTTP server while
+	// still allowing the orchestrator and related tools to be initialized.
+	SkipMesnadaServer bool
 }
 
 // findFreePort returns the first available TCP port starting at preferred, trying
@@ -354,36 +357,40 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 				logging.Info("ACP server enabled", "host", mesnadaCfg.AppConfig.ACP.Server.Host, "port", mesnadaCfg.AppConfig.ACP.Server.Port)
 			}
 
-			// Find a free port for the mesnada server; fall back if preferred is busy.
-			mesnadaPort := findFreePort(cfg.Mesnada.Server.Host, cfg.Mesnada.Server.Port)
-			if mesnadaPort != cfg.Mesnada.Server.Port {
-				logging.Warn("Mesnada preferred port unavailable, using alternative",
-					"preferred", cfg.Mesnada.Server.Port, "actual", mesnadaPort)
-				cfg.Mesnada.Server.Port = mesnadaPort
-				if mesnadaCfg.AppConfig != nil {
-					mesnadaCfg.AppConfig.Server.Port = mesnadaPort
+			if !opt.SkipMesnadaServer {
+				// Find a free port for the mesnada server; fall back if preferred is busy.
+				mesnadaPort := findFreePort(cfg.Mesnada.Server.Host, cfg.Mesnada.Server.Port)
+				if mesnadaPort != cfg.Mesnada.Server.Port {
+					logging.Warn("Mesnada preferred port unavailable, using alternative",
+						"preferred", cfg.Mesnada.Server.Port, "actual", mesnadaPort)
+					cfg.Mesnada.Server.Port = mesnadaPort
+					if mesnadaCfg.AppConfig != nil {
+						mesnadaCfg.AppConfig.Server.Port = mesnadaPort
+					}
 				}
-			}
-			addr := fmt.Sprintf("%s:%d", cfg.Mesnada.Server.Host, mesnadaPort)
-			srv := mesnadaServer.New(mesnadaServer.Config{
-				Addr:         addr,
-				Orchestrator: orch,
-				Version:      version.Version,
-				UseStdio:     false,
-				AppConfig:    mesnadaCfg.AppConfig,
-				ACPHandler:   acpHandler,
-				Remembrances: app.Remembrances,
-			})
-			app.MesnadaServer = srv
+				addr := fmt.Sprintf("%s:%d", cfg.Mesnada.Server.Host, mesnadaPort)
+				srv := mesnadaServer.New(mesnadaServer.Config{
+					Addr:         addr,
+					Orchestrator: orch,
+					Version:      version.Version,
+					UseStdio:     false,
+					AppConfig:    mesnadaCfg.AppConfig,
+					ACPHandler:   acpHandler,
+					Remembrances: app.Remembrances,
+				})
+				app.MesnadaServer = srv
 
-			// Start HTTP server in background
-			go func() {
-				if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					logging.Error("Mesnada server error", "error", err)
-				}
-			}()
-			logging.Info("Mesnada orchestrator started", "addr", addr)
-			logging.Debug("Mesnada orchestrator created", "addr", addr)
+				// Start HTTP server in background
+				go func() {
+					if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+						logging.Error("Mesnada server error", "error", err)
+					}
+				}()
+				logging.Info("Mesnada orchestrator started", "addr", addr)
+				logging.Debug("Mesnada orchestrator created", "addr", addr)
+			} else {
+				logging.Info("Mesnada orchestrator initialized without embedded HTTP server")
+			}
 		}
 	}
 

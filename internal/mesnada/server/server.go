@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
+	llmtools "github.com/digiogithub/pando/internal/llm/tools"
 	config "github.com/digiogithub/pando/internal/mesnada/config"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	rag "github.com/digiogithub/pando/internal/rag"
@@ -48,6 +49,7 @@ type Server struct {
 
 	// Remembrances support (optional)
 	remembrances *rag.RemembrancesService
+	pandoTools   []llmtools.BaseTool
 }
 
 // Session represents an MCP session.
@@ -85,6 +87,12 @@ type JSONRPCError struct {
 // ToolHandler handles a tool call.
 type ToolHandler func(ctx context.Context, params json.RawMessage) (interface{}, error)
 
+type nativeToolResult struct {
+	Content  string
+	Metadata string
+	IsError  bool
+}
+
 // Config holds server configuration.
 type Config struct {
 	Addr         string
@@ -93,8 +101,9 @@ type Config struct {
 	Commit       string
 	UseStdio     bool
 	AppConfig    *config.Config
-	ACPHandler   *ACPHandler                // Optional ACP handler for remote connections
-	Remembrances *rag.RemembrancesService   // Optional remembrances service
+	ACPHandler   *ACPHandler              // Optional ACP handler for remote connections
+	Remembrances *rag.RemembrancesService // Optional remembrances service
+	PandoTools   []llmtools.BaseTool      // Optional native Pando tools exposed as MCP tools
 }
 
 // New creates a new MCP server.
@@ -110,6 +119,7 @@ func New(cfg Config) *Server {
 		config:       cfg.AppConfig,
 		acpHandler:   cfg.ACPHandler,
 		remembrances: cfg.Remembrances,
+		pandoTools:   cfg.PandoTools,
 	}
 
 	s.registerTools()
@@ -172,6 +182,7 @@ func (s *Server) Start() error {
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.cleanupSessions()
 	if s.useStdio {
 		return nil
 	}
@@ -187,6 +198,8 @@ func (s *Server) runStdio() error {
 		CreatedAt: time.Now(),
 		events:    make(chan []byte, 100),
 	}
+	s.registerSessionResources(session.ID)
+	defer s.cleanupSessionResources(session.ID)
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -214,6 +227,41 @@ func (s *Server) runStdio() error {
 	return nil
 }
 
+func (s *Server) cleanupSessions() {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	for sessionID := range s.sessions {
+		s.cleanupSessionResources(sessionID)
+		delete(s.sessions, sessionID)
+	}
+}
+
+func (s *Server) getOrCreateSession(sessionID string) *Session {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+
+	session, exists := s.sessions[sessionID]
+	if !exists {
+		session = &Session{
+			ID:        sessionID,
+			CreatedAt: time.Now(),
+			events:    make(chan []byte, 100),
+		}
+		s.sessions[sessionID] = session
+		s.registerSessionResources(sessionID)
+	}
+	return session
+}
+
+func (s *Server) registerSessionResources(sessionID string) {
+	llmtools.RegisterSessionCache(sessionID)
+}
+
+func (s *Server) cleanupSessionResources(sessionID string) {
+	llmtools.UnregisterSessionCache(sessionID)
+	llmtools.CloseBrowserSession(sessionID)
+}
+
 func (s *Server) writeStdioError(encoder *json.Encoder, id interface{}, code int, message, data string) {
 	_ = encoder.Encode(&JSONRPCResponse{
 		JSONRPC: jsonRPCVersion,
@@ -227,7 +275,10 @@ func (s *Server) writeStdioError(encoder *json.Encoder, id interface{}, code int
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	stats := s.orchestrator.GetStats()
+	var stats interface{} = map[string]interface{}{}
+	if s.orchestrator != nil {
+		stats = s.orchestrator.GetStats()
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "healthy",
@@ -246,17 +297,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		sessionID = uuid.New().String()
 	}
 
-	s.sessionMu.Lock()
-	session, exists := s.sessions[sessionID]
-	if !exists {
-		session = &Session{
-			ID:        sessionID,
-			CreatedAt: time.Now(),
-			events:    make(chan []byte, 100),
-		}
-		s.sessions[sessionID] = session
-	}
-	s.sessionMu.Unlock()
+	session := s.getOrCreateSession(sessionID)
 
 	var req JSONRPCRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -320,7 +361,7 @@ func (s *Server) handleRequest(ctx context.Context, session *Session, req *JSONR
 	case "tools/list":
 		return s.handleToolsList(req)
 	case "tools/call":
-		return s.handleToolsCall(ctx, req)
+		return s.handleToolsCall(ctx, session, req)
 	case "ping":
 		return s.handlePing(req)
 	default:
@@ -384,7 +425,7 @@ func (s *Server) handleToolsList(req *JSONRPCRequest) *JSONRPCResponse {
 	}
 }
 
-func (s *Server) handleToolsCall(ctx context.Context, req *JSONRPCRequest) *JSONRPCResponse {
+func (s *Server) handleToolsCall(ctx context.Context, session *Session, req *JSONRPCRequest) *JSONRPCResponse {
 	var params struct {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
@@ -414,7 +455,7 @@ func (s *Server) handleToolsCall(ctx context.Context, req *JSONRPCRequest) *JSON
 		}
 	}
 
-	result, err := handler(ctx, params.Arguments)
+	result, err := handler(s.withToolContext(ctx, session, req.ID), params.Arguments)
 	if err != nil {
 		return &JSONRPCResponse{
 			JSONRPC: jsonRPCVersion,
@@ -431,6 +472,30 @@ func (s *Server) handleToolsCall(ctx context.Context, req *JSONRPCRequest) *JSON
 		}
 	}
 
+	if toolResult, ok := result.(nativeToolResult); ok {
+		payload := map[string]interface{}{
+			"content": []map[string]interface{}{
+				{
+					"type": "text",
+					"text": toolResult.Content,
+				},
+			},
+		}
+		if toolResult.Metadata != "" {
+			payload["structuredContent"] = map[string]interface{}{
+				"metadata": toolResult.Metadata,
+			}
+		}
+		if toolResult.IsError {
+			payload["isError"] = true
+		}
+		return &JSONRPCResponse{
+			JSONRPC: jsonRPCVersion,
+			ID:      req.ID,
+			Result:  payload,
+		}
+	}
+
 	text, _ := json.MarshalIndent(result, "", "  ")
 	return &JSONRPCResponse{
 		JSONRPC: jsonRPCVersion,
@@ -444,6 +509,26 @@ func (s *Server) handleToolsCall(ctx context.Context, req *JSONRPCRequest) *JSON
 			},
 		},
 	}
+}
+
+func (s *Server) withToolContext(ctx context.Context, session *Session, requestID interface{}) context.Context {
+	if session == nil {
+		return ctx
+	}
+
+	ctx = context.WithValue(ctx, llmtools.SessionIDContextKey, session.ID)
+	messageID := ""
+	if requestID != nil {
+		messageID = fmt.Sprint(requestID)
+	}
+	if messageID == "" {
+		messageID = fmt.Sprintf("mcp-%d", time.Now().UnixNano())
+	}
+	ctx = context.WithValue(ctx, llmtools.MessageIDContextKey, messageID)
+	if cache, ok := llmtools.GetSessionCacheByID(session.ID); ok {
+		ctx = context.WithValue(ctx, llmtools.SessionCacheContextKey, cache)
+	}
+	return ctx
 }
 
 func (s *Server) writeError(w http.ResponseWriter, id interface{}, code int, message, data string) {

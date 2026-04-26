@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/digiogithub/pando/internal/mesnada/acp"
 	"github.com/gin-gonic/gin"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // registerACPAPI registers ACP management endpoints.
@@ -29,14 +29,14 @@ func (s *Server) registerACPAPI(api *gin.RouterGroup) {
 func (s *Server) apiACPListSessions(c *gin.Context) {
 	agent := s.acpHandler.GetAgent()
 	if lister, ok := agent.(interface {
-		ListSessions(ctx context.Context) ([]acp.ACPSessionInfo, error)
+		ListSessions(ctx context.Context, req acpsdk.ListSessionsRequest) (acpsdk.ListSessionsResponse, error)
 	}); ok {
-		sessions, err := lister.ListSessions(c.Request.Context())
+		listResp, err := lister.ListSessions(c.Request.Context(), acpsdk.ListSessionsRequest{})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"sessions": sessions, "count": len(sessions)})
+		c.JSON(http.StatusOK, gin.H{"sessions": listResp.Sessions, "count": len(listResp.Sessions)})
 		return
 	}
 
@@ -93,12 +93,12 @@ func (s *Server) apiACPStats(c *gin.Context) {
 			"capabilities": capabilities,
 		},
 		"transport": gin.H{
-			"type":                "http+sse",
-			"active_sessions":     transportStats.ActiveSessions,
-			"total_sessions":      transportStats.TotalSessions,
-			"requests_processed":  transportStats.RequestsProcessed,
-			"max_sessions":        transportStats.MaxSessions,
-			"uptime_seconds":      int(transportStats.Uptime.Seconds()),
+			"type":                 "http+sse",
+			"active_sessions":      transportStats.ActiveSessions,
+			"total_sessions":       transportStats.TotalSessions,
+			"requests_processed":   transportStats.RequestsProcessed,
+			"max_sessions":         transportStats.MaxSessions,
+			"uptime_seconds":       int(transportStats.Uptime.Seconds()),
 			"idle_timeout_seconds": int(transportStats.IdleTimeout.Seconds()),
 		},
 	})

@@ -132,6 +132,9 @@ autoCompact = true
 # Start Pando
 pando
 
+# Start Pando as an MCP server (stdio + HTTP /mcp)
+pando mcp-server
+
 # Start with debug logging
 pando -d
 
@@ -143,6 +146,10 @@ pando -p "Explain the use of context in Go"
 
 # Get response in JSON format
 pando -p "Explain the use of context in Go" -f json
+
+# Disable one MCP transport if needed
+pando mcp-server --no-stdio
+pando mcp-server --no-http
 ```
 
 ## Custom Commands
