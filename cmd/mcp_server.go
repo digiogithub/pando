@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/config"
@@ -131,19 +132,11 @@ func runMCPServerMode(cmd *cobra.Command) error {
 		select {
 		case <-sigCtx.Done():
 			cancel()
-			if httpSrv != nil {
-				shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
-				defer shutdownCancel()
-				_ = httpSrv.Shutdown(shutdownCtx)
-			}
+			shutdownHTTPMCPServer(httpSrv)
 			return nil
 		case err := <-errCh:
 			cancel()
-			if httpSrv != nil {
-				shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
-				defer shutdownCancel()
-				_ = httpSrv.Shutdown(shutdownCtx)
-			}
+			shutdownHTTPMCPServer(httpSrv)
 			return err
 		}
 	}
@@ -172,19 +165,11 @@ func runMCPServerMode(cmd *cobra.Command) error {
 	select {
 	case <-sigCtx.Done():
 		cancel()
-		if httpSrv != nil {
-			shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
-			defer shutdownCancel()
-			_ = httpSrv.Shutdown(shutdownCtx)
-		}
+		shutdownHTTPMCPServer(httpSrv)
 		return nil
 	case err := <-errCh:
 		cancel()
-		if httpSrv != nil {
-			shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
-			defer shutdownCancel()
-			_ = httpSrv.Shutdown(shutdownCtx)
-		}
+		shutdownHTTPMCPServer(httpSrv)
 		return err
 	}
 }
@@ -261,4 +246,13 @@ func buildMCPServerTools(appSvc *app.App) []llmtools.BaseTool {
 	}
 
 	return tools
+}
+
+func shutdownHTTPMCPServer(server *mesnadaServer.Server) {
+	if server == nil {
+		return
+	}
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	_ = server.Shutdown(shutdownCtx)
 }

@@ -20,11 +20,8 @@ type Tool struct {
 }
 
 func (s *Server) registerTools() {
-	if len(s.pandoTools) > 0 {
-		for _, tool := range s.pandoTools {
-			if tool == nil {
-				continue
-			}
+	if nativeTools := s.validPandoTools(); len(nativeTools) > 0 {
+		for _, tool := range nativeTools {
 			name := tool.Info().Name
 			toolInstance := tool
 			s.tools[name] = func(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -427,12 +424,9 @@ func (s *Server) getRemembrancesToolDefinitions() []Tool {
 }
 
 func (s *Server) getToolDefinitions() []Tool {
-	if len(s.pandoTools) > 0 {
-		tools := make([]Tool, 0, len(s.pandoTools))
-		for _, tool := range s.pandoTools {
-			if tool == nil {
-				continue
-			}
+	if nativeTools := s.validPandoTools(); len(nativeTools) > 0 {
+		tools := make([]Tool, 0, len(nativeTools))
+		for _, tool := range nativeTools {
 			info := tool.Info()
 			schema := map[string]interface{}{
 				"type":       "object",
@@ -838,6 +832,19 @@ func (s *Server) getToolDefinitions() []Tool {
 
 	tools = append(tools, s.getRemembrancesToolDefinitions()...)
 	return tools
+}
+
+func (s *Server) validPandoTools() []llmtools.BaseTool {
+	if len(s.pandoTools) == 0 {
+		return nil
+	}
+	result := make([]llmtools.BaseTool, 0, len(s.pandoTools))
+	for _, tool := range s.pandoTools {
+		if tool != nil {
+			result = append(result, tool)
+		}
+	}
+	return result
 }
 
 func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (interface{}, error) {
