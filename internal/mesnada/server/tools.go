@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"time"
 
+	llmtools "github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/pkg/mesnada/models"
 )
@@ -19,6 +20,36 @@ type Tool struct {
 }
 
 func (s *Server) registerTools() {
+	if len(s.pandoTools) > 0 {
+		for _, tool := range s.pandoTools {
+			if tool == nil {
+				continue
+			}
+			name := tool.Info().Name
+			toolInstance := tool
+			s.tools[name] = func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+				callID := fmt.Sprintf("mcp-%d", time.Now().UnixNano())
+				response, err := toolInstance.Run(ctx, llmtools.ToolCall{
+					ID:    callID,
+					Name:  name,
+					Input: string(params),
+				})
+				if err != nil {
+					return nil, err
+				}
+				if cache := llmtools.GetSessionCache(ctx); cache != nil {
+					response = llmtools.InterceptToolResponse(cache, callID, name, response)
+				}
+				return nativeToolResult{
+					Content:  response.Content,
+					Metadata: response.Metadata,
+					IsError:  response.IsError,
+				}, nil
+			}
+		}
+		return
+	}
+
 	s.tools["spawn_agent"] = s.toolSpawnAgent
 	s.tools["get_task"] = s.toolGetTask
 	s.tools["list_tasks"] = s.toolListTasks
@@ -396,6 +427,29 @@ func (s *Server) getRemembrancesToolDefinitions() []Tool {
 }
 
 func (s *Server) getToolDefinitions() []Tool {
+	if len(s.pandoTools) > 0 {
+		tools := make([]Tool, 0, len(s.pandoTools))
+		for _, tool := range s.pandoTools {
+			if tool == nil {
+				continue
+			}
+			info := tool.Info()
+			schema := map[string]interface{}{
+				"type":       "object",
+				"properties": info.Parameters,
+			}
+			if len(info.Required) > 0 {
+				schema["required"] = info.Required
+			}
+			tools = append(tools, Tool{
+				Name:        info.Name,
+				Description: info.Description,
+				InputSchema: schema,
+			})
+		}
+		return tools
+	}
+
 	personas := s.orchestrator.ListPersonas()
 	personaDesc := "Optional persona/role to apply to the agent (prepends persona instructions to the prompt)"
 	if len(personas) > 0 {
