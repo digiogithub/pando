@@ -198,9 +198,8 @@ func (s *Server) runStdio() error {
 		CreatedAt: time.Now(),
 		events:    make(chan []byte, 100),
 	}
-	llmtools.RegisterSessionCache(session.ID)
-	defer llmtools.UnregisterSessionCache(session.ID)
-	defer llmtools.CloseBrowserSession(session.ID)
+	s.registerSessionResources(session.ID)
+	defer s.cleanupSessionResources(session.ID)
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -232,8 +231,7 @@ func (s *Server) cleanupSessions() {
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()
 	for sessionID := range s.sessions {
-		llmtools.UnregisterSessionCache(sessionID)
-		llmtools.CloseBrowserSession(sessionID)
+		s.cleanupSessionResources(sessionID)
 		delete(s.sessions, sessionID)
 	}
 }
@@ -250,9 +248,18 @@ func (s *Server) getOrCreateSession(sessionID string) *Session {
 			events:    make(chan []byte, 100),
 		}
 		s.sessions[sessionID] = session
-		llmtools.RegisterSessionCache(sessionID)
+		s.registerSessionResources(sessionID)
 	}
 	return session
+}
+
+func (s *Server) registerSessionResources(sessionID string) {
+	llmtools.RegisterSessionCache(sessionID)
+}
+
+func (s *Server) cleanupSessionResources(sessionID string) {
+	llmtools.UnregisterSessionCache(sessionID)
+	llmtools.CloseBrowserSession(sessionID)
 }
 
 func (s *Server) writeStdioError(encoder *json.Encoder, id interface{}, code int, message, data string) {
@@ -510,8 +517,11 @@ func (s *Server) withToolContext(ctx context.Context, session *Session, requestI
 	}
 
 	ctx = context.WithValue(ctx, llmtools.SessionIDContextKey, session.ID)
-	messageID := fmt.Sprintf("%v", requestID)
-	if messageID == "" || messageID == "<nil>" {
+	messageID := ""
+	if requestID != nil {
+		messageID = fmt.Sprint(requestID)
+	}
+	if messageID == "" {
 		messageID = fmt.Sprintf("mcp-%d", time.Now().UnixNano())
 	}
 	ctx = context.WithValue(ctx, llmtools.MessageIDContextKey, messageID)

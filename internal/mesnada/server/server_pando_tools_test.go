@@ -16,6 +16,8 @@ type stubTool struct {
 	run  func(ctx context.Context, call llmtools.ToolCall) (llmtools.ToolResponse, error)
 }
 
+const cacheTriggerLineCount = 350
+
 func (t stubTool) Info() llmtools.ToolInfo { return t.info }
 
 func (t stubTool) Run(ctx context.Context, call llmtools.ToolCall) (llmtools.ToolResponse, error) {
@@ -56,7 +58,7 @@ func TestHandleToolsCallSupportsCacheReadAcrossSession(t *testing.T) {
 		},
 		run: func(ctx context.Context, call llmtools.ToolCall) (llmtools.ToolResponse, error) {
 			var sb strings.Builder
-			for i := 1; i <= 350; i++ {
+			for i := 1; i <= cacheTriggerLineCount; i++ {
 				sb.WriteString("line ")
 				sb.WriteString(strings.Repeat("x", 50))
 				sb.WriteString("\n")

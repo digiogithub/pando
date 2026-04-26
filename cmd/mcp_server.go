@@ -103,7 +103,7 @@ func runMCPServerMode(cmd *cobra.Command) error {
 			return err
 		}
 		if selectedPort != port {
-			logging.Warn("Preferred MCP port %d unavailable, using %d", port, selectedPort)
+			logging.Warn("Preferred MCP port unavailable, using alternative", "preferred", port, "actual", selectedPort)
 			port = selectedPort
 		}
 
