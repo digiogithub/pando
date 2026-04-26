@@ -201,7 +201,9 @@ LogDir         = './.pando/mesnada/logs'     # Task execution logs
 MaxParallel    = 5                           # Maximum concurrent sub-agents
 DefaultEngine  = 'claude'                    # Default AI engine: 'claude' | 'copilot'
 DefaultModel   = 'sonnet'                    # Default model shorthand
-DefaultMCPConfig = '.github/mcp-config.json' # MCP server config for spawned agents
+# DefaultMCPConfig is optional. When unset, pando generates a dynamic MCP config
+# that includes pando itself plus any MCPServers defined in this file.
+# DefaultMCPConfig = '/path/to/custom-mcp-config.json'
 PersonaPath    = './.pando/mesnada/personas' # Directory of persona definition files
 
 # ACP (Agent Client Protocol) — lets VS Code / Zed / JetBrains talk to Pando.

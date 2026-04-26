@@ -184,12 +184,14 @@ orchestrator:
   log_dir: "~/.mesnada/logs"
   max_parallel: 5
 
-  # Additional MCP config to pass to the CLI for every spawned task.
-  # Path to a JSON file containing MCP server configuration.
-  # Can be absolute or relative to the task working directory.
-  # Mesnada will handle engine-specific format conversion automatically.
-  # Example: .github/mcp-config.json
-  default_mcp_config: ".github/mcp-config.json"
+  # Optional explicit MCP config override (path to a JSON file in canonical
+  # mesnada format). When set, this file is used instead of the default dynamic
+  # config. Normally you do NOT need this: pando automatically builds an MCP
+  # config for each spawned subagent that includes pando itself as an MCP server
+  # (exposing remembrances, mesnada, fetch, search, and browser tools) plus any
+  # additional MCP servers defined in the main pando config.
+  # Use this only to supply a fully custom MCP server set for subagents.
+  # default_mcp_config: "/path/to/my-custom-mcp-config.json"
 
   # Default CLI engine to use for spawning agents.
   # Supported engines:

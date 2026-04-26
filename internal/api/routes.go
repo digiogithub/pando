@@ -50,6 +50,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/config/mcp-servers/{name}", s.handleDeleteConfigMCPServer)
 	mux.HandleFunc("POST /api/v1/config/mcp-servers/{name}/reload", s.handleReloadMCPServer)
 	mux.HandleFunc("/api/v1/config/mcp-gateway", s.handleConfigMCPGateway)
+	mux.HandleFunc("/api/v1/config/mcp-server", s.handleConfigMCPServer)
 	mux.HandleFunc("/api/v1/config/lsp", s.handleConfigLSP)
 	mux.HandleFunc("DELETE /api/v1/config/lsp/{language}", s.handleDeleteConfigLSP)
 	mux.HandleFunc("/api/v1/config/tools", s.handleConfigTools)

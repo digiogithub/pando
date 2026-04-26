@@ -20,17 +20,20 @@ import (
 
 // Orchestrator coordinates the execution of CLI agents.
 type Orchestrator struct {
-	store            store.Store
-	manager          *agent.Manager
-	personaManager   *persona.Manager
-	subscribers      map[string][]chan *models.Task
-	subMu            sync.RWMutex
-	maxParallel      int
-	defaultMCPConfig string
-	defaultEngine    models.Engine
-	wg               sync.WaitGroup
-	ctx              context.Context
-	cancel           context.CancelFunc
+	store                store.Store
+	manager              *agent.Manager
+	personaManager       *persona.Manager
+	subscribers          map[string][]chan *models.Task
+	subMu                sync.RWMutex
+	maxParallel          int
+	defaultMCPConfig     string
+	defaultEngine        models.Engine
+	pandoMCPServers      []agent.PandoMCPServerEntry
+	gatewayExposeEnabled bool
+	dynamicMCPDir        string // base dir for dynamic MCP config temp files
+	wg                   sync.WaitGroup
+	ctx                  context.Context
+	cancel               context.CancelFunc
 }
 
 // Config holds orchestrator configuration.
@@ -38,10 +41,22 @@ type Config struct {
 	StorePath        string
 	LogDir           string
 	MaxParallel      int
+	// DefaultMCPConfig is an optional explicit override for the MCP config file
+	// passed to subagents. When empty (the default), pando builds a dynamic
+	// config at spawn time that includes pando itself as an MCP server plus all
+	// configured MCP servers.
 	DefaultMCPConfig string
 	DefaultEngine    string
 	PersonaPath      string
 	AppConfig        *mesnadaconfig.Config // Full app config for passing to managers
+	// MCPServers lists the MCP servers configured in pando that should be
+	// forwarded to subagents. Populated from the pando application config.
+	MCPServers []agent.PandoMCPServerEntry
+	// GatewayExposeEnabled indicates that MCPGateway re-exports all configured
+	// MCP servers through pando's own MCP server. When true, the individual
+	// MCPServers entries are not forwarded separately (they are already
+	// accessible via the "pando" MCP server entry).
+	GatewayExposeEnabled bool
 	// ModelResolver converts a model ID (possibly empty or shorthand) into the
 	// full "provider.model" string expected by the pando CLI's -m flag.
 	// When nil, model IDs are forwarded as-is to the pando CLI spawner.
@@ -74,15 +89,25 @@ func New(cfg Config) (*Orchestrator, error) {
 		return nil, fmt.Errorf("failed to create persona manager: %w", err)
 	}
 
+	// Resolve the base directory for dynamic MCP temp files.
+	dynamicMCPDir := cfg.LogDir
+	if dynamicMCPDir == "" {
+		home, _ := os.UserHomeDir()
+		dynamicMCPDir = home + "/.mesnada/logs"
+	}
+
 	o := &Orchestrator{
-		store:            fileStore,
-		personaManager:   personaManager,
-		subscribers:      make(map[string][]chan *models.Task),
-		maxParallel:      cfg.MaxParallel,
-		defaultMCPConfig: cfg.DefaultMCPConfig,
-		defaultEngine:    defaultEngine,
-		ctx:              ctx,
-		cancel:           cancel,
+		store:                fileStore,
+		personaManager:       personaManager,
+		subscribers:          make(map[string][]chan *models.Task),
+		maxParallel:          cfg.MaxParallel,
+		defaultMCPConfig:     cfg.DefaultMCPConfig,
+		defaultEngine:        defaultEngine,
+		pandoMCPServers:      cfg.MCPServers,
+		gatewayExposeEnabled: cfg.GatewayExposeEnabled,
+		dynamicMCPDir:        dynamicMCPDir,
+		ctx:                  ctx,
+		cancel:               cancel,
 	}
 
 	o.manager = agent.NewManager(cfg.AppConfig, cfg.LogDir, o.onTaskComplete, o.SetProgress, cfg.ModelResolver)
@@ -94,6 +119,12 @@ func (o *Orchestrator) onTaskComplete(task *models.Task) {
 	// Save final state
 	o.store.Save(task)
 	logTaskFinished(task)
+
+	// Clean up dynamic MCP config temp dir for this task (if one was generated).
+	if o.dynamicMCPDir != "" {
+		dynDir := o.dynamicMCPDir + "/mcp-dynamic/" + task.ID
+		os.RemoveAll(dynDir)
+	}
 
 	// Notify subscribers
 	o.subMu.RLock()
@@ -225,8 +256,8 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		timeout = models.Duration(dur)
 	}
 
-	// Apply orchestrator default MCP config when not explicitly provided.
-	// Priority: explicit request > persona-specific config > global default.
+	// Apply orchestrator MCP config when not explicitly provided.
+	// Priority: explicit request > persona-specific config > global override > dynamic.
 	mcpConfig := req.MCPConfig
 	if mcpConfig == "" {
 		if req.Persona != "" {
@@ -234,7 +265,8 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 				mcpConfig = personaMCPConfig
 			}
 		}
-		if mcpConfig == "" {
+		if mcpConfig == "" && o.defaultMCPConfig != "" {
+			// Explicit override still supported for advanced users.
 			mcpConfig = o.defaultMCPConfig
 		}
 	}
@@ -280,8 +312,23 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		model = acpAgent
 	}
 
+	taskID := generateID()
+
+	// For non-ACP engines with no explicit MCP config, generate a dynamic
+	// config that always includes pando as an MCP server plus any additional
+	// MCP servers configured in pando (unless already proxied via gateway).
+	if mcpConfig == "" && !isACPEngine(engine) {
+		dynCfg := agent.BuildSubagentMCPConfig("", o.pandoMCPServers, o.gatewayExposeEnabled)
+		dynDir := o.dynamicMCPDir + "/mcp-dynamic/" + taskID
+		if written, err := agent.WriteCanonicalConfigToFile(dynCfg, dynDir, "mcp-config.json"); err != nil {
+			log.Printf("Warning: failed to write dynamic MCP config for task %s: %v", taskID, err)
+		} else {
+			mcpConfig = written
+		}
+	}
+
 	task := &models.Task{
-		ID:           generateID(),
+		ID:           taskID,
 		Prompt:       prompt,
 		WorkDir:      workDir,
 		Status:       models.TaskStatusPending,
@@ -872,4 +919,19 @@ func truncateForLog(s string, max int) string {
 		return s
 	}
 	return s[:max-3] + "..."
+}
+
+// isACPEngine reports whether e is any ACP-based engine variant.
+// ACP agents manage their own MCP server connections, so the dynamic
+// MCP config generated by the orchestrator does not apply to them.
+func isACPEngine(e models.Engine) bool {
+	switch e {
+	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex,
+		models.EngineACPCustom, models.EngineACPServer, models.EnginePando:
+		return true
+	}
+	if strings.HasPrefix(string(e), "acp-") {
+		return true
+	}
+	return false
 }

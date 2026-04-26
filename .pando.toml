@@ -178,6 +178,39 @@ StrictMode = false
 HotReload = false
 LogFilteredData = false
 
+# MCPServer controls tool groups exposed when Pando runs as an MCP server
+# (`pando mcp-server`). Each group can be toggled independently. CLI flags
+# (--file-tools, --system-exec, etc.) override these values at runtime.
+[MCPServer]
+Enabled = false
+HttpPort = 9777
+HttpHost = "localhost"
+StdioEnabled = true
+HttpEnabled = true
+
+  # File tools: view, glob, grep, ls (read-only by default).
+  # Set AllowWrite = true to also expose write, edit, patch.
+  [MCPServer.FileTools]
+  Enabled = false
+  AllowWrite = false
+
+  # System execution: exposes the bash/shell tool to MCP clients.
+  # Use AllowedCommands to restrict which commands can be run.
+  [MCPServer.SystemExecution]
+  Enabled = false
+  AllowedCommands = []
+
+  # Gateway expose: re-exports every tool discovered by MCPGateway so
+  # external agents can reach all connected MCP servers through Pando.
+  # Requires [MCPGateway] Enabled = true.
+  [MCPServer.GatewayExpose]
+  Enabled = false
+
+  # Self-improvement: exposes evaluator stats, skills, and session evaluation.
+  # Requires [evaluator] enabled = true.
+  [MCPServer.SelfImprovement]
+  Enabled = false
+
 [MCPGateway]
 Enabled = true
 FavoriteThreshold = 3

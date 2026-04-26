@@ -137,6 +137,13 @@ func createVibeConfigToml(mcpConfigPath, workDir, model string) (string, error) 
 	return mcpconv.RenderMistralVibeTOML(cfg, model), nil
 }
 
+// WriteCanonicalConfigToFile serialises cfg directly to a JSON file at
+// tempDir/filename without reading any input file from disk. This is used by
+// the orchestrator when the MCP config is built dynamically at spawn time.
+func WriteCanonicalConfigToFile(cfg mcpconv.CanonicalConfig, tempDir, filename string) (string, error) {
+	return mcpconv.WriteJSONFile(tempDir, filename, cfg)
+}
+
 func writeVibeConfig(tempDir, content string) error {
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return fmt.Errorf("failed to create temp vibe home: %w", err)

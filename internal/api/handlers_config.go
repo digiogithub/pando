@@ -353,6 +353,32 @@ func (s *Server) handleConfigMCPGateway(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// handleConfigMCPServer handles GET/PUT for the MCPServer tool-group configuration.
+func (s *Server) handleConfigMCPServer(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		cfg := config.Get()
+		if cfg == nil {
+			writeError(w, http.StatusInternalServerError, "configuration not loaded")
+			return
+		}
+		writeJSON(w, http.StatusOK, cfg.MCPServer)
+	case http.MethodPut:
+		var req config.MCPServerConfig
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if err := config.UpdateMCPServerConfig(req); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update MCP server config: "+err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, config.Get().MCPServer)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
 // --- LSP ---
 
 // LSPConfigItem is the JSON representation of a single LSP configuration entry.

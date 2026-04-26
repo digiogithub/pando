@@ -35,6 +35,7 @@ import (
 	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/mcpgateway"
 	mesnadaACP "github.com/digiogithub/pando/internal/mesnada/acp"
+	mesnadaAgent "github.com/digiogithub/pando/internal/mesnada/agent"
 	mesnadaConfig "github.com/digiogithub/pando/internal/mesnada/config"
 	mesnadaOrch "github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/internal/mesnada/persona"
@@ -470,7 +471,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 func convertMesnadaConfig(cfg *config.Config) mesnadaOrch.Config {
 	appCfg := convertToMesnadaAppConfig(cfg)
 
-	return mesnadaOrch.Config{
+	orchCfg := mesnadaOrch.Config{
 		StorePath:        appCfg.Orchestrator.StorePath,
 		LogDir:           appCfg.Orchestrator.LogDir,
 		MaxParallel:      appCfg.Orchestrator.MaxParallel,
@@ -480,6 +481,36 @@ func convertMesnadaConfig(cfg *config.Config) mesnadaOrch.Config {
 		AppConfig:        appCfg,
 		ModelResolver:    makePandoModelResolver(cfg),
 	}
+
+	// Populate MCP servers from the pando application config so the orchestrator
+	// can forward them dynamically to subagents at spawn time.
+	if cfg != nil {
+		orchCfg.MCPServers = convertPandoMCPServers(cfg.MCPServers)
+		orchCfg.GatewayExposeEnabled = cfg.MCPGateway.Enabled && cfg.MCPServer.GatewayExpose.Enabled
+	}
+
+	return orchCfg
+}
+
+// convertPandoMCPServers converts the pando MCPServers map into a slice of
+// PandoMCPServerEntry values understood by the mesnada agent package.
+func convertPandoMCPServers(servers map[string]config.MCPServer) []mesnadaAgent.PandoMCPServerEntry {
+	if len(servers) == 0 {
+		return nil
+	}
+	entries := make([]mesnadaAgent.PandoMCPServerEntry, 0, len(servers))
+	for name, srv := range servers {
+		entries = append(entries, mesnadaAgent.PandoMCPServerEntry{
+			Name:    name,
+			Command: srv.Command,
+			Args:    srv.Args,
+			Env:     srv.Env,
+			Type:    string(srv.Type),
+			URL:     srv.URL,
+			Headers: srv.Headers,
+		})
+	}
+	return entries
 }
 
 // makePandoModelResolver returns a function that converts a model ID (possibly

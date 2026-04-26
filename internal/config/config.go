@@ -252,6 +252,67 @@ type APIServerConfig struct {
 	RequireAuth bool   `json:"requireAuth,omitempty"`
 }
 
+// MCPServerConfig controls which tool groups are exposed when Pando runs as an MCP server.
+// Each tool group can be independently enabled or disabled. The settings here serve as
+// defaults that can be overridden by CLI flags when running `pando mcp-server`.
+type MCPServerConfig struct {
+	// Enabled can be checked by other subsystems to know MCP server mode is active.
+	Enabled bool `json:"enabled,omitempty" toml:"Enabled"`
+	// HttpPort is the port for the HTTP/streamable transport. Default: 9777.
+	HttpPort int `json:"httpPort,omitempty" toml:"HttpPort"`
+	// HttpHost is the interface to bind the HTTP transport. Default: "localhost".
+	HttpHost string `json:"httpHost,omitempty" toml:"HttpHost"`
+	// StdioEnabled enables the stdio transport. Default: true.
+	StdioEnabled bool `json:"stdioEnabled,omitempty" toml:"StdioEnabled"`
+	// HttpEnabled enables the HTTP/streamable transport. Default: true.
+	HttpEnabled bool `json:"httpEnabled,omitempty" toml:"HttpEnabled"`
+
+	// FileTools exposes file-system tools (view/read, glob, grep, ls) and optionally
+	// write-side tools (write, edit, patch) to MCP clients.
+	FileTools MCPServerFileToolsConfig `json:"fileTools,omitempty" toml:"FileTools"`
+	// SystemExecution exposes the bash/shell execution tool to MCP clients.
+	SystemExecution MCPServerSystemConfig `json:"systemExecution,omitempty" toml:"SystemExecution"`
+	// GatewayExpose re-exports every tool discovered by the MCPGateway so that
+	// external agents can reach all connected MCP servers through this Pando instance.
+	GatewayExpose MCPServerGatewayExposeConfig `json:"gatewayExpose,omitempty" toml:"GatewayExpose"`
+	// SelfImprovement exposes the evaluator/self-improvement agent as MCP tools
+	// so external orchestrators can query UCB stats, skills, and trigger evaluation.
+	SelfImprovement MCPServerSelfImprovementConfig `json:"selfImprovement,omitempty" toml:"SelfImprovement"`
+}
+
+// MCPServerFileToolsConfig controls file-system tool exposure in MCP server mode.
+type MCPServerFileToolsConfig struct {
+	// Enabled exposes read-only file tools: view, glob, grep, ls. Default: false.
+	Enabled bool `json:"enabled,omitempty" toml:"Enabled"`
+	// AllowWrite also exposes write-side tools: write, edit, patch. Default: false.
+	// Requires Enabled = true.
+	AllowWrite bool `json:"allowWrite,omitempty" toml:"AllowWrite"`
+}
+
+// MCPServerSystemConfig controls shell/bash tool exposure in MCP server mode.
+type MCPServerSystemConfig struct {
+	// Enabled exposes the bash execution tool. Default: false.
+	Enabled bool `json:"enabled,omitempty" toml:"Enabled"`
+	// AllowedCommands is an optional allowlist of shell commands (first token).
+	// When non-empty only commands whose first token matches an entry are executed.
+	// An empty slice means all commands are permitted.
+	AllowedCommands []string `json:"allowedCommands,omitempty" toml:"AllowedCommands"`
+}
+
+// MCPServerGatewayExposeConfig controls re-export of MCPGateway tools.
+type MCPServerGatewayExposeConfig struct {
+	// Enabled re-exports every tool discovered by MCPGateway through this MCP server.
+	// Requires MCPGateway.Enabled = true in the main config. Default: false.
+	Enabled bool `json:"enabled,omitempty" toml:"Enabled"`
+}
+
+// MCPServerSelfImprovementConfig controls self-improvement tool exposure.
+type MCPServerSelfImprovementConfig struct {
+	// Enabled exposes evaluator tools: get stats, list skills, trigger evaluation.
+	// Requires Evaluator.Enabled = true in the main config. Default: false.
+	Enabled bool `json:"enabled,omitempty" toml:"Enabled"`
+}
+
 // MCPGatewayConfig defines configuration for the MCP gateway subsystem.
 type MCPGatewayConfig struct {
 	Enabled            bool `json:"enabled,omitempty" toml:"Enabled"`
@@ -520,6 +581,7 @@ type Config struct {
 	CronJobs          CronJobsConfig                    `json:"cronJobs,omitempty" toml:"CronJobs"`
 	LLMCache          LLMCacheConfig                    `json:"llmCache,omitempty" toml:"LLMCache"`
 	Container         ContainerConfig                   `json:"container,omitempty" toml:"Container"`
+	MCPServer         MCPServerConfig                   `json:"mcpServer,omitempty" toml:"MCPServer"`
 }
 
 // Application constants
@@ -3058,6 +3120,26 @@ func UpdateMCPGateway(gw MCPGatewayConfig) error {
 		config.MCPGateway = gw
 	}); err != nil {
 		cfg.MCPGateway = oldGW
+		return err
+	}
+
+	return nil
+}
+
+// UpdateMCPServerConfig updates the MCPServer configuration block and persists
+// it to the config file.
+func UpdateMCPServerConfig(mcpSrv MCPServerConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	old := cfg.MCPServer
+	cfg.MCPServer = mcpSrv
+
+	if err := updateCfgFile(func(config *Config) {
+		config.MCPServer = mcpSrv
+	}); err != nil {
+		cfg.MCPServer = old
 		return err
 	}
 

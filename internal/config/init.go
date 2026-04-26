@@ -234,7 +234,10 @@ LogDir           = './.pando/mesnada/logs'
 MaxParallel      = 5
 DefaultEngine    = 'claude'
 DefaultModel     = 'sonnet'
-DefaultMCPConfig = '.github/mcp-config.json'
+# DefaultMCPConfig is optional. When unset, pando generates a dynamic MCP config
+# at spawn time that includes pando itself (remembrances, mesnada, fetch, search,
+# browser) plus any MCPServers defined in this config file.
+# DefaultMCPConfig = '/path/to/custom-mcp-config.json'
 PersonaPath      = './.pando/mesnada/personas'
 
 [Mesnada.ACP]
