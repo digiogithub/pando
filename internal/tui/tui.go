@@ -19,6 +19,7 @@ import (
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp/protocol"
+	"github.com/digiogithub/pando/internal/notify"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/project"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -438,6 +439,30 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
+	case pubsub.Event[notify.Notification]:
+		n := msg.Payload
+		switch n.Level {
+		case notify.LevelError:
+			cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.ErrorKey, n.Message))
+			outAlert, outCmd := a.alert.Update(msg)
+			a.alert = outAlert.(bubbleup.AlertModel)
+			cmds = append(cmds, outCmd)
+		case notify.LevelWarn:
+			cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.WarnKey, n.Message))
+			outAlert, outCmd := a.alert.Update(msg)
+			a.alert = outAlert.(bubbleup.AlertModel)
+			cmds = append(cmds, outCmd)
+		case notify.LevelInfo:
+			s, cmd := a.status.Update(util.InfoMsg{
+				Type: util.InfoTypeInfo,
+				Msg:  n.Message,
+				TTL:  n.TTL,
+			})
+			a.status = s.(core.StatusCmp)
+			cmds = append(cmds, cmd)
+		}
+		return a, tea.Batch(cmds...)
+
 	case util.ClearStatusMsg:
 		s, _ := a.status.Update(msg)
 		a.status = s.(core.StatusCmp)

@@ -21,6 +21,7 @@ import (
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
 	acpPkg "github.com/digiogithub/pando/internal/mesnada/acp"
+	"github.com/digiogithub/pando/internal/notify"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -363,6 +364,7 @@ func setupSubscriptions(app *app.App, parentCtx context.Context) (chan tea.Msg, 
 	ctx, cancel := context.WithCancel(parentCtx) // Inherit from parent context
 
 	setupSubscriber(ctx, &wg, "logging", logging.Subscribe, ch)
+	setupSubscriber(ctx, &wg, "notify", notify.Subscribe, ch)
 	setupSubscriber(ctx, &wg, "sessions", app.Sessions.Subscribe, ch)
 	setupSubscriber(ctx, &wg, "messages", app.Messages.Subscribe, ch)
 	setupSubscriber(ctx, &wg, "permissions", app.Permissions.Subscribe, ch)
@@ -483,6 +485,9 @@ func runACPServerWithOptions(cwd string, debug bool, autoPerm bool) error {
 		sessionAdapter,
 		permAdapter,
 	)
+
+	// Fan out global notify.Bus events to all active ACP sessions.
+	go pandoAgent.StartNotificationBroadcast(ctx)
 
 	transport := acpPkg.NewStdioTransport(pandoAgent, logger)
 	logger.Printf("ACP agent listening on stdio")

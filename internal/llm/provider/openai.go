@@ -17,6 +17,7 @@ import (
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/notify"
 )
 
 type openaiOptions struct {
@@ -226,6 +227,7 @@ func (o *openaiClient) send(ctx context.Context, messages []message.Message, too
 			}
 			if retry {
 				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), 10*time.Second)
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
@@ -341,6 +343,7 @@ func (o *openaiClient) stream(ctx context.Context, messages []message.Message, t
 			}
 			if retry {
 				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), 10*time.Second)
 				select {
 				case <-ctx.Done():
 					// context cancelled
@@ -352,6 +355,9 @@ func (o *openaiClient) stream(ctx context.Context, messages []message.Message, t
 				case <-time.After(time.Duration(after) * time.Millisecond):
 					continue
 				}
+			}
+			if retryErr != nil {
+				notify.Error(notify.SourceLLMProvider, retryErr.Error())
 			}
 			eventChan <- ProviderEvent{Type: EventError, Error: retryErr}
 			close(eventChan)

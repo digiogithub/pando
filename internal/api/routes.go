@@ -43,6 +43,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/container/images/gc", s.handleContainerImageGC)
 	// Config hot-reload events (SSE)
 	mux.HandleFunc("GET /api/v1/config/events", s.handleConfigEvents)
+	// User-facing notifications (SSE): LLM retries, tool errors, LSP diagnostics
+	mux.HandleFunc("GET /api/v1/notifications/stream", s.handleNotificationsStream)
 	// Config sections
 	mux.HandleFunc("/api/v1/config/providers", s.handleConfigProviders)
 	mux.HandleFunc("/api/v1/config/agents", s.handleConfigAgents)

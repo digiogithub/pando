@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	acpsdk "github.com/madeindigio/acp-go-sdk"
+	"github.com/digiogithub/pando/internal/notify"
+	"github.com/digiogithub/pando/internal/pubsub"
 )
 
 // PandoACPAgent implements the ACP Agent interface.
@@ -544,4 +546,58 @@ func (a *PandoACPAgent) GetVersion() string {
 // GetCapabilities returns the agent capabilities.
 func (a *PandoACPAgent) GetCapabilities() acpsdk.AgentCapabilities {
 	return a.capabilities
+}
+
+// StartNotificationBroadcast subscribes to the global notify bus and fans out
+// each Notification to all currently active ACP sessions via a
+// SessionSessionInfoUpdate with _meta["pando:notification"] carrying the payload.
+// This allows ACP clients to receive LLM retry info, tool errors, LSP diagnostics,
+// etc. in real time alongside the normal session stream.
+//
+// Call this in a goroutine after creating the agent; it blocks until ctx is done.
+func (a *PandoACPAgent) StartNotificationBroadcast(ctx context.Context) {
+	ch := notify.Subscribe(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, ok := <-ch:
+			if !ok {
+				return
+			}
+			if event.Type != pubsub.CreatedEvent {
+				continue
+			}
+			n := event.Payload
+			meta := map[string]any{
+				"pando:notification": map[string]any{
+					"id":      n.ID,
+					"time":    n.Time,
+					"level":   string(n.Level),
+					"source":  string(n.Source),
+					"message": n.Message,
+					"ttl":     int64(n.TTL),
+				},
+			}
+			update := acpsdk.SessionUpdate{
+				SessionInfoUpdate: &acpsdk.SessionSessionInfoUpdate{
+					SessionUpdate: "session_info_update",
+					Meta:          meta,
+				},
+			}
+
+			a.sessionsMu.RLock()
+			sessions := make([]*ACPServerSession, 0, len(a.sessions))
+			for _, sess := range a.sessions {
+				sessions = append(sessions, sess)
+			}
+			a.sessionsMu.RUnlock()
+
+			for _, sess := range sessions {
+				if err := sess.SendUpdate(update); err != nil {
+					a.logger.Printf("[ACP AGENT] Failed to broadcast notification to session %s: %v", sess.ID, err)
+				}
+			}
+		}
+	}
 }

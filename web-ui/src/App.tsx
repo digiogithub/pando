@@ -21,11 +21,14 @@ import { isDesktop, getDesktopConfig } from '@/services/desktop'
 import { initDesktopMode } from '@/services/api'
 import { useLanguageSync } from '@/hooks/useLanguageSync'
 import PWAInstallPrompt from '@/components/shared/PWAInstallPrompt'
+import { useNotificationsStore } from '@/stores/notificationsStore'
 
 function App() {
   useLanguageSync()
   const [splashStatus, setSplashStatus] = useState<SplashStatus>('connecting')
   const [showSplash, setShowSplash] = useState(true)
+  const connectNotifications = useNotificationsStore((s) => s.connect)
+  const disconnectNotifications = useNotificationsStore((s) => s.disconnect)
 
   const initApp = useCallback(async () => {
     setSplashStatus('connecting')
@@ -52,6 +55,14 @@ function App() {
   useEffect(() => {
     void initApp()
   }, [initApp])
+
+  // Connect to the notifications SSE stream once the app is ready.
+  useEffect(() => {
+    if (!showSplash && splashStatus === 'ready') {
+      connectNotifications()
+      return () => disconnectNotifications()
+    }
+  }, [showSplash, splashStatus, connectNotifications, disconnectNotifications])
 
   return (
     <>
