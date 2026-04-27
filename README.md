@@ -183,6 +183,18 @@ Special thanks to:
 
 ## Tasks
 
+### tag
+
+Genera una nueva tag
+
+interactive:true
+
+```bash
+git tag --sort=creatordate
+git tag $(gum input)
+git push origin --tags
+```
+
 ### build
 
 Compila la web-ui embebida y luego el binario de pando.
