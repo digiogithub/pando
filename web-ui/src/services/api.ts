@@ -1,5 +1,16 @@
 const TOKEN_KEY = 'pando_token'
 
+// Network error handler — registered by serverStore to get immediate notification
+// when the server is unreachable (TypeError: Failed to fetch).
+let _networkErrorHandler: (() => void) | null = null
+export function registerNetworkErrorHandler(cb: () => void): void {
+  _networkErrorHandler = cb
+}
+
+export function notifyNetworkError(): void {
+  _networkErrorHandler?.()
+}
+
 // Resolve initial base URL from injected runtime config or dev-mode env var.
 // Priority: window.__PANDO_API_BASE__ (injected by backend) > VITE_API_BASE_URL (dev override) > '' (same origin)
 function resolveInitialBaseURL(): string {
@@ -59,7 +70,14 @@ async function fetchApi<T>(path: string, options: FetchOptions = {}): Promise<T>
     }
   }
 
-  const response = await fetch(baseURL + path, { ...init, headers })
+  let response: Response
+  try {
+    response = await fetch(baseURL + path, { ...init, headers })
+  } catch (err) {
+    // Network-level failure (server unreachable) — notify handler immediately
+    _networkErrorHandler?.()
+    throw err
+  }
 
   if (response.status === 401) {
     const hadToken = !!getToken()

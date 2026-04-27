@@ -1,4 +1,4 @@
-import api from './api'
+import api, { notifyNetworkError } from './api'
 import type { SSEEvent, SSEToolResult } from '@/types'
 
 export function createSSEStream(
@@ -82,6 +82,10 @@ export function createSSEStream(
     })
     .catch((err: unknown) => {
       if (err instanceof Error && err.name !== 'AbortError') {
+        // Network-level failure (server unreachable) — notify server store immediately
+        if (err instanceof TypeError) {
+          notifyNetworkError()
+        }
         onError?.(err)
       }
     })

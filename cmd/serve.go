@@ -96,27 +96,25 @@ This is the backend for the Pando Desktop/Web UI.`,
 		sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer stopSignals()
 
+		// Watchdog: unconditionally force-exit if the process has not terminated
+		// within 6 seconds of receiving the shutdown signal.
+		go func() {
+			<-sigCtx.Done()
+			time.Sleep(6 * time.Second)
+			logging.Error("Server shutdown watchdog: forced exit after 6s")
+			os.Exit(1)
+		}()
+
 		go func() {
 			<-sigCtx.Done()
 			logging.Info("Shutdown signal received")
 			cancel()
 
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer shutdownCancel()
 
-			shutdownDone := make(chan struct{})
-			go func() {
-				defer close(shutdownDone)
-				if err := server.Shutdown(shutdownCtx); err != nil {
-					logging.Error("Server shutdown error: %v", err)
-				}
-			}()
-
-			select {
-			case <-shutdownDone:
-			case <-shutdownCtx.Done():
-				logging.Error("Server shutdown timed out; forcing process exit")
-				os.Exit(1)
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				logging.Error("Server shutdown error: %v", err)
 			}
 		}()
 

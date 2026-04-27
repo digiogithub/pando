@@ -108,26 +108,25 @@ func runAppMode(cmd *cobra.Command) error {
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignals()
 
+	// Watchdog: unconditionally force-exit if the process has not terminated
+	// within 6 seconds of receiving the shutdown signal, in case something in
+	// the graceful-shutdown path hangs (watcher WaitGroup, SSE connections, etc.).
+	go func() {
+		<-sigCtx.Done()
+		time.Sleep(6 * time.Second)
+		logging.Error("App shutdown watchdog: forced exit after 6s")
+		os.Exit(1)
+	}()
+
 	go func() {
 		<-sigCtx.Done()
 		cancel()
 
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
 
-		shutdownDone := make(chan struct{})
-		go func() {
-			defer close(shutdownDone)
-			if err := server.Shutdown(shutdownCtx); err != nil {
-				logging.Error("App server shutdown error: %v", err)
-			}
-		}()
-
-		select {
-		case <-shutdownDone:
-		case <-shutdownCtx.Done():
-			logging.Error("App server shutdown timed out; forcing process exit")
-			os.Exit(1)
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logging.Error("App server shutdown error: %v", err)
 		}
 	}()
 

@@ -13,7 +13,7 @@ import { format } from 'date-fns'
 
 export default function Sidebar() {
   const { t } = useTranslation()
-  const [sessionsOpen, setSessionsOpen] = useState(true)
+  const [sessionsOpen, setSessionsOpen] = useState(false)
   const [navOpen, setNavOpen] = useState(true)
   const { sessions, activeSessionId, setActiveSession, setMessages } = useSessionStore()
   const setSidebarOpen = useLayoutStore((s) => s.setSidebarOpen)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	pandoapp "github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
@@ -52,12 +53,13 @@ type codeIndexStartedMsg struct {
 }
 
 type settingsPage struct {
-	width          int
-	height         int
-	app            *pandoapp.App
-	settings       settings.SettingsCmp
-	catalogDialog  *dialog.SkillsCatalogDialog
-	configChangeCh chan config.ConfigChangeEvent
+	width               int
+	height              int
+	app                 *pandoapp.App
+	settings            settings.SettingsCmp
+	catalogDialog       *dialog.SkillsCatalogDialog
+	addProviderDialog   dialog.AddProviderDialog
+	configChangeCh      chan config.ConfigChangeEvent
 }
 
 // waitForConfigChange returns a blocking tea.Cmd that resolves when an
@@ -111,6 +113,9 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			id := strings.TrimPrefix(msg.Field.Key, "action:delete_provider_account:")
 			return p, p.deleteProviderAccount(id)
 		}
+		if msg.Field.Key == "action:add_provider" {
+			return p, p.openAddProviderDialog()
+		}
 		if msg.Field.Key == "action:remembrances_index_workdir" {
 			return p, p.indexWorkingDirectory()
 		}
@@ -142,6 +147,18 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return p, util.ReportInfo(successMsg)
 	case dialog.CloseSkillsCatalogMsg:
 		p.catalogDialog = nil
+		return p, nil
+	case dialog.ProviderAccountCreatedMsg:
+		p.addProviderDialog = nil
+		err := config.AddProviderAccount(msg.Account)
+		p.settings.SetSections(buildSections(p.app))
+		p.settings.SetSize(p.width, p.height)
+		if err != nil {
+			return p, util.ReportError(err)
+		}
+		return p, util.ReportInfo("Provider added: " + msg.Account.DisplayName)
+	case dialog.CloseAddProviderDialogMsg:
+		p.addProviderDialog = nil
 		return p, nil
 	case lspPresetAddedMsg:
 		p.settings.SetSections(buildSections(p.app))
@@ -184,6 +201,18 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return p, tea.Batch(cmd, settingsCmd)
 	}
 
+	// Forward ALL events to add-provider dialog when active (sole handler for key events)
+	if p.addProviderDialog != nil {
+		updated, cmd := p.addProviderDialog.Update(msg)
+		p.addProviderDialog = updated.(dialog.AddProviderDialog)
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return p, cmd
+		}
+		settingsUpdated, settingsCmd := p.settings.Update(msg)
+		p.settings = settingsUpdated.(settings.SettingsCmp)
+		return p, tea.Batch(cmd, settingsCmd)
+	}
+
 	updated, cmd := p.settings.Update(msg)
 	p.settings = updated.(settings.SettingsCmp)
 	return p, cmd
@@ -195,6 +224,20 @@ func (p *settingsPage) View() string {
 		overlay := p.catalogDialog.View()
 		x := (p.width - dialog.DialogDialogWidth) / 2
 		y := (p.height - dialog.DialogDialogHeight) / 2
+		if x < 0 {
+			x = 0
+		}
+		if y < 0 {
+			y = 0
+		}
+		return layout.PlaceOverlay(x, y, overlay, base, true)
+	}
+	if p.addProviderDialog != nil {
+		overlay := p.addProviderDialog.(tea.Model).View()
+		overlayW := dialog.AddProviderDialogWidth
+		overlayH := lipgloss.Height(overlay)
+		x := (p.width - overlayW) / 2
+		y := (p.height - overlayH) / 2
 		if x < 0 {
 			x = 0
 		}
@@ -219,12 +262,19 @@ func (p *settingsPage) GetSize() (int, int) {
 
 // HasActiveModal reports whether the settings page currently has an active modal dialog.
 func (p *settingsPage) HasActiveModal() bool {
-	return p.catalogDialog != nil
+	return p.catalogDialog != nil || p.addProviderDialog != nil
 }
 
 // ClearModals closes any open modal dialogs on the settings page.
 func (p *settingsPage) ClearModals() {
 	p.catalogDialog = nil
+	p.addProviderDialog = nil
+}
+
+func (p *settingsPage) openAddProviderDialog() tea.Cmd {
+	d := dialog.NewAddProviderDialog(p.width, p.height)
+	p.addProviderDialog = d
+	return d.Init()
 }
 
 func NewSettingsPage(app *pandoapp.App) tea.Model {
@@ -436,7 +486,6 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		withGroup(buildGeneralSection(cfg), "Core"),
 
 		// ── AI ──
-		withGroup(buildProvidersSection(cfg), "AI"),
 		withGroup(buildProviderAccountsSection(cfg), "AI"),
 		withGroup(buildAgentsSection(cfg), "AI"),
 		withGroup(buildPersonaAutoSelectSection(cfg), "AI"),
@@ -657,7 +706,16 @@ func buildProvidersSection(cfg *config.Config) settings.Section {
 
 func buildProviderAccountsSection(cfg *config.Config) settings.Section {
 	accounts := config.GetProviderAccounts()
-	fields := make([]settings.Field, 0, len(accounts)*6)
+	fields := make([]settings.Field, 0, len(accounts)*6+1)
+
+	// "Add Provider" action at the top
+	fields = append(fields, settings.Field{
+		Label:    "Add Provider",
+		Key:      "action:add_provider",
+		Value:    "Configure a new provider account",
+		Type:     settings.FieldAction,
+		ReadOnly: true,
+	})
 
 	providerOptions := []string{
 		"anthropic", "openai", "openai-compatible",
@@ -711,7 +769,7 @@ func buildProviderAccountsSection(cfg *config.Config) settings.Section {
 	}
 
 	return settings.Section{
-		Title:  "Provider Accounts",
+		Title:  "Providers",
 		Fields: fields,
 	}
 }

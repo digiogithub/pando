@@ -89,31 +89,28 @@ Guidelines:
 - Provide clear, actionable task descriptions.
 - Prioritise tasks using high/medium/low to reflect urgency and importance.`,
 		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"todos": map[string]any{
-					"type":        "array",
-					"description": "The complete, updated list of todo items. Always send the full list.",
-					"items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"content": map[string]any{
-								"type":        "string",
-								"description": "Short description of the task.",
-							},
-							"status": map[string]any{
-								"type":        "string",
-								"enum":        []string{"pending", "in_progress", "completed"},
-								"description": "Current status of the task.",
-							},
-							"priority": map[string]any{
-								"type":        "string",
-								"enum":        []string{"high", "medium", "low"},
-								"description": "Relative priority of the task.",
-							},
+			"todos": map[string]any{
+				"type":        "array",
+				"description": "The complete, updated list of todo items. Always send the full list.",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"content": map[string]any{
+							"type":        "string",
+							"description": "Short description of the task.",
 						},
-						"required": []string{"content", "status", "priority"},
+						"status": map[string]any{
+							"type":        "string",
+							"enum":        []string{"pending", "in_progress", "completed"},
+							"description": "Current status of the task.",
+						},
+						"priority": map[string]any{
+							"type":        "string",
+							"enum":        []string{"high", "medium", "low"},
+							"description": "Relative priority of the task.",
+						},
 					},
+					"required": []string{"content", "status", "priority"},
 				},
 			},
 		},
