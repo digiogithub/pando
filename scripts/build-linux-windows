@@ -9,6 +9,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$REPO_ROOT/dist"
 WEB_UI_DIR="$REPO_ROOT/web-ui"
 ZIG="${ZIG:-zig}"
+UPX="${UPX:-upx}"
 
 cd "$REPO_ROOT"
 
@@ -45,6 +46,11 @@ build_archive() {
     echo "Building ${goos}/${goarch} → pando-${artifact_name}.zip ..."
     env GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=1 "${env_vars[@]}" \
         go build -ldflags "$LDFLAGS" -o "$out" .
+    if command -v "$UPX" >/dev/null 2>&1; then
+        "$UPX" --best --lzma "$out"
+    else
+        echo "Warning: upx not found, skipping compression for ${artifact_name}" >&2
+    fi
     (cd "$DIST_DIR" && zip -qm "pando-${artifact_name}.zip" "pando-${artifact_name}${ext}")
     echo "  → dist/pando-${artifact_name}.zip"
 }

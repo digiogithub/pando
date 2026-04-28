@@ -11,6 +11,7 @@ WEB_UI_INSTALL_CMD ?= bun install
 WEB_UI_EMBEDDED_BUILD_CMD ?= bun run build:embedded
 CGO_ENABLED ?= 1
 ZIG ?= zig
+UPX ?= upx
 CC_LINUX_ARM64 ?= $(ZIG) cc -target aarch64-linux-gnu
 CXX_LINUX_ARM64 ?= $(ZIG) c++ -target aarch64-linux-gnu
 CC_WINDOWS_AMD64 ?= $(ZIG) cc -target x86_64-windows-gnu
@@ -75,6 +76,7 @@ $(DIST_DIR):
 define build_release
 	@echo "Building $(1)/$(2)..."
 	GOOS=$(1) GOARCH=$(2) CGO_ENABLED=$(CGO_ENABLED) $(5) go build -ldflags '$(LDFLAGS)' -o $(DIST_DIR)/pando-$(3)$(4) .
+	if command -v $(UPX) >/dev/null 2>&1; then $(UPX) --best --lzma $(DIST_DIR)/pando-$(3)$(4); else echo "Skipping UPX for $(3)"; fi
 	cd $(DIST_DIR) && zip -qm pando-$(3).zip pando-$(3)$(4)
 endef
 
@@ -83,7 +85,7 @@ define require_cmd
 endef
 
 ## Build all release archives in dist/ for Linux, Windows and macOS
-release: web-ui-embedded $(DIST_DIR) release-linux-amd64 release-linux-arm64 release-windows-amd64 release-darwin-amd64 release-darwin-arm64
+release: web-ui-embedded $(DIST_DIR) release-linux-amd64 release-linux-arm64 release-windows-amd64 $(if $(filter Darwin,$(shell uname)),release-darwin-amd64 release-darwin-arm64)
 
 ## Build Linux x64 release archive in dist/
 release-linux-amd64: | $(DIST_DIR)
@@ -99,6 +101,7 @@ release-windows-amd64: | $(DIST_DIR)
 	$(call require_cmd,$(ZIG))
 	$(call build_release,windows,amd64,windows-x64,.exe,CC='$(CC_WINDOWS_AMD64)' CXX='$(CXX_WINDOWS_AMD64)')
 
+ifeq ($(shell uname),Darwin)
 ## Build macOS x64 release archive in dist/
 release-darwin-amd64: | $(DIST_DIR)
 	$(call require_cmd,$(ZIG))
@@ -108,6 +111,7 @@ release-darwin-amd64: | $(DIST_DIR)
 release-darwin-arm64: | $(DIST_DIR)
 	$(call require_cmd,$(ZIG))
 	$(call build_release,darwin,arm64,darwin-arm64,,CC='$(CC_DARWIN_ARM64)' CXX='$(CXX_DARWIN_ARM64)' $(MACOS_SYSROOT_FLAGS))
+endif
 
 ## Show available targets
 help:

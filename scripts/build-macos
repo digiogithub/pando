@@ -14,6 +14,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$REPO_ROOT/dist"
 WEB_UI_DIR="$REPO_ROOT/web-ui"
 ZIG="${ZIG:-zig}"
+UPX="${UPX:-upx}"
 MACOS_MIN_VERSION="${MACOS_MIN_VERSION:-11.0}"
 
 # Auto-detect SDKROOT on macOS if not set
@@ -78,9 +79,19 @@ build_archive() {
     echo "Building ${goos}/${goarch} → pando-${artifact_name}.zip ..."
     env GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=1 "${env_vars[@]}" ${sysroot_env[@]+"${sysroot_env[@]}"} \
         go build -ldflags "$LDFLAGS" -o "$out" .
+    if command -v "$UPX" >/dev/null 2>&1; then
+        "$UPX" --best --lzma "$out"
+    else
+        echo "Warning: upx not found, skipping compression for ${artifact_name}" >&2
+    fi
     (cd "$DIST_DIR" && zip -qm "pando-${artifact_name}.zip" "pando-${artifact_name}")
     echo "  → dist/pando-${artifact_name}.zip"
 }
+
+if [[ "$(uname)" != "Darwin" ]]; then
+    echo "Error: this script must be run on macOS." >&2
+    exit 1
+fi
 
 # macOS amd64 (cross-compiled via zig)
 # --sysroot in CC/CXX tells zig where to resolve system libs and frameworks.

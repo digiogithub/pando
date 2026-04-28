@@ -178,39 +178,6 @@ StrictMode = false
 HotReload = false
 LogFilteredData = false
 
-# MCPServer controls tool groups exposed when Pando runs as an MCP server
-# (`pando mcp-server`). Each group can be toggled independently. CLI flags
-# (--file-tools, --system-exec, etc.) override these values at runtime.
-[MCPServer]
-Enabled = false
-HttpPort = 9777
-HttpHost = "localhost"
-StdioEnabled = true
-HttpEnabled = true
-
-  # File tools: view, glob, grep, ls (read-only by default).
-  # Set AllowWrite = true to also expose write, edit, patch.
-  [MCPServer.FileTools]
-  Enabled = false
-  AllowWrite = false
-
-  # System execution: exposes the bash/shell tool to MCP clients.
-  # Use AllowedCommands to restrict which commands can be run.
-  [MCPServer.SystemExecution]
-  Enabled = false
-  AllowedCommands = []
-
-  # Gateway expose: re-exports every tool discovered by MCPGateway so
-  # external agents can reach all connected MCP servers through Pando.
-  # Requires [MCPGateway] Enabled = true.
-  [MCPServer.GatewayExpose]
-  Enabled = false
-
-  # Self-improvement: exposes evaluator stats, skills, and session evaluation.
-  # Requires [evaluator] enabled = true.
-  [MCPServer.SelfImprovement]
-  Enabled = false
-
 [MCPGateway]
 Enabled = true
 FavoriteThreshold = 3
@@ -222,14 +189,14 @@ DecayDays = 30
 FetchEnabled = true
 FetchMaxSizeMB = 0
 GoogleSearchEnabled = true
-GoogleAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBoUTdMR3k3d2ZSTU9MazVkenVRd1A5YTBYT2V0VzUrYnNLRWUwQmo1Q1I0CkREaEd0d2dTYzNiM2JKRy9TRjNVZ2NvNnpNZ0szWFdJc0Z4TUU1N05NYTAKLS0tIHh2QU9oaVRBc0xTKzZCZmQzWGZWTmFhdzBYL3F4TFFaRzRxVWtvbkg0cncKiMOd7cPKmLv1VCBnmSrpuZSDn6WAjWT2/fdXruxpJteoJqlSUyssqm/YKBsE36GSics9b9jT6xTjXL+YUnvGXqM3n3t8h9o='
-GoogleSearchEngineID = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBic1lWcTJMTHNmdGlFNnI4cCtwOURLWWp5QmF4OWRhNDVCTXJ4djhOQ3lRCmJnTUN4S1FQY2FaNUJ0Z2RBY1h4Z2dlTzJUcHRoUzhPL2RJOEdIYzdBOHcKLS0tIGpWVk9makFiMnh6dVZxYUNSNUo1SnBZRkhKZDlLQU9jTjJhd2RzTjl5Tm8K7B2AiHKogjXC3HLV+H3ZCAB1Oh1gw8O64Pk+1swZKCIYqWlzbqJhQLn03+c+QIZdGQ=='
+GoogleAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBuWkphZ1AxTU43S1B6dFdrMFYySHpjVDVEc0xsd0s4dy9jQjJLNkpUUnlrCnBSdkZ3TjFVU1MrS3BVeVZ2K1cweWtZQmpuR1g4YUx1Slp6cnJveWtmeW8KLS0tIHJQYXhQRGZKeXh2a1g4clJSYkx4MEUyWUh3N2JLdTBFK1dmZ01aWC9hUUUKAzQ+L2e+EXzJIKkfHB/rrzyY9zX354k071cz8rGTzYpPcrLj4MPcs/R60xgumIWQnG3VbbvJflFlE8+HZhp1hQ1+hfuN3Ho='
+GoogleSearchEngineID = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBCYWF6OGxzcXpwNFo2Vk5tMWdxV1J5dkpLZmhySy8zVzZoWUZpVU1hb3g4ClpxY0toMm1LZmh4dEFYOTBQUkFiZ0w2cnNVVnJ2SXVuY2hhN3J0Mzg5dlEKLS0tIGZzc0M2T0VvekFBeSt0T0RId0VHd2tYRlJISkg2dHhjM1hoaUxOUVJQNVkKPgM3NRb8aBs3kCYGW2laa79rPtwtZ7ZQetporXrP0qUYb8iDVIOGuT4KwTcNbTVNeQ=='
 BraveSearchEnabled = true
-BraveAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBTVjdmdHFDQitsWEtmcUsyVzRlOU8zVVBtcjJFSWxabms1cU1aZ09WYUFzCnFqdkUxYUtxcndBSitJWmpJOHBQa2FzTTJwZzJMck1PdzB6aEhoSTRUM3MKLS0tIGJXTmZMdGJsalc4WUtzZzVlaEtzcmpZNjg4aDRUVkZzeHZUcElBZTNlaTQKZSe+Ar3VRie694wur2uRF8EsI3hpznIZ+yV0zWtT1klyyORJCBJsheJityEFg7Z+NR2NQYVm+ChbpiKATxJ2'
+BraveAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBGcnMxZ2tUZ1k2RURpSWpvaFZLV1A4Tzg3L2YyNExQNVcyb2lvUnladnhrCkxjdkFkVzRWK015dmRuV1FodTQ3akZ2d2MwUDNEQ1crNVBlaldvaWZubXMKLS0tIGVlanVuYUZCZVI2anpOdGsxQTBGaFBDMDhZd1JQZ3JIb29FcU92N2NMNzQKhFx0SpJGjpl0t22/GFmoDV7hHM4GfZ6/dM1qQLxCKG8Usjg6bStCUXoZ6RCg0eCSyqhk+6+LxM6gqBSpWSkV'
 PerplexitySearchEnabled = false
 PerplexityAPIKey = ''
 ExaSearchEnabled = true
-ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA0WGVRRDJ1OCsyU3lTbHdFMWl2R0gxV3RwZXJlaGVOeHY4cDg4WURYM1MwCmNqMzF4YUJNeVZJTVVHbVROV2VpVkFiTzhQdnJzaGNQQ2V4T0ZJUDBhOTgKLS0tIDQ0Qy8vREdYbXVNZXV6dzBvQklEVnRsSUsrekZSY1dNTTdLaUgrUFVnRGsK32cvZepDghsGIZG07rdQpGHB4Njv22gBbg+wGMQfHq+YeRgiTqPyNm5617xrMhGadCqbDffhm4yZsJmbFMqCpidBbKA='
+ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB3VUxyMllIYTNXalIrVW4zVDJ0T2M1WWxlcHowbGp1b0JKQyttSUpNSUJBClJST2pMYVRxZi9hd3ZiZjFTVXpUbElEUE1PU0ZpL0pvMTl4MkJwQ3kzVDAKLS0tIGMrc1RUWHhPSFVwbFV1ZXcwbXl1SERJSTZHN0o1YmFQMUhuUG1OL3dJMGMKx5qMaUhWBl1X1QvGcJhccQ/PnP1r14skB0jZOB5apqgRhd4iH3aRY4lKdOfBqPRNoWPGNTwk3ORQaoY90U6AyquC4Rc='
 Context7Enabled = true
 BrowserEnabled = true
 BrowserHeadless = false
@@ -289,4 +256,45 @@ Enabled = false
 Jobs = []
 
 [LLMCache]
+Enabled = false
+
+[Container]
+runtime = ''
+image = ''
+pull_policy = ''
+socket = ''
+work_dir = ''
+network = ''
+read_only = false
+user = ''
+cpu_limit = ''
+mem_limit = ''
+pids_limit = 0
+no_new_privileges = false
+allow_env = []
+allow_mounts = []
+extra_env = []
+extra_mounts = []
+embedded_cache_dir = ''
+embedded_gc_keep_n = 0
+
+[MCPServer]
+Enabled = false
+HttpPort = 9777
+HttpHost = 'localhost'
+StdioEnabled = true
+HttpEnabled = true
+
+[MCPServer.FileTools]
+Enabled = false
+AllowWrite = false
+
+[MCPServer.SystemExecution]
+Enabled = false
+AllowedCommands = []
+
+[MCPServer.GatewayExpose]
+Enabled = false
+
+[MCPServer.SelfImprovement]
 Enabled = false

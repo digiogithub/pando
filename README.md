@@ -190,7 +190,7 @@ Genera una nueva tag
 interactive:true
 
 ```bash
-git tag --sort=creatordate
+git tag --sort=creatordate | tail -n 5
 git tag $(gum input)
 git push origin --tags
 ```
@@ -237,31 +237,18 @@ mkdir -p dist
 # Get version from last git tag
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
 
-# Function to build and zip
-build_and_zip() {
-    local os=$1
-    local arch=$2
-    local suffix=$3
-    local ext=$4
-
-    echo "Building for $os-$arch..."
-    GOOS=$os GOARCH=$arch go build -ldflags "-X github.com/digiogithub/pando/internal/version.Version=$VERSION" -o dist/pando-$suffix$ext .
-
-    echo "Zipping pando-$suffix$ext..."
-    cd dist
-    zip pando-$suffix.zip pando-$suffix$ext
-    rm pando-$suffix$ext
-    cd ..
-}
-
 # Linux x64
-build_and_zip linux amd64 linux-x64 ""
+make release-linux-amd64
+# Linux arm64
+make release-linux-arm64
 
 # Windows x64
-build_and_zip windows amd64 windows-x64 ".exe"
+make release-windows-amd64
 
 # macOS aarch64
-build_and_zip darwin arm64 darwin-arm64 ""
+make release-darwin-arm64
+# macOS x64
+make release-darwin-amd64
 
 echo "Release builds completed in dist/"
 ```
