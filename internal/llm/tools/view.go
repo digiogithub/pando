@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/mesnada/acp"
@@ -121,11 +120,8 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return v.runWithACP(ctx, params, acpConn)
 	}
 
-	// Handle relative paths
-	filePath := params.FilePath
-	if !filepath.IsAbs(filePath) {
-		filePath = filepath.Join(config.WorkingDirectory(), filePath)
-	}
+	// Resolve path (handles relative paths and prevents workdir doubling)
+	filePath := resolveToolPath(params.FilePath)
 	workspaceFS := getWorkspaceFS(ctx)
 
 	// Check if file exists

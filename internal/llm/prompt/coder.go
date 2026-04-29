@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
@@ -194,22 +195,49 @@ func getEnvironmentInfo() string {
 	cwd := config.WorkingDirectory()
 	isGit := isGitRepo(cwd)
 	platform := runtime.GOOS
-	date := time.Now().Format("1/2/2006")
+	now := time.Now()
+	dateStr := now.Format("2006-01-02 15:04:05 MST")
 	ls := tools.NewLsTool()
 	r, _ := ls.Run(context.Background(), tools.ToolCall{
 		Input: `{"path":"."}`,
 	})
+	gitBranch := ""
+	if isGit {
+		gitBranch = getGitBranch(cwd)
+	}
+	gitInfo := ""
+	if gitBranch != "" {
+		gitInfo = fmt.Sprintf("\nCurrent git branch: %s", gitBranch)
+	}
 	return fmt.Sprintf(`Here is useful information about the environment you are running in:
 <env>
 Working directory: %s
-Is directory a git repo: %s
+Is directory a git repo: %s%s
 Platform: %s
-Today's date: %s
+Current date and time: %s
 </env>
 <project>
 %s
 </project>
-		`, cwd, boolToYesNo(isGit), platform, date, r.Content)
+`, cwd, boolToYesNo(isGit), gitInfo, platform, dateStr, r.Content)
+}
+
+func getGitBranch(dir string) string {
+	branchFile := filepath.Join(dir, ".git", "HEAD")
+	data, err := os.ReadFile(branchFile)
+	if err != nil {
+		return ""
+	}
+	line := strings.TrimSpace(string(data))
+	const prefix = "ref: refs/heads/"
+	if strings.HasPrefix(line, prefix) {
+		return strings.TrimPrefix(line, prefix)
+	}
+	// detached HEAD: return short commit hash
+	if len(line) >= 8 {
+		return line[:8]
+	}
+	return line
 }
 
 func isGitRepo(dir string) bool {

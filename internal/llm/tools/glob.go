@@ -118,6 +118,8 @@ func (g *globTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	searchPath := params.Path
 	if searchPath == "" {
 		searchPath = config.WorkingDirectory()
+	} else {
+		searchPath = resolveToolPath(searchPath)
 	}
 
 	limit := params.HeadLimit

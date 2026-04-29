@@ -194,6 +194,8 @@ func (g *grepTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	searchPath := params.Path
 	if searchPath == "" {
 		searchPath = config.WorkingDirectory()
+	} else {
+		searchPath = resolveToolPath(searchPath)
 	}
 
 	// Resolve context lines: Before/After override Context

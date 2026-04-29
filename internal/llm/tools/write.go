@@ -118,10 +118,7 @@ func (w *writeTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return w.runWithACP(ctx, params, acpConn)
 	}
 
-	filePath := params.FilePath
-	if !filepath.IsAbs(filePath) {
-		filePath = filepath.Join(config.WorkingDirectory(), filePath)
-	}
+	filePath := resolveToolPath(params.FilePath)
 	workspaceFS := getWorkspaceFS(ctx)
 
 	fileInfo, err := workspaceFS.Stat(ctx, filePath)
