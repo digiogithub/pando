@@ -436,16 +436,19 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		}
 	}
 
-	// Context enrichment: if the KB/code enricher is active, prepend retrieved context.
+	// Resolve persona content to inject into the system prompt.
+	// This is done before creating the user message so the content (user query)
+	// can be used for auto-selection without modifying the user message itself.
+	personaContent := getPersonaContent(ctx, content)
+
+	// Context enrichment: if the KB/code enricher is active, append retrieved context
+	// after the user message so the user intent is clear and context follows naturally.
 	if globalContextEnricher != nil {
 		enriched := globalContextEnricher.EnrichContext(ctx, content)
 		if enriched != "" {
-			content = enriched + "\n\n" + content
+			content = content + "\n\n" + enriched
 		}
 	}
-
-	// Apply persona: manually set active persona takes priority over auto-selection.
-	content = applyActiveOrSelectPersona(ctx, content)
 
 	userMsg, err := a.createUserMessage(ctx, sessionID, content, attachmentParts)
 	if err != nil {
@@ -454,7 +457,8 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	// Append the new user message to the conversation history.
 	msgHistory := append(msgs, userMsg)
 
-	requestProvider, err := a.prepareProvider(content)
+	// Build provider with persona injected into the system prompt.
+	requestProvider, err := a.prepareProvider(content, personaContent)
 	if err != nil {
 		return a.err(fmt.Errorf("failed to prepare agent provider: %w", err))
 	}
@@ -1230,9 +1234,11 @@ Be concise but complete. This summary will replace the conversation history.`
 	return nil
 }
 
-func (a *agent) prepareProvider(userPrompt string) (provider.Provider, error) {
-	logging.Debug("prepareProvider", "agentName", string(a.agentName), "hasSkillManager", a.skillManager != nil)
-	if a.skillManager == nil {
+func (a *agent) prepareProvider(userPrompt string, personaContent string) (provider.Provider, error) {
+	logging.Debug("prepareProvider", "agentName", string(a.agentName), "hasSkillManager", a.skillManager != nil, "hasPersona", personaContent != "")
+
+	// When there is no skill manager and no persona, use the pre-built provider as-is.
+	if a.skillManager == nil && personaContent == "" {
 		return a.provider, nil
 	}
 
@@ -1249,10 +1255,10 @@ func (a *agent) prepareProvider(userPrompt string) (provider.Provider, error) {
 		}
 	}
 
-	return createAgentProvider(a.agentName, a.skillManager, activeSkillInstructions)
+	return createAgentProvider(a.agentName, a.skillManager, activeSkillInstructions, personaContent)
 }
 
-func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillManager, activeSkillInstructions []string) (provider.Provider, error) {
+func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillManager, activeSkillInstructions []string, personaContent ...string) (provider.Provider, error) {
 	logging.Debug("createAgentProvider", "agentName", string(agentName))
 	cfg := config.Get()
 	agentConfig, ok := cfg.Agents[agentName]
@@ -1285,7 +1291,11 @@ func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillM
 		maxTokens = agentConfig.MaxTokens
 	}
 
-	systemMessage := buildSystemMessage(agentName, model.Provider, skillManager, activeSkillInstructions)
+	pc := ""
+	if len(personaContent) > 0 {
+		pc = personaContent[0]
+	}
+	systemMessage := buildSystemMessage(agentName, model.Provider, skillManager, activeSkillInstructions, pc)
 
 	// For models with special provider options (reasoning effort, thinking mode),
 	// build opts explicitly using resolved account credentials.
@@ -1354,17 +1364,26 @@ func buildSystemMessage(
 	modelProvider models.ModelProvider,
 	skillManager *skills.SkillManager,
 	activeSkillInstructions []string,
+	personaContent string,
 ) string {
 	systemMessage := prompt.GetAgentPrompt(agentName, modelProvider, globalLuaManager)
-	if skillManager == nil || (agentName != config.AgentCoder && agentName != config.AgentTask) {
-		return systemMessage
+
+	sections := make([]string, 0, 3+len(activeSkillInstructions))
+
+	if skillManager != nil && (agentName == config.AgentCoder || agentName == config.AgentTask) {
+		if skillsMetadata := prompt.InjectSkillsMetadata(skillManager.GetAllMetadata()); skillsMetadata != "" {
+			sections = append(sections, skillsMetadata)
+		}
+		sections = append(sections, activeSkillInstructions...)
 	}
 
-	sections := make([]string, 0, 2+len(activeSkillInstructions))
-	if skillsMetadata := prompt.InjectSkillsMetadata(skillManager.GetAllMetadata()); skillsMetadata != "" {
-		sections = append(sections, skillsMetadata)
+	// Persona instructions are appended to the system prompt so they take effect
+	// without polluting the user message. They are added last so they can override
+	// or extend the base identity/workflow instructions.
+	if personaContent != "" {
+		sections = append(sections, personaContent)
 	}
-	sections = append(sections, activeSkillInstructions...)
+
 	if len(sections) == 0 {
 		return systemMessage
 	}

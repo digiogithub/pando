@@ -78,9 +78,11 @@ func SetActivePersona(name string) error {
 	return nil
 }
 
-// applyActiveOrSelectPersona applies the persona to the user prompt.
-// Priority: manually set active persona > auto-selector > no-op.
-func applyActiveOrSelectPersona(ctx context.Context, content string) string {
+// getPersonaContent returns the persona instructions for the given context.
+// Priority: manually set active persona > auto-selector > empty string.
+// The returned content is intended to be injected into the system prompt,
+// not prepended to the user message.
+func getPersonaContent(ctx context.Context, userPrompt string) string {
 	// Manual persona takes priority over auto-selection.
 	if activePersonaName != "" {
 		mgr := globalPersonaManager
@@ -88,17 +90,17 @@ func applyActiveOrSelectPersona(ctx context.Context, content string) string {
 			mgr = globalPersonaSelector.manager
 		}
 		if mgr != nil {
-			logging.Debug("Persona: applying manually set persona", "persona", activePersonaName)
-			return mgr.ApplyPersona(activePersonaName, content)
+			logging.Debug("Persona: using manually set persona", "persona", activePersonaName)
+			return mgr.GetPersona(activePersonaName)
 		}
 	}
 
 	// Fall back to automatic persona selection.
 	if globalPersonaSelector != nil {
-		return globalPersonaSelector.SelectAndApply(ctx, content)
+		return globalPersonaSelector.SelectPersonaContent(ctx, userPrompt)
 	}
 
-	return content
+	return ""
 }
 
 // PersonaSelector automatically selects and applies a persona for each user prompt.
@@ -141,13 +143,14 @@ func NewPersonaSelector(personaPath string) (*PersonaSelector, error) {
 	}, nil
 }
 
-// SelectAndApply selects the best persona for userPrompt and returns the prompt with the
-// persona content prepended. Returns the original prompt unchanged if no persona matches,
-// the selector is disabled, or an error occurs.
-func (ps *PersonaSelector) SelectAndApply(ctx context.Context, userPrompt string) string {
+// SelectPersonaContent selects the best persona for userPrompt and returns its raw
+// content (the persona instructions). Returns an empty string if no persona matches,
+// the selector is disabled, or an error occurs. The content is intended to be injected
+// into the system prompt rather than prepended to the user message.
+func (ps *PersonaSelector) SelectPersonaContent(ctx context.Context, userPrompt string) string {
 	personas := ps.manager.ListPersonas()
 	if len(personas) == 0 {
-		return userPrompt
+		return ""
 	}
 
 	// Build a compact persona listing: "- name: first heading/line"
@@ -180,26 +183,37 @@ func (ps *PersonaSelector) SelectAndApply(ctx context.Context, userPrompt string
 	)
 	if err != nil {
 		logging.Debug("PersonaSelector: selection call failed", "error", err)
-		return userPrompt
+		return ""
 	}
 
 	selected := strings.TrimSpace(strings.ToLower(response.Content))
 	// Strip any surrounding quotes or punctuation the model may add
 	selected = strings.Trim(selected, `"'`+"`.,;!?")
 	if selected == "" || selected == "none" {
-		return userPrompt
+		return ""
 	}
 
 	// Match case-insensitively against the available names
 	for _, name := range personas {
 		if strings.ToLower(name) == selected {
 			logging.Debug("PersonaSelector: applying persona", "persona", name)
-			return ps.manager.ApplyPersona(name, userPrompt)
+			return ps.manager.GetPersona(name)
 		}
 	}
 
 	logging.Debug("PersonaSelector: model returned unknown persona", "returned", selected)
-	return userPrompt
+	return ""
+}
+
+// SelectAndApply selects the best persona for userPrompt and returns the prompt with the
+// persona content prepended. Kept for backward compatibility; prefer SelectPersonaContent
+// when the content will be injected into the system prompt.
+func (ps *PersonaSelector) SelectAndApply(ctx context.Context, userPrompt string) string {
+	content := ps.SelectPersonaContent(ctx, userPrompt)
+	if content == "" {
+		return userPrompt
+	}
+	return content + "\n\n" + userPrompt
 }
 
 // extractPersonaTitle returns the first meaningful line of a persona's markdown content,

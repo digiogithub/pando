@@ -77,7 +77,7 @@ func (t *BrowserNavigateTool) Run(ctx context.Context, call ToolCall) (ToolRespo
 	var title string
 	actions := []chromedp.Action{
 		chromedp.Navigate(params.URL),
-		chromedp.WaitReady("body"),
+		chromedp.WaitVisible(`body`, chromedp.ByQuery),
 		chromedp.Title(&title),
 	}
 

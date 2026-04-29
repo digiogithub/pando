@@ -1,5 +1,5 @@
 procs:
-  mesnada: "mesnada -config .ai/mesnada.config.yaml"
+  #  mesnada: "mesnada -config .ai/mesnada.config.yaml"
   remembrances: "remembrances-mcp-beta --config .ai/remembrances.config.yaml"
   web-ui: "cd web-ui && npm install && npm run dev"
   pando-serve: "./pando serve"

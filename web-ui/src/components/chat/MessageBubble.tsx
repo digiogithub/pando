@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -6,7 +6,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faRobot, faUser, faWrench, faChevronDown, faChevronRight,
   faBrain, faTerminal, faPen, faEye, faFolder, faGlobe,
-  faFileLines, faMagnifyingGlass, faUserSecret,
+  faFileLines, faMagnifyingGlass, faUserSecret, faCopy, faCheck,
 } from '@fortawesome/free-solid-svg-icons'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import { format } from 'date-fns'
@@ -431,12 +431,69 @@ export function EventRow({ kind, thinking, toolName, toolInput, toolResult, isEr
   )
 }
 
+// ─── Code block copy button ───────────────────────────────────────────────────
+
+function CopyButton({ preRef }: { preRef: React.RefObject<HTMLPreElement | null> }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = () => {
+    const text = preRef.current?.textContent ?? ''
+    if (!text) return
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      title={copied ? 'Copied!' : 'Copy code'}
+      style={{
+        position: 'absolute',
+        top: '0.375rem',
+        right: '0.375rem',
+        background: copied ? 'color-mix(in srgb, var(--success) 15%, var(--surface))' : 'var(--surface)',
+        border: `1px solid ${copied ? 'var(--success)' : 'var(--border)'}`,
+        borderRadius: 'var(--radius-sm)',
+        padding: '0.2rem 0.45rem',
+        cursor: 'pointer',
+        color: copied ? 'var(--success)' : 'var(--fg-dim)',
+        fontSize: 10,
+        lineHeight: 1,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.25rem',
+        transition: 'all 0.15s ease',
+        zIndex: 1,
+      }}
+    >
+      <FontAwesomeIcon icon={copied ? faCheck : faCopy} style={{ fontSize: 9 }} />
+      {copied ? 'copied' : 'copy'}
+    </button>
+  )
+}
+
+function PreWithCopy({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
+  const preRef = useRef<HTMLPreElement>(null)
+  return (
+    <div style={{ position: 'relative' }}>
+      <pre ref={preRef} {...props}>{children}</pre>
+      <CopyButton preRef={preRef} />
+    </div>
+  )
+}
+
 // ─── Markdown renderer ────────────────────────────────────────────────────────
 
 function MarkdownContent({ text, streaming }: { text: string; streaming?: boolean }) {
   return (
     <div className="markdown-content">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeHighlight]}
+        components={{ pre: PreWithCopy }}
+      >
         {text}
       </ReactMarkdown>
       {streaming && (

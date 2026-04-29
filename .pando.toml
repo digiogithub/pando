@@ -200,9 +200,9 @@ ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA2Y2tLd2FRVlNqTjJpS2
 Context7Enabled = true
 BrowserEnabled = true
 BrowserHeadless = false
-BrowserTimeout = 0
+BrowserTimeout = 30
 BrowserUserDataDir = ''
-BrowserMaxSessions = 0
+BrowserMaxSessions = 3
 
 [Snapshots]
 Enabled = true

@@ -364,9 +364,9 @@ ExaAPIKey               = ''
 Context7Enabled         = false
 BrowserEnabled          = false
 BrowserHeadless         = false
-BrowserTimeout          = 0
+BrowserTimeout          = 30
 BrowserUserDataDir      = ''
-BrowserMaxSessions      = 0
+BrowserMaxSessions      = 3
 
 # =============================================================================
 # Snapshots

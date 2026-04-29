@@ -208,6 +208,9 @@ func getBrowserCtxWithTimeout(pandoCtx context.Context) (context.Context, contex
 
 	cfg := globalBrowserRegistry.cfg
 	timeout := time.Duration(cfg.BrowserTimeout) * time.Second
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
 	ctx, cancel := context.WithTimeout(sess.ctx, timeout)
 	return ctx, cancel, nil
 }
