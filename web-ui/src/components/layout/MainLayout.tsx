@@ -5,7 +5,6 @@ import { useSessionStore } from '@/stores/sessionStore'
 import { useServerStore } from '@/stores/serverStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { authenticate } from '@/services/auth'
-import { useTheme } from '@/hooks/useTheme'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import StatusBar from './StatusBar'
@@ -14,7 +13,6 @@ import ModelSwitcher from '@/components/overlays/ModelSwitcher'
 import ConfigInitBanner from '@/components/overlays/ConfigInitBanner'
 
 export default function MainLayout() {
-  const { themeMode: theme } = useTheme()
   const { sidebarOpen, quickMenuOpen, modelSwitcherOpen, setSidebarOpen } = useLayoutStore()
   const fetchSessions = useSessionStore((s) => s.fetchSessions)
   const fetchSettings = useSettingsStore((s) => s.fetchSettings)

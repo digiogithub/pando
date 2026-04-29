@@ -5,7 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faComments, faFileLines, faNetworkWired,
   faCamera, faStar, faCog, faMoon, faSun,
-  faChevronLeft, faChevronRight, faCode, faTerminal, faComment, faFolderOpen,
+  faChevronLeft, faChevronRight, faCode, faTerminal, faComment, faFolderOpen, faCircleQuestion,
 } from '@fortawesome/free-solid-svg-icons'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
@@ -225,6 +225,23 @@ export default function Header() {
         >
           <FontAwesomeIcon icon={faComment} style={{ fontSize: 13 }} />
         </button>
+
+        {/* Help */}
+        <a
+          href="https://madeindigio.github.io/pando-docs/"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Documentation"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            color: 'var(--fg-muted)',
+            padding: '0.25rem 0.375rem',
+            borderRadius: 'var(--radius-sm)',
+          }}
+        >
+          <FontAwesomeIcon icon={faCircleQuestion} style={{ fontSize: 13 }} />
+        </a>
 
         {/* Settings */}
         <NavLink
