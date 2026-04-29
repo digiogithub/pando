@@ -1,4 +1,4 @@
-# ⌬ Pando
+# 木 Pando
 
 > **Fork of [OpenCode](https://github.com/digiogithub/pando)** by Kujtim Hoxha.
 > Maintained by **José F. Rives**.

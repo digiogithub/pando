@@ -109,24 +109,9 @@ export default function MainLayout() {
             position: 'relative',
           }}
         >
-          {/* Watermark centrado en el área de chat — Oriental Symbol 木 */}
-          <div
-            style={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -52%)',
-              fontSize: 320,
-              fontWeight: 400,
-              color: 'var(--primary)',
-              opacity: theme === 'dark' ? 0.04 : 0.08,
-              fontFamily: 'serif',
-              userSelect: 'none',
-              pointerEvents: 'none',
-              zIndex: 0,
-            }}
-          >
-            木
+          {/* Watermark centrado en el área de chat — Pando mascot */}
+          <div className="pando-mascot-watermark">
+            <img src="/pando_mascot.svg" alt="" />
           </div>
           {/* Contenido por encima de la marca de agua */}
           <div style={{ position: 'relative', zIndex: 1, flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

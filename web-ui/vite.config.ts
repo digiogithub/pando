@@ -14,7 +14,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['pando-icon.svg', 'pando-logo.svg', 'pwa-icon-192.png', 'pwa-icon-512.png'],
+      includeAssets: ['pando-icon.svg', 'pando_mascot.svg', 'pwa-icon-192.png', 'pwa-icon-512.png'],
       manifest: {
         name: 'Pando AI Assistant',
         short_name: 'Pando',

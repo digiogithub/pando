@@ -39,6 +39,31 @@ body {
   50% { opacity: 0; }
 }
 
+/* ── Pando mascot watermark ──────────────────────────────────────────────── */
+.pando-mascot-watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -52%);
+  width: 340px;
+  height: 340px;
+  opacity: 0.12;
+  user-select: none;
+  pointer-events: none;
+  z-index: 0;
+}
+.pando-mascot-watermark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+[data-theme="dark"] .pando-mascot-watermark {
+  opacity: 0.06;
+}
+[data-theme="dark"] .pando-mascot-watermark img {
+  filter: drop-shadow(0 4px 24px rgba(212,175,55,.28)) brightness(1.05) saturate(1.05) contrast(1.02) invert(1) hue-rotate(170deg) sepia(.05);
+}
+
 .markdown-content { line-height: 1.6; }
 .markdown-content p { margin: 0.25rem 0; }
 .markdown-content ul, .markdown-content ol { padding-left: 1.25rem; margin: 0.25rem 0; }

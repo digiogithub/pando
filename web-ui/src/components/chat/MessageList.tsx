@@ -1,6 +1,4 @@
 import { useEffect, useRef } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faComments } from '@fortawesome/free-solid-svg-icons'
 import type { Message } from '@/types'
 import type { StreamingState } from '@/hooks/useChat'
 import MessageBubble, { EventRow } from './MessageBubble'
@@ -23,7 +21,6 @@ function EmptyState() {
         userSelect: 'none',
       }}
     >
-      <FontAwesomeIcon icon={faComments} style={{ fontSize: 40, opacity: 0.35 }} />
       <p style={{ fontSize: 15, fontWeight: 500, color: 'var(--fg-muted)' }}>
         Start a conversation
       </p>

@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	PandoIcon    string = "⌘"
+	PandoIcon    string = "木"
 	OpenCodeIcon        = PandoIcon
 
 	// Diagnostics
