@@ -3,6 +3,10 @@
 > **Fork of [OpenCode](https://github.com/digiogithub/pando)** by Kujtim Hoxha.
 > Maintained by **José F. Rives**.
 
+
+<img alt="pando mascot" title="pando mascot" src="https://github.com/digiogithub/pando/blob/main/assets/pando_mascot-fs8.png?raw=true" width="300" style="margin: 30px auto">
+
+
 A powerful terminal-based AI assistant for developers, providing intelligent coding assistance directly in your terminal.
 
 ## Overview
