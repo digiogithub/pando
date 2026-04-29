@@ -204,9 +204,12 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dialog.CompletionSelectedMsg:
 		existingValue := m.textarea.Value()
 		modifiedValue := strings.Replace(existingValue, msg.SearchString, msg.CompletionValue, 1)
-
 		m.textarea.SetValue(modifiedValue)
-		return m, nil
+		// SetValue calls Reset() internally which moves the viewport to the top.
+		// Trigger repositionView by running a no-op Update so the viewport scrolls
+		// to follow the cursor.
+		m.textarea, cmd = m.textarea.Update(nil)
+		return m, cmd
 	case SessionSelectedMsg:
 		if msg.ID != m.session.ID {
 			m.session = msg
@@ -259,7 +262,11 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.textarea.Focused() && key.Matches(msg, editorMaps.NewLine) {
 			m.textarea.InsertString("\n")
-			return m, nil
+			// Do NOT return early: fall through to m.textarea.Update(msg) below so
+			// that repositionView() is called and the viewport scrolls to the new
+			// cursor position. ctrl+j / shift+enter have no printable Runes, so
+			// the textarea.Update call is a no-op for content but does trigger
+			// the viewport reposition.
 		}
 		if m.textarea.Focused() && key.Matches(msg, editorMaps.Send) {
 			return m, m.send()
@@ -277,7 +284,10 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.textarea.SetValue(m.inputHistory[m.historyIdx])
 				m.textarea.CursorEnd()
-				return m, nil
+				// SetValue+CursorEnd don't call repositionView internally.
+				// Run a no-op Update so the viewport scrolls to show the cursor.
+				m.textarea, cmd = m.textarea.Update(nil)
+				return m, cmd
 			}
 		}
 		// History navigation: Down navigates toward newer messages.
@@ -293,7 +303,10 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textarea.SetValue(m.savedInput)
 				m.textarea.CursorEnd()
 			}
-			return m, nil
+			// SetValue+CursorEnd don't call repositionView internally.
+			// Run a no-op Update so the viewport scrolls to show the cursor.
+			m.textarea, cmd = m.textarea.Update(nil)
+			return m, cmd
 		}
 
 	}

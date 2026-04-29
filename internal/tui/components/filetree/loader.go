@@ -207,7 +207,9 @@ func loadGitStatuses(projectPath string) (map[string]GitFileStatus, error) {
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			if strings.Contains(strings.TrimSpace(string(output)), "not a git repository") {
+			// Exit code 128 is git's fatal error code (includes "not a git repository").
+			// Also check the output string for resilience against locale differences.
+			if exitErr.ExitCode() == 128 || strings.Contains(strings.TrimSpace(string(output)), "not a git repository") {
 				return map[string]GitFileStatus{}, nil
 			}
 		}
@@ -288,10 +290,9 @@ func ignoredPaths(projectPath string, candidates []loadCandidate) (map[string]bo
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			trimmed := strings.TrimSpace(stderr.String())
-			if exitErr.ExitCode() == 1 {
-				return ignored, nil
-			}
-			if strings.Contains(trimmed, "not a git repository") {
+			// Exit code 1: no files ignored (normal). Exit code 128: fatal git error
+			// (e.g. not a git repository). Both are non-error cases for the file tree.
+			if exitErr.ExitCode() == 1 || exitErr.ExitCode() == 128 || strings.Contains(trimmed, "not a git repository") {
 				return ignored, nil
 			}
 		}
