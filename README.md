@@ -234,6 +234,9 @@ Compila binarios para múltiples plataformas (Linux x64, Windows x64, macOS aarc
 # Create dist folder
 mkdir -p dist
 
+# Build embedded web-ui assets
+cd web-ui && bun install && bun run build:embedded && cd ..
+
 # Get version from last git tag
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
 

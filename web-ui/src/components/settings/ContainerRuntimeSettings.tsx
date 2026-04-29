@@ -23,8 +23,8 @@ const infoCardStyle: React.CSSProperties = {
   color: 'var(--fg-muted)',
 }
 
-function listValue(value: string[]) {
-  return value.join(', ')
+function listValue(value: string[] | null | undefined) {
+  return (value ?? []).join(', ')
 }
 
 export default function ContainerRuntimeSettings() {

@@ -69,7 +69,14 @@ export const useContainerStore = create<ContainerStore>((set, get) => ({
         api.get<{ events: ContainerEvent[] }>('/api/v1/container/events?limit=100'),
       ])
 
-      const merged = { ...DEFAULT_CONFIG, ...configData }
+      const merged: ContainerConfig = {
+        ...DEFAULT_CONFIG,
+        ...configData,
+        allow_env: configData.allow_env ?? DEFAULT_CONFIG.allow_env,
+        allow_mounts: configData.allow_mounts ?? DEFAULT_CONFIG.allow_mounts,
+        extra_env: configData.extra_env ?? DEFAULT_CONFIG.extra_env,
+        extra_mounts: configData.extra_mounts ?? DEFAULT_CONFIG.extra_mounts,
+      }
       set({
         config: merged,
         original: { ...merged },
@@ -100,9 +107,17 @@ export const useContainerStore = create<ContainerStore>((set, get) => ({
     set({ saving: true, error: null })
     try {
       const updated = await api.put<ContainerConfig>('/api/v1/container/config', get().config)
+      const savedConfig: ContainerConfig = {
+        ...DEFAULT_CONFIG,
+        ...updated,
+        allow_env: updated.allow_env ?? DEFAULT_CONFIG.allow_env,
+        allow_mounts: updated.allow_mounts ?? DEFAULT_CONFIG.allow_mounts,
+        extra_env: updated.extra_env ?? DEFAULT_CONFIG.extra_env,
+        extra_mounts: updated.extra_mounts ?? DEFAULT_CONFIG.extra_mounts,
+      }
       set((state) => ({
-        config: { ...DEFAULT_CONFIG, ...updated },
-        original: { ...DEFAULT_CONFIG, ...updated },
+        config: savedConfig,
+        original: { ...savedConfig },
         currentRuntime: updated.runtime || state.currentRuntime || 'host',
         dirty: false,
       }))

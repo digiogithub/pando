@@ -35,7 +35,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'z-ai/glm-5.1'
+Model = 'copilot.gpt-4.1-2025-04-14'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -90,7 +90,7 @@ AutoUpdate = false
 DefaultScope = ''
 
 [TUI]
-Theme = ''
+Theme = 'tokyonight'
 
 [Permissions]
 AutoApproveTools = true
@@ -189,14 +189,14 @@ DecayDays = 30
 FetchEnabled = true
 FetchMaxSizeMB = 0
 GoogleSearchEnabled = true
-GoogleAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBuWkphZ1AxTU43S1B6dFdrMFYySHpjVDVEc0xsd0s4dy9jQjJLNkpUUnlrCnBSdkZ3TjFVU1MrS3BVeVZ2K1cweWtZQmpuR1g4YUx1Slp6cnJveWtmeW8KLS0tIHJQYXhQRGZKeXh2a1g4clJSYkx4MEUyWUh3N2JLdTBFK1dmZ01aWC9hUUUKAzQ+L2e+EXzJIKkfHB/rrzyY9zX354k071cz8rGTzYpPcrLj4MPcs/R60xgumIWQnG3VbbvJflFlE8+HZhp1hQ1+hfuN3Ho='
-GoogleSearchEngineID = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBCYWF6OGxzcXpwNFo2Vk5tMWdxV1J5dkpLZmhySy8zVzZoWUZpVU1hb3g4ClpxY0toMm1LZmh4dEFYOTBQUkFiZ0w2cnNVVnJ2SXVuY2hhN3J0Mzg5dlEKLS0tIGZzc0M2T0VvekFBeSt0T0RId0VHd2tYRlJISkg2dHhjM1hoaUxOUVJQNVkKPgM3NRb8aBs3kCYGW2laa79rPtwtZ7ZQetporXrP0qUYb8iDVIOGuT4KwTcNbTVNeQ=='
+GoogleAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBDMUFVZjdIdkphNzM2TDZULzE3czlQL3ZvM0dYU0NzcmFNTWxRL1p0T2hVCmNIcFlpMjBpMWVNL09vN3A3SWp6Z3NDMWs5TWEwOG5VN2luS3ZhWUJQdzQKLS0tIEh2VllVMW5jVjZ3Mm9pT1ByVkFHbWpISDNCZ3RkcFZUZEVrOVpkZWNTWk0KqmBhAkL0c1rMlQwcSmslE7NBHHYjzYc1lkNwQLoRSNMKUY+0RpfDHdVbahWHN1ID1afF7UfxDbFda9hAQHx3yknqpixkp9s='
+GoogleSearchEngineID = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBPRmxPUXVJengzVE1aTk1wbUFTL0Mwc3VHcUNzUEd1R25EekYzQkNqRDM4Cms3cmY4ZEowMlpPQXZBV1FIODd1RmRRUXRTV2hNbnkwOGFUaXZwQ3dUdkkKLS0tIGg2Sm05UkRBWi9jZWFyTWxzZ1cvWGY1OWtFY2hTNGN0cXVpRmlzV1M5eXcKzX9jaJ/3X4Iqz5z+bfNHRZghIwdz7hTBb50ORyOE53s9wJQQOrosBsWFuQuc5cOtOQ=='
 BraveSearchEnabled = true
-BraveAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBGcnMxZ2tUZ1k2RURpSWpvaFZLV1A4Tzg3L2YyNExQNVcyb2lvUnladnhrCkxjdkFkVzRWK015dmRuV1FodTQ3akZ2d2MwUDNEQ1crNVBlaldvaWZubXMKLS0tIGVlanVuYUZCZVI2anpOdGsxQTBGaFBDMDhZd1JQZ3JIb29FcU92N2NMNzQKhFx0SpJGjpl0t22/GFmoDV7hHM4GfZ6/dM1qQLxCKG8Usjg6bStCUXoZ6RCg0eCSyqhk+6+LxM6gqBSpWSkV'
+BraveAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBGTGNyQnp2QlNvaURwQm5rODZGVXVJSS9kTnJkeld6OGEvMXZOOHV6YnprCmxQaGlnVE5GbHM4Vm5PU2NsaVNiNVdJNHVMTmJ6TDFXeDhLdVVmUVNpRXMKLS0tIGlqNTFFRlJPaWgwTTBGTFFaRnc1Q3B6RWI3T3JyQzkxWEM3SUZ0SmJqaHcKsCFKM90+n9syitNVfqxryy6GDwJhve1SMhXZ+fV8cifacXOU9Lxk39ucli1EdKi/1NbyTfw8PyMjud4v899H'
 PerplexitySearchEnabled = false
 PerplexityAPIKey = ''
 ExaSearchEnabled = true
-ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB3VUxyMllIYTNXalIrVW4zVDJ0T2M1WWxlcHowbGp1b0JKQyttSUpNSUJBClJST2pMYVRxZi9hd3ZiZjFTVXpUbElEUE1PU0ZpL0pvMTl4MkJwQ3kzVDAKLS0tIGMrc1RUWHhPSFVwbFV1ZXcwbXl1SERJSTZHN0o1YmFQMUhuUG1OL3dJMGMKx5qMaUhWBl1X1QvGcJhccQ/PnP1r14skB0jZOB5apqgRhd4iH3aRY4lKdOfBqPRNoWPGNTwk3ORQaoY90U6AyquC4Rc='
+ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA2Y2tLd2FRVlNqTjJpS2dvVkxnVkFlZUluZFZTdkxnWHJIWnJjQUtUSngwCnZ3djE5a3h0U0N1c1pMaC9XTlhoQU44bzBFdThYbm9yOTlGWVFvTTJ2QlEKLS0tIDlTSmcyMjJYTWZ0ZVN1Q2d5THdDUGNBQjNqQWtkOFZkRWhrQzhkUlQ3akUK1MsIUVnbHb8zcVQ7HsxE83AC/KC8bJBcenA7prl3sjD61ktuNiaMtdEKh6/iDqmn5RFk54WTBkqJOw0VXae42LoS9YY='
 Context7Enabled = true
 BrowserEnabled = true
 BrowserHeadless = false
@@ -259,7 +259,7 @@ Jobs = []
 Enabled = false
 
 [Container]
-runtime = ''
+runtime = 'host'
 image = ''
 pull_policy = ''
 socket = ''
