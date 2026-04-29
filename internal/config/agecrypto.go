@@ -182,7 +182,7 @@ func encryptSensitiveConfigFields(in *Config) (*Config, error) {
 	if err != nil { return nil, err }
 	out.InternalTools.ExaAPIKey, err = encryptSecretString(in.InternalTools.ExaAPIKey)
 	if err != nil { return nil, err }
-	// Encrypt provider API keys
+	// Encrypt provider API keys (legacy map)
 	if len(in.Providers) > 0 {
 		out.Providers = make(map[models.ModelProvider]Provider, len(in.Providers))
 		for name, p := range in.Providers {
@@ -192,6 +192,17 @@ func encryptSensitiveConfigFields(in *Config) (*Config, error) {
 				return nil, fmt.Errorf("encrypt provider %s APIKey: %w", name, err)
 			}
 			out.Providers[name] = cloned
+		}
+	}
+	// Encrypt providerAccounts API keys (new format)
+	if len(in.ProviderAccounts) > 0 {
+		out.ProviderAccounts = make([]ProviderAccount, len(in.ProviderAccounts))
+		copy(out.ProviderAccounts, in.ProviderAccounts)
+		for i, acc := range in.ProviderAccounts {
+			out.ProviderAccounts[i].APIKey, err = encryptSecretString(acc.APIKey)
+			if err != nil {
+				return nil, fmt.Errorf("encrypt providerAccount %s APIKey: %w", acc.ID, err)
+			}
 		}
 	}
 	// Encrypt remembrances embedding API keys
@@ -217,7 +228,7 @@ func decryptSensitiveConfigFields(in *Config) error {
 	if err != nil { return err }
 	in.InternalTools.ExaAPIKey, err = decryptSecretString(in.InternalTools.ExaAPIKey)
 	if err != nil { return err }
-	// Decrypt provider API keys
+	// Decrypt provider API keys (legacy map)
 	for name, p := range in.Providers {
 		decrypted, err := decryptSecretString(p.APIKey)
 		if err != nil {
@@ -225,6 +236,14 @@ func decryptSensitiveConfigFields(in *Config) error {
 		}
 		p.APIKey = decrypted
 		in.Providers[name] = p
+	}
+	// Decrypt providerAccounts API keys (new format)
+	for i, acc := range in.ProviderAccounts {
+		decrypted, err := decryptSecretString(acc.APIKey)
+		if err != nil {
+			return fmt.Errorf("decrypt providerAccount %s APIKey: %w", acc.ID, err)
+		}
+		in.ProviderAccounts[i].APIKey = decrypted
 	}
 	// Decrypt remembrances embedding API keys
 	in.Remembrances.DocumentEmbeddingAPIKey, err = decryptSecretString(in.Remembrances.DocumentEmbeddingAPIKey)

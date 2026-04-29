@@ -22,9 +22,13 @@ export function useDesktopNotifications() {
   }, [])
 
   const notify = useCallback(
-    (title: string, options?: { body?: string; icon?: string; onClick?: () => void }) => {
+    (
+      title: string,
+      options?: { body?: string; icon?: string; onClick?: () => void; onlyWhenBackground?: boolean },
+    ) => {
       if (typeof Notification === 'undefined') return
       if (Notification.permission !== 'granted') return
+      if (options?.onlyWhenBackground && document.visibilityState === 'visible' && document.hasFocus()) return
 
       const notification = new Notification(title, {
         body: options?.body,

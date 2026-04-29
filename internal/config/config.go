@@ -697,6 +697,11 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	if err := decryptSensitiveConfigFields(cfg); err != nil {
 		return cfg, fmt.Errorf("failed to decrypt sensitive config fields: %w", err)
 	}
+	// If providerAccounts (new format) is in use, override the legacy Providers
+	// map so that local project accounts take precedence over profile-level
+	// legacy providers. This prevents the profile's legacy keys from bleeding
+	// into the active config when the new format is configured.
+	syncProvidersFromAccounts(cfg)
 
 	// Restore WorkingDir after unmarshal: it's a runtime parameter, not a config file setting,
 	// so viper.Unmarshal would reset it to empty string if not present in the config file.
@@ -1684,6 +1689,33 @@ func migrateProvidersToAccounts(c *Config) {
 	logging.Info("migrated legacy providers to provider accounts", "count", len(c.ProviderAccounts))
 }
 
+// syncProvidersFromAccounts rebuilds the legacy cfg.Providers map entries for
+// any provider type that has a corresponding ProviderAccount. This ensures that
+// local providerAccounts take precedence over profile-level legacy providers:
+// only the first account per provider type is used (same semantics as
+// ResolveProviderAccountForType).
+func syncProvidersFromAccounts(c *Config) {
+	if len(c.ProviderAccounts) == 0 {
+		return
+	}
+	if c.Providers == nil {
+		c.Providers = make(map[models.ModelProvider]Provider)
+	}
+	seen := make(map[models.ModelProvider]bool)
+	for _, acc := range c.ProviderAccounts {
+		if seen[acc.Type] {
+			continue
+		}
+		seen[acc.Type] = true
+		c.Providers[acc.Type] = Provider{
+			APIKey:   acc.APIKey,
+			BaseURL:  acc.BaseURL,
+			Disabled: acc.Disabled,
+			UseOAuth: acc.UseOAuth,
+		}
+	}
+}
+
 func capitalizeFirst(s string) string {
 	if s == "" {
 		return s
@@ -1870,13 +1902,21 @@ func ResolveProviderAccountByID(id string) (*ProviderAccount, error) {
 }
 
 // ResolveProviderAccountForType returns the first non-disabled ProviderAccount of the given
-// provider type. It first checks the legacy Providers map for backward compatibility, then
-// looks in ProviderAccounts. Returns an error if no suitable account is found.
+// provider type. It checks ProviderAccounts (new format) first so that locally configured
+// accounts take precedence over profile-level legacy providers. Falls back to the legacy
+// Providers map for backward compatibility.
 func ResolveProviderAccountForType(providerType models.ModelProvider) (*ProviderAccount, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config not loaded")
 	}
-	// First check legacy Providers map for backward compatibility
+	// Check ProviderAccounts (new format) first — local config takes priority.
+	for i := range cfg.ProviderAccounts {
+		acc := cfg.ProviderAccounts[i]
+		if acc.Type == providerType && !acc.Disabled {
+			return &acc, nil
+		}
+	}
+	// Fall back to legacy Providers map for backward compatibility.
 	if p, ok := cfg.Providers[providerType]; ok && !p.Disabled {
 		return &ProviderAccount{
 			ID:       string(providerType),
@@ -1886,12 +1926,6 @@ func ResolveProviderAccountForType(providerType models.ModelProvider) (*Provider
 			Disabled: p.Disabled,
 			UseOAuth: p.UseOAuth,
 		}, nil
-	}
-	for i := range cfg.ProviderAccounts {
-		acc := cfg.ProviderAccounts[i]
-		if acc.Type == providerType && !acc.Disabled {
-			return &acc, nil
-		}
 	}
 	return nil, fmt.Errorf("no configured account for provider %s", providerType)
 }
@@ -2191,6 +2225,15 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 		if err := json.Unmarshal(configData, &userCfg); err != nil {
 			return fmt.Errorf("failed to parse JSON config file: %w", err)
 		}
+	}
+
+	// Ensure providerAccounts is populated from the legacy providers map so
+	// callbacks that reference providerAccounts can find entries that are still
+	// stored in the old providers format in the file. After migration, clear the
+	// legacy map to avoid duplicate entries in the written file.
+	migrateProvidersToAccounts(userCfg)
+	if len(userCfg.ProviderAccounts) > 0 {
+		userCfg.Providers = nil
 	}
 
 	updateCfg(userCfg)

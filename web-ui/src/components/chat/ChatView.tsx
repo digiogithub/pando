@@ -23,6 +23,7 @@ export default function ChatView() {
       onClick: () => {
         window.focus()
       },
+      onlyWhenBackground: true,
     })
   }, [notify, sessions, activeSessionId, t])
 

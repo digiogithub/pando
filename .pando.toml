@@ -35,7 +35,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'copilot.gpt-4.1-2025-04-14'
+Model = 'gpt-5.4'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
