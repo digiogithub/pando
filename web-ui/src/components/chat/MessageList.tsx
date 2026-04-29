@@ -111,8 +111,12 @@ export default function MessageList({ messages, streaming, streamingState }: Mes
   }
 
   const lastMessage = messages[messages.length - 1]
+  // Only show LoadingBubble when there is no assistant message yet.
+  // useChat always adds an empty assistant message before starting the SSE stream,
+  // so MessageBubble handles all live state (spinner, thinking, tool calls).
+  // Showing LoadingBubble when text === '' causes duplicate tool-call rows.
   const showLoadingBubble =
-    streaming && (!lastMessage || lastMessage.role !== 'assistant' || lastMessage.content[0]?.text === '')
+    streaming && (!lastMessage || lastMessage.role !== 'assistant')
 
   return (
     <div
