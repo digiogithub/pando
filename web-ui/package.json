@@ -35,6 +35,7 @@
   },
   "overrides": {
     "dompurify": ">=3.4.0",
+    "postcss": ">=8.5.10",
     "serialize-javascript": ">=7.0.5"
   },
   "devDependencies": {

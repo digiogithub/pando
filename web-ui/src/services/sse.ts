@@ -1,6 +1,33 @@
 import api, { notifyNetworkError } from './api'
 import type { SSEEvent } from '@/types'
 
+type ToolCallKind = NonNullable<NonNullable<SSEEvent['tool_call']>['kind']>
+type ToolCallStatus = NonNullable<NonNullable<SSEEvent['tool_call']>['status']>
+type ToolResultTerminal = NonNullable<NonNullable<SSEEvent['tool_result']>['terminal']>
+type ToolResultDiff = NonNullable<NonNullable<SSEEvent['tool_result']>['diff']>
+type PlanEntry = NonNullable<SSEEvent['plan_entries']>[number]
+
+function isToolCallKind(value: unknown): value is ToolCallKind {
+  return typeof value === 'string' && ['execute', 'edit', 'read', 'search', 'fetch', 'think', 'switch_mode', 'other'].includes(value)
+}
+
+function isToolCallStatus(value: unknown): value is ToolCallStatus {
+  return typeof value === 'string' && ['pending', 'in_progress', 'completed', 'failed'].includes(value)
+}
+
+function isToolResultTerminal(value: unknown): value is ToolResultTerminal {
+  return typeof value === 'object'
+    && value !== null
+    && typeof (value as Record<string, unknown>).terminal_id === 'string'
+    && typeof (value as Record<string, unknown>).exit_code === 'number'
+}
+
+function isToolResultDiff(value: unknown): value is ToolResultDiff {
+  return typeof value === 'object'
+    && value !== null
+    && typeof (value as Record<string, unknown>).file_path === 'string'
+}
+
 export function createSSEStream(
   url: string,
   body: unknown,
@@ -91,9 +118,9 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
           id: raw.id as string,
           name: raw.name as string,
           input: (raw.input as string) ?? '',
-          kind: (raw.kind as SSEEvent['tool_call'] extends { kind?: infer K } ? K : undefined) ?? raw.kind as any,
+          kind: isToolCallKind(raw.kind) ? raw.kind : undefined,
           title: typeof raw.title === 'string' ? raw.title : undefined,
-          status: typeof raw.status === 'string' ? raw.status as any : undefined,
+          status: isToolCallStatus(raw.status) ? raw.status : undefined,
           locations: Array.isArray(raw.locations) ? raw.locations : undefined,
         }
       }
@@ -103,8 +130,8 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
       if (raw.id) {
         base.tool_call_update = {
           id: raw.id as string,
-          status: typeof raw.status === 'string' ? raw.status as any : undefined,
-          kind: typeof raw.kind === 'string' ? raw.kind as any : undefined,
+          status: isToolCallStatus(raw.status) ? raw.status : undefined,
+          kind: isToolCallKind(raw.kind) ? raw.kind : undefined,
           title: typeof raw.title === 'string' ? raw.title : undefined,
           input: typeof raw.input === 'string' ? raw.input : undefined,
           locations: Array.isArray(raw.locations) ? raw.locations : undefined,
@@ -119,23 +146,22 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
           name: (raw.name as string) ?? '',
           content: (raw.content as string) ?? '',
           is_error: Boolean(raw.is_error),
-          kind: typeof raw.kind === 'string' ? raw.kind as any : undefined,
+          kind: isToolCallKind(raw.kind) ? raw.kind : undefined,
           title: typeof raw.title === 'string' ? raw.title : undefined,
-          status: typeof raw.status === 'string' ? raw.status as any : undefined,
+          status: isToolCallStatus(raw.status) ? raw.status : undefined,
           locations: Array.isArray(raw.locations) ? raw.locations : undefined,
           raw_output: typeof raw.raw_output === 'object' && raw.raw_output !== null
             ? raw.raw_output as Record<string, unknown> : undefined,
-          terminal: typeof raw.terminal === 'object' && raw.terminal !== null
-            ? raw.terminal as any : undefined,
-          diff: typeof raw.diff === 'object' && raw.diff !== null
-            ? raw.diff as any : undefined,
+          terminal: isToolResultTerminal(raw.terminal) ? raw.terminal : undefined,
+          diff: isToolResultDiff(raw.diff) ? raw.diff : undefined,
         }
       }
       break
 
     case 'plan_update':
       if (Array.isArray(raw.entries)) {
-        base.plan_entries = raw.entries as any
+        base.plan_entries = raw.entries
+          .filter((entry): entry is PlanEntry => typeof entry === 'object' && entry !== null && typeof entry.title === 'string' && typeof entry.status === 'string')
       }
       break
 
