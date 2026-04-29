@@ -18,9 +18,10 @@ export interface StreamingState {
 
 interface UseChatOptions {
   onNewSession?: (sessionId: string) => void
+  onDone?: () => void
 }
 
-export function useChat({ onNewSession }: UseChatOptions = {}) {
+export function useChat({ onNewSession, onDone }: UseChatOptions = {}) {
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [streamingState, setStreamingState] = useState<StreamingState>({ thinking: '', toolCalls: [] })
@@ -149,10 +150,11 @@ export function useChat({ onNewSession }: UseChatOptions = {}) {
           setStreaming(false)
           setStreamingState({ thinking: '', toolCalls: [] })
           fetchSessions()
+          onDone?.()
         },
       )
     },
-    [activeSessionId, streaming, addMessage, updateLastMessage, updateLastMessageParts, fetchSessions, onNewSession],
+    [activeSessionId, streaming, addMessage, updateLastMessage, updateLastMessageParts, fetchSessions, onNewSession, onDone],
   )
 
   const cancelStreaming = useCallback(() => {

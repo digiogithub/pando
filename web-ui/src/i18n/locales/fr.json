@@ -101,7 +101,9 @@
     "emptyChat": "Démarrer une conversation",
     "emptyChatDescription": "Posez n'importe quelle question pour commencer",
     "copyMessage": "Copier",
-    "copied": "Copié !"
+    "copied": "Copié !",
+    "agentDoneTitle": "Agent terminé",
+    "agentDoneBody": "Cliquez pour revenir à la session"
   },
   "models": {
     "searchPlaceholder": "Rechercher des modèles…",

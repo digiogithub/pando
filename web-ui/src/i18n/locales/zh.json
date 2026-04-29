@@ -101,7 +101,9 @@
     "emptyChat": "开始对话",
     "emptyChatDescription": "提问以开始使用",
     "copyMessage": "复制",
-    "copied": "已复制！"
+    "copied": "已复制！",
+    "agentDoneTitle": "代理已完成",
+    "agentDoneBody": "点击返回会话"
   },
   "models": {
     "searchPlaceholder": "搜索模型…",

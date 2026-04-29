@@ -101,7 +101,9 @@
     "emptyChat": "会話を始めましょう",
     "emptyChatDescription": "何でも質問してください",
     "copyMessage": "コピー",
-    "copied": "コピーしました！"
+    "copied": "コピーしました！",
+    "agentDoneTitle": "エージェント完了",
+    "agentDoneBody": "クリックしてセッションに戻る"
   },
   "models": {
     "searchPlaceholder": "モデルを検索…",

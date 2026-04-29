@@ -103,7 +103,9 @@
     "emptyChat": "Start a conversation",
     "emptyChatDescription": "Ask anything to get started",
     "copyMessage": "Copy",
-    "copied": "Copied!"
+    "copied": "Copied!",
+    "agentDoneTitle": "Agent finished",
+    "agentDoneBody": "Click to return to the session"
   },
   "models": {
     "searchPlaceholder": "Search models…",
