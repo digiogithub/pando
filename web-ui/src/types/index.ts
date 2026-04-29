@@ -58,10 +58,33 @@ export interface ChatRequest {
   model?: string
 }
 
+// Tool call kinds (matches backend toolmeta.ToolKind)
+export type ToolKind = 'execute' | 'edit' | 'read' | 'search' | 'fetch' | 'think' | 'switch_mode' | 'other'
+
+// Tool call lifecycle status (matches backend toolmeta.ToolCallStatus)
+export type ToolCallStatus = 'pending' | 'in_progress' | 'completed' | 'failed'
+
+export interface ToolCallLocation {
+  path: string
+}
+
 export interface SSEToolCall {
   id: string
   name: string
   input: string
+  kind?: ToolKind
+  title?: string
+  status?: ToolCallStatus
+  locations?: ToolCallLocation[]
+}
+
+export interface SSEToolCallUpdate {
+  id: string
+  status?: ToolCallStatus
+  kind?: ToolKind
+  title?: string
+  input?: string
+  locations?: ToolCallLocation[]
 }
 
 export interface SSEToolResult {
@@ -69,15 +92,41 @@ export interface SSEToolResult {
   name: string
   content: string
   is_error: boolean
+  kind?: ToolKind
+  title?: string
+  status?: ToolCallStatus
+  locations?: ToolCallLocation[]
+  raw_output?: Record<string, unknown>
+  terminal?: {
+    terminal_id: string
+    exit_code: number
+  }
+  diff?: {
+    file_path: string
+    old_string?: string
+    new_string?: string
+    new_content?: string
+  }
+}
+
+export interface SSEPlanEntry {
+  title: string
+  status: string
+  active_form?: string
 }
 
 export interface SSEEvent {
-  type: 'session' | 'content' | 'content_delta' | 'thinking_delta' | 'tool_call' | 'tool_result' | 'error' | 'done'
+  type: 'session' | 'content' | 'content_delta' | 'thinking_delta'
+      | 'tool_call' | 'tool_call_update' | 'tool_result'
+      | 'plan_update' | 'todos_update'
+      | 'error' | 'done'
   session_id?: string
   content?: string
   error?: string
   tool_call?: SSEToolCall
+  tool_call_update?: SSEToolCallUpdate
   tool_result?: SSEToolResult
+  plan_entries?: SSEPlanEntry[]
 }
 
 // Log types

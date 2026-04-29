@@ -81,7 +81,13 @@ function LoadingBubble({ streamingState }: { streamingState: StreamingState }) {
           toolInput={(() => { try { return JSON.parse(tc.input) } catch { return null } })()}
           toolResult={tc.result?.content}
           isError={tc.is_error}
-          isLive={tc.result === undefined}
+          isLive={tc.status === 'pending' || tc.status === 'in_progress'}
+          backendTitle={tc.title}
+          backendKind={tc.kind}
+          toolStatus={tc.status}
+          locations={tc.locations}
+          diff={tc.diff}
+          terminal={tc.terminal}
         />
       ))}
     </div>

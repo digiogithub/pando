@@ -1,5 +1,5 @@
 import api, { notifyNetworkError } from './api'
-import type { SSEEvent, SSEToolResult } from '@/types'
+import type { SSEEvent } from '@/types'
 
 export function createSSEStream(
   url: string,
@@ -47,25 +47,8 @@ export function createSSEStream(
           } else if (line.startsWith('data: ')) {
             try {
               const raw = JSON.parse(line.slice(6)) as Record<string, unknown>
-              // Normalize backend field names to SSEEvent shape
               const eventType = (currentEventType || 'content') as SSEEvent['type']
-              const event: SSEEvent = {
-                type: eventType,
-                session_id: typeof raw.sessionId === 'string' ? raw.sessionId : undefined,
-                content: typeof raw.text === 'string' ? raw.text : undefined,
-                error: typeof raw.error === 'string' ? raw.error : undefined,
-                tool_call: raw.id && raw.name
-                  ? { id: raw.id as string, name: raw.name as string, input: (raw.input as string) ?? '' }
-                  : undefined,
-                tool_result: raw.tool_call_id
-                  ? {
-                      tool_call_id: raw.tool_call_id as string,
-                      name: (raw.name as string) ?? '',
-                      content: (raw.content as string) ?? '',
-                      is_error: Boolean(raw.is_error),
-                    } as SSEToolResult
-                  : undefined,
-              }
+              const event = parseSSEPayload(eventType, raw)
               currentEventType = ''
               onEvent(event)
               if (event.type === 'done') {
@@ -91,4 +74,76 @@ export function createSSEStream(
     })
 
   return controller
+}
+
+function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknown>): SSEEvent {
+  const base: SSEEvent = {
+    type: eventType,
+    session_id: typeof raw.sessionId === 'string' ? raw.sessionId : undefined,
+    content: typeof raw.text === 'string' ? raw.text : undefined,
+    error: typeof raw.error === 'string' ? raw.error : undefined,
+  }
+
+  switch (eventType) {
+    case 'tool_call':
+      if (raw.id && raw.name) {
+        base.tool_call = {
+          id: raw.id as string,
+          name: raw.name as string,
+          input: (raw.input as string) ?? '',
+          kind: (raw.kind as SSEEvent['tool_call'] extends { kind?: infer K } ? K : undefined) ?? raw.kind as any,
+          title: typeof raw.title === 'string' ? raw.title : undefined,
+          status: typeof raw.status === 'string' ? raw.status as any : undefined,
+          locations: Array.isArray(raw.locations) ? raw.locations : undefined,
+        }
+      }
+      break
+
+    case 'tool_call_update':
+      if (raw.id) {
+        base.tool_call_update = {
+          id: raw.id as string,
+          status: typeof raw.status === 'string' ? raw.status as any : undefined,
+          kind: typeof raw.kind === 'string' ? raw.kind as any : undefined,
+          title: typeof raw.title === 'string' ? raw.title : undefined,
+          input: typeof raw.input === 'string' ? raw.input : undefined,
+          locations: Array.isArray(raw.locations) ? raw.locations : undefined,
+        }
+      }
+      break
+
+    case 'tool_result':
+      if (raw.tool_call_id) {
+        base.tool_result = {
+          tool_call_id: raw.tool_call_id as string,
+          name: (raw.name as string) ?? '',
+          content: (raw.content as string) ?? '',
+          is_error: Boolean(raw.is_error),
+          kind: typeof raw.kind === 'string' ? raw.kind as any : undefined,
+          title: typeof raw.title === 'string' ? raw.title : undefined,
+          status: typeof raw.status === 'string' ? raw.status as any : undefined,
+          locations: Array.isArray(raw.locations) ? raw.locations : undefined,
+          raw_output: typeof raw.raw_output === 'object' && raw.raw_output !== null
+            ? raw.raw_output as Record<string, unknown> : undefined,
+          terminal: typeof raw.terminal === 'object' && raw.terminal !== null
+            ? raw.terminal as any : undefined,
+          diff: typeof raw.diff === 'object' && raw.diff !== null
+            ? raw.diff as any : undefined,
+        }
+      }
+      break
+
+    case 'plan_update':
+      if (Array.isArray(raw.entries)) {
+        base.plan_entries = raw.entries as any
+      }
+      break
+
+    default:
+      // session, content, content_delta, thinking_delta, todos_update, error, done
+      // — already handled by base fields
+      break
+  }
+
+  return base
 }

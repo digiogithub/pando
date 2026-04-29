@@ -11,7 +11,7 @@ import {
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import { format } from 'date-fns'
 import 'highlight.js/styles/github-dark-dimmed.css'
-import type { Message, ContentPart } from '@/types'
+import type { Message, ContentPart, ToolCallStatus, ToolKind, ToolCallLocation } from '@/types'
 import type { StreamingState } from '@/hooks/useChat'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
 
@@ -120,6 +120,19 @@ function getToolMeta(name: string, input?: Record<string, unknown> | null): Tool
   return { icon: faWrench, label: name, summary: '', accent: 'var(--border)' }
 }
 
+function kindToLabel(kind: ToolKind): string {
+  switch (kind) {
+    case 'execute': return 'bash'
+    case 'edit': return 'edit'
+    case 'read': return 'read'
+    case 'search': return 'search'
+    case 'fetch': return 'fetch'
+    case 'think': return 'agent'
+    case 'switch_mode': return 'mode'
+    default: return kind
+  }
+}
+
 // ─── Expanded content panels ──────────────────────────────────────────────────
 
 function ThinkingContent({ text }: { text: string }) {
@@ -135,11 +148,15 @@ function ToolContent({
   input,
   result,
   isError,
+  diff,
+  terminal,
 }: {
   name: string
   input?: Record<string, unknown> | null
   result?: string
   isError?: boolean
+  diff?: { file_path: string; old_string?: string; new_string?: string; new_content?: string }
+  terminal?: { terminal_id: string; exit_code: number }
 }) {
   const n = name.toLowerCase()
 
@@ -295,6 +312,42 @@ function ToolContent({
     )
   }
 
+  // ── Backend-provided diff (for edit/write tools when input wasn't parsed client-side)
+  if (diff && diff.file_path) {
+    const oldStr = diff.old_string ?? ''
+    const newStr = diff.new_string ?? diff.new_content ?? ''
+    const oldLines = oldStr ? oldStr.split('\n').length : 0
+    const newLines = newStr ? newStr.split('\n').length : 0
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+        <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>
+          {diff.file_path}
+          {(oldStr || newStr) && (
+            <> · <span style={{ color: 'var(--error)' }}>−{oldLines}</span>{' / '}
+            <span style={{ color: 'var(--success)' }}>+{newLines}</span> lines</>
+          )}
+        </div>
+        {oldStr && (
+          <div>
+            <div style={{ ...labelStyle, color: 'var(--error)' }}>Removed</div>
+            <pre style={{ ...codeBlockStyle, color: 'var(--error)', background: 'color-mix(in srgb, var(--error) 6%, var(--surface))', borderColor: 'color-mix(in srgb, var(--error) 25%, transparent)', maxHeight: 200, overflowY: 'auto' }}>
+              {oldStr.split('\n').map((l) => `- ${l}`).join('\n')}
+            </pre>
+          </div>
+        )}
+        {newStr && (
+          <div>
+            <div style={{ ...labelStyle, color: 'var(--success)' }}>Added</div>
+            <pre style={{ ...codeBlockStyle, color: 'var(--success)', background: 'color-mix(in srgb, var(--success) 6%, var(--surface))', borderColor: 'color-mix(in srgb, var(--success) 25%, transparent)', maxHeight: 200, overflowY: 'auto' }}>
+              {newStr.split('\n').map((l) => `+ ${l}`).join('\n')}
+            </pre>
+          </div>
+        )}
+        {result && <div style={{ fontSize: 11, color: isError ? 'var(--error)' : 'var(--fg-dim)', fontFamily: 'monospace' }}>{result}</div>}
+      </div>
+    )
+  }
+
   // ── Generic fallback
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -316,6 +369,11 @@ function ToolContent({
           </pre>
         </div>
       )}
+      {terminal && (
+        <div style={{ fontSize: 10, color: 'var(--fg-dim)', fontFamily: 'monospace', marginTop: 2 }}>
+          exit code: {terminal.exit_code}
+        </div>
+      )}
     </div>
   )
 }
@@ -332,12 +390,23 @@ export interface EventRowProps {
   toolResult?: string
   isError?: boolean
   isLive?: boolean
+  // Rich metadata from backend (mirrors ACP)
+  backendTitle?: string
+  backendKind?: ToolKind
+  toolStatus?: ToolCallStatus
+  locations?: ToolCallLocation[]
+  diff?: { file_path: string; old_string?: string; new_string?: string; new_content?: string }
+  terminal?: { terminal_id: string; exit_code: number }
 }
 
-export function EventRow({ kind, thinking, toolName, toolInput, toolResult, isError, isLive }: EventRowProps) {
+export function EventRow({
+  kind, thinking, toolName, toolInput, toolResult, isError, isLive,
+  backendTitle, backendKind, toolStatus, locations, diff, terminal,
+}: EventRowProps) {
   const [expanded, setExpanded] = useState(false)
 
-  const isDone = !isLive && (toolResult !== undefined || kind === 'thinking')
+  const resolvedStatus = toolStatus ?? (isError ? 'failed' : isLive ? 'in_progress' : toolResult !== undefined ? 'completed' : 'pending')
+  const isDone = resolvedStatus === 'completed' || resolvedStatus === 'failed'
 
   // Metadata
   let icon: IconDefinition = faBrain
@@ -348,12 +417,13 @@ export function EventRow({ kind, thinking, toolName, toolInput, toolResult, isEr
   if (kind === 'tool' && toolName) {
     const meta = getToolMeta(toolName, toolInput)
     icon = meta.icon
-    label = meta.label
-    summary = meta.summary
+    // Use backend-provided title/kind when available, fall back to local detection
+    label = backendKind ? kindToLabel(backendKind) : meta.label
+    summary = backendTitle ?? meta.summary
     accent = isError ? 'var(--error)' : meta.accent
   }
 
-  const statusColor = isError ? 'var(--error)' : isLive ? 'var(--fg-dim)' : isDone ? 'var(--success)' : 'var(--fg-dim)'
+  const statusColor = isError ? 'var(--error)' : resolvedStatus === 'in_progress' ? 'var(--fg-dim)' : isDone ? 'var(--success)' : 'var(--fg-dim)'
 
   return (
     <div
@@ -395,9 +465,10 @@ export function EventRow({ kind, thinking, toolName, toolInput, toolResult, isEr
 
         {/* Status */}
         <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
-          {isLive && <LoadingSpinner size={9} />}
-          {!isLive && isError && <span style={{ color: 'var(--error)', fontSize: 10 }}>✗</span>}
-          {!isLive && !isError && isDone && <span style={{ color: 'var(--success)', fontSize: 10 }}>✓</span>}
+          {resolvedStatus === 'pending' && <span style={{ color: 'var(--fg-dim)', fontSize: 10 }}>○</span>}
+          {resolvedStatus === 'in_progress' && <LoadingSpinner size={9} />}
+          {resolvedStatus === 'failed' && <span style={{ color: 'var(--error)', fontSize: 10 }}>✗</span>}
+          {resolvedStatus === 'completed' && <span style={{ color: 'var(--success)', fontSize: 10 }}>✓</span>}
         </span>
 
         <FontAwesomeIcon
@@ -415,6 +486,26 @@ export function EventRow({ kind, thinking, toolName, toolInput, toolResult, isEr
             borderTop: `1px solid color-mix(in srgb, ${accent} 20%, var(--border))`,
           }}
         >
+          {/* File locations */}
+          {locations && locations.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.375rem' }}>
+              {locations.map((loc, i) => (
+                <span key={i} style={{
+                  display: 'inline-block',
+                  padding: '1px 6px',
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontFamily: 'monospace',
+                  fontSize: 10,
+                  color: 'var(--fg-muted)',
+                }}>
+                  {loc.path}
+                </span>
+              ))}
+            </div>
+          )}
+
           {kind === 'thinking' ? (
             <ThinkingContent text={thinking ?? ''} />
           ) : (
@@ -423,6 +514,8 @@ export function EventRow({ kind, thinking, toolName, toolInput, toolResult, isEr
               input={toolInput}
               result={toolResult}
               isError={isError}
+              diff={diff}
+              terminal={terminal}
             />
           )}
         </div>
@@ -675,7 +768,13 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
           toolInput={(() => { try { return JSON.parse(tc.input) } catch { return null } })()}
           toolResult={tc.result?.content}
           isError={tc.is_error}
-          isLive={tc.result === undefined}
+          isLive={tc.status === 'pending' || tc.status === 'in_progress'}
+          backendTitle={tc.title}
+          backendKind={tc.kind}
+          toolStatus={tc.status}
+          locations={tc.locations}
+          diff={tc.diff}
+          terminal={tc.terminal}
         />
       ))}
 
