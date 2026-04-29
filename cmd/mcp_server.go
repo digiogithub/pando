@@ -52,6 +52,7 @@ func init() {
 	mcpServerCmd.Flags().Bool("debug", false, "Enable debug logging")
 	mcpServerCmd.Flags().Bool("no-stdio", false, "Disable the stdio MCP transport")
 	mcpServerCmd.Flags().Bool("no-http", false, "Disable the HTTP MCP transport")
+	mcpServerCmd.Flags().StringP("cwd", "c", "", "Working directory for the MCP server (defaults to current directory)")
 
 	// Tool group flags – when provided they override the config file.
 	mcpServerCmd.Flags().Bool("file-tools", false, "Enable file read tools (view, glob, grep, ls)")
@@ -67,6 +68,7 @@ func runMCPServerMode(cmd *cobra.Command) error {
 	debug, _ := cmd.Flags().GetBool("debug")
 	noStdio, _ := cmd.Flags().GetBool("no-stdio")
 	noHTTP, _ := cmd.Flags().GetBool("no-http")
+	cwdFlag, _ := cmd.Flags().GetString("cwd")
 	if !cmd.Flags().Changed("port") {
 		port = 9777
 	}
@@ -75,9 +77,18 @@ func runMCPServerMode(cmd *cobra.Command) error {
 		return fmt.Errorf("at least one MCP transport must be enabled")
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current working directory: %w", err)
+	var cwd string
+	if cwdFlag != "" {
+		if err := os.Chdir(cwdFlag); err != nil {
+			return fmt.Errorf("failed to change directory to %q: %w", cwdFlag, err)
+		}
+		cwd = cwdFlag
+	} else {
+		var err error
+		cwd, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current working directory: %w", err)
+		}
 	}
 
 	if _, err := config.Load(cwd, debug, ""); err != nil {

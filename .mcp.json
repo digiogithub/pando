@@ -2,7 +2,7 @@
   "mcpServers": {
     "pando": {
       "command": "pando",
-      "args": ["mcp-server", "--no-http", "--self-improvement"]
+      "args": ["mcp-server", "--no-http", "-c", "/www/MCP/Pando/pando"]
     }
   }
 }
