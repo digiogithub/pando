@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -38,7 +39,11 @@ Requires the pando-desktop binary to be embedded (built with 'make desktop-embed
   pando desktop --port 9000
 
   # Start in simple mode
-  pando desktop --simple`,
+  pando desktop --simple
+
+  # Use a specific working directory
+  pando desktop --cwd /path/to/project
+  pando desktop -c /path/to/project`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runDesktopMode(cmd)
 	},
@@ -50,6 +55,7 @@ func init() {
 	desktopCmd.Flags().Int("port", 8765, "Preferred port for the API server")
 	desktopCmd.Flags().Bool("simple", false, "Start the desktop app in simple mode")
 	desktopCmd.Flags().Bool("debug", false, "Enable debug logging")
+	desktopCmd.Flags().StringP("cwd", "c", "", "Working directory (root path) for Pando to use")
 }
 
 func runDesktopMode(cmd *cobra.Command) error {
@@ -57,6 +63,7 @@ func runDesktopMode(cmd *cobra.Command) error {
 	port, _ := cmd.Flags().GetInt("port")
 	debug, _ := cmd.Flags().GetBool("debug")
 	simpleMode, _ := cmd.Flags().GetBool("simple")
+	cwdFlag, _ := cmd.Flags().GetString("cwd")
 
 	selectedPort, err := chooseAvailablePort(host, port)
 	if err != nil {
@@ -67,9 +74,17 @@ func runDesktopMode(cmd *cobra.Command) error {
 	}
 	port = selectedPort
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current working directory: %w", err)
+	var cwd string
+	if cwdFlag != "" {
+		cwd, err = filepath.Abs(cwdFlag)
+		if err != nil {
+			return fmt.Errorf("invalid --cwd path: %w", err)
+		}
+	} else {
+		cwd, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current working directory: %w", err)
+		}
 	}
 
 	_, err = config.Load(cwd, debug, "")

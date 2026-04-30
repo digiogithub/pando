@@ -51,10 +51,7 @@ func (a *App) OnDomReady(ctx context.Context) {
 	var url = ` + "`" + a.pandoURL + "`" + `;
 	var mode = "` + mode + `";
 	if (window.location.href === "about:blank" || window.location.href === "" || !window.location.href.startsWith(url)) {
-		var target = url;
-		if (mode === "simple") {
-			target = url + (url.indexOf("?") >= 0 ? "&" : "?") + "mode=simple";
-		}
+		var target = mode === "simple" ? url + "/chat/simple" : url;
 		window.location.href = target;
 	}
 })();
@@ -117,22 +114,9 @@ func (a *App) toggleMode(simple bool) {
 	a.simpleMode.Store(simple)
 	target := a.pandoURL
 	if simple {
-		sep := "?"
-		if len(a.pandoURL) > 0 && containsQuery(a.pandoURL) {
-			sep = "&"
-		}
-		target = a.pandoURL + sep + "mode=simple"
+		target = a.pandoURL + "/chat/simple"
 	}
 	runtime.WindowExecJS(a.ctx, `window.location.href = `+"`"+target+"`"+`;`)
-}
-
-func containsQuery(url string) bool {
-	for _, c := range url {
-		if c == '?' {
-			return true
-		}
-	}
-	return false
 }
 
 // ToggleWindow shows the window if hidden, hides it if visible.

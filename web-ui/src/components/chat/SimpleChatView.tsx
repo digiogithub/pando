@@ -256,7 +256,43 @@ export default function SimpleChatView() {
         )}
 
         {/* Main chat area */}
-        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          {/* New session FAB — visible only when sessions panel is collapsed */}
+          {!sidebarOpen && (
+            <button
+              title="New session"
+              onClick={() => useSessionStore.setState({ activeSessionId: null, messages: [] })}
+              style={{
+                position: 'absolute',
+                top: '0.5rem',
+                left: '0.5rem',
+                zIndex: 10,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                padding: '0.375rem 0.625rem',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                color: 'var(--fg-muted)',
+                fontSize: 12,
+                lineHeight: 1,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = 'var(--fg)'
+                e.currentTarget.style.borderColor = 'var(--primary)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = 'var(--fg-muted)'
+                e.currentTarget.style.borderColor = 'var(--border)'
+              }}
+            >
+              <FontAwesomeIcon icon={faPlus} style={{ fontSize: 10 }} />
+              New session
+            </button>
+          )}
           <div
             style={{
               flex: 1,
