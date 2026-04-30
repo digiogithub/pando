@@ -24,6 +24,7 @@ require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-units v0.5.0
 	github.com/fsnotify/fsnotify v1.9.0
+	github.com/gen2brain/beeep v0.11.2
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-logfmt/logfmt v0.6.0
 	github.com/google/go-containerregistry v0.21.5
@@ -55,6 +56,7 @@ require (
 )
 
 require (
+	git.sr.ht/~jackmordaunt/go-toast v1.1.2 // indirect
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -78,6 +80,7 @@ require (
 	github.com/docker/cli v29.4.0+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.3 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
+	github.com/esiqveland/notify v0.13.3 // indirect
 	github.com/go-json-experiment/json v0.0.0-20250725192818-e39067aee2d2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
@@ -86,6 +89,7 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
+	github.com/jackmordaunt/icns/v3 v3.0.1 // indirect
 	github.com/jchv/go-winloader v0.0.0-20210711035445-715c2860da7e // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/labstack/echo/v4 v4.13.3 // indirect
@@ -101,11 +105,15 @@ require (
 	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/morikuni/aec v1.1.0 // indirect
+	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/samber/lo v1.49.1 // indirect
+	github.com/sergeymakinen/go-bmp v1.0.0 // indirect
+	github.com/sergeymakinen/go-ico v1.0.0-beta.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
+	github.com/tadvi/systray v0.0.0-20190226123456-11a2b8fa57af // indirect
 	github.com/tkrajina/go-reflector v0.5.8 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect

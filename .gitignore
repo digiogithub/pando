@@ -60,3 +60,5 @@ desktop/build/bin/
 desktop/build/darwin/
 !desktop/build/darwin/Info.plist
 desktop/build/windows/*.syso
+desktop/desktop
+internal/desktop/bin/pando-desktop

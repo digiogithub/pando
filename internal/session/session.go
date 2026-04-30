@@ -11,6 +11,7 @@ import (
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/luaengine"
+	"github.com/digiogithub/pando/internal/notify"
 	"github.com/digiogithub/pando/internal/pubsub"
 )
 
@@ -233,6 +234,13 @@ func (s *service) EndSession(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+
+	// Publish a user-facing notification so the desktop app (and other UIs) can
+	// surface an OS-level notification when the agent finishes its work.
+	notify.Info(notify.SourceAgent, "Session completed: "+session.Title, 30*time.Second)
+
+	// Publish the session update event so subscribers (SSE, desktop) are notified.
+	s.Publish(pubsub.UpdatedEvent, session)
 
 	// Create end snapshot asynchronously
 	if globalSnapshotCreator != nil {

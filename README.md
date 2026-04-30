@@ -199,31 +199,45 @@ git tag $(gum input)
 git push origin --tags
 ```
 
-### build
+### build-webui
 
-Compila la web-ui embebida y luego el binario de pando.
+Compiles the webui
 
 ```bash
 # Build embedded web-ui assets
 cd web-ui && bun install && bun run build:embedded && cd ..
+```
 
+### build-desktop
+
+Compiles the desktop wails wrapper
+
+```bash
+make desktop-build
+make desktop-embed
+```
+
+### build
+
+Compiles the binary
+
+requires: build-webui, build-desktop
+
+```bash
 # Get version from last git tag
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
-go build -ldflags "-X github.com/digiogithub/pando/internal/version.Version=$VERSION" -o pando .
+#go build -ldflags "-X github.com/digiogithub/pando/internal/version.Version=$VERSION" -o pando .
+make build
 rm -f *.log
 ```
 
 ### build-and-copy
 
-Compila la web-ui embebida, genera el binario de pando y lo copia a `~/bin/`.
+Compile the working binary and copy to the binary path `~/bin/`.
+
+requires: build
 
 ```bash
-# Build embedded web-ui assets
-cd web-ui && bun install && bun run build:embedded && cd ..
-
-# Get version from last git tag
-VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
-go build -ldflags "-s -w -X github.com/digiogithub/pando/internal/version.Version=$VERSION" -o pando .
 rm -f ~/bin/pando
 upx -1 pando
 cp pando ~/bin/pando
@@ -232,7 +246,7 @@ rm -f *.upx
 
 ### release
 
-Compila binarios para múltiples plataformas (Linux x64, Windows x64, macOS aarch64) y genera releases comprimidos en la carpeta `dist/`.
+Compiles the binaries for the different platforms (Linux x64, Windows x64, macOS aarch64) and zip them into `dist/`.
 
 ```bash
 # Create dist folder

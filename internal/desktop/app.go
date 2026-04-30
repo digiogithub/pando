@@ -2,66 +2,160 @@ package desktop
 
 import (
 	"context"
-	"net/http"
+	"sync/atomic"
 
+	"github.com/wailsapp/wails/v2/pkg/menu"
+	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// App holds the Wails application state.
+// App holds the Wails desktop application state.
 type App struct {
-	ctx       context.Context
-	serverURL string
-	token     string
-	server    *apiServer
+	ctx            context.Context
+	pandoURL       string
+	simpleMode     atomic.Bool
+	windowFocused  atomic.Bool
 }
 
-// NewApp creates a new App instance.
-func NewApp() *App {
-	return &App{}
+// NewApp creates a new desktop App that wraps the given Pando URL in a WebView.
+func NewApp(pandoURL string, startSimple bool) *App {
+	a := &App{
+		pandoURL: pandoURL,
+	}
+	a.simpleMode.Store(startSimple)
+	return a
 }
 
-// Startup is called when the Wails app starts. It initialises the embedded
-// HTTP API server and stores the URL and auth token for later use.
+// Startup is called by Wails when the application starts.
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+	a.windowFocused.Store(true)
 
-	srv, err := startAPIServer(ctx)
-	if err != nil {
-		// Log but don't crash — UI will show connection error.
-		println("desktop: failed to start API server:", err.Error())
-		return
-	}
-	a.server = srv
-	a.serverURL = srv.url
-	a.token = srv.token
+	appMenu := a.buildMenu()
+	runtime.MenuSetApplicationMenu(ctx, appMenu)
+
+	// Start listening to the Pando notification SSE stream in background.
+	// Shows OS-native notifications when the window is not focused.
+	go a.startNotificationListener(ctx)
 }
 
-// OnDomReady is called by Wails when the DOM is ready. We inject the backend
-// config so the React frontend knows which port and token to use.
+// OnDomReady is called by Wails when the DOM is ready.
+// We navigate the webview to the Pando URL.
 func (a *App) OnDomReady(ctx context.Context) {
-	if a.serverURL == "" {
-		return
+	mode := "advanced"
+	if a.simpleMode.Load() {
+		mode = "simple"
 	}
-	runtime.WindowExecJS(ctx, configScript(a.serverURL, a.token))
+	script := `
+(function() {
+	var url = ` + "`" + a.pandoURL + "`" + `;
+	var mode = "` + mode + `";
+	if (window.location.href === "about:blank" || window.location.href === "" || !window.location.href.startsWith(url)) {
+		var target = url;
+		if (mode === "simple") {
+			target = url + (url.indexOf("?") >= 0 ? "&" : "?") + "mode=simple";
+		}
+		window.location.href = target;
+	}
+})();
+`
+	runtime.WindowExecJS(ctx, script)
+
+	// Inject focus/blur tracking so the Go side knows when to show OS notifications.
+	focusScript := `
+(function() {
+	window.addEventListener("focus", function() {
+		if (window.go && window.go.desktop && window.go.desktop.App) {
+			window.go.desktop.App.SetWindowFocused(true);
+		}
+	});
+	window.addEventListener("blur", function() {
+		if (window.go && window.go.desktop && window.go.desktop.App) {
+			window.go.desktop.App.SetWindowFocused(false);
+		}
+	});
+})();
+`
+	runtime.WindowExecJS(ctx, focusScript)
 }
 
-// Shutdown is called when the Wails app is closing.
-func (a *App) Shutdown(ctx context.Context) {
-	if a.server != nil {
-		a.server.stop(ctx)
-	}
+// Shutdown is called by Wails when the application is closing.
+func (a *App) Shutdown(ctx context.Context) {}
+
+// buildMenu constructs the application menu with window and mode controls.
+func (a *App) buildMenu() *menu.Menu {
+	appMenu := menu.NewMenu()
+
+	pandoMenu := appMenu.AddSubmenu("Pando")
+	pandoMenu.AddText("Show Window", keys.CmdOrCtrl("k"), func(_ *menu.CallbackData) {
+		runtime.WindowShow(a.ctx)
+	})
+	pandoMenu.AddText("Hide Window", keys.CmdOrCtrl("h"), func(_ *menu.CallbackData) {
+		runtime.WindowHide(a.ctx)
+	})
+	pandoMenu.AddSeparator()
+
+	modeItem := pandoMenu.AddCheckbox("Simple Mode", a.simpleMode.Load(), keys.CmdOrCtrl("m"), func(cd *menu.CallbackData) {
+		a.toggleMode(cd.MenuItem.Checked)
+	})
+	_ = modeItem
+
+	pandoMenu.AddSeparator()
+	pandoMenu.AddText("Reload", keys.CmdOrCtrl("r"), func(_ *menu.CallbackData) {
+		runtime.WindowReload(a.ctx)
+	})
+	pandoMenu.AddSeparator()
+	pandoMenu.AddText("Quit", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
+		runtime.Quit(a.ctx)
+	})
+
+	return appMenu
 }
 
-// AssetsHandler returns nil — Wails serves embedded assets directly.
-// Kept for compatibility with desktop/main.go.
-func (a *App) AssetsHandler() http.Handler {
-	return nil
+// toggleMode switches between simple and advanced mode and reloads the URL.
+func (a *App) toggleMode(simple bool) {
+	a.simpleMode.Store(simple)
+	target := a.pandoURL
+	if simple {
+		sep := "?"
+		if len(a.pandoURL) > 0 && containsQuery(a.pandoURL) {
+			sep = "&"
+		}
+		target = a.pandoURL + sep + "mode=simple"
+	}
+	runtime.WindowExecJS(a.ctx, `window.location.href = `+"`"+target+"`"+`;`)
 }
 
-// GetServerInfo exposes the backend URL and token to JavaScript via Wails binding.
-func (a *App) GetServerInfo() map[string]string {
-	return map[string]string{
-		"apiBase": a.serverURL,
-		"token":   a.token,
+func containsQuery(url string) bool {
+	for _, c := range url {
+		if c == '?' {
+			return true
+		}
 	}
+	return false
+}
+
+// ToggleWindow shows the window if hidden, hides it if visible.
+// Exposed as Wails binding.
+func (a *App) ToggleWindow() {
+	runtime.WindowShow(a.ctx)
+}
+
+// GetPandoURL returns the configured Pando URL.
+// Exposed as Wails binding.
+func (a *App) GetPandoURL() string {
+	return a.pandoURL
+}
+
+// IsSimpleMode returns whether simple mode is active.
+// Exposed as Wails binding.
+func (a *App) IsSimpleMode() bool {
+	return a.simpleMode.Load()
+}
+
+// SetWindowFocused is called from JavaScript when the window gains or loses
+// focus. This controls whether OS notifications are shown.
+// Exposed as Wails binding.
+func (a *App) SetWindowFocused(focused bool) {
+	a.windowFocused.Store(focused)
 }
