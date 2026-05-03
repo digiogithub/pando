@@ -945,7 +945,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("mesnada.server.host", "127.0.0.1")
 	viper.SetDefault("mesnada.server.port", 9767)
 	viper.SetDefault("mesnada.orchestrator.maxParallel", 5)
-	viper.SetDefault("mesnada.orchestrator.defaultEngine", "copilot")
+	viper.SetDefault("mesnada.orchestrator.defaultEngine", "pando")
 	viper.SetDefault("mesnada.orchestrator.defaultModel", "gpt-5.4")
 	viper.SetDefault("mesnada.tui.enabled", true)
 	viper.SetDefault("mesnada.tui.webui", true)

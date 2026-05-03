@@ -3711,7 +3711,7 @@ func parseIntValue(value string) (int, error) {
 
 func isAllowedMesnadaEngine(engine string) bool {
 	switch engine {
-	case "copilot", "claude", "gemini", "opencode", "mistral":
+	case "pando", "copilot", "claude", "gemini", "opencode", "mistral", "acp", "acp-claude", "acp-codex":
 		return true
 	default:
 		return false

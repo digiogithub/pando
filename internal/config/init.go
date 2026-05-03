@@ -232,7 +232,7 @@ Port = 5005
 StorePath        = './.pando/mesnada/tasks.json'
 LogDir           = './.pando/mesnada/logs'
 MaxParallel      = 5
-DefaultEngine    = 'claude'
+DefaultEngine    = 'pando'
 DefaultModel     = 'sonnet'
 # DefaultMCPConfig is optional. When unset, pando generates a dynamic MCP config
 # at spawn time that includes pando itself (remembrances, mesnada, fetch, search,

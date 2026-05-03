@@ -257,6 +257,10 @@ export default function SimpleChatView() {
 
         {/* Main chat area */}
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          {/* Watermark — Pando mascot */}
+          <div className="pando-mascot-watermark">
+            <img src="/pando_mascot.svg" alt="" />
+          </div>
           {/* New session FAB — visible only when sessions panel is collapsed */}
           {!sidebarOpen && (
             <button

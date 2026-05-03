@@ -57,12 +57,13 @@ type CopilotSpawner struct {
 
 // Process represents a running Copilot CLI process.
 type Process struct {
-	cmd     *exec.Cmd
-	task    *models.Task
-	output  *strings.Builder
-	logFile *os.File
-	cancel  context.CancelFunc
-	done    chan struct{}
+	cmd        *exec.Cmd
+	task       *models.Task
+	output     *strings.Builder
+	logFile    *os.File
+	cancel     context.CancelFunc
+	done       chan struct{}
+	mcpTempDir string // Temp dir for converted MCP config
 }
 
 // NewCopilotSpawner creates a new Copilot CLI agent spawner.
@@ -86,8 +87,24 @@ func NewCopilotSpawner(logDir string, onComplete func(task *models.Task)) *Copil
 
 // Spawn starts a new Copilot CLI agent.
 func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
+	// Convert MCP config to Copilot-compatible format (same mcpServers schema as Claude CLI).
+	var mcpConfigPath string
+	var mcpTempDir string
+	if task.MCPConfig != "" {
+		var err error
+		mcpTempDir = filepath.Join(s.logDir, "copilot-mcp", task.ID)
+		mcpConfigPath, err = ConvertMCPConfigForCopilot(task.MCPConfig, task.ID, s.logDir, task.WorkDir)
+		if err != nil {
+			log.Printf("Warning: failed to convert MCP config for Copilot task %s: %v", task.ID, err)
+			mcpTempDir = ""
+			// Continue without MCP config
+		} else {
+			log.Printf("INFO: MCP config converted successfully for Copilot task %s: %s", task.ID, mcpConfigPath)
+		}
+	}
+
 	// Build command arguments
-	args := s.buildArgs(task)
+	args := s.buildArgs(task, mcpConfigPath)
 
 	// Create cancellable context
 	procCtx, cancel := context.WithCancel(ctx)
@@ -166,12 +183,13 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	)
 
 	proc := &Process{
-		cmd:     cmd,
-		task:    task,
-		output:  output,
-		logFile: logFile,
-		cancel:  cancel,
-		done:    make(chan struct{}),
+		cmd:        cmd,
+		task:       task,
+		output:     output,
+		logFile:    logFile,
+		cancel:     cancel,
+		done:       make(chan struct{}),
+		mcpTempDir: mcpTempDir,
 	}
 
 	s.mu.Lock()
@@ -187,7 +205,7 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	return nil
 }
 
-func (s *CopilotSpawner) buildArgs(task *models.Task) []string {
+func (s *CopilotSpawner) buildArgs(task *models.Task, mcpConfigPath string) []string {
 	// Prepend task_id to the prompt
 	promptWithTaskID := fmt.Sprintf("You are the task_id: %s\n\n%s", task.ID, task.Prompt)
 
@@ -201,9 +219,9 @@ func (s *CopilotSpawner) buildArgs(task *models.Task) []string {
 		args = append(args, "--model", task.Model)
 	}
 
-	if task.MCPConfig != "" {
+	if mcpConfigPath != "" {
 		// Copilot expects @ prefix for file references
-		mcpConfigArg := task.MCPConfig
+		mcpConfigArg := mcpConfigPath
 		if !strings.HasPrefix(mcpConfigArg, "@") {
 			mcpConfigArg = "@" + mcpConfigArg
 		}
@@ -251,6 +269,11 @@ func (s *CopilotSpawner) captureOutput(proc *Process, stdout, stderr io.ReadClos
 func (s *CopilotSpawner) waitForCompletion(proc *Process) {
 	defer close(proc.done)
 	defer proc.logFile.Close()
+
+	// Clean up converted MCP config temp dir.
+	if proc.mcpTempDir != "" {
+		defer os.RemoveAll(proc.mcpTempDir)
+	}
 
 	err := proc.cmd.Wait()
 

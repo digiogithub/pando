@@ -52,7 +52,16 @@ func (a *App) OnDomReady(ctx context.Context) {
 	var mode = "` + mode + `";
 	if (window.location.href === "about:blank" || window.location.href === "" || !window.location.href.startsWith(url)) {
 		var target = mode === "simple" ? url + "/chat/simple" : url;
-		window.location.href = target;
+		var attempts = 0;
+		function tryNavigate() {
+			if (attempts++ > 30) { window.location.href = target; return; }
+			fetch(url + "/health").then(function() {
+				window.location.href = target;
+			}).catch(function() {
+				setTimeout(tryNavigate, 300);
+			});
+		}
+		tryNavigate();
 	}
 })();
 `

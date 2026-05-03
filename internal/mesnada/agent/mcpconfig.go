@@ -82,6 +82,26 @@ func CleanupMCPConfig(taskID, baseDir string) error {
 	return os.RemoveAll(tempDir)
 }
 
+// ConvertMCPConfigForCopilot converts Mesnada MCP config to GitHub Copilot CLI format.
+// Copilot accepts the same mcpServers schema as Claude CLI (command/args/env per entry).
+func ConvertMCPConfigForCopilot(mcpConfigPath, taskID, baseDir, workDir string) (string, error) {
+	if mcpConfigPath == "" {
+		return "", nil
+	}
+	cfg, err := mcpconv.ParseMesnadaFile(mcpConfigPath, workDir)
+	if err != nil {
+		return "", err
+	}
+	tempDir := filepath.Join(baseDir, "copilot-mcp", taskID)
+	return mcpconv.WriteJSONFile(tempDir, "copilot-mcp-config.json", mcpconv.RenderClaude(cfg, workDir))
+}
+
+// CleanupCopilotMCPConfig removes the temporary Copilot MCP config for a task.
+func CleanupCopilotMCPConfig(taskID, baseDir string) error {
+	tempDir := filepath.Join(baseDir, "copilot-mcp", taskID)
+	return os.RemoveAll(tempDir)
+}
+
 // CreateGeminiSettingsFile creates a temporary settings.json file with MCP configuration.
 func CreateGeminiSettingsFile(mcpConfigPath, taskID, baseDir, workDir string) (string, error) {
 	if mcpConfigPath == "" {

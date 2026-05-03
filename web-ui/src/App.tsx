@@ -40,6 +40,7 @@ function App() {
       const healthy = await checkHealth()
       if (!healthy) {
         setSplashStatus('error')
+        setTimeout(() => setShowSplash(false), 3000)
         return
       }
       setSplashStatus('authenticating')
