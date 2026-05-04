@@ -16,13 +16,21 @@ CC_LINUX_ARM64 ?= $(ZIG) cc -target aarch64-linux-gnu
 CXX_LINUX_ARM64 ?= $(ZIG) c++ -target aarch64-linux-gnu
 CC_WINDOWS_AMD64 ?= $(ZIG) cc -target x86_64-windows-gnu
 CXX_WINDOWS_AMD64 ?= $(ZIG) c++ -target x86_64-windows-gnu
-SDKROOT ?=
 MACOS_MIN_VERSION ?= 11.0
+# On Darwin, use native Apple clang for cross-arch builds (zig cannot resolve macOS system libs).
+# On Linux/CI, fall back to zig for darwin targets.
+ifeq ($(shell uname),Darwin)
+CC_DARWIN_AMD64 ?= clang -arch x86_64
+CXX_DARWIN_AMD64 ?= clang++ -arch x86_64
+CC_DARWIN_ARM64 ?= clang -arch arm64
+CXX_DARWIN_ARM64 ?= clang++ -arch arm64
+else
 CC_DARWIN_AMD64 ?= $(ZIG) cc -target x86_64-macos.$(MACOS_MIN_VERSION)
 CXX_DARWIN_AMD64 ?= $(ZIG) c++ -target x86_64-macos.$(MACOS_MIN_VERSION)
 CC_DARWIN_ARM64 ?= $(ZIG) cc -target aarch64-macos.$(MACOS_MIN_VERSION)
 CXX_DARWIN_ARM64 ?= $(ZIG) c++ -target aarch64-macos.$(MACOS_MIN_VERSION)
-MACOS_SYSROOT_FLAGS := $(if $(SDKROOT),CGO_CFLAGS="-isysroot $(SDKROOT)" CGO_CXXFLAGS="-isysroot $(SDKROOT)" CGO_LDFLAGS="-isysroot $(SDKROOT)",)
+endif
+MACOS_SYSROOT_FLAGS :=
 
 # ============================================================
 # Desktop App (Wails) targets
