@@ -16,6 +16,7 @@ import (
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
+	llmtools "github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 	pandoruntime "github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/skills/catalog"
@@ -53,13 +54,13 @@ type codeIndexStartedMsg struct {
 }
 
 type settingsPage struct {
-	width               int
-	height              int
-	app                 *pandoapp.App
-	settings            settings.SettingsCmp
-	catalogDialog       *dialog.SkillsCatalogDialog
-	addProviderDialog   dialog.AddProviderDialog
-	configChangeCh      chan config.ConfigChangeEvent
+	width             int
+	height            int
+	app               *pandoapp.App
+	settings          settings.SettingsCmp
+	catalogDialog     *dialog.SkillsCatalogDialog
+	addProviderDialog dialog.AddProviderDialog
+	configChangeCh    chan config.ConfigChangeEvent
 }
 
 // waitForConfigChange returns a blocking tea.Cmd that resolves when an
@@ -1679,6 +1680,14 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 
 func buildInternalToolsSection(cfg *config.Config) settings.Section {
 	it := cfg.InternalTools
+	browserInstalls := llmtools.DetectInstalledBrowsers()
+	browserOptions := []string{"chrome", "msedge", "chromium", "opera"}
+	for _, install := range browserInstalls {
+		browserOptions = ensureOption(browserOptions, install.Type)
+		if strings.TrimSpace(it.BrowserExecutable) == "" && install.Type == llmtools.NormalizeBrowserType(it.BrowserType) && strings.TrimSpace(it.BrowserUserDataDir) == "" && strings.TrimSpace(install.UserDataDir) != "" {
+			it.BrowserUserDataDir = install.UserDataDir
+		}
+	}
 	fields := []settings.Field{
 		{
 			Label: "Fetch Enabled",
@@ -1764,6 +1773,20 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 			Value: boolString(it.BrowserEnabled),
 		},
 		{
+			Label:   "Browser Type",
+			Key:     "internalTools.browserType",
+			Type:    settings.FieldSelect,
+			Value:   firstNonEmptyString(llmtools.NormalizeBrowserType(it.BrowserType), "chrome"),
+			Options: browserOptions,
+		},
+		{
+			Label: "Browser Executable",
+			Key:   "internalTools.browserExecutable",
+			Type:  settings.FieldText,
+			Value: it.BrowserExecutable,
+			Hint:  "Leave empty to auto-detect the selected browser binary.",
+		},
+		{
 			Label: "Browser Headless",
 			Key:   "internalTools.browserHeadless",
 			Type:  settings.FieldToggle,
@@ -1791,7 +1814,7 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 			Label:    "Browser Info",
 			Key:      "internalTools.browserInfo",
 			Type:     settings.FieldText,
-			Value:    "Requires Chrome/Chromium in PATH. Tools: navigate, screenshot, get_content, evaluate, click, fill, scroll, console_logs, network, pdf",
+			Value:    browserInfoValue(browserInstalls),
 			ReadOnly: true,
 		},
 		{
@@ -2221,6 +2244,17 @@ func ensureOption(options []string, value string) []string {
 
 	withValue := append([]string(nil), options...)
 	return append(withValue, value)
+}
+
+func browserInfoValue(installs []llmtools.BrowserInstall) string {
+	labels := make([]string, 0, len(installs))
+	for _, install := range installs {
+		labels = append(labels, install.Label)
+	}
+	if len(labels) == 0 {
+		return "Detected browsers: none. Supported: Chrome, Microsoft Edge, Chromium, Opera. Tools: navigate, screenshot, get_content, evaluate, click, fill, scroll, console_logs, network, pdf"
+	}
+	return fmt.Sprintf("Detected browsers: %s. Tools: navigate, screenshot, get_content, evaluate, click, fill, scroll, console_logs, network, pdf", strings.Join(labels, ", "))
 }
 
 func withGroup(s settings.Section, group string) settings.Section {
@@ -3055,6 +3089,16 @@ func saveInternalTools(field settings.Field) error {
 			return fmt.Errorf("invalid Browser Enabled value: %w", err)
 		}
 		itCfg.BrowserEnabled = enabled
+	case "internalTools.browserType":
+		itCfg.BrowserType = llmtools.NormalizeBrowserType(field.Value)
+		if install, ok := llmtools.ResolveBrowserInstall(itCfg.BrowserType, ""); ok && strings.TrimSpace(itCfg.BrowserExecutable) == "" {
+			itCfg.BrowserExecutable = install.Executable
+			if strings.TrimSpace(itCfg.BrowserUserDataDir) == "" {
+				itCfg.BrowserUserDataDir = install.UserDataDir
+			}
+		}
+	case "internalTools.browserExecutable":
+		itCfg.BrowserExecutable = strings.TrimSpace(field.Value)
 	case "internalTools.browserHeadless":
 		enabled, err := parseBoolValue(field.Value)
 		if err != nil {

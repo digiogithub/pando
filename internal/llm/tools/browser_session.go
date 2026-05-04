@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -82,18 +83,39 @@ func GetOrCreateBrowserSession(sessionID string) (*browserSession, error) {
 	}
 
 	// Build allocator options
+	resolvedInstall, ok := ResolveBrowserInstall(cfg.BrowserType, cfg.BrowserExecutable)
+	if !ok {
+		return nil, fmt.Errorf("browser %q is not installed or browser executable is invalid", cfg.BrowserType)
+	}
+	userDataDir := strings.TrimSpace(cfg.BrowserUserDataDir)
+	if userDataDir == "" {
+		userDataDir = resolvedInstall.UserDataDir
+	}
+	profileDir := strings.TrimSpace(resolvedInstall.ProfileDir)
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.ExecPath(resolvedInstall.Executable),
 		chromedp.Flag("headless", cfg.BrowserHeadless),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
 	)
-	if cfg.BrowserUserDataDir != "" {
-		opts = append(opts, chromedp.UserDataDir(cfg.BrowserUserDataDir))
+	if userDataDir != "" {
+		opts = append(opts, chromedp.UserDataDir(userDataDir))
+	}
+	if profileDir != "" {
+		opts = append(opts, chromedp.Flag("profile-directory", profileDir))
 	}
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
+	if err := chromedp.Run(ctx); err != nil {
+		ctxCancel()
+		allocCancel()
+		if userDataDir != "" && isBrowserProfileLockError(err) {
+			return nil, fmt.Errorf("browser profile is already in use: close the browser or configure a different Browser User Data Dir/Profile")
+		}
+		return nil, fmt.Errorf("browser startup failed: %w", err)
+	}
 
 	sess := &browserSession{
 		allocCtx:    allocCtx,
@@ -111,6 +133,14 @@ func GetOrCreateBrowserSession(sessionID string) (*browserSession, error) {
 	}
 
 	return sess, nil
+}
+
+func isBrowserProfileLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "process_singleton") || strings.Contains(msg, "singletonlock") || strings.Contains(msg, "singletonsocket") || strings.Contains(msg, "profile appears to be in use") || strings.Contains(msg, "user data directory is already in use")
 }
 
 // CloseBrowserSession cancels and removes the browser session for the given pando sessionID.

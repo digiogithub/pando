@@ -247,6 +247,8 @@ const TOOLS_DEFAULTS: ToolsConfig = {
   exaSearchEnabled: false,
   exaApiKey: '',
   context7Enabled: false,
+  browserType: 'chrome',
+  browserExecutable: '',
   browserEnabled: false,
   browserHeadless: true,
   browserTimeout: 30,

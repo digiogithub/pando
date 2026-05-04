@@ -31,6 +31,8 @@ class TestInternalToolsConfigJSONKeys(unittest.TestCase):
             "PerplexitySearchEnabled": "perplexitySearchEnabled",
             "PerplexityAPIKey": "perplexityApiKey",
             "Context7Enabled": "context7Enabled",
+            "BrowserType": "browserType",
+            "BrowserExecutable": "browserExecutable",
         }
 
     def test_fetch_enabled_json_key(self):
@@ -111,6 +113,7 @@ class TestInternalToolsConfigDefaults(unittest.TestCase):
             "braveSearchEnabled": True,
             "perplexitySearchEnabled": True,
             "context7Enabled": True,
+            "browserType": "chrome",
         }
 
     def test_fetch_enabled_default_is_true(self):
@@ -130,6 +133,9 @@ class TestInternalToolsConfigDefaults(unittest.TestCase):
 
     def test_context7_enabled_default_is_true(self):
         self.assertTrue(self.defaults["context7Enabled"])
+
+    def test_browser_type_default_is_chrome(self):
+        self.assertEqual(self.defaults["browserType"], "chrome")
 
     def test_no_default_api_keys(self):
         """API keys have no hardcoded defaults; they come only from env vars."""
@@ -234,6 +240,8 @@ class TestInternalToolsConfigJSONDeserialization(unittest.TestCase):
             "perplexitySearchEnabled": True,
             "perplexityApiKey": "pkey",
             "context7Enabled": False,
+            "browserType": "msedge",
+            "browserExecutable": "/usr/bin/microsoft-edge",
         }
         parsed = json.loads(json.dumps(raw))
         self.assertTrue(parsed["fetchEnabled"])
@@ -246,6 +254,8 @@ class TestInternalToolsConfigJSONDeserialization(unittest.TestCase):
         self.assertTrue(parsed["perplexitySearchEnabled"])
         self.assertEqual(parsed["perplexityApiKey"], "pkey")
         self.assertFalse(parsed["context7Enabled"])
+        self.assertEqual(parsed["browserType"], "msedge")
+        self.assertEqual(parsed["browserExecutable"], "/usr/bin/microsoft-edge")
 
     def test_partial_config_deserialization(self):
         """Partial configs should only set the specified fields."""

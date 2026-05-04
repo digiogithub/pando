@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useToolsStore } from '@/stores/settingsStore'
-import { Toggle, TextInput, MaskedInput } from '@/components/shared/FormInput'
-import type { ToolsConfig } from '@/types'
+import api from '@/services/api'
+import { Toggle, TextInput, MaskedInput, SelectInput } from '@/components/shared/FormInput'
+import type { BrowserInstallInfo, ToolsConfig } from '@/types'
 
 // ---- Config status indicator ----
 
@@ -121,10 +122,38 @@ const sectionTitle: React.CSSProperties = {
 export default function InternalToolsSettings() {
   const { config, dirtyKeys, dirty, loading, saving, error, fetchTools, updateField, updateApiKey, saveTools, resetTools } =
     useToolsStore()
+  const [browsers, setBrowsers] = useState<BrowserInstallInfo[]>([])
 
   useEffect(() => {
     fetchTools()
   }, [fetchTools])
+
+  useEffect(() => {
+    api.get<{ browsers: BrowserInstallInfo[] }>('/api/v1/config/browsers')
+      .then((data) => setBrowsers(data.browsers ?? []))
+      .catch(() => setBrowsers([]))
+  }, [])
+
+  const browserOptions = useMemo(() => {
+    const base = [
+      { value: 'chrome', label: 'Google Chrome' },
+      { value: 'msedge', label: 'Microsoft Edge' },
+      { value: 'chromium', label: 'Chromium' },
+      { value: 'opera', label: 'Opera' },
+    ]
+    const seen = new Set(base.map((option) => option.value))
+    for (const browser of browsers) {
+      if (!seen.has(browser.type)) {
+        base.push({ value: browser.type, label: browser.label })
+      }
+    }
+    return base
+  }, [browsers])
+
+  const detectedBrowser = useMemo(
+    () => browsers.find((browser) => browser.type === config.browserType),
+    [browsers, config.browserType],
+  )
 
   if (loading) {
     return (
@@ -280,12 +309,37 @@ export default function InternalToolsSettings() {
           status={simpleStatus(config.browserEnabled)}
           onToggle={(v) => updateField('browserEnabled', v)}
         >
+          <SelectInput
+            label="Browser"
+            value={config.browserType}
+            options={browserOptions}
+            onChange={(e) => {
+              const browserType = e.target.value
+              const selected = browsers.find((browser) => browser.type === browserType)
+              updateField('browserType', browserType)
+              updateField('browserExecutable', selected?.executable ?? '')
+              if (!config.browserUserDataDir && selected?.userDataDir) {
+                updateField('browserUserDataDir', selected.userDataDir)
+              }
+            }}
+          />
+          <TextInput
+            label="Browser Executable"
+            placeholder="Auto-detected from selected browser"
+            value={config.browserExecutable}
+            onChange={(e) => updateField('browserExecutable', e.target.value)}
+          />
           <TextInput
             label="User Data Directory"
             placeholder="/tmp/pando-browser"
             value={config.browserUserDataDir}
             onChange={(e) => updateField('browserUserDataDir', e.target.value)}
           />
+          {detectedBrowser && (
+            <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+              Detected: {detectedBrowser.label} · {detectedBrowser.executable}
+            </div>
+          )}
           <Toggle
             label="Headless mode"
             description="Run browser without a visible window"

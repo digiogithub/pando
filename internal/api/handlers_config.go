@@ -26,7 +26,7 @@ func maskAPIKey(key string) string {
 // ProviderConfigItem is the JSON representation of a provider configuration.
 type ProviderConfigItem struct {
 	Name     string `json:"name"`
-	APIKey   string `json:"apiKey"`   // masked in GET responses
+	APIKey   string `json:"apiKey"` // masked in GET responses
 	BaseURL  string `json:"baseUrl"`
 	Disabled bool   `json:"disabled"`
 	UseOAuth bool   `json:"useOAuth"`
@@ -486,6 +486,8 @@ type ToolsConfigResponse struct {
 
 	Context7Enabled bool `json:"context7Enabled"`
 
+	BrowserType        string `json:"browserType"`
+	BrowserExecutable  string `json:"browserExecutable"`
 	BrowserEnabled     bool   `json:"browserEnabled"`
 	BrowserHeadless    bool   `json:"browserHeadless"`
 	BrowserTimeout     int    `json:"browserTimeout"`
@@ -525,6 +527,8 @@ func (s *Server) handleGetConfigTools(w http.ResponseWriter, r *http.Request) {
 		ExaSearchEnabled:        t.ExaSearchEnabled,
 		ExaAPIKey:               maskAPIKey(t.ExaAPIKey),
 		Context7Enabled:         t.Context7Enabled,
+		BrowserType:             t.BrowserType,
+		BrowserExecutable:       t.BrowserExecutable,
 		BrowserEnabled:          t.BrowserEnabled,
 		BrowserHeadless:         t.BrowserHeadless,
 		BrowserTimeout:          t.BrowserTimeout,
@@ -569,6 +573,15 @@ func (s *Server) handlePutConfigTools(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ExaAPIKey == "" || strings.HasPrefix(req.ExaAPIKey, "••••") {
 		req.ExaAPIKey = existing.ExaAPIKey
+	}
+	if strings.TrimSpace(req.BrowserType) == "" {
+		req.BrowserType = existing.BrowserType
+	}
+	if strings.TrimSpace(req.BrowserExecutable) == "" {
+		req.BrowserExecutable = existing.BrowserExecutable
+	}
+	if strings.TrimSpace(req.BrowserType) == "" {
+		req.BrowserType = "chrome"
 	}
 
 	if err := config.UpdateInternalTools(req); err != nil {
@@ -638,8 +651,8 @@ func (s *Server) handleConfigBash(w http.ResponseWriter, r *http.Request) {
 // ExtensionsConfigResponse groups Skills, SkillsCatalog, and Lua engine configuration.
 type ExtensionsConfigResponse struct {
 	Skills        config.SkillsConfig        `json:"skills"`
-	SkillsCatalog config.SkillsCatalogConfig  `json:"skillsCatalog"`
-	Lua           config.LuaConfig            `json:"lua"`
+	SkillsCatalog config.SkillsCatalogConfig `json:"skillsCatalog"`
+	Lua           config.LuaConfig           `json:"lua"`
 }
 
 func (s *Server) handleConfigExtensions(w http.ResponseWriter, r *http.Request) {

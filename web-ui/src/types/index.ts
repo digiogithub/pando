@@ -375,11 +375,20 @@ export interface ToolsConfig {
 
   context7Enabled: boolean
 
+  browserType: string
+  browserExecutable: string
   browserEnabled: boolean
   browserHeadless: boolean
   browserTimeout: number
   browserUserDataDir: string
   browserMaxSessions: number
+}
+
+export interface BrowserInstallInfo {
+  type: string
+  label: string
+  executable: string
+  userDataDir?: string
 }
 
 // Bash config (matching BashConfig in config.go)

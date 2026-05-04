@@ -350,6 +350,8 @@ type InternalToolsConfig struct {
 
 	// Browser automation (chromedp)
 	BrowserEnabled     bool   `json:"browserEnabled,omitempty" toml:"BrowserEnabled"`
+	BrowserType        string `json:"browserType,omitempty" toml:"BrowserType"`
+	BrowserExecutable  string `json:"browserExecutable,omitempty" toml:"BrowserExecutable"`
 	BrowserHeadless    bool   `json:"browserHeadless,omitempty" toml:"BrowserHeadless"`
 	BrowserTimeout     int    `json:"browserTimeout,omitempty" toml:"BrowserTimeout"`
 	BrowserUserDataDir string `json:"browserUserDataDir,omitempty" toml:"BrowserUserDataDir"`
@@ -1056,6 +1058,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("internalTools.braveSearchEnabled", true)
 	viper.SetDefault("internalTools.perplexitySearchEnabled", true)
 	viper.SetDefault("internalTools.context7Enabled", true)
+	viper.SetDefault("internalTools.browserType", "chrome")
 	viper.SetDefault("internalTools.browserHeadless", true)
 	viper.SetDefault("internalTools.browserTimeout", 30)
 	viper.SetDefault("internalTools.browserMaxSessions", 3)

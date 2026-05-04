@@ -56,6 +56,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/config/lsp", s.handleConfigLSP)
 	mux.HandleFunc("DELETE /api/v1/config/lsp/{language}", s.handleDeleteConfigLSP)
 	mux.HandleFunc("/api/v1/config/tools", s.handleConfigTools)
+	mux.HandleFunc("GET /api/v1/config/browsers", s.handleConfigBrowsers)
 	mux.HandleFunc("/api/v1/config/openlit", s.handleConfigOpenLit)
 	mux.HandleFunc("/api/v1/config/bash", s.handleConfigBash)
 	mux.HandleFunc("/api/v1/config/extensions", s.handleConfigExtensions)
