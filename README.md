@@ -271,8 +271,8 @@ make release-darwin-arm64
 # macOS x64
 make release-darwin-amd64
 
-ssh mac-mini-de-digio "cd ~/MCP/Pando/pando && xc build && make release-darwin-arm64 && make release-darwin-amd64"
-scp mac-mini-de-digio:~/MCP/Pando/pando/dist/*.zip dist/
+ssh mac-mini-de-digio "export PATH=\$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && cd ~/www/MCP/Pando/pando && git pull origin main && git fetch origin --tags && rm dist/*.zip && xc build && make release-darwin-arm64 && make release-darwin-amd64"
+scp mac-mini-de-digio:~/www/MCP/Pando/pando/dist/*.zip dist/
 
 echo "Release builds completed in dist/"
 ```
