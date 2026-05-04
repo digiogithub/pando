@@ -68,10 +68,16 @@ desktop-embed: desktop-build
 		cp desktop/build/bin/pando-desktop internal/desktop/bin/pando-desktop; \
 	elif [ -f desktop/build/bin/pando-desktop.exe ]; then \
 		cp desktop/build/bin/pando-desktop.exe internal/desktop/bin/pando-desktop; \
-	elif [ -f "desktop/build/bin/pando-desktop.app/Contents/MacOS/pando-desktop" ]; then \
-		cp "desktop/build/bin/pando-desktop.app/Contents/MacOS/pando-desktop" internal/desktop/bin/pando-desktop; \
 	else \
-		echo "ERROR: pando-desktop binary not found in desktop/build/bin/"; exit 1; \
+		MACOS_BIN=$$(find desktop/build/bin -path "*/MacOS/*" -type f 2>/dev/null | head -1); \
+		if [ -n "$$MACOS_BIN" ]; then \
+			cp "$$MACOS_BIN" internal/desktop/bin/pando-desktop; \
+		else \
+			echo "ERROR: pando-desktop binary not found in desktop/build/bin/"; \
+			echo "Contents of desktop/build/bin/:"; \
+			find desktop/build/bin -type f 2>/dev/null || true; \
+			exit 1; \
+		fi \
 	fi
 	@echo "Embedded pando-desktop into internal/desktop/bin/pando-desktop"
 
