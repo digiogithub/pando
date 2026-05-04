@@ -37,8 +37,13 @@ MACOS_SYSROOT_FLAGS :=
 # ============================================================
 
 WAILS_CMD := $(shell which wails 2>/dev/null || echo "$(GOPATH)/bin/wails")
-# On Ubuntu 24.04+ webkit2gtk-4.0 was replaced by webkit2gtk-4.1 — pass webkit2_41 tag.
+# webkit2_41 is a Linux-only tag for systems with WebKit2GTK 4.1 instead of 4.0.
+# On macOS, WKWebView is used natively — no webkit2gtk tags needed.
+ifeq ($(shell uname),Darwin)
+WAILS_TAGS :=
+else
 WAILS_TAGS := $(shell pkg-config --exists webkit2gtk-4.0 2>/dev/null && echo "" || echo "webkit2_41")
+endif
 
 .PHONY: desktop-deps desktop-ui desktop-build desktop-dev desktop-package desktop-embed desktop-clean build web-ui-embedded dist-clean release release-linux-amd64 release-linux-arm64 release-windows-amd64 release-darwin-amd64 release-darwin-arm64 help
 
