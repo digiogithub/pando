@@ -108,12 +108,8 @@ $(DIST_DIR):
 define build_release
 	@echo "Building $(1)/$(2)..."
 	GOOS=$(1) GOARCH=$(2) CGO_ENABLED=$(CGO_ENABLED) $(5) go build -ldflags '$(LDFLAGS)' -o $(DIST_DIR)/pando-$(3)$(4) .
-	if command -v $(UPX) >/dev/null 2>&1; then \
-		if [ "$(1)" = "darwin" ]; then \
-			$(UPX) --best --lzma --force-macos $(DIST_DIR)/pando-$(3)$(4) || echo "Skipping UPX for $(3) (not supported on macOS)"; \
-		else \
-			$(UPX) --best --lzma $(DIST_DIR)/pando-$(3)$(4); \
-		fi; \
+	if [ "$(1)" != "darwin" ] && command -v $(UPX) >/dev/null 2>&1; then \
+		$(UPX) --best --lzma $(DIST_DIR)/pando-$(3)$(4); \
 	else echo "Skipping UPX for $(3)"; fi
 	cd $(DIST_DIR) && zip -qm pando-$(3).zip pando-$(3)$(4)
 endef

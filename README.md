@@ -271,6 +271,9 @@ make release-darwin-arm64
 # macOS x64
 make release-darwin-amd64
 
+ssh mac-mini-de-digio "cd ~/MCP/Pando/pando && xc build && make release-darwin-arm64 && make release-darwin-amd64"
+scp mac-mini-de-digio:~/MCP/Pando/pando/dist/*.zip dist/
+
 echo "Release builds completed in dist/"
 ```
 
