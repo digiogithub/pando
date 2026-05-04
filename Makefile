@@ -126,15 +126,25 @@ release-windows-amd64: | $(DIST_DIR)
 	$(call build_release,windows,amd64,windows-x64,.exe,CC='$(CC_WINDOWS_AMD64)' CXX='$(CXX_WINDOWS_AMD64)')
 
 ifeq ($(shell uname),Darwin)
+NATIVE_ARCH := $(shell uname -m)
+
 ## Build macOS x64 release archive in dist/
 release-darwin-amd64: | $(DIST_DIR)
+ifeq ($(NATIVE_ARCH),x86_64)
+	$(call build_release,darwin,amd64,darwin-x64,,)
+else
 	$(call require_cmd,$(ZIG))
 	$(call build_release,darwin,amd64,darwin-x64,,CC='$(CC_DARWIN_AMD64)' CXX='$(CXX_DARWIN_AMD64)' $(MACOS_SYSROOT_FLAGS))
+endif
 
 ## Build macOS arm64 release archive in dist/
 release-darwin-arm64: | $(DIST_DIR)
+ifeq ($(NATIVE_ARCH),arm64)
+	$(call build_release,darwin,arm64,darwin-arm64,,)
+else
 	$(call require_cmd,$(ZIG))
 	$(call build_release,darwin,arm64,darwin-arm64,,CC='$(CC_DARWIN_ARM64)' CXX='$(CXX_DARWIN_ARM64)' $(MACOS_SYSROOT_FLAGS))
+endif
 endif
 
 ## Show available targets
