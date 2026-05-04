@@ -274,6 +274,50 @@ func (s *Server) handleGetActiveProject(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// handleRenameProject handles PATCH /api/v1/projects/{id}.
+// Body: {"name": string}.
+// Returns 200 + {"project": ...} on success.
+func (s *Server) handleRenameProject(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.app.ProjectManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "project manager not available")
+		return
+	}
+
+	id := r.PathValue("id")
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	if err := s.app.ProjectManager.Rename(r.Context(), id, req.Name); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	p, err := s.app.Projects.Get(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"project": toProjectResponse(*p),
+	})
+}
+
 // handleProjectEvents handles GET /api/v1/projects/events.
 // It streams Server-Sent Events for project lifecycle changes.
 func (s *Server) handleProjectEvents(w http.ResponseWriter, r *http.Request) {

@@ -21,7 +21,7 @@ export default function SimpleChatView() {
   const { connected, startHealthCheck, setConnected } = useServerStore()
   const { config: settingsConfig, fetchSettings } = useSettingsStore()
   const defaultModel = settingsConfig.default_model
-  const { modelSwitcherOpen, setModelSwitcherOpen } = useLayoutStore()
+  const { modelSwitcherOpen, setModelSwitcherOpen, setChatMode } = useLayoutStore()
   const { sendMessage, streaming, error, cancelStreaming, streamingState } = useChat({
     onNewSession: (sessionId) => {
       useSessionStore.setState({ activeSessionId: sessionId })
@@ -147,7 +147,7 @@ export default function SimpleChatView() {
 
         {/* Botón para ir a vista avanzada */}
         <button
-          onClick={() => navigate('/')}
+          onClick={() => { setChatMode('advanced'); navigate('/') }}
           title="Switch to advanced view"
           style={{
             display: 'flex',
@@ -261,85 +261,88 @@ export default function SimpleChatView() {
           <div className="pando-mascot-watermark">
             <img src="/pando_mascot.svg" alt="" />
           </div>
-          {/* New session FAB — visible only when sessions panel is collapsed */}
-          {!sidebarOpen && (
-            <button
-              title="New session"
-              onClick={() => useSessionStore.setState({ activeSessionId: null, messages: [] })}
-              style={{
-                position: 'absolute',
-                top: '0.5rem',
-                left: '0.5rem',
-                zIndex: 10,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.375rem',
-                padding: '0.375rem 0.625rem',
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer',
-                color: 'var(--fg-muted)',
-                fontSize: 12,
-                lineHeight: 1,
-                boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = 'var(--fg)'
-                e.currentTarget.style.borderColor = 'var(--primary)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = 'var(--fg-muted)'
-                e.currentTarget.style.borderColor = 'var(--border)'
-              }}
-            >
-              <FontAwesomeIcon icon={faPlus} style={{ fontSize: 10 }} />
-              New session
-            </button>
-          )}
-          <div
-            style={{
-              flex: 1,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-              maxWidth: 900,
-              width: '100%',
-              margin: '0 auto',
-              alignSelf: 'stretch',
-            }}
-          >
-            <MessageList messages={messages} streaming={streaming} streamingState={streamingState} />
-          </div>
-
-          {/* Error banner */}
-          {error && (
+          {/* Content above watermark */}
+          <div style={{ position: 'relative', zIndex: 1, flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {/* New session FAB — visible only when sessions panel is collapsed */}
+            {!sidebarOpen && (
+              <button
+                title="New session"
+                onClick={() => useSessionStore.setState({ activeSessionId: null, messages: [] })}
+                style={{
+                  position: 'absolute',
+                  top: '0.5rem',
+                  left: '0.5rem',
+                  zIndex: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                  padding: '0.375rem 0.625rem',
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  color: 'var(--fg-muted)',
+                  fontSize: 12,
+                  lineHeight: 1,
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = 'var(--fg)'
+                  e.currentTarget.style.borderColor = 'var(--primary)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = 'var(--fg-muted)'
+                  e.currentTarget.style.borderColor = 'var(--border)'
+                }}
+              >
+                <FontAwesomeIcon icon={faPlus} style={{ fontSize: 10 }} />
+                New session
+              </button>
+            )}
             <div
               style={{
+                flex: 1,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
                 maxWidth: 900,
                 width: '100%',
                 margin: '0 auto',
-                padding: '0 1rem',
+                alignSelf: 'stretch',
               }}
             >
+              <MessageList messages={messages} streaming={streaming} streamingState={streamingState} />
+            </div>
+
+            {/* Error banner */}
+            {error && (
               <div
                 style={{
-                  marginBottom: '0.5rem',
-                  padding: '0.5rem 0.75rem',
-                  background: 'var(--error)',
-                  color: 'white',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: 13,
+                  maxWidth: 900,
+                  width: '100%',
+                  margin: '0 auto',
+                  padding: '0 1rem',
                 }}
               >
-                {error}
+                <div
+                  style={{
+                    marginBottom: '0.5rem',
+                    padding: '0.5rem 0.75rem',
+                    background: 'var(--error)',
+                    color: 'white',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: 13,
+                  }}
+                >
+                  {error}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Input */}
-          <div style={{ maxWidth: 900, width: '100%', margin: '0 auto', padding: '0 1rem' }}>
-            <ChatInput onSend={sendMessage} streaming={streaming} onCancel={cancelStreaming} />
+            {/* Input */}
+            <div style={{ maxWidth: 900, width: '100%', margin: '0 auto', padding: '0 1rem' }}>
+              <ChatInput onSend={sendMessage} streaming={streaming} onCancel={cancelStreaming} />
+            </div>
           </div>
         </div>
       </div>

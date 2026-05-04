@@ -61,6 +61,13 @@ SET
     updated_at  = strftime('%s', 'now')
 WHERE id = ?;
 
+-- name: UpdateProjectName :exec
+UPDATE projects
+SET
+    name       = ?,
+    updated_at = strftime('%s', 'now')
+WHERE id = ?;
+
 -- name: DeleteProject :exec
 DELETE FROM projects
 WHERE id = ?;

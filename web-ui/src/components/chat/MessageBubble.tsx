@@ -12,7 +12,7 @@ import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import { format } from 'date-fns'
 import 'highlight.js/styles/github-dark-dimmed.css'
 import type { Message, ContentPart, ToolCallStatus, ToolKind, ToolCallLocation } from '@/types'
-import type { StreamingState } from '@/hooks/useChat'
+import type { StreamingState, StreamItem, ActiveToolCall } from '@/hooks/useChat'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -684,11 +684,6 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
     .map((p) => p.text ?? '')
     .join('')
 
-  const reasoningParts = message.content.filter((p) => p.type === 'reasoning')
-  const toolParts = message.content.filter(
-    (p) => p.type === 'tool_call' || p.type === 'tool_result',
-  )
-
   // ── System / Persona message: collapsible, hidden by default
   if (isSystem) {
     return <PersonaRow text={textContent} timestamp={timestamp} />
@@ -740,103 +735,139 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
     )
   }
 
-  // ── Assistant message: event rows + optional text bubble
+  // ── Assistant message: render content in arrival order
 
-  // Live streaming events (shown while streaming and no completed parts yet)
-  const liveThinking = streaming && streamingState && streamingState.thinking.length > 0
-  const liveTools = streaming && streamingState && streamingState.toolCalls.length > 0
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', padding: '0.375rem 0' }}>
-
-      {/* Completed reasoning parts */}
-      {!streaming && reasoningParts.map((p, i) => (
-        <EventRow key={`r-${i}`} kind="thinking" thinking={p.text ?? ''} />
-      ))}
-
-      {/* Live thinking while streaming */}
-      {liveThinking && (
-        <EventRow kind="thinking" thinking={streamingState!.thinking} isLive />
-      )}
-
-      {/* Live tool calls while streaming */}
-      {liveTools && streamingState!.toolCalls.map((tc) => (
-        <EventRow
-          key={tc.id}
-          kind="tool"
-          toolName={tc.name}
-          toolInput={(() => { try { return JSON.parse(tc.input) } catch { return null } })()}
-          toolResult={tc.result?.content}
-          isError={tc.is_error}
-          isLive={tc.status === 'pending' || tc.status === 'in_progress'}
-          backendTitle={tc.title}
-          backendKind={tc.kind}
-          toolStatus={tc.status}
-          locations={tc.locations}
-          diff={tc.diff}
-          terminal={tc.terminal}
-        />
-      ))}
-
-      {/* Completed tool calls */}
-      {!streaming && toolParts.map((part: ContentPart, i) => (
-        <EventRow
-          key={`t-${i}`}
-          kind="tool"
-          toolName={part.tool_name ?? 'tool'}
-          toolInput={part.tool_input ?? null}
-          toolResult={part.tool_result}
-          isError={part.is_error}
-        />
-      ))}
-
-      {/* Text content — full width, no bubble constraint */}
-      {(textContent || (streaming && !liveThinking && !liveTools)) && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '0.625rem',
-            padding: '0.25rem 1rem',
-          }}
-        >
-          <div
-            style={{
-              width: 28, height: 28, borderRadius: '50%',
-              background: 'var(--card-bg)', border: '1px solid var(--border)',
-              flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--fg-muted)', marginTop: 2,
-            }}
-          >
-            <FontAwesomeIcon icon={faRobot} style={{ fontSize: 12 }} />
+  // Helper: render a text segment as a bubble
+  const renderTextBubble = (text: string, isStreaming: boolean, showTimestamp: boolean, key: string | number) => (
+    <div
+      key={key}
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '0.625rem',
+        padding: '0.25rem 1rem',
+      }}
+    >
+      <div
+        style={{
+          width: 28, height: 28, borderRadius: '50%',
+          background: 'var(--card-bg)', border: '1px solid var(--border)',
+          flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: 'var(--fg-muted)', marginTop: 2,
+        }}
+      >
+        <FontAwesomeIcon icon={faRobot} style={{ fontSize: 12 }} />
+      </div>
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          background: 'var(--card-bg)',
+          color: 'var(--fg)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-sm) var(--radius-md) var(--radius-md) var(--radius-md)',
+          padding: '0.625rem 0.875rem',
+          fontSize: 14,
+          lineHeight: 1.55,
+          wordBreak: 'break-word',
+        }}
+      >
+        <MarkdownContent text={text} streaming={isStreaming} />
+        {showTimestamp && (
+          <div style={{ fontSize: 10, marginTop: '0.375rem', color: 'var(--fg-dim)', textAlign: 'right' }}>
+            {timestamp}
           </div>
-          <div
-            style={{
-              flex: 1,
-              minWidth: 0,
-              background: 'var(--card-bg)',
-              color: 'var(--fg)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm) var(--radius-md) var(--radius-md) var(--radius-md)',
-              padding: '0.625rem 0.875rem',
-              fontSize: 14,
-              lineHeight: 1.55,
-              wordBreak: 'break-word',
-            }}
-          >
-            {textContent ? (
-              <MarkdownContent text={textContent} streaming={streaming} />
-            ) : (
+        )}
+      </div>
+    </div>
+  )
+
+  // Helper: render a tool call EventRow from an ActiveToolCall
+  const renderLiveToolCall = (tc: ActiveToolCall, key: string | number) => (
+    <EventRow
+      key={key}
+      kind="tool"
+      toolName={tc.name}
+      toolInput={(() => { try { return JSON.parse(tc.input) } catch { return null } })()}
+      toolResult={tc.result?.content}
+      isError={tc.is_error}
+      isLive={tc.status === 'pending' || tc.status === 'in_progress'}
+      backendTitle={tc.title}
+      backendKind={tc.kind}
+      toolStatus={tc.status}
+      locations={tc.locations}
+      diff={tc.diff}
+      terminal={tc.terminal}
+    />
+  )
+
+  if (streaming && streamingState) {
+    const items: StreamItem[] = streamingState.items
+    const lastIdx = items.length - 1
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', padding: '0.375rem 0' }}>
+        {items.length === 0 ? (
+          // Nothing received yet: show spinner
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.625rem', padding: '0.25rem 1rem' }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--card-bg)', border: '1px solid var(--border)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-muted)', marginTop: 2 }}>
+              <FontAwesomeIcon icon={faRobot} style={{ fontSize: 12 }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm) var(--radius-md) var(--radius-md) var(--radius-md)', padding: '0.625rem 0.875rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <LoadingSpinner size={14} />
                 <span style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Thinking…</span>
               </div>
-            )}
-            <div style={{ fontSize: 10, marginTop: '0.375rem', color: 'var(--fg-dim)', textAlign: 'right' }}>
-              {timestamp}
             </div>
           </div>
-        </div>
+        ) : (
+          items.map((item, i) => {
+            if (item.type === 'thinking') {
+              return <EventRow key={`thinking-${i}`} kind="thinking" thinking={item.text} isLive />
+            }
+            if (item.type === 'text') {
+              return renderTextBubble(item.text, i === lastIdx, i === lastIdx, `text-${i}`)
+            }
+            if (item.type === 'tool') {
+              const tc = streamingState.toolCalls.find((t) => t.id === item.id)
+              if (!tc) return null
+              return renderLiveToolCall(tc, `tool-${item.id}`)
+            }
+            return null
+          })
+        )}
+      </div>
+    )
+  }
+
+  // ── Non-streaming: render completed message.content in order
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', padding: '0.375rem 0' }}>
+      {message.content.map((part: ContentPart, i) => {
+        if (part.type === 'reasoning') {
+          return <EventRow key={`r-${i}`} kind="thinking" thinking={part.text ?? ''} />
+        }
+        if (part.type === 'tool_call') {
+          return (
+            <EventRow
+              key={`t-${i}`}
+              kind="tool"
+              toolName={part.tool_name ?? 'tool'}
+              toolInput={part.tool_input ?? null}
+              toolResult={part.tool_result}
+              isError={part.is_error}
+            />
+          )
+        }
+        if (part.type === 'text' && part.text) {
+          const isLast = i === message.content.length - 1
+          return renderTextBubble(part.text, false, isLast, `txt-${i}`)
+        }
+        return null
+      })}
+      {/* Fallback for messages with no typed parts (legacy format) */}
+      {message.content.every((p) => p.type !== 'text' && p.type !== 'tool_call' && p.type !== 'reasoning') && textContent && (
+        renderTextBubble(textContent, false, true, 'txt-legacy')
       )}
     </div>
   )

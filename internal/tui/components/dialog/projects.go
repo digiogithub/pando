@@ -40,6 +40,12 @@ type ProjectRemoveMsg struct {
 	ProjectID string
 }
 
+// ProjectRenameMsg is fired when the user confirms a new name for a project.
+type ProjectRenameMsg struct {
+	ProjectID string
+	NewName   string
+}
+
 // ProjectInitConfirmMsg is fired when ErrProjectNeedsInit was returned and
 // the user confirms they want to initialize the path.
 type ProjectInitConfirmMsg struct {
@@ -63,6 +69,7 @@ type projectsKeyMap struct {
 	Enter  key.Binding
 	Add    key.Binding
 	Remove key.Binding
+	Rename key.Binding
 	Escape key.Binding
 }
 
@@ -87,6 +94,10 @@ var projectsKeys = projectsKeyMap{
 		key.WithKeys("d"),
 		key.WithHelp("d", "remove project"),
 	),
+	Rename: key.NewBinding(
+		key.WithKeys("r"),
+		key.WithHelp("r", "rename project"),
+	),
 	Escape: key.NewBinding(
 		key.WithKeys("esc"),
 		key.WithHelp("esc", "close"),
@@ -100,8 +111,11 @@ type projectsDialogCmp struct {
 	width       int
 	height      int
 	// addMode is true when the user is typing a new project path.
-	addMode   bool
-	pathInput textinput.Model
+	addMode    bool
+	pathInput  textinput.Model
+	// renameMode is true when the user is typing a new name for a project.
+	renameMode  bool
+	renameInput textinput.Model
 }
 
 func (p *projectsDialogCmp) Init() tea.Cmd {
@@ -134,6 +148,33 @@ func (p *projectsDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		if p.renameMode {
+			switch {
+			case key.Matches(msg, projectsKeys.Enter):
+				newName := strings.TrimSpace(p.renameInput.Value())
+				if newName == "" || len(p.projects) == 0 {
+					p.renameMode = false
+					p.renameInput.SetValue("")
+					return p, nil
+				}
+				selected := p.projects[p.selectedIdx]
+				p.renameMode = false
+				p.renameInput.SetValue("")
+				return p, util.CmdHandler(ProjectRenameMsg{
+					ProjectID: selected.ID,
+					NewName:   newName,
+				})
+			case key.Matches(msg, projectsKeys.Escape):
+				p.renameMode = false
+				p.renameInput.SetValue("")
+				return p, nil
+			default:
+				var cmd tea.Cmd
+				p.renameInput, cmd = p.renameInput.Update(msg)
+				return p, cmd
+			}
+		}
+
 		// Normal mode
 		switch {
 		case key.Matches(msg, projectsKeys.Up):
@@ -159,6 +200,15 @@ func (p *projectsDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p.addMode = true
 			p.pathInput.SetValue("")
 			p.pathInput.Focus()
+			return p, textinput.Blink
+		case key.Matches(msg, projectsKeys.Rename):
+			if len(p.projects) == 0 {
+				return p, nil
+			}
+			selected := p.projects[p.selectedIdx]
+			p.renameMode = true
+			p.renameInput.SetValue(selected.Name)
+			p.renameInput.Focus()
 			return p, textinput.Blink
 		case key.Matches(msg, projectsKeys.Remove):
 			if len(p.projects) == 0 {
@@ -227,6 +277,9 @@ func (p *projectsDialogCmp) View() string {
 	if p.addMode {
 		return p.viewAddMode(t, baseStyle)
 	}
+	if p.renameMode {
+		return p.viewRenameMode(t, baseStyle)
+	}
 	return p.viewNormalMode(t, baseStyle)
 }
 
@@ -254,7 +307,7 @@ func (p *projectsDialogCmp) viewNormalMode(t theme.Theme, baseStyle lipgloss.Sty
 		Width(dialogWidth).
 		Padding(0, 1).
 		Foreground(t.TextMuted()).
-		Render("[a] Add  [d] Remove  [↑↓/jk] Nav  [enter] Switch  [esc] Close")
+		Render("[a] Add  [d] Remove  [r] Rename  [↑↓/jk] Nav  [enter] Switch  [esc] Close")
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -312,6 +365,52 @@ func (p *projectsDialogCmp) renderProjectItem(proj project.Project, selected boo
 		itemStyle = itemStyle.Background(t.SelectionBackground())
 	}
 	return itemStyle.Render(line)
+}
+
+func (p *projectsDialogCmp) viewRenameMode(t theme.Theme, baseStyle lipgloss.Style) string {
+	dialogWidth := projectsDialogMinWidth
+
+	var currentName string
+	if len(p.projects) > 0 {
+		currentName = p.projects[p.selectedIdx].Name
+	}
+
+	title := baseStyle.
+		Foreground(t.Primary()).
+		Bold(true).
+		Width(dialogWidth).
+		Padding(0, 1).
+		Render("Rename Project: " + currentName)
+
+	p.renameInput.Width = max(0, dialogWidth-8)
+	inputStyle := baseStyle.
+		Width(dialogWidth).
+		Padding(0, 1).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(t.BorderFocused())
+	inputStr := inputStyle.Render(p.renameInput.View())
+
+	footer := baseStyle.
+		Width(dialogWidth).
+		Padding(0, 1).
+		Foreground(t.TextMuted()).
+		Render("[enter] Confirm  [esc] Cancel")
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Left,
+		title,
+		baseStyle.Width(dialogWidth).Render(""),
+		inputStr,
+		baseStyle.Width(dialogWidth).Render(""),
+		footer,
+	)
+
+	return baseStyle.Padding(1, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderBackground(t.Background()).
+		BorderForeground(t.TextMuted()).
+		Width(lipgloss.Width(content) + 4).
+		Render(content)
 }
 
 func (p *projectsDialogCmp) viewAddMode(t theme.Theme, baseStyle lipgloss.Style) string {
@@ -375,6 +474,8 @@ func (p *projectsDialogCmp) SetProjects(projects []project.Project, activeID str
 	}
 	p.addMode = false
 	p.pathInput.SetValue("")
+	p.renameMode = false
+	p.renameInput.SetValue("")
 }
 
 // NewProjectsDialogCmp creates a new projects dialog.
@@ -384,8 +485,14 @@ func NewProjectsDialogCmp() ProjectsDialog {
 	input.Prompt = "Path: "
 	input.CharLimit = 512
 
+	rename := textinput.New()
+	rename.Placeholder = "my-project"
+	rename.Prompt = "Name: "
+	rename.CharLimit = 128
+
 	return &projectsDialogCmp{
-		pathInput: input,
+		pathInput:   input,
+		renameInput: rename,
 	}
 }
 

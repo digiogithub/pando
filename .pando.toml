@@ -34,7 +34,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'gpt-4.1-2025-04-14'
+Model = 'copilot.grok-code-fast-1'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -99,19 +99,19 @@ Enabled = true
 
 [Mesnada.Server]
 Host = ''
-Port = 5009
+Port = 5011
 
 [Mesnada.Orchestrator]
 StorePath = './.pando/mesnada'
 LogDir = './.pando/mesnada/logs'
 MaxParallel = 5
-DefaultEngine = 'copilot'
+DefaultEngine = 'pando'
 DefaultModel = ''
 DefaultMCPConfig = '.github/mcp-config.json'
 PersonaPath = './.pando/mesnada/personas'
 
 [Mesnada.ACP]
-Enabled = true
+Enabled = false
 DefaultAgent = 'copilot'
 AutoPermission = true
 

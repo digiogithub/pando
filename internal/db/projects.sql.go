@@ -223,6 +223,19 @@ func (q *Queries) MarkProjectInitialized(ctx context.Context, id string) error {
 	return err
 }
 
+const updateProjectName = `-- name: UpdateProjectName :exec
+UPDATE projects
+SET
+    name       = ?,
+    updated_at = strftime('%s', 'now')
+WHERE id = ?
+`
+
+func (q *Queries) UpdateProjectName(ctx context.Context, id, name string) error {
+	_, err := q.exec(ctx, nil, updateProjectName, name, id)
+	return err
+}
+
 const deleteProject = `-- name: DeleteProject :exec
 DELETE FROM projects
 WHERE id = ?

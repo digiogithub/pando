@@ -132,14 +132,6 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	// Set up output capture
 	output := &strings.Builder{}
 
-	// Set up stdin pipe to send the prompt
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		cancel()
-		logFile.Close()
-		return fmt.Errorf("failed to create stdin pipe: %w", err)
-	}
-
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
@@ -160,12 +152,6 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 		logFile.Close()
 		return fmt.Errorf("failed to start copilot: %w", err)
 	}
-
-	// Send the prompt to stdin and close it
-	go func() {
-		defer stdin.Close()
-		stdin.Write([]byte(task.Prompt))
-	}()
 
 	task.PID = cmd.Process.Pid
 	now := time.Now()
@@ -208,11 +194,16 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 func (s *CopilotSpawner) buildArgs(task *models.Task, mcpConfigPath string) []string {
 	// Prepend task_id to the prompt
 	promptWithTaskID := fmt.Sprintf("You are the task_id: %s\n\n%s", task.ID, task.Prompt)
+	task.Prompt = promptWithTaskID
 
+	// --yolo = --allow-all-tools + --allow-all-paths + --allow-all-urls (no permission prompts)
+	// -p passes the prompt in non-interactive mode (exits after completion)
+	// --output-format text for clean scriptable output
 	args := []string{
-		"--allow-all-tools",
+		"--yolo",
 		"--no-color",
 		"--no-custom-instructions",
+		"--output-format", "text",
 	}
 
 	if task.Model != "" {
@@ -230,8 +221,8 @@ func (s *CopilotSpawner) buildArgs(task *models.Task, mcpConfigPath string) []st
 
 	args = append(args, task.ExtraArgs...)
 
-	// Store the modified prompt for stdin
-	task.Prompt = promptWithTaskID
+	// -p triggers non-interactive mode (exits after completion)
+	args = append(args, "-p", promptWithTaskID)
 
 	return args
 }

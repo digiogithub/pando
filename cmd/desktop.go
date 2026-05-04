@@ -70,7 +70,7 @@ func runDesktopMode(cmd *cobra.Command) error {
 		return err
 	}
 	if selectedPort != port {
-		logging.Warn("Preferred port %d unavailable, using %d", port, selectedPort)
+		logging.Warn("Preferred port unavailable, using fallback", "preferred", port, "selected", selectedPort)
 	}
 	port = selectedPort
 

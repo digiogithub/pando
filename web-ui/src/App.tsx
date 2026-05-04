@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Suspense, useState, useEffect, useCallback } from 'react'
 import MainLayout from '@/components/layout/MainLayout'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
@@ -22,6 +22,18 @@ import { initDesktopMode } from '@/services/api'
 import { useLanguageSync } from '@/hooks/useLanguageSync'
 import PWAInstallPrompt from '@/components/shared/PWAInstallPrompt'
 import { useNotificationsStore } from '@/stores/notificationsStore'
+import { useLayoutStore } from '@/stores/layoutStore'
+
+function InitialModeRedirect() {
+  const navigate = useNavigate()
+  const chatMode = useLayoutStore((s) => s.chatMode)
+  useEffect(() => {
+    if (chatMode === 'simple') {
+      navigate('/chat/simple', { replace: true })
+    }
+  }, [chatMode, navigate])
+  return <ChatView />
+}
 
 function App() {
   useLanguageSync()
@@ -87,7 +99,7 @@ function App() {
 
               {/* Main layout */}
               <Route path="/" element={<MainLayout />}>
-                <Route index element={<ChatView />} />
+                <Route index element={<InitialModeRedirect />} />
                 <Route path="chat" element={<ChatView />} />
                 <Route path="orchestrator" element={<OrchestratorView />} />
                 <Route path="logs" element={<LogsView />} />

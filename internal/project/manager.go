@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/pubsub"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
@@ -418,6 +419,65 @@ func checkDirAccessible(dir string) error {
 	}
 	f.Close()
 	return nil
+}
+
+// Rename changes the display name of a registered project and propagates
+// the change to the global projects registry so other instances can see it.
+func (m *Manager) Rename(ctx context.Context, projectID, newName string) error {
+	proj, err := m.service.Get(ctx, projectID)
+	if err != nil {
+		return fmt.Errorf("project manager: rename: get project %s: %w", projectID, err)
+	}
+	if err := m.service.Rename(ctx, projectID, newName); err != nil {
+		return fmt.Errorf("project manager: rename: %w", err)
+	}
+	// Propagate to global registry.
+	if err := config.UpdateGlobalProjectName(proj.Path, newName); err != nil {
+		logging.Warn("project manager: rename: failed to update global registry", "error", err)
+	}
+	m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
+		Type:      EvStatusChanged,
+		ProjectID: projectID,
+	})
+	return nil
+}
+
+// SeedFromGlobal upserts every entry from the global projects registry into
+// the local DB so that any Pando instance can see all known projects.
+// Entries whose path is already registered are skipped.
+// This is called once during startup.
+func (m *Manager) SeedFromGlobal(ctx context.Context) {
+	entries, err := config.LoadGlobalProjects()
+	if err != nil {
+		logging.Warn("project manager: seed from global: failed to load registry", "error", err)
+		return
+	}
+	for _, entry := range entries {
+		absPath := entry.Path
+		if absPath == "" {
+			continue
+		}
+		// Skip if already present in the local DB.
+		if _, err := m.service.GetByPath(ctx, absPath); err == nil {
+			continue
+		}
+		name := entry.Name
+		if name == "" {
+			name = filepath.Base(absPath)
+		}
+		proj, err := m.service.Create(ctx, name, absPath)
+		if err != nil {
+			logging.Debug("project manager: seed from global: create failed", "path", absPath, "error", err)
+			continue
+		}
+		// Mark as initialized when the path has a Pando config file.
+		if config.HasConfigFileAt(absPath) {
+			if err := m.service.MarkInitialized(ctx, proj.ID); err != nil {
+				logging.Debug("project manager: seed from global: mark initialized failed", "id", proj.ID, "error", err)
+			}
+		}
+		logging.Debug("project manager: seeded project from global registry", "path", absPath, "name", name)
+	}
 }
 
 // Subscribe returns a channel of ManagerEvents for real-time notifications.

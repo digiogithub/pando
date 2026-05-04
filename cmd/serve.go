@@ -53,7 +53,7 @@ This is the backend for the Pando Desktop/Web UI.`,
 			return err
 		}
 		if selectedPort != preferredPort {
-			logging.Warn("Preferred port %d unavailable, using %d", preferredPort, selectedPort)
+			logging.Warn("Preferred port unavailable, using fallback", "preferred", preferredPort, "selected", selectedPort)
 			fmt.Printf("Port %d in use, switching to %d\n", preferredPort, selectedPort)
 		}
 		port = selectedPort

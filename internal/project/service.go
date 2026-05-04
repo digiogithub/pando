@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"time"
 
@@ -34,6 +35,9 @@ type Service interface {
 
 	// TouchLastOpened records the current time as last_opened for the project.
 	TouchLastOpened(ctx context.Context, id string) error
+
+	// Rename updates the display name of a project.
+	Rename(ctx context.Context, id, name string) error
 
 	// Delete removes a project from the registry (does NOT delete files).
 	Delete(ctx context.Context, id string) error
@@ -142,6 +146,14 @@ func (s *service) TouchLastOpened(ctx context.Context, id string) error {
 		ID:         id,
 		LastOpened: sql.NullInt64{Int64: time.Now().Unix(), Valid: true},
 	})
+}
+
+// Rename updates the display name of a project.
+func (s *service) Rename(ctx context.Context, id, name string) error {
+	if name == "" {
+		return fmt.Errorf("name must not be empty")
+	}
+	return s.q.UpdateProjectName(ctx, id, name)
 }
 
 // Delete removes a project from the registry (does NOT delete files on disk).

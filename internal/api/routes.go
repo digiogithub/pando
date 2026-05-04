@@ -125,6 +125,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/projects/events", s.handleProjectEvents)
 	mux.HandleFunc("GET /api/v1/projects/{id}", s.handleGetProject)
 	mux.HandleFunc("DELETE /api/v1/projects/{id}", s.handleDeleteProject)
+	mux.HandleFunc("PATCH /api/v1/projects/{id}", s.handleRenameProject)
 	mux.HandleFunc("POST /api/v1/projects/{id}/activate", s.handleActivateProject)
 	mux.HandleFunc("POST /api/v1/projects/{id}/deactivate", s.handleDeactivateProject)
 	mux.HandleFunc("POST /api/v1/projects/{id}/init", s.handleInitProject)

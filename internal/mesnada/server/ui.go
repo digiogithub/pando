@@ -337,8 +337,10 @@ func engineClass(engine models.Engine) string {
 		return "engine-mistral"
 	case models.EngineACP, models.EngineACPClaudeCode, models.EngineACPCodex, models.EngineACPCustom:
 		return "engine-acp"
+	case models.EnginePando:
+		return "engine-pando"
 	default:
-		return "engine-copilot"
+		return "engine-pando"
 	}
 }
 

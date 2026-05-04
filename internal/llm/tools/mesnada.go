@@ -93,12 +93,12 @@ func (t *MesnadaSpawnTool) Info() ToolInfo {
 			},
 			"engine": map[string]any{
 				"type":        "string",
-				"description": "CLI engine to use for the task. Available engines: pando (default, runs Pando itself as a subagent via CLI), copilot, claude, gemini, opencode, mistral, acp (requires acp_agent), acp-claude, acp-codex, ollama-claude, ollama-opencode.",
+				"description": "CLI engine to use for the task. 'pando' (default) runs Pando itself as a CLI subprocess — NOT an ACP agent. Other CLI engines: copilot, claude, gemini, opencode, mistral. ACP engines: acp (requires acp_agent), acp-claude, acp-codex. NOTE: choosing engine=pando with model=copilot.gpt-5.4 does NOT use the copilot engine; it uses the Copilot provider inside Pando CLI.",
 				"enum":        []string{"pando", "copilot", "claude", "gemini", "opencode", "mistral", "acp", "acp-claude", "acp-codex", "ollama-claude", "ollama-opencode"},
 			},
 			"model": map[string]any{
 				"type":        "string",
-				"description": "Model to use for the task.",
+				"description": "Model identifier. Omit to use the default model configured for the chosen engine. For engine=pando use 'provider.model' format (e.g. 'copilot.modelname', 'anthropic.modelname', 'google.modelname'). For other engines use their native short model name. Only set this when the user explicitly requests a specific model.",
 			},
 			"background": map[string]any{
 				"type":        "boolean",

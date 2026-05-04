@@ -714,6 +714,9 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dialog.ProjectRemoveMsg:
 		return a, a.unregisterProject(msg.ProjectID)
 
+	case dialog.ProjectRenameMsg:
+		return a, a.renameProject(msg.ProjectID, msg.NewName)
+
 	case showProjectInitConfirmMsg:
 		a.projectInitDialog.SetProject(msg.ProjectID, msg.Path)
 		a.showProjectInitDialog = true
@@ -1317,6 +1320,16 @@ func (a *appModel) unregisterProject(projectID string) tea.Cmd {
 			return util.InfoMsg{Type: util.InfoTypeError, Msg: "Failed to remove project: " + err.Error()}
 		}
 		return util.InfoMsg{Type: util.InfoTypeInfo, Msg: "Project removed"}
+	}
+}
+
+func (a *appModel) renameProject(projectID, newName string) tea.Cmd {
+	return func() tea.Msg {
+		err := a.app.ProjectManager.Rename(context.Background(), projectID, newName)
+		if err != nil {
+			return util.InfoMsg{Type: util.InfoTypeError, Msg: "Failed to rename project: " + err.Error()}
+		}
+		return util.InfoMsg{Type: util.InfoTypeInfo, Msg: "Project renamed to: " + newName}
 	}
 }
 

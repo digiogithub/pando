@@ -147,6 +147,22 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	}
 	app.ProjectManager = mgr
 
+	// Auto-register the current working directory as a known global project so
+	// other Pando instances can discover it.  Only register when there is a
+	// config file present (i.e. the directory is a real Pando project).
+	go func() {
+		cwd := config.WorkingDirectory()
+		if cwd != "" && config.HasConfigFileAt(cwd) {
+			name := filepath.Base(cwd)
+			if err := config.RegisterSelfAsGlobalProject(cwd, name); err != nil {
+				logging.Warn("failed to register self as global project", "error", err)
+			}
+		}
+		// Seed local DB with all projects from the global registry so this
+		// instance can see projects registered by other Pando instances.
+		mgr.SeedFromGlobal(ctx)
+	}()
+
 	// Initialize theme based on configuration
 	app.initTheme()
 

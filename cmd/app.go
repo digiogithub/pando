@@ -63,7 +63,7 @@ func runAppMode(cmd *cobra.Command) error {
 		return err
 	}
 	if selectedPort != preferredPort {
-		logging.Warn("Preferred port %d unavailable, using %d", preferredPort, selectedPort)
+		logging.Warn("Preferred port unavailable, using fallback", "preferred", preferredPort, "selected", selectedPort)
 	}
 	port = selectedPort
 

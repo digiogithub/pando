@@ -15,7 +15,7 @@ import PersonaSelector from '@/components/shared/PersonaSelector'
 export default function Header() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { toggleSidebar, sidebarOpen } = useLayoutStore()
+  const { toggleSidebar, sidebarOpen, setChatMode } = useLayoutStore()
   const { themeMode: theme, toggleMode: toggleTheme } = useTheme()
   const connected = useServerStore((s) => s.connected)
   const [version, setVersion] = useState<string>('')
@@ -210,7 +210,7 @@ export default function Header() {
 
         {/* Simple Chat */}
         <button
-          onClick={() => navigate('/chat/simple')}
+          onClick={() => { setChatMode('simple'); navigate('/chat/simple') }}
           title={t('header.simpleChat', 'Simple Chat')}
           style={{
             background: 'none',
