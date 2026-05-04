@@ -52,6 +52,8 @@ build: web-ui-embedded
 
 ## Full desktop build: compile pando-desktop Wails binary (requires wails CLI)
 desktop-build:
+	@mkdir -p internal/desktop/bin
+	@[ -f internal/desktop/bin/pando-desktop ] || echo -n "" > internal/desktop/bin/pando-desktop
 	cd desktop && $(WAILS_CMD) build $(if $(WAILS_TAGS),-tags $(WAILS_TAGS),) -o pando-desktop
 
 ## Development mode: run Wails dev server with hot-reload
@@ -66,6 +68,8 @@ desktop-embed: desktop-build
 		cp desktop/build/bin/pando-desktop internal/desktop/bin/pando-desktop; \
 	elif [ -f desktop/build/bin/pando-desktop.exe ]; then \
 		cp desktop/build/bin/pando-desktop.exe internal/desktop/bin/pando-desktop; \
+	elif [ -f "desktop/build/bin/pando-desktop.app/Contents/MacOS/pando-desktop" ]; then \
+		cp "desktop/build/bin/pando-desktop.app/Contents/MacOS/pando-desktop" internal/desktop/bin/pando-desktop; \
 	else \
 		echo "ERROR: pando-desktop binary not found in desktop/build/bin/"; exit 1; \
 	fi
