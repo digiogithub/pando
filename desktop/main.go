@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"flag"
+	"io/fs"
 	"os"
 
 	"github.com/digiogithub/pando/internal/desktop"
@@ -27,9 +28,16 @@ func main() {
 		*url = "http://localhost:8765"
 	}
 
+	// Sub into the "frontend" directory so that Wails finds index.html at the FS root.
+	frontendFS, err := fs.Sub(assets, "frontend")
+	if err != nil {
+		println("Error: failed to sub frontend FS:", err.Error())
+		os.Exit(1)
+	}
+
 	app := desktop.NewApp(*url, *simpleMode)
 
-	err := wails.Run(&options.App{
+	err = wails.Run(&options.App{
 		Title:            "Pando",
 		Width:            1280,
 		Height:           800,
@@ -37,7 +45,7 @@ func main() {
 		MinHeight:        600,
 		BackgroundColour: &options.RGBA{R: 18, G: 18, B: 18, A: 1},
 		AssetServer: &assetserver.Options{
-			Assets: assets,
+			Assets: frontendFS,
 		},
 		HideWindowOnClose:        false,
 		OnStartup:                app.Startup,
