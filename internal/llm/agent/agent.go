@@ -45,6 +45,28 @@ func SetContextEnricher(e ContextEnricher) {
 	globalContextEnricher = e
 }
 
+// globalNonInteractive indicates that Pando is running in non-interactive CLI mode (-p flag).
+// When true, the system prompt instructs agents to act autonomously without requesting user input.
+var globalNonInteractive bool
+
+// SetNonInteractiveMode configures all agents to run autonomously without waiting for user input.
+// Call this before running a session when a prompt is provided via the -p flag or stdin pipe.
+func SetNonInteractiveMode(enabled bool) {
+	globalNonInteractive = enabled
+}
+
+// nonInteractiveInstructions are appended to the system prompt when running in non-interactive mode.
+const nonInteractiveInstructions = `
+# Non-Interactive Mode
+You are running in non-interactive mode (prompt supplied via -p flag or stdin). There is NO user present to answer questions or provide feedback during execution.
+
+Rules you MUST follow:
+- Complete the requested task autonomously without asking for clarification or confirmation.
+- Make reasonable assumptions when information is ambiguous; document your assumptions in the output.
+- NEVER pause, prompt, or wait for user input at any point.
+- Exception — stop and report (do NOT proceed) only if the task explicitly or implicitly requires a DESTRUCTIVE action (permanent deletion of files/data, formatting/wiping storage, dropping databases) that is NOT clearly described or implied in the original prompt. In that case, explain what you cannot do safely and exit.
+- Once the task is complete, produce a concise summary of what was done and terminate.`
+
 type AgentEventType string
 
 const (
@@ -1382,6 +1404,11 @@ func buildSystemMessage(
 	// or extend the base identity/workflow instructions.
 	if personaContent != "" {
 		sections = append(sections, personaContent)
+	}
+
+	// Non-interactive mode: instruct agents to act autonomously without user feedback.
+	if globalNonInteractive {
+		sections = append(sections, nonInteractiveInstructions)
 	}
 
 	if len(sections) == 0 {

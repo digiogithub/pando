@@ -1016,6 +1016,9 @@ func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat
 	logging.Info("Running in non-interactive mode")
 	logging.Debug("Non-interactive mode started", "promptLength", len(prompt), "outputFormat", outputFormat, "yoloMode", yoloMode)
 
+	// Tell all agents to act autonomously — no user is present to answer questions.
+	agent.SetNonInteractiveMode(true)
+
 	if yoloMode {
 		a.Permissions.SetGlobalAutoApprove(true)
 	}
