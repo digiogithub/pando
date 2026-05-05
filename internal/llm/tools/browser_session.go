@@ -3,7 +3,10 @@ package tools
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +25,8 @@ type browserSession struct {
 	ctxCancel   context.CancelFunc
 	lastUsed    time.Time
 	tempDir     string
+	// For remote browsers (e.g. Lightpanda), the managed server process.
+	serverProcess *exec.Cmd
 	// Console and network event buffers (used by devtools tools)
 	consoleLogs []BrowserConsoleEntry
 	networkLog  []BrowserNetworkEntry
@@ -94,36 +99,58 @@ func GetOrCreateBrowserSession(sessionID string) (*browserSession, error) {
 	if !ok {
 		return nil, fmt.Errorf("browser %q is not installed or browser executable is invalid", cfg.BrowserType)
 	}
-	userDataDir := strings.TrimSpace(cfg.BrowserUserDataDir)
-	if userDataDir == "" {
-		userDataDir = resolvedInstall.UserDataDir
-	}
-	profileDir := strings.TrimSpace(resolvedInstall.ProfileDir)
-	ctx, ctxCancel, allocCtx, allocCancel, tempDir, err := startBrowserProcess(resolvedInstall.Executable, cfg.BrowserHeadless, userDataDir, profileDir)
-	if err != nil {
-		if userDataDir != "" && isBrowserProfileLockError(err) {
-			fallbackCtx, fallbackCancel, fallbackAllocCtx, fallbackAllocCancel, fallbackTempDir, fallbackErr := startBrowserWithTempProfile(resolvedInstall.Executable, cfg.BrowserHeadless)
-			if fallbackErr == nil {
-				ctx = fallbackCtx
-				ctxCancel = fallbackCancel
-				allocCtx = fallbackAllocCtx
-				allocCancel = fallbackAllocCancel
-				tempDir = fallbackTempDir
+
+	var (
+		ctx           context.Context
+		ctxCancel     context.CancelFunc
+		allocCtx      context.Context
+		allocCancel   context.CancelFunc
+		tempDir       string
+		serverProcess *exec.Cmd
+	)
+
+	if IsRemoteBrowserType(resolvedInstall.Type) {
+		// Lightpanda and other CDP-server browsers: launch the server process and
+		// connect via remote allocator — no profile or headless flags apply.
+		var err error
+		ctx, ctxCancel, allocCtx, allocCancel, serverProcess, err = startLightpandaProcess(resolvedInstall.Executable)
+		if err != nil {
+			return nil, fmt.Errorf("lightpanda startup failed: %w", err)
+		}
+	} else {
+		userDataDir := strings.TrimSpace(cfg.BrowserUserDataDir)
+		if userDataDir == "" {
+			userDataDir = resolvedInstall.UserDataDir
+		}
+		profileDir := strings.TrimSpace(resolvedInstall.ProfileDir)
+		var err error
+		ctx, ctxCancel, allocCtx, allocCancel, tempDir, err = startBrowserProcess(resolvedInstall.Executable, cfg.BrowserHeadless, userDataDir, profileDir)
+		if err != nil {
+			if userDataDir != "" && isBrowserProfileLockError(err) {
+				fallbackCtx, fallbackCancel, fallbackAllocCtx, fallbackAllocCancel, fallbackTempDir, fallbackErr := startBrowserWithTempProfile(resolvedInstall.Executable, cfg.BrowserHeadless)
+				if fallbackErr == nil {
+					ctx = fallbackCtx
+					ctxCancel = fallbackCancel
+					allocCtx = fallbackAllocCtx
+					allocCancel = fallbackAllocCancel
+					tempDir = fallbackTempDir
+				} else {
+					return nil, fmt.Errorf("browser profile is already in use and temporary profile startup failed: %w", fallbackErr)
+				}
 			} else {
-				return nil, fmt.Errorf("browser profile is already in use and temporary profile startup failed: %w", fallbackErr)
+				return nil, fmt.Errorf("browser startup failed: %w", err)
 			}
-		} else {
-			return nil, fmt.Errorf("browser startup failed: %w", err)
 		}
 	}
 
 	sess := &browserSession{
-		allocCtx:    allocCtx,
-		allocCancel: allocCancel,
-		ctx:         ctx,
-		ctxCancel:   ctxCancel,
-		lastUsed:    time.Now(),
-		tempDir:     tempDir,
+		allocCtx:      allocCtx,
+		allocCancel:   allocCancel,
+		ctx:           ctx,
+		ctxCancel:     ctxCancel,
+		lastUsed:      time.Now(),
+		tempDir:       tempDir,
+		serverProcess: serverProcess,
 	}
 	globalBrowserRegistry.sessions[sessionID] = sess
 
@@ -194,6 +221,9 @@ func CloseBrowserSession(sessionID string) {
 	}
 	sess.ctxCancel()
 	sess.allocCancel()
+	if sess.serverProcess != nil && sess.serverProcess.Process != nil {
+		_ = sess.serverProcess.Process.Kill()
+	}
 	if sess.tempDir != "" {
 		_ = os.RemoveAll(sess.tempDir)
 	}
@@ -208,6 +238,9 @@ func CloseAllBrowserSessions() {
 	for id, sess := range globalBrowserRegistry.sessions {
 		sess.ctxCancel()
 		sess.allocCancel()
+		if sess.serverProcess != nil && sess.serverProcess.Process != nil {
+			_ = sess.serverProcess.Process.Kill()
+		}
 		if sess.tempDir != "" {
 			_ = os.RemoveAll(sess.tempDir)
 		}
@@ -302,6 +335,73 @@ func joinStrings(parts []string, sep string) string {
 		result += p
 	}
 	return result
+}
+
+// startLightpandaProcess launches a Lightpanda CDP server on a free local port,
+// waits for it to accept connections, and returns chromedp contexts connected via
+// remote allocator. The returned *exec.Cmd must be killed when the session closes.
+func startLightpandaProcess(executable string) (context.Context, context.CancelFunc, context.Context, context.CancelFunc, *exec.Cmd, error) {
+	port, err := findFreePort()
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("find free port: %w", err)
+	}
+
+	host := "127.0.0.1"
+	addr := fmt.Sprintf("%s:%d", host, port)
+	wsURL := fmt.Sprintf("ws://%s", addr)
+
+	cmd := exec.Command(executable, "serve", "--host", host, "--port", fmt.Sprintf("%d", port)) //nolint:gosec
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Start(); err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("start lightpanda: %w", err)
+	}
+
+	// Wait until the CDP endpoint is reachable (up to 10 seconds).
+	if err := waitForCDPEndpoint(fmt.Sprintf("http://%s/json/version", addr), 10*time.Second); err != nil {
+		_ = cmd.Process.Kill()
+		return nil, nil, nil, nil, nil, fmt.Errorf("lightpanda did not become ready: %w", err)
+	}
+
+	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), wsURL)
+	ctx, ctxCancel := chromedp.NewContext(allocCtx)
+	if err := chromedp.Run(ctx); err != nil {
+		ctxCancel()
+		allocCancel()
+		_ = cmd.Process.Kill()
+		return nil, nil, nil, nil, nil, fmt.Errorf("chromedp connect to lightpanda: %w", err)
+	}
+
+	return ctx, ctxCancel, allocCtx, allocCancel, cmd, nil
+}
+
+// findFreePort returns an available TCP port on localhost.
+func findFreePort() (int, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+	return port, nil
+}
+
+// waitForCDPEndpoint polls the given HTTP URL until it returns a 200 response or
+// the timeout is exceeded.
+func waitForCDPEndpoint(url string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url) //nolint:gosec,noctx
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return fmt.Errorf("timeout waiting for %s", url)
 }
 
 // getBrowserCtxWithTimeout returns a chromedp context with the configured timeout

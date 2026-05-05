@@ -26,6 +26,17 @@ type browserCandidate struct {
 
 var supportedBrowserCandidates = []browserCandidate{
 	{
+		Type:      "lightpanda",
+		Label:     "Lightpanda",
+		ExecNames: []string{"lightpanda"},
+		Paths: []string{
+			"/usr/local/bin/lightpanda",
+			"/usr/bin/lightpanda",
+			"~/.local/bin/lightpanda",
+		},
+		Profiles: []string{}, // Lightpanda has no user profile concept
+	},
+	{
 		Type:      "chrome",
 		Label:     "Google Chrome",
 		ExecNames: []string{"google-chrome", "google-chrome-stable", "chrome", "chrome.exe"},
@@ -144,9 +155,17 @@ func NormalizeBrowserType(value string) string {
 		return "chromium"
 	case "opera", "opera-stable":
 		return "opera"
+	case "lightpanda", "light-panda":
+		return "lightpanda"
 	default:
 		return strings.ToLower(strings.TrimSpace(value))
 	}
+}
+
+// IsRemoteBrowserType returns true for browser types that act as CDP servers
+// (launched separately and connected to via WebSocket) rather than local executables.
+func IsRemoteBrowserType(browserType string) bool {
+	return NormalizeBrowserType(browserType) == "lightpanda"
 }
 
 func browserLabel(browserType string) string {
