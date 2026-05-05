@@ -283,39 +283,31 @@ func TestShouldSkip(t *testing.T) {
 }
 
 func TestCreateFileTree(t *testing.T) {
+	// Relative paths as returned by listDirectory after the fix
 	paths := []string{
-		"/path/to/file1.txt",
-		"/path/to/dir1/file2.txt",
-		"/path/to/dir1/subdir/file3.txt",
-		"/path/to/dir2/file4.txt",
+		"file1.txt",
+		"dir1/",
+		"dir1/file2.txt",
+		"dir1/subdir/",
+		"dir1/subdir/file3.txt",
+		"dir2/",
+		"dir2/file4.txt",
 	}
 
 	tree := createFileTree(paths)
-	
-	// Check the structure of the tree
-	assert.Len(t, tree, 1) // Should have one root node
-	
-	// Check the root node
-	rootNode := tree[0]
-	assert.Equal(t, "path", rootNode.Name)
-	assert.Equal(t, "directory", rootNode.Type)
-	assert.Len(t, rootNode.Children, 1)
-	
-	// Check the "to" node
-	toNode := rootNode.Children[0]
-	assert.Equal(t, "to", toNode.Name)
-	assert.Equal(t, "directory", toNode.Type)
-	assert.Len(t, toNode.Children, 3) // file1.txt, dir1, dir2
-	
-	// Find the dir1 node
+
+	// Should have 3 root nodes: file1.txt, dir1/, dir2/
+	assert.Len(t, tree, 3)
+
+	// Find dir1 node
 	var dir1Node *TreeNode
-	for _, child := range toNode.Children {
-		if child.Name == "dir1" {
-			dir1Node = child
+	for _, node := range tree {
+		if node.Name == "dir1" {
+			dir1Node = node
 			break
 		}
 	}
-	
+
 	require.NotNil(t, dir1Node)
 	assert.Equal(t, "directory", dir1Node.Type)
 	assert.Len(t, dir1Node.Children, 2) // file2.txt and subdir
@@ -405,23 +397,22 @@ func TestListDirectory(t *testing.T) {
 		files, truncated, err := listDirectory(tempDir, []string{}, 1000)
 		require.NoError(t, err)
 		assert.False(t, truncated)
-		
-		// Check that visible files and directories are included
+
+		// listDirectory returns relative paths now
 		containsPath := func(paths []string, target string) bool {
-			targetPath := filepath.Join(tempDir, target)
 			for _, path := range paths {
-				if strings.HasPrefix(path, targetPath) {
+				if strings.HasPrefix(path, target) {
 					return true
 				}
 			}
 			return false
 		}
-		
+
 		assert.True(t, containsPath(files, "dir1"))
 		assert.True(t, containsPath(files, "file1.txt"))
 		assert.True(t, containsPath(files, "file2.txt"))
-		assert.True(t, containsPath(files, "dir1/file3.txt"))
-		
+		assert.True(t, containsPath(files, filepath.Join("dir1", "file3.txt")))
+
 		// Check that hidden files and directories are not included
 		assert.False(t, containsPath(files, ".hidden_dir"))
 		assert.False(t, containsPath(files, ".hidden_file.txt"))
@@ -444,10 +435,10 @@ func TestListDirectory(t *testing.T) {
 			assert.False(t, strings.HasSuffix(file, ".txt"), "Found .txt file: %s", file)
 		}
 		
-		// But directories should still be included
+		// But directories should still be included (as relative paths)
 		containsDir := false
 		for _, file := range files {
-			if strings.Contains(file, "dir1") {
+			if strings.HasPrefix(file, "dir1") {
 				containsDir = true
 				break
 			}

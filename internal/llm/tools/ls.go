@@ -157,10 +157,14 @@ func listDirectory(initialPath string, ignorePatterns []string, limit int) ([]st
 		}
 
 		if path != initialPath {
-			if info.IsDir() {
-				path = path + string(filepath.Separator)
+			relPath, relErr := filepath.Rel(initialPath, path)
+			if relErr != nil {
+				return nil
 			}
-			results = append(results, path)
+			if info.IsDir() {
+				relPath = relPath + string(filepath.Separator)
+			}
+			results = append(results, relPath)
 		}
 
 		if len(results) >= limit {
