@@ -1,6 +1,7 @@
 {{/* Renders the task list (left column) */}} {{if .Tasks}} {{range .Tasks}}
 <div
     class="task {{.StatusClass}}"
+    data-task-id="{{.ID}}"
     role="button"
     tabindex="0"
     hx-get="/ui/partials/panel?task_id={{.ID}}"

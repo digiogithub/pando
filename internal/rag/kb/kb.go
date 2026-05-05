@@ -9,6 +9,7 @@ import (
 	"math"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -509,7 +510,29 @@ func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit in
 }
 
 // searchFTS performs full-text search using SQLite FTS5.
+func sanitizeFTSQuery(query string) string {
+	words := strings.Fields(query)
+	if len(words) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(words))
+	for _, w := range words {
+		w = strings.ReplaceAll(w, `"`, `""`)
+		if w != "" {
+			parts = append(parts, `"`+w+`"`)
+		}
+	}
+
+	return strings.Join(parts, " ")
+}
+
 func (s *KBStore) searchFTS(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+	escapedQuery := sanitizeFTSQuery(query)
+	if escapedQuery == "" {
+		return nil, nil
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.content,
 		       d.id, d.file_path, d.content, d.metadata, d.created_at, d.updated_at,
@@ -520,7 +543,7 @@ func (s *KBStore) searchFTS(ctx context.Context, query string, limit int) ([]Sea
 		WHERE kb_fts MATCH ?
 		ORDER BY score DESC
 		LIMIT ?`,
-		query, limit,
+		escapedQuery, limit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("kb: fts search: %w", err)

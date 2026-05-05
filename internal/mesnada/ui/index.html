@@ -1147,9 +1147,15 @@
         document.body.addEventListener("htmx:afterSwap", (e) => {
             if (!window.Alpine) return;
             try {
-                // When log content updates OR panel swaps, keep scroll pinned if enabled.
                 const tgt = e.target;
                 if (!tgt) return;
+                if (tgt.id === "tasks-list") {
+                    const selectedTask = Alpine.store("ui").selectedTask;
+                    if (selectedTask) {
+                        const selectedEl = tgt.querySelector(`[data-task-id="${selectedTask}"]`);
+                        if (selectedEl) selectedEl.classList.add("selected");
+                    }
+                }
                 if (tgt.id === "log-content" || tgt.id === "right-panel") {
                     fitLogHeight.ensureObserver();
                     fitLogHeight.schedule();

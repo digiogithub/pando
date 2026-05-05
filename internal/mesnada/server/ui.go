@@ -48,6 +48,7 @@ type uiPanelVM struct {
 	DurationText  string
 	TagsText      string
 	Prompt        string
+	Output        string
 	IsACP         bool
 	ACPMode       string
 	ACPAgentName  string
@@ -232,7 +233,8 @@ func (s *Server) handleUIPanel(w http.ResponseWriter, r *http.Request) {
 		FinishedTitle: finishedTitle,
 		DurationText:  durationText,
 		TagsText:      tagsText,
-		Prompt:        stripTaskIDPrefix(task.Prompt),
+		Prompt:        taskPromptText(task),
+		Output:        taskOutputText(task),
 		IsACP:         isACP,
 		ACPMode:       acpMode,
 		ACPAgentName:  acpAgentName,
@@ -361,6 +363,34 @@ func stripTaskIDPrefix(prompt string) string {
 		}
 	}
 	return p
+}
+
+func taskPromptText(task *models.Task) string {
+	if task == nil {
+		return "-"
+	}
+	prompt := stripTaskIDPrefix(task.Prompt)
+	if prompt == "" {
+		return "-"
+	}
+	return prompt
+}
+
+func taskOutputText(task *models.Task) string {
+	if task == nil {
+		return "-"
+	}
+	output := strings.TrimSpace(task.Output)
+	if output == "" && task.LogFile != "" {
+		output = strings.TrimSpace(readLastBytes(task.LogFile, 1024*1024))
+	}
+	if output == "" {
+		output = strings.TrimSpace(task.OutputTail)
+	}
+	if output == "" {
+		return "-"
+	}
+	return output
 }
 
 func truncate(s string, max int) string {

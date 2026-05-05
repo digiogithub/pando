@@ -101,23 +101,14 @@
         </div>
     </div>
 
-    <div class="card-b" style="padding: 10px 14px 10px" x-data="{ expanded: false }">
-        <div style="
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                cursor: pointer;
-            " @click="expanded = !expanded">
-            <div class="muted">Prompt</div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s"
-                :style="expanded ? 'transform: rotate(180deg)' : ''">
-                <path d="M6 9l6 6 6-6" />
-            </svg>
-        </div>
-        <div x-show="expanded" x-collapse style="margin-top: 6px">
-            {{.Prompt}}
-        </div>
+    <div class="card-b" style="padding: 10px 14px 10px">
+        <div class="muted" style="margin-bottom: 6px">Prompt</div>
+        <pre style="margin: 0; white-space: pre-wrap; word-break: break-word">{{.Prompt}}</pre>
+    </div>
+
+    <div class="card-b" style="padding: 10px 14px 10px; border-top: 1px solid var(--border)">
+        <div class="muted" style="margin-bottom: 6px">Output</div>
+        <pre style="margin: 0; white-space: pre-wrap; word-break: break-word">{{.Output}}</pre>
     </div>
 
     {{if and .IsACP (gt (len .Permissions) 0)}}

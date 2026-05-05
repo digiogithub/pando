@@ -52,6 +52,7 @@ type taskRow struct {
 	Model    string
 	Progress string
 	Prompt   string
+	Output   string
 }
 
 type orchestratorKeyMap struct {
@@ -481,6 +482,7 @@ func (p *orchestratorPage) setTasks(tasks []*mesnadaModels.Task, selectedID stri
 			Model:    fallbackString(task.Model, "-"),
 			Progress: taskProgressLabel(task),
 			Prompt:   truncatePrompt(task.Prompt, orchestratorPromptMaxLen),
+			Output:   taskOutput(task),
 		}
 		p.tasks = append(p.tasks, row)
 		rows = append(rows, table.Row{
@@ -617,17 +619,8 @@ func (p *orchestratorPage) renderDetail() string {
 		}
 	}
 
-	prompt := strings.TrimSpace(task.Prompt)
-	if prompt == "" {
-		prompt = "-"
-	}
-	output := strings.TrimSpace(task.OutputTail)
-	if output == "" {
-		output = strings.TrimSpace(task.Output)
-	}
-	if output == "" {
-		output = "-"
-	}
+	prompt := taskPrompt(task)
+	output := taskOutput(task)
 
 	if p.showDetail {
 		lines = append(lines, "", "Prompt:", prompt, "", "Output:", output)
@@ -752,6 +745,31 @@ func truncatePrompt(prompt string, maxLen int) string {
 		return prompt[:maxLen]
 	}
 	return prompt[:maxLen-3] + "..."
+}
+
+func taskPrompt(task *mesnadaModels.Task) string {
+	if task == nil {
+		return "-"
+	}
+	prompt := strings.TrimSpace(task.Prompt)
+	if prompt == "" {
+		return "-"
+	}
+	return prompt
+}
+
+func taskOutput(task *mesnadaModels.Task) string {
+	if task == nil {
+		return "-"
+	}
+	output := strings.TrimSpace(task.Output)
+	if output == "" {
+		output = strings.TrimSpace(task.OutputTail)
+	}
+	if output == "" {
+		return "-"
+	}
+	return output
 }
 
 func truncateMultiline(value string, maxLines, maxChars int) string {
