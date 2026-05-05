@@ -39,6 +39,8 @@ func FetchModelsFromProvider(ctx context.Context, provider ModelProvider, apiKey
 		return fetchOpenRouterModels(ctx, apiKey)
 	case ProviderXAI:
 		return fetchXAIModels(ctx, apiKey)
+	case ProviderLlamaCpp:
+		return fetchLlamaCppModels(ctx, apiKey, baseURL)
 	case ProviderOpenAICompatible:
 		return fetchOpenAICompatibleModels(ctx, apiKey, baseURL)
 	default:
@@ -428,6 +430,44 @@ func fetchOpenAICompatibleModels(ctx context.Context, apiKey, baseURL string) ([
 			fetched = append(fetched, FetchedModel{ID: m.ID, Created: m.Created})
 		}
 		return fetched, nil
+	})
+}
+
+// fetchLlamaCppModels queries a running llama-server for its loaded model(s)
+// via the OpenAI-compatible /v1/models endpoint.  No API key is required.
+func fetchLlamaCppModels(ctx context.Context, apiKey string, baseURL string) ([]FetchedModel, error) {
+	modelsURL, err := url.JoinPath(ResolveLlamaCppBaseURL(baseURL), "models")
+	if err != nil {
+		return nil, fmt.Errorf("build llama-cpp models URL: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if strings.TrimSpace(apiKey) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	}
+
+	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
+		var response struct {
+			Data []struct {
+				ID      string `json:"id"`
+				Created int64  `json:"created"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, fmt.Errorf("parse response: %w", err)
+		}
+		result := make([]FetchedModel, 0, len(response.Data))
+		for _, m := range response.Data {
+			result = append(result, FetchedModel{
+				ID:      m.ID,
+				Name:    m.ID,
+				Created: m.Created,
+			})
+		}
+		return result, nil
 	})
 }
 

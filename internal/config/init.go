@@ -150,6 +150,10 @@ UseOAuth = true
 # BaseURL  = 'http://localhost:11434'
 # Disabled = false
 
+# [Providers.llama-cpp]
+# BaseURL  = 'http://localhost:8080'
+# Disabled = false
+
 # =============================================================================
 # Language Server Protocol (LSP)
 # =============================================================================

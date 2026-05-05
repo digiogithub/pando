@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/digiogithub/pando/internal/config"
@@ -101,5 +102,24 @@ func TestCloseAllBrowserSessions(t *testing.T) {
 
 	if count != 0 {
 		t.Errorf("expected 0 sessions after CloseAllBrowserSessions, got %d", count)
+	}
+}
+
+func TestIsBrowserProfileLockError(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "singletonlock", err: fmt.Errorf("SingletonLock exists"), want: true},
+		{name: "profile in use", err: fmt.Errorf("profile appears to be in use by another Chromium process"), want: true},
+		{name: "different error", err: fmt.Errorf("executable not found"), want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isBrowserProfileLockError(tt.err); got != tt.want {
+				t.Fatalf("isBrowserProfileLockError() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

@@ -1113,6 +1113,9 @@ func setProviderDefaults() {
 	if apiKey := strings.TrimSpace(os.Getenv("OLLAMA_API_KEY")); apiKey != "" {
 		viper.SetDefault("providers.ollama.apiKey", apiKey)
 	}
+	if baseURL := strings.TrimSpace(os.Getenv("LLAMACPP_BASE_URL")); baseURL != "" {
+		viper.SetDefault("providers.llama-cpp.baseURL", models.ResolveLlamaCppBaseURL(baseURL))
+	}
 	if hasCopilotCredentials() {
 		viper.SetDefault("providers.copilot.disabled", false)
 	}
@@ -1879,7 +1882,7 @@ func SetProviderAccountDisabled(id string, disabled bool) error {
 // providerAccountRequiresAPIKey returns true if the given provider type requires an API key.
 func providerAccountRequiresAPIKey(providerType models.ModelProvider) bool {
 	switch providerType {
-	case models.ProviderCopilot, models.ProviderOllama:
+	case models.ProviderCopilot, models.ProviderOllama, models.ProviderLlamaCpp:
 		return false
 	default:
 		return true
@@ -2402,6 +2405,13 @@ func OverrideAgentModel(agentName AgentName, modelID models.ModelID) error {
 		if providerCfg.Disabled {
 			return fmt.Errorf("provider %s is disabled", model.Provider)
 		}
+	case models.ProviderLlamaCpp:
+		if !providerConfigured {
+			return fmt.Errorf("provider %s is not configured", model.Provider)
+		}
+		if providerCfg.Disabled {
+			return fmt.Errorf("provider %s is disabled", model.Provider)
+		}
 	default:
 		if !providerConfigured {
 			return fmt.Errorf("provider %s is not configured", model.Provider)
@@ -2712,7 +2722,7 @@ func UpdateProvider(name models.ModelProvider, apiKey string, baseURL string, di
 	if providerRequiresAPIKey(name) && strings.TrimSpace(apiKey) == "" && !disabled {
 		return fmt.Errorf("provider %s requires an API key when enabled", name)
 	}
-	if name == models.ProviderOllama && strings.TrimSpace(baseURL) == "" && !disabled {
+	if (name == models.ProviderOllama || name == models.ProviderLlamaCpp) && strings.TrimSpace(baseURL) == "" && !disabled {
 		return fmt.Errorf("provider %s requires a base URL when enabled", name)
 	}
 
@@ -2746,7 +2756,7 @@ func UpdateProvider(name models.ModelProvider, apiKey string, baseURL string, di
 }
 
 func providerRequiresAPIKey(provider models.ModelProvider) bool {
-	return provider != models.ProviderCopilot && provider != models.ProviderOllama
+	return provider != models.ProviderCopilot && provider != models.ProviderOllama && provider != models.ProviderLlamaCpp
 }
 
 func refreshConfiguredDynamicModels() {
@@ -2768,15 +2778,29 @@ func refreshConfiguredDynamicModels() {
 		}
 	}
 
-	if !ok || providerCfg.Disabled {
-		return
+	if ok && !providerCfg.Disabled {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := models.RefreshProviderModels(ctx, models.ProviderOllama, providerCfg.APIKey, "", providerCfg.BaseURL); err != nil {
+			logging.Debug("Failed to refresh Ollama models during config load", "error", err)
+		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	// llama-cpp (llama-server)
+	llamaCppCfg, llamaCppOk := cfg.Providers[models.ProviderLlamaCpp]
+	if !llamaCppOk {
+		if tryAutoDetectLlamaCpp() {
+			llamaCppCfg = cfg.Providers[models.ProviderLlamaCpp]
+			llamaCppOk = true
+		}
+	}
 
-	if err := models.RefreshProviderModels(ctx, models.ProviderOllama, providerCfg.APIKey, "", providerCfg.BaseURL); err != nil {
-		logging.Debug("Failed to refresh Ollama models during config load", "error", err)
+	if llamaCppOk && !llamaCppCfg.Disabled {
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel2()
+		if err := models.RefreshProviderModels(ctx2, models.ProviderLlamaCpp, llamaCppCfg.APIKey, "", llamaCppCfg.BaseURL); err != nil {
+			logging.Debug("Failed to refresh llama-cpp models during config load", "error", err)
+		}
 	}
 }
 
@@ -2808,6 +2832,30 @@ func tryAutoDetectOllama() bool {
 	}
 	cfg.Providers[models.ProviderOllama] = Provider{}
 	logging.Debug("Auto-detected Ollama", "url", pingURL)
+	return true
+}
+
+// tryAutoDetectLlamaCpp pings the llama-server OpenAI-compat models endpoint
+// and registers it as a provider if reachable.
+func tryAutoDetectLlamaCpp() bool {
+	baseURL := models.ResolveLlamaCppBaseURL("")
+	pingURL := strings.TrimRight(baseURL, "/") + "/models"
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(pingURL) //nolint:noctx
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	if cfg.Providers == nil {
+		cfg.Providers = make(map[models.ModelProvider]Provider)
+	}
+	cfg.Providers[models.ProviderLlamaCpp] = Provider{}
+	logging.Debug("Auto-detected llama-cpp server", "url", pingURL)
 	return true
 }
 

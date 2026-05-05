@@ -68,7 +68,7 @@ func (t *BrowserNavigateTool) Run(ctx context.Context, call ToolCall) (ToolRespo
 		return NewTextErrorResponse("url parameter is required"), nil
 	}
 
-	browserCtx, cancel, err := getBrowserCtxWithTimeout(ctx)
+	browserCtx, cancel, err := getBrowserCtxWithTimeout(ctx, params.Timeout)
 	if err != nil {
 		return NewTextErrorResponse("browser not available: " + err.Error()), nil
 	}

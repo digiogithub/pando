@@ -211,6 +211,15 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 			options: clientOptions,
 			client:  newOpenAIClient(clientOptions),
 		}, nil)
+	case models.ProviderLlamaCpp:
+		clientOptions.openaiOptions = ensureOpenAIBaseURL(
+			clientOptions.openaiOptions,
+			models.ResolveLlamaCppBaseURL(""),
+		)
+		return wrapInstrumented(&baseProvider[OpenAIClient]{
+			options: clientOptions,
+			client:  newOpenAIClient(clientOptions),
+		}, nil)
 	case models.ProviderLocal:
 		clientOptions.openaiOptions = append(clientOptions.openaiOptions,
 			WithOpenAIBaseURL(os.Getenv("LOCAL_ENDPOINT")),
@@ -274,13 +283,15 @@ func NewProviderFromAccount(account config.ProviderAccount, model models.Model, 
 		return NewProvider(models.ProviderOpenAICompatible, opts...)
 	}
 
-	// For providers that support a custom BaseURL (ollama, openai, etc.), pass it via their option
+	// For providers that support a custom BaseURL (ollama, llama-cpp, openai, etc.), pass it via their option
 	if account.BaseURL != "" {
 		switch providerType {
 		case models.ProviderOllama:
 			opts = append(opts, WithOpenAIOptions(WithOpenAIBaseURL(account.BaseURL)))
 		case models.ProviderOpenAI:
 			opts = append(opts, WithOpenAIOptions(WithOpenAIBaseURL(account.BaseURL)))
+		case models.ProviderLlamaCpp:
+			opts = append(opts, WithOpenAIOptions(WithOpenAIBaseURL(models.ResolveLlamaCppBaseURL(account.BaseURL))))
 		}
 	}
 

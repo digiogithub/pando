@@ -148,7 +148,7 @@ func (s *EventStore) SearchEvents(ctx context.Context, opts SearchOptions) ([]Se
 	}()
 
 	go func() {
-		items, err := s.searchFTS(ctx, opts.Query, subLimit, timeFilter, timeArgs, subjectFilter, subjectArgs)
+		items, err := s.searchFTS(ctx, opts.Query, subLimit, timeFilter, timeArgs, opts.Subject)
 		ftsCh <- result{items, err}
 	}()
 
@@ -247,7 +247,7 @@ func (s *EventStore) searchVector(ctx context.Context, embedding []float32, limi
 }
 
 // searchFTS performs full-text search with temporal and subject filters.
-func (s *EventStore) searchFTS(ctx context.Context, query string, limit int, timeFilter string, timeArgs []interface{}, subjectFilter string, subjectArgs []interface{}) ([]SearchResult, error) {
+func (s *EventStore) searchFTS(ctx context.Context, query string, limit int, timeFilter string, timeArgs []interface{}, subject string) ([]SearchResult, error) {
 	q := `
 		SELECT e.id, e.subject, e.content, e.metadata, e.event_at, e.created_at,
 		       -bm25(events_fts) AS score
@@ -260,9 +260,9 @@ func (s *EventStore) searchFTS(ctx context.Context, query string, limit int, tim
 		q += timeFilter
 		args = append(args, timeArgs...)
 	}
-	if subjectFilter != "" {
-		q += subjectFilter
-		args = append(args, subjectArgs...)
+	if subject != "" {
+		q += " AND e.subject = ?"
+		args = append(args, subject)
 	}
 
 	q += " ORDER BY score DESC LIMIT ?"
