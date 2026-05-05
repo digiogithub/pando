@@ -21,6 +21,36 @@ type evaluatorService interface {
 	EvaluateSession(ctx context.Context, sessionID string) error
 }
 
+// IPCPublisher is the minimal interface used by session to publish ZMQ events.
+// A local interface is used to avoid import cycles between session and ipc packages.
+type IPCPublisher interface {
+	Publish(topic string, payload any) error
+}
+
+// ipcTopicSessionUpdate is the ZMQ topic for session creation and update events.
+// Defined locally to avoid importing internal/ipc/protocol (which would create an import cycle).
+const ipcTopicSessionUpdate = "session.update"
+
+// ipcTopicSessionDeleted is the ZMQ topic for session deletion events.
+const ipcTopicSessionDeleted = "session.deleted"
+
+// ipcSessionPayload is the payload for session IPC events.
+// Defined locally to avoid importing internal/ipc/protocol.
+type ipcSessionPayload struct {
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	MessageCount int64     `json:"message_count"`
+}
+
+var globalIPCPublisher IPCPublisher
+
+// SetIPCPublisher sets the ZMQ IPC publisher for cross-instance event broadcasting.
+// Call this from app.go after the Bus is started (only for the primary instance).
+func SetIPCPublisher(p IPCPublisher) {
+	globalIPCPublisher = p
+}
+
 var globalEvaluator evaluatorService
 
 // SetEvaluator sets the evaluator service used to trigger self-evaluation at session end.
@@ -88,6 +118,7 @@ func (s *service) Create(ctx context.Context, title string) (Session, error) {
 	}
 	session := s.fromDBItem(dbSession)
 	s.Publish(pubsub.CreatedEvent, session)
+	s.publishIPC(ipcTopicSessionUpdate, ipcPayloadFromSession(session))
 	logging.Debug("Session created", "title", title)
 
 	// Register session cache
@@ -157,6 +188,7 @@ func (s *service) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	s.Publish(pubsub.DeletedEvent, session)
+	s.publishIPC(ipcTopicSessionDeleted, ipcPayloadFromSession(session))
 	return nil
 }
 
@@ -198,6 +230,7 @@ func (s *service) Save(ctx context.Context, session Session) (Session, error) {
 	}
 	session = s.fromDBItem(dbSession)
 	s.Publish(pubsub.UpdatedEvent, session)
+	s.publishIPC(ipcTopicSessionUpdate, ipcPayloadFromSession(session))
 	logging.Debug("Session saved", "sessionID", session.ID, "title", session.Title)
 	return session, nil
 }
@@ -241,6 +274,7 @@ func (s *service) EndSession(ctx context.Context, id string) error {
 
 	// Publish the session update event so subscribers (SSE, desktop) are notified.
 	s.Publish(pubsub.UpdatedEvent, session)
+	s.publishIPC(ipcTopicSessionUpdate, ipcPayloadFromSession(session))
 
 	// Create end snapshot asynchronously
 	if globalSnapshotCreator != nil {
@@ -280,6 +314,27 @@ func (s *service) EndSession(ctx context.Context, id string) error {
 	tools.CloseBrowserSession(id)
 
 	return nil
+}
+
+// publishIPC publishes a session event to the ZMQ Bus (best-effort, non-blocking).
+// It is a no-op if no IPC publisher has been set.
+func (s *service) publishIPC(topic string, payload any) {
+	if globalIPCPublisher == nil {
+		return
+	}
+	if err := globalIPCPublisher.Publish(topic, payload); err != nil {
+		logging.Warn("ipc: failed to publish session event", "topic", topic, "error", err)
+	}
+}
+
+// ipcPayloadFromSession constructs an ipcSessionPayload from a Session.
+func ipcPayloadFromSession(sess Session) ipcSessionPayload {
+	return ipcSessionPayload{
+		ID:           sess.ID,
+		Title:        sess.Title,
+		UpdatedAt:    time.Unix(sess.UpdatedAt, 0),
+		MessageCount: sess.MessageCount,
+	}
 }
 
 func NewService(q db.Querier) Service {
