@@ -26,6 +26,7 @@
     "terminal": "Terminal",
     "settings": "Configuración",
     "projects": "Proyectos",
+    "instances": "Instancias",
     "sections": {
       "sessions": "Sesiones",
       "navigate": "Navegar",

@@ -160,6 +160,255 @@ func (s *Server) handleInstanceStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleInstanceListSessions handles GET /api/v1/instances/{id}/sessions.
+// Returns the list of sessions of a remote instance via RPC session.list.
+func (s *Server) handleInstanceListSessions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	instanceID := r.PathValue("id")
+	if instanceID == "" {
+		writeError(w, http.StatusBadRequest, "instance id required")
+		return
+	}
+
+	reg := instanceregistry.New()
+	entry, err := reg.Get(instanceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get instance: "+err.Error())
+		return
+	}
+	if entry == nil {
+		writeError(w, http.StatusNotFound, "instance not found")
+		return
+	}
+	if entry.RPCPort == 0 {
+		writeError(w, http.StatusServiceUnavailable, "instance has no RPC port registered")
+		return
+	}
+
+	rpcEndpoint := fmt.Sprintf("tcp://127.0.0.1:%d", entry.RPCPort)
+	client, err := ipc.NewClient(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create IPC client: "+err.Error())
+		return
+	}
+	defer client.Close()
+
+	callCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	result, err := client.Call(callCtx, rpcEndpoint, protocol.MethodSessionList, nil)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "failed to list sessions: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleInstanceGetSession handles GET /api/v1/instances/{id}/sessions/{sid}.
+// Returns the state of a specific session on a remote instance via RPC session.get.
+func (s *Server) handleInstanceGetSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	instanceID := r.PathValue("id")
+	sessionID := r.PathValue("sid")
+
+	if instanceID == "" {
+		writeError(w, http.StatusBadRequest, "instance id required")
+		return
+	}
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "session id required")
+		return
+	}
+
+	reg := instanceregistry.New()
+	entry, err := reg.Get(instanceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get instance: "+err.Error())
+		return
+	}
+	if entry == nil {
+		writeError(w, http.StatusNotFound, "instance not found")
+		return
+	}
+	if entry.RPCPort == 0 {
+		writeError(w, http.StatusServiceUnavailable, "instance has no RPC port registered")
+		return
+	}
+
+	rpcEndpoint := fmt.Sprintf("tcp://127.0.0.1:%d", entry.RPCPort)
+	client, err := ipc.NewClient(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create IPC client: "+err.Error())
+		return
+	}
+	defer client.Close()
+
+	params := protocol.SessionGetParams{SessionID: sessionID}
+
+	callCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	result, err := client.Call(callCtx, rpcEndpoint, protocol.MethodSessionGet, params)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "failed to get session: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleInstanceSessionStream handles GET /api/v1/instances/{id}/sessions/{sid}/stream.
+// Proxies the remote instance's ZMQ PUB stream as SSE, filtering events by session_id.
+func (s *Server) handleInstanceSessionStream(w http.ResponseWriter, r *http.Request) {
+	instanceID := r.PathValue("id")
+	sessionID := r.PathValue("sid")
+
+	if instanceID == "" {
+		writeError(w, http.StatusBadRequest, "instance id required")
+		return
+	}
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "session id required")
+		return
+	}
+
+	reg := instanceregistry.New()
+	entry, err := reg.Get(instanceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get instance: "+err.Error())
+		return
+	}
+	if entry == nil {
+		writeError(w, http.StatusNotFound, "instance not found")
+		return
+	}
+	if entry.PubPort == 0 {
+		writeError(w, http.StatusServiceUnavailable, "instance has no PUB port registered")
+		return
+	}
+
+	pubEndpoint := fmt.Sprintf("tcp://127.0.0.1:%d", entry.PubPort)
+	client, err := ipc.NewClient(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create IPC client: "+err.Error())
+		return
+	}
+	defer client.Close()
+
+	envCh, err := client.SubscribeTo(pubEndpoint)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "failed to subscribe to instance stream: "+err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return
+	}
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case env, open := <-envCh:
+			if !open {
+				return
+			}
+			// Filter by session_id: only forward envelopes that contain the target session.
+			// We do a simple JSON marshal and check; non-session events (heartbeat, etc.)
+			// are forwarded as-is so the client can handle them.
+			data, err := json.Marshal(env)
+			if err != nil {
+				continue
+			}
+			// Only forward events related to the requested session_id.
+			var raw map[string]interface{}
+			if jsonErr := json.Unmarshal(data, &raw); jsonErr == nil {
+				if payload, ok := raw["payload"].(map[string]interface{}); ok {
+					if sid, ok := payload["session_id"].(string); ok && sid != sessionID {
+						continue
+					}
+				}
+			}
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		}
+	}
+}
+
+// handleInstanceCancelSession handles DELETE /api/v1/instances/{id}/sessions/{sid}/cancel.
+// Interrupts an ongoing LLM generation on a remote session via RPC session.interrupt.
+func (s *Server) handleInstanceCancelSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	instanceID := r.PathValue("id")
+	sessionID := r.PathValue("sid")
+
+	if instanceID == "" {
+		writeError(w, http.StatusBadRequest, "instance id required")
+		return
+	}
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "session id required")
+		return
+	}
+
+	reg := instanceregistry.New()
+	entry, err := reg.Get(instanceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get instance: "+err.Error())
+		return
+	}
+	if entry == nil {
+		writeError(w, http.StatusNotFound, "instance not found")
+		return
+	}
+	if entry.RPCPort == 0 {
+		writeError(w, http.StatusServiceUnavailable, "instance has no RPC port registered")
+		return
+	}
+
+	rpcEndpoint := fmt.Sprintf("tcp://127.0.0.1:%d", entry.RPCPort)
+	client, err := ipc.NewClient(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create IPC client: "+err.Error())
+		return
+	}
+	defer client.Close()
+
+	params := protocol.SessionInterruptParams{SessionID: sessionID}
+
+	callCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	_, err = client.Call(callCtx, rpcEndpoint, protocol.MethodSessionInterrupt, params)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "failed to interrupt session: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 // instanceSendMessageRequest is the body accepted by POST /api/v1/instances/{id}/sessions/{sid}/message.
 type instanceSendMessageRequest struct {
 	Content string `json:"content"`

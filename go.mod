@@ -27,6 +27,7 @@ require (
 	github.com/gen2brain/beeep v0.11.2
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-logfmt/logfmt v0.6.0
+	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/google/go-containerregistry v0.21.5
 	github.com/google/uuid v1.6.0
 	github.com/layeh/gopher-json v0.0.0-20201124131017-552bb3c4c3bf
@@ -84,7 +85,6 @@ require (
 	github.com/go-json-experiment/json v0.0.0-20250725192818-e39067aee2d2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-zeromq/goczmq/v4 v4.2.2 // indirect
-	github.com/go-zeromq/zmq4 v0.17.0 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
