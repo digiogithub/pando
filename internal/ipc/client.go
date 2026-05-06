@@ -7,23 +7,65 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-zeromq/zmq4"
 )
 
+// dealerConn is a cached DEALER socket for a specific RPC endpoint.
+type dealerConn struct {
+	mu     sync.Mutex
+	dealer zmq4.Socket
+	addr   string
+}
+
 // Client connects to a primary's Bus using SUB and DEALER sockets.
+// A single persistent DEALER socket is reused per endpoint to avoid the
+// overhead of creating/destroying zmq4 goroutines on every RPC call.
 type Client struct {
 	ctx  context.Context
 	opts Options
+
+	// connMu protects the dealers map.
+	connMu  sync.Mutex
+	dealers map[string]*dealerConn
 }
 
 // NewClient creates a new Client for subscribing to events and making RPC calls.
 func NewClient(ctx context.Context) (*Client, error) {
 	return &Client{
-		ctx:  ctx,
-		opts: DefaultOptions,
+		ctx:     ctx,
+		opts:    DefaultOptions,
+		dealers: make(map[string]*dealerConn),
 	}, nil
+}
+
+// getOrCreateDealer returns the cached DEALER for routerEndpoint, creating it
+// on first access. The returned conn's mu is NOT held; callers must lock it
+// themselves around the send/recv pair.
+func (c *Client) getOrCreateDealer(routerEndpoint string) (*dealerConn, error) {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+
+	if dc, ok := c.dealers[routerEndpoint]; ok {
+		return dc, nil
+	}
+
+	dealer := zmq4.NewDealer(c.ctx,
+		zmq4.WithID(zmq4.SocketIdentity(fmt.Sprintf("pando-client-%d", time.Now().UnixNano()))),
+		zmq4.WithDialerTimeout(c.opts.DialTimeout),
+		zmq4.WithDialerMaxRetries(3),
+	)
+
+	if err := dealer.Dial(routerEndpoint); err != nil {
+		_ = dealer.Close()
+		return nil, fmt.Errorf("%w: dial ROUTER endpoint %s: %v", ErrConnectionFailed, routerEndpoint, err)
+	}
+
+	dc := &dealerConn{dealer: dealer, addr: routerEndpoint}
+	c.dealers[routerEndpoint] = dc
+	return dc, nil
 }
 
 // SubscribeTo connects to a PUB endpoint and subscribes to the given topics.
@@ -100,17 +142,12 @@ func (c *Client) SubscribeTo(pubEndpoint string, topics ...string) (<-chan Envel
 }
 
 // Call sends a JSON-RPC request to a ROUTER endpoint and waits for the response.
-// A fresh DEALER socket is used per call.
+// A persistent DEALER socket is reused per endpoint to avoid the overhead of
+// creating/closing zmq4 goroutines on every call.
 func (c *Client) Call(ctx context.Context, routerEndpoint, method string, params any) (json.RawMessage, error) {
-	dealer := zmq4.NewDealer(ctx,
-		zmq4.WithID(zmq4.SocketIdentity(fmt.Sprintf("client-%d", time.Now().UnixNano()))),
-		zmq4.WithDialerTimeout(c.opts.DialTimeout),
-		zmq4.WithDialerMaxRetries(3),
-	)
-	defer dealer.Close()
-
-	if err := dealer.Dial(routerEndpoint); err != nil {
-		return nil, fmt.Errorf("%w: dial ROUTER endpoint %s: %v", ErrConnectionFailed, routerEndpoint, err)
+	dc, err := c.getOrCreateDealer(routerEndpoint)
+	if err != nil {
+		return nil, err
 	}
 
 	rawParams, err := json.Marshal(params)
@@ -131,9 +168,15 @@ func (c *Client) Call(ctx context.Context, routerEndpoint, method string, params
 		return nil, fmt.Errorf("ipc: marshal request: %w", err)
 	}
 
+	// Serialize access to the shared DEALER socket (send + matching recv must
+	// be atomic from this socket's perspective).
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
+
 	// DEALER sends: [empty][data] — zmq4 prepends the identity automatically.
-	// We send the request data directly; the DEALER socket handles framing.
-	if err := dealer.Send(zmq4.NewMsgFrom([]byte{}, reqBytes)); err != nil {
+	if err := dc.dealer.Send(zmq4.NewMsgFrom([]byte{}, reqBytes)); err != nil {
+		// Socket may have become stale; evict it so the next call recreates it.
+		c.evictDealer(routerEndpoint)
 		return nil, fmt.Errorf("ipc: send RPC request: %w", err)
 	}
 
@@ -147,15 +190,18 @@ func (c *Client) Call(ctx context.Context, routerEndpoint, method string, params
 	}
 	done := make(chan result, 1)
 	go func() {
-		msg, err := dealer.Recv()
+		msg, err := dc.dealer.Recv()
 		done <- result{msg, err}
 	}()
 
 	select {
 	case <-callCtx.Done():
+		// Evict the stale socket so subsequent calls start fresh.
+		c.evictDealer(routerEndpoint)
 		return nil, fmt.Errorf("%w: waiting for response to method %q", ErrTimeout, method)
 	case r := <-done:
 		if r.err != nil {
+			c.evictDealer(routerEndpoint)
 			return nil, fmt.Errorf("ipc: recv RPC response: %w", r.err)
 		}
 
@@ -176,8 +222,30 @@ func (c *Client) Call(ctx context.Context, routerEndpoint, method string, params
 	}
 }
 
-// Close closes any resources held by the client.
-// Currently the Client is stateless between calls; this is a no-op.
+// evictDealer removes and closes the cached DEALER for the given endpoint.
+// Must NOT be called while dc.mu is held (deadlock risk).
+func (c *Client) evictDealer(routerEndpoint string) {
+	c.connMu.Lock()
+	dc, ok := c.dealers[routerEndpoint]
+	if ok {
+		delete(c.dealers, routerEndpoint)
+	}
+	c.connMu.Unlock()
+
+	if ok {
+		_ = dc.dealer.Close()
+	}
+}
+
+// Close closes any resources held by the client, including cached dealer sockets.
 func (c *Client) Close() error {
+	c.connMu.Lock()
+	dealers := c.dealers
+	c.dealers = make(map[string]*dealerConn)
+	c.connMu.Unlock()
+
+	for _, dc := range dealers {
+		_ = dc.dealer.Close()
+	}
 	return nil
 }

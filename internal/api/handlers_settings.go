@@ -22,17 +22,21 @@ type SettingsResponse struct {
 	SkillsEnabled    bool   `json:"skills_enabled"`
 	DataDirectory    string `json:"data_directory"`
 	LLMCacheEnabled  bool   `json:"llm_cache_enabled"`
+	EvaluatorEnabled bool   `json:"evaluator_enabled"`
+	JudgeModel       string `json:"judge_model"`
 }
 
 // SettingsUpdateRequest contains the fields that can be updated via PUT /api/v1/settings.
 type SettingsUpdateRequest struct {
-	DefaultModel    *string `json:"default_model,omitempty"`
-	DefaultProvider *string `json:"default_provider,omitempty"`
-	Theme           *string `json:"theme,omitempty"`
-	Debug           *bool   `json:"debug,omitempty"`
-	AutoCompact     *bool   `json:"auto_compact,omitempty"`
-	SkillsEnabled   *bool   `json:"skills_enabled,omitempty"`
-	LLMCacheEnabled *bool   `json:"llm_cache_enabled,omitempty"`
+	DefaultModel     *string `json:"default_model,omitempty"`
+	DefaultProvider  *string `json:"default_provider,omitempty"`
+	Theme            *string `json:"theme,omitempty"`
+	Debug            *bool   `json:"debug,omitempty"`
+	AutoCompact      *bool   `json:"auto_compact,omitempty"`
+	SkillsEnabled    *bool   `json:"skills_enabled,omitempty"`
+	LLMCacheEnabled  *bool   `json:"llm_cache_enabled,omitempty"`
+	EvaluatorEnabled *bool   `json:"evaluator_enabled,omitempty"`
+	JudgeModel       *string `json:"judge_model,omitempty"`
 }
 
 // ProviderStatus describes a configured provider and whether it has an API key set.
@@ -80,6 +84,8 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		SkillsEnabled:    cfg.Skills.Enabled,
 		DataDirectory:    cfg.Data.Directory,
 		LLMCacheEnabled:  cfg.LLMCache.Enabled,
+		EvaluatorEnabled: cfg.Evaluator.Enabled,
+		JudgeModel:       string(cfg.Evaluator.Model),
 	}, nil
 }
 
@@ -137,6 +143,20 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if req.LLMCacheEnabled != nil {
 		if err := config.UpdateLLMCache(*req.LLMCacheEnabled); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update llm cache setting")
+			return
+		}
+	}
+
+	if req.EvaluatorEnabled != nil || req.JudgeModel != nil {
+		eval := config.Get().Evaluator
+		if req.EvaluatorEnabled != nil {
+			eval.Enabled = *req.EvaluatorEnabled
+		}
+		if req.JudgeModel != nil {
+			eval.Model = models.ModelID(*req.JudgeModel)
+		}
+		if err := config.UpdateEvaluator(eval); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update evaluator settings")
 			return
 		}
 	}

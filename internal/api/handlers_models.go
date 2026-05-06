@@ -185,6 +185,42 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Fallback: when no dynamic models were fetched (no accounts or all disabled/failed),
+	// return static models from SupportedModels for each configured and enabled provider.
+	// This mirrors the TUI model dialog behaviour and ensures the selector is never empty
+	// for users who have providers configured via the legacy Providers map or via
+	// ProviderAccounts that failed to fetch.
+	if len(allModels) == 0 {
+		seenProviders := make(map[models.ModelProvider]bool)
+		for _, acc := range accounts {
+			seenProviders[acc.Type] = true
+		}
+		// Also honour the legacy Providers map (populated by syncProvidersFromAccounts).
+		for provider, providerCfg := range cfg.Providers {
+			if providerCfg.Disabled {
+				continue
+			}
+			seenProviders[provider] = true
+		}
+		for provider := range seenProviders {
+			for _, m := range models.SupportedModels {
+				if m.Provider != provider {
+					continue
+				}
+				name := m.Name
+				if name == "" {
+					name = string(m.ID)
+				}
+				allModels = append(allModels, ModelInfo{
+					ID:      string(m.ID),
+					Name:    name,
+					Provider: string(m.Provider),
+					Badges:  badgesForModel(string(m.ID)),
+				})
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"models": allModels,
 		"errors": providerErrors,

@@ -155,7 +155,15 @@ func (b *Bus) RegisterMethod(method string, handler HandlerFunc) {
 
 // serveRPC runs in a goroutine receiving ROUTER frames and dispatching JSON-RPC calls.
 // ROUTER recv layout: [identity][empty?][json_request_bytes]
+// Transient errors are logged and retried with exponential back-off so that a
+// single bad frame or a brief socket hiccup does not kill the RPC handler.
 func (b *Bus) serveRPC(ctx context.Context) {
+	const (
+		backoffMin = 5 * time.Millisecond
+		backoffMax = 500 * time.Millisecond
+	)
+	backoff := backoffMin
+
 	for {
 		msg, err := b.routerSock.Recv()
 		if err != nil {
@@ -163,11 +171,22 @@ func (b *Bus) serveRPC(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			default:
-				log.Printf("ipc: ROUTER recv error: %v", err)
-				return
+				log.Printf("ipc: ROUTER recv error (retrying in %s): %v", backoff, err)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(backoff):
+				}
+				// Exponential back-off, capped at backoffMax.
+				backoff *= 2
+				if backoff > backoffMax {
+					backoff = backoffMax
+				}
+				continue
 			}
 		}
-
+		// Reset back-off on successful receive.
+		backoff = backoffMin
 		go b.handleRPC(ctx, msg)
 	}
 }

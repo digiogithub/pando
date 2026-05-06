@@ -2364,6 +2364,18 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		},
 	})
 	model.RegisterCommand(dialog.Command{
+		ID:          "instances-browser",
+		Title:       "Instances Browser",
+		Description: "Browse and observe remote Pando instances",
+		Shortcut:    "Ctrl+Alt+I",
+		Category:    dialog.CommandCategoryView,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return func() tea.Msg {
+				return page.PageChangeMsg{ID: page.InstancesPage}
+			}
+		},
+	})
+	model.RegisterCommand(dialog.Command{
 		ID:          "copilot-login",
 		Title:       "Copilot Login",
 		Description: "Authenticate with GitHub Copilot",

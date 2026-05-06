@@ -16,6 +16,24 @@ displayName = 'Anthropic'
 type = 'anthropic'
 apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBWVFQwemdEWldkM2JtZ2t4WkY3RHhhcUhpSlpvRGJMa2NsaktVYWNzdEVFCmExdE5VaHZ5VVdEb2Z0eFUzRWpXZUpyOHZGTHdqVi9Rcjc5Zzhob0RpaGcKLS0tIHQra0xnUXJQa0Ftd3hmY3JodmpSTTJtd2VXb1I1dS9ESWdwa3pEem40S1kKrA22of8LtXXYVpbQeiE4iTXYgOFYhu/GzP8tEXLqK1S9mGzyT1GvhD0ubPb04+4aQhAc2YXCB8+mcXoKgEdmhmaE1kHUv85DuxHU3XSSmn8L6+9i1OH82LLbZ4oW+sqAFF6/8MMQktiYISYzM4KdKVhRzlvg2fxe7dAEQgDSDsSP2fsGmfO2qZKlyJQ='
 
+[[providerAccounts]]
+id = 'copilot'
+displayName = 'copilot'
+type = 'copilot'
+useOAuth = true
+
+[[providerAccounts]]
+id = 'gemini'
+displayName = 'gemini'
+type = 'gemini'
+apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBIalJySUZJeDNDd3AzZFVHMFhNbCtMNmo5UHdBYjcxUkVBS0NtcURWdEFVCmdnZFNsTFppWm1ZK1Raak0wUDVRZWM3OUdKTTFON0x4TzZUcVYyeW0ya2cKLS0tIG9KdG5mSmc4d28rTS9NMExzWmo4RC9EQyt4bHZ1VVJ4TThIVU53c2xjWXcKzvj8pn0kqomhkK1anxt3EDvRYCc8ZvOBzejzU6QEW0Hg93P/RkWLF6/t9vdd/lEDalZ0XG+pioRfP3bPwaMFjU/JU5dt+vw='
+
+[[providerAccounts]]
+id = 'openrouter'
+displayName = 'openrouter'
+type = 'openrouter'
+apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6OG52TGN0bHlnakEzeEEyNElrTElwc1ZIR3VCVVRwb0lzc0FxejZXUHhBCko4cEMwVWl3RTBlck5vMGRKY3BjZzFnMEtXQTdLWVEwSndwYVVRWWp3Y00KLS0tICtDRXJuRUMwV3RBcEpYSjZudFZBVGp5Uk94WXA2Y1Y2U0JxOEF5VW5NVFUKjprAHYTkIdmNL4Dz8JCwKgRtzvw6Bc9CjMlkd3WqxqK7K/k2RgvH1f4dxDgZbw9WoPyqkzZ+2bLPkEqjCMwBjpYiQTBALRcwBqCenmLS9mSHqtUxIwRrAX34uVCceR9FeHYtiA3IeC7x'
+
 [LSP]
 [LSP.gopls]
 Disabled = false
@@ -25,16 +43,16 @@ Languages = []
 
 [Agents]
 [Agents.cliassist]
-Model = 'gpt-4.1-2025-04-14'
+Model = 'copilot.gpt-4o'
 MaxTokens = 5000
-ReasoningEffort = 'none'
+ReasoningEffort = ''
 ThinkingMode = ''
-AutoCompact = true
+AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'copilot.gpt-5.4'
+Model = 'claude-opus-4-7'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -45,9 +63,9 @@ ContextWindowOverride = 0
 [Agents.persona-selector]
 Model = 'gpt-4.1-2025-04-14'
 MaxTokens = 5000
-ReasoningEffort = 'none'
+ReasoningEffort = ''
 ThinkingMode = ''
-AutoCompact = true
+AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
@@ -70,11 +88,11 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.title]
-Model = 'gpt-4.1-2025-04-14'
+Model = 'gpt-4o-mini-2024-07-18'
 MaxTokens = 80
-ReasoningEffort = 'none'
+ReasoningEffort = ''
 ThinkingMode = ''
-AutoCompact = true
+AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 

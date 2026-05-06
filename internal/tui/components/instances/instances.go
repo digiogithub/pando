@@ -157,9 +157,23 @@ func fetchSessionsCmd(entry *instanceregistry.Entry) tea.Cmd {
 	}
 }
 
+// liveEventWithChannelMsg carries a formatted event line plus the open channel,
+// so the Update loop can schedule the next read without leaking goroutine stack depth.
+type liveEventWithChannelMsg struct {
+	line string
+	ch   <-chan ipc.Envelope
+	ctx  context.Context
+	sid  string
+}
+
+// liveSubCancelWithChannelMsg signals that the subscription ended.
+type liveSubCancelWithChannelMsg struct{}
+
 // subscribeLiveCmd subscribes to the PUB socket of the given instance and
-// returns liveEventMsg for each relevant event. The supplied context cancel
-// function is stored in the model so the subscription can be cancelled.
+// returns liveEventWithChannelMsg for each relevant event. The supplied
+// context cancel function is stored in the model so the subscription can be
+// cancelled. Irrelevant events are skipped inside the blocking goroutine so
+// the tea event loop only wakes for events that produce visible output.
 func subscribeLiveCmd(ctx context.Context, entry *instanceregistry.Entry, sessionID string) tea.Cmd {
 	return func() tea.Msg {
 		endpoint := fmt.Sprintf("tcp://127.0.0.1:%d", entry.PubPort)
@@ -173,31 +187,25 @@ func subscribeLiveCmd(ctx context.Context, entry *instanceregistry.Entry, sessio
 			return liveSubCancelMsg{}
 		}
 
-		// We only return the first event here; subsequent events are pumped
-		// via a goroutine that sends liveEventMsg back to the program.
-		// Bubble Tea does not support persistent goroutine subscriptions
-		// directly, so we use a channel-based approach via a looping Cmd.
-		select {
-		case <-ctx.Done():
-			return liveSubCancelMsg{}
-		case env, ok := <-ch:
-			if !ok {
-				return liveSubCancelMsg{}
-			}
-			line := formatEnvelope(env, sessionID)
-			if line == "" {
-				// Skip irrelevant events by re-scheduling without emitting
-				return nextLiveEventCmd(ctx, ch, sessionID)()
-			}
-			return liveEventMsg{line: line}
-		}
+		return readNextRelevantEvent(ctx, ch, sessionID)
 	}
 }
 
-// nextLiveEventCmd returns a Cmd that reads the next event from an already
-// open subscription channel. This is used to keep reading after the first event.
+// nextLiveEventCmd returns a Cmd that reads the next relevant event from an
+// already-open subscription channel. Returning a Cmd (rather than calling
+// directly with `()`) ensures each iteration is scheduled by the tea runtime,
+// preventing unbounded goroutine stack growth on high-volume event streams.
 func nextLiveEventCmd(ctx context.Context, ch <-chan ipc.Envelope, sessionID string) tea.Cmd {
 	return func() tea.Msg {
+		return readNextRelevantEvent(ctx, ch, sessionID)
+	}
+}
+
+// readNextRelevantEvent blocks on ch until a relevant event (non-empty line)
+// is found or the context is done / channel closed. Called inside a tea.Cmd
+// goroutine so blocking here is safe.
+func readNextRelevantEvent(ctx context.Context, ch <-chan ipc.Envelope, sessionID string) tea.Msg {
+	for {
 		select {
 		case <-ctx.Done():
 			return liveSubCancelMsg{}
@@ -207,9 +215,10 @@ func nextLiveEventCmd(ctx context.Context, ch <-chan ipc.Envelope, sessionID str
 			}
 			line := formatEnvelope(env, sessionID)
 			if line == "" {
-				return nextLiveEventCmd(ctx, ch, sessionID)()
+				// Skip irrelevant events (e.g. heartbeats) and read next one.
+				continue
 			}
-			return liveEventMsg{line: line}
+			return liveEventWithChannelMsg{line: line, ch: ch, ctx: ctx, sid: sessionID}
 		}
 	}
 }

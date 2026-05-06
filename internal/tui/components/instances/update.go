@@ -96,13 +96,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case liveEventMsg:
 		m.appendLiveEvent(msg.line)
-		// Re-schedule reading the next event from the same subscription.
-		// The channel is managed by the goroutine in subscribeLiveCmd; we
-		// continue pumping by issuing a new nextLiveEventCmd via a stored
-		// context. Because we cannot pass the channel through a tea.Msg
-		// easily, we restart a fresh subscription every time a session is
-		// selected. This is safe for the demo use case.
 		return m, nil
+
+	case liveEventWithChannelMsg:
+		// Received a relevant event; append it and schedule reading the next one.
+		m.appendLiveEvent(msg.line)
+		return m, nextLiveEventCmd(msg.ctx, msg.ch, msg.sid)
 
 	case liveSubCancelMsg:
 		// Subscription ended; clear the cancel func.

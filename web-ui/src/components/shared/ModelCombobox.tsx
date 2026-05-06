@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import api from '@/services/api'
 
 interface ModelInfo {
@@ -49,17 +50,24 @@ export default function ModelCombobox({
   const [models, setModels] = useState<ModelInfo[]>([])
   const [providerErrors, setProviderErrors] = useState<Record<string, string>>({})
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [dropdownRect, setDropdownRect] = useState<DOMRect | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
+  const [fetching, setFetching] = useState(false)
   const fetchedRef = useRef(false)
   const openDropdown = useCallback(() => {
+    if (buttonRef.current) {
+      setDropdownRect(buttonRef.current.getBoundingClientRect())
+    }
     setOpen(true)
     setQuery('')
     setSelectedIndex(0)
     if (!fetchedRef.current) {
       fetchedRef.current = true
+      setFetching(true)
       api
         .get<{ models: ModelInfo[]; errors?: Record<string, string> }>('/api/v1/models')
         .then((r) => {
@@ -67,6 +75,7 @@ export default function ModelCombobox({
           setProviderErrors(r.errors ?? {})
         })
         .catch(() => {})
+        .finally(() => setFetching(false))
     }
     setTimeout(() => searchRef.current?.focus(), 0)
   }, [])
@@ -76,10 +85,29 @@ export default function ModelCombobox({
     setQuery('')
   }, [])
 
+  // Recalculate dropdown position on scroll/resize while open
+  useEffect(() => {
+    if (!open) return
+    const update = () => {
+      if (buttonRef.current) {
+        setDropdownRect(buttonRef.current.getBoundingClientRect())
+      }
+    }
+    window.addEventListener('scroll', update, true)
+    window.addEventListener('resize', update)
+    return () => {
+      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', update)
+    }
+  }, [open])
+
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      const inContainer = containerRef.current?.contains(target)
+      const inPortal = (document.getElementById('model-combobox-portal'))?.contains(target)
+      if (!inContainer && !inPortal) {
         closeDropdown()
       }
     }
@@ -127,6 +155,7 @@ export default function ModelCombobox({
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={open ? closeDropdown : openDropdown}
         style={inputStyle as React.CSSProperties}
@@ -153,14 +182,15 @@ export default function ModelCombobox({
         <span style={{ color: 'var(--fg-dim)', fontSize: 11, marginLeft: '0.5rem', flexShrink: 0 }}>▼</span>
       </button>
 
-      {open && (
+      {open && dropdownRect && createPortal(
         <div
+          id="model-combobox-portal"
           style={{
-            position: 'absolute',
-            top: 'calc(100% + 4px)',
-            left: 0,
-            right: 0,
-            zIndex: 200,
+            position: 'fixed',
+            top: dropdownRect.bottom + 4,
+            left: dropdownRect.left,
+            width: dropdownRect.width,
+            zIndex: 9999,
             background: 'var(--card-bg, var(--input-bg))',
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius)',
@@ -236,9 +266,13 @@ export default function ModelCombobox({
           )}
 
           <div ref={listRef} style={{ overflowY: 'auto', flex: 1 }}>
-            {models.length === 0 ? (
+            {fetching ? (
               <div style={{ padding: '1rem', textAlign: 'center', fontSize: 13, color: 'var(--fg-muted)' }}>
                 Loading models…
+              </div>
+            ) : models.length === 0 ? (
+              <div style={{ padding: '1rem', textAlign: 'center', fontSize: 13, color: 'var(--fg-muted)' }}>
+                No models found — configure a provider first
               </div>
             ) : flatModels.length === 0 ? (
               <div style={{ padding: '1rem', textAlign: 'center', fontSize: 13, color: 'var(--fg-muted)' }}>
@@ -315,7 +349,8 @@ export default function ModelCombobox({
               })
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
