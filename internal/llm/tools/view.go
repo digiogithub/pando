@@ -19,6 +19,7 @@ type ViewParams struct {
 	FilePath string `json:"file_path"`
 	Offset   int    `json:"offset"`
 	Limit    int    `json:"limit"`
+	EndLine  int    `json:"end_line"`
 }
 
 type viewTool struct {
@@ -96,6 +97,10 @@ func (v *viewTool) Info() ToolInfo {
 				"type":        "integer",
 				"description": "The number of lines to read (defaults to 2000)",
 			},
+			"end_line": map[string]any{
+				"type":        "integer",
+				"description": "The line number to stop reading at (exclusive, 0-based). If set, it overrides limit.",
+			},
 		},
 		Required: []string{"file_path"},
 	}
@@ -168,7 +173,9 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	}
 
 	// Set default limit if not provided
-	if params.Limit <= 0 {
+	if params.EndLine > params.Offset {
+		params.Limit = params.EndLine - params.Offset
+	} else if params.Limit <= 0 {
 		params.Limit = DefaultReadLimit
 	}
 
@@ -375,8 +382,10 @@ func (v *viewTool) runWithACP(ctx context.Context, params ViewParams, acpConnInt
 		return NewTextErrorResponse(fmt.Sprintf("Failed to read file: %s", err)), nil
 	}
 
-	// Set default limit if not provided
-	if params.Limit <= 0 {
+	// Apply params logic for end_line
+	if params.EndLine > params.Offset {
+		params.Limit = params.EndLine - params.Offset
+	} else if params.Limit <= 0 {
 		params.Limit = DefaultReadLimit
 	}
 

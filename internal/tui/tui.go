@@ -2177,6 +2177,16 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		},
 	})
 	model.RegisterCommand(dialog.Command{
+		ID:          "new-session",
+		Title:       "New Session",
+		Description: "Clear the current chat and start a new session",
+		Shortcut:    "Ctrl+N",
+		Category:    dialog.CommandCategorySessions,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(chat.SessionClearedMsg{})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
 		ID:          "switch-session",
 		Title:       "Switch Session",
 		Description: "Open the session switcher",
@@ -2203,6 +2213,19 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Category:    dialog.CommandCategoryGeneral,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(dialog.OpenPersonaDialogMsg{})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "toggle-help",
+		Title:       "Toggle Help",
+		Description: "Show or hide the help overlay",
+		Shortcut:    "Ctrl+H",
+		Category:    dialog.CommandCategoryGeneral,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return func() tea.Msg {
+				a.showHelp = !a.showHelp
+				return nil
+			}
 		},
 	})
 	model.RegisterCommand(dialog.Command{
@@ -2244,6 +2267,26 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		},
 	})
 	model.RegisterCommand(dialog.Command{
+		ID:          "toggle-editor-chat-layout",
+		Title:       "Toggle Editor+Chat Layout",
+		Description: "Cycle through chat, sidebar, split, and tabbed editor layouts",
+		Shortcut:    "Ctrl+R",
+		Category:    dialog.CommandCategoryView,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return func() tea.Msg {
+				chatModel, ok := model.pages[page.ChatPage].(*page.ChatPageModel)
+				if !ok {
+					return nil
+				}
+				_, outCmd := chatModel.Update(tea.KeyMsg{Type: tea.KeyCtrlR, Runes: []rune{'r'}})
+				if outCmd != nil {
+					return outCmd()
+				}
+				return nil
+			}
+		},
+	})
+	model.RegisterCommand(dialog.Command{
 		ID:          "settings",
 		Title:       "Settings",
 		Description: "Open configuration settings",
@@ -2251,6 +2294,23 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Category:    dialog.CommandCategoryView,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(page.PageChangeMsg{ID: page.SettingsPage})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "show-diagnostics",
+		Title:       "Show Diagnostics Summary",
+		Description: "Display the current LSP diagnostics summary",
+		Category:    dialog.CommandCategoryView,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			summary := model.buildDiagnosticsSummary()
+			if summary == "" {
+				return nil
+			}
+			return util.CmdHandler(util.InfoMsg{
+				Type: util.InfoTypeInfo,
+				Msg:  summary,
+				TTL:  15 * time.Second,
+			})
 		},
 	})
 	model.RegisterCommand(dialog.Command{
@@ -2406,9 +2466,30 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		ID:          "open-terminal",
 		Title:       "Open Terminal Emulator Embedded",
 		Description: "Open an embedded terminal in the bottom panel",
+		Shortcut:    "Ctrl+U",
 		Category:    dialog.CommandCategoryView,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return model.toggleTerminalPanel()
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "new-terminal-tab",
+		Title:       "New Terminal Tab",
+		Description: "Open a new embedded terminal tab and focus it",
+		Shortcut:    "Ctrl+Y",
+		Category:    dialog.CommandCategoryView,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return model.openNewTerminalTab()
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "next-terminal-tab",
+		Title:       "Next Terminal Tab",
+		Description: "Switch to the next embedded terminal tab",
+		Shortcut:    "Ctrl+Shift+Y",
+		Category:    dialog.CommandCategoryView,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return model.nextTerminalTab()
 		},
 	})
 
