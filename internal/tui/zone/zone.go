@@ -16,6 +16,7 @@ const (
 	DialogButtonPrefix     = "dialog-button-"
 	SessionItemPrefix      = "session-item-"
 	ModelItemPrefix        = "model-item-"
+	ModelListPrefix        = "model-list-"
 	StatusModel            = "status-model"
 	StatusSession          = "status-session"
 	StatusHelp             = "status-help"
@@ -58,6 +59,10 @@ func ModelItemID(id string) string {
 	return ModelItemPrefix + hash(id)
 }
 
+func ModelListID(id string) string {
+	return ModelListPrefix + hash(id)
+}
+
 func MarkFileTreeItem(path, content string) string {
 	return Manager.Mark(FileTreeItemID(path), content)
 }
@@ -88,6 +93,10 @@ func MarkSessionItem(id, content string) string {
 
 func MarkModelItem(id, content string) string {
 	return Manager.Mark(ModelItemID(id), content)
+}
+
+func MarkModelList(id, content string) string {
+	return Manager.Mark(ModelListID(id), content)
 }
 
 func MarkViewerViewport(content string) string {

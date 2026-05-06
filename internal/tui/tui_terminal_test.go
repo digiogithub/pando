@@ -12,10 +12,10 @@ func TestDefaultKeyMapTerminalBinding(t *testing.T) {
 	toggle := keys.Global.ToggleTerminal.Keys()
 	newTerm := keys.Global.NewTerminal.Keys()
 
-	if len(toggle) != 1 || toggle[0] != "ctrl+shift+t" {
+	if len(toggle) != 1 || toggle[0] != "ctrl+u" {
 		t.Fatalf("unexpected toggle terminal binding: %v", toggle)
 	}
-	if len(newTerm) != 1 || newTerm[0] != "ctrl+alt+t" {
+	if len(newTerm) != 1 || newTerm[0] != "ctrl+y" {
 		t.Fatalf("unexpected new terminal binding: %v", newTerm)
 	}
 	if toggle[0] == newTerm[0] {

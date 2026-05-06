@@ -32,8 +32,14 @@ func (m Model) View() string {
 	sessionsHeight := m.height * 40 / 100
 	liveHeight := m.height - sessionsHeight - 1 // -1 for separator
 
+	// Compute transient status (cleared after expiry).
+	status := ""
+	if m.statusLine != "" && time.Now().Before(m.statusExpiry) {
+		status = m.statusLine
+	}
+
 	// Header bar
-	header := renderHeader(t, m.width, len(m.instances))
+	header := renderHeader(t, m.width, len(m.instances), status)
 
 	// Left pane: instances list
 	leftContent := renderInstancesPane(t, m.instances, m.selectedInst, m.activePane == paneInstances, leftWidth, m.height-2)
@@ -74,12 +80,51 @@ func (m Model) View() string {
 		rightContent,
 	)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, body)
+	full := lipgloss.JoinVertical(lipgloss.Left, header, body)
+
+	// If the message input overlay is active, render it at the bottom of the
+	// live-view area as a single-line prompt bar.
+	if m.showMsgInput {
+		full = renderWithMsgInputOverlay(t, full, m.msgInput.View(), m.width)
+	}
+
+	return full
 }
 
-// renderHeader renders the top header bar.
-func renderHeader(t theme.Theme, width, count int) string {
+// renderWithMsgInputOverlay appends a styled message-input bar below the main
+// content. It replaces the last rendered line so the total height stays stable.
+func renderWithMsgInputOverlay(t theme.Theme, content, inputView string, width int) string {
+	promptStyle := lipgloss.NewStyle().
+		Width(width).
+		Foreground(t.TextEmphasized()).
+		Background(t.BackgroundSecondary()).
+		Padding(0, 1)
+
+	label := "Send message: "
+	bar := promptStyle.Render(label + inputView)
+
+	// Remove the last line from content and replace with the input bar so
+	// the overall layout height stays the same.
+	lines := strings.Split(content, "\n")
+	if len(lines) > 1 {
+		lines[len(lines)-1] = bar
+		return strings.Join(lines, "\n")
+	}
+	return content + "\n" + bar
+}
+
+// renderHeader renders the top header bar. When status is non-empty it is
+// shown on the right side of the bar as a transient notification.
+func renderHeader(t theme.Theme, width, count int, status string) string {
 	title := fmt.Sprintf("  Instances  [%d running]", count)
+	if status != "" {
+		// Pad title and status to fill the full width.
+		gap := width - len(title) - len(status) - 2
+		if gap < 1 {
+			gap = 1
+		}
+		title = title + strings.Repeat(" ", gap) + status
+	}
 	style := lipgloss.NewStyle().
 		Width(width).
 		Foreground(t.TextEmphasized()).
@@ -309,6 +354,12 @@ func renderLiveViewPane(
 			Padding(0, 1).
 			Render("Select a session and press Enter to watch live events"))
 	}
+
+	// Help hints at the bottom of the live-view pane.
+	hints := lipgloss.NewStyle().
+		Foreground(t.TextMuted()).
+		Render("  m: send message  i: interrupt  tab: switch panel")
+	rows = append(rows, hints)
 
 	for len(rows) < height {
 		rows = append(rows, "")

@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	numVisibleModels = 10
+	numVisibleModels = 8
 	maxDialogWidth   = 44
+	modelListZoneID  = "model-dialog-list"
 )
 
 // ModelSelectedMsg is sent when a model is selected
@@ -179,6 +180,9 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.Button {
 		case tea.MouseButtonLeft:
+			if !tuizone.InBounds(tuizone.ModelListID(modelListZoneID), msg) {
+				break
+			}
 			for i, model := range m.filteredModels {
 				if !tuizone.InBounds(tuizone.ModelItemID(string(model.ID)), msg) {
 					continue
@@ -193,9 +197,15 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, util.CmdHandler(ModelSelectedMsg{Model: m.filteredModels[m.selectedIdx]})
 			}
 		case tea.MouseButtonWheelUp:
+			if !tuizone.InBounds(tuizone.ModelListID(modelListZoneID), msg) {
+				break
+			}
 			m.moveSelectionUp()
 			return m, nil
 		case tea.MouseButtonWheelDown:
+			if !tuizone.InBounds(tuizone.ModelListID(modelListZoneID), msg) {
+				break
+			}
 			m.moveSelectionDown()
 			return m, nil
 		}
@@ -334,12 +344,17 @@ func (m *modelDialogCmp) View() string {
 
 	scrollIndicator := m.getScrollIndicators(maxDialogWidth)
 
+	modelList := baseStyle.Width(maxDialogWidth).Render(lipgloss.JoinVertical(lipgloss.Left, modelItems...))
+	if len(m.filteredModels) > 0 {
+		modelList = tuizone.MarkModelList(modelListZoneID, modelList)
+	}
+
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		title,
 		searchInput,
 		baseStyle.Width(maxDialogWidth).Render(""),
-		baseStyle.Width(maxDialogWidth).Render(lipgloss.JoinVertical(lipgloss.Left, modelItems...)),
+		modelList,
 		scrollIndicator,
 	)
 

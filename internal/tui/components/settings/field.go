@@ -8,7 +8,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/digiogithub/pando/internal/tui/theme"
+	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 )
+
+const selectFieldVisibleOptions = 4
 
 type FieldType int
 
@@ -158,9 +161,11 @@ func (c ToggleFieldCmp) Value() string {
 }
 
 type SelectFieldCmp struct {
-	options     []string
-	activeIdx   int
-	renderWidth int
+	options      []string
+	activeIdx    int
+	renderWidth  int
+	scrollOffset int
+	zoneBaseID   string
 }
 
 func NewSelectFieldCmp(field Field, width int) SelectFieldCmp {
@@ -176,6 +181,7 @@ func NewSelectFieldCmp(field Field, width int) SelectFieldCmp {
 		options:     append([]string(nil), field.Options...),
 		activeIdx:   activeIdx,
 		renderWidth: max(1, width),
+		zoneBaseID:  field.Key,
 	}
 }
 
@@ -184,18 +190,46 @@ func (c *SelectFieldCmp) SetWidth(width int) {
 }
 
 func (c *SelectFieldCmp) Update(msg tea.Msg) (tea.Cmd, bool) {
-	keyMsg, ok := msg.(tea.KeyMsg)
-	if !ok || len(c.options) == 0 {
+	if len(c.options) == 0 {
 		return nil, false
 	}
 
-	switch keyMsg.String() {
-	case "up", "k":
-		c.activeIdx = (c.activeIdx - 1 + len(c.options)) % len(c.options)
-	case "down", "j":
-		c.activeIdx = (c.activeIdx + 1) % len(c.options)
-	case "enter":
-		return nil, true
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			c.moveUp()
+		case "down", "j":
+			c.moveDown()
+		case "enter":
+			return nil, true
+		}
+	case tea.MouseMsg:
+		if msg.Action != tea.MouseActionPress {
+			return nil, false
+		}
+
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if tuizone.InBounds(c.listZoneID(), msg) {
+				c.moveUp()
+			}
+		case tea.MouseButtonWheelDown:
+			if tuizone.InBounds(c.listZoneID(), msg) {
+				c.moveDown()
+			}
+		case tea.MouseButtonLeft:
+			if !tuizone.InBounds(c.listZoneID(), msg) {
+				return nil, false
+			}
+			for i := c.scrollOffset; i < c.visibleEnd(); i++ {
+				if tuizone.InBounds(c.optionZoneID(i), msg) {
+					c.activeIdx = i
+					c.ensureVisible()
+					return nil, true
+				}
+			}
+		}
 	}
 
 	return nil, false
@@ -209,8 +243,11 @@ func (c SelectFieldCmp) View() string {
 			Render("(no options)")
 	}
 
-	items := make([]string, len(c.options))
-	for i, option := range c.options {
+	start := c.scrollOffset
+	end := c.visibleEnd()
+	items := make([]string, 0, end-start+1)
+	for i := start; i < end; i++ {
+		option := c.options[i]
 		prefix := "  "
 		itemStyle := lipgloss.NewStyle().
 			Width(c.renderWidth).
@@ -223,10 +260,21 @@ func (c SelectFieldCmp) View() string {
 				Bold(true)
 		}
 
-		items[i] = itemStyle.Render(prefix + option)
+		items = append(items, tuizone.MarkModelItem(c.optionZoneID(i), itemStyle.Render(prefix+option)))
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, items...)
+	if len(c.options) > selectFieldVisibleOptions {
+		indicator := ""
+		if c.scrollOffset > 0 {
+			indicator += "↑ "
+		}
+		if c.visibleEnd() < len(c.options) {
+			indicator += "↓"
+		}
+		items = append(items, lipgloss.NewStyle().Width(c.renderWidth).Align(lipgloss.Right).Foreground(t.Primary()).Render(strings.TrimSpace(indicator)))
+	}
+
+	return tuizone.MarkModelList(c.listZoneID(), lipgloss.JoinVertical(lipgloss.Left, items...))
 }
 
 func (c SelectFieldCmp) Value() string {
@@ -235,4 +283,42 @@ func (c SelectFieldCmp) Value() string {
 	}
 
 	return c.options[c.activeIdx]
+}
+
+func (c *SelectFieldCmp) moveUp() {
+	c.activeIdx = (c.activeIdx - 1 + len(c.options)) % len(c.options)
+	c.ensureVisible()
+}
+
+func (c *SelectFieldCmp) moveDown() {
+	c.activeIdx = (c.activeIdx + 1) % len(c.options)
+	c.ensureVisible()
+}
+
+func (c *SelectFieldCmp) ensureVisible() {
+	if c.activeIdx < c.scrollOffset {
+		c.scrollOffset = c.activeIdx
+	}
+	if c.activeIdx >= c.scrollOffset+selectFieldVisibleOptions {
+		c.scrollOffset = c.activeIdx - (selectFieldVisibleOptions - 1)
+	}
+	maxOffset := max(0, len(c.options)-selectFieldVisibleOptions)
+	if c.scrollOffset > maxOffset {
+		c.scrollOffset = maxOffset
+	}
+	if c.scrollOffset < 0 {
+		c.scrollOffset = 0
+	}
+}
+
+func (c SelectFieldCmp) visibleEnd() int {
+	return min(c.scrollOffset+selectFieldVisibleOptions, len(c.options))
+}
+
+func (c SelectFieldCmp) listZoneID() string {
+	return "settings-select-list-" + c.zoneBaseID
+}
+
+func (c SelectFieldCmp) optionZoneID(index int) string {
+	return c.listZoneID() + "-option-" + strconv.Itoa(index)
 }

@@ -35,8 +35,8 @@ func TestMesnadaDefaults(t *testing.T) {
 	if got := loaded.Mesnada.Orchestrator.MaxParallel; got != 5 {
 		t.Fatalf("mesnada.orchestrator.maxParallel = %d, want %d", got, 5)
 	}
-	if got := loaded.Mesnada.Orchestrator.DefaultEngine; got != "copilot" {
-		t.Fatalf("mesnada.orchestrator.defaultEngine = %q, want %q", got, "copilot")
+	if got := loaded.Mesnada.Orchestrator.DefaultEngine; got != "pando" {
+		t.Fatalf("mesnada.orchestrator.defaultEngine = %q, want %q", got, "pando")
 	}
 	if !loaded.Mesnada.TUI.Enabled {
 		t.Fatal("mesnada.tui.enabled = false, want true")

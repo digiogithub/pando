@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/digiogithub/pando/internal/instanceregistry"
 	ipc "github.com/digiogithub/pando/internal/ipc"
@@ -58,6 +59,16 @@ type liveEventMsg struct {
 // liveSubCancelMsg is sent when a live subscription goroutine exits.
 type liveSubCancelMsg struct{}
 
+// sendMessageResultMsg is sent after a remote message.send RPC completes.
+type sendMessageResultMsg struct {
+	err error
+}
+
+// switchSessionResultMsg is sent after a remote session.activate RPC completes.
+type switchSessionResultMsg struct {
+	err error
+}
+
 // Model is the main Bubble Tea model for the instances browser.
 type Model struct {
 	width, height int
@@ -75,13 +86,28 @@ type Model struct {
 
 	// Registry
 	registry *instanceregistry.Registry
+
+	// Message send dialog: when showMsgInput is true an inline textinput is
+	// overlaid at the bottom of the live-view pane.
+	showMsgInput bool
+	msgInput     textinput.Model
+
+	// statusLine holds a transient status message shown in the header bar
+	// (e.g. "Message sent", "Session switched", or an error).
+	statusLine    string
+	statusExpiry  time.Time
 }
 
 // New returns a new instances browser model ready to be used.
 func New() Model {
+	ti := textinput.New()
+	ti.Placeholder = "Type a message and press Enter…"
+	ti.CharLimit = 4096
+
 	return Model{
 		registry:   instanceregistry.New(),
 		activePane: paneInstances,
+		msgInput:   ti,
 	}
 }
 
@@ -279,6 +305,38 @@ func interruptSessionCmd(entry *instanceregistry.Entry, sessionID string) tea.Cm
 	}
 }
 
+// sendMessageCmd sends a user message to the selected session via RPC.
+func sendMessageCmd(entry *instanceregistry.Entry, sessionID, content string) tea.Cmd {
+	return func() tea.Msg {
+		endpoint := fmt.Sprintf("tcp://127.0.0.1:%d", entry.RPCPort)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		rc, err := remoteview.NewRemoteControl(ctx, endpoint)
+		if err != nil {
+			return sendMessageResultMsg{err: err}
+		}
+		err = rc.SendMessage(ctx, sessionID, content)
+		return sendMessageResultMsg{err: err}
+	}
+}
+
+// switchSessionCmd sends a session.activate RPC to the selected instance.
+func switchSessionCmd(entry *instanceregistry.Entry, sessionID string) tea.Cmd {
+	return func() tea.Msg {
+		endpoint := fmt.Sprintf("tcp://127.0.0.1:%d", entry.RPCPort)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+
+		rc, err := remoteview.NewRemoteControl(ctx, endpoint)
+		if err != nil {
+			return switchSessionResultMsg{err: err}
+		}
+		err = rc.SwitchSession(ctx, sessionID)
+		return switchSessionResultMsg{err: err}
+	}
+}
+
 // appendLiveEvent appends a line to the live events buffer, capping at maxLiveEvents.
 func (m *Model) appendLiveEvent(line string) {
 	m.liveEvents = append(m.liveEvents, line)
@@ -297,6 +355,13 @@ func (m Model) Height() int { return m.height }
 func (m *Model) SetSize(w, h int) {
 	m.width = w
 	m.height = h
+}
+
+// setStatus sets a transient status message that is shown in the header bar
+// for 3 seconds before being cleared by the next polling tick.
+func (m *Model) setStatus(msg string) {
+	m.statusLine = msg
+	m.statusExpiry = time.Now().Add(3 * time.Second)
 }
 
 // cancelLiveSub cancels the current live subscription if one exists.

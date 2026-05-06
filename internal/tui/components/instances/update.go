@@ -18,6 +18,8 @@ var instanceBrowserKeyMap = struct {
 	Enter     key.Binding
 	Escape    key.Binding
 	Interrupt key.Binding
+	SendMsg   key.Binding
+	Switch    key.Binding
 }{
 	Tab: key.NewBinding(
 		key.WithKeys("tab"),
@@ -42,6 +44,14 @@ var instanceBrowserKeyMap = struct {
 	Interrupt: key.NewBinding(
 		key.WithKeys("i"),
 		key.WithHelp("i", "interrupt session"),
+	),
+	SendMsg: key.NewBinding(
+		key.WithKeys("m"),
+		key.WithHelp("m", "send message"),
+	),
+	Switch: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "switch active session"),
 	),
 }
 
@@ -99,11 +109,64 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.liveCancel = nil
 		return m, nil
 
+	case sendMessageResultMsg:
+		if msg.err != nil {
+			m.setStatus("Error: " + msg.err.Error())
+		} else {
+			m.setStatus("Message sent")
+		}
+		return m, nil
+
+	case switchSessionResultMsg:
+		if msg.err != nil {
+			m.setStatus("Error: " + msg.err.Error())
+		} else {
+			m.setStatus("Session switched")
+		}
+		return m, nil
+
 	case tea.KeyMsg:
+		// When the message input overlay is active, route all keys to it.
+		if m.showMsgInput {
+			return m.handleMsgInput(msg)
+		}
 		return m.handleKey(msg)
 	}
 
 	return m, nil
+}
+
+// handleMsgInput routes keyboard events to the textinput overlay.
+// Enter submits the message, Esc cancels.
+func (m Model) handleMsgInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		content := m.msgInput.Value()
+		m.showMsgInput = false
+		m.msgInput.SetValue("")
+		m.msgInput.Blur()
+		if content == "" {
+			return m, nil
+		}
+		entry := m.selectedInstanceEntry()
+		sess := m.selectedSessionEntry()
+		if entry == nil || sess == nil {
+			m.setStatus("No instance/session selected")
+			return m, nil
+		}
+		return m, sendMessageCmd(entry, sess.ID, content)
+
+	case "esc":
+		m.showMsgInput = false
+		m.msgInput.SetValue("")
+		m.msgInput.Blur()
+		return m, nil
+
+	default:
+		var cmd tea.Cmd
+		m.msgInput, cmd = m.msgInput.Update(msg)
+		return m, cmd
+	}
 }
 
 // handleKey processes keyboard input according to the active pane.
@@ -126,8 +189,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case paneSessions:
 		return m.handleSessionsPane(msg)
 	case paneLiveView:
-		// Live view is read-only; only Tab/Esc are handled (above).
-		return m, nil
+		return m.handleLiveViewPane(msg)
 	}
 
 	return m, nil
@@ -201,6 +263,52 @@ func (m Model) handleSessionsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, instanceBrowserKeyMap.Interrupt):
 		// Send interrupt to the selected session.
+		entry := m.selectedInstanceEntry()
+		sess := m.selectedSessionEntry()
+		if entry == nil || sess == nil {
+			return m, nil
+		}
+		return m, interruptSessionCmd(entry, sess.ID)
+
+	case key.Matches(msg, instanceBrowserKeyMap.SendMsg):
+		// Open the inline message send dialog.
+		entry := m.selectedInstanceEntry()
+		sess := m.selectedSessionEntry()
+		if entry == nil || sess == nil {
+			return m, nil
+		}
+		m.showMsgInput = true
+		m.msgInput.Focus()
+		return m, nil
+
+	case key.Matches(msg, instanceBrowserKeyMap.Switch):
+		// Switch the active session on the remote instance.
+		entry := m.selectedInstanceEntry()
+		sess := m.selectedSessionEntry()
+		if entry == nil || sess == nil {
+			return m, nil
+		}
+		return m, switchSessionCmd(entry, sess.ID)
+	}
+	return m, nil
+}
+
+// handleLiveViewPane handles keys when the live view pane is focused.
+func (m Model) handleLiveViewPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, instanceBrowserKeyMap.SendMsg):
+		// Open the inline message send dialog from the live view too.
+		entry := m.selectedInstanceEntry()
+		sess := m.selectedSessionEntry()
+		if entry == nil || sess == nil {
+			return m, nil
+		}
+		m.showMsgInput = true
+		m.msgInput.Focus()
+		return m, nil
+
+	case key.Matches(msg, instanceBrowserKeyMap.Interrupt):
+		// Interrupt from live view as well.
 		entry := m.selectedInstanceEntry()
 		sess := m.selectedSessionEntry()
 		if entry == nil || sess == nil {
