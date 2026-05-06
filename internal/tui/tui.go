@@ -979,6 +979,9 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.currentPage == page.EvaluatorPage {
 					return a, a.moveToPage(page.ChatPage)
 				}
+				if a.currentPage == page.InstancesPage {
+					return a, a.moveToPage(page.ChatPage)
+				}
 			}
 		case key.Matches(msg, a.keys.Global.Logs):
 			return a, a.moveToPage(page.LogsPage)
@@ -997,6 +1000,11 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, a.keys.Global.CronJobs):
 			if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
 				return a, a.openCronJobsDialog()
+			}
+			return a, nil
+		case key.Matches(msg, a.keys.Global.InstancesBrowser):
+			if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+				return a, a.moveToPage(page.InstancesPage)
 			}
 			return a, nil
 		case key.Matches(msg, a.keys.Global.Help):
@@ -1574,6 +1582,11 @@ func (a appModel) pageHelpSections() []dialog.HelpSection {
 			Title:    "Self-Improvement",
 			Bindings: a.pageBindings(a.pages[a.currentPage]),
 		}}
+	case page.InstancesPage:
+		return []dialog.HelpSection{{
+			Title:    "Instances Browser",
+			Bindings: a.pageBindings(a.pages[a.currentPage]),
+		}}
 	default:
 		return nil
 	}
@@ -2119,6 +2132,7 @@ func New(app *app.App) tea.Model {
 			page.OrchestratorPage: page.NewOrchestratorPage(app),
 			page.SnapshotsPage:    page.NewSnapshotsPage(app),
 			page.EvaluatorPage:    page.NewEvaluatorPage(app.Evaluator),
+			page.InstancesPage:    page.NewInstancesPage(),
 		},
 		filepicker:    dialog.NewFilepickerCmp(app),
 		terminalPanel: terminal.NewTerminalPanel(),

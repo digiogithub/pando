@@ -14,20 +14,21 @@ type KeyMap struct {
 }
 
 type GlobalKeys struct {
-	Logs           key.Binding
-	Orchestrator   key.Binding
-	Snapshots      key.Binding
-	Evaluator      key.Binding
-	Projects       key.Binding
-	CronJobs       key.Binding
-	Quit           key.Binding
-	Help           key.Binding
-	Settings       key.Binding
-	Filepicker     key.Binding
-	SwitchTheme    key.Binding
-	ToggleTerminal key.Binding
-	NewTerminal    key.Binding
-	NextTerminal   key.Binding
+	Logs             key.Binding
+	Orchestrator     key.Binding
+	Snapshots        key.Binding
+	Evaluator        key.Binding
+	Projects         key.Binding
+	CronJobs         key.Binding
+	InstancesBrowser key.Binding
+	Quit             key.Binding
+	Help             key.Binding
+	Settings         key.Binding
+	Filepicker       key.Binding
+	SwitchTheme      key.Binding
+	ToggleTerminal   key.Binding
+	NewTerminal      key.Binding
+	NextTerminal     key.Binding
 }
 
 type ChatKeys struct {
@@ -126,6 +127,10 @@ func DefaultKeyMap() KeyMap {
 			CronJobs: key.NewBinding(
 				key.WithKeys("ctrl+alt+j"),
 				key.WithHelp("ctrl+alt+j", "cronjobs"),
+			),
+			InstancesBrowser: key.NewBinding(
+				key.WithKeys("ctrl+alt+i"),
+				key.WithHelp("ctrl+alt+i", "instances browser"),
 			),
 			Quit: key.NewBinding(
 				key.WithKeys("ctrl+c"),
@@ -302,7 +307,7 @@ func (k GlobalKeys) FullHelp() [][]key.Binding {
 	return compactHelpGroups(
 		filterHelpBindings(k.Help, k.Quit),
 		filterHelpBindings(k.Logs, k.Orchestrator, k.Snapshots, k.Evaluator, k.Settings),
-		filterHelpBindings(k.Projects, k.CronJobs, k.Filepicker, k.SwitchTheme),
+		filterHelpBindings(k.Projects, k.CronJobs, k.InstancesBrowser, k.Filepicker, k.SwitchTheme),
 		filterHelpBindings(k.ToggleTerminal, k.NewTerminal, k.NextTerminal),
 	)
 }
