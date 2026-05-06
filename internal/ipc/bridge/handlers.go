@@ -21,10 +21,33 @@ type BusRegistrar interface {
 	Publish(topic string, payload any) error
 }
 
+// MessageRunner is the minimal interface used by the bridge to send a user message
+// to a session via the local agent. A local interface is used to avoid import cycles
+// between the bridge and the agent packages.
+// RunMessage starts processing the given user message asynchronously and returns
+// after the agent goroutine is launched. Any streaming events are handled internally.
+type MessageRunner interface {
+	RunMessage(ctx context.Context, sessionID string, content string) error
+}
+
+// SessionInterrupter is the minimal interface used by the bridge to cancel the
+// running LLM call for a session. A local interface is used to avoid import cycles.
+type SessionInterrupter interface {
+	Cancel(sessionID string)
+}
+
 // RegisterHandlers registers all JSON-RPC handlers on the Bus.
 // instanceID is the local instance identifier (bus.instanceID is unexported).
 // svc is the local session service; startedAt is when this instance started.
+// runner and interrupter are optional: pass nil if message.send / session.interrupt
+// should not be handled by this instance.
 func RegisterHandlers(bus BusRegistrar, instanceID string, svc session.Service, startedAt time.Time) {
+	RegisterHandlersWithAgent(bus, instanceID, svc, startedAt, nil, nil)
+}
+
+// RegisterHandlersWithAgent registers all JSON-RPC handlers including the agent-backed
+// message.send and session.interrupt methods.
+func RegisterHandlersWithAgent(bus BusRegistrar, instanceID string, svc session.Service, startedAt time.Time, runner MessageRunner, interrupter SessionInterrupter) {
 	bus.RegisterMethod(protocol.MethodInstancePing, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 		result := protocol.PingResult{
 			Status:     "ok",
@@ -71,6 +94,43 @@ func RegisterHandlers(bus BusRegistrar, instanceID string, svc session.Service, 
 		if err := bus.Publish(protocol.TopicSessionActivated, sessionToPayload(s)); err != nil {
 			return nil, fmt.Errorf("session.activate: publish: %w", err)
 		}
+		return marshalResult(protocol.OKResult{OK: true})
+	})
+
+	// message.send — triggers the local agent to process a user message in the given session.
+	bus.RegisterMethod(protocol.MethodMessageSend, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+		var p protocol.MessageSendParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("message.send: invalid params: %w", err)
+		}
+		if p.SessionID == "" {
+			return nil, fmt.Errorf("message.send: session_id is required")
+		}
+		if p.Content == "" {
+			return nil, fmt.Errorf("message.send: content is required")
+		}
+		if runner == nil {
+			return nil, fmt.Errorf("message.send: agent runner not available on this instance")
+		}
+		if err := runner.RunMessage(ctx, p.SessionID, p.Content); err != nil {
+			return nil, fmt.Errorf("message.send: run: %w", err)
+		}
+		return marshalResult(protocol.OKResult{OK: true})
+	})
+
+	// session.interrupt — cancels the active LLM run for the given session.
+	bus.RegisterMethod(protocol.MethodSessionInterrupt, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+		var p protocol.SessionInterruptParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("session.interrupt: invalid params: %w", err)
+		}
+		if p.SessionID == "" {
+			return nil, fmt.Errorf("session.interrupt: session_id is required")
+		}
+		if interrupter == nil {
+			return nil, fmt.Errorf("session.interrupt: agent interrupter not available on this instance")
+		}
+		interrupter.Cancel(p.SessionID)
 		return marshalResult(protocol.OKResult{OK: true})
 	})
 }
