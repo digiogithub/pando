@@ -186,6 +186,7 @@ type OpenSessionDialogMsg struct{}
 type OpenModelDialogMsg struct{}
 type OpenThemeDialogMsg struct{}
 type OpenFilepickerMsg struct{}
+type ToggleHelpMsg struct{}
 
 // CommandDialog interface for the command selection dialog.
 type CommandDialog interface {

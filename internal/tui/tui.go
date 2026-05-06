@@ -676,6 +676,10 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case dialog.ToggleHelpMsg:
+		a.showHelp = !a.showHelp
+		return a, nil
+
 	case dialog.OpenPersonaDialogMsg:
 		if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
 			return a, a.openPersonaDialog()
@@ -2222,10 +2226,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Shortcut:    "Ctrl+H",
 		Category:    dialog.CommandCategoryGeneral,
 		Handler: func(cmd dialog.Command) tea.Cmd {
-			return func() tea.Msg {
-				a.showHelp = !a.showHelp
-				return nil
-			}
+			return util.CmdHandler(dialog.ToggleHelpMsg{})
 		},
 	})
 	model.RegisterCommand(dialog.Command{

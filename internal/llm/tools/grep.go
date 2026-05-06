@@ -334,7 +334,6 @@ func formatGrepOutput(fileMatches []search.FileMatch, mode search.OutputMode, tr
 		sb.WriteString(fmt.Sprintf("\nTotal: %d matches in %d files\n", total, len(fileMatches)))
 
 	default: // OutputModeFiles
-	default: // OutputModeFiles
 		sb.WriteString(fmt.Sprintf("Found %d file(s) with matches\n", len(fileMatches)))
 		for _, fm := range fileMatches {
 			if len(fm.Lines) > 0 {
