@@ -12,11 +12,16 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/uuid"
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/format"
+	"github.com/digiogithub/pando/internal/ipc"
+	"github.com/digiogithub/pando/internal/ipc/bridge"
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
+	"github.com/digiogithub/pando/internal/instanceregistry"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
@@ -185,11 +190,85 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		app, err := app.New(ctx, conn)
+		// --- IPC: determine primary/secondary role ---
+		instanceID := uuid.New().String()
+		pubPort, rpcPort := ipc.PortsForPath(cwd)
+		isPrimary, lockInfo, lockFile, lockErr := ipc.AcquireLock(cwd, instanceID, pubPort, rpcPort)
+		if lockErr != nil {
+			logging.Warn("IPC lock acquisition failed, continuing without IPC", "error", lockErr)
+		}
+		if lockFile != nil {
+			defer ipc.ReleaseLock(lockFile)
+		}
+
+		appOpts := app.AppOptions{}
+
+		if isPrimary || lockErr != nil {
+			// Primary instance: announce in registry (best-effort).
+			_ = instanceregistry.Announce(&instanceregistry.Entry{
+				InstanceID: instanceID,
+				Path:       cwd,
+				PID:        os.Getpid(),
+				PubPort:    pubPort,
+				RPCPort:    rpcPort,
+				StartedAt:  time.Now(),
+				Mode:       instanceregistry.ModeTUI,
+				IsPrimary:  true,
+			})
+			defer func() { _ = instanceregistry.Revoke(instanceID) }()
+			logging.Debug("IPC: running as primary instance", "pubPort", pubPort, "rpcPort", rpcPort)
+		} else {
+			// Secondary instance: open read-only DB and proxy writes to primary.
+			roConn, roErr := db.ConnectReadOnly()
+			if roErr != nil {
+				logging.Warn("IPC: failed to open read-only DB, using primary DB directly", "error", roErr)
+			} else {
+				ipcClient, clientErr := ipc.NewClient(ctx)
+				if clientErr != nil {
+					logging.Warn("IPC: failed to create client, falling back to primary DB", "error", clientErr)
+				} else {
+					rpcAddr := fmt.Sprintf("tcp://127.0.0.1:%d", lockInfo.RPCPort)
+					proxy := dbproxy.New(db.New(roConn), ipcClient, rpcAddr)
+					appOpts.DBQuerier = proxy
+					conn = roConn
+				}
+			}
+			_ = instanceregistry.Announce(&instanceregistry.Entry{
+				InstanceID: instanceID,
+				Path:       cwd,
+				PID:        os.Getpid(),
+				PubPort:    pubPort,
+				RPCPort:    rpcPort,
+				StartedAt:  time.Now(),
+				Mode:       instanceregistry.ModeTUI,
+				IsPrimary:  false,
+			})
+			defer func() { _ = instanceregistry.Revoke(instanceID) }()
+			logging.Debug("IPC: running as secondary instance",
+				"primaryRPC", fmt.Sprintf("tcp://127.0.0.1:%d", lockInfo.RPCPort))
+		}
+
+		pandoApp, err := app.New(ctx, conn, appOpts)
 		if err != nil {
 			logging.Error("Failed to create app: %v", err)
 			return err
 		}
+
+		// Primary: start IPC bus, register handlers, start bridge.
+		if isPrimary && lockErr == nil {
+			bus := ipc.NewBus(instanceID)
+			if busErr := bus.Start(ctx, pubPort, rpcPort); busErr != nil {
+				logging.Warn("IPC: failed to start bus, continuing without IPC", "error", busErr)
+			} else {
+				dbproxy.RegisterHandlers(bus, db.New(conn))
+				bridge.RegisterHandlers(bus, instanceID, pandoApp.Sessions, time.Now())
+				pandoApp.SetupIPC(bus)
+				br := bridge.New(bus, pandoApp.Sessions, pandoApp.CoderAgent)
+				br.Start(ctx)
+			}
+		}
+
+		app := pandoApp
 		logging.Debug("App initialized")
 
 		// Initialize MCP tools early for both modes

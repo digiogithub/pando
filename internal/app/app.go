@@ -23,6 +23,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/cronjob"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/evaluator"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/history"
@@ -75,6 +76,12 @@ type App struct {
 	MCPGateway          *mcpgateway.Gateway
 	Evaluator           *evaluator.EvaluatorService
 
+	// IPCBus is set on the primary instance after calling SetupIPC.
+	// Secondary instances leave this nil.
+	IPCBus *ipc.Bus
+	// IPCIsPrimary is true when this instance holds the IPC lock.
+	IPCIsPrimary bool
+
 	openlitShutdown func(context.Context) error
 
 	clientsMutex sync.RWMutex
@@ -92,6 +99,10 @@ type AppOptions struct {
 	// SkipMesnadaServer avoids starting the embedded Mesnada HTTP server while
 	// still allowing the orchestrator and related tools to be initialized.
 	SkipMesnadaServer bool
+	// DBQuerier overrides the db.Querier used for sessions, messages, and projects.
+	// When non-nil this querier is used instead of db.New(conn).
+	// Primary instances leave this nil; secondary instances pass a dbproxy.DBProxy.
+	DBQuerier db.Querier
 }
 
 // findFreePort returns the first available TCP port starting at preferred, trying
@@ -125,11 +136,22 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		opt = opts[0]
 	}
 
-	q := db.New(conn)
+	// Use the provided querier override (secondary instances pass a dbproxy.DBProxy),
+	// or fall back to the standard direct querier for primary instances.
+	var q db.Querier
+	rawQ := db.New(conn) // always needed for history (uses WithTx)
+	if opt.DBQuerier != nil {
+		q = opt.DBQuerier
+	} else {
+		q = rawQ
+	}
 	sessions := session.NewService(q)
 	messages := message.NewService(q)
-	files := history.NewService(q, conn)
-	projects := project.NewService(q)
+	files := history.NewService(rawQ, conn)
+	// project.NewService uses *db.Queries directly (UpdateProjectName is not in db.Querier).
+	// Secondary instances will have project writes go through rawQ (read-only conn) which
+	// will fail gracefully; project management on secondaries is a Phase 5+ concern.
+	projects := project.NewService(rawQ)
 
 	app := &App{
 		Sessions:    sessions,
@@ -1199,6 +1221,19 @@ func (app *App) refreshDynamicModels(ctx context.Context) {
 }
 
 // Shutdown performs a clean shutdown of the application
+// SetupIPC configures the primary IPC bus for this instance.
+// Call this after New() on the primary instance to enable ZMQ event broadcasting
+// and to register the db.write handler so secondary instances can proxy writes.
+// bus must already be started (bus.Start called) before calling SetupIPC.
+func (app *App) SetupIPC(bus *ipc.Bus) {
+	app.IPCBus = bus
+	app.IPCIsPrimary = true
+	// Wire the bus as the ZMQ publisher for the session service so session
+	// create/update/delete events are broadcast over PUB to other instances.
+	session.SetIPCPublisher(bus)
+	logging.Info("IPC bus wired to session service", "pubAddr", bus.PubAddr, "rpcAddr", bus.RPCAddr)
+}
+
 func (app *App) Shutdown() {
 	logging.Debug("App shutdown started")
 	if app.MesnadaServer != nil {
@@ -1262,6 +1297,12 @@ func (app *App) Shutdown() {
 	// Shutdown project manager and all child project ACP processes.
 	if app.ProjectManager != nil {
 		app.ProjectManager.Shutdown()
+	}
+	// Shutdown IPC bus (primary only).
+	if app.IPCBus != nil {
+		if err := app.IPCBus.Shutdown(); err != nil {
+			logging.Error("Failed to shutdown IPC bus", "error", err)
+		}
 	}
 	logging.Debug("App shutdown completed")
 }

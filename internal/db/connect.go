@@ -15,6 +15,31 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
+// ConnectReadOnly opens the existing SQLite database in read-only mode.
+// Secondary (non-primary) Pando instances use this so they never write
+// directly; all writes are proxied through the primary via ZMQ RPC.
+// The caller must NOT run migrations — the primary is responsible for that.
+func ConnectReadOnly() (*sql.DB, error) {
+	dataDir := config.Get().Data.Directory
+	if dataDir == "" {
+		return nil, fmt.Errorf("data.dir is not set")
+	}
+	dbPath := filepath.Join(dataDir, "pando.db")
+	// Use file URI with mode=ro so the driver never acquires a write lock.
+	dbURI := fmt.Sprintf("file:%s?mode=ro", dbPath)
+	conn, err := sql.Open("sqlite3", dbURI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open read-only database: %w", err)
+	}
+	if err = conn.Ping(); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to connect read-only database: %w", err)
+	}
+	// Allow multiple concurrent readers.
+	conn.SetMaxOpenConns(4)
+	return conn, nil
+}
+
 func Connect() (*sql.DB, error) {
 	dataDir := config.Get().Data.Directory
 	if dataDir == "" {
