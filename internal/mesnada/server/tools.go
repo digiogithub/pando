@@ -483,13 +483,17 @@ func (s *Server) getToolDefinitions() []Tool {
 	tools := []Tool{
 		{
 			Name:        "spawn_agent",
-			Description: "Spawn a new CLI agent to execute a task. Supports multiple engines: 'copilot' (GitHub Copilot CLI, default), 'claude-code' (Anthropic Claude CLI), 'gemini-cli' (Google Gemini CLI), 'opencode' (OpenCode.ai CLI), 'ollama-claude' (Ollama Claude interface), or 'ollama-opencode' (Ollama OpenCode interface). The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
+			Description: "Spawn a new CLI agent to execute a task, or relaunch an existing task in-place. When task_id is provided, the existing task is reset and re-executed (preserving its ID so dependent tasks are automatically unblocked). Supports multiple engines: 'copilot' (GitHub Copilot CLI, default), 'claude-code' (Anthropic Claude CLI), 'gemini-cli' (Google Gemini CLI), 'opencode' (OpenCode.ai CLI), 'ollama-claude' (Ollama Claude interface), or 'ollama-opencode' (Ollama OpenCode interface). The agent runs in the specified working directory with full tool access. Use background=true for long-running tasks.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional: ID of an existing task to relaunch in-place. When set, the task is reset to pending and re-executed using the stored configuration (overridden by any provided prompt/engine/model/timeout). All dependent tasks are automatically unblocked when the relaunched task completes because the task ID is preserved.",
+					},
 					"prompt": map[string]interface{}{
 						"type":        "string",
-						"description": "The prompt/instruction for the agent to execute",
+						"description": "The prompt/instruction for the agent to execute. Required when creating a new task; optional (override) when relaunching an existing task via task_id.",
 					},
 					"work_dir": map[string]interface{}{
 						"type":        "string",
@@ -849,6 +853,7 @@ func (s *Server) validPandoTools() []llmtools.BaseTool {
 
 func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req struct {
+		TaskID           string                 `json:"task_id"`
 		Prompt           string                 `json:"prompt"`
 		WorkDir          string                 `json:"work_dir"`
 		Engine           string                 `json:"engine"`
@@ -870,13 +875,51 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
-	if req.Prompt == "" {
-		return nil, fmt.Errorf("prompt is required")
-	}
-
 	background := true
 	if req.Background != nil {
 		background = *req.Background
+	}
+
+	// Relaunch an existing task in-place when task_id is provided.
+	if req.TaskID != "" {
+		engineName := req.Engine
+		switch engineName {
+		case "claude-code":
+			engineName = "claude"
+		case "gemini-cli":
+			engineName = "gemini"
+		}
+
+		task, err := s.orchestrator.Relaunch(ctx, req.TaskID, orchestrator.RelaunchOptions{
+			Prompt:     req.Prompt,
+			Engine:     models.Engine(engineName),
+			Model:      req.Model,
+			Timeout:    req.Timeout,
+			Background: background,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		result := map[string]interface{}{
+			"task_id":    task.ID,
+			"status":     task.Status,
+			"work_dir":   task.WorkDir,
+			"created_at": task.CreatedAt,
+			"relaunched": true,
+		}
+		if !background && task.IsTerminal() {
+			result["output_tail"] = task.OutputTail
+			result["exit_code"] = task.ExitCode
+			if task.Error != "" {
+				result["error"] = task.Error
+			}
+		}
+		return result, nil
+	}
+
+	if req.Prompt == "" {
+		return nil, fmt.Errorf("prompt is required")
 	}
 
 	engineName := req.Engine

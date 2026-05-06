@@ -34,7 +34,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'copilot.grok-code-fast-1'
+Model = 'copilot.gpt-5.4'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -52,20 +52,20 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.summarizer]
-Model = 'gpt-4.1-2025-04-14'
-MaxTokens = 64000
-ReasoningEffort = 'none'
+Model = 'gemini.gemini-3-flash'
+MaxTokens = 8192
+ReasoningEffort = ''
 ThinkingMode = ''
-AutoCompact = true
+AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.task]
-Model = 'gpt-4.1-2025-04-14'
-MaxTokens = 16384
-ReasoningEffort = 'none'
+Model = 'gemini.gemini-3-flash-preview'
+MaxTokens = 8192
+ReasoningEffort = ''
 ThinkingMode = ''
-AutoCompact = true
+AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 

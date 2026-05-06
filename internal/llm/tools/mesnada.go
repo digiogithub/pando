@@ -11,6 +11,7 @@ import (
 	"github.com/digiogithub/pando/pkg/mesnada/models"
 )
 
+
 const (
 	mesnadaSpawnToolName     = "mesnada_spawn_agent"
 	mesnadaGetTaskToolName   = "mesnada_get_task"
@@ -81,11 +82,15 @@ func NewMesnadaGetOutputTool(orch *orchestrator.Orchestrator) BaseTool {
 func (t *MesnadaSpawnTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        mesnadaSpawnToolName,
-		Description: "Creates and executes a new Mesnada orchestrator task.",
+		Description: "Creates and executes a new Mesnada orchestrator task, or relaunches an existing task in-place. When task_id is provided the task is reset and re-executed preserving its ID so dependent tasks are automatically unblocked.",
 		Parameters: map[string]any{
+			"task_id": map[string]any{
+				"type":        "string",
+				"description": "Optional: ID of an existing task to relaunch in-place. When set, the task is reset to pending and re-executed using the stored configuration (overridden by any provided prompt/engine/model/timeout). Dependent tasks are automatically unblocked when the relaunched task completes.",
+			},
 			"prompt": map[string]any{
 				"type":        "string",
-				"description": "The prompt or instruction for the spawned task.",
+				"description": "The prompt or instruction for the spawned task. Required when creating a new task; optional override when relaunching via task_id.",
 			},
 			"work_dir": map[string]any{
 				"type":        "string",
@@ -122,6 +127,7 @@ func (t *MesnadaSpawnTool) Info() ToolInfo {
 
 func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
 	type spawnParams struct {
+		TaskID     string   `json:"task_id"`
 		Prompt     string   `json:"prompt"`
 		WorkDir    string   `json:"work_dir"`
 		Engine     string   `json:"engine"`
@@ -135,13 +141,47 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 	if err := decodeMesnadaInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(err.Error()), nil
 	}
-	if req.Prompt == "" {
-		return NewTextErrorResponse("prompt is required"), nil
-	}
 
 	background := true
 	if req.Background != nil {
 		background = *req.Background
+	}
+
+	// Relaunch an existing task in-place when task_id is provided.
+	if req.TaskID != "" {
+		logging.Debug("mesnada relaunch called", "task_id", req.TaskID, "engine", req.Engine, "model", req.Model, "background", background)
+
+		task, err := t.orchestrator.Relaunch(ctx, req.TaskID, orchestrator.RelaunchOptions{
+			Prompt:     req.Prompt,
+			Engine:     normalizeMesnadaEngine(req.Engine),
+			Model:      req.Model,
+			Timeout:    req.Timeout,
+			Background: background,
+		})
+		if err != nil {
+			return NewTextErrorResponse(err.Error()), nil
+		}
+
+		logging.Debug("mesnada task relaunched", "taskID", task.ID, "status", string(task.Status))
+		result := map[string]any{
+			"task_id":    task.ID,
+			"status":     task.Status,
+			"work_dir":   task.WorkDir,
+			"created_at": task.CreatedAt,
+			"relaunched": true,
+		}
+		if !background && task.IsTerminal() {
+			result["output_tail"] = task.OutputTail
+			result["exit_code"] = task.ExitCode
+			if task.Error != "" {
+				result["error"] = task.Error
+			}
+		}
+		return encodeMesnadaResult(result)
+	}
+
+	if req.Prompt == "" {
+		return NewTextErrorResponse("prompt is required"), nil
 	}
 
 	logging.Debug("mesnada spawn called", "prompt_length", len(req.Prompt), "engine", req.Engine, "model", req.Model, "background", background)

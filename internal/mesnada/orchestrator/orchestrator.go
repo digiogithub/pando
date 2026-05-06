@@ -112,7 +112,37 @@ func New(cfg Config) (*Orchestrator, error) {
 
 	o.manager = agent.NewManager(cfg.AppConfig, cfg.LogDir, o.onTaskComplete, o.SetProgress, cfg.ModelResolver)
 
+	// Recover any tasks that were left in running state from a previous run.
+	o.recoverStaleTasks()
+
 	return o, nil
+}
+
+// recoverStaleTasks marks any tasks that are still in "running" state as failed.
+// This happens when pando is restarted after a crash or ungraceful shutdown.
+func (o *Orchestrator) recoverStaleTasks() {
+	tasks, err := o.store.List(store.ListFilter{
+		Status: []models.TaskStatus{models.TaskStatusRunning},
+	})
+	if err != nil {
+		log.Printf("Warning: failed to list running tasks for recovery: %v", err)
+		return
+	}
+
+	for _, task := range tasks {
+		log.Printf("task_event=recovering_stale task_id=%s - marking as failed (process interrupted)", task.ID)
+		task.Status = models.TaskStatusFailed
+		task.Error = "task was interrupted (process died or pando was restarted)"
+		now := time.Now()
+		task.CompletedAt = &now
+		if err := o.store.Save(task); err != nil {
+			log.Printf("Warning: failed to save recovered task %s: %v", task.ID, err)
+		}
+	}
+
+	if len(tasks) > 0 {
+		log.Printf("task_recovery: marked %d stale running task(s) as failed", len(tasks))
+	}
 }
 
 func (o *Orchestrator) onTaskComplete(task *models.Task) {
@@ -609,6 +639,113 @@ func (o *Orchestrator) Resume(ctx context.Context, taskID string, opts ResumeOpt
 		ExtraArgs:    prev.ExtraArgs,
 		Background:   opts.Background,
 	})
+}
+
+// RelaunchOptions controls how a task is relaunched in-place.
+type RelaunchOptions struct {
+	// Prompt overrides the original prompt when non-empty.
+	Prompt string
+	// Engine overrides the engine when non-zero.
+	Engine models.Engine
+	// Model overrides the model when non-empty.
+	Model string
+	// Timeout overrides the timeout when non-empty.
+	Timeout string
+	// Background controls whether the relaunch runs in the background.
+	Background bool
+}
+
+// Relaunch resets an existing task (of any status) back to pending and re-runs it.
+// Unlike Retry (which creates a new task), Relaunch reuses the same task ID so that
+// any dependent tasks automatically benefit from the new execution without needing
+// their dependency arrays updated.
+//
+// Optional fields in opts override the stored task configuration; zero values keep
+// the original values.
+func (o *Orchestrator) Relaunch(ctx context.Context, taskID string, opts RelaunchOptions) (*models.Task, error) {
+	task, err := o.store.Get(taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Best-effort: stop the process if it is still tracked as running.
+	if task.Status == models.TaskStatusRunning {
+		if err := o.manager.Cancel(taskID); err != nil {
+			log.Printf("Warning: failed to cancel running task %s before relaunch: %v", taskID, err)
+		}
+	}
+
+	// Apply overrides.
+	if opts.Prompt != "" {
+		task.Prompt = opts.Prompt
+	}
+	if opts.Engine != "" {
+		task.Engine = opts.Engine
+	}
+	if opts.Model != "" {
+		task.Model = opts.Model
+	}
+	if opts.Timeout != "" {
+		dur, parseErr := time.ParseDuration(opts.Timeout)
+		if parseErr != nil {
+			return nil, fmt.Errorf("invalid timeout: %w", parseErr)
+		}
+		task.Timeout = models.Duration(dur)
+	}
+
+	// Apply orchestrator default engine if none is set.
+	if task.Engine == "" {
+		task.Engine = o.defaultEngine
+	}
+
+	// Regenerate the dynamic MCP config for non-ACP engines, because the
+	// previous config directory may have been cleaned up when the task finished
+	// (or was never created if the task was interrupted before starting).
+	if !isACPEngine(task.Engine) {
+		dynPrefix := o.dynamicMCPDir + "/mcp-dynamic/" + taskID
+		if task.MCPConfig == "" || strings.HasPrefix(task.MCPConfig, dynPrefix) {
+			dynCfg := agent.BuildSubagentMCPConfig("", o.pandoMCPServers, o.gatewayExposeEnabled)
+			if written, writeErr := agent.WriteCanonicalConfigToFile(dynCfg, dynPrefix, "mcp-config.json"); writeErr != nil {
+				log.Printf("Warning: failed to regenerate dynamic MCP config for task %s: %v", taskID, writeErr)
+			} else {
+				task.MCPConfig = written
+			}
+		}
+	}
+
+	// Reset execution state while preserving identity and configuration.
+	task.Status = models.TaskStatusPending
+	task.PID = 0
+	task.Error = ""
+	task.ExitCode = nil
+	task.Output = ""
+	task.OutputTail = ""
+	task.Progress = nil
+	task.StartedAt = nil
+	task.CompletedAt = nil
+	task.CurrentTool = ""
+	task.ToolCalls = nil
+
+	logTaskReceived(task)
+
+	if err := o.store.Save(task); err != nil {
+		return nil, fmt.Errorf("failed to save task: %w", err)
+	}
+
+	if o.canStart(task) {
+		reason := "relaunch_dependencies_satisfied"
+		if len(task.Dependencies) == 0 {
+			reason = "relaunch_no_dependencies"
+		}
+		logTaskStartable(task, reason)
+		if opts.Background {
+			go o.startTask(task)
+		} else {
+			o.startTask(task)
+		}
+	}
+
+	return task, nil
 }
 
 // RetryOptions controls how a failed or pending task is retried.
