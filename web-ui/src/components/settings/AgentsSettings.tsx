@@ -31,6 +31,14 @@ const REASONING_EFFORT_OPTIONS = [
   { value: 'high', label: 'High' },
 ]
 
+const THINKING_MODE_OPTIONS = [
+  { value: '', label: 'Default' },
+  { value: 'disabled', label: 'Disabled' },
+  { value: 'low', label: 'Low (20% budget)' },
+  { value: 'medium', label: 'Medium (50% budget)' },
+  { value: 'high', label: 'High (80% budget)' },
+]
+
 const sectionTitle: React.CSSProperties = {
   fontSize: 18,
   fontWeight: 700,
@@ -175,8 +183,8 @@ function AgentCard({
             />
           </Field>
 
-          {/* MaxTokens + Reasoning Effort in a row */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          {/* MaxTokens + Reasoning Effort + Thinking Mode in a row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
             <Field label="Max Tokens">
               <input
                 type="number"
@@ -198,6 +206,22 @@ function AgentCard({
                 onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
               >
                 {REASONING_EFFORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Thinking Mode ⚡">
+              <select
+                value={agent.thinkingMode ?? ''}
+                onChange={(e) => onUpdate({ thinkingMode: e.target.value })}
+                style={{ ...inputStyle, cursor: 'pointer' }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
+              >
+                {THINKING_MODE_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
@@ -299,6 +323,7 @@ export default function AgentsSettings() {
         model: '',
         maxTokens: 0,
         reasoningEffort: '',
+        thinkingMode: '',
         autoCompact: false,
         autoCompactThreshold: 0,
       }

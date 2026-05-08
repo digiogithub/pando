@@ -17,6 +17,8 @@ interface ModelInfo {
   provider: string
   description: string
   badges: string[]
+  canReason: boolean
+  supportsReasoningEffort: boolean
 }
 
 interface ModelsResponse {
@@ -28,15 +30,16 @@ const BADGE_COLORS: Record<string, string> = {
   cost: '#F59E0B',
   capable: 'var(--info)',
   vision: 'var(--accent)',
+  thinking: '#A855F7',
 }
 
 const FALLBACK_MODELS: ModelInfo[] = [
-  { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'anthropic', description: 'Most capable Anthropic model', badges: ['capable', 'fast'] },
-  { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', provider: 'anthropic', description: 'Balanced model', badges: ['fast', 'cost'] },
-  { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', provider: 'anthropic', description: 'Fastest Anthropic model', badges: ['fast', 'cost'] },
-  { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai', description: 'OpenAI flagship model', badges: ['fast', 'capable'] },
-  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'openai', description: 'Smaller, cost-efficient GPT-4o', badges: ['fast', 'cost'] },
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', provider: 'google', description: 'Google fast model', badges: ['fast', 'cost'] },
+  { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'anthropic', description: 'Most capable Anthropic model', badges: ['capable', 'fast'], canReason: true, supportsReasoningEffort: false },
+  { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', provider: 'anthropic', description: 'Balanced model', badges: ['fast', 'cost'], canReason: true, supportsReasoningEffort: false },
+  { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', provider: 'anthropic', description: 'Fastest Anthropic model', badges: ['fast', 'cost'], canReason: false, supportsReasoningEffort: false },
+  { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai', description: 'OpenAI flagship model', badges: ['fast', 'capable'], canReason: false, supportsReasoningEffort: false },
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'openai', description: 'Smaller, cost-efficient GPT-4o', badges: ['fast', 'cost'], canReason: false, supportsReasoningEffort: false },
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', provider: 'google', description: 'Google fast model', badges: ['fast', 'cost'], canReason: false, supportsReasoningEffort: false },
 ]
 
 export default function ModelSwitcher() {
@@ -299,7 +302,24 @@ export default function ModelSwitcher() {
                             </div>
                           )}
                         </div>
-                        <div style={{ display: 'flex', gap: '0.25rem' }}>
+                        <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          {model.canReason && (
+                            <span
+                              title="Supports extended thinking / reasoning"
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 600,
+                                padding: '1px 6px',
+                                borderRadius: 0,
+                                background: `${BADGE_COLORS.thinking}22`,
+                                color: BADGE_COLORS.thinking,
+                                border: `1px solid ${BADGE_COLORS.thinking}44`,
+                                textTransform: 'lowercase',
+                              }}
+                            >
+                              ⚡ thinking
+                            </span>
+                          )}
                           {model.badges.map((badge) => (
                             <span
                               key={badge}

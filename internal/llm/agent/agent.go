@@ -438,6 +438,19 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		}
 	}
 
+	// Trim message history to fit within 40% of the current model's context window.
+	// This prevents overflowing when the model was switched to one with a smaller
+	// context window mid-conversation. The 40% budget leaves ample room for the new
+	// user message, tool calls, and the model's response.
+	if a.provider != nil {
+		contextWindow := a.provider.Model().ContextWindow
+		cfg2 := config.Get()
+		if agentCfg2, ok2 := cfg2.Agents[a.agentName]; ok2 && agentCfg2.ContextWindowOverride > 0 {
+			contextWindow = agentCfg2.ContextWindowOverride
+		}
+		msgs = trimMessagesToContextBudget(msgs, contextWindow, 0.40)
+	}
+
 	// Sanitize history: if an assistant message has tool_calls but no matching
 	// tool results follow (e.g. the session was interrupted mid-tool-execution),
 	// insert synthetic "interrupted" results so the API does not reject the request.
@@ -1154,7 +1167,26 @@ func (a *agent) shouldCompact(usedTokens int64) bool {
 // compactContext summarizes the conversation history to reduce context size.
 // It creates a summary message and sets it as the session's SummaryMessageID so
 // subsequent calls to processGeneration will start from the summary.
-func (a *agent) sendCompactionSummary(ctx context.Context, messages []message.Message) (*provider.ProviderResponse, provider.Provider, error) {
+
+// getSummarizerContextWindow returns the context window of the primary summarizer,
+// falling back to the fallback provider, and then to 0 if neither is available.
+func (a *agent) getSummarizerContextWindow() int64 {
+	if a.summarizeProvider != nil {
+		if w := a.summarizeProvider.Model().ContextWindow; w > 0 {
+			return w
+		}
+	}
+	if a.summarizeFallbackProvider != nil {
+		return a.summarizeFallbackProvider.Model().ContextWindow
+	}
+	return 0
+}
+
+// sendCompactionSummary sends the summarization request to the appropriate provider.
+// rawConvText and compactionPrompt are passed so that if the primary provider fails,
+// the fallback (coder) provider can rebuild the message trimmed to its own context window.
+// reservation is the token budget reserved for prompt + expected output.
+func (a *agent) sendCompactionSummary(ctx context.Context, messages []message.Message, rawConvText, compactionPrompt string, reservation int64) (*provider.ProviderResponse, provider.Provider, error) {
 	providerToUse := a.summarizeProvider
 	if providerToUse == nil {
 		providerToUse = a.summarizeFallbackProvider
@@ -1167,13 +1199,26 @@ func (a *agent) sendCompactionSummary(ctx context.Context, messages []message.Me
 	if err == nil {
 		return response, providerToUse, nil
 	}
+
+	// If the primary summarizer failed and we have a separate fallback (coder), retry
+	// with the fallback provider, re-trimming the conversation text to fit its context window.
 	if a.summarizeProvider != nil && a.summarizeFallbackProvider != nil && providerToUse == a.summarizeProvider {
-		logging.WarnPersist("Configured compaction model failed, retrying with current agent model", "error", err, "fallbackModel", a.summarizeFallbackProvider.Model().ID)
-		response, fallbackErr := a.summarizeFallbackProvider.SendMessages(ctx, messages, []tools.BaseTool{})
-		if fallbackErr == nil {
-			return response, a.summarizeFallbackProvider, nil
+		fallback := a.summarizeFallbackProvider
+		logging.WarnPersist("Configured compaction model failed, retrying with coder (fallback) model",
+			"error", err, "fallbackModel", fallback.Model().ID)
+
+		fallbackConvStr := trimTextToContextWindow(rawConvText, fallback.Model().ContextWindow, reservation)
+		fallbackMessages := []message.Message{
+			{
+				Role:  message.User,
+				Parts: []message.ContentPart{message.TextContent{Text: compactionPrompt + "\n\nConversation to summarize:\n" + fallbackConvStr}},
+			},
 		}
-		return nil, nil, fmt.Errorf("configured compaction model failed: %w; fallback with current agent model failed: %w", err, fallbackErr)
+		response, fallbackErr := fallback.SendMessages(ctx, fallbackMessages, []tools.BaseTool{})
+		if fallbackErr == nil {
+			return response, fallback, nil
+		}
+		return nil, nil, fmt.Errorf("configured compaction model failed: %w; coder fallback also failed: %w", err, fallbackErr)
 	}
 	return nil, nil, err
 }
@@ -1209,14 +1254,22 @@ func (a *agent) compactContext(ctx context.Context, sessionID string) error {
 
 Be concise but complete. This summary will replace the conversation history.`
 
+	// Determine the effective context window of the summarizer.
+	// If the summarizer has a smaller context window than the conversation text,
+	// trim the conversation from the oldest end to fit.
+	// Reserve ~2500 tokens for the compaction prompt and expected output.
+	const compactionReservation int64 = 2500
+	summarizerContextWindow := a.getSummarizerContextWindow()
+	convStr := trimTextToContextWindow(convText.String(), summarizerContextWindow, compactionReservation)
+
 	sendCtx := context.WithValue(ctx, tools.SessionIDContextKey, sessionID)
 	messages := []message.Message{
 		{
 			Role:  message.User,
-			Parts: []message.ContentPart{message.TextContent{Text: compactionPrompt + "\n\nConversation to summarize:\n" + convText.String()}},
+			Parts: []message.ContentPart{message.TextContent{Text: compactionPrompt + "\n\nConversation to summarize:\n" + convStr}},
 		},
 	}
-	response, usedProvider, err := a.sendCompactionSummary(sendCtx, messages)
+	response, usedProvider, err := a.sendCompactionSummary(sendCtx, messages, convText.String(), compactionPrompt, compactionReservation)
 	if err != nil {
 		return fmt.Errorf("failed to generate compaction summary: %w", err)
 	}
@@ -1425,4 +1478,76 @@ func effectiveMaxTokens(agentName config.AgentName, model models.Model) int {
 		}
 	}
 	return int(model.DefaultMaxTokens)
+}
+
+// estimateMessageTokens returns a rough token estimate for a single message.
+// Uses the heuristic of 1 token ≈ 4 UTF-8 bytes.
+func estimateMessageTokens(msg message.Message) int64 {
+	chars := int64(len(msg.Content().Text))
+	for _, tc := range msg.ToolCalls() {
+		chars += int64(len(tc.Input))
+	}
+	return chars / 4
+}
+
+// trimMessagesToContextBudget trims the message slice from the oldest end so that
+// the estimated token count fits within contextWindow * fraction.
+// A minimum of 2 messages is always preserved.
+// If contextWindow <= 0, msgs is returned unchanged.
+func trimMessagesToContextBudget(msgs []message.Message, contextWindow int64, fraction float64) []message.Message {
+	if contextWindow <= 0 || len(msgs) == 0 || fraction <= 0 {
+		return msgs
+	}
+	maxTokens := int64(float64(contextWindow) * fraction)
+
+	var estimatedTokens int64
+	for _, msg := range msgs {
+		estimatedTokens += estimateMessageTokens(msg)
+	}
+
+	if estimatedTokens <= maxTokens {
+		return msgs
+	}
+
+	original := len(msgs)
+	for len(msgs) > 2 && estimatedTokens > maxTokens {
+		estimatedTokens -= estimateMessageTokens(msgs[0])
+		msgs = msgs[1:]
+	}
+
+	if len(msgs) < original {
+		logging.InfoPersist(fmt.Sprintf(
+			"Message history trimmed for context budget: %d→%d messages (~%d tokens, budget=%.0f%% of %d)",
+			original, len(msgs), estimatedTokens, fraction*100, contextWindow,
+		))
+	}
+	return msgs
+}
+
+// trimTextToContextWindow trims text from the beginning so that its estimated
+// token count fits within contextWindow - reservation tokens.
+// Returns the original text if contextWindow <= 0.
+func trimTextToContextWindow(text string, contextWindow int64, reservation int64) string {
+	if contextWindow <= 0 {
+		return text
+	}
+	available := contextWindow - reservation
+	if available <= 0 {
+		available = contextWindow / 2
+	}
+	maxChars := available * 4
+	if int64(len(text)) <= maxChars {
+		return text
+	}
+	// Keep the most recent portion (tail) of the text.
+	trimmed := text[int64(len(text))-maxChars:]
+	// Advance to the next newline to avoid cutting in mid-sentence.
+	if idx := strings.IndexByte(trimmed, '\n'); idx > 0 && idx < 200 {
+		trimmed = trimmed[idx+1:]
+	}
+	logging.InfoPersist(fmt.Sprintf(
+		"Conversation text trimmed for compaction: %d→%d chars (context window=%d tokens)",
+		len(text), len(trimmed), contextWindow,
+	))
+	return trimmed
 }

@@ -333,12 +333,17 @@ func (m *modelDialogCmp) View() string {
 		modelItems = append(modelItems, baseStyle.Width(maxDialogWidth).Padding(0, 1).Foreground(t.TextMuted()).Render("No models found"))
 	} else {
 		for i := m.scrollOffset; i < endIdx; i++ {
+			mod := m.filteredModels[i]
 			itemStyle := baseStyle.Width(maxDialogWidth)
 			if i == m.selectedIdx {
 				itemStyle = itemStyle.Background(t.Primary()).
 					Foreground(t.Background()).Bold(true)
 			}
-			modelItems = append(modelItems, tuizone.MarkModelItem(string(m.filteredModels[i].ID), itemStyle.Render(m.filteredModels[i].Name)))
+			label := mod.Name
+			if mod.CanReason {
+				label += " ⚡"
+			}
+			modelItems = append(modelItems, tuizone.MarkModelItem(string(mod.ID), itemStyle.Render(label)))
 		}
 	}
 

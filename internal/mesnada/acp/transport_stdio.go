@@ -152,8 +152,12 @@ func interceptStdin(in io.Reader, out *syncWriter, fwd *io.PipeWriter, agent *Pa
 		if err := json.Unmarshal(line, &msg); err != nil {
 			logACPJSONRPC(logger, "in", line)
 			// Unparseable: forward as-is so the SDK can log/handle it.
-			fwd.Write(line)
-			fwd.Write([]byte("\n"))
+			if _, werr := fwd.Write(line); werr != nil {
+				break
+			}
+			if _, werr := fwd.Write([]byte("\n")); werr != nil {
+				break
+			}
 			continue
 		}
 		logACPJSONRPC(logger, "in", line)
@@ -201,8 +205,12 @@ func interceptStdin(in io.Reader, out *syncWriter, fwd *io.PipeWriter, agent *Pa
 		}
 
 		// Forward everything else to the SDK connection.
-		fwd.Write(line)
-		fwd.Write([]byte("\n"))
+		if _, werr := fwd.Write(line); werr != nil {
+			break
+		}
+		if _, werr := fwd.Write([]byte("\n")); werr != nil {
+			break
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -390,6 +398,8 @@ func handleClaudeUsageRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAgent, l
 }
 
 // writeRPCResult writes a JSON-RPC 2.0 success response as a newline-terminated JSON line.
+// Write errors (e.g. EPIPE when the editor closed its stdin) are swallowed because
+// SIGPIPE is ignored at process level; returning them would just spam logs.
 func writeRPCResult(out io.Writer, id json.RawMessage, result interface{}) {
 	type rpcResponse struct {
 		JSONRPC string          `json:"jsonrpc"`
@@ -398,10 +408,12 @@ func writeRPCResult(out io.Writer, id json.RawMessage, result interface{}) {
 	}
 	b, _ := json.Marshal(rpcResponse{JSONRPC: "2.0", ID: id, Result: result})
 	b = append(b, '\n')
-	out.Write(b) //nolint:errcheck
+	_, _ = out.Write(b)
 }
 
 // writeRPCError writes a JSON-RPC 2.0 error response as a newline-terminated JSON line.
+// Write errors (e.g. EPIPE when the editor closed its stdin) are swallowed because
+// SIGPIPE is ignored at process level; returning them would just spam logs.
 func writeRPCError(out io.Writer, id json.RawMessage, code int, message string) {
 	type rpcErr struct {
 		Code    int    `json:"code"`
@@ -414,5 +426,5 @@ func writeRPCError(out io.Writer, id json.RawMessage, code int, message string) 
 	}
 	b, _ := json.Marshal(rpcResponse{JSONRPC: "2.0", ID: id, Error: rpcErr{Code: code, Message: message}})
 	b = append(b, '\n')
-	out.Write(b) //nolint:errcheck
+	_, _ = out.Write(b)
 }

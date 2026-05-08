@@ -6,9 +6,11 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/signal"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -491,6 +493,12 @@ func runACPServer() error {
 // Editors like VS Code, Zed, and JetBrains spawn this as a subprocess and
 // communicate via JSON-RPC over stdin/stdout.
 func runACPServerWithOptions(cwd string, debug bool, autoPerm bool) error {
+	// Ignore SIGPIPE so the process does not terminate with signal 13 when the
+	// editor closes its end of the stdio pipe (e.g. on disconnect or restart).
+	// Without this, any write to stdout after the editor exits triggers SIGPIPE
+	// and kills the server abruptly, aborting in-flight communications.
+	signal.Ignore(syscall.SIGPIPE)
+
 	if cwd == "" {
 		var err error
 		cwd, err = os.Getwd()

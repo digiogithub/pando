@@ -138,13 +138,35 @@ func DeleteCopilotSession() error {
 	return nil
 }
 
+// isCopilotCompatibleToken reports whether the token is an OAuth token accepted
+// by the Copilot API.  The Copilot API rejects Personal Access Tokens (PATs),
+// which start with "ghp_" or "github_pat_".  Only OAuth tokens ("gho_") and
+// tokens without a recognised prefix (legacy / enterprise) are accepted.
+func isCopilotCompatibleToken(token string) bool {
+	lower := strings.ToLower(strings.TrimSpace(token))
+	if strings.HasPrefix(lower, "ghp_") {
+		return false // Personal Access Token — rejected by Copilot API
+	}
+	if strings.HasPrefix(lower, "github_pat_") {
+		return false // Fine-grained PAT — also rejected
+	}
+	return token != ""
+}
+
 func LoadGitHubOAuthToken() (string, error) {
-	for _, envVar := range []string{"COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"} {
-		if token := strings.TrimSpace(os.Getenv(envVar)); token != "" {
-			return token, nil
-		}
+	// COPILOT_GITHUB_TOKEN is user-explicit and always wins regardless of type.
+	if token := strings.TrimSpace(os.Getenv("COPILOT_GITHUB_TOKEN")); token != "" {
+		return token, nil
 	}
 
+	// GH_TOKEN is the GitHub CLI token — typically an OAuth token, try it next.
+	if token := strings.TrimSpace(os.Getenv("GH_TOKEN")); isCopilotCompatibleToken(token) {
+		return token, nil
+	}
+
+	// Saved session from `pando auth copilot login` takes precedence over the
+	// generic GITHUB_TOKEN env var, which may be a PAT (ghp_...) used for CI/CD
+	// and is rejected by the Copilot API.
 	if session, err := LoadCopilotSession(); err == nil && strings.TrimSpace(session.AccessToken) != "" {
 		return session.AccessToken, nil
 	}
@@ -154,6 +176,12 @@ func LoadGitHubOAuthToken() (string, error) {
 	}
 
 	if token, err := loadGitHubCLIToken(); err == nil && token != "" {
+		return token, nil
+	}
+
+	// GITHUB_TOKEN is checked last because it is commonly set to a PAT in CI
+	// environments.  Only accept it when it looks like an OAuth token.
+	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); isCopilotCompatibleToken(token) {
 		return token, nil
 	}
 

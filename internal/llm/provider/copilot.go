@@ -112,7 +112,11 @@ func (c *copilotClient) requestHeaders(messages []message.Message) map[string]st
 		headers["Copilot-Vision-Request"] = "true"
 	}
 	if c.isAnthropicModel() {
-		headers["anthropic-beta"] = "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"
+		// GitHub Copilot's /v1/messages shim does not support the
+		// fine-grained-tool-streaming beta feature. Using only the
+		// interleaved-thinking beta matches what the opencode reference
+		// implementation sends (see copilot.ts chat.headers hook).
+		headers["anthropic-beta"] = "interleaved-thinking-2025-05-14"
 	}
 	for key, value := range c.options.extraHeaders {
 		headers[key] = value
@@ -240,6 +244,14 @@ func (c *copilotClient) convertMessages(messages []message.Message) (copilotMess
 				assistantMsg.Content = openai.ChatCompletionAssistantMessageParamContentUnion{
 					OfString: openai.String(msg.Content().String()),
 				}
+			}
+
+			// Pass reasoning_content back for providers that require it (e.g. SiliconFlow via OpenRouter).
+			// Without this, multi-turn conversations with thinking models return a 400 error.
+			if thinking := msg.ReasoningContent().Thinking; thinking != "" {
+				assistantMsg.WithExtraFields(map[string]any{
+					"reasoning_content": thinking,
+				})
 			}
 
 			if len(msg.ToolCalls()) > 0 {
@@ -476,6 +488,18 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 							Content: choice.Delta.Content,
 						}
 						currentContent += choice.Delta.Content
+					}
+					// Capture reasoning_content from providers like SiliconFlow via OpenRouter.
+					if rc, ok := choice.Delta.JSON.ExtraFields["reasoning_content"]; ok {
+						if raw := rc.Raw(); raw != "" && raw != "null" {
+							var rcStr string
+							if err := json.Unmarshal([]byte(raw), &rcStr); err == nil && rcStr != "" {
+								eventChan <- ProviderEvent{
+									Type:     EventThinkingDelta,
+									Thinking: rcStr,
+								}
+							}
+						}
 					}
 				}
 

@@ -125,6 +125,14 @@ func (o *openaiClient) convertMessages(messages []message.Message) (openaiMessag
 				}
 			}
 
+			// Pass reasoning_content back for providers that require it (e.g. SiliconFlow via OpenRouter).
+			// Without this, multi-turn conversations with thinking models return a 400 error.
+			if thinking := msg.ReasoningContent().Thinking; thinking != "" {
+				assistantMsg.WithExtraFields(map[string]any{
+					"reasoning_content": thinking,
+				})
+			}
+
 			openaiMessages = append(openaiMessages, openai.ChatCompletionMessageParamUnion{
 				OfAssistant: &assistantMsg,
 			})
@@ -303,6 +311,18 @@ func (o *openaiClient) stream(ctx context.Context, messages []message.Message, t
 							Content: choice.Delta.Content,
 						}
 						currentContent += choice.Delta.Content
+					}
+					// Capture reasoning_content from providers like SiliconFlow via OpenRouter.
+					if rc, ok := choice.Delta.JSON.ExtraFields["reasoning_content"]; ok {
+						if raw := rc.Raw(); raw != "" && raw != "null" {
+							var rcStr string
+							if err := json.Unmarshal([]byte(raw), &rcStr); err == nil && rcStr != "" {
+								eventChan <- ProviderEvent{
+									Type:     EventThinkingDelta,
+									Thinking: rcStr,
+								}
+							}
+						}
 					}
 				}
 			}

@@ -222,6 +222,7 @@ export interface AgentConfigItem {
   model: string
   maxTokens: number
   reasoningEffort: string
+  thinkingMode: string
   autoCompact: boolean
   autoCompactThreshold: number
 }

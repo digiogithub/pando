@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/digiogithub/pando/internal/version"
 )
 
 // FetchedModel represents a model returned by a provider's API
@@ -220,37 +222,33 @@ func fetchCopilotModels(ctx context.Context, bearerToken string) ([]FetchedModel
 	}
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "Pando/"+version.Version)
 
 	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
-		// Copilot returns a JSON array of model objects
 		var response struct {
 			Data []struct {
-				ID      string `json:"id"`
-				Name    string `json:"name"`
-				Version string `json:"version"`
+				ID                string `json:"id"`
+				Name              string `json:"name"`
+				Version           string `json:"version"`
+				ModelPickerEnabled bool   `json:"model_picker_enabled"`
+				Policy            *struct {
+					State string `json:"state,omitempty"`
+				} `json:"policy,omitempty"`
 			} `json:"data"`
 		}
 		if err := json.Unmarshal(body, &response); err != nil {
-			// Try as a plain array
-			var models []struct {
-				ID      string `json:"id"`
-				Name    string `json:"name"`
-				Version string `json:"version"`
-			}
-			if err2 := json.Unmarshal(body, &models); err2 != nil {
-				return nil, fmt.Errorf("parse response: %w", err)
-			}
-			result := make([]FetchedModel, 0, len(models))
-			for _, m := range models {
-				result = append(result, FetchedModel{
-					ID:   m.ID,
-					Name: m.Name,
-				})
-			}
-			return result, nil
+			return nil, fmt.Errorf("parse response: %w", err)
 		}
 		result := make([]FetchedModel, 0, len(response.Data))
 		for _, m := range response.Data {
+			// Filter out models not shown in the model picker or explicitly disabled.
+			// Matches the opencode reference implementation filter logic.
+			if !m.ModelPickerEnabled {
+				continue
+			}
+			if m.Policy != nil && m.Policy.State == "disabled" {
+				continue
+			}
 			result = append(result, FetchedModel{
 				ID:   m.ID,
 				Name: m.Name,

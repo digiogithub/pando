@@ -15,12 +15,14 @@ import (
 
 // ModelInfo describes a model available for selection.
 type ModelInfo struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Provider    string   `json:"provider"`
-	AccountID   string   `json:"accountId,omitempty"`
-	Description string   `json:"description"`
-	Badges      []string `json:"badges"`
+	ID                      string   `json:"id"`
+	Name                    string   `json:"name"`
+	Provider                string   `json:"provider"`
+	AccountID               string   `json:"accountId,omitempty"`
+	Description             string   `json:"description"`
+	Badges                  []string `json:"badges"`
+	CanReason               bool     `json:"canReason"`
+	SupportsReasoningEffort bool     `json:"supportsReasoningEffort"`
 }
 
 // badgesForModel returns heuristic badges based on model ID.
@@ -154,13 +156,16 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 				if sameTypeCount > 1 {
 					displayName = acc.ID + ": " + name
 				}
+				knownModel := models.SupportedModels[modelID]
 				items = append(items, ModelInfo{
-					ID:          string(modelID),
-					Name:        displayName,
-					Provider:    string(acc.Type),
-					AccountID:   acc.ID,
-					Description: m.Description,
-					Badges:      badgesForModel(m.ID),
+					ID:                      string(modelID),
+					Name:                    displayName,
+					Provider:                string(acc.Type),
+					AccountID:               acc.ID,
+					Description:             m.Description,
+					Badges:                  badgesForModel(m.ID),
+					CanReason:               knownModel.CanReason,
+					SupportsReasoningEffort: knownModel.SupportsReasoningEffort,
 				})
 			}
 			resultCh <- accountResult{accountID: acc.ID, provider: acc.Type, items: items}
