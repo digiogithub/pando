@@ -52,7 +52,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'claude-opus-4-7'
+Model = 'qwen/qwen3.6-27b'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''

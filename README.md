@@ -264,7 +264,7 @@ make release-linux-amd64
 make release-linux-arm64
 
 # Windows x64
-make release-windows-amd64
+#make release-windows-amd64
 
 # macOS aarch64
 make release-darwin-arm64
