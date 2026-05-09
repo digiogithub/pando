@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
@@ -6,6 +6,7 @@ import {
   faComments, faFileLines, faNetworkWired,
   faCamera, faStar, faCog, faMoon, faSun,
   faChevronLeft, faChevronRight, faCode, faTerminal, faComment, faFolderOpen, faCircleQuestion,
+  faBars, faTimes,
 } from '@fortawesome/free-solid-svg-icons'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
@@ -19,6 +20,19 @@ export default function Header() {
   const { themeMode: theme, toggleMode: toggleTheme } = useTheme()
   const connected = useServerStore((s) => s.connected)
   const [version, setVersion] = useState<string>('')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const mobileMenuRef = useRef<HTMLElement>(null)
+
+  // Close mobile menu when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) {
+        setMobileMenuOpen(false)
+      }
+    }
+    if (mobileMenuOpen) document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [mobileMenuOpen])
 
   const TABS = [
     { path: '/', label: t('nav.chat'), icon: faComments, end: true },
@@ -45,6 +59,7 @@ export default function Header() {
 
   return (
     <header
+      ref={mobileMenuRef}
       style={{
         display: 'flex',
         alignItems: 'stretch',
@@ -53,7 +68,8 @@ export default function Header() {
         background: 'var(--sidebar-bg)',
         paddingRight: '0.75rem',
         flexShrink: 0,
-        zIndex: 10,
+        zIndex: 200,
+        position: 'relative',
       }}
     >
       {/* Toggle sidebar */}
@@ -130,7 +146,7 @@ export default function Header() {
         )}
       </div>
 
-      {/* Nav tabs — underline style */}
+      {/* Nav tabs — underline style (desktop) */}
       <nav
         style={{ display: 'flex', alignItems: 'stretch', flex: 1, gap: 0 }}
         className="header-nav"
@@ -161,12 +177,76 @@ export default function Header() {
         ))}
       </nav>
 
+      {/* Mobile hamburger button */}
+      <button
+        className="mobile-menu-btn"
+        onClick={() => setMobileMenuOpen((v) => !v)}
+        title="Menu"
+        style={{
+          display: 'none',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          color: mobileMenuOpen ? 'var(--primary)' : 'var(--fg-muted)',
+          padding: '0 0.75rem',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <FontAwesomeIcon icon={mobileMenuOpen ? faTimes : faBars} style={{ fontSize: 16 }} />
+      </button>
+
+      {/* Mobile dropdown nav */}
+      {mobileMenuOpen && (
+        <div
+          className="mobile-nav-dropdown"
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            background: 'var(--sidebar-bg)',
+            borderBottom: '1px solid var(--border)',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.18)',
+            zIndex: 201,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {TABS.map((tab) => (
+            <NavLink
+              key={tab.path}
+              to={tab.path}
+              end={tab.end}
+              onClick={() => setMobileMenuOpen(false)}
+              style={({ isActive }) => ({
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '0.75rem 1.25rem',
+                textDecoration: 'none',
+                fontSize: 14,
+                fontWeight: isActive ? 600 : 400,
+                color: isActive ? 'var(--primary)' : 'var(--fg)',
+                background: isActive ? 'var(--selected)' : 'transparent',
+                borderLeft: isActive ? '3px solid var(--primary)' : '3px solid transparent',
+                transition: 'background 0.12s, color 0.12s',
+              })}
+            >
+              <FontAwesomeIcon icon={tab.icon} style={{ fontSize: 14, width: 18 }} />
+              {tab.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+
       <style>{`
         .header-nav a:hover:not([style*="var(--primary)"]) { color: var(--fg) !important; }
         .header-version-short { display: none; }
         @media (max-width: 768px) {
-          .header-tab-label { display: none; }
-          .header-nav a { padding: 0 0.4rem !important; }
+          .header-nav { display: none !important; }
+          .mobile-menu-btn { display: flex !important; }
           .header-logo-text { display: none; }
           .header-version-full { display: none; }
           .header-version-short { display: inline; }

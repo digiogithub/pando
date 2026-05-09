@@ -113,3 +113,29 @@ body {
   border-top: 1px solid var(--border);
   margin: 0.75rem 0;
 }
+
+/* ── Mobile message bubble layout ──────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .msg-user-wrapper {
+    flex-direction: column !important;
+    align-items: flex-end !important;
+  }
+  .msg-user-avatar {
+    margin-bottom: 0.25rem;
+  }
+  .msg-user-bubble {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+  .msg-assistant-wrapper {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+  .msg-assistant-avatar {
+    margin-top: 0 !important;
+    margin-bottom: 0.25rem;
+  }
+  .msg-assistant-bubble {
+    width: 100% !important;
+  }
+}

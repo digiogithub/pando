@@ -263,7 +263,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 				logging.Warn("IPC: failed to start bus, continuing without IPC", "error", busErr)
 			} else {
 				dbproxy.RegisterHandlers(bus, db.New(conn))
-				bridge.RegisterHandlers(bus, instanceID, pandoApp.Sessions, time.Now())
+				bridge.RegisterHandlers(bus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
 				pandoApp.SetupIPC(bus)
 				br := bridge.New(bus, pandoApp.Sessions, pandoApp.CoderAgent)
 				br.Start(ctx)
@@ -547,6 +547,32 @@ func runACPServerWithOptions(cwd string, debug bool, autoPerm bool) error {
 		logger.Printf("ACP auto-permission forced on for stdio mode")
 	}
 	pandoApp.Permissions.SetGlobalAutoApprove(true)
+
+	// --- IPC: announce this ACP instance and start a ZMQ Bus so the TUI
+	// instances browser can discover it and query its sessions via RPC. ---
+	acpInstanceID := uuid.New().String()
+	acpPubPort, acpRPCPort := ipc.PortsForPath(cwd)
+	_ = instanceregistry.Announce(&instanceregistry.Entry{
+		InstanceID: acpInstanceID,
+		Path:       cwd,
+		PID:        os.Getpid(),
+		PubPort:    acpPubPort,
+		RPCPort:    acpRPCPort,
+		StartedAt:  time.Now(),
+		Mode:       instanceregistry.ModeACP,
+		IsPrimary:  false,
+	})
+	defer func() { _ = instanceregistry.Revoke(acpInstanceID) }()
+
+	acpBus := ipc.NewBus(acpInstanceID)
+	if busErr := acpBus.Start(ctx, acpPubPort, acpRPCPort); busErr != nil {
+		logger.Printf("IPC: ACP bus failed to start (instances browser will not see this instance): %v", busErr)
+	} else {
+		bridge.RegisterHandlers(acpBus, acpInstanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+		acpBridge := bridge.New(acpBus, pandoApp.Sessions, pandoApp.CoderAgent)
+		acpBridge.Start(ctx)
+		defer func() { _ = acpBus.Shutdown() }()
+	}
 
 	// Build adapters (defined below) that bridge internal services to ACP interfaces,
 	// avoiding import cycles between internal/mesnada/acp and internal/llm/agent.

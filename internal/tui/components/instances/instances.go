@@ -51,6 +51,12 @@ type sessionsUpdatedMsg struct {
 	sessions []protocol.SessionPayload
 }
 
+// messagesLoadedMsg carries historical messages for the selected session.
+type messagesLoadedMsg struct {
+	messages []protocol.MessagePayload
+	err      error
+}
+
 // liveEventMsg carries a single formatted event line for the live view.
 type liveEventMsg struct {
 	line string
@@ -74,12 +80,13 @@ type Model struct {
 	width, height int
 
 	// Data
-	instances       []*instanceregistry.Entry
-	selectedInst    int
-	sessions        []protocol.SessionPayload
-	selectedSession int
-	liveEvents      []string
-	activePane      paneID
+	instances        []*instanceregistry.Entry
+	selectedInst     int
+	sessions         []protocol.SessionPayload
+	selectedSession  int
+	historyMessages  []protocol.MessagePayload // historical messages for selected session
+	liveEvents       []string
+	activePane       paneID
 
 	// Live subscription cancellation
 	liveCancel context.CancelFunc
@@ -154,6 +161,23 @@ func fetchSessionsCmd(entry *instanceregistry.Entry) tea.Cmd {
 			return sessionsUpdatedMsg{}
 		}
 		return sessionsUpdatedMsg{sessions: sessions}
+	}
+}
+
+// fetchMessagesCmd loads the message history for a session from the selected instance via RPC.
+func fetchMessagesCmd(entry *instanceregistry.Entry, sessionID string) tea.Cmd {
+	return func() tea.Msg {
+		endpoint := fmt.Sprintf("tcp://127.0.0.1:%d", entry.RPCPort)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		rc, err := remoteview.NewRemoteControl(ctx, endpoint)
+		if err != nil {
+			return messagesLoadedMsg{err: err}
+		}
+
+		msgs, err := rc.ListMessages(ctx, sessionID)
+		return messagesLoadedMsg{messages: msgs, err: err}
 	}
 }
 

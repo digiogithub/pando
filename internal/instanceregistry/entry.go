@@ -16,6 +16,8 @@ const (
 	ModeACP Mode = "acp"
 	// ModeNonInteractive identifies a non-interactive (script/pipe) instance.
 	ModeNonInteractive Mode = "noninteractive"
+	// ModeProxy identifies an LLM proxy server instance.
+	ModeProxy Mode = "proxy"
 )
 
 // Entry describes a running Pando instance. It is serialized as JSON and

@@ -21,6 +21,8 @@ const (
 	MethodInstancePing = "instance.ping"
 	// MethodInstanceInfo retrieves detailed instance information.
 	MethodInstanceInfo = "instance.info"
+	// MethodMessageList requests the message history for a session.
+	MethodMessageList = "message.list"
 )
 
 // StateSyncParams is the parameter struct for the state.sync RPC method.
@@ -53,6 +55,11 @@ type MessageSendParams struct {
 
 // SessionInterruptParams is the parameter struct for session.interrupt.
 type SessionInterruptParams struct {
+	SessionID string `json:"session_id"`
+}
+
+// MessageListParams is the parameter struct for message.list.
+type MessageListParams struct {
 	SessionID string `json:"session_id"`
 }
 

@@ -92,6 +92,20 @@ func (rc *RemoteControl) GetSession(ctx context.Context, sessionID string) (prot
 	return sess, nil
 }
 
+// ListMessages returns the message history for the given session on the remote instance.
+func (rc *RemoteControl) ListMessages(ctx context.Context, sessionID string) ([]protocol.MessagePayload, error) {
+	params := protocol.MessageListParams{SessionID: sessionID}
+	raw, err := rc.client.Call(ctx, rc.rpcEndpoint, protocol.MethodMessageList, params)
+	if err != nil {
+		return nil, fmt.Errorf("remoteview: message.list: %w", err)
+	}
+	var msgs []protocol.MessagePayload
+	if err := json.Unmarshal(raw, &msgs); err != nil {
+		return nil, fmt.Errorf("remoteview: message.list: unmarshal: %w", err)
+	}
+	return msgs, nil
+}
+
 // Ping checks that the remote instance is alive and returns its status.
 func (rc *RemoteControl) Ping(ctx context.Context) (protocol.PingResult, error) {
 	raw, err := rc.client.Call(ctx, rc.rpcEndpoint, protocol.MethodInstancePing, struct{}{})

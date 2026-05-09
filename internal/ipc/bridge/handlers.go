@@ -7,10 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/protocol"
+	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/session"
 )
 
@@ -41,13 +43,13 @@ type SessionInterrupter interface {
 // svc is the local session service; startedAt is when this instance started.
 // runner and interrupter are optional: pass nil if message.send / session.interrupt
 // should not be handled by this instance.
-func RegisterHandlers(bus BusRegistrar, instanceID string, svc session.Service, startedAt time.Time) {
-	RegisterHandlersWithAgent(bus, instanceID, svc, startedAt, nil, nil)
+func RegisterHandlers(bus BusRegistrar, instanceID string, svc session.Service, msgSvc message.Service, startedAt time.Time) {
+	RegisterHandlersWithAgent(bus, instanceID, svc, msgSvc, startedAt, nil, nil)
 }
 
 // RegisterHandlersWithAgent registers all JSON-RPC handlers including the agent-backed
 // message.send and session.interrupt methods.
-func RegisterHandlersWithAgent(bus BusRegistrar, instanceID string, svc session.Service, startedAt time.Time, runner MessageRunner, interrupter SessionInterrupter) {
+func RegisterHandlersWithAgent(bus BusRegistrar, instanceID string, svc session.Service, msgSvc message.Service, startedAt time.Time, runner MessageRunner, interrupter SessionInterrupter) {
 	bus.RegisterMethod(protocol.MethodInstancePing, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 		result := protocol.PingResult{
 			Status:     "ok",
@@ -133,6 +135,29 @@ func RegisterHandlersWithAgent(bus BusRegistrar, instanceID string, svc session.
 		interrupter.Cancel(p.SessionID)
 		return marshalResult(protocol.OKResult{OK: true})
 	})
+
+	// message.list — returns the message history for a session.
+	bus.RegisterMethod(protocol.MethodMessageList, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+		var p protocol.MessageListParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("message.list: invalid params: %w", err)
+		}
+		if p.SessionID == "" {
+			return nil, fmt.Errorf("message.list: session_id is required")
+		}
+		if msgSvc == nil {
+			return nil, fmt.Errorf("message.list: message service not available on this instance")
+		}
+		msgs, err := msgSvc.List(ctx, p.SessionID)
+		if err != nil {
+			return nil, fmt.Errorf("message.list: %w", err)
+		}
+		payloads := make([]protocol.MessagePayload, 0, len(msgs))
+		for _, msg := range msgs {
+			payloads = append(payloads, messageToPayload(msg))
+		}
+		return marshalResult(payloads)
+	})
 }
 
 // sessionToPayload converts a session.Session to a protocol.SessionPayload.
@@ -142,6 +167,23 @@ func sessionToPayload(s session.Session) protocol.SessionPayload {
 		Title:        s.Title,
 		UpdatedAt:    time.Unix(s.UpdatedAt, 0),
 		MessageCount: s.MessageCount,
+	}
+}
+
+// messageToPayload converts a message.Message to a protocol.MessagePayload.
+// It extracts text content by joining all TextContent parts with newlines.
+func messageToPayload(msg message.Message) protocol.MessagePayload {
+	var parts []string
+	for _, p := range msg.Parts {
+		if tc, ok := p.(message.TextContent); ok && tc.Text != "" {
+			parts = append(parts, tc.Text)
+		}
+	}
+	return protocol.MessagePayload{
+		ID:        msg.ID,
+		Role:      string(msg.Role),
+		Content:   strings.Join(parts, "\n"),
+		CreatedAt: time.Unix(msg.CreatedAt, 0),
 	}
 }
 

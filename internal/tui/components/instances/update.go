@@ -92,6 +92,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.selectedSession >= len(m.sessions) {
 			m.selectedSession = max(0, len(m.sessions)-1)
 		}
+		// Auto-load history for the currently selected session if any.
+		if sess := m.selectedSessionEntry(); sess != nil {
+			entry := m.selectedInstanceEntry()
+			if entry != nil {
+				return m, fetchMessagesCmd(entry, sess.ID)
+			}
+		}
+		return m, nil
+
+	case messagesLoadedMsg:
+		if msg.err == nil {
+			m.historyMessages = msg.messages
+		}
 		return m, nil
 
 	case liveEventMsg:
@@ -237,16 +250,28 @@ func (m Model) handleSessionsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.selectedSession > 0 {
 			m.selectedSession--
 			m.liveEvents = nil
+			m.historyMessages = nil
 			m.cancelLiveSub()
+			entry := m.selectedInstanceEntry()
+			sess := m.selectedSessionEntry()
+			if entry != nil && sess != nil {
+				return m, fetchMessagesCmd(entry, sess.ID)
+			}
 		}
 	case key.Matches(msg, instanceBrowserKeyMap.Down):
 		if m.selectedSession < len(m.sessions)-1 {
 			m.selectedSession++
 			m.liveEvents = nil
+			m.historyMessages = nil
 			m.cancelLiveSub()
+			entry := m.selectedInstanceEntry()
+			sess := m.selectedSessionEntry()
+			if entry != nil && sess != nil {
+				return m, fetchMessagesCmd(entry, sess.ID)
+			}
 		}
 	case key.Matches(msg, instanceBrowserKeyMap.Enter):
-		// Start live subscription for the selected session.
+		// Start live subscription for the selected session (also refresh history).
 		entry := m.selectedInstanceEntry()
 		sess := m.selectedSessionEntry()
 		if entry == nil || sess == nil {
@@ -258,7 +283,10 @@ func (m Model) handleSessionsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ctx, cancel = context.WithCancel(ctx)
 		m.liveCancel = cancel
 		m.activePane = paneLiveView
-		return m, subscribeLiveCmd(ctx, entry, sess.ID)
+		return m, tea.Batch(
+			fetchMessagesCmd(entry, sess.ID),
+			subscribeLiveCmd(ctx, entry, sess.ID),
+		)
 
 	case key.Matches(msg, instanceBrowserKeyMap.Interrupt):
 		// Send interrupt to the selected session.

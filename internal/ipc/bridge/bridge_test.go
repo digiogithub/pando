@@ -73,7 +73,7 @@ func TestRegisterHandlers_InstancePing(t *testing.T) {
 
 	captured := make(map[string]ipc.HandlerFunc)
 	scratchBus := newCapturingBus(captured)
-	bridge.RegisterHandlers(scratchBus, "test-instance-id", svc, startedAt)
+	bridge.RegisterHandlers(scratchBus, "test-instance-id", svc, nil, startedAt)
 
 	// Now invoke the instance.ping handler directly from captured.
 	pingHandler, ok := captured[protocol.MethodInstancePing]
@@ -109,7 +109,7 @@ func TestRegisterHandlers_SessionListEmpty(t *testing.T) {
 
 	captured := make(map[string]ipc.HandlerFunc)
 	scratchBus := newCapturingBus(captured)
-	bridge.RegisterHandlers(scratchBus, "test-instance-empty", svc, startedAt)
+	bridge.RegisterHandlers(scratchBus, "test-instance-empty", svc, nil, startedAt)
 
 	handler, ok := captured[protocol.MethodSessionList]
 	if !ok {
@@ -144,7 +144,7 @@ func TestRegisterHandlers_SessionListNonEmpty(t *testing.T) {
 
 	captured := make(map[string]ipc.HandlerFunc)
 	scratchBus := newCapturingBus(captured)
-	bridge.RegisterHandlers(scratchBus, "test-instance-list", svc, startedAt)
+	bridge.RegisterHandlers(scratchBus, "test-instance-list", svc, nil, startedAt)
 
 	handler, ok := captured[protocol.MethodSessionList]
 	if !ok {

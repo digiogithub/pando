@@ -48,23 +48,30 @@ func (m Model) View() string {
 	var instPath, instRole string
 	if entry := m.selectedInstanceEntry(); entry != nil {
 		instPath = truncatePath(entry.Path, rightWidth-20)
+		modeStr := strings.ToUpper(string(entry.Mode))
+		if modeStr == "" {
+			modeStr = "TUI"
+		}
 		if entry.IsPrimary {
-			instRole = "PRIMARY"
+			instRole = modeStr + " PRIMARY"
 		} else {
-			instRole = "2nd"
+			instRole = modeStr
 		}
 	}
 	topRightContent := renderSessionsPane(t, m.sessions, m.selectedSession, m.activePane == paneSessions, rightWidth, sessionsHeight, instPath, instRole)
 
-	// Bottom-right pane: live view
+	// Bottom-right pane: live view (history + live events)
 	var sessTitle string
 	if sess := m.selectedSessionEntry(); sess != nil {
-		sessTitle = sess.ID
-		if len(sessTitle) > 12 {
-			sessTitle = sessTitle[:12] + "..."
+		sessTitle = sess.Title
+		if sessTitle == "" {
+			sessTitle = sess.ID
+		}
+		if len(sessTitle) > 20 {
+			sessTitle = sessTitle[:20] + "..."
 		}
 	}
-	bottomRightContent := renderLiveViewPane(t, m.liveEvents, m.activePane == paneLiveView, rightWidth, liveHeight, sessTitle)
+	bottomRightContent := renderLiveViewPane(t, m.historyMessages, m.liveEvents, m.activePane == paneLiveView, rightWidth, liveHeight, sessTitle)
 
 	// Assemble right column
 	rightContent := lipgloss.JoinVertical(lipgloss.Left,
@@ -158,17 +165,20 @@ func renderInstancesPane(
 	rows = append(rows, title)
 
 	for i, entry := range instances {
-		role := "2nd"
-		if entry.IsPrimary {
-			role = "PRIMARY"
+		modeLabel := strings.ToUpper(string(entry.Mode))
+		if modeLabel == "" {
+			modeLabel = "TUI"
 		}
-		path := truncatePath(entry.Path, width-12)
+		if entry.IsPrimary {
+			modeLabel = modeLabel + "*"
+		}
+		path := truncatePath(entry.Path, width-len(modeLabel)-5)
 		prefix := "  "
 		if i == selected {
 			prefix = "▸ "
 		}
 
-		line := fmt.Sprintf("%s%-*s %s", prefix, width-len(role)-5, path, role)
+		line := fmt.Sprintf("%s%-*s %s", prefix, width-len(modeLabel)-5, path, modeLabel)
 
 		var lineStyle lipgloss.Style
 		if i == selected {
@@ -282,9 +292,11 @@ func renderSessionsPane(
 		Render(content)
 }
 
-// renderLiveViewPane renders the bottom-right live event stream panel.
+// renderLiveViewPane renders the bottom-right pane showing historical messages
+// followed by live events from the ZMQ stream.
 func renderLiveViewPane(
 	t theme.Theme,
+	history []protocol.MessagePayload,
 	events []string,
 	focused bool,
 	width, height int,
@@ -300,19 +312,44 @@ func renderLiveViewPane(
 		Bold(true).
 		Padding(0, 1)
 
-	header := "Live View"
+	header := "History & Live"
 	if sessTitle != "" {
-		header = fmt.Sprintf("Live View — %s", sessTitle)
+		header = fmt.Sprintf("History & Live — %s", sessTitle)
 	}
 	title := titleStyle.Render(header)
 
-	contentHeight := height - 2 // subtract title row and potential border
+	// Reserve rows for title, hints, cursor.
+	contentHeight := height - 3
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
 
-	// Show last contentHeight lines
-	visible := events
+	// Build a combined list: history messages first, then live events.
+	var allLines []string
+	for _, msg := range history {
+		roleLabel := "[User]"
+		roleColor := t.Text()
+		if msg.Role == "assistant" {
+			roleLabel = "[Asst]"
+			roleColor = t.Info()
+		}
+		content := msg.Content
+		if len(content) > width-len(roleLabel)-6 {
+			content = content[:width-len(roleLabel)-9] + "..."
+		}
+		line := roleLabel + " " + content
+		_ = roleColor // used below per-line
+		allLines = append(allLines, "history:"+string(msg.Role)+":"+line)
+	}
+	if len(history) > 0 && len(events) > 0 {
+		allLines = append(allLines, "sep:---  live  ---")
+	}
+	for _, ev := range events {
+		allLines = append(allLines, "live::"+ev)
+	}
+
+	// Show last contentHeight lines.
+	visible := allLines
 	if len(visible) > contentHeight {
 		visible = visible[len(visible)-contentHeight:]
 	}
@@ -320,42 +357,57 @@ func renderLiveViewPane(
 	var rows []string
 	rows = append(rows, title)
 
-	for _, line := range visible {
-		color := t.Text()
+	for _, encoded := range visible {
+		var lineStyle lipgloss.Style
+		var displayLine string
+
 		switch {
-		case strings.HasPrefix(line, "[Tool]"):
-			color = t.Warning()
-		case strings.HasPrefix(line, "[LLM]"), strings.HasPrefix(line, "[Asst]"):
-			color = t.Info()
-		case strings.HasPrefix(line, "[Msg]"):
-			color = t.Text()
-		case strings.HasPrefix(line, "[Err]"):
-			color = t.Error()
-		case strings.HasPrefix(line, "[Info]"):
-			color = t.Success()
+		case strings.HasPrefix(encoded, "history:user:"):
+			displayLine = encoded[len("history:user:"):]
+			lineStyle = lipgloss.NewStyle().Foreground(t.Text())
+		case strings.HasPrefix(encoded, "history:assistant:"):
+			displayLine = encoded[len("history:assistant:"):]
+			lineStyle = lipgloss.NewStyle().Foreground(t.Info())
+		case strings.HasPrefix(encoded, "sep:"):
+			displayLine = encoded[4:]
+			lineStyle = lipgloss.NewStyle().Foreground(t.TextMuted())
+		default:
+			// live event
+			line := encoded[len("live::"):]
+			color := t.Text()
+			switch {
+			case strings.HasPrefix(line, "[Tool]"):
+				color = t.Warning()
+			case strings.HasPrefix(line, "[LLM]"), strings.HasPrefix(line, "[Asst]"):
+				color = t.Info()
+			case strings.HasPrefix(line, "[Err]"):
+				color = t.Error()
+			case strings.HasPrefix(line, "[Info]"):
+				color = t.Success()
+			}
+			displayLine = line
+			lineStyle = lipgloss.NewStyle().Foreground(color)
 		}
 
-		// Truncate to fit width
-		displayLine := line
 		if len(displayLine) > width-4 {
 			displayLine = displayLine[:width-7] + "..."
 		}
-		rows = append(rows, lipgloss.NewStyle().Foreground(color).Render(displayLine))
+		rows = append(rows, lineStyle.Render(displayLine))
 	}
 
-	// Streaming cursor on last line when focused
+	// Streaming cursor when focused and receiving live events.
 	if focused && len(events) > 0 {
 		rows = append(rows, lipgloss.NewStyle().Foreground(t.Primary()).Render("▌"))
 	}
 
-	if len(events) == 0 {
+	if len(history) == 0 && len(events) == 0 {
 		rows = append(rows, lipgloss.NewStyle().
 			Foreground(t.TextMuted()).
 			Padding(0, 1).
-			Render("Select a session and press Enter to watch live events"))
+			Render("Select a session — history loads automatically, Enter for live view"))
 	}
 
-	// Help hints at the bottom of the live-view pane.
+	// Help hints.
 	hints := lipgloss.NewStyle().
 		Foreground(t.TextMuted()).
 		Render("  m: send message  i: interrupt  tab: switch panel")

@@ -692,16 +692,15 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
   // ── User message: border-only style with light background
   if (isUser) {
     return (
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'row-reverse',
-          alignItems: 'flex-start',
-          gap: '0.625rem',
-          padding: '0.5rem 1rem',
-        }}
-      >
+      <div className="msg-user-wrapper" style={{
+        display: 'flex',
+        flexDirection: 'row-reverse',
+        alignItems: 'flex-start',
+        gap: '0.625rem',
+        padding: '0.5rem 1rem',
+      }}>
         <div
+          className="msg-user-avatar"
           style={{
             width: 32, height: 32, borderRadius: '50%',
             background: 'color-mix(in srgb, var(--primary) 15%, var(--bg))',
@@ -714,6 +713,7 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
           <FontAwesomeIcon icon={faUser} style={{ fontSize: 13 }} />
         </div>
         <div
+          className="msg-user-bubble"
           style={{
             maxWidth: 'min(680px, 80%)',
             background: 'color-mix(in srgb, var(--primary) 8%, var(--bg))',
@@ -741,6 +741,7 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
   const renderTextBubble = (text: string, isStreaming: boolean, showTimestamp: boolean, key: string | number) => (
     <div
       key={key}
+      className="msg-assistant-wrapper"
       style={{
         display: 'flex',
         alignItems: 'flex-start',
@@ -749,6 +750,7 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
       }}
     >
       <div
+        className="msg-assistant-avatar"
         style={{
           width: 28, height: 28, borderRadius: '50%',
           background: 'var(--card-bg)', border: '1px solid var(--border)',
@@ -759,6 +761,7 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
         <FontAwesomeIcon icon={faRobot} style={{ fontSize: 12 }} />
       </div>
       <div
+        className="msg-assistant-bubble"
         style={{
           flex: 1,
           minWidth: 0,
@@ -809,11 +812,11 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
       <div style={{ display: 'flex', flexDirection: 'column', padding: '0.375rem 0' }}>
         {items.length === 0 ? (
           // Nothing received yet: show spinner
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.625rem', padding: '0.25rem 1rem' }}>
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--card-bg)', border: '1px solid var(--border)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-muted)', marginTop: 2 }}>
+          <div className="msg-assistant-wrapper" style={{ display: 'flex', alignItems: 'flex-start', gap: '0.625rem', padding: '0.25rem 1rem' }}>
+            <div className="msg-assistant-avatar" style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--card-bg)', border: '1px solid var(--border)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-muted)', marginTop: 2 }}>
               <FontAwesomeIcon icon={faRobot} style={{ fontSize: 12 }} />
             </div>
-            <div style={{ flex: 1, minWidth: 0, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm) var(--radius-md) var(--radius-md) var(--radius-md)', padding: '0.625rem 0.875rem' }}>
+            <div className="msg-assistant-bubble" style={{ flex: 1, minWidth: 0, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm) var(--radius-md) var(--radius-md) var(--radius-md)', padding: '0.625rem 0.875rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <LoadingSpinner size={14} />
                 <span style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Thinking…</span>

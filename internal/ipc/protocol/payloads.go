@@ -70,6 +70,14 @@ type HeartbeatPayload struct {
 	StartedAt       time.Time `json:"started_at"`
 }
 
+// MessagePayload is a single message returned by message.list.
+type MessagePayload struct {
+	ID        string    `json:"id"`
+	Role      string    `json:"role"`    // "user" or "assistant"
+	Content   string    `json:"content"` // text representation of the message
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // ShutdownPayload is published on instance.shutdown during graceful shutdown.
 type ShutdownPayload struct {
 	InstanceID string `json:"instance_id"`
