@@ -5,9 +5,13 @@ package instances
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	ipc "github.com/digiogithub/pando/internal/ipc"
+	"github.com/digiogithub/pando/internal/ipc/protocol"
+	"github.com/digiogithub/pando/internal/tui/theme"
 )
 
 // instanceBrowserKeyMap holds the keybindings for the instances browser.
@@ -18,7 +22,6 @@ var instanceBrowserKeyMap = struct {
 	Enter     key.Binding
 	Escape    key.Binding
 	Interrupt key.Binding
-	SendMsg   key.Binding
 	Switch    key.Binding
 }{
 	Tab: key.NewBinding(
@@ -35,7 +38,7 @@ var instanceBrowserKeyMap = struct {
 	),
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
-		key.WithHelp("enter", "select"),
+		key.WithHelp("enter", "select / send"),
 	),
 	Escape: key.NewBinding(
 		key.WithKeys("esc"),
@@ -44,10 +47,6 @@ var instanceBrowserKeyMap = struct {
 	Interrupt: key.NewBinding(
 		key.WithKeys("i"),
 		key.WithHelp("i", "interrupt session"),
-	),
-	SendMsg: key.NewBinding(
-		key.WithKeys("m"),
-		key.WithHelp("m", "send message"),
 	),
 	Switch: key.NewBinding(
 		key.WithKeys("s"),
@@ -62,26 +61,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.updateViewportSize()
+		m.refreshViewportContent()
 		return m, nil
 
 	case tickMsg:
 		// Re-schedule the tick and refresh the instance list.
-		return m, tea.Batch(
-			tickCmd(),
-			fetchInstancesCmd(m.registry),
-		)
+		// Also clear expired status lines.
+		return m, tea.Batch(tickCmd(), fetchInstancesCmd(m.registry))
 
 	case instancesUpdatedMsg:
 		oldLen := len(m.instances)
 		m.instances = msg.entries
-		// Clamp selection index.
 		if m.selectedInst >= len(m.instances) {
 			m.selectedInst = max(0, len(m.instances)-1)
 		}
-		// If the list changed and we have an instance selected, refresh sessions.
 		if len(m.instances) > 0 && (oldLen == 0 || m.activePane != paneInstances) {
-			entry := m.selectedInstanceEntry()
-			if entry != nil {
+			if entry := m.selectedInstanceEntry(); entry != nil {
 				return m, fetchSessionsCmd(entry)
 			}
 		}
@@ -92,10 +88,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.selectedSession >= len(m.sessions) {
 			m.selectedSession = max(0, len(m.sessions)-1)
 		}
-		// Auto-load history for the currently selected session if any.
 		if sess := m.selectedSessionEntry(); sess != nil {
-			entry := m.selectedInstanceEntry()
-			if entry != nil {
+			if entry := m.selectedInstanceEntry(); entry != nil {
 				return m, fetchMessagesCmd(entry, sess.ID)
 			}
 		}
@@ -105,19 +99,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.historyMessages = msg.messages
 		}
-		return m, nil
-
-	case liveEventMsg:
-		m.appendLiveEvent(msg.line)
+		m.rebuildChatLines()
+		m.refreshViewportContent()
+		m.scrollChatToBottom()
 		return m, nil
 
 	case liveEventWithChannelMsg:
-		// Received a relevant event; append it and schedule reading the next one.
-		m.appendLiveEvent(msg.line)
-		return m, nextLiveEventCmd(msg.ctx, msg.ch, msg.sid)
+		// Process the envelope and schedule the next read.
+		m.handleEnvelope(msg.env)
+		return m, nextEnvelopeCmd(msg.ctx, msg.ch, msg.sid)
 
 	case liveSubCancelMsg:
-		// Subscription ended; clear the cancel func.
 		m.liveCancel = nil
 		return m, nil
 
@@ -137,10 +129,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
+
 	case tea.KeyMsg:
-		// When the message input overlay is active, route all keys to it.
-		if m.showMsgInput {
-			return m.handleMsgInput(msg)
+		if m.activePane == paneChat {
+			return m.handleChatKey(msg)
 		}
 		return m.handleKey(msg)
 	}
@@ -148,15 +142,120 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleMsgInput routes keyboard events to the textinput overlay.
-// Enter submits the message, Esc cancels.
-func (m Model) handleMsgInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// handleEnvelope processes a ZMQ envelope and updates the chat state.
+func (m *Model) handleEnvelope(env ipc.Envelope) {
+	t := theme.CurrentTheme()
+	_ = t
+
+	switch env.Topic {
+	case protocol.TopicLLMStart:
+		m.isStreaming = true
+		m.streamBuf.Reset()
+
+	case protocol.TopicLLMToken:
+		var p protocol.LLMTokenPayload
+		if err := json.Unmarshal(env.Payload, &p); err != nil {
+			return
+		}
+		m.streamBuf.WriteString(p.Token)
+		m.rebuildChatLines()
+		m.refreshViewportContent()
+		m.scrollChatToBottom()
+
+	case protocol.TopicLLMEnd:
+		if m.isStreaming && m.streamBuf.Len() > 0 {
+			// Commit the streaming message as a history entry.
+			m.historyMessages = append(m.historyMessages, protocol.MessagePayload{
+				Role:    "assistant",
+				Content: m.streamBuf.String(),
+			})
+		}
+		m.isStreaming = false
+		m.streamBuf.Reset()
+		m.rebuildChatLines()
+		m.refreshViewportContent()
+		m.scrollChatToBottom()
+
+	case protocol.TopicToolStart:
+		var p protocol.ToolStartPayload
+		if err := json.Unmarshal(env.Payload, &p); err != nil {
+			return
+		}
+		m.historyMessages = append(m.historyMessages, protocol.MessagePayload{
+			Role:    "tool",
+			Content: "⚙ " + p.ToolName + "…",
+		})
+		m.rebuildChatLines()
+		m.refreshViewportContent()
+
+	case protocol.TopicToolEnd:
+		var p protocol.ToolEndPayload
+		if err := json.Unmarshal(env.Payload, &p); err != nil {
+			return
+		}
+		suffix := " ✓"
+		if p.IsError {
+			suffix = " ✗"
+		}
+		m.historyMessages = append(m.historyMessages, protocol.MessagePayload{
+			Role:    "tool",
+			Content: "⚙ " + p.ToolName + suffix,
+		})
+		m.rebuildChatLines()
+		m.refreshViewportContent()
+
+	case protocol.TopicMessageAppend:
+		var p protocol.MessageAppendPayload
+		if err := json.Unmarshal(env.Payload, &p); err != nil {
+			return
+		}
+		// Only add user messages here; assistant messages come via llm.token stream.
+		if p.Role == "user" {
+			m.historyMessages = append(m.historyMessages, protocol.MessagePayload{
+				Role:    p.Role,
+				Content: p.Content,
+			})
+			m.rebuildChatLines()
+			m.refreshViewportContent()
+			m.scrollChatToBottom()
+		}
+	}
+}
+
+// refreshViewportContent re-renders chat lines into the viewport.
+func (m *Model) refreshViewportContent() {
+	t := theme.CurrentTheme()
+	content := renderChatLines(t, m.chatLines, m.chatViewport.Width+4)
+	m.chatViewport.SetContent(content)
+}
+
+// handleKey processes keyboard input when not in the chat pane.
+func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, instanceBrowserKeyMap.Tab):
+		m.setActivePane((m.activePane + 1) % 3)
+		return m, nil
+
+	case key.Matches(msg, instanceBrowserKeyMap.Escape):
+		return m, nil
+	}
+
+	switch m.activePane {
+	case paneInstances:
+		return m.handleInstancesPane(msg)
+	case paneSessions:
+		return m.handleSessionsPane(msg)
+	}
+
+	return m, nil
+}
+
+// handleChatKey processes keyboard input when the chat pane is focused.
+func (m Model) handleChatKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		content := m.msgInput.Value()
-		m.showMsgInput = false
 		m.msgInput.SetValue("")
-		m.msgInput.Blur()
 		if content == "" {
 			return m, nil
 		}
@@ -166,92 +265,111 @@ func (m Model) handleMsgInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setStatus("No instance/session selected")
 			return m, nil
 		}
+		// Add locally to chat immediately.
+		m.historyMessages = append(m.historyMessages, protocol.MessagePayload{
+			Role:    "user",
+			Content: content,
+		})
+		m.rebuildChatLines()
+		m.refreshViewportContent()
+		m.scrollChatToBottom()
 		return m, sendMessageCmd(entry, sess.ID, content)
 
-	case "esc":
-		m.showMsgInput = false
-		m.msgInput.SetValue("")
-		m.msgInput.Blur()
+	case "tab":
+		m.setActivePane((m.activePane + 1) % 3)
 		return m, nil
+
+	case "esc":
+		m.setActivePane(paneSessions)
+		return m, nil
+
+	case "i":
+		entry := m.selectedInstanceEntry()
+		sess := m.selectedSessionEntry()
+		if entry == nil || sess == nil {
+			return m, nil
+		}
+		return m, interruptSessionCmd(entry, sess.ID)
+
+	case "s":
+		entry := m.selectedInstanceEntry()
+		sess := m.selectedSessionEntry()
+		if entry == nil || sess == nil {
+			return m, nil
+		}
+		return m, switchSessionCmd(entry, sess.ID)
 
 	default:
+		// Forward remaining keys to the text input and to the viewport for scrolling.
 		var cmd tea.Cmd
 		m.msgInput, cmd = m.msgInput.Update(msg)
-		return m, cmd
+		var vpCmd tea.Cmd
+		m.chatViewport, vpCmd = m.chatViewport.Update(msg)
+		return m, tea.Batch(cmd, vpCmd)
 	}
-}
-
-// handleKey processes keyboard input according to the active pane.
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Global bindings.
-	switch {
-	case key.Matches(msg, instanceBrowserKeyMap.Tab):
-		m.activePane = (m.activePane + 1) % 3
-		return m, nil
-
-	case key.Matches(msg, instanceBrowserKeyMap.Escape):
-		// Bubble Esc up to the app model so it can navigate back.
-		return m, nil
-	}
-
-	// Pane-specific bindings.
-	switch m.activePane {
-	case paneInstances:
-		return m.handleInstancesPane(msg)
-	case paneSessions:
-		return m.handleSessionsPane(msg)
-	case paneLiveView:
-		return m.handleLiveViewPane(msg)
-	}
-
-	return m, nil
 }
 
 // handleInstancesPane handles keys when the instances list pane is focused.
 func (m Model) handleInstancesPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	leftWidth := m.width * 30 / 100
+	leftH := m.height - 1
+	instH := leftH * 40 / 100
+	if instH < 3 {
+		instH = 3
+	}
+	visibleInstH := instH - 3
+
 	switch {
 	case key.Matches(msg, instanceBrowserKeyMap.Up):
 		if m.selectedInst > 0 {
 			m.selectedInst--
-			m.sessions = nil
-			m.selectedSession = 0
-			m.liveEvents = nil
-			m.cancelLiveSub()
-			entry := m.selectedInstanceEntry()
-			if entry != nil {
+			m.scrollInstances = clampScroll(m.scrollInstances, len(m.instances), visibleInstH)
+			if m.selectedInst < m.scrollInstances {
+				m.scrollInstances = m.selectedInst
+			}
+			m.resetSession()
+			if entry := m.selectedInstanceEntry(); entry != nil {
 				return m, fetchSessionsCmd(entry)
 			}
 		}
 	case key.Matches(msg, instanceBrowserKeyMap.Down):
 		if m.selectedInst < len(m.instances)-1 {
 			m.selectedInst++
-			m.sessions = nil
-			m.selectedSession = 0
-			m.liveEvents = nil
-			m.cancelLiveSub()
-			entry := m.selectedInstanceEntry()
-			if entry != nil {
+			if m.selectedInst >= m.scrollInstances+visibleInstH {
+				m.scrollInstances = m.selectedInst - visibleInstH + 1
+			}
+			m.resetSession()
+			if entry := m.selectedInstanceEntry(); entry != nil {
 				return m, fetchSessionsCmd(entry)
 			}
 		}
 	case key.Matches(msg, instanceBrowserKeyMap.Enter):
-		// Move focus to the sessions pane.
 		if len(m.instances) > 0 {
-			m.activePane = paneSessions
+			m.setActivePane(paneSessions)
 		}
 	}
+	_ = leftWidth
 	return m, nil
 }
 
 // handleSessionsPane handles keys when the sessions list pane is focused.
 func (m Model) handleSessionsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	leftH := m.height - 1
+	instH := leftH * 40 / 100
+	if instH < 3 {
+		instH = 3
+	}
+	sessH := leftH - instH
+	visibleSessH := sessH - 3
+
 	switch {
 	case key.Matches(msg, instanceBrowserKeyMap.Up):
 		if m.selectedSession > 0 {
 			m.selectedSession--
-			m.liveEvents = nil
-			m.historyMessages = nil
-			m.cancelLiveSub()
+			if m.selectedSession < m.scrollSessions {
+				m.scrollSessions = m.selectedSession
+			}
+			m.resetChat()
 			entry := m.selectedInstanceEntry()
 			sess := m.selectedSessionEntry()
 			if entry != nil && sess != nil {
@@ -261,9 +379,10 @@ func (m Model) handleSessionsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, instanceBrowserKeyMap.Down):
 		if m.selectedSession < len(m.sessions)-1 {
 			m.selectedSession++
-			m.liveEvents = nil
-			m.historyMessages = nil
-			m.cancelLiveSub()
+			if m.selectedSession >= m.scrollSessions+visibleSessH {
+				m.scrollSessions = m.selectedSession - visibleSessH + 1
+			}
+			m.resetChat()
 			entry := m.selectedInstanceEntry()
 			sess := m.selectedSessionEntry()
 			if entry != nil && sess != nil {
@@ -271,25 +390,23 @@ func (m Model) handleSessionsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case key.Matches(msg, instanceBrowserKeyMap.Enter):
-		// Start live subscription for the selected session (also refresh history).
+		// Move to chat and start live subscription.
 		entry := m.selectedInstanceEntry()
 		sess := m.selectedSessionEntry()
 		if entry == nil || sess == nil {
 			return m, nil
 		}
 		m.cancelLiveSub()
-		m.liveEvents = nil
-		ctx, cancel := context.Background(), context.CancelFunc(func() {})
-		ctx, cancel = context.WithCancel(ctx)
+		m.resetChat()
+		ctx, cancel := context.WithCancel(context.Background())
 		m.liveCancel = cancel
-		m.activePane = paneLiveView
+		m.setActivePane(paneChat)
 		return m, tea.Batch(
 			fetchMessagesCmd(entry, sess.ID),
 			subscribeLiveCmd(ctx, entry, sess.ID),
 		)
 
 	case key.Matches(msg, instanceBrowserKeyMap.Interrupt):
-		// Send interrupt to the selected session.
 		entry := m.selectedInstanceEntry()
 		sess := m.selectedSessionEntry()
 		if entry == nil || sess == nil {
@@ -297,19 +414,7 @@ func (m Model) handleSessionsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, interruptSessionCmd(entry, sess.ID)
 
-	case key.Matches(msg, instanceBrowserKeyMap.SendMsg):
-		// Open the inline message send dialog.
-		entry := m.selectedInstanceEntry()
-		sess := m.selectedSessionEntry()
-		if entry == nil || sess == nil {
-			return m, nil
-		}
-		m.showMsgInput = true
-		m.msgInput.Focus()
-		return m, nil
-
 	case key.Matches(msg, instanceBrowserKeyMap.Switch):
-		// Switch the active session on the remote instance.
 		entry := m.selectedInstanceEntry()
 		sess := m.selectedSessionEntry()
 		if entry == nil || sess == nil {
@@ -320,37 +425,105 @@ func (m Model) handleSessionsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleLiveViewPane handles keys when the live view pane is focused.
-func (m Model) handleLiveViewPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, instanceBrowserKeyMap.SendMsg):
-		// Open the inline message send dialog from the live view too.
-		entry := m.selectedInstanceEntry()
-		sess := m.selectedSessionEntry()
-		if entry == nil || sess == nil {
-			return m, nil
-		}
-		m.showMsgInput = true
-		m.msgInput.Focus()
-		return m, nil
-
-	case key.Matches(msg, instanceBrowserKeyMap.Interrupt):
-		// Interrupt from live view as well.
-		entry := m.selectedInstanceEntry()
-		sess := m.selectedSessionEntry()
-		if entry == nil || sess == nil {
-			return m, nil
-		}
-		return m, interruptSessionCmd(entry, sess.ID)
+// handleMouse processes mouse events for panel selection and scrolling.
+func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	leftWidth := m.width * 30 / 100
+	leftH := m.height - 1
+	instH := leftH * 40 / 100
+	if instH < 3 {
+		instH = 3
 	}
+
+	// Determine mouse position relative to layout.
+	x := msg.X
+	y := msg.Y - 1 // subtract header row
+
+	if x < leftWidth {
+		// Click is in the left column.
+		if y >= 0 && y < instH {
+			// Instances panel.
+			switch msg.Button {
+			case tea.MouseButtonLeft:
+				if msg.Action == tea.MouseActionPress {
+					m.setActivePane(paneInstances)
+					// Row 0 is title, rows 1+ are items.
+					itemRow := y - 1
+					if itemRow >= 0 {
+						idx := m.scrollInstances + itemRow
+						if idx < len(m.instances) {
+							m.selectedInst = idx
+							m.resetSession()
+							if entry := m.selectedInstanceEntry(); entry != nil {
+								return m, fetchSessionsCmd(entry)
+							}
+						}
+					}
+				}
+			case tea.MouseButtonWheelUp:
+				if m.scrollInstances > 0 {
+					m.scrollInstances--
+				}
+			case tea.MouseButtonWheelDown:
+				m.scrollInstances++
+			}
+		} else if y >= instH {
+			// Sessions panel.
+			sessY := y - instH
+			switch msg.Button {
+			case tea.MouseButtonLeft:
+				if msg.Action == tea.MouseActionPress {
+					m.setActivePane(paneSessions)
+					itemRow := sessY - 1
+					if itemRow >= 0 {
+						idx := m.scrollSessions + itemRow
+						if idx < len(m.sessions) {
+							m.selectedSession = idx
+							m.resetChat()
+							entry := m.selectedInstanceEntry()
+							sess := m.selectedSessionEntry()
+							if entry != nil && sess != nil {
+								return m, fetchMessagesCmd(entry, sess.ID)
+							}
+						}
+					}
+				}
+			case tea.MouseButtonWheelUp:
+				if m.scrollSessions > 0 {
+					m.scrollSessions--
+				}
+			case tea.MouseButtonWheelDown:
+				m.scrollSessions++
+			}
+		}
+	} else {
+		// Click is in the right (chat) panel.
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
+			m.setActivePane(paneChat)
+		}
+		// Forward scroll wheel to viewport.
+		var cmd tea.Cmd
+		m.chatViewport, cmd = m.chatViewport.Update(msg)
+		return m, cmd
+	}
+
 	return m, nil
 }
 
-// max returns the larger of two ints (Go 1.21+ has a built-in, but this keeps
-// compatibility with older toolchains that may be in use).
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
+// resetSession clears session data when the selected instance changes.
+func (m *Model) resetSession() {
+	m.sessions = nil
+	m.selectedSession = 0
+	m.scrollSessions = 0
+	m.resetChat()
 }
+
+// resetChat clears chat history and streaming state.
+func (m *Model) resetChat() {
+	m.historyMessages = nil
+	m.chatLines = nil
+	m.isStreaming = false
+	m.streamBuf.Reset()
+	m.cancelLiveSub()
+	m.refreshViewportContent()
+}
+

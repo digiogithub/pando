@@ -123,6 +123,7 @@ func (p *evaluatorPage) View() string {
 	if p.loading {
 		loadingStyle := lipgloss.NewStyle().
 			Foreground(t.TextMuted()).
+			Background(t.Background()).
 			Italic(true).
 			Padding(1, 2)
 		return baseStyle.Render(loadingStyle.Render("Loading self-improvement stats..."))
@@ -146,10 +147,14 @@ func (p *evaluatorPage) View() string {
 		// Highlight active panel border
 		focusedBorder := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(t.BorderFocused())
+			BorderForeground(t.BorderFocused()).
+			BorderBackground(t.Background()).
+			Background(t.Background())
 		normalBorder := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(t.BorderNormal())
+			BorderForeground(t.BorderNormal()).
+			BorderBackground(t.Background()).
+			Background(t.Background())
 
 		halfW := p.width / 2
 		panelH := p.panelHeight()
@@ -233,8 +238,10 @@ Restart Pando. The system will begin evaluating sessions automatically.`
 }
 
 func renderEvaluatorHelp() string {
+	t := theme.CurrentTheme()
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#888888")).
+		Foreground(t.TextMuted()).
+		Background(t.Background()).
 		Render("[r] Refresh  [tab] Switch panel  [↑↓] Navigate  [esc/q] Back")
 }
 

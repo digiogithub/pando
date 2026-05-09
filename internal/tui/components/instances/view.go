@@ -15,137 +15,95 @@ import (
 	"github.com/digiogithub/pando/internal/tui/theme"
 )
 
-// View renders the full three-panel instances browser.
+// View renders the two-panel instances browser.
+// Left column: instances list (top) + sessions list (bottom), each scrollable.
+// Right column: live chat view with message history + input at bottom.
+//
+// Height accounting (lipgloss Border adds 2 rows to total rendered height):
+//
+//	terminal = m.height
+//	header   = 1 row
+//	panels   = m.height - 1  (leftH)
+//	Each panel is rendered with Height(h - 2) so that bordered total == h.
 func (m Model) View() string {
 	t := theme.CurrentTheme()
 
-	// Minimum dimensions guard.
 	if m.width < 20 || m.height < 6 {
 		return "Instances browser"
 	}
 
-	// Column split: left 30% / right 70%
+	// Column widths: left 30% / separator 1 / right rest
 	leftWidth := m.width * 30 / 100
-	rightWidth := m.width - leftWidth - 1 // -1 for separator
+	rightWidth := m.width - leftWidth - 1
 
-	// Row split for right column: sessions 40% / liveview 60%
-	sessionsHeight := m.height * 40 / 100
-	liveHeight := m.height - sessionsHeight - 1 // -1 for separator
-
-	// Compute transient status (cleared after expiry).
+	// Status for header
 	status := ""
 	if m.statusLine != "" && time.Now().Before(m.statusExpiry) {
 		status = m.statusLine
 	}
-
-	// Header bar
 	header := renderHeader(t, m.width, len(m.instances), status)
 
-	// Left pane: instances list
-	leftContent := renderInstancesPane(t, m.instances, m.selectedInst, m.activePane == paneInstances, leftWidth, m.height-2)
+	// Total height available below the header row
+	leftH := m.height - 1
 
-	// Top-right pane: sessions list
-	var instPath, instRole string
-	if entry := m.selectedInstanceEntry(); entry != nil {
-		instPath = truncatePath(entry.Path, rightWidth-20)
-		modeStr := strings.ToUpper(string(entry.Mode))
-		if modeStr == "" {
-			modeStr = "TUI"
-		}
-		if entry.IsPrimary {
-			instRole = modeStr + " PRIMARY"
-		} else {
-			instRole = modeStr
-		}
+	// Split left column vertically: instances 40% / sessions 60%
+	instH := leftH * 40 / 100
+	if instH < 4 {
+		instH = 4
 	}
-	topRightContent := renderSessionsPane(t, m.sessions, m.selectedSession, m.activePane == paneSessions, rightWidth, sessionsHeight, instPath, instRole)
+	sessH := leftH - instH
 
-	// Bottom-right pane: live view (history + live events)
-	var sessTitle string
-	if sess := m.selectedSessionEntry(); sess != nil {
-		sessTitle = sess.Title
-		if sessTitle == "" {
-			sessTitle = sess.ID
-		}
-		if len(sessTitle) > 20 {
-			sessTitle = sessTitle[:20] + "..."
-		}
-	}
-	bottomRightContent := renderLiveViewPane(t, m.historyMessages, m.liveEvents, m.activePane == paneLiveView, rightWidth, liveHeight, sessTitle)
+	// Left panels (each panel receives its OUTER target height)
+	instPanel := renderInstancesPanel(t, m.instances, m.selectedInst, m.scrollInstances,
+		m.activePane == paneInstances, leftWidth, instH)
+	sessPanel := renderSessionsPanel(t, m.sessions, m.selectedSession, m.scrollSessions,
+		m.activePane == paneSessions, leftWidth, sessH)
 
-	// Assemble right column
-	rightContent := lipgloss.JoinVertical(lipgloss.Left,
-		topRightContent,
-		strings.Repeat("─", rightWidth),
-		bottomRightContent,
-	)
+	leftCol := lipgloss.JoinVertical(lipgloss.Left, instPanel, sessPanel)
 
-	// Assemble main body
-	body := lipgloss.JoinHorizontal(lipgloss.Top,
-		leftContent,
-		"│",
-		rightContent,
-	)
+	// Right chat panel
+	rightPanel := renderChatPanel(t, m.chatViewport.View(), m.msgInput.View(),
+		m.activePane == paneChat, rightWidth, leftH)
 
-	full := lipgloss.JoinVertical(lipgloss.Left, header, body)
+	// Vertical separator (same height as panels)
+	sep := lipgloss.NewStyle().
+		Foreground(t.BorderDim()).
+		Height(leftH).
+		Render("│")
 
-	// If the message input overlay is active, render it at the bottom of the
-	// live-view area as a single-line prompt bar.
-	if m.showMsgInput {
-		full = renderWithMsgInputOverlay(t, full, m.msgInput.View(), m.width)
-	}
+	body := lipgloss.JoinHorizontal(lipgloss.Top, leftCol, sep, rightPanel)
 
-	return full
+	return lipgloss.JoinVertical(lipgloss.Left, header, body)
 }
 
-// renderWithMsgInputOverlay appends a styled message-input bar below the main
-// content. It replaces the last rendered line so the total height stays stable.
-func renderWithMsgInputOverlay(t theme.Theme, content, inputView string, width int) string {
-	promptStyle := lipgloss.NewStyle().
-		Width(width).
-		Foreground(t.TextEmphasized()).
-		Background(t.BackgroundSecondary()).
-		Padding(0, 1)
-
-	label := "Send message: "
-	bar := promptStyle.Render(label + inputView)
-
-	// Remove the last line from content and replace with the input bar so
-	// the overall layout height stays the same.
-	lines := strings.Split(content, "\n")
-	if len(lines) > 1 {
-		lines[len(lines)-1] = bar
-		return strings.Join(lines, "\n")
-	}
-	return content + "\n" + bar
-}
-
-// renderHeader renders the top header bar. When status is non-empty it is
-// shown on the right side of the bar as a transient notification.
+// renderHeader renders the full-width top status bar (always 1 row).
 func renderHeader(t theme.Theme, width, count int, status string) string {
-	title := fmt.Sprintf("  Instances  [%d running]", count)
+	left := fmt.Sprintf("  Instances  [%d running]", count)
+	hints := "tab: panel  i: interrupt  s: switch"
 	if status != "" {
-		// Pad title and status to fill the full width.
-		gap := width - len(title) - len(status) - 2
-		if gap < 1 {
-			gap = 1
-		}
-		title = title + strings.Repeat(" ", gap) + status
+		hints = status
 	}
-	style := lipgloss.NewStyle().
+	gap := width - len(left) - len(hints) - 2
+	if gap < 1 {
+		gap = 1
+	}
+	line := left + strings.Repeat(" ", gap) + hints
+
+	return lipgloss.NewStyle().
 		Width(width).
 		Foreground(t.TextEmphasized()).
 		Background(t.BackgroundSecondary()).
 		Bold(true).
-		Padding(0, 1)
-	return style.Render(title)
+		Padding(0, 1).
+		Render(line)
 }
 
-// renderInstancesPane renders the left instances list panel.
-func renderInstancesPane(
+// renderInstancesPanel renders the top-left instances list.
+// height is the OUTER target height (including the border's 2 rows).
+func renderInstancesPanel(
 	t theme.Theme,
 	instances []*instanceregistry.Entry,
-	selected int,
+	selected, scroll int,
 	focused bool,
 	width, height int,
 ) string {
@@ -153,282 +111,357 @@ func renderInstancesPane(
 	if focused {
 		borderColor = t.BorderFocused()
 	}
+	bg := t.Background()
 
 	titleStyle := lipgloss.NewStyle().
 		Foreground(t.Primary()).
+		Background(bg).
 		Bold(true).
 		Padding(0, 1)
+	title := titleStyle.Render("INSTANCES")
 
-	title := titleStyle.Render("Instances")
+	// Inner usable rows: outer - 2 border rows - 1 title row
+	innerH := height - 3
+	if innerH < 0 {
+		innerH = 0
+	}
+	innerW := width - 2 // inside left+right border
 
 	var rows []string
 	rows = append(rows, title)
 
-	for i, entry := range instances {
-		modeLabel := strings.ToUpper(string(entry.Mode))
-		if modeLabel == "" {
-			modeLabel = "TUI"
+	visible := instances
+	if scroll > 0 && scroll < len(visible) {
+		visible = visible[scroll:]
+	}
+
+	for i, entry := range visible {
+		if i >= innerH {
+			break
 		}
+		absIdx := i + scroll
+		ml := modeStr(entry)
 		if entry.IsPrimary {
-			modeLabel = modeLabel + "*"
+			ml += "*"
 		}
-		path := truncatePath(entry.Path, width-len(modeLabel)-5)
+		path := truncatePath(entry.Path, innerW-len(ml)-4)
 		prefix := "  "
-		if i == selected {
-			prefix = "▸ "
+		if absIdx == selected {
+			prefix = "▶ "
 		}
+		line := fmt.Sprintf("%s%-*s %s", prefix, innerW-len(ml)-4, path, ml)
 
-		line := fmt.Sprintf("%s%-*s %s", prefix, width-len(modeLabel)-5, path, modeLabel)
-
-		var lineStyle lipgloss.Style
-		if i == selected {
-			lineStyle = lipgloss.NewStyle().
+		var ls lipgloss.Style
+		if absIdx == selected {
+			ls = lipgloss.NewStyle().
 				Foreground(t.SelectionForeground()).
 				Background(t.SelectionBackground())
 		} else {
-			lineStyle = lipgloss.NewStyle().
-				Foreground(t.Text())
+			ls = lipgloss.NewStyle().Foreground(t.Text()).Background(bg)
 		}
-		rows = append(rows, lineStyle.Width(width-2).Render(line))
+		rows = append(rows, ls.Width(innerW).Render(line))
 	}
 
 	if len(instances) == 0 {
 		rows = append(rows, lipgloss.NewStyle().
-			Foreground(t.TextMuted()).
-			Padding(0, 1).
+			Foreground(t.TextMuted()).Background(bg).Padding(0, 1).
 			Render("No instances running"))
 	}
 
-	// Pad rows to fill height
-	for len(rows) < height {
+	if remaining := len(instances) - scroll - innerH; remaining > 0 {
+		rows = append(rows, lipgloss.NewStyle().Foreground(t.TextMuted()).Background(bg).
+			Render(fmt.Sprintf("  ↓ %d more", remaining)))
+	}
+
+	// Pad to fill the inner area
+	for len(rows) < height-2 {
 		rows = append(rows, "")
 	}
 
-	content := strings.Join(rows[:min(len(rows), height)], "\n")
+	content := strings.Join(rows[:min(len(rows), height-2)], "\n")
 
+	// Height(height-2): lipgloss adds 2 border rows → total output = height
 	return lipgloss.NewStyle().
 		Width(width).
-		Height(height).
+		Height(height - 2).
+		Background(bg).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(borderColor).
+		BorderBackground(bg).
 		Render(content)
 }
 
-// renderSessionsPane renders the top-right sessions list panel.
-func renderSessionsPane(
+// renderSessionsPanel renders the bottom-left sessions list.
+// height is the OUTER target height (including the border's 2 rows).
+func renderSessionsPanel(
 	t theme.Theme,
 	sessions []protocol.SessionPayload,
-	selected int,
+	selected, scroll int,
 	focused bool,
 	width, height int,
-	instPath, instRole string,
 ) string {
 	borderColor := t.BorderDim()
 	if focused {
 		borderColor = t.BorderFocused()
 	}
+	bg := t.Background()
 
 	titleStyle := lipgloss.NewStyle().
 		Foreground(t.Primary()).
+		Background(bg).
 		Bold(true).
 		Padding(0, 1)
+	title := titleStyle.Render("SESSIONS")
 
-	header := fmt.Sprintf("Sessions — %s (%s)", instPath, instRole)
-	if instPath == "" {
-		header = "Sessions"
+	innerH := height - 3
+	if innerH < 0 {
+		innerH = 0
 	}
-	title := titleStyle.Render(header)
+	innerW := width - 2
 
 	var rows []string
 	rows = append(rows, title)
 
-	for i, sess := range sessions {
+	visible := sessions
+	if scroll > 0 && scroll < len(visible) {
+		visible = visible[scroll:]
+	}
+
+	for i, sess := range visible {
+		if i >= innerH {
+			break
+		}
+		absIdx := i + scroll
 		prefix := "  "
-		if i == selected {
-			prefix = "▸ "
+		if absIdx == selected {
+			prefix = "▶ "
 		}
 		elapsed := relativeTime(sess.UpdatedAt)
 		titleStr := sess.Title
 		if titleStr == "" {
 			titleStr = sess.ID
 		}
-		maxTitle := width - len(elapsed) - 8
+		maxTitle := innerW - len(elapsed) - 5
 		if len(titleStr) > maxTitle && maxTitle > 3 {
 			titleStr = titleStr[:maxTitle-3] + "..."
 		}
-
 		line := fmt.Sprintf("%s%-*s %s", prefix, maxTitle, titleStr, elapsed)
 
-		var lineStyle lipgloss.Style
-		if i == selected {
-			lineStyle = lipgloss.NewStyle().
+		var ls lipgloss.Style
+		if absIdx == selected {
+			ls = lipgloss.NewStyle().
 				Foreground(t.SelectionForeground()).
 				Background(t.SelectionBackground())
 		} else {
-			lineStyle = lipgloss.NewStyle().
-				Foreground(t.Text())
+			ls = lipgloss.NewStyle().Foreground(t.Text()).Background(bg)
 		}
-		rows = append(rows, lineStyle.Width(width-2).Render(line))
+		rows = append(rows, ls.Width(innerW).Render(line))
 	}
 
 	if len(sessions) == 0 {
 		rows = append(rows, lipgloss.NewStyle().
-			Foreground(t.TextMuted()).
-			Padding(0, 1).
+			Foreground(t.TextMuted()).Background(bg).Padding(0, 1).
 			Render("No sessions"))
 	}
 
-	for len(rows) < height {
+	if remaining := len(sessions) - scroll - innerH; remaining > 0 {
+		rows = append(rows, lipgloss.NewStyle().Foreground(t.TextMuted()).Background(bg).
+			Render(fmt.Sprintf("  ↓ %d more", remaining)))
+	}
+
+	for len(rows) < height-2 {
 		rows = append(rows, "")
 	}
 
-	content := strings.Join(rows[:min(len(rows), height)], "\n")
+	content := strings.Join(rows[:min(len(rows), height-2)], "\n")
 
 	return lipgloss.NewStyle().
 		Width(width).
-		Height(height).
+		Height(height - 2).
+		Background(bg).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(borderColor).
+		BorderBackground(bg).
 		Render(content)
 }
 
-// renderLiveViewPane renders the bottom-right pane showing historical messages
-// followed by live events from the ZMQ stream.
-func renderLiveViewPane(
+// renderChatPanel renders the right chat panel.
+// height is the OUTER target height (including the border's 2 rows).
+//
+// Inner layout (height - 2 rows inside border):
+//
+//	1 row  — title
+//	N rows — viewport  (height - 2 - 1 - 1 - 1 = height - 5)
+//	1 row  — hints
+//	1 row  — input bar
+func renderChatPanel(
 	t theme.Theme,
-	history []protocol.MessagePayload,
-	events []string,
+	viewportContent string,
+	inputView string,
 	focused bool,
 	width, height int,
-	sessTitle string,
 ) string {
 	borderColor := t.BorderDim()
 	if focused {
 		borderColor = t.BorderFocused()
 	}
+	bg := t.Background()
 
 	titleStyle := lipgloss.NewStyle().
 		Foreground(t.Primary()).
+		Background(bg).
 		Bold(true).
 		Padding(0, 1)
+	title := titleStyle.Render("CHAT")
 
-	header := "History & Live"
-	if sessTitle != "" {
-		header = fmt.Sprintf("History & Live — %s", sessTitle)
-	}
-	title := titleStyle.Render(header)
-
-	// Reserve rows for title, hints, cursor.
-	contentHeight := height - 3
-	if contentHeight < 1 {
-		contentHeight = 1
-	}
-
-	// Build a combined list: history messages first, then live events.
-	var allLines []string
-	for _, msg := range history {
-		roleLabel := "[User]"
-		roleColor := t.Text()
-		if msg.Role == "assistant" {
-			roleLabel = "[Asst]"
-			roleColor = t.Info()
-		}
-		content := msg.Content
-		if len(content) > width-len(roleLabel)-6 {
-			content = content[:width-len(roleLabel)-9] + "..."
-		}
-		line := roleLabel + " " + content
-		_ = roleColor // used below per-line
-		allLines = append(allLines, "history:"+string(msg.Role)+":"+line)
-	}
-	if len(history) > 0 && len(events) > 0 {
-		allLines = append(allLines, "sep:---  live  ---")
-	}
-	for _, ev := range events {
-		allLines = append(allLines, "live::"+ev)
-	}
-
-	// Show last contentHeight lines.
-	visible := allLines
-	if len(visible) > contentHeight {
-		visible = visible[len(visible)-contentHeight:]
-	}
-
-	var rows []string
-	rows = append(rows, title)
-
-	for _, encoded := range visible {
-		var lineStyle lipgloss.Style
-		var displayLine string
-
-		switch {
-		case strings.HasPrefix(encoded, "history:user:"):
-			displayLine = encoded[len("history:user:"):]
-			lineStyle = lipgloss.NewStyle().Foreground(t.Text())
-		case strings.HasPrefix(encoded, "history:assistant:"):
-			displayLine = encoded[len("history:assistant:"):]
-			lineStyle = lipgloss.NewStyle().Foreground(t.Info())
-		case strings.HasPrefix(encoded, "sep:"):
-			displayLine = encoded[4:]
-			lineStyle = lipgloss.NewStyle().Foreground(t.TextMuted())
-		default:
-			// live event
-			line := encoded[len("live::"):]
-			color := t.Text()
-			switch {
-			case strings.HasPrefix(line, "[Tool]"):
-				color = t.Warning()
-			case strings.HasPrefix(line, "[LLM]"), strings.HasPrefix(line, "[Asst]"):
-				color = t.Info()
-			case strings.HasPrefix(line, "[Err]"):
-				color = t.Error()
-			case strings.HasPrefix(line, "[Info]"):
-				color = t.Success()
-			}
-			displayLine = line
-			lineStyle = lipgloss.NewStyle().Foreground(color)
-		}
-
-		if len(displayLine) > width-4 {
-			displayLine = displayLine[:width-7] + "..."
-		}
-		rows = append(rows, lineStyle.Render(displayLine))
-	}
-
-	// Streaming cursor when focused and receiving live events.
-	if focused && len(events) > 0 {
-		rows = append(rows, lipgloss.NewStyle().Foreground(t.Primary()).Render("▌"))
-	}
-
-	if len(history) == 0 && len(events) == 0 {
-		rows = append(rows, lipgloss.NewStyle().
-			Foreground(t.TextMuted()).
-			Padding(0, 1).
-			Render("Select a session — history loads automatically, Enter for live view"))
-	}
-
-	// Help hints.
-	hints := lipgloss.NewStyle().
+	hintsStyle := lipgloss.NewStyle().
 		Foreground(t.TextMuted()).
-		Render("  m: send message  i: interrupt  tab: switch panel")
-	rows = append(rows, hints)
+		Background(bg)
+	hints := hintsStyle.Render("  enter: send  i: interrupt  s: switch  tab: panels  esc: back")
 
-	for len(rows) < height {
-		rows = append(rows, "")
-	}
+	inputStyle := lipgloss.NewStyle().
+		Width(width - 2).
+		Foreground(t.Text()).
+		Background(t.BackgroundSecondary()).
+		Padding(0, 1)
+	inputBar := inputStyle.Render(inputView)
 
-	content := strings.Join(rows[:min(len(rows), height)], "\n")
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		title,
+		viewportContent,
+		hints,
+		inputBar,
+	)
 
 	return lipgloss.NewStyle().
 		Width(width).
-		Height(height).
+		Height(height - 2).
+		Background(bg).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(borderColor).
-		Render(content)
+		BorderBackground(bg).
+		Render(inner)
 }
 
-// truncatePath truncates a file path to fit within maxLen characters,
-// showing the last components of the path with a leading "...".
+// renderChatLines renders all chat lines into a single string for the viewport.
+func renderChatLines(t theme.Theme, lines []chatLine, width int) string {
+	if len(lines) == 0 {
+		return lipgloss.NewStyle().
+			Foreground(t.TextMuted()).
+			Render("\n  Select a session — press Enter to start live chat.\n")
+	}
+
+	var sb strings.Builder
+	for _, cl := range lines {
+		sb.WriteString(renderChatLine(t, cl, width))
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// renderChatLine renders a single chat line with role-based styling.
+func renderChatLine(t theme.Theme, cl chatLine, width int) string {
+	bg := t.Background()
+	innerW := width - 4
+	if innerW < 10 {
+		innerW = 10
+	}
+
+	switch cl.role {
+	case "user":
+		style := lipgloss.NewStyle().
+			Foreground(t.Text()).
+			Background(bg).
+			BorderLeft(true).
+			BorderStyle(lipgloss.ThickBorder()).
+			BorderForeground(t.Secondary()).
+			PaddingLeft(1).
+			Width(innerW)
+		label := lipgloss.NewStyle().Foreground(t.Secondary()).Bold(true).Background(bg).Render("You")
+		return style.Render(label + "\n" + wordWrap(cl.content, innerW-2))
+
+	case "assistant":
+		style := lipgloss.NewStyle().
+			Foreground(t.TextMuted()).
+			Background(bg).
+			BorderLeft(true).
+			BorderStyle(lipgloss.ThickBorder()).
+			BorderForeground(t.Primary()).
+			PaddingLeft(1).
+			Width(innerW)
+		label := lipgloss.NewStyle().Foreground(t.Primary()).Bold(true).Background(bg).Render("Assistant")
+		return style.Render(label + "\n" + wordWrap(cl.content, innerW-2))
+
+	case "stream":
+		style := lipgloss.NewStyle().
+			Foreground(t.Info()).
+			Background(bg).
+			BorderLeft(true).
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(t.Info()).
+			PaddingLeft(1).
+			Width(innerW)
+		label := lipgloss.NewStyle().Foreground(t.Info()).Bold(true).Background(bg).Render("Assistant ▌")
+		return style.Render(label + "\n" + wordWrap(cl.content, innerW-2))
+
+	case "tool":
+		return lipgloss.NewStyle().
+			Foreground(t.Warning()).Background(bg).PaddingLeft(2).
+			Width(innerW).Render("⚙ " + cl.content)
+
+	default:
+		return lipgloss.NewStyle().
+			Foreground(t.TextMuted()).Background(bg).PaddingLeft(2).
+			Width(innerW).Render("─ " + cl.content)
+	}
+}
+
+// wordWrap wraps text at the given width without breaking words.
+func wordWrap(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return text
+	}
+	var lines []string
+	cur := ""
+	for _, w := range words {
+		if cur == "" {
+			cur = w
+		} else if len(cur)+1+len(w) <= width {
+			cur += " " + w
+		} else {
+			lines = append(lines, cur)
+			cur = w
+		}
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// modeStr returns a short display label for the instance mode.
+func modeStr(e *instanceregistry.Entry) string {
+	switch e.Mode {
+	case instanceregistry.ModeTUI:
+		return "TUI"
+	case instanceregistry.ModeWebUI:
+		return "WEB"
+	case instanceregistry.ModeDesktop:
+		return "DSK"
+	case instanceregistry.ModeACP:
+		return "ACP"
+	case instanceregistry.ModeProxy:
+		return "PRX"
+	default:
+		return "TUI"
+	}
+}
+
+// truncatePath truncates a file path to fit within maxLen characters.
 func truncatePath(path string, maxLen int) string {
 	if len(path) <= maxLen || maxLen < 4 {
 		return path
@@ -440,7 +473,7 @@ func truncatePath(path string, maxLen int) string {
 	return "..." + path[len(path)-maxLen+3:]
 }
 
-// relativeTime returns a short relative time string (e.g. "2m ago", "1h ago").
+// relativeTime returns a compact relative time string.
 func relativeTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
@@ -448,19 +481,27 @@ func relativeTime(t time.Time) string {
 	d := time.Since(t)
 	switch {
 	case d < time.Minute:
-		return "just now"
+		return "now"
 	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+		return fmt.Sprintf("%dm", int(d.Minutes()))
 	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
+		return fmt.Sprintf("%dh", int(d.Hours()))
 	default:
-		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
 }
 
 // min returns the smaller of two ints.
 func min(a, b int) int {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+// max returns the larger of two ints.
+func max(a, b int) int {
+	if a > b {
 		return a
 	}
 	return b

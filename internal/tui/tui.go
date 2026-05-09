@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -1227,6 +1228,23 @@ func (a *appModel) openSessionDialog() tea.Cmd {
 	if len(sessions) == 0 {
 		return util.ReportWarn("No sessions available")
 	}
+
+	slices.SortStableFunc(sessions, func(a, b session.Session) int {
+		if a.UpdatedAt == b.UpdatedAt {
+			switch {
+			case a.CreatedAt > b.CreatedAt:
+				return -1
+			case a.CreatedAt < b.CreatedAt:
+				return 1
+			default:
+				return 0
+			}
+		}
+		if a.UpdatedAt > b.UpdatedAt {
+			return -1
+		}
+		return 1
+	})
 
 	a.sessionDialog.SetSessions(sessions)
 	a.showSessionDialog = true

@@ -88,6 +88,13 @@ func (s *Server) IsTLS() bool {
 	return s.config.TLSCertFile != "" && s.config.TLSKeyFile != ""
 }
 
+// PandoApp returns the underlying app.App instance.
+// This is used by serve/app/desktop commands to set up the IPC bus after
+// the server is created.
+func (s *Server) PandoApp() *app.App {
+	return s.app
+}
+
 func (s *Server) Shutdown(ctx context.Context) error {
 	shutdownDone := make(chan struct{})
 	go func() {

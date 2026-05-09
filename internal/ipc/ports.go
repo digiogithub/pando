@@ -5,6 +5,7 @@ package ipc
 
 import (
 	"hash/fnv"
+	"net"
 )
 
 const (
@@ -23,4 +24,26 @@ func PortsForPath(absPath string) (pub, rpc int) {
 	_, _ = h.Write([]byte(absPath))
 	base := portBase + int(h.Sum32()%portRange)
 	return base, base + 1
+}
+
+// FindFreePorts finds two consecutive free TCP ports. This is useful for
+// secondary instances (serve, app, desktop) that cannot bind the deterministic
+// ports already held by a primary TUI instance on the same path.
+func FindFreePorts() (pub, rpc int, err error) {
+	// Request two OS-assigned ports, then close and return the numbers.
+	l1, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, 0, err
+	}
+	p1 := l1.Addr().(*net.TCPAddr).Port
+	_ = l1.Close()
+
+	l2, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, 0, err
+	}
+	p2 := l2.Addr().(*net.TCPAddr).Port
+	_ = l2.Close()
+
+	return p1, p2, nil
 }

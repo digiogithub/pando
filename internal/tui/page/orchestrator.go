@@ -353,12 +353,14 @@ func (p *orchestratorPage) View() string {
 	}
 	header := lipgloss.NewStyle().
 		Foreground(t.Primary()).
+		Background(t.Background()).
 		Bold(true).
 		Width(p.width).
 		Render(headerText)
 
 	subtitle := lipgloss.NewStyle().
 		Foreground(t.TextMuted()).
+		Background(t.Background()).
 		Width(p.width).
 		Render("ID | Status | Engine | Model | Prompt")
 
@@ -726,34 +728,42 @@ func (p *orchestratorPage) renderSpawnDialog() string {
 	baseStyle := styles.BaseStyle()
 	maxWidth := max(30, min(70, max(30, p.width-8)))
 
+	bg := t.Background()
+
 	title := lipgloss.NewStyle().
 		Foreground(t.Primary()).
+		Background(bg).
 		Bold(true).
 		Width(maxWidth).
 		Render("Spawn Orchestrator Task")
 
 	description := lipgloss.NewStyle().
 		Foreground(t.TextMuted()).
+		Background(bg).
 		Width(maxWidth).
 		Render("Enter a prompt for the new task and press Enter to spawn it in the background.")
 
 	input := lipgloss.NewStyle().
 		Foreground(t.Text()).
+		Background(bg).
 		Width(maxWidth).
 		Render(p.spawnInput.View())
 
 	engine := lipgloss.NewStyle().
 		Foreground(t.Text()).
+		Background(bg).
 		Width(maxWidth).
 		Render(p.spawnEngine.View())
 
 	acpAgent := lipgloss.NewStyle().
 		Foreground(t.Text()).
+		Background(bg).
 		Width(maxWidth).
 		Render(p.spawnACPAgent.View())
 
 	footer := lipgloss.NewStyle().
 		Foreground(t.TextMuted()).
+		Background(bg).
 		Width(maxWidth).
 		Render("engine=pando spawns Pando as CLI subprocess (default); engine=acp + acp_agent=<name> for ACP • Enter confirm • Esc cancel")
 

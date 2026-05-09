@@ -321,7 +321,8 @@ func (m *editorCmp) View() string {
 	style := lipgloss.NewStyle().
 		Padding(0, 0, 0, 1).
 		Bold(true).
-		Foreground(t.Primary())
+		Foreground(t.Primary()).
+		Background(t.Background())
 
 	if len(m.attachments) == 0 {
 		return lipgloss.JoinHorizontal(lipgloss.Top, style.Render(">"), m.textarea.View())

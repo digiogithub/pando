@@ -13,9 +13,13 @@ import (
 	"github.com/digiogithub/pando/internal/api"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/instanceregistry"
+	"github.com/digiogithub/pando/internal/ipc"
+	"github.com/digiogithub/pando/internal/ipc/bridge"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/tlsutil"
 	"github.com/digiogithub/pando/internal/version"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -115,6 +119,38 @@ This is the backend for the Pando Desktop/Web UI.`,
 		server, err := api.NewServer(ctx, cfg)
 		if err != nil {
 			return fmt.Errorf("failed to create API server: %w", err)
+		}
+
+		// --- IPC: announce this serve instance so other Pando instances can discover it.
+		// Use free ports to avoid collision with a TUI instance on the same path.
+		instanceID := uuid.New().String()
+		pubPort, rpcPort, freeErr := ipc.FindFreePorts()
+		if freeErr != nil {
+			// Fall back to path-derived ports; bus.Start will log the error if they're taken.
+			pubPort, rpcPort = ipc.PortsForPath(cwd)
+		}
+		_ = instanceregistry.Announce(&instanceregistry.Entry{
+			InstanceID: instanceID,
+			Path:       cwd,
+			PID:        os.Getpid(),
+			PubPort:    pubPort,
+			RPCPort:    rpcPort,
+			StartedAt:  time.Now(),
+			Mode:       instanceregistry.ModeWebUI,
+			IsPrimary:  false,
+		})
+		defer func() { _ = instanceregistry.Revoke(instanceID) }()
+
+		pandoApp := server.PandoApp()
+		serveBus := ipc.NewBus(instanceID)
+		if busErr := serveBus.Start(ctx, pubPort, rpcPort); busErr != nil {
+			logging.Warn("IPC: serve mode failed to start bus", "error", busErr)
+		} else {
+			bridge.RegisterHandlers(serveBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+			serveBridge := bridge.New(serveBus, pandoApp.Sessions, pandoApp.CoderAgent)
+			serveBridge.Start(ctx)
+			defer func() { _ = serveBus.Shutdown() }()
+			logging.Debug("IPC: serve mode announced", "instanceID", instanceID, "pubPort", pubPort, "rpcPort", rpcPort)
 		}
 
 		sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -33,7 +33,7 @@ SELECT *
 FROM sessions
 WHERE parent_session_id is NULL
   AND message_count > 0
-ORDER BY created_at DESC;
+ORDER BY updated_at DESC, created_at DESC;
 
 -- name: UpdateSession :one
 UPDATE sessions

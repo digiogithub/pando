@@ -1,6 +1,9 @@
 package dialog
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -143,26 +146,27 @@ func (s *sessionDialogCmp) View() string {
 			Render("No sessions available")
 	}
 
-	// Calculate max width needed for session titles
-	maxWidth := 40 // Minimum width
+	maxWidth := 40
 	for _, sess := range s.sessions {
-		if len(sess.Title) > maxWidth-4 { // Account for padding
-			maxWidth = len(sess.Title) + 4
+		title := sess.Title
+		if title == "" {
+			title = sess.ID
+		}
+		width := len(title) + len(relativeSessionTime(sess.UpdatedAt)) + 6
+		if width > maxWidth {
+			maxWidth = width
 		}
 	}
 
-	maxWidth = max(30, min(maxWidth, s.width-15)) // Limit width to avoid overflow
-
-	// Limit height to avoid taking up too much screen space
+	maxWidth = max(30, min(maxWidth, s.width-15))
 	maxVisibleSessions := min(10, len(s.sessions))
+	if maxVisibleSessions < 1 {
+		maxVisibleSessions = 1
+	}
 
-	// Build the session list
 	sessionItems := make([]string, 0, maxVisibleSessions)
 	startIdx := 0
-
-	// If we have more sessions than can be displayed, adjust the start index
 	if len(s.sessions) > maxVisibleSessions {
-		// Center the selected item when possible
 		halfVisible := maxVisibleSessions / 2
 		if s.selectedIdx >= halfVisible && s.selectedIdx < len(s.sessions)-halfVisible {
 			startIdx = s.selectedIdx - halfVisible
@@ -172,19 +176,33 @@ func (s *sessionDialogCmp) View() string {
 	}
 
 	endIdx := min(startIdx+maxVisibleSessions, len(s.sessions))
-
 	for i := startIdx; i < endIdx; i++ {
 		sess := s.sessions[i]
+		title := sess.Title
+		if title == "" {
+			title = sess.ID
+		}
+		elapsed := relativeSessionTime(sess.UpdatedAt)
+		maxTitle := maxWidth - len(elapsed) - 4
+		if maxTitle < 1 {
+			maxTitle = 1
+		}
+		if len(title) > maxTitle {
+			if maxTitle > 3 {
+				title = title[:maxTitle-3] + "..."
+			} else {
+				title = title[:maxTitle]
+			}
+		}
+		line := fmt.Sprintf("%-*s %s", maxTitle, title, elapsed)
 		itemStyle := baseStyle.Width(maxWidth)
-
 		if i == s.selectedIdx {
 			itemStyle = itemStyle.
 				Background(t.Primary()).
 				Foreground(t.Background()).
 				Bold(true)
 		}
-
-		sessionItems = append(sessionItems, tuizone.MarkSessionItem(sess.ID, itemStyle.Padding(0, 1).Render(sess.Title)))
+		sessionItems = append(sessionItems, tuizone.MarkSessionItem(sess.ID, itemStyle.Padding(0, 1).Render(line)))
 	}
 
 	title := baseStyle.
@@ -208,6 +226,30 @@ func (s *sessionDialogCmp) View() string {
 		BorderForeground(t.TextMuted()).
 		Width(lipgloss.Width(content) + 4).
 		Render(content)
+}
+
+func relativeSessionTime(ts int64) string {
+	if ts <= 0 {
+		return ""
+	}
+	return relativeTime(time.Unix(ts, 0))
+}
+
+func relativeTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
 }
 
 func (s *sessionDialogCmp) BindingKeys() []key.Binding {

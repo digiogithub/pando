@@ -15,9 +15,13 @@ import (
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/instanceregistry"
+	"github.com/digiogithub/pando/internal/ipc"
+	"github.com/digiogithub/pando/internal/ipc/bridge"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/tlsutil"
 	"github.com/digiogithub/pando/internal/version"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -124,6 +128,37 @@ func runAppMode(cmd *cobra.Command) error {
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create app server: %w", err)
+	}
+
+	// --- IPC: announce this app instance so other Pando instances can discover it.
+	// Use free ports to avoid collision with a TUI instance on the same path.
+	instanceID := uuid.New().String()
+	pubPort, rpcPort, freeErr := ipc.FindFreePorts()
+	if freeErr != nil {
+		pubPort, rpcPort = ipc.PortsForPath(cwd)
+	}
+	_ = instanceregistry.Announce(&instanceregistry.Entry{
+		InstanceID: instanceID,
+		Path:       cwd,
+		PID:        os.Getpid(),
+		PubPort:    pubPort,
+		RPCPort:    rpcPort,
+		StartedAt:  time.Now(),
+		Mode:       instanceregistry.ModeWebUI,
+		IsPrimary:  false,
+	})
+	defer func() { _ = instanceregistry.Revoke(instanceID) }()
+
+	pandoApp := server.PandoApp()
+	appBus := ipc.NewBus(instanceID)
+	if busErr := appBus.Start(ctx, pubPort, rpcPort); busErr != nil {
+		logging.Warn("IPC: app mode failed to start bus", "error", busErr)
+	} else {
+		bridge.RegisterHandlers(appBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+		appBridge := bridge.New(appBus, pandoApp.Sessions, pandoApp.CoderAgent)
+		appBridge.Start(ctx)
+		defer func() { _ = appBus.Shutdown() }()
+		logging.Debug("IPC: app mode announced", "instanceID", instanceID, "pubPort", pubPort, "rpcPort", rpcPort)
 	}
 
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

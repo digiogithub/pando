@@ -2,20 +2,21 @@
 // Use of this source code is governed by a MIT-style license.
 
 // Package instances provides a Bubble Tea component for browsing and
-// observing remote Pando instances in a three-panel layout:
+// interacting with remote Pando instances in a two-panel layout:
 //
-//   - Left panel: list of running instances discovered via instanceregistry
-//   - Top-right panel: session list for the selected instance (loaded via RPC)
-//   - Bottom-right panel: live event stream for the selected session (via ZMQ PUB)
+//   - Left panel: instances list (top) + sessions list for the selected instance (bottom)
+//   - Right panel: live chat view with message history and an input box
 package instances
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/digiogithub/pando/internal/instanceregistry"
 	ipc "github.com/digiogithub/pando/internal/ipc"
@@ -29,11 +30,11 @@ type paneID int
 const (
 	paneInstances paneID = iota
 	paneSessions
-	paneLiveView
+	paneChat
 )
 
-// maxLiveEvents is the maximum number of live event lines kept in memory.
-const maxLiveEvents = 200
+// maxLiveEvents is the maximum number of streaming lines kept in memory.
+const maxStreamingLines = 500
 
 // pollInterval is how often the instances list is refreshed.
 const pollInterval = 2 * time.Second
@@ -57,9 +58,12 @@ type messagesLoadedMsg struct {
 	err      error
 }
 
-// liveEventMsg carries a single formatted event line for the live view.
-type liveEventMsg struct {
-	line string
+// liveEventWithChannelMsg carries a formatted event plus the open channel for re-reads.
+type liveEventWithChannelMsg struct {
+	env ipc.Envelope
+	ch  <-chan ipc.Envelope
+	ctx context.Context
+	sid string
 }
 
 // liveSubCancelMsg is sent when a live subscription goroutine exits.
@@ -75,18 +79,38 @@ type switchSessionResultMsg struct {
 	err error
 }
 
+// chatLine is a single rendered line in the chat panel.
+type chatLine struct {
+	role    string // "user", "assistant", "tool", "info", "stream"
+	content string
+}
+
 // Model is the main Bubble Tea model for the instances browser.
 type Model struct {
 	width, height int
 
 	// Data
-	instances        []*instanceregistry.Entry
-	selectedInst     int
-	sessions         []protocol.SessionPayload
-	selectedSession  int
-	historyMessages  []protocol.MessagePayload // historical messages for selected session
-	liveEvents       []string
-	activePane       paneID
+	instances       []*instanceregistry.Entry
+	selectedInst    int
+	sessions        []protocol.SessionPayload
+	selectedSession int
+	historyMessages []protocol.MessagePayload
+	chatLines       []chatLine // rendered chat lines (history + live)
+	streamBuf       strings.Builder
+	isStreaming     bool
+
+	// Viewport for the chat panel (right side)
+	chatViewport viewport.Model
+
+	activePane paneID
+
+	// Scroll offsets for the left panels
+	scrollInstances int
+	scrollSessions  int
+
+	// Panel heights (set during View, used for mouse hit-testing)
+	instBoxH int
+	sessBoxH int
 
 	// Live subscription cancellation
 	liveCancel context.CancelFunc
@@ -94,27 +118,29 @@ type Model struct {
 	// Registry
 	registry *instanceregistry.Registry
 
-	// Message send dialog: when showMsgInput is true an inline textinput is
-	// overlaid at the bottom of the live-view pane.
-	showMsgInput bool
-	msgInput     textinput.Model
+	// Message input
+	msgInput textinput.Model
 
-	// statusLine holds a transient status message shown in the header bar
-	// (e.g. "Message sent", "Session switched", or an error).
-	statusLine    string
-	statusExpiry  time.Time
+	// statusLine holds a transient status message.
+	statusLine   string
+	statusExpiry time.Time
 }
 
-// New returns a new instances browser model ready to be used.
+// New returns a new instances browser model.
 func New() Model {
 	ti := textinput.New()
 	ti.Placeholder = "Type a message and press Enter…"
 	ti.CharLimit = 4096
+	// Start blurred — focus is granted when the user navigates to paneChat.
+	ti.Blur()
+
+	vp := viewport.New(0, 0)
 
 	return Model{
-		registry:   instanceregistry.New(),
-		activePane: paneInstances,
-		msgInput:   ti,
+		registry:     instanceregistry.New(),
+		activePane:   paneInstances,
+		msgInput:     ti,
+		chatViewport: vp,
 	}
 }
 
@@ -155,7 +181,6 @@ func fetchSessionsCmd(entry *instanceregistry.Entry) tea.Cmd {
 		if err != nil {
 			return sessionsUpdatedMsg{}
 		}
-
 		sessions, err := rc.ListSessions(ctx)
 		if err != nil {
 			return sessionsUpdatedMsg{}
@@ -164,7 +189,7 @@ func fetchSessionsCmd(entry *instanceregistry.Entry) tea.Cmd {
 	}
 }
 
-// fetchMessagesCmd loads the message history for a session from the selected instance via RPC.
+// fetchMessagesCmd loads the message history for a session via RPC.
 func fetchMessagesCmd(entry *instanceregistry.Entry, sessionID string) tea.Cmd {
 	return func() tea.Msg {
 		endpoint := fmt.Sprintf("tcp://127.0.0.1:%d", entry.RPCPort)
@@ -175,29 +200,12 @@ func fetchMessagesCmd(entry *instanceregistry.Entry, sessionID string) tea.Cmd {
 		if err != nil {
 			return messagesLoadedMsg{err: err}
 		}
-
 		msgs, err := rc.ListMessages(ctx, sessionID)
 		return messagesLoadedMsg{messages: msgs, err: err}
 	}
 }
 
-// liveEventWithChannelMsg carries a formatted event line plus the open channel,
-// so the Update loop can schedule the next read without leaking goroutine stack depth.
-type liveEventWithChannelMsg struct {
-	line string
-	ch   <-chan ipc.Envelope
-	ctx  context.Context
-	sid  string
-}
-
-// liveSubCancelWithChannelMsg signals that the subscription ended.
-type liveSubCancelWithChannelMsg struct{}
-
-// subscribeLiveCmd subscribes to the PUB socket of the given instance and
-// returns liveEventWithChannelMsg for each relevant event. The supplied
-// context cancel function is stored in the model so the subscription can be
-// cancelled. Irrelevant events are skipped inside the blocking goroutine so
-// the tea event loop only wakes for events that produce visible output.
+// subscribeLiveCmd subscribes to the PUB socket of the given instance.
 func subscribeLiveCmd(ctx context.Context, entry *instanceregistry.Entry, sessionID string) tea.Cmd {
 	return func() tea.Msg {
 		endpoint := fmt.Sprintf("tcp://127.0.0.1:%d", entry.PubPort)
@@ -205,30 +213,23 @@ func subscribeLiveCmd(ctx context.Context, entry *instanceregistry.Entry, sessio
 		if err != nil {
 			return liveSubCancelMsg{}
 		}
-
 		ch, err := client.SubscribeTo(endpoint)
 		if err != nil {
 			return liveSubCancelMsg{}
 		}
-
-		return readNextRelevantEvent(ctx, ch, sessionID)
+		return readNextEnvelope(ctx, ch, sessionID)
 	}
 }
 
-// nextLiveEventCmd returns a Cmd that reads the next relevant event from an
-// already-open subscription channel. Returning a Cmd (rather than calling
-// directly with `()`) ensures each iteration is scheduled by the tea runtime,
-// preventing unbounded goroutine stack growth on high-volume event streams.
-func nextLiveEventCmd(ctx context.Context, ch <-chan ipc.Envelope, sessionID string) tea.Cmd {
+// nextEnvelopeCmd returns a Cmd that reads the next event from an open channel.
+func nextEnvelopeCmd(ctx context.Context, ch <-chan ipc.Envelope, sessionID string) tea.Cmd {
 	return func() tea.Msg {
-		return readNextRelevantEvent(ctx, ch, sessionID)
+		return readNextEnvelope(ctx, ch, sessionID)
 	}
 }
 
-// readNextRelevantEvent blocks on ch until a relevant event (non-empty line)
-// is found or the context is done / channel closed. Called inside a tea.Cmd
-// goroutine so blocking here is safe.
-func readNextRelevantEvent(ctx context.Context, ch <-chan ipc.Envelope, sessionID string) tea.Msg {
+// readNextEnvelope blocks until the next relevant envelope arrives.
+func readNextEnvelope(ctx context.Context, ch <-chan ipc.Envelope, sessionID string) tea.Msg {
 	for {
 		select {
 		case <-ctx.Done():
@@ -237,87 +238,57 @@ func readNextRelevantEvent(ctx context.Context, ch <-chan ipc.Envelope, sessionI
 			if !ok {
 				return liveSubCancelMsg{}
 			}
-			line := formatEnvelope(env, sessionID)
-			if line == "" {
-				// Skip irrelevant events (e.g. heartbeats) and read next one.
+			// Filter by session if one is specified.
+			if sessionID != "" && !envelopeMatchesSession(env, sessionID) {
 				continue
 			}
-			return liveEventWithChannelMsg{line: line, ch: ch, ctx: ctx, sid: sessionID}
+			return liveEventWithChannelMsg{env: env, ch: ch, ctx: ctx, sid: sessionID}
 		}
 	}
 }
 
-// formatEnvelope converts a ZMQ envelope to a human-readable event line.
-// Returns an empty string for events that should be skipped.
-func formatEnvelope(env ipc.Envelope, sessionID string) string {
+// envelopeMatchesSession checks if an envelope belongs to the given session.
+func envelopeMatchesSession(env ipc.Envelope, sessionID string) bool {
 	switch env.Topic {
-	case "llm.token":
+	case protocol.TopicLLMToken:
 		var p protocol.LLMTokenPayload
 		if err := json.Unmarshal(env.Payload, &p); err != nil {
-			return ""
+			return false
 		}
-		if sessionID != "" && p.SessionID != sessionID {
-			return ""
-		}
-		return "[LLM] " + p.Token
-	case "llm.start":
+		return p.SessionID == sessionID
+	case protocol.TopicLLMStart:
 		var p protocol.LLMStartPayload
 		if err := json.Unmarshal(env.Payload, &p); err != nil {
-			return ""
+			return false
 		}
-		if sessionID != "" && p.SessionID != sessionID {
-			return ""
-		}
-		return "[LLM] thinking..."
-	case "llm.end":
+		return p.SessionID == sessionID
+	case protocol.TopicLLMEnd:
 		var p protocol.LLMEndPayload
 		if err := json.Unmarshal(env.Payload, &p); err != nil {
-			return ""
+			return false
 		}
-		if sessionID != "" && p.SessionID != sessionID {
-			return ""
-		}
-		return fmt.Sprintf("[LLM] done (in:%d out:%d)", p.TokensIn, p.TokensOut)
-	case "tool.start":
+		return p.SessionID == sessionID
+	case protocol.TopicToolStart:
 		var p protocol.ToolStartPayload
 		if err := json.Unmarshal(env.Payload, &p); err != nil {
-			return ""
+			return false
 		}
-		if sessionID != "" && p.SessionID != sessionID {
-			return ""
-		}
-		return "[Tool] " + p.ToolName + " ..."
-	case "tool.end":
+		return p.SessionID == sessionID
+	case protocol.TopicToolEnd:
 		var p protocol.ToolEndPayload
 		if err := json.Unmarshal(env.Payload, &p); err != nil {
-			return ""
+			return false
 		}
-		if sessionID != "" && p.SessionID != sessionID {
-			return ""
-		}
-		if p.IsError {
-			return "[Tool] " + p.ToolName + " ERROR"
-		}
-		return "[Tool] " + p.ToolName + " done"
-	case "message.append":
+		return p.SessionID == sessionID
+	case protocol.TopicMessageAppend:
 		var p protocol.MessageAppendPayload
 		if err := json.Unmarshal(env.Payload, &p); err != nil {
-			return ""
+			return false
 		}
-		if sessionID != "" && p.SessionID != sessionID {
-			return ""
-		}
-		prefix := "[Msg]"
-		if p.Role == "assistant" {
-			prefix = "[Asst]"
-		}
-		content := p.Content
-		if len(content) > 80 {
-			content = content[:80] + "..."
-		}
-		return prefix + " " + content
+		return p.SessionID == sessionID
 	}
-	return ""
+	// Allow heartbeat and session events to pass through regardless.
+	return true
 }
 
 // interruptSessionCmd sends a session.interrupt RPC to the selected instance.
@@ -329,12 +300,10 @@ func interruptSessionCmd(entry *instanceregistry.Entry, sessionID string) tea.Cm
 
 		rc, err := remoteview.NewRemoteControl(ctx, endpoint)
 		if err != nil {
-			return liveEventMsg{line: "[Err] interrupt: " + err.Error()}
+			return sendMessageResultMsg{err: err}
 		}
-		if err := rc.Interrupt(ctx, sessionID); err != nil {
-			return liveEventMsg{line: "[Err] interrupt: " + err.Error()}
-		}
-		return liveEventMsg{line: "[Info] session interrupted"}
+		err = rc.Interrupt(ctx, sessionID)
+		return sendMessageResultMsg{err: err}
 	}
 }
 
@@ -370,12 +339,24 @@ func switchSessionCmd(entry *instanceregistry.Entry, sessionID string) tea.Cmd {
 	}
 }
 
-// appendLiveEvent appends a line to the live events buffer, capping at maxLiveEvents.
-func (m *Model) appendLiveEvent(line string) {
-	m.liveEvents = append(m.liveEvents, line)
-	if len(m.liveEvents) > maxLiveEvents {
-		m.liveEvents = m.liveEvents[len(m.liveEvents)-maxLiveEvents:]
+// rebuildChatLines rebuilds the chatLines slice from historyMessages + streaming.
+func (m *Model) rebuildChatLines() {
+	m.chatLines = nil
+	for _, msg := range m.historyMessages {
+		role := msg.Role
+		if role == "" {
+			role = "info"
+		}
+		m.chatLines = append(m.chatLines, chatLine{role: role, content: msg.Content})
 	}
+	if m.isStreaming && m.streamBuf.Len() > 0 {
+		m.chatLines = append(m.chatLines, chatLine{role: "stream", content: m.streamBuf.String()})
+	}
+}
+
+// scrollChatToBottom moves the viewport to the bottom.
+func (m *Model) scrollChatToBottom() {
+	m.chatViewport.GotoBottom()
 }
 
 // Width returns the current width of the model.
@@ -388,13 +369,53 @@ func (m Model) Height() int { return m.height }
 func (m *Model) SetSize(w, h int) {
 	m.width = w
 	m.height = h
+	m.updateViewportSize()
 }
 
-// setStatus sets a transient status message that is shown in the header bar
-// for 3 seconds before being cleared by the next polling tick.
+// updateViewportSize recalculates the viewport dimensions to fit inside the chat panel.
+//
+// Chat panel outer height = leftH = m.height - 1
+// Inside border (-2): leftH - 2
+// title(-1) + viewport + hints(-1) + input(-1) = leftH - 2
+// → viewport height = leftH - 2 - 3 = m.height - 6
+//
+// Viewport width = rightWidth - 2 (inside left+right border chars).
+func (m *Model) updateViewportSize() {
+	leftWidth := m.width * 30 / 100
+	rightWidth := m.width - leftWidth - 1
+
+	// leftH = m.height - 1 (header)
+	// chat outer = leftH; inner = leftH - 2 (borders)
+	// title(1) + hints(1) + input(1) = 3 rows consumed
+	vpH := m.height - 1 - 2 - 3
+	if vpH < 1 {
+		vpH = 1
+	}
+
+	// -2 for left+right border characters inside the panel
+	vpW := rightWidth - 2
+	if vpW < 10 {
+		vpW = 10
+	}
+
+	m.chatViewport.Width = vpW
+	m.chatViewport.Height = vpH
+}
+
+// setStatus sets a transient status message.
 func (m *Model) setStatus(msg string) {
 	m.statusLine = msg
 	m.statusExpiry = time.Now().Add(3 * time.Second)
+}
+
+// setActivePane changes the active pane and manages textinput focus accordingly.
+func (m *Model) setActivePane(p paneID) {
+	m.activePane = p
+	if p == paneChat {
+		m.msgInput.Focus()
+	} else {
+		m.msgInput.Blur()
+	}
 }
 
 // cancelLiveSub cancels the current live subscription if one exists.
@@ -405,7 +426,7 @@ func (m *Model) cancelLiveSub() {
 	}
 }
 
-// selectedInstance returns the currently selected instance entry, or nil.
+// selectedInstanceEntry returns the currently selected instance entry, or nil.
 func (m *Model) selectedInstanceEntry() *instanceregistry.Entry {
 	if len(m.instances) == 0 || m.selectedInst < 0 || m.selectedInst >= len(m.instances) {
 		return nil
@@ -413,10 +434,25 @@ func (m *Model) selectedInstanceEntry() *instanceregistry.Entry {
 	return m.instances[m.selectedInst]
 }
 
-// selectedSessionEntry returns the currently selected session, or zero value.
+// selectedSessionEntry returns the currently selected session, or nil.
 func (m *Model) selectedSessionEntry() *protocol.SessionPayload {
 	if len(m.sessions) == 0 || m.selectedSession < 0 || m.selectedSession >= len(m.sessions) {
 		return nil
 	}
 	return &m.sessions[m.selectedSession]
+}
+
+// clampScroll ensures scroll offsets are within valid bounds.
+func clampScroll(offset, listLen, visibleH int) int {
+	if offset < 0 {
+		return 0
+	}
+	max := listLen - visibleH
+	if max < 0 {
+		max = 0
+	}
+	if offset > max {
+		return max
+	}
+	return offset
 }
