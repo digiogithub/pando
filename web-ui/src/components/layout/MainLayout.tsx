@@ -11,6 +11,7 @@ import StatusBar from './StatusBar'
 import QuickMenu from '@/components/overlays/QuickMenu'
 import ModelSwitcher from '@/components/overlays/ModelSwitcher'
 import ConfigInitBanner from '@/components/overlays/ConfigInitBanner'
+import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
 
 export default function MainLayout() {
   const { sidebarOpen, quickMenuOpen, modelSwitcherOpen, setSidebarOpen } = useLayoutStore()
@@ -73,6 +74,7 @@ export default function MainLayout() {
       }}
     >
       <Header />
+      <NetworkErrorBanner />
       <ConfigInitBanner />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>

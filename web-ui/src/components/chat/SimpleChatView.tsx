@@ -14,6 +14,7 @@ import { authenticate } from '@/services/auth'
 import MessageList from './MessageList'
 import ChatInput from './ChatInput'
 import ModelSwitcher from '@/components/overlays/ModelSwitcher'
+import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
 
 export default function SimpleChatView() {
   const navigate = useNavigate()
@@ -163,6 +164,8 @@ export default function SimpleChatView() {
           <FontAwesomeIcon icon={faColumns} style={{ fontSize: 13 }} />
         </button>
       </div>
+
+      <NetworkErrorBanner />
 
       {/* Body: sidebar + chat */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>

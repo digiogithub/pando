@@ -13,7 +13,10 @@
     "tokens": "tokens",
     "session": "会话",
     "noActiveSession": "无活动会话",
-    "clickToSwitchModel": "点击切换模型 (Ctrl+O)"
+    "clickToSwitchModel": "点击切换模型 (Ctrl+O)",
+    "connectionLost": "连接断开 — 服务器不可达",
+    "reload": "重新加载",
+    "reloading": "加载中…"
   },
   "nav": {
     "chat": "聊天",

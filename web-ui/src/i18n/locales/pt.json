@@ -13,7 +13,10 @@
     "tokens": "tokens",
     "session": "Sessão",
     "noActiveSession": "Nenhuma sessão ativa",
-    "clickToSwitchModel": "Clique para trocar o modelo (Ctrl+O)"
+    "clickToSwitchModel": "Clique para trocar o modelo (Ctrl+O)",
+    "connectionLost": "Conexão perdida — servidor inacessível",
+    "reload": "Recarregar",
+    "reloading": "Recarregando…"
   },
   "nav": {
     "chat": "Chat",
