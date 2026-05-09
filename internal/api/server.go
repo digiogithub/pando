@@ -16,14 +16,16 @@ import (
 )
 
 type ServerConfig struct {
-	Host      string
-	Port      int
-	Version   string
-	DB        *sql.DB
-	CWD       string
-	StaticFS  fs.FS
-	OpenUI    bool
-	UIBaseURL string
+	Host        string
+	Port        int
+	Version     string
+	DB          *sql.DB
+	CWD         string
+	StaticFS    fs.FS
+	OpenUI      bool
+	UIBaseURL   string
+	TLSCertFile string
+	TLSKeyFile  string
 }
 
 type Server struct {
@@ -73,7 +75,15 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 }
 
 func (s *Server) Start() error {
+	if s.config.TLSCertFile != "" && s.config.TLSKeyFile != "" {
+		return s.httpServer.ListenAndServeTLS(s.config.TLSCertFile, s.config.TLSKeyFile)
+	}
 	return s.httpServer.ListenAndServe()
+}
+
+// IsTLS reports whether the server is configured to use TLS.
+func (s *Server) IsTLS() bool {
+	return s.config.TLSCertFile != "" && s.config.TLSKeyFile != ""
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {

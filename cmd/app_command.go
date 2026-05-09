@@ -15,4 +15,6 @@ func init() {
 	rootCmd.AddCommand(appCmd)
 	appCmd.Flags().String("host", "localhost", "Host to bind the app server to")
 	appCmd.Flags().Int("port", 8765, "Preferred port to bind the app server to")
+	appCmd.Flags().String("tls-cert", "", "Path to TLS certificate file (auto-generated if omitted)")
+	appCmd.Flags().String("tls-key", "", "Path to TLS private key file (auto-generated if omitted)")
 }

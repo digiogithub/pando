@@ -14,6 +14,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/tlsutil"
 	"github.com/digiogithub/pando/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +32,7 @@ The server provides REST endpoints and SSE streaming for:
 
 This is the backend for the Pando Desktop/Web UI.`,
 	Example: `
-  # Start with default configuration (port 8765)
+  # Start with default configuration (port 8765, auto-generated TLS certificate)
   pando serve
 
   # Start on specific port
@@ -40,12 +41,17 @@ This is the backend for the Pando Desktop/Web UI.`,
   # Start bound to all interfaces (for remote access)
   pando serve --host 0.0.0.0
 
+  # Use a custom TLS certificate and key
+  pando serve --tls-cert /path/to/server.crt --tls-key /path/to/server.key
+
   # Start with debug logging
   pando serve --debug`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		host, _ := cmd.Flags().GetString("host")
 		port, _ := cmd.Flags().GetInt("port")
 		debug, _ := cmd.Flags().GetBool("debug")
+		tlsCert, _ := cmd.Flags().GetString("tls-cert")
+		tlsKey, _ := cmd.Flags().GetString("tls-key")
 		preferredPort := port
 
 		selectedPort, err := chooseAvailablePort(host, preferredPort)
@@ -75,17 +81,35 @@ This is the backend for the Pando Desktop/Web UI.`,
 		}
 		logging.Debug("Database connected")
 
+		// Resolve TLS certificate: use provided files or auto-generate.
+		if tlsCert == "" || tlsKey == "" {
+			dataDir := config.Get().Data.Directory
+			if dataDir == "" {
+				dataDir = ".pando"
+			}
+			certPaths, err := tlsutil.EnsureCert(dataDir)
+			if err != nil {
+				return fmt.Errorf("failed to ensure TLS certificate: %w", err)
+			}
+			tlsCert = certPaths.CertFile
+			tlsKey = certPaths.KeyFile
+			logging.Debug("Using auto-generated TLS certificate", "cert", tlsCert)
+		}
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		baseURL := fmt.Sprintf("http://%s:%d", host, port)
+		scheme := "https"
+		baseURL := fmt.Sprintf("%s://%s:%d", scheme, host, port)
 		cfg := api.ServerConfig{
-			Host:      host,
-			Port:      port,
-			Version:   version.Version,
-			DB:        conn,
-			CWD:       cwd,
-			UIBaseURL: baseURL,
+			Host:        host,
+			Port:        port,
+			Version:     version.Version,
+			DB:          conn,
+			CWD:         cwd,
+			UIBaseURL:   baseURL,
+			TLSCertFile: tlsCert,
+			TLSKeyFile:  tlsKey,
 		}
 
 		server, err := api.NewServer(ctx, cfg)
@@ -126,6 +150,9 @@ This is the backend for the Pando Desktop/Web UI.`,
 			versionPrefix = "v"
 		}
 		fmt.Printf("Pando API server %s%s listening on %s\n", versionPrefix, version.Version, baseURL)
+		if server.IsTLS() {
+			fmt.Println("TLS enabled (self-signed certificate — accept the browser security warning for local use)")
+		}
 		fmt.Println("Press Ctrl+C to stop")
 
 		if err := server.Start(); err != nil && err != http.ErrServerClosed {
@@ -143,4 +170,6 @@ func init() {
 	serveCmd.Flags().String("host", "localhost", "Host to bind to")
 	serveCmd.Flags().Int("port", 8765, "Port to listen on")
 	serveCmd.Flags().Bool("debug", false, "Enable debug logging")
+	serveCmd.Flags().String("tls-cert", "", "Path to TLS certificate file (auto-generated if omitted)")
+	serveCmd.Flags().String("tls-key", "", "Path to TLS private key file (auto-generated if omitted)")
 }

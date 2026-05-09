@@ -16,6 +16,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/tlsutil"
 	"github.com/digiogithub/pando/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -56,6 +57,8 @@ func runAppMode(cmd *cobra.Command) error {
 	host, _ := cmd.Flags().GetString("host")
 	port, _ := cmd.Flags().GetInt("port")
 	debug, _ := cmd.Flags().GetBool("debug")
+	tlsCert, _ := cmd.Flags().GetString("tls-cert")
+	tlsKey, _ := cmd.Flags().GetString("tls-key")
 	preferredPort := port
 
 	selectedPort, err := chooseAvailablePort(host, preferredPort)
@@ -87,19 +90,37 @@ func runAppMode(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to load embedded web ui: %w", err)
 	}
 
+	// Resolve TLS certificate: use provided files or auto-generate.
+	if tlsCert == "" || tlsKey == "" {
+		dataDir := config.Get().Data.Directory
+		if dataDir == "" {
+			dataDir = ".pando"
+		}
+		certPaths, err := tlsutil.EnsureCert(dataDir)
+		if err != nil {
+			return fmt.Errorf("failed to ensure TLS certificate: %w", err)
+		}
+		tlsCert = certPaths.CertFile
+		tlsKey = certPaths.KeyFile
+		logging.Debug("Using auto-generated TLS certificate", "cert", tlsCert)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	baseURL := fmt.Sprintf("http://%s:%d", host, port)
+	scheme := "https"
+	baseURL := fmt.Sprintf("%s://%s:%d", scheme, host, port)
 	server, err := api.NewServer(ctx, api.ServerConfig{
-		Host:      host,
-		Port:      port,
-		Version:   version.Version,
-		DB:        conn,
-		CWD:       cwd,
-		StaticFS:  staticFS,
-		OpenUI:    true,
-		UIBaseURL: baseURL,
+		Host:        host,
+		Port:        port,
+		Version:     version.Version,
+		DB:          conn,
+		CWD:         cwd,
+		StaticFS:    staticFS,
+		OpenUI:      true,
+		UIBaseURL:   baseURL,
+		TLSCertFile: tlsCert,
+		TLSKeyFile:  tlsKey,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create app server: %w", err)
@@ -135,6 +156,9 @@ func runAppMode(cmd *cobra.Command) error {
 		versionPrefix = "v"
 	}
 	fmt.Printf("Pando app %s%s listening on %s\n", versionPrefix, version.Version, baseURL)
+	if server.IsTLS() {
+		fmt.Println("TLS enabled (self-signed certificate — accept the browser security warning for local use)")
+	}
 	fmt.Println("Press Ctrl+C to stop")
 
 	go func() {
