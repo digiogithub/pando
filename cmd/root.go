@@ -239,14 +239,15 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 				InstanceID: instanceID,
 				Path:       cwd,
 				PID:        os.Getpid(),
-				PubPort:    pubPort,
-				RPCPort:    rpcPort,
+				PubPort:    lockInfo.PubPort,
+				RPCPort:    lockInfo.RPCPort,
 				StartedAt:  time.Now(),
 				Mode:       instanceregistry.ModeTUI,
 				IsPrimary:  false,
 			})
 			defer func() { _ = instanceregistry.Revoke(instanceID) }()
 			logging.Debug("IPC: running as secondary instance",
+				"primaryPub", fmt.Sprintf("tcp://127.0.0.1:%d", lockInfo.PubPort),
 				"primaryRPC", fmt.Sprintf("tcp://127.0.0.1:%d", lockInfo.RPCPort))
 		}
 
