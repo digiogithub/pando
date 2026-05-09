@@ -76,6 +76,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleChatStream starts an agent run in the background (decoupled from the
+// HTTP connection lifetime) and streams events to the client via SSE.
+// If the client disconnects mid-run the agent keeps running; a reconnect via
+// GET /api/v1/sessions/{id}/stream will replay buffered events and resume live.
 func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -115,235 +119,313 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	fmt.Fprintf(w, "event: session\ndata: {\"sessionId\":\"%s\"}\n\n", sess.ID)
+	fmt.Fprintf(w, "event: session\ndata: {\"sessionId\":%q,\"running\":true}\n\n", sess.ID)
 	flusher.Flush()
 
-	eventChan, err := s.app.CoderAgent.Run(r.Context(), sess.ID, req.Prompt)
-	if err != nil {
-		writeSSEEvent(w, flusher, "error", map[string]string{"error": err.Error()})
+	// Submit the run to the background manager. The agent goroutine uses a
+	// context.Background()-derived context so it survives HTTP disconnects.
+	agentSvc := s.app.CoderAgent
+	sessionID := sess.ID
+	submitErr := s.bgRunner.Submit(sessionID, func(ctx context.Context) (<-chan agent.AgentEvent, error) {
+		return agentSvc.Run(ctx, sessionID, req.Prompt)
+	})
+	if submitErr != nil {
+		writeSSEEvent(w, flusher, "error", map[string]string{"error": submitErr.Error()})
 		return
 	}
 
-	workDir := s.config.CWD
+	// Subscribe to receive buffered + live events from the background run.
+	eventChan, unsubFn, _ := s.bgRunner.Subscribe(sessionID)
+	s.streamSessionEvents(w, flusher, r.Context(), unsubFn, eventChan)
+}
 
-	// Track tool call state to guarantee start events precede results
-	// and to carry input data across events (mirrors ACP prompt_handler).
+// handleSessionStream lets clients reconnect to an in-progress (or recently
+// completed) background session to observe its events with replay.
+// GET /api/v1/sessions/{id}/stream
+func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "session id required")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	running := s.bgRunner.IsBusy(sessionID)
+	fmt.Fprintf(w, "event: session\ndata: {\"sessionId\":%q,\"running\":%v}\n\n", sessionID, running)
+	flusher.Flush()
+
+	eventChan, unsubFn, knownSession := s.bgRunner.Subscribe(sessionID)
+	if !knownSession {
+		// Session not in runner — already completed long ago or never started here.
+		// Return a done marker so the UI knows there is nothing to stream.
+		writeSSEEvent(w, flusher, "done", map[string]string{})
+		return
+	}
+
+	s.streamSessionEvents(w, flusher, r.Context(), unsubFn, eventChan)
+}
+
+// streamSessionEvents reads events from eventChan and writes them as SSE to w.
+// It returns when eventChan is closed (agent done) or clientCtx is cancelled
+// (HTTP disconnect). On disconnect unsubFn is called to clean up the
+// subscription, but the background session keeps running.
+func (s *Server) streamSessionEvents(
+	w http.ResponseWriter,
+	flusher http.Flusher,
+	clientCtx context.Context,
+	unsubFn func(),
+	eventChan <-chan agent.AgentEvent,
+) {
+	workDir := s.config.CWD
 	var mu sync.Mutex
 	startedToolCalls := map[string]bool{}
 	pendingInputs := map[string]string{}
 
-	for event := range eventChan {
-		switch event.Type {
-		case agent.AgentEventTypeThinkingDelta:
-			writeSSEEvent(w, flusher, "thinking_delta", map[string]string{"text": event.Delta})
-
-		case agent.AgentEventTypeContentDelta:
-			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": event.Delta})
-
-		case agent.AgentEventTypeToolCall:
-			if event.ToolCall == nil {
-				continue
-			}
-			tc := event.ToolCall
-
-			// TodoWrite → plan: emit plan_update instead of tool_call.
-			if toolmeta.IsTodoWriteTool(tc.Name) {
-				mu.Lock()
-				pendingInputs[tc.ID] = tc.Input
-				startedToolCalls[tc.ID] = true
-				mu.Unlock()
-				// Only emit once the full input is assembled.
-				if tc.Finished {
-					writeSSETodoWritePlan(w, flusher, tc.Input)
-				}
-				continue
-			}
-
-			kind := toolmeta.MapToolKind(tc.Name)
-			rawInput := toolmeta.ParseJSONInput(tc.Input)
-			title := toolmeta.DisplayTitle(tc.Name, rawInput, workDir)
-			locations := toolmeta.ToLocations(tc.Name, tc.Input)
-
-			mu.Lock()
-			pendingInputs[tc.ID] = tc.Input
-			started := startedToolCalls[tc.ID]
-			mu.Unlock()
-
-			if !tc.Finished {
-				// Streaming in progress — send start if not yet sent.
-				if !started {
-					writeSSEEvent(w, flusher, "tool_call", map[string]interface{}{
-						"id":        tc.ID,
-						"name":      tc.Name,
-						"kind":      kind,
-						"title":     title,
-						"status":    toolmeta.StatusPending,
-						"input":     tc.Input,
-						"locations": locations,
-					})
-					mu.Lock()
-					startedToolCalls[tc.ID] = true
-					mu.Unlock()
-				}
-			} else {
-				// Finished assembling — send start if needed, then in_progress.
-				if !started {
-					writeSSEEvent(w, flusher, "tool_call", map[string]interface{}{
-						"id":        tc.ID,
-						"name":      tc.Name,
-						"kind":      kind,
-						"title":     title,
-						"status":    toolmeta.StatusInProgress,
-						"input":     tc.Input,
-						"locations": locations,
-					})
-					mu.Lock()
-					startedToolCalls[tc.ID] = true
-					mu.Unlock()
-				} else {
-					// Already started — send update to in_progress with final input.
-					writeSSEEvent(w, flusher, "tool_call_update", map[string]interface{}{
-						"id":        tc.ID,
-						"status":    toolmeta.StatusInProgress,
-						"kind":      kind,
-						"title":     title,
-						"input":     tc.Input,
-						"locations": locations,
-					})
-				}
-			}
-
-		case agent.AgentEventTypeToolResult:
-			if event.ToolResult == nil {
-				continue
-			}
-			tr := event.ToolResult
-
-			// TodoWrite results are suppressed — plan_update already sent.
-			if toolmeta.IsTodoWriteTool(tr.Name) {
-				mu.Lock()
-				delete(pendingInputs, tr.ToolCallID)
-				delete(startedToolCalls, tr.ToolCallID)
-				mu.Unlock()
-				continue
-			}
-
-			status := toolmeta.StatusCompleted
-			if tr.IsError {
-				status = toolmeta.StatusFailed
-			}
-
-			mu.Lock()
-			storedInput := pendingInputs[tr.ToolCallID]
-			wasStarted := startedToolCalls[tr.ToolCallID]
-			delete(startedToolCalls, tr.ToolCallID)
-			delete(pendingInputs, tr.ToolCallID)
-			mu.Unlock()
-
-			rawInput := toolmeta.ParseJSONInput(storedInput)
-			kind := toolmeta.MapToolKind(tr.Name)
-			title := toolmeta.DisplayTitle(tr.Name, rawInput, workDir)
-			locations := toolmeta.ToLocations(tr.Name, storedInput)
-
-			// Guarantee a tool_call start event precedes the result.
-			if !wasStarted {
-				writeSSEEvent(w, flusher, "tool_call", map[string]interface{}{
-					"id":        tr.ToolCallID,
-					"name":      tr.Name,
-					"kind":      kind,
-					"title":     title,
-					"status":    toolmeta.StatusInProgress,
-					"input":     storedInput,
-					"locations": locations,
-				})
-			}
-
-			// Build rawOutput with structured metadata.
-			rawOutput := map[string]interface{}{
-				"output": tr.Content,
-			}
-			if tr.Metadata != "" {
-				var meta interface{}
-				if jerr := json.Unmarshal([]byte(tr.Metadata), &meta); jerr == nil {
-					rawOutput["metadata"] = meta
-				} else {
-					rawOutput["metadata"] = tr.Metadata
-				}
-			}
-
-			// For bash tools, include terminal metadata.
-			var terminalMeta map[string]interface{}
-			if toolmeta.IsBashTool(tr.Name) {
-				exitCode := 0
-				if tr.IsError {
-					exitCode = 1
-				}
-				terminalMeta = map[string]interface{}{
-					"terminal_id": tr.ToolCallID,
-					"exit_code":   exitCode,
-				}
-			}
-
-			// For edit tools, include diff metadata.
-			var diffMeta map[string]interface{}
-			if toolmeta.IsEditTool(tr.Name) && !tr.IsError && storedInput != "" {
-				var ep struct {
-					FilePath  string `json:"file_path"`
-					OldString string `json:"old_string"`
-					NewString string `json:"new_string"`
-					Content   string `json:"content"`
-				}
-				if jerr := json.Unmarshal([]byte(storedInput), &ep); jerr == nil && ep.FilePath != "" {
-					diffMeta = map[string]interface{}{
-						"file_path": ep.FilePath,
-					}
-					if tr.Name == "write" {
-						diffMeta["new_content"] = ep.Content
-					} else {
-						diffMeta["old_string"] = ep.OldString
-						diffMeta["new_string"] = ep.NewString
-					}
-				}
-			}
-
-			resultPayload := map[string]interface{}{
-				"tool_call_id": tr.ToolCallID,
-				"name":         tr.Name,
-				"kind":         kind,
-				"title":        title,
-				"status":       status,
-				"content":      tr.Content,
-				"is_error":     tr.IsError,
-				"locations":    locations,
-				"raw_output":   rawOutput,
-			}
-			if terminalMeta != nil {
-				resultPayload["terminal"] = terminalMeta
-			}
-			if diffMeta != nil {
-				resultPayload["diff"] = diffMeta
-			}
-
-			writeSSEEvent(w, flusher, "tool_result", resultPayload)
-
-		case agent.AgentEventTypeTodosUpdated:
-			if len(event.Todos) > 0 {
-				writeSSEEvent(w, flusher, "todos_update", map[string]interface{}{
-					"session_id": event.SessionID,
-					"todos":      event.Todos,
-				})
-			}
-
-		case agent.AgentEventTypeResponse:
-			// Final response — content already streamed via content_delta events.
-
-		case agent.AgentEventTypeError:
-			writeSSEEvent(w, flusher, "error", map[string]string{"error": event.Error.Error()})
-			return
+	cleanup := func() {
+		unsubFn()
+		// Drain remaining buffered events to prevent the pump goroutine from
+		// blocking on sends to this (now-abandoned) subscriber channel.
+		for range eventChan {
 		}
 	}
 
-	writeSSEEvent(w, flusher, "done", map[string]string{})
+	for {
+		select {
+		case <-clientCtx.Done():
+			// Client disconnected — leave the agent running.
+			go cleanup()
+			return
+		case event, open := <-eventChan:
+			if !open {
+				writeSSEEvent(w, flusher, "done", map[string]string{})
+				return
+			}
+			s.dispatchSSEEvent(w, flusher, &mu, startedToolCalls, pendingInputs, workDir, event)
+		}
+	}
+}
+
+// dispatchSSEEvent translates a single AgentEvent into SSE writes.
+func (s *Server) dispatchSSEEvent(
+	w http.ResponseWriter,
+	flusher http.Flusher,
+	mu *sync.Mutex,
+	startedToolCalls map[string]bool,
+	pendingInputs map[string]string,
+	workDir string,
+	event agent.AgentEvent,
+) {
+	switch event.Type {
+	case agent.AgentEventTypeThinkingDelta:
+		writeSSEEvent(w, flusher, "thinking_delta", map[string]string{"text": event.Delta})
+
+	case agent.AgentEventTypeContentDelta:
+		writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": event.Delta})
+
+	case agent.AgentEventTypeToolCall:
+		if event.ToolCall == nil {
+			return
+		}
+		tc := event.ToolCall
+
+		// TodoWrite → plan: emit plan_update instead of tool_call.
+		if toolmeta.IsTodoWriteTool(tc.Name) {
+			mu.Lock()
+			pendingInputs[tc.ID] = tc.Input
+			startedToolCalls[tc.ID] = true
+			mu.Unlock()
+			if tc.Finished {
+				writeSSETodoWritePlan(w, flusher, tc.Input)
+			}
+			return
+		}
+
+		kind := toolmeta.MapToolKind(tc.Name)
+		rawInput := toolmeta.ParseJSONInput(tc.Input)
+		title := toolmeta.DisplayTitle(tc.Name, rawInput, workDir)
+		locations := toolmeta.ToLocations(tc.Name, tc.Input)
+
+		mu.Lock()
+		pendingInputs[tc.ID] = tc.Input
+		started := startedToolCalls[tc.ID]
+		mu.Unlock()
+
+		if !tc.Finished {
+			if !started {
+				writeSSEEvent(w, flusher, "tool_call", map[string]interface{}{
+					"id":        tc.ID,
+					"name":      tc.Name,
+					"kind":      kind,
+					"title":     title,
+					"status":    toolmeta.StatusPending,
+					"input":     tc.Input,
+					"locations": locations,
+				})
+				mu.Lock()
+				startedToolCalls[tc.ID] = true
+				mu.Unlock()
+			}
+		} else {
+			if !started {
+				writeSSEEvent(w, flusher, "tool_call", map[string]interface{}{
+					"id":        tc.ID,
+					"name":      tc.Name,
+					"kind":      kind,
+					"title":     title,
+					"status":    toolmeta.StatusInProgress,
+					"input":     tc.Input,
+					"locations": locations,
+				})
+				mu.Lock()
+				startedToolCalls[tc.ID] = true
+				mu.Unlock()
+			} else {
+				writeSSEEvent(w, flusher, "tool_call_update", map[string]interface{}{
+					"id":        tc.ID,
+					"status":    toolmeta.StatusInProgress,
+					"kind":      kind,
+					"title":     title,
+					"input":     tc.Input,
+					"locations": locations,
+				})
+			}
+		}
+
+	case agent.AgentEventTypeToolResult:
+		if event.ToolResult == nil {
+			return
+		}
+		tr := event.ToolResult
+
+		// TodoWrite results are suppressed — plan_update already sent.
+		if toolmeta.IsTodoWriteTool(tr.Name) {
+			mu.Lock()
+			delete(pendingInputs, tr.ToolCallID)
+			delete(startedToolCalls, tr.ToolCallID)
+			mu.Unlock()
+			return
+		}
+
+		status := toolmeta.StatusCompleted
+		if tr.IsError {
+			status = toolmeta.StatusFailed
+		}
+
+		mu.Lock()
+		storedInput := pendingInputs[tr.ToolCallID]
+		wasStarted := startedToolCalls[tr.ToolCallID]
+		delete(startedToolCalls, tr.ToolCallID)
+		delete(pendingInputs, tr.ToolCallID)
+		mu.Unlock()
+
+		rawInputParsed := toolmeta.ParseJSONInput(storedInput)
+		kind := toolmeta.MapToolKind(tr.Name)
+		title := toolmeta.DisplayTitle(tr.Name, rawInputParsed, workDir)
+		locations := toolmeta.ToLocations(tr.Name, storedInput)
+
+		// Guarantee a tool_call start event precedes the result.
+		if !wasStarted {
+			writeSSEEvent(w, flusher, "tool_call", map[string]interface{}{
+				"id":        tr.ToolCallID,
+				"name":      tr.Name,
+				"kind":      kind,
+				"title":     title,
+				"status":    toolmeta.StatusInProgress,
+				"input":     storedInput,
+				"locations": locations,
+			})
+		}
+
+		rawOutput := map[string]interface{}{
+			"output": tr.Content,
+		}
+		if tr.Metadata != "" {
+			var meta interface{}
+			if jerr := json.Unmarshal([]byte(tr.Metadata), &meta); jerr == nil {
+				rawOutput["metadata"] = meta
+			} else {
+				rawOutput["metadata"] = tr.Metadata
+			}
+		}
+
+		var terminalMeta map[string]interface{}
+		if toolmeta.IsBashTool(tr.Name) {
+			exitCode := 0
+			if tr.IsError {
+				exitCode = 1
+			}
+			terminalMeta = map[string]interface{}{
+				"terminal_id": tr.ToolCallID,
+				"exit_code":   exitCode,
+			}
+		}
+
+		var diffMeta map[string]interface{}
+		if toolmeta.IsEditTool(tr.Name) && !tr.IsError && storedInput != "" {
+			var ep struct {
+				FilePath  string `json:"file_path"`
+				OldString string `json:"old_string"`
+				NewString string `json:"new_string"`
+				Content   string `json:"content"`
+			}
+			if jerr := json.Unmarshal([]byte(storedInput), &ep); jerr == nil && ep.FilePath != "" {
+				diffMeta = map[string]interface{}{
+					"file_path": ep.FilePath,
+				}
+				if tr.Name == "write" {
+					diffMeta["new_content"] = ep.Content
+				} else {
+					diffMeta["old_string"] = ep.OldString
+					diffMeta["new_string"] = ep.NewString
+				}
+			}
+		}
+
+		resultPayload := map[string]interface{}{
+			"tool_call_id": tr.ToolCallID,
+			"name":         tr.Name,
+			"kind":         kind,
+			"title":        title,
+			"status":       status,
+			"content":      tr.Content,
+			"is_error":     tr.IsError,
+			"locations":    locations,
+			"raw_output":   rawOutput,
+		}
+		if terminalMeta != nil {
+			resultPayload["terminal"] = terminalMeta
+		}
+		if diffMeta != nil {
+			resultPayload["diff"] = diffMeta
+		}
+		writeSSEEvent(w, flusher, "tool_result", resultPayload)
+
+	case agent.AgentEventTypeTodosUpdated:
+		if len(event.Todos) > 0 {
+			writeSSEEvent(w, flusher, "todos_update", map[string]interface{}{
+				"session_id": event.SessionID,
+				"todos":      event.Todos,
+			})
+		}
+
+	case agent.AgentEventTypeResponse:
+		// Final response — content already streamed via content_delta events.
+
+	case agent.AgentEventTypeError:
+		if event.Error != nil {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": event.Error.Error()})
+		}
+	}
 }
 
 // writeSSETodoWritePlan emits a plan_update SSE event from a TodoWrite input.

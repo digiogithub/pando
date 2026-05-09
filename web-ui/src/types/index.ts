@@ -9,6 +9,8 @@ export interface Session {
   cost: number
   created_at: string
   updated_at: string
+  /** true when the session has an active background agent run */
+  is_running?: boolean
 }
 
 export interface ContentPart {

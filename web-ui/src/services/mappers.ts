@@ -12,6 +12,7 @@ interface RawSession {
   Cost: number
   CreatedAt: number
   UpdatedAt: number
+  IsRunning?: boolean
 }
 
 // RawPart matches what the Go message.Message serializes to JSON via encoding/json.
@@ -76,6 +77,7 @@ export function mapSession(raw: RawSession): Session {
     cost: raw.Cost,
     created_at: unixToISO(raw.CreatedAt),
     updated_at: unixToISO(raw.UpdatedAt),
+    is_running: raw.IsRunning ?? false,
   }
 }
 

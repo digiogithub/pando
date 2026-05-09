@@ -11,6 +11,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/project", s.handleProject)
 	mux.HandleFunc("/api/v1/project/context", s.handleProjectContext)
 	mux.HandleFunc("/api/v1/sessions", s.handleSessions)
+	mux.HandleFunc("GET /api/v1/sessions/{id}/stream", s.handleSessionStream)
 	mux.HandleFunc("/api/v1/sessions/", s.handleSessionByID)
 	mux.HandleFunc("/api/v1/tools", s.handleTools)
 	mux.HandleFunc("/api/v1/files", s.handleFiles)

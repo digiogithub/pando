@@ -28,6 +28,84 @@ function isToolResultDiff(value: unknown): value is ToolResultDiff {
     && typeof (value as Record<string, unknown>).file_path === 'string'
 }
 
+/** Shared SSE body reader used by both POST and GET stream functions. */
+async function consumeSSEBody(
+  body: ReadableStream<Uint8Array>,
+  onEvent: (event: SSEEvent) => void,
+  onDone?: () => void,
+): Promise<void> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let currentEventType = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        currentEventType = line.slice(7).trim()
+      } else if (line.startsWith('data: ')) {
+        try {
+          const raw = JSON.parse(line.slice(6)) as Record<string, unknown>
+          const eventType = (currentEventType || 'content') as SSEEvent['type']
+          const event = parseSSEPayload(eventType, raw)
+          currentEventType = ''
+          onEvent(event)
+          if (event.type === 'done') {
+            onDone?.()
+            return
+          }
+        } catch {
+          // ignore malformed lines
+        }
+      }
+    }
+  }
+  onDone?.()
+}
+
+/**
+ * Connect to an existing background session stream via GET (no body).
+ * Used to reconnect to a session that is already running in the background.
+ * Events are replayed from the server-side buffer then continue live.
+ */
+export function createGETSSEStream(
+  url: string,
+  onEvent: (event: SSEEvent) => void,
+  onError?: (error: Error) => void,
+  onDone?: () => void,
+): AbortController {
+  const controller = new AbortController()
+  const token = api.getToken()
+
+  fetch(url, {
+    method: 'GET',
+    headers: {
+      ...(token ? { 'X-Pando-Token': token } : {}),
+    },
+    signal: controller.signal,
+  })
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      if (!response.body) throw new Error('No response body')
+      await consumeSSEBody(response.body, onEvent, onDone)
+    })
+    .catch((err: unknown) => {
+      if (err instanceof Error && err.name !== 'AbortError') {
+        if (err instanceof TypeError) notifyNetworkError()
+        onError?.(err)
+      }
+    })
+
+  return controller
+}
+
 export function createSSEStream(
   url: string,
   body: unknown,
@@ -48,47 +126,9 @@ export function createSSEStream(
     signal: controller.signal,
   })
     .then(async (response) => {
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-      if (!response.body) {
-        throw new Error('No response body')
-      }
-
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let currentEventType = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEventType = line.slice(7).trim()
-          } else if (line.startsWith('data: ')) {
-            try {
-              const raw = JSON.parse(line.slice(6)) as Record<string, unknown>
-              const eventType = (currentEventType || 'content') as SSEEvent['type']
-              const event = parseSSEPayload(eventType, raw)
-              currentEventType = ''
-              onEvent(event)
-              if (event.type === 'done') {
-                onDone?.()
-                return
-              }
-            } catch {
-              // ignore malformed lines
-            }
-          }
-        }
-      }
-      onDone?.()
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      if (!response.body) throw new Error('No response body')
+      await consumeSSEBody(response.body, onEvent, onDone)
     })
     .catch((err: unknown) => {
       if (err instanceof Error && err.name !== 'AbortError') {

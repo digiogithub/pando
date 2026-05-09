@@ -160,7 +160,7 @@ func getHelpWidget() string {
 		Render(helpText)
 }
 
-func formatTokensAndCost(tokens, contextWindow int64, cost float64) string {
+func formatTokens(tokens, contextWindow int64) string {
 	// Format tokens in human-readable format (e.g., 110K, 1.2M)
 	var formattedTokens string
 	switch {
@@ -180,16 +180,13 @@ func formatTokensAndCost(tokens, contextWindow int64, cost float64) string {
 		formattedTokens = strings.Replace(formattedTokens, ".0M", "M", 1)
 	}
 
-	// Format cost with $ symbol and 2 decimal places
-	formattedCost := fmt.Sprintf("$%.2f", cost)
-
 	percentage := (float64(tokens) / float64(contextWindow)) * 100
 	if percentage > 80 {
 		// add the warning icon and percentage
 		formattedTokens = fmt.Sprintf("%s(%d%%)", styles.WarningIcon, int(percentage))
 	}
 
-	return fmt.Sprintf("Context: %s, Cost: %s", formattedTokens, formattedCost)
+	return fmt.Sprintf("Context: %s", formattedTokens)
 }
 
 // renderBreadcrumbs renders the breadcrumb trail of recently edited files.
@@ -261,7 +258,7 @@ func (m statusCmp) View() string {
 	tokenInfoWidth := 0
 	if m.session.ID != "" {
 		totalTokens := m.session.PromptTokens + m.session.CompletionTokens
-		tokens := formatTokensAndCost(totalTokens, model.ContextWindow, m.session.Cost)
+		tokens := formatTokens(totalTokens, model.ContextWindow)
 		tokensStyle := styles.Padded().
 			Background(t.Text()).
 			Foreground(t.BackgroundSecondary())

@@ -35,6 +35,7 @@ type Server struct {
 	token         string
 	staticFS      fs.FS
 	staticHandler http.Handler
+	bgRunner      *BackgroundSessionManager
 }
 
 func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
@@ -50,6 +51,7 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 		config:   cfg,
 		token:    generateToken(),
 		staticFS: cfg.StaticFS,
+		bgRunner: NewBackgroundSessionManager(),
 	}
 
 	if s.staticFS != nil {

@@ -8,24 +8,28 @@ interface SessionStore {
   activeSessionId: string | null
   messages: Message[]
   loading: boolean
+  /** true while the active session has a live background run streaming in */
+  isStreaming: boolean
   fetchSessions: () => Promise<void>
-  setActiveSession: (id: string) => Promise<void>
+  setActiveSession: (id: string) => Promise<{ isRunning: boolean }>
   setMessages: (msgs: Message[]) => void
   addMessage: (msg: Message) => void
   updateLastMessage: (content: string) => void
   updateLastMessageParts: (parts: import('@/types').ContentPart[]) => void
+  markSessionRunning: (id: string, running: boolean) => void
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RawSessions = { sessions: any[] }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RawSessionDetail = { session: any; messages: any[] }
+type RawSessionDetail = { session: any; messages: any[]; is_running?: boolean }
 
 export const useSessionStore = create<SessionStore>((set) => ({
   sessions: [],
   activeSessionId: null,
   messages: [],
   loading: false,
+  isStreaming: false,
 
   fetchSessions: async () => {
     set({ loading: true })
@@ -43,9 +47,20 @@ export const useSessionStore = create<SessionStore>((set) => ({
     try {
       const data = await api.get<RawSessionDetail>(`/api/v1/sessions/${id}`)
       const messages = mapMessages(data.messages ?? [])
-      set({ messages })
+      const isRunning = data.is_running ?? false
+      set({ messages, isStreaming: isRunning })
+
+      // Reflect running status in the sessions list too
+      set((s) => ({
+        sessions: s.sessions.map((sess) =>
+          sess.id === id ? { ...sess, is_running: isRunning } : sess
+        ),
+      }))
+
+      return { isRunning }
     } catch {
-      set({ messages: [] })
+      set({ messages: [], isStreaming: false })
+      return { isRunning: false }
     }
   },
 
@@ -73,4 +88,12 @@ export const useSessionStore = create<SessionStore>((set) => ({
       msgs[msgs.length - 1] = last
       return { messages: msgs }
     }),
+
+  markSessionRunning: (id, running) =>
+    set((s) => ({
+      sessions: s.sessions.map((sess) =>
+        sess.id === id ? { ...sess, is_running: running } : sess
+      ),
+      isStreaming: s.activeSessionId === id ? running : s.isStreaming,
+    })),
 }))

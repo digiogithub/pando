@@ -96,16 +96,37 @@ export default function Sidebar() {
                   gap: '0.5rem',
                 }}
               >
-                <FontAwesomeIcon
-                  icon={faCircle}
-                  style={{ fontSize: 6, color: s.id === activeSessionId ? 'var(--primary)' : 'var(--fg-dim)', flexShrink: 0 }}
-                />
+                {/* Running indicator: pulsing dot when active, static otherwise */}
+                <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                  {s.is_running ? (
+                    <span
+                      title="Running"
+                      style={{
+                        display: 'inline-block',
+                        width: 7,
+                        height: 7,
+                        borderRadius: '50%',
+                        background: 'var(--success, #22c55e)',
+                        boxShadow: '0 0 0 0 rgba(34,197,94,0.5)',
+                        animation: 'pulse-dot 1.5s ease-in-out infinite',
+                      }}
+                    />
+                  ) : (
+                    <FontAwesomeIcon
+                      icon={faCircle}
+                      style={{ fontSize: 6, color: s.id === activeSessionId ? 'var(--primary)' : 'var(--fg-dim)' }}
+                    />
+                  )}
+                </span>
                 <div style={{ flex: 1, overflow: 'hidden' }}>
                   <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {s.title || t('nav.untitledSession')}
                   </div>
                   <div style={{ fontSize: 10, color: 'var(--fg-muted)' }}>
-                    {s.message_count} {t('common.messages')} · {format(new Date(s.updated_at), 'MMM d')}
+                    {s.is_running
+                      ? <span style={{ color: 'var(--success, #22c55e)' }}>● Running</span>
+                      : <>{s.message_count} {t('common.messages')} · {format(new Date(s.updated_at), 'MMM d')}</>
+                    }
                   </div>
                 </div>
               </button>

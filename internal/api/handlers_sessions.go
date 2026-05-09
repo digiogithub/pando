@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/digiogithub/pando/internal/session"
 )
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
@@ -18,8 +20,20 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	type sessionWithStatus struct {
+		session.Session
+		IsRunning bool `json:"is_running"`
+	}
+	result := make([]sessionWithStatus, len(sessions))
+	for i, sess := range sessions {
+		result[i] = sessionWithStatus{
+			Session:   sess,
+			IsRunning: s.bgRunner.IsBusy(sess.ID),
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"sessions": sessions,
+		"sessions": result,
 	})
 }
 
@@ -56,8 +70,9 @@ func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request, id str
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"session":  sess,
-		"messages": messages,
+		"session":    sess,
+		"messages":   messages,
+		"is_running": s.bgRunner.IsBusy(id),
 	})
 }
 

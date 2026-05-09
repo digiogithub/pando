@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPlus } from '@fortawesome/free-solid-svg-icons'
@@ -11,7 +11,7 @@ import ChatInput from './ChatInput'
 
 export default function ChatView() {
   const { t } = useTranslation()
-  const { messages, fetchSessions, sessions, activeSessionId, setMessages } = useSessionStore()
+  const { messages, fetchSessions, sessions, activeSessionId, setMessages, setActiveSession } = useSessionStore()
   const { notify } = useDesktopNotifications()
   const sidebarOpen = useLayoutStore((s) => s.sidebarOpen)
 
@@ -27,13 +27,28 @@ export default function ChatView() {
     })
   }, [notify, sessions, activeSessionId, t])
 
-  const { sendMessage, streaming, error, cancelStreaming, streamingState } = useChat({
+  const { sendMessage, reconnectSession, streaming, error, cancelStreaming, streamingState } = useChat({
     onNewSession: (sessionId) => {
       useSessionStore.setState({ activeSessionId: sessionId })
       fetchSessions()
     },
     onDone: handleDone,
   })
+
+  // Track which session we last reconnected to avoid duplicate connections.
+  const reconnectedSessionRef = useRef<string | null>(null)
+
+  // When the active session changes, load its messages and auto-reconnect if running.
+  useEffect(() => {
+    if (!activeSessionId) return
+    void setActiveSession(activeSessionId).then(({ isRunning }) => {
+      if (isRunning && reconnectedSessionRef.current !== activeSessionId) {
+        reconnectedSessionRef.current = activeSessionId
+        reconnectSession(activeSessionId)
+      }
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId])
 
   // Load sessions on mount if not already loaded
   useEffect(() => {
