@@ -11,12 +11,12 @@ A powerful terminal-based AI assistant for developers, providing intelligent cod
 
 ## Overview
 
-Pando is a Go-based CLI application that brings AI assistance to your terminal. It provides a TUI (Terminal User Interface) for interacting with various AI models to help with coding tasks, debugging, and more.
+Pando is a Go-based CLI application that brings AI assistance to your terminal. It provides a TUI (Terminal User Interface), PWA WebUI and desktop application for interacting with various AI models to help with coding tasks, debugging, and more.
 
 ## Features
 
 - **Interactive TUI**: Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) for a smooth terminal experience
-- **Multiple AI Providers**: Support for OpenAI, Anthropic Claude, Google Gemini, AWS Bedrock, Groq, Azure OpenAI, and OpenRouter
+- **Multiple AI Providers**: Support for Github copilot, OpenAI, Anthropic Claude, Google Gemini, AWS Bedrock, Groq, Azure OpenAI, Ollama, Llama.cpp, and OpenRouter. Also any OpenAI compatible provider, including self-hosted models with the `local` provider.
 - **Session Management**: Save and manage multiple conversation sessions
 - **Tool Integration**: AI can execute commands, search files, and modify code
 - **Vim-like Editor**: Integrated editor with text input capabilities
@@ -26,6 +26,16 @@ Pando is a Go-based CLI application that brings AI assistance to your terminal. 
 - **External Editor Support**: Open your preferred editor for composing messages
 - **Named Arguments for Custom Commands**: Create powerful custom commands with multiple named placeholders
 - **Configuration**: Supports both JSON and TOML configuration files
+- **PWA WebUI**: Access Pando through a web interface for a more visual experience in React (embedded into the binary). Access remotely or locally via browser. Perfect team with Tailscale or Zerotier distributed vpn for remote access.
+  - **Code Editor**: Using the same component to VisualStudio Code's editor, with syntax highlighting and LSP features.
+  - **File Explorer**: Browse and search project files with an integrated file explorer.
+  - **Session History**: View and manage past conversations in a dedicated session history panel.
+  - **Real-time Updates**: See AI responses and tool outputs in real-time with WebSockets.
+- **Desktop Application**: Run Pando as a native desktop app using Wails (embedded into the binary)
+- **Agent Client Protocol (ACP)**: Use Pando as an AI coding assistant directly in compatible editors like VS Code, JetBrains IDEs, and Zed
+- **LLM Proxy Support**: Configure Pando to be used as a proxy for LLM API requests, allowing you to route requests through Pando for additional processing or logging
+- **MCP Server**: Start Pando as an MCP server to allow external clients to connect and interact with it using the Model Client Protocol
+- **ICP and inter-process communication**: Pando autodiscover other Pando instances running on the same machine and can communicate with them using a custom inter-process communication protocol, allowing for distributed AI assistance across multiple terminals or projects.
 
 ## Installation
 
