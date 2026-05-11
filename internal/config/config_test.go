@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/digiogithub/pando/internal/llm/models"
@@ -43,6 +44,18 @@ func TestMesnadaDefaults(t *testing.T) {
 	}
 	if !loaded.Mesnada.TUI.WebUI {
 		t.Fatal("mesnada.tui.webui = false, want true")
+	}
+}
+
+func TestDefaultConfigTemplateKeepsBuiltInContextPathsEnabled(t *testing.T) {
+	if strings.Contains(DefaultConfigTemplate, "ContextPaths = []") {
+		t.Fatal("DefaultConfigTemplate should not explicitly clear ContextPaths")
+	}
+
+	for _, want := range []string{"AGENTS.md", "PANDO.md", "CLAUDE.md"} {
+		if !strings.Contains(DefaultConfigTemplate, want) {
+			t.Fatalf("DefaultConfigTemplate should mention %s", want)
+		}
 	}
 }
 

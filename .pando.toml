@@ -3,7 +3,6 @@ AgeKeys = ''
 Debug = false
 LogFile = ''
 DebugLSP = false
-ContextPaths = []
 AutoCompact = true
 
 [Data]
@@ -160,7 +159,7 @@ Enabled = true
 KBPath = './.kb'
 KBWatch = true
 KBAutoImport = true
-AutoIndexSessions = false
+AutoIndexSessions = true
 DocumentEmbeddingProvider = 'ollama'
 DocumentEmbeddingModel = 'nomic-embed-text'
 DocumentEmbeddingBaseURL = ''
@@ -177,9 +176,9 @@ ContextEnrichmentEnabled = true
 ContextEnrichmentKBResults = 5
 ContextEnrichmentCodeResults = 5
 ContextEnrichmentCodeProject = 'pando'
-ContextEnrichmentEventsResults = 0
+ContextEnrichmentEventsResults = 5
 ContextEnrichmentEventsSubject = ''
-ContextEnrichmentEventsLastDays = 0
+ContextEnrichmentEventsLastDays = 10
 ContextEnrichmentMinScore = 0.0
 
 [Server]

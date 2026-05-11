@@ -41,8 +41,10 @@ LogFile = ''
 DebugLSP = false
 
 # Additional paths to include in the AI context window (relative or absolute).
+# Leave unset to keep the built-in project instruction files such as
+# AGENTS.md, PANDO.md, and CLAUDE.md enabled.
 # Example: ContextPaths = ['./docs', './specs']
-ContextPaths = []
+# ContextPaths = []
 
 # Automatically compact the conversation context when it approaches the model
 # token limit. Recommended: true for long sessions.

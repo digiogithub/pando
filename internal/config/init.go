@@ -113,8 +113,12 @@ WorkingDir = ''
 Debug      = false
 LogFile    = ''
 DebugLSP   = false
-ContextPaths = []
 AutoCompact  = true
+
+# Leave ContextPaths unset to keep the built-in project instruction files
+# such as AGENTS.md, PANDO.md, and CLAUDE.md enabled.
+# Example:
+# ContextPaths = ['./docs', './specs']
 
 [Data]
 Directory = './.pando/data'
