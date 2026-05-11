@@ -1,4 +1,5 @@
 WorkingDir = ''
+AgeKeys = ''
 Debug = false
 LogFile = ''
 DebugLSP = false
@@ -52,7 +53,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'qwen/qwen3.6-27b'
+Model = 'openrouter.deepseek/deepseek-v4-pro'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''

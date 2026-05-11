@@ -38,12 +38,12 @@ const (
 
 // MCPServer defines the configuration for a Model Control Protocol server.
 type MCPServer struct {
-	Command string            `json:"command"`
-	Env     []string          `json:"env"`
-	Args    []string          `json:"args"`
-	Type    MCPType           `json:"type"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers"`
+	Command string            `json:"command" toml:"Command" yaml:"command"`
+	Env     []string          `json:"env" toml:"Env" yaml:"env"`
+	Args    []string          `json:"args" toml:"Args" yaml:"args"`
+	Type    MCPType           `json:"type" toml:"Type" yaml:"type"`
+	URL     string            `json:"url" toml:"URL" yaml:"url"`
+	Headers map[string]string `json:"headers" toml:"Headers" yaml:"headers"`
 }
 
 type AgentName string

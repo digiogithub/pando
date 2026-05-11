@@ -91,6 +91,21 @@ func (a *SimpleACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSession
 	return acpsdk.LoadSessionResponse{}, nil
 }
 
+// CloseSession implements Agent (stub).
+func (a *SimpleACPAgent) CloseSession(ctx context.Context, req acpsdk.CloseSessionRequest) (acpsdk.CloseSessionResponse, error) {
+	return acpsdk.CloseSessionResponse{}, nil
+}
+
+// ResumeSession implements Agent (stub).
+func (a *SimpleACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSessionRequest) (acpsdk.ResumeSessionResponse, error) {
+	return acpsdk.ResumeSessionResponse{}, nil
+}
+
+// SetSessionModel implements Agent (stub).
+func (a *SimpleACPAgent) SetSessionModel(ctx context.Context, req acpsdk.SetSessionModelRequest) (acpsdk.SetSessionModelResponse, error) {
+	return acpsdk.SetSessionModelResponse{}, nil
+}
+
 // UnstableSetSessionModel implements AgentExperimental (stub).
 func (a *SimpleACPAgent) UnstableSetSessionModel(ctx context.Context, req acpsdk.UnstableSetSessionModelRequest) (acpsdk.UnstableSetSessionModelResponse, error) {
 	return acpsdk.UnstableSetSessionModelResponse{}, nil

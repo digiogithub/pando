@@ -3,6 +3,7 @@ package acp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -155,6 +156,13 @@ func (c *MesnadaACPClient) SessionUpdate(ctx context.Context, params acpsdk.Sess
 	}
 
 	return nil
+}
+
+func (c *MesnadaACPClient) HandleExtensionMethod(ctx context.Context, method string, params json.RawMessage) (any, error) {
+	if c.logFile != nil {
+		fmt.Fprintf(c.logFile, "[ACP EXTENSION] method=%s params=%s\n", method, strings.TrimSpace(string(params)))
+	}
+	return nil, nil
 }
 
 // RequestPermission handles permission requests from the ACP agent.

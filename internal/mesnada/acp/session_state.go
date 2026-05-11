@@ -145,12 +145,7 @@ func (a *PandoACPAgent) sendAvailableCommandsUpdate(ctx context.Context, session
 
 	update := acpsdk.SessionNotification{
 		SessionId: sessionID,
-		Update: acpsdk.SessionUpdate{
-			AvailableCommandsUpdate: &acpsdk.SessionAvailableCommandsUpdate{
-				AvailableCommands: commands,
-				SessionUpdate:     "available_commands_update",
-			},
-		},
+		Update:    acpsdk.UpdateAvailableCommands(commands...),
 	}
 
 	func() {

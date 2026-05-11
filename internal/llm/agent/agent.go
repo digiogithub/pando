@@ -1064,7 +1064,7 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 		}
 		event = AgentEvent{
 			Type:     AgentEventTypeSummarize,
-			Progress: "Creating new session...",
+			Progress: "Persisting summary...",
 		}
 
 		a.Publish(pubsub.CreatedEvent, event)
@@ -1079,7 +1079,6 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 			a.Publish(pubsub.CreatedEvent, event)
 			return
 		}
-		// Create a message in the new session with the summary
 		msg, err := a.messages.Create(summarizeCtx, oldSession.ID, message.CreateMessageParams{
 			Role: message.Assistant,
 			Parts: []message.ContentPart{
@@ -1119,6 +1118,72 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 				Done:  true,
 			}
 			a.Publish(pubsub.CreatedEvent, event)
+			return
+		}
+
+		event = AgentEvent{
+			Type:      AgentEventTypeSummarize,
+			SessionID: oldSession.ID,
+			Progress:  "Summary persisted. Resuming with compacted context...",
+		}
+		a.Publish(pubsub.CreatedEvent, event)
+
+		newMsgs, err := a.messages.List(summarizeCtx, sessionID)
+		if err != nil {
+			event = AgentEvent{
+				Type:  AgentEventTypeError,
+				Error: fmt.Errorf("failed to reload messages after summary: %w", err),
+				Done:  true,
+			}
+			a.Publish(pubsub.CreatedEvent, event)
+			return
+		}
+		summaryMsgIndex := -1
+		for i, m := range newMsgs {
+			if m.ID == oldSession.SummaryMessageID {
+				summaryMsgIndex = i
+				break
+			}
+		}
+		if summaryMsgIndex == -1 {
+			event = AgentEvent{
+				Type:  AgentEventTypeError,
+				Error: fmt.Errorf("failed to find summary message in reloaded history"),
+				Done:  true,
+			}
+			a.Publish(pubsub.CreatedEvent, event)
+			return
+		}
+		msgHistory := newMsgs[summaryMsgIndex:]
+		msgHistory[0].Role = message.User
+
+		requestProvider, err := a.prepareProvider(summary, "")
+		if err != nil {
+			event = AgentEvent{
+				Type:  AgentEventTypeError,
+				Error: fmt.Errorf("failed to prepare agent provider after summary: %w", err),
+				Done:  true,
+			}
+			a.Publish(pubsub.CreatedEvent, event)
+			return
+		}
+
+		for {
+			agentMessage, toolResults, err := a.streamAndHandleEvents(summarizeCtx, sessionID, msgHistory, requestProvider, nil)
+			if err != nil {
+				event = AgentEvent{
+					Type:  AgentEventTypeError,
+					Error: fmt.Errorf("failed to continue after summary: %w", err),
+					Done:  true,
+				}
+				a.Publish(pubsub.CreatedEvent, event)
+				return
+			}
+			if agentMessage.FinishReason() == message.FinishReasonToolUse && toolResults != nil {
+				msgHistory = append(msgHistory, agentMessage, *toolResults)
+				continue
+			}
+			break
 		}
 
 		event = AgentEvent{
@@ -1128,7 +1193,6 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 			Done:      true,
 		}
 		a.Publish(pubsub.CreatedEvent, event)
-		// Send final success event with the new session ID
 	}()
 
 	return nil

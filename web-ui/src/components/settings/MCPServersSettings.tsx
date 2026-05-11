@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMCPServersStore } from '@/stores/mcpServersStore'
 import type { MCPServerConfig, MCPToolInfo, MCPType } from '@/types'
-import TagListEditor from '@/components/shared/TagListEditor'
 import KeyValueEditor, { envToKV, kvToEnv, type KVPair } from '@/components/shared/KeyValueEditor'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
 import { TextInput } from '@/components/shared/FormInput'
@@ -49,6 +48,7 @@ interface ModalFormState {
   command: string
   args: string[]
   envPairs: KVPair[]
+  headerPairs: KVPair[]
   type: MCPType
   url: string
   enabled: boolean
@@ -60,6 +60,7 @@ function emptyForm(): ModalFormState {
     command: '',
     args: [],
     envPairs: [],
+    headerPairs: [],
     type: 'stdio',
     url: '',
     enabled: true,
@@ -72,6 +73,7 @@ function serverToForm(s: MCPServerConfig): ModalFormState {
     command: s.command,
     args: s.args ?? [],
     envPairs: envToKV(s.env ?? []),
+    headerPairs: Object.entries(s.headers ?? {}).map(([key, value]) => ({ key, value })),
     type: s.type ?? 'stdio',
     url: s.url ?? '',
     enabled: true, // env has no disabled field; treat all as enabled for display
@@ -86,7 +88,7 @@ function formToServer(f: ModalFormState): MCPServerConfig {
     env: kvToEnv(f.envPairs),
     type: f.type,
     url: f.url,
-    headers: {},
+    headers: Object.fromEntries(f.headerPairs.filter((pair) => pair.key.trim()).map((pair) => [pair.key.trim(), pair.value])),
   }
 }
 
@@ -184,6 +186,8 @@ export default function MCPServersSettings() {
   function setField<K extends keyof ModalFormState>(key: K, value: ModalFormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
   }
+
+  const isRemoteServer = form.type === 'sse' || form.type === 'streamable-http'
 
   return (
     <div style={{ maxWidth: 800 }}>
@@ -354,12 +358,15 @@ export default function MCPServersSettings() {
                 />
               )}
 
-              <TagListEditor
-                label="Args"
-                items={form.args}
-                onChange={(v) => setField('args', v)}
-                placeholder="Add argument…"
-              />
+              {!isRemoteServer && (
+                <KeyValueEditor
+                  label="Arguments"
+                  pairs={form.args.map((value, index) => ({ key: String(index + 1), value }))}
+                  onChange={(pairs) => setField('args', pairs.map((pair) => pair.value).filter((value) => value.trim()))}
+                  keyPlaceholder="#"
+                  valuePlaceholder="argument"
+                />
+              )}
 
               <KeyValueEditor
                 label="Environment Variables"
@@ -368,6 +375,16 @@ export default function MCPServersSettings() {
                 keyPlaceholder="ENV_VAR"
                 valuePlaceholder="value"
               />
+
+              {isRemoteServer && (
+                <KeyValueEditor
+                  label="Headers"
+                  pairs={form.headerPairs}
+                  onChange={(v) => setField('headerPairs', v)}
+                  keyPlaceholder="Header-Name"
+                  valuePlaceholder="Header value"
+                />
+              )}
             </div>
 
             <div style={dividerStyle} />

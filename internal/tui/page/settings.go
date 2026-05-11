@@ -1051,12 +1051,6 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 				Type:  settings.FieldText,
 			},
 			settings.Field{
-				Label: fmt.Sprintf("%s Args", name),
-				Key:   fmt.Sprintf("mcpServers.%s.args", name),
-				Value: strings.Join(server.Args, " "),
-				Type:  settings.FieldText,
-			},
-			settings.Field{
 				Label:   fmt.Sprintf("%s Type", name),
 				Key:     fmt.Sprintf("mcpServers.%s.type", name),
 				Value:   serverType,
@@ -1066,10 +1060,25 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 		)
 
 		if server.Type == config.MCPSse || server.Type == config.MCPStreamableHTTP {
+			fields = append(fields,
+				settings.Field{
+					Label: fmt.Sprintf("%s URL", name),
+					Key:   fmt.Sprintf("mcpServers.%s.url", name),
+					Value: server.URL,
+					Type:  settings.FieldText,
+				},
+				settings.Field{
+					Label: fmt.Sprintf("%s Headers", name),
+					Key:   fmt.Sprintf("mcpServers.%s.headers", name),
+					Value: headersToString(server.Headers),
+					Type:  settings.FieldText,
+				},
+			)
+		} else {
 			fields = append(fields, settings.Field{
-				Label: fmt.Sprintf("%s URL", name),
-				Key:   fmt.Sprintf("mcpServers.%s.url", name),
-				Value: server.URL,
+				Label: fmt.Sprintf("%s Args", name),
+				Key:   fmt.Sprintf("mcpServers.%s.args", name),
+				Value: strings.Join(server.Args, " "),
 				Type:  settings.FieldText,
 			})
 		}
@@ -1078,12 +1087,6 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 				Label: fmt.Sprintf("%s Env", name),
 				Key:   fmt.Sprintf("mcpServers.%s.env", name),
 				Value: strings.Join(server.Env, " "),
-				Type:  settings.FieldText,
-			},
-			settings.Field{
-				Label: fmt.Sprintf("%s Headers", name),
-				Key:   fmt.Sprintf("mcpServers.%s.headers", name),
-				Value: headersToString(server.Headers),
 				Type:  settings.FieldText,
 			},
 		)

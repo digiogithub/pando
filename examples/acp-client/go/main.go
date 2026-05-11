@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
+	"strings"
 
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
@@ -22,7 +22,6 @@ func run() error {
 	fmt.Println("🚀 Pando ACP Client Example")
 	fmt.Println("===========================\n")
 
-	// Create temporary workspace
 	workspace, err := os.MkdirTemp("", "pando-example-*")
 	if err != nil {
 		return fmt.Errorf("failed to create workspace: %w", err)
@@ -30,7 +29,6 @@ func run() error {
 	defer os.RemoveAll(workspace)
 	fmt.Printf("📁 Workspace: %s\n", workspace)
 
-	// Start Pando ACP server
 	fmt.Println("🔧 Starting Pando ACP server...")
 	cmd := exec.Command("pando", "--acp-server")
 	stdin, err := cmd.StdinPipe()
@@ -48,13 +46,11 @@ func run() error {
 	defer cmd.Process.Kill()
 	fmt.Println("✓ Pando server started\n")
 
-	// Create client
 	client := NewExampleACPClient(workspace)
 	conn := acpsdk.NewClientSideConnection(client, stdin, stdout)
 
 	ctx := context.Background()
 
-	// Initialize connection
 	fmt.Println("🔌 Initializing connection...")
 	initResp, err := conn.Initialize(ctx, acpsdk.InitializeRequest{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
@@ -69,7 +65,6 @@ func run() error {
 	fmt.Printf("✓ Connected to %s v%s\n", initResp.AgentInfo.Name, initResp.AgentInfo.Version)
 	fmt.Printf("  Protocol version: %d\n\n", initResp.ProtocolVersion)
 
-	// Create session
 	fmt.Println("📋 Creating session...")
 	sessionResp, err := conn.NewSession(ctx, acpsdk.NewSessionRequest{
 		Cwd: workspace,
@@ -79,7 +74,6 @@ func run() error {
 	}
 	fmt.Printf("✓ Session created: %s\n\n", sessionResp.SessionId)
 
-	// Example 1: Create a simple Python file
 	fmt.Println("Example 1: Create a Python hello world program")
 	fmt.Println("-----------------------------------------------")
 	prompt1 := "Create a simple hello world program in Python called hello.py"
@@ -89,15 +83,10 @@ func run() error {
 	}
 	displayPromptResponse(promptResp1)
 
-	// Wait a moment for file to be created
-	time.Sleep(1 * time.Second)
-
-	// Verify file was created
 	if _, err := os.Stat(filepath.Join(workspace, "hello.py")); err == nil {
 		fmt.Println("✓ File hello.py was created successfully\n")
 	}
 
-	// Example 2: Run the Python program
 	fmt.Println("Example 2: Run the Python program")
 	fmt.Println("----------------------------------")
 	prompt2 := "Run the hello.py program and show me the output"
@@ -107,7 +96,6 @@ func run() error {
 	}
 	displayPromptResponse(promptResp2)
 
-	// Example 3: Create multiple files
 	fmt.Println("\nExample 3: Create a simple web server")
 	fmt.Println("--------------------------------------")
 	prompt3 := "Create a simple HTTP web server in Go that responds with 'Hello, World!' on port 8080"
@@ -117,7 +105,6 @@ func run() error {
 	}
 	displayPromptResponse(promptResp3)
 
-	// List files created in workspace
 	fmt.Println("\n📂 Files in workspace:")
 	files, err := os.ReadDir(workspace)
 	if err == nil {
@@ -130,7 +117,7 @@ func run() error {
 	return nil
 }
 
-func sendPrompt(ctx context.Context, conn acpsdk.ClientSideConnection, sessionID, prompt string) (acpsdk.PromptResponse, error) {
+func sendPrompt(ctx context.Context, conn *acpsdk.ClientSideConnection, sessionID acpsdk.SessionId, prompt string) (acpsdk.PromptResponse, error) {
 	fmt.Printf("💭 Prompt: %s\n", prompt)
 
 	resp, err := conn.Prompt(ctx, acpsdk.PromptRequest{
@@ -147,15 +134,9 @@ func sendPrompt(ctx context.Context, conn acpsdk.ClientSideConnection, sessionID
 }
 
 func displayPromptResponse(resp acpsdk.PromptResponse) {
-	fmt.Println("📝 Response:")
-	for _, block := range resp.Message {
-		if textBlock, ok := block.(acpsdk.TextContentBlock); ok {
-			fmt.Printf("   %s\n", textBlock.Text)
-		}
-	}
+	fmt.Printf("📝 Prompt completed (stopReason=%s)\n", resp.StopReason)
 }
 
-// ExampleACPClient implements the ACP client interface
 type ExampleACPClient struct {
 	workspace string
 	terminals map[string]*exec.Cmd
@@ -168,19 +149,17 @@ func NewExampleACPClient(workspace string) *ExampleACPClient {
 	}
 }
 
-// ReadTextFile reads a text file from the workspace
 func (c *ExampleACPClient) ReadTextFile(ctx context.Context, req acpsdk.ReadTextFileRequest) (acpsdk.ReadTextFileResponse, error) {
 	fmt.Printf("  [CLIENT] Reading file: %s\n", req.Path)
 
 	path := filepath.Join(c.workspace, req.Path)
 
-	// Security: ensure path is within workspace
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return acpsdk.ReadTextFileResponse{}, fmt.Errorf("invalid path: %w", err)
 	}
 	absWorkspace, _ := filepath.Abs(c.workspace)
-	if !filepath.HasPrefix(absPath, absWorkspace) {
+	if !strings.HasPrefix(absPath, absWorkspace+string(os.PathSeparator)) && absPath != absWorkspace {
 		return acpsdk.ReadTextFileResponse{}, fmt.Errorf("path outside workspace")
 	}
 
@@ -194,23 +173,20 @@ func (c *ExampleACPClient) ReadTextFile(ctx context.Context, req acpsdk.ReadText
 	}, nil
 }
 
-// WriteTextFile writes content to a file
 func (c *ExampleACPClient) WriteTextFile(ctx context.Context, req acpsdk.WriteTextFileRequest) (acpsdk.WriteTextFileResponse, error) {
 	fmt.Printf("  [CLIENT] Writing file: %s (%d bytes)\n", req.Path, len(req.Content))
 
 	path := filepath.Join(c.workspace, req.Path)
 
-	// Security: ensure path is within workspace
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return acpsdk.WriteTextFileResponse{}, fmt.Errorf("invalid path: %w", err)
 	}
 	absWorkspace, _ := filepath.Abs(c.workspace)
-	if !filepath.HasPrefix(absPath, absWorkspace) {
+	if !strings.HasPrefix(absPath, absWorkspace+string(os.PathSeparator)) && absPath != absWorkspace {
 		return acpsdk.WriteTextFileResponse{}, fmt.Errorf("path outside workspace")
 	}
 
-	// Create directory if needed
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return acpsdk.WriteTextFileResponse{}, fmt.Errorf("failed to create directory: %w", err)
@@ -223,7 +199,6 @@ func (c *ExampleACPClient) WriteTextFile(ctx context.Context, req acpsdk.WriteTe
 	return acpsdk.WriteTextFileResponse{}, nil
 }
 
-// CreateTerminal creates a new terminal session
 func (c *ExampleACPClient) CreateTerminal(ctx context.Context, req acpsdk.CreateTerminalRequest) (acpsdk.CreateTerminalResponse, error) {
 	fmt.Printf("  [CLIENT] Creating terminal: %s %v\n", req.Command, req.Args)
 
@@ -246,15 +221,12 @@ func (c *ExampleACPClient) CreateTerminal(ctx context.Context, req acpsdk.Create
 	}, nil
 }
 
-// TerminalOutput gets output from a terminal
 func (c *ExampleACPClient) TerminalOutput(ctx context.Context, req acpsdk.TerminalOutputRequest) (acpsdk.TerminalOutputResponse, error) {
-	// In a real implementation, this would read from the terminal's output buffer
 	return acpsdk.TerminalOutputResponse{
 		Output: "",
 	}, nil
 }
 
-// WaitForTerminalExit waits for a terminal to exit
 func (c *ExampleACPClient) WaitForTerminalExit(ctx context.Context, req acpsdk.WaitForTerminalExitRequest) (acpsdk.WaitForTerminalExitResponse, error) {
 	cmd, ok := c.terminals[req.TerminalId]
 	if !ok {
@@ -276,29 +248,25 @@ func (c *ExampleACPClient) WaitForTerminalExit(ctx context.Context, req acpsdk.W
 	}, nil
 }
 
-// KillTerminalCommand kills a running terminal command
-func (c *ExampleACPClient) KillTerminalCommand(ctx context.Context, req acpsdk.KillTerminalCommandRequest) (acpsdk.KillTerminalCommandResponse, error) {
+func (c *ExampleACPClient) KillTerminal(ctx context.Context, req acpsdk.KillTerminalRequest) (acpsdk.KillTerminalResponse, error) {
 	cmd, ok := c.terminals[req.TerminalId]
 	if !ok {
-		return acpsdk.KillTerminalCommandResponse{}, fmt.Errorf("terminal not found")
+		return acpsdk.KillTerminalResponse{}, fmt.Errorf("terminal not found")
 	}
 
 	if err := cmd.Process.Kill(); err != nil {
-		return acpsdk.KillTerminalCommandResponse{}, fmt.Errorf("failed to kill process: %w", err)
+		return acpsdk.KillTerminalResponse{}, fmt.Errorf("failed to kill process: %w", err)
 	}
 
-	return acpsdk.KillTerminalCommandResponse{}, nil
+	return acpsdk.KillTerminalResponse{}, nil
 }
 
-// ReleaseTerminal releases terminal resources
 func (c *ExampleACPClient) ReleaseTerminal(ctx context.Context, req acpsdk.ReleaseTerminalRequest) (acpsdk.ReleaseTerminalResponse, error) {
 	delete(c.terminals, req.TerminalId)
 	return acpsdk.ReleaseTerminalResponse{}, nil
 }
 
-// RequestPermission handles permission requests
 func (c *ExampleACPClient) RequestPermission(ctx context.Context, req acpsdk.RequestPermissionRequest) (acpsdk.RequestPermissionResponse, error) {
-	// Auto-approve all permissions in this example
 	if len(req.Options) > 0 {
 		return acpsdk.RequestPermissionResponse{
 			Outcome: acpsdk.NewRequestPermissionOutcomeSelected(req.Options[0].OptionId),
@@ -308,4 +276,24 @@ func (c *ExampleACPClient) RequestPermission(ctx context.Context, req acpsdk.Req
 	return acpsdk.RequestPermissionResponse{
 		Outcome: acpsdk.NewRequestPermissionOutcomeCancelled(),
 	}, nil
+}
+
+// SessionUpdate handles real-time session updates streamed from the agent.
+func (c *ExampleACPClient) SessionUpdate(ctx context.Context, params acpsdk.SessionNotification) error {
+	u := params.Update
+	switch {
+	case u.AgentMessageChunk != nil:
+		if u.AgentMessageChunk.Content.Text != nil {
+			fmt.Print(u.AgentMessageChunk.Content.Text.Text)
+		}
+	case u.ToolCall != nil:
+		fmt.Printf("\n🔧 %s (%s)\n", u.ToolCall.Title, u.ToolCall.Status)
+	case u.ToolCallUpdate != nil:
+		status := "unknown"
+		if u.ToolCallUpdate.Status != nil {
+			status = string(*u.ToolCallUpdate.Status)
+		}
+		fmt.Printf("\n🔧 Tool call `%s` updated: %v\n\n", u.ToolCallUpdate.ToolCallId, status)
+	}
+	return nil
 }

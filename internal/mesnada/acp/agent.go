@@ -2,14 +2,15 @@ package acp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
 
-	acpsdk "github.com/madeindigio/acp-go-sdk"
 	"github.com/digiogithub/pando/internal/notify"
 	"github.com/digiogithub/pando/internal/pubsub"
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 // PandoACPAgent implements the ACP Agent interface.
@@ -60,6 +61,8 @@ type PandoACPAgent struct {
 	// live streaming path so we can guarantee a tool_call exists before any
 	// tool_call_update for the same ID.
 	startedToolCalls map[string]bool
+
+	extensionHandlers map[string]func(ctx context.Context, params json.RawMessage) (any, error)
 }
 
 // NewPandoACPAgent creates a new ACP agent instance.
@@ -75,7 +78,7 @@ func NewPandoACPAgent(
 		logger = log.Default()
 	}
 
-	return &PandoACPAgent{
+	agent := &PandoACPAgent{
 		version:           version,
 		workDir:           workDir,
 		logger:            logger,
@@ -98,6 +101,14 @@ func NewPandoACPAgent(
 			},
 		},
 	}
+
+	agent.extensionHandlers = map[string]func(ctx context.Context, params json.RawMessage) (any, error){
+		"_pando.setPersona":       agent.handleExtensionSetPersona,
+		"_pando.openCopilotUsage": agent.handleExtensionOpenCopilotUsage,
+		"_pando.openClaudeUsage":  agent.handleExtensionOpenClaudeUsage,
+	}
+
+	return agent
 }
 
 // Initialize handles the initialization handshake from an ACP client.
@@ -477,19 +488,97 @@ func (a *PandoACPAgent) SetSessionConfigOption(_ context.Context, req acpsdk.Set
 // UnstableSetSessionModel implements AgentExperimental.
 // It stores the requested model on the ACP session for use in future prompts.
 func (a *PandoACPAgent) UnstableSetSessionModel(ctx context.Context, req acpsdk.UnstableSetSessionModelRequest) (acpsdk.UnstableSetSessionModelResponse, error) {
-	a.logger.Printf("[ACP AGENT] SetSessionModel: SessionID=%s, ModelID=%s", req.SessionId, req.ModelId)
+	return a.setSessionModel(ctx, req.SessionId, string(req.ModelId))
+}
+
+// SetSessionModel implements Agent.
+// It stores the requested model on the ACP session for use in future prompts.
+func (a *PandoACPAgent) SetSessionModel(ctx context.Context, req acpsdk.SetSessionModelRequest) (acpsdk.SetSessionModelResponse, error) {
+	return a.setSessionModel(ctx, req.SessionId, string(req.ModelId))
+}
+
+func (a *PandoACPAgent) setSessionModel(ctx context.Context, sessionID acpsdk.SessionId, modelID string) (acpsdk.SetSessionModelResponse, error) {
+	a.logger.Printf("[ACP AGENT] SetSessionModel: SessionID=%s, ModelID=%s", sessionID, modelID)
+
+	a.sessionsMu.RLock()
+	acpSession, exists := a.sessions[sessionID]
+	a.sessionsMu.RUnlock()
+
+	if !exists {
+		return acpsdk.SetSessionModelResponse{}, fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	acpSession.SetModel(modelID)
+	a.logger.Printf("[ACP AGENT] SetSessionModel: model set to %s for session %s", modelID, sessionID)
+	return acpsdk.SetSessionModelResponse{}, nil
+}
+
+// CloseSession implements Agent.
+// It cancels ongoing work, removes the session mapping, and cleans up
+// permission handlers and auto-approve state associated with this session.
+func (a *PandoACPAgent) CloseSession(ctx context.Context, req acpsdk.CloseSessionRequest) (acpsdk.CloseSessionResponse, error) {
+	a.logger.Printf("[ACP AGENT] CloseSession: SessionID=%s", req.SessionId)
 
 	a.sessionsMu.RLock()
 	acpSession, exists := a.sessions[req.SessionId]
 	a.sessionsMu.RUnlock()
 
 	if !exists {
-		return acpsdk.UnstableSetSessionModelResponse{}, fmt.Errorf("session not found: %s", req.SessionId)
+		return acpsdk.CloseSessionResponse{}, fmt.Errorf("session not found: %s", req.SessionId)
 	}
 
-	acpSession.SetModel(string(req.ModelId))
-	a.logger.Printf("[ACP AGENT] SetSessionModel: model set to %s for session %s", req.ModelId, req.SessionId)
-	return acpsdk.UnstableSetSessionModelResponse{}, nil
+	acpSession.Cancel()
+	a.agentService.Cancel(acpSession.PandoSessionID())
+
+	sid := string(req.SessionId)
+	if a.permissionService != nil {
+		a.permissionService.RemoveAutoApproveSession(sid)
+		a.permissionService.UnregisterSessionHandler(sid)
+	}
+
+	a.sessionsMu.Lock()
+	delete(a.sessions, req.SessionId)
+	a.sessionsMu.Unlock()
+
+	a.logger.Printf("[ACP AGENT] CloseSession: session %s closed", req.SessionId)
+	return acpsdk.CloseSessionResponse{}, nil
+}
+
+// ResumeSession implements Agent.
+// It registers an existing session for use without replaying history.
+func (a *PandoACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSessionRequest) (acpsdk.ResumeSessionResponse, error) {
+	a.logger.Printf("[ACP AGENT] ResumeSession: SessionID=%s, Cwd=%s", req.SessionId, req.Cwd)
+
+	_, err := a.sessionService.GetSession(ctx, string(req.SessionId))
+	if err != nil {
+		a.logger.Printf("[ACP AGENT] ResumeSession: session not found: %v", err)
+		return acpsdk.ResumeSessionResponse{}, fmt.Errorf("session not found: %w", err)
+	}
+
+	workDir := a.workDir
+	if req.Cwd != "" {
+		workDir = req.Cwd
+	}
+
+	a.sessionsMu.Lock()
+	currentMode := "agent"
+	if existing, exists := a.sessions[req.SessionId]; exists {
+		existing.SetWorkDir(workDir)
+		existing.SetAgentConnection(a.conn)
+		if existing.Mode() != "" {
+			currentMode = existing.Mode()
+		} else {
+			existing.SetMode(currentMode)
+		}
+	} else {
+		acpSession := NewACPServerSession(req.SessionId, workDir, a.conn, string(req.SessionId))
+		acpSession.SetMode(currentMode)
+		a.sessions[req.SessionId] = acpSession
+	}
+	a.sessionsMu.Unlock()
+
+	a.logger.Printf("[ACP AGENT] ResumeSession: session %s resumed", req.SessionId)
+	return acpsdk.ResumeSessionResponse{}, nil
 }
 
 // SetSessionPersona stores the requested persona on the ACP session for use in future prompts.
@@ -497,32 +586,87 @@ func (a *PandoACPAgent) UnstableSetSessionModel(ctx context.Context, req acpsdk.
 func (a *PandoACPAgent) SetSessionPersona(ctx context.Context, sessionID acpsdk.SessionId, personaName string) error {
 	a.logger.Printf("[ACP AGENT] SetSessionPersona: SessionID=%s, Persona=%s", sessionID, personaName)
 
-	a.sessionsMu.RLock()
-	acpSession, exists := a.sessions[sessionID]
-	a.sessionsMu.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("session not found: %s", sessionID)
+	acpSession, err := a.getSession(sessionID)
+	if err != nil {
+		return err
 	}
-
-	// Validate persona exists (empty string means "clear / auto").
-	if personaName != "" {
-		available := a.agentService.ListPersonas()
-		found := false
-		for _, p := range available {
-			if p == personaName {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("unknown persona: %s", personaName)
-		}
+	if err := a.validatePersona(personaName); err != nil {
+		return err
 	}
 
 	acpSession.SetPersona(personaName)
 	a.logger.Printf("[ACP AGENT] SetSessionPersona: persona set to %q for session %s", personaName, sessionID)
 	return nil
+}
+
+func (a *PandoACPAgent) HandleExtensionMethod(ctx context.Context, method string, params json.RawMessage) (any, error) {
+	handler, ok := a.extensionHandlers[method]
+	if !ok {
+		return nil, fmt.Errorf("unknown extension method: %s", method)
+	}
+	return handler(ctx, params)
+}
+
+func (a *PandoACPAgent) getSession(sessionID acpsdk.SessionId) (*ACPServerSession, error) {
+	a.sessionsMu.RLock()
+	acpSession, exists := a.sessions[sessionID]
+	a.sessionsMu.RUnlock()
+	if !exists {
+		return nil, fmt.Errorf("session not found: %s", sessionID)
+	}
+	return acpSession, nil
+}
+
+func (a *PandoACPAgent) validatePersona(personaName string) error {
+	if personaName == "" {
+		return nil
+	}
+
+	available := a.agentService.ListPersonas()
+	for _, p := range available {
+		if p == personaName {
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown persona: %s", personaName)
+}
+
+type extensionSetPersonaParams struct {
+	SessionID string `json:"sessionId"`
+	Name      string `json:"name"`
+}
+
+func (a *PandoACPAgent) handleExtensionSetPersona(ctx context.Context, params json.RawMessage) (any, error) {
+	var req extensionSetPersonaParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("invalid params: %w", err)
+		}
+	}
+	if strings.TrimSpace(req.SessionID) == "" {
+		return nil, fmt.Errorf("sessionId is required")
+	}
+
+	if err := a.SetSessionPersona(ctx, acpsdk.SessionId(req.SessionID), strings.TrimSpace(req.Name)); err != nil {
+		return nil, err
+	}
+	return personaGetResult{Active: strings.TrimSpace(req.Name)}, nil
+}
+
+func (a *PandoACPAgent) handleExtensionOpenCopilotUsage(context.Context, json.RawMessage) (any, error) {
+	const url = "https://github.com/settings/copilot/features"
+	if err := a.agentService.OpenCopilotUsage(); err != nil {
+		return nil, err
+	}
+	return usageOpenResult{Opened: true, URL: url}, nil
+}
+
+func (a *PandoACPAgent) handleExtensionOpenClaudeUsage(context.Context, json.RawMessage) (any, error) {
+	const url = "https://claude.ai/settings/usage"
+	if err := a.agentService.OpenClaudeUsage(); err != nil {
+		return nil, err
+	}
+	return usageOpenResult{Opened: true, URL: url}, nil
 }
 
 // SetConnection stores a reference to the AgentSideConnection so the agent can
@@ -579,12 +723,9 @@ func (a *PandoACPAgent) StartNotificationBroadcast(ctx context.Context) {
 					"ttl":     int64(n.TTL),
 				},
 			}
-			update := acpsdk.SessionUpdate{
-				SessionInfoUpdate: &acpsdk.SessionSessionInfoUpdate{
-					SessionUpdate: "session_info_update",
-					Meta:          meta,
-				},
-			}
+			update := acpsdk.UpdateSessionInfo(acpsdk.SessionInfoUpdate{
+				Meta: meta,
+			})
 
 			a.sessionsMu.RLock()
 			sessions := make([]*ACPServerSession, 0, len(a.sessions))

@@ -116,6 +116,64 @@ func TestHandleClaudeUsageRPCError(t *testing.T) {
 	}
 }
 
+func TestPandoACPAgent_HandleExtensionMethod(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+	newResp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	t.Run("set persona", func(t *testing.T) {
+		params, err := json.Marshal(map[string]string{
+			"sessionId": string(newResp.SessionId),
+			"name":      "assistant",
+		})
+		if err != nil {
+			t.Fatalf("marshal params: %v", err)
+		}
+
+		resp, err := agent.HandleExtensionMethod(ctx, "_pando.setPersona", params)
+		if err != nil {
+			t.Fatalf("HandleExtensionMethod returned error: %v", err)
+		}
+
+		result, ok := resp.(personaGetResult)
+		if !ok {
+			t.Fatalf("unexpected response type %T", resp)
+		}
+		if result.Active != "assistant" {
+			t.Fatalf("unexpected active persona %q", result.Active)
+		}
+
+		agent.sessionsMu.RLock()
+		persona := agent.sessions[newResp.SessionId].Persona()
+		agent.sessionsMu.RUnlock()
+		if persona != "assistant" {
+			t.Fatalf("session persona = %q, want %q", persona, "assistant")
+		}
+	})
+
+	t.Run("unknown method", func(t *testing.T) {
+		_, err := agent.HandleExtensionMethod(ctx, "_pando.unknown", nil)
+		if err == nil || !strings.Contains(err.Error(), "unknown extension method") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("missing session id", func(t *testing.T) {
+		params, err := json.Marshal(map[string]string{"name": "assistant"})
+		if err != nil {
+			t.Fatalf("marshal params: %v", err)
+		}
+
+		_, err = agent.HandleExtensionMethod(ctx, "_pando.setPersona", params)
+		if err == nil || !strings.Contains(err.Error(), "sessionId is required") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
 // mockAgentService is a test double for AgentService.
 type mockAgentService struct {
 	runCalled        bool
