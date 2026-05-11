@@ -538,14 +538,19 @@ func convertPandoMCPServers(servers map[string]config.MCPServer) []mesnadaAgent.
 	}
 	entries := make([]mesnadaAgent.PandoMCPServerEntry, 0, len(servers))
 	for name, srv := range servers {
+		resolved, err := config.ResolveMCPServerSecrets(srv)
+		if err != nil {
+			logging.Warn("failed to resolve MCP server secrets for subagent forwarding", "server", name, "error", err)
+			resolved = srv
+		}
 		entries = append(entries, mesnadaAgent.PandoMCPServerEntry{
 			Name:    name,
-			Command: srv.Command,
-			Args:    srv.Args,
-			Env:     srv.Env,
-			Type:    string(srv.Type),
-			URL:     srv.URL,
-			Headers: srv.Headers,
+			Command: resolved.Command,
+			Args:    resolved.Args,
+			Env:     resolved.Env,
+			Type:    string(resolved.Type),
+			URL:     resolved.URL,
+			Headers: resolved.Headers,
 		})
 	}
 	return entries

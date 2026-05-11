@@ -45,7 +45,15 @@ func (g *Gateway) Initialize(ctx context.Context, mcpServers map[string]config.M
 		logging.Info("MCP Gateway: no servers configured, skipping discovery")
 		return nil
 	}
-	return g.registry.DiscoverAll(ctx, mcpServers)
+	resolved := make(map[string]config.MCPServer, len(mcpServers))
+	for name, srv := range mcpServers {
+		resolvedSrv, err := config.ResolveMCPServerSecrets(srv)
+		if err != nil {
+			return fmt.Errorf("resolve MCP server %s secrets: %w", name, err)
+		}
+		resolved[name] = resolvedSrv
+	}
+	return g.registry.DiscoverAll(ctx, resolved)
 }
 
 // GetFavorites returns the current favorite tools based on usage statistics.
@@ -79,6 +87,13 @@ func (g *Gateway) CallTool(ctx context.Context, toolID string, params map[string
 		return nil, fmt.Errorf("configuration unavailable")
 	}
 	srv, ok := cfg.MCPServers[tool.ServerName]
+	if ok {
+		resolvedSrv, err := config.ResolveMCPServerSecrets(srv)
+		if err != nil {
+			return nil, fmt.Errorf("resolve MCP server %s secrets: %w", tool.ServerName, err)
+		}
+		srv = resolvedSrv
+	}
 	if !ok {
 		return nil, fmt.Errorf("server not found in config: %s", tool.ServerName)
 	}

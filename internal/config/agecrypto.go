@@ -135,6 +135,64 @@ func decryptSecretString(value string) (string, error) {
 	return string(plaintext), nil
 }
 
+func TransformSecretString(value string) (string, error) {
+	if strings.HasPrefix(strings.TrimSpace(value), encryptedValuePrefix) {
+		return decryptSecretString(value)
+	}
+	return encryptSecretString(value)
+}
+
+func ResolveMCPServerSecrets(server MCPServer) (MCPServer, error) {
+	resolved := server
+	var err error
+
+	resolved.Command, err = decryptSecretString(server.Command)
+	if err != nil {
+		return MCPServer{}, fmt.Errorf("decrypt MCP command: %w", err)
+	}
+	resolved.URL, err = decryptSecretString(server.URL)
+	if err != nil {
+		return MCPServer{}, fmt.Errorf("decrypt MCP url: %w", err)
+	}
+	if len(server.Args) > 0 {
+		resolved.Args = make([]string, len(server.Args))
+		for i, arg := range server.Args {
+			resolved.Args[i], err = decryptSecretString(arg)
+			if err != nil {
+				return MCPServer{}, fmt.Errorf("decrypt MCP arg %d: %w", i, err)
+			}
+		}
+	}
+	if len(server.Env) > 0 {
+		resolved.Env = make([]string, len(server.Env))
+		for i, entry := range server.Env {
+			parts := strings.SplitN(entry, "=", 2)
+			if len(parts) != 2 {
+				resolved.Env[i], err = decryptSecretString(entry)
+				if err != nil {
+					return MCPServer{}, fmt.Errorf("decrypt MCP env %d: %w", i, err)
+				}
+				continue
+			}
+			value, err := decryptSecretString(parts[1])
+			if err != nil {
+				return MCPServer{}, fmt.Errorf("decrypt MCP env %s[%d]: %w", parts[0], i, err)
+			}
+			resolved.Env[i] = parts[0] + "=" + value
+		}
+	}
+	if len(server.Headers) > 0 {
+		resolved.Headers = cloneStringMap(server.Headers)
+		for key, value := range resolved.Headers {
+			resolved.Headers[key], err = decryptSecretString(value)
+			if err != nil {
+				return MCPServer{}, fmt.Errorf("decrypt MCP header %s: %w", key, err)
+			}
+		}
+	}
+	return resolved, nil
+}
+
 func encryptSensitiveConfigFields(in *Config) (*Config, error) {
 	if in == nil {
 		return nil, nil
@@ -251,31 +309,9 @@ func decryptSensitiveConfigFields(in *Config) error {
 	in.Remembrances.CodeEmbeddingAPIKey, err = decryptSecretString(in.Remembrances.CodeEmbeddingAPIKey)
 	if err != nil { return err }
 	for name, server := range in.MCPServers {
-		updated := server
-		if len(server.Env) > 0 {
-			updated.Env = make([]string, len(server.Env))
-			for i, entry := range server.Env {
-				parts := strings.SplitN(entry, "=", 2)
-				if len(parts) != 2 {
-					updated.Env[i] = entry
-					continue
-				}
-				decrypted, err := decryptSecretString(parts[1])
-				if err != nil {
-					return fmt.Errorf("decrypt MCP env %s[%d]: %w", name, i, err)
-				}
-				updated.Env[i] = parts[0] + "=" + decrypted
-			}
-		}
-		if len(server.Headers) > 0 {
-			updated.Headers = cloneStringMap(server.Headers)
-			for key, value := range updated.Headers {
-				decrypted, err := decryptSecretString(value)
-				if err != nil {
-					return fmt.Errorf("decrypt MCP header %s.%s: %w", name, key, err)
-				}
-				updated.Headers[key] = decrypted
-			}
+		updated, err := ResolveMCPServerSecrets(server)
+		if err != nil {
+			return fmt.Errorf("decrypt MCP server %s: %w", name, err)
 		}
 		in.MCPServers[name] = updated
 	}

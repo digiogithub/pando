@@ -120,3 +120,78 @@ func TestLoadOrCreateAgeKeyManagerStoresKeysInUserPandoPath(t *testing.T) {
 		t.Fatalf("private key not created: %v", err)
 	}
 }
+
+func TestTransformSecretString(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	encrypted, err := TransformSecretString("super-secret")
+	if err != nil {
+		t.Fatalf("TransformSecretString() encrypt error = %v", err)
+	}
+	if !strings.HasPrefix(encrypted, encryptedValuePrefix) {
+		t.Fatalf("expected encrypted value prefix, got %q", encrypted)
+	}
+
+	decrypted, err := TransformSecretString(encrypted)
+	if err != nil {
+		t.Fatalf("TransformSecretString() decrypt error = %v", err)
+	}
+	if decrypted != "super-secret" {
+		t.Fatalf("expected decrypted value to round-trip, got %q", decrypted)
+	}
+}
+
+func TestResolveMCPServerSecrets(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	encryptedArg, err := encryptSecretString("--token=secret")
+	if err != nil {
+		t.Fatalf("encryptSecretString(arg) error = %v", err)
+	}
+	encryptedEnv, err := encryptSecretString("plain-token")
+	if err != nil {
+		t.Fatalf("encryptSecretString(env) error = %v", err)
+	}
+	encryptedHeader, err := encryptSecretString("Bearer abc123")
+	if err != nil {
+		t.Fatalf("encryptSecretString(header) error = %v", err)
+	}
+	encryptedCommand, err := encryptSecretString("/usr/bin/demo")
+	if err != nil {
+		t.Fatalf("encryptSecretString(command) error = %v", err)
+	}
+	encryptedURL, err := encryptSecretString("https://example.com/mcp")
+	if err != nil {
+		t.Fatalf("encryptSecretString(url) error = %v", err)
+	}
+
+	server, err := ResolveMCPServerSecrets(MCPServer{
+		Command: encryptedCommand,
+		Args:    []string{encryptedArg, "--verbose"},
+		Env:     []string{"TOKEN=" + encryptedEnv, "DEBUG=true"},
+		URL:     encryptedURL,
+		Headers: map[string]string{"Authorization": encryptedHeader},
+	})
+	if err != nil {
+		t.Fatalf("ResolveMCPServerSecrets() error = %v", err)
+	}
+	if server.Command != "/usr/bin/demo" {
+		t.Fatalf("unexpected command: %q", server.Command)
+	}
+	if server.Args[0] != "--token=secret" || server.Args[1] != "--verbose" {
+		t.Fatalf("unexpected args: %#v", server.Args)
+	}
+	if server.Env[0] != "TOKEN=plain-token" || server.Env[1] != "DEBUG=true" {
+		t.Fatalf("unexpected env: %#v", server.Env)
+	}
+	if server.URL != "https://example.com/mcp" {
+		t.Fatalf("unexpected url: %q", server.URL)
+	}
+	if server.Headers["Authorization"] != "Bearer abc123" {
+		t.Fatalf("unexpected headers: %#v", server.Headers)
+	}
+}
