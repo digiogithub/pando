@@ -223,6 +223,32 @@ func TestResolveProjectInitializationContextPath(t *testing.T) {
 	}
 }
 
+func TestEffectiveContextPathsPrependsPreferredProjectMemory(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte("memory"), 0o644); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
+	}
+
+	got := EffectiveContextPaths(tmpDir, []string{"docs/"})
+	want := []string{"AGENTS.md", "docs/"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("EffectiveContextPaths() = %v, want %v", got, want)
+	}
+}
+
+func TestEffectiveContextPathsKeepsPreferredProjectMemoryWhenAlreadyConfigured(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte("memory"), 0o644); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
+	}
+
+	got := EffectiveContextPaths(tmpDir, []string{"AGENTS.md", "docs/"})
+	want := []string{"AGENTS.md", "docs/"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("EffectiveContextPaths() = %v, want %v", got, want)
+	}
+}
+
 func TestLoadSupportsLegacyGlobalConfigYAML(t *testing.T) {
 	cfg = nil
 	viper.Reset()

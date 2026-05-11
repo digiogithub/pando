@@ -126,32 +126,29 @@ func InjectSkillInstructions(name string, instructions string) string {
 	return fmt.Sprintf("## Active Skill: %s\n%s", skillName, body)
 }
 
-var (
-	onceContext    sync.Once
-	contextContent string
-)
-
 func getContextFromPaths() string {
-	onceContext.Do(func() {
-		var (
-			cfg          = config.Get()
-			workDir      = cfg.WorkingDir
-			contextPaths = cfg.ContextPaths
-		)
-
-		contextContent = processContextPaths(workDir, contextPaths)
-	})
-
-	return contextContent
+	return formatContextFiles(LoadContextFilesFromConfig())
 }
 
-func processContextPaths(workDir string, paths []string) string {
+// LoadContextFilesFromConfig loads project context files using the active config.
+func LoadContextFilesFromConfig() []ContextFile {
+	cfg := config.Get()
+	if cfg == nil {
+		return nil
+	}
+
+	return LoadContextFiles(cfg.WorkingDir, cfg.ContextPaths)
+}
+
+// LoadContextFiles resolves configured project context files in deterministic order.
+func LoadContextFiles(workDir string, paths []string) []ContextFile {
+	paths = config.EffectiveContextPaths(workDir, paths)
 	selectedProjectContextPath, hasSelectedProjectContextPath := config.DetectPreferredProjectContextPath(workDir)
 
 	// Track processed files to avoid duplicates
 	processedFiles := make(map[string]bool)
 	var processedMutex sync.Mutex
-	results := make([]string, 0)
+	results := make([]ContextFile, 0)
 
 	for _, path := range paths {
 		if hasSelectedProjectContextPath && config.IsPrioritizedProjectContextPath(path) && filepath.Base(path) != selectedProjectContextPath {
@@ -173,8 +170,8 @@ func processContextPaths(workDir string, paths []string) string {
 					processedFiles[lowerPath] = true
 					processedMutex.Unlock()
 
-					result := processFile(path)
-					if result != "" {
+					result, ok := loadContextFile(workDir, path)
+					if ok {
 						results = append(results, result)
 					}
 				} else {
@@ -193,8 +190,8 @@ func processContextPaths(workDir string, paths []string) string {
 			processedFiles[lowerPath] = true
 			processedMutex.Unlock()
 
-			result := processFile(fullPath)
-			if result != "" {
+			result, ok := loadContextFile(workDir, fullPath)
+			if ok {
 				results = append(results, result)
 			}
 		} else {
@@ -202,15 +199,38 @@ func processContextPaths(workDir string, paths []string) string {
 		}
 	}
 
+	return results
+}
+
+func processContextPaths(workDir string, paths []string) string {
+	return formatContextFiles(LoadContextFiles(workDir, paths))
+}
+
+func formatContextFiles(files []ContextFile) string {
+	results := make([]string, 0, len(files))
+	for _, file := range files {
+		results = append(results, "# From:"+file.Path+"\n"+file.Content)
+	}
 	return strings.Join(results, "\n")
 }
 
-func processFile(filePath string) string {
+func loadContextFile(workDir string, filePath string) (ContextFile, bool) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return ""
+		return ContextFile{}, false
 	}
-	return "# From:" + filePath + "\n" + string(content)
+
+	displayPath := filePath
+	if workDir != "" {
+		if rel, err := filepath.Rel(workDir, filePath); err == nil && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".." {
+			displayPath = rel
+		}
+	}
+
+	return ContextFile{
+		Path:    filepath.ToSlash(displayPath),
+		Content: string(content),
+	}, true
 }
 
 func compactPromptText(text string) string {
@@ -221,23 +241,23 @@ func compactPromptText(text string) string {
 type BuildOption func(*buildOptions)
 
 type buildOptions struct {
-	mcpServers      []string
-	tools           []string
-	workingDir      string
-	isGitRepo       bool
-	platform        string
-	date            string
-	gitBranch       string
-	gitStatus       string
+	mcpServers       []string
+	tools            []string
+	workingDir       string
+	isGitRepo        bool
+	platform         string
+	date             string
+	gitBranch        string
+	gitStatus        string
 	gitRecentCommits string
-	projectListing  string
-	skillsMetadata  string
-	activeSkills    []string
-	lspInfo         string
-	mcpInstructions string
-	version         string
-	model           string
-	contextFiles    []ContextFile
+	projectListing   string
+	skillsMetadata   string
+	activeSkills     []string
+	lspInfo          string
+	mcpInstructions  string
+	version          string
+	model            string
+	contextFiles     []ContextFile
 }
 
 // WithMCPServers sets the list of MCP server names for capability detection.

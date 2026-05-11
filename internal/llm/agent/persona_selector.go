@@ -6,11 +6,11 @@ import (
 	"strings"
 
 	"github.com/digiogithub/pando/internal/config"
-	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/llm/provider"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mesnada/persona"
+	"github.com/digiogithub/pando/internal/message"
 )
 
 // globalPersonaSelector is the package-level persona selector for the main session.
@@ -132,7 +132,7 @@ func NewPersonaSelector(personaPath string) (*PersonaSelector, error) {
 		return nil, fmt.Errorf("failed to load personas: %w", err)
 	}
 
-	selectorProvider, err := createAgentProvider(config.AgentPersonaSelector, nil, nil)
+	selectorProvider, err := createAgentProvider(config.AgentPersonaSelector, nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("persona-selector agent not available: %w", err)
 	}

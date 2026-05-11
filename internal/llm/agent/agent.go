@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	goruntime "runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -139,7 +143,7 @@ func NewAgent(
 	agentTools []tools.BaseTool,
 	skillManager *skills.SkillManager,
 ) (Service, error) {
-	agentProvider, err := createAgentProvider(agentName, skillManager, nil)
+	agentProvider, err := createAgentProvider(agentName, agentTools, skillManager, nil)
 	if err != nil {
 		// If the model is not yet available (e.g. dynamic models not fetched yet),
 		// create the agent without a provider. The TUI will prompt the user to select a model.
@@ -150,7 +154,7 @@ func NewAgent(
 	var titleProvider provider.Provider
 	// Only generate titles for the coder agent
 	if agentName == config.AgentCoder {
-		titleProvider, err = createAgentProvider(config.AgentTitle, nil, nil)
+		titleProvider, err = createAgentProvider(config.AgentTitle, nil, nil, nil)
 		if err != nil {
 			logging.Debug("Title agent provider not available", "error", err)
 			titleProvider = nil
@@ -158,7 +162,7 @@ func NewAgent(
 	}
 	var summarizeProvider provider.Provider
 	if agentName == config.AgentCoder {
-		summarizeProvider, err = createAgentProvider(config.AgentSummarizer, nil, nil)
+		summarizeProvider, err = createAgentProvider(config.AgentSummarizer, nil, nil, nil)
 		if err != nil {
 			logging.Debug("Summarizer agent provider not available", "error", err)
 			summarizeProvider = nil
@@ -949,7 +953,7 @@ func (a *agent) Update(agentName config.AgentName, modelID models.ModelID) (mode
 		return models.Model{}, fmt.Errorf("failed to update config: %w", err)
 	}
 
-	provider, err := createAgentProvider(agentName, a.skillManager, nil)
+	provider, err := createAgentProvider(agentName, a.tools, a.skillManager, nil)
 	if err != nil {
 		return models.Model{}, fmt.Errorf("failed to create provider for model %s: %w", modelID, err)
 	}
@@ -1394,10 +1398,10 @@ func (a *agent) prepareProvider(userPrompt string, personaContent string) (provi
 		}
 	}
 
-	return createAgentProvider(a.agentName, a.skillManager, activeSkillInstructions, personaContent)
+	return createAgentProvider(a.agentName, a.tools, a.skillManager, activeSkillInstructions, personaContent)
 }
 
-func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillManager, activeSkillInstructions []string, personaContent ...string) (provider.Provider, error) {
+func createAgentProvider(agentName config.AgentName, agentTools []tools.BaseTool, skillManager *skills.SkillManager, activeSkillInstructions []string, personaContent ...string) (provider.Provider, error) {
 	logging.Debug("createAgentProvider", "agentName", string(agentName))
 	cfg := config.Get()
 	agentConfig, ok := cfg.Agents[agentName]
@@ -1434,7 +1438,7 @@ func createAgentProvider(agentName config.AgentName, skillManager *skills.SkillM
 	if len(personaContent) > 0 {
 		pc = personaContent[0]
 	}
-	systemMessage := buildSystemMessage(agentName, model.Provider, skillManager, activeSkillInstructions, pc)
+	systemMessage := buildSystemMessage(agentName, model.Provider, agentTools, skillManager, activeSkillInstructions, pc)
 
 	// For models with special provider options (reasoning effort, thinking mode),
 	// build opts explicitly using resolved account credentials.
@@ -1501,20 +1505,35 @@ func defaultAnthropicThinkingMode(model models.Model, configuredMode config.Thin
 func buildSystemMessage(
 	agentName config.AgentName,
 	modelProvider models.ModelProvider,
+	agentTools []tools.BaseTool,
 	skillManager *skills.SkillManager,
 	activeSkillInstructions []string,
 	personaContent string,
 ) string {
-	systemMessage := prompt.GetAgentPrompt(agentName, modelProvider, globalLuaManager)
-
-	sections := make([]string, 0, 3+len(activeSkillInstructions))
-
-	if skillManager != nil && (agentName == config.AgentCoder || agentName == config.AgentTask) {
-		if skillsMetadata := prompt.InjectSkillsMetadata(skillManager.GetAllMetadata()); skillsMetadata != "" {
-			sections = append(sections, skillsMetadata)
-		}
-		sections = append(sections, activeSkillInstructions...)
+	cfg := config.Get()
+	if cfg == nil {
+		return prompt.GetAgentPrompt(agentName, modelProvider, globalLuaManager)
 	}
+
+	skillsMetadata := ""
+	if skillManager != nil && (agentName == config.AgentCoder || agentName == config.AgentTask) {
+		skillsMetadata = prompt.InjectSkillsMetadata(skillManager.GetAllMetadata())
+	}
+
+	systemMessage, err := prompt.BuildPrompt(context.Background(), agentName, modelProvider, globalLuaManager,
+		prompt.WithEnvironment(cfg.WorkingDir, isGitRepo(cfg.WorkingDir), goruntime.GOOS, time.Now().Format("2006-01-02 15:04:05 MST")),
+		prompt.WithGitInfo(getGitBranch(cfg.WorkingDir), "", ""),
+		prompt.WithMCPServers(promptMCPServerNames(cfg)),
+		prompt.WithTools(promptToolNames(agentTools)),
+		prompt.WithContextFiles(prompt.LoadContextFilesFromConfig()),
+		prompt.WithSkills(skillsMetadata, activeSkillInstructions),
+	)
+	if err != nil {
+		logging.Warn("Template prompt build failed; falling back to legacy system prompt", "agent", string(agentName), "error", err)
+		systemMessage = prompt.GetAgentPrompt(agentName, modelProvider, globalLuaManager)
+	}
+
+	sections := make([]string, 0, 2)
 
 	// Persona instructions are appended to the system prompt so they take effect
 	// without polluting the user message. They are added last so they can override
@@ -1528,11 +1547,76 @@ func buildSystemMessage(
 		sections = append(sections, nonInteractiveInstructions)
 	}
 
-	if len(sections) == 0 {
-		return systemMessage
+	finalPrompt := systemMessage
+	if len(sections) > 0 {
+		finalPrompt += "\n\n" + strings.Join(sections, "\n\n")
+	}
+	logging.Debug("System prompt built",
+		"agent", string(agentName),
+		"length", len(finalPrompt),
+		"sections", len(sections),
+		"system_prompt", finalPrompt,
+	)
+	return finalPrompt
+}
+
+func promptMCPServerNames(cfg *config.Config) []string {
+	if cfg == nil || len(cfg.MCPServers) == 0 {
+		return nil
 	}
 
-	return systemMessage + "\n\n" + strings.Join(sections, "\n\n")
+	names := make([]string, 0, len(cfg.MCPServers))
+	for name := range cfg.MCPServers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func promptToolNames(agentTools []tools.BaseTool) []string {
+	if len(agentTools) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(agentTools))
+	for _, tool := range agentTools {
+		if tool == nil {
+			continue
+		}
+		name := strings.TrimSpace(tool.Info().Name)
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func getGitBranch(dir string) string {
+	branchFile := filepath.Join(dir, ".git", "HEAD")
+	data, err := os.ReadFile(branchFile)
+	if err != nil {
+		return ""
+	}
+
+	line := strings.TrimSpace(string(data))
+	const prefix = "ref: refs/heads/"
+	if strings.HasPrefix(line, prefix) {
+		return strings.TrimPrefix(line, prefix)
+	}
+	if len(line) >= 8 {
+		return line[:8]
+	}
+	return line
+}
+
+func isGitRepo(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(dir, ".git"))
+	return err == nil
 }
 
 func effectiveMaxTokens(agentName config.AgentName, model models.Model) int {

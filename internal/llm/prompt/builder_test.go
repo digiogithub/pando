@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -256,6 +257,21 @@ func TestPromptBuilderSkillsContext(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, result, "sql")
+}
+
+func TestCapabilityDetectorDetectsRemembrancesAndOrchestrationFromTools(t *testing.T) {
+	t.Parallel()
+
+	detector := NewCapabilityDetector(&config.Config{}, nil, []string{
+		"kb_search_documents",
+		"code_hybrid_search",
+		"mesnada_spawn_agent",
+	})
+
+	caps := detector.Detect()
+	assert.True(t, caps["remembrances"])
+	assert.True(t, caps["code_indexing"])
+	assert.True(t, caps["orchestration"])
 }
 
 func TestPromptBuilderMCPInstructions(t *testing.T) {

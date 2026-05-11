@@ -192,8 +192,8 @@ func (a *PandoACPAgent) processPromptWithAgent(
 
 				if !tc.Finished {
 					if !started {
-						if err := sendStart(acpsdk.ToolCallStatusPending); err != nil {
-							a.logger.Printf("[ACP AGENT] Failed to send tool call pending: %v", err)
+						if err := sendStart(acpsdk.ToolCallStatusInProgress); err != nil {
+							a.logger.Printf("[ACP AGENT] Failed to send tool call in_progress: %v", err)
 						} else {
 							a.pendingToolCallsMu.Lock()
 							a.startedToolCalls[tc.ID] = true

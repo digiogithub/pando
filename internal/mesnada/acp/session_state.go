@@ -255,7 +255,7 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 
 					startOpts := []acpsdk.ToolCallStartOpt{
 						acpsdk.WithStartKind(kind),
-						acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
+						acpsdk.WithStartStatus(acpsdk.ToolCallStatusInProgress),
 						acpsdk.WithStartRawInput(rawInput),
 					}
 					if len(content) > 0 {

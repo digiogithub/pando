@@ -3,6 +3,7 @@ AgeKeys = ''
 Debug = false
 LogFile = ''
 DebugLSP = false
+ContextPaths = []
 AutoCompact = true
 
 [Data]
@@ -52,7 +53,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'openrouter.deepseek/deepseek-v4-pro'
+Model = 'copilot.gpt-4.1'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''

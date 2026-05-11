@@ -660,6 +660,27 @@ func IsPrioritizedProjectContextPath(path string) bool {
 	return false
 }
 
+// EffectiveContextPaths returns the configured context paths plus the preferred
+// project memory file (AGENTS.md > PANDO.md > CLAUDE.md) when it exists.
+// The preferred project memory file is always prepended unless it is already
+// present in the configured paths.
+func EffectiveContextPaths(workDir string, configured []string) []string {
+	result := append([]string(nil), configured...)
+
+	preferred, ok := DetectPreferredProjectContextPath(workDir)
+	if !ok {
+		return result
+	}
+
+	for _, path := range result {
+		if strings.EqualFold(filepath.Base(path), preferred) {
+			return result
+		}
+	}
+
+	return append([]string{preferred}, result...)
+}
+
 // Global configuration instance
 var cfg *Config
 var ageKeysOverride string
