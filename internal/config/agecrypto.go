@@ -17,6 +17,7 @@ const encryptedValuePrefix = "age1:"
 const ageKeysDirName = "keys"
 const agePublicKeyFileName = "config.age.pub"
 const agePrivateKeyFileName = "config.age.txt"
+const defaultAgeKeySetName = "default"
 
 type ageKeyManager struct {
 	identity  *age.X25519Identity
@@ -31,12 +32,46 @@ func pandoConfigHome() (string, error) {
 	return filepath.Join(homeDir, ".config", appName), nil
 }
 
+func normalizeAgeKeySetName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return defaultAgeKeySetName
+	}
+	var b strings.Builder
+	b.Grow(len(trimmed))
+	for _, r := range trimmed {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	result := strings.Trim(b.String(), "-.")
+	if result == "" {
+		return defaultAgeKeySetName
+	}
+	return result
+}
+
+func activeAgeKeySetName() string {
+	if override := strings.TrimSpace(AgeKeysOverride()); override != "" {
+		return normalizeAgeKeySetName(override)
+	}
+	if cfg != nil && strings.TrimSpace(cfg.AgeKeys) != "" {
+		return normalizeAgeKeySetName(cfg.AgeKeys)
+	}
+	return defaultAgeKeySetName
+}
+
 func pandoAgeKeyPaths() (dir, publicKeyPath, privateKeyPath string, err error) {
 	baseDir, err := pandoConfigHome()
 	if err != nil {
 		return "", "", "", err
 	}
-	dir = filepath.Join(baseDir, ageKeysDirName)
+	dir = filepath.Join(baseDir, ageKeysDirName, activeAgeKeySetName())
 	return dir, filepath.Join(dir, agePublicKeyFileName), filepath.Join(dir, agePrivateKeyFileName), nil
 }
 
@@ -231,15 +266,25 @@ func encryptSensitiveConfigFields(in *Config) (*Config, error) {
 	out.InternalTools = in.InternalTools
 	var err error
 	out.InternalTools.GoogleAPIKey, err = encryptSecretString(in.InternalTools.GoogleAPIKey)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	out.InternalTools.GoogleSearchEngineID, err = encryptSecretString(in.InternalTools.GoogleSearchEngineID)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	out.InternalTools.BraveAPIKey, err = encryptSecretString(in.InternalTools.BraveAPIKey)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	out.InternalTools.PerplexityAPIKey, err = encryptSecretString(in.InternalTools.PerplexityAPIKey)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	out.InternalTools.ExaAPIKey, err = encryptSecretString(in.InternalTools.ExaAPIKey)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	// Encrypt provider API keys (legacy map)
 	if len(in.Providers) > 0 {
 		out.Providers = make(map[models.ModelProvider]Provider, len(in.Providers))
@@ -265,9 +310,13 @@ func encryptSensitiveConfigFields(in *Config) (*Config, error) {
 	}
 	// Encrypt remembrances embedding API keys
 	out.Remembrances.DocumentEmbeddingAPIKey, err = encryptSecretString(in.Remembrances.DocumentEmbeddingAPIKey)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	out.Remembrances.CodeEmbeddingAPIKey, err = encryptSecretString(in.Remembrances.CodeEmbeddingAPIKey)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return &out, nil
 }
 
@@ -277,15 +326,25 @@ func decryptSensitiveConfigFields(in *Config) error {
 	}
 	var err error
 	in.InternalTools.GoogleAPIKey, err = decryptSecretString(in.InternalTools.GoogleAPIKey)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	in.InternalTools.GoogleSearchEngineID, err = decryptSecretString(in.InternalTools.GoogleSearchEngineID)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	in.InternalTools.BraveAPIKey, err = decryptSecretString(in.InternalTools.BraveAPIKey)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	in.InternalTools.PerplexityAPIKey, err = decryptSecretString(in.InternalTools.PerplexityAPIKey)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	in.InternalTools.ExaAPIKey, err = decryptSecretString(in.InternalTools.ExaAPIKey)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	// Decrypt provider API keys (legacy map)
 	for name, p := range in.Providers {
 		decrypted, err := decryptSecretString(p.APIKey)
@@ -305,9 +364,13 @@ func decryptSensitiveConfigFields(in *Config) error {
 	}
 	// Decrypt remembrances embedding API keys
 	in.Remembrances.DocumentEmbeddingAPIKey, err = decryptSecretString(in.Remembrances.DocumentEmbeddingAPIKey)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	in.Remembrances.CodeEmbeddingAPIKey, err = decryptSecretString(in.Remembrances.CodeEmbeddingAPIKey)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	for name, server := range in.MCPServers {
 		updated, err := ResolveMCPServerSecrets(server)
 		if err != nil {

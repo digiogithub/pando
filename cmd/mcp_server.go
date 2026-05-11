@@ -69,6 +69,8 @@ func runMCPServerMode(cmd *cobra.Command) error {
 	noStdio, _ := cmd.Flags().GetBool("no-stdio")
 	noHTTP, _ := cmd.Flags().GetBool("no-http")
 	cwdFlag, _ := cmd.Flags().GetString("cwd")
+	ageKeys, _ := cmd.Flags().GetString("age-keys")
+	config.SetAgeKeysOverride(ageKeys)
 	if !cmd.Flags().Changed("port") {
 		port = 9777
 	}

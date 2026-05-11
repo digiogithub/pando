@@ -68,6 +68,8 @@ func runDesktopMode(cmd *cobra.Command) error {
 	debug, _ := cmd.Flags().GetBool("debug")
 	simpleMode, _ := cmd.Flags().GetBool("simple")
 	cwdFlag, _ := cmd.Flags().GetString("cwd")
+	ageKeys, _ := cmd.Flags().GetString("age-keys")
+	config.SetAgeKeysOverride(ageKeys)
 
 	selectedPort, err := chooseAvailablePort(host, port)
 	if err != nil {

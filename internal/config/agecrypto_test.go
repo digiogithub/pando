@@ -9,7 +9,14 @@ import (
 	"github.com/digiogithub/pando/internal/llm/models"
 )
 
+func resetAgeKeyTestState() {
+	cfg = nil
+	SetAgeKeysOverride("")
+}
+
 func TestEncryptDecryptSensitiveConfigFields(t *testing.T) {
+	resetAgeKeyTestState()
+	t.Cleanup(resetAgeKeyTestState)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
@@ -97,6 +104,8 @@ func TestEncryptDecryptSensitiveConfigFields(t *testing.T) {
 }
 
 func TestLoadOrCreateAgeKeyManagerStoresKeysInUserPandoPath(t *testing.T) {
+	resetAgeKeyTestState()
+	t.Cleanup(resetAgeKeyTestState)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
@@ -122,6 +131,8 @@ func TestLoadOrCreateAgeKeyManagerStoresKeysInUserPandoPath(t *testing.T) {
 }
 
 func TestTransformSecretString(t *testing.T) {
+	resetAgeKeyTestState()
+	t.Cleanup(resetAgeKeyTestState)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
@@ -144,6 +155,8 @@ func TestTransformSecretString(t *testing.T) {
 }
 
 func TestResolveMCPServerSecrets(t *testing.T) {
+	resetAgeKeyTestState()
+	t.Cleanup(resetAgeKeyTestState)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
@@ -193,5 +206,47 @@ func TestResolveMCPServerSecrets(t *testing.T) {
 	}
 	if server.Headers["Authorization"] != "Bearer abc123" {
 		t.Fatalf("unexpected headers: %#v", server.Headers)
+	}
+}
+
+func TestNamedAgeKeySetsUseSeparateStorage(t *testing.T) {
+	resetAgeKeyTestState()
+	t.Cleanup(resetAgeKeyTestState)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	SetAgeKeysOverride("team-A")
+	encrypted, err := TransformSecretString("shared-secret")
+	if err != nil {
+		t.Fatalf("TransformSecretString(team-A) error = %v", err)
+	}
+	teamDir, _, _, err := pandoAgeKeyPaths()
+	if err != nil {
+		t.Fatalf("pandoAgeKeyPaths(team-A) error = %v", err)
+	}
+	if !strings.HasSuffix(teamDir, filepath.Join("keys", "team-A")) {
+		t.Fatalf("unexpected team key dir %q", teamDir)
+	}
+
+	SetAgeKeysOverride("team-B")
+	otherDir, _, _, err := pandoAgeKeyPaths()
+	if err != nil {
+		t.Fatalf("pandoAgeKeyPaths(team-B) error = %v", err)
+	}
+	if !strings.HasSuffix(otherDir, filepath.Join("keys", "team-B")) {
+		t.Fatalf("unexpected other key dir %q", otherDir)
+	}
+	if _, err := TransformSecretString(encrypted); err == nil {
+		t.Fatal("expected decryption with a different named keypair to fail")
+	}
+
+	SetAgeKeysOverride("team-A")
+	decrypted, err := TransformSecretString(encrypted)
+	if err != nil {
+		t.Fatalf("TransformSecretString(team-A decrypt) error = %v", err)
+	}
+	if decrypted != "shared-secret" {
+		t.Fatalf("unexpected decrypted value %q", decrypted)
 	}
 }

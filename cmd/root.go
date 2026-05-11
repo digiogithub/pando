@@ -14,27 +14,27 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/google/uuid"
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/format"
+	"github.com/digiogithub/pando/internal/instanceregistry"
 	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/bridge"
 	"github.com/digiogithub/pando/internal/ipc/dbproxy"
-	"github.com/digiogithub/pando/internal/instanceregistry"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
 	acpPkg "github.com/digiogithub/pando/internal/mesnada/acp"
-	"github.com/digiogithub/pando/internal/notify"
 	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/notify"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui"
 	"github.com/digiogithub/pando/internal/version"
+	"github.com/google/uuid"
 	zone "github.com/lrstanley/bubblezone"
 	"github.com/spf13/cobra"
 )
@@ -119,7 +119,9 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		quiet, _ := cmd.Flags().GetBool("quiet")
 		yolo, _ := cmd.Flags().GetBool("yolo")
 		allowAll, _ := cmd.Flags().GetBool("allow-all-tools")
+		ageKeys, _ := cmd.Flags().GetString("age-keys")
 		yoloMode := yolo || allowAll
+		config.SetAgeKeysOverride(ageKeys)
 
 		// Read prompt from stdin if piped (not a terminal)
 		if prompt == "" {
@@ -845,6 +847,7 @@ func init() {
 	rootCmd.Flags().StringP("cwd", "c", "", "Current working directory")
 	rootCmd.Flags().StringP("prompt", "p", "", "Prompt to run in non-interactive mode")
 	rootCmd.Flags().StringP("model", "m", "", "Override the model for this run without changing the saved config")
+	rootCmd.PersistentFlags().String("age-keys", "", "Named AGE keypair to use instead of the default one")
 
 	// Add format flag with validation logic
 	rootCmd.Flags().StringP("output-format", "f", format.Text.String(),

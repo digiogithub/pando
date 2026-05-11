@@ -56,6 +56,8 @@ This is the backend for the Pando Desktop/Web UI.`,
 		debug, _ := cmd.Flags().GetBool("debug")
 		tlsCert, _ := cmd.Flags().GetString("tls-cert")
 		tlsKey, _ := cmd.Flags().GetString("tls-key")
+		ageKeys, _ := cmd.Flags().GetString("age-keys")
+		config.SetAgeKeysOverride(ageKeys)
 		preferredPort := port
 
 		selectedPort, err := chooseAvailablePort(host, preferredPort)

@@ -546,6 +546,7 @@ type ProviderAccount struct {
 type Config struct {
 	Data       Data                 `json:"data"`
 	WorkingDir string               `json:"wd,omitempty"`
+	AgeKeys    string               `json:"ageKeys,omitempty" toml:"AgeKeys"`
 	MCPServers map[string]MCPServer `json:"mcpServers,omitempty"`
 	// ProviderAccounts is the new multi-account provider configuration.
 	// It supersedes the Providers map. On load, if empty and Providers is non-empty,
@@ -661,6 +662,17 @@ func IsPrioritizedProjectContextPath(path string) bool {
 
 // Global configuration instance
 var cfg *Config
+var ageKeysOverride string
+
+// SetAgeKeysOverride sets the runtime override for the named AGE keypair.
+func SetAgeKeysOverride(name string) {
+	ageKeysOverride = strings.TrimSpace(name)
+}
+
+// AgeKeysOverride returns the runtime override for the named AGE keypair.
+func AgeKeysOverride() string {
+	return ageKeysOverride
+}
 
 // Load initializes the configuration from environment variables and config files.
 // If debug is true, debug mode is enabled and log level is set to debug.
@@ -708,6 +720,9 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	// Restore WorkingDir after unmarshal: it's a runtime parameter, not a config file setting,
 	// so viper.Unmarshal would reset it to empty string if not present in the config file.
 	cfg.WorkingDir = workingDir
+	if ageKeysOverride != "" {
+		cfg.AgeKeys = ageKeysOverride
+	}
 
 	applyDefaultValues()
 

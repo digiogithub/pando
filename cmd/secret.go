@@ -14,6 +14,8 @@ var secretCmd = &cobra.Command{
 	Short: "Encrypt or decrypt a secret with Pando AGE keys",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ageKeys, _ := cmd.Flags().GetString("age-keys")
+		config.SetAgeKeysOverride(ageKeys)
 		result, err := config.TransformSecretString(args[0])
 		if err != nil {
 			return err
