@@ -116,6 +116,7 @@ func TestBuildSystemMessageUsesTemplatePromptBuilder(t *testing.T) {
 	}
 
 	msg := buildSystemMessage(
+		context.Background(),
 		config.AgentCoder,
 		models.ProviderAnthropic,
 		[]tools.BaseTool{

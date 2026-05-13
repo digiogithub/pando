@@ -57,6 +57,13 @@ func New(cfg config.EvaluatorConfig, q db.Querier, msgs message.Service) (*Evalu
 		return nil, nil
 	}
 
+	slog.Info("evaluator: initializing self-improvement system",
+		"async", cfg.Async,
+		"model", cfg.Model,
+		"min_sessions_for_ucb", cfg.MinSessionsForUCB,
+		"max_skills", cfg.MaxSkills,
+	)
+
 	patterns, err := compilePatterns(cfg.CorrectionsPatterns)
 	if err != nil {
 		return nil, fmt.Errorf("evaluator: compile correction patterns: %w", err)
@@ -76,8 +83,11 @@ func New(cfg config.EvaluatorConfig, q db.Querier, msgs message.Service) (*Evalu
 			slog.Warn("evaluator: judge init failed, continuing without LLM judge", "err", err)
 		} else {
 			svc.judge = j
+			slog.Info("evaluator: judge initialized", "model", cfg.Model)
 		}
 	}
+
+	slog.Debug("evaluator: self-improvement system ready", "judge_enabled", svc.judge != nil, "correction_patterns", len(svc.patterns))
 
 	return svc, nil
 }
@@ -93,6 +103,7 @@ func (s *EvaluatorService) RecordTemplateSelection(_ context.Context, sessionID,
 		return
 	}
 	s.sessionTemplates.Store(sessionID, templateID)
+	slog.Debug("evaluator: recorded template selection", "session_id", sessionID, "template_id", templateID)
 }
 
 // EvaluateSession triggers evaluation of a completed session.
@@ -100,6 +111,7 @@ func (s *EvaluatorService) EvaluateSession(ctx context.Context, sessionID string
 	if s == nil || !s.cfg.Enabled {
 		return nil
 	}
+	slog.Info("evaluator: starting session evaluation", "session_id", sessionID, "async", s.cfg.Async)
 	if s.cfg.Async {
 		go func() {
 			bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -216,11 +228,21 @@ func (s *EvaluatorService) SelectTemplate(ctx context.Context, sectionName strin
 
 	total, err := s.db.CountSessionScores(ctx)
 	if err != nil || int(total) < s.cfg.MinSessionsForUCB {
+		if err != nil {
+			slog.Debug("evaluator: template selection skipped", "section", sectionName, "error", err)
+		} else {
+			slog.Debug("evaluator: template selection skipped below threshold", "section", sectionName, "session_scores", total, "min_sessions", s.cfg.MinSessionsForUCB)
+		}
 		return nil, nil // not enough history yet
 	}
 
 	templates, err := s.db.ListActiveTemplatesBySection(ctx, sectionName)
 	if err != nil || len(templates) == 0 {
+		if err != nil {
+			slog.Debug("evaluator: template selection unavailable", "section", sectionName, "error", err)
+		} else {
+			slog.Debug("evaluator: no active templates for section", "section", sectionName)
+		}
 		return nil, nil
 	}
 
@@ -239,6 +261,8 @@ func (s *EvaluatorService) SelectTemplate(ctx context.Context, sectionName strin
 	if best == nil {
 		return nil, nil
 	}
+
+	slog.Debug("evaluator: selected template", "section", sectionName, "template_id", best.ID, "template_name", best.Name, "times_used", best.TimesUsed, "avg_reward", best.AvgReward)
 
 	return &PromptTemplate{
 		ID:        best.ID,
@@ -267,6 +291,7 @@ func (s *EvaluatorService) GetActiveSkills(ctx context.Context, taskType string)
 	if err != nil {
 		return nil, fmt.Errorf("evaluator: list active skills: %w", err)
 	}
+	slog.Debug("evaluator: loaded active skills", "task_type", taskType, "count", len(rows))
 
 	skills := make([]Skill, 0, len(rows))
 	for _, r := range rows {

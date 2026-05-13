@@ -143,7 +143,7 @@ func NewAgent(
 	agentTools []tools.BaseTool,
 	skillManager *skills.SkillManager,
 ) (Service, error) {
-	agentProvider, err := createAgentProvider(agentName, agentTools, skillManager, nil)
+	agentProvider, err := createAgentProvider(context.Background(), agentName, agentTools, skillManager, nil)
 	if err != nil {
 		// If the model is not yet available (e.g. dynamic models not fetched yet),
 		// create the agent without a provider. The TUI will prompt the user to select a model.
@@ -154,7 +154,7 @@ func NewAgent(
 	var titleProvider provider.Provider
 	// Only generate titles for the coder agent
 	if agentName == config.AgentCoder {
-		titleProvider, err = createAgentProvider(config.AgentTitle, nil, nil, nil)
+		titleProvider, err = createAgentProvider(context.Background(), config.AgentTitle, nil, nil, nil)
 		if err != nil {
 			logging.Debug("Title agent provider not available", "error", err)
 			titleProvider = nil
@@ -162,7 +162,7 @@ func NewAgent(
 	}
 	var summarizeProvider provider.Provider
 	if agentName == config.AgentCoder {
-		summarizeProvider, err = createAgentProvider(config.AgentSummarizer, nil, nil, nil)
+		summarizeProvider, err = createAgentProvider(context.Background(), config.AgentSummarizer, nil, nil, nil)
 		if err != nil {
 			logging.Debug("Summarizer agent provider not available", "error", err)
 			summarizeProvider = nil
@@ -497,7 +497,8 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	msgHistory := append(msgs, userMsg)
 
 	// Build provider with persona injected into the system prompt.
-	requestProvider, err := a.prepareProvider(content, personaContent)
+	promptCtx := context.WithValue(ctx, prompt.SessionIDKey, sessionID)
+	requestProvider, err := a.prepareProvider(promptCtx, content, personaContent)
 	if err != nil {
 		return a.err(fmt.Errorf("failed to prepare agent provider: %w", err))
 	}
@@ -953,7 +954,7 @@ func (a *agent) Update(agentName config.AgentName, modelID models.ModelID) (mode
 		return models.Model{}, fmt.Errorf("failed to update config: %w", err)
 	}
 
-	provider, err := createAgentProvider(agentName, a.tools, a.skillManager, nil)
+	provider, err := createAgentProvider(context.Background(), agentName, a.tools, a.skillManager, nil)
 	if err != nil {
 		return models.Model{}, fmt.Errorf("failed to create provider for model %s: %w", modelID, err)
 	}
@@ -1161,7 +1162,7 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 		msgHistory := newMsgs[summaryMsgIndex:]
 		msgHistory[0].Role = message.User
 
-		requestProvider, err := a.prepareProvider(summary, "")
+		requestProvider, err := a.prepareProvider(context.WithValue(summarizeCtx, prompt.SessionIDKey, sessionID), summary, "")
 		if err != nil {
 			event = AgentEvent{
 				Type:  AgentEventTypeError,
@@ -1377,7 +1378,7 @@ Be concise but complete. This summary will replace the conversation history.`
 	return nil
 }
 
-func (a *agent) prepareProvider(userPrompt string, personaContent string) (provider.Provider, error) {
+func (a *agent) prepareProvider(ctx context.Context, userPrompt string, personaContent string) (provider.Provider, error) {
 	logging.Debug("prepareProvider", "agentName", string(a.agentName), "hasSkillManager", a.skillManager != nil, "hasPersona", personaContent != "")
 
 	// When there is no skill manager and no persona, use the pre-built provider as-is.
@@ -1398,10 +1399,10 @@ func (a *agent) prepareProvider(userPrompt string, personaContent string) (provi
 		}
 	}
 
-	return createAgentProvider(a.agentName, a.tools, a.skillManager, activeSkillInstructions, personaContent)
+	return createAgentProvider(ctx, a.agentName, a.tools, a.skillManager, activeSkillInstructions, personaContent)
 }
 
-func createAgentProvider(agentName config.AgentName, agentTools []tools.BaseTool, skillManager *skills.SkillManager, activeSkillInstructions []string, personaContent ...string) (provider.Provider, error) {
+func createAgentProvider(ctx context.Context, agentName config.AgentName, agentTools []tools.BaseTool, skillManager *skills.SkillManager, activeSkillInstructions []string, personaContent ...string) (provider.Provider, error) {
 	logging.Debug("createAgentProvider", "agentName", string(agentName))
 	cfg := config.Get()
 	agentConfig, ok := cfg.Agents[agentName]
@@ -1438,7 +1439,7 @@ func createAgentProvider(agentName config.AgentName, agentTools []tools.BaseTool
 	if len(personaContent) > 0 {
 		pc = personaContent[0]
 	}
-	systemMessage := buildSystemMessage(agentName, model.Provider, agentTools, skillManager, activeSkillInstructions, pc)
+	systemMessage := buildSystemMessage(ctx, agentName, model.Provider, agentTools, skillManager, activeSkillInstructions, pc)
 
 	// For models with special provider options (reasoning effort, thinking mode),
 	// build opts explicitly using resolved account credentials.
@@ -1503,6 +1504,7 @@ func defaultAnthropicThinkingMode(model models.Model, configuredMode config.Thin
 }
 
 func buildSystemMessage(
+	ctx context.Context,
 	agentName config.AgentName,
 	modelProvider models.ModelProvider,
 	agentTools []tools.BaseTool,
@@ -1520,7 +1522,12 @@ func buildSystemMessage(
 		skillsMetadata = prompt.InjectSkillsMetadata(skillManager.GetAllMetadata())
 	}
 
-	systemMessage, err := prompt.BuildPrompt(context.Background(), agentName, modelProvider, globalLuaManager,
+	buildCtx := ctx
+	if buildCtx == nil {
+		buildCtx = context.Background()
+	}
+
+	systemMessage, err := prompt.BuildPrompt(buildCtx, agentName, modelProvider, globalLuaManager,
 		prompt.WithEnvironment(cfg.WorkingDir, isGitRepo(cfg.WorkingDir), goruntime.GOOS, time.Now().Format("2006-01-02 15:04:05 MST")),
 		prompt.WithGitInfo(getGitBranch(cfg.WorkingDir), "", ""),
 		prompt.WithMCPServers(promptMCPServerNames(cfg)),
@@ -1531,6 +1538,12 @@ func buildSystemMessage(
 	if err != nil {
 		logging.Warn("Template prompt build failed; falling back to legacy system prompt", "agent", string(agentName), "error", err)
 		systemMessage = prompt.GetAgentPrompt(agentName, modelProvider, globalLuaManager)
+	} else {
+		logging.Debug("Self-improvement prompt build completed",
+			"agent", string(agentName),
+			"provider", string(modelProvider),
+			"prompt_length", len(systemMessage),
+		)
 	}
 
 	sections := make([]string, 0, 2)

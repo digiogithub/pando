@@ -113,6 +113,21 @@ func (t *MesnadaSpawnTool) Info() ToolInfo {
 				"type":        "string",
 				"description": "Timeout duration such as 30m or 1h.",
 			},
+			"dependencies": map[string]any{
+				"type":        "array",
+				"description": "List of task IDs that must complete before this task starts.",
+				"items": map[string]any{
+					"type": "string",
+				},
+			},
+			"include_dependency_logs": map[string]any{
+				"type":        "boolean",
+				"description": "Append logs from dependency tasks to the prompt before execution.",
+			},
+			"dependency_log_lines": map[string]any{
+				"type":        "integer",
+				"description": "Number of lines to include from each dependency log when include_dependency_logs is true.",
+			},
 			"tags": map[string]any{
 				"type":        "array",
 				"description": "Optional tags to associate with the task.",
@@ -127,14 +142,17 @@ func (t *MesnadaSpawnTool) Info() ToolInfo {
 
 func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
 	type spawnParams struct {
-		TaskID     string   `json:"task_id"`
-		Prompt     string   `json:"prompt"`
-		WorkDir    string   `json:"work_dir"`
-		Engine     string   `json:"engine"`
-		Model      string   `json:"model"`
-		Background *bool    `json:"background"`
-		Timeout    string   `json:"timeout"`
-		Tags       []string `json:"tags"`
+		TaskID                string   `json:"task_id"`
+		Prompt                string   `json:"prompt"`
+		WorkDir               string   `json:"work_dir"`
+		Engine                string   `json:"engine"`
+		Model                 string   `json:"model"`
+		Background            *bool    `json:"background"`
+		Timeout               string   `json:"timeout"`
+		Dependencies          []string `json:"dependencies"`
+		IncludeDependencyLogs bool     `json:"include_dependency_logs"`
+		DependencyLogLines    int      `json:"dependency_log_lines"`
+		Tags                  []string `json:"tags"`
 	}
 
 	var req spawnParams
@@ -187,13 +205,16 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 	logging.Debug("mesnada spawn called", "prompt_length", len(req.Prompt), "engine", req.Engine, "model", req.Model, "background", background)
 
 	task, err := t.orchestrator.Spawn(ctx, models.SpawnRequest{
-		Prompt:     req.Prompt,
-		WorkDir:    req.WorkDir,
-		Engine:     normalizeMesnadaEngine(req.Engine),
-		Model:      req.Model,
-		Background: background,
-		Timeout:    req.Timeout,
-		Tags:       req.Tags,
+		Prompt:                req.Prompt,
+		WorkDir:               req.WorkDir,
+		Engine:                normalizeMesnadaEngine(req.Engine),
+		Model:                 req.Model,
+		Background:            background,
+		Timeout:               req.Timeout,
+		Dependencies:          req.Dependencies,
+		IncludeDependencyLogs: req.IncludeDependencyLogs,
+		DependencyLogLines:    req.DependencyLogLines,
+		Tags:                  req.Tags,
 	})
 	if err != nil {
 		return NewTextErrorResponse(err.Error()), nil

@@ -132,7 +132,7 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 		"remembrances":  b.data.HasRemembrances,
 		"orchestration": b.data.HasOrchestration,
 		"web_search":    b.data.HasWebSearch,
-		"code_indexing":  b.data.HasCodeIndexing,
+		"code_indexing": b.data.HasCodeIndexing,
 		"lsp":           b.data.HasLSP,
 	}
 	for name, available := range capabilityMap {
@@ -174,6 +174,9 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 				Name:    "evaluator/learned_skills",
 				Content: skillsText.String(),
 			})
+			logging.Debug("Self-improvement learned skills injected", "count", len(learnedSkills), "agent", b.agentName)
+		} else if err != nil {
+			logging.Debug("Self-improvement learned skills unavailable", "agent", b.agentName, "error", err)
 		}
 	}
 
@@ -212,8 +215,13 @@ func (b *PromptBuilder) renderSection(ctx context.Context, name string) PromptSe
 			// Record which template was chosen so the evaluator can score it later.
 			if sessionID, ok := ctx.Value(SessionIDKey).(string); ok && sessionID != "" {
 				b.evaluator.RecordTemplateSelection(ctx, sessionID, tmpl.ID)
+				logging.Debug("Self-improvement template selected", "section", name, "template_id", tmpl.ID, "session_id", sessionID, "version", tmpl.Version)
+			} else {
+				logging.Debug("Self-improvement template selected without session context", "section", name, "template_id", tmpl.ID, "version", tmpl.Version)
 			}
 			return PromptSection{Name: name, Content: tmpl.Content}
+		} else if err != nil {
+			logging.Debug("Self-improvement template selection failed", "section", name, "error", err)
 		}
 	}
 

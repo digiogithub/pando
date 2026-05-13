@@ -31,7 +31,7 @@ export default function SimpleChatView() {
   })
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [sessionsOpen, setSessionsOpen] = useState(false)
+  const [sessionsOpen, setSessionsOpen] = useState(true)
 
   const activeSession = sessions.find((s) => s.id === activeSessionId)
 
@@ -302,50 +302,26 @@ export default function SimpleChatView() {
                 New session
               </button>
             )}
-            <div
-              style={{
-                flex: 1,
-                overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column',
-                maxWidth: 900,
-                width: '100%',
-                margin: '0 auto',
-                alignSelf: 'stretch',
-              }}
-            >
-              <MessageList messages={messages} streaming={streaming} streamingState={streamingState} />
-            </div>
+            <MessageList messages={messages} streaming={streaming} streamingState={streamingState} />
 
             {/* Error banner */}
             {error && (
               <div
                 style={{
-                  maxWidth: 900,
-                  width: '100%',
-                  margin: '0 auto',
-                  padding: '0 1rem',
+                  margin: '0 1rem 0.5rem',
+                  padding: '0.5rem 0.75rem',
+                  background: 'var(--error)',
+                  color: 'white',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: 13,
                 }}
               >
-                <div
-                  style={{
-                    marginBottom: '0.5rem',
-                    padding: '0.5rem 0.75rem',
-                    background: 'var(--error)',
-                    color: 'white',
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: 13,
-                  }}
-                >
-                  {error}
-                </div>
+                {error}
               </div>
             )}
 
             {/* Input */}
-            <div style={{ maxWidth: 900, width: '100%', margin: '0 auto', padding: '0 1rem' }}>
-              <ChatInput onSend={sendMessage} streaming={streaming} onCancel={cancelStreaming} />
-            </div>
+            <ChatInput onSend={sendMessage} streaming={streaming} onCancel={cancelStreaming} />
           </div>
         </div>
       </div>

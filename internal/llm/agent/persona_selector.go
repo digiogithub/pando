@@ -132,7 +132,7 @@ func NewPersonaSelector(personaPath string) (*PersonaSelector, error) {
 		return nil, fmt.Errorf("failed to load personas: %w", err)
 	}
 
-	selectorProvider, err := createAgentProvider(config.AgentPersonaSelector, nil, nil, nil)
+	selectorProvider, err := createAgentProvider(context.Background(), config.AgentPersonaSelector, nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("persona-selector agent not available: %w", err)
 	}

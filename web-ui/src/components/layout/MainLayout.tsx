@@ -137,15 +137,11 @@ export default function MainLayout() {
             top: 48px !important;
             left: 0 !important;
             bottom: 40px !important;
-            right: 0 !important;
             z-index: 100 !important;
-            width: 100% !important;
+            width: min(280px, 85vw) !important;
           }
           aside {
             width: 100% !important;
-          }
-          .main-content {
-            display: ${sidebarOpen ? 'none !important' : 'flex !important'};
           }
         }
       `}</style>
