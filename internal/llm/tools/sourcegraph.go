@@ -1,14 +1,18 @@
 package tools
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+
+	"github.com/digiogithub/pando/internal/config"
 )
 
 type SourcegraphParams struct {
@@ -29,7 +33,9 @@ type sourcegraphTool struct {
 
 const (
 	SourcegraphToolName        = "sourcegraph"
-	sourcegraphToolDescription = `Search code across public repositories using Sourcegraph's GraphQL API.
+	sourcegraphGraphQLURL      = "https://sourcegraph.com/.api/graphql"
+	sourcegraphStreamURL       = "https://sourcegraph.com/.api/search/stream"
+	sourcegraphToolDescription = `Search code across public repositories using Sourcegraph.
 
 WHEN TO USE THIS TOOL:
 - Use when you need to find code examples or implementations across public repositories
@@ -172,15 +178,16 @@ func (t *sourcegraphTool) Run(ctx context.Context, call ToolCall) (ToolResponse,
 	if params.Count <= 0 {
 		params.Count = 10
 	} else if params.Count > 20 {
-		params.Count = 20 // Limit to 20 results
+		params.Count = 20
 	}
 
 	if params.ContextWindow <= 0 {
-		params.ContextWindow = 10 // Default context window
+		params.ContextWindow = 10
 	}
+
 	client := t.client
 	if params.Timeout > 0 {
-		maxTimeout := 120 // 2 minutes
+		maxTimeout := 120
 		if params.Timeout > maxTimeout {
 			params.Timeout = maxTimeout
 		}
@@ -189,6 +196,20 @@ func (t *sourcegraphTool) Run(ctx context.Context, call ToolCall) (ToolResponse,
 		}
 	}
 
+	// Read token from config at call time (hot-reloadable).
+	token := ""
+	if cfg := config.Get(); cfg != nil {
+		token = strings.TrimSpace(cfg.InternalTools.SourcegraphToken)
+	}
+
+	if token != "" {
+		return t.runGraphQL(ctx, client, params, token)
+	}
+	return t.runStream(ctx, client, params)
+}
+
+// runGraphQL uses the authenticated GraphQL API.
+func (t *sourcegraphTool) runGraphQL(ctx context.Context, client *http.Client, params SourcegraphParams, token string) (ToolResponse, error) {
 	type graphqlRequest struct {
 		Query     string `json:"query"`
 		Variables struct {
@@ -205,20 +226,15 @@ func (t *sourcegraphTool) Run(ctx context.Context, call ToolCall) (ToolResponse,
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("failed to marshal GraphQL request: %w", err)
 	}
-	graphqlQuery := string(graphqlQueryBytes)
 
-	req, err := http.NewRequestWithContext(
-		ctx,
-		"POST",
-		"https://sourcegraph.com/.api/graphql",
-		bytes.NewBuffer([]byte(graphqlQuery)),
-	)
+	req, err := http.NewRequestWithContext(ctx, "POST", sourcegraphGraphQLURL, bytes.NewBuffer(graphqlQueryBytes))
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "pando/1.0")
+	req.Header.Set("Authorization", "token "+token)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -231,9 +247,9 @@ func (t *sourcegraphTool) Run(ctx context.Context, call ToolCall) (ToolResponse,
 		if len(body) > 0 {
 			return NewTextErrorResponse(fmt.Sprintf("Request failed with status code: %d, response: %s", resp.StatusCode, string(body))), nil
 		}
-
 		return NewTextErrorResponse(fmt.Sprintf("Request failed with status code: %d", resp.StatusCode)), nil
 	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("failed to read response body: %w", err)
@@ -250,6 +266,130 @@ func (t *sourcegraphTool) Run(ctx context.Context, call ToolCall) (ToolResponse,
 	}
 
 	return NewTextResponse(formattedResults), nil
+}
+
+// streamMatch represents a content match from the Sourcegraph streaming API.
+type streamMatch struct {
+	Type       string `json:"type"`
+	Path       string `json:"path"`
+	Repository string `json:"repository"`
+	// content matches
+	ChunkMatches []struct {
+		Content      string `json:"content"`
+		ContentStart struct {
+			Line int `json:"line"`
+		} `json:"contentStart"`
+	} `json:"chunkMatches"`
+	// symbol matches
+	Symbols []struct {
+		Name string `json:"name"`
+		Kind string `json:"kind"`
+	} `json:"symbols"`
+}
+
+// runStream uses the unauthenticated public streaming search API as fallback.
+func (t *sourcegraphTool) runStream(ctx context.Context, client *http.Client, params SourcegraphParams) (ToolResponse, error) {
+	u, err := url.Parse(sourcegraphStreamURL)
+	if err != nil {
+		return ToolResponse{}, fmt.Errorf("failed to build stream URL: %w", err)
+	}
+	q := u.Query()
+	q.Set("q", params.Query)
+	q.Set("display", fmt.Sprintf("%d", params.Count))
+	q.Set("v", "V2")
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return ToolResponse{}, fmt.Errorf("failed to create stream request: %w", err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("User-Agent", "pando/1.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return ToolResponse{}, fmt.Errorf("failed to fetch stream: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return NewTextErrorResponse(fmt.Sprintf("Stream request failed with status %d: %s", resp.StatusCode, string(body))), nil
+	}
+
+	var matches []streamMatch
+	scanner := bufio.NewScanner(resp.Body)
+
+	var eventType string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "event:") {
+			eventType = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+			continue
+		}
+		if strings.HasPrefix(line, "data:") {
+			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if eventType == "matches" && len(matches) < params.Count {
+				var batch []streamMatch
+				if err := json.Unmarshal([]byte(data), &batch); err == nil {
+					for _, m := range batch {
+						if len(matches) >= params.Count {
+							break
+						}
+						matches = append(matches, m)
+					}
+				}
+			}
+			if eventType == "done" {
+				break
+			}
+			eventType = ""
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return ToolResponse{}, fmt.Errorf("error reading stream: %w", err)
+	}
+
+	return NewTextResponse(formatStreamResults(matches, params.ContextWindow)), nil
+}
+
+func formatStreamResults(matches []streamMatch, contextWindow int) string {
+	var buf strings.Builder
+	buf.WriteString("# Sourcegraph Search Results (public API)\n\n")
+
+	if len(matches) == 0 {
+		buf.WriteString("No results found. Try a different query.\n")
+		return buf.String()
+	}
+
+	buf.WriteString(fmt.Sprintf("Found %d matches\n\n", len(matches)))
+
+	for i, m := range matches {
+		switch m.Type {
+		case "content":
+			buf.WriteString(fmt.Sprintf("## Result %d: %s/%s\n\n", i+1, m.Repository, m.Path))
+			for _, chunk := range m.ChunkMatches {
+				startLine := chunk.ContentStart.Line + 1
+				buf.WriteString(fmt.Sprintf("Line %d:\n", startLine))
+				buf.WriteString("```\n")
+				buf.WriteString(chunk.Content)
+				buf.WriteString("\n```\n\n")
+			}
+		case "path":
+			buf.WriteString(fmt.Sprintf("## Result %d: %s/%s\n\n", i+1, m.Repository, m.Path))
+		case "symbol":
+			buf.WriteString(fmt.Sprintf("## Result %d: %s/%s\n\n", i+1, m.Repository, m.Path))
+			for _, sym := range m.Symbols {
+				buf.WriteString(fmt.Sprintf("- `%s` (%s)\n", sym.Name, sym.Kind))
+			}
+			buf.WriteString("\n")
+		case "repo":
+			buf.WriteString(fmt.Sprintf("## Result %d: %s\n\n", i+1, m.Repository))
+		}
+	}
+
+	return buf.String()
 }
 
 func formatSourcegraphResults(result map[string]any, contextWindow int) (string, error) {

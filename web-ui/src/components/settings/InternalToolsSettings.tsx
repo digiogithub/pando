@@ -294,6 +294,21 @@ export default function InternalToolsSettings() {
           />
         </ToolCard>
 
+        {/* Sourcegraph */}
+        <ToolCard
+          title="Sourcegraph Code Search"
+          enabled={config.sourcegraphEnabled}
+          status={simpleStatus(config.sourcegraphEnabled)}
+          onToggle={(v) => updateField('sourcegraphEnabled', v)}
+        >
+          <MaskedInput
+            label="Access Token (optional — uses public API if empty)"
+            placeholder="sgp_…"
+            value={apiKeyValue('sourcegraphToken')}
+            onChange={handleApiKey('sourcegraphToken')}
+          />
+        </ToolCard>
+
         {/* Context7 */}
         <ToolCard
           title="Context7 (Library Docs)"

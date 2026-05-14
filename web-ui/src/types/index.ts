@@ -376,6 +376,9 @@ export interface ToolsConfig {
   exaSearchEnabled: boolean
   exaApiKey: string
 
+  sourcegraphEnabled: boolean
+  sourcegraphToken: string
+
   context7Enabled: boolean
 
   browserType: string

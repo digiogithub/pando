@@ -1763,6 +1763,19 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 			Masked: true,
 		},
 		{
+			Label: "Sourcegraph Enabled",
+			Key:   "internalTools.sourcegraphEnabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(it.SourcegraphEnabled),
+		},
+		{
+			Label:  "Sourcegraph Token (optional)",
+			Key:    "internalTools.sourcegraphToken",
+			Type:   settings.FieldText,
+			Value:  it.SourcegraphToken,
+			Masked: true,
+		},
+		{
 			Label: "Context7 Enabled",
 			Key:   "internalTools.context7Enabled",
 			Type:  settings.FieldToggle,
@@ -3080,6 +3093,14 @@ func saveInternalTools(field settings.Field) error {
 		itCfg.ExaSearchEnabled = enabled
 	case "internalTools.exaApiKey":
 		itCfg.ExaAPIKey = strings.TrimSpace(field.Value)
+	case "internalTools.sourcegraphEnabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Sourcegraph Enabled value: %w", err)
+		}
+		itCfg.SourcegraphEnabled = enabled
+	case "internalTools.sourcegraphToken":
+		itCfg.SourcegraphToken = strings.TrimSpace(field.Value)
 	case "internalTools.context7Enabled":
 		enabled, err := parseBoolValue(field.Value)
 		if err != nil {

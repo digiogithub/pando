@@ -484,6 +484,9 @@ type ToolsConfigResponse struct {
 	ExaSearchEnabled bool   `json:"exaSearchEnabled"`
 	ExaAPIKey        string `json:"exaApiKey"` // masked
 
+	SourcegraphEnabled bool   `json:"sourcegraphEnabled"`
+	SourcegraphToken   string `json:"sourcegraphToken"` // masked
+
 	Context7Enabled bool `json:"context7Enabled"`
 
 	BrowserType        string `json:"browserType"`
@@ -526,6 +529,8 @@ func (s *Server) handleGetConfigTools(w http.ResponseWriter, r *http.Request) {
 		PerplexityAPIKey:        maskAPIKey(t.PerplexityAPIKey),
 		ExaSearchEnabled:        t.ExaSearchEnabled,
 		ExaAPIKey:               maskAPIKey(t.ExaAPIKey),
+		SourcegraphEnabled:      t.SourcegraphEnabled,
+		SourcegraphToken:        maskAPIKey(t.SourcegraphToken),
 		Context7Enabled:         t.Context7Enabled,
 		BrowserType:             t.BrowserType,
 		BrowserExecutable:       t.BrowserExecutable,
@@ -573,6 +578,9 @@ func (s *Server) handlePutConfigTools(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ExaAPIKey == "" || strings.HasPrefix(req.ExaAPIKey, "••••") {
 		req.ExaAPIKey = existing.ExaAPIKey
+	}
+	if req.SourcegraphToken == "" || strings.HasPrefix(req.SourcegraphToken, "••••") {
+		req.SourcegraphToken = existing.SourcegraphToken
 	}
 	if strings.TrimSpace(req.BrowserType) == "" {
 		req.BrowserType = existing.BrowserType

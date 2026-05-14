@@ -345,6 +345,10 @@ type InternalToolsConfig struct {
 	ExaSearchEnabled bool   `json:"exaSearchEnabled,omitempty"`
 	ExaAPIKey        string `json:"exaApiKey,omitempty"`
 
+	// Sourcegraph code search (token optional — falls back to public API)
+	SourcegraphEnabled bool   `json:"sourcegraphEnabled,omitempty"`
+	SourcegraphToken   string `json:"sourcegraphToken,omitempty"`
+
 	// Context7 library docs (no API key required)
 	Context7Enabled bool `json:"context7Enabled,omitempty"`
 

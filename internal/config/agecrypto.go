@@ -285,6 +285,10 @@ func encryptSensitiveConfigFields(in *Config) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	out.InternalTools.SourcegraphToken, err = encryptSecretString(in.InternalTools.SourcegraphToken)
+	if err != nil {
+		return nil, err
+	}
 	// Encrypt provider API keys (legacy map)
 	if len(in.Providers) > 0 {
 		out.Providers = make(map[models.ModelProvider]Provider, len(in.Providers))
@@ -342,6 +346,10 @@ func decryptSensitiveConfigFields(in *Config) error {
 		return err
 	}
 	in.InternalTools.ExaAPIKey, err = decryptSecretString(in.InternalTools.ExaAPIKey)
+	if err != nil {
+		return err
+	}
+	in.InternalTools.SourcegraphToken, err = decryptSecretString(in.InternalTools.SourcegraphToken)
 	if err != nil {
 		return err
 	}

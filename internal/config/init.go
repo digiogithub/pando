@@ -358,7 +358,7 @@ DecayDays          = 30
 # Internal Tools
 # =============================================================================
 [InternalTools]
-FetchEnabled            = false
+FetchEnabled            = true
 FetchMaxSizeMB          = 0
 GoogleSearchEnabled     = false
 GoogleAPIKey            = ''
@@ -369,6 +369,8 @@ PerplexitySearchEnabled = false
 PerplexityAPIKey        = ''
 ExaSearchEnabled        = false
 ExaAPIKey               = ''
+SourcegraphEnabled      = false
+SourcegraphToken        = ''
 Context7Enabled         = false
 BrowserEnabled          = false
 BrowserType             = 'chrome'

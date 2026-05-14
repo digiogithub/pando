@@ -33,6 +33,9 @@ func CoderAgentTools(
 	cfg := config.Get()
 	if cfg != nil {
 		it := cfg.InternalTools
+		if it.FetchEnabled {
+			otherTools = append(otherTools, tools.NewFetchTool(permissions))
+		}
 		if it.GoogleSearchEnabled && strings.TrimSpace(it.GoogleAPIKey) != "" {
 			otherTools = append(otherTools, tools.NewGoogleSearchTool(permissions))
 		}
@@ -44,6 +47,9 @@ func CoderAgentTools(
 		}
 		if it.ExaSearchEnabled && strings.TrimSpace(it.ExaAPIKey) != "" {
 			otherTools = append(otherTools, tools.NewExaSearchTool(permissions))
+		}
+		if it.SourcegraphEnabled {
+			otherTools = append(otherTools, tools.NewSourcegraphTool())
 		}
 		if it.Context7Enabled {
 			otherTools = append(otherTools, tools.NewContext7Tools()...)
@@ -67,11 +73,9 @@ func CoderAgentTools(
 		[]tools.BaseTool{
 			tools.NewBashTool(permissions),
 			tools.NewEditTool(lspClients, permissions, history),
-			tools.NewFetchTool(permissions),
 			tools.NewGlobTool(),
 			tools.NewGrepTool(),
 			tools.NewLsTool(),
-			tools.NewSourcegraphTool(),
 			tools.NewViewTool(lspClients),
 			tools.NewCacheReadTool(),
 			tools.NewCacheStatsTool(),
@@ -104,11 +108,9 @@ func CoderAgentToolsWithMesnada(
 			[]tools.BaseTool{
 				tools.NewBashTool(permissions),
 				tools.NewEditTool(lspClients, permissions, history),
-				tools.NewFetchTool(permissions),
 				tools.NewGlobTool(),
 				tools.NewGrepTool(),
 				tools.NewLsTool(),
-				tools.NewSourcegraphTool(),
 				tools.NewViewTool(lspClients),
 				tools.NewCacheReadTool(),
 				tools.NewCacheStatsTool(),
@@ -140,6 +142,9 @@ func CoderAgentToolsWithMesnada(
 		cfg := config.Get()
 		if cfg != nil {
 			it := cfg.InternalTools
+			if it.FetchEnabled {
+				baseTools = append(baseTools, tools.NewFetchTool(permissions))
+			}
 			if it.GoogleSearchEnabled && strings.TrimSpace(it.GoogleAPIKey) != "" {
 				baseTools = append(baseTools, tools.NewGoogleSearchTool(permissions))
 			}
@@ -148,6 +153,12 @@ func CoderAgentToolsWithMesnada(
 			}
 			if it.PerplexitySearchEnabled && strings.TrimSpace(it.PerplexityAPIKey) != "" {
 				baseTools = append(baseTools, tools.NewPerplexitySearchTool(permissions))
+			}
+			if it.ExaSearchEnabled && strings.TrimSpace(it.ExaAPIKey) != "" {
+				baseTools = append(baseTools, tools.NewExaSearchTool(permissions))
+			}
+			if it.SourcegraphEnabled {
+				baseTools = append(baseTools, tools.NewSourcegraphTool())
 			}
 			if it.Context7Enabled {
 				baseTools = append(baseTools, tools.NewContext7Tools()...)
@@ -204,12 +215,15 @@ func CoderAgentToolsWithMesnada(
 }
 
 func TaskAgentTools(lspClients map[string]*lsp.Client) []tools.BaseTool {
-	return []tools.BaseTool{
+	base := []tools.BaseTool{
 		tools.NewGlobTool(),
 		tools.NewGrepTool(),
 		tools.NewLsTool(),
-		tools.NewSourcegraphTool(),
 		tools.NewViewTool(lspClients),
 		tools.NewCacheReadTool(),
 	}
+	if cfg := config.Get(); cfg != nil && cfg.InternalTools.SourcegraphEnabled {
+		base = append(base, tools.NewSourcegraphTool())
+	}
+	return base
 }

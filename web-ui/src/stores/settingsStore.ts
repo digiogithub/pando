@@ -246,6 +246,8 @@ const TOOLS_DEFAULTS: ToolsConfig = {
   perplexityApiKey: '',
   exaSearchEnabled: false,
   exaApiKey: '',
+  sourcegraphEnabled: false,
+  sourcegraphToken: '',
   context7Enabled: false,
   browserType: 'chrome',
   browserExecutable: '',
