@@ -389,22 +389,6 @@ ExcludePatterns  = []
 AutoCleanupDays  = 30
 
 # =============================================================================
-# Evaluator
-# =============================================================================
-[evaluator]
-enabled              = true
-model                = ''
-provider             = ''
-alphaWeight          = 0.8
-betaWeight           = 0.2
-explorationC         = 1.41
-minSessionsForUCB    = 5
-maxTokensBaseline    = 50
-maxSkills            = 100
-async                = true
-judgePromptTemplate  = ''
-
-# =============================================================================
 # CLI Assist
 # =============================================================================
 [cliAssist]

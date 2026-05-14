@@ -197,7 +197,7 @@ HotReload = false
 LogFilteredData = false
 
 [MCPGateway]
-Enabled = true
+Enabled = false
 FavoriteThreshold = 3
 MaxFavorites = 10
 FavoriteWindowDays = 7

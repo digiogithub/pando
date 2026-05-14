@@ -3370,16 +3370,59 @@ func EvaluatorWithDefaults(eval EvaluatorConfig) EvaluatorConfig {
 	return eval
 }
 
+func normalizeEvaluatorConfig(eval EvaluatorConfig) (EvaluatorConfig, error) {
+	eval = EvaluatorWithDefaults(eval)
+	eval.Model = models.NormalizeModelID(string(eval.Model))
+	eval.Provider = strings.TrimSpace(eval.Provider)
+
+	if eval.Model == "" {
+		if eval.Enabled {
+			return EvaluatorConfig{}, fmt.Errorf("evaluator.model is required when evaluator is enabled")
+		}
+		eval.Provider = ""
+		return eval, nil
+	}
+
+	model, ok := models.SupportedModels[eval.Model]
+	if !ok {
+		return EvaluatorConfig{}, fmt.Errorf("unsupported evaluator.model %q", eval.Model)
+	}
+
+	expectedProvider := string(model.Provider)
+	if eval.Provider == "" {
+		eval.Provider = expectedProvider
+	} else if eval.Provider != expectedProvider {
+		return EvaluatorConfig{}, fmt.Errorf("evaluator.provider must match model provider %q", expectedProvider)
+	}
+
+	return eval, nil
+}
+
 func UpdateEvaluator(eval EvaluatorConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")
 	}
 
+	normalized, err := normalizeEvaluatorConfig(eval)
+	if err != nil {
+		return err
+	}
+
 	oldEval := cfg.Evaluator
-	cfg.Evaluator = eval
+	cfg.Evaluator = normalized
+
+	configFile, err := ResolveConfigFilePath()
+	if err != nil {
+		cfg.Evaluator = oldEval
+		return err
+	}
+	persistEmptyEvaluator := configFileFormat(configFile) != "toml"
 
 	if err := updateCfgFile(func(config *Config) {
-		config.Evaluator = eval
+		config.Evaluator = normalized
+		if !persistEmptyEvaluator && !normalized.Enabled && normalized.Model == "" {
+			config.Evaluator = EvaluatorConfig{}
+		}
 	}); err != nil {
 		cfg.Evaluator = oldEval
 		return err
