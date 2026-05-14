@@ -485,6 +485,24 @@ func TestProviderOpenAICompatibleExists(t *testing.T) {
 	}
 }
 
+func TestProviderAntigravityExists(t *testing.T) {
+	if models.ProviderAntigravity != "antigravity" {
+		t.Fatalf("expected ProviderAntigravity = 'antigravity', got %q", models.ProviderAntigravity)
+	}
+}
+
+func TestProviderAccountRequiresAPIKeyAntigravity(t *testing.T) {
+	if providerAccountRequiresAPIKey(models.ProviderAntigravity) {
+		t.Fatal("expected antigravity provider accounts not to require an API key")
+	}
+}
+
+func TestProviderRequiresAPIKeyAntigravity(t *testing.T) {
+	if providerRequiresAPIKey(models.ProviderAntigravity) {
+		t.Fatal("expected antigravity provider not to require an API key")
+	}
+}
+
 func TestLLMCacheConfigDefault(t *testing.T) {
 	// Test that LLMCacheConfig has correct zero value behavior.
 	// Zero value of bool is false, so without initialization it should be false.

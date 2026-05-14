@@ -12,9 +12,14 @@ import (
 	"github.com/digiogithub/pando/internal/ipc"
 )
 
+// BusRegistrar is the minimal interface needed to register dbproxy RPC methods.
+type BusRegistrar interface {
+	RegisterMethod(method string, handler ipc.HandlerFunc)
+}
+
 // RegisterHandlers registers the db.write JSON-RPC handler on the given bus.
 // Only the primary instance should call this.
-func RegisterHandlers(bus *ipc.Bus, q db.Querier) {
+func RegisterHandlers(bus BusRegistrar, q db.Querier) {
 	bus.RegisterMethod(MethodDBWrite, func(ctx context.Context, _ string, params json.RawMessage) (json.RawMessage, error) {
 		var req WriteRequest
 		if err := json.Unmarshal(params, &req); err != nil {

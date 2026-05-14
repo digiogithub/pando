@@ -310,6 +310,14 @@ func encryptSensitiveConfigFields(in *Config) (*Config, error) {
 			if err != nil {
 				return nil, fmt.Errorf("encrypt providerAccount %s APIKey: %w", acc.ID, err)
 			}
+			out.ProviderAccounts[i].OAuthRefreshToken, err = encryptSecretString(acc.OAuthRefreshToken)
+			if err != nil {
+				return nil, fmt.Errorf("encrypt providerAccount %s OAuthRefreshToken: %w", acc.ID, err)
+			}
+			out.ProviderAccounts[i].OAuthAccessToken, err = encryptSecretString(acc.OAuthAccessToken)
+			if err != nil {
+				return nil, fmt.Errorf("encrypt providerAccount %s OAuthAccessToken: %w", acc.ID, err)
+			}
 		}
 	}
 	// Encrypt remembrances embedding API keys
@@ -369,6 +377,16 @@ func decryptSensitiveConfigFields(in *Config) error {
 			return fmt.Errorf("decrypt providerAccount %s APIKey: %w", acc.ID, err)
 		}
 		in.ProviderAccounts[i].APIKey = decrypted
+		decrypted, err = decryptSecretString(acc.OAuthRefreshToken)
+		if err != nil {
+			return fmt.Errorf("decrypt providerAccount %s OAuthRefreshToken: %w", acc.ID, err)
+		}
+		in.ProviderAccounts[i].OAuthRefreshToken = decrypted
+		decrypted, err = decryptSecretString(acc.OAuthAccessToken)
+		if err != nil {
+			return fmt.Errorf("decrypt providerAccount %s OAuthAccessToken: %w", acc.ID, err)
+		}
+		in.ProviderAccounts[i].OAuthAccessToken = decrypted
 	}
 	// Decrypt remembrances embedding API keys
 	in.Remembrances.DocumentEmbeddingAPIKey, err = decryptSecretString(in.Remembrances.DocumentEmbeddingAPIKey)

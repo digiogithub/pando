@@ -16,6 +16,7 @@ import (
 	"github.com/digiogithub/pando/internal/instanceregistry"
 	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/bridge"
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/tlsutil"
 	"github.com/digiogithub/pando/internal/version"
@@ -145,10 +146,11 @@ This is the backend for the Pando Desktop/Web UI.`,
 
 		pandoApp := server.PandoApp()
 		serveBus := ipc.NewBus(instanceID)
+		dbproxy.RegisterHandlers(serveBus, db.New(conn))
+		bridge.RegisterHandlers(serveBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
 		if busErr := serveBus.Start(ctx, pubPort, rpcPort); busErr != nil {
 			logging.Warn("IPC: serve mode failed to start bus", "error", busErr)
 		} else {
-			bridge.RegisterHandlers(serveBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
 			serveBridge := bridge.New(serveBus, pandoApp.Sessions, pandoApp.CoderAgent)
 			serveBridge.Start(ctx)
 			defer func() { _ = serveBus.Shutdown() }()

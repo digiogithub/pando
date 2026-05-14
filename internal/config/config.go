@@ -536,14 +536,19 @@ type ContainerConfig struct {
 // It allows multiple accounts of the same provider type (e.g., two Anthropic API keys).
 // The ID field is a unique slug used to identify the account (e.g., "anthropic-work").
 type ProviderAccount struct {
-	ID           string               `json:"id" toml:"id"`
-	DisplayName  string               `json:"displayName,omitempty" toml:"displayName,omitempty"`
-	Type         models.ModelProvider `json:"type" toml:"type"`
-	APIKey       string               `json:"apiKey,omitempty" toml:"apiKey,omitempty"`
-	BaseURL      string               `json:"baseUrl,omitempty" toml:"baseUrl,omitempty"`
-	ExtraHeaders map[string]string    `json:"extraHeaders,omitempty" toml:"extraHeaders,omitempty"`
-	Disabled     bool                 `json:"disabled,omitempty" toml:"disabled,omitempty"`
-	UseOAuth     bool                 `json:"useOAuth,omitempty" toml:"useOAuth,omitempty"`
+	ID                string               `json:"id" toml:"id"`
+	DisplayName       string               `json:"displayName,omitempty" toml:"displayName,omitempty"`
+	Type              models.ModelProvider `json:"type" toml:"type"`
+	APIKey            string               `json:"apiKey,omitempty" toml:"apiKey,omitempty"`
+	OAuthRefreshToken string               `json:"oauthRefreshToken,omitempty" toml:"oauthRefreshToken,omitempty"`
+	OAuthAccessToken  string               `json:"oauthAccessToken,omitempty" toml:"oauthAccessToken,omitempty"`
+	OAuthExpiry       int64                `json:"oauthExpiry,omitempty" toml:"oauthExpiry,omitempty"`
+	ProjectID         string               `json:"projectId,omitempty" toml:"projectId,omitempty"`
+	Email             string               `json:"email,omitempty" toml:"email,omitempty"`
+	BaseURL           string               `json:"baseUrl,omitempty" toml:"baseUrl,omitempty"`
+	ExtraHeaders      map[string]string    `json:"extraHeaders,omitempty" toml:"extraHeaders,omitempty"`
+	Disabled          bool                 `json:"disabled,omitempty" toml:"disabled,omitempty"`
+	UseOAuth          bool                 `json:"useOAuth,omitempty" toml:"useOAuth,omitempty"`
 }
 
 // Config is the main configuration structure for the application.
@@ -1922,7 +1927,7 @@ func SetProviderAccountDisabled(id string, disabled bool) error {
 // providerAccountRequiresAPIKey returns true if the given provider type requires an API key.
 func providerAccountRequiresAPIKey(providerType models.ModelProvider) bool {
 	switch providerType {
-	case models.ProviderCopilot, models.ProviderOllama, models.ProviderLlamaCpp:
+	case models.ProviderAntigravity, models.ProviderCopilot, models.ProviderOllama, models.ProviderLlamaCpp:
 		return false
 	default:
 		return true
@@ -2796,7 +2801,7 @@ func UpdateProvider(name models.ModelProvider, apiKey string, baseURL string, di
 }
 
 func providerRequiresAPIKey(provider models.ModelProvider) bool {
-	return provider != models.ProviderCopilot && provider != models.ProviderOllama && provider != models.ProviderLlamaCpp
+	return provider != models.ProviderAntigravity && provider != models.ProviderCopilot && provider != models.ProviderOllama && provider != models.ProviderLlamaCpp
 }
 
 func refreshConfiguredDynamicModels() {

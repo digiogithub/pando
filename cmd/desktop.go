@@ -18,6 +18,7 @@ import (
 	"github.com/digiogithub/pando/internal/instanceregistry"
 	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/bridge"
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/version"
 	"github.com/google/uuid"
@@ -147,10 +148,11 @@ func runDesktopMode(cmd *cobra.Command) error {
 
 	pandoApp := server.PandoApp()
 	desktopBus := ipc.NewBus(instanceID)
+	dbproxy.RegisterHandlers(desktopBus, db.New(conn))
+	bridge.RegisterHandlers(desktopBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
 	if busErr := desktopBus.Start(ctx, pubPort, rpcPort); busErr != nil {
 		logging.Warn("IPC: desktop mode failed to start bus", "error", busErr)
 	} else {
-		bridge.RegisterHandlers(desktopBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
 		desktopBridge := bridge.New(desktopBus, pandoApp.Sessions, pandoApp.CoderAgent)
 		desktopBridge.Start(ctx)
 		defer func() { _ = desktopBus.Shutdown() }()

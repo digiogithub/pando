@@ -262,12 +262,12 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		// Primary: start IPC bus, register handlers, start bridge.
 		if isPrimary && lockErr == nil {
 			bus := ipc.NewBus(instanceID)
+			dbproxy.RegisterHandlers(bus, db.New(conn))
+			bridge.RegisterHandlers(bus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+			pandoApp.SetupIPC(bus)
 			if busErr := bus.Start(ctx, pubPort, rpcPort); busErr != nil {
 				logging.Warn("IPC: failed to start bus, continuing without IPC", "error", busErr)
 			} else {
-				dbproxy.RegisterHandlers(bus, db.New(conn))
-				bridge.RegisterHandlers(bus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
-				pandoApp.SetupIPC(bus)
 				br := bridge.New(bus, pandoApp.Sessions, pandoApp.CoderAgent)
 				br.Start(ctx)
 			}

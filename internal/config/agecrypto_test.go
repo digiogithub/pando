@@ -22,6 +22,17 @@ func TestEncryptDecryptSensitiveConfigFields(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	cfg := &Config{
+		ProviderAccounts: []ProviderAccount{
+			{
+				ID:                "antigravity-work",
+				Type:              models.ProviderAntigravity,
+				OAuthRefreshToken: "refresh-secret",
+				OAuthAccessToken:  "access-secret",
+				OAuthExpiry:       1735689600,
+				ProjectID:         "project-123",
+				Email:             "dev@example.com",
+			},
+		},
 		MCPServers: map[string]MCPServer{
 			"demo": {
 				Env:     []string{"TOKEN=plain-token", "DEBUG=true"},
@@ -67,6 +78,12 @@ func TestEncryptDecryptSensitiveConfigFields(t *testing.T) {
 	if !strings.HasPrefix(encrypted.Providers[models.ProviderOpenAI].APIKey, encryptedValuePrefix) {
 		t.Fatal("openai provider API key was not encrypted")
 	}
+	if !strings.HasPrefix(encrypted.ProviderAccounts[0].OAuthRefreshToken, encryptedValuePrefix) {
+		t.Fatal("provider account OAuth refresh token was not encrypted")
+	}
+	if !strings.HasPrefix(encrypted.ProviderAccounts[0].OAuthAccessToken, encryptedValuePrefix) {
+		t.Fatal("provider account OAuth access token was not encrypted")
+	}
 	if !strings.HasPrefix(encrypted.Remembrances.DocumentEmbeddingAPIKey, encryptedValuePrefix) {
 		t.Fatal("document embedding API key was not encrypted")
 	}
@@ -94,6 +111,18 @@ func TestEncryptDecryptSensitiveConfigFields(t *testing.T) {
 	}
 	if encrypted.Providers[models.ProviderOpenAI].APIKey != "openai-secret" {
 		t.Fatal("openai provider API key was not restored after decryption")
+	}
+	if encrypted.ProviderAccounts[0].OAuthRefreshToken != "refresh-secret" {
+		t.Fatal("provider account OAuth refresh token was not restored after decryption")
+	}
+	if encrypted.ProviderAccounts[0].OAuthAccessToken != "access-secret" {
+		t.Fatal("provider account OAuth access token was not restored after decryption")
+	}
+	if encrypted.ProviderAccounts[0].ProjectID != "project-123" {
+		t.Fatal("provider account project ID should remain unchanged")
+	}
+	if encrypted.ProviderAccounts[0].Email != "dev@example.com" {
+		t.Fatal("provider account email should remain unchanged")
 	}
 	if encrypted.Remembrances.DocumentEmbeddingAPIKey != "doc-embed-secret" {
 		t.Fatal("document embedding API key was not restored after decryption")

@@ -24,6 +24,7 @@ type ProviderTypeInfo struct {
 
 var providerTypes = []ProviderTypeInfo{
 	{Type: "anthropic", DisplayName: "Anthropic", RequiresAPIKey: true, RequiresBaseURL: false, SupportsOAuth: false, SupportsExtraHeaders: true},
+	{Type: "antigravity", DisplayName: "Antigravity", RequiresAPIKey: false, RequiresBaseURL: false, SupportsOAuth: true, SupportsExtraHeaders: false},
 	{Type: "openai", DisplayName: "OpenAI", RequiresAPIKey: true, RequiresBaseURL: false, SupportsOAuth: false, SupportsExtraHeaders: true},
 	{Type: "openai-compatible", DisplayName: "OpenAI Compatible", RequiresAPIKey: true, RequiresBaseURL: true, SupportsOAuth: false, SupportsExtraHeaders: true},
 	{Type: "ollama", DisplayName: "Ollama", RequiresAPIKey: false, RequiresBaseURL: true, SupportsOAuth: false, SupportsExtraHeaders: false},
@@ -198,4 +199,3 @@ func (s *Server) handleTestProviderAccount(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleListProviderTypes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"providerTypes": providerTypes})
 }
-

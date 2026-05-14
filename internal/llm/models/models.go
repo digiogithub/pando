@@ -50,18 +50,19 @@ const (
 
 // Providers in order of popularity
 var ProviderPopularity = map[ModelProvider]int{
-	ProviderCopilot:    1,
-	ProviderAnthropic:  2,
-	ProviderOpenAI:     3,
-	ProviderOllama:     4,
-	ProviderLlamaCpp:   5,
-	ProviderGemini:     6,
-	ProviderGROQ:       7,
-	ProviderOpenRouter: 8,
-	ProviderBedrock:          9,
-	ProviderAzure:            10,
-	ProviderVertexAI:         11,
-	ProviderOpenAICompatible: 12,
+	ProviderCopilot:          1,
+	ProviderAnthropic:        2,
+	ProviderOpenAI:           3,
+	ProviderAntigravity:      4,
+	ProviderOllama:           5,
+	ProviderLlamaCpp:         6,
+	ProviderGemini:           7,
+	ProviderGROQ:             8,
+	ProviderOpenRouter:       9,
+	ProviderBedrock:          10,
+	ProviderAzure:            11,
+	ProviderVertexAI:         12,
+	ProviderOpenAICompatible: 13,
 }
 
 var SupportedModels = map[ModelID]Model{

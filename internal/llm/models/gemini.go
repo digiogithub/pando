@@ -1,14 +1,15 @@
 package models
 
 const (
-	ProviderGemini ModelProvider = "gemini"
+	ProviderAntigravity ModelProvider = "antigravity"
+	ProviderGemini      ModelProvider = "gemini"
 
 	// Gemini 3 preview models (require preview access)
-	Gemini31ProPreview           ModelID = "gemini.gemini-3.1-pro-preview-customtools"
-	Gemini31ProPreviewBase       ModelID = "gemini.gemini-3.1-pro-preview"
-	Gemini31FlashLitePreview     ModelID = "gemini.gemini-3.1-flash-lite-preview"
-	Gemini30ProPreview           ModelID = "gemini.gemini-3-pro-preview"
-	Gemini30Flash                ModelID = "gemini.gemini-3-flash-preview"
+	Gemini31ProPreview       ModelID = "gemini.gemini-3.1-pro-preview-customtools"
+	Gemini31ProPreviewBase   ModelID = "gemini.gemini-3.1-pro-preview"
+	Gemini31FlashLitePreview ModelID = "gemini.gemini-3.1-flash-lite-preview"
+	Gemini30ProPreview       ModelID = "gemini.gemini-3-pro-preview"
+	Gemini30Flash            ModelID = "gemini.gemini-3-flash-preview"
 	// Gemini30Flash legacy alias – config files using "gemini.gemini-3-flash" still resolve.
 	Gemini30FlashLegacy ModelID = "gemini.gemini-3-flash"
 
