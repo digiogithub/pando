@@ -443,11 +443,8 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			app.Remembrances,
 			app.MCPGateway,
 			app.Permissions,
-			app.Sessions,
-			app.Messages,
 			app.History,
 			app.LSPClients,
-			app.SkillManager,
 		),
 		app.SkillManager,
 	)

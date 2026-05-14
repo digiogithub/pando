@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/rag/embeddings"
@@ -246,6 +248,30 @@ func (s *EventStore) searchVector(ctx context.Context, embedding []float32, limi
 	return results, nil
 }
 
+// validFTSColumns are the column names defined in the events_fts virtual table.
+var validFTSColumns = map[string]bool{
+	"subject": true,
+	"content": true,
+}
+
+// ftsColumnFilter matches FTS5 column-filter syntax: word: or word:"phrase"
+var ftsColumnFilter = regexp.MustCompile(`(?i)\b(\w+):`)
+
+// sanitizeFTSQuery removes column-filter prefixes for columns that don't exist in
+// events_fts. FTS5 interprets "col:term" as a column filter; if "col" is not a
+// valid column SQLite returns "no such column: col".
+func sanitizeFTSQuery(query string) string {
+	return ftsColumnFilter.ReplaceAllStringFunc(query, func(match string) string {
+		col := strings.ToLower(strings.TrimSuffix(match, ":"))
+		if validFTSColumns[col] {
+			return match
+		}
+		// Replace invalid column prefix with the word followed by a space so the
+		// term is still searched as plain text.
+		return strings.TrimSuffix(match, ":") + " "
+	})
+}
+
 // searchFTS performs full-text search with temporal and subject filters.
 func (s *EventStore) searchFTS(ctx context.Context, query string, limit int, timeFilter string, timeArgs []interface{}, subject string) ([]SearchResult, error) {
 	q := `
@@ -254,7 +280,7 @@ func (s *EventStore) searchFTS(ctx context.Context, query string, limit int, tim
 		FROM events_fts
 		JOIN events e ON e.id = events_fts.rowid
 		WHERE events_fts MATCH ?`
-	args := []interface{}{query}
+	args := []interface{}{sanitizeFTSQuery(query)}
 
 	if timeFilter != "" {
 		q += timeFilter

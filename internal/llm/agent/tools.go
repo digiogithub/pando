@@ -10,20 +10,14 @@ import (
 	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/mcpgateway"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
-	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/rag"
-	"github.com/digiogithub/pando/internal/session"
-	"github.com/digiogithub/pando/internal/skills"
 )
 
 func CoderAgentTools(
 	permissions permission.Service,
-	sessions session.Service,
-	messages message.Service,
 	history history.Service,
 	lspClients map[string]*lsp.Client,
-	skillManager *skills.SkillManager,
 ) []tools.BaseTool {
 	ctx := context.Background()
 	otherTools := GetMcpTools(ctx, permissions)
@@ -82,7 +76,6 @@ func CoderAgentTools(
 			tools.NewPatchTool(lspClients, permissions, history),
 			tools.NewWriteTool(lspClients, permissions, history),
 			tools.NewTodoWriteTool(),
-			NewAgentTool(sessions, messages, lspClients, skillManager),
 		}, otherTools...,
 	)
 }
@@ -92,11 +85,8 @@ func CoderAgentToolsWithMesnada(
 	remembrances *rag.RemembrancesService,
 	gateway *mcpgateway.Gateway,
 	permissions permission.Service,
-	sessions session.Service,
-	messages message.Service,
 	history history.Service,
 	lspClients map[string]*lsp.Client,
-	skillManager *skills.SkillManager,
 ) []tools.BaseTool {
 	ctx := context.Background()
 
@@ -117,7 +107,6 @@ func CoderAgentToolsWithMesnada(
 				tools.NewPatchTool(lspClients, permissions, history),
 				tools.NewWriteTool(lspClients, permissions, history),
 				tools.NewTodoWriteTool(),
-				NewAgentTool(sessions, messages, lspClients, skillManager),
 			},
 			gatewayTools...,
 		)
@@ -129,11 +118,8 @@ func CoderAgentToolsWithMesnada(
 		// (Google/Brave/Perplexity/Context7/Browser), so we skip adding them again below.
 		baseTools = CoderAgentTools(
 			permissions,
-			sessions,
-			messages,
 			history,
 			lspClients,
-			skillManager,
 		)
 	}
 	// Only add internal tools when using the gateway path; CoderAgentTools already

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/pkg/mesnada/models"
@@ -82,7 +83,7 @@ func NewMesnadaGetOutputTool(orch *orchestrator.Orchestrator) BaseTool {
 func (t *MesnadaSpawnTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        mesnadaSpawnToolName,
-		Description: "Creates and executes a new Mesnada orchestrator task, or relaunches an existing task in-place. When task_id is provided the task is reset and re-executed preserving its ID so dependent tasks are automatically unblocked.",
+		Description: "Creates and executes a new Mesnada orchestrator task, or relaunches an existing task in-place. When task_id is provided the task is reset and re-executed preserving its ID so dependent tasks are automatically unblocked.\n\nSimplest usage — provide only 'prompt': the task runs with engine=pando using the currently active coder model, in background (fire-and-forget). No need to specify engine, model, or background unless you want to override the defaults.",
 		Parameters: map[string]any{
 			"task_id": map[string]any{
 				"type":        "string",
@@ -163,6 +164,15 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 	background := true
 	if req.Background != nil {
 		background = *req.Background
+	}
+
+	// When neither engine nor model are specified, default to pando engine with
+	// the currently active coder model so a prompt-only call just works.
+	if req.Engine == "" && req.Model == "" {
+		req.Engine = string(models.EnginePando)
+		if cfg := config.Get(); cfg != nil {
+			req.Model = string(cfg.Agents[config.AgentCoder].Model)
+		}
 	}
 
 	// Relaunch an existing task in-place when task_id is provided.
