@@ -1010,7 +1010,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("lua.strict_mode", false)
 
 	// Snapshots defaults
-	viper.SetDefault("snapshots.enabled", true)
+	viper.SetDefault("snapshots.enabled", false)
 	viper.SetDefault("snapshots.maxSnapshots", 100)
 	viper.SetDefault("snapshots.maxFileSize", "10MB")
 	viper.SetDefault("snapshots.excludePatterns", []string{"node_modules/", ".git/", "vendor/", "*.log", "*.tmp"})

@@ -384,7 +384,7 @@ BrowserMaxSessions      = 3
 # Snapshots
 # =============================================================================
 [Snapshots]
-Enabled          = true
+Enabled          = false
 MaxSnapshots     = 50
 MaxFileSize      = '10MB'
 ExcludePatterns  = []
