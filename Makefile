@@ -45,7 +45,7 @@ else
 WAILS_TAGS := $(shell pkg-config --exists webkit2gtk-4.0 2>/dev/null && echo "" || echo "webkit2_41")
 endif
 
-.PHONY: desktop-deps desktop-ui desktop-build desktop-dev desktop-package desktop-embed desktop-clean build web-ui-embedded dist-clean release release-linux-amd64 release-linux-arm64 release-windows-amd64 release-darwin-amd64 release-darwin-arm64 help
+.PHONY: desktop-deps desktop-ui desktop-build desktop-dev desktop-package desktop-embed desktop-clean build build-fast web-ui-embedded dist-clean release release-linux-amd64 release-linux-arm64 release-windows-amd64 release-darwin-amd64 release-darwin-arm64 test-integration help
 
 ## Install the Wails CLI (run once)
 desktop-deps:
@@ -62,6 +62,14 @@ web-ui-embedded:
 ## Build local CLI binary with embedded web-ui and release version from git tag
 build: web-ui-embedded
 	go build -ldflags '$(LDFLAGS)' -o pando .
+
+## Build local CLI binary without rebuilding web-ui (fast iteration)
+build-fast:
+	go build -o pando .
+
+## Run multi-process single-writer integration tests (requires compiled binary)
+test-integration: build-fast
+	PANDO_BINARY=./pando go test -tags=integration ./test/integration/single_writer/... -v -timeout 180s
 
 ## Full desktop build: compile pando-desktop Wails binary (requires wails CLI)
 desktop-build:

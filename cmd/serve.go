@@ -12,11 +12,12 @@ import (
 
 	"github.com/digiogithub/pando/internal/api"
 	"github.com/digiogithub/pando/internal/config"
-	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/instanceregistry"
-	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/bridge"
+	"github.com/digiogithub/pando/internal/ipc/changepub"
 	"github.com/digiogithub/pando/internal/ipc/dbproxy"
+	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
+	"github.com/digiogithub/pando/internal/ipc/writecoordinator"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/tlsutil"
 	"github.com/digiogithub/pando/internal/version"
@@ -82,10 +83,18 @@ This is the backend for the Pando Desktop/Web UI.`,
 		}
 		logging.Debug("Config loaded", "workingDir", cwd)
 
-		conn, err := db.Connect()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
+		instanceID := uuid.New().String()
+		rt, err := ipcruntime.Bootstrap(ctx, cwd, instanceID)
 		if err != nil {
-			return err
+			return fmt.Errorf("IPC bootstrap failed: %w", err)
 		}
+		defer rt.Cleanup()
+
+		conn := rt.SQLDB
 		logging.Debug("Database connected")
 
 		// Resolve TLS certificate: use provided files or auto-generate.
@@ -103,58 +112,56 @@ This is the backend for the Pando Desktop/Web UI.`,
 			logging.Debug("Using auto-generated TLS certificate", "cert", tlsCert)
 		}
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
 		scheme := "https"
 		baseURL := fmt.Sprintf("%s://%s:%d", scheme, host, port)
-		cfg := api.ServerConfig{
+		server, err := api.NewServer(ctx, api.ServerConfig{
 			Host:        host,
 			Port:        port,
 			Version:     version.Version,
 			DB:          conn,
+			Querier:     rt.Querier,
 			CWD:         cwd,
 			UIBaseURL:   baseURL,
 			TLSCertFile: tlsCert,
 			TLSKeyFile:  tlsKey,
-		}
-
-		server, err := api.NewServer(ctx, cfg)
+			InstanceID:  instanceID,
+			Role:        string(rt.Role),
+			PubPort:     rt.PubPort,
+			RPCPort:     rt.RPCPort,
+		})
 		if err != nil {
 			return fmt.Errorf("failed to create API server: %w", err)
 		}
 
-		// --- IPC: announce this serve instance so other Pando instances can discover it.
-		// Use free ports to avoid collision with a TUI instance on the same path.
-		instanceID := uuid.New().String()
-		pubPort, rpcPort, freeErr := ipc.FindFreePorts()
-		if freeErr != nil {
-			// Fall back to path-derived ports; bus.Start will log the error if they're taken.
-			pubPort, rpcPort = ipc.PortsForPath(cwd)
-		}
 		_ = instanceregistry.Announce(&instanceregistry.Entry{
 			InstanceID: instanceID,
 			Path:       cwd,
 			PID:        os.Getpid(),
-			PubPort:    pubPort,
-			RPCPort:    rpcPort,
+			PubPort:    rt.PubPort,
+			RPCPort:    rt.RPCPort,
 			StartedAt:  time.Now(),
 			Mode:       instanceregistry.ModeWebUI,
-			IsPrimary:  false,
+			IsPrimary:  rt.Role == ipcruntime.RolePrimary,
 		})
 		defer func() { _ = instanceregistry.Revoke(instanceID) }()
 
-		pandoApp := server.PandoApp()
-		serveBus := ipc.NewBus(instanceID)
-		dbproxy.RegisterHandlers(serveBus, db.New(conn))
-		bridge.RegisterHandlers(serveBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
-		if busErr := serveBus.Start(ctx, pubPort, rpcPort); busErr != nil {
-			logging.Warn("IPC: serve mode failed to start bus", "error", busErr)
-		} else {
-			serveBridge := bridge.New(serveBus, pandoApp.Sessions, pandoApp.CoderAgent)
-			serveBridge.Start(ctx)
-			defer func() { _ = serveBus.Shutdown() }()
-			logging.Debug("IPC: serve mode announced", "instanceID", instanceID, "pubPort", pubPort, "rpcPort", rpcPort)
+		// Start IPC bus and register handlers only on the primary instance.
+		if rt.Role == ipcruntime.RolePrimary {
+			pandoApp := server.PandoApp()
+			serveBus := rt.Bus
+			serveCoord := writecoordinator.New(ctx, rt.Querier, 256)
+			defer serveCoord.Shutdown()
+			servePub := changepub.NewBusPublisher(serveBus.Publish, instanceID, cwd)
+			serveCoord.SetPublisher(servePub)
+			dbproxy.RegisterHandlersWithCoordinator(serveBus, serveCoord)
+			bridge.RegisterHandlers(serveBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+			if busErr := serveBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
+				logging.Warn("IPC: serve mode failed to start bus", "error", busErr)
+			} else {
+				serveBridge := bridge.New(serveBus, pandoApp.Sessions, pandoApp.CoderAgent)
+				serveBridge.Start(ctx)
+				logging.Debug("IPC: serve mode announced", "instanceID", instanceID, "pubPort", rt.PubPort, "rpcPort", rt.RPCPort)
+			}
 		}
 
 		sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

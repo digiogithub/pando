@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/ipc/protocol"
 	"github.com/go-zeromq/zmq4"
 )
 
@@ -93,8 +94,18 @@ func (b *Bus) Start(ctx context.Context, pubPort, rpcPort int) error {
 	return nil
 }
 
-// Shutdown closes both sockets gracefully.
+// Shutdown publishes instance.shutdown and then closes both sockets gracefully.
 func (b *Bus) Shutdown() error {
+	// Publish the shutdown event before closing sockets so secondaries can react
+	// immediately instead of waiting for the heartbeat timeout.
+	if b.pubSock != nil {
+		payload := protocol.ShutdownPayload{
+			InstanceID: b.instanceID,
+			Reason:     "graceful shutdown",
+		}
+		_ = b.Publish(protocol.TopicInstanceShutdown, payload)
+	}
+
 	if b.cancel != nil {
 		b.cancel()
 	}

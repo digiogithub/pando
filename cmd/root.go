@@ -20,9 +20,11 @@ import (
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/instanceregistry"
-	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/bridge"
+	"github.com/digiogithub/pando/internal/ipc/changepub"
 	"github.com/digiogithub/pando/internal/ipc/dbproxy"
+	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
+	"github.com/digiogithub/pando/internal/ipc/writecoordinator"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
@@ -183,93 +185,65 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		}
 		logging.Debug("Config loaded", "workingDir", cwd, "debug", debug, "logFile", logFile)
 
-		// Connect DB, this will also run migrations
-		conn, err := db.Connect()
-		if err != nil {
-			return err
-		}
-		logging.Debug("Database connected")
-
 		// Create main context for the application
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		// --- IPC: determine primary/secondary role ---
+		// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
 		instanceID := uuid.New().String()
-		pubPort, rpcPort := ipc.PortsForPath(cwd)
-		isPrimary, lockInfo, lockFile, lockErr := ipc.AcquireLock(cwd, instanceID, pubPort, rpcPort)
-		if lockErr != nil {
-			logging.Warn("IPC lock acquisition failed, continuing without IPC", "error", lockErr)
+		rt, err := ipcruntime.Bootstrap(ctx, cwd, instanceID)
+		if err != nil {
+			return fmt.Errorf("IPC bootstrap failed: %w", err)
 		}
-		if lockFile != nil {
-			defer ipc.ReleaseLock(lockFile)
-		}
+		defer rt.Cleanup()
 
-		appOpts := app.AppOptions{}
-
-		if isPrimary || lockErr != nil {
-			// Primary instance: announce in registry (best-effort).
-			_ = instanceregistry.Announce(&instanceregistry.Entry{
-				InstanceID: instanceID,
-				Path:       cwd,
-				PID:        os.Getpid(),
-				PubPort:    pubPort,
-				RPCPort:    rpcPort,
-				StartedAt:  time.Now(),
-				Mode:       instanceregistry.ModeTUI,
-				IsPrimary:  true,
-			})
-			defer func() { _ = instanceregistry.Revoke(instanceID) }()
-			logging.Debug("IPC: running as primary instance", "pubPort", pubPort, "rpcPort", rpcPort)
-		} else {
-			// Secondary instance: open read-only DB and proxy writes to primary.
-			roConn, roErr := db.ConnectReadOnly()
-			if roErr != nil {
-				logging.Warn("IPC: failed to open read-only DB, using primary DB directly", "error", roErr)
-			} else {
-				ipcClient, clientErr := ipc.NewClient(ctx)
-				if clientErr != nil {
-					logging.Warn("IPC: failed to create client, falling back to primary DB", "error", clientErr)
-				} else {
-					rpcAddr := fmt.Sprintf("tcp://127.0.0.1:%d", lockInfo.RPCPort)
-					proxy := dbproxy.New(db.New(roConn), ipcClient, rpcAddr)
-					appOpts.DBQuerier = proxy
-					conn = roConn
-				}
-			}
-			_ = instanceregistry.Announce(&instanceregistry.Entry{
-				InstanceID: instanceID,
-				Path:       cwd,
-				PID:        os.Getpid(),
-				PubPort:    lockInfo.PubPort,
-				RPCPort:    lockInfo.RPCPort,
-				StartedAt:  time.Now(),
-				Mode:       instanceregistry.ModeTUI,
-				IsPrimary:  false,
-			})
-			defer func() { _ = instanceregistry.Revoke(instanceID) }()
-			logging.Debug("IPC: running as secondary instance",
-				"primaryPub", fmt.Sprintf("tcp://127.0.0.1:%d", lockInfo.PubPort),
-				"primaryRPC", fmt.Sprintf("tcp://127.0.0.1:%d", lockInfo.RPCPort))
+		// Enable automatic failover if requested. The watcher is always created but starts
+		// inactive (Enabled: false) to keep the default behaviour safe.
+		if autoFailover, _ := cmd.Flags().GetBool("auto-failover"); autoFailover {
+			rt.Watcher.SetEnabled(true)
+			logging.Info("IPC: auto-failover enabled")
 		}
 
-		pandoApp, err := app.New(ctx, conn, appOpts)
+		_ = instanceregistry.Announce(&instanceregistry.Entry{
+			InstanceID: instanceID,
+			Path:       cwd,
+			PID:        os.Getpid(),
+			PubPort:    rt.PubPort,
+			RPCPort:    rt.RPCPort,
+			StartedAt:  time.Now(),
+			Mode:       instanceregistry.ModeTUI,
+			IsPrimary:  rt.Role == ipcruntime.RolePrimary,
+		})
+		defer func() { _ = instanceregistry.Revoke(instanceID) }()
+
+		conn := rt.SQLDB
+		logging.Debug("Database connected")
+
+		pandoApp, err := app.New(ctx, conn, app.AppOptions{DBQuerier: rt.Querier})
 		if err != nil {
 			logging.Error("Failed to create app: %v", err)
 			return err
 		}
 
-		// Primary: start IPC bus, register handlers, start bridge.
-		if isPrimary && lockErr == nil {
-			bus := ipc.NewBus(instanceID)
-			dbproxy.RegisterHandlers(bus, db.New(conn))
+		// Start IPC bus and register handlers only on the primary instance.
+		if rt.Role == ipcruntime.RolePrimary {
+			bus := rt.Bus
+			coord := writecoordinator.New(ctx, db.New(conn), 256)
+			defer coord.Shutdown()
+			pub := changepub.NewBusPublisher(bus.Publish, instanceID, cwd)
+			coord.SetPublisher(pub)
+			dbproxy.RegisterHandlersWithCoordinator(bus, coord)
 			bridge.RegisterHandlers(bus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
 			pandoApp.SetupIPC(bus)
-			if busErr := bus.Start(ctx, pubPort, rpcPort); busErr != nil {
+			if busErr := bus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
 				logging.Warn("IPC: failed to start bus, continuing without IPC", "error", busErr)
 			} else {
 				br := bridge.New(bus, pandoApp.Sessions, pandoApp.CoderAgent)
 				br.Start(ctx)
+				// Start the primary failover watcher after the bus is up so heartbeat
+				// publishes have a live socket. The bridge also publishes heartbeats, but the
+				// watcher covers the shutdown signal path independently.
+				rt.Watcher.Start(ctx)
 			}
 		}
 
@@ -528,16 +502,21 @@ func runACPServerWithOptions(cwd string, debug bool, autoPerm bool) error {
 		cfg.ACP.AutoPermission = true
 	}
 
-	// Connect to database
-	conn, err := db.Connect()
-	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+	ctx := context.Background()
+
+	// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
+	acpInstanceID := uuid.New().String()
+	rt, bootstrapErr := ipcruntime.Bootstrap(ctx, cwd, acpInstanceID)
+	if bootstrapErr != nil {
+		return fmt.Errorf("IPC bootstrap failed: %w", bootstrapErr)
 	}
+	defer rt.Cleanup()
+
+	conn := rt.SQLDB
 
 	// Create app with all services (sessions, messages, agent, etc.).
 	// LSP is skipped: in ACP stdio mode the editor manages its own language servers.
-	ctx := context.Background()
-	pandoApp, err := app.New(ctx, conn, app.AppOptions{SkipLSP: true})
+	pandoApp, err := app.New(ctx, conn, app.AppOptions{SkipLSP: true, DBQuerier: rt.Querier})
 	if err != nil {
 		return fmt.Errorf("failed to initialize app: %w", err)
 	}
@@ -551,30 +530,33 @@ func runACPServerWithOptions(cwd string, debug bool, autoPerm bool) error {
 	}
 	pandoApp.Permissions.SetGlobalAutoApprove(true)
 
-	// --- IPC: announce this ACP instance and start a ZMQ Bus so the TUI
-	// instances browser can discover it and query its sessions via RPC. ---
-	acpInstanceID := uuid.New().String()
-	acpPubPort, acpRPCPort := ipc.PortsForPath(cwd)
 	_ = instanceregistry.Announce(&instanceregistry.Entry{
 		InstanceID: acpInstanceID,
 		Path:       cwd,
 		PID:        os.Getpid(),
-		PubPort:    acpPubPort,
-		RPCPort:    acpRPCPort,
+		PubPort:    rt.PubPort,
+		RPCPort:    rt.RPCPort,
 		StartedAt:  time.Now(),
 		Mode:       instanceregistry.ModeACP,
-		IsPrimary:  false,
+		IsPrimary:  rt.Role == ipcruntime.RolePrimary,
 	})
 	defer func() { _ = instanceregistry.Revoke(acpInstanceID) }()
 
-	acpBus := ipc.NewBus(acpInstanceID)
-	if busErr := acpBus.Start(ctx, acpPubPort, acpRPCPort); busErr != nil {
-		logger.Printf("IPC: ACP bus failed to start (instances browser will not see this instance): %v", busErr)
-	} else {
+	// Start IPC bus and register handlers only on the primary instance.
+	if rt.Role == ipcruntime.RolePrimary {
+		acpBus := rt.Bus
+		acpCoord := writecoordinator.New(ctx, db.New(conn), 256)
+		defer acpCoord.Shutdown()
+		acpPub := changepub.NewBusPublisher(acpBus.Publish, acpInstanceID, cwd)
+		acpCoord.SetPublisher(acpPub)
+		dbproxy.RegisterHandlersWithCoordinator(acpBus, acpCoord)
 		bridge.RegisterHandlers(acpBus, acpInstanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
-		acpBridge := bridge.New(acpBus, pandoApp.Sessions, pandoApp.CoderAgent)
-		acpBridge.Start(ctx)
-		defer func() { _ = acpBus.Shutdown() }()
+		if busErr := acpBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
+			logger.Printf("IPC: ACP bus failed to start (instances browser will not see this instance): %v", busErr)
+		} else {
+			acpBridge := bridge.New(acpBus, pandoApp.Sessions, pandoApp.CoderAgent)
+			acpBridge.Start(ctx)
+		}
 	}
 
 	// Build adapters (defined below) that bridge internal services to ACP interfaces,
@@ -862,6 +844,9 @@ func init() {
 	rootCmd.Flags().Bool("acp-server", false, "Run as ACP server (allows other agents to connect)")
 	rootCmd.PersistentFlags().String("host", "localhost", "Host to bind the app/api server to")
 	rootCmd.PersistentFlags().Int("port", 8765, "Port to bind the app/api server to")
+
+	// Failover flag — disabled by default; opt-in for automatic primary promotion.
+	rootCmd.PersistentFlags().Bool("auto-failover", false, "Enable automatic primary failover when the primary instance dies")
 
 	// Register custom validation for the format flag
 	rootCmd.RegisterFlagCompletionFunc("output-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

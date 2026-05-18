@@ -14,11 +14,11 @@ import (
 	"github.com/digiogithub/pando/internal/api"
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
-	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/instanceregistry"
-	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/bridge"
 	"github.com/digiogithub/pando/internal/ipc/dbproxy"
+	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
+	"github.com/digiogithub/pando/internal/ipc/writecoordinator"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/tlsutil"
 	"github.com/digiogithub/pando/internal/version"
@@ -87,10 +87,18 @@ func runAppMode(cmd *cobra.Command) error {
 		return err
 	}
 
-	conn, err := db.Connect()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
+	instanceID := uuid.New().String()
+	rt, err := ipcruntime.Bootstrap(ctx, cwd, instanceID)
 	if err != nil {
-		return err
+		return fmt.Errorf("IPC bootstrap failed: %w", err)
 	}
+	defer rt.Cleanup()
+
+	conn := rt.SQLDB
 
 	staticFS, err := api.EmbeddedWebUI()
 	if err != nil {
@@ -112,9 +120,6 @@ func runAppMode(cmd *cobra.Command) error {
 		logging.Debug("Using auto-generated TLS certificate", "cert", tlsCert)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	scheme := "https"
 	baseURL := fmt.Sprintf("%s://%s:%d", scheme, host, port)
 	server, err := api.NewServer(ctx, api.ServerConfig{
@@ -122,47 +127,49 @@ func runAppMode(cmd *cobra.Command) error {
 		Port:        port,
 		Version:     version.Version,
 		DB:          conn,
+		Querier:     rt.Querier,
 		CWD:         cwd,
 		StaticFS:    staticFS,
 		OpenUI:      true,
 		UIBaseURL:   baseURL,
 		TLSCertFile: tlsCert,
 		TLSKeyFile:  tlsKey,
+		InstanceID:  instanceID,
+		Role:        string(rt.Role),
+		PubPort:     rt.PubPort,
+		RPCPort:     rt.RPCPort,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create app server: %w", err)
 	}
 
-	// --- IPC: announce this app instance so other Pando instances can discover it.
-	// Use free ports to avoid collision with a TUI instance on the same path.
-	instanceID := uuid.New().String()
-	pubPort, rpcPort, freeErr := ipc.FindFreePorts()
-	if freeErr != nil {
-		pubPort, rpcPort = ipc.PortsForPath(cwd)
-	}
 	_ = instanceregistry.Announce(&instanceregistry.Entry{
 		InstanceID: instanceID,
 		Path:       cwd,
 		PID:        os.Getpid(),
-		PubPort:    pubPort,
-		RPCPort:    rpcPort,
+		PubPort:    rt.PubPort,
+		RPCPort:    rt.RPCPort,
 		StartedAt:  time.Now(),
 		Mode:       instanceregistry.ModeWebUI,
-		IsPrimary:  false,
+		IsPrimary:  rt.Role == ipcruntime.RolePrimary,
 	})
 	defer func() { _ = instanceregistry.Revoke(instanceID) }()
 
-	pandoApp := server.PandoApp()
-	appBus := ipc.NewBus(instanceID)
-	dbproxy.RegisterHandlers(appBus, db.New(conn))
-	bridge.RegisterHandlers(appBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
-	if busErr := appBus.Start(ctx, pubPort, rpcPort); busErr != nil {
-		logging.Warn("IPC: app mode failed to start bus", "error", busErr)
-	} else {
-		appBridge := bridge.New(appBus, pandoApp.Sessions, pandoApp.CoderAgent)
-		appBridge.Start(ctx)
-		defer func() { _ = appBus.Shutdown() }()
-		logging.Debug("IPC: app mode announced", "instanceID", instanceID, "pubPort", pubPort, "rpcPort", rpcPort)
+	// Start IPC bus and register handlers only on the primary instance.
+	if rt.Role == ipcruntime.RolePrimary {
+		pandoApp := server.PandoApp()
+		appBus := rt.Bus
+		appCoord := writecoordinator.New(ctx, rt.Querier, 256)
+		defer appCoord.Shutdown()
+		dbproxy.RegisterHandlersWithCoordinator(appBus, appCoord)
+		bridge.RegisterHandlers(appBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+		if busErr := appBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
+			logging.Warn("IPC: app mode failed to start bus", "error", busErr)
+		} else {
+			appBridge := bridge.New(appBus, pandoApp.Sessions, pandoApp.CoderAgent)
+			appBridge.Start(ctx)
+			logging.Debug("IPC: app mode announced", "instanceID", instanceID, "pubPort", rt.PubPort, "rpcPort", rt.RPCPort)
+		}
 	}
 
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

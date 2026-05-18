@@ -131,6 +131,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/projects/{id}/activate", s.handleActivateProject)
 	mux.HandleFunc("POST /api/v1/projects/{id}/deactivate", s.handleDeactivateProject)
 	mux.HandleFunc("POST /api/v1/projects/{id}/init", s.handleInitProject)
+	// IPC topology diagnostics
+	mux.HandleFunc("GET /api/v1/ipc/status", s.handleIPCStatus)
 	// Instances — remote observation and control
 	mux.HandleFunc("GET /api/v1/instances", s.handleListInstances)
 	mux.HandleFunc("GET /api/v1/instances/{id}", s.handleGetInstance)

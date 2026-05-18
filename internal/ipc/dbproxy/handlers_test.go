@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/digiogithub/pando/internal/db"
@@ -80,6 +81,55 @@ func TestRegisterHandlers_RegistersDBWriteBeforeBusStart(t *testing.T) {
 	}
 }
 
+func TestDispatchWrite_UnknownMethodReturnsMethodNotFound(t *testing.T) {
+	req := WriteRequest{Method: "NonExistent", Params: json.RawMessage(`{}`)}
+	_, err := dispatchWrite(context.Background(), &recordingQuerier{}, req)
+	if err == nil {
+		t.Fatal("expected error for unknown method")
+	}
+	var werr *WriteError
+	if !errors.As(err, &werr) {
+		t.Fatalf("expected *WriteError, got %T: %v", err, err)
+	}
+	if werr.Code != ErrCodeMethodNotFound {
+		t.Fatalf("expected ErrCodeMethodNotFound, got %s", werr.Code)
+	}
+}
+
+func TestDispatchWrite_BadParamsReturnsInvalidParams(t *testing.T) {
+	// Pass invalid JSON for CreateSession params.
+	req := WriteRequest{Method: "CreateSession", Params: json.RawMessage(`not-json`)}
+	_, err := dispatchWrite(context.Background(), &recordingQuerier{}, req)
+	if err == nil {
+		t.Fatal("expected error for invalid params")
+	}
+	var werr *WriteError
+	if !errors.As(err, &werr) {
+		t.Fatalf("expected *WriteError, got %T: %v", err, err)
+	}
+	if werr.Code != ErrCodeInvalidParams {
+		t.Fatalf("expected ErrCodeInvalidParams, got %s", werr.Code)
+	}
+}
+
+func TestWriteError_IsRetryable(t *testing.T) {
+	retryable := []WriteErrorCode{ErrCodeTimeout, ErrCodeUnreachable}
+	for _, code := range retryable {
+		werr := &WriteError{Code: code}
+		if !werr.IsRetryable() {
+			t.Errorf("expected %s to be retryable", code)
+		}
+	}
+
+	nonRetryable := []WriteErrorCode{ErrCodeMethodNotFound, ErrCodeInvalidParams, ErrCodeConflict, ErrCodeInternal}
+	for _, code := range nonRetryable {
+		werr := &WriteError{Code: code}
+		if werr.IsRetryable() {
+			t.Errorf("expected %s to NOT be retryable", code)
+		}
+	}
+}
+
 func TestRegisterHandlers_PropagatesQuerierErrors(t *testing.T) {
 	bus := &busRecorder{}
 	querier := &recordingQuerier{createSessionErr: errors.New("boom")}
@@ -104,7 +154,15 @@ func TestRegisterHandlers_PropagatesQuerierErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected handler to return error")
 	}
-	if err.Error() != "boom" {
-		t.Fatalf("expected original error, got %v", err)
+	// DB errors are now wrapped as *WriteError; verify the original message is preserved.
+	var werr *WriteError
+	if !errors.As(err, &werr) {
+		t.Fatalf("expected *WriteError, got %T: %v", err, err)
+	}
+	if werr.Code != ErrCodeInternal {
+		t.Fatalf("expected ErrCodeInternal, got %s", werr.Code)
+	}
+	if !strings.Contains(werr.Message, "boom") {
+		t.Fatalf("expected original message in WriteError, got %q", werr.Message)
 	}
 }

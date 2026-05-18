@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/app"
+	"github.com/digiogithub/pando/internal/db"
 )
 
 type ServerConfig struct {
@@ -20,12 +21,23 @@ type ServerConfig struct {
 	Port        int
 	Version     string
 	DB          *sql.DB
+	// Querier overrides the db.Querier passed to app.New. When non-nil it is
+	// used instead of db.New(cfg.DB). Secondary instances supply a DBProxy here
+	// so all writes are forwarded to the primary via ZMQ RPC.
+	Querier     db.Querier
 	CWD         string
 	StaticFS    fs.FS
 	OpenUI      bool
 	UIBaseURL   string
 	TLSCertFile string
 	TLSKeyFile  string
+
+	// IPC identity fields populated by Bootstrap so the /api/ipc/status
+	// endpoint can report them without re-reading the lock file.
+	InstanceID string
+	Role       string
+	PubPort    int
+	RPCPort    int
 }
 
 type Server struct {
@@ -39,7 +51,8 @@ type Server struct {
 }
 
 func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
-	application, err := app.New(ctx, cfg.DB)
+	appOpts := app.AppOptions{DBQuerier: cfg.Querier}
+	application, err := app.New(ctx, cfg.DB, appOpts)
 	if err != nil {
 		return nil, err
 	}

@@ -40,6 +40,15 @@ func ConnectReadOnly() (*sql.DB, error) {
 	return conn, nil
 }
 
+// ConnectForRole opens the database in read-write mode when isPrimary is true,
+// or in read-only mode when false. This avoids duplicating the role branch in callers.
+func ConnectForRole(isPrimary bool) (*sql.DB, error) {
+	if isPrimary {
+		return Connect()
+	}
+	return ConnectReadOnly()
+}
+
 func Connect() (*sql.DB, error) {
 	dataDir := config.Get().Data.Directory
 	if dataDir == "" {

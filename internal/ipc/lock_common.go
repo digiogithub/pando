@@ -50,3 +50,10 @@ func readLockInfo(path string) (*LockInfo, error) {
 	}
 	return &info, nil
 }
+
+// ReadLockForPath reads the IPC lock file for the given workdir and returns
+// the LockInfo written by the primary instance. Returns nil if no lock file
+// exists or the primary is no longer running.
+func ReadLockForPath(workdir string) (*LockInfo, error) {
+	return readLockInfo(lockFilePath(workdir))
+}
