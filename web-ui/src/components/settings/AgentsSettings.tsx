@@ -14,6 +14,16 @@ const AGENT_LABELS: Record<string, string> = {
   'persona-selector': 'Persona Selector',
 }
 
+// Automatic token budgets per agent role (mirrors config.AutoBudgetByRole)
+const AUTO_TOKEN_BUDGET: Record<string, number> = {
+  title: 80,
+  'persona-selector': 64,
+  cliassist: 256,
+  task: 2048,
+  summarizer: 4096,
+  coder: 8192,
+}
+
 const AGENT_DESCRIPTIONS: Record<string, string> = {
   coder: 'Main coding and problem-solving agent',
   summarizer: 'Summarizes sessions and content',
@@ -195,6 +205,16 @@ function AgentCard({
                 onFocus={(e) => { e.target.style.borderColor = 'var(--border-focus)' }}
                 onBlur={(e) => { e.target.style.borderColor = 'var(--border)' }}
               />
+              {agent.maxTokens === 0 && (
+                <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>
+                  Auto — effective: {agent.resolvedMaxTokens ?? AUTO_TOKEN_BUDGET[agent.name.toLowerCase()] ?? 4096} tokens
+                </div>
+              )}
+              {agent.maxTokens !== 0 && (
+                <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>
+                  0 = Auto
+                </div>
+              )}
             </Field>
 
             <Field label="Reasoning Effort">

@@ -176,17 +176,17 @@ Languages = []
 [Agents]
 
 [Agents.coder]
-Model     = ''
-MaxTokens = 32000
+Model       = ''
+MaxTokens   = 0 # Auto (resolved by agent role and model; 0 = 8192 for coder)
 AutoCompact = false
 
 [Agents.summarizer]
 Model     = ''
-MaxTokens = 90000
+MaxTokens = 0 # Auto (resolved by agent role and model; 0 = 4096 for summarizer)
 
 [Agents.task]
 Model     = ''
-MaxTokens = 16384
+MaxTokens = 0 # Auto (resolved by agent role and model; 0 = 2048 for task)
 
 # =============================================================================
 # Skills

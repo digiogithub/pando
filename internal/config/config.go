@@ -605,6 +605,63 @@ const (
 	MaxTokensFallbackDefault = 4096
 )
 
+// AutoBudgetByRole returns the automatic max output token budget for the given agent role.
+// Used when MaxTokens is 0 (auto mode).
+func AutoBudgetByRole(name AgentName) int64 {
+	switch name {
+	case AgentTitle:
+		return 80
+	case AgentPersonaSelector:
+		return 64
+	case AgentCLIAssist:
+		return 256
+	case AgentTask:
+		return 2048
+	case AgentSummarizer:
+		return 4096
+	case AgentCoder:
+		return 8192
+	default:
+		return 4096
+	}
+}
+
+// roleCeilingTokens returns the hard upper guardrail for output tokens per agent role.
+func roleCeilingTokens(name AgentName) int64 {
+	switch name {
+	case AgentTitle, AgentPersonaSelector:
+		return 128
+	case AgentCLIAssist:
+		return 512
+	case AgentTask:
+		return 4096
+	case AgentSummarizer:
+		return 8192
+	case AgentCoder:
+		return 16384
+	default:
+		return 16384
+	}
+}
+
+// ResolveAgentMaxTokens returns the effective max output tokens for the given agent.
+// If agentCfg.MaxTokens > 0 it is used as a manual override; otherwise the automatic
+// budget for the agent role is selected. The result is clamped to the model's reported
+// output capability and to a role-based context guardrail.
+func ResolveAgentMaxTokens(name AgentName, agentCfg Agent, model models.Model) int64 {
+	budget := agentCfg.MaxTokens
+	if budget <= 0 {
+		budget = AutoBudgetByRole(name)
+	}
+	if model.DefaultMaxTokens > 0 && budget > model.DefaultMaxTokens {
+		budget = model.DefaultMaxTokens
+	}
+	if ceiling := roleCeilingTokens(name); ceiling > 0 && budget > ceiling {
+		budget = ceiling
+	}
+	return budget
+}
+
 var defaultContextPaths = []string{
 	".github/copilot-instructions.md",
 	".cursorrules",
@@ -840,11 +897,6 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 		cfg.Agents = make(map[AgentName]Agent)
 	}
 
-	// Override the max tokens for title agent
-	cfg.Agents[AgentTitle] = Agent{
-		Model:     cfg.Agents[AgentTitle].Model,
-		MaxTokens: 80,
-	}
 	return cfg, nil
 }
 
@@ -1535,34 +1587,8 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 		}
 	}
 
-	// Validate max tokens
-	if agent.MaxTokens <= 0 {
-		logging.Warn("invalid max tokens, setting to default",
-			"agent", name,
-			"model", agent.Model,
-			"max_tokens", agent.MaxTokens)
-
-		// Update the agent with default max tokens
-		updatedAgent := cfg.Agents[name]
-		if model.DefaultMaxTokens > 0 {
-			updatedAgent.MaxTokens = model.DefaultMaxTokens
-		} else {
-			updatedAgent.MaxTokens = MaxTokensFallbackDefault
-		}
-		cfg.Agents[name] = updatedAgent
-	} else if model.ContextWindow > 0 && agent.MaxTokens > model.ContextWindow/2 {
-		// Ensure max tokens doesn't exceed half the context window (reasonable limit)
-		logging.Warn("max tokens exceeds half the context window, adjusting",
-			"agent", name,
-			"model", agent.Model,
-			"max_tokens", agent.MaxTokens,
-			"context_window", model.ContextWindow)
-
-		// Update the agent with adjusted max tokens
-		updatedAgent := cfg.Agents[name]
-		updatedAgent.MaxTokens = model.ContextWindow / 2
-		cfg.Agents[name] = updatedAgent
-	}
+	// MaxTokens = 0 means Auto mode: budget is resolved at runtime by ResolveAgentMaxTokens.
+	// Manual overrides (MaxTokens > 0) are accepted as-is; no clamping here.
 
 	// Validate reasoning effort for models that support reasoning
 	if model.CanReason && provider == models.ProviderOpenAI || provider == models.ProviderLocal {
@@ -2024,7 +2050,8 @@ func getProviderAPIKey(provider models.ModelProvider) string {
 	return ""
 }
 
-// setDefaultModelForAgent sets a default model for an agent based on available providers
+// setDefaultModelForAgent sets a default model for an agent based on available providers.
+// MaxTokens is left at 0 so ResolveAgentMaxTokens picks the automatic budget at runtime.
 func setDefaultModelForAgent(agent AgentName) bool {
 	// Only use Copilot if credentials exist AND provider is not disabled
 	if hasCopilotCredentials() {
@@ -2033,138 +2060,81 @@ func setDefaultModelForAgent(agent AgentName) bool {
 			copilotDisabled = true
 		}
 		if !copilotDisabled {
-			maxTokens := int64(5000)
-			if agent == AgentTitle {
-				maxTokens = 80
-			}
-
-			cfg.Agents[agent] = Agent{
-				Model:     models.CopilotGPT4o,
-				MaxTokens: maxTokens,
-			}
+			cfg.Agents[agent] = Agent{Model: models.CopilotGPT4o}
 			return true
 		}
 	}
 	// Check providers in order of preference
-	if apiKey := os.Getenv("ANTHROPIC_API_KEY"); apiKey != "" {
-		maxTokens := int64(5000)
-		if agent == AgentTitle {
-			maxTokens = 80
-		}
-		cfg.Agents[agent] = Agent{
-			Model:     models.Claude4Sonnet,
-			MaxTokens: maxTokens,
-		}
+	if os.Getenv("ANTHROPIC_API_KEY") != "" {
+		cfg.Agents[agent] = Agent{Model: models.Claude4Sonnet}
 		return true
 	}
 
-	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
-		var model models.ModelID
-		maxTokens := int64(5000)
+	if os.Getenv("OPENAI_API_KEY") != "" {
+		var modelID models.ModelID
 		reasoningEffort := ""
 
 		switch agent {
 		case AgentTitle:
-			model = models.GPT41Mini
-			maxTokens = 80
+			modelID = models.GPT41Mini
 		case AgentTask:
-			model = models.GPT41Mini
+			modelID = models.GPT41Mini
 		default:
-			model = models.GPT41
+			modelID = models.GPT41
 		}
 
-		// Check if model supports reasoning
-		if modelInfo, ok := models.SupportedModels[model]; ok && modelInfo.CanReason {
+		if modelInfo, ok := models.SupportedModels[modelID]; ok && modelInfo.CanReason {
 			reasoningEffort = "medium"
 		}
 
-		cfg.Agents[agent] = Agent{
-			Model:           model,
-			MaxTokens:       maxTokens,
-			ReasoningEffort: reasoningEffort,
-		}
+		cfg.Agents[agent] = Agent{Model: modelID, ReasoningEffort: reasoningEffort}
 		return true
 	}
 
-	if apiKey := os.Getenv("OPENROUTER_API_KEY"); apiKey != "" {
-		var model models.ModelID
-		maxTokens := int64(5000)
-
+	if os.Getenv("OPENROUTER_API_KEY") != "" {
+		var modelID models.ModelID
 		switch agent {
 		case AgentTitle:
-			model = models.OpenRouterClaude35Haiku
-			maxTokens = 80
+			modelID = models.OpenRouterClaude35Haiku
 		default:
-			model = models.OpenRouterClaude37Sonnet
+			modelID = models.OpenRouterClaude37Sonnet
 		}
-
-		cfg.Agents[agent] = Agent{
-			Model:     model,
-			MaxTokens: maxTokens,
-		}
+		cfg.Agents[agent] = Agent{Model: modelID}
 		return true
 	}
 
-	if apiKey := os.Getenv("GEMINI_API_KEY"); apiKey != "" {
-		var model models.ModelID
-		maxTokens := int64(5000)
-
+	if os.Getenv("GEMINI_API_KEY") != "" {
+		var modelID models.ModelID
 		if agent == AgentTitle {
-			model = models.Gemini25Flash
-			maxTokens = 80
+			modelID = models.Gemini25Flash
 		} else {
-			model = models.Gemini25
+			modelID = models.Gemini25
 		}
-
-		cfg.Agents[agent] = Agent{
-			Model:     model,
-			MaxTokens: maxTokens,
-		}
+		cfg.Agents[agent] = Agent{Model: modelID}
 		return true
 	}
 
-	if apiKey := os.Getenv("GROQ_API_KEY"); apiKey != "" {
-		maxTokens := int64(5000)
-		if agent == AgentTitle {
-			maxTokens = 80
-		}
-
-		cfg.Agents[agent] = Agent{
-			Model:     models.QWENQwq,
-			MaxTokens: maxTokens,
-		}
+	if os.Getenv("GROQ_API_KEY") != "" {
+		cfg.Agents[agent] = Agent{Model: models.QWENQwq}
 		return true
 	}
 
 	if hasAWSCredentials() {
-		maxTokens := int64(5000)
-		if agent == AgentTitle {
-			maxTokens = 80
-		}
-
 		cfg.Agents[agent] = Agent{
 			Model:           models.BedrockClaude37Sonnet,
-			MaxTokens:       maxTokens,
-			ReasoningEffort: "medium", // Claude models support reasoning
+			ReasoningEffort: "medium",
 		}
 		return true
 	}
 
 	if hasVertexAICredentials() {
-		var model models.ModelID
-		maxTokens := int64(5000)
-
+		var modelID models.ModelID
 		if agent == AgentTitle {
-			model = models.VertexAIGemini25Flash
-			maxTokens = 80
+			modelID = models.VertexAIGemini25Flash
 		} else {
-			model = models.VertexAIGemini25
+			modelID = models.VertexAIGemini25
 		}
-
-		cfg.Agents[agent] = Agent{
-			Model:     model,
-			MaxTokens: maxTokens,
-		}
+		cfg.Agents[agent] = Agent{Model: modelID}
 		return true
 	}
 
@@ -2173,14 +2143,7 @@ func setDefaultModelForAgent(agent AgentName) bool {
 		if !ok {
 			return false
 		}
-		maxTokens := int64(5000)
-		if agent == AgentTitle {
-			maxTokens = 80
-		}
-		cfg.Agents[agent] = Agent{
-			Model:     model.ID,
-			MaxTokens: maxTokens,
-		}
+		cfg.Agents[agent] = Agent{Model: model.ID}
 		return true
 	}
 
@@ -2483,19 +2446,14 @@ func setAgentModel(agentName AgentName, modelID models.ModelID, persist bool) er
 
 	existingAgentCfg, hadExistingAgent := cfg.Agents[agentName]
 
-	model, ok := models.SupportedModels[modelID]
-	if !ok {
+	if _, ok := models.SupportedModels[modelID]; !ok {
 		return fmt.Errorf("model %s not supported", modelID)
 	}
 
-	maxTokens := existingAgentCfg.MaxTokens
-	if model.DefaultMaxTokens > 0 {
-		maxTokens = model.DefaultMaxTokens
-	}
-
+	// Preserve existing MaxTokens; 0 means Auto (resolved at runtime by ResolveAgentMaxTokens).
 	newAgentCfg := Agent{
 		Model:           modelID,
-		MaxTokens:       maxTokens,
+		MaxTokens:       existingAgentCfg.MaxTokens,
 		ReasoningEffort: existingAgentCfg.ReasoningEffort,
 	}
 	cfg.Agents[agentName] = newAgentCfg

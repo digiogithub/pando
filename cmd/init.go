@@ -136,7 +136,7 @@ Languages = []  # Leave empty to apply to all files; e.g. ['.go']
 # Primary coding assistant — handles most interactive and non-interactive tasks.
 [Agents.coder]
 Model                 = 'anthropic.claude-sonnet-4-6'
-MaxTokens             = 32000
+MaxTokens             = 0      # 0 = Auto (role default: 8192 tokens; override with a positive number)
 ReasoningEffort       = ''     # 'low' | 'medium' | 'high' (OpenAI o-series only)
 AutoCompact           = false
 AutoCompactThreshold  = 0.0    # 0.0 = use global AutoCompact setting
@@ -144,12 +144,12 @@ AutoCompactThreshold  = 0.0    # 0.0 = use global AutoCompact setting
 # Summariser — condenses long conversations to save tokens.
 [Agents.summarizer]
 Model     = 'anthropic.claude-sonnet-4-6'
-MaxTokens = 90000
+MaxTokens = 0 # 0 = Auto (role default: 4096 tokens; override with a positive number)
 
 # Task planner — breaks large goals into steps (used by the orchestrator).
 [Agents.task]
 Model           = 'anthropic.claude-sonnet-4-6'
-MaxTokens       = 16384
+MaxTokens       = 0   # 0 = Auto (role default: 2048 tokens; override with a positive number)
 ReasoningEffort = 'low'
 
 # =============================================================================

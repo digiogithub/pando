@@ -223,6 +223,7 @@ export interface AgentConfigItem {
   name: string
   model: string
   maxTokens: number
+  resolvedMaxTokens?: number // effective value after auto-budget resolution (read-only)
   reasoningEffort: string
   thinkingMode: string
   autoCompact: boolean

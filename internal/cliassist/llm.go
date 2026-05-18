@@ -60,7 +60,7 @@ func FetchCommand(ctx context.Context, cfg *config.Config, systemPrompt, userPro
 		provider.WithUseOAuth(providerCfg.UseOAuth),
 		provider.WithModel(model),
 		provider.WithSystemMessage(systemPrompt),
-		provider.WithMaxTokens(model.DefaultMaxTokens),
+		provider.WithMaxTokens(config.ResolveAgentMaxTokens(config.AgentCLIAssist, config.Agent{}, model)),
 	)
 	if err != nil {
 		return "", fmt.Errorf("initializing provider: %w", err)

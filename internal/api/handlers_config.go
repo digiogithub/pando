@@ -115,6 +115,7 @@ type AgentConfigItem struct {
 	Name                 string              `json:"name"`
 	Model                models.ModelID      `json:"model"`
 	MaxTokens            int64               `json:"maxTokens"`
+	ResolvedMaxTokens    int64               `json:"resolvedMaxTokens,omitempty"` // effective value after auto-budget resolution
 	ReasoningEffort      string              `json:"reasoningEffort"`
 	ThinkingMode         config.ThinkingMode `json:"thinkingMode,omitempty"`
 	AutoCompact          bool                `json:"autoCompact"`
@@ -141,10 +142,12 @@ func (s *Server) handleGetConfigAgents(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]AgentConfigItem, 0, len(cfg.Agents))
 	for name, a := range cfg.Agents {
+		model := models.SupportedModels[a.Model]
 		items = append(items, AgentConfigItem{
 			Name:                 string(name),
 			Model:                a.Model,
 			MaxTokens:            a.MaxTokens,
+			ResolvedMaxTokens:    config.ResolveAgentMaxTokens(name, a, model),
 			ReasoningEffort:      a.ReasoningEffort,
 			ThinkingMode:         a.ThinkingMode,
 			AutoCompact:          a.AutoCompact,

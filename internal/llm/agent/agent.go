@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -101,6 +102,28 @@ type AgentEvent struct {
 
 	// Todos is populated when Type == AgentEventTypeTodosUpdated.
 	Todos []tools.TodoItem
+}
+
+const (
+	summaryOutputReservationTokens = int64(2048)
+	summaryToolOverheadTokens      = int64(512)
+	summaryMinInputBudgetTokens    = int64(1024)
+	continuationMarkerTemplate     = "The previous conversation was interrupted while compacting context. Resume the unfinished work using this summary before continuing:\n\n%s"
+)
+
+type summaryMode int
+
+const (
+	summaryModeManual summaryMode = iota
+	summaryModeCompaction
+)
+
+type summaryResult struct {
+	message      message.Message
+	text         string
+	model        models.Model
+	usage        provider.TokenUsage
+	usedFallback bool
 }
 
 type Service interface {
@@ -533,7 +556,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			msgHistory = append(msgHistory, agentMessage, *toolResults)
 
 			// Check if we should auto-compact context before continuing the loop
-			if sess, sessErr := a.sessions.Get(ctx, sessionID); sessErr == nil && a.shouldCompact(sess.PromptTokens) {
+			if sess, sessErr := a.sessions.Get(ctx, sessionID); sessErr == nil && a.shouldCompact(sess) {
 				compactMsg := "\n\n⚡ Auto-compacting context to free space...\n"
 				a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: compactMsg})
 				select {
@@ -969,10 +992,6 @@ func (a *agent) Update(agentName config.AgentName, modelID models.ModelID) (mode
 
 func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 	logging.Debug("Summarize started", "sessionID", sessionID)
-	if a.summarizeProvider == nil {
-		return fmt.Errorf("summarize provider not available")
-	}
-
 	// Check if session is busy
 	if a.IsSessionBusy(sessionID) {
 		return ErrSessionBusy
@@ -993,46 +1012,11 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 		}
 
 		a.Publish(pubsub.CreatedEvent, event)
-		// Get all messages from the session
-		msgs, err := a.messages.List(summarizeCtx, sessionID)
-		if err != nil {
-			event = AgentEvent{
-				Type:  AgentEventTypeError,
-				Error: fmt.Errorf("failed to list messages: %w", err),
-				Done:  true,
-			}
-			a.Publish(pubsub.CreatedEvent, event)
-			return
-		}
-		summarizeCtx = context.WithValue(summarizeCtx, tools.SessionIDContextKey, sessionID)
-
-		if len(msgs) == 0 {
-			event = AgentEvent{
-				Type:  AgentEventTypeError,
-				Error: fmt.Errorf("no messages to summarize"),
-				Done:  true,
-			}
-			a.Publish(pubsub.CreatedEvent, event)
-			return
-		}
-
 		event = AgentEvent{
 			Type:     AgentEventTypeSummarize,
 			Progress: "Analyzing conversation...",
 		}
 		a.Publish(pubsub.CreatedEvent, event)
-
-		// Add a system message to guide the summarization
-		summarizePrompt := "Provide a detailed but concise summary of our conversation above. Focus on information that would be helpful for continuing the conversation, including what we did, what we're doing, which files we're working on, and what we're going to do next."
-
-		// Create a new message with the summarize prompt
-		promptMsg := message.Message{
-			Role:  message.User,
-			Parts: []message.ContentPart{message.TextContent{Text: summarizePrompt}},
-		}
-
-		// Append the prompt to the messages
-		msgsWithPrompt := append(msgs, promptMsg)
 
 		event = AgentEvent{
 			Type:     AgentEventTypeSummarize,
@@ -1041,27 +1025,11 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 
 		a.Publish(pubsub.CreatedEvent, event)
 
-		// Send the messages to the summarize provider
-		response, err := a.summarizeProvider.SendMessages(
-			summarizeCtx,
-			msgsWithPrompt,
-			make([]tools.BaseTool, 0),
-		)
+			result, err := a.generateAndPersistSummary(summarizeCtx, sessionID, summaryModeManual)
 		if err != nil {
 			event = AgentEvent{
 				Type:  AgentEventTypeError,
-				Error: fmt.Errorf("failed to summarize: %w", err),
-				Done:  true,
-			}
-			a.Publish(pubsub.CreatedEvent, event)
-			return
-		}
-
-		summary := strings.TrimSpace(response.Content)
-		if summary == "" {
-			event = AgentEvent{
-				Type:  AgentEventTypeError,
-				Error: fmt.Errorf("empty summary returned"),
+				Error: err,
 				Done:  true,
 			}
 			a.Publish(pubsub.CreatedEvent, event)
@@ -1073,128 +1041,26 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 		}
 
 		a.Publish(pubsub.CreatedEvent, event)
-		oldSession, err := a.sessions.Get(summarizeCtx, sessionID)
-		if err != nil {
-			event = AgentEvent{
-				Type:  AgentEventTypeError,
-				Error: fmt.Errorf("failed to get session: %w", err),
-				Done:  true,
-			}
 
-			a.Publish(pubsub.CreatedEvent, event)
-			return
+		persistedMsg := "Summary persisted. Continue explicitly from the summary if more work is needed."
+		if result.usedFallback {
+			persistedMsg = "Summary persisted using coder fallback. Continue explicitly from the summary if more work is needed."
 		}
-		msg, err := a.messages.Create(summarizeCtx, oldSession.ID, message.CreateMessageParams{
-			Role: message.Assistant,
-			Parts: []message.ContentPart{
-				message.TextContent{Text: summary},
-				message.Finish{
-					Reason: message.FinishReasonEndTurn,
-					Time:   time.Now().Unix(),
-				},
-			},
-			Model: a.summarizeProvider.Model().ID,
-		})
-		if err != nil {
-			event = AgentEvent{
-				Type:  AgentEventTypeError,
-				Error: fmt.Errorf("failed to create summary message: %w", err),
-				Done:  true,
-			}
-
-			a.Publish(pubsub.CreatedEvent, event)
-			return
-		}
-		oldSession.SummaryMessageID = msg.ID
-		oldSession.CompletionTokens = response.Usage.OutputTokens
-		oldSession.PromptTokens = 0
-		model := a.summarizeProvider.Model()
-		usage := response.Usage
-		cost := model.CostPer1MInCached/1e6*float64(usage.CacheCreationTokens) +
-			model.CostPer1MOutCached/1e6*float64(usage.CacheReadTokens) +
-			model.CostPer1MIn/1e6*float64(usage.InputTokens) +
-			model.CostPer1MOut/1e6*float64(usage.OutputTokens)
-		oldSession.Cost += cost
-		_, err = a.sessions.Save(summarizeCtx, oldSession)
-		if err != nil {
-			event = AgentEvent{
-				Type:  AgentEventTypeError,
-				Error: fmt.Errorf("failed to save session: %w", err),
-				Done:  true,
-			}
-			a.Publish(pubsub.CreatedEvent, event)
-			return
-		}
-
 		event = AgentEvent{
 			Type:      AgentEventTypeSummarize,
-			SessionID: oldSession.ID,
-			Progress:  "Summary persisted. Resuming with compacted context...",
+			SessionID: result.message.SessionID,
+			Progress:  persistedMsg,
 		}
 		a.Publish(pubsub.CreatedEvent, event)
 
-		newMsgs, err := a.messages.List(summarizeCtx, sessionID)
-		if err != nil {
-			event = AgentEvent{
-				Type:  AgentEventTypeError,
-				Error: fmt.Errorf("failed to reload messages after summary: %w", err),
-				Done:  true,
-			}
-			a.Publish(pubsub.CreatedEvent, event)
-			return
+		completeMsg := "Summary complete"
+		if result.usedFallback {
+			completeMsg = "Summary complete using coder fallback"
 		}
-		summaryMsgIndex := -1
-		for i, m := range newMsgs {
-			if m.ID == oldSession.SummaryMessageID {
-				summaryMsgIndex = i
-				break
-			}
-		}
-		if summaryMsgIndex == -1 {
-			event = AgentEvent{
-				Type:  AgentEventTypeError,
-				Error: fmt.Errorf("failed to find summary message in reloaded history"),
-				Done:  true,
-			}
-			a.Publish(pubsub.CreatedEvent, event)
-			return
-		}
-		msgHistory := newMsgs[summaryMsgIndex:]
-		msgHistory[0].Role = message.User
-
-		requestProvider, err := a.prepareProvider(context.WithValue(summarizeCtx, prompt.SessionIDKey, sessionID), summary, "")
-		if err != nil {
-			event = AgentEvent{
-				Type:  AgentEventTypeError,
-				Error: fmt.Errorf("failed to prepare agent provider after summary: %w", err),
-				Done:  true,
-			}
-			a.Publish(pubsub.CreatedEvent, event)
-			return
-		}
-
-		for {
-			agentMessage, toolResults, err := a.streamAndHandleEvents(summarizeCtx, sessionID, msgHistory, requestProvider, nil)
-			if err != nil {
-				event = AgentEvent{
-					Type:  AgentEventTypeError,
-					Error: fmt.Errorf("failed to continue after summary: %w", err),
-					Done:  true,
-				}
-				a.Publish(pubsub.CreatedEvent, event)
-				return
-			}
-			if agentMessage.FinishReason() == message.FinishReasonToolUse && toolResults != nil {
-				msgHistory = append(msgHistory, agentMessage, *toolResults)
-				continue
-			}
-			break
-		}
-
 		event = AgentEvent{
 			Type:      AgentEventTypeSummarize,
-			SessionID: oldSession.ID,
-			Progress:  "Summary complete",
+			SessionID: result.message.SessionID,
+			Progress:  completeMsg,
 			Done:      true,
 		}
 		a.Publish(pubsub.CreatedEvent, event)
@@ -1203,8 +1069,12 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-// shouldCompact returns true if the context usage exceeds the auto-compact threshold.
-func (a *agent) shouldCompact(usedTokens int64) bool {
+// shouldCompact returns true if the active session is close to exhausting the
+// model context after reserving output and tool overhead budget.
+func (a *agent) shouldCompact(sess session.Session) bool {
+	if a.provider == nil {
+		return false
+	}
 	cfg := config.Get()
 	agentCfg, ok := cfg.Agents[a.agentName]
 	if !ok || !agentCfg.AutoCompact {
@@ -1222,133 +1092,50 @@ func (a *agent) shouldCompact(usedTokens int64) bool {
 	if contextWindow <= 0 {
 		return false
 	}
-	compactAt := int64(float64(contextWindow) * threshold)
+	reservedTokens := summaryOutputReservationTokens + summaryToolOverheadTokens
+	availableContext := contextWindow - reservedTokens
+	if availableContext <= 0 {
+		availableContext = contextWindow
+	}
+	usedTokens := sess.PromptTokens + sess.CompletionTokens
+	compactAt := int64(float64(availableContext) * threshold)
 	should := usedTokens >= compactAt
 	if should {
 		logging.InfoPersist(fmt.Sprintf(
-			"Auto-compact triggered: used=%d tokens, window=%d tokens, threshold=%.0f%% (%d tokens)",
-			usedTokens, contextWindow, threshold*100, compactAt,
+			"Auto-compact triggered: used=%d tokens, available=%d tokens (window=%d, reserved=%d), threshold=%.0f%% (%d tokens)",
+			usedTokens, availableContext, contextWindow, reservedTokens, threshold*100, compactAt,
 		))
 	}
 	return should
 }
 
-// compactContext summarizes the conversation history to reduce context size.
-// It creates a summary message and sets it as the session's SummaryMessageID so
-// subsequent calls to processGeneration will start from the summary.
-
-// getSummarizerContextWindow returns the context window of the primary summarizer,
-// falling back to the fallback provider, and then to 0 if neither is available.
-func (a *agent) getSummarizerContextWindow() int64 {
-	if a.summarizeProvider != nil {
-		if w := a.summarizeProvider.Model().ContextWindow; w > 0 {
-			return w
-		}
-	}
-	if a.summarizeFallbackProvider != nil {
-		return a.summarizeFallbackProvider.Model().ContextWindow
-	}
-	return 0
-}
-
-// sendCompactionSummary sends the summarization request to the appropriate provider.
-// rawConvText and compactionPrompt are passed so that if the primary provider fails,
-// the fallback (coder) provider can rebuild the message trimmed to its own context window.
-// reservation is the token budget reserved for prompt + expected output.
-func (a *agent) sendCompactionSummary(ctx context.Context, messages []message.Message, rawConvText, compactionPrompt string, reservation int64) (*provider.ProviderResponse, provider.Provider, error) {
-	providerToUse := a.summarizeProvider
-	if providerToUse == nil {
-		providerToUse = a.summarizeFallbackProvider
-	}
-	if providerToUse == nil {
-		return nil, nil, fmt.Errorf("no summarizer provider available for compaction")
-	}
-
-	response, err := providerToUse.SendMessages(ctx, messages, []tools.BaseTool{})
-	if err == nil {
-		return response, providerToUse, nil
-	}
-
-	// If the primary summarizer failed and we have a separate fallback (coder), retry
-	// with the fallback provider, re-trimming the conversation text to fit its context window.
-	if a.summarizeProvider != nil && a.summarizeFallbackProvider != nil && providerToUse == a.summarizeProvider {
-		fallback := a.summarizeFallbackProvider
-		logging.WarnPersist("Configured compaction model failed, retrying with coder (fallback) model",
-			"error", err, "fallbackModel", fallback.Model().ID)
-
-		fallbackConvStr := trimTextToContextWindow(rawConvText, fallback.Model().ContextWindow, reservation)
-		fallbackMessages := []message.Message{
-			{
-				Role:  message.User,
-				Parts: []message.ContentPart{message.TextContent{Text: compactionPrompt + "\n\nConversation to summarize:\n" + fallbackConvStr}},
-			},
-		}
-		response, fallbackErr := fallback.SendMessages(ctx, fallbackMessages, []tools.BaseTool{})
-		if fallbackErr == nil {
-			return response, fallback, nil
-		}
-		return nil, nil, fmt.Errorf("configured compaction model failed: %w; coder fallback also failed: %w", err, fallbackErr)
-	}
-	return nil, nil, err
-}
-
-func (a *agent) compactContext(ctx context.Context, sessionID string) error {
+func (a *agent) generateAndPersistSummary(ctx context.Context, sessionID string, mode summaryMode) (*summaryResult, error) {
 	msgs, err := a.messages.List(ctx, sessionID)
 	if err != nil {
-		return fmt.Errorf("failed to list messages for compaction: %w", err)
+		return nil, fmt.Errorf("failed to list messages for summary: %w", err)
 	}
-
-	if len(msgs) < 4 {
-		return nil // not enough messages to compact
+	if len(msgs) == 0 {
+		return nil, fmt.Errorf("no messages to summarize")
 	}
-
-	// Build conversation text for summarization (text content only)
-	var convText strings.Builder
-	for _, msg := range msgs {
-		role := "User"
-		if msg.Role == message.Assistant {
-			role = "Assistant"
-		}
-		text := msg.Content().Text
-		if text != "" {
-			convText.WriteString(fmt.Sprintf("\n\n%s: %s", role, text))
-		}
-	}
-
-	compactionPrompt := `Create a structured summary of the conversation to replace the conversation history. Include:
-1. Task Overview: user's core request, success criteria, any constraints
-2. Current State: completed work, files modified (with paths), key outputs produced
-3. Important Discoveries: technical constraints, decisions made, errors resolved
-4. Next Steps: remaining work, pending decisions or blockers
-
-Be concise but complete. This summary will replace the conversation history.`
-
-	// Determine the effective context window of the summarizer.
-	// If the summarizer has a smaller context window than the conversation text,
-	// trim the conversation from the oldest end to fit.
-	// Reserve ~2500 tokens for the compaction prompt and expected output.
-	const compactionReservation int64 = 2500
-	summarizerContextWindow := a.getSummarizerContextWindow()
-	convStr := trimTextToContextWindow(convText.String(), summarizerContextWindow, compactionReservation)
 
 	sendCtx := context.WithValue(ctx, tools.SessionIDContextKey, sessionID)
-	messages := []message.Message{
-		{
-			Role:  message.User,
-			Parts: []message.ContentPart{message.TextContent{Text: compactionPrompt + "\n\nConversation to summarize:\n" + convStr}},
-		},
-	}
-	response, usedProvider, err := a.sendCompactionSummary(sendCtx, messages, convText.String(), compactionPrompt, compactionReservation)
+	response, usedProvider, usedFallback, err := a.sendSummaryRequest(sendCtx, sessionID, msgs, mode)
 	if err != nil {
-		return fmt.Errorf("failed to generate compaction summary: %w", err)
+		return nil, err
 	}
 
 	summary := strings.TrimSpace(response.Content)
 	if summary == "" {
-		return fmt.Errorf("empty compaction summary returned")
+		if mode == summaryModeCompaction {
+			return nil, fmt.Errorf("empty compaction summary returned")
+		}
+		return nil, fmt.Errorf("empty summary returned")
 	}
 
-	summaryText := fmt.Sprintf("The following is a summary of the earlier conversation:\n\n%s\n\n---\nConversation continues below:", summary)
+	summaryText := summary
+	if mode == summaryModeCompaction {
+		summaryText = a.buildCompactionContinuationSummary(msgs, summary)
+	}
 
 	summaryMsg, err := a.messages.Create(ctx, sessionID, message.CreateMessageParams{
 		Role: message.Assistant,
@@ -1362,19 +1149,276 @@ Be concise but complete. This summary will replace the conversation history.`
 		Model: usedProvider.Model().ID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create compaction summary message: %w", err)
+		if mode == summaryModeCompaction {
+			return nil, fmt.Errorf("failed to create compaction summary message: %w", err)
+		}
+		return nil, fmt.Errorf("failed to create summary message: %w", err)
 	}
 
 	sess, err := a.sessions.Get(ctx, sessionID)
 	if err != nil {
-		return fmt.Errorf("failed to get session for compaction: %w", err)
+		if mode == summaryModeCompaction {
+			return nil, fmt.Errorf("failed to get session for compaction: %w", err)
+		}
+		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 	sess.SummaryMessageID = summaryMsg.ID
+	sess.CompletionTokens = response.Usage.OutputTokens
+	sess.PromptTokens = 0
+	model := usedProvider.Model()
+	usage := response.Usage
+	cost := model.CostPer1MInCached/1e6*float64(usage.CacheCreationTokens) +
+		model.CostPer1MOutCached/1e6*float64(usage.CacheReadTokens) +
+		model.CostPer1MIn/1e6*float64(usage.InputTokens) +
+		model.CostPer1MOut/1e6*float64(usage.OutputTokens)
+	sess.Cost += cost
 	if _, err = a.sessions.Save(ctx, sess); err != nil {
-		return fmt.Errorf("failed to save session after compaction: %w", err)
+		if mode == summaryModeCompaction {
+			return nil, fmt.Errorf("failed to save session after compaction: %w", err)
+		}
+		return nil, fmt.Errorf("failed to save session: %w", err)
 	}
 
-	logging.InfoPersist(fmt.Sprintf("Context compacted: %d messages summarized, SummaryMessageID: %s", len(msgs), summaryMsg.ID))
+	return &summaryResult{message: summaryMsg, text: summary, model: model, usage: usage, usedFallback: usedFallback}, nil
+}
+
+func (a *agent) sendSummaryRequest(ctx context.Context, sessionID string, msgs []message.Message, mode summaryMode) (*provider.ProviderResponse, provider.Provider, bool, error) {
+	providerToUse := a.summarizeProvider
+	if providerToUse == nil {
+		providerToUse = a.summarizeFallbackProvider
+	}
+	if providerToUse == nil {
+		return nil, nil, false, fmt.Errorf("no summarizer provider available")
+	}
+
+	buildMessages := func(p provider.Provider) []message.Message {
+		if mode == summaryModeManual {
+			return buildManualSummaryMessages(msgs, p)
+		}
+		return buildCompactionSummaryMessages(sessionID, msgs, p)
+	}
+
+	messages := buildMessages(providerToUse)
+	response, err := providerToUse.SendMessages(ctx, messages, []tools.BaseTool{})
+	if err == nil {
+		return response, providerToUse, false, nil
+	}
+
+	if a.summarizeProvider != nil && a.summarizeFallbackProvider != nil && providerToUse == a.summarizeProvider {
+		fallback := a.summarizeFallbackProvider
+		logging.WarnPersist("Configured summary model failed, retrying with coder (fallback) model",
+			"error", err, "fallbackModel", fallback.Model().ID)
+		response, fallbackErr := fallback.SendMessages(ctx, buildMessages(fallback), []tools.BaseTool{})
+		if fallbackErr == nil {
+			return response, fallback, true, nil
+		}
+		return nil, nil, false, fmt.Errorf("configured summary model failed: %w; coder fallback also failed: %w", err, fallbackErr)
+	}
+
+	return nil, nil, false, fmt.Errorf("failed to summarize: %w", err)
+}
+
+func buildConversationText(msgs []message.Message) string {
+	var convText strings.Builder
+	for _, msg := range msgs {
+		role := "User"
+		if msg.Role == message.Assistant {
+			role = "Assistant"
+		}
+		text := msg.Content().Text
+		if text != "" {
+			convText.WriteString(fmt.Sprintf("\n\n%s: %s", role, text))
+		}
+	}
+	return convText.String()
+}
+
+func buildManualSummaryMessages(msgs []message.Message, p provider.Provider) []message.Message {
+	promptText := prompt.SummarizerPrompt(p.Model().Provider)
+	promptMsg := message.Message{
+		Role:  message.User,
+		Parts: []message.ContentPart{message.TextContent{Text: promptText}},
+	}
+	trimmed := trimMessagesToSummaryBudget(msgs, p)
+	return append(trimmed, promptMsg)
+}
+
+func buildCompactionSummaryMessages(sessionID string, msgs []message.Message, p provider.Provider) []message.Message {
+	promptText := prompt.SummarizerPrompt(p.Model().Provider)
+	structured := buildStructuredConversationSummary(sessionID, msgs)
+	budgeted := trimTextToSummaryBudget(structured, p)
+	return []message.Message{{
+		Role:  message.User,
+		Parts: []message.ContentPart{message.TextContent{Text: promptText + "\n\nConversation state to summarize:\n" + budgeted}},
+	}}
+}
+
+func trimMessagesToSummaryBudget(msgs []message.Message, p provider.Provider) []message.Message {
+	budget := summaryInputBudget(p)
+	if budget <= 0 {
+		return msgs
+	}
+
+	trimmed := append([]message.Message(nil), msgs...)
+	for len(trimmed) > 2 && estimateMessagesTokens(trimmed) > budget {
+		trimmed = trimmed[1:]
+	}
+	return trimmed
+}
+
+func trimTextToSummaryBudget(text string, p provider.Provider) string {
+	budget := summaryInputBudget(p)
+	if budget <= 0 {
+		return text
+	}
+	return trimTextToContextWindow(text, budget, 0)
+}
+
+func summaryInputBudget(p provider.Provider) int64 {
+	contextWindow := p.Model().ContextWindow
+	if contextWindow <= 0 {
+		return 0
+	}
+	budget := contextWindow - summaryOutputReservationTokens - summaryToolOverheadTokens
+	if budget < summaryMinInputBudgetTokens {
+		if contextWindow <= summaryMinInputBudgetTokens {
+			return contextWindow
+		}
+		return summaryMinInputBudgetTokens
+	}
+	return budget
+}
+
+func estimateMessagesTokens(msgs []message.Message) int64 {
+	var total int64
+	for _, msg := range msgs {
+		total += estimateMessageTokens(msg)
+	}
+	return total
+}
+
+func buildStructuredConversationSummary(sessionID string, msgs []message.Message) string {
+	var b strings.Builder
+	b.WriteString("Session ID: ")
+	b.WriteString(sessionID)
+	b.WriteString("\n")
+	b.WriteString("Message count: ")
+	b.WriteString(strconv.Itoa(len(msgs)))
+	b.WriteString("\n\n")
+
+	for i, msg := range msgs {
+		b.WriteString("Message ")
+		b.WriteString(strconv.Itoa(i + 1))
+		b.WriteString(":\n")
+		b.WriteString("- Role: ")
+		b.WriteString(string(msg.Role))
+		b.WriteString("\n")
+		if msg.Model != "" {
+			b.WriteString("- Model: ")
+			b.WriteString(string(msg.Model))
+			b.WriteString("\n")
+		}
+		if text := strings.TrimSpace(msg.Content().Text); text != "" {
+			b.WriteString("- Text:\n")
+			b.WriteString(indentSummaryBlock(text))
+			b.WriteString("\n")
+		}
+		if thinking := strings.TrimSpace(msg.ReasoningContent().Thinking); thinking != "" {
+			b.WriteString("- Reasoning:\n")
+			b.WriteString(indentSummaryBlock(thinking))
+			b.WriteString("\n")
+		}
+		if toolCalls := msg.ToolCalls(); len(toolCalls) > 0 {
+			b.WriteString("- Tool calls:\n")
+			for _, tc := range toolCalls {
+				b.WriteString("  - ")
+				b.WriteString(tc.Name)
+				if tc.ID != "" {
+					b.WriteString(" (#")
+					b.WriteString(tc.ID)
+					b.WriteString(")")
+				}
+				if input := strings.TrimSpace(tc.Input); input != "" {
+					b.WriteString(" input:\n")
+					b.WriteString(indentSummaryBlock(input))
+				} else {
+					b.WriteString("\n")
+				}
+			}
+		}
+		if toolResults := msg.ToolResults(); len(toolResults) > 0 {
+			b.WriteString("- Tool results:\n")
+			for _, tr := range toolResults {
+				b.WriteString("  - ")
+				b.WriteString(tr.Name)
+				if tr.ToolCallID != "" {
+					b.WriteString(" (#")
+					b.WriteString(tr.ToolCallID)
+					b.WriteString(")")
+				}
+				if content := strings.TrimSpace(tr.Content); content != "" {
+					b.WriteString(":\n")
+					b.WriteString(indentSummaryBlock(content))
+				} else {
+					b.WriteString("\n")
+				}
+			}
+		}
+		if finish := msg.FinishPart(); finish != nil {
+			b.WriteString("- Finish reason: ")
+			b.WriteString(string(finish.Reason))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
+	return strings.TrimSpace(b.String())
+}
+
+func indentSummaryBlock(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = "    " + line
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (a *agent) buildCompactionContinuationSummary(msgs []message.Message, summary string) string {
+	summaryText := fmt.Sprintf("The following is a summary of the earlier conversation:\n\n%s\n\n---\nConversation continues below:", summary)
+	if wasInterruptedMidTool(msgs) {
+		return fmt.Sprintf(continuationMarkerTemplate, summaryText)
+	}
+	return summaryText
+}
+
+func wasInterruptedMidTool(msgs []message.Message) bool {
+	if len(msgs) == 0 {
+		return false
+	}
+	lastMsg := msgs[len(msgs)-1]
+	return len(lastMsg.ToolCalls()) > 0
+}
+
+// compactContext summarizes the conversation history to reduce context size.
+// It creates a summary message and sets it as the session's SummaryMessageID so
+// subsequent calls to processGeneration will start from the summary.
+
+func (a *agent) compactContext(ctx context.Context, sessionID string) error {
+	msgs, err := a.messages.List(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to list messages for compaction: %w", err)
+	}
+
+	if len(msgs) < 4 {
+		return nil // not enough messages to compact
+	}
+
+	result, err := a.generateAndPersistSummary(ctx, sessionID, summaryModeCompaction)
+	if err != nil {
+		return fmt.Errorf("failed to generate compaction summary: %w", err)
+	}
+
+	logging.InfoPersist(fmt.Sprintf("Context compacted: %d messages summarized, SummaryMessageID: %s", len(msgs), result.message.ID))
 	return nil
 }
 
@@ -1430,10 +1474,7 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 		return nil, fmt.Errorf("provider account %q is disabled", acc.ID)
 	}
 
-	maxTokens := model.DefaultMaxTokens
-	if agentConfig.MaxTokens > 0 {
-		maxTokens = agentConfig.MaxTokens
-	}
+	maxTokens := config.ResolveAgentMaxTokens(agentName, agentConfig, model)
 
 	pc := ""
 	if len(personaContent) > 0 {
@@ -1633,12 +1674,13 @@ func isGitRepo(dir string) bool {
 }
 
 func effectiveMaxTokens(agentName config.AgentName, model models.Model) int {
+	agentCfg := config.Agent{}
 	if cfg := config.Get(); cfg != nil {
-		if agentConfig, ok := cfg.Agents[agentName]; ok && agentConfig.MaxTokens > 0 {
-			return int(agentConfig.MaxTokens)
+		if ac, ok := cfg.Agents[agentName]; ok {
+			agentCfg = ac
 		}
 	}
-	return int(model.DefaultMaxTokens)
+	return int(config.ResolveAgentMaxTokens(agentName, agentCfg, model))
 }
 
 // estimateMessageTokens returns a rough token estimate for a single message.

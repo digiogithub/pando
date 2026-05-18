@@ -1049,6 +1049,7 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 				Key:   fmt.Sprintf("agents.%s.maxTokens", agentName),
 				Value: fmt.Sprint(agentCfg.MaxTokens),
 				Type:  settings.FieldText,
+				Hint:  agentTokensHint(agentName, agentCfg),
 			},
 			settings.Field{
 				Label:   fmt.Sprintf("%s Reasoning Effort", string(agentName)),
@@ -1084,6 +1085,15 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 		Title:  "Agents/Models",
 		Fields: fields,
 	}
+}
+
+// agentTokensHint returns a hint string for the MaxTokens field of an agent.
+// When MaxTokens is 0 it shows the automatic budget that will be used at runtime.
+func agentTokensHint(agentName config.AgentName, agentCfg config.Agent) string {
+	if agentCfg.MaxTokens <= 0 {
+		return fmt.Sprintf("0 = Auto (role default: %d tokens)", config.AutoBudgetByRole(agentName))
+	}
+	return "0 = Auto"
 }
 
 func buildMCPServersSection(cfg *config.Config) settings.Section {
@@ -2694,8 +2704,8 @@ func saveAgent(field settings.Field) error {
 		if err != nil {
 			return fmt.Errorf("invalid max tokens value: %w", err)
 		}
-		if v <= 0 {
-			return fmt.Errorf("max tokens must be greater than zero")
+		if v < 0 {
+			return fmt.Errorf("max tokens must be 0 (auto) or a positive number")
 		}
 		agentCfg.MaxTokens = v
 	case "reasoningEffort":
