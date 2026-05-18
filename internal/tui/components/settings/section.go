@@ -12,6 +12,11 @@ type SaveFieldMsg struct {
 	Field        Field
 }
 
+type OpenModelFieldDialogMsg struct {
+	SectionTitle string
+	Field        Field
+}
+
 type Section struct {
 	Title          string
 	Group          string // optional group label shown as header in sidebar
@@ -177,6 +182,13 @@ func (s *Section) startEditing() tea.Cmd {
 		editor := NewToggleFieldCmp(*field)
 		s.editor = &editor
 	case FieldSelect:
+		if field.UseModelDialog {
+			s.editor = nil
+			openedField := *field
+			return func() tea.Msg {
+				return OpenModelFieldDialogMsg{SectionTitle: s.Title, Field: openedField}
+			}
+		}
 		editor := NewSelectFieldCmp(*field, s.editorWidth())
 		s.editor = &editor
 	default:

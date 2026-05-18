@@ -54,13 +54,16 @@ type codeIndexStartedMsg struct {
 }
 
 type settingsPage struct {
-	width             int
-	height            int
-	app               *pandoapp.App
-	settings          settings.SettingsCmp
-	catalogDialog     *dialog.SkillsCatalogDialog
-	addProviderDialog dialog.AddProviderDialog
-	configChangeCh    chan config.ConfigChangeEvent
+	width              int
+	height             int
+	app                *pandoapp.App
+	settings           settings.SettingsCmp
+	catalogDialog      *dialog.SkillsCatalogDialog
+	addProviderDialog  dialog.AddProviderDialog
+	modelDialog        dialog.ModelDialog
+	modelDialogField   *settings.Field
+	modelDialogSection string
+	configChangeCh     chan config.ConfigChangeEvent
 }
 
 // waitForConfigChange returns a blocking tea.Cmd that resolves when an
@@ -90,6 +93,8 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.width = msg.Width
 		p.height = msg.Height
 		return p, p.SetSize(msg.Width, msg.Height)
+	case settings.OpenModelFieldDialogMsg:
+		return p, p.openModelFieldDialog(msg)
 	case settings.SaveFieldMsg:
 		if msg.Field.Key == "action:open_skills_catalog" {
 			return p, p.openCatalogDialog()
@@ -161,6 +166,23 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dialog.CloseAddProviderDialogMsg:
 		p.addProviderDialog = nil
 		return p, nil
+	case dialog.ModelDialogSelectionMsg:
+		if p.modelDialogField == nil {
+			p.modelDialog = nil
+			return p, nil
+		}
+		selectedField := *p.modelDialogField
+		selectedField.Value = string(msg.Selected.ID)
+		p.modelDialog = nil
+		p.modelDialogField = nil
+		saveMsg := settings.SaveFieldMsg{SectionTitle: p.modelDialogSection, Field: selectedField}
+		p.modelDialogSection = ""
+		return p, p.saveField(saveMsg)
+	case dialog.CloseModelDialogMsg:
+		p.modelDialog = nil
+		p.modelDialogField = nil
+		p.modelDialogSection = ""
+		return p, nil
 	case lspPresetAddedMsg:
 		p.settings.SetSections(buildSections(p.app))
 		p.settings.SetSize(p.width, p.height)
@@ -214,6 +236,17 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return p, tea.Batch(cmd, settingsCmd)
 	}
 
+	if p.modelDialog != nil {
+		updated, cmd := p.modelDialog.Update(msg)
+		p.modelDialog = updated.(dialog.ModelDialog)
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return p, cmd
+		}
+		settingsUpdated, settingsCmd := p.settings.Update(msg)
+		p.settings = settingsUpdated.(settings.SettingsCmp)
+		return p, tea.Batch(cmd, settingsCmd)
+	}
+
 	updated, cmd := p.settings.Update(msg)
 	p.settings = updated.(settings.SettingsCmp)
 	return p, cmd
@@ -247,6 +280,20 @@ func (p *settingsPage) View() string {
 		}
 		return layout.PlaceOverlay(x, y, overlay, base, true)
 	}
+	if p.modelDialog != nil {
+		overlay := p.modelDialog.View()
+		overlayW := lipgloss.Width(overlay)
+		overlayH := lipgloss.Height(overlay)
+		x := (p.width - overlayW) / 2
+		y := (p.height - overlayH) / 2
+		if x < 0 {
+			x = 0
+		}
+		if y < 0 {
+			y = 0
+		}
+		return layout.PlaceOverlay(x, y, overlay, base, true)
+	}
 	return base
 }
 
@@ -263,13 +310,16 @@ func (p *settingsPage) GetSize() (int, int) {
 
 // HasActiveModal reports whether the settings page currently has an active modal dialog.
 func (p *settingsPage) HasActiveModal() bool {
-	return p.catalogDialog != nil || p.addProviderDialog != nil
+	return p.catalogDialog != nil || p.addProviderDialog != nil || p.modelDialog != nil
 }
 
 // ClearModals closes any open modal dialogs on the settings page.
 func (p *settingsPage) ClearModals() {
 	p.catalogDialog = nil
 	p.addProviderDialog = nil
+	p.modelDialog = nil
+	p.modelDialogField = nil
+	p.modelDialogSection = ""
 }
 
 func (p *settingsPage) openAddProviderDialog() tea.Cmd {
@@ -285,6 +335,24 @@ func NewSettingsPage(app *pandoapp.App) tea.Model {
 		app:      app,
 		settings: cmp,
 	}
+}
+
+func (p *settingsPage) openModelFieldDialog(msg settings.OpenModelFieldDialogMsg) tea.Cmd {
+	modelOptions := make([]dialog.ModelDialogOption, 0, len(msg.Field.Options))
+	for _, option := range msg.Field.Options {
+		provider := models.SupportedModels[models.ModelID(option)].Provider
+		modelOptions = append(modelOptions, dialog.ModelDialogOption{
+			ID:       models.ModelID(option),
+			Name:     option,
+			Provider: provider,
+		})
+	}
+	p.modelDialog = dialog.NewCustomModelDialogCmp(msg.Field.ModelDialogTitle, models.ModelID(msg.Field.Value), modelOptions, func(model models.Model) tea.Msg {
+		return dialog.ModelDialogSelectionMsg{Selected: dialog.ModelDialogOption{ID: model.ID, Name: model.Name, Provider: model.Provider}}
+	})
+	p.modelDialogField = &msg.Field
+	p.modelDialogSection = msg.SectionTitle
+	return p.modelDialog.Init()
 }
 
 func (p *settingsPage) saveField(msg settings.SaveFieldMsg) tea.Cmd {
@@ -968,11 +1036,13 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 
 		fields = append(fields,
 			settings.Field{
-				Label:   fmt.Sprintf("%s Model", string(agentName)),
-				Key:     fmt.Sprintf("agents.%s.model", agentName),
-				Value:   modelID,
-				Type:    settings.FieldSelect,
-				Options: ensureOption(modelOptions, modelID),
+				Label:            fmt.Sprintf("%s Model", string(agentName)),
+				Key:              fmt.Sprintf("agents.%s.model", agentName),
+				Value:            modelID,
+				Type:             settings.FieldSelect,
+				Options:          ensureOption(modelOptions, modelID),
+				UseModelDialog:   true,
+				ModelDialogTitle: fmt.Sprintf("Select %s Model", string(agentName)),
 			},
 			settings.Field{
 				Label: fmt.Sprintf("%s Max Tokens", string(agentName)),
@@ -1339,11 +1409,13 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 		{Label: "Orchestrator Store Path", Key: "mesnada.orchestrator.storePath", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.StorePath},
 		{Label: "Orchestrator Log Dir", Key: "mesnada.orchestrator.logDir", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.LogDir},
 		{
-			Label:   "Orchestrator Default Model",
-			Key:     "mesnada.orchestrator.defaultModel",
-			Type:    settings.FieldSelect,
-			Value:   cfg.Mesnada.Orchestrator.DefaultModel,
-			Options: ensureOption(supportedModelOptions(cfg), cfg.Mesnada.Orchestrator.DefaultModel),
+			Label:            "Orchestrator Default Model",
+			Key:              "mesnada.orchestrator.defaultModel",
+			Type:             settings.FieldSelect,
+			Value:            cfg.Mesnada.Orchestrator.DefaultModel,
+			Options:          ensureOption(supportedModelOptions(cfg), cfg.Mesnada.Orchestrator.DefaultModel),
+			UseModelDialog:   true,
+			ModelDialogTitle: "Select Orchestrator Default Model",
 		},
 		{Label: "Orchestrator MCP Config", Key: "mesnada.orchestrator.defaultMcpConfig", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.DefaultMCPConfig},
 		{
@@ -2084,11 +2156,13 @@ func buildEvaluatorSection(cfg *config.Config) settings.Section {
 			Value: boolString(eval.Enabled),
 		},
 		{
-			Label:   "Judge Model",
-			Key:     "evaluator.model",
-			Type:    settings.FieldSelect,
-			Value:   string(eval.Model),
-			Options: ensureOption(supportedModelOptions(cfg), string(eval.Model)),
+			Label:            "Judge Model",
+			Key:              "evaluator.model",
+			Type:             settings.FieldSelect,
+			Value:            string(eval.Model),
+			Options:          ensureOption(supportedModelOptions(cfg), string(eval.Model)),
+			UseModelDialog:   true,
+			ModelDialogTitle: "Select Judge Model",
 		},
 
 		{

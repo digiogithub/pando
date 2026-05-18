@@ -23,14 +23,16 @@ const (
 )
 
 type Field struct {
-	Label    string
-	Key      string
-	Value    string
-	Type     FieldType
-	Options  []string
-	Masked   bool
-	ReadOnly bool
-	Disabled bool
+	Label            string
+	Key              string
+	Value            string
+	Type             FieldType
+	Options          []string
+	Masked           bool
+	ReadOnly         bool
+	Disabled         bool
+	UseModelDialog   bool
+	ModelDialogTitle string
 	// Hint is optional helper text shown below the field row (e.g. recommended default).
 	Hint string
 }

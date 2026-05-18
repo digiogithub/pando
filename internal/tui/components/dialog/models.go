@@ -30,6 +30,17 @@ type ModelSelectedMsg struct {
 	Model models.Model
 }
 
+type ModelDialogOption struct {
+	ID       models.ModelID
+	Name     string
+	Provider models.ModelProvider
+}
+
+// ModelDialogSelectionMsg is sent when a model is selected from a custom model dialog instance.
+type ModelDialogSelectionMsg struct {
+	Selected ModelDialogOption
+}
+
 // CloseModelDialogMsg is sent when a model is selected
 type CloseModelDialogMsg struct{}
 
@@ -40,10 +51,14 @@ type ModelDialog interface {
 }
 
 type modelDialogCmp struct {
-	models             []models.Model
-	filteredModels     []models.Model
-	provider           models.ModelProvider
-	availableProviders []models.ModelProvider
+	models               []models.Model
+	filteredModels       []models.Model
+	provider             models.ModelProvider
+	availableProviders   []models.ModelProvider
+	selectedModelID      models.ModelID
+	title                string
+	onSelect             func(models.Model) tea.Msg
+	customProviderModels map[models.ModelProvider][]models.Model
 
 	selectedIdx     int
 	width           int
@@ -116,6 +131,13 @@ func (m *modelDialogCmp) Init() tea.Cmd {
 	return textinput.Blink
 }
 
+func (m *modelDialogCmp) emitSelection(model models.Model) tea.Msg {
+	if m.onSelect != nil {
+		return m.onSelect(model)
+	}
+	return ModelSelectedMsg{Model: model}
+}
+
 func (m *modelDialogCmp) filterModels() {
 	query := strings.TrimSpace(m.queryInput.Value())
 	if query == "" {
@@ -162,7 +184,7 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			util.ReportInfo(fmt.Sprintf("selected model: %s", m.filteredModels[m.selectedIdx].Name))
-			return m, util.CmdHandler(ModelSelectedMsg{Model: m.filteredModels[m.selectedIdx]})
+			return m, util.CmdHandler(m.emitSelection(m.filteredModels[m.selectedIdx]))
 		case key.Matches(msg, modelKeys.Escape):
 			return m, util.CmdHandler(CloseModelDialogMsg{})
 		default:
@@ -194,7 +216,7 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.selectedIdx >= m.scrollOffset+numVisibleModels {
 					m.scrollOffset = m.selectedIdx - (numVisibleModels - 1)
 				}
-				return m, util.CmdHandler(ModelSelectedMsg{Model: m.filteredModels[m.selectedIdx]})
+				return m, util.CmdHandler(m.emitSelection(m.filteredModels[m.selectedIdx]))
 			}
 		case tea.MouseButtonWheelUp:
 			if !tuizone.InBounds(tuizone.ModelListID(modelListZoneID), msg) {
@@ -307,14 +329,17 @@ func (m *modelDialogCmp) View() string {
 			Render(content)
 	}
 
-	// Capitalize first letter of provider name
-	providerName := strings.ToUpper(string(m.provider)[:1]) + string(m.provider[1:])
+	titleText := m.title
+	if strings.TrimSpace(titleText) == "" {
+		providerName := strings.ToUpper(string(m.provider)[:1]) + string(m.provider[1:])
+		titleText = fmt.Sprintf("Select %s Model", providerName)
+	}
 	title := baseStyle.
 		Foreground(t.Primary()).
 		Bold(true).
 		Width(maxDialogWidth).
 		Padding(0, 0, 1).
-		Render(fmt.Sprintf("Select %s Model", providerName))
+		Render(titleText)
 
 	// Search input
 	queryStyle := baseStyle.
@@ -412,6 +437,30 @@ func (m *modelDialogCmp) BindingKeys() []key.Binding {
 }
 
 func (m *modelDialogCmp) setupModels() {
+	if len(m.customProviderModels) > 0 {
+		m.availableProviders = make([]models.ModelProvider, 0, len(m.customProviderModels))
+		for provider := range m.customProviderModels {
+			m.availableProviders = append(m.availableProviders, provider)
+		}
+		slices.SortFunc(m.availableProviders, func(a, b models.ModelProvider) int {
+			return strings.Compare(string(a), string(b))
+		})
+		m.hScrollPossible = len(m.availableProviders) > 1
+		if len(m.availableProviders) == 0 {
+			m.provider = ""
+			m.models = nil
+			m.filteredModels = nil
+			return
+		}
+		m.provider = models.SupportedModels[m.selectedModelID].Provider
+		if m.provider == "" || findProviderIndex(m.availableProviders, m.provider) == -1 {
+			m.provider = m.availableProviders[0]
+		}
+		m.hScrollOffset = findProviderIndex(m.availableProviders, m.provider)
+		m.setupModelsForProvider(m.provider)
+		return
+	}
+
 	cfg := config.Get()
 	modelInfo := GetSelectedModel(cfg)
 	m.availableProviders = getEnabledProviders(cfg)
@@ -426,6 +475,7 @@ func (m *modelDialogCmp) setupModels() {
 	}
 
 	m.provider = modelInfo.Provider
+	m.selectedModelID = modelInfo.ID
 
 	// If the selected model's provider is empty or not in the available list,
 	// fall back to the first available provider
@@ -481,23 +531,29 @@ func findProviderIndex(providers []models.ModelProvider, provider models.ModelPr
 }
 
 func (m *modelDialogCmp) setupModelsForProvider(provider models.ModelProvider) {
-	cfg := config.Get()
-	agentCfg := cfg.Agents[config.AgentCoder]
-	selectedModelId := agentCfg.Model
-
 	m.provider = provider
-	m.models = getModelsForProvider(provider)
+	if len(m.customProviderModels) > 0 {
+		m.models = append([]models.Model(nil), m.customProviderModels[provider]...)
+	} else {
+		m.models = getModelsForProvider(provider)
+	}
 	m.selectedIdx = 0
 	m.scrollOffset = 0
 	m.queryInput.SetValue("")
 	m.filterModels()
 
+	selectedModelID := m.selectedModelID
+	if selectedModelID == "" {
+		cfg := config.Get()
+		agentCfg := cfg.Agents[config.AgentCoder]
+		selectedModelID = agentCfg.Model
+	}
+
 	// Try to select the current model if it belongs to this provider
-	if provider == models.SupportedModels[selectedModelId].Provider {
+	if provider == models.SupportedModels[selectedModelID].Provider {
 		for i, model := range m.filteredModels {
-			if model.ID == selectedModelId {
+			if model.ID == selectedModelID {
 				m.selectedIdx = i
-				// Adjust scroll position to keep selected model visible
 				if m.selectedIdx >= numVisibleModels {
 					m.scrollOffset = m.selectedIdx - (numVisibleModels - 1)
 				}
@@ -529,12 +585,43 @@ func getModelsForProvider(provider models.ModelProvider) []models.Model {
 }
 
 func NewModelDialogCmp() ModelDialog {
+	return NewCustomModelDialogCmp("", "", nil, nil)
+}
+
+func NewCustomModelDialogCmp(title string, selectedModelID models.ModelID, modelOptions []ModelDialogOption, onSelect func(models.Model) tea.Msg) ModelDialog {
 	input := textinput.New()
 	input.Placeholder = "Search models..."
 	input.Prompt = "> "
 	input.CharLimit = 128
 
-	return &modelDialogCmp{
-		queryInput: input,
+	cmp := &modelDialogCmp{
+		queryInput:           input,
+		title:                title,
+		selectedModelID:      selectedModelID,
+		onSelect:             onSelect,
+		customProviderModels: make(map[models.ModelProvider][]models.Model),
 	}
+	for _, option := range modelOptions {
+		provider := option.Provider
+		if provider == "" {
+			provider = models.SupportedModels[option.ID].Provider
+		}
+		cmp.customProviderModels[provider] = append(cmp.customProviderModels[provider], models.Model{
+			ID:       option.ID,
+			Name:     option.Name,
+			Provider: provider,
+		})
+	}
+	for provider, providerModels := range cmp.customProviderModels {
+		slices.SortFunc(providerModels, func(a, b models.Model) int {
+			if a.Name > b.Name {
+				return -1
+			} else if a.Name < b.Name {
+				return 1
+			}
+			return 0
+		})
+		cmp.customProviderModels[provider] = providerModels
+	}
+	return cmp
 }

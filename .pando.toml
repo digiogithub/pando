@@ -53,7 +53,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'copilot.gpt-4.1'
+Model = 'copilot.gpt-4o'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -71,8 +71,8 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.summarizer]
-Model = 'gemini.gemini-3-flash'
-MaxTokens = 8192
+Model = 'openrouter.qwen/qwen3.6-flash'
+MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false
@@ -215,6 +215,8 @@ PerplexitySearchEnabled = false
 PerplexityAPIKey = ''
 ExaSearchEnabled = true
 ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAvSmw0ODJCVExNcTJBdTRzY1VsU3A1ZkFVS0p0SHpNdE01MzZiQ2NGMGtnCmFoVFpsZjE0ZGI0M3loU0l3YmhaRUlWVXR5RXlzcmRIVmNGODRxMWJMbU0KLS0tIDVEMTR1VEg3TnpZcndnRHlrb0plOHk3L1luN3dIVXMxUmRYdnNBTFBZRjAKfn/7eh8fYKqE+eruS8b6wR5Cu78Rb930QhoZEqiqnir7AJFg05pzxFfFICILgavTt927iu7NA/q8uF9YvJfpH2vpbP4='
+SourcegraphEnabled = false
+SourcegraphToken = ''
 Context7Enabled = true
 BrowserEnabled = true
 BrowserType = 'chrome'
