@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strings"
 )
 
 // binaryName returns the platform-appropriate binary filename.
@@ -48,46 +47,8 @@ func hasUsableEmbeddedAppBundle() bool {
 
 func extractEmbeddedAppBundle(dstRoot string) (string, error) {
 	bundleRoot := filepath.Join(dstRoot, appBundleName())
-	entries, err := fs.Glob(DesktopBundle, "bin/"+appBundleName()+"/**")
-	if err != nil {
-		return "", fmt.Errorf("failed to list embedded macOS app bundle: %w", err)
-	}
-	if len(entries) == 0 {
-		return "", fmt.Errorf("desktop app bundle not embedded: run `make desktop-embed` on macOS")
-	}
-
-	for _, entry := range entries {
-		relPath := strings.TrimPrefix(entry, "bin/")
-		if relPath == "" {
-			continue
-		}
-
-		info, statErr := fs.Stat(DesktopBundle, entry)
-		if statErr != nil {
-			return "", fmt.Errorf("failed to stat embedded app bundle entry %q: %w", entry, statErr)
-		}
-
-		targetPath := filepath.Join(dstRoot, filepath.FromSlash(relPath))
-		if info.IsDir() {
-			if mkdirErr := os.MkdirAll(targetPath, 0o755); mkdirErr != nil {
-				return "", fmt.Errorf("failed to create app bundle directory %q: %w", targetPath, mkdirErr)
-			}
-			continue
-		}
-
-		if mkdirErr := os.MkdirAll(filepath.Dir(targetPath), 0o755); mkdirErr != nil {
-			return "", fmt.Errorf("failed to create app bundle parent directory %q: %w", targetPath, mkdirErr)
-		}
-
-		data, readErr := fs.ReadFile(DesktopBundle, entry)
-		if readErr != nil {
-			return "", fmt.Errorf("failed to read embedded app bundle entry %q: %w", entry, readErr)
-		}
-
-		mode := info.Mode()
-		if writeErr := os.WriteFile(targetPath, data, mode.Perm()); writeErr != nil {
-			return "", fmt.Errorf("failed to write app bundle entry %q: %w", targetPath, writeErr)
-		}
+	if err := copyEmbeddedDir(DesktopBundle, "bin/"+appBundleName(), bundleRoot); err != nil {
+		return "", err
 	}
 
 	execPath, err := macOSBundleExecutablePath(bundleRoot)
@@ -99,6 +60,47 @@ func extractEmbeddedAppBundle(dstRoot string) (string, error) {
 	}
 
 	return bundleRoot, nil
+}
+
+func copyEmbeddedDir(src fs.FS, srcRoot, dstRoot string) error {
+	return fs.WalkDir(src, srcRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("failed to walk embedded app bundle entry %q: %w", path, err)
+		}
+
+		relPath, relErr := filepath.Rel(srcRoot, path)
+		if relErr != nil {
+			return fmt.Errorf("failed to resolve embedded app bundle relative path for %q: %w", path, relErr)
+		}
+		if relPath == "." {
+			return os.MkdirAll(dstRoot, 0o755)
+		}
+
+		targetPath := filepath.Join(dstRoot, filepath.FromSlash(relPath))
+		if d.IsDir() {
+			if mkdirErr := os.MkdirAll(targetPath, 0o755); mkdirErr != nil {
+				return fmt.Errorf("failed to create app bundle directory %q: %w", targetPath, mkdirErr)
+			}
+			return nil
+		}
+
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			return fmt.Errorf("failed to stat embedded app bundle entry %q: %w", path, infoErr)
+		}
+		if mkdirErr := os.MkdirAll(filepath.Dir(targetPath), 0o755); mkdirErr != nil {
+			return fmt.Errorf("failed to create app bundle parent directory %q: %w", targetPath, mkdirErr)
+		}
+
+		data, readErr := fs.ReadFile(src, path)
+		if readErr != nil {
+			return fmt.Errorf("failed to read embedded app bundle entry %q: %w", path, readErr)
+		}
+		if writeErr := os.WriteFile(targetPath, data, info.Mode().Perm()); writeErr != nil {
+			return fmt.Errorf("failed to write app bundle entry %q: %w", targetPath, writeErr)
+		}
+		return nil
+	})
 }
 
 func macOSBundleExecutablePath(bundleRoot string) (string, error) {
