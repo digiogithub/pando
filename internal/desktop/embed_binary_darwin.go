@@ -10,9 +10,12 @@ import "embed"
 //go:embed bin/.keep
 var DesktopBundlePlaceholder []byte
 
-// DesktopBundle contains the embedded macOS .app bundle directory tree.
-// Populated by running `make desktop-embed` on macOS.
+// DesktopBundle contains the embedded macOS .app bundle directory tree when it
+// has been copied into internal/desktop/bin/Pando.app by `make desktop-embed`.
 //
-//go:embed bin/Pando.app
-//go:embed bin/Pando.app/**
+// The directory itself is optional during normal compilation, so keep the
+// default embedded filesystem limited to the placeholder file and let runtime
+// detection decide whether an app bundle is available.
+//
+//go:embed bin/.keep
 var DesktopBundle embed.FS

@@ -26,7 +26,13 @@ func hasEmbeddedAppBundle() bool {
 	if runtime.GOOS != "darwin" {
 		return false
 	}
-	entries, err := fs.Glob(DesktopBundle, "bin/"+appBundleName()+"/**")
+
+	bundleRoot := "bin/" + appBundleName()
+	if _, err := fs.Stat(DesktopBundle, bundleRoot); err == nil {
+		return true
+	}
+
+	entries, err := fs.Glob(DesktopBundle, bundleRoot+"/**")
 	return err == nil && len(entries) > 0
 }
 
