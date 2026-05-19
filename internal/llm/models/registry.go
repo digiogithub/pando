@@ -106,48 +106,71 @@ func RefreshProviderModelsForAccount(ctx context.Context, params AccountModelRef
 		return fmt.Errorf("fetch models from account %s (%s): %w", params.AccountID, params.ProviderType, err)
 	}
 
-	// Determine the prefix for model IDs
-	prefix := string(params.ProviderType)
-	if params.AllAccountsOfType > 1 {
-		prefix = params.AccountID
-	}
-
 	for _, fm := range fetched {
-		modelID := ModelID(fmt.Sprintf("%s.%s", prefix, fm.ID))
-
-		// Don't overwrite statically defined models (only relevant when prefix = provider type)
-		if _, exists := SupportedModels[modelID]; exists {
+		model := modelFromFetchedAccountModel(params, fm)
+		if shouldSkipAccountScopedModel(params.ProviderType, model.ID, model.APIModel) {
 			continue
 		}
-
-		name := fm.Name
-		if name == "" {
-			name = fm.ID
-		}
-
-		contextWindow := fm.ContextWindow
-		if contextWindow <= 0 {
-			contextWindow = 128_000
-		}
-		maxTokens := int64(4096)
-		if contextWindow < maxTokens {
-			maxTokens = contextWindow / 2
-		}
-
-		model := Model{
-			ID:               modelID,
-			Name:             fmt.Sprintf("%s: %s", capitalizeProvider(string(params.ProviderType)), name),
-			Provider:         params.ProviderType,
-			APIModel:         fm.ID,
-			ContextWindow:    contextWindow,
-			DefaultMaxTokens: maxTokens,
-			AccountID:        params.AccountID,
-		}
-
 		RegisterDynamicModel(model)
 	}
 
 	return nil
+}
+
+func modelFromFetchedAccountModel(params AccountModelRefreshParams, fetched FetchedModel) Model {
+	prefix := dynamicModelPrefix(params.ProviderType, params.AccountID, params.AllAccountsOfType)
+	modelID := ModelID(fmt.Sprintf("%s.%s", prefix, fetched.ID))
+	name := fetchedModelName(fetched)
+	contextWindow := fetchedModelContextWindow(fetched.ContextWindow)
+
+	maxTokens := int64(4096)
+	if contextWindow < maxTokens {
+		maxTokens = contextWindow / 2
+	}
+
+	return Model{
+		ID:               modelID,
+		Name:             fmt.Sprintf("%s: %s", capitalizeProvider(string(params.ProviderType)), name),
+		Provider:         params.ProviderType,
+		APIModel:         fetched.ID,
+		ContextWindow:    contextWindow,
+		DefaultMaxTokens: maxTokens,
+		AccountID:        params.AccountID,
+	}
+}
+
+func dynamicModelPrefix(providerType ModelProvider, accountID string, allAccountsOfType int) string {
+	if providerType == ProviderAntigravity {
+		return string(providerType)
+	}
+	if allAccountsOfType > 1 {
+		return accountID
+	}
+	return string(providerType)
+}
+
+func shouldSkipAccountScopedModel(providerType ModelProvider, modelID ModelID, apiModel string) bool {
+	if _, exists := SupportedModels[modelID]; exists {
+		return true
+	}
+	if providerType == ProviderAntigravity {
+		return modelExistsByAPIModel(providerType, apiModel)
+	}
+	return false
+}
+
+func fetchedModelName(fetched FetchedModel) string {
+	if fetched.Name != "" {
+		return fetched.Name
+	}
+	return fetched.ID
+}
+
+func fetchedModelContextWindow(contextWindow int64) int64 {
+	if contextWindow > 0 {
+		return contextWindow
+	}
+	return 128_000
 }
 
 // GetAllModels returns both static and dynamic models

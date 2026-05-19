@@ -54,6 +54,11 @@ type codeIndexStartedMsg struct {
 	err       error
 }
 
+type providerAccountActionMsg struct {
+	info string
+	err  error
+}
+
 type settingsPage struct {
 	width              int
 	height             int
@@ -120,6 +125,18 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if strings.HasPrefix(msg.Field.Key, "action:delete_provider_account:") {
 			id := strings.TrimPrefix(msg.Field.Key, "action:delete_provider_account:")
 			return p, p.deleteProviderAccount(id)
+		}
+		if strings.HasPrefix(msg.Field.Key, "action:login_provider_account:") {
+			id := strings.TrimPrefix(msg.Field.Key, "action:login_provider_account:")
+			return p, p.loginProviderAccount(id)
+		}
+		if strings.HasPrefix(msg.Field.Key, "action:verify_provider_account:") {
+			id := strings.TrimPrefix(msg.Field.Key, "action:verify_provider_account:")
+			return p, p.verifyProviderAccount(id)
+		}
+		if strings.HasPrefix(msg.Field.Key, "action:refresh_provider_account:") {
+			id := strings.TrimPrefix(msg.Field.Key, "action:refresh_provider_account:")
+			return p, p.refreshProviderAccount(id)
 		}
 		if msg.Field.Key == "action:add_provider" {
 			return p, p.openAddProviderDialog()
@@ -217,6 +234,13 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, util.ReportError(msg.err)
 		}
 		return p, util.ReportInfo(fmt.Sprintf("Indexing started for project %q (job: %s)", msg.projectID, msg.jobID))
+	case providerAccountActionMsg:
+		p.settings.SetSections(buildSections(p.app))
+		p.settings.SetSize(p.width, p.height)
+		if msg.err != nil {
+			return p, util.ReportError(msg.err)
+		}
+		return p, util.ReportInfo(msg.info)
 	case configExternalChangeMsg:
 		// Config changed from outside TUI (file or Web-UI): rebuild sections and
 		// re-arm the listener command so we keep receiving future events.
@@ -452,6 +476,91 @@ func (p *settingsPage) deleteProviderAccount(id string) tea.Cmd {
 	p.settings.SetSections(buildSections(p.app))
 	p.settings.SetSize(p.width, p.height)
 	return util.ReportInfo("Provider account deleted: " + id)
+}
+
+func (p *settingsPage) loginProviderAccount(id string) tea.Cmd {
+	return func() tea.Msg {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return providerAccountActionMsg{err: fmt.Errorf("provider account ID cannot be empty")}
+		}
+		acc, ok := config.GetProviderAccount(id)
+		if !ok {
+			return providerAccountActionMsg{err: fmt.Errorf("provider account %q not found", id)}
+		}
+		if acc.Type != models.ProviderAntigravity {
+			return providerAccountActionMsg{err: fmt.Errorf("provider account %q does not support Google login", id)}
+		}
+		return providerAccountActionMsg{info: fmt.Sprintf("Start Google login for %s via POST /api/v1/config/provider-accounts/antigravity/start and open the returned authUrl.", acc.DisplayName)}
+	}
+}
+
+func (p *settingsPage) verifyProviderAccount(id string) tea.Cmd {
+	return func() tea.Msg {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return providerAccountActionMsg{err: fmt.Errorf("provider account ID cannot be empty")}
+		}
+		acc, ok := config.GetProviderAccount(id)
+		if !ok {
+			return providerAccountActionMsg{err: fmt.Errorf("provider account %q not found", id)}
+		}
+		if acc.Type != models.ProviderAntigravity {
+			return providerAccountActionMsg{err: fmt.Errorf("provider account %q does not support verify", id)}
+		}
+		info := fmt.Sprintf("%s: %s", acc.DisplayName, providerAccountStatus(*acc))
+		if email := strings.TrimSpace(acc.Email); email != "" {
+			info += fmt.Sprintf(" | email: %s", email)
+		}
+		if projectID := strings.TrimSpace(acc.ProjectID); projectID != "" {
+			info += fmt.Sprintf(" | project: %s", projectID)
+		}
+		return providerAccountActionMsg{info: info}
+	}
+}
+
+func (p *settingsPage) refreshProviderAccount(id string) tea.Cmd {
+	return func() tea.Msg {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return providerAccountActionMsg{err: fmt.Errorf("provider account ID cannot be empty")}
+		}
+		acc, ok := config.GetProviderAccount(id)
+		if !ok {
+			return providerAccountActionMsg{err: fmt.Errorf("provider account %q not found", id)}
+		}
+		if acc.Type != models.ProviderAntigravity {
+			return providerAccountActionMsg{err: fmt.Errorf("provider account %q does not support refresh", id)}
+		}
+		if strings.TrimSpace(acc.OAuthRefreshToken) == "" {
+			return providerAccountActionMsg{err: fmt.Errorf("provider account %q is not connected yet", id)}
+		}
+		return providerAccountActionMsg{info: fmt.Sprintf("Use POST /api/v1/config/provider-accounts/antigravity/refresh for %s to refresh the OAuth token.", acc.DisplayName)}
+	}
+}
+
+func providerAccountStatus(acc config.ProviderAccount) string {
+	if acc.Disabled {
+		return "disabled"
+	}
+	if acc.Type == models.ProviderAntigravity {
+		if strings.TrimSpace(acc.OAuthRefreshToken) == "" && strings.TrimSpace(acc.OAuthAccessToken) == "" {
+			return "pending login"
+		}
+		if (strings.TrimSpace(acc.OAuthAccessToken) == "" && strings.TrimSpace(acc.OAuthRefreshToken) != "") || (strings.TrimSpace(acc.OAuthAccessToken) != "" && acc.OAuthExpiry > 0 && time.Now().Add(30*time.Second).Unix() >= acc.OAuthExpiry) {
+			return "needs refresh"
+		}
+		return "connected"
+	}
+	return "configured"
+}
+
+func providerAccountMetadataValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "—"
+	}
+	return value
 }
 
 // indexWorkingDirectory starts a code indexing job for the current working directory.
@@ -845,11 +954,12 @@ func buildProviderAccountsSection(cfg *config.Config) settings.Section {
 	providerOptions := []string{
 		"anthropic", "openai", "openai-compatible",
 		"ollama", "copilot", "gemini", "groq",
-		"openrouter", "xai", "azure", "bedrock", "vertexai",
+		"openrouter", "xai", "azure", "bedrock", "vertexai", "antigravity",
 	}
 
 	for _, acc := range accounts {
 		accType := string(acc.Type)
+		statusValue := providerAccountStatus(acc)
 		fields = append(fields,
 			settings.Field{
 				Label: fmt.Sprintf("[%s] Name", acc.ID),
@@ -884,6 +994,13 @@ func buildProviderAccountsSection(cfg *config.Config) settings.Section {
 				Type:  settings.FieldToggle,
 			},
 			settings.Field{
+				Label:    fmt.Sprintf("[%s] Status", acc.ID),
+				Key:      fmt.Sprintf("providerAccount.%s.status", acc.ID),
+				Value:    statusValue,
+				Type:     settings.FieldText,
+				ReadOnly: true,
+			},
+			settings.Field{
 				Label:    fmt.Sprintf("[%s] Delete", acc.ID),
 				Key:      fmt.Sprintf("action:delete_provider_account:%s", acc.ID),
 				Value:    "Delete this provider account",
@@ -891,6 +1008,53 @@ func buildProviderAccountsSection(cfg *config.Config) settings.Section {
 				ReadOnly: true,
 			},
 		)
+		if acc.Type == models.ProviderAntigravity {
+			fields = append(fields,
+				settings.Field{
+					Label:    fmt.Sprintf("[%s] Email", acc.ID),
+					Key:      fmt.Sprintf("providerAccount.%s.email", acc.ID),
+					Value:    providerAccountMetadataValue(acc.Email),
+					Type:     settings.FieldText,
+					ReadOnly: true,
+				},
+				settings.Field{
+					Label:    fmt.Sprintf("[%s] Project ID", acc.ID),
+					Key:      fmt.Sprintf("providerAccount.%s.projectId", acc.ID),
+					Value:    providerAccountMetadataValue(acc.ProjectID),
+					Type:     settings.FieldText,
+					ReadOnly: true,
+				},
+			)
+
+			loginLabel := "Login with Google"
+			if strings.TrimSpace(acc.OAuthRefreshToken) != "" || strings.TrimSpace(acc.OAuthAccessToken) != "" {
+				loginLabel = "Reauthenticate with Google"
+			}
+			fields = append(fields,
+				settings.Field{
+					Label:    fmt.Sprintf("[%s] Login", acc.ID),
+					Key:      fmt.Sprintf("action:login_provider_account:%s", acc.ID),
+					Value:    loginLabel,
+					Type:     settings.FieldAction,
+					ReadOnly: true,
+				},
+				settings.Field{
+					Label:    fmt.Sprintf("[%s] Verify", acc.ID),
+					Key:      fmt.Sprintf("action:verify_provider_account:%s", acc.ID),
+					Value:    "Verify account connection",
+					Type:     settings.FieldAction,
+					ReadOnly: true,
+				},
+				settings.Field{
+					Label:    fmt.Sprintf("[%s] Refresh", acc.ID),
+					Key:      fmt.Sprintf("action:refresh_provider_account:%s", acc.ID),
+					Value:    "Refresh OAuth access token",
+					Type:     settings.FieldAction,
+					ReadOnly: true,
+					Disabled: strings.TrimSpace(acc.OAuthRefreshToken) == "",
+				},
+			)
+		}
 	}
 
 	return settings.Section{

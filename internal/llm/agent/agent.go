@@ -1025,7 +1025,7 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 
 		a.Publish(pubsub.CreatedEvent, event)
 
-			result, err := a.generateAndPersistSummary(summarizeCtx, sessionID, summaryModeManual)
+		result, err := a.generateAndPersistSummary(summarizeCtx, sessionID, summaryModeManual)
 		if err != nil {
 			event = AgentEvent{
 				Type:  AgentEventTypeError,
@@ -1462,16 +1462,21 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 	// Resolve the provider account: by AccountID if set, otherwise by provider type.
 	var acc *config.ProviderAccount
 	var err error
-	if model.AccountID != "" {
-		acc, err = config.ResolveProviderAccountByID(model.AccountID)
+	needsConcreteAccount := model.AccountID != "" || model.Provider != models.ProviderAntigravity
+	if needsConcreteAccount {
+		if model.AccountID != "" {
+			acc, err = config.ResolveProviderAccountByID(model.AccountID)
+		} else {
+			acc, err = config.ResolveProviderAccountForType(model.Provider)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("could not resolve provider account: %w", err)
+		}
+		if acc.Disabled {
+			return nil, fmt.Errorf("provider account %q is disabled", acc.ID)
+		}
 	} else {
-		acc, err = config.ResolveProviderAccountForType(model.Provider)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("could not resolve provider account: %w", err)
-	}
-	if acc.Disabled {
-		return nil, fmt.Errorf("provider account %q is disabled", acc.ID)
+		acc = &config.ProviderAccount{Type: models.ProviderAntigravity}
 	}
 
 	maxTokens := config.ResolveAgentMaxTokens(agentName, agentConfig, model)

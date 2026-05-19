@@ -546,6 +546,10 @@ type ProviderAccount struct {
 	OAuthExpiry       int64                `json:"oauthExpiry,omitempty" toml:"oauthExpiry,omitempty"`
 	ProjectID         string               `json:"projectId,omitempty" toml:"projectId,omitempty"`
 	Email             string               `json:"email,omitempty" toml:"email,omitempty"`
+	OAuthState        string               `json:"oauthState,omitempty" toml:"oauthState,omitempty"`
+	OAuthCodeVerifier string               `json:"oauthCodeVerifier,omitempty" toml:"oauthCodeVerifier,omitempty"`
+	OAuthRedirectURI  string               `json:"oauthRedirectUri,omitempty" toml:"oauthRedirectUri,omitempty"`
+	ReauthRequired    bool                 `json:"reauthRequired,omitempty" toml:"reauthRequired,omitempty"`
 	BaseURL           string               `json:"baseUrl,omitempty" toml:"baseUrl,omitempty"`
 	ExtraHeaders      map[string]string    `json:"extraHeaders,omitempty" toml:"extraHeaders,omitempty"`
 	Disabled          bool                 `json:"disabled,omitempty" toml:"disabled,omitempty"`
@@ -2358,6 +2362,11 @@ func ConfigFileFormat() string {
 // It's safe to call this function multiple times.
 func Get() *Config {
 	return cfg
+}
+
+// SetForTests replaces the global configuration for package-external tests.
+func SetForTests(c *Config) {
+	cfg = c
 }
 
 // WorkingDirectory returns the current working directory from the configuration.
