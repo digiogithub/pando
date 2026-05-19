@@ -86,35 +86,7 @@ desktop-dev:
 desktop-embed: desktop-build
 	@mkdir -p internal/desktop/bin
 	@rm -rf internal/desktop/bin/Pando.app
-	@if [ -d desktop/build/bin/Pando.app ]; then \
-		cp -R desktop/build/bin/Pando.app internal/desktop/bin/Pando.app; \
-	elif [ -f desktop/build/bin/pando-desktop ]; then \
-		cp desktop/build/bin/pando-desktop internal/desktop/bin/pando-desktop; \
-	elif [ -f desktop/build/bin/pando-desktop.exe ]; then \
-		cp desktop/build/bin/pando-desktop.exe internal/desktop/bin/pando-desktop; \
-	else \
-		MACOS_APP=$$(python3 - <<'PY'
-import pathlib
-root = pathlib.Path('desktop/build/bin')
-apps = sorted(root.rglob('*.app'))
-print(apps[0] if apps else '')
-PY
-		); \
-		if [ -n "$$MACOS_APP" ]; then \
-			cp -R "$$MACOS_APP" internal/desktop/bin/Pando.app; \
-		else \
-			echo "ERROR: pando-desktop binary not found in desktop/build/bin/"; \
-			echo "Contents of desktop/build/bin/:"; \
-			python3 - <<'PY'
-import pathlib
-root = pathlib.Path('desktop/build/bin')
-for path in sorted(root.rglob('*')):
-    print(path)
-PY
-			; \
-			exit 1; \
-		fi \
-	fi
+	@python3 scripts/embed_desktop_artifact.py desktop/build/bin internal/desktop/bin
 	@echo "Embedded desktop build artifacts into internal/desktop/bin"
 
 ## Build production packages for current platform
