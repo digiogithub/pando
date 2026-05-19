@@ -85,22 +85,37 @@ desktop-dev:
 ## This copies the compiled binary into internal/desktop/bin/ for go:embed
 desktop-embed: desktop-build
 	@mkdir -p internal/desktop/bin
-	@if [ -f desktop/build/bin/pando-desktop ]; then \
+	@rm -rf internal/desktop/bin/Pando.app
+	@if [ -d desktop/build/bin/Pando.app ]; then \
+		cp -R desktop/build/bin/Pando.app internal/desktop/bin/Pando.app; \
+	elif [ -f desktop/build/bin/pando-desktop ]; then \
 		cp desktop/build/bin/pando-desktop internal/desktop/bin/pando-desktop; \
 	elif [ -f desktop/build/bin/pando-desktop.exe ]; then \
 		cp desktop/build/bin/pando-desktop.exe internal/desktop/bin/pando-desktop; \
 	else \
-		MACOS_BIN=$$(find desktop/build/bin -path "*/MacOS/*" -type f 2>/dev/null | head -1); \
-		if [ -n "$$MACOS_BIN" ]; then \
-			cp "$$MACOS_BIN" internal/desktop/bin/pando-desktop; \
+		MACOS_APP=$$(python3 - <<'PY'
+import pathlib
+root = pathlib.Path('desktop/build/bin')
+apps = sorted(root.rglob('*.app'))
+print(apps[0] if apps else '')
+PY
+		); \
+		if [ -n "$$MACOS_APP" ]; then \
+			cp -R "$$MACOS_APP" internal/desktop/bin/Pando.app; \
 		else \
 			echo "ERROR: pando-desktop binary not found in desktop/build/bin/"; \
 			echo "Contents of desktop/build/bin/:"; \
-			find desktop/build/bin -type f 2>/dev/null || true; \
+			python3 - <<'PY'
+import pathlib
+root = pathlib.Path('desktop/build/bin')
+for path in sorted(root.rglob('*')):
+    print(path)
+PY
+			; \
 			exit 1; \
 		fi \
 	fi
-	@echo "Embedded pando-desktop into internal/desktop/bin/pando-desktop"
+	@echo "Embedded desktop build artifacts into internal/desktop/bin"
 
 ## Build production packages for current platform
 desktop-package:
@@ -109,6 +124,7 @@ desktop-package:
 ## Remove desktop build artifacts
 desktop-clean:
 	rm -rf desktop/build/bin
+	rm -rf internal/desktop/bin/Pando.app
 	echo -n "" > internal/desktop/bin/pando-desktop
 
 ## Remove distribution artifacts
