@@ -14,10 +14,17 @@ import {
   faMoon,
   faRotateRight,
   faFile,
+  faRightToBracket,
+  faCircleInfo,
+  faArrowRightFromBracket,
+  faChartColumn,
+  faKey,
 } from '@fortawesome/free-solid-svg-icons'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
+import { useToast } from '@/stores/toastStore'
+import { loadLauncherCommands, type LauncherCommand } from '@/services/commandLauncher'
 
 const RECENT_KEY = 'pando-quick-menu-recent'
 
@@ -25,10 +32,11 @@ interface MenuItem {
   id: string
   label: string
   icon: IconDefinition
-  group: 'view' | 'command' | 'recent'
+  group: 'view' | 'command' | 'recent' | 'account'
   path?: string
-  action?: () => void
+  action?: () => void | Promise<void>
   description?: string
+  keywords?: string[]
 }
 
 const VIEWS: Omit<MenuItem, 'group'>[] = [
@@ -63,15 +71,32 @@ function addToRecent(id: string) {
   saveRecent([id, ...prev])
 }
 
+const AUTH_ICONS: Record<string, IconDefinition> = {
+  'anthropic:login': faRightToBracket,
+  'anthropic:complete-login': faKey,
+  'anthropic:status': faCircleInfo,
+  'anthropic:logout': faArrowRightFromBracket,
+  'anthropic:usage': faChartColumn,
+  'copilot:login': faRightToBracket,
+  'copilot:status': faCircleInfo,
+  'copilot:logout': faArrowRightFromBracket,
+}
+
+function iconForCommand(command: LauncherCommand): IconDefinition {
+  return AUTH_ICONS[command.id] ?? faCircleInfo
+}
+
 export default function QuickMenu() {
   const navigate = useNavigate()
   const { setQuickMenuOpen } = useLayoutStore()
   const { toggleMode: toggleTheme } = useTheme()
+  const toast = useToast()
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [recentIds, setRecentIds] = useState<string[]>(loadRecent)
+  const [accountCommands, setAccountCommands] = useState<MenuItem[]>([])
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -80,6 +105,35 @@ export default function QuickMenu() {
   const close = useCallback(() => {
     setQuickMenuOpen(false)
   }, [setQuickMenuOpen])
+
+  useEffect(() => {
+    let cancelled = false
+    void loadLauncherCommands((message, type = 'info') => {
+      if (type === 'success') toast.success(message, 6000)
+      else if (type === 'error') toast.error(message, 7000)
+      else if (type === 'warning') toast.warning(message, 7000)
+      else toast.info(message, 8000)
+    })
+      .then((commands) => {
+        if (cancelled) return
+        setAccountCommands(commands.map((command) => ({
+          id: command.id,
+          label: command.label,
+          icon: iconForCommand(command),
+          group: 'account' as const,
+          description: command.description,
+          keywords: command.keywords,
+          action: command.action,
+        })))
+      })
+      .catch((error) => {
+        if (cancelled) return
+        toast.error(error instanceof Error ? error.message : 'Failed to load launcher commands')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [toast])
 
   // Build all items
   const allItems: MenuItem[] = [
@@ -106,6 +160,7 @@ export default function QuickMenu() {
       group: 'command',
       action: () => { window.location.reload() },
     },
+    ...accountCommands,
   ]
 
   // Filter by query
@@ -114,7 +169,8 @@ export default function QuickMenu() {
     (item) =>
       !q ||
       item.label.toLowerCase().includes(q) ||
-      (item.description ?? '').toLowerCase().includes(q),
+      (item.description ?? '').toLowerCase().includes(q) ||
+      item.keywords?.some((keyword) => keyword.toLowerCase().includes(q)),
   )
 
   // Build recent items from ids
@@ -133,9 +189,11 @@ export default function QuickMenu() {
 
   const viewItems = filtered.filter((x) => x.group === 'view')
   const commandItems = filtered.filter((x) => x.group === 'command')
+  const accountItems = filtered.filter((x) => x.group === 'account')
 
   if (viewItems.length > 0) groups.push({ label: 'Views', items: viewItems })
   if (commandItems.length > 0) groups.push({ label: 'Commands', items: commandItems })
+  if (accountItems.length > 0) groups.push({ label: 'Accounts', items: accountItems })
 
   // Flat list for keyboard nav
   const flatItems = groups.flatMap((g) => g.items)
@@ -143,11 +201,12 @@ export default function QuickMenu() {
   const normalizedSelectedIndex = query ? 0 : selectedIndex
 
   const execute = useCallback(
-    (item: MenuItem) => {
+    async (item: MenuItem) => {
       addToRecent(item.id)
       setRecentIds(loadRecent())
       if (item.action) {
-        item.action()
+        await item.action()
+        close()
       } else if (item.path) {
         navigate(item.path)
         close()
@@ -175,7 +234,9 @@ export default function QuickMenu() {
       if (e.key === 'Enter') {
         e.preventDefault()
         const item = flatItems[normalizedSelectedIndex]
-        if (item) execute(item)
+        if (item) {
+          void execute(item)
+        }
         return
       }
     }
@@ -312,7 +373,7 @@ export default function QuickMenu() {
                       <div
                         key={`${group.label}-${item.id}`}
                         data-selected={isSelected ? 'true' : undefined}
-                        onClick={() => execute(item)}
+                        onClick={() => { void execute(item) }}
                         style={{
                           display: 'flex',
                           alignItems: 'center',

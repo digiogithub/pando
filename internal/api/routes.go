@@ -71,6 +71,14 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/config/provider-accounts/{id}", s.handleUpdateProviderAccount)
 	mux.HandleFunc("DELETE /api/v1/config/provider-accounts/{id}", s.handleDeleteProviderAccount)
 	mux.HandleFunc("POST /api/v1/config/provider-accounts/{id}/test", s.handleTestProviderAccount)
+	// Auth providers
+	mux.HandleFunc("GET /api/v1/auth/providers/{provider}/status", s.handleAuthProviderStatus)
+	mux.HandleFunc("POST /api/v1/auth/providers/anthropic/login", s.handleAnthropicLoginStart)
+	mux.HandleFunc("POST /api/v1/auth/providers/anthropic/login/complete", s.handleAnthropicLoginComplete)
+	mux.HandleFunc("POST /api/v1/auth/providers/anthropic/logout", s.handleAnthropicLogout)
+	mux.HandleFunc("GET /api/v1/auth/providers/anthropic/stats", s.handleAnthropicStats)
+	mux.HandleFunc("POST /api/v1/auth/providers/copilot/login", s.handleCopilotLoginStart)
+	mux.HandleFunc("POST /api/v1/auth/providers/copilot/logout", s.handleCopilotLogout)
 	mux.HandleFunc("POST /api/v1/config/api-server/regenerate-token", s.handleRegenerateAPIToken)
 	// First-run / config generation
 	mux.HandleFunc("GET /api/v1/config/init-status", s.handleConfigInitStatus)

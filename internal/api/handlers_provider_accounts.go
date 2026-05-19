@@ -23,7 +23,7 @@ type ProviderTypeInfo struct {
 }
 
 var providerTypes = []ProviderTypeInfo{
-	{Type: "anthropic", DisplayName: "Anthropic", RequiresAPIKey: true, RequiresBaseURL: false, SupportsOAuth: false, SupportsExtraHeaders: true},
+	{Type: "anthropic", DisplayName: "Anthropic", RequiresAPIKey: true, RequiresBaseURL: false, SupportsOAuth: true, SupportsExtraHeaders: true},
 	{Type: "antigravity", DisplayName: "Antigravity", RequiresAPIKey: false, RequiresBaseURL: false, SupportsOAuth: true, SupportsExtraHeaders: false},
 	{Type: "openai", DisplayName: "OpenAI", RequiresAPIKey: true, RequiresBaseURL: false, SupportsOAuth: false, SupportsExtraHeaders: true},
 	{Type: "openai-compatible", DisplayName: "OpenAI Compatible", RequiresAPIKey: true, RequiresBaseURL: true, SupportsOAuth: false, SupportsExtraHeaders: true},

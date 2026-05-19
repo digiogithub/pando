@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
-  faCircle, faColumns, faChevronDown, faChevronRight, faPlus, faMicrochip,
+  faCircle, faColumns, faChevronDown, faChevronRight, faPlus, faMicrochip, faTerminal,
 } from '@fortawesome/free-solid-svg-icons'
 import { format } from 'date-fns'
 import { useChat } from '@/hooks/useChat'
@@ -14,6 +14,7 @@ import { authenticate } from '@/services/auth'
 import MessageList from './MessageList'
 import ChatInput from './ChatInput'
 import ModelSwitcher from '@/components/overlays/ModelSwitcher'
+import QuickMenu from '@/components/overlays/QuickMenu'
 import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
 
 export default function SimpleChatView() {
@@ -22,7 +23,13 @@ export default function SimpleChatView() {
   const { connected, startHealthCheck, setConnected } = useServerStore()
   const { config: settingsConfig, fetchSettings } = useSettingsStore()
   const defaultModel = settingsConfig.default_model
-  const { modelSwitcherOpen, setModelSwitcherOpen, setChatMode } = useLayoutStore()
+  const {
+    modelSwitcherOpen,
+    quickMenuOpen,
+    setModelSwitcherOpen,
+    setQuickMenuOpen,
+    setChatMode,
+  } = useLayoutStore()
   const { sendMessage, streaming, error, cancelStreaming, streamingState } = useChat({
     onNewSession: (sessionId) => {
       useSessionStore.setState({ activeSessionId: sessionId })
@@ -68,6 +75,21 @@ export default function SimpleChatView() {
     return id
   }
   const modelLabel = formatModel(defaultModel)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'p') {
+        e.preventDefault()
+        setQuickMenuOpen(true)
+      }
+      if (e.ctrlKey && e.key === 'o') {
+        e.preventDefault()
+        setModelSwitcherOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [setModelSwitcherOpen, setQuickMenuOpen])
 
   return (
     <div
@@ -341,7 +363,31 @@ export default function SimpleChatView() {
           flexShrink: 0,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button
+            onClick={() => setQuickMenuOpen(true)}
+            title="Open command launcher"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--fg-muted)',
+              fontSize: 11,
+              padding: '0 0.25rem',
+              borderRadius: 'var(--radius-sm)',
+              transition: 'color 0.15s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--fg-muted)')}
+          >
+            <FontAwesomeIcon icon={faTerminal} style={{ fontSize: 10 }} />
+            <span>Commands</span>
+            <span style={{ opacity: 0.7 }}>Ctrl+P</span>
+          </button>
+          <span style={{ opacity: 0.4 }}>·</span>
           <FontAwesomeIcon
             icon={faCircle}
             style={{ fontSize: 7, color: connected ? 'var(--success)' : 'var(--error)' }}
@@ -384,7 +430,8 @@ export default function SimpleChatView() {
         </div>
       </div>
 
-      {/* Model switcher overlay */}
+      {/* Overlays */}
+      {quickMenuOpen && <QuickMenu />}
       {modelSwitcherOpen && <ModelSwitcher />}
     </div>
   )
