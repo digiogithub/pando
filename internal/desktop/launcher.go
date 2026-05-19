@@ -33,6 +33,19 @@ func hasEmbeddedAppBundle() bool {
 	return err == nil
 }
 
+func hasUsableEmbeddedAppBundle() bool {
+	if !hasEmbeddedAppBundle() {
+		return false
+	}
+
+	if _, err := fs.Stat(DesktopBundle, "bin/"+appBundleName()+"/Contents/MacOS"); err == nil {
+		return true
+	}
+
+	entries, err := fs.Glob(DesktopBundle, "bin/"+appBundleName()+"/Contents/MacOS/*")
+	return err == nil && len(entries) > 0
+}
+
 func extractEmbeddedAppBundle(dstRoot string) (string, error) {
 	bundleRoot := filepath.Join(dstRoot, appBundleName())
 	entries, err := fs.Glob(DesktopBundle, "bin/"+appBundleName()+"/**")
@@ -109,11 +122,14 @@ func macOSBundleExecutablePath(bundleRoot string) (string, error) {
 // The embedBin parameter is the raw bytes of the compiled pando-desktop binary
 // produced by `make desktop-embed`. If nil or empty, Launch returns an error.
 func Launch(embedBin []byte, pandoURL string, simpleMode bool) error {
-	if runtime.GOOS == "darwin" && hasEmbeddedAppBundle() {
+	if runtime.GOOS == "darwin" && hasUsableEmbeddedAppBundle() {
 		return launchAppBundle(pandoURL, simpleMode)
 	}
 
 	if len(embedBin) == 0 {
+		if runtime.GOOS == "darwin" && hasEmbeddedAppBundle() {
+			return fmt.Errorf("embedded macOS app bundle is incomplete: re-run `make desktop-embed` on macOS so Pando.app includes Contents/Info.plist and Contents/MacOS/*")
+		}
 		return fmt.Errorf("desktop binary not embedded: run `make desktop-embed` to build and embed it")
 	}
 
@@ -161,7 +177,10 @@ func launchAppBundle(pandoURL string, simpleMode bool) error {
 		return err
 	}
 
-	binPath := filepath.Join(bundlePath, "Contents", "MacOS", binaryName())
+	binPath, err := macOSBundleExecutablePath(bundlePath)
+	if err != nil {
+		return err
+	}
 	args := []string{"--url", pandoURL}
 	if simpleMode {
 		args = append(args, "--simple")
