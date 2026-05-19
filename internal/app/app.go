@@ -23,10 +23,10 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/cronjob"
 	"github.com/digiogithub/pando/internal/db"
-	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/evaluator"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/history"
+	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/prompt"
@@ -204,6 +204,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 
 	// Refresh dynamic models from configured providers in the background
 	go app.refreshDynamicModels(ctx)
+	agent.ResetMcpToolsCache()
 
 	// Initialize Remembrances service if enabled
 	cfg := config.Get()
@@ -321,6 +322,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	// Initialize MCP Gateway if enabled
 	cfg = config.Get()
 	if cfg != nil && cfg.MCPGateway.Enabled {
+		agent.ResetMcpToolsCache()
 		favCfg := mcpgateway.FavoriteConfig{
 			Threshold:    cfg.MCPGateway.FavoriteThreshold,
 			MaxFavorites: cfg.MCPGateway.MaxFavorites,

@@ -15,6 +15,7 @@ import (
 	pandoapp "github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	llmtools "github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
@@ -60,6 +61,7 @@ type settingsPage struct {
 	settings           settings.SettingsCmp
 	catalogDialog      *dialog.SkillsCatalogDialog
 	addProviderDialog  dialog.AddProviderDialog
+	addMCPServerDialog dialog.AddMCPServerDialog
 	modelDialog        dialog.ModelDialog
 	modelDialogField   *settings.Field
 	modelDialogSection string
@@ -122,6 +124,9 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Field.Key == "action:add_provider" {
 			return p, p.openAddProviderDialog()
 		}
+		if msg.Field.Key == "action:add_mcp_server" {
+			return p, p.openAddMCPServerDialog()
+		}
 		if msg.Field.Key == "action:remembrances_index_workdir" {
 			return p, p.indexWorkingDirectory()
 		}
@@ -165,6 +170,21 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return p, util.ReportInfo("Provider added: " + msg.Account.DisplayName)
 	case dialog.CloseAddProviderDialogMsg:
 		p.addProviderDialog = nil
+		return p, nil
+	case dialog.MCPServerCreatedMsg:
+		p.addMCPServerDialog = nil
+		if err := config.UpdateMCPServer(msg.Name, msg.Server); err != nil {
+			p.settings.SetSections(buildSections(p.app))
+			p.settings.SetSize(p.width, p.height)
+			return p, util.ReportError(err)
+		}
+		agent.ResetMcpToolsCache()
+		p.settings.SetSections(buildSections(p.app))
+		p.settings.SetSize(p.width, p.height)
+		p.settings.SetActiveField("MCP Servers", fmt.Sprintf("mcpServers.%s.name", msg.Name))
+		return p, util.ReportInfo("MCP server added: " + msg.Name)
+	case dialog.CloseAddMCPServerDialogMsg:
+		p.addMCPServerDialog = nil
 		return p, nil
 	case dialog.ModelDialogSelectionMsg:
 		if p.modelDialogField == nil {
@@ -236,6 +256,17 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return p, tea.Batch(cmd, settingsCmd)
 	}
 
+	if p.addMCPServerDialog != nil {
+		updated, cmd := p.addMCPServerDialog.Update(msg)
+		p.addMCPServerDialog = updated.(dialog.AddMCPServerDialog)
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return p, cmd
+		}
+		settingsUpdated, settingsCmd := p.settings.Update(msg)
+		p.settings = settingsUpdated.(settings.SettingsCmp)
+		return p, tea.Batch(cmd, settingsCmd)
+	}
+
 	if p.modelDialog != nil {
 		updated, cmd := p.modelDialog.Update(msg)
 		p.modelDialog = updated.(dialog.ModelDialog)
@@ -280,6 +311,20 @@ func (p *settingsPage) View() string {
 		}
 		return layout.PlaceOverlay(x, y, overlay, base, true)
 	}
+	if p.addMCPServerDialog != nil {
+		overlay := p.addMCPServerDialog.(tea.Model).View()
+		overlayW := dialog.AddMCPServerDialogWidth
+		overlayH := lipgloss.Height(overlay)
+		x := (p.width - overlayW) / 2
+		y := (p.height - overlayH) / 2
+		if x < 0 {
+			x = 0
+		}
+		if y < 0 {
+			y = 0
+		}
+		return layout.PlaceOverlay(x, y, overlay, base, true)
+	}
 	if p.modelDialog != nil {
 		overlay := p.modelDialog.View()
 		overlayW := lipgloss.Width(overlay)
@@ -310,13 +355,14 @@ func (p *settingsPage) GetSize() (int, int) {
 
 // HasActiveModal reports whether the settings page currently has an active modal dialog.
 func (p *settingsPage) HasActiveModal() bool {
-	return p.catalogDialog != nil || p.addProviderDialog != nil || p.modelDialog != nil
+	return p.catalogDialog != nil || p.addProviderDialog != nil || p.addMCPServerDialog != nil || p.modelDialog != nil
 }
 
 // ClearModals closes any open modal dialogs on the settings page.
 func (p *settingsPage) ClearModals() {
 	p.catalogDialog = nil
 	p.addProviderDialog = nil
+	p.addMCPServerDialog = nil
 	p.modelDialog = nil
 	p.modelDialogField = nil
 	p.modelDialogSection = ""
@@ -325,6 +371,12 @@ func (p *settingsPage) ClearModals() {
 func (p *settingsPage) openAddProviderDialog() tea.Cmd {
 	d := dialog.NewAddProviderDialog(p.width, p.height)
 	p.addProviderDialog = d
+	return d.Init()
+}
+
+func (p *settingsPage) openAddMCPServerDialog() tea.Cmd {
+	d := dialog.NewAddMCPServerDialog(p.width, p.height)
+	p.addMCPServerDialog = d
 	return d.Init()
 }
 
@@ -359,6 +411,9 @@ func (p *settingsPage) saveField(msg settings.SaveFieldMsg) tea.Cmd {
 	if err := persistSetting(p.app, msg.Field); err != nil {
 		return util.ReportError(err)
 	}
+	if strings.HasPrefix(msg.Field.Key, "mcpServers.") {
+		agent.ResetMcpToolsCache()
+	}
 
 	p.settings.SetSections(buildSections(p.app))
 	p.settings.SetSize(p.width, p.height)
@@ -374,6 +429,7 @@ func (p *settingsPage) deleteMCPServer(name string) tea.Cmd {
 	if err := config.DeleteMCPServer(name); err != nil {
 		return util.ReportError(err)
 	}
+	agent.ResetMcpToolsCache()
 	if p.app != nil && p.app.MCPGateway != nil {
 		if err := p.app.MCPGateway.DeleteServerData(context.Background(), name); err != nil {
 			return util.ReportError(err)
@@ -1103,7 +1159,15 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 	}
 	sort.Strings(serverNames)
 
-	fields := make([]settings.Field, 0, len(serverNames)*5)
+	fields := make([]settings.Field, 0, len(serverNames)*7+1)
+	fields = append(fields, settings.Field{
+		Label:    "Add MCP Server",
+		Key:      "action:add_mcp_server",
+		Value:    "Create a new MCP server entry",
+		Type:     settings.FieldAction,
+		ReadOnly: true,
+	})
+
 	for _, name := range serverNames {
 		server := cfg.MCPServers[name]
 		serverType := string(server.Type)
@@ -1125,10 +1189,11 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 				Type:  settings.FieldAction,
 			},
 			settings.Field{
-				Label: fmt.Sprintf("%s Command", name),
-				Key:   fmt.Sprintf("mcpServers.%s.command", name),
-				Value: server.Command,
-				Type:  settings.FieldText,
+				Label:    fmt.Sprintf("%s Command", name),
+				Key:      fmt.Sprintf("mcpServers.%s.command", name),
+				Value:    server.Command,
+				Type:     settings.FieldText,
+				Disabled: server.Type != config.MCPStdio,
 			},
 			settings.Field{
 				Label:   fmt.Sprintf("%s Type", name),
@@ -1137,37 +1202,33 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 				Type:    settings.FieldSelect,
 				Options: ensureOption([]string{string(config.MCPStdio), string(config.MCPSse), string(config.MCPStreamableHTTP)}, serverType),
 			},
-		)
-
-		if server.Type == config.MCPSse || server.Type == config.MCPStreamableHTTP {
-			fields = append(fields,
-				settings.Field{
-					Label: fmt.Sprintf("%s URL", name),
-					Key:   fmt.Sprintf("mcpServers.%s.url", name),
-					Value: server.URL,
-					Type:  settings.FieldText,
-				},
-				settings.Field{
-					Label: fmt.Sprintf("%s Headers", name),
-					Key:   fmt.Sprintf("mcpServers.%s.headers", name),
-					Value: headersToString(server.Headers),
-					Type:  settings.FieldText,
-				},
-			)
-		} else {
-			fields = append(fields, settings.Field{
-				Label: fmt.Sprintf("%s Args", name),
-				Key:   fmt.Sprintf("mcpServers.%s.args", name),
-				Value: strings.Join(server.Args, " "),
-				Type:  settings.FieldText,
-			})
-		}
-		fields = append(fields,
 			settings.Field{
-				Label: fmt.Sprintf("%s Env", name),
-				Key:   fmt.Sprintf("mcpServers.%s.env", name),
-				Value: strings.Join(server.Env, " "),
-				Type:  settings.FieldText,
+				Label:    fmt.Sprintf("%s Args", name),
+				Key:      fmt.Sprintf("mcpServers.%s.args", name),
+				Value:    strings.Join(server.Args, " "),
+				Type:     settings.FieldText,
+				Disabled: server.Type != config.MCPStdio,
+			},
+			settings.Field{
+				Label:    fmt.Sprintf("%s Env", name),
+				Key:      fmt.Sprintf("mcpServers.%s.env", name),
+				Value:    strings.Join(server.Env, " "),
+				Type:     settings.FieldText,
+				Disabled: server.Type != config.MCPStdio,
+			},
+			settings.Field{
+				Label:    fmt.Sprintf("%s URL", name),
+				Key:      fmt.Sprintf("mcpServers.%s.url", name),
+				Value:    server.URL,
+				Type:     settings.FieldText,
+				Disabled: server.Type == config.MCPStdio,
+			},
+			settings.Field{
+				Label:    fmt.Sprintf("%s Headers", name),
+				Key:      fmt.Sprintf("mcpServers.%s.headers", name),
+				Value:    headersToString(server.Headers),
+				Type:     settings.FieldText,
+				Disabled: server.Type == config.MCPStdio,
 			},
 		)
 	}
@@ -2789,6 +2850,14 @@ func saveMCPServer(field settings.Field) error {
 			return fmt.Errorf("unsupported MCP server type %q", field.Value)
 		}
 		server.Type = serverType
+		if serverType == config.MCPStdio {
+			server.URL = ""
+			server.Headers = nil
+		} else {
+			server.Command = ""
+			server.Args = nil
+			server.Env = nil
+		}
 	case "url":
 		server.URL = strings.TrimSpace(field.Value)
 	case "env":
@@ -2801,6 +2870,18 @@ func saveMCPServer(field settings.Field) error {
 		server.Headers = headers
 	default:
 		return fmt.Errorf("unsupported MCP server field %q", parts[2])
+	}
+
+	if server.Type == "" {
+		server.Type = config.MCPStdio
+	}
+	if server.Type == config.MCPStdio {
+		server.URL = ""
+		server.Headers = nil
+	} else {
+		server.Command = ""
+		server.Args = nil
+		server.Env = nil
 	}
 
 	return config.UpdateMCPServer(serverName, server)

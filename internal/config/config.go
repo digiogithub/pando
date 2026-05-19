@@ -44,6 +44,7 @@ type MCPServer struct {
 	Type    MCPType           `json:"type" toml:"Type" yaml:"type"`
 	URL     string            `json:"url" toml:"URL" yaml:"url"`
 	Headers map[string]string `json:"headers" toml:"Headers" yaml:"headers"`
+	Timeout string            `json:"timeout,omitempty" toml:"Timeout" yaml:"timeout"`
 }
 
 type AgentName string
@@ -556,7 +557,7 @@ type Config struct {
 	Data       Data                 `json:"data"`
 	WorkingDir string               `json:"wd,omitempty"`
 	AgeKeys    string               `json:"ageKeys,omitempty" toml:"AgeKeys"`
-	MCPServers map[string]MCPServer `json:"mcpServers,omitempty"`
+	MCPServers map[string]MCPServer `json:"mcpServers,omitempty" toml:"MCPServers"`
 	// ProviderAccounts is the new multi-account provider configuration.
 	// It supersedes the Providers map. On load, if empty and Providers is non-empty,
 	// the old map is automatically migrated to this list.
@@ -2919,6 +2920,7 @@ func UpdateMCPServer(name string, server MCPServer) error {
 		Type:    server.Type,
 		URL:     server.URL,
 		Headers: cloneStringMap(server.Headers),
+		Timeout: server.Timeout,
 	}
 	if newServer.Type == "" {
 		newServer.Type = MCPStdio

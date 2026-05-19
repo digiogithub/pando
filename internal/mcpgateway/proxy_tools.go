@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/notify"
 )
 
 // CatalogTool implements tools.BaseTool as "mcp_query_catalog".
@@ -124,7 +125,9 @@ func (t *CallToolProxy) Run(ctx context.Context, params tools.ToolCall) (tools.T
 
 	result, err := t.gateway.CallTool(ctx, toolID, input.Parameters, input.SessionID)
 	if err != nil {
-		return tools.NewTextErrorResponse(fmt.Sprintf("tool call failed: %s", err)), nil
+		msg := fmt.Sprintf("tool call failed: %s", err)
+		notify.Error(notify.SourceTool, msg)
+		return tools.NewTextErrorResponse(msg), nil
 	}
 
 	switch v := result.(type) {

@@ -10,6 +10,12 @@ AutoCompact = true
 Directory = './.pando/data'
 
 [MCPServers]
+[MCPServers.mycommandmcp]
+Command = 'mycommandmcp'
+Env = []
+Args = ['-c', '.ai/mycommand-mcp.yaml']
+Type = 'stdio'
+URL = ''
 
 [[providerAccounts]]
 id = 'anthropic'
@@ -53,7 +59,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'copilot.gpt-5.4'
+Model = 'copilot.gpt-4.1'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''

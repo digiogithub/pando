@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/mcpclient"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -87,13 +89,6 @@ func (g *Gateway) CallTool(ctx context.Context, toolID string, params map[string
 		return nil, fmt.Errorf("configuration unavailable")
 	}
 	srv, ok := cfg.MCPServers[tool.ServerName]
-	if ok {
-		resolvedSrv, err := config.ResolveMCPServerSecrets(srv)
-		if err != nil {
-			return nil, fmt.Errorf("resolve MCP server %s secrets: %w", tool.ServerName, err)
-		}
-		srv = resolvedSrv
-	}
 	if !ok {
 		return nil, fmt.Errorf("server not found in config: %s", tool.ServerName)
 	}
@@ -146,10 +141,16 @@ func (g *Gateway) callMCPTool(ctx context.Context, serverName string, srv config
 	callReq.Params.Name = toolName
 	callReq.Params.Arguments = args
 
-	result, err := c.CallTool(ctx, callReq)
+	timeout := mcpclient.ResolveTimeout(srv.Timeout, mcpclient.DefaultOperationTimeout)
+	callCtx, callCancel := mcpclient.WithTimeout(ctx, timeout)
+	result, err := c.CallTool(callCtx, callReq)
+	callCancel()
 	if err != nil {
 		// Evict on error so the next caller gets a fresh connection.
 		g.pool.Evict(serverName)
+		if errors.Is(err, context.DeadlineExceeded) {
+			return "", mcpclient.BuildTimeoutError(serverName, fmt.Sprintf("tool call %q", toolName), timeout)
+		}
 		return "", fmt.Errorf("call tool: %w", err)
 	}
 

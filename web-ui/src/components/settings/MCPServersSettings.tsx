@@ -3,7 +3,7 @@ import { useMCPServersStore } from '@/stores/mcpServersStore'
 import type { MCPServerConfig, MCPToolInfo, MCPType } from '@/types'
 import KeyValueEditor, { envToKV, kvToEnv, type KVPair } from '@/components/shared/KeyValueEditor'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
-import { TextInput } from '@/components/shared/FormInput'
+import { TextInput, Textarea } from '@/components/shared/FormInput'
 import { useToast } from '@/stores/toastStore'
 
 const MCP_TYPES: { value: MCPType; label: string }[] = [
@@ -47,6 +47,7 @@ interface ModalFormState {
   name: string
   command: string
   args: string[]
+  argsText: string
   envPairs: KVPair[]
   headerPairs: KVPair[]
   type: MCPType
@@ -54,11 +55,94 @@ interface ModalFormState {
   enabled: boolean
 }
 
+function parseCommandLineArgs(input: string): string[] {
+  const args: string[] = []
+  let current = ''
+  let quote: 'single' | 'double' | null = null
+
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index]
+
+    if (quote === 'single') {
+      if (char === "'") {
+        quote = null
+      } else {
+        current += char
+      }
+      continue
+    }
+
+    if (quote === 'double') {
+      if (char === '"') {
+        quote = null
+        continue
+      }
+      if (char === '\\' && index + 1 < input.length) {
+        const next = input[index + 1]
+        if (next === '"' || next === '\\') {
+          current += next
+          index += 1
+          continue
+        }
+      }
+      current += char
+      continue
+    }
+
+    if (/\s/.test(char)) {
+      if (current) {
+        args.push(current)
+        current = ''
+      }
+      continue
+    }
+
+    if (char === "'") {
+      quote = 'single'
+      continue
+    }
+
+    if (char === '"') {
+      quote = 'double'
+      continue
+    }
+
+    if (char === '\\' && index + 1 < input.length) {
+      current += input[index + 1]
+      index += 1
+      continue
+    }
+
+    current += char
+  }
+
+  if (current) {
+    args.push(current)
+  }
+
+  return args
+}
+
+function formatArgsAsCommandLine(args: string[]): string {
+  return args
+    .map((arg) => {
+      if (arg === '') {
+        return '""'
+      }
+      if (/^[^\s"'\\]+$/.test(arg)) {
+        return arg
+      }
+      return `"${arg.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+    })
+    .join(' ')
+}
+
 function emptyForm(): ModalFormState {
   return {
     name: '',
     command: '',
     args: [],
+    argsText: '',
     envPairs: [],
     headerPairs: [],
     type: 'stdio',
@@ -72,6 +156,7 @@ function serverToForm(s: MCPServerConfig): ModalFormState {
     name: s.name,
     command: s.command,
     args: s.args ?? [],
+    argsText: formatArgsAsCommandLine(s.args ?? []),
     envPairs: envToKV(s.env ?? []),
     headerPairs: Object.entries(s.headers ?? {}).map(([key, value]) => ({ key, value })),
     type: s.type ?? 'stdio',
@@ -84,7 +169,7 @@ function formToServer(f: ModalFormState): MCPServerConfig {
   return {
     name: f.name,
     command: f.command,
-    args: f.args,
+    args: parseCommandLineArgs(f.argsText),
     env: kvToEnv(f.envPairs),
     type: f.type,
     url: f.url,
@@ -184,7 +269,12 @@ export default function MCPServersSettings() {
   }
 
   function setField<K extends keyof ModalFormState>(key: K, value: ModalFormState[K]) {
-    setForm((f) => ({ ...f, [key]: value }))
+    setForm((f) => {
+      if (key === 'argsText') {
+        return { ...f, argsText: value as string, args: parseCommandLineArgs(value as string) }
+      }
+      return { ...f, [key]: value }
+    })
   }
 
   const isRemoteServer = form.type === 'sse' || form.type === 'streamable-http'
@@ -359,13 +449,18 @@ export default function MCPServersSettings() {
               )}
 
               {!isRemoteServer && (
-                <KeyValueEditor
-                  label="Arguments"
-                  pairs={form.args.map((value, index) => ({ key: String(index + 1), value }))}
-                  onChange={(pairs) => setField('args', pairs.map((pair) => pair.value).filter((value) => value.trim()))}
-                  keyPlaceholder="#"
-                  valuePlaceholder="argument"
-                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                  <Textarea
+                    label="Arguments"
+                    placeholder={'--port 3000 --workspace "/path with spaces"'}
+                    value={form.argsText}
+                    onChange={(e) => setField('argsText', e.target.value)}
+                    rows={3}
+                  />
+                  <div style={{ fontSize: 12, color: 'var(--fg-muted)', lineHeight: 1.5 }}>
+                    Enter arguments as you would in a command line. They will be saved as an array of strings.
+                  </div>
+                </div>
               )}
 
               <KeyValueEditor

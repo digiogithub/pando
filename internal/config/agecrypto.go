@@ -189,6 +189,7 @@ func ResolveMCPServerSecrets(server MCPServer) (MCPServer, error) {
 	if err != nil {
 		return MCPServer{}, fmt.Errorf("decrypt MCP url: %w", err)
 	}
+	resolved.Timeout = server.Timeout
 	if len(server.Args) > 0 {
 		resolved.Args = make([]string, len(server.Args))
 		for i, arg := range server.Args {

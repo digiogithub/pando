@@ -3,18 +3,19 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/luaengine"
+	"github.com/digiogithub/pando/internal/mcpclient"
 	"github.com/digiogithub/pando/internal/mcpgateway"
+	"github.com/digiogithub/pando/internal/notify"
 	"github.com/digiogithub/pando/internal/permission"
-	"github.com/digiogithub/pando/internal/version"
 
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -43,6 +44,23 @@ type MCPClient interface {
 	Close() error
 }
 
+func mcpToolErrorResponse(serverName, message string) tools.ToolResponse {
+	wrapped := fmt.Sprintf("MCP server %q: %s", serverName, message)
+	notify.Error(notify.SourceTool, wrapped)
+	return tools.NewTextErrorResponse(wrapped)
+}
+
+func mcpOperationError(serverName, toolName, operation string, err error, timeout time.Duration) tools.ToolResponse {
+	if errors.Is(err, context.DeadlineExceeded) {
+		msg := mcpclient.BuildTimeoutError(serverName, operation, timeout).Error()
+		mcpclient.PublishError(serverName, msg)
+		return tools.NewTextErrorResponse(msg)
+	}
+	msg := mcpclient.BuildCallError(serverName, toolName, operation, err).Error()
+	mcpclient.PublishError(serverName, msg)
+	return tools.NewTextErrorResponse(msg)
+}
+
 func (b *mcpTool) Info() tools.ToolInfo {
 	required := b.tool.InputSchema.Required
 	if required == nil {
@@ -56,19 +74,16 @@ func (b *mcpTool) Info() tools.ToolInfo {
 	}
 }
 
-func runTool(ctx context.Context, c MCPClient, serverName string, toolName string, input string) (tools.ToolResponse, error) {
-	logging.Debug("runTool", "toolName", toolName, "inputLength", len(input))
+func runTool(ctx context.Context, c MCPClient, serverName string, timeout time.Duration, toolName string, input string) (tools.ToolResponse, error) {
+	logging.Debug("runTool", "server", serverName, "toolName", toolName, "inputLength", len(input), "timeout", timeout)
 	defer c.Close()
-	initRequest := mcp.InitializeRequest{}
-	initRequest.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-	initRequest.Params.ClientInfo = mcp.Implementation{
-		Name:    "OpenCode",
-		Version: version.Version,
-	}
+	initRequest := mcpclient.BuildInitializeRequest("OpenCode")
 
-	_, err := c.Initialize(ctx, initRequest)
+	initCtx, initCancel := mcpclient.WithTimeout(ctx, timeout)
+	_, err := c.Initialize(initCtx, initRequest)
+	initCancel()
 	if err != nil {
-		return tools.NewTextErrorResponse(err.Error()), nil
+		return mcpOperationError(serverName, toolName, "initialize", err, timeout), nil
 	}
 
 	toolRequest := mcp.CallToolRequest{}
@@ -94,9 +109,11 @@ func runTool(ctx context.Context, c MCPClient, serverName string, toolName strin
 	}
 
 	toolRequest.Params.Arguments = args
-	result, err := c.CallTool(ctx, toolRequest)
+	callCtx, callCancel := mcpclient.WithTimeout(ctx, timeout)
+	result, err := c.CallTool(callCtx, toolRequest)
+	callCancel()
 	if err != nil {
-		return tools.NewTextErrorResponse(err.Error()), nil
+		return mcpOperationError(serverName, toolName, "call", err, timeout), nil
 	}
 
 	output := ""
@@ -148,38 +165,15 @@ func (b *mcpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolRes
 	var response tools.ToolResponse
 	var err error
 
-	switch b.mcpConfig.Type {
-	case config.MCPStdio:
-		c, cerr := client.NewStdioMCPClient(
-			b.mcpConfig.Command,
-			b.mcpConfig.Env,
-			b.mcpConfig.Args...,
-		)
-		if cerr != nil {
-			return tools.NewTextErrorResponse(cerr.Error()), nil
-		}
-		response, err = runTool(ctx, c, b.mcpName, b.tool.Name, params.Input)
-	case config.MCPSse:
-		c, cerr := client.NewSSEMCPClient(
-			b.mcpConfig.URL,
-			client.WithHeaders(b.mcpConfig.Headers),
-		)
-		if cerr != nil {
-			return tools.NewTextErrorResponse(cerr.Error()), nil
-		}
-		response, err = runTool(ctx, c, b.mcpName, b.tool.Name, params.Input)
-	case config.MCPStreamableHTTP:
-		c, cerr := client.NewStreamableHttpClient(
-			b.mcpConfig.URL,
-			transport.WithHTTPHeaders(b.mcpConfig.Headers),
-		)
-		if cerr != nil {
-			return tools.NewTextErrorResponse(cerr.Error()), nil
-		}
-		response, err = runTool(ctx, c, b.mcpName, b.tool.Name, params.Input)
-	default:
-		return tools.NewTextErrorResponse("invalid mcp type"), nil
+	timeout := mcpclient.ResolveTimeout(b.mcpConfig.Timeout, mcpclient.DefaultOperationTimeout)
+	clientCtx, clientCancel := context.WithCancel(ctx)
+	defer clientCancel()
+
+	c, cerr := mcpclient.New(clientCtx, b.mcpName, b.mcpConfig)
+	if cerr != nil {
+		return mcpToolErrorResponse(b.mcpName, cerr.Error()), nil
 	}
+	response, err = runTool(ctx, c, b.mcpName, timeout, b.tool.Name, params.Input)
 
 	if err != nil {
 		return response, err
@@ -203,25 +197,31 @@ func NewMcpTool(name string, tool mcp.Tool, permissions permission.Service, mcpC
 
 var mcpTools []tools.BaseTool
 
+func ResetMcpToolsCache() {
+	mcpTools = nil
+}
+
 func getTools(ctx context.Context, name string, m config.MCPServer, permissions permission.Service, c MCPClient) []tools.BaseTool {
 	logging.Debug("getTools", "serverName", name, "type", string(m.Type))
 	var stdioTools []tools.BaseTool
-	initRequest := mcp.InitializeRequest{}
-	initRequest.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-	initRequest.Params.ClientInfo = mcp.Implementation{
-		Name:    "OpenCode",
-		Version: version.Version,
-	}
+	timeout := mcpclient.ResolveTimeout(m.Timeout, mcpclient.DefaultDiscoveryTimeout)
+	initRequest := mcpclient.BuildInitializeRequest("OpenCode")
 
-	_, err := c.Initialize(ctx, initRequest)
+	initCtx, initCancel := mcpclient.WithTimeout(ctx, timeout)
+	_, err := c.Initialize(initCtx, initRequest)
+	initCancel()
 	if err != nil {
-		logging.Error("error initializing mcp client", "error", err)
+		logging.Error("error initializing mcp client", "server", name, "error", err)
+		mcpclient.PublishWarn(name, mcpclient.BuildCallError(name, "", "initialize during discovery", err).Error())
 		return stdioTools
 	}
 	toolsRequest := mcp.ListToolsRequest{}
-	tools, err := c.ListTools(ctx, toolsRequest)
+	listCtx, listCancel := mcpclient.WithTimeout(ctx, timeout)
+	tools, err := c.ListTools(listCtx, toolsRequest)
+	listCancel()
 	if err != nil {
-		logging.Error("error listing tools", "error", err)
+		logging.Error("error listing tools", "server", name, "error", err)
+		mcpclient.PublishWarn(name, mcpclient.BuildCallError(name, "", "list tools during discovery", err).Error())
 		return stdioTools
 	}
 	logging.Debug("MCP server tools listed", "serverName", name, "toolCount", len(tools.Tools))
@@ -239,40 +239,17 @@ func GetMcpTools(ctx context.Context, permissions permission.Service) []tools.Ba
 	}
 	for name, m := range config.Get().MCPServers {
 		logging.Debug("Initializing MCP server", "name", name, "type", string(m.Type))
-		switch m.Type {
-		case config.MCPStdio:
-			c, err := client.NewStdioMCPClient(
-				m.Command,
-				m.Env,
-				m.Args...,
-			)
-			if err != nil {
-				logging.Error("error creating mcp client", "error", err)
-				continue
-			}
-
-			mcpTools = append(mcpTools, getTools(ctx, name, m, permissions, c)...)
-		case config.MCPSse:
-			c, err := client.NewSSEMCPClient(
-				m.URL,
-				client.WithHeaders(m.Headers),
-			)
-			if err != nil {
-				logging.Error("error creating mcp client", "error", err)
-				continue
-			}
-			mcpTools = append(mcpTools, getTools(ctx, name, m, permissions, c)...)
-		case config.MCPStreamableHTTP:
-			c, err := client.NewStreamableHttpClient(
-				m.URL,
-				transport.WithHTTPHeaders(m.Headers),
-			)
-			if err != nil {
-				logging.Error("error creating mcp client", "error", err)
-				continue
-			}
-			mcpTools = append(mcpTools, getTools(ctx, name, m, permissions, c)...)
+		clientCtx, clientCancel := context.WithCancel(ctx)
+		c, err := mcpclient.New(clientCtx, name, m)
+		if err != nil {
+			clientCancel()
+			logging.Error("error creating mcp client", "server", name, "error", err)
+			mcpclient.PublishWarn(name, fmt.Sprintf("Failed to connect MCP server %q: %v", name, err))
+			continue
 		}
+
+		mcpTools = append(mcpTools, getTools(ctx, name, m, permissions, c)...)
+		clientCancel()
 	}
 
 	logging.Debug("MCP tools loaded", "totalToolCount", len(mcpTools))

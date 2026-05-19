@@ -8,10 +8,8 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
-	"github.com/digiogithub/pando/internal/version"
+	"github.com/digiogithub/pando/internal/mcpclient"
 
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -30,6 +28,7 @@ type clientEntry struct {
 	serverName string
 	createdAt  time.Time
 	lastUsed   time.Time
+	cancel     context.CancelFunc
 }
 
 // MCPClientPool manages long-lived MCP client connections to avoid creating a
@@ -61,21 +60,23 @@ func (p *MCPClientPool) GetOrCreate(ctx context.Context, serverName string, srv 
 		return entry.client, nil
 	}
 
-	c, err := newPooledClient(srv)
+	clientCtx, clientCancel := context.WithCancel(ctx)
+	c, err := newPooledClient(clientCtx, serverName, srv)
 	if err != nil {
+		clientCancel()
 		return nil, fmt.Errorf("create MCP client for %q: %w", serverName, err)
 	}
 
-	initReq := mcp.InitializeRequest{}
-	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-	initReq.Params.ClientInfo = mcp.Implementation{
-		Name:    "pando-gateway",
-		Version: version.Version,
-	}
-	if _, err := c.Initialize(ctx, initReq); err != nil {
+	timeout := mcpclient.ResolveTimeout(srv.Timeout, mcpclient.DefaultDiscoveryTimeout)
+	initReq := mcpclient.BuildInitializeRequest("pando-gateway")
+	initCtx, initCancel := mcpclient.WithTimeout(ctx, timeout)
+	if _, err := c.Initialize(initCtx, initReq); err != nil {
+		initCancel()
+		clientCancel()
 		_ = c.Close()
 		return nil, fmt.Errorf("initialize MCP client for %q: %w", serverName, err)
 	}
+	initCancel()
 
 	now := time.Now()
 	p.clients[serverName] = &clientEntry{
@@ -83,6 +84,7 @@ func (p *MCPClientPool) GetOrCreate(ctx context.Context, serverName string, srv 
 		serverName: serverName,
 		createdAt:  now,
 		lastUsed:   now,
+		cancel:     clientCancel,
 	}
 	logging.Debug("MCP client pool: created new client", "server", serverName)
 	return c, nil
@@ -98,6 +100,9 @@ func (p *MCPClientPool) Evict(serverName string) {
 	if !ok {
 		return
 	}
+	if entry.cancel != nil {
+		entry.cancel()
+	}
 	if err := entry.client.Close(); err != nil {
 		logging.Debug("MCP client pool: error closing evicted client", "server", serverName, "error", err)
 	}
@@ -111,6 +116,9 @@ func (p *MCPClientPool) StopAll() {
 	defer p.mu.Unlock()
 
 	for name, entry := range p.clients {
+		if entry.cancel != nil {
+			entry.cancel()
+		}
 		if err := entry.client.Close(); err != nil {
 			logging.Debug("MCP client pool: error stopping client", "server", name, "error", err)
 		}
@@ -120,15 +128,6 @@ func (p *MCPClientPool) StopAll() {
 }
 
 // newPooledClient constructs a concrete MCP client based on the server type.
-func newPooledClient(srv config.MCPServer) (pooledMCPClient, error) {
-	switch srv.Type {
-	case config.MCPStdio:
-		return client.NewStdioMCPClient(srv.Command, srv.Env, srv.Args...)
-	case config.MCPSse:
-		return client.NewSSEMCPClient(srv.URL, client.WithHeaders(srv.Headers))
-	case config.MCPStreamableHTTP:
-		return client.NewStreamableHttpClient(srv.URL, transport.WithHTTPHeaders(srv.Headers))
-	default:
-		return nil, fmt.Errorf("unknown MCP server type: %q", srv.Type)
-	}
+func newPooledClient(ctx context.Context, serverName string, srv config.MCPServer) (pooledMCPClient, error) {
+	return mcpclient.New(ctx, serverName, srv)
 }

@@ -9,10 +9,8 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
-	"github.com/digiogithub/pando/internal/version"
+	"github.com/digiogithub/pando/internal/mcpclient"
 
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -53,39 +51,27 @@ func (r *Registry) DiscoverAll(ctx context.Context, mcpServers map[string]config
 // listServerTools creates an MCP client for the given server, initializes it,
 // lists its tools, and returns them.
 func listServerTools(ctx context.Context, name string, srv config.MCPServer) ([]mcp.Tool, error) {
-	var c interface {
-		Initialize(ctx context.Context, req mcp.InitializeRequest) (*mcp.InitializeResult, error)
-		ListTools(ctx context.Context, req mcp.ListToolsRequest) (*mcp.ListToolsResult, error)
-		Close() error
-	}
+	clientCtx, clientCancel := context.WithCancel(ctx)
+	defer clientCancel()
 
-	var err error
-	switch srv.Type {
-	case config.MCPStdio:
-		c, err = client.NewStdioMCPClient(srv.Command, srv.Env, srv.Args...)
-	case config.MCPSse:
-		c, err = client.NewSSEMCPClient(srv.URL, client.WithHeaders(srv.Headers))
-	case config.MCPStreamableHTTP:
-		c, err = client.NewStreamableHttpClient(srv.URL, transport.WithHTTPHeaders(srv.Headers))
-	default:
-		return nil, fmt.Errorf("unknown MCP type: %s", srv.Type)
-	}
+	c, err := mcpclient.New(clientCtx, name, srv)
 	if err != nil {
 		return nil, fmt.Errorf("create client: %w", err)
 	}
 	defer c.Close()
 
-	initReq := mcp.InitializeRequest{}
-	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-	initReq.Params.ClientInfo = mcp.Implementation{
-		Name:    "pando-gateway",
-		Version: version.Version,
-	}
-	if _, err := c.Initialize(ctx, initReq); err != nil {
+	timeout := mcpclient.ResolveTimeout(srv.Timeout, mcpclient.DefaultDiscoveryTimeout)
+	initReq := mcpclient.BuildInitializeRequest("pando-gateway")
+	initCtx, initCancel := mcpclient.WithTimeout(ctx, timeout)
+	if _, err := c.Initialize(initCtx, initReq); err != nil {
+		initCancel()
 		return nil, fmt.Errorf("initialize: %w", err)
 	}
+	initCancel()
 
-	result, err := c.ListTools(ctx, mcp.ListToolsRequest{})
+	listCtx, listCancel := mcpclient.WithTimeout(ctx, timeout)
+	result, err := c.ListTools(listCtx, mcp.ListToolsRequest{})
+	listCancel()
 	if err != nil {
 		return nil, fmt.Errorf("list tools: %w", err)
 	}

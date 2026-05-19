@@ -27,13 +27,9 @@ func hasEmbeddedAppBundle() bool {
 		return false
 	}
 
-	bundleRoot := "bin/" + appBundleName()
-	if _, err := fs.Stat(DesktopBundle, bundleRoot); err == nil {
-		return true
-	}
-
-	entries, err := fs.Glob(DesktopBundle, bundleRoot+"/**")
-	return err == nil && len(entries) > 0
+	bundleInfoPath := "bin/" + appBundleName() + "/Contents/Info.plist"
+	_, err := fs.Stat(DesktopBundle, bundleInfoPath)
+	return err == nil
 }
 
 func extractEmbeddedAppBundle(dstRoot string) (string, error) {

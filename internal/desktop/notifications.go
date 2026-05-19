@@ -18,6 +18,7 @@ type sseNotification struct {
 	Level   string `json:"level"`
 	Source  string `json:"source"`
 	Message string `json:"message"`
+	Time    string `json:"time,omitempty"`
 }
 
 // startNotificationListener connects to the Pando SSE notification stream and
@@ -108,12 +109,13 @@ func (a *App) handleNotificationData(data string) {
 		return
 	}
 
-	// Filter for session completion notifications from the agent source.
-	if n.Source != "agent" {
+	// Surface agent completion notifications and MCP/tool failures.
+	title := "Pando"
+	if n.Source == "tool" {
+		title = "Pando MCP"
+	} else if n.Source != "agent" {
 		return
 	}
-
-	title := "Pando"
 	if err := beeep.Notify(title, n.Message, ""); err != nil {
 		slog.Debug("desktop: failed to show OS notification", "error", err)
 	}
