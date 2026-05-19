@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -121,6 +122,10 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 				resultCh <- accountResult{accountID: acc.ID, provider: acc.Type, err: err.Error()}
 				return
 			}
+			if acc.Type == models.ProviderAntigravity {
+				resultCh <- accountResult{accountID: acc.ID, provider: acc.Type}
+				return
+			}
 
 			sameTypeCount := typeCount[acc.Type]
 			items := make([]ModelInfo, 0, len(fetched))
@@ -217,19 +222,55 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 					name = string(m.ID)
 				}
 				allModels = append(allModels, ModelInfo{
-					ID:      string(m.ID),
-					Name:    name,
+					ID:       string(m.ID),
+					Name:     name,
 					Provider: string(m.Provider),
-					Badges:  badgesForModel(string(m.ID)),
+					Badges:   badgesForModel(string(m.ID)),
 				})
 			}
 		}
 	}
 
+	allModels = append(allModels, logicalAntigravityModelInfos(accounts)...)
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"models": allModels,
 		"errors": providerErrors,
 	})
+}
+
+func logicalAntigravityModelInfos(accounts []config.ProviderAccount) []ModelInfo {
+	hasAntigravity := false
+	for _, acc := range accounts {
+		if !acc.Disabled && acc.Type == models.ProviderAntigravity {
+			hasAntigravity = true
+			break
+		}
+	}
+	if !hasAntigravity {
+		return nil
+	}
+
+	ids := make([]models.ModelID, 0, len(models.AntigravityModels))
+	for id := range models.AntigravityModels {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	items := make([]ModelInfo, 0, len(ids))
+	for _, id := range ids {
+		model := models.AntigravityModels[id]
+		items = append(items, ModelInfo{
+			ID:                      string(model.ID),
+			Name:                    model.Name,
+			Provider:                string(model.Provider),
+			Description:             model.APIModel,
+			Badges:                  badgesForModel(string(model.ID)),
+			CanReason:               model.CanReason,
+			SupportsReasoningEffort: model.SupportsReasoningEffort,
+		})
+	}
+	return items
 }
 
 // handleSetActiveModel handles PUT /api/v1/models/active.

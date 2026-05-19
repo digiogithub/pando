@@ -2,12 +2,15 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/llm/provider"
 )
 
 var slugRe = regexp.MustCompile(`^[a-z0-9-]+$`)
@@ -53,6 +56,8 @@ func providerAccountToResponse(a config.ProviderAccount, mask bool) config.Provi
 	if mask && out.APIKey != "" {
 		out.APIKey = maskProviderAccountAPIKey(out.APIKey)
 	}
+	out.OAuthRefreshToken = ""
+	out.OAuthAccessToken = ""
 	return out
 }
 
@@ -190,10 +195,81 @@ func (s *Server) handleTestProviderAccount(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if account.Type == models.ProviderAntigravity {
+		result, err := s.verifyAntigravityAccount(*account)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"ok":        false,
+				"error":     err.Error(),
+				"accountId": account.ID,
+				"provider":  account.Type,
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok":         true,
 		"modelCount": 0,
 	})
+}
+
+func (s *Server) verifyAntigravityAccount(account config.ProviderAccount) (map[string]interface{}, error) {
+	response := antigravityOAuthResponseFromAccount(account)
+	connected := response.Connected
+	status := antigravityAccountStatus(account)
+
+	result := map[string]interface{}{
+		"ok":           connected && !response.NeedsRefresh,
+		"provider":     account.Type,
+		"accountId":    account.ID,
+		"connected":    connected,
+		"displayName":  account.DisplayName,
+		"email":        account.Email,
+		"projectId":    account.ProjectID,
+		"status":       status,
+		"tokenExpiry":  account.OAuthExpiry,
+		"needsRefresh": response.NeedsRefresh,
+		"modelCount":   0,
+	}
+
+	if !connected {
+		result["error"] = "account is not connected"
+		return result, nil
+	}
+	if !response.NeedsRefresh {
+		return result, nil
+	}
+
+	refreshed, err := s.refreshAntigravityAccount(account.ID, false)
+	if err != nil {
+		result["error"] = fmt.Sprintf("account requires reauthentication: %v", err)
+		return result, nil
+	}
+
+	response = antigravityOAuthResponseFromAccount(refreshed)
+	result["ok"] = true
+	result["email"] = refreshed.Email
+	result["projectId"] = refreshed.ProjectID
+	result["tokenExpiry"] = refreshed.OAuthExpiry
+	result["needsRefresh"] = response.NeedsRefresh
+	result["status"] = antigravityAccountStatus(refreshed)
+	return result, nil
+}
+
+func antigravityAccountStatus(account config.ProviderAccount) string {
+	if account.Disabled {
+		return "disabled"
+	}
+	if strings.TrimSpace(account.OAuthAccessToken) == "" && strings.TrimSpace(account.OAuthRefreshToken) == "" {
+		return "pending"
+	}
+	if provider.AntigravityTokenNeedsRefresh(account) {
+		return "needs_refresh"
+	}
+	return "connected"
 }
 
 func (s *Server) handleListProviderTypes(w http.ResponseWriter, r *http.Request) {

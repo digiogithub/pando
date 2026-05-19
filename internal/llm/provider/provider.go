@@ -67,11 +67,15 @@ type Provider interface {
 }
 
 type providerClientOptions struct {
-	apiKey        string
-	useOAuth      bool
-	model         models.Model
-	maxTokens     int64
-	systemMessage string
+	apiKey            string
+	useOAuth          bool
+	oauthAccountID    string
+	oauthAccessToken  string
+	oauthRefreshToken string
+	oauthExpiry       int64
+	model             models.Model
+	maxTokens         int64
+	systemMessage     string
 
 	anthropicOptions []AnthropicOption
 	openaiOptions    []OpenAIOption
@@ -88,8 +92,9 @@ type ProviderClient interface {
 }
 
 type baseProvider[C ProviderClient] struct {
-	options providerClientOptions
-	client  C
+	options            providerClientOptions
+	client             C
+	antigravityContext *antigravityRequestContext
 }
 
 func wrapInstrumented(p Provider, err error) (Provider, error) {
@@ -97,6 +102,28 @@ func wrapInstrumented(p Provider, err error) (Provider, error) {
 		return nil, err
 	}
 	return NewInstrumentedProvider(p), nil
+}
+
+func attachAntigravityContext(p Provider, ctx *antigravityRequestContext) Provider {
+	if ctx == nil || p == nil {
+		return p
+	}
+	switch typed := p.(type) {
+	case *instrumentedProvider:
+		typed.inner = attachAntigravityContext(typed.inner, ctx)
+		return typed
+	case *baseProvider[GeminiClient]:
+		typed.antigravityContext = ctx
+		return typed
+	case *baseProvider[OpenAIClient]:
+		typed.antigravityContext = ctx
+		return typed
+	case *baseProvider[ProviderClient]:
+		typed.antigravityContext = ctx
+		return typed
+	default:
+		return p
+	}
 }
 
 func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption) (Provider, error) {
@@ -245,12 +272,27 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 // NewProviderFromAccount creates a Provider from a named ProviderAccount configuration.
 // This is the preferred way to create providers when using the multi-account system.
 func NewProviderFromAccount(account config.ProviderAccount, model models.Model, maxTokens int64, systemMessage string) (Provider, error) {
-	opts := []ProviderClientOption{
-		WithAPIKey(account.APIKey),
-		WithUseOAuth(account.UseOAuth),
-		WithModel(model),
-		WithMaxTokens(maxTokens),
-		WithSystemMessage(systemMessage),
+	providerType := account.Type
+	var antigravityCtx *antigravityRequestContext
+
+	opts := []ProviderClientOption{}
+	if providerType == models.ProviderAntigravity {
+		prepared, ctx, err := prepareAntigravityAccount(account, model)
+		if err != nil {
+			return nil, err
+		}
+		account = prepared
+		antigravityCtx = ctx
+		providerType = models.ProviderOpenAICompatible
+		opts = append(opts, antigravityProviderOptions(account, model, maxTokens, systemMessage)...)
+	} else {
+		opts = append(opts,
+			WithAPIKey(account.APIKey),
+			WithUseOAuth(account.UseOAuth),
+			WithModel(model),
+			WithMaxTokens(maxTokens),
+			WithSystemMessage(systemMessage),
+		)
 	}
 
 	// Apply cache-disable options based on global config
@@ -264,8 +306,6 @@ func NewProviderFromAccount(account config.ProviderAccount, model models.Model, 
 	if len(gemCacheOpts) > 0 {
 		opts = append(opts, WithGeminiOptions(gemCacheOpts...))
 	}
-
-	providerType := account.Type
 
 	// For openai-compatible, apply baseURL and extraHeaders via OpenAI options
 	if providerType == models.ProviderOpenAICompatible {
@@ -295,7 +335,11 @@ func NewProviderFromAccount(account config.ProviderAccount, model models.Model, 
 		}
 	}
 
-	return NewProvider(providerType, opts...)
+	providerInstance, err := NewProvider(providerType, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return attachAntigravityContext(providerInstance, antigravityCtx), nil
 }
 
 func (p *baseProvider[C]) cleanMessages(messages []message.Message) (cleaned []message.Message) {
@@ -314,7 +358,14 @@ func (p *baseProvider[C]) SendMessages(ctx context.Context, messages []message.M
 	if cfg := config.Get(); cfg != nil && cfg.Debug {
 		logging.Debug("Sending messages", "model", p.options.model.APIModel, "message_count", len(messages))
 	}
-	return p.client.send(ctx, messages, tools)
+	response, err := p.client.send(ctx, messages, tools)
+	if err != nil && p.antigravityContext != nil {
+		return nil, applyAntigravityFailure(p.antigravityContext.Account, p.antigravityContext.Pool, p.antigravityContext.Model, err)
+	}
+	if err == nil && p.antigravityContext != nil {
+		defaultAntigravityScheduler.ReportSuccess(p.antigravityContext.Account.ID, p.antigravityContext.Pool, p.antigravityContext.Model)
+	}
+	return response, err
 }
 
 func (p *baseProvider[C]) Model() models.Model {
@@ -326,7 +377,23 @@ func (p *baseProvider[C]) StreamResponse(ctx context.Context, messages []message
 	if cfg := config.Get(); cfg != nil && cfg.Debug {
 		logging.Debug("Starting stream response", "model", p.options.model.APIModel, "message_count", len(messages), "tool_count", len(tools))
 	}
-	return p.client.stream(ctx, messages, tools)
+	inner := p.client.stream(ctx, messages, tools)
+	if p.antigravityContext == nil {
+		return inner
+	}
+	out := make(chan ProviderEvent)
+	go func() {
+		defer close(out)
+		for event := range inner {
+			if event.Type == EventError && event.Error != nil {
+				event.Error = applyAntigravityFailure(p.antigravityContext.Account, p.antigravityContext.Pool, p.antigravityContext.Model, event.Error)
+			} else if event.Type == EventComplete {
+				defaultAntigravityScheduler.ReportSuccess(p.antigravityContext.Account.ID, p.antigravityContext.Pool, p.antigravityContext.Model)
+			}
+			out <- event
+		}
+	}()
+	return out
 }
 
 func WithAPIKey(apiKey string) ProviderClientOption {
@@ -338,6 +405,15 @@ func WithAPIKey(apiKey string) ProviderClientOption {
 func WithUseOAuth(useOAuth bool) ProviderClientOption {
 	return func(options *providerClientOptions) {
 		options.useOAuth = useOAuth
+	}
+}
+
+func WithOAuthAccount(account config.ProviderAccount) ProviderClientOption {
+	return func(options *providerClientOptions) {
+		options.oauthAccountID = account.ID
+		options.oauthAccessToken = account.OAuthAccessToken
+		options.oauthRefreshToken = account.OAuthRefreshToken
+		options.oauthExpiry = account.OAuthExpiry
 	}
 }
 

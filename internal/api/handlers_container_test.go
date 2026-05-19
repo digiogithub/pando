@@ -11,6 +11,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	embeddedrt "github.com/digiogithub/pando/internal/runtime/embedded"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/spf13/viper"
 )
 
 func TestHandleContainerCapabilitiesIncludesEmbedded(t *testing.T) {
@@ -92,9 +93,11 @@ func loadTestConfig(t *testing.T) {
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, ".pando.toml")
-	if err := os.WriteFile(configPath, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte("{}"), 0o644); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
+	_ = config.Reload()
+	viper.Reset()
 
 	if _, err := config.Load(dir, false); err != nil {
 		t.Fatalf("config.Load(): %v", err)

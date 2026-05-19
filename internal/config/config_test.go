@@ -479,6 +479,10 @@ func TestGetProviderAccountCRUD(t *testing.T) {
 	}
 }
 
+func configTestSetGlobalConfig(c *Config) {
+	cfg = c
+}
+
 func TestProviderOpenAICompatibleExists(t *testing.T) {
 	if models.ProviderOpenAICompatible != "openai-compatible" {
 		t.Fatalf("expected ProviderOpenAICompatible = 'openai-compatible', got %q", models.ProviderOpenAICompatible)

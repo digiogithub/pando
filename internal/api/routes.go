@@ -71,6 +71,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/config/provider-accounts/{id}", s.handleUpdateProviderAccount)
 	mux.HandleFunc("DELETE /api/v1/config/provider-accounts/{id}", s.handleDeleteProviderAccount)
 	mux.HandleFunc("POST /api/v1/config/provider-accounts/{id}/test", s.handleTestProviderAccount)
+	mux.HandleFunc("POST /api/v1/config/provider-accounts/antigravity/start", s.handleAntigravityOAuthStart)
+	mux.HandleFunc("POST /api/v1/config/provider-accounts/antigravity/callback", s.handleAntigravityOAuthCallback)
+	mux.HandleFunc("POST /api/v1/config/provider-accounts/antigravity/refresh", s.handleAntigravityOAuthRefresh)
+	mux.HandleFunc("POST /api/v1/config/provider-accounts/antigravity/verify", s.handleAntigravityOAuthVerify)
 	mux.HandleFunc("POST /api/v1/config/api-server/regenerate-token", s.handleRegenerateAPIToken)
 	// First-run / config generation
 	mux.HandleFunc("GET /api/v1/config/init-status", s.handleConfigInitStatus)
