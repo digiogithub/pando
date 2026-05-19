@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 )
@@ -76,12 +77,30 @@ func extractEmbeddedAppBundle(dstRoot string) (string, error) {
 		}
 	}
 
-	execPath := filepath.Join(bundleRoot, "Contents", "MacOS", binaryName())
+	execPath, err := macOSBundleExecutablePath(bundleRoot)
+	if err != nil {
+		return "", err
+	}
 	if chmodErr := os.Chmod(execPath, 0o755); chmodErr != nil {
 		return "", fmt.Errorf("failed to ensure macOS app executable permissions: %w", chmodErr)
 	}
 
 	return bundleRoot, nil
+}
+
+func macOSBundleExecutablePath(bundleRoot string) (string, error) {
+	infoPlistPath := filepath.Join(bundleRoot, "Contents", "Info.plist")
+	data, err := os.ReadFile(infoPlistPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read macOS app Info.plist: %w", err)
+	}
+
+	match := regexp.MustCompile(`<key>CFBundleExecutable</key>\s*<string>([^<]+)</string>`).FindSubmatch(data)
+	if len(match) != 2 {
+		return "", fmt.Errorf("failed to determine macOS app executable from Info.plist")
+	}
+
+	return filepath.Join(bundleRoot, "Contents", "MacOS", string(match[1])), nil
 }
 
 // Launch extracts the embedded desktop binary to a temp dir (if needed) and
