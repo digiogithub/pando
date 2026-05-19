@@ -95,8 +95,8 @@ func (t *evaluatorSkillsTool) Run(ctx context.Context, call tools.ToolCall) (too
 
 	var params evaluatorSkillsParams
 	if call.Input != "" && call.Input != "{}" {
-		if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
-			return tools.NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
+		if err := tools.DecodeToolInput(call.Input, &params); err != nil {
+			return tools.NewTextErrorResponse(err.Error()), nil
 		}
 	}
 
@@ -153,8 +153,8 @@ func (t *evaluatorEvaluateTool) Run(ctx context.Context, call tools.ToolCall) (t
 	}
 
 	var params evaluatorEvaluateParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
-		return tools.NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
+	if err := tools.DecodeToolInput(call.Input, &params); err != nil {
+		return tools.NewTextErrorResponse(err.Error()), nil
 	}
 	if params.SessionID == "" {
 		return tools.NewTextErrorResponse("session_id is required"), nil

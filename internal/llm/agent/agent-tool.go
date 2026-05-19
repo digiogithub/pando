@@ -43,6 +43,11 @@ func (b *agentTool) Info() tools.ToolInfo {
 }
 
 func (b *agentTool) Run(ctx context.Context, call tools.ToolCall) (tools.ToolResponse, error) {
+	call, err := tools.MustNormalizeToolCallInput(call)
+	if err != nil {
+		return tools.NewTextErrorResponse(err.Error()), nil
+	}
+
 	var params AgentParams
 	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
 		return tools.NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil

@@ -42,8 +42,8 @@ func (t *CatalogTool) Run(ctx context.Context, params tools.ToolCall) (tools.Too
 		Query      string `json:"query"`
 		MaxResults int    `json:"max_results"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &input); err != nil {
-		return tools.NewTextErrorResponse(fmt.Sprintf("invalid parameters: %s", err)), nil
+	if err := tools.DecodeToolInput(params.Input, &input); err != nil {
+		return tools.NewTextErrorResponse(err.Error()), nil
 	}
 	if input.MaxResults <= 0 {
 		input.MaxResults = 10
@@ -109,8 +109,8 @@ func (t *CallToolProxy) Run(ctx context.Context, params tools.ToolCall) (tools.T
 		ServerName string                 `json:"server_name"`
 		SessionID  string                 `json:"session_id"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &input); err != nil {
-		return tools.NewTextErrorResponse(fmt.Sprintf("invalid parameters: %s", err)), nil
+	if err := tools.DecodeToolInput(params.Input, &input); err != nil {
+		return tools.NewTextErrorResponse(err.Error()), nil
 	}
 
 	toolID := input.ToolName

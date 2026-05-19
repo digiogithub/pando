@@ -607,7 +607,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		ACPMCPServers    []models.ACPMCPServer  `json:"acp_mcp_servers"`
 	}
 
-	if err := json.Unmarshal(params, &req); err != nil {
+	if err := llmtools.DecodeToolInput(string(params), &req); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
@@ -724,7 +724,7 @@ func (s *Server) toolGetTask(ctx context.Context, params json.RawMessage) (inter
 		TaskID string `json:"task_id"`
 	}
 
-	if err := json.Unmarshal(params, &req); err != nil {
+	if err := llmtools.DecodeToolInput(string(params), &req); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
@@ -756,7 +756,7 @@ func (s *Server) toolListTasks(ctx context.Context, params json.RawMessage) (int
 		Offset int      `json:"offset"`
 	}
 
-	if err := json.Unmarshal(params, &req); err != nil {
+	if err := llmtools.DecodeToolInput(string(params), &req); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
@@ -796,7 +796,7 @@ func (s *Server) toolWaitTask(ctx context.Context, params json.RawMessage) (inte
 		Timeout string `json:"timeout"`
 	}
 
-	if err := json.Unmarshal(params, &req); err != nil {
+	if err := llmtools.DecodeToolInput(string(params), &req); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
@@ -834,7 +834,7 @@ func (s *Server) toolWaitMultiple(ctx context.Context, params json.RawMessage) (
 		Timeout string   `json:"timeout"`
 	}
 
-	if err := json.Unmarshal(params, &req); err != nil {
+	if err := llmtools.DecodeToolInput(string(params), &req); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
@@ -876,7 +876,7 @@ func (s *Server) toolCancelTask(ctx context.Context, params json.RawMessage) (in
 		TaskID string `json:"task_id"`
 	}
 
-	if err := json.Unmarshal(params, &req); err != nil {
+	if err := llmtools.DecodeToolInput(string(params), &req); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
@@ -895,7 +895,7 @@ func (s *Server) toolPauseTask(ctx context.Context, params json.RawMessage) (int
 		TaskID string `json:"task_id"`
 	}
 
-	if err := json.Unmarshal(params, &req); err != nil {
+	if err := llmtools.DecodeToolInput(string(params), &req); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
@@ -917,7 +917,7 @@ func (s *Server) toolResumeTask(ctx context.Context, params json.RawMessage) (in
 		Tags       *[]string `json:"tags"`
 	}
 
-	if err := json.Unmarshal(params, &req); err != nil {
+	if err := llmtools.DecodeToolInput(string(params), &req); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
@@ -948,7 +948,7 @@ func (s *Server) toolDeleteTask(ctx context.Context, params json.RawMessage) (in
 		TaskID string `json:"task_id"`
 	}
 
-	if err := json.Unmarshal(params, &req); err != nil {
+	if err := llmtools.DecodeToolInput(string(params), &req); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
@@ -972,7 +972,7 @@ func (s *Server) toolGetTaskOutput(ctx context.Context, params json.RawMessage) 
 		Tail   *bool  `json:"tail"`
 	}
 
-	if err := json.Unmarshal(params, &req); err != nil {
+	if err := llmtools.DecodeToolInput(string(params), &req); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
@@ -1007,7 +1007,7 @@ func (s *Server) toolSetProgress(ctx context.Context, params json.RawMessage) (i
 		Description string      `json:"description"`
 	}
 
-	if err := json.Unmarshal(params, &req); err != nil {
+	if err := llmtools.DecodeToolInput(string(params), &req); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 
@@ -1054,7 +1054,7 @@ func (s *Server) toolACPSessionControl(ctx context.Context, params json.RawMessa
 		OptionID  string `json:"option_id"`
 	}
 
-	if err := json.Unmarshal(params, &req); err != nil {
+	if err := llmtools.DecodeToolInput(string(params), &req); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
 	}
 

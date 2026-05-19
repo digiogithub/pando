@@ -501,13 +501,7 @@ func (t *MesnadaGetOutputTool) Run(ctx context.Context, params ToolCall) (ToolRe
 }
 
 func decodeMesnadaInput(input string, target any) error {
-	if input == "" {
-		input = "{}"
-	}
-	if err := json.Unmarshal([]byte(input), target); err != nil {
-		return fmt.Errorf("error parsing parameters: %w", err)
-	}
-	return nil
+	return DecodeToolInput(input, target)
 }
 
 func encodeMesnadaResult(result any) (ToolResponse, error) {

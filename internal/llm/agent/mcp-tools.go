@@ -73,8 +73,14 @@ func runTool(ctx context.Context, c MCPClient, serverName string, toolName strin
 
 	toolRequest := mcp.CallToolRequest{}
 	toolRequest.Params.Name = toolName
+
+	normalizedInput, err := tools.NormalizeJSONInput(input)
+	if err != nil {
+		return tools.NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
+	}
+
 	var args map[string]any
-	if err = json.Unmarshal([]byte(input), &args); err != nil {
+	if err = json.Unmarshal([]byte(normalizedInput), &args); err != nil {
 		return tools.NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
 	}
 

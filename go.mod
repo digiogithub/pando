@@ -30,6 +30,7 @@ require (
 	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/google/go-containerregistry v0.21.5
 	github.com/google/uuid v1.6.0
+	github.com/kaptinlin/jsonrepair v0.2.4
 	github.com/layeh/gopher-json v0.0.0-20201124131017-552bb3c4c3bf
 	github.com/lrstanley/bubblezone v0.0.0-20250315020633-c249a3fe1231
 	github.com/madeindigio/acp-go-sdk v0.15.0
