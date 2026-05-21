@@ -88,7 +88,7 @@ func (t *exaSearchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, e
 		IncludeHighlights *bool  `json:"include_highlights"`
 		Category          string `json:"category"`
 	}
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("Failed to parse parameters: " + err.Error()), nil
 	}
 	if strings.TrimSpace(params.Query) == "" {

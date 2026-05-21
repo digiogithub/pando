@@ -125,7 +125,7 @@ func (t *fetchTool) Info() ToolInfo {
 
 func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params FetchParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("Failed to parse fetch parameters: " + err.Error()), nil
 	}
 

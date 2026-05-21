@@ -98,7 +98,7 @@ func (t *perplexitySearchTool) Run(ctx context.Context, call ToolCall) (ToolResp
 		SearchRecencyFilter string  `json:"search_recency_filter"`
 		ReturnCitations     *bool   `json:"return_citations"`
 	}
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("Failed to parse parameters: " + err.Error()), nil
 	}
 	if strings.TrimSpace(params.Query) == "" {

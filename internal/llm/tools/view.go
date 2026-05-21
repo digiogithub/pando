@@ -4,8 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"io"
 	"path/filepath"
 	"strings"
@@ -32,11 +33,12 @@ type ViewResponseMetadata struct {
 }
 
 const (
-	ViewToolName     = "view"
-	MaxReadSize      = 250 * 1024
-	DefaultReadLimit = 2000
-	MaxLineLength    = 2000
-	viewDescription  = `File viewing tool that reads and displays the contents of files with line numbers, allowing you to examine code, logs, or text data.
+	ViewToolName       = "view"
+	MaxReadSize        = 250 * 1024
+	LargeFileProbeSize = 4096
+	DefaultReadLimit   = 2000
+	MaxLineLength      = 2000
+	viewDescription    = `File viewing tool that reads and displays the contents of files with line numbers, allowing you to examine code, logs, or text data.
 
 WHEN TO USE THIS TOOL:
 - Use when you need to read the contents of a specific file
@@ -56,7 +58,6 @@ FEATURES:
 - Suggests similar file names when the requested file isn't found
 
 LIMITATIONS:
-- Maximum file size is 250KB
 - Default reading limit is 2000 lines
 - Lines longer than 2000 characters are truncated
 - Cannot display binary files or images
@@ -110,7 +111,7 @@ func (v *viewTool) Info() ToolInfo {
 func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params ViewParams
 	logging.Debug("view tool params", "params", call.Input)
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
 	}
 
@@ -166,12 +167,6 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return NewTextErrorResponse(fmt.Sprintf("Path is a directory, not a file: %s", filePath)), nil
 	}
 
-	// Check file size
-	if fileInfo.Size() > MaxReadSize {
-		return NewTextErrorResponse(fmt.Sprintf("File is too large (%d bytes). Maximum size is %d bytes",
-			fileInfo.Size(), MaxReadSize)), nil
-	}
-
 	// Set default limit if not provided
 	if params.EndLine > params.Offset {
 		params.Limit = params.EndLine - params.Offset
@@ -186,22 +181,11 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return NewTextErrorResponse(fmt.Sprintf("This is an image file of type: %s\nUse a different tool to process images", imageType)), nil
 	}
 
-	fileContent, err := workspaceFS.ReadFile(ctx, filePath)
+	content, lineCount, err := v.readFileContent(ctx, workspaceFS, filePath, fileInfo, params.Offset, params.Limit)
 	if err != nil {
-		return ToolResponse{}, fmt.Errorf("error reading file: %w", err)
-	}
-
-	// Check for binary content using a sample of up to 4096 bytes
-	{
-		sampleSize := min(len(fileContent), binarySampleSize)
-		if isBinaryContent(fileContent[:sampleSize]) {
+		if errors.Is(err, errBinaryContent) {
 			return NewTextErrorResponse(fmt.Sprintf("File appears to be binary: %s", filePath)), nil
 		}
-	}
-
-	// Read the file content
-	content, lineCount, err := readTextFile(fileContent, params.Offset, params.Limit)
-	if err != nil {
 		return ToolResponse{}, fmt.Errorf("error reading file: %w", err)
 	}
 
@@ -226,6 +210,39 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 			Content:  content,
 		},
 	), nil
+}
+
+var errBinaryContent = errors.New("binary content")
+
+func (v *viewTool) readFileContent(ctx context.Context, workspaceFS fsReader, filePath string, fileInfo fs.FileInfo, offset, limit int) (string, int, error) {
+	if fileInfo.Size() <= MaxReadSize {
+		fileContent, err := workspaceFS.ReadFile(ctx, filePath)
+		if err != nil {
+			return "", 0, err
+		}
+
+		sampleSize := min(len(fileContent), binarySampleSize)
+		if sampleSize > 0 && isBinaryContent(fileContent[:sampleSize]) {
+			return "", 0, errBinaryContent
+		}
+
+		return readTextFile(fileContent, offset, limit)
+	}
+
+	probe, err := workspaceFS.ReadFileRange(ctx, filePath, 0, LargeFileProbeSize)
+	if err != nil {
+		return "", 0, err
+	}
+	if len(probe) > 0 && isBinaryContent(probe) {
+		return "", 0, errBinaryContent
+	}
+
+	return readTextFileStreaming(ctx, workspaceFS, filePath, offset, limit)
+}
+
+type fsReader interface {
+	ReadFile(ctx context.Context, path string) ([]byte, error)
+	ReadFileRange(ctx context.Context, path string, offset, length int64) ([]byte, error)
 }
 
 func addLineNumbers(content string, startLine int) string {
@@ -297,6 +314,63 @@ func readTextFile(content []byte, offset, limit int) (string, int, error) {
 	}
 
 	return strings.Join(lines, "\n"), lineCount, nil
+}
+
+func readTextFileStreaming(ctx context.Context, workspaceFS fsReader, filePath string, offset, limit int) (string, int, error) {
+	const chunkSize int64 = 64 * 1024
+
+	var (
+		chunkOffset int64
+		leftover    string
+		lines       []string
+		lineCount   int
+	)
+
+	for {
+		chunk, err := workspaceFS.ReadFileRange(ctx, filePath, chunkOffset, chunkSize)
+		if err != nil {
+			return "", 0, err
+		}
+		if len(chunk) == 0 {
+			break
+		}
+
+		chunkOffset += int64(len(chunk))
+		text := leftover + string(chunk)
+		parts := strings.Split(text, "\n")
+		leftover = parts[len(parts)-1]
+
+		for _, part := range parts[:len(parts)-1] {
+			if lineCount >= offset && len(lines) < limit {
+				lines = append(lines, truncateLongLine(strings.TrimSuffix(part, "\r")))
+			}
+			lineCount++
+		}
+
+		if len(chunk) < int(chunkSize) {
+			break
+		}
+	}
+
+	if leftover != "" || chunkOffset == 0 {
+		if lineCount >= offset && len(lines) < limit {
+			lines = append(lines, truncateLongLine(strings.TrimSuffix(leftover, "\r")))
+		}
+		lineCount++
+	}
+
+	if offset > 0 && lineCount <= offset {
+		return "", lineCount, nil
+	}
+
+	return strings.Join(lines, "\n"), lineCount, nil
+}
+
+func truncateLongLine(line string) string {
+	if len(line) > MaxLineLength {
+		return line[:MaxLineLength] + "..."
+	}
+	return line
 }
 
 const binarySampleSize = 4096

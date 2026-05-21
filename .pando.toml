@@ -16,6 +16,7 @@ Env = []
 Args = ['-c', '.ai/mycommand-mcp.yaml']
 Type = 'stdio'
 URL = ''
+Timeout = ''
 
 [[providerAccounts]]
 id = 'anthropic'
@@ -59,7 +60,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'copilot.gpt-4.1'
+Model = 'openrouter.qwen/qwen3.6-flash'
 MaxTokens = 4096
 ReasoningEffort = ''
 ThinkingMode = ''

@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 
 	"github.com/chromedp/chromedp"
 )
@@ -61,7 +60,7 @@ func (t *BrowserScreenshotTool) Info() ToolInfo {
 
 func (t *BrowserScreenshotTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params BrowserScreenshotParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("failed to parse parameters: " + err.Error()), nil
 	}
 

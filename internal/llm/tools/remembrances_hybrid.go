@@ -43,7 +43,7 @@ func (t *HybridSearchRemembrancesTool) Run(ctx context.Context, params ToolCall)
 		IncludeSessions *bool    `json:"include_sessions"`
 		IncludeCode     *bool    `json:"include_code"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.Query == "" {

@@ -78,7 +78,7 @@ func (t *context7ResolveTool) Run(ctx context.Context, call ToolCall) (ToolRespo
 	var params struct {
 		LibraryName string `json:"library_name"`
 	}
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("Failed to parse parameters: " + err.Error()), nil
 	}
 	if strings.TrimSpace(params.LibraryName) == "" {
@@ -174,7 +174,7 @@ func (t *context7DocsTool) Run(ctx context.Context, call ToolCall) (ToolResponse
 		Topic     string `json:"topic"`
 		Tokens    int    `json:"tokens"`
 	}
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("Failed to parse parameters: " + err.Error()), nil
 	}
 	if strings.TrimSpace(params.LibraryID) == "" {

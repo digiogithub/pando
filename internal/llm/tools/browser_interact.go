@@ -40,7 +40,7 @@ type browserClickParams struct {
 
 func (t *BrowserClickTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params browserClickParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("failed to parse parameters: " + err.Error()), nil
 	}
 	if params.Selector == "" {
@@ -107,7 +107,7 @@ type browserFillParams struct {
 
 func (t *BrowserFillTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params browserFillParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("failed to parse parameters: " + err.Error()), nil
 	}
 	if params.Selector == "" {
@@ -175,7 +175,7 @@ type browserScrollParams struct {
 
 func (t *BrowserScrollTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params browserScrollParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("failed to parse parameters: " + err.Error()), nil
 	}
 

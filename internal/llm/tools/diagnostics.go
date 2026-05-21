@@ -67,7 +67,7 @@ func (b *diagnosticsTool) Info() ToolInfo {
 
 func (b *diagnosticsTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params DiagnosticsParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
 	}
 

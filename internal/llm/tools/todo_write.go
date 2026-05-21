@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -120,7 +119,7 @@ Guidelines:
 
 func (t *todoWriteTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params TodoWriteParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("invalid input: " + err.Error()), nil
 	}
 

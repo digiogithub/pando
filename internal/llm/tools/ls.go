@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -90,7 +89,7 @@ func (l *lsTool) Info() ToolInfo {
 
 func (l *lsTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params LSParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
 	}
 

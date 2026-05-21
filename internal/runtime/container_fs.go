@@ -52,6 +52,13 @@ func (c *containerFS) ReadFile(ctx context.Context, path string) ([]byte, error)
 	return nil, fmt.Errorf("read %q: %w", path, errContainerCopyModeNotImplemented)
 }
 
+func (c *containerFS) ReadFileRange(ctx context.Context, path string, offset, length int64) ([]byte, error) {
+	if c.Mounted() {
+		return c.host.ReadFileRange(ctx, path, offset, length)
+	}
+	return nil, fmt.Errorf("read range %q: %w", path, errContainerCopyModeNotImplemented)
+}
+
 func (c *containerFS) WriteFile(ctx context.Context, path string, data []byte, perm fs.FileMode) error {
 	if c.Mounted() {
 		return c.host.WriteFile(ctx, path, data, perm)

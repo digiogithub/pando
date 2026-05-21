@@ -44,7 +44,7 @@ type browserConsoleLogsParams struct {
 
 func (t *BrowserConsoleLogsTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params browserConsoleLogsParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("failed to parse parameters: " + err.Error()), nil
 	}
 
@@ -116,7 +116,7 @@ type browserNetworkParams struct {
 
 func (t *BrowserNetworkTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params browserNetworkParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("failed to parse parameters: " + err.Error()), nil
 	}
 
@@ -188,7 +188,7 @@ type browserPDFParams struct {
 
 func (t *BrowserPDFTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params browserPDFParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("failed to parse parameters: " + err.Error()), nil
 	}
 

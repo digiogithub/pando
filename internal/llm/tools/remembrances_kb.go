@@ -97,7 +97,7 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 		Content  string                 `json:"content"`
 		Metadata map[string]interface{} `json:"metadata"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.FilePath == "" {
@@ -158,7 +158,7 @@ func (t *KBImportPathTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		Path          string `json:"path"`
 		DeleteMissing *bool  `json:"delete_missing"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.Path == "" {
@@ -216,7 +216,7 @@ func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolR
 		Query string `json:"query"`
 		Limit int    `json:"limit"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.Query == "" {
@@ -287,7 +287,7 @@ func (t *KBGetDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 	var req struct {
 		FilePath string `json:"file_path"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.FilePath == "" {
@@ -335,7 +335,7 @@ func (t *KBDeleteDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRe
 	var req struct {
 		FilePath string `json:"file_path"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.FilePath == "" {

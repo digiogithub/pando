@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/chromedp/chromedp"
 )
@@ -55,7 +54,7 @@ func (t *BrowserGetContentTool) Info() ToolInfo {
 
 func (t *BrowserGetContentTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params BrowserGetContentParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("failed to parse parameters: " + err.Error()), nil
 	}
 

@@ -65,7 +65,7 @@ func (t *SaveEventTool) Run(ctx context.Context, params ToolCall) (ToolResponse,
 		Content  string                 `json:"content"`
 		Metadata map[string]interface{} `json:"metadata"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.Subject == "" {
@@ -132,7 +132,7 @@ func (t *SearchEventsTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		ToDate    string `json:"to_date"`
 		Limit     int    `json:"limit"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 

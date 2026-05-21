@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -87,7 +86,7 @@ func (c *cacheReadTool) Info() ToolInfo {
 
 func (c *cacheReadTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params CacheReadParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
 	}
 

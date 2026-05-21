@@ -108,7 +108,7 @@ func (t *googleSearchTool) Run(ctx context.Context, call ToolCall) (ToolResponse
 		SiteSearch   string `json:"site_search"`
 		SearchType   string `json:"search_type"`
 	}
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("Failed to parse parameters: " + err.Error()), nil
 	}
 	if strings.TrimSpace(params.Query) == "" {

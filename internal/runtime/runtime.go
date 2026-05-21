@@ -46,6 +46,7 @@ type ExecutionRuntime interface {
 // WorkspaceFS provides filesystem operations over the session workspace.
 type WorkspaceFS interface {
 	ReadFile(ctx context.Context, path string) ([]byte, error)
+	ReadFileRange(ctx context.Context, path string, offset, length int64) ([]byte, error)
 	WriteFile(ctx context.Context, path string, data []byte, perm fs.FileMode) error
 	Stat(ctx context.Context, path string) (fs.FileInfo, error)
 	MkdirAll(ctx context.Context, path string, perm fs.FileMode) error

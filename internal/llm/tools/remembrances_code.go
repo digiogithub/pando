@@ -121,7 +121,7 @@ func (t *CodeIndexProjectTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		ProjectName string   `json:"project_name"`
 		Languages   []string `json:"languages"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.ProjectPath == "" {
@@ -177,7 +177,7 @@ func (t *CodeIndexStatusTool) Run(ctx context.Context, params ToolCall) (ToolRes
 	var req struct {
 		JobID string `json:"job_id"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.JobID == "" {
@@ -252,7 +252,7 @@ func (t *CodeHybridSearchTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		Languages   []string `json:"languages"`
 		SymbolTypes []string `json:"symbol_types"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.ProjectID == "" {
@@ -387,7 +387,7 @@ func (t *CodeFindSymbolTool) Run(ctx context.Context, params ToolCall) (ToolResp
 		SubstringMatching bool     `json:"substring_matching"`
 		Limit             int      `json:"limit"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.ProjectID == "" {
@@ -467,7 +467,7 @@ func (t *CodeGetSymbolsOverviewTool) Run(ctx context.Context, params ToolCall) (
 		RelativePath string `json:"relative_path"`
 		MaxResults   int    `json:"max_results"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.ProjectID == "" {
@@ -513,7 +513,7 @@ func (t *CodeGetProjectStatsTool) Run(ctx context.Context, params ToolCall) (Too
 	var req struct {
 		ProjectID string `json:"project_id"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.ProjectID == "" {
@@ -549,7 +549,7 @@ func (t *CodeDeleteProjectTool) Run(ctx context.Context, params ToolCall) (ToolR
 	var req struct {
 		ProjectID string `json:"project_id"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.ProjectID == "" {
@@ -592,7 +592,7 @@ func (t *CodeReindexFileTool) Run(ctx context.Context, params ToolCall) (ToolRes
 		ProjectID string `json:"project_id"`
 		FilePath  string `json:"file_path"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.ProjectID == "" {
@@ -688,7 +688,7 @@ func (t *CodeSearchPatternTool) Run(ctx context.Context, params ToolCall) (ToolR
 		SymbolTypes   []string `json:"symbol_types"`
 		Limit         int      `json:"limit"`
 	}
-	if err := json.Unmarshal([]byte(params.Input), &req); err != nil {
+	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
 	if req.ProjectID == "" {

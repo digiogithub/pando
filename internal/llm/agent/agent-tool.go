@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/digiogithub/pando/internal/config"
@@ -49,7 +48,7 @@ func (b *agentTool) Run(ctx context.Context, call tools.ToolCall) (tools.ToolRes
 	}
 
 	var params AgentParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := tools.DecodeToolInput(call.Input, &params); err != nil {
 		return tools.NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
 	}
 	if params.Prompt == "" {

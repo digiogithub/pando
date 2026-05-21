@@ -380,9 +380,12 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 // sanitizeToolCallHistory ensures that every assistant message with tool_calls
 // is followed by a tool message that covers all the corresponding tool_call_ids.
 // When a session is interrupted mid-tool-execution the tool results message may
-// never have been saved, leaving an invalid history that OpenAI-compatible APIs
-// reject with a 400 error. This function inserts ephemeral synthetic results for
-// any uncovered tool_call_ids so the resumed conversation is accepted.
+// never have been saved, leaving an invalid history that providers reject with
+// a 400 error. Anthropic is stricter here: each tool_result block must correspond
+// to a tool_use block in the immediately previous assistant message, so an
+// intervening message also makes the history invalid. This function inserts
+// ephemeral synthetic results for any uncovered tool_call_ids so the resumed
+// conversation is accepted.
 func sanitizeToolCallHistory(msgs []message.Message) []message.Message {
 	result := make([]message.Message, 0, len(msgs))
 	for i, msg := range msgs {
@@ -395,6 +398,8 @@ func sanitizeToolCallHistory(msgs []message.Message) []message.Message {
 			continue
 		}
 		// Collect tool_call_ids already covered by the immediately following tool message.
+		// If the next message is not a tool message, none of these calls are validly
+		// covered anymore for providers that require strict adjacency.
 		covered := make(map[string]bool)
 		if i+1 < len(msgs) && msgs[i+1].Role == message.Tool {
 			for _, tr := range msgs[i+1].ToolResults() {

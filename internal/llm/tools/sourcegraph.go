@@ -167,7 +167,7 @@ func (t *sourcegraphTool) Info() ToolInfo {
 
 func (t *sourcegraphTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 	var params SourcegraphParams
-	if err := json.Unmarshal([]byte(call.Input), &params); err != nil {
+	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("Failed to parse sourcegraph parameters: " + err.Error()), nil
 	}
 
