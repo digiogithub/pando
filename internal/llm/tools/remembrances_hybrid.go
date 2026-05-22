@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/digiogithub/pando/internal/rag"
@@ -80,9 +79,5 @@ func (t *HybridSearchRemembrancesTool) Run(ctx context.Context, params ToolCall)
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("hybrid remembrances search error: %v", err)), nil
 	}
-	out, err := json.MarshalIndent(map[string]any{"count": len(results), "results": results}, "", "  ")
-	if err != nil {
-		return NewTextErrorResponse("failed to marshal results"), nil
-	}
-	return NewTextResponse(string(out)), nil
+	return NewStructuredResponse(map[string]any{"count": len(results), "results": results}), nil
 }

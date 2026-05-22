@@ -171,6 +171,14 @@ func (a *PandoACPAgent) processPromptWithAgent(
 						acpsdk.WithStartStatus(status),
 						acpsdk.WithStartRawInput(rawInput),
 					}
+					// ACP clients expect the initial tool_call notification to be
+					// status=pending while input is still streaming or awaiting
+					// execution. Later tool_call_update notifications transition it
+					// to in_progress/completed. Sending in_progress too early can
+					// cause some clients to skip the richer follow-up rendering.
+					if status == acpsdk.ToolCallStatusInProgress {
+						startOpts[1] = acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending)
+					}
 					if len(locations) > 0 {
 						startOpts = append(startOpts, acpsdk.WithStartLocations(locations))
 					}
@@ -645,7 +653,7 @@ func (a *PandoACPAgent) processAgentResponse(
 
 		startOpts := []acpsdk.ToolCallStartOpt{
 			acpsdk.WithStartKind(kind),
-			acpsdk.WithStartStatus(acpsdk.ToolCallStatusInProgress),
+			acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
 			acpsdk.WithStartRawInput(rawInput),
 		}
 		if len(locations) > 0 {

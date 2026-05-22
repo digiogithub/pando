@@ -40,8 +40,9 @@ This is the mode used by editors like VS Code, Zed, and JetBrains.`,
 			}
 		}
 		debug, _ := cmd.Flags().GetBool("debug")
+		logFile, _ := cmd.Flags().GetString("log-file")
 		autoPerm, _ := cmd.Flags().GetBool("auto-permission")
-		return runACPServerWithOptions(cwd, debug, autoPerm)
+		return runACPServerWithOptions(cwd, debug, logFile, autoPerm)
 	},
 }
 
@@ -77,8 +78,9 @@ Configuration is read from .pando.toml or can be overridden with flags.`,
 			}
 		}
 		debug, _ := cmd.Flags().GetBool("debug")
+		logFile, _ := cmd.Flags().GetString("log-file")
 		autoPerm, _ := cmd.Flags().GetBool("auto-permission")
-		return runACPServerWithOptions(cwd, debug, autoPerm)
+		return runACPServerWithOptions(cwd, debug, logFile, autoPerm)
 	},
 }
 
@@ -271,6 +273,7 @@ func init() {
 	// Persistent flags available to all acp subcommands
 	acpCmd.PersistentFlags().String("cwd", "", "Working directory (default: current directory)")
 	acpCmd.PersistentFlags().Bool("debug", false, "Enable debug logging")
+	acpCmd.PersistentFlags().String("log-file", "", "Path to log file (enables debug logging to file)")
 	acpCmd.PersistentFlags().Bool("auto-permission", false, "Automatically approve tool permission requests")
 
 	// Flags for start command (start-specific options)

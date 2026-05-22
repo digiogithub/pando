@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -81,8 +80,7 @@ func (t *BrowserConsoleLogsTool) Run(ctx context.Context, call ToolCall) (ToolRe
 		entries = filtered
 	}
 
-	result, _ := json.Marshal(entries)
-	return NewTextResponse(string(result)), nil
+	return NewStructuredResponse(entries), nil
 }
 
 // ─── BrowserNetworkTool ──────────────────────────────────────────────────────
@@ -148,8 +146,7 @@ func (t *BrowserNetworkTool) Run(ctx context.Context, call ToolCall) (ToolRespon
 		entries = filtered
 	}
 
-	result, _ := json.Marshal(entries)
-	return NewTextResponse(string(result)), nil
+	return NewStructuredResponse(entries), nil
 }
 
 // ─── BrowserPDFTool ──────────────────────────────────────────────────────────
@@ -221,11 +218,10 @@ func (t *BrowserPDFTool) Run(ctx context.Context, call ToolCall) (ToolResponse, 
 		if err := os.WriteFile(params.OutputPath, pdfBuf, 0o644); err != nil {
 			return NewTextErrorResponse(fmt.Sprintf("failed to write PDF to %s: %v", params.OutputPath, err)), nil
 		}
-		result, _ := json.Marshal(map[string]any{
+		return NewStructuredResponse(map[string]any{
 			"saved": true,
 			"path":  params.OutputPath,
-		})
-		return NewTextResponse(string(result)), nil
+		}), nil
 	}
 
 	return NewTextResponse(base64.StdEncoding.EncodeToString(pdfBuf)), nil

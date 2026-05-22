@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/chromedp/chromedp"
 )
@@ -89,10 +88,9 @@ func (t *BrowserNavigateTool) Run(ctx context.Context, call ToolCall) (ToolRespo
 		return NewTextErrorResponse("browser navigation failed: " + err.Error()), nil
 	}
 
-	result, _ := json.Marshal(map[string]string{
+	return NewStructuredResponse(map[string]string{
 		"url":    params.URL,
 		"title":  title,
 		"status": "loaded",
-	})
-	return NewTextResponse(string(result)), nil
+	}), nil
 }

@@ -496,7 +496,6 @@ func (s *Server) handleToolsCall(ctx context.Context, session *Session, req *JSO
 		}
 	}
 
-	text, _ := json.MarshalIndent(result, "", "  ")
 	return &JSONRPCResponse{
 		JSONRPC: jsonRPCVersion,
 		ID:      req.ID,
@@ -504,7 +503,7 @@ func (s *Server) handleToolsCall(ctx context.Context, session *Session, req *JSO
 			"content": []map[string]interface{}{
 				{
 					"type": "text",
-					"text": string(text),
+					"text": llmtools.FormatStructuredData(result),
 				},
 			},
 		},

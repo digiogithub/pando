@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -198,12 +197,8 @@ func (t *SearchEventsTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		}
 	}
 
-	out, err := json.MarshalIndent(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"count":   len(items),
 		"results": items,
-	}, "", "  ")
-	if err != nil {
-		return NewTextErrorResponse("failed to marshal results"), nil
-	}
-	return NewTextResponse(string(out)), nil
+	}), nil
 }

@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -64,11 +63,10 @@ func (t *BrowserClickTool) Run(ctx context.Context, call ToolCall) (ToolResponse
 		return NewTextErrorResponse(fmt.Sprintf("click failed: %v", err)), nil
 	}
 
-	result, _ := json.Marshal(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"clicked":  true,
 		"selector": params.Selector,
-	})
-	return NewTextResponse(string(result)), nil
+	}), nil
 }
 
 // ─── BrowserFillTool ─────────────────────────────────────────────────────────
@@ -137,11 +135,10 @@ func (t *BrowserFillTool) Run(ctx context.Context, call ToolCall) (ToolResponse,
 		return NewTextErrorResponse(fmt.Sprintf("fill failed: %v", err)), nil
 	}
 
-	result, _ := json.Marshal(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"filled":   true,
 		"selector": params.Selector,
-	})
-	return NewTextResponse(string(result)), nil
+	}), nil
 }
 
 // ─── BrowserScrollTool ───────────────────────────────────────────────────────
@@ -200,10 +197,9 @@ func (t *BrowserScrollTool) Run(ctx context.Context, call ToolCall) (ToolRespons
 		return NewTextErrorResponse(fmt.Sprintf("scroll failed: %v", err)), nil
 	}
 
-	result, _ := json.Marshal(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"scrolled": true,
 		"x":        x,
 		"y":        y,
-	})
-	return NewTextResponse(string(result)), nil
+	}), nil
 }

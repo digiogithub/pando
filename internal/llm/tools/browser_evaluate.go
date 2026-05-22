@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/chromedp/chromedp"
 )
@@ -68,10 +67,5 @@ func (t *BrowserEvaluateTool) Run(ctx context.Context, call ToolCall) (ToolRespo
 		return NewTextErrorResponse("JavaScript evaluation failed: " + err.Error()), nil
 	}
 
-	resultJSON, err := json.Marshal(result)
-	if err != nil {
-		return NewTextErrorResponse("failed to serialize result: " + err.Error()), nil
-	}
-
-	return NewTextResponse(string(resultJSON)), nil
+	return NewStructuredResponse(result), nil
 }

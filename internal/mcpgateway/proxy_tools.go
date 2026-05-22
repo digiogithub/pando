@@ -2,7 +2,6 @@ package mcpgateway
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/digiogithub/pando/internal/llm/tools"
@@ -59,11 +58,7 @@ func (t *CatalogTool) Run(ctx context.Context, params tools.ToolCall) (tools.Too
 		return tools.NewTextResponse("No tools found matching the query."), nil
 	}
 
-	out, err := json.MarshalIndent(results, "", "  ")
-	if err != nil {
-		return tools.NewTextErrorResponse("failed to serialize results"), nil
-	}
-	return tools.NewTextResponse(string(out)), nil
+	return tools.NewStructuredResponse(results), nil
 }
 
 // CallToolProxy implements tools.BaseTool as "mcp_call_tool".
@@ -132,9 +127,8 @@ func (t *CallToolProxy) Run(ctx context.Context, params tools.ToolCall) (tools.T
 
 	switch v := result.(type) {
 	case string:
-		return tools.NewTextResponse(v), nil
+		return tools.NewTextResponse(tools.FormatJSONLikeContent(v)), nil
 	default:
-		out, _ := json.Marshal(v)
-		return tools.NewTextResponse(string(out)), nil
+		return tools.NewStructuredResponse(v), nil
 	}
 }

@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/digiogithub/pando/internal/rag/kb"
@@ -175,7 +174,7 @@ func (t *KBImportPathTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		return NewTextErrorResponse(fmt.Sprintf("kb import error: %v", err)), nil
 	}
 
-	out, err := json.MarshalIndent(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"path":           req.Path,
 		"delete_missing": deleteMissing,
 		"scanned":        stats.Scanned,
@@ -183,12 +182,7 @@ func (t *KBImportPathTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		"updated":        stats.Updated,
 		"unchanged":      stats.Unchanged,
 		"deleted":        stats.Deleted,
-	}, "", "  ")
-	if err != nil {
-		return NewTextErrorResponse("failed to marshal import result"), nil
-	}
-
-	return NewTextResponse(string(out)), nil
+	}), nil
 }
 
 // ---- KBSearchDocumentsTool ----
@@ -257,14 +251,10 @@ func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolR
 		}
 	}
 
-	out, err := json.MarshalIndent(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"count":   len(items),
 		"results": items,
-	}, "", "  ")
-	if err != nil {
-		return NewTextErrorResponse("failed to marshal results"), nil
-	}
-	return NewTextResponse(string(out)), nil
+	}), nil
 }
 
 // ---- KBGetDocumentTool ----
@@ -302,17 +292,13 @@ func (t *KBGetDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 		return NewTextResponse(fmt.Sprintf("Document not found: %s", req.FilePath)), nil
 	}
 
-	out, err := json.MarshalIndent(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"file_path":  doc.FilePath,
 		"content":    doc.Content,
 		"metadata":   doc.Metadata,
 		"created_at": doc.CreatedAt,
 		"updated_at": doc.UpdatedAt,
-	}, "", "  ")
-	if err != nil {
-		return NewTextErrorResponse("failed to marshal document"), nil
-	}
-	return NewTextResponse(string(out)), nil
+	}), nil
 }
 
 // ---- KBDeleteDocumentTool ----

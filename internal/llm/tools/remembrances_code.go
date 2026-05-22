@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/digiogithub/pando/internal/rag/code"
 	"github.com/digiogithub/pando/internal/rag/treesitter"
+	"github.com/digiogithub/pando/internal/search"
 )
 
 // Code indexing tool names
@@ -147,14 +149,13 @@ func (t *CodeIndexProjectTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		return NewTextErrorResponse(fmt.Sprintf("index project error: %v", err)), nil
 	}
 
-	out, _ := json.MarshalIndent(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"job_id":       jobID,
 		"project_id":   projectID,
 		"project_path": req.ProjectPath,
 		"status":       "in_progress",
 		"message":      "Indexing started. Use code_index_status with the job_id to track progress.",
-	}, "", "  ")
-	return NewTextResponse(string(out)), nil
+	}), nil
 }
 
 // ---- CodeIndexStatusTool ----
@@ -206,8 +207,7 @@ func (t *CodeIndexStatusTool) Run(ctx context.Context, params ToolCall) (ToolRes
 		result["error"] = *job.Error
 	}
 
-	out, _ := json.MarshalIndent(result, "", "  ")
-	return NewTextResponse(string(out)), nil
+	return NewStructuredResponse(result), nil
 }
 
 // ---- CodeHybridSearchTool ----
@@ -318,11 +318,10 @@ func (t *CodeHybridSearchTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		}
 	}
 
-	out, _ := json.MarshalIndent(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"count":   len(items),
 		"results": items,
-	}, "", "  ")
-	return NewTextResponse(string(out)), nil
+	}), nil
 }
 
 // ---- CodeFindSymbolTool ----
@@ -430,11 +429,10 @@ func (t *CodeFindSymbolTool) Run(ctx context.Context, params ToolCall) (ToolResp
 		return NewTextResponse("No symbols found matching the pattern."), nil
 	}
 
-	out, _ := json.MarshalIndent(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"count":   len(symbols),
 		"symbols": symbols,
-	}, "", "  ")
-	return NewTextResponse(string(out)), nil
+	}), nil
 }
 
 // ---- CodeGetSymbolsOverviewTool ----
@@ -486,11 +484,10 @@ func (t *CodeGetSymbolsOverviewTool) Run(ctx context.Context, params ToolCall) (
 		return NewTextResponse(fmt.Sprintf("No symbols found in file: %s", req.RelativePath)), nil
 	}
 
-	out, _ := json.MarshalIndent(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"count":   len(symbols),
 		"symbols": symbols,
-	}, "", "  ")
-	return NewTextResponse(string(out)), nil
+	}), nil
 }
 
 // ---- CodeGetProjectStatsTool ----
@@ -525,8 +522,7 @@ func (t *CodeGetProjectStatsTool) Run(ctx context.Context, params ToolCall) (Too
 		return NewTextErrorResponse(fmt.Sprintf("get stats error: %v", err)), nil
 	}
 
-	out, _ := json.MarshalIndent(stats, "", "  ")
-	return NewTextResponse(string(out)), nil
+	return NewStructuredResponse(stats), nil
 }
 
 // ---- CodeDeleteProjectTool ----
@@ -560,11 +556,10 @@ func (t *CodeDeleteProjectTool) Run(ctx context.Context, params ToolCall) (ToolR
 		return NewTextErrorResponse(fmt.Sprintf("delete project error: %v", err)), nil
 	}
 
-	out, _ := json.MarshalIndent(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"project_id": req.ProjectID,
 		"deleted":    true,
-	}, "", "  ")
-	return NewTextResponse(string(out)), nil
+	}), nil
 }
 
 // ---- CodeReindexFileTool ----
@@ -629,11 +624,10 @@ func (t *CodeListProjectsTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		return NewTextResponse("No indexed projects found."), nil
 	}
 
-	out, _ := json.MarshalIndent(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"count":    len(projects),
 		"projects": projects,
-	}, "", "  ")
-	return NewTextResponse(string(out)), nil
+	}), nil
 }
 
 // ---- CodeSearchPatternTool ----
@@ -679,15 +673,7 @@ func (t *CodeSearchPatternTool) Info() ToolInfo {
 }
 
 func (t *CodeSearchPatternTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
-	var req struct {
-		ProjectID     string   `json:"project_id"`
-		Pattern       string   `json:"pattern"`
-		CaseSensitive bool     `json:"case_sensitive"`
-		IsRegex       bool     `json:"is_regex"`
-		Languages     []string `json:"languages"`
-		SymbolTypes   []string `json:"symbol_types"`
-		Limit         int      `json:"limit"`
-	}
+	var req codeSearchPatternRequest
 	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
 	}
@@ -716,14 +702,105 @@ func (t *CodeSearchPatternTool) Run(ctx context.Context, params ToolCall) (ToolR
 	}
 
 	if len(symbols) == 0 {
+		fallback, fallbackErr := t.fallbackToGrep(ctx, req)
+		if fallbackErr != nil {
+			return NewTextErrorResponse(fmt.Sprintf("search pattern fallback error: %v", fallbackErr)), nil
+		}
+		if fallback != nil {
+			return *fallback, nil
+		}
 		return NewTextResponse(fmt.Sprintf("No symbols found matching pattern: %s", req.Pattern)), nil
 	}
 
-	out, _ := json.MarshalIndent(map[string]any{
+	return NewStructuredResponse(map[string]any{
 		"count":   len(symbols),
 		"symbols": symbols,
-	}, "", "  ")
-	return NewTextResponse(string(out)), nil
+	}), nil
+}
+
+type codeSearchPatternRequest struct {
+	ProjectID     string   `json:"project_id"`
+	Pattern       string   `json:"pattern"`
+	CaseSensitive bool     `json:"case_sensitive"`
+	IsRegex       bool     `json:"is_regex"`
+	Languages     []string `json:"languages"`
+	SymbolTypes   []string `json:"symbol_types"`
+	Limit         int      `json:"limit"`
+}
+
+func (t *CodeSearchPatternTool) fallbackToGrep(ctx context.Context, req codeSearchPatternRequest) (*ToolResponse, error) {
+	projects, err := t.indexer.ListProjects(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list projects: %w", err)
+	}
+
+	var projectRoot string
+	for _, project := range projects {
+		if project != nil && project.ProjectID == req.ProjectID {
+			projectRoot = project.RootPath
+			break
+		}
+	}
+	if projectRoot == "" {
+		return nil, nil
+	}
+
+	grep := &grepTool{}
+	grepParams := map[string]any{
+		"pattern":      req.Pattern,
+		"path":         projectRoot,
+		"literal_text": !req.IsRegex,
+		"output_mode":  "content",
+		"head_limit":   req.Limit,
+		"offset":       0,
+	}
+	if typeFilter := languageTypeFilter(req.Languages); typeFilter != "" {
+		grepParams["type"] = typeFilter
+	}
+	if req.CaseSensitive {
+		grepParams["pattern"] = "(?-i)" + req.Pattern
+	}
+	grepInput, err := json.Marshal(grepParams)
+	if err != nil {
+		return nil, fmt.Errorf("marshal grep params: %w", err)
+	}
+	grepCall := ToolCall{Input: string(grepInput)}
+
+	resp, err := grep.Run(ctx, grepCall)
+	if err != nil {
+		return nil, err
+	}
+
+	metadata := GrepResponseMetadata{}
+	if len(resp.Metadata) > 0 {
+		_ = json.Unmarshal([]byte(resp.Metadata), &metadata)
+	}
+	if metadata.NumberOfMatches == 0 {
+		return nil, nil
+	}
+
+	content := fmt.Sprintf("No indexed symbol matches found for pattern: %s\nFallback grep results in project path %s:\n\n%s", req.Pattern, projectRoot, resp.Content)
+	wrapped := WithResponseMetadata(NewTextResponse(content), map[string]any{
+		"fallback_tool": "grep",
+		"project_id":    req.ProjectID,
+		"project_path":  projectRoot,
+		"search_type":   "grep_fallback",
+		"grep_metadata": metadata,
+	})
+	return &wrapped, nil
+}
+
+func languageTypeFilter(languages []string) string {
+	for _, lang := range languages {
+		lang = strings.TrimSpace(lang)
+		if lang == "" {
+			continue
+		}
+		if _, ok := search.TypeToGlobs(lang); ok {
+			return lang
+		}
+	}
+	return ""
 }
 
 // sanitizeProjectID converts a path or name to a valid project ID.

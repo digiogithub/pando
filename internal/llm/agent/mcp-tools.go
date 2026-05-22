@@ -138,7 +138,7 @@ func runTool(ctx context.Context, c MCPClient, serverName string, timeout time.D
 	}
 
 	logging.Debug("runTool completed", "toolName", toolName, "outputLength", len(output))
-	return tools.NewTextResponse(output), nil
+	return tools.NewTextResponse(tools.FormatJSONLikeContent(output)), nil
 }
 
 func (b *mcpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolResponse, error) {

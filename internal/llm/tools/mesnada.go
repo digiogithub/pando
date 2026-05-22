@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -505,11 +504,7 @@ func decodeMesnadaInput(input string, target any) error {
 }
 
 func encodeMesnadaResult(result any) (ToolResponse, error) {
-	body, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return ToolResponse{}, fmt.Errorf("encode mesnada result: %w", err)
-	}
-	return NewTextResponse(string(body)), nil
+	return NewStructuredResponse(result), nil
 }
 
 func normalizeMesnadaEngine(engine string) models.Engine {

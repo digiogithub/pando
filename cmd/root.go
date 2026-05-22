@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -463,13 +464,13 @@ func runACPServer() error {
 	if err != nil {
 		return fmt.Errorf("failed to get current working directory: %w", err)
 	}
-	return runACPServerWithOptions(cwd, false, false)
+	return runACPServerWithOptions(cwd, false, "", false)
 }
 
 // runACPServerWithOptions starts Pando in ACP server mode (stdio transport).
 // Editors like VS Code, Zed, and JetBrains spawn this as a subprocess and
 // communicate via JSON-RPC over stdin/stdout.
-func runACPServerWithOptions(cwd string, debug bool, autoPerm bool) error {
+func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bool) error {
 	// Ignore SIGPIPE so the process does not terminate with signal 13 when the
 	// editor closes its end of the stdio pipe (e.g. on disconnect or restart).
 	// Without this, any write to stdout after the editor exits triggers SIGPIPE
@@ -488,11 +489,28 @@ func runACPServerWithOptions(cwd string, debug bool, autoPerm bool) error {
 	if debug {
 		logFlags |= log.Lshortfile
 	}
-	logger := log.New(os.Stderr, "[ACP] ", logFlags)
-	logger.Printf("Starting Pando ACP Agent v%s (cwd=%s, debug=%v, autoPerm=%v)", version.Version, cwd, debug, autoPerm)
+
+	logOutput := io.Writer(os.Stderr)
+	var logFileHandle *os.File
+	if logFile != "" {
+		logDir := filepath.Dir(logFile)
+		if err := os.MkdirAll(logDir, 0o755); err != nil {
+			return fmt.Errorf("failed to create ACP log directory: %w", err)
+		}
+		fileHandle, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
+		if err != nil {
+			return fmt.Errorf("failed to open ACP log file: %w", err)
+		}
+		logFileHandle = fileHandle
+		logOutput = fileHandle
+		defer logFileHandle.Close()
+	}
+
+	logger := log.New(logOutput, "[ACP] ", logFlags)
+	logger.Printf("Starting Pando ACP Agent v%s (cwd=%s, debug=%v, logFile=%q, autoPerm=%v)", version.Version, cwd, debug, logFile, autoPerm)
 
 	// Load config (required to connect DB and initialize agent)
-	cfg, err := config.Load(cwd, debug, "")
+	cfg, err := config.Load(cwd, debug, logFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
