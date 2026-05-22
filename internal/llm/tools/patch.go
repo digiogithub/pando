@@ -49,7 +49,7 @@ The patch text must follow this format:
 *** End Patch
 
 Before using this tool:
-1. Use the FileRead tool to understand the files' contents and context
+1. Use the View tool to understand the files' contents and context
 2. Verify all file paths are correct (use the LS tool)
 
 CRITICAL REQUIREMENTS FOR USING THIS TOOL:
@@ -107,7 +107,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		}
 
 		if getLastReadTime(absPath).IsZero() {
-			return NewTextErrorResponse(fmt.Sprintf("you must read the file %s before patching it. Use the FileRead tool first", filePath)), nil
+			return NewTextErrorResponse(fmt.Sprintf("you must read the file %s before patching it. Use the View tool first", filePath)), nil
 		}
 
 		fileInfo, err := workspaceFS.Stat(ctx, absPath)

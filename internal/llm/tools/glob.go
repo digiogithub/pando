@@ -51,7 +51,7 @@ LIMITATIONS:
 
 TIPS:
 - For the most useful results, combine with the Grep tool: first find files with Glob, then search their contents with Grep
-- When doing iterative exploration that may require multiple rounds of searching, consider using the Agent tool instead
+- When doing iterative exploration that may require multiple rounds of searching, consider using mesnada_spawn_agent instead
 - Always check if results are truncated and refine your search pattern if needed`
 )
 

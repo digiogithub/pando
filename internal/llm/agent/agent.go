@@ -156,7 +156,13 @@ type agent struct {
 	contextManager            *skills.ContextManager
 	luaMgr                    *luaengine.FilterManager
 
-	activeRequests sync.Map
+	activeRequests   sync.Map
+	// toolCallThrottle debounces AgentEventTypeToolCall emissions during
+	// EventToolUseDelta. It maps toolCallID → time.Time of the last emitted
+	// event, preventing the ACP event channel from being flooded while still
+	// giving the frontend periodic enriched updates (rawInput, title, etc.)
+	// as the provider streams the tool-call input JSON.
+	toolCallThrottle sync.Map
 }
 
 func NewAgent(
@@ -884,11 +890,38 @@ func (a *agent) processEvent(
 		}
 		return a.messages.Update(ctx, *assistantMsg)
 	case provider.EventToolUseDelta:
-		// Accumulate tool call input without sending to frontend (too frequent)
+		// Accumulate tool call input in the assistant message so persistence stays consistent.
 		assistantMsg.AppendToolCallInput(event.ToolCall.ID, event.ToolCall.Input)
+		// Emit an AgentEventTypeToolCall event at most once every 100ms per
+		// tool call. This gives the ACP prompt handler periodic enriched
+		// updates (rawInput, title, locations) without saturating the
+		// 256-slot event channel.
+		const throttleInterval = 100 * time.Millisecond
+		now := time.Now()
+		throttleKey := event.ToolCall.ID
+		lastEmit, loaded := a.toolCallThrottle.Load(throttleKey)
+		if !loaded || now.Sub(lastEmit.(time.Time)) >= throttleInterval {
+			a.toolCallThrottle.Store(throttleKey, now)
+			// Retrieve the updated tool call from the assistant message so the
+			// event carries the fully accumulated input so far.
+			for _, tc := range assistantMsg.ToolCalls() {
+				if tc.ID == event.ToolCall.ID {
+					tcCopy := tc
+					a.publishEvent(AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tcCopy})
+					select {
+					case eventCh <- AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tcCopy}:
+					default:
+					}
+					break
+				}
+			}
+		}
 	case provider.EventToolUseStop:
 		logging.Debug("Event: ToolUseStop", "sessionID", sessionID, "toolID", event.ToolCall.ID)
 		assistantMsg.FinishToolCall(event.ToolCall.ID)
+		// Clean up the throttle entry for this tool call to avoid leaking memory
+		// across the session lifetime.
+		a.toolCallThrottle.Delete(event.ToolCall.ID)
 		// Send updated tool_call event with complete input to frontend
 		for _, tc := range assistantMsg.ToolCalls() {
 			if tc.ID == event.ToolCall.ID {

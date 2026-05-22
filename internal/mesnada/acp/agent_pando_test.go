@@ -382,6 +382,146 @@ func TestProcessAgentResponse_ToolCallsIncludeRenderingMetadata(t *testing.T) {
 	}
 }
 
+// TestToolCallStreamParity verifies that tool call metadata is consistent
+// between initial StartToolCall, delta UpdateToolCall, final UpdateToolCall,
+// and history replay.
+func TestToolCallStreamParity(t *testing.T) {
+	// Test data: a view command with file path and range
+	input := map[string]any{
+		"file_path": "/workspace/project/internal/main.go",
+		"offset":    float64(10),
+		"limit":     float64(5),
+	}
+	inputJSON, _ := json.Marshal(input)
+	workDir := "/workspace/project"
+
+	// 1. Initial state (empty input) - StartToolCall sends generic title
+	emptyInput := map[string]any{}
+	startEmpty := acpsdk.StartToolCall(
+		acpsdk.ToolCallId("tool-1"),
+		"view",
+		acpsdk.WithStartKind(mapToolKind("view")),
+		acpsdk.WithStartStatus(acpsdk.ToolCallStatusInProgress),
+		acpsdk.WithStartRawInput(emptyInput),
+	)
+	if startEmpty.ToolCall.Title != "view" {
+		t.Errorf("Initial title should be tool name, got %q", startEmpty.ToolCall.Title)
+	}
+
+	// 2. Delta state (path only) - UpdateToolCall during streaming
+	pathOnlyInput := map[string]any{"file_path": "/workspace/project/internal/main.go"}
+	pathTitle := toolDisplayTitle("view", pathOnlyInput, workDir)
+	deltaUpdate := acpsdk.UpdateToolCall(
+		acpsdk.ToolCallId("tool-1"),
+		acpsdk.WithUpdateTitle(pathTitle),
+		acpsdk.WithUpdateKind(mapToolKind("view")),
+		acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
+		acpsdk.WithUpdateRawInput(pathOnlyInput),
+		acpsdk.WithUpdateLocations(toLocations("view", mustJSON(pathOnlyInput))),
+	)
+	if deltaUpdate.ToolCallUpdate.Title == nil || *deltaUpdate.ToolCallUpdate.Title != pathTitle {
+		t.Errorf("Delta title mismatch")
+	}
+	if len(deltaUpdate.ToolCallUpdate.Locations) != 1 {
+		t.Errorf("Delta update should have 1 location, got %d", len(deltaUpdate.ToolCallUpdate.Locations))
+	}
+
+	// 3. Complete state (full input) - final UpdateToolCall
+	rawInput := parseJSONInput(string(inputJSON))
+	fullTitle := toolDisplayTitle("view", rawInput, workDir)
+	locations := toLocations("view", string(inputJSON))
+	content := toolCallContent("view", rawInput)
+	finalUpdate := acpsdk.UpdateToolCall(
+		acpsdk.ToolCallId("tool-1"),
+		acpsdk.WithUpdateTitle(fullTitle),
+		acpsdk.WithUpdateKind(mapToolKind("view")),
+		acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
+		acpsdk.WithUpdateRawInput(rawInput),
+		acpsdk.WithUpdateLocations(locations),
+		acpsdk.WithUpdateContent(content),
+	)
+	if finalUpdate.ToolCallUpdate.Title == nil || *finalUpdate.ToolCallUpdate.Title != fullTitle {
+		t.Errorf("Final title mismatch")
+	}
+	if len(finalUpdate.ToolCallUpdate.Locations) != 1 {
+		t.Errorf("Final update should have 1 location, got %d", len(finalUpdate.ToolCallUpdate.Locations))
+	}
+
+	// 4. History replay - same input, same helper calls
+	historyInput := message.ToolCall{ID: "tool-1", Name: "view", Input: string(inputJSON)}
+	historyRawInput := parseJSONInput(historyInput.Input)
+	historyTitle := toolDisplayTitle(historyInput.Name, historyRawInput, workDir)
+	historyLocations := toLocations(historyInput.Name, historyInput.Input)
+	historyContent := toolCallContent(historyInput.Name, historyRawInput)
+	historyUpdate := acpsdk.UpdateToolCall(
+		acpsdk.ToolCallId(historyInput.ID),
+		acpsdk.WithUpdateTitle(historyTitle),
+		acpsdk.WithUpdateKind(mapToolKind(historyInput.Name)),
+		acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
+		acpsdk.WithUpdateRawInput(historyRawInput),
+		acpsdk.WithUpdateLocations(historyLocations),
+		acpsdk.WithUpdateContent(historyContent),
+	)
+
+	// Verify parity between streaming final update and history replay
+	if finalUpdate.ToolCallUpdate.Title == nil || historyUpdate.ToolCallUpdate.Title == nil ||
+		*finalUpdate.ToolCallUpdate.Title != *historyUpdate.ToolCallUpdate.Title {
+		t.Errorf("Streaming/Hist title parity failed")
+	}
+	if finalUpdate.ToolCallUpdate.Kind == nil || historyUpdate.ToolCallUpdate.Kind == nil ||
+		*finalUpdate.ToolCallUpdate.Kind != *historyUpdate.ToolCallUpdate.Kind {
+		t.Errorf("Streaming/Hist kind parity failed")
+	}
+	if len(finalUpdate.ToolCallUpdate.Locations) != len(historyUpdate.ToolCallUpdate.Locations) {
+		t.Errorf("Streaming/Hist locations length parity failed: %d vs %d",
+			len(finalUpdate.ToolCallUpdate.Locations), len(historyUpdate.ToolCallUpdate.Locations))
+	}
+}
+
+// mustJSON marshals v to JSON string, for use in tests only.
+func mustJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
+// TestToolCallProgressiveEnrichment verifies that tool call metadata
+// becomes more specific as input accumulates during streaming.
+func TestToolCallProgressiveEnrichment(t *testing.T) {
+	workDir := "/workspace/project"
+
+	// Stage 1: Empty input - generic title
+	emptyInput := map[string]any{}
+	title1 := toolDisplayTitle("view", emptyInput, workDir)
+	if !strings.Contains(title1, "view") && title1 != "view" {
+		t.Errorf("Stage 1: empty input should produce generic title, got %q", title1)
+	}
+
+	// Stage 2: Path only - shows file name
+	pathOnlyInput := map[string]any{"file_path": "/workspace/project/src/utils.go"}
+	title2 := toolDisplayTitle("view", pathOnlyInput, workDir)
+	if !strings.Contains(title2, "utils.go") {
+		t.Errorf("Stage 2: path-only input should include filename, got %q", title2)
+	}
+
+	// Stage 3: Complete input - shows file and range
+	completeInput := map[string]any{"file_path": "/workspace/project/src/utils.go", "offset": 100, "limit": 50}
+	title3 := toolDisplayTitle("view", completeInput, workDir)
+	if !strings.Contains(title3, "utils.go") || !strings.Contains(title3, "100") {
+		t.Errorf("Stage 3: complete input should include filename and offset, got %q", title3)
+	}
+
+	// Verify progressive enrichment: each stage adds more specificity
+	if title1 == title2 {
+		t.Error("Stage 1 -> 2: title should change when path is added")
+	}
+	if title2 == title3 {
+		t.Error("Stage 2 -> 3: title should change when offset is added")
+	}
+}
+
 // TestPandoACPAgent_Initialize verifies the initialization response.
 func TestPandoACPAgent_Initialize(t *testing.T) {
 	agent := newTestPandoAgent()

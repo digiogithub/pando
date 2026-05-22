@@ -199,6 +199,32 @@ func (a *PandoACPAgent) processPromptWithAgent(
 							a.startedToolCalls[tc.ID] = true
 							a.pendingToolCallsMu.Unlock()
 						}
+					} else {
+						// Throttled delta update: the agent emits a new
+						// AgentEventTypeToolCall during EventToolUseDelta with
+						// the accumulated input so far. Forward it as an
+						// UpdateToolCall so the ACP client sees enriched
+						// rawInput / title / locations while the provider is
+						// still streaming the tool-call JSON.
+						deltaOpts := []acpsdk.ToolCallUpdateOpt{
+							acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
+							acpsdk.WithUpdateKind(kind),
+							acpsdk.WithUpdateTitle(title),
+							acpsdk.WithUpdateRawInput(rawInput),
+						}
+						if len(content) > 0 {
+							deltaOpts = append(deltaOpts, acpsdk.WithUpdateContent(content))
+						}
+						if len(locations) > 0 {
+							deltaOpts = append(deltaOpts, acpsdk.WithUpdateLocations(locations))
+						}
+						deltaUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tc.ID), deltaOpts...)
+						if deltaUpdate.ToolCallUpdate != nil {
+							deltaUpdate.ToolCallUpdate.Meta = toolMeta
+						}
+						if err := acpSession.SendUpdate(deltaUpdate); err != nil {
+							a.logger.Printf("[ACP AGENT] Failed to send tool call delta update: %v", err)
+						}
 					}
 				} else {
 					if !started {
