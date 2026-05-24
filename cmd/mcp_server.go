@@ -112,6 +112,7 @@ func runMCPServerMode(cmd *cobra.Command) error {
 	pandoApp, err := app.New(ctx, conn, app.AppOptions{
 		SkipLSP:           true,
 		SkipMesnadaServer: true,
+		StartupMode:       "mcp",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to initialize app: %w", err)

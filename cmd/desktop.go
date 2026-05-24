@@ -120,19 +120,20 @@ func runDesktopMode(cmd *cobra.Command) error {
 
 	baseURL := fmt.Sprintf("http://%s:%d", host, port)
 	server, err := api.NewServer(ctx, api.ServerConfig{
-		Host:       host,
-		Port:       port,
-		Version:    version.Version,
-		DB:         conn,
-		Querier:    rt.Querier,
-		CWD:        cwd,
-		StaticFS:   staticFS,
-		OpenUI:     false,
-		UIBaseURL:  baseURL,
-		InstanceID: instanceID,
-		Role:       string(rt.Role),
-		PubPort:    rt.PubPort,
-		RPCPort:    rt.RPCPort,
+		Host:        host,
+		Port:        port,
+		Version:     version.Version,
+		DB:          conn,
+		Querier:     rt.Querier,
+		CWD:         cwd,
+		StaticFS:    staticFS,
+		OpenUI:      false,
+		UIBaseURL:   baseURL,
+		InstanceID:  instanceID,
+		Role:        string(rt.Role),
+		PubPort:     rt.PubPort,
+		RPCPort:     rt.RPCPort,
+		StartupMode: "desktop",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create API server: %w", err)

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"math"
@@ -430,6 +431,25 @@ func (c *CodeIndexer) embedSymbols(ctx context.Context, projectID string, fileID
 	return nil
 }
 
+// HasProject reports whether a project is already registered for code indexing
+// and whether the stored root path matches the requested one.
+func (c *CodeIndexer) HasProject(ctx context.Context, projectID, rootPath string) (bool, error) {
+	if strings.TrimSpace(projectID) == "" {
+		return false, fmt.Errorf("code: project_id is required")
+	}
+
+	var existingRoot string
+	err := c.db.QueryRowContext(ctx, `SELECT root_path FROM code_projects WHERE project_id = ?`, projectID).Scan(&existingRoot)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("code: get project: %w", err)
+	}
+
+	return filepath.Clean(existingRoot) == filepath.Clean(rootPath), nil
+}
+
 // ReindexFile re-indexes a single file in a project.
 func (c *CodeIndexer) ReindexFile(ctx context.Context, projectID, filePath string) error {
 	// Get project root
@@ -441,6 +461,30 @@ func (c *CodeIndexer) ReindexFile(ctx context.Context, projectID, filePath strin
 
 	absPath := filepath.Join(rootPath, filePath)
 	return c.indexFile(ctx, projectID, rootPath, absPath)
+}
+
+// DeleteFile removes a single indexed file and all related indexed symbols.
+func (c *CodeIndexer) DeleteFile(ctx context.Context, projectID, filePath string) error {
+	if strings.TrimSpace(projectID) == "" {
+		return fmt.Errorf("code: project_id is required")
+	}
+	if strings.TrimSpace(filePath) == "" {
+		return fmt.Errorf("code: file_path is required")
+	}
+
+	res, err := c.db.ExecContext(ctx, `DELETE FROM code_files WHERE project_id = ? AND file_path = ?`, projectID, filePath)
+	if err != nil {
+		return fmt.Errorf("code: delete file: %w", err)
+	}
+
+	if rows, rowsErr := res.RowsAffected(); rowsErr == nil && rows == 0 {
+		return os.ErrNotExist
+	}
+
+	if err := c.updateLanguageStats(ctx, projectID); err != nil {
+		return fmt.Errorf("code: update language stats after delete: %w", err)
+	}
+	return nil
 }
 
 // DeleteProject removes an indexed project and all related indexed data.

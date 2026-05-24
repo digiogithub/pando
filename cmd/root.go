@@ -220,7 +220,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		conn := rt.SQLDB
 		logging.Debug("Database connected")
 
-		pandoApp, err := app.New(ctx, conn, app.AppOptions{DBQuerier: rt.Querier})
+		pandoApp, err := app.New(ctx, conn, app.AppOptions{DBQuerier: rt.Querier, StartupMode: "tui"})
 		if err != nil {
 			logging.Error("Failed to create app: %v", err)
 			return err
@@ -534,7 +534,7 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 
 	// Create app with all services (sessions, messages, agent, etc.).
 	// LSP is skipped: in ACP stdio mode the editor manages its own language servers.
-	pandoApp, err := app.New(ctx, conn, app.AppOptions{SkipLSP: true, DBQuerier: rt.Querier})
+	pandoApp, err := app.New(ctx, conn, app.AppOptions{SkipLSP: true, DBQuerier: rt.Querier, StartupMode: "acp"})
 	if err != nil {
 		return fmt.Errorf("failed to initialize app: %w", err)
 	}

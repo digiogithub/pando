@@ -3,7 +3,9 @@ package code
 import (
 	"context"
 	"database/sql"
+	"os"
 	"testing"
+	"time"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
 	_ "github.com/ncruces/go-sqlite3/embed"
@@ -13,6 +15,81 @@ import (
 
 type testEmbedder struct {
 	gotNilCtx bool
+}
+
+func setupIndexerTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+
+	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		db.Close()
+		t.Fatalf("enable foreign keys: %v", err)
+	}
+
+	if _, err := db.Exec(`
+		CREATE TABLE code_projects (
+			project_id TEXT PRIMARY KEY,
+			name TEXT NOT NULL DEFAULT '',
+			root_path TEXT NOT NULL,
+			language_stats TEXT NOT NULL DEFAULT '{}',
+			last_indexed_at DATETIME,
+			indexing_status TEXT NOT NULL DEFAULT 'pending',
+			created_at DATETIME,
+			updated_at DATETIME
+		);
+	`); err != nil {
+		db.Close()
+		t.Fatalf("create code_projects: %v", err)
+	}
+
+	if _, err := db.Exec(`
+		CREATE TABLE code_files (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id TEXT NOT NULL REFERENCES code_projects(project_id) ON DELETE CASCADE,
+			file_path TEXT NOT NULL,
+			language TEXT NOT NULL,
+			file_hash TEXT NOT NULL,
+			symbols_count INTEGER NOT NULL DEFAULT 0,
+			indexed_at DATETIME
+		);
+	`); err != nil {
+		db.Close()
+		t.Fatalf("create code_files: %v", err)
+	}
+
+	if _, err := db.Exec(`
+		CREATE TABLE code_symbols (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES code_projects(project_id) ON DELETE CASCADE,
+			file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE,
+			file_path TEXT NOT NULL,
+			language TEXT NOT NULL,
+			symbol_type TEXT NOT NULL,
+			name TEXT NOT NULL,
+			name_path TEXT NOT NULL,
+			start_line INTEGER NOT NULL DEFAULT 0,
+			end_line INTEGER NOT NULL DEFAULT 0,
+			start_byte INTEGER NOT NULL DEFAULT 0,
+			end_byte INTEGER NOT NULL DEFAULT 0,
+			source_code TEXT NOT NULL DEFAULT '',
+			signature TEXT NOT NULL DEFAULT '',
+			doc_string TEXT NOT NULL DEFAULT '',
+			parent_id TEXT,
+			metadata TEXT NOT NULL DEFAULT '{}',
+			embedding BLOB,
+			created_at DATETIME,
+			updated_at DATETIME
+		);
+	`); err != nil {
+		db.Close()
+		t.Fatalf("create code_symbols: %v", err)
+	}
+
+	return db
 }
 
 func (e *testEmbedder) Dimension() int {
@@ -70,72 +147,85 @@ func TestEmbedSymbols_NilContextUsesBackground(t *testing.T) {
 	}
 }
 
-func TestDeleteProject_CascadeDeletesChildren(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+func TestHasProjectAndDeleteFile(t *testing.T) {
+	db := setupIndexerTestDB(t)
 	defer db.Close()
 
-	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
-		t.Fatalf("enable foreign keys: %v", err)
+	now := time.Now().UTC()
+	if _, err := db.Exec(`INSERT INTO code_projects (project_id, name, root_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, "proj1", "proj1", "/tmp/proj1", now, now); err != nil {
+		t.Fatalf("insert project: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO code_projects (project_id, name, root_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, "proj2", "proj2", "/tmp/proj2", now, now); err != nil {
+		t.Fatalf("insert project2: %v", err)
+	}
+
+	idx := NewCodeIndexer(db, nil, 1)
+	ok, err := idx.HasProject(context.Background(), "proj1", "/tmp/proj1")
+	if err != nil {
+		t.Fatalf("HasProject returned error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected HasProject to return true for matching root")
+	}
+
+	ok, err = idx.HasProject(context.Background(), "proj1", "/tmp/other")
+	if err != nil {
+		t.Fatalf("HasProject mismatch returned error: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected HasProject to return false for mismatched root")
+	}
+
+	ok, err = idx.HasProject(context.Background(), "missing", "/tmp/proj1")
+	if err != nil {
+		t.Fatalf("HasProject missing returned error: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected HasProject to return false for missing project")
+	}
+
+	res, err := db.Exec(`INSERT INTO code_files (project_id, file_path, language, file_hash, symbols_count, indexed_at) VALUES ('proj1', 'a.go', 'go', 'h1', 1, ?)`, now)
+	if err != nil {
+		t.Fatalf("insert file proj1: %v", err)
+	}
+	fileID1, err := res.LastInsertId()
+	if err != nil {
+		t.Fatalf("last insert id proj1: %v", err)
 	}
 
 	if _, err := db.Exec(`
-		CREATE TABLE code_projects (
-			project_id TEXT PRIMARY KEY,
-			name TEXT NOT NULL DEFAULT '',
-			root_path TEXT NOT NULL,
-			language_stats TEXT NOT NULL DEFAULT '{}',
-			last_indexed_at DATETIME,
-			indexing_status TEXT NOT NULL DEFAULT 'pending',
-			created_at DATETIME,
-			updated_at DATETIME
-		);
-	`); err != nil {
-		t.Fatalf("create code_projects: %v", err)
+		INSERT INTO code_symbols (id, project_id, file_id, file_path, language, symbol_type, name, name_path, created_at, updated_at)
+		VALUES ('sym1', 'proj1', ?, 'a.go', 'go', 'function', 'A', '/A', ?, ?)`, fileID1, now, now); err != nil {
+		t.Fatalf("insert symbol proj1: %v", err)
 	}
 
-	if _, err := db.Exec(`
-		CREATE TABLE code_files (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			project_id TEXT NOT NULL REFERENCES code_projects(project_id) ON DELETE CASCADE,
-			file_path TEXT NOT NULL,
-			language TEXT NOT NULL,
-			file_hash TEXT NOT NULL,
-			symbols_count INTEGER NOT NULL DEFAULT 0,
-			indexed_at DATETIME
-		);
-	`); err != nil {
-		t.Fatalf("create code_files: %v", err)
+	if err := idx.DeleteFile(context.Background(), "proj1", "a.go"); err != nil {
+		t.Fatalf("DeleteFile returned error: %v", err)
 	}
 
-	if _, err := db.Exec(`
-		CREATE TABLE code_symbols (
-			id TEXT PRIMARY KEY,
-			project_id TEXT NOT NULL REFERENCES code_projects(project_id) ON DELETE CASCADE,
-			file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE,
-			file_path TEXT NOT NULL,
-			language TEXT NOT NULL,
-			symbol_type TEXT NOT NULL,
-			name TEXT NOT NULL,
-			name_path TEXT NOT NULL,
-			start_line INTEGER NOT NULL DEFAULT 0,
-			end_line INTEGER NOT NULL DEFAULT 0,
-			start_byte INTEGER NOT NULL DEFAULT 0,
-			end_byte INTEGER NOT NULL DEFAULT 0,
-			source_code TEXT NOT NULL DEFAULT '',
-			signature TEXT NOT NULL DEFAULT '',
-			doc_string TEXT NOT NULL DEFAULT '',
-			parent_id TEXT,
-			metadata TEXT NOT NULL DEFAULT '{}',
-			embedding BLOB,
-			created_at DATETIME,
-			updated_at DATETIME
-		);
-	`); err != nil {
-		t.Fatalf("create code_symbols: %v", err)
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM code_files WHERE project_id = 'proj1' AND file_path = 'a.go'`).Scan(&count); err != nil {
+		t.Fatalf("count proj1 file: %v", err)
 	}
+	if count != 0 {
+		t.Fatalf("expected proj1 file to be deleted, got %d rows", count)
+	}
+
+	if err := db.QueryRow(`SELECT COUNT(*) FROM code_symbols WHERE project_id = 'proj1'`).Scan(&count); err != nil {
+		t.Fatalf("count proj1 symbols: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected proj1 symbols to be cascade-deleted, got %d rows", count)
+	}
+
+	if err := idx.DeleteFile(context.Background(), "proj1", "missing.go"); !os.IsNotExist(err) {
+		t.Fatalf("expected os.ErrNotExist for missing file, got %v", err)
+	}
+}
+
+func TestDeleteProject_CascadeDeletesChildren(t *testing.T) {
+	db := setupIndexerTestDB(t)
+	defer db.Close()
 
 	if _, err := db.Exec(`INSERT INTO code_projects (project_id, name, root_path) VALUES ('proj1', 'proj1', '/tmp/proj1')`); err != nil {
 		t.Fatalf("insert project: %v", err)

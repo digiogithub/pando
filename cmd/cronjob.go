@@ -174,7 +174,7 @@ func runCronJobRun(name string) error {
 	defer conn.Close()
 
 	ctx := context.Background()
-	a, err := app.New(ctx, conn, app.AppOptions{SkipLSP: true})
+	a, err := app.New(ctx, conn, app.AppOptions{SkipLSP: true, StartupMode: "cronjob"})
 	if err != nil {
 		return fmt.Errorf("initialize app: %w", err)
 	}

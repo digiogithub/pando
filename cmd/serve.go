@@ -128,6 +128,7 @@ This is the backend for the Pando Desktop/Web UI.`,
 			Role:        string(rt.Role),
 			PubPort:     rt.PubPort,
 			RPCPort:     rt.RPCPort,
+			StartupMode: "serve",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create API server: %w", err)

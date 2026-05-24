@@ -133,19 +133,18 @@ func (a *PandoACPAgent) processPromptWithAgent(
 			if event.ToolCall != nil {
 				tc := event.ToolCall
 
-				// TodoWrite → plan: suppress all tool_call notifications and emit
-				// a plan only when the full input is assembled (Finished=true).
+				// TodoWrite → plan: emit a plan update on every streaming tool-call
+				// event so ACP clients can display the evolving plan live, matching
+				// the history replay path that already reconstructs the full plan.
 				if strings.EqualFold(tc.Name, "TodoWrite") {
 					a.pendingToolCallsMu.Lock()
 					a.pendingToolCalls[tc.ID] = tc.Input
 					// Mark as registered so processAgentResponse skips it.
 					a.startedToolCalls[tc.ID] = true
 					a.pendingToolCallsMu.Unlock()
-					if tc.Finished {
-						if entries := parseTodoWritePlan(tc.Input); len(entries) > 0 {
-							if err := acpSession.SendUpdate(acpsdk.UpdatePlan(entries...)); err != nil {
-								a.logger.Printf("[ACP AGENT] Failed to send plan update (streaming): %v", err)
-							}
+					if entries := parseTodoWritePlan(tc.Input); len(entries) > 0 {
+						if err := acpSession.SendUpdate(acpsdk.UpdatePlan(entries...)); err != nil {
+							a.logger.Printf("[ACP AGENT] Failed to send plan update (streaming): %v", err)
 						}
 					}
 					continue

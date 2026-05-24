@@ -138,6 +138,7 @@ func runAppMode(cmd *cobra.Command) error {
 		Role:        string(rt.Role),
 		PubPort:     rt.PubPort,
 		RPCPort:     rt.RPCPort,
+		StartupMode: "app",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create app server: %w", err)

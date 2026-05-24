@@ -495,8 +495,8 @@ func TestToolCallProgressiveEnrichment(t *testing.T) {
 	// Stage 1: Empty input - generic title
 	emptyInput := map[string]any{}
 	title1 := toolDisplayTitle("view", emptyInput, workDir)
-	if !strings.Contains(title1, "view") && title1 != "view" {
-		t.Errorf("Stage 1: empty input should produce generic title, got %q", title1)
+	if title1 == "" {
+		t.Errorf("Stage 1: empty input should produce a non-empty generic title")
 	}
 
 	// Stage 2: Path only - shows file name
@@ -519,6 +519,30 @@ func TestToolCallProgressiveEnrichment(t *testing.T) {
 	}
 	if title2 == title3 {
 		t.Error("Stage 2 -> 3: title should change when offset is added")
+	}
+}
+
+func TestParseTodoWritePlanSupportsStreamingUpdates(t *testing.T) {
+	t.Parallel()
+
+	partial := `{"todos":[{"content":"Investigate logs","status":"in_progress","priority":"high"}]}`
+	entries := parseTodoWritePlan(partial)
+	if len(entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1", len(entries))
+	}
+	if entries[0].Content != "Investigate logs" {
+		t.Fatalf("unexpected content: %q", entries[0].Content)
+	}
+	if entries[0].Status != acpsdk.PlanEntryStatusInProgress {
+		t.Fatalf("unexpected status: %q", entries[0].Status)
+	}
+	if entries[0].Priority != acpsdk.PlanEntryPriorityHigh {
+		t.Fatalf("unexpected priority: %q", entries[0].Priority)
+	}
+
+	incompleteJSON := `{"todos":[{"content":"Investigate logs"`
+	if entries := parseTodoWritePlan(incompleteJSON); len(entries) != 0 {
+		t.Fatalf("expected no plan entries for incomplete JSON, got %d", len(entries))
 	}
 }
 

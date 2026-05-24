@@ -17,10 +17,10 @@ import (
 )
 
 type ServerConfig struct {
-	Host        string
-	Port        int
-	Version     string
-	DB          *sql.DB
+	Host    string
+	Port    int
+	Version string
+	DB      *sql.DB
 	// Querier overrides the db.Querier passed to app.New. When non-nil it is
 	// used instead of db.New(cfg.DB). Secondary instances supply a DBProxy here
 	// so all writes are forwarded to the primary via ZMQ RPC.
@@ -31,6 +31,7 @@ type ServerConfig struct {
 	UIBaseURL   string
 	TLSCertFile string
 	TLSKeyFile  string
+	StartupMode string
 
 	// IPC identity fields populated by Bootstrap so the /api/ipc/status
 	// endpoint can report them without re-reading the lock file.
@@ -51,7 +52,7 @@ type Server struct {
 }
 
 func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
-	appOpts := app.AppOptions{DBQuerier: cfg.Querier}
+	appOpts := app.AppOptions{DBQuerier: cfg.Querier, StartupMode: cfg.StartupMode}
 	application, err := app.New(ctx, cfg.DB, appOpts)
 	if err != nil {
 		return nil, err

@@ -99,6 +99,9 @@ type AppOptions struct {
 	// SkipMesnadaServer avoids starting the embedded Mesnada HTTP server while
 	// still allowing the orchestrator and related tools to be initialized.
 	SkipMesnadaServer bool
+	// StartupMode identifies the mode in which Pando is starting so background
+	// remembrances behaviors can be aligned consistently across entrypoints.
+	StartupMode string
 	// DBQuerier overrides the db.Querier used for sessions, messages, and projects.
 	// When non-nil this querier is used instead of db.New(conn).
 	// Primary instances leave this nil; secondary instances pass a dbproxy.DBProxy.
@@ -225,7 +228,8 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		} else {
 			app.Remembrances = remembrances
 			if remembrances != nil {
-				logging.Info("Remembrances service initialized")
+				logging.Info("Remembrances service initialized", "startup_mode", opt.StartupMode)
+				app.initRemembrancesProjectIndexing(ctx, remembrances, &cfg.Remembrances, opt.StartupMode)
 				app.initRemembrancesKBSync(ctx, remembrances, &cfg.Remembrances)
 				app.initRemembrancesSessionIndexing(ctx, remembrances, &cfg.Remembrances)
 

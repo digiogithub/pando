@@ -11,6 +11,28 @@ import (
 	rag "github.com/digiogithub/pando/internal/rag"
 )
 
+func sanitizeRemembrancesProjectID(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return ""
+	}
+
+	result := make([]byte, 0, len(trimmed))
+	for i := 0; i < len(trimmed); i++ {
+		ch := trimmed[i]
+		switch {
+		case (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'):
+			result = append(result, ch)
+		case ch == '-' || ch == '_':
+			result = append(result, ch)
+		default:
+			result = append(result, '_')
+		}
+	}
+
+	return strings.Trim(strings.TrimSpace(string(result)), "_")
+}
+
 func (app *App) initRemembrancesKBSync(ctx context.Context, svc *rag.RemembrancesService, cfg *config.RemembrancesConfig) {
 	if svc == nil || svc.KB == nil || cfg == nil {
 		return
