@@ -3,6 +3,7 @@ package chat
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -30,6 +31,72 @@ type EditorFocusMsg bool
 type TodosUpdatedMsg struct {
 	SessionID string
 	Todos     []tools.TodoItem
+}
+
+// GoalState is the TUI-friendly projection of the current goal/autopilot state.
+type GoalState struct {
+	Objective      string
+	Status         string
+	Iteration      int64
+	MaxIterations  int64
+	StartedAt      int64
+	CompletedAt    int64
+	HasCompletedAt bool
+	Progress       string
+	NextStep       string
+}
+
+func (g *GoalState) IsRunning() bool {
+	return g != nil && strings.EqualFold(g.Status, "running")
+}
+
+func (g *GoalState) IsTerminal() bool {
+	if g == nil {
+		return false
+	}
+
+	switch strings.ToLower(g.Status) {
+	case "completed", "failed", "cancelled", "blocked", "timeout", "stalled":
+		return true
+	default:
+		return false
+	}
+}
+
+// GoalUpdatedMsg is dispatched when the current session goal state changes.
+type GoalUpdatedMsg struct {
+	SessionID string
+	Goal      *GoalState
+}
+
+const goalPromptHeader = "# Goal Mode Instructions"
+
+func formatUserInput(text string) string {
+	if objective, ok := extractGoalObjective(text); ok {
+		return "/goal " + objective
+	}
+	return text
+}
+
+func extractGoalObjective(text string) (string, bool) {
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, goalPromptHeader) {
+		return "", false
+	}
+
+	startMarker := "\n## Your Objective\n"
+	endMarker := "\n## How Goal Mode Works"
+	start := strings.Index(trimmed, startMarker)
+	end := strings.Index(trimmed, endMarker)
+	if start == -1 || end == -1 || end <= start {
+		return "", false
+	}
+
+	objective := strings.TrimSpace(trimmed[start+len(startMarker) : end])
+	if objective == "" {
+		return "", false
+	}
+	return objective, true
 }
 
 func header(width int) string {

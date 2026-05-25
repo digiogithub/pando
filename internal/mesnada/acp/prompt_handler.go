@@ -105,13 +105,18 @@ func (a *PandoACPAgent) processPromptWithAgent(
 	promptText string,
 	attachments ...message.Attachment,
 ) (acpsdk.StopReason, error) {
-	pandoSessionID := acpSession.PandoSessionID()
-
-	eventChan, err := a.agentService.Run(ctx, pandoSessionID, promptText, attachments...)
+	eventChan, err := a.agentService.Run(ctx, acpSession.PandoSessionID(), promptText, attachments...)
 	if err != nil {
 		return "", fmt.Errorf("failed to start agent: %w", err)
 	}
+	return a.processAgentEventStream(ctx, acpSession, eventChan)
+}
 
+func (a *PandoACPAgent) processAgentEventStream(
+	ctx context.Context,
+	acpSession *ACPServerSession,
+	eventChan <-chan AgentEvent,
+) (acpsdk.StopReason, error) {
 	var finalStopReason acpsdk.StopReason
 	// Track whether streaming deltas were sent so processAgentResponse can skip
 	// re-sending the full content (which would cause duplicate text in the client).

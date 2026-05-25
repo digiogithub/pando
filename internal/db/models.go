@@ -107,3 +107,19 @@ type Session struct {
 	CreatedAt        int64          `json:"created_at"`
 	SummaryMessageID sql.NullString `json:"summary_message_id"`
 }
+
+type SessionGoal struct {
+	ID                 string         `json:"id"`
+	SessionID          string         `json:"session_id"`
+	Objective          string         `json:"objective"`
+	Status             string         `json:"status"`
+	Iteration          int64          `json:"iteration"`
+	MaxIterations      int64          `json:"max_iterations"`
+	MaxDurationSeconds int64          `json:"max_duration_seconds"`
+	StartedAt          int64          `json:"started_at"`
+	CompletedAt        sql.NullInt64  `json:"completed_at"`
+	LastProgress       sql.NullString `json:"last_progress"`
+	NextStep           sql.NullString `json:"next_step"`
+	BlockedReason      sql.NullString `json:"blocked_reason"`
+	CreatedAt          int64          `json:"created_at"`
+}

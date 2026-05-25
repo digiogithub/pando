@@ -40,6 +40,7 @@ type messagesCmp struct {
 	width, height int
 	viewport      viewport.Model
 	session       session.Session
+	goal          *GoalState
 	messages      []message.Message
 	uiMessages    []uiMessage
 	currentMsgID  string
@@ -104,12 +105,14 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case SessionSelectedMsg:
 		if msg.ID != m.session.ID {
+			m.goal = nil
 			cmd := m.SetSession(msg)
 			return m, cmd
 		}
 		return m, nil
 	case SessionClearedMsg:
 		m.session = session.Session{}
+		m.goal = nil
 		m.messages = make([]message.Message, 0)
 		m.currentMsgID = ""
 		m.rendering = false
@@ -198,6 +201,10 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				delete(m.cachedContent, m.currentMsgID)
 				m.renderView()
 			}
+		}
+	case GoalUpdatedMsg:
+		if msg.SessionID == m.session.ID {
+			m.goal = msg.Goal
 		}
 	case pubsub.Event[message.Message]:
 		needsRerender := false
@@ -520,6 +527,9 @@ func (m *messagesCmp) working() string {
 		baseStyle := styles.BaseStyle()
 
 		task := "Thinking..."
+		if m.goal != nil && m.goal.IsRunning() {
+			task = "Working toward goal..."
+		}
 		lastMessage := m.messages[len(m.messages)-1]
 		if hasToolsWithoutResponse(m.messages) {
 			task = "Waiting for tool response..."
@@ -545,7 +555,14 @@ func (m *messagesCmp) help() string {
 
 	text := ""
 
-	if m.app.CoderAgent.IsBusy() {
+	if m.goal != nil && m.goal.IsRunning() {
+		text += lipgloss.JoinHorizontal(
+			lipgloss.Left,
+			baseStyle.Foreground(t.TextMuted()).Bold(true).Render("press "),
+			baseStyle.Foreground(t.Text()).Bold(true).Render("ctrl+c"),
+			baseStyle.Foreground(t.TextMuted()).Bold(true).Render(" to cancel the goal"),
+		)
+	} else if m.app.CoderAgent.IsBusy() {
 		text += lipgloss.JoinHorizontal(
 			lipgloss.Left,
 			baseStyle.Foreground(t.TextMuted()).Bold(true).Render("press "),

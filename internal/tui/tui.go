@@ -866,6 +866,13 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 
 		case key.Matches(msg, a.keys.Global.Quit) && !(a.tabBar != nil && a.tabBar.IsActiveEditable()):
+			if a.currentPage == page.ChatPage {
+				if goalPage, ok := a.pages[a.currentPage].(interface{ HasRunningGoal() bool }); ok && goalPage.HasRunningGoal() {
+					a.pages[a.currentPage], cmd = a.pages[a.currentPage].Update(msg)
+					a.syncChatState()
+					return a, cmd
+				}
+			}
 			a.showQuit = !a.showQuit
 			if a.showHelp {
 				a.showHelp = false

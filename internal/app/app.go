@@ -60,6 +60,7 @@ type App struct {
 	Messages    message.Service
 	History     history.Service
 	Permissions permission.Service
+	DBQuerier   db.Querier
 
 	CoderAgent agent.Service
 
@@ -161,6 +162,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		Messages:    messages,
 		History:     files,
 		Permissions: permission.NewPermissionService(),
+		DBQuerier:   q,
 		Projects:    projects,
 		LSPClients:  make(map[string]*lsp.Client),
 	}
@@ -362,8 +364,11 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			if mesnadaCfg.AppConfig != nil && mesnadaCfg.AppConfig.ACP.Server.Enabled {
 				// Build ACP agent adapters so PandoACPAgent can use the live app services
 				// without causing import cycles (the ACP package defines narrow interfaces).
-				agentAdapter := &appACPAgentAdapter{svc: app.CoderAgent}
-				sessionAdapter := &appACPSessionAdapter{svc: app.Sessions, msgSvc: app.Messages}
+				agentAdapter := &appACPAgentAdapter{
+					svc:        app.CoderAgent,
+					goalRunner: agent.NewGoalRunner(app.CoderAgent, app.DBQuerier),
+				}
+				sessionAdapter := &appACPSessionAdapter{svc: app.Sessions, msgSvc: app.Messages, q: app.DBQuerier}
 				permAdapter := &appACPPermissionAdapter{svc: app.Permissions}
 
 				cwd, _ := os.Getwd()
@@ -1041,6 +1046,20 @@ func (s *assistantTextStreamer) writeString(value string) error {
 	return nil
 }
 
+// NonInteractiveGoalResult is the serialized outcome of a CLI goal-mode run.
+type NonInteractiveGoalResult struct {
+	SessionID          string `json:"session_id"`
+	Objective          string `json:"objective"`
+	Status             string `json:"status"`
+	Iteration          int64  `json:"iteration"`
+	MaxIterations      int64  `json:"max_iterations"`
+	MaxDurationSeconds int64  `json:"max_duration_seconds"`
+	Response           string `json:"response"`
+	Progress           string `json:"progress,omitempty"`
+	NextStep           string `json:"next_step,omitempty"`
+	BlockedReason      string `json:"blocked_reason,omitempty"`
+}
+
 // RunNonInteractive handles the execution flow when a prompt is provided via CLI flag.
 func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat string, quiet bool, yoloMode bool) error {
 	logging.Info("Running in non-interactive mode")
@@ -1164,6 +1183,202 @@ func (a *App) RunNonInteractive(ctx context.Context, prompt string, outputFormat
 	logging.Info("Non-interactive run completed", "session_id", sess.ID)
 
 	return nil
+}
+
+func (a *App) RunNonInteractiveGoal(ctx context.Context, objective string, outputFormat string, quiet bool, yoloMode bool) (NonInteractiveGoalResult, error) {
+	logging.Info("Running in non-interactive goal mode")
+	logging.Debug("Non-interactive goal mode started", "objectiveLength", len(objective), "outputFormat", outputFormat, "yoloMode", yoloMode)
+
+	objective = strings.TrimSpace(objective)
+	if objective == "" {
+		return NonInteractiveGoalResult{}, errors.New("goal objective cannot be empty")
+	}
+
+	agent.SetNonInteractiveMode(true)
+
+	if yoloMode {
+		a.Permissions.SetGlobalAutoApprove(true)
+	}
+
+	const maxObjectiveLengthForTitle = 100
+	titleSuffix := objective
+	if len(titleSuffix) > maxObjectiveLengthForTitle {
+		titleSuffix = titleSuffix[:maxObjectiveLengthForTitle] + "..."
+	}
+
+	sess, err := a.Sessions.Create(ctx, "Goal: "+titleSuffix)
+	if err != nil {
+		return NonInteractiveGoalResult{}, fmt.Errorf("failed to create session for goal mode: %w", err)
+	}
+	logging.Info("Created session for non-interactive goal run", "session_id", sess.ID)
+
+	if !yoloMode {
+		a.Permissions.AutoApproveSession(sess.ID)
+	}
+
+	writeGoalProgress(os.Stderr, "Goal started: %s\n", objective)
+
+	var (
+		streamer     *assistantTextStreamer
+		streamCancel context.CancelFunc
+		streamWG     sync.WaitGroup
+	)
+	if outputFormat == format.Text.String() {
+		streamer = newAssistantTextStreamer(os.Stdout, sess.ID)
+		streamCtx, cancel := context.WithCancel(ctx)
+		streamCancel = cancel
+		agentEvents := a.CoderAgent.Subscribe(streamCtx)
+
+		streamWG.Add(1)
+		go func() {
+			defer streamWG.Done()
+			for event := range agentEvents {
+				if err := streamer.Consume(event); err != nil {
+					logging.Warn("Failed to stream non-interactive goal response", "session_id", sess.ID, "error", err)
+					return
+				}
+			}
+		}()
+	}
+
+	goalRunner := agent.NewGoalRunner(a.CoderAgent, a.DBQuerier)
+	done, err := goalRunner.Run(ctx, sess.ID, objective, agent.GoalOptions{})
+	if err != nil {
+		if streamCancel != nil {
+			streamCancel()
+			streamWG.Wait()
+		}
+		return NonInteractiveGoalResult{}, fmt.Errorf("failed to start goal processing stream: %w", err)
+	}
+
+	var (
+		lastEvent    agent.AgentEvent
+		lastResponse string
+		iterations   int
+	)
+	for event := range done {
+		lastEvent = event
+		if event.Type == agent.AgentEventTypeResponse {
+			response := strings.TrimSpace(event.Message.Content().String())
+			if response != "" {
+				lastResponse = response
+			}
+			iterations++
+			if !quiet {
+				writeGoalProgress(os.Stderr, "Goal iteration %d completed.\n", iterations)
+			}
+		}
+	}
+
+	if streamCancel != nil {
+		streamCancel()
+		streamWG.Wait()
+	}
+
+	goal, goalErr := a.DBQuerier.GetGoalBySession(context.Background(), sess.ID)
+	if goalErr != nil {
+		if lastEvent.Error != nil {
+			return NonInteractiveGoalResult{}, fmt.Errorf("goal processing failed: %w", lastEvent.Error)
+		}
+		return NonInteractiveGoalResult{}, fmt.Errorf("failed to load final goal status: %w", goalErr)
+	}
+
+	result := nonInteractiveGoalResultFromDB(goal, lastResponse)
+	logGoalCompletion(os.Stderr, result)
+
+	if outputFormat == format.Text.String() {
+		content := result.Response
+		if content == "" {
+			content = result.Progress
+		}
+		if content == "" {
+			content = result.BlockedReason
+		}
+		if content == "" {
+			content = "No content available"
+		}
+		if streamer != nil {
+			if err := streamer.PrintFinalContent(content); err != nil {
+				return result, fmt.Errorf("failed to render final goal response: %w", err)
+			}
+			if streamer.wrote {
+				if err := streamer.CloseLine(); err != nil {
+					return result, fmt.Errorf("failed to finalize streamed goal response: %w", err)
+				}
+			} else {
+				fmt.Println(content)
+			}
+		} else {
+			fmt.Println(content)
+		}
+	} else {
+		serialized, err := formatNonInteractiveGoalResult(result)
+		if err != nil {
+			return result, fmt.Errorf("failed to format goal result: %w", err)
+		}
+		fmt.Println(serialized)
+	}
+
+	if lastEvent.Error != nil && result.Status == agent.GoalStatusRunning {
+		return result, fmt.Errorf("goal processing failed: %w", lastEvent.Error)
+	}
+
+	logging.Info("Non-interactive goal run completed", "session_id", sess.ID, "status", result.Status)
+	return result, nil
+}
+
+func nonInteractiveGoalResultFromDB(goal db.SessionGoal, response string) NonInteractiveGoalResult {
+	result := NonInteractiveGoalResult{
+		SessionID:          goal.SessionID,
+		Objective:          goal.Objective,
+		Status:             goal.Status,
+		Iteration:          goal.Iteration,
+		MaxIterations:      goal.MaxIterations,
+		MaxDurationSeconds: goal.MaxDurationSeconds,
+		Response:           strings.TrimSpace(response),
+	}
+	if goal.LastProgress.Valid {
+		result.Progress = strings.TrimSpace(goal.LastProgress.String)
+	}
+	if goal.NextStep.Valid {
+		result.NextStep = strings.TrimSpace(goal.NextStep.String)
+	}
+	if goal.BlockedReason.Valid {
+		result.BlockedReason = strings.TrimSpace(goal.BlockedReason.String)
+	}
+	return result
+}
+
+func formatNonInteractiveGoalResult(result NonInteractiveGoalResult) (string, error) {
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func logGoalCompletion(w io.Writer, result NonInteractiveGoalResult) {
+	statusLine := "Goal finished with status: " + result.Status
+	if result.Status == agent.GoalStatusCompleted {
+		statusLine = "Goal completed."
+	}
+	writeGoalProgress(w, "%s\n", statusLine)
+	if result.Progress != "" {
+		writeGoalProgress(w, "Progress: %s\n", result.Progress)
+	}
+	if result.BlockedReason != "" && result.BlockedReason != result.Progress {
+		writeGoalProgress(w, "Reason: %s\n", result.BlockedReason)
+	}
+	if result.NextStep != "" {
+		writeGoalProgress(w, "Next step: %s\n", result.NextStep)
+	}
+}
+
+func writeGoalProgress(w io.Writer, format string, args ...any) {
+	if w == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, format, args...)
 }
 
 // refreshDynamicModels fetches model lists from configured provider accounts asynchronously.
@@ -1321,13 +1536,28 @@ func (app *App) Shutdown() {
 // internal/llm/agent, internal/session, and internal/permission.
 // ---------------------------------------------------------------------------
 
-type appACPAgentAdapter struct{ svc agent.Service }
+type appACPAgentAdapter struct {
+	svc        agent.Service
+	goalRunner *agent.GoalRunner
+}
 
 func (a *appACPAgentAdapter) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan mesnadaACP.AgentEvent, error) {
 	realCh, err := a.svc.Run(ctx, sessionID, content, attachments...)
 	if err != nil {
 		return nil, err
 	}
+	return a.forwardEvents(ctx, realCh), nil
+}
+
+func (a *appACPAgentAdapter) RunGoal(ctx context.Context, sessionID string, objective string) (<-chan mesnadaACP.AgentEvent, error) {
+	realCh, err := a.goalRunner.Run(ctx, sessionID, objective, agent.GoalOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return a.forwardEvents(ctx, realCh), nil
+}
+
+func (a *appACPAgentAdapter) forwardEvents(ctx context.Context, realCh <-chan agent.AgentEvent) <-chan mesnadaACP.AgentEvent {
 	// Buffered to decouple the event-drain goroutine from the ACP handler.
 	// Without a buffer, each SendUpdate (RPC write) stalls the goroutine and
 	// prevents it from draining agent.eventCh, causing overflow and lost events.
@@ -1367,7 +1597,7 @@ func (a *appACPAgentAdapter) Run(ctx context.Context, sessionID string, content 
 			}
 		}
 	}()
-	return acpCh, nil
+	return acpCh
 }
 
 func (a *appACPAgentAdapter) Cancel(sessionID string) { a.svc.Cancel(sessionID) }
@@ -1434,6 +1664,7 @@ func (a *appACPAgentAdapter) OpenClaudeUsage() error {
 type appACPSessionAdapter struct {
 	svc    session.Service
 	msgSvc message.Service
+	q      db.Querier
 }
 
 func (a *appACPSessionAdapter) CreateSession(ctx context.Context, title string) (string, error) {
@@ -1462,6 +1693,30 @@ func (a *appACPSessionAdapter) ListSessions(ctx context.Context) ([]mesnadaACP.A
 		result[i] = mesnadaACP.ACPSessionInfo{ID: s.ID, Title: s.Title, UpdatedAt: s.UpdatedAt}
 	}
 	return result, nil
+}
+
+func (a *appACPSessionAdapter) GetActiveGoal(ctx context.Context, sessionID string) (db.SessionGoal, error) {
+	return a.q.GetActiveGoal(ctx, sessionID)
+}
+
+func (a *appACPSessionAdapter) GetGoalBySession(ctx context.Context, sessionID string) (db.SessionGoal, error) {
+	return a.q.GetGoalBySession(ctx, sessionID)
+}
+
+func (a *appACPSessionAdapter) CancelGoal(ctx context.Context, sessionID string) (db.SessionGoal, error) {
+	goal, err := a.q.GetActiveGoal(ctx, sessionID)
+	if err != nil {
+		return db.SessionGoal{}, err
+	}
+	return a.q.UpdateGoalStatus(ctx, db.UpdateGoalStatusParams{
+		Status:        agent.GoalStatusCancelled,
+		Iteration:     goal.Iteration,
+		LastProgress:  goal.LastProgress,
+		NextStep:      sql.NullString{},
+		BlockedReason: sql.NullString{},
+		CompletedAt:   sql.NullInt64{Int64: time.Now().Unix(), Valid: true},
+		ID:            goal.ID,
+	})
 }
 
 func (a *appACPSessionAdapter) GetMessages(ctx context.Context, sessionID string) ([]message.Message, error) {

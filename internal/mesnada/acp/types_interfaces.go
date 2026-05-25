@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 
+	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/message"
 )
 
@@ -47,6 +48,7 @@ type ACPToolInfo struct {
 // This is intentionally minimal to avoid import cycles.
 type AgentService interface {
 	Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error)
+	RunGoal(ctx context.Context, sessionID string, objective string) (<-chan AgentEvent, error)
 	Cancel(sessionID string)
 	// CurrentModelID returns the ID of the currently active model.
 	CurrentModelID() string
@@ -90,9 +92,23 @@ type SessionService interface {
 	CreateSession(ctx context.Context, title string) (string, error)
 	GetSession(ctx context.Context, id string) (ACPSessionInfo, error)
 	ListSessions(ctx context.Context) ([]ACPSessionInfo, error)
+	GetActiveGoal(ctx context.Context, sessionID string) (db.SessionGoal, error)
+	GetGoalBySession(ctx context.Context, sessionID string) (db.SessionGoal, error)
+	CancelGoal(ctx context.Context, sessionID string) (db.SessionGoal, error)
 	// GetMessages returns the messages for a session in chronological order.
 	// Used by LoadSession to replay conversation history to connecting clients.
 	GetMessages(ctx context.Context, sessionID string) ([]message.Message, error)
+}
+
+// GoalStateUpdate is the ACP-friendly projection of a persisted goal state.
+type GoalStateUpdate struct {
+	Objective     string `json:"objective"`
+	Status        string `json:"status"`
+	Iteration     int    `json:"iteration"`
+	MaxIterations int    `json:"max_iterations"`
+	Progress      string `json:"progress,omitempty"`
+	NextStep      string `json:"next_step,omitempty"`
+	ElapsedTime   string `json:"elapsed_time,omitempty"`
 }
 
 // PermissionRequestData carries the full details of a tool permission request.

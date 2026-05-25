@@ -1,0 +1,117 @@
+package acp
+
+import (
+	"context"
+	"strings"
+	"time"
+
+	acpsdk "github.com/madeindigio/acp-go-sdk"
+)
+
+func (a *PandoACPAgent) handleSlashCommand(
+	ctx context.Context,
+	sessionID acpsdk.SessionId,
+	acpSession *ACPServerSession,
+	command slashCommand,
+) (acpsdk.StopReason, error) {
+	switch command.Kind {
+	case slashCommandGoal:
+		if strings.TrimSpace(command.Objective) == "" {
+			if err := a.sendAgentText(acpSession, "Usage: /goal <objective>\nAlias: /autopilot <objective>"); err != nil {
+				return "", err
+			}
+			return acpsdk.StopReasonEndTurn, nil
+		}
+		return a.processGoalPrompt(ctx, sessionID, acpSession, command.Objective)
+	case slashCommandGoalStatus:
+		goal, err := a.syncGoalState(ctx, sessionID, false)
+		if err != nil {
+			return "", err
+		}
+		a.sendGoalStateUpdate(sessionID, goal)
+		if err := a.sendAgentText(acpSession, formatGoalStatus(goal)); err != nil {
+			return "", err
+		}
+		return acpsdk.StopReasonEndTurn, nil
+	case slashCommandGoalCancel:
+		acpSession.CancelGoalExecution()
+		goal, err := a.sessionService.CancelGoal(context.Background(), acpSession.PandoSessionID())
+		if err != nil {
+			if isGoalNotFound(err) {
+				if err := a.sendAgentText(acpSession, "No active goal is running."); err != nil {
+					return "", err
+				}
+				a.sendGoalStateUpdate(sessionID, nil)
+				return acpsdk.StopReasonEndTurn, nil
+			}
+			return "", err
+		}
+		update := goalStateFromDB(goal, time.Now())
+		a.sendGoalStateUpdate(sessionID, update)
+		if err := a.sendAgentText(acpSession, "Cancelled current goal.\n\n"+formatGoalStatus(update)); err != nil {
+			return "", err
+		}
+		return acpsdk.StopReasonCancelled, nil
+	default:
+		return acpsdk.StopReasonEndTurn, nil
+	}
+}
+
+func (a *PandoACPAgent) processGoalPrompt(
+	ctx context.Context,
+	sessionID acpsdk.SessionId,
+	acpSession *ACPServerSession,
+	objective string,
+) (acpsdk.StopReason, error) {
+	if existingGoal, err := a.syncGoalState(ctx, sessionID, true); err != nil {
+		return "", err
+	} else if existingGoal != nil {
+		a.sendGoalStateUpdate(sessionID, existingGoal)
+		if err := a.sendAgentText(acpSession, "A goal is already running.\n\n"+formatGoalStatus(existingGoal)); err != nil {
+			return "", err
+		}
+		return acpsdk.StopReasonEndTurn, nil
+	}
+
+	acpSession.SetMode(goalModeID)
+	acpSession.SetAskPermission(defaultAskPermissionForMode(goalModeID))
+	acpSession.SetPermissionConfigured(false)
+	a.sendCurrentModeUpdate(ctx, sessionID, goalModeID)
+	a.sendSessionConfigOptionsUpdate(ctx, sessionID)
+	cleanupPermissions := a.configurePermissionMode(sessionID, goalModeID, acpSession.AskPermission())
+	defer cleanupPermissions()
+
+	goalCtx, cancel := context.WithCancel(acpSession.Context())
+	acpSession.SetGoalCancel(cancel)
+	defer acpSession.ClearGoalCancel()
+
+	eventChan, err := a.agentService.RunGoal(goalCtx, acpSession.PandoSessionID(), objective)
+	if err != nil {
+		return "", err
+	}
+
+	if goal, err := a.loadGoalState(context.Background(), acpSession.PandoSessionID(), true); err == nil {
+		a.sendGoalStateUpdate(sessionID, goal)
+	}
+
+	stopReason, err := a.processAgentEventStream(goalCtx, acpSession, eventChan)
+	finalGoal, finalErr := a.loadGoalState(context.Background(), acpSession.PandoSessionID(), false)
+	if finalErr != nil && !isGoalNotFound(finalErr) {
+		return stopReason, finalErr
+	}
+	if isGoalNotFound(finalErr) {
+		finalGoal = nil
+	}
+	a.sendGoalStateUpdate(sessionID, finalGoal)
+	if finalGoal != nil && finalGoal.Status == "cancelled" {
+		stopReason = acpsdk.StopReasonCancelled
+	}
+	return stopReason, err
+}
+
+func (a *PandoACPAgent) sendAgentText(acpSession *ACPServerSession, text string) error {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	return acpSession.SendUpdate(acpsdk.UpdateAgentMessageText(text))
+}

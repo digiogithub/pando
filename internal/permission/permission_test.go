@@ -75,6 +75,29 @@ func TestRequest_RemoveAutoApproveSession_RestoresBlocking(t *testing.T) {
 	}
 }
 
+func TestRequest_RequireExplicitApprovalSession_BypassesSessionAutoApprove(t *testing.T) {
+	svc := NewPermissionService()
+	svc.AutoApproveSession("session-goal")
+	svc.RequireExplicitApprovalSession("session-goal")
+
+	done := make(chan bool, 1)
+	go func() {
+		done <- svc.Request(CreatePermissionRequest{
+			SessionID:               "session-goal",
+			ToolName:                "bash",
+			Action:                  "execute",
+			Path:                    "tmp/main.go",
+			RequireExplicitApproval: true,
+		})
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("expected explicit-approval request to block despite session auto-approve")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 func TestRequest_SessionHandler_DoesNotBlockAndUsesHandlerResult(t *testing.T) {
 	svc := NewPermissionService()
 	called := make(chan struct{}, 1)

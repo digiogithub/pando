@@ -755,12 +755,20 @@ func (c *Client) GetFileDiagnostics(uri protocol.DocumentUri) []protocol.Diagnos
 	c.diagnosticsMu.RLock()
 	defer c.diagnosticsMu.RUnlock()
 
-	return c.diagnostics[uri]
+	return append([]protocol.Diagnostic(nil), c.diagnostics[uri]...)
 }
 
-// GetDiagnostics returns all diagnostics for all files
+// GetDiagnostics returns a snapshot of all diagnostics for all files.
 func (c *Client) GetDiagnostics() map[protocol.DocumentUri][]protocol.Diagnostic {
-	return c.diagnostics
+	c.diagnosticsMu.RLock()
+	defer c.diagnosticsMu.RUnlock()
+
+	snapshot := make(map[protocol.DocumentUri][]protocol.Diagnostic, len(c.diagnostics))
+	for uri, diagnostics := range c.diagnostics {
+		snapshot[uri] = append([]protocol.Diagnostic(nil), diagnostics...)
+	}
+
+	return snapshot
 }
 
 // OpenFileOnDemand opens a file only if it's not already open

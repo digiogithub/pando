@@ -23,6 +23,7 @@ type sidebarCmp struct {
 	width, height int
 	session       session.Session
 	history       history.Service
+	goal          *GoalState
 	modFiles      map[string]struct {
 		additions int
 		removals  int
@@ -82,6 +83,10 @@ func (m *sidebarCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case TodosUpdatedMsg:
 		if msg.SessionID == m.session.ID {
 			m.todos = msg.Todos
+		}
+	case GoalUpdatedMsg:
+		if msg.SessionID == m.session.ID {
+			m.goal = msg.Goal
 		}
 	}
 	return m, nil

@@ -13,9 +13,10 @@ interface ChatInputProps {
   streaming: boolean
   onCancel: () => void
   disabled?: boolean
+  goalActive?: boolean
 }
 
-export default function ChatInput({ onSend, streaming, onCancel, disabled }: ChatInputProps) {
+export default function ChatInput({ onSend, streaming, onCancel, disabled, goalActive = false }: ChatInputProps) {
   const [value, setValue] = useState('')
   const [focused, setFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -187,7 +188,7 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled }: Cha
           color: 'var(--fg-dim)',
         }}
       >
-        <span>Enter to send · Shift+Enter for newline</span>
+        <span>{goalActive ? '/goal, /goal-status, /goal-cancel supported' : 'Enter to send · Shift+Enter for newline'}</span>
         <span style={{ color: charCount > MAX_CHARS * 0.9 ? 'var(--warning)' : 'var(--fg-dim)' }}>
           {charCount.toLocaleString()} / {MAX_CHARS.toLocaleString()}
         </span>

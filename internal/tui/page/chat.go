@@ -2,8 +2,11 @@ package page
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,8 +14,10 @@ import (
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/completions"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/db"
 	agentpkg "github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui/components/chat"
 	"github.com/digiogithub/pando/internal/tui/components/dialog"
@@ -48,6 +53,7 @@ type ChatPageModel struct {
 	height int
 
 	layout               layout.SplitPaneLayout
+	sidebar              layout.SplitPaneLayout
 	chatLayout           layout.SplitPaneLayout
 	chatContainer        layout.Container
 	fileTreePanel        layout.Container
@@ -69,6 +75,12 @@ type ChatPageModel struct {
 	tabBar   *editor.TabBar
 
 	editorWorkspace *editorWorkspace
+
+	goalRunner           *agentpkg.GoalRunner
+	goal                 *chat.GoalState
+	goalCancel           context.CancelFunc
+	goalCancelSessionID  string
+	goalObjectivePending string
 }
 
 type ChatKeyMap struct {
@@ -378,7 +390,7 @@ func (p *ChatPageModel) Init() tea.Cmd {
 	p.rebuildLayout()
 	cmds := []tea.Cmd{
 		p.chatLayout.Init(),
-		p.fileTree.Init(),
+		p.sidebar.Init(),
 		p.editorWorkspace.Init(),
 		p.completionDialog.Init(),
 	}
@@ -436,6 +448,27 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case chat.SessionSelectedMsg:
 		p.session = msg
+		if goalMsg, err := p.loadGoalUpdate(msg.ID, false); err != nil {
+			return p, util.ReportError(err)
+		} else {
+			p.routeGoalUpdate(goalMsg, &cmds)
+		}
+	case chat.GoalUpdatedMsg:
+		if msg.SessionID == p.session.ID {
+			if cmd := p.applyGoalUpdate(msg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		cmds = append(cmds, p.routeMessage(msg)...)
+		return p, tea.Batch(cmds...)
+	case pubsub.Event[agentpkg.AgentEvent]:
+		if msg.Payload.SessionID == p.session.ID && msg.Payload.Type != agentpkg.AgentEventTypeContentDelta && msg.Payload.Type != agentpkg.AgentEventTypeThinkingDelta {
+			if goalMsg, err := p.loadGoalUpdate(msg.Payload.SessionID, false); err != nil {
+				return p, util.ReportError(err)
+			} else {
+				p.routeGoalUpdate(goalMsg, &cmds)
+			}
+		}
 	case tea.KeyMsg:
 		handled, cmd := p.handleKey(msg)
 		if cmd != nil {
@@ -464,6 +497,8 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (p *ChatPageModel) handleKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 	switch {
+	case msg.String() == "ctrl+c" && p.HasRunningGoal():
+		return true, p.cancelGoal()
 	case key.Matches(msg, keyMap.ToggleEditorChat):
 		p.showCompletionDialog = false
 		switch p.layoutMode {
@@ -598,6 +633,15 @@ func (p *ChatPageModel) updateFileTree(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
+func (p *ChatPageModel) updateSidebar(msg tea.Msg) tea.Cmd {
+	if p.sidebar == nil {
+		return nil
+	}
+	model, cmd := p.sidebar.Update(msg)
+	p.sidebar = model.(layout.SplitPaneLayout)
+	return cmd
+}
+
 func (p *ChatPageModel) updateEditorWorkspace(msg tea.Msg) tea.Cmd {
 	model, cmd := p.editorWorkspace.Update(msg)
 	p.editorWorkspace = model.(*editorWorkspace)
@@ -622,18 +666,16 @@ func (p *ChatPageModel) updateChatTabWorkspace(msg tea.Msg) tea.Cmd {
 }
 
 func (p *ChatPageModel) sendMessage(text string, attachments []message.Attachment) tea.Cmd {
-	var cmds []tea.Cmd
-	if p.session.ID == "" {
-		session, err := p.app.Sessions.Create(context.Background(), "New Session")
-		if err != nil {
-			return util.ReportError(err)
-		}
-
-		p.session = session
-		cmds = append(cmds, util.CmdHandler(chat.SessionSelectedMsg(session)))
+	if cmd, ok := p.handleGoalCommand(text); ok {
+		return cmd
 	}
 
-	_, err := p.app.CoderAgent.Run(context.Background(), p.session.ID, text, attachments...)
+	cmds, err := p.ensureSession()
+	if err != nil {
+		return util.ReportError(err)
+	}
+
+	_, err = p.app.CoderAgent.Run(context.Background(), p.session.ID, text, attachments...)
 	if err != nil {
 		if errors.Is(err, agentpkg.ErrNoModel) {
 			return util.CmdHandler(dialog.OpenModelDialogMsg{})
@@ -871,6 +913,323 @@ func (p *ChatPageModel) editorOverlayX() int {
 	}
 }
 
+func (p *ChatPageModel) HasRunningGoal() bool {
+	return strings.TrimSpace(p.goalObjectivePending) != "" || (p.goal != nil && p.goal.IsRunning())
+}
+
+func (p *ChatPageModel) handleGoalCommand(input string) (tea.Cmd, bool) {
+	command, ok := parseGoalCommand(input)
+	if !ok {
+		return nil, false
+	}
+
+	switch command.kind {
+	case goalCommandStart:
+		if strings.TrimSpace(command.objective) == "" {
+			return util.ReportWarn("Usage: /goal <objective>"), true
+		}
+		return p.startGoal(command.objective), true
+	case goalCommandStatus:
+		if p.session.ID == "" {
+			return util.ReportInfo("No goal is currently tracked for this session."), true
+		}
+		goalMsg, err := p.loadGoalUpdate(p.session.ID, false)
+		if err != nil {
+			return util.ReportError(err), true
+		}
+		return tea.Batch(
+			util.CmdHandler(goalMsg),
+			util.ReportInfo(formatGoalStatus(goalMsg.Goal)),
+		), true
+	case goalCommandCancel:
+		return p.cancelGoal(), true
+	default:
+		return nil, false
+	}
+}
+
+func (p *ChatPageModel) startGoal(objective string) tea.Cmd {
+	cmds, err := p.ensureSession()
+	if err != nil {
+		return util.ReportError(err)
+	}
+
+	if activeGoal, err := p.loadGoalUpdate(p.session.ID, true); err != nil {
+		return util.ReportError(err)
+	} else if activeGoal.Goal != nil && activeGoal.Goal.IsRunning() {
+		return tea.Batch(
+			util.CmdHandler(activeGoal),
+			util.ReportWarn("A goal is already running. Press Ctrl+C to cancel it first."),
+		)
+	}
+
+	goalCtx, cancel := context.WithCancel(context.Background())
+	eventCh, err := p.goalRunner.Run(goalCtx, p.session.ID, objective, agentpkg.GoalOptions{})
+	if err != nil {
+		cancel()
+		if errors.Is(err, agentpkg.ErrNoModel) {
+			return util.CmdHandler(dialog.OpenModelDialogMsg{})
+		}
+		return util.ReportError(err)
+	}
+
+	p.goalCancel = cancel
+	p.goalCancelSessionID = p.session.ID
+	p.goalObjectivePending = objective
+	p.app.Permissions.RequireExplicitApprovalSession(p.session.ID)
+	if goalAutoApproveEnabled() {
+		p.app.Permissions.AutoApproveSession(p.session.ID)
+	}
+
+	go func() {
+		for range eventCh {
+		}
+	}()
+
+	goalMsg, err := p.loadGoalUpdate(p.session.ID, false)
+	if err != nil {
+		return util.ReportError(err)
+	}
+
+	cmds = append(cmds,
+		util.CmdHandler(goalMsg),
+		util.ReportInfo(fmt.Sprintf("Goal started: %s", objective)),
+	)
+	return tea.Batch(cmds...)
+}
+
+func (p *ChatPageModel) cancelGoal() tea.Cmd {
+	if !p.HasRunningGoal() {
+		return util.ReportWarn("No active goal is running.")
+	}
+
+	if p.goalCancel != nil && p.goalCancelSessionID == p.session.ID {
+		p.goalCancel()
+	}
+
+	goal, err := p.cancelPersistedGoal(p.session.ID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return util.ReportWarn("No active goal is running.")
+		}
+		return util.ReportError(err)
+	}
+
+	return util.CmdHandler(chat.GoalUpdatedMsg{
+		SessionID: p.session.ID,
+		Goal:      goalStateFromDB(goal),
+	})
+}
+
+func (p *ChatPageModel) ensureSession() ([]tea.Cmd, error) {
+	var cmds []tea.Cmd
+	if p.session.ID != "" {
+		return cmds, nil
+	}
+
+	session, err := p.app.Sessions.Create(context.Background(), "New Session")
+	if err != nil {
+		return nil, err
+	}
+
+	p.session = session
+	cmds = append(cmds, util.CmdHandler(chat.SessionSelectedMsg(session)))
+	return cmds, nil
+}
+
+func (p *ChatPageModel) loadGoalUpdate(sessionID string, activeOnly bool) (chat.GoalUpdatedMsg, error) {
+	msg := chat.GoalUpdatedMsg{SessionID: sessionID}
+	if sessionID == "" {
+		return msg, nil
+	}
+
+	var (
+		goal db.SessionGoal
+		err  error
+	)
+	if activeOnly {
+		goal, err = p.app.DBQuerier.GetActiveGoal(context.Background(), sessionID)
+	} else {
+		goal, err = p.app.DBQuerier.GetGoalBySession(context.Background(), sessionID)
+	}
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return msg, nil
+		}
+		return msg, err
+	}
+
+	msg.Goal = goalStateFromDB(goal)
+	return msg, nil
+}
+
+func (p *ChatPageModel) applyGoalUpdate(msg chat.GoalUpdatedMsg) tea.Cmd {
+	if msg.SessionID != p.session.ID {
+		return nil
+	}
+
+	var cmds []tea.Cmd
+	prev := p.goal
+	p.goal = msg.Goal
+	if p.goal != nil && p.goal.IsRunning() {
+		p.goalObjectivePending = ""
+	}
+	if p.goal == nil || !p.goal.IsRunning() {
+		p.clearGoalExecution(msg.SessionID)
+		if p.chatHasFocus() {
+			cmds = append(cmds, util.CmdHandler(chat.FocusChatEditorMsg{}))
+		}
+	}
+
+	wasRunning := prev != nil && prev.IsRunning()
+	if msg.Goal == nil || !wasRunning || msg.Goal.IsRunning() {
+		return tea.Batch(cmds...)
+	}
+
+	var statusCmd tea.Cmd
+	switch msg.Goal.Status {
+	case agentpkg.GoalStatusCompleted:
+		statusCmd = util.ReportInfo("Goal completed.")
+	case agentpkg.GoalStatusCancelled:
+		statusCmd = util.ReportInfo("Goal cancelled.")
+	case agentpkg.GoalStatusBlocked:
+		if msg.Goal.Progress != "" {
+			statusCmd = util.ReportWarn("Goal blocked: " + msg.Goal.Progress)
+			break
+		}
+		statusCmd = util.ReportWarn("Goal blocked.")
+	case agentpkg.GoalStatusFailed, agentpkg.GoalStatusTimeout, agentpkg.GoalStatusStalled:
+		statusCmd = util.ReportWarn("Goal ended with status: " + msg.Goal.Status)
+	default:
+		statusCmd = util.ReportWarn("Goal ended with status: " + msg.Goal.Status)
+	}
+	cmds = append(cmds, statusCmd)
+	return tea.Batch(cmds...)
+}
+
+func (p *ChatPageModel) routeGoalUpdate(msg chat.GoalUpdatedMsg, cmds *[]tea.Cmd) {
+	if msg.SessionID != p.session.ID {
+		return
+	}
+
+	if cmd := p.applyGoalUpdate(msg); cmd != nil {
+		*cmds = append(*cmds, cmd)
+	}
+	*cmds = append(*cmds,
+		p.updateSidebar(msg),
+		p.updateEditorWorkspace(msg),
+		p.updateChatLayout(msg),
+	)
+	if p.layoutMode == EditorChatTab && p.chatTabWorkspace != nil {
+		*cmds = append(*cmds, p.updateChatTabWorkspace(msg))
+	}
+}
+
+func (p *ChatPageModel) clearGoalExecution(sessionID string) {
+	if sessionID != "" {
+		p.app.Permissions.RemoveAutoApproveSession(sessionID)
+		p.app.Permissions.RemoveExplicitApprovalSession(sessionID)
+	}
+	if sessionID == p.session.ID {
+		p.goalObjectivePending = ""
+	}
+	if p.goalCancelSessionID == sessionID {
+		p.goalCancel = nil
+		p.goalCancelSessionID = ""
+	}
+}
+
+func goalAutoApproveEnabled() bool {
+	cfg := config.Get()
+	if cfg == nil {
+		return true
+	}
+	return cfg.Goal.AutoApprove
+}
+
+func (p *ChatPageModel) cancelPersistedGoal(sessionID string) (db.SessionGoal, error) {
+	goal, err := p.app.DBQuerier.GetActiveGoal(context.Background(), sessionID)
+	if err != nil {
+		return db.SessionGoal{}, err
+	}
+
+	return p.app.DBQuerier.UpdateGoalStatus(context.Background(), db.UpdateGoalStatusParams{
+		Status:        agentpkg.GoalStatusCancelled,
+		Iteration:     goal.Iteration,
+		LastProgress:  goal.LastProgress,
+		NextStep:      sql.NullString{},
+		BlockedReason: sql.NullString{},
+		CompletedAt:   sql.NullInt64{Int64: time.Now().Unix(), Valid: true},
+		ID:            goal.ID,
+	})
+}
+
+func goalStateFromDB(goal db.SessionGoal) *chat.GoalState {
+	state := &chat.GoalState{
+		Objective:     goal.Objective,
+		Status:        goal.Status,
+		Iteration:     goal.Iteration,
+		MaxIterations: goal.MaxIterations,
+		StartedAt:     goal.StartedAt,
+	}
+	if goal.CompletedAt.Valid {
+		state.CompletedAt = goal.CompletedAt.Int64
+		state.HasCompletedAt = true
+	}
+	if goal.LastProgress.Valid {
+		state.Progress = goal.LastProgress.String
+	}
+	if goal.NextStep.Valid {
+		state.NextStep = goal.NextStep.String
+	}
+	if state.Progress == "" && goal.BlockedReason.Valid {
+		state.Progress = goal.BlockedReason.String
+	}
+	return state
+}
+
+type goalCommandKind int
+
+const (
+	goalCommandNone goalCommandKind = iota
+	goalCommandStart
+	goalCommandStatus
+	goalCommandCancel
+)
+
+type goalCommand struct {
+	kind      goalCommandKind
+	objective string
+}
+
+func parseGoalCommand(input string) (goalCommand, bool) {
+	line := strings.TrimSpace(input)
+	switch {
+	case line == "/goal", line == "/goal-status":
+		return goalCommand{kind: goalCommandStatus}, true
+	case line == "/goal-cancel":
+		return goalCommand{kind: goalCommandCancel}, true
+	case strings.HasPrefix(line, "/goal "):
+		return goalCommand{kind: goalCommandStart, objective: strings.TrimSpace(strings.TrimPrefix(line, "/goal "))}, true
+	case strings.HasPrefix(line, "/autopilot "):
+		return goalCommand{kind: goalCommandStart, objective: strings.TrimSpace(strings.TrimPrefix(line, "/autopilot "))}, true
+	default:
+		return goalCommand{}, false
+	}
+}
+
+func formatGoalStatus(goal *chat.GoalState) string {
+	if goal == nil {
+		return "No goal is currently tracked for this session."
+	}
+
+	status := fmt.Sprintf("Goal: %s (%s)", goal.Objective, goal.Status)
+	if goal.MaxIterations > 0 {
+		status += fmt.Sprintf(" [%d/%d]", goal.Iteration, goal.MaxIterations)
+	}
+	return status
+}
+
 func NewChatPage(app *app.App) *ChatPageModel {
 	cg := completions.NewFileAndFolderContextGroup()
 	completionDialog := dialog.NewCompletionDialogCmp(cg)
@@ -890,9 +1249,22 @@ func NewChatPage(app *app.App) *ChatPageModel {
 	chatContainer := layout.NewContainer(chatLayout)
 
 	fileTreeCmp := filetree.New(config.WorkingDirectory())
-	fileTreePanel := layout.NewContainer(
+	fileTreeContent := layout.NewContainer(
 		fileTreeCmp,
 		layout.WithPadding(1, 1, 1, 1),
+	)
+	goalPanel := layout.NewContainer(
+		chat.NewGoalStatusCmp(),
+		layout.WithPadding(1, 1, 1, 1),
+		layout.WithBorder(true, false, false, false),
+	)
+	sidebarLayout := layout.NewSplitPane(
+		layout.WithLeftPanel(fileTreeContent),
+		layout.WithBottomPanel(goalPanel),
+		layout.WithVerticalRatio(0.72),
+	)
+	fileTreePanel := layout.NewContainer(
+		sidebarLayout,
 		layout.WithBorder(false, true, false, false),
 	)
 
@@ -907,6 +1279,7 @@ func NewChatPage(app *app.App) *ChatPageModel {
 		focus:            focusChat,
 		messages:         messagesContainer,
 		editor:           editorContainer,
+		sidebar:          sidebarLayout,
 		chatLayout:       chatLayout,
 		chatContainer:    chatContainer,
 		fileTree:         fileTreeCmp,
@@ -916,6 +1289,7 @@ func NewChatPage(app *app.App) *ChatPageModel {
 		editorWorkspace:  editorWorkspace,
 		editorPanel:      editorPanel,
 		completionDialog: completionDialog,
+		goalRunner:       agentpkg.NewGoalRunner(app.CoderAgent, app.DBQuerier),
 	}
 	page.rebuildLayout()
 	return page

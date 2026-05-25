@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/safety"
 )
 
 const (
@@ -26,22 +27,6 @@ const (
 	terminalMaxOutput        = 64 * 1024
 	terminalMaxCombinedBytes = 256 * 1024
 )
-
-var dangerousPrefixes = []string{
-	"rm -rf /",
-	"rm -fr /",
-	"sudo",
-	"chmod 777 /",
-	"chmod -R 777 /",
-	"dd if=",
-	"mkfs",
-	":(){ :|:& };:",
-	"> /dev/sda",
-	"shred /dev/",
-	"wipefs",
-	"parted /dev/",
-	"fdisk /dev/",
-}
 
 type ExecRequest struct {
 	Command   string `json:"command"`
@@ -70,14 +55,7 @@ var terminalSessions = struct {
 }{items: map[string]*terminalSession{}}
 
 func isCommandDangerous(command string) bool {
-	trimmed := strings.TrimSpace(command)
-	lower := strings.ToLower(trimmed)
-	for _, prefix := range dangerousPrefixes {
-		if strings.HasPrefix(lower, strings.ToLower(prefix)) {
-			return true
-		}
-	}
-	return false
+	return safety.IsDangerousShellCommand(command, nil)
 }
 
 func resolveWorkDir(cwd, dir string) string {

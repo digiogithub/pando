@@ -3,13 +3,17 @@ package acp
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/message"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
@@ -192,18 +196,32 @@ func TestPandoACPAgent_HandleExtensionMethod(t *testing.T) {
 // mockAgentService is a test double for AgentService.
 type mockAgentService struct {
 	runCalled        bool
+	runGoalCalled    bool
 	cancelCalled     bool
 	runErr           error
+	goalRunErr       error
 	modelOverride    string
 	modelOverrideErr error
 	copilotUsageErr  error
 	claudeUsageErr   error
+	goalObjective    string
 }
 
 func (m *mockAgentService) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
 	m.runCalled = true
 	if m.runErr != nil {
 		return nil, m.runErr
+	}
+	ch := make(chan AgentEvent)
+	close(ch)
+	return ch, nil
+}
+
+func (m *mockAgentService) RunGoal(ctx context.Context, sessionID string, objective string) (<-chan AgentEvent, error) {
+	m.runGoalCalled = true
+	m.goalObjective = objective
+	if m.goalRunErr != nil {
+		return nil, m.goalRunErr
 	}
 	ch := make(chan AgentEvent)
 	close(ch)
@@ -259,6 +277,7 @@ func (m *mockAgentService) OpenClaudeUsage() error {
 // mockSessionService is a test double for SessionService.
 type mockSessionService struct {
 	sessions map[string]ACPSessionInfo
+	goals    map[string]db.SessionGoal
 	created  []string
 	counter  int
 }
@@ -266,6 +285,7 @@ type mockSessionService struct {
 func newMockSessionService() *mockSessionService {
 	return &mockSessionService{
 		sessions: make(map[string]ACPSessionInfo),
+		goals:    make(map[string]db.SessionGoal),
 	}
 }
 
@@ -295,6 +315,33 @@ func (m *mockSessionService) ListSessions(ctx context.Context) ([]ACPSessionInfo
 
 func (m *mockSessionService) GetMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
 	return nil, nil
+}
+
+func (m *mockSessionService) GetActiveGoal(ctx context.Context, sessionID string) (db.SessionGoal, error) {
+	goal, ok := m.goals[sessionID]
+	if !ok || goal.Status != "running" {
+		return db.SessionGoal{}, sql.ErrNoRows
+	}
+	return goal, nil
+}
+
+func (m *mockSessionService) GetGoalBySession(ctx context.Context, sessionID string) (db.SessionGoal, error) {
+	goal, ok := m.goals[sessionID]
+	if !ok {
+		return db.SessionGoal{}, sql.ErrNoRows
+	}
+	return goal, nil
+}
+
+func (m *mockSessionService) CancelGoal(ctx context.Context, sessionID string) (db.SessionGoal, error) {
+	goal, err := m.GetActiveGoal(ctx, sessionID)
+	if err != nil {
+		return db.SessionGoal{}, err
+	}
+	goal.Status = "cancelled"
+	goal.CompletedAt = sql.NullInt64{Int64: time.Now().Unix(), Valid: true}
+	m.goals[sessionID] = goal
+	return goal, nil
 }
 
 type mockPermissionService struct {
@@ -1073,6 +1120,35 @@ func TestPandoACPAgent_SetSessionMode(t *testing.T) {
 	}
 }
 
+func TestPandoACPAgent_SetSessionMode_Goal(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	_, err = agent.SetSessionMode(ctx, acpsdk.SetSessionModeRequest{
+		SessionId: resp.SessionId,
+		ModeId:    goalModeID,
+	})
+	if err != nil {
+		t.Fatalf("SetSessionMode failed: %v", err)
+	}
+
+	acpSess, err := agent.getSession(resp.SessionId)
+	if err != nil {
+		t.Fatalf("getSession failed: %v", err)
+	}
+	if acpSess.Mode() != goalModeID {
+		t.Fatalf("expected mode %q, got %q", goalModeID, acpSess.Mode())
+	}
+	if acpSess.AskPermission() {
+		t.Fatal("expected goal mode to default to auto-approve")
+	}
+}
+
 func TestPandoACPAgent_SetSessionMode_LogsNextPromptApplication(t *testing.T) {
 	var logs bytes.Buffer
 	logger := log.New(&logs, "", 0)
@@ -1127,6 +1203,122 @@ func TestPandoACPAgent_Prompt_AgentModeAutoApprovesSession(t *testing.T) {
 	}
 }
 
+func TestPandoACPAgent_Prompt_GoalSlashStartsGoalRunner(t *testing.T) {
+	mockAgent := &mockAgentService{}
+	sessions := newMockSessionService()
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), mockAgent, sessions, nil)
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	_, err = agent.Prompt(ctx, acpsdk.PromptRequest{
+		SessionId: resp.SessionId,
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("/goal Implement phase two")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt failed: %v", err)
+	}
+
+	if !mockAgent.runGoalCalled {
+		t.Fatal("expected goal runner path to be used")
+	}
+	if mockAgent.goalObjective != "Implement phase two" {
+		t.Fatalf("unexpected goal objective %q", mockAgent.goalObjective)
+	}
+	acpSess, err := agent.getSession(resp.SessionId)
+	if err != nil {
+		t.Fatalf("getSession failed: %v", err)
+	}
+	if acpSess.Mode() != goalModeID {
+		t.Fatalf("expected goal mode after /goal, got %q", acpSess.Mode())
+	}
+}
+
+func TestPandoACPAgent_Prompt_GoalSlashRegistersTemporaryPermissionHandler(t *testing.T) {
+	mockAgent := &mockAgentService{}
+	sessions := newMockSessionService()
+	permSvc := newMockPermissionService()
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), mockAgent, sessions, permSvc)
+	agent.SetConnection(&acpsdk.AgentSideConnection{})
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	_, err = agent.Prompt(ctx, acpsdk.PromptRequest{
+		SessionId: resp.SessionId,
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("/goal Implement phase two")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt failed: %v", err)
+	}
+
+	found := false
+	for _, sessionID := range permSvc.registered {
+		if sessionID == string(resp.SessionId) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected goal mode permission handler registration for session %s, got %+v", resp.SessionId, permSvc.registered)
+	}
+	foundCleanup := false
+	for _, sessionID := range permSvc.unregistered {
+		if sessionID == string(resp.SessionId) {
+			foundCleanup = true
+			break
+		}
+	}
+	if !foundCleanup {
+		t.Fatalf("expected goal mode permission handler cleanup for session %s, got %+v", resp.SessionId, permSvc.unregistered)
+	}
+}
+
+func TestPandoACPAgent_GoalPermissionHandlerApprovesSafeAndRejectsDangerousWithoutConnection(t *testing.T) {
+	config.SetForTests(&config.Config{
+		Goal: config.GoalConfig{
+			AutoApprove:       true,
+			DangerousPatterns: []string{"DROP TABLE"},
+		},
+	})
+	t.Cleanup(func() {
+		config.SetForTests(nil)
+	})
+
+	permSvc := newMockPermissionService()
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), &mockAgentService{}, newMockSessionService(), permSvc)
+
+	cleanup := agent.configurePermissionMode(acpsdk.SessionId("session-1"), goalModeID, false)
+	defer cleanup()
+
+	handler := permSvc.handlers["session-1"]
+	if handler == nil {
+		t.Fatal("expected goal permission handler to be registered")
+	}
+
+	if !handler(PermissionRequestData{
+		SessionID: "session-1",
+		ToolName:  "bash",
+		Params:    map[string]any{"command": "go test ./..."},
+	}) {
+		t.Fatal("expected safe goal-mode command to auto-approve")
+	}
+
+	if handler(PermissionRequestData{
+		SessionID: "session-1",
+		ToolName:  "bash",
+		Params:    map[string]any{"command": "sqlite3 app.db 'DROP TABLE users;'"},
+	}) {
+		t.Fatal("expected dangerous goal-mode command to require confirmation")
+	}
+}
+
 func TestPandoACPAgent_Prompt_AskModeRegistersAndUnregistersHandler(t *testing.T) {
 	mockAgent := &mockAgentService{}
 	sessions := newMockSessionService()
@@ -1156,13 +1348,34 @@ func TestPandoACPAgent_Prompt_AskModeRegistersAndUnregistersHandler(t *testing.T
 		t.Fatalf("Prompt failed: %v", err)
 	}
 
-	if len(permSvc.removed) != 1 || permSvc.removed[0] != string(resp.SessionId) {
+	foundRemoval := false
+	for _, sessionID := range permSvc.removed {
+		if sessionID == string(resp.SessionId) {
+			foundRemoval = true
+			break
+		}
+	}
+	if !foundRemoval {
 		t.Fatalf("expected auto-approve removal for session %s, got %+v", resp.SessionId, permSvc.removed)
 	}
-	if len(permSvc.registered) != 1 || permSvc.registered[0] != string(resp.SessionId) {
+	foundRegistration := false
+	for _, sessionID := range permSvc.registered {
+		if sessionID == string(resp.SessionId) {
+			foundRegistration = true
+			break
+		}
+	}
+	if !foundRegistration {
 		t.Fatalf("expected handler registration for session %s, got %+v", resp.SessionId, permSvc.registered)
 	}
-	if len(permSvc.unregistered) != 1 || permSvc.unregistered[0] != string(resp.SessionId) {
+	foundUnregistration := false
+	for _, sessionID := range permSvc.unregistered {
+		if sessionID == string(resp.SessionId) {
+			foundUnregistration = true
+			break
+		}
+	}
+	if !foundUnregistration {
 		t.Fatalf("expected handler unregistration for session %s, got %+v", resp.SessionId, permSvc.unregistered)
 	}
 }
@@ -1202,6 +1415,97 @@ func TestPandoACPAgent_Prompt_AskModeWithoutConnectionLogsWarning(t *testing.T) 
 	}
 	if !strings.Contains(logs.String(), "no ACP connection is available") {
 		t.Fatalf("expected ask-mode warning about missing ACP connection, got logs:\n%s", logs.String())
+	}
+}
+
+func TestPandoACPAgent_HandleSlashGoalStatusSyncsSessionGoal(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	sessions := agent.sessionService.(*mockSessionService)
+	sessions.goals[string(resp.SessionId)] = db.SessionGoal{
+		ID:            "goal-1",
+		SessionID:     string(resp.SessionId),
+		Objective:     "Implement ACP goal mode",
+		Status:        "running",
+		Iteration:     2,
+		MaxIterations: 5,
+		StartedAt:     time.Now().Add(-2 * time.Minute).Unix(),
+		LastProgress:  sql.NullString{String: "Registered goal mode", Valid: true},
+		NextStep:      sql.NullString{String: "Emit session updates", Valid: true},
+	}
+
+	acpSession, err := agent.getSession(resp.SessionId)
+	if err != nil {
+		t.Fatalf("getSession failed: %v", err)
+	}
+
+	_, err = agent.handleSlashCommand(ctx, resp.SessionId, acpSession, slashCommand{Kind: slashCommandGoalStatus})
+	if err != nil {
+		t.Fatalf("handleSlashCommand failed: %v", err)
+	}
+
+	goal := acpSession.Goal()
+	if goal == nil {
+		t.Fatal("expected session goal state to be populated")
+	}
+	if goal.Objective != "Implement ACP goal mode" {
+		t.Fatalf("unexpected objective %q", goal.Objective)
+	}
+	if goal.NextStep != "Emit session updates" {
+		t.Fatalf("unexpected next step %q", goal.NextStep)
+	}
+}
+
+func TestPandoACPAgent_HandleSlashGoalCancelCancelsGoal(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	sessions := agent.sessionService.(*mockSessionService)
+	sessions.goals[string(resp.SessionId)] = db.SessionGoal{
+		ID:            "goal-2",
+		SessionID:     string(resp.SessionId),
+		Objective:     "Implement ACP goal mode",
+		Status:        "running",
+		Iteration:     1,
+		MaxIterations: 5,
+		StartedAt:     time.Now().Add(-time.Minute).Unix(),
+	}
+
+	acpSession, err := agent.getSession(resp.SessionId)
+	if err != nil {
+		t.Fatalf("getSession failed: %v", err)
+	}
+
+	cancelled := false
+	acpSession.SetGoalCancel(func() { cancelled = true })
+
+	stopReason, err := agent.handleSlashCommand(ctx, resp.SessionId, acpSession, slashCommand{Kind: slashCommandGoalCancel})
+	if err != nil {
+		t.Fatalf("handleSlashCommand failed: %v", err)
+	}
+	if stopReason != acpsdk.StopReasonCancelled {
+		t.Fatalf("expected cancelled stop reason, got %q", stopReason)
+	}
+	if !cancelled {
+		t.Fatal("expected running goal execution to be cancelled")
+	}
+	goal := sessions.goals[string(resp.SessionId)]
+	if goal.Status != "cancelled" {
+		t.Fatalf("expected persisted goal to be cancelled, got %q", goal.Status)
+	}
+	if acpSession.Goal() == nil || acpSession.Goal().Status != "cancelled" {
+		t.Fatalf("expected session goal snapshot to be cancelled, got %+v", acpSession.Goal())
 	}
 }
 
@@ -1297,8 +1601,8 @@ func TestPandoACPAgent_NewSessionResponse_UsesSeparatedACPSelectors(t *testing.T
 	if resp.Modes == nil {
 		t.Fatal("expected legacy modes to be present")
 	}
-	if len(resp.Modes.AvailableModes) != 2 {
-		t.Fatalf("expected 2 legacy modes, got %d", len(resp.Modes.AvailableModes))
+	if len(resp.Modes.AvailableModes) != 3 {
+		t.Fatalf("expected 3 legacy modes, got %d", len(resp.Modes.AvailableModes))
 	}
 
 	if len(resp.ConfigOptions) != 4 {

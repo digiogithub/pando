@@ -117,10 +117,21 @@ export interface SSEPlanEntry {
   active_form?: string
 }
 
+export interface GoalStatus {
+  objective: string
+  status: string
+  iteration: number
+  maxIterations: number
+  progress?: string
+  nextStep?: string
+  startedAt: number
+  completedAt?: number
+}
+
 export interface SSEEvent {
   type: 'session' | 'content' | 'content_delta' | 'thinking_delta'
       | 'tool_call' | 'tool_call_update' | 'tool_result'
-      | 'plan_update' | 'todos_update'
+      | 'plan_update' | 'todos_update' | 'goal_status'
       | 'error' | 'done'
   session_id?: string
   content?: string
@@ -129,6 +140,7 @@ export interface SSEEvent {
   tool_call_update?: SSEToolCallUpdate
   tool_result?: SSEToolResult
   plan_entries?: SSEPlanEntry[]
+  goal?: GoalStatus
 }
 
 // Log types

@@ -2,8 +2,11 @@ package app
 
 import (
 	"bytes"
+	"database/sql"
+	"encoding/json"
 	"testing"
 
+	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -87,5 +90,65 @@ func TestAssistantTextStreamerPrintsFinalContentFallback(t *testing.T) {
 
 	if got, want := output.String(), "final answer\n"; got != want {
 		t.Fatalf("streamed output = %q, want %q", got, want)
+	}
+}
+
+func TestNonInteractiveGoalResultFromDB(t *testing.T) {
+	goal := db.SessionGoal{
+		SessionID:          "session-1",
+		Objective:          "Ship goal mode",
+		Status:             agent.GoalStatusBlocked,
+		Iteration:          2,
+		MaxIterations:      5,
+		MaxDurationSeconds: 3600,
+		LastProgress:       sql.NullString{String: "  Waiting on credentials  ", Valid: true},
+		NextStep:           sql.NullString{String: "  Retry after auth  ", Valid: true},
+		BlockedReason:      sql.NullString{String: "  Missing credentials  ", Valid: true},
+	}
+
+	got := nonInteractiveGoalResultFromDB(goal, "  Latest assistant summary  ")
+	if got.SessionID != "session-1" || got.Objective != "Ship goal mode" {
+		t.Fatalf("unexpected identity fields: %+v", got)
+	}
+	if got.Response != "Latest assistant summary" {
+		t.Fatalf("Response = %q, want trimmed value", got.Response)
+	}
+	if got.Progress != "Waiting on credentials" {
+		t.Fatalf("Progress = %q, want trimmed value", got.Progress)
+	}
+	if got.NextStep != "Retry after auth" {
+		t.Fatalf("NextStep = %q, want trimmed value", got.NextStep)
+	}
+	if got.BlockedReason != "Missing credentials" {
+		t.Fatalf("BlockedReason = %q, want trimmed value", got.BlockedReason)
+	}
+}
+
+func TestFormatNonInteractiveGoalResult(t *testing.T) {
+	serialized, err := formatNonInteractiveGoalResult(NonInteractiveGoalResult{
+		SessionID:     "session-1",
+		Objective:     "Ship goal mode",
+		Status:        agent.GoalStatusCompleted,
+		Iteration:     3,
+		MaxIterations: 5,
+		Response:      "Done",
+	})
+	if err != nil {
+		t.Fatalf("formatNonInteractiveGoalResult() error = %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(serialized), &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if decoded["status"] != agent.GoalStatusCompleted {
+		t.Fatalf("status = %v, want %q", decoded["status"], agent.GoalStatusCompleted)
+	}
+	if decoded["response"] != "Done" {
+		t.Fatalf("response = %v, want %q", decoded["response"], "Done")
+	}
+	if _, ok := decoded["blocked_reason"]; ok {
+		t.Fatalf("blocked_reason should be omitted when empty: %v", decoded)
 	}
 }

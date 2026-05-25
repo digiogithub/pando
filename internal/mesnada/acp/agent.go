@@ -7,9 +7,12 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/notify"
 	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/digiogithub/pando/internal/safety"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
@@ -169,6 +172,9 @@ func (a *PandoACPAgent) Cancel(ctx context.Context, params acpsdk.CancelNotifica
 
 	acpSession.Cancel()
 	a.agentService.Cancel(acpSession.PandoSessionID())
+	if goal, err := a.sessionService.CancelGoal(context.Background(), acpSession.PandoSessionID()); err == nil {
+		a.sendGoalStateUpdate(params.SessionId, goalStateFromDB(goal, time.Now()))
+	}
 
 	a.logger.Printf("[ACP AGENT] Session cancelled: %s", params.SessionId)
 	return nil
@@ -257,7 +263,7 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 		ConfigOptions: buildSessionConfigOptions(a.agentService, acpSession.Model(), currentMode, acpSession.Persona(), acpSession.AskPermission()),
 		Modes:         buildSessionModeState(a.agentService, currentMode),
 		Models:        buildSessionModelState(a.agentService, acpSession.Model()),
-		Meta:          personaStateToMeta(buildSessionPersonaState(a.agentService, acpSession.Persona())),
+		Meta:          mergeMetaMaps(personaStateToMeta(buildSessionPersonaState(a.agentService, acpSession.Persona())), goalMeta(acpSession.Goal())),
 	}, nil
 }
 
@@ -308,43 +314,46 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 	if mode == "" {
 		mode = defaultACPMode
 	}
-	if mode == askModeID {
-		promptText = askModeInstruction + "\n\nUser request:\n" + promptText
-	}
 
 	// Configure permissions from the dedicated approval selector.
 	askPermission := acpSession.AskPermission()
 	if mode == askModeID && !acpSession.PermissionConfigured() {
 		askPermission = true
+	} else if mode == goalModeID && !acpSession.PermissionConfigured() {
+		askPermission = !goalAutoApproveEnabled()
 	}
 
-	switch {
-	case askPermission:
-		// Manual approval mode: route permission requests to the connected editor via ACP.
-		if a.permissionService != nil {
-			a.permissionService.RemoveAutoApproveSession(string(req.SessionId))
-			if a.conn == nil {
-				a.logger.Printf("[ACP AGENT] Ask permission enabled for session %s but no ACP connection is available; using default permission handling", req.SessionId)
-			} else {
-				bridge := NewACPPermissionBridge(a.conn, req.SessionId, a.logger)
-				a.permissionService.RegisterSessionHandler(string(req.SessionId), bridge.Handle)
-				defer a.permissionService.UnregisterSessionHandler(string(req.SessionId))
-			}
-		}
-	default:
-		// Auto-approve mode: tool calls proceed without permission dialogs.
-		if a.permissionService != nil {
-			a.permissionService.AutoApproveSession(string(req.SessionId))
-		}
-	}
+	cleanupPermissions := a.configurePermissionMode(req.SessionId, mode, askPermission)
+	defer cleanupPermissions()
 	a.logger.Printf("[ACP AGENT] Session mode=%q askPermission=%t applied for session %s", mode, askPermission, req.SessionId)
 
-	stopReason, err := a.processPromptWithAgent(ctx, acpSession, promptText, attachments...)
+	if command, ok := parseSlashCommand(promptText); ok {
+		stopReason, err := a.handleSlashCommand(ctx, req.SessionId, acpSession, command)
+		if err != nil {
+			a.logger.Printf("[ACP AGENT] Slash command failed: %v", err)
+			return acpsdk.PromptResponse{}, fmt.Errorf("prompt processing failed: %w", err)
+		}
+		return a.finishPrompt(ctx, req.SessionId, acpSession, stopReason)
+	}
+
+	var stopReason acpsdk.StopReason
+	if mode == goalModeID {
+		stopReason, err = a.processGoalPrompt(ctx, req.SessionId, acpSession, promptText)
+	} else {
+		if mode == askModeID {
+			promptText = askModeInstruction + "\n\nUser request:\n" + promptText
+		}
+		stopReason, err = a.processPromptWithAgent(ctx, acpSession, promptText, attachments...)
+	}
 	if err != nil {
 		a.logger.Printf("[ACP AGENT] Prompt processing failed: %v", err)
 		return acpsdk.PromptResponse{}, fmt.Errorf("prompt processing failed: %w", err)
 	}
 
+	return a.finishPrompt(ctx, req.SessionId, acpSession, stopReason)
+}
+
+func (a *PandoACPAgent) finishPrompt(ctx context.Context, sessionID acpsdk.SessionId, acpSession *ACPServerSession, stopReason acpsdk.StopReason) (acpsdk.PromptResponse, error) {
 	// Send usage_update and session_info_update after the prompt completes.
 	// Fetch the latest session state so we have accurate token counts and title.
 	if sessionInfo, sessErr := a.sessionService.GetSession(ctx, acpSession.PandoSessionID()); sessErr == nil {
@@ -373,7 +382,7 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 	}
 
 	a.logger.Printf("[ACP AGENT] Prompt completed: SessionID=%s, StopReason=%s",
-		req.SessionId, stopReason)
+		sessionID, stopReason)
 
 	return acpsdk.PromptResponse{
 		StopReason: stopReason,
@@ -403,11 +412,20 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 		workDir = req.Cwd
 	}
 
+	persistedGoal, goalErr := a.loadGoalState(ctx, string(req.SessionId), false)
+	if goalErr != nil && !isGoalNotFound(goalErr) {
+		return acpsdk.LoadSessionResponse{}, fmt.Errorf("load goal state: %w", goalErr)
+	}
+
 	a.sessionsMu.Lock()
 	currentMode := defaultACPMode
 	if existing, exists := a.sessions[req.SessionId]; exists {
 		existing.SetWorkDir(workDir)
 		existing.SetAgentConnection(a.conn)
+		existing.SetGoal(persistedGoal)
+		if persistedGoal != nil && persistedGoal.Status == "running" {
+			existing.SetMode(goalModeID)
+		}
 		if existing.Mode() != "" {
 			currentMode = existing.Mode()
 		} else {
@@ -416,6 +434,12 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 		a.logger.Printf("[ACP AGENT] LoadSession: synchronized existing session %s", req.SessionId)
 	} else {
 		acpSession := NewACPServerSession(req.SessionId, workDir, a.conn, string(req.SessionId))
+		if persistedGoal != nil {
+			acpSession.SetGoal(persistedGoal)
+			if persistedGoal.Status == "running" {
+				currentMode = goalModeID
+			}
+		}
 		acpSession.SetMode(currentMode)
 		acpSession.SetAskPermission(false)
 		a.sessions[req.SessionId] = acpSession
@@ -424,9 +448,11 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 	a.sessionsMu.Unlock()
 
 	var currentPersona string
+	var acpSession *ACPServerSession
 	a.sessionsMu.RLock()
 	if sess, ok := a.sessions[req.SessionId]; ok {
 		currentPersona = sess.Persona()
+		acpSession = sess
 	}
 	a.sessionsMu.RUnlock()
 
@@ -441,7 +467,7 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 		ConfigOptions: buildSessionConfigOptions(a.agentService, a.mustSessionModel(req.SessionId), currentMode, currentPersona, a.mustSessionAskPermission(req.SessionId)),
 		Modes:         buildSessionModeState(a.agentService, currentMode),
 		Models:        buildSessionModelState(a.agentService, a.mustSessionModel(req.SessionId)),
-		Meta:          personaStateToMeta(buildSessionPersonaState(a.agentService, currentPersona)),
+		Meta:          mergeMetaMaps(personaStateToMeta(buildSessionPersonaState(a.agentService, currentPersona)), goalMeta(acpSession.Goal())),
 	}, nil
 }
 
@@ -464,7 +490,7 @@ func (a *PandoACPAgent) SetSessionMode(ctx context.Context, req acpsdk.SetSessio
 	}
 
 	acpSession.SetMode(modeID)
-	acpSession.SetAskPermission(modeID == askModeID)
+	acpSession.SetAskPermission(defaultAskPermissionForMode(modeID))
 	acpSession.SetPermissionConfigured(false)
 	a.logger.Printf("[ACP AGENT] Session mode set: SessionID=%s, Mode=%s (mode will take effect on next prompt)", req.SessionId, modeID)
 
@@ -498,7 +524,7 @@ func (a *PandoACPAgent) SetSessionConfigOption(ctx context.Context, req acpsdk.S
 		}
 		acpSession.SetMode(value)
 		if !acpSession.PermissionConfigured() {
-			acpSession.SetAskPermission(value == askModeID)
+			acpSession.SetAskPermission(defaultAskPermissionForMode(value))
 		}
 		a.sendCurrentModeUpdate(ctx, sessionID, value)
 	case sessionConfigAskPermissionID:
@@ -598,11 +624,20 @@ func (a *PandoACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSess
 		workDir = req.Cwd
 	}
 
+	persistedGoal, goalErr := a.loadGoalState(ctx, string(req.SessionId), false)
+	if goalErr != nil && !isGoalNotFound(goalErr) {
+		return acpsdk.ResumeSessionResponse{}, fmt.Errorf("load goal state: %w", goalErr)
+	}
+
 	a.sessionsMu.Lock()
 	currentMode := defaultACPMode
 	if existing, exists := a.sessions[req.SessionId]; exists {
 		existing.SetWorkDir(workDir)
 		existing.SetAgentConnection(a.conn)
+		existing.SetGoal(persistedGoal)
+		if persistedGoal != nil && persistedGoal.Status == "running" {
+			existing.SetMode(goalModeID)
+		}
 		if existing.Mode() != "" {
 			currentMode = existing.Mode()
 		} else {
@@ -610,8 +645,14 @@ func (a *PandoACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSess
 		}
 	} else {
 		acpSession := NewACPServerSession(req.SessionId, workDir, a.conn, string(req.SessionId))
+		if persistedGoal != nil {
+			acpSession.SetGoal(persistedGoal)
+			if persistedGoal.Status == "running" {
+				currentMode = goalModeID
+			}
+		}
 		acpSession.SetMode(currentMode)
-		acpSession.SetAskPermission(false)
+		acpSession.SetAskPermission(defaultAskPermissionForMode(currentMode))
 		a.sessions[req.SessionId] = acpSession
 	}
 	a.sessionsMu.Unlock()
@@ -622,7 +663,7 @@ func (a *PandoACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSess
 	return acpsdk.ResumeSessionResponse{
 		ConfigOptions: buildUnstableSessionConfigOptions(configOptions),
 		Modes:         buildSessionModeState(a.agentService, currentMode),
-		Meta:          personaStateToMeta(buildSessionPersonaState(a.agentService, acpSession.Persona())),
+		Meta:          mergeMetaMaps(personaStateToMeta(buildSessionPersonaState(a.agentService, acpSession.Persona())), goalMeta(acpSession.Goal())),
 	}, nil
 }
 
@@ -751,9 +792,101 @@ func parseAskPermissionValue(value string) (bool, error) {
 	}
 }
 
+func defaultAskPermissionForMode(modeID string) bool {
+	switch strings.TrimSpace(modeID) {
+	case askModeID:
+		return true
+	case goalModeID:
+		return !goalAutoApproveEnabled()
+	default:
+		return false
+	}
+}
+
+func goalAutoApproveEnabled() bool {
+	cfg := config.Get()
+	if cfg == nil {
+		return true
+	}
+	return cfg.Goal.AutoApprove
+}
+
+func dangerousGoalPatterns() []string {
+	cfg := config.Get()
+	if cfg == nil {
+		return nil
+	}
+	return cfg.Goal.DangerousPatterns
+}
+
+func isDangerousPermissionRequest(req PermissionRequestData) bool {
+	if !strings.EqualFold(strings.TrimSpace(req.ToolName), "bash") || req.Params == nil {
+		return false
+	}
+
+	var params struct {
+		Command string `json:"command"`
+	}
+	data, err := json.Marshal(req.Params)
+	if err != nil {
+		return false
+	}
+	if err := json.Unmarshal(data, &params); err != nil {
+		return false
+	}
+
+	return safety.IsDangerousShellCommand(params.Command, dangerousGoalPatterns())
+}
+
+func (a *PandoACPAgent) configurePermissionMode(sessionID acpsdk.SessionId, mode string, askPermission bool) func() {
+	if a.permissionService == nil {
+		return func() {}
+	}
+
+	sid := string(sessionID)
+	cleanup := func() {
+		a.permissionService.RemoveAutoApproveSession(sid)
+		a.permissionService.UnregisterSessionHandler(sid)
+	}
+	cleanup()
+
+	switch {
+	case askPermission:
+		if a.conn == nil {
+			a.logger.Printf("[ACP AGENT] Ask permission enabled for session %s but no ACP connection is available; using default permission handling", sessionID)
+			return cleanup
+		}
+		bridge := NewACPPermissionBridge(a.conn, sessionID, a.logger)
+		a.permissionService.RegisterSessionHandler(sid, bridge.Handle)
+	case mode == goalModeID:
+		goalBridge := func(req PermissionRequestData) bool {
+			if !goalAutoApproveEnabled() {
+				if a.conn == nil {
+					a.logger.Printf("[ACP AGENT] Goal mode requires permission prompts for session %s but no ACP connection is available; denying tool %s", sessionID, req.ToolName)
+					return false
+				}
+				return NewACPPermissionBridge(a.conn, sessionID, a.logger).Handle(req)
+			}
+			if !isDangerousPermissionRequest(req) {
+				return true
+			}
+			if a.conn == nil {
+				a.logger.Printf("[ACP AGENT] Dangerous goal-mode tool call requires confirmation but no ACP connection is available; denying tool %s", req.ToolName)
+				return false
+			}
+			return NewACPPermissionBridge(a.conn, sessionID, a.logger).Handle(req)
+		}
+		a.permissionService.RegisterSessionHandler(sid, goalBridge)
+	default:
+		a.permissionService.AutoApproveSession(sid)
+	}
+
+	return cleanup
+}
+
 func validateModeID(modeID string) error {
 	switch strings.TrimSpace(modeID) {
-	case agentModeID, askModeID:
+	case agentModeID, askModeID, goalModeID:
 		return nil
 	default:
 		return fmt.Errorf("unknown mode: %s", modeID)

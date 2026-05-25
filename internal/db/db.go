@@ -27,6 +27,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createFileStmt, err = db.PrepareContext(ctx, createFile); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateFile: %w", err)
 	}
+	if q.createGoalStmt, err = db.PrepareContext(ctx, createGoal); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateGoal: %w", err)
+	}
 	if q.createMessageStmt, err = db.PrepareContext(ctx, createMessage); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateMessage: %w", err)
 	}
@@ -35,6 +38,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteFileStmt, err = db.PrepareContext(ctx, deleteFile); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteFile: %w", err)
+	}
+	if q.deleteGoalsBySessionStmt, err = db.PrepareContext(ctx, deleteGoalsBySession); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteGoalsBySession: %w", err)
 	}
 	if q.deleteMessageStmt, err = db.PrepareContext(ctx, deleteMessage); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteMessage: %w", err)
@@ -53,6 +59,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getFileByPathAndSessionStmt, err = db.PrepareContext(ctx, getFileByPathAndSession); err != nil {
 		return nil, fmt.Errorf("error preparing query GetFileByPathAndSession: %w", err)
+	}
+	if q.getActiveGoalStmt, err = db.PrepareContext(ctx, getActiveGoal); err != nil {
+		return nil, fmt.Errorf("error preparing query GetActiveGoal: %w", err)
+	}
+	if q.getGoalBySessionStmt, err = db.PrepareContext(ctx, getGoalBySession); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGoalBySession: %w", err)
 	}
 	if q.getMessageStmt, err = db.PrepareContext(ctx, getMessage); err != nil {
 		return nil, fmt.Errorf("error preparing query GetMessage: %w", err)
@@ -80,6 +92,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.updateFileStmt, err = db.PrepareContext(ctx, updateFile); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateFile: %w", err)
+	}
+	if q.updateGoalProgressStmt, err = db.PrepareContext(ctx, updateGoalProgress); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateGoalProgress: %w", err)
+	}
+	if q.updateGoalStatusStmt, err = db.PrepareContext(ctx, updateGoalStatus); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateGoalStatus: %w", err)
 	}
 	if q.updateMessageStmt, err = db.PrepareContext(ctx, updateMessage); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateMessage: %w", err)
@@ -175,6 +193,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createFileStmt: %w", cerr)
 		}
 	}
+	if q.createGoalStmt != nil {
+		if cerr := q.createGoalStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createGoalStmt: %w", cerr)
+		}
+	}
 	if q.createMessageStmt != nil {
 		if cerr := q.createMessageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createMessageStmt: %w", cerr)
@@ -188,6 +211,11 @@ func (q *Queries) Close() error {
 	if q.deleteFileStmt != nil {
 		if cerr := q.deleteFileStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteFileStmt: %w", cerr)
+		}
+	}
+	if q.deleteGoalsBySessionStmt != nil {
+		if cerr := q.deleteGoalsBySessionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteGoalsBySessionStmt: %w", cerr)
 		}
 	}
 	if q.deleteMessageStmt != nil {
@@ -218,6 +246,16 @@ func (q *Queries) Close() error {
 	if q.getFileByPathAndSessionStmt != nil {
 		if cerr := q.getFileByPathAndSessionStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getFileByPathAndSessionStmt: %w", cerr)
+		}
+	}
+	if q.getActiveGoalStmt != nil {
+		if cerr := q.getActiveGoalStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getActiveGoalStmt: %w", cerr)
+		}
+	}
+	if q.getGoalBySessionStmt != nil {
+		if cerr := q.getGoalBySessionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGoalBySessionStmt: %w", cerr)
 		}
 	}
 	if q.getMessageStmt != nil {
@@ -263,6 +301,16 @@ func (q *Queries) Close() error {
 	if q.updateFileStmt != nil {
 		if cerr := q.updateFileStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateFileStmt: %w", cerr)
+		}
+	}
+	if q.updateGoalProgressStmt != nil {
+		if cerr := q.updateGoalProgressStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateGoalProgressStmt: %w", cerr)
+		}
+	}
+	if q.updateGoalStatusStmt != nil {
+		if cerr := q.updateGoalStatusStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateGoalStatusStmt: %w", cerr)
 		}
 	}
 	if q.updateMessageStmt != nil {
@@ -445,15 +493,19 @@ type Queries struct {
 	db                               DBTX
 	tx                               *sql.Tx
 	createFileStmt                   *sql.Stmt
+	createGoalStmt                   *sql.Stmt
 	createMessageStmt                *sql.Stmt
 	createSessionStmt                *sql.Stmt
 	deleteFileStmt                   *sql.Stmt
+	deleteGoalsBySessionStmt         *sql.Stmt
 	deleteMessageStmt                *sql.Stmt
 	deleteSessionStmt                *sql.Stmt
 	deleteSessionFilesStmt           *sql.Stmt
 	deleteSessionMessagesStmt        *sql.Stmt
 	getFileStmt                      *sql.Stmt
 	getFileByPathAndSessionStmt      *sql.Stmt
+	getActiveGoalStmt                *sql.Stmt
+	getGoalBySessionStmt             *sql.Stmt
 	getMessageStmt                   *sql.Stmt
 	getSessionByIDStmt               *sql.Stmt
 	listFilesByPathStmt              *sql.Stmt
@@ -463,6 +515,8 @@ type Queries struct {
 	listNewFilesStmt                 *sql.Stmt
 	listSessionsStmt                 *sql.Stmt
 	updateFileStmt                   *sql.Stmt
+	updateGoalProgressStmt           *sql.Stmt
+	updateGoalStatusStmt             *sql.Stmt
 	updateMessageStmt                *sql.Stmt
 	updateSessionStmt                *sql.Stmt
 	insertPromptTemplateStmt         *sql.Stmt
@@ -498,15 +552,19 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		db:                               tx,
 		tx:                               tx,
 		createFileStmt:                   q.createFileStmt,
+		createGoalStmt:                   q.createGoalStmt,
 		createMessageStmt:                q.createMessageStmt,
 		createSessionStmt:                q.createSessionStmt,
 		deleteFileStmt:                   q.deleteFileStmt,
+		deleteGoalsBySessionStmt:         q.deleteGoalsBySessionStmt,
 		deleteMessageStmt:                q.deleteMessageStmt,
 		deleteSessionStmt:                q.deleteSessionStmt,
 		deleteSessionFilesStmt:           q.deleteSessionFilesStmt,
 		deleteSessionMessagesStmt:        q.deleteSessionMessagesStmt,
 		getFileStmt:                      q.getFileStmt,
 		getFileByPathAndSessionStmt:      q.getFileByPathAndSessionStmt,
+		getActiveGoalStmt:                q.getActiveGoalStmt,
+		getGoalBySessionStmt:             q.getGoalBySessionStmt,
 		getMessageStmt:                   q.getMessageStmt,
 		getSessionByIDStmt:               q.getSessionByIDStmt,
 		listFilesByPathStmt:              q.listFilesByPathStmt,
@@ -516,6 +574,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listNewFilesStmt:                 q.listNewFilesStmt,
 		listSessionsStmt:                 q.listSessionsStmt,
 		updateFileStmt:                   q.updateFileStmt,
+		updateGoalProgressStmt:           q.updateGoalProgressStmt,
+		updateGoalStatusStmt:             q.updateGoalStatusStmt,
 		updateMessageStmt:                q.updateMessageStmt,
 		updateSessionStmt:                q.updateSessionStmt,
 		insertPromptTemplateStmt:         q.insertPromptTemplateStmt,

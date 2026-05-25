@@ -47,6 +47,39 @@ func TestMesnadaDefaults(t *testing.T) {
 	}
 }
 
+func TestGoalDefaults(t *testing.T) {
+	cfg = nil
+	viper.Reset()
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	configureViper()
+	setDefaults(false)
+
+	var loaded Config
+	if err := viper.Unmarshal(&loaded); err != nil {
+		t.Fatalf("unmarshal defaults: %v", err)
+	}
+
+	if got := loaded.Goal.MaxIterations; got != 20 {
+		t.Fatalf("goal.maxIterations = %d, want %d", got, 20)
+	}
+	if got := loaded.Goal.MaxDuration; got != "1h" {
+		t.Fatalf("goal.maxDuration = %q, want %q", got, "1h")
+	}
+	if got := loaded.Goal.StallIterations; got != 3 {
+		t.Fatalf("goal.stallIterations = %d, want %d", got, 3)
+	}
+	if !loaded.Goal.AutoApprove {
+		t.Fatal("goal.autoApprove = false, want true")
+	}
+	if len(loaded.Goal.DangerousPatterns) != 0 {
+		t.Fatalf("goal.dangerousPatterns = %v, want empty", loaded.Goal.DangerousPatterns)
+	}
+}
+
 func TestDefaultConfigTemplateKeepsBuiltInContextPathsEnabled(t *testing.T) {
 	if strings.Contains(DefaultConfigTemplate, "ContextPaths = []") {
 		t.Fatal("DefaultConfigTemplate should not explicitly clear ContextPaths")
@@ -123,6 +156,33 @@ func TestValidateDoesNotWriteMissingAPIKeyWarningToStdout(t *testing.T) {
 
 	if !cfg.Providers[models.ProviderOpenAI].Disabled {
 		t.Fatal("openai provider should be disabled when API key is missing")
+	}
+}
+
+func TestValidateRejectsInvalidGoalDuration(t *testing.T) {
+	cfg = &Config{
+		Goal: GoalConfig{
+			MaxIterations:   20,
+			MaxDuration:     "not-a-duration",
+			StallIterations: 3,
+			AutoApprove:     true,
+		},
+		Agents:    make(map[AgentName]Agent),
+		LSP:       make(map[string]LSPConfig),
+		Providers: make(map[models.ModelProvider]Provider),
+	}
+	viper.Reset()
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	err := Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want invalid goal duration error")
+	}
+	if !strings.Contains(err.Error(), "goal.maxDuration") {
+		t.Fatalf("Validate() error = %v, want goal.maxDuration error", err)
 	}
 }
 

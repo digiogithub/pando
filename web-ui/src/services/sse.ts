@@ -205,6 +205,24 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
       }
       break
 
+    case 'goal_status':
+      if (typeof raw.goal === 'object' && raw.goal !== null) {
+        const goal = raw.goal as Record<string, unknown>
+        if (typeof goal.objective === 'string' && typeof goal.status === 'string') {
+          base.goal = {
+            objective: goal.objective,
+            status: goal.status,
+            iteration: typeof goal.iteration === 'number' ? goal.iteration : 0,
+            maxIterations: typeof goal.maxIterations === 'number' ? goal.maxIterations : 0,
+            progress: typeof goal.progress === 'string' ? goal.progress : undefined,
+            nextStep: typeof goal.nextStep === 'string' ? goal.nextStep : undefined,
+            startedAt: typeof goal.startedAt === 'number' ? goal.startedAt : 0,
+            completedAt: typeof goal.completedAt === 'number' ? goal.completedAt : undefined,
+          }
+        }
+      }
+      break
+
     default:
       // session, content, content_delta, thinking_delta, todos_update, error, done
       // — already handled by base fields

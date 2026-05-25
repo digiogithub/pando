@@ -10,15 +10,19 @@ import (
 
 type Querier interface {
 	CreateFile(ctx context.Context, arg CreateFileParams) (File, error)
+	CreateGoal(ctx context.Context, arg CreateGoalParams) (SessionGoal, error)
 	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	DeleteFile(ctx context.Context, id string) error
+	DeleteGoalsBySession(ctx context.Context, sessionID string) error
 	DeleteMessage(ctx context.Context, id string) error
 	DeleteSession(ctx context.Context, id string) error
 	DeleteSessionFiles(ctx context.Context, sessionID string) error
 	DeleteSessionMessages(ctx context.Context, sessionID string) error
 	GetFile(ctx context.Context, id string) (File, error)
 	GetFileByPathAndSession(ctx context.Context, arg GetFileByPathAndSessionParams) (File, error)
+	GetActiveGoal(ctx context.Context, sessionID string) (SessionGoal, error)
+	GetGoalBySession(ctx context.Context, sessionID string) (SessionGoal, error)
 	GetMessage(ctx context.Context, id string) (Message, error)
 	GetSessionByID(ctx context.Context, id string) (Session, error)
 	ListFilesByPath(ctx context.Context, path string) ([]File, error)
@@ -28,6 +32,8 @@ type Querier interface {
 	ListNewFiles(ctx context.Context) ([]File, error)
 	ListSessions(ctx context.Context) ([]Session, error)
 	UpdateFile(ctx context.Context, arg UpdateFileParams) (File, error)
+	UpdateGoalProgress(ctx context.Context, arg UpdateGoalProgressParams) (SessionGoal, error)
+	UpdateGoalStatus(ctx context.Context, arg UpdateGoalStatusParams) (SessionGoal, error)
 	UpdateMessage(ctx context.Context, arg UpdateMessageParams) error
 	UpdateSession(ctx context.Context, arg UpdateSessionParams) (Session, error)
 	// Self-improvement queries

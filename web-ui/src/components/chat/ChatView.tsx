@@ -3,17 +3,20 @@ import { useTranslation } from 'react-i18next'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPlus } from '@fortawesome/free-solid-svg-icons'
 import { useChat } from '@/hooks/useChat'
+import { useGoal } from '@/hooks/useGoal'
 import { useDesktopNotifications } from '@/hooks/useDesktopNotifications'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useLayoutStore } from '@/stores/layoutStore'
 import MessageList from './MessageList'
 import ChatInput from './ChatInput'
+import GoalStatus from './GoalStatus'
 
 export default function ChatView() {
   const { t } = useTranslation()
   const { messages, fetchSessions, sessions, activeSessionId, setMessages, setActiveSession } = useSessionStore()
   const { notify } = useDesktopNotifications()
   const sidebarOpen = useLayoutStore((s) => s.sidebarOpen)
+  const { goal, applyGoalEvent, cancelGoal, cancelling } = useGoal(activeSessionId)
 
   const handleDone = useCallback(() => {
     const session = sessions.find((s) => s.id === activeSessionId)
@@ -33,6 +36,15 @@ export default function ChatView() {
       fetchSessions()
     },
     onDone: handleDone,
+    onEvent: applyGoalEvent,
+    onCancelled: async (sessionId) => {
+      if (!sessionId) return
+      try {
+        await cancelGoal()
+      } catch {
+        // useGoal exposes the error state; keep UI responsive here.
+      }
+    },
   })
 
   // Track which session we last reconnected to avoid duplicate connections.
@@ -96,6 +108,7 @@ export default function ChatView() {
           {t('nav.newSession')}
         </button>
       )}
+      <GoalStatus goal={goal ?? streamingState.goal} cancelling={cancelling} onCancel={() => void cancelGoal()} />
       <MessageList messages={messages} streaming={streaming} streamingState={streamingState} />
 
       {error && (
@@ -113,7 +126,7 @@ export default function ChatView() {
         </div>
       )}
 
-      <ChatInput onSend={sendMessage} streaming={streaming} onCancel={cancelStreaming} />
+      <ChatInput onSend={sendMessage} streaming={streaming} onCancel={() => void cancelStreaming()} goalActive={(goal ?? streamingState.goal)?.status === 'running'} />
     </div>
   )
 }

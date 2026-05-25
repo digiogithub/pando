@@ -13,6 +13,7 @@ const (
 	defaultACPMode               = "agent"
 	askModeID                    = "ask"
 	agentModeID                  = "agent"
+	goalModeID                   = "goal"
 	sessionConfigModelID         = "model"
 	sessionConfigModeID          = "mode"
 	sessionConfigAskPermissionID = "askPermission"
@@ -33,6 +34,11 @@ func availableModes(_ AgentService) []acpsdk.SessionMode {
 			Id:          askModeID,
 			Name:        "Ask",
 			Description: descPtr("Prefer direct answers and avoid tool use unless needed"),
+		},
+		{
+			Id:          goalModeID,
+			Name:        "Goal",
+			Description: descPtr("Persist an objective and work autonomously toward completion"),
 		},
 	}
 }
@@ -127,6 +133,7 @@ func buildSessionConfigOptions(svc AgentService, currentModel, currentMode, curr
 			[]configOptionValue{
 				{Value: agentModeID, Name: "Agent", Description: "Use the coding agent workflow with tools available"},
 				{Value: askModeID, Name: "Ask", Description: "Prefer direct answers and avoid tool use unless needed"},
+				{Value: goalModeID, Name: "Goal", Description: "Persist an objective and work autonomously toward completion"},
 			},
 		),
 		newSelectConfigOption(

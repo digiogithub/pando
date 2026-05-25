@@ -91,11 +91,12 @@ func renderUserMessage(msg message.Message, isFocused bool, width int, position 
 		styledAttachments = append(styledAttachments, attachmentStyles.Render(filename))
 	}
 	content := ""
+	text := formatUserInput(msg.Content().String())
 	if len(styledAttachments) > 0 {
 		attachmentContent := styles.BaseStyle().Width(width).Render(lipgloss.JoinHorizontal(lipgloss.Left, styledAttachments...))
-		content = renderMessage(msg.Content().String(), true, isFocused, width, attachmentContent)
+		content = renderMessage(text, true, isFocused, width, attachmentContent)
 	} else {
-		content = renderMessage(msg.Content().String(), true, isFocused, width)
+		content = renderMessage(text, true, isFocused, width)
 	}
 	userMsg := uiMessage{
 		ID:          msg.ID,

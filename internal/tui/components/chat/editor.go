@@ -29,6 +29,7 @@ type editorCmp struct {
 	height       int
 	app          *app.App
 	session      session.Session
+	goal         *GoalState
 	textarea     textarea.Model
 	attachments  []message.Attachment
 	deleteMode   bool
@@ -178,7 +179,7 @@ func (m *editorCmp) loadSessionHistory() []string {
 			continue
 		}
 		if text := msg.Content().Text; text != "" {
-			history = append(history, text)
+			history = append(history, formatUserInput(text))
 		}
 	}
 	return history
@@ -213,18 +214,33 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SessionSelectedMsg:
 		if msg.ID != m.session.ID {
 			m.session = msg
+			m.goal = nil
 			m.inputHistory = m.loadSessionHistory()
 			m.historyIdx = -1
 			m.savedInput = ""
 		}
 		return m, nil
+	case GoalUpdatedMsg:
+		if msg.SessionID == m.session.ID {
+			m.goal = msg.Goal
+			if m.goalRunning() {
+				m.textarea.Blur()
+				return m, nil
+			}
+		}
 	case dialog.AttachmentAddedMsg:
+		if m.goalRunning() {
+			return m, nil
+		}
 		if len(m.attachments) >= maxAttachments {
 			logging.ErrorPersist(fmt.Sprintf("cannot add more than %d images", maxAttachments))
 			return m, cmd
 		}
 		m.attachments = append(m.attachments, msg.Attachment)
 	case tea.KeyMsg:
+		if m.goalRunning() {
+			return m, nil
+		}
 		if key.Matches(msg, DeleteKeyMaps.AttachmentDeleteMode) {
 			m.deleteMode = true
 			return m, nil
@@ -324,6 +340,13 @@ func (m *editorCmp) View() string {
 		Foreground(t.Primary()).
 		Background(t.Background())
 
+	if m.goalRunning() {
+		disabled := styles.BaseStyle().
+			Foreground(t.TextMuted()).
+			Render("Goal in progress — input disabled. Press Ctrl+C to cancel.")
+		return lipgloss.JoinHorizontal(lipgloss.Top, style.Render(">"), disabled)
+	}
+
 	if len(m.attachments) == 0 {
 		return lipgloss.JoinHorizontal(lipgloss.Top, style.Render(">"), m.textarea.View())
 	}
@@ -414,4 +437,8 @@ func NewEditorCmp(app *app.App) tea.Model {
 		textarea:   ta,
 		historyIdx: -1,
 	}
+}
+
+func (m *editorCmp) goalRunning() bool {
+	return m.goal != nil && m.goal.IsRunning()
 }

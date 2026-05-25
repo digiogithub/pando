@@ -15,12 +15,13 @@ import (
 var ErrorPermissionDenied = errors.New("permission denied")
 
 type CreatePermissionRequest struct {
-	SessionID   string `json:"session_id"`
-	ToolName    string `json:"tool_name"`
-	Description string `json:"description"`
-	Action      string `json:"action"`
-	Params      any    `json:"params"`
-	Path        string `json:"path"`
+	SessionID               string `json:"session_id"`
+	ToolName                string `json:"tool_name"`
+	Description             string `json:"description"`
+	Action                  string `json:"action"`
+	Params                  any    `json:"params"`
+	Path                    string `json:"path"`
+	RequireExplicitApproval bool   `json:"require_explicit_approval,omitempty"`
 }
 
 type PermissionRequest struct {
@@ -41,6 +42,8 @@ type Service interface {
 	Request(opts CreatePermissionRequest) bool
 	AutoApproveSession(sessionID string)
 	RemoveAutoApproveSession(sessionID string)
+	RequireExplicitApprovalSession(sessionID string)
+	RemoveExplicitApprovalSession(sessionID string)
 	SetGlobalAutoApprove(enabled bool)
 	// RegisterSessionHandler installs a custom approval function for a specific session.
 	// When set, this handler is called instead of the TUI dialog for that session.
@@ -56,6 +59,7 @@ type permissionService struct {
 	sessionPermissions  []PermissionRequest
 	pendingRequests     sync.Map
 	autoApproveSessions []string
+	explicitApproval    []string
 	globalAutoApprove   bool
 	sessionHandlers     map[string]func(req CreatePermissionRequest) bool
 	sessionHandlersMu   sync.RWMutex
@@ -97,7 +101,8 @@ func (s *permissionService) Request(opts CreatePermissionRequest) bool {
 		return resp
 	}
 
-	if slices.Contains(s.autoApproveSessions, opts.SessionID) {
+	bypassSessionAutoApprove := opts.RequireExplicitApproval && slices.Contains(s.explicitApproval, opts.SessionID)
+	if !bypassSessionAutoApprove && slices.Contains(s.autoApproveSessions, opts.SessionID) {
 		logging.Debug("Permission result via auto-approve session", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", true)
 		return true
 	}
@@ -145,6 +150,19 @@ func (s *permissionService) AutoApproveSession(sessionID string) {
 
 func (s *permissionService) RemoveAutoApproveSession(sessionID string) {
 	s.autoApproveSessions = slices.DeleteFunc(s.autoApproveSessions, func(id string) bool {
+		return id == sessionID
+	})
+}
+
+func (s *permissionService) RequireExplicitApprovalSession(sessionID string) {
+	if slices.Contains(s.explicitApproval, sessionID) {
+		return
+	}
+	s.explicitApproval = append(s.explicitApproval, sessionID)
+}
+
+func (s *permissionService) RemoveExplicitApprovalSession(sessionID string) {
+	s.explicitApproval = slices.DeleteFunc(s.explicitApproval, func(id string) bool {
 		return id == sessionID
 	})
 }

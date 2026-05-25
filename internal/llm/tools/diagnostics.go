@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -114,8 +113,7 @@ func waitForLspDiagnostics(ctx context.Context, filePath string, lsps map[string
 	diagChan := make(chan struct{}, 1)
 
 	for _, client := range lsps {
-		originalDiags := make(map[protocol.DocumentUri][]protocol.Diagnostic)
-		maps.Copy(originalDiags, client.GetDiagnostics())
+		originalDiags := client.GetDiagnostics()
 
 		handler := func(params json.RawMessage) {
 			lsp.HandleDiagnostics(client, params)

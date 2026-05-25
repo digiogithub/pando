@@ -2,12 +2,15 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/session"
@@ -24,6 +27,21 @@ type ChatResponse struct {
 	SessionID string `json:"sessionId"`
 	MessageID string `json:"messageId"`
 	Response  string `json:"response"`
+}
+
+type goalStatusResponse struct {
+	Goal *goalSSEPayload `json:"goal"`
+}
+
+type goalSSEPayload struct {
+	Objective     string `json:"objective"`
+	Status        string `json:"status"`
+	Iteration     int64  `json:"iteration"`
+	MaxIterations int64  `json:"maxIterations"`
+	Progress      string `json:"progress,omitempty"`
+	NextStep      string `json:"nextStep,omitempty"`
+	StartedAt     int64  `json:"startedAt"`
+	CompletedAt   *int64 `json:"completedAt,omitempty"`
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -136,7 +154,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 
 	// Subscribe to receive buffered + live events from the background run.
 	eventChan, unsubFn, _ := s.bgRunner.Subscribe(sessionID)
-	s.streamSessionEvents(w, flusher, r.Context(), unsubFn, eventChan)
+	s.streamSessionEvents(w, flusher, r.Context(), sessionID, unsubFn, eventChan)
 }
 
 // handleSessionStream lets clients reconnect to an in-progress (or recently
@@ -163,6 +181,10 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 	running := s.bgRunner.IsBusy(sessionID)
 	fmt.Fprintf(w, "event: session\ndata: {\"sessionId\":%q,\"running\":%v}\n\n", sessionID, running)
 	flusher.Flush()
+	if err := s.writeCurrentGoalState(w, flusher, sessionID); err != nil {
+		writeSSEEvent(w, flusher, "error", map[string]string{"error": err.Error()})
+		return
+	}
 
 	eventChan, unsubFn, knownSession := s.bgRunner.Subscribe(sessionID)
 	if !knownSession {
@@ -172,7 +194,7 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.streamSessionEvents(w, flusher, r.Context(), unsubFn, eventChan)
+	s.streamSessionEvents(w, flusher, r.Context(), sessionID, unsubFn, eventChan)
 }
 
 // streamSessionEvents reads events from eventChan and writes them as SSE to w.
@@ -183,6 +205,7 @@ func (s *Server) streamSessionEvents(
 	w http.ResponseWriter,
 	flusher http.Flusher,
 	clientCtx context.Context,
+	sessionID string,
 	unsubFn func(),
 	eventChan <-chan agent.AgentEvent,
 ) {
@@ -207,6 +230,10 @@ func (s *Server) streamSessionEvents(
 			return
 		case event, open := <-eventChan:
 			if !open {
+				if err := s.writeCurrentGoalState(w, flusher, sessionID); err != nil {
+					writeSSEEvent(w, flusher, "error", map[string]string{"error": err.Error()})
+					return
+				}
 				writeSSEEvent(w, flusher, "done", map[string]string{})
 				return
 			}
@@ -474,6 +501,114 @@ func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, eventType string
 	}
 	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, data)
 	flusher.Flush()
+}
+
+func (s *Server) handleGoalStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "session id required")
+		return
+	}
+
+	goal, err := s.getGoalBySession(r.Context(), sessionID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, goalStatusResponse{Goal: goal})
+}
+
+func (s *Server) handleCancelGoal(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "session id required")
+		return
+	}
+
+	goal, err := s.cancelPersistedGoal(r.Context(), sessionID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "no active goal")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	s.bgRunner.Cancel(sessionID)
+	writeJSON(w, http.StatusOK, goalStatusResponse{Goal: goalStateFromDB(goal)})
+}
+
+func (s *Server) writeCurrentGoalState(w http.ResponseWriter, flusher http.Flusher, sessionID string) error {
+	goal, err := s.getGoalBySession(context.Background(), sessionID)
+	if err != nil {
+		return err
+	}
+	writeSSEEvent(w, flusher, "goal_status", map[string]any{"goal": goal})
+	return nil
+}
+
+func (s *Server) getGoalBySession(ctx context.Context, sessionID string) (*goalSSEPayload, error) {
+	goal, err := s.app.DBQuerier.GetGoalBySession(ctx, sessionID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return goalStateFromDB(goal), nil
+}
+
+func (s *Server) cancelPersistedGoal(ctx context.Context, sessionID string) (db.SessionGoal, error) {
+	goal, err := s.app.DBQuerier.GetActiveGoal(ctx, sessionID)
+	if err != nil {
+		return db.SessionGoal{}, err
+	}
+
+	return s.app.DBQuerier.UpdateGoalStatus(ctx, db.UpdateGoalStatusParams{
+		Status:        agent.GoalStatusCancelled,
+		Iteration:     goal.Iteration,
+		LastProgress:  sql.NullString{String: "GOAL CANCELLED", Valid: true},
+		NextStep:      sql.NullString{},
+		BlockedReason: sql.NullString{},
+		CompletedAt:   sql.NullInt64{Int64: time.Now().Unix(), Valid: true},
+		ID:            goal.ID,
+	})
+}
+
+func goalStateFromDB(goal db.SessionGoal) *goalSSEPayload {
+	payload := &goalSSEPayload{
+		Objective:     goal.Objective,
+		Status:        goal.Status,
+		Iteration:     goal.Iteration,
+		MaxIterations: goal.MaxIterations,
+		StartedAt:     goal.StartedAt,
+	}
+	if goal.CompletedAt.Valid {
+		completedAt := goal.CompletedAt.Int64
+		payload.CompletedAt = &completedAt
+	}
+	if goal.LastProgress.Valid {
+		payload.Progress = goal.LastProgress.String
+	}
+	if goal.NextStep.Valid {
+		payload.NextStep = goal.NextStep.String
+	}
+	if payload.Progress == "" && goal.BlockedReason.Valid {
+		payload.Progress = goal.BlockedReason.String
+	}
+	return payload
 }
 
 func (s *Server) getOrCreateSession(ctx context.Context, sessionID string) (*session.Session, error) {

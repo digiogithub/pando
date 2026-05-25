@@ -60,12 +60,12 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'openrouter.qwen/qwen3.6-flash'
+Model = 'copilot.gpt-4.1-2025-04-14'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
-AutoCompact = true
-AutoCompactThreshold = 0.9
+AutoCompact = false
+AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.persona-selector]
@@ -180,8 +180,8 @@ UseSameModel = false
 ChunkSize = 800
 ChunkOverlap = 100
 IndexWorkers = 4
-ContextEnrichmentEnabled = true
-ContextEnrichmentKBResults = 5
+ContextEnrichmentEnabled = false
+ContextEnrichmentKBResults = 2
 ContextEnrichmentCodeResults = 5
 ContextEnrichmentCodeProject = 'pando'
 ContextEnrichmentEventsResults = 5

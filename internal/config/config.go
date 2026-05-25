@@ -121,6 +121,15 @@ type PermissionsConfig struct {
 	AutoApproveTools bool `json:"autoApproveTools,omitempty"`
 }
 
+// GoalConfig defines execution and safety defaults for goal/autopilot mode.
+type GoalConfig struct {
+	MaxIterations     int64    `json:"maxIterations,omitempty" toml:"MaxIterations"`
+	MaxDuration       string   `json:"maxDuration,omitempty" toml:"MaxDuration"`
+	StallIterations   int      `json:"stallIterations,omitempty" toml:"StallIterations"`
+	AutoApprove       bool     `json:"autoApprove,omitempty" toml:"AutoApprove"`
+	DangerousPatterns []string `json:"dangerousPatterns,omitempty" toml:"DangerousPatterns"`
+}
+
 // MesnadaServerConfig holds mesnada HTTP server configuration
 type MesnadaServerConfig struct {
 	Host string `json:"host,omitempty"`
@@ -579,6 +588,7 @@ type Config struct {
 	SkillsCatalog     SkillsCatalogConfig               `json:"skillsCatalog,omitempty"`
 	TUI               TUIConfig                         `json:"tui"`
 	Permissions       PermissionsConfig                 `json:"permissions,omitempty"`
+	Goal              GoalConfig                        `json:"goal,omitempty" toml:"Goal"`
 	Mesnada           MesnadaConfig                     `json:"mesnada,omitempty"`
 	Shell             ShellConfig                       `json:"shell,omitempty"`
 	Bash              BashConfig                        `json:"bash,omitempty"`
@@ -1045,6 +1055,11 @@ func setDefaults(debug bool) {
 	viper.SetDefault("skillsCatalog.defaultScope", "global")
 	viper.SetDefault("tui.theme", "pando")
 	viper.SetDefault("permissions.autoApproveTools", false)
+	viper.SetDefault("goal.maxIterations", int64(20))
+	viper.SetDefault("goal.maxDuration", "1h")
+	viper.SetDefault("goal.stallIterations", 3)
+	viper.SetDefault("goal.autoApprove", true)
+	viper.SetDefault("goal.dangerousPatterns", []string{})
 	viper.SetDefault("mesnada.enabled", false)
 	viper.SetDefault("mesnada.server.host", "127.0.0.1")
 	viper.SetDefault("mesnada.server.port", 9767)
@@ -1733,6 +1748,29 @@ func Validate() error {
 	// Validate evaluator configuration
 	if cfg.Evaluator.Enabled && cfg.Evaluator.Model == "" {
 		return fmt.Errorf("evaluator.model is required when evaluator is enabled")
+	}
+
+	if cfg.Goal.MaxIterations <= 0 {
+		cfg.Goal.MaxIterations = 20
+	}
+	if strings.TrimSpace(cfg.Goal.MaxDuration) == "" {
+		cfg.Goal.MaxDuration = "1h"
+	}
+	if cfg.Goal.StallIterations <= 0 {
+		cfg.Goal.StallIterations = 3
+	}
+	if cfg.Goal.MaxIterations <= 0 {
+		return fmt.Errorf("goal.maxIterations must be greater than zero")
+	}
+	if cfg.Goal.StallIterations <= 0 {
+		return fmt.Errorf("goal.stallIterations must be greater than zero")
+	}
+	maxDuration, err := time.ParseDuration(strings.TrimSpace(cfg.Goal.MaxDuration))
+	if err != nil {
+		return fmt.Errorf("goal.maxDuration must be a valid duration: %w", err)
+	}
+	if maxDuration <= 0 {
+		return fmt.Errorf("goal.maxDuration must be greater than zero")
 	}
 
 	return nil

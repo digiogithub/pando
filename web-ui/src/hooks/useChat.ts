@@ -3,7 +3,7 @@ import { createSSEStream, createGETSSEStream } from '@/services/sse'
 import { useSessionStore } from '@/stores/sessionStore'
 import type {
   Message, SSEEvent, SSEToolCall, SSEToolResult, SSEToolCallUpdate,
-  ContentPart, ToolKind, ToolCallStatus, ToolCallLocation, SSEPlanEntry,
+  ContentPart, ToolKind, ToolCallStatus, ToolCallLocation, SSEPlanEntry, GoalStatus,
 } from '@/types'
 
 export interface ActiveToolCall {
@@ -44,19 +44,22 @@ export interface StreamingState {
   toolCalls: ActiveToolCall[]
   plan: PlanEntry[]
   items: StreamItem[]
+  goal: GoalStatus | null
 }
 
 interface UseChatOptions {
   onNewSession?: (sessionId: string) => void
   onDone?: () => void
+  onEvent?: (event: SSEEvent) => void
+  onCancelled?: (sessionId: string | null) => Promise<void> | void
 }
 
 /** Build a fresh empty StreamingState */
 function emptyState(): StreamingState {
-  return { thinking: '', toolCalls: [], plan: [], items: [] }
+  return { thinking: '', toolCalls: [], plan: [], items: [], goal: null }
 }
 
-export function useChat({ onNewSession, onDone }: UseChatOptions = {}) {
+export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatOptions = {}) {
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [streamingState, setStreamingState] = useState<StreamingState>(emptyState())
@@ -69,22 +72,31 @@ export function useChat({ onNewSession, onDone }: UseChatOptions = {}) {
   const toolCallsRef = useRef<ActiveToolCall[]>([])
   const planRef = useRef<PlanEntry[]>([])
   const itemsRef = useRef<StreamItem[]>([])
+  const goalRef = useRef<GoalStatus | null>(null)
 
   const resetAccum = useCallback(() => {
     accumulatedRef.current = ''
     toolCallsRef.current = []
     planRef.current = []
     itemsRef.current = []
+    goalRef.current = null
   }, [])
 
   /** Process a single SSE event and update React state. */
   const handleEvent = useCallback(
     (event: SSEEvent, sessionIdForNewSession?: string) => {
+      onEvent?.(event)
+
       if (event.type === 'session' && event.session_id) {
         onNewSession?.(event.session_id)
         if (sessionIdForNewSession == null) {
           // sendMessage path: the session was just created
         }
+      }
+
+      if (event.type === 'goal_status') {
+        goalRef.current = event.goal ?? null
+        setStreamingState((prev) => ({ ...prev, goal: event.goal ?? null }))
       }
 
       if (event.type === 'content_delta' && event.content) {
@@ -271,7 +283,7 @@ export function useChat({ onNewSession, onDone }: UseChatOptions = {}) {
         setError(event.error ?? 'Unknown error')
       }
     },
-    [onNewSession, updateLastMessage],
+    [onEvent, onNewSession, updateLastMessage],
   )
 
   /** Called when the stream ends (done event or connection closed). */
@@ -394,11 +406,16 @@ export function useChat({ onNewSession, onDone }: UseChatOptions = {}) {
     [streaming, addMessage, handleEvent, handleDone, resetAccum],
   )
 
-  const cancelStreaming = useCallback(() => {
+  const cancelStreaming = useCallback(async () => {
+    const sessionId = activeSessionId
     abortRef.current?.abort()
     setStreaming(false)
     setStreamingState(emptyState())
-  }, [])
+    if (sessionId) {
+      markSessionRunning(sessionId, false)
+    }
+    await onCancelled?.(sessionId)
+  }, [activeSessionId, markSessionRunning, onCancelled])
 
   return { sendMessage, reconnectSession, streaming, error, cancelStreaming, streamingState }
 }

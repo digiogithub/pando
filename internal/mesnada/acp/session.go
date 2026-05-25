@@ -55,6 +55,12 @@ type ACPServerSession struct {
 	// variant is the session variant (reserved for future use)
 	variant string
 
+	// goal stores the latest known goal status for the session.
+	goal *GoalStateUpdate
+
+	// goalCancel cancels the currently executing goal iteration, if any.
+	goalCancel context.CancelFunc
+
 	// mu protects concurrent access to session state
 	mu sync.Mutex
 }
@@ -110,9 +116,15 @@ func (s *ACPServerSession) Context() context.Context {
 // Cancel cancels the session context.
 func (s *ACPServerSession) Cancel() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.cancel != nil {
-		s.cancel()
+	goalCancel := s.goalCancel
+	s.goalCancel = nil
+	cancel := s.cancel
+	s.mu.Unlock()
+	if goalCancel != nil {
+		goalCancel()
+	}
+	if cancel != nil {
+		cancel()
 	}
 }
 
@@ -227,4 +239,47 @@ func (s *ACPServerSession) Variant() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.variant
+}
+
+// SetGoal stores the latest goal state snapshot.
+func (s *ACPServerSession) SetGoal(goal *GoalStateUpdate) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.goal = goal
+}
+
+// Goal returns the latest goal state snapshot.
+func (s *ACPServerSession) Goal() *GoalStateUpdate {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.goal == nil {
+		return nil
+	}
+	goal := *s.goal
+	return &goal
+}
+
+// SetGoalCancel stores the cancel function for the running goal iteration.
+func (s *ACPServerSession) SetGoalCancel(cancel context.CancelFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.goalCancel = cancel
+}
+
+// CancelGoalExecution cancels the running goal iteration if one exists.
+func (s *ACPServerSession) CancelGoalExecution() {
+	s.mu.Lock()
+	cancel := s.goalCancel
+	s.goalCancel = nil
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// ClearGoalCancel removes the stored goal cancel function without cancelling it.
+func (s *ACPServerSession) ClearGoalCancel() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.goalCancel = nil
 }

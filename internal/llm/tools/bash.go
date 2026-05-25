@@ -12,6 +12,7 @@ import (
 	"github.com/digiogithub/pando/internal/mesnada/acp"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/runtime"
+	"github.com/digiogithub/pando/internal/safety"
 )
 
 // getRuntimeResolver extracts a RuntimeResolver from the context if one was
@@ -341,14 +342,21 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	if sessionID == "" || messageID == "" {
 		return ToolResponse{}, fmt.Errorf("session ID and message ID are required for creating a new file")
 	}
+	isDangerous := false
+	if cfg := config.Get(); cfg != nil {
+		isDangerous = safety.IsDangerousShellCommand(params.Command, cfg.Goal.DangerousPatterns)
+	} else {
+		isDangerous = safety.IsDangerousShellCommand(params.Command, nil)
+	}
 	if !isSafeReadOnly {
 		p := b.permissions.Request(
 			permission.CreatePermissionRequest{
-				SessionID:   sessionID,
-				Path:        config.WorkingDirectory(),
-				ToolName:    BashToolName,
-				Action:      "execute",
-				Description: fmt.Sprintf("Execute command: %s", params.Command),
+				SessionID:               sessionID,
+				Path:                    config.WorkingDirectory(),
+				ToolName:                BashToolName,
+				Action:                  "execute",
+				Description:             fmt.Sprintf("Execute command: %s", params.Command),
+				RequireExplicitApproval: isDangerous,
 				Params: BashPermissionsParams{
 					Command: params.Command,
 				},

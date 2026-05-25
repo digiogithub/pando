@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"log"
@@ -48,7 +49,7 @@ var rootCmd = &cobra.Command{
 	Long: `Pando is a powerful terminal-based AI assistant that helps with software development tasks.
 It provides an interactive chat interface with AI capabilities, code analysis, and LSP integration
 to assist developers in writing, debugging, and understanding code directly from the terminal.
-It also supports non-interactive prompts via the -p flag or piped stdin input.
+It also supports non-interactive prompts via the -p flag or piped stdin input, plus autonomous goal execution via --goal.
 The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 	Example: `
   # Run in interactive mode
@@ -75,6 +76,9 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
   # Run a single non-interactive prompt with JSON output format
   pando -p "Explain the use of context in Go" -f json
 
+  # Run an autonomous goal in non-interactive mode
+  pando --goal "Fix the failing Go tests and stop when they pass"
+
   # Run with all tools auto-approved (no permission prompts)
   pando -p "Fix all lint errors" --yolo
 
@@ -96,6 +100,8 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
   # Priority: -p flag > stdin > PANDO_PROMPT > interactive mode
   `,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		cliExitCode = 0
+
 		// If the help flag is set, show the help message
 		if cmd.Flag("help").Changed {
 			cmd.Help()
@@ -116,6 +122,8 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		debug, _ := cmd.Flags().GetBool("debug")
 		logFile, _ := cmd.Flags().GetString("log-file")
 		cwd, _ := cmd.Flags().GetString("cwd")
+		goalObjective, _ := cmd.Flags().GetString("goal")
+		goalFlagChanged := cmd.Flags().Changed("goal")
 		prompt, _ := cmd.Flags().GetString("prompt")
 		modelOverride, _ := cmd.Flags().GetString("model")
 		outputFormat, _ := cmd.Flags().GetString("output-format")
@@ -124,10 +132,13 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		allowAll, _ := cmd.Flags().GetBool("allow-all-tools")
 		ageKeys, _ := cmd.Flags().GetString("age-keys")
 		yoloMode := yolo || allowAll
+		goalObjective = strings.TrimSpace(goalObjective)
+		promptFlagValue := strings.TrimSpace(prompt)
 		config.SetAgeKeysOverride(ageKeys)
 
-		// Read prompt from stdin if piped (not a terminal)
-		if prompt == "" {
+		// Read prompt from stdin if piped (not a terminal).
+		// Goal mode intentionally ignores prompt/stdin/env input and relies on --goal.
+		if goalObjective == "" && prompt == "" {
 			fi, err := os.Stdin.Stat()
 			if err == nil && (fi.Mode()&os.ModeCharDevice) == 0 {
 				data, err := io.ReadAll(os.Stdin)
@@ -141,10 +152,17 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		}
 
 		// Check PANDO_PROMPT environment variable as last resort
-		if prompt == "" {
+		if goalObjective == "" && prompt == "" {
 			if envPrompt := os.Getenv("PANDO_PROMPT"); envPrompt != "" {
 				prompt = strings.TrimSpace(envPrompt)
 			}
+		}
+
+		if goalObjective != "" && promptFlagValue != "" {
+			return fmt.Errorf("--goal cannot be combined with --prompt")
+		}
+		if goalFlagChanged && goalObjective == "" {
+			return fmt.Errorf("--goal requires a non-empty objective")
 		}
 
 		// Validate format option
@@ -255,6 +273,16 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		initMCPTools(ctx, app)
 
 		// Non-interactive mode
+		if goalObjective != "" {
+			quiet = true
+			defer app.Shutdown()
+			result, err := app.RunNonInteractiveGoal(ctx, goalObjective, outputFormat, quiet, yoloMode)
+			if err != nil {
+				return err
+			}
+			cliExitCode = goalStatusExitCode(result.Status)
+			return nil
+		}
 		if prompt != "" {
 			quiet = true
 			defer app.Shutdown()
@@ -349,6 +377,21 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		logging.Info("TUI exited with result: %v", result)
 		return nil
 	},
+}
+
+var cliExitCode int
+
+func goalStatusExitCode(status string) int {
+	switch strings.TrimSpace(status) {
+	case "", agent.GoalStatusCompleted:
+		return 0
+	case agent.GoalStatusFailed, agent.GoalStatusTimeout:
+		return 2
+	case agent.GoalStatusBlocked, agent.GoalStatusCancelled, agent.GoalStatusStalled:
+		return 1
+	default:
+		return 1
+	}
 }
 
 // attemptTUIRecovery tries to recover the TUI after a panic
@@ -579,8 +622,11 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 
 	// Build adapters (defined below) that bridge internal services to ACP interfaces,
 	// avoiding import cycles between internal/mesnada/acp and internal/llm/agent.
-	agentAdapter := &acpAgentAdapter{svc: pandoApp.CoderAgent}
-	sessionAdapter := &acpSessionAdapter{svc: pandoApp.Sessions, msgSvc: pandoApp.Messages}
+	agentAdapter := &acpAgentAdapter{
+		svc:        pandoApp.CoderAgent,
+		goalRunner: agent.NewGoalRunner(pandoApp.CoderAgent, pandoApp.DBQuerier),
+	}
+	sessionAdapter := &acpSessionAdapter{svc: pandoApp.Sessions, msgSvc: pandoApp.Messages, q: pandoApp.DBQuerier}
 	permAdapter := &acpPermissionAdapter{svc: pandoApp.Permissions}
 
 	// Start the CronService in ACP mode so headless background jobs run even
@@ -613,7 +659,8 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 // acpAgentAdapter adapts agent.Service to acpPkg.AgentService.
 // Defined here to avoid import cycles between internal/mesnada/acp and internal/llm/agent.
 type acpAgentAdapter struct {
-	svc agent.Service
+	svc        agent.Service
+	goalRunner *agent.GoalRunner
 }
 
 func (a *acpAgentAdapter) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan acpPkg.AgentEvent, error) {
@@ -621,7 +668,18 @@ func (a *acpAgentAdapter) Run(ctx context.Context, sessionID string, content str
 	if err != nil {
 		return nil, err
 	}
+	return a.forwardEvents(ctx, realCh), nil
+}
 
+func (a *acpAgentAdapter) RunGoal(ctx context.Context, sessionID string, objective string) (<-chan acpPkg.AgentEvent, error) {
+	realCh, err := a.goalRunner.Run(ctx, sessionID, objective, agent.GoalOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return a.forwardEvents(ctx, realCh), nil
+}
+
+func (a *acpAgentAdapter) forwardEvents(ctx context.Context, realCh <-chan agent.AgentEvent) <-chan acpPkg.AgentEvent {
 	// Buffered to decouple the event-drain goroutine from the ACP handler.
 	// Without a buffer, each SendUpdate (RPC write) stalls the goroutine and
 	// prevents it from draining agent.eventCh, causing overflow and lost events.
@@ -662,7 +720,7 @@ func (a *acpAgentAdapter) Run(ctx context.Context, sessionID string, content str
 		}
 	}()
 
-	return acpCh, nil
+	return acpCh
 }
 
 func (a *acpAgentAdapter) Cancel(sessionID string) {
@@ -751,6 +809,7 @@ func (a *acpAgentAdapter) OpenClaudeUsage() error {
 type acpSessionAdapter struct {
 	svc    session.Service
 	msgSvc message.Service
+	q      db.Querier
 }
 
 func (a *acpSessionAdapter) CreateSession(ctx context.Context, title string) (string, error) {
@@ -796,6 +855,30 @@ func (a *acpSessionAdapter) ListSessions(ctx context.Context) ([]acpPkg.ACPSessi
 	return result, nil
 }
 
+func (a *acpSessionAdapter) GetActiveGoal(ctx context.Context, sessionID string) (db.SessionGoal, error) {
+	return a.q.GetActiveGoal(ctx, sessionID)
+}
+
+func (a *acpSessionAdapter) GetGoalBySession(ctx context.Context, sessionID string) (db.SessionGoal, error) {
+	return a.q.GetGoalBySession(ctx, sessionID)
+}
+
+func (a *acpSessionAdapter) CancelGoal(ctx context.Context, sessionID string) (db.SessionGoal, error) {
+	goal, err := a.q.GetActiveGoal(ctx, sessionID)
+	if err != nil {
+		return db.SessionGoal{}, err
+	}
+	return a.q.UpdateGoalStatus(ctx, db.UpdateGoalStatusParams{
+		Status:        agent.GoalStatusCancelled,
+		Iteration:     goal.Iteration,
+		LastProgress:  goal.LastProgress,
+		NextStep:      sql.NullString{},
+		BlockedReason: sql.NullString{},
+		CompletedAt:   sql.NullInt64{Int64: time.Now().Unix(), Valid: true},
+		ID:            goal.ID,
+	})
+}
+
 func (a *acpSessionAdapter) GetMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
 	return a.msgSvc.List(ctx, sessionID)
 }
@@ -837,6 +920,7 @@ func Execute() {
 	if err != nil {
 		os.Exit(1)
 	}
+	os.Exit(cliExitCode)
 }
 
 func init() {
@@ -845,6 +929,7 @@ func init() {
 	rootCmd.Flags().BoolP("debug", "d", false, "Debug")
 	rootCmd.Flags().StringP("log-file", "l", "", "Path to log file (enables debug logging to file)")
 	rootCmd.Flags().StringP("cwd", "c", "", "Current working directory")
+	rootCmd.Flags().String("goal", "", "Objective to run in autonomous goal mode")
 	rootCmd.Flags().StringP("prompt", "p", "", "Prompt to run in non-interactive mode")
 	rootCmd.Flags().StringP("model", "m", "", "Override the model for this run without changing the saved config")
 	rootCmd.PersistentFlags().String("age-keys", "", "Named AGE keypair to use instead of the default one")
