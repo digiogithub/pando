@@ -9,68 +9,48 @@ import (
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
-// availableModes returns the fixed set of session modes supported by Pando,
-// plus persona-specific combinations exposed as ACP modes.
-func availableModes(svc AgentService) []acpsdk.SessionMode {
+const (
+	defaultACPMode               = "agent"
+	askModeID                    = "ask"
+	agentModeID                  = "agent"
+	sessionConfigModelID         = "model"
+	sessionConfigModeID          = "mode"
+	sessionConfigAskPermissionID = "askPermission"
+	sessionConfigAgentID         = "agent"
+	askPermissionYesValue        = "yes"
+	askPermissionNoValue         = "no"
+)
+
+func availableModes(_ AgentService) []acpsdk.SessionMode {
 	descPtr := func(s string) *string { return &s }
-	modes := []acpsdk.SessionMode{
+	return []acpsdk.SessionMode{
 		{
-			Id:          "agent",
+			Id:          agentModeID,
 			Name:        "Agent",
-			Description: descPtr("Full agent — tools auto-approved without prompting"),
+			Description: descPtr("Use the coding agent workflow with tools available"),
 		},
 		{
-			Id:          "ask",
+			Id:          askModeID,
 			Name:        "Ask",
-			Description: descPtr("Ask for permission before each tool use"),
+			Description: descPtr("Prefer direct answers and avoid tool use unless needed"),
 		},
 	}
-
-	if svc == nil {
-		return modes
-	}
-
-	for _, persona := range svc.ListPersonas() {
-		persona = strings.TrimSpace(persona)
-		if persona == "" {
-			continue
-		}
-
-		modes = append(modes,
-			acpsdk.SessionMode{
-				Id:          acpsdk.SessionModeId(persona + ":agent"),
-				Name:        persona + ": yolo",
-				Description: descPtr("Agent mode with persona " + persona),
-			},
-			acpsdk.SessionMode{
-				Id:          acpsdk.SessionModeId(persona + ":ask"),
-				Name:        persona + ": ask",
-				Description: descPtr("Ask mode with persona " + persona),
-			},
-		)
-	}
-
-	return modes
 }
 
 // buildSessionModeState constructs the SessionModeState for ACP responses.
-func buildSessionModeState(svc AgentService, currentModeID string, currentPersona string) *acpsdk.SessionModeState {
+func buildSessionModeState(svc AgentService, currentModeID string) *acpsdk.SessionModeState {
 	if currentModeID == "" {
-		currentModeID = "agent"
-	}
-	currentModeKey := currentModeID
-	if currentPersona != "" {
-		currentModeKey = currentPersona + ":" + currentModeID
+		currentModeID = defaultACPMode
 	}
 	return &acpsdk.SessionModeState{
 		AvailableModes: availableModes(svc),
-		CurrentModeId:  acpsdk.SessionModeId(currentModeKey),
+		CurrentModeId:  acpsdk.SessionModeId(currentModeID),
 	}
 }
 
 // buildSessionModelState constructs the SessionModelState from the AgentService.
-func buildSessionModelState(svc AgentService) *acpsdk.SessionModelState {
-	currentID := svc.CurrentModelID()
+func buildSessionModelState(svc AgentService, currentModelID string) *acpsdk.SessionModelState {
+	currentID := resolvedModelValue(svc, currentModelID)
 	available := svc.AvailableModels()
 
 	infos := make([]acpsdk.ModelInfo, 0, len(available))
@@ -106,10 +86,9 @@ func personaStateToMeta(s *SessionPersonaState) map[string]any {
 	return m
 }
 
-// buildSessionPersonaState constructs the SessionPersonaState from the AgentService.
-func buildSessionPersonaState(svc AgentService) *SessionPersonaState {
+func buildSessionPersonaState(svc AgentService, currentPersona string) *SessionPersonaState {
 	available := svc.ListPersonas()
-	active := svc.GetActivePersona()
+	active := resolvedPersonaValue(svc, currentPersona)
 
 	infos := make([]PersonaInfo, 0, len(available))
 	for _, name := range available {
@@ -123,6 +102,202 @@ func buildSessionPersonaState(svc AgentService) *SessionPersonaState {
 		AvailablePersonas: infos,
 		CurrentPersonaId:  active,
 	}
+}
+
+func buildSessionConfigOptions(svc AgentService, currentModel, currentMode, currentPersona string, askPermission bool) []acpsdk.SessionConfigOption {
+	if currentMode == "" {
+		currentMode = defaultACPMode
+	}
+
+	options := []acpsdk.SessionConfigOption{
+		newSelectConfigOption(
+			sessionConfigModelID,
+			"Model",
+			"The model used for this session",
+			"model",
+			resolvedModelValue(svc, currentModel),
+			buildModelConfigValues(svc),
+		),
+		newSelectConfigOption(
+			sessionConfigModeID,
+			"Mode",
+			"The interaction mode exposed to ACP clients",
+			"mode",
+			currentMode,
+			[]configOptionValue{
+				{Value: agentModeID, Name: "Agent", Description: "Use the coding agent workflow with tools available"},
+				{Value: askModeID, Name: "Ask", Description: "Prefer direct answers and avoid tool use unless needed"},
+			},
+		),
+		newSelectConfigOption(
+			sessionConfigAskPermissionID,
+			"Ask Permission",
+			"Whether tool calls should wait for approval before running",
+			"_permission",
+			boolToAskPermissionValue(askPermission),
+			[]configOptionValue{
+				{Value: askPermissionYesValue, Name: "Yes", Description: "Request approval before each tool call"},
+				{Value: askPermissionNoValue, Name: "No", Description: "Automatically approve tool calls"},
+			},
+		),
+	}
+
+	if personaOption := buildPersonaConfigOption(svc, currentPersona); personaOption != nil {
+		options = append(options, *personaOption)
+	}
+
+	return options
+}
+
+func buildUnstableSessionConfigOptions(opts []acpsdk.SessionConfigOption) []acpsdk.UnstableSessionConfigOption {
+	if len(opts) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(opts)
+	if err != nil {
+		return nil
+	}
+	var unstable []acpsdk.UnstableSessionConfigOption
+	if err := json.Unmarshal(raw, &unstable); err != nil {
+		return nil
+	}
+	return unstable
+}
+
+type configOptionValue struct {
+	Value       string
+	Name        string
+	Description string
+}
+
+func newSelectConfigOption(id, name, description, category, currentValue string, values []configOptionValue) acpsdk.SessionConfigOption {
+	ungrouped := make(acpsdk.SessionConfigSelectOptionsUngrouped, 0, len(values))
+	for _, value := range values {
+		option := acpsdk.SessionConfigSelectOption{
+			Name:  value.Name,
+			Value: acpsdk.SessionConfigValueId(value.Value),
+		}
+		if value.Description != "" {
+			desc := value.Description
+			option.Description = &desc
+		}
+		ungrouped = append(ungrouped, option)
+	}
+
+	opt := acpsdk.NewSessionConfigOptionSelect(
+		acpsdk.SessionConfigValueId(currentValue),
+		acpsdk.SessionConfigSelectOptions{Ungrouped: &ungrouped},
+	)
+	opt.Select.Id = acpsdk.SessionConfigId(id)
+	opt.Select.Name = name
+	if description != "" {
+		desc := description
+		opt.Select.Description = &desc
+	}
+	if category != "" {
+		opt.Select.Category = sessionConfigCategory(category)
+	}
+	return opt
+}
+
+func buildPersonaConfigOption(svc AgentService, currentPersona string) *acpsdk.SessionConfigOption {
+	personas := svc.ListPersonas()
+	if len(personas) == 0 {
+		return nil
+	}
+
+	values := make([]configOptionValue, 0, len(personas))
+	for _, persona := range personas {
+		persona = strings.TrimSpace(persona)
+		if persona == "" {
+			continue
+		}
+		values = append(values, configOptionValue{
+			Value:       persona,
+			Name:        persona,
+			Description: "Use persona " + persona + " for this session",
+		})
+	}
+	if len(values) == 0 {
+		return nil
+	}
+
+	current := resolvedPersonaValue(svc, currentPersona)
+	if current == "" {
+		current = values[0].Value
+	}
+
+	opt := newSelectConfigOption(
+		sessionConfigAgentID,
+		"Agent",
+		"Select the persona used for this session",
+		"_agent",
+		current,
+		values,
+	)
+	return &opt
+}
+
+func sessionConfigCategory(name string) *acpsdk.SessionConfigOptionCategory {
+	category := acpsdk.SessionConfigOptionCategoryOther(name)
+	return &acpsdk.SessionConfigOptionCategory{Other: &category}
+}
+
+func resolvedPersonaValue(svc AgentService, currentPersona string) string {
+	currentPersona = strings.TrimSpace(currentPersona)
+	if currentPersona != "" {
+		return currentPersona
+	}
+
+	active := strings.TrimSpace(svc.GetActivePersona())
+	if active != "" {
+		return active
+	}
+
+	for _, persona := range svc.ListPersonas() {
+		persona = strings.TrimSpace(persona)
+		if persona != "" {
+			return persona
+		}
+	}
+
+	return ""
+}
+
+func buildModelConfigValues(svc AgentService) []configOptionValue {
+	available := svc.AvailableModels()
+	values := make([]configOptionValue, 0, len(available))
+	for _, model := range available {
+		id := strings.TrimSpace(model.ID)
+		if id == "" {
+			continue
+		}
+		name := strings.TrimSpace(model.Name)
+		if name == "" {
+			name = id
+		}
+		values = append(values, configOptionValue{
+			Value:       id,
+			Name:        name,
+			Description: "Use model " + name,
+		})
+	}
+	return values
+}
+
+func resolvedModelValue(svc AgentService, currentModel string) string {
+	currentModel = strings.TrimSpace(currentModel)
+	if currentModel != "" {
+		return currentModel
+	}
+	return strings.TrimSpace(svc.CurrentModelID())
+}
+
+func boolToAskPermissionValue(enabled bool) string {
+	if enabled {
+		return askPermissionYesValue
+	}
+	return askPermissionNoValue
 }
 
 // sendAvailableCommandsUpdate sends an available_commands_update SessionUpdate to the
@@ -250,7 +425,7 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 					toolCallID := acpsdk.ToolCallId(p.ID)
 					kind := mapToolKind(p.Name)
 					title := toolDisplayTitle(p.Name, rawInput, workDir)
-					content := toolCallContent(p.Name, rawInput)
+					content := a.toolStartContent(p.Name, p.ID, toolCallContent(p.Name, rawInput))
 					locations := toLocations(p.Name, p.Input)
 
 					startOpts := []acpsdk.ToolCallStartOpt{
@@ -266,16 +441,7 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 					}
 					startUpdate := acpsdk.StartToolCall(toolCallID, title, startOpts...)
 
-					// Add _meta with toolName and terminal_info for Bash tools.
-					toolMeta := map[string]any{
-						"pando": map[string]any{"toolName": p.Name},
-					}
-					if isBashTool(p.Name) {
-						toolMeta["terminal_info"] = map[string]any{"terminal_id": p.ID}
-						if startUpdate.ToolCall != nil {
-							startUpdate.ToolCall.Content = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(p.ID)}
-						}
-					}
+					toolMeta := a.toolMeta(p.Name, p.ID, true)
 					if startUpdate.ToolCall != nil {
 						startUpdate.ToolCall.Meta = toolMeta
 					}
@@ -351,13 +517,11 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 					}
 
 					// Build _meta for the result.
-					resultMeta := map[string]any{
-						"pando": map[string]any{"toolName": tr.Name},
-					}
+					resultMeta := a.toolMeta(tr.Name, tr.ToolCallID, false)
 
 					// For Bash tools, send terminal_output + terminal_exit via _meta
 					// so clients display the output in their terminal widgets.
-					if isBashTool(tr.Name) {
+					if a.terminalOutputEnabled() && isBashTool(tr.Name) {
 						termOutput := strings.TrimSpace(tr.Content)
 						if termOutput != "" {
 							// Step 2: terminal_output notification — only _meta, no content

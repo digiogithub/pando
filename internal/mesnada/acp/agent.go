@@ -52,6 +52,10 @@ type PandoACPAgent struct {
 	// Set during Initialize from ClientCapabilities.Fs.WriteTextFile.
 	clientSupportsWriteFile bool
 
+	// clientSupportsTerminalOutput indicates the connected client supports
+	// terminal transport metadata via _meta.terminal_output / terminal_exit.
+	clientSupportsTerminalOutput bool
+
 	// pendingToolCalls maps tool call IDs to their raw input JSON for edit/write operations.
 	// Used to extract the file path when sending WriteTextFile after a successful tool result.
 	pendingToolCallsMu sync.Mutex
@@ -64,6 +68,8 @@ type PandoACPAgent struct {
 
 	extensionHandlers map[string]func(ctx context.Context, params json.RawMessage) (any, error)
 }
+
+const askModeInstruction = "You are in Ask mode. Prefer direct answers and avoid tool use unless the user explicitly requests tool-driven work or a tool is required to answer accurately."
 
 // NewPandoACPAgent creates a new ACP agent instance.
 func NewPandoACPAgent(
@@ -124,6 +130,7 @@ func (a *PandoACPAgent) Initialize(ctx context.Context, req acpsdk.InitializeReq
 
 	// Store whether this client supports receiving file content via WriteTextFile (6a).
 	a.clientSupportsWriteFile = req.ClientCapabilities.Fs.WriteTextFile
+	a.clientSupportsTerminalOutput = req.ClientCapabilities.Terminal
 
 	agentInfo := &acpsdk.Implementation{
 		Name:    "pando",
@@ -219,7 +226,8 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 		a.conn, // AgentSideConnection for streaming updates
 		pandoSessionID,
 	)
-	acpSession.SetMode("agent")
+	acpSession.SetMode(defaultACPMode)
+	acpSession.SetAskPermission(false)
 
 	currentMode := acpSession.Mode()
 	a.sessionsMu.Lock()
@@ -227,9 +235,10 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 		existing.SetWorkDir(workDir)
 		existing.SetAgentConnection(a.conn)
 		if existing.Mode() == "" {
-			existing.SetMode("agent")
+			existing.SetMode(defaultACPMode)
 		}
 		currentMode = existing.Mode()
+		acpSession = existing
 		a.logger.Printf("[ACP AGENT] NewSession reused existing ACP session mapping: SessionID=%s", sessionID)
 	} else {
 		a.sessions[sessionID] = acpSession
@@ -244,10 +253,11 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 	go a.sendAvailableCommandsUpdate(context.Background(), sessionID)
 
 	return acpsdk.NewSessionResponse{
-		SessionId: sessionID,
-		Modes:     buildSessionModeState(a.agentService, currentMode, acpSession.Persona()),
-		Models:    buildSessionModelState(a.agentService),
-		Meta:      personaStateToMeta(buildSessionPersonaState(a.agentService)),
+		SessionId:     sessionID,
+		ConfigOptions: buildSessionConfigOptions(a.agentService, acpSession.Model(), currentMode, acpSession.Persona(), acpSession.AskPermission()),
+		Modes:         buildSessionModeState(a.agentService, currentMode),
+		Models:        buildSessionModelState(a.agentService, acpSession.Model()),
+		Meta:          personaStateToMeta(buildSessionPersonaState(a.agentService, acpSession.Persona())),
 	}, nil
 }
 
@@ -294,23 +304,27 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 		_ = a.agentService.SetActivePersona("")
 	}
 
-	// Enforce session mode: configure permissions based on Agent vs Ask mode.
 	mode := acpSession.Mode()
 	if mode == "" {
-		mode = "agent"
+		mode = defaultACPMode
 	}
-	switch mode {
-	case "agent":
-		// Agent mode: auto-approve all tool calls for this session (no permission dialogs).
-		if a.permissionService != nil {
-			a.permissionService.AutoApproveSession(string(req.SessionId))
-		}
-	case "ask":
-		// Ask mode: route permission requests to the connected editor via ACP.
+	if mode == askModeID {
+		promptText = askModeInstruction + "\n\nUser request:\n" + promptText
+	}
+
+	// Configure permissions from the dedicated approval selector.
+	askPermission := acpSession.AskPermission()
+	if mode == askModeID && !acpSession.PermissionConfigured() {
+		askPermission = true
+	}
+
+	switch {
+	case askPermission:
+		// Manual approval mode: route permission requests to the connected editor via ACP.
 		if a.permissionService != nil {
 			a.permissionService.RemoveAutoApproveSession(string(req.SessionId))
 			if a.conn == nil {
-				a.logger.Printf("[ACP AGENT] Ask mode requested for session %s but no ACP connection is available; using default permission handling", req.SessionId)
+				a.logger.Printf("[ACP AGENT] Ask permission enabled for session %s but no ACP connection is available; using default permission handling", req.SessionId)
 			} else {
 				bridge := NewACPPermissionBridge(a.conn, req.SessionId, a.logger)
 				a.permissionService.RegisterSessionHandler(string(req.SessionId), bridge.Handle)
@@ -318,12 +332,12 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 			}
 		}
 	default:
-		a.logger.Printf("[ACP AGENT] Unknown session mode %q — defaulting to agent behavior", mode)
+		// Auto-approve mode: tool calls proceed without permission dialogs.
 		if a.permissionService != nil {
 			a.permissionService.AutoApproveSession(string(req.SessionId))
 		}
 	}
-	a.logger.Printf("[ACP AGENT] Session mode %q applied for session %s", mode, req.SessionId)
+	a.logger.Printf("[ACP AGENT] Session mode=%q askPermission=%t applied for session %s", mode, askPermission, req.SessionId)
 
 	stopReason, err := a.processPromptWithAgent(ctx, acpSession, promptText, attachments...)
 	if err != nil {
@@ -390,7 +404,7 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 	}
 
 	a.sessionsMu.Lock()
-	currentMode := "agent"
+	currentMode := defaultACPMode
 	if existing, exists := a.sessions[req.SessionId]; exists {
 		existing.SetWorkDir(workDir)
 		existing.SetAgentConnection(a.conn)
@@ -403,6 +417,7 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 	} else {
 		acpSession := NewACPServerSession(req.SessionId, workDir, a.conn, string(req.SessionId))
 		acpSession.SetMode(currentMode)
+		acpSession.SetAskPermission(false)
 		a.sessions[req.SessionId] = acpSession
 		a.logger.Printf("[ACP AGENT] LoadSession: registered session %s", req.SessionId)
 	}
@@ -423,9 +438,10 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 	go a.streamSessionHistory(context.Background(), req.SessionId, string(req.SessionId))
 
 	return acpsdk.LoadSessionResponse{
-		Modes:  buildSessionModeState(a.agentService, currentMode, currentPersona),
-		Models: buildSessionModelState(a.agentService),
-		Meta:   personaStateToMeta(buildSessionPersonaState(a.agentService)),
+		ConfigOptions: buildSessionConfigOptions(a.agentService, a.mustSessionModel(req.SessionId), currentMode, currentPersona, a.mustSessionAskPermission(req.SessionId)),
+		Modes:         buildSessionModeState(a.agentService, currentMode),
+		Models:        buildSessionModelState(a.agentService, a.mustSessionModel(req.SessionId)),
+		Meta:          personaStateToMeta(buildSessionPersonaState(a.agentService, currentPersona)),
 	}, nil
 }
 
@@ -443,46 +459,67 @@ func (a *PandoACPAgent) SetSessionMode(ctx context.Context, req acpsdk.SetSessio
 	}
 
 	modeID := strings.TrimSpace(string(req.ModeId))
-	baseMode := modeID
-	personaName := ""
-
-	if strings.Contains(modeID, ":") {
-		parts := strings.SplitN(modeID, ":", 2)
-		personaName = strings.TrimSpace(parts[0])
-		baseMode = strings.TrimSpace(parts[1])
-	}
-
-	validModes := map[string]bool{"agent": true, "ask": true}
-	if !validModes[baseMode] {
+	if err := validateModeID(modeID); err != nil {
 		return acpsdk.SetSessionModeResponse{}, fmt.Errorf("unknown mode: %s", req.ModeId)
 	}
 
-	if personaName != "" {
-		available := a.agentService.ListPersonas()
-		found := false
-		for _, p := range available {
-			if p == personaName {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return acpsdk.SetSessionModeResponse{}, fmt.Errorf("unknown persona: %s", personaName)
-		}
-	}
+	acpSession.SetMode(modeID)
+	acpSession.SetAskPermission(modeID == askModeID)
+	acpSession.SetPermissionConfigured(false)
+	a.logger.Printf("[ACP AGENT] Session mode set: SessionID=%s, Mode=%s (mode will take effect on next prompt)", req.SessionId, modeID)
 
-	acpSession.SetPersona(personaName)
-	acpSession.SetMode(baseMode)
-	a.logger.Printf("[ACP AGENT] Session mode set: SessionID=%s, Mode=%s, Persona=%q (mode will take effect on next prompt)", req.SessionId, baseMode, personaName)
+	a.sendCurrentModeUpdate(ctx, req.SessionId, modeID)
+	a.sendSessionConfigOptionsUpdate(ctx, req.SessionId)
 
 	return acpsdk.SetSessionModeResponse{}, nil
 }
 
 // SetSessionConfigOption handles runtime configuration changes from the client.
-// Currently treated as a no-op; individual options are not yet mapped to agent settings.
-func (a *PandoACPAgent) SetSessionConfigOption(_ context.Context, req acpsdk.SetSessionConfigOptionRequest) (acpsdk.SetSessionConfigOptionResponse, error) {
-	a.logger.Printf("[ACP AGENT] SetSessionConfigOption: (not implemented)")
-	return acpsdk.SetSessionConfigOptionResponse{}, nil
+func (a *PandoACPAgent) SetSessionConfigOption(ctx context.Context, req acpsdk.SetSessionConfigOptionRequest) (acpsdk.SetSessionConfigOptionResponse, error) {
+	sessionID, configID, value, err := parseSessionConfigOptionRequest(req)
+	if err != nil {
+		return acpsdk.SetSessionConfigOptionResponse{}, err
+	}
+
+	acpSession, err := a.getSession(sessionID)
+	if err != nil {
+		return acpsdk.SetSessionConfigOptionResponse{}, err
+	}
+
+	switch configID {
+	case sessionConfigModelID:
+		if err := a.validateModel(value); err != nil {
+			return acpsdk.SetSessionConfigOptionResponse{}, err
+		}
+		acpSession.SetModel(value)
+	case sessionConfigModeID:
+		if err := validateModeID(value); err != nil {
+			return acpsdk.SetSessionConfigOptionResponse{}, err
+		}
+		acpSession.SetMode(value)
+		if !acpSession.PermissionConfigured() {
+			acpSession.SetAskPermission(value == askModeID)
+		}
+		a.sendCurrentModeUpdate(ctx, sessionID, value)
+	case sessionConfigAskPermissionID:
+		enabled, err := parseAskPermissionValue(value)
+		if err != nil {
+			return acpsdk.SetSessionConfigOptionResponse{}, err
+		}
+		acpSession.SetAskPermission(enabled)
+		acpSession.SetPermissionConfigured(true)
+	case sessionConfigAgentID:
+		if err := a.validatePersona(value); err != nil {
+			return acpsdk.SetSessionConfigOptionResponse{}, err
+		}
+		acpSession.SetPersona(value)
+	default:
+		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("unknown config option: %s", configID)
+	}
+
+	configOptions := buildSessionConfigOptions(a.agentService, acpSession.Model(), acpSession.Mode(), acpSession.Persona(), acpSession.AskPermission())
+	a.sendSessionConfigOptionsUpdate(ctx, sessionID)
+	return acpsdk.SetSessionConfigOptionResponse{ConfigOptions: configOptions}, nil
 }
 
 // UnstableSetSessionModel implements AgentExperimental.
@@ -510,6 +547,7 @@ func (a *PandoACPAgent) setSessionModel(ctx context.Context, sessionID acpsdk.Se
 
 	acpSession.SetModel(modelID)
 	a.logger.Printf("[ACP AGENT] SetSessionModel: model set to %s for session %s", modelID, sessionID)
+	a.sendSessionConfigOptionsUpdate(ctx, sessionID)
 	return acpsdk.SetSessionModelResponse{}, nil
 }
 
@@ -561,7 +599,7 @@ func (a *PandoACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSess
 	}
 
 	a.sessionsMu.Lock()
-	currentMode := "agent"
+	currentMode := defaultACPMode
 	if existing, exists := a.sessions[req.SessionId]; exists {
 		existing.SetWorkDir(workDir)
 		existing.SetAgentConnection(a.conn)
@@ -573,12 +611,19 @@ func (a *PandoACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSess
 	} else {
 		acpSession := NewACPServerSession(req.SessionId, workDir, a.conn, string(req.SessionId))
 		acpSession.SetMode(currentMode)
+		acpSession.SetAskPermission(false)
 		a.sessions[req.SessionId] = acpSession
 	}
 	a.sessionsMu.Unlock()
 
 	a.logger.Printf("[ACP AGENT] ResumeSession: session %s resumed", req.SessionId)
-	return acpsdk.ResumeSessionResponse{}, nil
+	acpSession, _ := a.getSession(req.SessionId)
+	configOptions := buildSessionConfigOptions(a.agentService, acpSession.Model(), currentMode, acpSession.Persona(), acpSession.AskPermission())
+	return acpsdk.ResumeSessionResponse{
+		ConfigOptions: buildUnstableSessionConfigOptions(configOptions),
+		Modes:         buildSessionModeState(a.agentService, currentMode),
+		Meta:          personaStateToMeta(buildSessionPersonaState(a.agentService, acpSession.Persona())),
+	}, nil
 }
 
 // SetSessionPersona stores the requested persona on the ACP session for use in future prompts.
@@ -596,6 +641,7 @@ func (a *PandoACPAgent) SetSessionPersona(ctx context.Context, sessionID acpsdk.
 
 	acpSession.SetPersona(personaName)
 	a.logger.Printf("[ACP AGENT] SetSessionPersona: persona set to %q for session %s", personaName, sessionID)
+	a.sendSessionConfigOptionsUpdate(ctx, sessionID)
 	return nil
 }
 
@@ -629,6 +675,105 @@ func (a *PandoACPAgent) validatePersona(personaName string) error {
 		}
 	}
 	return fmt.Errorf("unknown persona: %s", personaName)
+}
+
+func (a *PandoACPAgent) validateModel(modelID string) error {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return fmt.Errorf("model is required")
+	}
+	for _, model := range a.agentService.AvailableModels() {
+		if strings.TrimSpace(model.ID) == modelID {
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown model: %s", modelID)
+}
+
+func (a *PandoACPAgent) sendCurrentModeUpdate(_ context.Context, sessionID acpsdk.SessionId, modeID string) {
+	if a.conn == nil {
+		return
+	}
+	acpSession, err := a.getSession(sessionID)
+	if err != nil {
+		return
+	}
+	if err := a.safeSessionUpdate(acpSession, sessionID, acpsdk.UpdateCurrentMode(acpsdk.SessionModeId(modeID))); err != nil {
+		a.logger.Printf("[ACP AGENT] Failed to send current_mode_update for session %s: %v", sessionID, err)
+	}
+}
+
+func (a *PandoACPAgent) sendSessionConfigOptionsUpdate(_ context.Context, sessionID acpsdk.SessionId) {
+	if a.conn == nil {
+		return
+	}
+	acpSession, err := a.getSession(sessionID)
+	if err != nil {
+		return
+	}
+	update := acpsdk.UpdateConfigOptions(buildSessionConfigOptions(a.agentService, acpSession.Model(), acpSession.Mode(), acpSession.Persona(), acpSession.AskPermission()))
+	if err := a.safeSessionUpdate(acpSession, sessionID, update); err != nil {
+		a.logger.Printf("[ACP AGENT] Failed to send config_option_update for session %s: %v", sessionID, err)
+	}
+}
+
+func (a *PandoACPAgent) safeSessionUpdate(acpSession *ACPServerSession, sessionID acpsdk.SessionId, update acpsdk.SessionUpdate) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic sending session update: %v", r)
+		}
+	}()
+	if acpSession == nil {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+	return acpSession.SendUpdate(update)
+}
+
+func parseSessionConfigOptionRequest(req acpsdk.SetSessionConfigOptionRequest) (acpsdk.SessionId, string, string, error) {
+	switch {
+	case req.ValueId != nil:
+		return req.ValueId.SessionId, string(req.ValueId.ConfigId), strings.TrimSpace(string(req.ValueId.Value)), nil
+	case req.Boolean != nil:
+		return req.Boolean.SessionId, string(req.Boolean.ConfigId), boolToAskPermissionValue(req.Boolean.Value), nil
+	default:
+		return "", "", "", fmt.Errorf("invalid config option request")
+	}
+}
+
+func parseAskPermissionValue(value string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case askPermissionYesValue, "true":
+		return true, nil
+	case askPermissionNoValue, "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid askPermission value: %s", value)
+	}
+}
+
+func validateModeID(modeID string) error {
+	switch strings.TrimSpace(modeID) {
+	case agentModeID, askModeID:
+		return nil
+	default:
+		return fmt.Errorf("unknown mode: %s", modeID)
+	}
+}
+
+func (a *PandoACPAgent) mustSessionAskPermission(sessionID acpsdk.SessionId) bool {
+	acpSession, err := a.getSession(sessionID)
+	if err != nil {
+		return false
+	}
+	return acpSession.AskPermission()
+}
+
+func (a *PandoACPAgent) mustSessionModel(sessionID acpsdk.SessionId) string {
+	acpSession, err := a.getSession(sessionID)
+	if err != nil {
+		return ""
+	}
+	return acpSession.Model()
 }
 
 type extensionSetPersonaParams struct {

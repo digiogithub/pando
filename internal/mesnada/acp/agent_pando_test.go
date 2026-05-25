@@ -707,6 +707,45 @@ func TestToolCallDeltaCanPromoteEmptyStartToEnrichedPending(t *testing.T) {
 	}
 }
 
+func TestToolMetaCapabilityGatesTerminalInfo(t *testing.T) {
+	t.Parallel()
+
+	agent := newTestPandoAgent()
+	meta := agent.toolMeta("bash", "tool-1", true)
+	if _, ok := meta["terminal_info"]; ok {
+		t.Fatalf("expected terminal_info to be absent without terminal capability: %#v", meta)
+	}
+
+	agent.clientSupportsTerminalOutput = true
+	meta = agent.toolMeta("bash", "tool-1", true)
+	term, ok := meta["terminal_info"].(map[string]any)
+	if !ok || term["terminal_id"] != "tool-1" {
+		t.Fatalf("expected terminal_info when capability enabled, got %#v", meta)
+	}
+}
+
+func TestToolStartContentFallsBackWithoutTerminalCapability(t *testing.T) {
+	t.Parallel()
+
+	agent := newTestPandoAgent()
+	fallback := toolCallContent("bash", map[string]any{"command": "echo hi", "description": "run command"})
+	content := agent.toolStartContent("bash", "tool-1", fallback)
+	if len(content) != len(fallback) {
+		t.Fatalf("expected fallback content without terminal capability, got %#v", content)
+	}
+}
+
+func TestToolStartContentUsesTerminalRefWhenCapabilityEnabled(t *testing.T) {
+	t.Parallel()
+
+	agent := newTestPandoAgent()
+	agent.clientSupportsTerminalOutput = true
+	content := agent.toolStartContent("bash", "tool-1", nil)
+	if len(content) != 1 || content[0].Terminal == nil || content[0].Terminal.TerminalId != "tool-1" {
+		t.Fatalf("expected terminal ref content, got %#v", content)
+	}
+}
+
 // TestDeferredStartToolCallSendsEnrichedFirst verifies that when a tool call
 // starts with empty input (ToolUseStart), the first StartToolCall is deferred
 // until enriched input arrives, so ACP clients like Zed never see an empty card.
@@ -997,6 +1036,12 @@ func TestPandoACPAgent_SetSessionMode(t *testing.T) {
 	if acpSess.Mode() != "ask" {
 		t.Errorf("Expected mode 'ask', got %q", acpSess.Mode())
 	}
+	if !acpSess.AskPermission() {
+		t.Error("Expected legacy ask mode to enable ask-permission compatibility")
+	}
+	if acpSess.PermissionConfigured() {
+		t.Error("Expected legacy SetSessionMode to keep permission in inherited mode")
+	}
 }
 
 func TestPandoACPAgent_SetSessionMode_LogsNextPromptApplication(t *testing.T) {
@@ -1128,6 +1173,150 @@ func TestPandoACPAgent_Prompt_AskModeWithoutConnectionLogsWarning(t *testing.T) 
 	}
 	if !strings.Contains(logs.String(), "no ACP connection is available") {
 		t.Fatalf("expected ask-mode warning about missing ACP connection, got logs:\n%s", logs.String())
+	}
+}
+
+func TestPandoACPAgent_SetSessionConfigOption_SplitsModePermissionAndAgent(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	modeResp, err := agent.SetSessionConfigOption(ctx, acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{
+			SessionId: resp.SessionId,
+			ConfigId:  acpsdk.SessionConfigId(sessionConfigModeID),
+			Value:     acpsdk.SessionConfigValueId(askModeID),
+		},
+	})
+	if err != nil {
+		t.Fatalf("SetSessionConfigOption(mode) failed: %v", err)
+	}
+
+	modelResp, err := agent.SetSessionConfigOption(ctx, acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{
+			SessionId: resp.SessionId,
+			ConfigId:  acpsdk.SessionConfigId(sessionConfigModelID),
+			Value:     acpsdk.SessionConfigValueId("test-model"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("SetSessionConfigOption(model) failed: %v", err)
+	}
+
+	askPermResp, err := agent.SetSessionConfigOption(ctx, acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{
+			SessionId: resp.SessionId,
+			ConfigId:  acpsdk.SessionConfigId(sessionConfigAskPermissionID),
+			Value:     acpsdk.SessionConfigValueId(askPermissionNoValue),
+		},
+	})
+	if err != nil {
+		t.Fatalf("SetSessionConfigOption(askPermission) failed: %v", err)
+	}
+
+	agentResp, err := agent.SetSessionConfigOption(ctx, acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{
+			SessionId: resp.SessionId,
+			ConfigId:  acpsdk.SessionConfigId(sessionConfigAgentID),
+			Value:     acpsdk.SessionConfigValueId("assistant"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("SetSessionConfigOption(agent) failed: %v", err)
+	}
+
+	agent.sessionsMu.RLock()
+	acpSess := agent.sessions[resp.SessionId]
+	agent.sessionsMu.RUnlock()
+
+	if acpSess.Mode() != askModeID {
+		t.Fatalf("expected mode %q, got %q", askModeID, acpSess.Mode())
+	}
+	if acpSess.Model() != "test-model" {
+		t.Fatalf("expected model %q, got %q", "test-model", acpSess.Model())
+	}
+	if acpSess.AskPermission() {
+		t.Fatal("expected askPermission selector to override inherited ask-mode permission")
+	}
+	if !acpSess.PermissionConfigured() {
+		t.Fatal("expected explicit askPermission selection to mark permissionConfigured")
+	}
+	if acpSess.Persona() != "assistant" {
+		t.Fatalf("expected persona %q, got %q", "assistant", acpSess.Persona())
+	}
+
+	for _, cfgResp := range []acpsdk.SetSessionConfigOptionResponse{modeResp, modelResp, askPermResp, agentResp} {
+		if len(cfgResp.ConfigOptions) != 4 {
+			t.Fatalf("expected 4 config options in response, got %d", len(cfgResp.ConfigOptions))
+		}
+	}
+}
+
+func TestPandoACPAgent_NewSessionResponse_UsesSeparatedACPSelectors(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	if resp.Modes == nil {
+		t.Fatal("expected legacy modes to be present")
+	}
+	if len(resp.Modes.AvailableModes) != 2 {
+		t.Fatalf("expected 2 legacy modes, got %d", len(resp.Modes.AvailableModes))
+	}
+
+	if len(resp.ConfigOptions) != 4 {
+		t.Fatalf("expected 4 config options, got %d", len(resp.ConfigOptions))
+	}
+
+	got := map[string]string{}
+	for _, opt := range resp.ConfigOptions {
+		if opt.Select == nil {
+			t.Fatalf("expected select config option, got %+v", opt)
+		}
+		got[string(opt.Select.Id)] = string(opt.Select.CurrentValue)
+	}
+
+	if got[sessionConfigModelID] != "test-model" {
+		t.Fatalf("expected model currentValue %q, got %q", "test-model", got[sessionConfigModelID])
+	}
+	if got[sessionConfigModeID] != agentModeID {
+		t.Fatalf("expected mode currentValue %q, got %q", agentModeID, got[sessionConfigModeID])
+	}
+	if got[sessionConfigAskPermissionID] != askPermissionNoValue {
+		t.Fatalf("expected askPermission currentValue %q, got %q", askPermissionNoValue, got[sessionConfigAskPermissionID])
+	}
+	if got[sessionConfigAgentID] != "default" {
+		t.Fatalf("expected agent currentValue %q, got %q", "default", got[sessionConfigAgentID])
+	}
+}
+
+func TestPandoACPAgent_ResumeSession_IncludesConfigOptions(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	newResp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	resumeResp, err := agent.ResumeSession(ctx, acpsdk.ResumeSessionRequest{
+		SessionId: newResp.SessionId,
+		Cwd:       "/tmp",
+	})
+	if err != nil {
+		t.Fatalf("ResumeSession failed: %v", err)
+	}
+
+	if len(resumeResp.ConfigOptions) != 4 {
+		t.Fatalf("expected 4 resume config options, got %d", len(resumeResp.ConfigOptions))
 	}
 }
 
@@ -1284,7 +1473,7 @@ func TestPandoACPAgent_NewSessionResponse_IncludesPersonaState(t *testing.T) {
 		t.Fatal("Expected Meta with persona state, got nil")
 	}
 
-	personaState := buildSessionPersonaState(agent.agentService)
+	personaState := buildSessionPersonaState(agent.agentService, "")
 	if personaState == nil {
 		t.Fatal("Expected persona state, got nil")
 	}

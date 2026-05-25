@@ -156,7 +156,7 @@ type agent struct {
 	contextManager            *skills.ContextManager
 	luaMgr                    *luaengine.FilterManager
 
-	activeRequests   sync.Map
+	activeRequests sync.Map
 	// toolCallThrottle debounces AgentEventTypeToolCall emissions during
 	// EventToolUseDelta. It maps toolCallID → time.Time of the last emitted
 	// event, preventing the ACP event channel from being flooded while still
@@ -383,18 +383,23 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 	return events, nil
 }
 
-// sanitizeToolCallHistory ensures that every assistant message with tool_calls
-// is followed by a tool message that covers all the corresponding tool_call_ids.
-// When a session is interrupted mid-tool-execution the tool results message may
-// never have been saved, leaving an invalid history that providers reject with
-// a 400 error. Anthropic is stricter here: each tool_result block must correspond
-// to a tool_use block in the immediately previous assistant message, so an
-// intervening message also makes the history invalid. This function inserts
-// ephemeral synthetic results for any uncovered tool_call_ids so the resumed
-// conversation is accepted.
+// sanitizeToolCallHistory normalizes assistant/tool exchanges into the strict
+// shape expected by providers like Anthropic:
+//   - every assistant message with tool_calls is followed by exactly one tool
+//     message covering only those tool_call_ids
+//   - missing tool results are synthesized as interrupted errors
+//   - orphan tool messages are dropped
+//
+// This avoids invalid histories after interrupted tool execution, partial tool
+// persistence, or front-trimming that removes the originating assistant turn.
 func sanitizeToolCallHistory(msgs []message.Message) []message.Message {
 	result := make([]message.Message, 0, len(msgs))
-	for i, msg := range msgs {
+	for i := 0; i < len(msgs); i++ {
+		msg := msgs[i]
+		if msg.Role == message.Tool {
+			logging.Debug("sanitizeToolCallHistory: dropping orphan tool message", "messageID", msg.ID)
+			continue
+		}
 		result = append(result, msg)
 		if msg.Role != message.Assistant {
 			continue
@@ -403,38 +408,58 @@ func sanitizeToolCallHistory(msgs []message.Message) []message.Message {
 		if len(toolCalls) == 0 {
 			continue
 		}
-		// Collect tool_call_ids already covered by the immediately following tool message.
-		// If the next message is not a tool message, none of these calls are validly
-		// covered anymore for providers that require strict adjacency.
-		covered := make(map[string]bool)
-		if i+1 < len(msgs) && msgs[i+1].Role == message.Tool {
-			for _, tr := range msgs[i+1].ToolResults() {
-				covered[tr.ToolCallID] = true
-			}
-		}
-		// Build synthetic results for any uncovered tool_call_ids.
-		var syntheticParts []message.ContentPart
+		expected := make(map[string]message.ToolCall, len(toolCalls))
+		orderedResults := make([]message.ContentPart, 0, len(toolCalls))
+		collected := make(map[string]message.ToolResult, len(toolCalls))
 		for _, tc := range toolCalls {
-			if !covered[tc.ID] {
-				tr := message.ToolResult{
+			expected[tc.ID] = tc
+		}
+		nextIndex := i + 1
+		for nextIndex < len(msgs) && msgs[nextIndex].Role == message.Tool {
+			for _, tr := range msgs[nextIndex].ToolResults() {
+				tc, ok := expected[tr.ToolCallID]
+				if !ok {
+					continue
+				}
+				if _, alreadyCollected := collected[tr.ToolCallID]; alreadyCollected {
+					continue
+				}
+				if tr.Name == "" {
+					tr.Name = tc.Name
+				}
+				collected[tr.ToolCallID] = tr
+			}
+			nextIndex++
+		}
+		missingCount := 0
+		for _, tc := range toolCalls {
+			tr, ok := collected[tc.ID]
+			if !ok {
+				tr = message.ToolResult{
 					ToolCallID: tc.ID,
 					Name:       tc.Name,
 					Content:    "Tool execution was interrupted",
 					IsError:    true,
 				}
-				syntheticParts = append(syntheticParts, tr)
+				missingCount++
 			}
+			orderedResults = append(orderedResults, tr)
 		}
-		if len(syntheticParts) > 0 {
-			logging.Debug("sanitizeToolCallHistory: inserting synthetic tool results",
-				"assistantMsgID", msg.ID,
-				"count", len(syntheticParts),
-			)
+		if len(orderedResults) > 0 {
+			if missingCount > 0 || nextIndex > i+2 {
+				logging.Debug("sanitizeToolCallHistory: normalizing tool results",
+					"assistantMsgID", msg.ID,
+					"collected", len(collected),
+					"missing", missingCount,
+					"consumedToolMessages", nextIndex-(i+1),
+				)
+			}
 			result = append(result, message.Message{
 				Role:  message.Tool,
-				Parts: syntheticParts,
+				Parts: orderedResults,
 			})
 		}
+		i = nextIndex - 1
 	}
 	return result
 }
@@ -717,13 +742,13 @@ func providerInputBudget(agentName config.AgentName, model models.Model) int64 {
 func fitMessagesToProviderBudget(msgs []message.Message, agentName config.AgentName, model models.Model) []message.Message {
 	budget := providerInputBudget(agentName, model)
 	if budget <= 0 {
-		return msgs
+		return sanitizeToolCallHistory(msgs)
 	}
 	trimmed := append([]message.Message(nil), msgs...)
 	for len(trimmed) > 1 && estimateMessagesTokens(trimmed) > budget {
 		trimmed = trimmed[1:]
 	}
-	return trimmed
+	return sanitizeToolCallHistory(trimmed)
 }
 
 func (a *agent) createUserMessage(ctx context.Context, sessionID, content string, attachmentParts []message.ContentPart) (message.Message, error) {
@@ -1547,18 +1572,25 @@ func indentSummaryBlock(text string) string {
 
 func (a *agent) buildCompactionContinuationSummary(msgs []message.Message, summary string) string {
 	summaryText := fmt.Sprintf("The following is a summary of the earlier conversation:\n\n%s\n\n---\nConversation continues below:", summary)
-	if wasInterruptedMidTool(msgs) {
+	if summaryNeedsContinuationPrompt(msgs) {
 		return fmt.Sprintf(continuationMarkerTemplate, summaryText)
 	}
 	return summaryText
 }
 
-func wasInterruptedMidTool(msgs []message.Message) bool {
+func summaryNeedsContinuationPrompt(msgs []message.Message) bool {
 	if len(msgs) == 0 {
 		return false
 	}
-	lastMsg := msgs[len(msgs)-1]
-	return len(lastMsg.ToolCalls()) > 0
+	normalized := sanitizeToolCallHistory(msgs)
+	if len(normalized) == 0 {
+		return false
+	}
+	lastMsg := normalized[len(normalized)-1]
+	if lastMsg.Role == message.Tool && len(lastMsg.ToolResults()) > 0 {
+		return true
+	}
+	return lastMsg.Role == message.Assistant && len(lastMsg.ToolCalls()) > 0
 }
 
 // compactContext summarizes the conversation history to reduce context size.

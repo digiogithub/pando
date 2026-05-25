@@ -76,6 +76,27 @@ func joinTextParts(parts []string) string {
 	return result
 }
 
+func (a *PandoACPAgent) terminalOutputEnabled() bool {
+	return a.clientSupportsTerminalOutput
+}
+
+func (a *PandoACPAgent) toolMeta(toolName, toolCallID string, includeTerminalInfo bool) map[string]any {
+	meta := map[string]any{
+		"pando": map[string]any{"toolName": toolName},
+	}
+	if includeTerminalInfo && a.terminalOutputEnabled() && isBashTool(toolName) {
+		meta["terminal_info"] = map[string]any{"terminal_id": toolCallID}
+	}
+	return meta
+}
+
+func (a *PandoACPAgent) toolStartContent(toolName, toolCallID string, fallback []acpsdk.ToolCallContent) []acpsdk.ToolCallContent {
+	if a.terminalOutputEnabled() && isBashTool(toolName) {
+		return []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(toolCallID)}
+	}
+	return fallback
+}
+
 // processPromptWithAgent processes a prompt using the Pando LLM agent.
 // attachments carries any image/binary content extracted from the prompt (6d).
 func (a *PandoACPAgent) processPromptWithAgent(
@@ -156,13 +177,8 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				content := toolCallContent(tc.Name, rawInput)
 				locations := toLocations(tc.Name, tc.Input)
 
-				toolMeta := map[string]any{
-					"pando": map[string]any{"toolName": tc.Name},
-				}
-				if isBashTool(tc.Name) {
-					toolMeta["terminal_info"] = map[string]any{"terminal_id": tc.ID}
-					content = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(tc.ID)}
-				}
+				content = a.toolStartContent(tc.Name, tc.ID, content)
+				toolMeta := a.toolMeta(tc.Name, tc.ID, true)
 
 				// Prefer sending whatever structured/raw input is already available in the
 				// initial tool_call payload so ACP clients like Zed can render arguments
@@ -199,21 +215,13 @@ func (a *PandoACPAgent) processPromptWithAgent(
 
 				if !tc.Finished {
 					if !started {
-						// Only send StartToolCall when we have useful input.
-						// Deferring avoids empty cards in Zed that never get
-						// enriched because the client latches onto the first
-						// tool_call event as the canonical card state.
-						if hasUsefulInput {
-							if err := sendStart(); err != nil {
-								a.logger.Printf("[ACP AGENT] Failed to send tool call pending: %v", err)
-							} else {
-								a.pendingToolCallsMu.Lock()
-								a.startedToolCalls[tc.ID] = true
-								a.pendingToolCallsMu.Unlock()
-							}
+						if err := sendStart(); err != nil {
+							a.logger.Printf("[ACP AGENT] Failed to send tool call pending: %v", err)
+						} else {
+							a.pendingToolCallsMu.Lock()
+							a.startedToolCalls[tc.ID] = true
+							a.pendingToolCallsMu.Unlock()
 						}
-						// else: no useful input yet — defer StartToolCall until
-						// a delta brings enriched input or the tool finishes.
 					} else {
 						// Throttled delta update: the agent emits a new
 						// AgentEventTypeToolCall during EventToolUseDelta with
@@ -342,11 +350,8 @@ func (a *PandoACPAgent) processPromptWithAgent(
 					synthTitle := toolDisplayTitle(tr.Name, synthRawInput, acpSession.WorkDir)
 					synthContent := toolCallContent(tr.Name, synthRawInput)
 					synthLocations := toLocations(tr.Name, storedInput)
-					synthMeta := map[string]any{"pando": map[string]any{"toolName": tr.Name}}
-					if isBashTool(tr.Name) {
-						synthMeta["terminal_info"] = map[string]any{"terminal_id": tr.ToolCallID}
-						synthContent = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(tr.ToolCallID)}
-					}
+					synthMeta := a.toolMeta(tr.Name, tr.ToolCallID, true)
+					synthContent = a.toolStartContent(tr.Name, tr.ToolCallID, synthContent)
 					synthStartOpts := []acpsdk.ToolCallStartOpt{
 						acpsdk.WithStartKind(synthKind),
 						acpsdk.WithStartStatus(acpsdk.ToolCallStatusInProgress),
@@ -404,11 +409,7 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				title := toolDisplayTitle(tr.Name, rawInput, acpSession.WorkDir)
 
 				// Build _meta for the result update.
-				resultMeta := map[string]any{
-					"pando": map[string]any{
-						"toolName": tr.Name,
-					},
-				}
+				resultMeta := a.toolMeta(tr.Name, tr.ToolCallID, false)
 
 				// For Bash tools, send terminal_output + terminal_exit via _meta
 				// so editors can display the output in their terminal widgets.
@@ -416,7 +417,7 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				//   1. tool_call       → _meta.terminal_info  (sent above in ToolCall)
 				//   2. tool_call_update → _meta.terminal_output (sent here)
 				//   3. tool_call_update → _meta.terminal_exit   (sent here)
-				if isBashTool(tr.Name) {
+				if a.terminalOutputEnabled() && isBashTool(tr.Name) {
 					// Step 2: send terminal_output as a separate notification.
 					// Only _meta carries the output data — no content field, matching
 					// claude-agent-acp behavior so clients don't render it twice.
@@ -635,11 +636,8 @@ func (a *PandoACPAgent) processAgentResponse(
 				title := toolDisplayTitle(toolCall.Name, rawInput, acpSession.WorkDir)
 				content := toolCallContent(toolCall.Name, rawInput)
 				locations := toLocations(toolCall.Name, toolCall.Input)
-				toolMeta := map[string]any{"pando": map[string]any{"toolName": toolCall.Name}}
-				if isBashTool(toolCall.Name) {
-					toolMeta["terminal_info"] = map[string]any{"terminal_id": toolCall.ID}
-					content = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(toolCall.ID)}
-				}
+				content = a.toolStartContent(toolCall.Name, toolCall.ID, content)
+				toolMeta := a.toolMeta(toolCall.Name, toolCall.ID, true)
 				correctiveOpts := []acpsdk.ToolCallUpdateOpt{
 					acpsdk.WithUpdateKind(kind),
 					acpsdk.WithUpdateTitle(title),
@@ -681,13 +679,8 @@ func (a *PandoACPAgent) processAgentResponse(
 		content := toolCallContent(toolCall.Name, rawInput)
 		locations := toLocations(toolCall.Name, toolCall.Input)
 
-		toolMeta := map[string]any{
-			"pando": map[string]any{"toolName": toolCall.Name},
-		}
-		if isBashTool(toolCall.Name) {
-			toolMeta["terminal_info"] = map[string]any{"terminal_id": toolCall.ID}
-			content = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(toolCall.ID)}
-		}
+		content = a.toolStartContent(toolCall.Name, toolCall.ID, content)
+		toolMeta := a.toolMeta(toolCall.Name, toolCall.ID, true)
 
 		startOpts := []acpsdk.ToolCallStartOpt{
 			acpsdk.WithStartKind(kind),
@@ -758,12 +751,10 @@ func (a *PandoACPAgent) processAgentResponse(
 		kind := mapToolKind(toolResult.Name)
 		title := toolDisplayTitle(toolResult.Name, rawInput, acpSession.WorkDir)
 
-		resultMeta := map[string]any{
-			"pando": map[string]any{"toolName": toolResult.Name},
-		}
+		resultMeta := a.toolMeta(toolResult.Name, toolResult.ToolCallID, false)
 
 		// Terminal streaming for Bash results (same as streaming path).
-		if isBashTool(toolResult.Name) {
+		if a.terminalOutputEnabled() && isBashTool(toolResult.Name) {
 			termOutput := strings.TrimSpace(toolResult.Content)
 			if termOutput != "" {
 				termOutputUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(toolResult.ToolCallID))

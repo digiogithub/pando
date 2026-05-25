@@ -45,6 +45,13 @@ type ACPServerSession struct {
 	// persona is the persona name requested by the client (set via SetSessionPersona)
 	persona string
 
+	// askPermission controls whether tool calls require ACP approval prompts.
+	askPermission bool
+
+	// permissionConfigured reports whether askPermission was explicitly chosen
+	// through config options instead of being inherited from legacy mode defaults.
+	permissionConfigured bool
+
 	// variant is the session variant (reserved for future use)
 	variant string
 
@@ -178,6 +185,34 @@ func (s *ACPServerSession) Persona() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.persona
+}
+
+// SetAskPermission stores whether tool calls require explicit approval.
+func (s *ACPServerSession) SetAskPermission(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.askPermission = enabled
+}
+
+// AskPermission returns whether tool calls require explicit approval.
+func (s *ACPServerSession) AskPermission() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.askPermission
+}
+
+// SetPermissionConfigured records whether askPermission was explicitly selected.
+func (s *ACPServerSession) SetPermissionConfigured(configured bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.permissionConfigured = configured
+}
+
+// PermissionConfigured reports whether askPermission was explicitly selected.
+func (s *ACPServerSession) PermissionConfigured() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.permissionConfigured
 }
 
 // SetVariant stores the session variant.
