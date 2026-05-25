@@ -246,7 +246,7 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 
 					// Replay the tool call with full metadata so clients display
 					// proper title, kind, content, and locations.
-					rawInput := parseJSONInput(p.Input)
+					rawInput := parseRawInput(p.Input)
 					toolCallID := acpsdk.ToolCallId(p.ID)
 					kind := mapToolKind(p.Name)
 					title := toolDisplayTitle(p.Name, rawInput, workDir)
@@ -330,7 +330,7 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 						}
 					}
 
-					rawInput := parseJSONInput(storedInput)
+					rawInput := parseRawInput(storedInput)
 					title := toolDisplayTitle(tr.Name, rawInput, workDir)
 
 					// For edit tools, attach a diff content block.

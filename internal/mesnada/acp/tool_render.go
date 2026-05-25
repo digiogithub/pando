@@ -23,6 +23,40 @@ func parseJSONInput(s string) interface{} {
 	return s
 }
 
+// parseRawInput parses input JSON for use as ACP rawInput fields.
+// Unlike parseJSONInput, this function guarantees the result is always a JSON
+// object (map) or array — never a plain string. ACP rawInput is typed as `any`
+// in the SDK and serialized directly into the JSON-RPC payload. If the value
+// is a Go string, json.Marshal will produce a JSON string literal (with escaped
+// quotes), causing double-encoding that ACP clients like Zed display as garbled
+// text with duplicated quote characters.
+//
+// When parsing fails (e.g. partial/truncated JSON during streaming), an empty
+// map is returned so the field serializes cleanly as `{}`.
+func parseRawInput(s string) interface{} {
+	v := parseJSONInput(s)
+	switch v.(type) {
+	case map[string]interface{}, []interface{}:
+		return v
+	default:
+		return map[string]interface{}{}
+	}
+}
+
+// hasUsefulRawInput returns true when the parsed rawInput is a non-empty JSON
+// object or a non-empty JSON array. This is used to decide whether a tool call
+// has accumulated enough streamed input to emit an enriched StartToolCall.
+func hasUsefulRawInput(rawInput interface{}) bool {
+	switch v := rawInput.(type) {
+	case map[string]interface{}:
+		return len(v) > 0
+	case []interface{}:
+		return len(v) > 0
+	default:
+		return false
+	}
+}
+
 func toDisplayPath(path string, cwd string) string {
 	if strings.TrimSpace(path) == "" {
 		return path
@@ -397,10 +431,41 @@ func toLocations(toolName, inputJSON string) []acpsdk.ToolCallLocation {
 //	{"todos": [{"content": "...", "status": "pending|in_progress|completed", "priority": "high|medium|low"}, ...]}
 //
 // Unknown status/priority values fall back to "pending" / "medium".
+// When the input is truncated (streaming), it attempts to repair the JSON by
+// closing open structures so that partially streamed plans can be displayed live.
 func parseTodoWritePlan(inputJSON string) []acpsdk.PlanEntry {
 	if inputJSON == "" {
 		return nil
 	}
+	if entries := parseTodoWritePlanStrict(inputJSON); len(entries) > 0 {
+		return entries
+	}
+	// Tolerant parsing: the provider is still streaming and the JSON is truncated.
+	// Try common repair suffixes to close open structures.
+	repairs := []string{
+		"]}",       // array element complete, close array + object
+		"}]}",      // mid-property in last element
+		"\"}]}",    // mid-string value in last element
+		"\"}}]}",   // mid-string nested in object
+		"null}]}", // mid-value
+	}
+	for _, suffix := range repairs {
+		if entries := parseTodoWritePlanStrict(inputJSON + suffix); len(entries) > 0 {
+			// The last entry may have truncated content; only include it if
+			// it has a non-empty content field.
+			for len(entries) > 0 && strings.TrimSpace(entries[len(entries)-1].Content) == "" {
+				entries = entries[:len(entries)-1]
+			}
+			if len(entries) > 0 {
+				return entries
+			}
+		}
+	}
+	return nil
+}
+
+// parseTodoWritePlanStrict performs exact JSON parsing of a TodoWrite input.
+func parseTodoWritePlanStrict(inputJSON string) []acpsdk.PlanEntry {
 	var raw struct {
 		Todos []struct {
 			Content  string `json:"content"`

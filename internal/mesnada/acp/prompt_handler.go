@@ -151,7 +151,7 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				}
 
 				kind := mapToolKind(tc.Name)
-				rawInput := parseJSONInput(tc.Input)
+				rawInput := parseRawInput(tc.Input)
 				title := toolDisplayTitle(tc.Name, rawInput, acpSession.WorkDir)
 				content := toolCallContent(tc.Name, rawInput)
 				locations := toLocations(tc.Name, tc.Input)
@@ -164,19 +164,19 @@ func (a *PandoACPAgent) processPromptWithAgent(
 					content = []acpsdk.ToolCallContent{acpsdk.ToolTerminalRef(tc.ID)}
 				}
 
-				sendStart := func(status acpsdk.ToolCallStatus) error {
+				// Prefer sending whatever structured/raw input is already available in the
+				// initial tool_call payload so ACP clients like Zed can render arguments
+				// from the first card instead of waiting for tool_call_update.
+				// sendStart emits the initial tool_call notification.
+				// ACP clients expect status=pending for the initial event while
+				// input is still streaming; in_progress is reserved for when the
+				// tool actually begins executing. We always force pending here.
+				sendStart := func() error {
 					startOpts := []acpsdk.ToolCallStartOpt{
 						acpsdk.WithStartKind(kind),
-						acpsdk.WithStartStatus(status),
+						acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
 						acpsdk.WithStartRawInput(rawInput),
-					}
-					// ACP clients expect the initial tool_call notification to be
-					// status=pending while input is still streaming or awaiting
-					// execution. Later tool_call_update notifications transition it
-					// to in_progress/completed. Sending in_progress too early can
-					// cause some clients to skip the richer follow-up rendering.
-					if status == acpsdk.ToolCallStatusInProgress {
-						startOpts[1] = acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending)
+						acpsdk.WithStartMeta(toolMeta),
 					}
 					if len(locations) > 0 {
 						startOpts = append(startOpts, acpsdk.WithStartLocations(locations))
@@ -184,28 +184,36 @@ func (a *PandoACPAgent) processPromptWithAgent(
 					if len(content) > 0 {
 						startOpts = append(startOpts, acpsdk.WithStartContent(content))
 					}
-					startUpdate := acpsdk.StartToolCall(acpsdk.ToolCallId(tc.ID), title, startOpts...)
-					if startUpdate.ToolCall != nil {
-						startUpdate.ToolCall.Meta = toolMeta
-					}
-					return acpSession.SendUpdate(startUpdate)
+					return acpSession.SendUpdate(acpsdk.StartToolCall(acpsdk.ToolCallId(tc.ID), title, startOpts...))
 				}
 
 				// Always update the stored input; for edit tools sendWriteTextFile also reads it.
 				a.pendingToolCallsMu.Lock()
+				prevInput := a.pendingToolCalls[tc.ID]
 				a.pendingToolCalls[tc.ID] = tc.Input
 				started := a.startedToolCalls[tc.ID]
 				a.pendingToolCallsMu.Unlock()
 
+				hasUsefulInput := hasUsefulRawInput(rawInput)
+				becameEnriched := started && !hasUsefulRawInput(parseRawInput(prevInput)) && hasUsefulInput
+
 				if !tc.Finished {
 					if !started {
-						if err := sendStart(acpsdk.ToolCallStatusInProgress); err != nil {
-							a.logger.Printf("[ACP AGENT] Failed to send tool call in_progress: %v", err)
-						} else {
-							a.pendingToolCallsMu.Lock()
-							a.startedToolCalls[tc.ID] = true
-							a.pendingToolCallsMu.Unlock()
+						// Only send StartToolCall when we have useful input.
+						// Deferring avoids empty cards in Zed that never get
+						// enriched because the client latches onto the first
+						// tool_call event as the canonical card state.
+						if hasUsefulInput {
+							if err := sendStart(); err != nil {
+								a.logger.Printf("[ACP AGENT] Failed to send tool call pending: %v", err)
+							} else {
+								a.pendingToolCallsMu.Lock()
+								a.startedToolCalls[tc.ID] = true
+								a.pendingToolCallsMu.Unlock()
+							}
 						}
+						// else: no useful input yet — defer StartToolCall until
+						// a delta brings enriched input or the tool finishes.
 					} else {
 						// Throttled delta update: the agent emits a new
 						// AgentEventTypeToolCall during EventToolUseDelta with
@@ -213,8 +221,15 @@ func (a *PandoACPAgent) processPromptWithAgent(
 						// UpdateToolCall so the ACP client sees enriched
 						// rawInput / title / locations while the provider is
 						// still streaming the tool-call JSON.
+						deltaStatus := acpsdk.ToolCallStatusInProgress
+						if becameEnriched {
+							// When the initial tool_call had empty input, resend the first
+							// enriched payload as pending so clients like Zed can treat it
+							// as the canonical initial card state instead of only a follow-up.
+							deltaStatus = acpsdk.ToolCallStatusPending
+						}
 						deltaOpts := []acpsdk.ToolCallUpdateOpt{
-							acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
+							acpsdk.WithUpdateStatus(deltaStatus),
 							acpsdk.WithUpdateKind(kind),
 							acpsdk.WithUpdateTitle(title),
 							acpsdk.WithUpdateRawInput(rawInput),
@@ -234,32 +249,50 @@ func (a *PandoACPAgent) processPromptWithAgent(
 						}
 					}
 				} else {
+					// tc.Finished == true (ToolUseStop event).
+					// sentStart tracks whether StartToolCall is sent in this block so
+					// we can decide whether to follow up with an in_progress update.
+					sentStart := started
 					if !started {
-						if err := sendStart(acpsdk.ToolCallStatusInProgress); err != nil {
-							a.logger.Printf("[ACP AGENT] Failed to send synthetic tool call start: %v", err)
-						} else {
-							a.pendingToolCallsMu.Lock()
-							a.startedToolCalls[tc.ID] = true
-							a.pendingToolCallsMu.Unlock()
+						// Only send StartToolCall when input is non-empty and parseable.
+						// If input is still empty at ToolUseStop, defer entirely to
+						// processAgentResponse which uses the complete assembled message.
+						// Sending a StartToolCall with {} here would lock Zed onto an
+						// empty card it will never update.
+						if hasUsefulInput {
+							if err := sendStart(); err != nil {
+								a.logger.Printf("[ACP AGENT] Failed to send tool call start at ToolUseStop: %v", err)
+							} else {
+								a.pendingToolCallsMu.Lock()
+								a.startedToolCalls[tc.ID] = true
+								a.pendingToolCallsMu.Unlock()
+								sentStart = true
+							}
 						}
+						// else: processAgentResponse will send StartToolCall with full input.
 					}
 
-					inProgressOpts := []acpsdk.ToolCallUpdateOpt{
-						acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
-						acpsdk.WithUpdateKind(kind),
-						acpsdk.WithUpdateTitle(title),
-						acpsdk.WithUpdateRawInput(rawInput),
-						acpsdk.WithUpdateContent(content),
-					}
-					if len(locations) > 0 {
-						inProgressOpts = append(inProgressOpts, acpsdk.WithUpdateLocations(locations))
-					}
-					inProgressUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tc.ID), inProgressOpts...)
-					if inProgressUpdate.ToolCallUpdate != nil {
-						inProgressUpdate.ToolCallUpdate.Meta = toolMeta
-					}
-					if err := acpSession.SendUpdate(inProgressUpdate); err != nil {
-						a.logger.Printf("[ACP AGENT] Failed to send tool call in_progress: %v", err)
+					// Only emit in_progress when a StartToolCall was (or had been) sent.
+					// Without a prior StartToolCall the update is for an unknown toolCallId
+					// and ACP clients silently discard it.
+					if sentStart {
+						inProgressOpts := []acpsdk.ToolCallUpdateOpt{
+							acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusInProgress),
+							acpsdk.WithUpdateKind(kind),
+							acpsdk.WithUpdateTitle(title),
+							acpsdk.WithUpdateRawInput(rawInput),
+							acpsdk.WithUpdateContent(content),
+						}
+						if len(locations) > 0 {
+							inProgressOpts = append(inProgressOpts, acpsdk.WithUpdateLocations(locations))
+						}
+						inProgressUpdate := acpsdk.UpdateToolCall(acpsdk.ToolCallId(tc.ID), inProgressOpts...)
+						if inProgressUpdate.ToolCallUpdate != nil {
+							inProgressUpdate.ToolCallUpdate.Meta = toolMeta
+						}
+						if err := acpSession.SendUpdate(inProgressUpdate); err != nil {
+							a.logger.Printf("[ACP AGENT] Failed to send tool call in_progress: %v", err)
+						}
 					}
 				}
 			}
@@ -305,7 +338,7 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				// update, so the tool never appears in the conversation panel.
 				if !wasStarted {
 					synthKind := mapToolKind(tr.Name)
-					synthRawInput := parseJSONInput(storedInput)
+					synthRawInput := parseRawInput(storedInput)
 					synthTitle := toolDisplayTitle(tr.Name, synthRawInput, acpSession.WorkDir)
 					synthContent := toolCallContent(tr.Name, synthRawInput)
 					synthLocations := toLocations(tr.Name, storedInput)
@@ -337,7 +370,7 @@ func (a *PandoACPAgent) processPromptWithAgent(
 				}
 
 				// Rebuild rawInput so clients can display tool arguments alongside the result.
-				rawInput := parseJSONInput(storedInput)
+				rawInput := parseRawInput(storedInput)
 
 				// Build rawOutput matching the opencode format: { output, metadata }.
 				rawOutput := map[string]interface{}{
@@ -580,29 +613,25 @@ func (a *PandoACPAgent) processAgentResponse(
 		}
 
 		a.pendingToolCallsMu.Lock()
-		_, alreadyRegistered := a.pendingToolCalls[toolCall.ID]
-		// hadEmptyInput is true when EventToolUseStart stored "" (empty) and
-		// EventToolUseStop was silently dropped because the 256-slot event buffer
-		// was full (non-blocking send with default:). In that case the streaming
-		// path sent StartToolCall with title="<toolname>" and rawInput={}, so we
-		// must send a corrective UpdateToolCall here with the full command info.
-		hadEmptyInput := alreadyRegistered && a.pendingToolCalls[toolCall.ID] == ""
+		prevStoredInput, alreadyRegistered := a.pendingToolCalls[toolCall.ID]
+		wasStarted := a.startedToolCalls[toolCall.ID]
+		hadEmptyInput := alreadyRegistered && prevStoredInput == ""
 		if !alreadyRegistered {
 			a.pendingToolCalls[toolCall.ID] = toolCall.Input
-		} else if a.pendingToolCalls[toolCall.ID] == "" {
+		} else if prevStoredInput == "" {
 			// Registered by ToolUseStart with empty input; update to full input now.
 			a.pendingToolCalls[toolCall.ID] = toolCall.Input
 		}
 		a.pendingToolCallsMu.Unlock()
 
-		if alreadyRegistered {
+		if alreadyRegistered && wasStarted {
 			// StartToolCall was already sent by the streaming path.
-			// If EventToolUseStop was dropped (hadEmptyInput), send a corrective
-			// UpdateToolCall so the client displays the correct command title and
-			// rawInput instead of just the tool name (e.g. "bash").
+			// If the stored input was empty (EventToolUseStop dropped because the
+			// 256-slot event buffer overflowed), send a corrective UpdateToolCall
+			// so the client displays the correct command title and rawInput.
 			if hadEmptyInput && toolCall.Input != "" {
 				kind := mapToolKind(toolCall.Name)
-				rawInput := parseJSONInput(toolCall.Input)
+				rawInput := parseRawInput(toolCall.Input)
 				title := toolDisplayTitle(toolCall.Name, rawInput, acpSession.WorkDir)
 				content := toolCallContent(toolCall.Name, rawInput)
 				locations := toLocations(toolCall.Name, toolCall.Input)
@@ -635,9 +664,19 @@ func (a *PandoACPAgent) processAgentResponse(
 			continue
 		}
 
+		if alreadyRegistered && !wasStarted {
+			// Streaming path registered the tool call in pendingToolCalls but
+			// deferred StartToolCall because input was empty. Now that the
+			// complete message is available we fall through to send
+			// StartToolCall with full input below.
+			a.pendingToolCallsMu.Lock()
+			a.pendingToolCalls[toolCall.ID] = toolCall.Input
+			a.pendingToolCallsMu.Unlock()
+		}
+
 		// Non-streaming provider: send StartToolCall now so the client knows the tool name.
 		kind := mapToolKind(toolCall.Name)
-		rawInput := parseJSONInput(toolCall.Input)
+		rawInput := parseRawInput(toolCall.Input)
 		title := toolDisplayTitle(toolCall.Name, rawInput, acpSession.WorkDir)
 		content := toolCallContent(toolCall.Name, rawInput)
 		locations := toLocations(toolCall.Name, toolCall.Input)
@@ -693,7 +732,7 @@ func (a *PandoACPAgent) processAgentResponse(
 		}
 		a.pendingToolCallsMu.Unlock()
 
-		rawInput := parseJSONInput(storedInput)
+		rawInput := parseRawInput(storedInput)
 		rawOutput := map[string]interface{}{"output": toolResult.Content}
 		if toolResult.Metadata != "" {
 			var meta interface{}

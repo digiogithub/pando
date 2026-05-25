@@ -525,6 +525,7 @@ func TestToolCallProgressiveEnrichment(t *testing.T) {
 func TestParseTodoWritePlanSupportsStreamingUpdates(t *testing.T) {
 	t.Parallel()
 
+	// Complete, valid JSON: exact parse works.
 	partial := `{"todos":[{"content":"Investigate logs","status":"in_progress","priority":"high"}]}`
 	entries := parseTodoWritePlan(partial)
 	if len(entries) != 1 {
@@ -540,9 +541,218 @@ func TestParseTodoWritePlanSupportsStreamingUpdates(t *testing.T) {
 		t.Fatalf("unexpected priority: %q", entries[0].Priority)
 	}
 
+	// Tolerant parsing: truncated JSON should still return entries when repairable.
 	incompleteJSON := `{"todos":[{"content":"Investigate logs"`
-	if entries := parseTodoWritePlan(incompleteJSON); len(entries) != 0 {
-		t.Fatalf("expected no plan entries for incomplete JSON, got %d", len(entries))
+	entries = parseTodoWritePlan(incompleteJSON)
+	if len(entries) != 1 {
+		t.Fatalf("tolerant parser: expected 1 entry for repairable JSON, got %d", len(entries))
+	}
+	if entries[0].Content != "Investigate logs" {
+		t.Fatalf("tolerant parser: unexpected content %q", entries[0].Content)
+	}
+
+	// Tolerant parsing: truncated mid-content should still recover the entry.
+	midContent := `{"todos":[{"content":"Investigate lo`
+	entries = parseTodoWritePlan(midContent)
+	if len(entries) != 1 {
+		t.Fatalf("tolerant parser mid-content: expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Content != "Investigate lo" {
+		t.Fatalf("tolerant parser mid-content: unexpected content %q", entries[0].Content)
+	}
+
+	// Tolerant parsing: two complete entries + truncated third should return at least the first two.
+	twoAndHalf := `{"todos":[{"content":"Step 1","status":"completed"},{"content":"Step 2","status":"in_progress"},{"content":"Step`
+	entries = parseTodoWritePlan(twoAndHalf)
+	if len(entries) < 2 {
+		t.Fatalf("tolerant parser 2.5 entries: expected at least 2 entries, got %d", len(entries))
+	}
+	if entries[0].Content != "Step 1" || entries[1].Content != "Step 2" {
+		t.Fatalf("tolerant parser 2.5 entries: unexpected content %q, %q", entries[0].Content, entries[1].Content)
+	}
+
+	// Completely unparseable garbage returns nil.
+	garbage := `not json at all`
+	if entries := parseTodoWritePlan(garbage); len(entries) != 0 {
+		t.Fatalf("expected no entries for garbage input, got %d", len(entries))
+	}
+
+	// Empty prefix before todos array: too little data to repair.
+	tooShort := `{"todos":[`
+	if entries := parseTodoWritePlan(tooShort); len(entries) != 0 {
+		t.Fatalf("expected no entries for too-short input, got %d", len(entries))
+	}
+}
+
+func TestParseRawInputNeverReturnsString(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		wantMap  bool
+		wantKeys int // expected number of keys if wantMap is true
+	}{
+		{"empty", "", true, 0},
+		{"valid object", `{"selector":"input","value":"test"}`, true, 2},
+		{"valid array", `[1,2,3]`, false, 0}, // returns []interface{}, not map
+		{"partial JSON", `{"selector": "input[type=\"pa`, true, 0},
+		{"bare string", `hello world`, true, 0},
+		{"truncated mid-key", `{"sel`, true, 0},
+		{"just opening brace", `{`, true, 0},
+		{"number", `42`, true, 0},
+		{"boolean", `true`, true, 0},
+		{"null", `null`, true, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseRawInput(tt.input)
+			// Must never be a string — that causes double-encoding in ACP JSON-RPC
+			if _, isString := result.(string); isString {
+				t.Fatalf("parseRawInput(%q) returned string, want map or slice", tt.input)
+			}
+			if tt.wantMap {
+				m, ok := result.(map[string]interface{})
+				if !ok {
+					t.Fatalf("parseRawInput(%q) = %T, want map[string]interface{}", tt.input, result)
+				}
+				if len(m) != tt.wantKeys {
+					t.Fatalf("parseRawInput(%q) map has %d keys, want %d", tt.input, len(m), tt.wantKeys)
+				}
+			}
+		})
+	}
+}
+
+func TestHasUsefulRawInputChecksForContent(t *testing.T) {
+	t.Parallel()
+
+	if hasUsefulRawInput(map[string]interface{}{}) {
+		t.Error("empty map should not be useful")
+	}
+	if !hasUsefulRawInput(map[string]interface{}{"key": "val"}) {
+		t.Error("non-empty map should be useful")
+	}
+	if hasUsefulRawInput("partial json") {
+		t.Error("string should not be useful")
+	}
+	if hasUsefulRawInput(nil) {
+		t.Error("nil should not be useful")
+	}
+	if !hasUsefulRawInput([]interface{}{1}) {
+		t.Error("non-empty slice should be useful")
+	}
+	if hasUsefulRawInput([]interface{}{}) {
+		t.Error("empty slice should not be useful")
+	}
+}
+
+func TestToolCallStreamStartsWithAvailableRawInput(t *testing.T) {
+	t.Parallel()
+
+	rawInput := map[string]any{"command": "go test ./internal/api"}
+	start := acpsdk.StartToolCall(
+		acpsdk.ToolCallId("tool-raw-input"),
+		toolDisplayTitle("bash", rawInput, "/workspace/project"),
+		acpsdk.WithStartKind(mapToolKind("bash")),
+		acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
+		acpsdk.WithStartRawInput(rawInput),
+		acpsdk.WithStartContent([]acpsdk.ToolCallContent{acpsdk.ToolTerminalRef("tool-raw-input")}),
+	)
+	if start.ToolCall == nil {
+		t.Fatal("expected tool_call payload")
+	}
+	inputMap, ok := start.ToolCall.RawInput.(map[string]any)
+	if !ok {
+		t.Fatalf("expected raw input map, got %#v", start.ToolCall.RawInput)
+	}
+	if inputMap["command"] != "go test ./internal/api" {
+		t.Fatalf("unexpected command in start raw input: %#v", inputMap)
+	}
+}
+
+func TestToolCallDeltaCanPromoteEmptyStartToEnrichedPending(t *testing.T) {
+	t.Parallel()
+
+	emptyStart := acpsdk.StartToolCall(
+		acpsdk.ToolCallId("tool-delta"),
+		"bash",
+		acpsdk.WithStartKind(mapToolKind("bash")),
+		acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending),
+		acpsdk.WithStartRawInput(map[string]any{}),
+	)
+	if emptyStart.ToolCall == nil {
+		t.Fatal("expected initial tool_call payload")
+	}
+
+	enriched := map[string]any{"command": "grep -n foo pando-acp.log"}
+	delta := acpsdk.UpdateToolCall(
+		acpsdk.ToolCallId("tool-delta"),
+		acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusPending),
+		acpsdk.WithUpdateKind(mapToolKind("bash")),
+		acpsdk.WithUpdateTitle(toolDisplayTitle("bash", enriched, "/workspace/project")),
+		acpsdk.WithUpdateRawInput(enriched),
+		acpsdk.WithUpdateContent([]acpsdk.ToolCallContent{acpsdk.ToolTerminalRef("tool-delta")}),
+	)
+	if delta.ToolCallUpdate == nil || delta.ToolCallUpdate.Status == nil {
+		t.Fatal("expected enriched tool_call_update payload")
+	}
+	if *delta.ToolCallUpdate.Status != acpsdk.ToolCallStatusPending {
+		t.Fatalf("unexpected delta status: %q", *delta.ToolCallUpdate.Status)
+	}
+	inputMap, ok := delta.ToolCallUpdate.RawInput.(map[string]any)
+	if !ok || inputMap["command"] != "grep -n foo pando-acp.log" {
+		t.Fatalf("unexpected delta raw input: %#v", delta.ToolCallUpdate.RawInput)
+	}
+}
+
+// TestDeferredStartToolCallSendsEnrichedFirst verifies that when a tool call
+// starts with empty input (ToolUseStart), the first StartToolCall is deferred
+// until enriched input arrives, so ACP clients like Zed never see an empty card.
+func TestDeferredStartToolCallSendsEnrichedFirst(t *testing.T) {
+	t.Parallel()
+
+	agent := newTestPandoAgent()
+	workDir := "/workspace/project"
+
+	// Simulate ToolUseStart with empty input:
+	// The streaming path sets pendingToolCalls but does NOT set startedToolCalls
+	// because input is empty (deferred).
+	agent.pendingToolCallsMu.Lock()
+	agent.pendingToolCalls["tool-deferred"] = ""
+	// startedToolCalls["tool-deferred"] is intentionally NOT set
+	agent.pendingToolCallsMu.Unlock()
+
+	// Simulate processAgentResponse receiving the complete tool call
+	// with full input. Since wasStarted is false, it should send
+	// StartToolCall with full enriched data.
+	msg := message.Message{Parts: []message.ContentPart{
+		message.ToolCall{ID: "tool-deferred", Name: "bash", Input: `{"command":"go test ./...","timeout":120000}`},
+	}}
+
+	acpSession := NewACPServerSession(acpsdk.SessionId("session-deferred"), workDir, nil, "session-deferred")
+	if err := agent.processAgentResponse(acpSession, msg, false, false); err != nil {
+		t.Fatalf("processAgentResponse failed: %v", err)
+	}
+
+	// Verify the stored input was updated to the full input
+	agent.pendingToolCallsMu.Lock()
+	storedInput := agent.pendingToolCalls["tool-deferred"]
+	agent.pendingToolCallsMu.Unlock()
+	if storedInput != `{"command":"go test ./...","timeout":120000}` {
+		t.Fatalf("expected stored input to be updated, got %q", storedInput)
+	}
+
+	// Verify that the enriched StartToolCall would have proper metadata
+	rawInput := parseJSONInput(storedInput)
+	title := toolDisplayTitle("bash", rawInput, workDir)
+	if title != "go test ./..." {
+		t.Fatalf("expected enriched title 'go test ./...', got %q", title)
+	}
+	kind := mapToolKind("bash")
+	if kind != acpsdk.ToolKindExecute {
+		t.Fatalf("expected ToolKindExecute, got %q", kind)
 	}
 }
 
