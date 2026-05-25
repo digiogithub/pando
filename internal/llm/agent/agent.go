@@ -462,30 +462,14 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		return a.err(fmt.Errorf("failed to get session: %w", err))
 	}
 	logging.Debug("processGeneration", "sessionID", sessionID, "existingMessages", len(msgs), "hasSummary", session.SummaryMessageID != "")
-	if session.SummaryMessageID != "" {
-		summaryMsgInex := -1
-		for i, msg := range msgs {
-			if msg.ID == session.SummaryMessageID {
-				summaryMsgInex = i
-				break
-			}
-		}
-		if summaryMsgInex != -1 {
-			msgs = msgs[summaryMsgInex:]
-			msgs[0].Role = message.User
-		}
-	}
+	msgs = applySummaryBoundary(msgs, session.SummaryMessageID)
 
 	// Trim message history to fit within 40% of the current model's context window.
 	// This prevents overflowing when the model was switched to one with a smaller
 	// context window mid-conversation. The 40% budget leaves ample room for the new
 	// user message, tool calls, and the model's response.
 	if a.provider != nil {
-		contextWindow := a.provider.Model().ContextWindow
-		cfg2 := config.Get()
-		if agentCfg2, ok2 := cfg2.Agents[a.agentName]; ok2 && agentCfg2.ContextWindowOverride > 0 {
-			contextWindow = agentCfg2.ContextWindowOverride
-		}
+		contextWindow := effectiveContextWindow(a.agentName, a.provider.Model())
 		msgs = trimMessagesToContextBudget(msgs, contextWindow, 0.40)
 	}
 
@@ -537,6 +521,11 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		return a.err(fmt.Errorf("failed to prepare agent provider: %w", err))
 	}
 
+	msgHistory, err = a.ensureHistoryFitsBeforeSend(ctx, sessionID, msgHistory, requestProvider, eventCh)
+	if err != nil {
+		return a.err(err)
+	}
+
 	for {
 		// Check for cancellation before each iteration
 		select {
@@ -577,17 +566,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 				if compactErr := a.compactContext(ctx, sessionID); compactErr != nil {
 					a.emitCompactionError(sessionID, compactErr, eventCh)
 				} else {
-					// Reload msgHistory from DB using the same SummaryMessageID logic
-					if newMsgs, listErr := a.messages.List(ctx, sessionID); listErr == nil {
-						if sess2, sessErr2 := a.sessions.Get(ctx, sessionID); sessErr2 == nil && sess2.SummaryMessageID != "" {
-							for i, m := range newMsgs {
-								if m.ID == sess2.SummaryMessageID {
-									newMsgs = newMsgs[i:]
-									newMsgs[0].Role = message.User
-									break
-								}
-							}
-						}
+					if newMsgs, reloadErr := a.loadSessionMessagesFromSummary(ctx, sessionID); reloadErr == nil {
 						msgHistory = newMsgs
 					}
 					doneMsg := "✓ Context compacted. Continuing...\n\n"
@@ -608,6 +587,143 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			Done:      true,
 		}
 	}
+}
+
+func (a *agent) ensureHistoryFitsBeforeSend(ctx context.Context, sessionID string, msgHistory []message.Message, requestProvider provider.Provider, eventCh chan<- AgentEvent) ([]message.Message, error) {
+	fitted := fitMessagesToProviderBudget(msgHistory, a.agentName, requestProvider.Model())
+	if estimateMessagesTokens(fitted) <= providerInputBudget(a.agentName, requestProvider.Model()) {
+		return fitted, nil
+	}
+
+	compactMsg := "\n\n⚡ Auto-compacting context before sending request...\n"
+	a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: compactMsg})
+	select {
+	case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: compactMsg}:
+	default:
+	}
+
+	if err := a.compactContext(ctx, sessionID); err != nil {
+		trimmed := fitMessagesToProviderBudget(msgHistory, a.agentName, requestProvider.Model())
+		if estimateMessagesTokens(trimmed) <= providerInputBudget(a.agentName, requestProvider.Model()) {
+			warnMsg := "⚠️ Context compaction failed; continuing with aggressively trimmed history.\n\n"
+			a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: warnMsg})
+			select {
+			case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: warnMsg}:
+			default:
+			}
+			return trimmed, nil
+		}
+		return nil, fmt.Errorf("session exceeds %s context budget and compaction failed: %w", requestProvider.Model().ID, err)
+	}
+
+	reloaded, err := a.loadSessionMessagesFromSummary(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	reloaded = fitMessagesToProviderBudget(reloaded, a.agentName, requestProvider.Model())
+	if estimateMessagesTokens(reloaded) > providerInputBudget(a.agentName, requestProvider.Model()) {
+		return nil, fmt.Errorf("session remains too large for %s after compaction", requestProvider.Model().ID)
+	}
+
+	doneMsg := "✓ Context compacted before sending request.\n\n"
+	a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: doneMsg})
+	select {
+	case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: doneMsg}:
+	default:
+	}
+	return reloaded, nil
+}
+
+func (a *agent) loadSessionMessagesFromSummary(ctx context.Context, sessionID string) ([]message.Message, error) {
+	msgs, err := a.messages.List(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reload session messages: %w", err)
+	}
+	sess, err := a.sessions.Get(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reload session: %w", err)
+	}
+	return applySummaryBoundary(msgs, sess.SummaryMessageID), nil
+}
+
+func applySummaryBoundary(msgs []message.Message, summaryMessageID string) []message.Message {
+	if summaryMessageID == "" {
+		return sanitizeMessagesForPrompt(msgs)
+	}
+	summaryMsgIndex := -1
+	for i, msg := range msgs {
+		if msg.ID == summaryMessageID {
+			summaryMsgIndex = i
+			break
+		}
+	}
+	if summaryMsgIndex == -1 {
+		return sanitizeMessagesForPrompt(msgs)
+	}
+	msgs = msgs[summaryMsgIndex:]
+	if len(msgs) > 0 {
+		msgs[0].Role = message.User
+	}
+	return sanitizeMessagesForPrompt(msgs)
+}
+
+func sanitizeMessagesForPrompt(msgs []message.Message) []message.Message {
+	sanitized := make([]message.Message, 0, len(msgs))
+	for _, msg := range msgs {
+		msgCopy := msg
+		if msg.Role == message.Tool {
+			parts := make([]message.ContentPart, 0, len(msg.Parts))
+			for _, part := range msg.Parts {
+				tr, ok := part.(message.ToolResult)
+				if !ok {
+					parts = append(parts, part)
+					continue
+				}
+				parts = append(parts, tr.SanitizedForPrompt())
+			}
+			msgCopy.Parts = parts
+		}
+		sanitized = append(sanitized, msgCopy)
+	}
+	return sanitized
+}
+
+func effectiveContextWindow(agentName config.AgentName, model models.Model) int64 {
+	cfg := config.Get()
+	if cfg != nil {
+		if agentCfg, ok := cfg.Agents[agentName]; ok && agentCfg.ContextWindowOverride > 0 {
+			return agentCfg.ContextWindowOverride
+		}
+	}
+	return model.ContextWindow
+}
+
+func providerInputBudget(agentName config.AgentName, model models.Model) int64 {
+	contextWindow := effectiveContextWindow(agentName, model)
+	if contextWindow <= 0 {
+		return 0
+	}
+	reserved := int64(effectiveMaxTokens(agentName, model)) + summaryToolOverheadTokens
+	budget := contextWindow - reserved
+	if budget < summaryMinInputBudgetTokens {
+		if contextWindow <= summaryMinInputBudgetTokens {
+			return contextWindow
+		}
+		return summaryMinInputBudgetTokens
+	}
+	return budget
+}
+
+func fitMessagesToProviderBudget(msgs []message.Message, agentName config.AgentName, model models.Model) []message.Message {
+	budget := providerInputBudget(agentName, model)
+	if budget <= 0 {
+		return msgs
+	}
+	trimmed := append([]message.Message(nil), msgs...)
+	for len(trimmed) > 1 && estimateMessagesTokens(trimmed) > budget {
+		trimmed = trimmed[1:]
+	}
+	return trimmed
 }
 
 func (a *agent) createUserMessage(ctx context.Context, sessionID, content string, attachmentParts []message.ContentPart) (message.Message, error) {
@@ -1394,6 +1510,10 @@ func buildStructuredConversationSummary(sessionID string, msgs []message.Message
 					b.WriteString(tr.ToolCallID)
 					b.WriteString(")")
 				}
+				if shouldOmitToolResultContent(tr.Name) {
+					b.WriteString(": <omitted from summary>\n")
+					continue
+				}
 				if content := strings.TrimSpace(tr.Content); content != "" {
 					b.WriteString(":\n")
 					b.WriteString(indentSummaryBlock(content))
@@ -1411,6 +1531,10 @@ func buildStructuredConversationSummary(sessionID string, msgs []message.Message
 	}
 
 	return strings.TrimSpace(b.String())
+}
+
+func shouldOmitToolResultContent(toolName string) bool {
+	return strings.EqualFold(toolName, tools.BrowserScreenshotToolName)
 }
 
 func indentSummaryBlock(text string) string {

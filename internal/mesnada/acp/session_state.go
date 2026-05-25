@@ -292,6 +292,11 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 					if strings.EqualFold(tr.Name, "TodoWrite") {
 						continue
 					}
+					// Browser screenshots may contain very large base64 payloads. Omit them
+					// from resumed-session history so they do not bloat the next prompt.
+					if strings.EqualFold(tr.Name, "browser_screenshot") {
+						continue
+					}
 
 					status := acpsdk.ToolCallStatusCompleted
 					if tr.IsError {

@@ -61,16 +61,16 @@ ContextWindowOverride = 0
 
 [Agents.coder]
 Model = 'openrouter.qwen/qwen3.6-flash'
-MaxTokens = 4096
+MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
-AutoCompact = false
-AutoCompactThreshold = 0.0
+AutoCompact = true
+AutoCompactThreshold = 0.9
 ContextWindowOverride = 0
 
 [Agents.persona-selector]
 Model = 'gpt-4.1-2025-04-14'
-MaxTokens = 5000
+MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false
@@ -79,7 +79,7 @@ ContextWindowOverride = 0
 
 [Agents.summarizer]
 Model = 'openrouter.qwen/qwen3.6-flash'
-MaxTokens = 4096
+MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false

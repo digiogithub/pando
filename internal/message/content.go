@@ -3,6 +3,7 @@ package message
 import (
 	"encoding/base64"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/llm/models"
@@ -101,6 +102,19 @@ type ToolResult struct {
 }
 
 func (ToolResult) isPart() {}
+
+func (tr ToolResult) ShouldOmitFromPrompt() bool {
+	return strings.EqualFold(tr.Name, "browser_screenshot")
+}
+
+func (tr ToolResult) SanitizedForPrompt() ToolResult {
+	if !tr.ShouldOmitFromPrompt() {
+		return tr
+	}
+		tr.Content = ""
+		tr.Metadata = ""
+		return tr
+}
 
 type Finish struct {
 	Reason FinishReason `json:"reason"`
