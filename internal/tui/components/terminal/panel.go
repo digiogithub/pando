@@ -36,11 +36,11 @@ type TerminalOpenedMsg struct {
 // TerminalPanel is the bottom-anchored panel containing the tab bar and
 // the active terminal's output.
 type TerminalPanel struct {
-	tabBar    *TerminalTabBar
-	visible   bool
-	width     int
-	height    int // total panel height (tab bar + terminal body)
-	focused   bool
+	tabBar  *TerminalTabBar
+	visible bool
+	width   int
+	height  int // total panel height (tab bar + terminal body)
+	focused bool
 }
 
 // NewTerminalPanel creates an empty, hidden terminal panel.

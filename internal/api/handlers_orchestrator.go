@@ -11,18 +11,18 @@ import (
 
 // TaskResponse is the JSON representation of an orchestrator task returned by the API.
 type TaskResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Agent     string    `json:"agent"`
-	Model     string    `json:"model"`
-	Status    string    `json:"status"`
-	Progress  int       `json:"progress"`
-	Tokens    int       `json:"tokens"`
-	Output    string    `json:"output,omitempty"`
-	CurrentTool string   `json:"current_tool,omitempty"`
-	ToolCalls []*mesnadaModels.ToolCall `json:"tool_calls,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          string                    `json:"id"`
+	Name        string                    `json:"name"`
+	Agent       string                    `json:"agent"`
+	Model       string                    `json:"model"`
+	Status      string                    `json:"status"`
+	Progress    int                       `json:"progress"`
+	Tokens      int                       `json:"tokens"`
+	Output      string                    `json:"output,omitempty"`
+	CurrentTool string                    `json:"current_tool,omitempty"`
+	ToolCalls   []*mesnadaModels.ToolCall `json:"tool_calls,omitempty"`
+	CreatedAt   time.Time                 `json:"created_at"`
+	UpdatedAt   time.Time                 `json:"updated_at"`
 }
 
 // taskToResponse converts a models.Task into a TaskResponse.
@@ -40,17 +40,17 @@ func taskToResponse(t *mesnadaModels.Task) TaskResponse {
 	}
 
 	return TaskResponse{
-		ID:        t.ID,
-		Name:      truncateTaskPrompt(t.Prompt, 80),
-		Agent:     string(t.Engine),
-		Model:     t.Model,
-		Status:    string(t.Status),
-		Progress:  progress,
-		Output:    t.Output,
+		ID:          t.ID,
+		Name:        truncateTaskPrompt(t.Prompt, 80),
+		Agent:       string(t.Engine),
+		Model:       t.Model,
+		Status:      string(t.Status),
+		Progress:    progress,
+		Output:      t.Output,
 		CurrentTool: t.CurrentTool,
-		ToolCalls: t.ToolCalls,
-		CreatedAt: t.CreatedAt,
-		UpdatedAt: updatedAt,
+		ToolCalls:   t.ToolCalls,
+		CreatedAt:   t.CreatedAt,
+		UpdatedAt:   updatedAt,
 	}
 }
 

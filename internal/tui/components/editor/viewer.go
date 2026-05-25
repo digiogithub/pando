@@ -65,8 +65,8 @@ type fileViewer struct {
 	currentMatch  int
 
 	// Word wrap state
-	wordWrap        bool
-	visualToRaw     []int // visual line index → raw line index (when wordWrap is true)
+	wordWrap         bool
+	visualToRaw      []int // visual line index → raw line index (when wordWrap is true)
 	rawToFirstVisual []int // raw line index → first visual line index (when wordWrap is true)
 	totalVisualLines int   // total visual line count when wordWrap is true
 

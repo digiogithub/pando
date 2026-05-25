@@ -6,10 +6,10 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	tcmarkdown "github.com/mistakenelf/teacup/markdown"
 	"github.com/digiogithub/pando/internal/tui/layout"
 	"github.com/digiogithub/pando/internal/tui/styles"
 	tuitheme "github.com/digiogithub/pando/internal/tui/theme"
+	tcmarkdown "github.com/mistakenelf/teacup/markdown"
 )
 
 // markdownViewer is a read-only viewer for .md files that renders markdown via teacup.

@@ -38,9 +38,9 @@ type Orchestrator struct {
 
 // Config holds orchestrator configuration.
 type Config struct {
-	StorePath        string
-	LogDir           string
-	MaxParallel      int
+	StorePath   string
+	LogDir      string
+	MaxParallel int
 	// DefaultMCPConfig is an optional explicit override for the MCP config file
 	// passed to subagents. When empty (the default), pando builds a dynamic
 	// config at spawn time that includes pando itself as an MCP server plus all

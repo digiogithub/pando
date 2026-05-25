@@ -11,10 +11,10 @@ import (
 
 // App holds the Wails desktop application state.
 type App struct {
-	ctx            context.Context
-	pandoURL       string
-	simpleMode     atomic.Bool
-	windowFocused  atomic.Bool
+	ctx           context.Context
+	pandoURL      string
+	simpleMode    atomic.Bool
+	windowFocused atomic.Bool
 }
 
 // NewApp creates a new desktop App that wraps the given Pando URL in a WebView.

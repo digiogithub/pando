@@ -21,8 +21,10 @@ func (s stubEvaluatorService) SelectTemplate(_ context.Context, _ string) (*eval
 func (s stubEvaluatorService) GetActiveSkills(_ context.Context, _ string) ([]evaluator.Skill, error) {
 	return nil, nil
 }
-func (s stubEvaluatorService) GetStats(_ context.Context) (*evaluator.Stats, error) { return s.stats, nil }
-func (s stubEvaluatorService) IsEnabled() bool { return true }
+func (s stubEvaluatorService) GetStats(_ context.Context) (*evaluator.Stats, error) {
+	return s.stats, nil
+}
+func (s stubEvaluatorService) IsEnabled() bool                                        { return true }
 func (s stubEvaluatorService) RecordTemplateSelection(_ context.Context, _, _ string) {}
 
 func TestEvaluatorViewStaysWithinTerminalHeight(t *testing.T) {

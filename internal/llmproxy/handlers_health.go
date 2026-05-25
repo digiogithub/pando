@@ -41,8 +41,8 @@ func (s *LLMProxyServer) handleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"name":             "pando-llm-proxy",
-		"version":          version.Version,
+		"name":              "pando-llm-proxy",
+		"version":           version.Version,
 		"openai_compatible": true,
 	})
 }

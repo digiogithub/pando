@@ -34,8 +34,8 @@ type WebSearcher interface {
 
 // googleSearcher performs searches using Google Custom Search API.
 type googleSearcher struct {
-	client       *http.Client
-	apiKey       string
+	client         *http.Client
+	apiKey         string
 	searchEngineID string
 }
 

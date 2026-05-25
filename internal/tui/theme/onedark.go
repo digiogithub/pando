@@ -111,7 +111,7 @@ func NewOneDarkTheme() *OneDarkTheme {
 		Light: lightSelection, // #e5e5e6 - good contrast with dark text
 	}
 	theme.SelectionForegroundColor = lipgloss.AdaptiveColor{
-		Dark:  "#e5e9f0",      // Bright white text on dark selection
+		Dark:  "#e5e9f0",       // Bright white text on dark selection
 		Light: lightForeground, // #383a42
 	}
 

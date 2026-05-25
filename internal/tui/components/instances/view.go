@@ -320,7 +320,7 @@ func renderChatPanel(
 	hints := hintsStyle.Render("  enter: send  i: interrupt  s: switch  tab: panels  esc: back")
 
 	inputStyle := lipgloss.NewStyle().
-		Width(width - 2).
+		Width(width-2).
 		Foreground(t.Text()).
 		Background(t.BackgroundSecondary()).
 		Padding(0, 1)

@@ -307,15 +307,15 @@ func (p *Parser) parseAddFile() (PatchAction, error) {
 // with their ASCII equivalents for better patch matching.
 func normalizeUnicode(s string) string {
 	r := strings.NewReplacer(
-		"\u2018", "'",   // left single quotation mark
-		"\u2019", "'",   // right single quotation mark
-		"\u201C", "\"",  // left double quotation mark
-		"\u201D", "\"",  // right double quotation mark
-		"\u2014", "-",   // em dash
-		"\u2013", "-",   // en dash
+		"\u2018", "'", // left single quotation mark
+		"\u2019", "'", // right single quotation mark
+		"\u201C", "\"", // left double quotation mark
+		"\u201D", "\"", // right double quotation mark
+		"\u2014", "-", // em dash
+		"\u2013", "-", // en dash
 		"\u2026", "...", // horizontal ellipsis
-		"\u00A0", " ",   // non-breaking space
-		"\u2011", "-",   // non-breaking hyphen
+		"\u00A0", " ", // non-breaking space
+		"\u2011", "-", // non-breaking hyphen
 	)
 	return r.Replace(s)
 }

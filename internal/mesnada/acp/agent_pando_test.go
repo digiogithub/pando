@@ -44,6 +44,21 @@ func TestToolDisplayTitle(t *testing.T) {
 		t.Fatalf("unexpected read title: %q", got)
 	}
 
+	writeInput := map[string]interface{}{"file_path": "/workspace/project/internal/out.go"}
+	if got := toolDisplayTitle("write", writeInput, cwd); got != "Write internal/out.go" {
+		t.Fatalf("unexpected write title: %q", got)
+	}
+
+	editInput := map[string]interface{}{"path": "/workspace/project/internal/edit.go"}
+	if got := toolDisplayTitle("edit", editInput, cwd); got != "Edit internal/edit.go" {
+		t.Fatalf("unexpected edit title: %q", got)
+	}
+
+	bashInput := map[string]interface{}{"command": "go test ./internal/api"}
+	if got := toolDisplayTitle("bash", bashInput, cwd); got != "go test ./internal/api" {
+		t.Fatalf("unexpected bash title: %q", got)
+	}
+
 	grepInput := map[string]interface{}{
 		"pattern":     "toolInfo",
 		"path":        "/workspace/project/internal",
@@ -743,6 +758,20 @@ func TestToolStartContentUsesTerminalRefWhenCapabilityEnabled(t *testing.T) {
 	content := agent.toolStartContent("bash", "tool-1", nil)
 	if len(content) != 1 || content[0].Terminal == nil || content[0].Terminal.TerminalId != "tool-1" {
 		t.Fatalf("expected terminal ref content, got %#v", content)
+	}
+}
+
+func TestToolCallContentShowsPathHintForPartialWriteAndEditInputs(t *testing.T) {
+	t.Parallel()
+
+	writeContent := toolCallContent("write", map[string]any{"path": "/workspace/project/internal/out.go"})
+	if len(writeContent) != 1 || writeContent[0].Content == nil {
+		t.Fatalf("expected write path hint content, got %#v", writeContent)
+	}
+
+	editContent := toolCallContent("edit", map[string]any{"path": "/workspace/project/internal/edit.go"})
+	if len(editContent) != 1 || writeContent[0].Content == nil {
+		t.Fatalf("expected edit path hint content, got %#v", editContent)
 	}
 }
 

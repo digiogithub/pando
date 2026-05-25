@@ -55,7 +55,7 @@ func (f *executableFinder) find() (string, error) {
 // ─── Chrome ────────────────────────────────────────────────────────────────
 
 type chromeBrowser struct {
-	execPath    string
+	execPath     string
 	cleaningOpts *htmlCleaningOptions
 }
 
@@ -92,7 +92,7 @@ func (c *chromeBrowser) Fetch(url string) ([]byte, error) {
 // ─── Firefox ───────────────────────────────────────────────────────────────
 
 type firefoxBrowser struct {
-	execPath    string
+	execPath     string
 	cleaningOpts *htmlCleaningOptions
 }
 
@@ -125,7 +125,7 @@ func (f *firefoxBrowser) Fetch(url string) ([]byte, error) {
 // ─── Curl ──────────────────────────────────────────────────────────────────
 
 type curlBrowser struct {
-	execPath    string
+	execPath     string
 	cleaningOpts *htmlCleaningOptions
 }
 
@@ -142,8 +142,8 @@ func (c *curlBrowser) Name() string { return "Curl" }
 
 func (c *curlBrowser) Fetch(url string) ([]byte, error) {
 	cmd := exec.Command(c.execPath,
-		"-L",        // follow redirects
-		"-s",        // silent
+		"-L", // follow redirects
+		"-s", // silent
 		"-A", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 		"--max-time", "30",
 		url,

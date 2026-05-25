@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/fsnotify/fsnotify"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/lsp/protocol"
+	"github.com/fsnotify/fsnotify"
 )
 
 // WorkspaceWatcher manages LSP file watching

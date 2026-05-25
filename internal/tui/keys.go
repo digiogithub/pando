@@ -58,11 +58,11 @@ type EditorKeys struct {
 }
 
 type FileTreeKeys struct {
-	Up      key.Binding
-	Down    key.Binding
-	Open    key.Binding
-	Search  key.Binding
-	Expand  key.Binding
+	Up       key.Binding
+	Down     key.Binding
+	Open     key.Binding
+	Search   key.Binding
+	Expand   key.Binding
 	Collapse key.Binding
 	Refresh  key.Binding
 	NewFile  key.Binding

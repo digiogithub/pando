@@ -11,7 +11,7 @@ import (
 
 const (
 	DefaultCacheMaxBytes  = 50 * 1024 * 1024 // 50MB per session
-	DefaultCachePageLines = 200               // Default page size
+	DefaultCachePageLines = 200              // Default page size
 )
 
 // CacheEntry holds a cached tool response with pagination support.

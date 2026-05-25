@@ -6,13 +6,13 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/notify"
 	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/google/uuid"
 )
 
 // evaluatorService is the minimal interface used by session to trigger evaluation.

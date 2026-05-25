@@ -217,7 +217,7 @@ func (m SettingsCmp) renderSidebar() string {
 			// Show group header when the group changes
 			if section.Group != "" && section.Group != lastGroup {
 				groupHeader := lipgloss.NewStyle().
-					Width(width - 2).
+					Width(width-2).
 					Padding(0, 1).
 					Foreground(t.TextMuted()).
 					Render("─ " + section.Group)

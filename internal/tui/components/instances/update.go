@@ -526,4 +526,3 @@ func (m *Model) resetChat() {
 	m.cancelLiveSub()
 	m.refreshViewportContent()
 }
-

@@ -110,16 +110,23 @@ func mapToolKind(toolName string) acpsdk.ToolKind {
 }
 
 func toolDisplayTitle(toolName string, rawInput interface{}, cwd string) string {
-	switch strings.ToLower(toolName) {
+	name := strings.ToLower(toolName)
+	switch name {
 	case "bash", "execute_command":
 		if m, ok := rawInput.(map[string]interface{}); ok {
 			if command, ok := m["command"].(string); ok && strings.TrimSpace(command) != "" {
 				return command
 			}
+			if description, ok := m["description"].(string); ok && strings.TrimSpace(description) != "" {
+				return description
+			}
 		}
-		return toolName
+		if name == "execute_command" {
+			return "Execute command"
+		}
+		return "Bash"
 	case "read", "view":
-		if path := toolInputString(rawInput, "file_path"); path != "" {
+		if path := firstToolInputString(rawInput, "file_path", "path"); path != "" {
 			displayPath := toDisplayPath(path, cwd)
 			if limit := readRangeLabel(rawInput); limit != "" {
 				return "Read " + displayPath + limit
@@ -128,12 +135,12 @@ func toolDisplayTitle(toolName string, rawInput interface{}, cwd string) string 
 		}
 		return "Read"
 	case "write":
-		if path := toolInputString(rawInput, "file_path"); path != "" {
+		if path := firstToolInputString(rawInput, "file_path", "path"); path != "" {
 			return "Write " + toDisplayPath(path, cwd)
 		}
 		return "Write"
 	case "edit", "multiedit", "patch":
-		if path := toolInputString(rawInput, "file_path"); path != "" {
+		if path := firstToolInputString(rawInput, "file_path", "path"); path != "" {
 			return "Edit " + toDisplayPath(path, cwd)
 		}
 		return "Edit"
@@ -255,17 +262,23 @@ func todoSummary(rawInput interface{}) string {
 func toolCallContent(toolName string, rawInput interface{}) []acpsdk.ToolCallContent {
 	switch strings.ToLower(toolName) {
 	case "write":
-		path := toolInputString(rawInput, "file_path")
+		path := firstToolInputString(rawInput, "file_path", "path")
 		content := toolInputString(rawInput, "content")
 		if path != "" && content != "" {
 			return []acpsdk.ToolCallContent{acpsdk.ToolDiffContent(path, content)}
 		}
+		if path != "" {
+			return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock("Write " + path))}
+		}
 	case "edit", "multiedit", "patch":
-		path := toolInputString(rawInput, "file_path")
+		path := firstToolInputString(rawInput, "file_path", "path")
 		oldString := toolInputString(rawInput, "old_string")
 		newString := toolInputString(rawInput, "new_string")
 		if path != "" && (oldString != "" || newString != "") {
 			return []acpsdk.ToolCallContent{acpsdk.ToolDiffContent(path, newString, oldString)}
+		}
+		if path != "" {
+			return []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock("Edit " + path))}
 		}
 	case "bash", "execute_command":
 		if description := toolInputString(rawInput, "description"); description != "" {
@@ -358,6 +371,15 @@ func toolInputString(rawInput interface{}, key string) string {
 	return s
 }
 
+func firstToolInputString(rawInput interface{}, keys ...string) string {
+	for _, key := range keys {
+		if value := toolInputString(rawInput, key); strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func toolInputInt(rawInput interface{}, key string) int {
 	m, ok := rawInput.(map[string]interface{})
 	if !ok {
@@ -443,10 +465,10 @@ func parseTodoWritePlan(inputJSON string) []acpsdk.PlanEntry {
 	// Tolerant parsing: the provider is still streaming and the JSON is truncated.
 	// Try common repair suffixes to close open structures.
 	repairs := []string{
-		"]}",       // array element complete, close array + object
-		"}]}",      // mid-property in last element
-		"\"}]}",    // mid-string value in last element
-		"\"}}]}",   // mid-string nested in object
+		"]}",      // array element complete, close array + object
+		"}]}",     // mid-property in last element
+		"\"}]}",   // mid-string value in last element
+		"\"}}]}",  // mid-string nested in object
 		"null}]}", // mid-value
 	}
 	for _, suffix := range repairs {

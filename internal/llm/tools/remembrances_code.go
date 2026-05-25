@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/digiogithub/pando/internal/rag/code"
 	"github.com/digiogithub/pando/internal/rag/treesitter"
@@ -23,6 +24,7 @@ const (
 	codeReindexFileToolName     = "code_reindex_file"
 	codeListProjectsToolName    = "code_list_projects"
 	codeSearchPatternToolName   = "code_search_pattern"
+	codeFindReferencesToolName  = "code_find_references"
 )
 
 type codeToolBase struct {
@@ -59,6 +61,9 @@ type CodeListProjectsTool struct{ codeToolBase }
 // CodeSearchPatternTool searches for text patterns in code symbols.
 type CodeSearchPatternTool struct{ codeToolBase }
 
+// CodeFindReferencesTool finds references to a symbol across the indexed codebase.
+type CodeFindReferencesTool struct{ codeToolBase }
+
 // Constructors
 
 func NewCodeIndexProjectTool(indexer *code.CodeIndexer) BaseTool {
@@ -90,6 +95,9 @@ func NewCodeListProjectsTool(indexer *code.CodeIndexer) BaseTool {
 }
 func NewCodeSearchPatternTool(indexer *code.CodeIndexer) BaseTool {
 	return &CodeSearchPatternTool{codeToolBase{indexer}}
+}
+func NewCodeFindReferencesTool(indexer *code.CodeIndexer) BaseTool {
+	return &CodeFindReferencesTool{codeToolBase{indexer}}
 }
 
 // ---- CodeIndexProjectTool ----
@@ -287,17 +295,23 @@ func (t *CodeHybridSearchTool) Run(ctx context.Context, params ToolCall) (ToolRe
 	}
 
 	type symbolItem struct {
-		ID         string  `json:"id"`
-		FilePath   string  `json:"file_path"`
-		Language   string  `json:"language"`
-		SymbolType string  `json:"symbol_type"`
-		Name       string  `json:"name"`
-		NamePath   string  `json:"name_path"`
-		StartLine  int     `json:"start_line"`
-		EndLine    int     `json:"end_line"`
-		DocString  string  `json:"doc_string,omitempty"`
-		Score      float64 `json:"score"`
-		Rank       int     `json:"rank"`
+		ID         string                 `json:"id"`
+		FilePath   string                 `json:"file_path"`
+		Language   string                 `json:"language"`
+		SymbolType string                 `json:"symbol_type"`
+		Name       string                 `json:"name"`
+		NamePath   string                 `json:"name_path"`
+		StartLine  int                    `json:"start_line"`
+		EndLine    int                    `json:"end_line"`
+		StartByte  int                    `json:"start_byte"`
+		EndByte    int                    `json:"end_byte"`
+		Signature  string                 `json:"signature,omitempty"`
+		DocString  string                 `json:"doc_string,omitempty"`
+		Metadata   map[string]interface{} `json:"metadata,omitempty"`
+		CreatedAt  time.Time              `json:"created_at"`
+		UpdatedAt  time.Time              `json:"updated_at"`
+		Score      float64                `json:"score"`
+		Rank       int                    `json:"rank"`
 	}
 
 	items := make([]symbolItem, len(results))
@@ -312,7 +326,13 @@ func (t *CodeHybridSearchTool) Run(ctx context.Context, params ToolCall) (ToolRe
 			NamePath:   sym.NamePath,
 			StartLine:  sym.StartLine,
 			EndLine:    sym.EndLine,
+			StartByte:  sym.StartByte,
+			EndByte:    sym.EndByte,
+			Signature:  sym.Signature,
 			DocString:  sym.DocString,
+			Metadata:   sym.Metadata,
+			CreatedAt:  sym.CreatedAt,
+			UpdatedAt:  sym.UpdatedAt,
 			Score:      r.Score,
 			Rank:       r.Rank,
 		}
@@ -635,7 +655,7 @@ func (t *CodeListProjectsTool) Run(ctx context.Context, params ToolCall) (ToolRe
 func (t *CodeSearchPatternTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        codeSearchPatternToolName,
-		Description: "Searches for text patterns in indexed code symbols source code. Useful for finding specific identifiers, API calls, or patterns.",
+		Description: "Searches indexed code symbols for literal text or regular expressions across source code, names, paths, signatures, and docs.",
 		Parameters: map[string]any{
 			"project_id": map[string]any{
 				"type":        "string",
@@ -643,7 +663,7 @@ func (t *CodeSearchPatternTool) Info() ToolInfo {
 			},
 			"pattern": map[string]any{
 				"type":        "string",
-				"description": "Text pattern to search for in symbol source code.",
+				"description": "Text pattern or regular expression to search for across indexed symbol fields.",
 			},
 			"case_sensitive": map[string]any{
 				"type":        "boolean",
@@ -801,6 +821,68 @@ func languageTypeFilter(languages []string) string {
 		}
 	}
 	return ""
+}
+
+// ---- CodeFindReferencesTool ----
+
+func (t *CodeFindReferencesTool) Info() ToolInfo {
+	return ToolInfo{
+		Name:        codeFindReferencesToolName,
+		Description: "Finds symbols that reference a target symbol by ID or name across the indexed project.",
+		Parameters: map[string]any{
+			"project_id": map[string]any{
+				"type":        "string",
+				"description": "The project ID to search in.",
+			},
+			"symbol_id": map[string]any{
+				"type":        "string",
+				"description": "Optional symbol ID to resolve the target name.",
+			},
+			"symbol_name": map[string]any{
+				"type":        "string",
+				"description": "Optional symbol name to search for references.",
+			},
+			"limit": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of results (default: 50).",
+			},
+		},
+		Required: []string{"project_id"},
+	}
+}
+
+func (t *CodeFindReferencesTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
+	var req struct {
+		ProjectID  string `json:"project_id"`
+		SymbolID   string `json:"symbol_id"`
+		SymbolName string `json:"symbol_name"`
+		Limit      int    `json:"limit"`
+	}
+	if err := DecodeToolInput(params.Input, &req); err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
+	}
+	if req.ProjectID == "" {
+		return NewTextErrorResponse("project_id is required"), nil
+	}
+	if req.SymbolID == "" && req.SymbolName == "" {
+		return NewTextErrorResponse("symbol_id or symbol_name is required"), nil
+	}
+	if req.Limit <= 0 {
+		req.Limit = 50
+	}
+
+	symbols, err := t.indexer.FindReferences(ctx, req.ProjectID, req.SymbolID, req.SymbolName, req.Limit)
+	if err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("find references error: %v", err)), nil
+	}
+	if len(symbols) == 0 {
+		return NewTextResponse("No references found for the requested symbol."), nil
+	}
+
+	return NewStructuredResponse(map[string]any{
+		"count":   len(symbols),
+		"symbols": symbols,
+	}), nil
 }
 
 // sanitizeProjectID converts a path or name to a valid project ID.

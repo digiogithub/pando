@@ -5,12 +5,12 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	chAnsi "github.com/charmbracelet/x/ansi"
-	"github.com/muesli/ansi"
-	"github.com/muesli/reflow/truncate"
-	"github.com/muesli/termenv"
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
+	"github.com/muesli/ansi"
+	"github.com/muesli/reflow/truncate"
+	"github.com/muesli/termenv"
 )
 
 // Most of this code is borrowed from

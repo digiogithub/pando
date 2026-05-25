@@ -57,8 +57,8 @@ type EditableKeyMap struct {
 	Down      key.Binding
 	Left      key.Binding
 	Right     key.Binding
-	LineStart  key.Binding
-	LineEnd    key.Binding
+	LineStart key.Binding
+	LineEnd   key.Binding
 	PageUp    key.Binding
 	PageDown  key.Binding
 	FileStart key.Binding
@@ -229,16 +229,16 @@ type fileEditor struct {
 	extraCursors []cursorPos
 
 	// Selection
-	hasSelection    bool
-	selAnchorRow    int
-	selAnchorCol    int
+	hasSelection bool
+	selAnchorRow int
+	selAnchorCol int
 
 	// Internal clipboard (separate from OS clipboard)
 	internalClipboard string
 
 	// Word wrap state
-	wordWrap        bool
-	wrapWidth       int   // content width used for wrapping
+	wordWrap         bool
+	wrapWidth        int   // content width used for wrapping
 	rawToFirstVisual []int // raw line → first visual line index (rebuilt in refreshViewport)
 	totalVisualLines int
 

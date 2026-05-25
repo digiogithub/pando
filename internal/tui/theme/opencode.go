@@ -284,4 +284,3 @@ func init() {
 	// Register the Pando theme with the theme manager
 	RegisterTheme("pando", NewPandoTheme())
 }
-

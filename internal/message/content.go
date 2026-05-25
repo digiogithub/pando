@@ -111,9 +111,9 @@ func (tr ToolResult) SanitizedForPrompt() ToolResult {
 	if !tr.ShouldOmitFromPrompt() {
 		return tr
 	}
-		tr.Content = ""
-		tr.Metadata = ""
-		return tr
+	tr.Content = ""
+	tr.Metadata = ""
+	return tr
 }
 
 type Finish struct {

@@ -67,8 +67,8 @@ func TestSecondaryWatcherNilClient(t *testing.T) {
 	w := failover.NewWatcherForSecondary(
 		failover.DefaultConfig(),
 		"test-id", t.TempDir(), 40004, 40005,
-		nil,  // nil client
-		"",   // no pubEndpoint
+		nil, // nil client
+		"",  // no pubEndpoint
 		nil,
 	)
 	ctx, cancel := context.WithCancel(context.Background())

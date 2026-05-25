@@ -20,9 +20,9 @@ var embeddedTemplates embed.FS
 // It supports embedded templates with external override from project
 // or user configuration directories.
 type TemplateRegistry struct {
-	mu          sync.RWMutex
-	cache       map[string]*template.Template
-	customFuncs template.FuncMap
+	mu           sync.RWMutex
+	cache        map[string]*template.Template
+	customFuncs  template.FuncMap
 	overrideDirs []string
 }
 

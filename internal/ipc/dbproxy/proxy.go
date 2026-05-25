@@ -56,7 +56,7 @@ var DefaultWriteTimeouts = WriteTimeout{
 // When client is nil the proxy behaves identically to the embedded querier
 // (useful for the primary instance itself).
 type DBProxy struct {
-	db.Querier             // local reads — embedded interface
+	db.Querier // local reads — embedded interface
 	client     *ipc.Client
 	rpcAddr    string
 	instanceID string

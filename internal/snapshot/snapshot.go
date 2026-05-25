@@ -38,7 +38,7 @@ type Snapshot struct {
 // SnapshotFile represents a single file captured within a snapshot.
 type SnapshotFile struct {
 	Path    string `json:"path"`
-	Hash    string `json:"hash"`     // SHA256 hex digest
+	Hash    string `json:"hash"` // SHA256 hex digest
 	Size    int64  `json:"size"`
 	ModTime int64  `json:"mod_time"`
 	IsDir   bool   `json:"is_dir"`

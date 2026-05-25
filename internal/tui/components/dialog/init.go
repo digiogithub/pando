@@ -24,7 +24,7 @@ type InitDialogCmp struct {
 
 	// Config generation question — only shown when showConfigSection is true.
 	showConfigSection bool
-	configSelected    int // 0=yes 1=no
+	configSelected    int  // 0=yes 1=no
 	focusConfig       bool // true when the keyboard focus is on the config row
 
 	keys initDialogKeyMap

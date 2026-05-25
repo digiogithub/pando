@@ -58,14 +58,14 @@ func TestGeminiBuildThinkingConfig(t *testing.T) {
 			wantBudget: int32Ptr(2000),
 		},
 		{
-			name:    "gemini 2.5 flash-lite has no thinking config",
+			name:     "gemini 2.5 flash-lite has no thinking config",
 			apiModel: "gemini-2.5-flash-lite",
-			wantNil: true,
+			wantNil:  true,
 		},
 		{
-			name:    "older gemini 2.0 model has no thinking config",
+			name:     "older gemini 2.0 model has no thinking config",
 			apiModel: "gemini-2.0-flash",
-			wantNil: true,
+			wantNil:  true,
 		},
 	}
 

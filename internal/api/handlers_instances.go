@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/digiogithub/pando/internal/instanceregistry"
 	ipc "github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/protocol"
-	"github.com/digiogithub/pando/internal/instanceregistry"
 )
 
 // instanceResponse is the JSON wire representation of a running Pando instance.

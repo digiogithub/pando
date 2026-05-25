@@ -111,8 +111,8 @@ type projectsDialogCmp struct {
 	width       int
 	height      int
 	// addMode is true when the user is typing a new project path.
-	addMode    bool
-	pathInput  textinput.Model
+	addMode   bool
+	pathInput textinput.Model
 	// renameMode is true when the user is typing a new name for a project.
 	renameMode  bool
 	renameInput textinput.Model

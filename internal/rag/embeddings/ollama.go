@@ -26,8 +26,8 @@ type OllamaEmbedder struct {
 
 // ollamaEmbeddingRequest is the request structure for Ollama embeddings API.
 type ollamaEmbeddingRequest struct {
-	Model  string `json:"model"`
-	Input  any    `json:"input"`
+	Model string `json:"model"`
+	Input any    `json:"input"`
 }
 
 // ollamaEmbeddingResponse is the response structure from Ollama embeddings API.
@@ -135,8 +135,8 @@ func (e *OllamaEmbedder) Dimension() int {
 // embedSingle makes a single API call to embed one text.
 func (e *OllamaEmbedder) embedSingle(ctx context.Context, text string) ([]float32, error) {
 	reqBody := ollamaEmbeddingRequest{
-		Model:  e.model,
-		Input:  text,
+		Model: e.model,
+		Input: text,
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)

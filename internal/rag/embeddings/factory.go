@@ -70,14 +70,14 @@ var ProviderDimensions = map[string]int{
 	"text-embedding-004": 768,
 
 	// Ollama (common models)
-	"nomic-embed-text":   768,
-	"mxbai-embed-large":  1024,
-	"all-minilm":         384,
+	"nomic-embed-text":  768,
+	"mxbai-embed-large": 1024,
+	"all-minilm":        384,
 
 	// Voyage (Anthropic)
-	"voyage-3":        1024,
-	"voyage-3-large":  1536,
-	"voyage-code-3":   1024,
+	"voyage-3":       1024,
+	"voyage-3-large": 1536,
+	"voyage-code-3":  1024,
 }
 
 // GetModelDimension returns the expected dimension for a given model.

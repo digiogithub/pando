@@ -31,7 +31,7 @@ type Chunk struct {
 	// ChunkIndex is the zero-based position of this chunk inside its source document.
 	ChunkIndex int
 	// Metadata is an arbitrary JSON string stored alongside the chunk.
-	Metadata string
+	Metadata  string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

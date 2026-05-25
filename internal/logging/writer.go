@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-logfmt/logfmt"
 	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/go-logfmt/logfmt"
 )
 
 const (

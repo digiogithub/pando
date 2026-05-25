@@ -1,23 +1,10 @@
 {
   "mcpServers": {
-    "hyper-mcp": {
+    "pando": {
       "type": "local",
-      "command": "hyper-mcp",
-      "args": [
-        "--config-file",
-        "/home/sevir/.config/hyper-mcp/search.yaml"
-      ],
-      "tools": [
-        "*"
-      ]
-    },
-    "remembrances": {
-      "type": "http",
-      "url": "http://127.0.0.1:4030/mcp"
-    },
-    "mesnada": {
-      "type": "http",
-      "url": "http://127.0.0.1:9767/mcp"
+      "command": "pando",
+      "args": ["acp"],
+      "tools": ["*"]
     }
   }
 }

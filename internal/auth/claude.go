@@ -19,14 +19,14 @@ import (
 )
 
 const (
-	ClaudeClientID        = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-	ClaudeAuthorizeURL    = "https://claude.ai/oauth/authorize"
-	ClaudeTokenURL        = "https://platform.claude.com/v1/oauth/token"
-	ClaudeProfileURL      = "https://api.anthropic.com/api/oauth/profile"
-	ClaudeOAuthBetaHeader = "oauth-2025-04-20"
-	ClaudeManualRedirectURL = "https://platform.claude.com/oauth/code/callback"
-	ClaudeSuccessURL        = "https://claude.ai/oauth/code/success?app=claude-code"
-	ClaudeOAuthScopes       = "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
+	ClaudeClientID           = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	ClaudeAuthorizeURL       = "https://claude.ai/oauth/authorize"
+	ClaudeTokenURL           = "https://platform.claude.com/v1/oauth/token"
+	ClaudeProfileURL         = "https://api.anthropic.com/api/oauth/profile"
+	ClaudeOAuthBetaHeader    = "oauth-2025-04-20"
+	ClaudeManualRedirectURL  = "https://platform.claude.com/oauth/code/callback"
+	ClaudeSuccessURL         = "https://claude.ai/oauth/code/success?app=claude-code"
+	ClaudeOAuthScopes        = "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
 	claudeCredentialFile     = "claude.json"
 	claudeCodeCredentialFile = ".credentials.json"
 	claudeCallbackTimeout    = 5 * time.Minute
@@ -58,12 +58,12 @@ type ClaudeProfileAccount struct {
 }
 
 type ClaudeProfileOrganization struct {
-	UUID                    string `json:"uuid"`
-	OrganizationType        string `json:"organization_type"`
-	RateLimitTier           string `json:"rate_limit_tier"`
-	HasExtraUsageEnabled    bool   `json:"has_extra_usage_enabled"`
-	BillingType             string `json:"billing_type"`
-	SubscriptionCreatedAt   string `json:"subscription_created_at"`
+	UUID                  string `json:"uuid"`
+	OrganizationType      string `json:"organization_type"`
+	RateLimitTier         string `json:"rate_limit_tier"`
+	HasExtraUsageEnabled  bool   `json:"has_extra_usage_enabled"`
+	BillingType           string `json:"billing_type"`
+	SubscriptionCreatedAt string `json:"subscription_created_at"`
 }
 
 type ClaudeAuthStatus struct {
@@ -463,7 +463,7 @@ func LoadClaudeCredentials() (*ClaudeCredentials, string, error) {
 		}
 		return creds, "env", nil
 	}
-	
+
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
 		path := filepath.Join(homeDir, ".claude", claudeCodeCredentialFile)

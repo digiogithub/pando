@@ -25,8 +25,8 @@ func TestAssistantTextStreamerShowsToolsAndOnlyVisibleContent(t *testing.T) {
 		{
 			Type: pubsub.CreatedEvent,
 			Payload: agent.AgentEvent{
-				SessionID: "session-1",
-				Type:      agent.AgentEventTypeToolResult,
+				SessionID:  "session-1",
+				Type:       agent.AgentEventTypeToolResult,
 				ToolResult: &message.ToolResult{ToolCallID: "tool-1", Name: "kb_search_documents", Content: "2 docs found"},
 			},
 		},

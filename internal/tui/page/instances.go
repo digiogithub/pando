@@ -61,7 +61,7 @@ func NewInstancesPage() tea.Model {
 
 // Ensure interfaces are satisfied at compile time.
 var (
-	_ tea.Model      = (*instancesPageModel)(nil)
+	_ tea.Model       = (*instancesPageModel)(nil)
 	_ layout.Sizeable = (*instancesPageModel)(nil)
 	_ layout.Bindings = (*instancesPageModel)(nil)
 )

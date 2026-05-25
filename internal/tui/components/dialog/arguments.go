@@ -75,7 +75,7 @@ func NewMultiArgumentsDialogCmp(commandID, content string, argNames []string) Mu
 		ti.PlaceholderStyle = ti.PlaceholderStyle.Background(t.Background())
 		ti.PromptStyle = ti.PromptStyle.Background(t.Background())
 		ti.TextStyle = ti.TextStyle.Background(t.Background())
-		
+
 		// Only focus the first input initially
 		if i == 0 {
 			ti.Focus()
@@ -89,11 +89,11 @@ func NewMultiArgumentsDialogCmp(commandID, content string, argNames []string) Mu
 	}
 
 	return MultiArgumentsDialogCmp{
-		inputs:    inputs,
-		keys:      argumentsDialogKeyMap{},
-		commandID: commandID,
-		content:   content,
-		argNames:  argNames,
+		inputs:     inputs,
+		keys:       argumentsDialogKeyMap{},
+		commandID:  commandID,
+		content:    content,
+		argNames:   argNames,
 		focusIndex: 0,
 	}
 }
@@ -108,7 +108,7 @@ func (m MultiArgumentsDialogCmp) Init() tea.Cmd {
 			m.inputs[i].Blur()
 		}
 	}
-	
+
 	return textinput.Blink
 }
 
@@ -206,13 +206,13 @@ func (m MultiArgumentsDialogCmp) View() string {
 			Width(maxWidth).
 			Padding(1, 1, 0, 1).
 			Background(t.Background())
-			
+
 		if i == m.focusIndex {
 			labelStyle = labelStyle.Foreground(t.Primary()).Bold(true)
 		} else {
 			labelStyle = labelStyle.Foreground(t.TextMuted())
 		}
-		
+
 		label := labelStyle.Render(m.argNames[i] + ":")
 
 		field := lipgloss.NewStyle().

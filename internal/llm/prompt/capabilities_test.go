@@ -68,6 +68,7 @@ func TestCapabilityDetectorCodeIndexing(t *testing.T) {
 	}{
 		{"hybrid_search", []string{"code_hybrid_search"}},
 		{"find_symbol", []string{"code_find_symbol"}},
+		{"find_references", []string{"code_find_references"}},
 		{"index_project", []string{"code_index_project"}},
 	}
 

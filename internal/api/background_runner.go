@@ -22,7 +22,7 @@ const (
 // bgSession holds the in-flight state of a single background agent run.
 type bgSession struct {
 	mu     sync.Mutex
-	buf    []agent.AgentEvent     // circular replay buffer
+	buf    []agent.AgentEvent      // circular replay buffer
 	subs   []chan agent.AgentEvent // active SSE subscribers
 	done   bool
 	cancel context.CancelFunc

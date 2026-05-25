@@ -135,15 +135,15 @@ type terminalModel struct {
 	focused       bool
 	keyMap        terminalKeyMap
 	writeCh       chan []byte   // serialized input queue
-	processExited atomic.Bool  // cached exit state
+	processExited atomic.Bool   // cached exit state
 	stopCh        chan struct{} // signals goroutines to stop
 
 	// scrollback
-	scrollMu    sync.Mutex
-	newLinesBuf []string // lines waiting to be picked up on next tick
-	rawParser   rawLineParser
-	scrollback  []string // all collected lines (max scrollbackMaxLines)
-	scrollOffset int     // 0 = live view; >0 = lines scrolled up from bottom
+	scrollMu     sync.Mutex
+	newLinesBuf  []string // lines waiting to be picked up on next tick
+	rawParser    rawLineParser
+	scrollback   []string // all collected lines (max scrollbackMaxLines)
+	scrollOffset int      // 0 = live view; >0 = lines scrolled up from bottom
 }
 
 const scrollbackMaxLines = 1000

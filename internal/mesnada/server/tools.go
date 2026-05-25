@@ -142,7 +142,6 @@ func (s *Server) detectEngineForModel(modelID string) models.Engine {
 	return ""
 }
 
-
 func (s *Server) getToolDefinitions() []Tool {
 	if nativeTools := s.validPandoTools(); len(nativeTools) > 0 {
 		tools := make([]Tool, 0, len(nativeTools))

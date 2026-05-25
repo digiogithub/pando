@@ -11,15 +11,15 @@ import (
 
 // SnapshotResponse is the JSON representation of a snapshot for the web-UI.
 type SnapshotResponse struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	SessionID   string    `json:"session_id"`
-	Type        string    `json:"type"`
-	Status      string    `json:"status"`
-	WorkingDir  string    `json:"working_dir"`
-	CreatedAt   time.Time `json:"created_at"`
-	Size        int64     `json:"size"`
-	FilesCount  int       `json:"files_count"`
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	SessionID  string    `json:"session_id"`
+	Type       string    `json:"type"`
+	Status     string    `json:"status"`
+	WorkingDir string    `json:"working_dir"`
+	CreatedAt  time.Time `json:"created_at"`
+	Size       int64     `json:"size"`
+	FilesCount int       `json:"files_count"`
 }
 
 // snapshotToResponse maps the internal snapshot.Snapshot to SnapshotResponse.

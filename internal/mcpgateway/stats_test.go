@@ -125,7 +125,7 @@ func TestStats_GetFavorites(t *testing.T) {
 	insertTool(t, db, "srvA/toolY", "srvA", "toolY")
 
 	cfg := mcpgateway.FavoriteConfig{
-		Threshold:    3,  // need at least 3 calls
+		Threshold:    3, // need at least 3 calls
 		MaxFavorites: 10,
 		WindowDays:   30,
 		DecayDays:    14,

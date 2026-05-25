@@ -23,8 +23,8 @@ import (
 //	│   └── {hash[0:2]}/{hash[2:4]}/{hash}   (gzip-compressed file content)
 //	└── index.json                             (ordered list of snapshot IDs)
 type storage struct {
-	root     string // absolute path of the snapshots directory
-	blobsDir string // absolute path of the blobs subdirectory
+	root      string // absolute path of the snapshots directory
+	blobsDir  string // absolute path of the blobs subdirectory
 	indexPath string // absolute path of index.json
 }
 

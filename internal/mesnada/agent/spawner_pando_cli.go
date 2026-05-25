@@ -22,11 +22,11 @@ import (
 // It runs the pando binary itself as a subprocess with --yolo --output-format text,
 // making it the default engine when no specific engine is requested.
 type PandoCLISpawner struct {
-	logDir        string
-	processes     map[string]*Process
-	mu            sync.RWMutex
-	onComplete    func(task *models.Task)
-	resolveModel  func(modelID string) string // resolves model to "provider.model" format
+	logDir       string
+	processes    map[string]*Process
+	mu           sync.RWMutex
+	onComplete   func(task *models.Task)
+	resolveModel func(modelID string) string // resolves model to "provider.model" format
 }
 
 // NewPandoCLISpawner creates a new pando CLI spawner.

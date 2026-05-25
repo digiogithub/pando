@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/google/uuid"
 )
 
 const (

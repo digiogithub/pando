@@ -5,9 +5,9 @@ import (
 	lua "github.com/yuin/gopher-lua"
 
 	// gopher-lua-libs modules
+	luare "github.com/vadv/gopher-lua-libs/regexp"
 	luastrings "github.com/vadv/gopher-lua-libs/strings"
-	luatime    "github.com/vadv/gopher-lua-libs/time"
-	luare      "github.com/vadv/gopher-lua-libs/regexp"
+	luatime "github.com/vadv/gopher-lua-libs/time"
 )
 
 // NewLuaState initializes a new sandboxed Lua state with required modules preloaded.

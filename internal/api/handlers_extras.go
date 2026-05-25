@@ -62,10 +62,10 @@ type InstalledSkillResponse struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Version     string `json:"version"`
-	Source      string `json:"source"`   // "owner/repo" from lock, or "(local)"
-	Scope       string `json:"scope"`    // "global", "project", or "(local)"
-	Active      bool   `json:"active"`   // loaded in SkillManager
-	SkillID     string `json:"skillId"`  // from lock, may be empty
+	Source      string `json:"source"`  // "owner/repo" from lock, or "(local)"
+	Scope       string `json:"scope"`   // "global", "project", or "(local)"
+	Active      bool   `json:"active"`  // loaded in SkillManager
+	SkillID     string `json:"skillId"` // from lock, may be empty
 }
 
 // handleListInstalledSkills handles GET /api/v1/skills/installed.
@@ -78,8 +78,8 @@ func (s *Server) handleListInstalledSkills(w http.ResponseWriter, r *http.Reques
 	}
 
 	dirs := []dirEntry{
-		{catalog.ResolveSkillsDir(false), true},  // global: ~/.pando/skills/
-		{catalog.ResolveSkillsDir(true), false},  // project-local: .pando/skills/
+		{catalog.ResolveSkillsDir(false), true}, // global: ~/.pando/skills/
+		{catalog.ResolveSkillsDir(true), false}, // project-local: .pando/skills/
 	}
 
 	// Read lock files for both directories.

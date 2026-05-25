@@ -7,20 +7,20 @@ import (
 // Flexoki color palette constants
 const (
 	// Base colors
-	flexokiPaper    = "#FFFCF0" // Paper (lightest)
-	flexokiBase50   = "#F2F0E5" // bg-2 (light)
-	flexokiBase100  = "#E6E4D9" // ui (light)
-	flexokiBase150  = "#DAD8CE" // ui-2 (light)
-	flexokiBase200  = "#CECDC3" // ui-3 (light)
-	flexokiBase300  = "#B7B5AC" // tx-3 (light)
-	flexokiBase500  = "#878580" // tx-2 (light)
-	flexokiBase600  = "#6F6E69" // tx (light)
-	flexokiBase700  = "#575653" // tx-3 (dark)
-	flexokiBase800  = "#403E3C" // ui-3 (dark)
-	flexokiBase850  = "#343331" // ui-2 (dark)
-	flexokiBase900  = "#282726" // ui (dark)
-	flexokiBase950  = "#1C1B1A" // bg-2 (dark)
-	flexokiBlack    = "#100F0F" // bg (darkest)
+	flexokiPaper   = "#FFFCF0" // Paper (lightest)
+	flexokiBase50  = "#F2F0E5" // bg-2 (light)
+	flexokiBase100 = "#E6E4D9" // ui (light)
+	flexokiBase150 = "#DAD8CE" // ui-2 (light)
+	flexokiBase200 = "#CECDC3" // ui-3 (light)
+	flexokiBase300 = "#B7B5AC" // tx-3 (light)
+	flexokiBase500 = "#878580" // tx-2 (light)
+	flexokiBase600 = "#6F6E69" // tx (light)
+	flexokiBase700 = "#575653" // tx-3 (dark)
+	flexokiBase800 = "#403E3C" // ui-3 (dark)
+	flexokiBase850 = "#343331" // ui-2 (dark)
+	flexokiBase900 = "#282726" // ui (dark)
+	flexokiBase950 = "#1C1B1A" // bg-2 (dark)
+	flexokiBlack   = "#100F0F" // bg (darkest)
 
 	// Accent colors - Light theme (600)
 	flexokiRed600     = "#AF3029"
@@ -119,8 +119,8 @@ func NewFlexokiTheme() *FlexokiTheme {
 		Light: flexokiBase200, // #CECDC3 - good contrast with dark text
 	}
 	theme.SelectionForegroundColor = lipgloss.AdaptiveColor{
-		Dark:  flexokiPaper,  // #FFFCF0 - bright text on dark selection
-		Light: flexokiBlack,  // #100F0F - dark text on light selection
+		Dark:  flexokiPaper, // #FFFCF0 - bright text on dark selection
+		Light: flexokiBlack, // #100F0F - dark text on light selection
 	}
 
 	// Border colors

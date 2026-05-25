@@ -84,7 +84,7 @@ func (q *quitDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (q *quitDialogCmp) View() string {
 	t := theme.CurrentTheme()
 	baseStyle := styles.BaseStyle()
-	
+
 	yesStyle := baseStyle
 	noStyle := baseStyle
 	spacerStyle := baseStyle.Background(t.Background())

@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/google/uuid"
 )
 
 type CreateMessageParams struct {

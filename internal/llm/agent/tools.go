@@ -189,6 +189,7 @@ func CoderAgentToolsWithMesnada(
 			tools.NewCodeIndexStatusTool(remembrances.Code),
 			tools.NewCodeHybridSearchTool(remembrances.Code),
 			tools.NewCodeFindSymbolTool(remembrances.Code),
+			tools.NewCodeFindReferencesTool(remembrances.Code),
 			tools.NewCodeGetSymbolsOverviewTool(remembrances.Code),
 			tools.NewCodeGetProjectStatsTool(remembrances.Code),
 			tools.NewCodeDeleteProjectTool(remembrances.Code),

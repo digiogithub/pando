@@ -227,11 +227,11 @@ func fetchCopilotModels(ctx context.Context, bearerToken string) ([]FetchedModel
 	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
 		var response struct {
 			Data []struct {
-				ID                string `json:"id"`
-				Name              string `json:"name"`
-				Version           string `json:"version"`
+				ID                 string `json:"id"`
+				Name               string `json:"name"`
+				Version            string `json:"version"`
 				ModelPickerEnabled bool   `json:"model_picker_enabled"`
-				Policy            *struct {
+				Policy             *struct {
 					State string `json:"state,omitempty"`
 				} `json:"policy,omitempty"`
 			} `json:"data"`

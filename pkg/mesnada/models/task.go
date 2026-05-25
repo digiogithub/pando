@@ -102,7 +102,7 @@ type Task struct {
 	Timeout      Duration      `json:"timeout,omitempty"`
 	MCPConfig    string        `json:"mcp_config,omitempty"`
 	ExtraArgs    []string      `json:"extra_args,omitempty"`
-	Persona      string     `json:"persona,omitempty"`
+	Persona      string        `json:"persona,omitempty"`
 	// ACP-specific fields
 	ACPSessionID string      `json:"acp_session_id,omitempty"`
 	ACPMode      string      `json:"acp_mode,omitempty"`
@@ -125,7 +125,6 @@ type ToolCall struct {
 	StartedAt time.Time              `json:"started_at"`
 	EndedAt   *time.Time             `json:"ended_at,omitempty"`
 }
-
 
 // Duration is a wrapper around time.Duration for JSON marshaling.
 type Duration time.Duration

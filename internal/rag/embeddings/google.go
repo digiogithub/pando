@@ -28,9 +28,9 @@ type googleEmbeddingRequest struct {
 }
 
 type googleEmbedRequest struct {
-	Model   string                 `json:"model"`
-	Content googleEmbedContent     `json:"content"`
-	TaskType string                `json:"taskType,omitempty"`
+	Model    string             `json:"model"`
+	Content  googleEmbedContent `json:"content"`
+	TaskType string             `json:"taskType,omitempty"`
 }
 
 type googleEmbedContent struct {

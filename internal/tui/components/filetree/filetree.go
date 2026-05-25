@@ -63,9 +63,9 @@ type FileTree struct {
 	loading      map[string]bool
 	lastErr      error
 	// New file creation state
-	creatingFile    bool
-	newFileInput    textinput.Model
-	newFileDirPath  string // directory in which to create the file
+	creatingFile   bool
+	newFileInput   textinput.Model
+	newFileDirPath string // directory in which to create the file
 }
 
 func New(projectPath string, opts ...Option) *FileTree {

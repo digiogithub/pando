@@ -135,12 +135,12 @@ func NewGruvboxTheme() *GruvboxTheme {
 
 	// Selection colors
 	theme.SelectionBackgroundColor = lipgloss.AdaptiveColor{
-		Dark:  gruvboxDarkBg2,    // #504945 - good contrast with light fg
-		Light: gruvboxLightBg2,   // #d5c4a1 - good contrast with dark fg
+		Dark:  gruvboxDarkBg2,  // #504945 - good contrast with light fg
+		Light: gruvboxLightBg2, // #d5c4a1 - good contrast with dark fg
 	}
 	theme.SelectionForegroundColor = lipgloss.AdaptiveColor{
-		Dark:  gruvboxDarkFg0,    // #fbf1c7 - bright text on dark selection
-		Light: gruvboxLightFg0,   // #282828 - dark text on light selection
+		Dark:  gruvboxDarkFg0,  // #fbf1c7 - bright text on dark selection
+		Light: gruvboxLightFg0, // #282828 - dark text on light selection
 	}
 
 	// Border colors
@@ -183,11 +183,11 @@ func NewGruvboxTheme() *GruvboxTheme {
 		Light: gruvboxLightRedBright,
 	}
 	theme.DiffAddedBgColor = lipgloss.AdaptiveColor{
-		Dark:  "#3C4C3C",  // Darker green background
+		Dark:  "#3C4C3C", // Darker green background
 		Light: "#E8F5E9", // Light green background
 	}
 	theme.DiffRemovedBgColor = lipgloss.AdaptiveColor{
-		Dark:  "#4C3C3C",  // Darker red background
+		Dark:  "#4C3C3C", // Darker red background
 		Light: "#FFEBEE", // Light red background
 	}
 	theme.DiffContextBgColor = lipgloss.AdaptiveColor{
@@ -199,11 +199,11 @@ func NewGruvboxTheme() *GruvboxTheme {
 		Light: gruvboxLightFg4,
 	}
 	theme.DiffAddedLineNumberBgColor = lipgloss.AdaptiveColor{
-		Dark:  "#32432F",   // Slightly darker green
+		Dark:  "#32432F", // Slightly darker green
 		Light: "#C8E6C9", // Light green
 	}
 	theme.DiffRemovedLineNumberBgColor = lipgloss.AdaptiveColor{
-		Dark:  "#43322F",   // Slightly darker red
+		Dark:  "#43322F", // Slightly darker red
 		Light: "#FFCDD2", // Light red
 	}
 

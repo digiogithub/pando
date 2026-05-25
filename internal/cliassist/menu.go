@@ -13,10 +13,10 @@ import (
 type MenuAction int
 
 const (
-	ActionExecute    MenuAction = iota // Run the command
-	ActionEditPrompt                   // Re-enter the request text and re-fetch
-	ActionEditCommand                  // Edit the command inline, then re-show menu
-	ActionQuit                         // Exit without executing
+	ActionExecute     MenuAction = iota // Run the command
+	ActionEditPrompt                    // Re-enter the request text and re-fetch
+	ActionEditCommand                   // Edit the command inline, then re-show menu
+	ActionQuit                          // Exit without executing
 )
 
 // ShowMenu displays the generated command in a Unicode box and waits for a keypress.

@@ -65,14 +65,14 @@ type StatusCmp interface {
 }
 
 type statusCmp struct {
-	info               util.InfoMsg
-	width              int
-	messageTTL         time.Duration
-	lspClients         map[string]*lsp.Client
-	session            session.Session
-	breadcrumbs        []string // recently edited file paths
-	mcpFavoritesCount  int      // number of MCP gateway favorite tools (0 = gateway off)
-	activeProject      string   // display name of the active project ("" = none)
+	info              util.InfoMsg
+	width             int
+	messageTTL        time.Duration
+	lspClients        map[string]*lsp.Client
+	session           session.Session
+	breadcrumbs       []string // recently edited file paths
+	mcpFavoritesCount int      // number of MCP gateway favorite tools (0 = gateway off)
+	activeProject     string   // display name of the active project ("" = none)
 }
 
 // clearMessageCmd is a command that clears status messages after a timeout

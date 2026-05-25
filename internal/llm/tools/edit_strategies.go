@@ -61,15 +61,15 @@ type quoteNormalizedStrategy struct{}
 func (s *quoteNormalizedStrategy) Name() string { return "quote-normalized" }
 
 var quoteReplacer = strings.NewReplacer(
-	"\u2018", "'",   // left single quotation mark '
-	"\u2019", "'",   // right single quotation mark '
-	"\u201C", "\"",  // left double quotation mark "
-	"\u201D", "\"",  // right double quotation mark "
-	"\u2014", "-",   // em dash —
-	"\u2013", "-",   // en dash –
+	"\u2018", "'", // left single quotation mark '
+	"\u2019", "'", // right single quotation mark '
+	"\u201C", "\"", // left double quotation mark "
+	"\u201D", "\"", // right double quotation mark "
+	"\u2014", "-", // em dash —
+	"\u2013", "-", // en dash –
 	"\u2026", "...", // horizontal ellipsis …
-	"\u00A0", " ",   // non-breaking space
-	"\u2011", "-",   // non-breaking hyphen
+	"\u00A0", " ", // non-breaking space
+	"\u2011", "-", // non-breaking hyphen
 )
 
 func normalizeQuotes(s string) string {

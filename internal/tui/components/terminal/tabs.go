@@ -13,17 +13,17 @@ import (
 )
 
 const (
-	termTabOverflow    = "..."
-	termDefaultWidth   = 80
-	termMinTabWidth    = 8
-	termMaxTabWidth    = 24
+	termTabOverflow  = "..."
+	termDefaultWidth = 80
+	termMinTabWidth  = 8
+	termMaxTabWidth  = 24
 )
 
 // TerminalTab represents one terminal session in the tab bar.
 type TerminalTab struct {
-	Title     string
-	Terminal  TerminalComponent
-	Running   bool
+	Title    string
+	Terminal TerminalComponent
+	Running  bool
 }
 
 // TerminalTabBar manages multiple terminal tabs.
