@@ -195,16 +195,19 @@ func TestPandoACPAgent_HandleExtensionMethod(t *testing.T) {
 
 // mockAgentService is a test double for AgentService.
 type mockAgentService struct {
-	runCalled        bool
-	runGoalCalled    bool
-	cancelCalled     bool
-	runErr           error
-	goalRunErr       error
-	modelOverride    string
-	modelOverrideErr error
-	copilotUsageErr  error
-	claudeUsageErr   error
-	goalObjective    string
+	runCalled         bool
+	runGoalCalled     bool
+	summarizeCalled   bool
+	cancelCalled      bool
+	runErr            error
+	goalRunErr        error
+	summarizeErr      error
+	modelOverride     string
+	modelOverrideErr  error
+	copilotUsageErr   error
+	claudeUsageErr    error
+	goalObjective     string
+	summarizeSessionID string
 }
 
 func (m *mockAgentService) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
@@ -259,11 +262,10 @@ func (m *mockAgentService) SetActivePersona(name string) error {
 	return nil
 }
 
-func (m *mockAgentService) ListAvailableTools() []ACPToolInfo {
-	return []ACPToolInfo{
-		{Name: "bash", Description: "Execute bash commands"},
-		{Name: "edit", Description: "Edit files"},
-	}
+func (m *mockAgentService) Summarize(ctx context.Context, sessionID string) error {
+	m.summarizeCalled = true
+	m.summarizeSessionID = sessionID
+	return m.summarizeErr
 }
 
 func (m *mockAgentService) OpenCopilotUsage() error {
@@ -1509,6 +1511,37 @@ func TestPandoACPAgent_HandleSlashGoalCancelCancelsGoal(t *testing.T) {
 	}
 }
 
+func TestPandoACPAgent_HandleSlashSummarizeStartsManualSummary(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	acpSession, err := agent.getSession(resp.SessionId)
+	if err != nil {
+		t.Fatalf("getSession failed: %v", err)
+	}
+
+	stopReason, err := agent.handleSlashCommand(ctx, resp.SessionId, acpSession, slashCommand{Kind: slashCommandSummarize})
+	if err != nil {
+		t.Fatalf("handleSlashCommand failed: %v", err)
+	}
+	if stopReason != acpsdk.StopReasonEndTurn {
+		t.Fatalf("expected end turn stop reason, got %q", stopReason)
+	}
+
+	mockAgent := agent.agentService.(*mockAgentService)
+	if !mockAgent.summarizeCalled {
+		t.Fatal("expected summarize to be invoked")
+	}
+	if mockAgent.summarizeSessionID != string(resp.SessionId) {
+		t.Fatalf("expected summarize session %q, got %q", resp.SessionId, mockAgent.summarizeSessionID)
+	}
+}
+
 func TestPandoACPAgent_SetSessionConfigOption_SplitsModePermissionAndAgent(t *testing.T) {
 	agent := newTestPandoAgent()
 	ctx := context.Background()
@@ -1628,6 +1661,24 @@ func TestPandoACPAgent_NewSessionResponse_UsesSeparatedACPSelectors(t *testing.T
 	}
 	if got[sessionConfigAgentID] != "default" {
 		t.Fatalf("expected agent currentValue %q, got %q", "default", got[sessionConfigAgentID])
+	}
+}
+
+func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
+	commands := availableCommands()
+	if len(commands) != 6 {
+		t.Fatalf("expected 6 available commands, got %d", len(commands))
+	}
+
+	got := map[string]string{}
+	for _, cmd := range commands {
+		got[cmd.Name] = cmd.Description
+	}
+
+	for _, name := range []string{goalCommandName, autopilotCommandName, goalStatusCommandName, goalCancelCommandName, compactCommandName, summarizeCommandName} {
+		if _, ok := got[name]; !ok {
+			t.Fatalf("expected available command %q to be exposed", name)
+		}
 	}
 }
 

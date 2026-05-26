@@ -11,6 +11,7 @@ const (
 	slashCommandGoal       slashCommandKind = "goal"
 	slashCommandGoalStatus slashCommandKind = "goal-status"
 	slashCommandGoalCancel slashCommandKind = "goal-cancel"
+	slashCommandSummarize  slashCommandKind = "summarize"
 )
 
 type slashCommand struct {
@@ -31,6 +32,8 @@ func parseSlashCommand(input string) (slashCommand, bool) {
 		return slashCommand{Kind: slashCommandGoalStatus}, true
 	case line == "/goal-cancel":
 		return slashCommand{Kind: slashCommandGoalCancel}, true
+	case line == "/compact", line == "/summarize":
+		return slashCommand{Kind: slashCommandSummarize}, true
 	default:
 		return slashCommand{}, false
 	}

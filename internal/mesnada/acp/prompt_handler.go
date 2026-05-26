@@ -490,7 +490,15 @@ func (a *PandoACPAgent) processAgentEventStream(
 			}
 
 		case AgentEventTypeSummarize:
-			a.logger.Printf("[ACP AGENT] Summarize event")
+			if event.Delta != "" {
+				if err := acpSession.SendUpdate(acpsdk.UpdateAgentMessageText(event.Delta + "\n")); err != nil {
+					a.logger.Printf("[ACP AGENT] Failed to send summarize update: %v", err)
+				} else {
+					sentContentDeltas = true
+				}
+			} else {
+				a.logger.Printf("[ACP AGENT] Summarize event")
+			}
 		}
 	}
 

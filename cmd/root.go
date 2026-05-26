@@ -775,18 +775,8 @@ func (a *acpAgentAdapter) SetActivePersona(name string) error {
 	return agent.SetActivePersona(name)
 }
 
-// ListAvailableTools returns the name and description of all tools available to the agent.
-func (a *acpAgentAdapter) ListAvailableTools() []acpPkg.ACPToolInfo {
-	baseTools := a.svc.GetTools()
-	result := make([]acpPkg.ACPToolInfo, 0, len(baseTools))
-	for _, t := range baseTools {
-		info := t.Info()
-		result = append(result, acpPkg.ACPToolInfo{
-			Name:        info.Name,
-			Description: info.Description,
-		})
-	}
-	return result
+func (a *acpAgentAdapter) Summarize(ctx context.Context, sessionID string) error {
+	return a.svc.Summarize(ctx, sessionID)
 }
 
 func (a *acpAgentAdapter) OpenCopilotUsage() error {

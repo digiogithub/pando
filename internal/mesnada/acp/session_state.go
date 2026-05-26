@@ -20,6 +20,12 @@ const (
 	sessionConfigAgentID         = "agent"
 	askPermissionYesValue        = "yes"
 	askPermissionNoValue         = "no"
+	goalCommandName              = "/goal"
+	autopilotCommandName         = "/autopilot"
+	goalStatusCommandName        = "/goal-status"
+	goalCancelCommandName        = "/goal-cancel"
+	compactCommandName           = "/compact"
+	summarizeCommandName         = "/summarize"
 )
 
 func availableModes(_ AgentService) []acpsdk.SessionMode {
@@ -307,27 +313,44 @@ func boolToAskPermissionValue(enabled bool) string {
 	return askPermissionNoValue
 }
 
-// sendAvailableCommandsUpdate sends an available_commands_update SessionUpdate to the
-// connected ACP client so that clients (Zed, multicoder, etc.) can display the tool
-// names and descriptions. This mirrors how opencode sends the update after session
-// creation/loading.
+func availableCommands() []acpsdk.AvailableCommand {
+	return []acpsdk.AvailableCommand{
+		{
+			Name:        goalCommandName,
+			Description: "Start goal mode with a persistent objective: /goal <objective>",
+		},
+		{
+			Name:        autopilotCommandName,
+			Description: "Alias for /goal <objective>",
+		},
+		{
+			Name:        goalStatusCommandName,
+			Description: "Show the status of the current goal",
+		},
+		{
+			Name:        goalCancelCommandName,
+			Description: "Cancel the current goal execution",
+		},
+		{
+			Name:        compactCommandName,
+			Description: "Create a manual compact summary for the current session",
+		},
+		{
+			Name:        summarizeCommandName,
+			Description: "Alias for /compact",
+		},
+	}
+}
+
+// sendAvailableCommandsUpdate publishes the ACP slash commands supported by Pando.
 func (a *PandoACPAgent) sendAvailableCommandsUpdate(ctx context.Context, sessionID acpsdk.SessionId) {
 	if a.conn == nil {
 		return
 	}
 
-	tools := a.agentService.ListAvailableTools()
-	commands := make([]acpsdk.AvailableCommand, 0, len(tools))
-	for _, t := range tools {
-		commands = append(commands, acpsdk.AvailableCommand{
-			Name:        t.Name,
-			Description: t.Description,
-		})
-	}
-
 	update := acpsdk.SessionNotification{
 		SessionId: sessionID,
-		Update:    acpsdk.UpdateAvailableCommands(commands...),
+		Update:    acpsdk.UpdateAvailableCommands(availableCommands()...),
 	}
 
 	func() {

@@ -52,6 +52,8 @@ func (a *PandoACPAgent) handleSlashCommand(
 			return "", err
 		}
 		return acpsdk.StopReasonCancelled, nil
+	case slashCommandSummarize:
+		return a.processSummarizeCommand(ctx, acpSession)
 	default:
 		return acpsdk.StopReasonEndTurn, nil
 	}
@@ -107,6 +109,34 @@ func (a *PandoACPAgent) processGoalPrompt(
 		stopReason = acpsdk.StopReasonCancelled
 	}
 	return stopReason, err
+}
+
+func (a *PandoACPAgent) processSummarizeCommand(ctx context.Context, acpSession *ACPServerSession) (acpsdk.StopReason, error) {
+	eventChan, err := a.startManualSummary(ctx, acpSession.PandoSessionID())
+	if err != nil {
+		return "", err
+	}
+	return a.processAgentEventStream(ctx, acpSession, eventChan)
+}
+
+func (a *PandoACPAgent) startManualSummary(ctx context.Context, sessionID string) (<-chan AgentEvent, error) {
+	if err := a.agentService.Summarize(ctx, sessionID); err != nil {
+		return nil, err
+	}
+
+	events := make(chan AgentEvent, 16)
+	go func() {
+		defer close(events)
+		select {
+		case <-ctx.Done():
+			events <- AgentEvent{Type: AgentEventTypeError, Error: ctx.Err()}
+			return
+		default:
+		}
+		events <- AgentEvent{Type: AgentEventTypeSummarize, Delta: "Starting summarization..."}
+		events <- AgentEvent{Type: AgentEventTypeSummarize, Delta: "Summary complete"}
+	}()
+	return events, nil
 }
 
 func (a *PandoACPAgent) sendAgentText(acpSession *ACPServerSession, text string) error {

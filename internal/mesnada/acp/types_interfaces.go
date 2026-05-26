@@ -37,13 +37,6 @@ type ACPModelInfo struct {
 	Name string
 }
 
-// ACPToolInfo holds minimal tool metadata for ACP available_commands_update.
-// Defined here to avoid importing internal/llm/tools from this package.
-type ACPToolInfo struct {
-	Name        string
-	Description string
-}
-
 // AgentService defines the interface for interacting with Pando's LLM agent.
 // This is intentionally minimal to avoid import cycles.
 type AgentService interface {
@@ -63,8 +56,8 @@ type AgentService interface {
 	GetActivePersona() string
 	// SetActivePersona sets the active persona by name. Pass empty string to clear.
 	SetActivePersona(name string) error
-	// ListAvailableTools returns the name and description of all tools available to the agent.
-	ListAvailableTools() []ACPToolInfo
+	// Summarize performs a manual conversation summary/compaction for the session.
+	Summarize(ctx context.Context, sessionID string) error
 	// OpenCopilotUsage opens the Copilot usage/features page when Copilot auth is available.
 	OpenCopilotUsage() error
 	// OpenClaudeUsage opens the Claude usage page when Claude OAuth auth is available.

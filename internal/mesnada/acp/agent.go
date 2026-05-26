@@ -254,8 +254,6 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 	a.logger.Printf("[ACP AGENT] NewSession created: SessionID=%s, PandoSessionID=%s, WorkDir=%s",
 		sessionID, pandoSessionID, workDir)
 
-	// Send available_commands_update asynchronously after session creation so
-	// clients (Zed, multicoder, etc.) can display the tool names and descriptions.
 	go a.sendAvailableCommandsUpdate(context.Background(), sessionID)
 
 	return acpsdk.NewSessionResponse{
@@ -456,7 +454,6 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 	}
 	a.sessionsMu.RUnlock()
 
-	// Send available_commands_update asynchronously so clients can display tool names.
 	go a.sendAvailableCommandsUpdate(context.Background(), req.SessionId)
 
 	// Stream the full conversation history back to the client as required by the ACP protocol:
