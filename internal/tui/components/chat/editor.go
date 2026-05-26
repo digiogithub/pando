@@ -204,7 +204,12 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea = CreateTextArea(&m.textarea)
 	case dialog.CompletionSelectedMsg:
 		existingValue := m.textarea.Value()
-		modifiedValue := strings.Replace(existingValue, msg.SearchString, msg.CompletionValue, 1)
+		searchValue := msg.SearchString
+		replacementValue := msg.CompletionValue
+		if strings.HasPrefix(searchValue, "/") && strings.HasPrefix(replacementValue, "/") && strings.Contains(existingValue, "//") {
+			replacementValue = strings.TrimPrefix(replacementValue, "/")
+		}
+		modifiedValue := strings.Replace(existingValue, searchValue, replacementValue, 1)
 		m.textarea.SetValue(modifiedValue)
 		// SetValue calls Reset() internally which moves the viewport to the top.
 		// Trigger repositionView by running a no-op Update so the viewport scrolls

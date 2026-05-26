@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/digiogithub/pando/internal/session"
+	"github.com/digiogithub/pando/internal/tui/components/dialog"
 )
 
 func TestEditorCtrlJInsertsNewLine(t *testing.T) {
@@ -54,5 +55,24 @@ func TestEditorDisablesInputWhileGoalRunning(t *testing.T) {
 	}
 	if !stillDisabled.goalRunning() {
 		t.Fatal("expected editor to remain in goal-running state")
+	}
+}
+
+func TestEditorCompletionSelectedDoesNotDuplicateLeadingSlash(t *testing.T) {
+	editor := &editorCmp{textarea: CreateTextArea(nil)}
+	editor.textarea.SetValue("//go")
+	editor.textarea.SetCursor(len("//go"))
+
+	model, cmd := editor.Update(dialog.CompletionSelectedMsg{
+		SearchString:    "/go",
+		CompletionValue: "/goal",
+	})
+	if cmd != nil {
+		t.Fatalf("expected no command, got %v", cmd)
+	}
+
+	updated := model.(*editorCmp)
+	if got := updated.textarea.Value(); got != "/goal" {
+		t.Fatalf("expected slash command completion without duplicate slash, got %q", got)
 	}
 }
