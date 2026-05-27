@@ -130,8 +130,7 @@ func (a *PandoACPAgent) processAgentEventStream(
 			}
 
 		case AgentEventTypeResponse:
-			err := a.processAgentResponse(acpSession, event.Message, sentContentDeltas, sentThinkingDeltas)
-			if err != nil {
+			if err := a.processAgentResponse(acpSession, event.Message, sentContentDeltas, sentThinkingDeltas); err != nil {
 				a.logger.Printf("[ACP AGENT] Failed to process response: %v", err)
 				return acpsdk.StopReasonRefusal, err
 			}
@@ -146,12 +145,21 @@ func (a *PandoACPAgent) processAgentEventStream(
 				}
 			}
 
-		case AgentEventTypeThinkingDelta:
-			if event.Delta != "" {
-				if err := acpSession.SendUpdate(acpsdk.UpdateAgentThoughtText(event.Delta)); err != nil {
-					a.logger.Printf("[ACP AGENT] Failed to send thinking delta: %v", err)
+		case AgentEventTypeSystemMessage:
+			msg := strings.TrimSpace(event.SystemMessage)
+			if msg == "" {
+				continue
+			}
+			if usageUpdate, normalized, suppress := a.normalizeSystemMessage(ctx, acpSession, msg); !suppress {
+				if usageUpdate != nil {
+					if err := acpSession.SendUpdate(*usageUpdate); err != nil {
+						a.logger.Printf("[ACP AGENT] Failed to send system usage update: %v", err)
+					}
+				}
+				if err := acpSession.SendUpdate(acpsdk.UpdateAgentMessageText(normalized)); err != nil {
+					a.logger.Printf("[ACP AGENT] Failed to send system message update: %v", err)
 				} else {
-					sentThinkingDeltas = true
+					sentContentDeltas = true
 				}
 			}
 
@@ -442,7 +450,6 @@ func (a *PandoACPAgent) processAgentEventStream(
 						}
 					}
 
-					// Step 3: attach terminal_exit to the final result update.
 					exitCode := 0
 					if tr.IsError {
 						exitCode = 1
@@ -452,11 +459,10 @@ func (a *PandoACPAgent) processAgentEventStream(
 						"exit_code":   exitCode,
 						"signal":      nil,
 					}
-
-					// Bash tool result content: only terminal ref (output already sent
-					// via terminal_output _meta above). Text block fallback is omitted
-					// because it causes duplicate display in clients that support terminal
-					// widgets — matching claude-agent-acp's approach.
+					// Keep only the terminal reference in content (output is carried via
+					// _meta above). Text block fallback is omitted because it causes
+					// duplicate display in clients that support terminal widgets —
+					// matching claude-agent-acp's approach.
 					outputContent = []acpsdk.ToolCallContent{
 						acpsdk.ToolTerminalRef(tr.ToolCallID),
 					}
@@ -493,15 +499,6 @@ func (a *PandoACPAgent) processAgentEventStream(
 			if event.Progress != "" {
 				if err := acpSession.SendUpdate(acpsdk.UpdateAgentMessageText(event.Progress + "\n")); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send summarize update: %v", err)
-				} else {
-					sentContentDeltas = true
-				}
-			}
-
-		case AgentEventTypeSystemMessage:
-			if event.SystemMessage != "" {
-				if err := acpSession.SendUpdate(acpsdk.UpdateAgentMessageText(event.SystemMessage)); err != nil {
-					a.logger.Printf("[ACP AGENT] Failed to send system message: %v", err)
 				} else {
 					sentContentDeltas = true
 				}

@@ -356,20 +356,14 @@ func (a *PandoACPAgent) finishPrompt(ctx context.Context, sessionID acpsdk.Sessi
 
 	// Send usage_update and session_info_update after the prompt completes.
 	// Fetch the latest session state so we have accurate token counts and title.
-	if sessionInfo, sessErr := a.sessionService.GetSession(ctx, acpSession.PandoSessionID()); sessErr == nil {
-		// usage_update: report tokens currently in context.
-		// used = input + output tokens for this turn; size = model context window.
-		used := int(sessionInfo.PromptTokens + sessionInfo.CompletionTokens)
-		size := int(sessionInfo.ContextWindow)
-		if size == 0 {
-			size = 200000 // safe default for modern frontier models
-		}
+	if used, size, ok := a.currentUsageSnapshot(ctx, acpSession); ok {
 		if used > 0 {
 			if sendErr := acpSession.SendUpdate(acpsdk.UpdateUsage(used, size)); sendErr != nil {
 				a.logger.Printf("[ACP AGENT] Failed to send usage_update: %v", sendErr)
 			}
 		}
-
+	}
+	if sessionInfo, sessErr := a.sessionService.GetSession(ctx, acpSession.PandoSessionID()); sessErr == nil {
 		// session_info_update: send the current session title so clients can
 		// display it in session lists without requiring a full ListSessions call.
 		if sessionInfo.Title != "" && sessionInfo.Title != "ACP Session" {
@@ -769,6 +763,63 @@ func (a *PandoACPAgent) safeSessionUpdate(acpSession *ACPServerSession, sessionI
 	return acpSession.SendUpdate(update)
 }
 
+func (a *PandoACPAgent) currentUsageSnapshot(ctx context.Context, acpSession *ACPServerSession) (used int, size int, ok bool) {
+	if acpSession == nil {
+		return 0, 0, false
+	}
+	sessionInfo, err := a.sessionService.GetSession(ctx, acpSession.PandoSessionID())
+	if err != nil {
+		a.logger.Printf("[ACP AGENT] Could not fetch session usage snapshot: %v", err)
+		return 0, 0, false
+	}
+	used = int(sessionInfo.PromptTokens + sessionInfo.CompletionTokens)
+	size = int(sessionInfo.ContextWindow)
+	if size == 0 {
+		size = 200000 // safe default for modern frontier models
+	}
+	return used, size, true
+}
+
+func (a *PandoACPAgent) normalizeSystemMessage(ctx context.Context, acpSession *ACPServerSession, msg string) (*acpsdk.SessionUpdate, string, bool) {
+	normalized := strings.TrimSpace(msg)
+	if normalized == "" {
+		return nil, "", true
+	}
+	lowerMsg := strings.ToLower(normalized)
+
+	switch {
+	case strings.Contains(lowerMsg, "selected persona:"):
+		return nil, "", true
+	case strings.Contains(lowerMsg, "auto-compacting context") || strings.Contains(lowerMsg, "compacting context"):
+		return nil, "Compacting...", false
+	case strings.Contains(lowerMsg, "context compacted"):
+		if used, size, ok := a.currentUsageSnapshot(ctx, acpSession); ok {
+			if used < 0 {
+				used = 0
+			}
+			update := acpsdk.UpdateUsage(used, size)
+			return &update, "\n\nCompacting completed.", false
+		}
+		return nil, "\n\nCompacting completed.", false
+	case strings.Contains(lowerMsg, "continuing with trimmed history"):
+		return nil, "Context compaction failed; continuing with trimmed history.", false
+	case strings.Contains(lowerMsg, "retrying with fallback model"):
+		return nil, normalized, false
+	case strings.Contains(lowerMsg, "retrying due to rate limit"):
+		return nil, normalized, false
+	case strings.Contains(lowerMsg, "rate limit") && strings.Contains(lowerMsg, "attempt"):
+		return nil, normalized, false
+	case strings.Contains(lowerMsg, "authentication failed"):
+		return nil, normalized, false
+	case strings.Contains(lowerMsg, "oauth required"):
+		return nil, "Authentication required. Please sign in again.", false
+	case strings.Contains(lowerMsg, "quota exceeded") || strings.Contains(lowerMsg, "too many requests"):
+		return nil, normalized, false
+	default:
+		return nil, normalized, false
+	}
+}
+
 func (a *PandoACPAgent) sendRunStatusMeta(_ context.Context, sessionID acpsdk.SessionId, acpSession *ACPServerSession) {
 	if a.conn == nil || acpSession == nil {
 		return
@@ -1027,6 +1078,12 @@ func (a *PandoACPAgent) StartNotificationBroadcast(ctx context.Context) {
 					"ttl":     int64(n.TTL),
 				},
 			}
+			var visibleMessage string
+			if n.Source == notify.SourceLLMProvider {
+				if _, normalized, suppress := a.normalizeSystemMessage(ctx, nil, n.Message); !suppress {
+					visibleMessage = normalized
+				}
+			}
 			update := acpsdk.UpdateSessionInfo(acpsdk.SessionInfoUpdate{
 				Meta: meta,
 			})
@@ -1041,6 +1098,11 @@ func (a *PandoACPAgent) StartNotificationBroadcast(ctx context.Context) {
 			for _, sess := range sessions {
 				if err := sess.SendUpdate(update); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to broadcast notification to session %s: %v", sess.ID, err)
+				}
+				if visibleMessage != "" {
+					if err := sess.SendUpdate(acpsdk.UpdateAgentMessageText(visibleMessage)); err != nil {
+						a.logger.Printf("[ACP AGENT] Failed to broadcast visible notification to session %s: %v", sess.ID, err)
+					}
 				}
 			}
 		}
