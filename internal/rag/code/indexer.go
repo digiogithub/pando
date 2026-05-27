@@ -747,6 +747,21 @@ func buildCodeSearchTerms(query string) []string {
 	return terms
 }
 
+func countCodeTermMatches(text string, terms []string) int {
+	if text == "" || len(terms) == 0 {
+		return 0
+	}
+
+	lower := strings.ToLower(text)
+	matches := 0
+	for _, term := range terms {
+		if term != "" && strings.Contains(lower, term) {
+			matches++
+		}
+	}
+	return matches
+}
+
 func buildCodeFTSQuery(query string) string {
 	terms := buildCodeSearchTerms(query)
 	if len(terms) == 0 {
@@ -774,6 +789,7 @@ func lexicalBoost(symbol *CodeSymbol, terms []string) float64 {
 		{text: strings.ToLower(symbol.FilePath), boost: 0.2},
 		{text: strings.ToLower(symbol.DocString), boost: 0.1},
 		{text: strings.ToLower(symbol.Signature), boost: 0.15},
+		{text: strings.ToLower(symbol.SourceCode), boost: 0.18},
 	}
 
 	score := 0.0
@@ -784,12 +800,49 @@ func lexicalBoost(symbol *CodeSymbol, terms []string) float64 {
 			}
 		}
 	}
+
+	nameMatches := countCodeTermMatches(symbol.Name, terms)
+	namePathMatches := countCodeTermMatches(symbol.NamePath, terms)
+	signatureMatches := countCodeTermMatches(symbol.Signature, terms)
+	sourceMatches := countCodeTermMatches(symbol.SourceCode, terms)
+
+	if nameMatches > 0 {
+		score += 0.18 * float64(nameMatches)
+	}
+	if namePathMatches > 0 {
+		score += 0.28 * float64(namePathMatches)
+	}
+	if signatureMatches > 0 {
+		score += 0.08 * float64(signatureMatches)
+	}
+	if sourceMatches >= 2 {
+		score += 0.06 * float64(sourceMatches-1)
+	}
+
+	if nameMatches+namePathMatches+signatureMatches >= 2 {
+		score += 0.25
+	}
+	if nameMatches == 0 && namePathMatches == 0 && signatureMatches == 0 && sourceMatches > 0 {
+		score -= 0.12
+	}
+	if strings.HasSuffix(strings.ToLower(symbol.FilePath), ".md") {
+		score -= 0.2
+	}
+	if symbol.SymbolType == SymbolType("namespace") {
+		score -= 0.1
+	}
 	return score
 }
 
 func boostHybridResults(results []HybridSearchResult, terms []string) {
 	for i := range results {
 		results[i].Score += lexicalBoost(results[i].Symbol, terms)
+		if results[i].FTSScore > 0 {
+			results[i].Score += 0.35 + (results[i].FTSScore * 0.35)
+		}
+		if results[i].VectorScore > 0 && results[i].FTSScore == 0 {
+			results[i].Score += results[i].VectorScore * 0.05
+		}
 	}
 	sort.SliceStable(results, func(i, j int) bool {
 		if results[i].Score == results[j].Score {

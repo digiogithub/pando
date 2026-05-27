@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 )
 
@@ -19,6 +20,7 @@ import (
 type EventStore struct {
 	db       *sql.DB
 	embedder embeddings.Embedder
+	proxy    *dbproxy.DBProxy
 }
 
 // NewEventStore creates a new EventStore backed by db.
@@ -28,6 +30,11 @@ func NewEventStore(db *sql.DB, embedder embeddings.Embedder) *EventStore {
 		db:       db,
 		embedder: embedder,
 	}
+}
+
+// SetWriteProxy configures a DB proxy for mutating operations.
+func (s *EventStore) SetWriteProxy(proxy *dbproxy.DBProxy) {
+	s.proxy = proxy
 }
 
 // SaveEvent stores a new event with its embedding and updates the FTS index.
@@ -49,6 +56,15 @@ func (s *EventStore) SaveEvent(ctx context.Context, subject, content string, met
 		if err != nil {
 			return 0, fmt.Errorf("events: marshal metadata: %w", err)
 		}
+	}
+
+	if s.proxy != nil {
+		return dbproxy.ProxyWriteWithResult[int64](ctx, s.proxy, "SaveEvent", saveEventRequest{
+			Subject:   subject,
+			Content:   content,
+			Metadata:  metadata,
+			Embedding: embedding,
+		})
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -87,6 +103,13 @@ func (s *EventStore) SaveEvent(ctx context.Context, subject, content string, met
 		return 0, fmt.Errorf("events: commit: %w", err)
 	}
 	return id, nil
+}
+
+type saveEventRequest struct {
+	Subject   string                 `json:"subject"`
+	Content   string                 `json:"content"`
+	Metadata  map[string]interface{} `json:"metadata"`
+	Embedding []float32              `json:"embedding"`
 }
 
 // SearchEvents performs hybrid search with temporal filters.

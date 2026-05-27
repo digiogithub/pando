@@ -224,7 +224,11 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			app.openlitShutdown = shutdownFn
 		}
 
-		remembrances, err := rag.NewRemembrancesService(conn, &cfg.Remembrances)
+		var remembrancesProxy *dbproxy.DBProxy
+		if p, ok := q.(*dbproxy.DBProxy); ok {
+			remembrancesProxy = p
+		}
+		remembrances, err := rag.NewRemembrancesServiceWithProxy(conn, &cfg.Remembrances, remembrancesProxy)
 		if err != nil {
 			logging.Error("Failed to create remembrances service", "error", err)
 		} else {

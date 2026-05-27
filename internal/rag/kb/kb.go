@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 )
@@ -24,6 +25,7 @@ const kbEmbeddingsTimeout = 45 * time.Second
 type KBStore struct {
 	db           *sql.DB
 	embedder     embeddings.Embedder
+	proxy        *dbproxy.DBProxy
 	chunkSize    int
 	chunkOverlap int
 	syncWorkers  int
@@ -63,6 +65,11 @@ func NewKBStore(db *sql.DB, embedder embeddings.Embedder, chunkSize, chunkOverla
 	}
 }
 
+// SetWriteProxy configures a DB proxy for mutating operations.
+func (s *KBStore) SetWriteProxy(proxy *dbproxy.DBProxy) {
+	s.proxy = proxy
+}
+
 func defaultSyncWorkers() int {
 	n := runtime.NumCPU() / 2
 	if n < 2 {
@@ -99,6 +106,44 @@ func (s *KBStore) getSyncWorkers() int {
 func (s *KBStore) AddDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}) error {
 	if filePath == "" {
 		return fmt.Errorf("kb: file_path cannot be empty")
+	}
+
+	if s.proxy != nil {
+		chunks := embeddings.ChunkText(content, s.chunkSize, s.chunkOverlap)
+		embedVecs := make([][]float32, 0, len(chunks))
+		if len(chunks) > 0 {
+			logging.Debug("kb add: embedding start", "file_path", filePath, "chunks", len(chunks), "bytes", len(content))
+			embedStartedAt := time.Now()
+			embedCtx, embedCancel := context.WithTimeout(ctx, kbEmbeddingsTimeout)
+			defer embedCancel()
+			var err error
+			embedVecs, err = s.embedder.EmbedDocuments(embedCtx, chunks)
+			if err != nil {
+				logging.Debug("kb add: embedding failed",
+					"file_path", filePath,
+					"chunks", len(chunks),
+					"elapsed", time.Since(embedStartedAt).String(),
+					"error", err,
+				)
+				return fmt.Errorf("kb: embed chunks: %w", err)
+			}
+			logging.Debug("kb add: embedding completed",
+				"file_path", filePath,
+				"chunks", len(chunks),
+				"vectors", len(embedVecs),
+				"elapsed", time.Since(embedStartedAt).String(),
+			)
+			if len(embedVecs) != len(chunks) {
+				return fmt.Errorf("kb: embedding count mismatch: got %d, expected %d", len(embedVecs), len(chunks))
+			}
+		}
+		return s.proxy.WriteWithRetry(ctx, "KBAddDocument", kbAddDocumentRequest{
+			FilePath:   filePath,
+			Content:    content,
+			Metadata:   metadata,
+			Chunks:     chunks,
+			Embeddings: embedVecs,
+		}, dbproxy.DefaultWriteTimeouts.Long)
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -299,6 +344,10 @@ func (s *KBStore) listDocumentMetadata(ctx context.Context, limit, offset int) (
 
 // DeleteDocument removes a document and all its chunks from the knowledge base.
 func (s *KBStore) DeleteDocument(ctx context.Context, filePath string) error {
+	if s.proxy != nil {
+		return s.proxy.WriteWithRetry(ctx, "KBDeleteDocument", filePath, dbproxy.DefaultWriteTimeouts.Default)
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("kb: begin tx: %w", err)
@@ -370,6 +419,30 @@ func (s *KBStore) DeleteDocument(ctx context.Context, filePath string) error {
 // UpdateDocument updates an existing document's content and metadata.
 // It re-chunks and re-embeds the content.
 func (s *KBStore) UpdateDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}) error {
+	if s.proxy != nil {
+		chunks := embeddings.ChunkText(content, s.chunkSize, s.chunkOverlap)
+		embedVecs := make([][]float32, 0, len(chunks))
+		if len(chunks) > 0 {
+			embedCtx, embedCancel := context.WithTimeout(ctx, kbEmbeddingsTimeout)
+			defer embedCancel()
+			var err error
+			embedVecs, err = s.embedder.EmbedDocuments(embedCtx, chunks)
+			if err != nil {
+				return fmt.Errorf("kb: embed chunks: %w", err)
+			}
+			if len(embedVecs) != len(chunks) {
+				return fmt.Errorf("kb: embedding count mismatch: got %d, expected %d", len(embedVecs), len(chunks))
+			}
+		}
+		return s.proxy.WriteWithRetry(ctx, "KBUpdateDocument", kbAddDocumentRequest{
+			FilePath:   filePath,
+			Content:    content,
+			Metadata:   metadata,
+			Chunks:     chunks,
+			Embeddings: embedVecs,
+		}, dbproxy.DefaultWriteTimeouts.Long)
+	}
+
 	// Delete existing document (including chunks)
 	if err := s.DeleteDocument(ctx, filePath); err != nil {
 		return fmt.Errorf("kb: delete for update: %w", err)
@@ -377,6 +450,14 @@ func (s *KBStore) UpdateDocument(ctx context.Context, filePath, content string, 
 
 	// Re-add with new content
 	return s.AddDocument(ctx, filePath, content, metadata)
+}
+
+type kbAddDocumentRequest struct {
+	FilePath   string                 `json:"file_path"`
+	Content    string                 `json:"content"`
+	Metadata   map[string]interface{} `json:"metadata"`
+	Chunks     []string               `json:"chunks"`
+	Embeddings [][]float32            `json:"embeddings"`
 }
 
 // SearchDocuments performs hybrid search combining vector similarity and FTS.

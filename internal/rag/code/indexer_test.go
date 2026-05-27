@@ -523,6 +523,93 @@ func TestHybridSearchPrefersLexicalMatches(t *testing.T) {
 	}
 }
 
+func TestHybridSearchPrefersCodeSymbolsOverMarkdownNoise(t *testing.T) {
+	db := setupIndexerTestDB(t)
+	defer db.Close()
+
+	now := time.Date(2026, 5, 27, 11, 12, 13, 0, time.UTC)
+	insertTestCodeProject(t, db, "proj1", "/tmp/proj1", now)
+
+	mdFileID := insertTestCodeFile(t, db, "proj1", "AGENTS.md", now)
+	insertTestCodeSymbol(
+		t, db, mdFileID, "proj1", "AGENTS.md",
+		"sym-doc", "/Guides/HybridSearch", "namespace", "Hybrid Search Guide",
+		"hybrid search ranking guidance for the codebase",
+		"Hybrid Search Guide", "General hybrid search documentation.",
+		nil, now,
+	)
+
+	goFileID := insertTestCodeFile(t, db, "proj1", "internal/rag/code/indexer.go", now)
+	insertTestCodeSymbol(
+		t, db, goFileID, "proj1", "internal/rag/code/indexer.go",
+		"sym-code", "/CodeIndexer/HybridSearch", "method", "HybridSearch",
+		"func (c *CodeIndexer) HybridSearch() { code_hybrid_search ranking lexical boost }",
+		"func (c *CodeIndexer) HybridSearch()", "Ranks code_hybrid_search results with lexical boost.",
+		nil, now,
+	)
+
+	idx := NewCodeIndexer(db, fixedVectorEmbedder{query: []float32{1, 0}}, 1)
+	if _, err := db.Exec(`UPDATE code_symbols SET embedding = ? WHERE id = ?`, serializeFloat32([]float32{1, 0}), "sym-doc"); err != nil {
+		t.Fatalf("seed markdown embedding: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE code_symbols SET embedding = ? WHERE id = ?`, serializeFloat32([]float32{0.92, 0.08}), "sym-code"); err != nil {
+		t.Fatalf("seed code embedding: %v", err)
+	}
+
+	results, err := idx.HybridSearch(context.Background(), "proj1", "code_hybrid_search ranking lexical boost", 5, nil, nil)
+	if err != nil {
+		t.Fatalf("HybridSearch returned error: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected hybrid search results")
+	}
+	if results[0].Symbol.ID != "sym-code" {
+		t.Fatalf("expected code symbol first, got %s (all results: %+v)", results[0].Symbol.ID, results)
+	}
+}
+
+func TestHybridSearchBoostsSourceMatchesWhenStructureIsSparse(t *testing.T) {
+	db := setupIndexerTestDB(t)
+	defer db.Close()
+
+	now := time.Date(2026, 5, 27, 11, 12, 13, 0, time.UTC)
+	insertTestCodeProject(t, db, "proj1", "/tmp/proj1", now)
+	fileID := insertTestCodeFile(t, db, "proj1", "internal/rag/code/indexer.go", now)
+	insertTestCodeSymbol(
+		t, db, fileID, "proj1", "internal/rag/code/indexer.go",
+		"sym-source", "/CodeIndexer/Search", "function", "Search",
+		"func Search() { lexicalBoost buildCodeSearchTerms buildCodeFTSQuery boostHybridResults }",
+		"func Search()", "Search helper.",
+		nil, now,
+	)
+	insertTestCodeSymbol(
+		t, db, fileID, "proj1", "internal/rag/code/other.go",
+		"sym-shallow", "/Docs/Boost", "function", "Boost",
+		"func Boost() {}",
+		"func Boost()", "Mentions boost once.",
+		nil, now,
+	)
+
+	idx := NewCodeIndexer(db, fixedVectorEmbedder{query: []float32{1, 0}}, 1)
+	if _, err := db.Exec(`UPDATE code_symbols SET embedding = ? WHERE id = ?`, serializeFloat32([]float32{0.95, 0.05}), "sym-shallow"); err != nil {
+		t.Fatalf("seed shallow embedding: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE code_symbols SET embedding = ? WHERE id = ?`, serializeFloat32([]float32{0.82, 0.18}), "sym-source"); err != nil {
+		t.Fatalf("seed source embedding: %v", err)
+	}
+
+	results, err := idx.HybridSearch(context.Background(), "proj1", "lexicalBoost buildCodeSearchTerms boostHybridResults", 5, nil, nil)
+	if err != nil {
+		t.Fatalf("HybridSearch returned error: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected hybrid search results")
+	}
+	if results[0].Symbol.ID != "sym-source" {
+		t.Fatalf("expected source-heavy symbol first, got %s (all results: %+v)", results[0].Symbol.ID, results)
+	}
+}
+
 func TestSearchPatternMatchesNamePathAndRegex(t *testing.T) {
 	db := setupIndexerTestDB(t)
 	defer db.Close()

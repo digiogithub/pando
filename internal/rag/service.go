@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/rag/code"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
@@ -27,6 +28,13 @@ type RemembrancesService struct {
 // NewRemembrancesService creates a RemembrancesService from the app configuration and an
 // existing SQLite connection. Returns nil (no error) when remembrances is disabled.
 func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*RemembrancesService, error) {
+	return NewRemembrancesServiceWithProxy(db, cfg, nil)
+}
+
+// NewRemembrancesServiceWithProxy creates a RemembrancesService from the app configuration and an
+// existing SQLite connection. When proxy is non-nil, mutating KB/events/code-indexing writes are
+// redirected through the primary instance while reads still use the provided DB connection.
+func NewRemembrancesServiceWithProxy(db *sql.DB, cfg *config.RemembrancesConfig, proxy *dbproxy.DBProxy) (*RemembrancesService, error) {
 	if cfg == nil || !cfg.Enabled {
 		return nil, nil
 	}
@@ -69,6 +77,11 @@ func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*Rememb
 	kbStore.SetSyncWorkers(workers)
 	eventStore := events.NewEventStore(db, docEmbedder)
 	codeIndexer := code.NewCodeIndexer(db, codeEmbedder, workers)
+	if proxy != nil {
+		kbStore.SetWriteProxy(proxy)
+		eventStore.SetWriteProxy(proxy)
+		codeIndexer.SetWriteProxy(proxy)
+	}
 
 	return &RemembrancesService{
 		KB:           kbStore,
