@@ -23,11 +23,11 @@ type ACPServerSession struct {
 	// agentConn is the agent-side connection for sending notifications to the client
 	agentConn *acpsdk.AgentSideConnection
 
-	// ctx is the context for this session (for cancellation)
-	ctx context.Context
+	// runCtx is the context for in-flight prompt/goal execution cancellation.
+	runCtx context.Context
 
-	// cancel is the cancellation function
-	cancel context.CancelFunc
+	// runCancel cancels in-flight prompt/goal execution.
+	runCancel context.CancelFunc
 
 	// pandoSessionID is the internal Pando session ID
 	pandoSessionID string
@@ -93,38 +93,40 @@ func NewACPServerSession(
 	agentConn *acpsdk.AgentSideConnection,
 	pandoSessionID string,
 ) *ACPServerSession {
-	ctx, cancel := context.WithCancel(context.Background())
+	runCtx, runCancel := context.WithCancel(context.Background())
 
 	return &ACPServerSession{
 		ID:             sessionID,
 		WorkDir:        workDir,
 		CreatedAt:      time.Now(),
 		agentConn:      agentConn,
-		ctx:            ctx,
-		cancel:         cancel,
+		runCtx:         runCtx,
+		runCancel:      runCancel,
 		pandoSessionID: pandoSessionID,
 	}
 }
 
-// Context returns the session's context.
+// Context returns the session's execution context.
 func (s *ACPServerSession) Context() context.Context {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.ctx
+	return s.runCtx
 }
 
-// Cancel cancels the session context.
+// Cancel cancels in-flight session work while keeping ACP transport available
+// for any final updates or future prompts on the same session.
 func (s *ACPServerSession) Cancel() {
 	s.mu.Lock()
 	goalCancel := s.goalCancel
 	s.goalCancel = nil
-	cancel := s.cancel
+	runCancel := s.runCancel
+	s.runCtx, s.runCancel = context.WithCancel(context.Background())
 	s.mu.Unlock()
 	if goalCancel != nil {
 		goalCancel()
 	}
-	if cancel != nil {
-		cancel()
+	if runCancel != nil {
+		runCancel()
 	}
 }
 
@@ -147,7 +149,9 @@ func (s *ACPServerSession) SendUpdate(update acpsdk.SessionUpdate) error {
 		Update:    update,
 	}
 
-	return agentConn.SessionUpdate(s.ctx, notification)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return agentConn.SessionUpdate(ctx, notification)
 }
 
 // PandoSessionID returns the internal Pando session ID.

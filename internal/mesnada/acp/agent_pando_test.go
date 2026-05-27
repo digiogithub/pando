@@ -391,6 +391,27 @@ func newTestPandoAgent() *PandoACPAgent {
 	return NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), agent, sessions, nil)
 }
 
+func TestACPServerSessionCancelResetsRunContextWithoutBreakingUpdates(t *testing.T) {
+	session := NewACPServerSession("session-1", "/tmp", nil, "pando-1")
+	before := session.Context()
+
+	session.Cancel()
+
+	select {
+	case <-before.Done():
+	default:
+		t.Fatal("expected previous run context to be canceled")
+	}
+
+	after := session.Context()
+	if after == before {
+		t.Fatal("expected Cancel to install a fresh run context")
+	}
+	if err := after.Err(); err != nil {
+		t.Fatalf("expected fresh run context to remain active, got %v", err)
+	}
+}
+
 func TestProcessAgentResponse_ToolCallsIncludeRenderingMetadata(t *testing.T) {
 	agent := newTestPandoAgent()
 	input := map[string]any{"file_path": "/workspace/project/main.go", "offset": 10, "limit": 5}
