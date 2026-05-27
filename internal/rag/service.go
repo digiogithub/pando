@@ -25,6 +25,13 @@ type RemembrancesService struct {
 	codeEmbedder embeddings.Embedder
 }
 
+func (s *RemembrancesService) DocumentEmbedder() embeddings.Embedder {
+	if s == nil {
+		return nil
+	}
+	return s.docEmbedder
+}
+
 // NewRemembrancesService creates a RemembrancesService from the app configuration and an
 // existing SQLite connection. Returns nil (no error) when remembrances is disabled.
 func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*RemembrancesService, error) {

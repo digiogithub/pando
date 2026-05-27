@@ -1566,6 +1566,37 @@ func TestPandoACPAgent_HandleSlashSummarizeStartsManualSummary(t *testing.T) {
 	}
 }
 
+func TestParseSlashCommand_NormalizesClientDoubleSlashPrefix(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         string
+		wantKind      slashCommandKind
+		wantObjective string
+	}{
+		{name: "double slash compact", input: "//compact", wantKind: slashCommandSummarize},
+		{name: "double slash summarize", input: "//summarize", wantKind: slashCommandSummarize},
+		{name: "double slash goal status", input: "//goal", wantKind: slashCommandGoalStatus},
+		{name: "double slash goal objective", input: "//goal Implement phase two", wantKind: slashCommandGoal, wantObjective: "Implement phase two"},
+		{name: "triple slash autopilot objective", input: "///autopilot Implement phase three", wantKind: slashCommandGoal, wantObjective: "Implement phase three"},
+		{name: "double slash goal cancel", input: " //goal-cancel ", wantKind: slashCommandGoalCancel},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := parseSlashCommand(tt.input)
+			if !ok {
+				t.Fatalf("expected %q to be parsed as slash command", tt.input)
+			}
+			if got.Kind != tt.wantKind {
+				t.Fatalf("parseSlashCommand(%q) kind = %q, want %q", tt.input, got.Kind, tt.wantKind)
+			}
+			if got.Objective != tt.wantObjective {
+				t.Fatalf("parseSlashCommand(%q) objective = %q, want %q", tt.input, got.Objective, tt.wantObjective)
+			}
+		})
+	}
+}
+
 func TestPandoACPAgent_SetSessionConfigOption_SplitsModePermissionAndAgent(t *testing.T) {
 	agent := newTestPandoAgent()
 	ctx := context.Background()
@@ -1705,19 +1736,16 @@ func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{goalCommandName, autopilotCommandName} {
-		cmd := got[name]
-		if cmd.Input == nil || cmd.Input.Unstructured == nil {
-			t.Fatalf("expected available command %q to declare unstructured input", name)
+	for _, cmd := range commands {
+		if cmd.Input != nil {
+			t.Fatalf("expected available command %q to omit input metadata for maximum ACP client compatibility", cmd.Name)
 		}
-		if strings.TrimSpace(cmd.Input.Unstructured.Hint) == "" {
-			t.Fatalf("expected available command %q to provide an input hint", name)
+		payload, err := json.Marshal(cmd)
+		if err != nil {
+			t.Fatalf("marshal available command %q: %v", cmd.Name, err)
 		}
-	}
-
-	for _, name := range []string{goalStatusCommandName, goalCancelCommandName, compactCommandName, summarizeCommandName} {
-		if got[name].Input != nil {
-			t.Fatalf("expected available command %q to omit input metadata", name)
+		if strings.Contains(string(payload), "\"input\":{}") {
+			t.Fatalf("expected available command %q to avoid empty input payloads, got %s", cmd.Name, payload)
 		}
 	}
 }

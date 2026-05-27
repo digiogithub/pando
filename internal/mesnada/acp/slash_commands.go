@@ -21,6 +21,10 @@ type slashCommand struct {
 
 func parseSlashCommand(input string) (slashCommand, bool) {
 	line := strings.TrimSpace(input)
+	for strings.HasPrefix(line, "//") {
+		line = strings.TrimPrefix(line, "/")
+	}
+
 	switch {
 	case line == "/goal":
 		return slashCommand{Kind: slashCommandGoalStatus}, true

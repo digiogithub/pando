@@ -13,7 +13,16 @@ import (
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
+	"github.com/digiogithub/pando/internal/rag/embeddings"
 )
+
+const sessionIndexChunkMetadataKey = "chunk_index"
+
+type sessionEventChunkSaver interface {
+	SaveEventWithEmbedding(ctx context.Context, subject, content string, metadata map[string]interface{}, embedding []float32) (int64, error)
+}
+
+var saveSessionEventChunkFn = saveSessionEventChunk
 
 func (app *App) initRemembrancesSessionIndexing(ctx context.Context, svc *rag.RemembrancesService, cfg *config.RemembrancesConfig) {
 	if svc == nil || svc.Events == nil || cfg == nil || !cfg.AutoIndexSessions {
@@ -119,10 +128,40 @@ func (app *App) indexSessionConversation(ctx context.Context, svc *rag.Remembran
 		"updated_at":    sess.UpdatedAt,
 	}
 
-	if _, err := svc.Events.SaveEvent(ctx, "session", content, metadata); err != nil {
-		return fmt.Errorf("save session event: %w", err)
+	chunks := embeddings.ChunkText(content, embeddings.DefaultChunkSize, embeddings.DefaultChunkOverlap)
+	if len(chunks) == 0 {
+		return nil
+	}
+
+	chunkEmbeddings, err := svc.DocumentEmbedder().EmbedDocuments(ctx, chunks)
+	if err != nil {
+		return fmt.Errorf("embed session chunks: %w", err)
+	}
+	if len(chunkEmbeddings) != len(chunks) {
+		return fmt.Errorf("session chunk embedding count mismatch: got %d, expected %d", len(chunkEmbeddings), len(chunks))
+	}
+
+	for i, chunk := range chunks {
+		chunkMetadata := cloneSessionMetadata(metadata)
+		chunkMetadata[sessionIndexChunkMetadataKey] = i
+		chunkMetadata["chunk_count"] = len(chunks)
+		if _, err := saveSessionEventChunkFn(ctx, svc.Events, "session", chunk, chunkMetadata, chunkEmbeddings[i]); err != nil {
+			return fmt.Errorf("save session event chunk %d: %w", i, err)
+		}
 	}
 	return nil
+}
+
+func saveSessionEventChunk(ctx context.Context, store sessionEventChunkSaver, subject, content string, metadata map[string]interface{}, embedding []float32) (int64, error) {
+	return store.SaveEventWithEmbedding(ctx, subject, content, metadata, embedding)
+}
+
+func cloneSessionMetadata(metadata map[string]interface{}) map[string]interface{} {
+	cloned := make(map[string]interface{}, len(metadata)+2)
+	for key, value := range metadata {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func extractMessageSearchParts(msg message.Message) []string {

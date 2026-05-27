@@ -314,22 +314,14 @@ func boolToAskPermissionValue(enabled bool) string {
 }
 
 func availableCommands() []acpsdk.AvailableCommand {
-	textInput := func(hint string) *acpsdk.AvailableCommandInput {
-		return &acpsdk.AvailableCommandInput{
-			Unstructured: &acpsdk.UnstructuredCommandInput{Hint: hint},
-		}
-	}
-
 	return []acpsdk.AvailableCommand{
 		{
 			Name:        goalCommandName,
 			Description: "Start goal mode with a persistent objective: /goal <objective>",
-			Input:       textInput("Describe the objective to pursue"),
 		},
 		{
 			Name:        autopilotCommandName,
 			Description: "Alias for /goal <objective>",
-			Input:       textInput("Describe the objective to pursue"),
 		},
 		{
 			Name:        goalStatusCommandName,
