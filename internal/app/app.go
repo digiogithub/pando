@@ -28,6 +28,8 @@ import (
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/dbproxy"
+	"github.com/digiogithub/pando/internal/ipc/failover"
+	"github.com/digiogithub/pando/internal/ipc/protocol"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/prompt"
@@ -84,6 +86,28 @@ type App struct {
 	IPCBus *ipc.Bus
 	// IPCIsPrimary is true when this instance holds the IPC lock.
 	IPCIsPrimary bool
+
+	// ipcWatcher is the failover watcher. Non-nil when IPC is active.
+	ipcWatcher *failover.Watcher
+
+	// ---- Secondary-only IPC context (set via SetIPCSecondaryContext) ----
+
+	// ipcClient is the ZMQ client used by secondary instances.
+	ipcClient *ipc.Client
+	// ipcROConn is the read-only SQLite connection held by the secondary.
+	// Closed and replaced with a RW connection on promotion.
+	ipcROConn *sql.DB
+	// ipcWorkdir is the working directory used to derive IPC ports and lock path.
+	ipcWorkdir string
+	// ipcInstanceID is the instance ID used in lock acquisition and IPC messaging.
+	ipcInstanceID string
+	// ipcPubPort and ipcRPCPort are the deterministic ports derived from ipcWorkdir.
+	ipcPubPort int
+	ipcRPCPort int
+	// ipcBusSetupFunc is provided by cmd/root.go and performs the full primary wiring
+	// (writecoordinator, changepub, bridge registration) once the RW DB and Bus are
+	// available after promotion.
+	ipcBusSetupFunc func(ctx context.Context, bus *ipc.Bus, rwConn *sql.DB) error
 
 	openlitShutdown func(context.Context) error
 
@@ -1471,6 +1495,118 @@ func (app *App) SetupIPC(bus *ipc.Bus) {
 	}
 
 	logging.Info("IPC bus wired to session service", "pubAddr", bus.PubAddr, "rpcAddr", bus.RPCAddr)
+}
+
+// SetIPCSecondaryContext stores the secondary IPC state and registers the active-probe
+// function on the watcher so it can perform per-prompt and per-minute liveness checks.
+//
+// busSetupFunc is called during promotion with the new Bus and RW connection.
+// It must wire the writecoordinator, changepub publisher, and bridge handlers.
+func (app *App) SetIPCSecondaryContext(
+	client *ipc.Client,
+	roConn *sql.DB,
+	workdir, instanceID string,
+	pubPort, rpcPort int,
+	watcher *failover.Watcher,
+	busSetupFunc func(ctx context.Context, bus *ipc.Bus, rwConn *sql.DB) error,
+) {
+	app.ipcClient = client
+	app.ipcROConn = roConn
+	app.ipcWorkdir = workdir
+	app.ipcInstanceID = instanceID
+	app.ipcPubPort = pubPort
+	app.ipcRPCPort = rpcPort
+	app.ipcWatcher = watcher
+	app.ipcBusSetupFunc = busSetupFunc
+
+	// Wire the per-prompt probe function on the watcher so it can do active pings.
+	if proxy, ok := app.DBQuerier.(*dbproxy.DBProxy); ok {
+		watcher.SetProbePrimary(proxy.ProbePrimary)
+	}
+}
+
+// EnsurePrimary performs an active liveness probe of the primary and, if the
+// primary is unreachable and auto-failover is enabled, triggers the failover
+// sequence.  Must be called before processing each user prompt on a secondary
+// instance.  Safe to call on the primary instance (no-op).
+func (app *App) EnsurePrimary(ctx context.Context) {
+	if app.IPCIsPrimary || app.ipcWatcher == nil {
+		return
+	}
+	if err := app.ipcWatcher.CheckAndMaybeFailover(ctx); err != nil {
+		logging.Warn("EnsurePrimary: primary unavailable", "error", err)
+	}
+}
+
+// PromoteToPrimary is the failover.PromoteFunc implementation.
+// It is called by the Watcher when this secondary wins the lock race.
+// lockFile is the open flock file that must be kept open for the duration of
+// this instance's primary role.
+//
+// The method:
+//  1. Closes the old read-only SQLite connection.
+//  2. Opens a new read-write connection (with migrations).
+//  3. Creates a new IPC Bus and calls ipcBusSetupFunc to wire all handlers.
+//  4. Updates the app's Querier, IPCBus, and IPCIsPrimary fields.
+//  5. Publishes instance.promoted on the new Bus so other secondaries reconnect.
+func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
+	logging.Info("failover: PromoteToPrimary starting",
+		"instance_id", app.ipcInstanceID,
+		"workdir", app.ipcWorkdir,
+	)
+
+	// 1. Close old read-only connection.
+	if app.ipcROConn != nil {
+		_ = app.ipcROConn.Close()
+		app.ipcROConn = nil
+	}
+	if app.ipcClient != nil {
+		_ = app.ipcClient.Close()
+		app.ipcClient = nil
+	}
+
+	// 2. Open read-write SQLite connection.
+	rwConn, err := db.Connect()
+	if err != nil {
+		return fmt.Errorf("failover: open RW DB: %w", err)
+	}
+
+	// 3. Create a new IPC Bus and wire all handlers via the injected setup function.
+	bus := ipc.NewBus(app.ipcInstanceID)
+	if app.ipcBusSetupFunc != nil {
+		if setupErr := app.ipcBusSetupFunc(ctx, bus, rwConn); setupErr != nil {
+			_ = rwConn.Close()
+			return fmt.Errorf("failover: bus setup: %w", setupErr)
+		}
+	}
+	if startErr := bus.Start(ctx, app.ipcPubPort, app.ipcRPCPort); startErr != nil {
+		_ = rwConn.Close()
+		return fmt.Errorf("failover: start bus: %w", startErr)
+	}
+
+	// 4. Update app state.
+	app.DBQuerier = db.New(rwConn)
+	app.SetupIPC(bus)
+
+	// 5. Publish instance.promoted so other secondaries reset their heartbeat timers
+	//    and reconnect to the new primary.
+	_ = bus.Publish(protocol.TopicInstancePromoted, protocol.PromotedPayload{
+		InstanceID: app.ipcInstanceID,
+		PubAddr:    bus.PubAddr,
+		RPCAddr:    bus.RPCAddr,
+	})
+
+	logging.Info("failover: PromoteToPrimary complete",
+		"instance_id", app.ipcInstanceID,
+		"pub_addr", bus.PubAddr,
+		"rpc_addr", bus.RPCAddr,
+	)
+
+	// The lockFile is intentionally NOT closed here — it must remain open for the
+	// duration of this instance's primary role to maintain the flock.
+	_ = lockFile
+
+	return nil
 }
 
 func (app *App) Shutdown() {

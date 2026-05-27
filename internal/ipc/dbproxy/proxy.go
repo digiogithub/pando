@@ -2,11 +2,17 @@
 // Use of this source code is governed by a MIT-style license.
 
 // Package dbproxy provides a db.Querier implementation that transparently
-// routes write operations to the primary Pando instance via ZMQ JSON-RPC,
-// while serving reads from the local (possibly read-only) SQLite database.
+// routes write operations while keeping reads fast.
 //
-// Secondary instances use DBProxy so they never write to SQLite directly,
-// preserving the single-writer invariant required by SQLite.
+// Write strategy (secondary instances):
+//  1. Attempt the write directly against the local RW SQLite connection (WAL
+//     mode allows concurrent writes when there is no lock contention).
+//  2. If SQLite returns BUSY or LOCKED (another writer holds the lock) the
+//     operation is forwarded to the primary instance via ZMQ JSON-RPC, which
+//     serialises writes as the single authoritative writer.
+//  3. Only if the proxy call also fails is an error returned to the caller.
+//
+// Primary instances use the embedded Querier directly; no proxying occurs.
 package dbproxy
 
 import (
@@ -14,10 +20,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+
+	sqlite3 "github.com/ncruces/go-sqlite3"
 
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/ipc"
+	"github.com/digiogithub/pando/internal/logging"
 )
 
 // MethodDBWrite is the JSON-RPC method name for proxied write operations.
@@ -51,18 +61,19 @@ var DefaultWriteTimeouts = WriteTimeout{
 }
 
 // DBProxy implements db.Querier. Reads are served from the embedded local
-// querier. Writes are forwarded via ZMQ JSON-RPC to the primary instance.
+// querier. Writes first attempt the local RW connection (WAL mode); on
+// SQLITE_BUSY/LOCKED they are forwarded via ZMQ JSON-RPC to the primary.
 //
 // When client is nil the proxy behaves identically to the embedded querier
-// (useful for the primary instance itself).
+// (useful for the primary instance itself, which never proxies).
 type DBProxy struct {
-	db.Querier // local reads — embedded interface
+	db.Querier // local reads and direct write attempts — embedded interface
 	client     *ipc.Client
 	rpcAddr    string
 	instanceID string
 }
 
-// New creates a DBProxy backed by local for reads.
+// New creates a DBProxy backed by local for reads and direct write attempts.
 // Pass a non-nil client and the primary's rpcAddr to enable write proxying.
 // Pass client=nil for primary instances (writes go directly to the local querier).
 func New(local db.Querier, client *ipc.Client, rpcAddr string) *DBProxy {
@@ -87,6 +98,23 @@ func NewWithInstanceID(local db.Querier, client *ipc.Client, rpcAddr, instanceID
 // isPrimary returns true when no write proxying is configured.
 func (p *DBProxy) isPrimary() bool { return p.client == nil }
 
+// ProbePrimary sends an instance.ping JSON-RPC call to the primary with a 2-second
+// timeout and returns nil on success.  Returns an error if the primary is
+// unreachable, the call times out, or the proxy is not configured.
+// Always returns nil when this instance is the primary (no proxy needed).
+func (p *DBProxy) ProbePrimary(ctx context.Context) error {
+	if p.isPrimary() {
+		return nil
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	_, err := p.client.Call(probeCtx, p.rpcAddr, "instance.ping", struct{}{})
+	if err != nil {
+		return fmt.Errorf("dbproxy: probe primary: %w", err)
+	}
+	return nil
+}
+
 // newMeta builds a WriteMeta for the current request.
 func (p *DBProxy) newMeta() WriteMeta {
 	return WriteMeta{
@@ -95,6 +123,28 @@ func (p *DBProxy) newMeta() WriteMeta {
 		Timestamp:        time.Now().UTC().Format(time.RFC3339),
 	}
 }
+
+// isLockError returns true when err indicates that SQLite could not acquire the
+// write lock (SQLITE_BUSY or SQLITE_LOCKED). These are the only errors that
+// trigger the IPC proxy fallback; all other errors are returned as-is.
+func isLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var e *sqlite3.Error
+	if errors.As(err, &e) {
+		c := e.Code()
+		return c == sqlite3.BUSY || c == sqlite3.LOCKED
+	}
+	// String fallback for wrapped or driver-specific error representations.
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "database is locked") ||
+		strings.Contains(s, "database table is locked") ||
+		strings.Contains(s, "sqlite_busy") ||
+		strings.Contains(s, "sqlite_locked")
+}
+
+// ---- proxy helpers ----
 
 // proxyWrite serialises params, sends db.write to the primary within the given
 // timeout, and deserialises the result.
@@ -174,153 +224,184 @@ func (p *DBProxy) writeWithRetry(ctx context.Context, method string, params any,
 	return fmt.Errorf("dbproxy: exhausted retries for %s", method)
 }
 
+// ---- direct-then-proxy helpers ----
+
+// directOrProxy attempts a typed write directly against the local RW Querier.
+// On success the result is returned immediately. On SQLITE_BUSY/LOCKED the
+// write is forwarded to the primary via ZMQ and the proxy result is returned.
+// Any other error is returned as-is without proxying.
+func directOrProxy[R any](
+	ctx context.Context,
+	p *DBProxy,
+	directFn func() (R, error),
+	method string,
+	params any,
+	timeout time.Duration,
+) (R, error) {
+	if p.isPrimary() {
+		return directFn()
+	}
+	result, err := directFn()
+	if err == nil {
+		return result, nil
+	}
+	if !isLockError(err) {
+		return result, err
+	}
+	logging.Debug("dbproxy: direct write got lock contention, falling back to proxy",
+		"method", method, "error", err)
+	return proxyWrite[R](ctx, p, method, params, timeout)
+}
+
+// directOrProxyVoid is like directOrProxy but for operations that return only
+// an error (no result value).
+func directOrProxyVoid(
+	ctx context.Context,
+	p *DBProxy,
+	directFn func() error,
+	method string,
+	params any,
+	timeout time.Duration,
+) error {
+	if p.isPrimary() {
+		return directFn()
+	}
+	if err := directFn(); err == nil {
+		return nil
+	} else if !isLockError(err) {
+		return err
+	}
+	logging.Debug("dbproxy: direct void write got lock contention, falling back to proxy",
+		"method", method)
+	return p.writeWithRetry(ctx, method, params, timeout)
+}
+
 // ---- Write method overrides ----
 
 func (p *DBProxy) CreateSession(ctx context.Context, arg db.CreateSessionParams) (db.Session, error) {
-	if p.isPrimary() {
-		return p.Querier.CreateSession(ctx, arg)
-	}
-	return proxyWrite[db.Session](ctx, p, "CreateSession", arg, DefaultWriteTimeouts.Default)
+	return directOrProxy(ctx, p,
+		func() (db.Session, error) { return p.Querier.CreateSession(ctx, arg) },
+		"CreateSession", arg, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) UpdateSession(ctx context.Context, arg db.UpdateSessionParams) (db.Session, error) {
-	if p.isPrimary() {
-		return p.Querier.UpdateSession(ctx, arg)
-	}
-	return proxyWrite[db.Session](ctx, p, "UpdateSession", arg, DefaultWriteTimeouts.Default)
+	return directOrProxy(ctx, p,
+		func() (db.Session, error) { return p.Querier.UpdateSession(ctx, arg) },
+		"UpdateSession", arg, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) DeleteSession(ctx context.Context, id string) error {
-	if p.isPrimary() {
-		return p.Querier.DeleteSession(ctx, id)
-	}
-	return p.writeWithRetry(ctx, "DeleteSession", id, DefaultWriteTimeouts.Default)
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.DeleteSession(ctx, id) },
+		"DeleteSession", id, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) DeleteSessionMessages(ctx context.Context, sessionID string) error {
-	if p.isPrimary() {
-		return p.Querier.DeleteSessionMessages(ctx, sessionID)
-	}
-	return p.writeWithRetry(ctx, "DeleteSessionMessages", sessionID, DefaultWriteTimeouts.Default)
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.DeleteSessionMessages(ctx, sessionID) },
+		"DeleteSessionMessages", sessionID, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) CreateMessage(ctx context.Context, arg db.CreateMessageParams) (db.Message, error) {
-	if p.isPrimary() {
-		return p.Querier.CreateMessage(ctx, arg)
-	}
-	return proxyWrite[db.Message](ctx, p, "CreateMessage", arg, DefaultWriteTimeouts.Default)
+	return directOrProxy(ctx, p,
+		func() (db.Message, error) { return p.Querier.CreateMessage(ctx, arg) },
+		"CreateMessage", arg, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) UpdateMessage(ctx context.Context, arg db.UpdateMessageParams) error {
-	if p.isPrimary() {
-		return p.Querier.UpdateMessage(ctx, arg)
-	}
-	return p.writeWithRetry(ctx, "UpdateMessage", arg, DefaultWriteTimeouts.Default)
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.UpdateMessage(ctx, arg) },
+		"UpdateMessage", arg, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) DeleteMessage(ctx context.Context, id string) error {
-	if p.isPrimary() {
-		return p.Querier.DeleteMessage(ctx, id)
-	}
-	return p.writeWithRetry(ctx, "DeleteMessage", id, DefaultWriteTimeouts.Default)
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.DeleteMessage(ctx, id) },
+		"DeleteMessage", id, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) CreateFile(ctx context.Context, arg db.CreateFileParams) (db.File, error) {
-	if p.isPrimary() {
-		return p.Querier.CreateFile(ctx, arg)
-	}
-	return proxyWrite[db.File](ctx, p, "CreateFile", arg, DefaultWriteTimeouts.Default)
+	return directOrProxy(ctx, p,
+		func() (db.File, error) { return p.Querier.CreateFile(ctx, arg) },
+		"CreateFile", arg, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) UpdateFile(ctx context.Context, arg db.UpdateFileParams) (db.File, error) {
-	if p.isPrimary() {
-		return p.Querier.UpdateFile(ctx, arg)
-	}
-	return proxyWrite[db.File](ctx, p, "UpdateFile", arg, DefaultWriteTimeouts.Default)
+	return directOrProxy(ctx, p,
+		func() (db.File, error) { return p.Querier.UpdateFile(ctx, arg) },
+		"UpdateFile", arg, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) DeleteFile(ctx context.Context, id string) error {
-	if p.isPrimary() {
-		return p.Querier.DeleteFile(ctx, id)
-	}
-	return p.writeWithRetry(ctx, "DeleteFile", id, DefaultWriteTimeouts.Default)
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.DeleteFile(ctx, id) },
+		"DeleteFile", id, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) DeleteSessionFiles(ctx context.Context, sessionID string) error {
-	if p.isPrimary() {
-		return p.Querier.DeleteSessionFiles(ctx, sessionID)
-	}
-	return p.writeWithRetry(ctx, "DeleteSessionFiles", sessionID, DefaultWriteTimeouts.Default)
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.DeleteSessionFiles(ctx, sessionID) },
+		"DeleteSessionFiles", sessionID, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) InsertPromptTemplate(ctx context.Context, arg db.InsertPromptTemplateParams) (db.PromptTemplate, error) {
-	if p.isPrimary() {
-		return p.Querier.InsertPromptTemplate(ctx, arg)
-	}
-	return proxyWrite[db.PromptTemplate](ctx, p, "InsertPromptTemplate", arg, DefaultWriteTimeouts.Default)
+	return directOrProxy(ctx, p,
+		func() (db.PromptTemplate, error) { return p.Querier.InsertPromptTemplate(ctx, arg) },
+		"InsertPromptTemplate", arg, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) InsertSessionScore(ctx context.Context, arg db.InsertSessionScoreParams) (db.SessionScore, error) {
-	if p.isPrimary() {
-		return p.Querier.InsertSessionScore(ctx, arg)
-	}
-	return proxyWrite[db.SessionScore](ctx, p, "InsertSessionScore", arg, DefaultWriteTimeouts.Default)
+	return directOrProxy(ctx, p,
+		func() (db.SessionScore, error) { return p.Querier.InsertSessionScore(ctx, arg) },
+		"InsertSessionScore", arg, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) InsertSkill(ctx context.Context, arg db.InsertSkillParams) (db.SkillLibrary, error) {
-	if p.isPrimary() {
-		return p.Querier.InsertSkill(ctx, arg)
-	}
-	return proxyWrite[db.SkillLibrary](ctx, p, "InsertSkill", arg, DefaultWriteTimeouts.Default)
+	return directOrProxy(ctx, p,
+		func() (db.SkillLibrary, error) { return p.Querier.InsertSkill(ctx, arg) },
+		"InsertSkill", arg, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) DeactivateLowestSkill(ctx context.Context) error {
-	if p.isPrimary() {
-		return p.Querier.DeactivateLowestSkill(ctx)
-	}
-	return p.writeWithRetry(ctx, "DeactivateLowestSkill", nil, DefaultWriteTimeouts.Default)
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.DeactivateLowestSkill(ctx) },
+		"DeactivateLowestSkill", nil, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) IncrementSkillUsage(ctx context.Context, id string) error {
-	if p.isPrimary() {
-		return p.Querier.IncrementSkillUsage(ctx, id)
-	}
-	return p.writeWithRetry(ctx, "IncrementSkillUsage", id, DefaultWriteTimeouts.Default)
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.IncrementSkillUsage(ctx, id) },
+		"IncrementSkillUsage", id, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) CreateProject(ctx context.Context, arg db.CreateProjectParams) (db.Project, error) {
-	if p.isPrimary() {
-		return p.Querier.CreateProject(ctx, arg)
-	}
-	return proxyWrite[db.Project](ctx, p, "CreateProject", arg, DefaultWriteTimeouts.Default)
+	return directOrProxy(ctx, p,
+		func() (db.Project, error) { return p.Querier.CreateProject(ctx, arg) },
+		"CreateProject", arg, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) UpdateProjectStatus(ctx context.Context, arg db.UpdateProjectStatusParams) error {
-	if p.isPrimary() {
-		return p.Querier.UpdateProjectStatus(ctx, arg)
-	}
-	return p.writeWithRetry(ctx, "UpdateProjectStatus", arg, DefaultWriteTimeouts.Default)
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.UpdateProjectStatus(ctx, arg) },
+		"UpdateProjectStatus", arg, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) UpdateProjectLastOpened(ctx context.Context, arg db.UpdateProjectLastOpenedParams) error {
-	if p.isPrimary() {
-		return p.Querier.UpdateProjectLastOpened(ctx, arg)
-	}
-	return p.writeWithRetry(ctx, "UpdateProjectLastOpened", arg, DefaultWriteTimeouts.Default)
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.UpdateProjectLastOpened(ctx, arg) },
+		"UpdateProjectLastOpened", arg, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) MarkProjectInitialized(ctx context.Context, id string) error {
-	if p.isPrimary() {
-		return p.Querier.MarkProjectInitialized(ctx, id)
-	}
-	return p.writeWithRetry(ctx, "MarkProjectInitialized", id, DefaultWriteTimeouts.Default)
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.MarkProjectInitialized(ctx, id) },
+		"MarkProjectInitialized", id, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) DeleteProject(ctx context.Context, id string) error {
-	if p.isPrimary() {
-		return p.Querier.DeleteProject(ctx, id)
-	}
-	return p.writeWithRetry(ctx, "DeleteProject", id, DefaultWriteTimeouts.Default)
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.DeleteProject(ctx, id) },
+		"DeleteProject", id, DefaultWriteTimeouts.Default)
 }
 
 // Ensure DBProxy satisfies db.Querier at compile time.

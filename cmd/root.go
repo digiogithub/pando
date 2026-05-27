@@ -22,6 +22,7 @@ import (
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/instanceregistry"
+	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/bridge"
 	"github.com/digiogithub/pando/internal/ipc/changepub"
 	"github.com/digiogithub/pando/internal/ipc/dbproxy"
@@ -264,6 +265,37 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 				// watcher covers the shutdown signal path independently.
 				rt.Watcher.Start(ctx)
 			}
+		} else {
+			// Secondary instance: register IPC context on the app so it can perform
+			// per-prompt probes and promote itself to primary on failure.
+			//
+			// busSetupFunc is the closure that recreates the full primary wiring
+			// (writecoordinator, changepub, bridge) using the new RW connection and Bus.
+			// It captures the current pandoApp and cmd-level vars by reference so it can
+			// reference them after promotion.
+			busSetupFunc := func(busCtx context.Context, newBus *ipc.Bus, rwConn *sql.DB) error {
+				coord := writecoordinator.New(busCtx, db.New(rwConn), 256)
+				pub := changepub.NewBusPublisher(newBus.Publish, instanceID, cwd)
+				coord.SetPublisher(pub)
+				dbproxy.RegisterHandlersWithCoordinator(newBus, coord)
+				bridge.RegisterHandlers(newBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+				br := bridge.New(newBus, pandoApp.Sessions, pandoApp.CoderAgent)
+				br.Start(busCtx)
+				return nil
+			}
+			pandoApp.SetIPCSecondaryContext(
+				rt.IPCClient,
+				rt.SQLDB,
+				cwd,
+				instanceID,
+				rt.PubPort,
+				rt.RPCPort,
+				rt.Watcher,
+				busSetupFunc,
+			)
+			// Register the promotion callback so the watcher can call PromoteToPrimary
+			// when it wins the lock race.
+			rt.Watcher.SetPromoteCallback(pandoApp.PromoteToPrimary)
 		}
 
 		app := pandoApp
@@ -276,6 +308,8 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		if goalObjective != "" {
 			quiet = true
 			defer app.Shutdown()
+			// Probe primary before processing — detect stale primary before writes fail.
+			app.EnsurePrimary(ctx)
 			result, err := app.RunNonInteractiveGoal(ctx, goalObjective, outputFormat, quiet, yoloMode)
 			if err != nil {
 				return err
@@ -286,6 +320,8 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		if prompt != "" {
 			quiet = true
 			defer app.Shutdown()
+			// Probe primary before processing — detect stale primary before writes fail.
+			app.EnsurePrimary(ctx)
 			// Run non-interactive flow using the App method
 			return app.RunNonInteractive(ctx, prompt, outputFormat, quiet, yoloMode)
 		}

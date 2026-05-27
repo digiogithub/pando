@@ -8,6 +8,7 @@ package failover
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -28,7 +29,11 @@ type Config struct {
 	HeartbeatInterval time.Duration
 	// HeartbeatTimeout is the maximum silence before a secondary declares the primary dead.
 	HeartbeatTimeout time.Duration
-	// Enabled is the feature flag; false by default to ensure safe opt-in.
+	// ProbeInterval is how often the secondary actively pings the primary via RPC
+	// as a complementary liveness check independent of PUB/SUB heartbeats.
+	ProbeInterval time.Duration
+	// Enabled controls whether the secondary will attempt automatic promotion when
+	// the primary appears dead. Defaults to true; set false to observe without acting.
 	Enabled bool
 }
 
@@ -37,7 +42,8 @@ func DefaultConfig() Config {
 	return Config{
 		HeartbeatInterval: 5 * time.Second,
 		HeartbeatTimeout:  15 * time.Second,
-		Enabled:           false,
+		ProbeInterval:     60 * time.Second,
+		Enabled:           true,
 	}
 }
 
@@ -50,6 +56,17 @@ type BusPublisher interface {
 type EventSubscriber interface {
 	SubscribeTo(pubEndpoint string, topics ...string) (<-chan ipc.Envelope, error)
 }
+
+// PromoteFunc is called when this secondary wins the promotion race.
+// The lockFile parameter is the open flock file the caller has already acquired
+// (and must keep open for the lifetime of the primary role).
+// If PromoteFunc returns an error the lockFile is released and the promotion is
+// considered failed.
+type PromoteFunc func(ctx context.Context, lockFile *os.File) error
+
+// ProbePrimaryFunc is an optional callback the Watcher uses to actively probe
+// the primary via RPC (instance.ping). Set via SetProbePrimary.
+type ProbePrimaryFunc func(ctx context.Context) error
 
 // Watcher monitors primary liveness and coordinates role transitions.
 //   - On the primary instance: publishes periodic heartbeats and instance.shutdown on exit.
@@ -73,10 +90,13 @@ type Watcher struct {
 	lastHeartbeat time.Time
 
 	// onPromote is called when this secondary wins the promotion race.
-	// Kept as a stub in Phase 5a; Phase 5b will implement full DB reconnect.
-	onPromote func(ctx context.Context) error
+	// The lockFile is passed so the callback can hold the lock for the new primary's lifetime.
+	onPromote PromoteFunc
 	// onDemote is called when this instance loses primary status (future use).
 	onDemote func(ctx context.Context) error
+
+	// probePrimary is an optional per-prompt / background probe function.
+	probePrimary ProbePrimaryFunc
 
 	// RoleChangedC receives non-blocking notifications on every role transition.
 	RoleChangedC chan RoleChanged
@@ -94,7 +114,8 @@ func NewWatcher(
 	bus BusPublisher,
 	client EventSubscriber,
 	pubEndpoint string,
-	onPromote, onDemote func(ctx context.Context) error,
+	onPromote PromoteFunc,
+	onDemote func(ctx context.Context) error,
 ) *Watcher {
 	return &Watcher{
 		cfg:          cfg,
@@ -118,6 +139,58 @@ func (w *Watcher) SetEnabled(enabled bool) {
 	w.mu.Lock()
 	w.cfg.Enabled = enabled
 	w.mu.Unlock()
+}
+
+// SetPromoteCallback replaces the promotion callback after construction.
+// Must be called before Start() to take effect.
+func (w *Watcher) SetPromoteCallback(fn PromoteFunc) {
+	w.mu.Lock()
+	w.onPromote = fn
+	w.mu.Unlock()
+}
+
+// SetProbePrimary registers an active-probe function used by the 60-second background
+// ticker and by CheckAndMaybeFailover for per-prompt liveness checks.
+func (w *Watcher) SetProbePrimary(fn ProbePrimaryFunc) {
+	w.mu.Lock()
+	w.probePrimary = fn
+	w.mu.Unlock()
+}
+
+// CheckAndMaybeFailover performs an immediate active probe of the primary and, if
+// unreachable and auto-failover is enabled, triggers the promotion sequence.
+// Designed to be called before processing each user prompt on a secondary.
+// Returns nil if the primary is alive or if this is already the primary.
+// Returns an error only if the probe fails AND promotion also fails.
+func (w *Watcher) CheckAndMaybeFailover(ctx context.Context) error {
+	w.mu.RLock()
+	role := w.role
+	probe := w.probePrimary
+	enabled := w.cfg.Enabled
+	w.mu.RUnlock()
+
+	if role == "primary" {
+		return nil
+	}
+
+	if probe == nil {
+		return nil // no probe function registered — skip
+	}
+
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	if err := probe(probeCtx); err != nil {
+		logging.Warn("failover: per-prompt probe detected primary is unreachable",
+			"error", err,
+			"instance_id", w.instanceID,
+		)
+		if enabled {
+			w.triggerFailover(ctx)
+		}
+		return fmt.Errorf("primary unreachable: %w", err)
+	}
+	return nil
 }
 
 // Start begins monitoring in the background. For the primary it publishes heartbeats;
@@ -175,7 +248,12 @@ func (w *Watcher) runPrimary(ctx context.Context) {
 }
 
 // runSecondary subscribes to the primary's PUB socket and watches for heartbeats.
-// It also listens for instance.shutdown so it can react immediately instead of waiting.
+// It also:
+//   - listens for instance.shutdown to react immediately on graceful primary exit
+//   - listens for instance.promoted to reset the heartbeat timer when another
+//     secondary was promoted and resets its connection state
+//   - runs a background probe ticker every ProbeInterval (default 60s) as a
+//     complementary liveness check independent of PUB/SUB connectivity
 func (w *Watcher) runSecondary(ctx context.Context) {
 	defer close(w.done)
 
@@ -187,6 +265,7 @@ func (w *Watcher) runSecondary(ctx context.Context) {
 	ch, err := w.client.SubscribeTo(w.pubEndpoint,
 		protocol.TopicInstanceHeartbeat,
 		protocol.TopicInstanceShutdown,
+		protocol.TopicInstancePromoted,
 	)
 	if err != nil {
 		logging.Warn("failover: secondary failed to subscribe to primary events", "error", err)
@@ -197,13 +276,20 @@ func (w *Watcher) runSecondary(ctx context.Context) {
 	w.lastHeartbeat = time.Now()
 	w.mu.Unlock()
 
-	timeout := time.NewTimer(w.cfg.HeartbeatTimeout)
-	defer timeout.Stop()
+	heartbeatTimer := time.NewTimer(w.cfg.HeartbeatTimeout)
+	defer heartbeatTimer.Stop()
+
+	probeTicker := time.NewTicker(w.cfg.ProbeInterval)
+	defer probeTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
+
+		// Background active probe (every 60 s by default)
+		case <-probeTicker.C:
+			w.runProbe(ctx)
 
 		case env, ok := <-ch:
 			if !ok {
@@ -217,25 +303,27 @@ func (w *Watcher) runSecondary(ctx context.Context) {
 				w.mu.Lock()
 				w.lastHeartbeat = time.Now()
 				w.mu.Unlock()
-				// Reset the timer on each received heartbeat.
-				if !timeout.Stop() {
-					select {
-					case <-timeout.C:
-					default:
-					}
-				}
-				timeout.Reset(w.cfg.HeartbeatTimeout)
+				resetTimer(heartbeatTimer, w.cfg.HeartbeatTimeout)
 
 			case protocol.TopicInstanceShutdown:
 				logging.Info("failover: received graceful shutdown from primary; starting failover immediately")
 				w.triggerFailover(ctx)
 				return
+
+			case protocol.TopicInstancePromoted:
+				// Another secondary became the new primary. Reset the heartbeat
+				// timer so we don't immediately try to promote ourselves again.
+				logging.Info("failover: received instance.promoted — another secondary took over; resetting heartbeat timer")
+				w.mu.Lock()
+				w.lastHeartbeat = time.Now()
+				w.mu.Unlock()
+				resetTimer(heartbeatTimer, w.cfg.HeartbeatTimeout)
 			}
 
-		case <-timeout.C:
-			w.mu.Lock()
+		case <-heartbeatTimer.C:
+			w.mu.RLock()
 			last := w.lastHeartbeat
-			w.mu.Unlock()
+			w.mu.RUnlock()
 			logging.Warn("failover: no heartbeat received within timeout",
 				"timeout", w.cfg.HeartbeatTimeout,
 				"last_heartbeat", last,
@@ -246,8 +334,36 @@ func (w *Watcher) runSecondary(ctx context.Context) {
 	}
 }
 
+// runProbe executes the registered ProbePrimaryFunc and triggers failover if the
+// probe fails and auto-failover is enabled.
+func (w *Watcher) runProbe(ctx context.Context) {
+	w.mu.RLock()
+	probe := w.probePrimary
+	enabled := w.cfg.Enabled
+	w.mu.RUnlock()
+
+	if probe == nil {
+		return
+	}
+
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	if err := probe(probeCtx); err != nil {
+		logging.Warn("failover: background probe detected primary is unreachable",
+			"error", err,
+			"instance_id", w.instanceID,
+		)
+		if enabled {
+			w.triggerFailover(ctx)
+		}
+	}
+}
+
 // triggerFailover is called on the secondary when the primary appears dead.
 // It checks the feature flag, attempts lock acquisition, and calls onPromote on success.
+// The acquired lock file is passed directly to onPromote so the promotion callback
+// can hold it for the lifetime of the new primary role.
 func (w *Watcher) triggerFailover(ctx context.Context) {
 	w.mu.RLock()
 	enabled := w.cfg.Enabled
@@ -275,22 +391,24 @@ func (w *Watcher) triggerFailover(ctx context.Context) {
 		return
 	}
 
-	// We hold the lock — release it back to the bootstrap sequence so onPromote
-	// can re-open the RW DB and start the Bus properly. The stub below logs and
-	// returns without actually setting up services; Phase 5b implements the full flow.
-	ipc.ReleaseLock(lockFile)
-
+	// We hold the lock. Pass it directly to onPromote so the callback can keep it
+	// open for the lifetime of the new primary session.
 	logging.Info("failover: acquired lock; invoking promotion callback",
 		"instance_id", w.instanceID,
 	)
 
+	w.mu.RLock()
+	onPromote := w.onPromote
+	w.mu.RUnlock()
+
 	var promoteErr error
-	if w.onPromote != nil {
-		promoteErr = w.onPromote(ctx)
+	if onPromote != nil {
+		promoteErr = onPromote(ctx, lockFile)
 	}
 
 	if promoteErr != nil {
-		logging.Warn("failover: promotion callback returned error", "error", promoteErr)
+		logging.Warn("failover: promotion callback returned error; releasing lock", "error", promoteErr)
+		ipc.ReleaseLock(lockFile)
 		return
 	}
 
@@ -308,7 +426,6 @@ func (w *Watcher) notify(rc RoleChanged) {
 	select {
 	case w.RoleChangedC <- rc:
 	default:
-		// Drop if nobody is reading; callers must drain the channel.
 		logging.Warn("failover: RoleChangedC full; event dropped",
 			"old_role", rc.OldRole,
 			"new_role", rc.NewRole,
@@ -322,17 +439,6 @@ func (w *Watcher) LastHeartbeat() time.Time {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.lastHeartbeat
-}
-
-// defaultPromoteStub is used when onPromote is nil. It logs a message and returns nil
-// so that the watcher infrastructure can be exercised without a real DB reconnect.
-func defaultPromoteStub(instanceID string) func(ctx context.Context) error {
-	return func(_ context.Context) error {
-		logging.Warn("failover: PROMOTE stub called — full DB reconnect not yet implemented",
-			"instance_id", instanceID,
-		)
-		return nil
-	}
 }
 
 // NewWatcherForPrimary is a convenience constructor that wires a primary Watcher
@@ -351,17 +457,15 @@ func NewWatcherForPrimary(
 
 // NewWatcherForSecondary is a convenience constructor that wires a secondary Watcher
 // with the IPC client subscribed to the primary's PUB endpoint.
+// onPromote may be nil; it can be set later via SetPromoteCallback.
 func NewWatcherForSecondary(
 	cfg Config,
 	instanceID, workdir string,
 	pubPort, rpcPort int,
 	client EventSubscriber,
 	pubEndpoint string,
-	onPromote func(ctx context.Context) error,
+	onPromote PromoteFunc,
 ) *Watcher {
-	if onPromote == nil {
-		onPromote = defaultPromoteStub(instanceID)
-	}
 	return NewWatcher(cfg, "secondary", instanceID, workdir, pubPort, rpcPort,
 		nil, client, pubEndpoint,
 		onPromote, nil,
@@ -376,6 +480,17 @@ func (w *Watcher) FormatStatus() string {
 	if w.role == "primary" {
 		return fmt.Sprintf("role=primary enabled=%v heartbeat_interval=%s", enabled, w.cfg.HeartbeatInterval)
 	}
-	return fmt.Sprintf("role=secondary enabled=%v heartbeat_timeout=%s last_heartbeat=%s",
-		enabled, w.cfg.HeartbeatTimeout, w.lastHeartbeat.Format(time.RFC3339))
+	return fmt.Sprintf("role=secondary enabled=%v heartbeat_timeout=%s probe_interval=%s last_heartbeat=%s",
+		enabled, w.cfg.HeartbeatTimeout, w.cfg.ProbeInterval, w.lastHeartbeat.Format(time.RFC3339))
+}
+
+// resetTimer drains and resets a timer safely.
+func resetTimer(t *time.Timer, d time.Duration) {
+	if !t.Stop() {
+		select {
+		case <-t.C:
+		default:
+		}
+	}
+	t.Reset(d)
 }

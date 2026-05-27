@@ -152,30 +152,33 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 		"rpc_port", lockInfo.RPCPort,
 	)
 
-	roConn, roErr := db.ConnectReadOnly()
-	if roErr != nil {
-		// Cannot open RO DB — fall back gracefully with an empty cleanup.
-		logging.Warn("IPC bootstrap: failed to open read-only DB, secondary has no DB", "error", roErr)
+	// Open in RW+WAL mode so direct writes are attempted first.
+	// busy_timeout=200ms lets SQLite retry briefly before returning BUSY,
+	// at which point DBProxy falls back to the IPC proxy.
+	rwConn, rwErr := db.ConnectRWSecondary()
+	if rwErr != nil {
+		// Cannot open DB — fall back gracefully with an empty cleanup.
+		logging.Warn("IPC bootstrap: failed to open secondary RW DB, secondary has no DB", "error", rwErr)
 		res.Cleanup = func() {}
 		return res, nil
 	}
 
-	logging.Debug("IPC: secondary RO DB opened", "role", RoleSecondary, "workdir", workdir)
+	logging.Debug("IPC: secondary RW DB opened (WAL mode)", "role", RoleSecondary, "workdir", workdir)
 
 	ipcClient, clientErr := ipc.NewClient(ctx)
 	if clientErr != nil {
-		_ = roConn.Close()
+		_ = rwConn.Close()
 		logging.Warn("IPC bootstrap: failed to create IPC client, secondary has no proxy", "error", clientErr)
-		res.SQLDB = roConn
-		res.Querier = db.New(roConn)
-		res.Cleanup = func() { _ = roConn.Close() }
+		res.SQLDB = rwConn
+		res.Querier = db.New(rwConn)
+		res.Cleanup = func() { _ = rwConn.Close() }
 		return res, nil
 	}
 
 	rpcAddr := fmt.Sprintf("tcp://127.0.0.1:%d", lockInfo.RPCPort)
-	proxy := dbproxy.New(db.New(roConn), ipcClient, rpcAddr)
+	proxy := dbproxy.New(db.New(rwConn), ipcClient, rpcAddr)
 
-	res.SQLDB = roConn
+	res.SQLDB = rwConn
 	res.Querier = proxy
 	res.IPCClient = ipcClient
 
@@ -209,7 +212,7 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 		shutdownCtx := context.Background()
 		watcher.Shutdown(shutdownCtx)
 		_ = ipcClient.Close()
-		_ = roConn.Close()
+		_ = rwConn.Close()
 	}
 
 	logging.Info("IPC: secondary connected to primary",

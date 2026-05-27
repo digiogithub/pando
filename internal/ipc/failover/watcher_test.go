@@ -14,8 +14,8 @@ import (
 // TestDefaultConfig verifies the conservative defaults.
 func TestDefaultConfig(t *testing.T) {
 	cfg := failover.DefaultConfig()
-	if cfg.Enabled {
-		t.Error("auto-failover must be disabled by default")
+	if !cfg.Enabled {
+		t.Error("auto-failover must be enabled by default")
 	}
 	if cfg.HeartbeatInterval != 5*time.Second {
 		t.Errorf("HeartbeatInterval: got %s, want 5s", cfg.HeartbeatInterval)

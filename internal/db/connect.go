@@ -41,12 +41,49 @@ func ConnectReadOnly() (*sql.DB, error) {
 }
 
 // ConnectForRole opens the database in read-write mode when isPrimary is true,
-// or in read-only mode when false. This avoids duplicating the role branch in callers.
+// or via ConnectRWSecondary when false. This avoids duplicating the role branch
+// in callers.
 func ConnectForRole(isPrimary bool) (*sql.DB, error) {
 	if isPrimary {
 		return Connect()
 	}
-	return ConnectReadOnly()
+	return ConnectRWSecondary()
+}
+
+// ConnectRWSecondary opens the SQLite database in read-write mode with WAL and
+// a short busy_timeout (200 ms). It does NOT run migrations — the primary owns
+// schema management. Secondary instances use this connection to attempt direct
+// WAL writes; if they get SQLITE_BUSY/LOCKED they fall back to the IPC proxy.
+func ConnectRWSecondary() (*sql.DB, error) {
+	dataDir := config.Get().Data.Directory
+	if dataDir == "" {
+		return nil, fmt.Errorf("data.dir is not set")
+	}
+	dbPath := filepath.Join(dataDir, "pando.db")
+	conn, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open secondary RW database: %w", err)
+	}
+	if err = conn.Ping(); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to connect secondary RW database: %w", err)
+	}
+	// Limit to a single writer so concurrent secondary writes don't race each
+	// other before reaching the proxy fallback.
+	conn.SetMaxOpenConns(1)
+	pragmas := []string{
+		"PRAGMA journal_mode = WAL;",
+		"PRAGMA busy_timeout = 200;",
+		"PRAGMA synchronous = NORMAL;",
+		"PRAGMA foreign_keys = ON;",
+	}
+	for _, pragma := range pragmas {
+		if _, err = conn.Exec(pragma); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("failed to set pragma %q on secondary RW connection: %w", pragma, err)
+		}
+	}
+	return conn, nil
 }
 
 func Connect() (*sql.DB, error) {

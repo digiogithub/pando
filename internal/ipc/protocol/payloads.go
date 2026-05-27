@@ -83,3 +83,11 @@ type ShutdownPayload struct {
 	InstanceID string `json:"instance_id"`
 	Reason     string `json:"reason,omitempty"`
 }
+
+// PromotedPayload is published on instance.promoted when a secondary takes over
+// as primary.  Other secondaries use the PubAddr / RPCAddr fields to reconnect.
+type PromotedPayload struct {
+	InstanceID string `json:"instance_id"`
+	PubAddr    string `json:"pub_addr"`
+	RPCAddr    string `json:"rpc_addr"`
+}

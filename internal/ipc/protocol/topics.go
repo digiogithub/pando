@@ -45,4 +45,9 @@ const (
 	TopicInstanceHeartbeat = "instance.heartbeat"
 	// TopicInstanceShutdown is published on graceful shutdown.
 	TopicInstanceShutdown = "instance.shutdown"
+	// TopicInstancePromoted is published when a secondary instance successfully
+	// promotes itself to primary after the previous primary died or shut down.
+	// Other secondary instances must reset their heartbeat timer and reconnect
+	// to the new primary's PUB/RPC endpoints.
+	TopicInstancePromoted = "instance.promoted"
 )
