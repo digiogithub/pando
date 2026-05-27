@@ -177,6 +177,7 @@ func (a *PandoACPAgent) processAgentEventStream(
 					a.startedToolCalls[tc.ID] = true
 					a.pendingToolCallsMu.Unlock()
 					if entries := parseTodoWritePlan(tc.Input); len(entries) > 0 {
+						a.sendCurrentModeUpdate(ctx, acpSession.ID, "plan")
 						if err := acpSession.SendUpdate(acpsdk.UpdatePlan(entries...)); err != nil {
 							a.logger.Printf("[ACP AGENT] Failed to send plan update (streaming): %v", err)
 						}
@@ -619,6 +620,7 @@ func (a *PandoACPAgent) processAgentResponse(
 		// clients render it as a structured plan instead of a plain tool call.
 		if strings.EqualFold(toolCall.Name, "TodoWrite") {
 			if entries := parseTodoWritePlan(toolCall.Input); len(entries) > 0 {
+				a.sendCurrentModeUpdate(acpSession.Context(), acpSession.ID, "plan")
 				if err := acpSession.SendUpdate(acpsdk.UpdatePlan(entries...)); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send plan update: %v", err)
 				}

@@ -444,6 +444,7 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 					// regular tool_call so history playback matches live behaviour.
 					if strings.EqualFold(p.Name, "TodoWrite") {
 						if entries := parseTodoWritePlan(p.Input); len(entries) > 0 {
+							sendUpdate(acpsdk.UpdateCurrentMode(acpsdk.SessionModeId("plan")))
 							sendUpdate(acpsdk.UpdatePlan(entries...))
 						}
 						continue

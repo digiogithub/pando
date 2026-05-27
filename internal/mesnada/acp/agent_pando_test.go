@@ -676,6 +676,31 @@ func TestParseTodoWritePlanSupportsStreamingUpdates(t *testing.T) {
 	}
 }
 
+func TestTodoWritePlanUpdateImpliesPlanModeUpdate(t *testing.T) {
+	t.Parallel()
+
+	update := acpsdk.UpdatePlan(
+		acpsdk.NewPlanEntry("Investigate logs", acpsdk.PlanEntryStatusInProgress, acpsdk.PlanEntryPriorityHigh),
+	)
+	modeUpdate := acpsdk.UpdateCurrentMode(acpsdk.SessionModeId("plan"))
+
+	if update.Plan == nil {
+		t.Fatalf("expected plan update payload")
+	}
+	if modeUpdate.CurrentModeUpdate == nil {
+		t.Fatalf("expected current mode update payload")
+	}
+	if modeUpdate.CurrentModeUpdate.CurrentModeId != acpsdk.SessionModeId("plan") {
+		t.Fatalf("unexpected mode id: %q", modeUpdate.CurrentModeUpdate.CurrentModeId)
+	}
+	if len(update.Plan.Entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1", len(update.Plan.Entries))
+	}
+	if update.Plan.Entries[0].Content != "Investigate logs" {
+		t.Fatalf("unexpected content: %q", update.Plan.Entries[0].Content)
+	}
+}
+
 func TestParseRawInputNeverReturnsString(t *testing.T) {
 	t.Parallel()
 
