@@ -112,30 +112,95 @@ type saveEventRequest struct {
 	Embedding []float32              `json:"embedding"`
 }
 
+type replaceSessionEventsRequest struct {
+	SessionID  string                 `json:"session_id"`
+	Subject    string                 `json:"subject"`
+	Metadata   map[string]interface{} `json:"metadata"`
+	Chunks     []string               `json:"chunks"`
+	Embeddings [][]float32            `json:"embeddings"`
+}
+
 // SaveEventWithEmbedding inserts an event using a pre-computed embedding.
 // Called by the primary IPC dispatcher when a secondary forwards a SaveEvent write.
 // No embedding generation is performed; the provided embedding is stored directly.
 func (s *EventStore) SaveEventWithEmbedding(ctx context.Context, subject, content string, metadata map[string]interface{}, embedding []float32) (int64, error) {
-	var metaJSON []byte
-	var err error
-	if metadata == nil {
-		metaJSON = []byte("{}")
-	} else {
-		metaJSON, err = json.Marshal(metadata)
-		if err != nil {
-			return 0, fmt.Errorf("events: marshal metadata: %w", err)
-		}
-	}
-
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("events: begin tx: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	now := time.Now().UTC()
-	embBlob := serializeFloat32(embedding)
+	id, err := s.insertEventTx(ctx, tx, subject, content, metadata, embedding, time.Now().UTC())
+	if err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, fmt.Errorf("events: commit: %w", err)
+	}
+	return id, nil
+}
 
+// ReplaceSessionEvents replaces all indexed chunks for a session atomically.
+// Embeddings must already be computed; if embedding generation fails before this
+// method is called, the previous indexed version remains untouched.
+func (s *EventStore) ReplaceSessionEvents(ctx context.Context, sessionID, subject string, metadata map[string]interface{}, chunks []string, embeddings [][]float32) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("events: session_id cannot be empty")
+	}
+	if strings.TrimSpace(subject) == "" {
+		subject = "session"
+	}
+	if len(chunks) != len(embeddings) {
+		return fmt.Errorf("events: chunk embedding count mismatch: got %d embeddings for %d chunks", len(embeddings), len(chunks))
+	}
+
+	if s.proxy != nil {
+		return s.proxy.WriteWithRetry(ctx, "ReplaceSessionEvents", replaceSessionEventsRequest{
+			SessionID:  sessionID,
+			Subject:    subject,
+			Metadata:   metadata,
+			Chunks:     chunks,
+			Embeddings: embeddings,
+		}, dbproxy.DefaultWriteTimeouts.Long)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("events: begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if err := s.deleteSessionEventsTx(ctx, tx, subject, sessionID); err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	for i, chunk := range chunks {
+		chunkMetadata := cloneMetadata(metadata)
+		chunkMetadata["chunk_index"] = i
+		chunkMetadata["chunk_count"] = len(chunks)
+		if _, err := s.insertEventTx(ctx, tx, subject, chunk, chunkMetadata, embeddings[i], now); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("events: commit replace session events: %w", err)
+	}
+	return nil
+}
+
+func (s *EventStore) insertEventTx(ctx context.Context, tx *sql.Tx, subject, content string, metadata map[string]interface{}, embedding []float32, now time.Time) (int64, error) {
+	metaJSON := []byte("{}")
+	if metadata != nil {
+		var err error
+		metaJSON, err = json.Marshal(metadata)
+		if err != nil {
+			return 0, fmt.Errorf("events: marshal metadata: %w", err)
+		}
+	}
+
+	embBlob := serializeFloat32(embedding)
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO events (subject, content, metadata, embedding, event_at, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,
@@ -158,10 +223,67 @@ func (s *EventStore) SaveEventWithEmbedding(ctx context.Context, subject, conten
 		return 0, fmt.Errorf("events: insert fts: %w", err)
 	}
 
-	if err = tx.Commit(); err != nil {
-		return 0, fmt.Errorf("events: commit: %w", err)
-	}
 	return id, nil
+}
+
+func (s *EventStore) deleteSessionEventsTx(ctx context.Context, tx *sql.Tx, subject, sessionID string) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, subject, content
+		FROM events
+		WHERE subject = ?
+		  AND json_extract(metadata, '$.session_id') = ?`,
+		subject, sessionID,
+	)
+	if err != nil {
+		return fmt.Errorf("events: query session events for delete: %w", err)
+	}
+	defer rows.Close()
+
+	type existingEvent struct {
+		id      int64
+		subject string
+		content string
+	}
+	var existing []existingEvent
+	for rows.Next() {
+		var item existingEvent
+		if err := rows.Scan(&item.id, &item.subject, &item.content); err != nil {
+			return fmt.Errorf("events: scan session event for delete: %w", err)
+		}
+		existing = append(existing, item)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("events: iterate session events for delete: %w", err)
+	}
+
+	for _, item := range existing {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO events_fts(events_fts, rowid, subject, content)
+			VALUES ('delete', ?, ?, ?)`,
+			item.id, item.subject, item.content,
+		); err != nil {
+			return fmt.Errorf("events: fts delete: %w", err)
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM events
+		WHERE subject = ?
+		  AND json_extract(metadata, '$.session_id') = ?`,
+		subject, sessionID,
+	); err != nil {
+		return fmt.Errorf("events: delete session events: %w", err)
+	}
+
+	return nil
+}
+
+func cloneMetadata(metadata map[string]interface{}) map[string]interface{} {
+	cloned := make(map[string]interface{}, len(metadata)+2)
+	for key, value := range metadata {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 // SearchEvents performs hybrid search with temporal filters.

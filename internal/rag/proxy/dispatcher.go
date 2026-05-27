@@ -33,6 +33,14 @@ type saveEventReq struct {
 	Embedding []float32              `json:"embedding"`
 }
 
+type replaceSessionEventsReq struct {
+	SessionID  string                 `json:"session_id"`
+	Subject    string                 `json:"subject"`
+	Metadata   map[string]interface{} `json:"metadata"`
+	Chunks     []string               `json:"chunks"`
+	Embeddings [][]float32            `json:"embeddings"`
+}
+
 // codeUpsertProjectReq mirrors code.codeUpsertProjectRequest for JSON decoding.
 type codeUpsertProjectReq struct {
 	ProjectID string    `json:"project_id"`
@@ -140,6 +148,17 @@ func (d *RemembrancesWriteDispatcher) DispatchRemembrancesWrite(ctx context.Cont
 			return nil, err
 		}
 		return json.Marshal(id)
+
+	case "ReplaceSessionEvents":
+		if d.svc.Events == nil {
+			return nil, fmt.Errorf("rag dispatcher: Events store not available")
+		}
+		var req replaceSessionEventsReq
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("rag dispatcher: ReplaceSessionEvents unmarshal: %w", err)
+		}
+		err := d.svc.Events.ReplaceSessionEvents(ctx, req.SessionID, req.Subject, req.Metadata, req.Chunks, req.Embeddings)
+		return nil, err
 
 	// ---- Code indexing writes ----
 

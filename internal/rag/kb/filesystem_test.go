@@ -1,6 +1,7 @@
 package kb
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,5 +55,19 @@ func TestDeleteDocumentFromFilesystemIgnoresMissing(t *testing.T) {
 
 	if err := store.DeleteDocumentFromFilesystem("missing.md"); err != nil {
 		t.Fatalf("DeleteDocumentFromFilesystem() error = %v", err)
+	}
+}
+
+func TestShouldIgnoreKBWatchPathError(t *testing.T) {
+	t.Parallel()
+
+	permErr := &fs.PathError{Op: "open", Path: "/tmp/secret.md", Err: fs.ErrPermission}
+	if !shouldIgnoreKBWatchPathError(permErr) {
+		t.Fatalf("expected permission error to be ignored")
+	}
+
+	missingErr := &fs.PathError{Op: "open", Path: "/tmp/missing.md", Err: fs.ErrNotExist}
+	if shouldIgnoreKBWatchPathError(missingErr) {
+		t.Fatalf("expected missing file error not to be ignored")
 	}
 }

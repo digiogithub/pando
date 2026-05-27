@@ -16,13 +16,7 @@ import (
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 )
 
-const sessionIndexChunkMetadataKey = "chunk_index"
-
-type sessionEventChunkSaver interface {
-	SaveEventWithEmbedding(ctx context.Context, subject, content string, metadata map[string]interface{}, embedding []float32) (int64, error)
-}
-
-var saveSessionEventChunkFn = saveSessionEventChunk
+const sessionIndexSubject = "session"
 
 func (app *App) initRemembrancesSessionIndexing(ctx context.Context, svc *rag.RemembrancesService, cfg *config.RemembrancesConfig) {
 	if svc == nil || svc.Events == nil || cfg == nil || !cfg.AutoIndexSessions {
@@ -141,19 +135,13 @@ func (app *App) indexSessionConversation(ctx context.Context, svc *rag.Remembran
 		return fmt.Errorf("session chunk embedding count mismatch: got %d, expected %d", len(chunkEmbeddings), len(chunks))
 	}
 
-	for i, chunk := range chunks {
-		chunkMetadata := cloneSessionMetadata(metadata)
-		chunkMetadata[sessionIndexChunkMetadataKey] = i
-		chunkMetadata["chunk_count"] = len(chunks)
-		if _, err := saveSessionEventChunkFn(ctx, svc.Events, "session", chunk, chunkMetadata, chunkEmbeddings[i]); err != nil {
-			return fmt.Errorf("save session event chunk %d: %w", i, err)
-		}
+	if svc.Events == nil {
+		return fmt.Errorf("session event store not configured")
+	}
+	if err := svc.Events.ReplaceSessionEvents(ctx, sess.ID, sessionIndexSubject, metadata, chunks, chunkEmbeddings); err != nil {
+		return fmt.Errorf("replace session events: %w", err)
 	}
 	return nil
-}
-
-func saveSessionEventChunk(ctx context.Context, store sessionEventChunkSaver, subject, content string, metadata map[string]interface{}, embedding []float32) (int64, error) {
-	return store.SaveEventWithEmbedding(ctx, subject, content, metadata, embedding)
 }
 
 func cloneSessionMetadata(metadata map[string]interface{}) map[string]interface{} {

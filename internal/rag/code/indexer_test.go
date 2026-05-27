@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -309,6 +312,49 @@ func TestHasProjectAndDeleteFile(t *testing.T) {
 
 	if err := idx.DeleteFile(context.Background(), "proj1", "missing.go"); !os.IsNotExist(err) {
 		t.Fatalf("expected os.ErrNotExist for missing file, got %v", err)
+	}
+}
+
+func TestIndexProjectSync_IgnoresPermissionWalkErrors(t *testing.T) {
+	idx := NewCodeIndexer(nil, nil, 1)
+	job := &IndexingJob{ProjectPath: "/tmp/project"}
+	permErr := &fs.PathError{Op: "open", Path: "/tmp/project/secret", Err: fs.ErrPermission}
+
+	if !shouldIgnoreCodePathError(permErr) {
+		t.Fatalf("expected permission error to be ignored")
+	}
+
+	idx.appendJobWarning(job, pathWarning("secret", errors.New("walk skipped: permission denied")))
+	if len(job.Warnings) != 1 {
+		t.Fatalf("expected warning to be recorded, got %d", len(job.Warnings))
+	}
+}
+
+func TestReindexFile_IgnoresPermissionDenied(t *testing.T) {
+	db := setupIndexerTestDB(t)
+	defer db.Close()
+
+	root := t.TempDir()
+	filePath := filepath.Join(root, "restricted.go")
+	if err := os.WriteFile(filePath, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	now := time.Now().UTC()
+	insertTestCodeProject(t, db, "proj-perm", root, now)
+
+	idx := NewCodeIndexer(db, nil, 1)
+	originalReadFile := osReadFileForTest
+	osReadFileForTest = func(name string) ([]byte, error) {
+		if name == filePath {
+			return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
+		}
+		return os.ReadFile(name)
+	}
+	defer func() { osReadFileForTest = originalReadFile }()
+
+	if err := idx.ReindexFile(context.Background(), "proj-perm", "restricted.go"); err != nil {
+		t.Fatalf("expected permission denied to be ignored, got %v", err)
 	}
 }
 

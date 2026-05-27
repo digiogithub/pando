@@ -2,7 +2,9 @@ package kb
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,7 +30,9 @@ func (s *KBStore) WatchDirectory(ctx context.Context, dirPath string) error {
 	}
 	defer watcher.Close()
 
-	if err := addWatchRecursively(watcher, baseDir); err != nil {
+	if err := addWatchRecursively(watcher, baseDir, func(path string, err error) {
+		logKBWatchPermissionWarning(path, err)
+	}); err != nil {
 		return err
 	}
 
@@ -78,7 +82,9 @@ func (s *KBStore) WatchDirectory(ctx context.Context, dirPath string) error {
 			// Newly created directories must be watched too.
 			if event.Op&fsnotify.Create != 0 {
 				if fi, statErr := os.Stat(event.Name); statErr == nil && fi.IsDir() {
-					if err := addWatchRecursively(watcher, event.Name); err != nil {
+					if err := addWatchRecursively(watcher, event.Name, func(path string, err error) {
+						logKBWatchPermissionWarning(path, err)
+					}); err != nil {
 						logging.Warn("kb watcher: add recursive watch failed", "path", event.Name, "error", err)
 					}
 					continue
@@ -129,6 +135,10 @@ func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fs
 			}
 			return
 		}
+		if shouldIgnoreKBWatchPathError(err) {
+			logKBWatchPermissionWarning(absPath, err)
+			return
+		}
 		logging.Warn("kb watcher: stat failed", "path", absPath, "error", err)
 		return
 	}
@@ -151,6 +161,10 @@ func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fs
 
 	contentBytes, err := os.ReadFile(absPath)
 	if err != nil {
+		if shouldIgnoreKBWatchPathError(err) {
+			logKBWatchPermissionWarning(absPath, err)
+			return
+		}
 		logging.Warn("kb watcher: read failed", "path", absPath, "error", err)
 		return
 	}
@@ -173,21 +187,47 @@ func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fs
 	}
 }
 
-func addWatchRecursively(w *fsnotify.Watcher, root string) error {
+func addWatchRecursively(w *fsnotify.Watcher, root string, onIgnored func(path string, err error)) error {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return fmt.Errorf("kb: abs watch root %q: %w", root, err)
 	}
 	return filepath.WalkDir(rootAbs, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
+			if shouldIgnoreKBWatchPathError(walkErr) {
+				if onIgnored != nil {
+					onIgnored(path, walkErr)
+				}
+				if d != nil && d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 			return walkErr
 		}
 		if !d.IsDir() {
 			return nil
 		}
 		if err := w.Add(path); err != nil {
+			if shouldIgnoreKBWatchPathError(err) {
+				if onIgnored != nil {
+					onIgnored(path, err)
+				}
+				return filepath.SkipDir
+			}
 			return fmt.Errorf("kb: watch directory %q: %w", path, err)
 		}
 		return nil
 	})
+}
+
+func shouldIgnoreKBWatchPathError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, fs.ErrPermission) || errors.Is(err, os.ErrPermission)
+}
+
+func logKBWatchPermissionWarning(path string, err error) {
+	logging.Warn("kb watcher: skipping inaccessible path", "path", path, "error", err)
 }

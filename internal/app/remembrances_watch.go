@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +24,9 @@ func (app *App) watchIndexedProject(ctx context.Context, svc *rag.RemembrancesSe
 	}
 	defer watcher.Close()
 
-	if err := addProjectWatchRecursively(watcher, rootPath); err != nil {
+	if err := addProjectWatchRecursively(watcher, rootPath, func(path string, err error) {
+		logProjectWatchPermissionWarning(projectID, path, startupMode, err)
+	}); err != nil {
 		return err
 	}
 
@@ -78,7 +81,9 @@ func (app *App) watchIndexedProject(ctx context.Context, svc *rag.RemembrancesSe
 
 			if event.Op&fsnotify.Create != 0 {
 				if fi, statErr := os.Stat(event.Name); statErr == nil && fi.IsDir() {
-					if err := addProjectWatchRecursively(watcher, event.Name); err != nil {
+					if err := addProjectWatchRecursively(watcher, event.Name, func(path string, err error) {
+						logProjectWatchPermissionWarning(projectID, path, startupMode, err)
+					}); err != nil {
 						logging.Warn("remembrances code: add recursive watch failed",
 							"project_id", projectID,
 							"path", event.Name,
@@ -143,6 +148,8 @@ func (app *App) handleIndexedProjectEvent(ctx context.Context, svc *rag.Remembra
 					"error", err,
 				)
 			}
+		} else if shouldIgnoreProjectWatchPathError(statErr) {
+			logProjectWatchPermissionWarning(projectID, absPath, startupMode, statErr)
 		}
 		return
 	}
@@ -157,7 +164,7 @@ func (app *App) handleIndexedProjectEvent(ctx context.Context, svc *rag.Remembra
 	}
 }
 
-func addProjectWatchRecursively(w *fsnotify.Watcher, root string) error {
+func addProjectWatchRecursively(w *fsnotify.Watcher, root string, onIgnored func(path string, err error)) error {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return fmt.Errorf("remembrances code: abs watch root %q: %w", root, err)
@@ -165,6 +172,15 @@ func addProjectWatchRecursively(w *fsnotify.Watcher, root string) error {
 
 	return filepath.WalkDir(rootAbs, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
+			if shouldIgnoreProjectWatchPathError(walkErr) {
+				if onIgnored != nil {
+					onIgnored(path, walkErr)
+				}
+				if d != nil && d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 			return walkErr
 		}
 		if !d.IsDir() {
@@ -179,10 +195,32 @@ func addProjectWatchRecursively(w *fsnotify.Watcher, root string) error {
 		}
 
 		if err := w.Add(path); err != nil {
+			if shouldIgnoreProjectWatchPathError(err) {
+				if onIgnored != nil {
+					onIgnored(path, err)
+				}
+				return filepath.SkipDir
+			}
 			return fmt.Errorf("remembrances code: watch directory %q: %w", path, err)
 		}
 		return nil
 	})
+}
+
+func shouldIgnoreProjectWatchPathError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, fs.ErrPermission) || errors.Is(err, os.ErrPermission)
+}
+
+func logProjectWatchPermissionWarning(projectID, path, startupMode string, err error) {
+	logging.Warn("remembrances code: skipping inaccessible path",
+		"project_id", projectID,
+		"path", path,
+		"startup_mode", startupMode,
+		"error", err,
+	)
 }
 
 func isProjectPathWithinBase(path, base string) bool {

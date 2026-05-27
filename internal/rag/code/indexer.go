@@ -44,6 +44,11 @@ const (
 	maxJobWarnings = 100
 )
 
+var (
+	errCodeIgnorePath = errors.New("code: ignore path")
+	osReadFileForTest = os.ReadFile
+)
+
 const codeSymbolSelectColumns = `id, project_id, file_path, language, symbol_type, name, name_path,
 	start_line, end_line, start_byte, end_byte, source_code, signature, doc_string, parent_id, metadata, created_at, updated_at`
 
@@ -200,6 +205,13 @@ func (c *CodeIndexer) indexProjectSync(ctx context.Context, job *IndexingJob, la
 
 	err := filepath.WalkDir(job.ProjectPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			if shouldIgnoreCodePathError(err) {
+				c.appendJobWarning(job, pathWarning(path, fmt.Errorf("walk skipped: %w", err)))
+				if d != nil && d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 			return nil // Skip errors
 		}
 		if d.IsDir() {
@@ -279,13 +291,41 @@ func (c *CodeIndexer) indexProjectSync(ctx context.Context, job *IndexingJob, la
 			if relErr != nil {
 				relPath = result.path
 			}
-			job.Warnings = append(job.Warnings, fmt.Sprintf("index warning (%s): %v", relPath, result.err))
+			job.Warnings = append(job.Warnings, pathWarning(relPath, result.err))
 		}
 		c.jobsMu.Unlock()
 	}
 
 	// Update language stats
 	return c.updateLanguageStats(ctx, job.ProjectID)
+}
+
+func (c *CodeIndexer) appendJobWarning(job *IndexingJob, warning string) {
+	if job == nil || strings.TrimSpace(warning) == "" {
+		return
+	}
+
+	c.jobsMu.Lock()
+	defer c.jobsMu.Unlock()
+	if len(job.Warnings) >= maxJobWarnings {
+		return
+	}
+	job.Warnings = append(job.Warnings, warning)
+}
+
+func shouldIgnoreCodePathError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, fs.ErrPermission) || errors.Is(err, os.ErrPermission)
+}
+
+func pathWarning(path string, err error) string {
+	trimmedPath := strings.TrimSpace(path)
+	if trimmedPath == "" {
+		return fmt.Sprintf("index warning: %v", err)
+	}
+	return fmt.Sprintf("index warning (%s): %v", trimmedPath, err)
 }
 
 // safeIndexFile protects project indexing from non-fatal panics in per-file processing.
@@ -309,8 +349,11 @@ func (c *CodeIndexer) indexFile(ctx context.Context, projectID, rootPath, filePa
 	}
 
 	// Read file
-	content, err := os.ReadFile(filePath)
+	content, err := osReadFileForTest(filePath)
 	if err != nil {
+		if shouldIgnoreCodePathError(err) {
+			return fmt.Errorf("%w: read file %s: %w", errCodeIgnorePath, filePath, err)
+		}
 		return fmt.Errorf("code: read file %s: %w", filePath, err)
 	}
 
@@ -527,7 +570,11 @@ func (c *CodeIndexer) ReindexFile(ctx context.Context, projectID, filePath strin
 	}
 
 	absPath := filepath.Join(rootPath, filePath)
-	return c.indexFile(ctx, projectID, rootPath, absPath)
+	err = c.indexFile(ctx, projectID, rootPath, absPath)
+	if shouldIgnoreCodePathError(err) || errors.Is(err, errCodeIgnorePath) {
+		return nil
+	}
+	return err
 }
 
 // DeleteFile removes a single indexed file and all related indexed symbols.
