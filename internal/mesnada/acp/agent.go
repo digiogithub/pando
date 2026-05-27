@@ -352,6 +352,8 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 }
 
 func (a *PandoACPAgent) finishPrompt(ctx context.Context, sessionID acpsdk.SessionId, acpSession *ACPServerSession, stopReason acpsdk.StopReason) (acpsdk.PromptResponse, error) {
+	a.sendRunStatusMeta(ctx, sessionID, acpSession)
+
 	// Send usage_update and session_info_update after the prompt completes.
 	// Fetch the latest session state so we have accurate token counts and title.
 	if sessionInfo, sessErr := a.sessionService.GetSession(ctx, acpSession.PandoSessionID()); sessErr == nil {
@@ -765,6 +767,23 @@ func (a *PandoACPAgent) safeSessionUpdate(acpSession *ACPServerSession, sessionI
 		return fmt.Errorf("session not found: %s", sessionID)
 	}
 	return acpSession.SendUpdate(update)
+}
+
+func (a *PandoACPAgent) sendRunStatusMeta(_ context.Context, sessionID acpsdk.SessionId, acpSession *ACPServerSession) {
+	if a.conn == nil || acpSession == nil {
+		return
+	}
+	messages := a.agentService.LastRunSystemMessages(acpSession.PandoSessionID())
+	if len(messages) == 0 {
+		return
+	}
+	meta := map[string]any{
+		"pando:serverEvents": messages,
+	}
+	update := acpsdk.UpdateSessionInfo(acpsdk.SessionInfoUpdate{Meta: meta})
+	if err := a.safeSessionUpdate(acpSession, sessionID, update); err != nil {
+		a.logger.Printf("[ACP AGENT] Failed to send session_info_update meta for session %s: %v", sessionID, err)
+	}
 }
 
 func parseSessionConfigOptionRequest(req acpsdk.SetSessionConfigOptionRequest) (acpsdk.SessionId, string, string, error) {

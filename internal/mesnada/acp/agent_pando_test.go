@@ -208,6 +208,7 @@ type mockAgentService struct {
 	claudeUsageErr     error
 	goalObjective      string
 	summarizeSessionID string
+	lastRunMessages    []string
 }
 
 func (m *mockAgentService) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
@@ -233,6 +234,12 @@ func (m *mockAgentService) RunGoal(ctx context.Context, sessionID string, object
 
 func (m *mockAgentService) Cancel(sessionID string) {
 	m.cancelCalled = true
+}
+
+func (m *mockAgentService) LastRunSystemMessages(sessionID string) []string {
+	msgs := append([]string(nil), m.lastRunMessages...)
+	m.lastRunMessages = nil
+	return msgs
 }
 
 func (m *mockAgentService) CurrentModelID() string {

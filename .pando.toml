@@ -241,8 +241,8 @@ BrowserUserDataDir = ''
 BrowserMaxSessions = 3
 
 [Snapshots]
-Enabled = true
-MaxSnapshots = 5
+Enabled = false
+MaxSnapshots = 0
 MaxFileSize = '10MB'
 ExcludePatterns = []
 AutoCleanupDays = 5

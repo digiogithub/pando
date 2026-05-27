@@ -51,6 +51,10 @@ type AgentService interface {
 	Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error)
 	RunGoal(ctx context.Context, sessionID string, objective string) (<-chan AgentEvent, error)
 	Cancel(sessionID string)
+	// LastRunSystemMessages returns internal status/progress messages emitted while
+	// preparing or running the most recent prompt for the session (persona selection,
+	// self-improvement prompt tuning, retries, compaction, etc.).
+	LastRunSystemMessages(sessionID string) []string
 	// CurrentModelID returns the ID of the currently active model.
 	CurrentModelID() string
 	// AvailableModels returns the list of available models with name metadata.

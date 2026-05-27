@@ -140,6 +140,7 @@ type Service interface {
 	pubsub.Suscriber[AgentEvent]
 	Model() models.Model
 	Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error)
+	LastRunSystemMessages(sessionID string) []string
 	Cancel(sessionID string)
 	IsSessionBusy(sessionID string) bool
 	IsBusy() bool
@@ -172,7 +173,9 @@ type agent struct {
 	// event, preventing the ACP event channel from being flooded while still
 	// giving the frontend periodic enriched updates (rawInput, title, etc.)
 	// as the provider streams the tool-call input JSON.
-	toolCallThrottle sync.Map
+	toolCallThrottle  sync.Map
+	runStatusMu       sync.Mutex
+	runStatusMessages map[string][]string
 }
 
 func NewAgent(
@@ -231,6 +234,7 @@ func NewAgent(
 		skillManager:              skillManager,
 		contextManager:            contextManager,
 		activeRequests:            sync.Map{},
+		runStatusMessages:         make(map[string][]string),
 	}
 
 	logging.Debug("Agent created", "name", string(agentName), "model", modelID, "toolCount", len(agentTools))
@@ -338,6 +342,33 @@ func (a *agent) publishEvent(event AgentEvent) {
 	a.Publish(pubsub.CreatedEvent, event)
 }
 
+func (a *agent) addRunStatusMessage(sessionID string, msg string) {
+	msg = strings.TrimSpace(msg)
+	if sessionID == "" || msg == "" {
+		return
+	}
+	a.runStatusMu.Lock()
+	defer a.runStatusMu.Unlock()
+	a.runStatusMessages[sessionID] = append(a.runStatusMessages[sessionID], msg)
+}
+
+func (a *agent) clearRunStatusMessages(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	a.runStatusMu.Lock()
+	defer a.runStatusMu.Unlock()
+	delete(a.runStatusMessages, sessionID)
+}
+
+func (a *agent) LastRunSystemMessages(sessionID string) []string {
+	a.runStatusMu.Lock()
+	defer a.runStatusMu.Unlock()
+	msgs := append([]string(nil), a.runStatusMessages[sessionID]...)
+	delete(a.runStatusMessages, sessionID)
+	return msgs
+}
+
 func (a *agent) emitCompactionError(sessionID string, err error, eventCh chan<- AgentEvent) {
 	if err == nil {
 		return
@@ -355,6 +386,7 @@ func (a *agent) emitCompactionError(sessionID string, err error, eventCh chan<- 
 var ErrNoModel = fmt.Errorf("no model configured, please select a model")
 
 func (a *agent) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
+	a.clearRunStatusMessages(sessionID)
 	logging.Debug("Agent.Run called", "sessionID", sessionID, "contentLength", len(content), "attachmentCount", len(attachments))
 	if a.provider == nil {
 		return nil, ErrNoModel
@@ -532,6 +564,9 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	// This is done before creating the user message so the content (user query)
 	// can be used for auto-selection without modifying the user message itself.
 	personaContent := getPersonaContent(ctx, content)
+	if activePersona := strings.TrimSpace(GetActivePersona()); activePersona != "" {
+		a.addRunStatusMessage(sessionID, fmt.Sprintf("Selected persona: %s", activePersona))
+	}
 
 	// Context enrichment: if the KB/code enricher is active, append retrieved context
 	// after the user message so the user intent is clear and context follows naturally.
@@ -627,6 +662,7 @@ func (a *agent) ensureHistoryFitsBeforeSend(ctx context.Context, sessionID strin
 	}
 
 	compactMsg := "\n\n⚡ Auto-compacting context before sending request...\n"
+	a.addRunStatusMessage(sessionID, "Auto-compacting context before sending request")
 	compactEv := AgentEvent{Type: AgentEventTypeSystemMessage, SessionID: sessionID, SystemMessage: compactMsg}
 	a.publishEvent(compactEv)
 	eventCh <- compactEv
@@ -635,6 +671,7 @@ func (a *agent) ensureHistoryFitsBeforeSend(ctx context.Context, sessionID strin
 		trimmed := fitMessagesToProviderBudget(msgHistory, a.agentName, requestProvider.Model())
 		if estimateMessagesTokens(trimmed) <= providerInputBudget(a.agentName, requestProvider.Model()) {
 			warnMsg := "⚠️ Context compaction failed; continuing with aggressively trimmed history.\n\n"
+			a.addRunStatusMessage(sessionID, "Context compaction failed; continuing with trimmed history")
 			warnEv := AgentEvent{Type: AgentEventTypeSystemMessage, SessionID: sessionID, SystemMessage: warnMsg}
 			a.publishEvent(warnEv)
 			eventCh <- warnEv
@@ -653,6 +690,7 @@ func (a *agent) ensureHistoryFitsBeforeSend(ctx context.Context, sessionID strin
 	}
 
 	doneMsg := "✓ Context compacted before sending request.\n\n"
+	a.addRunStatusMessage(sessionID, "Context compacted before sending request")
 	doneEv := AgentEvent{Type: AgentEventTypeSystemMessage, SessionID: sessionID, SystemMessage: doneMsg}
 	a.publishEvent(doneEv)
 	eventCh <- doneEv
@@ -1387,6 +1425,7 @@ func (a *agent) sendSummaryRequest(ctx context.Context, sessionID string, msgs [
 		fallback := a.summarizeFallbackProvider
 		logging.WarnPersist("Configured summary model failed, retrying with coder (fallback) model",
 			"error", err, "fallbackModel", fallback.Model().ID)
+		a.addRunStatusMessage(sessionID, fmt.Sprintf("Compaction summary model failed; retrying with fallback model %s", fallback.Model().ID))
 		response, fallbackErr := fallback.SendMessages(ctx, buildMessages(fallback), []tools.BaseTool{})
 		if fallbackErr == nil {
 			return response, fallback, true, nil

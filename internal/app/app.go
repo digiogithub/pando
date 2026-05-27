@@ -1758,6 +1758,10 @@ func (a *appACPAgentAdapter) forwardEvents(ctx context.Context, realCh <-chan ag
 
 func (a *appACPAgentAdapter) Cancel(sessionID string) { a.svc.Cancel(sessionID) }
 
+func (a *appACPAgentAdapter) LastRunSystemMessages(sessionID string) []string {
+	return a.svc.LastRunSystemMessages(sessionID)
+}
+
 func (a *appACPAgentAdapter) CurrentModelID() string { return string(a.svc.Model().ID) }
 
 func (a *appACPAgentAdapter) AvailableModels() []mesnadaACP.ACPModelInfo {

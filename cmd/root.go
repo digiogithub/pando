@@ -763,6 +763,10 @@ func (a *acpAgentAdapter) Cancel(sessionID string) {
 	a.svc.Cancel(sessionID)
 }
 
+func (a *acpAgentAdapter) LastRunSystemMessages(sessionID string) []string {
+	return a.svc.LastRunSystemMessages(sessionID)
+}
+
 // CurrentModelID returns the ID of the currently active model for the coder agent.
 func (a *acpAgentAdapter) CurrentModelID() string {
 	return string(a.svc.Model().ID)
