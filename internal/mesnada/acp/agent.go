@@ -952,8 +952,18 @@ func (a *PandoACPAgent) SetConnection(conn *acpsdk.AgentSideConnection) {
 	defer a.sessionsMu.Unlock()
 
 	a.conn = conn
-	for _, sess := range a.sessions {
+	sessionIDs := make([]acpsdk.SessionId, 0, len(a.sessions))
+	for id, sess := range a.sessions {
 		sess.SetAgentConnection(conn)
+		sessionIDs = append(sessionIDs, id)
+	}
+
+	if conn == nil {
+		return
+	}
+
+	for _, sessionID := range sessionIDs {
+		go a.sendAvailableCommandsUpdate(context.Background(), sessionID)
 	}
 }
 

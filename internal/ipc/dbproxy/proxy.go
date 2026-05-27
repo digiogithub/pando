@@ -120,6 +120,11 @@ func proxyWrite[R any](ctx context.Context, p *DBProxy, method string, params an
 	return result, nil
 }
 
+// ProxyWriteWithResult forwards a write method and decodes a typed result.
+func ProxyWriteWithResult[R any](ctx context.Context, p *DBProxy, method string, params any) (R, error) {
+	return proxyWrite[R](ctx, p, method, params, DefaultWriteTimeouts.Default)
+}
+
 // proxyVoidWrite sends a write that returns only an error.
 func proxyVoidWrite(ctx context.Context, p *DBProxy, method string, params any, timeout time.Duration) error {
 	rawParams, err := json.Marshal(params)
@@ -136,6 +141,14 @@ func proxyVoidWrite(ctx context.Context, p *DBProxy, method string, params any, 
 		return mapToWriteError(method, err)
 	}
 	return nil
+}
+
+// WriteWithRetry forwards a void write with the provided timeout and retry logic.
+func (p *DBProxy) WriteWithRetry(ctx context.Context, method string, params any, timeout time.Duration) error {
+	if p.isPrimary() {
+		return fmt.Errorf("dbproxy: WriteWithRetry requires a configured client")
+	}
+	return p.writeWithRetry(ctx, method, params, timeout)
 }
 
 // writeWithRetry retries proxyVoidWrite on transient errors with exponential backoff.

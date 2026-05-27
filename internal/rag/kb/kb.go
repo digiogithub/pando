@@ -460,6 +460,81 @@ type kbAddDocumentRequest struct {
 	Embeddings [][]float32            `json:"embeddings"`
 }
 
+// AddDocumentWithEmbeddings inserts a document using pre-computed chunks and embeddings.
+// Called by the primary IPC dispatcher when a secondary forwards a KBAddDocument write.
+// No embedding generation is performed; the provided values are stored directly.
+func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, content string, metadata map[string]interface{}, chunks []string, embeddings [][]float32) error {
+	if filePath == "" {
+		return fmt.Errorf("kb: file_path cannot be empty")
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("kb: begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	metaJSON := "{}"
+	if len(metadata) > 0 {
+		b, err := json.Marshal(metadata)
+		if err != nil {
+			return fmt.Errorf("kb: marshal metadata: %w", err)
+		}
+		metaJSON = string(b)
+	}
+
+	now := time.Now().UTC()
+
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO kb_documents (file_path, content, metadata, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		filePath, content, metaJSON, now, now,
+	)
+	if err != nil {
+		return fmt.Errorf("kb: insert document: %w", err)
+	}
+
+	docID, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("kb: last insert id: %w", err)
+	}
+
+	if len(chunks) == 0 {
+		return tx.Commit()
+	}
+
+	for i, chunk := range chunks {
+		var embBlob []byte
+		if i < len(embeddings) {
+			embBlob = serializeFloat32(embeddings[i])
+		}
+
+		chunkRes, err := tx.ExecContext(ctx, `
+			INSERT INTO kb_chunks (document_id, chunk_index, content, embedding, created_at)
+			VALUES (?, ?, ?, ?, ?)`,
+			docID, i, chunk, embBlob, now,
+		)
+		if err != nil {
+			return fmt.Errorf("kb: insert chunk %d: %w", i, err)
+		}
+
+		chunkID, err := chunkRes.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("kb: chunk last insert id: %w", err)
+		}
+
+		if _, err = tx.ExecContext(ctx, `
+			INSERT INTO kb_fts(rowid, content)
+			VALUES (?, ?)`,
+			chunkID, chunk,
+		); err != nil {
+			return fmt.Errorf("kb: insert fts: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
 // SearchDocuments performs hybrid search combining vector similarity and FTS.
 // Results are fused using Reciprocal Rank Fusion (RRF).
 func (s *KBStore) SearchDocuments(ctx context.Context, query string, limit int) ([]SearchResult, error) {

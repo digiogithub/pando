@@ -85,6 +85,11 @@ const (
 	// AgentEventTypeTodosUpdated is emitted when the TodoWrite tool runs successfully.
 	// It carries the current todo list for non-ACP consumers (TUI, WebUI).
 	AgentEventTypeTodosUpdated AgentEventType = "todos_updated"
+	// AgentEventTypeSystemMessage carries internal status messages (context compaction,
+	// retries, etc.) that should be displayed to the user but are not part of the
+	// LLM response. Unlike ContentDelta these are sent with a blocking channel write
+	// so they are never silently dropped.
+	AgentEventTypeSystemMessage AgentEventType = "system_message"
 )
 
 type AgentEvent struct {
@@ -102,6 +107,11 @@ type AgentEvent struct {
 
 	// Todos is populated when Type == AgentEventTypeTodosUpdated.
 	Todos []tools.TodoItem
+
+	// SystemMessage is populated when Type == AgentEventTypeSystemMessage.
+	// It carries a human-readable status message (context compaction, retries, etc.)
+	// that should be shown to the user regardless of the transport (TUI, ACP, web).
+	SystemMessage string
 }
 
 const (
@@ -583,11 +593,9 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			// Check if we should auto-compact context before continuing the loop
 			if sess, sessErr := a.sessions.Get(ctx, sessionID); sessErr == nil && a.shouldCompact(sess) {
 				compactMsg := "\n\n⚡ Auto-compacting context to free space...\n"
-				a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: compactMsg})
-				select {
-				case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: compactMsg}:
-				default:
-				}
+				sysEv := AgentEvent{Type: AgentEventTypeSystemMessage, SessionID: sessionID, SystemMessage: compactMsg}
+				a.publishEvent(sysEv)
+				eventCh <- sysEv
 				if compactErr := a.compactContext(ctx, sessionID); compactErr != nil {
 					a.emitCompactionError(sessionID, compactErr, eventCh)
 				} else {
@@ -595,11 +603,9 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 						msgHistory = newMsgs
 					}
 					doneMsg := "✓ Context compacted. Continuing...\n\n"
-					a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: doneMsg})
-					select {
-					case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: doneMsg}:
-					default:
-					}
+					doneEv := AgentEvent{Type: AgentEventTypeSystemMessage, SessionID: sessionID, SystemMessage: doneMsg}
+					a.publishEvent(doneEv)
+					eventCh <- doneEv
 				}
 			}
 
@@ -621,21 +627,17 @@ func (a *agent) ensureHistoryFitsBeforeSend(ctx context.Context, sessionID strin
 	}
 
 	compactMsg := "\n\n⚡ Auto-compacting context before sending request...\n"
-	a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: compactMsg})
-	select {
-	case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: compactMsg}:
-	default:
-	}
+	compactEv := AgentEvent{Type: AgentEventTypeSystemMessage, SessionID: sessionID, SystemMessage: compactMsg}
+	a.publishEvent(compactEv)
+	eventCh <- compactEv
 
 	if err := a.compactContext(ctx, sessionID); err != nil {
 		trimmed := fitMessagesToProviderBudget(msgHistory, a.agentName, requestProvider.Model())
 		if estimateMessagesTokens(trimmed) <= providerInputBudget(a.agentName, requestProvider.Model()) {
 			warnMsg := "⚠️ Context compaction failed; continuing with aggressively trimmed history.\n\n"
-			a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: warnMsg})
-			select {
-			case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: warnMsg}:
-			default:
-			}
+			warnEv := AgentEvent{Type: AgentEventTypeSystemMessage, SessionID: sessionID, SystemMessage: warnMsg}
+			a.publishEvent(warnEv)
+			eventCh <- warnEv
 			return trimmed, nil
 		}
 		return nil, fmt.Errorf("session exceeds %s context budget and compaction failed: %w", requestProvider.Model().ID, err)
@@ -651,11 +653,9 @@ func (a *agent) ensureHistoryFitsBeforeSend(ctx context.Context, sessionID strin
 	}
 
 	doneMsg := "✓ Context compacted before sending request.\n\n"
-	a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: doneMsg})
-	select {
-	case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: doneMsg}:
-	default:
-	}
+	doneEv := AgentEvent{Type: AgentEventTypeSystemMessage, SessionID: sessionID, SystemMessage: doneMsg}
+	a.publishEvent(doneEv)
+	eventCh <- doneEv
 	return reloaded, nil
 }
 

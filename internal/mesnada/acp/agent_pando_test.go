@@ -195,18 +195,18 @@ func TestPandoACPAgent_HandleExtensionMethod(t *testing.T) {
 
 // mockAgentService is a test double for AgentService.
 type mockAgentService struct {
-	runCalled         bool
-	runGoalCalled     bool
-	summarizeCalled   bool
-	cancelCalled      bool
-	runErr            error
-	goalRunErr        error
-	summarizeErr      error
-	modelOverride     string
-	modelOverrideErr  error
-	copilotUsageErr   error
-	claudeUsageErr    error
-	goalObjective     string
+	runCalled          bool
+	runGoalCalled      bool
+	summarizeCalled    bool
+	cancelCalled       bool
+	runErr             error
+	goalRunErr         error
+	summarizeErr       error
+	modelOverride      string
+	modelOverrideErr   error
+	copilotUsageErr    error
+	claudeUsageErr     error
+	goalObjective      string
 	summarizeSessionID string
 }
 
@@ -945,7 +945,31 @@ func TestPandoACPAgent_SetConnection_SynchronizesExistingSessions(t *testing.T) 
 	}
 }
 
-// TestPandoACPAgent_LoadSession_Found verifies loading an existing session.
+func TestPandoACPAgent_SetConnection_BackfillsAvailableCommandsForExistingSessions(t *testing.T) {
+	var logs bytes.Buffer
+	logger := log.New(&logs, "", 0)
+	mockAgent := &mockAgentService{}
+	sessions := newMockSessionService()
+	permSvc := newMockPermissionService()
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", logger, mockAgent, sessions, permSvc)
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	agent.SetConnection(&acpsdk.AgentSideConnection{})
+	time.Sleep(20 * time.Millisecond)
+
+	if !strings.Contains(logs.String(), "sendAvailableCommandsUpdate") {
+		t.Fatalf("expected SetConnection to trigger available commands update, got logs:\n%s", logs.String())
+	}
+	if !strings.Contains(logs.String(), string(resp.SessionId)) {
+		t.Fatalf("expected SetConnection-triggered update to mention session %s, got logs:\n%s", resp.SessionId, logs.String())
+	}
+}
+
 func TestPandoACPAgent_LoadSession_Found(t *testing.T) {
 	agent := newTestPandoAgent()
 	ctx := context.Background()
@@ -1670,14 +1694,30 @@ func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 		t.Fatalf("expected 6 available commands, got %d", len(commands))
 	}
 
-	got := map[string]string{}
+	got := map[string]acpsdk.AvailableCommand{}
 	for _, cmd := range commands {
-		got[cmd.Name] = cmd.Description
+		got[cmd.Name] = cmd
 	}
 
 	for _, name := range []string{goalCommandName, autopilotCommandName, goalStatusCommandName, goalCancelCommandName, compactCommandName, summarizeCommandName} {
 		if _, ok := got[name]; !ok {
 			t.Fatalf("expected available command %q to be exposed", name)
+		}
+	}
+
+	for _, name := range []string{goalCommandName, autopilotCommandName} {
+		cmd := got[name]
+		if cmd.Input == nil || cmd.Input.Unstructured == nil {
+			t.Fatalf("expected available command %q to declare unstructured input", name)
+		}
+		if strings.TrimSpace(cmd.Input.Unstructured.Hint) == "" {
+			t.Fatalf("expected available command %q to provide an input hint", name)
+		}
+	}
+
+	for _, name := range []string{goalStatusCommandName, goalCancelCommandName, compactCommandName, summarizeCommandName} {
+		if got[name].Input != nil {
+			t.Fatalf("expected available command %q to omit input metadata", name)
 		}
 	}
 }

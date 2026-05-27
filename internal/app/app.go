@@ -27,6 +27,7 @@ import (
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/ipc"
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/prompt"
@@ -48,6 +49,7 @@ import (
 	"github.com/digiogithub/pando/internal/project"
 	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
+	ragproxy "github.com/digiogithub/pando/internal/rag/proxy"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
 	"github.com/digiogithub/pando/internal/snapshot"
@@ -1458,6 +1460,16 @@ func (app *App) SetupIPC(bus *ipc.Bus) {
 	// Wire the bus as the ZMQ publisher for the session service so session
 	// create/update/delete events are broadcast over PUB to other instances.
 	session.SetIPCPublisher(bus)
+
+	// Register the Remembrances write dispatcher so that KB, Events and Code
+	// indexing writes forwarded from secondary instances via IPC are correctly
+	// applied to the primary's read-write SQLite database.
+	if app.Remembrances != nil {
+		dispatcher := ragproxy.NewRemembrancesWriteDispatcher(app.Remembrances)
+		dbproxy.RegisterRemembrancesDispatcher(dispatcher)
+		logging.Info("Remembrances IPC write dispatcher registered on primary")
+	}
+
 	logging.Info("IPC bus wired to session service", "pubAddr", bus.PubAddr, "rpcAddr", bus.RPCAddr)
 }
 
@@ -1579,6 +1591,10 @@ func (a *appACPAgentAdapter) forwardEvents(ctx context.Context, realCh <-chan ag
 				acpEv.Message = ev.Message
 			case agent.AgentEventTypeSummarize:
 				acpEv.Type = mesnadaACP.AgentEventTypeSummarize
+				acpEv.Progress = ev.Progress
+			case agent.AgentEventTypeSystemMessage:
+				acpEv.Type = mesnadaACP.AgentEventTypeSystemMessage
+				acpEv.SystemMessage = ev.SystemMessage
 			case agent.AgentEventTypeContentDelta:
 				acpEv.Type = mesnadaACP.AgentEventTypeContentDelta
 				acpEv.Delta = ev.Delta

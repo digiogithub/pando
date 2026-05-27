@@ -279,6 +279,9 @@ func dispatchWrite(ctx context.Context, q db.Querier, req WriteRequest) (json.Ra
 		return nil, nil
 
 	default:
+		if remembrancesDispatcher != nil {
+			return remembrancesDispatcher.DispatchRemembrancesWrite(ctx, req.Method, req.Params)
+		}
 		return nil, &WriteError{
 			Code:    ErrCodeMethodNotFound,
 			Method:  req.Method,

@@ -112,6 +112,58 @@ type saveEventRequest struct {
 	Embedding []float32              `json:"embedding"`
 }
 
+// SaveEventWithEmbedding inserts an event using a pre-computed embedding.
+// Called by the primary IPC dispatcher when a secondary forwards a SaveEvent write.
+// No embedding generation is performed; the provided embedding is stored directly.
+func (s *EventStore) SaveEventWithEmbedding(ctx context.Context, subject, content string, metadata map[string]interface{}, embedding []float32) (int64, error) {
+	var metaJSON []byte
+	var err error
+	if metadata == nil {
+		metaJSON = []byte("{}")
+	} else {
+		metaJSON, err = json.Marshal(metadata)
+		if err != nil {
+			return 0, fmt.Errorf("events: marshal metadata: %w", err)
+		}
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("events: begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	now := time.Now().UTC()
+	embBlob := serializeFloat32(embedding)
+
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO events (subject, content, metadata, embedding, event_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		subject, content, string(metaJSON), embBlob, now, now,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("events: insert event: %w", err)
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("events: last insert id: %w", err)
+	}
+
+	if _, err = tx.ExecContext(ctx, `
+		INSERT INTO events_fts(rowid, subject, content)
+		VALUES (?, ?, ?)`,
+		id, subject, content,
+	); err != nil {
+		return 0, fmt.Errorf("events: insert fts: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return 0, fmt.Errorf("events: commit: %w", err)
+	}
+	return id, nil
+}
+
 // SearchEvents performs hybrid search with temporal filters.
 // The search combines vector similarity and FTS using RRF, then applies time filters.
 func (s *EventStore) SearchEvents(ctx context.Context, opts SearchOptions) ([]SearchResult, error) {

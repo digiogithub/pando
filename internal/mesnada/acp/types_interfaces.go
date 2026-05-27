@@ -18,6 +18,9 @@ const (
 	AgentEventTypeThinkingDelta AgentEventType = "thinking_delta"
 	AgentEventTypeToolCall      AgentEventType = "tool_call"
 	AgentEventTypeToolResult    AgentEventType = "tool_result"
+	// AgentEventTypeSystemMessage carries internal status messages (context compaction,
+	// retries, etc.) that must be shown to the user but are not part of the LLM response.
+	AgentEventTypeSystemMessage AgentEventType = "system_message"
 )
 
 // AgentEvent represents an event from the agent service
@@ -28,6 +31,11 @@ type AgentEvent struct {
 	Delta      string
 	ToolCall   *message.ToolCall
 	ToolResult *message.ToolResult
+	// Progress is populated for AgentEventTypeSummarize events.
+	Progress string
+	// SystemMessage is populated for AgentEventTypeSystemMessage events.
+	// It carries a human-readable status string (compaction, retry, etc.).
+	SystemMessage string
 }
 
 // ACPModelInfo holds minimal model metadata for ACP responses.

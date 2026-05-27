@@ -60,7 +60,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'copilot.gpt-4.1-2025-04-14'
+Model = 'gemini.gemini-3.5-flash'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -119,6 +119,13 @@ Theme = 'tokyonight'
 
 [Permissions]
 AutoApproveTools = true
+
+[Goal]
+MaxIterations = 0
+MaxDuration = ''
+StallIterations = 0
+AutoApprove = false
+DangerousPatterns = []
 
 [Mesnada]
 Enabled = true

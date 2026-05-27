@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 	"github.com/digiogithub/pando/internal/rag/treesitter"
@@ -62,6 +63,7 @@ var codeSearchStopwords = map[string]struct{}{
 type CodeIndexer struct {
 	db       *sql.DB
 	embedder embeddings.Embedder
+	proxy    *dbproxy.DBProxy
 	parser   *treesitter.Parser
 	walker   *treesitter.ASTWalker
 	workers  int
@@ -87,29 +89,49 @@ func NewCodeIndexer(db *sql.DB, embedder embeddings.Embedder, workers int) *Code
 	}
 }
 
+// SetWriteProxy configures a DB proxy for mutating operations.
+func (c *CodeIndexer) SetWriteProxy(proxy *dbproxy.DBProxy) {
+	c.proxy = proxy
+}
+
 // IndexProject indexes all supported source files in a project directory.
 // It runs asynchronously and updates the job status in the jobs map.
 // Returns the job ID immediately.
 func (c *CodeIndexer) IndexProject(ctx context.Context, projectID, projectPath string, languages []Language) (string, error) {
+	jobID := uuid.New().String()
 	// Upsert project record
 	now := time.Now().UTC()
 	projectName := filepath.Base(projectPath)
-	_, err := c.db.ExecContext(ctx, `
-		INSERT INTO code_projects (project_id, name, root_path, indexing_status, created_at, updated_at)
-		VALUES (?, ?, ?, 'in_progress', ?, ?)
-		ON CONFLICT(project_id) DO UPDATE SET
-			name = excluded.name,
-			root_path = excluded.root_path,
-			indexing_status = 'in_progress',
-			updated_at = excluded.updated_at`,
-		projectID, projectName, projectPath, now, now,
-	)
-	if err != nil {
-		return "", fmt.Errorf("code: upsert project: %w", err)
+	if c.proxy != nil {
+		if err := c.proxy.WriteWithRetry(ctx, "CodeUpsertProject", codeUpsertProjectRequest{
+			ProjectID:  projectID,
+			Name:       projectName,
+			RootPath:   projectPath,
+			Status:     string(IndexingStatusInProgress),
+			CreatedAt:  now,
+			UpdatedAt:  now,
+			JobID:      jobID,
+			Languages:  languages,
+		}, dbproxy.DefaultWriteTimeouts.Default); err != nil {
+			return "", fmt.Errorf("code: upsert project: %w", err)
+		}
+	} else {
+		_, err := c.db.ExecContext(ctx, `
+			INSERT INTO code_projects (project_id, name, root_path, indexing_status, created_at, updated_at)
+			VALUES (?, ?, ?, 'in_progress', ?, ?)
+			ON CONFLICT(project_id) DO UPDATE SET
+				name = excluded.name,
+				root_path = excluded.root_path,
+				indexing_status = 'in_progress',
+				updated_at = excluded.updated_at`,
+			projectID, projectName, projectPath, now, now,
+		)
+		if err != nil {
+			return "", fmt.Errorf("code: upsert project: %w", err)
+		}
 	}
 
 	// Create job
-	jobID := uuid.New().String()
 	job := &IndexingJob{
 		ID:          jobID,
 		ProjectID:   projectID,
@@ -131,8 +153,16 @@ func (c *CodeIndexer) IndexProject(ctx context.Context, projectID, projectPath s
 			job.Error = &errStr
 			c.jobsMu.Unlock()
 
-			c.db.ExecContext(bgCtx, `UPDATE code_projects SET indexing_status='failed', updated_at=? WHERE project_id=?`,
-				time.Now().UTC(), projectID)
+			updatedAt := time.Now().UTC()
+			if c.proxy != nil {
+				_ = c.proxy.WriteWithRetry(bgCtx, "CodeSetProjectStatus", codeSetProjectStatusRequest{
+					ProjectID: projectID,
+					Status:    string(IndexingStatusFailed),
+					UpdatedAt: updatedAt,
+				}, dbproxy.DefaultWriteTimeouts.Default)
+			} else {
+				c.db.ExecContext(bgCtx, `UPDATE code_projects SET indexing_status='failed', updated_at=? WHERE project_id=?`, updatedAt, projectID)
+			}
 		} else {
 			c.jobsMu.Lock()
 			job.Status = IndexingStatusCompleted
@@ -140,8 +170,19 @@ func (c *CodeIndexer) IndexProject(ctx context.Context, projectID, projectPath s
 			job.CompletedAt = &completedAt
 			c.jobsMu.Unlock()
 
-			c.db.ExecContext(bgCtx, `UPDATE code_projects SET indexing_status='completed', last_indexed_at=?, updated_at=? WHERE project_id=?`,
-				time.Now().UTC(), time.Now().UTC(), projectID)
+			lastIndexed := time.Now().UTC()
+			updatedAt := time.Now().UTC()
+			if c.proxy != nil {
+				_ = c.proxy.WriteWithRetry(bgCtx, "CodeSetProjectStatus", codeSetProjectStatusRequest{
+					ProjectID:     projectID,
+					Status:        string(IndexingStatusCompleted),
+					LastIndexedAt: &lastIndexed,
+					UpdatedAt:     updatedAt,
+				}, dbproxy.DefaultWriteTimeouts.Default)
+			} else {
+				c.db.ExecContext(bgCtx, `UPDATE code_projects SET indexing_status='completed', last_indexed_at=?, updated_at=? WHERE project_id=?`,
+					lastIndexed, updatedAt, projectID)
+			}
 		}
 	}()
 
@@ -306,6 +347,17 @@ func (c *CodeIndexer) indexFile(ctx context.Context, projectID, rootPath, filePa
 	symbols, err := c.walker.ExtractSymbols(tree, content, lang, relPath, projectID)
 	if err != nil {
 		return fmt.Errorf("code: extract symbols %s: %w", relPath, err)
+	}
+
+	if c.proxy != nil {
+		return c.proxy.WriteWithRetry(ctx, "CodeIndexFile", codeIndexFileRequest{
+			ProjectID: projectID,
+			RootPath:  rootPath,
+			FilePath:  relPath,
+			Language:  string(lang),
+			FileHash:  hash,
+			Symbols:   symbols,
+		}, dbproxy.DefaultWriteTimeouts.Long)
 	}
 
 	// Upsert file record in a transaction
@@ -507,6 +559,19 @@ func (c *CodeIndexer) DeleteProject(ctx context.Context, projectID string) error
 	if strings.TrimSpace(projectID) == "" {
 		return fmt.Errorf("code: project_id is required")
 	}
+	if c.proxy != nil {
+		if err := c.proxy.WriteWithRetry(ctx, "CodeDeleteProject", projectID, dbproxy.DefaultWriteTimeouts.Default); err != nil {
+			return err
+		}
+		c.jobsMu.Lock()
+		for id, job := range c.jobs {
+			if job.ProjectID == projectID {
+				delete(c.jobs, id)
+			}
+		}
+		c.jobsMu.Unlock()
+		return nil
+	}
 
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -531,6 +596,33 @@ func (c *CodeIndexer) DeleteProject(ctx context.Context, projectID string) error
 	c.jobsMu.Unlock()
 
 	return nil
+}
+
+type codeUpsertProjectRequest struct {
+	ProjectID string     `json:"project_id"`
+	Name      string     `json:"name"`
+	RootPath  string     `json:"root_path"`
+	Status    string     `json:"status"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	JobID     string     `json:"job_id,omitempty"`
+	Languages []Language `json:"languages,omitempty"`
+}
+
+type codeSetProjectStatusRequest struct {
+	ProjectID     string     `json:"project_id"`
+	Status        string     `json:"status"`
+	LastIndexedAt *time.Time `json:"last_indexed_at,omitempty"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type codeIndexFileRequest struct {
+	ProjectID string                    `json:"project_id"`
+	RootPath  string                    `json:"root_path"`
+	FilePath  string                    `json:"file_path"`
+	Language  string                    `json:"language"`
+	FileHash  string                    `json:"file_hash"`
+	Symbols   []*treesitter.CodeSymbol  `json:"symbols"`
 }
 
 // GetJob returns the current status of an indexing job.
@@ -1478,4 +1570,168 @@ func l2norm(v []float32) float64 {
 		sum += float64(x) * float64(x)
 	}
 	return math.Sqrt(sum)
+}
+
+// ---- Primary-side direct write methods (called by IPC dispatcher) ----
+
+// UpsertProjectDirect inserts or updates a code project record.
+// Called by the primary IPC dispatcher when a secondary forwards a CodeUpsertProject write.
+func (c *CodeIndexer) UpsertProjectDirect(ctx context.Context, projectID, name, rootPath, status string, createdAt, updatedAt time.Time) error {
+	_, err := c.db.ExecContext(ctx, `
+		INSERT INTO code_projects (project_id, name, root_path, indexing_status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(project_id) DO UPDATE SET
+			name = excluded.name,
+			root_path = excluded.root_path,
+			indexing_status = excluded.indexing_status,
+			updated_at = excluded.updated_at`,
+		projectID, name, rootPath, status, createdAt, updatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("code: upsert project direct: %w", err)
+	}
+	return nil
+}
+
+// SetProjectStatusDirect updates the indexing status of an existing project.
+// Called by the primary IPC dispatcher when a secondary forwards a CodeSetProjectStatus write.
+func (c *CodeIndexer) SetProjectStatusDirect(ctx context.Context, projectID, status string, lastIndexedAt *time.Time, updatedAt time.Time) error {
+	var err error
+	if lastIndexedAt != nil {
+		_, err = c.db.ExecContext(ctx,
+			`UPDATE code_projects SET indexing_status=?, last_indexed_at=?, updated_at=? WHERE project_id=?`,
+			status, lastIndexedAt, updatedAt, projectID,
+		)
+	} else {
+		_, err = c.db.ExecContext(ctx,
+			`UPDATE code_projects SET indexing_status=?, updated_at=? WHERE project_id=?`,
+			status, updatedAt, projectID,
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("code: set project status direct: %w", err)
+	}
+	return nil
+}
+
+// IndexFileDirect inserts or updates a file and its symbols, then generates embeddings.
+// Called by the primary IPC dispatcher when a secondary forwards a CodeIndexFile write.
+// symbolsJSON is the JSON-encoded []*treesitter.CodeSymbol payload from the RPC request.
+// Symbol embeddings are generated on the primary using its configured embedder.
+func (c *CodeIndexer) IndexFileDirect(ctx context.Context, projectID, filePath, language, fileHash string, symbolsJSON json.RawMessage) error {
+	var symbols []*treesitter.CodeSymbol
+	if len(symbolsJSON) > 0 && string(symbolsJSON) != "null" {
+		if err := json.Unmarshal(symbolsJSON, &symbols); err != nil {
+			return fmt.Errorf("code: unmarshal symbols direct: %w", err)
+		}
+	}
+
+	var fileID int64
+	var existingHash string
+	err := c.db.QueryRowContext(ctx, `
+		SELECT id, file_hash FROM code_files
+		WHERE project_id = ? AND file_path = ?`,
+		projectID, filePath,
+	).Scan(&fileID, &existingHash)
+
+	if err == nil && existingHash == fileHash {
+		return nil // No change
+	}
+
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("code: begin tx direct: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	now := time.Now().UTC()
+
+	if fileID > 0 {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM code_symbols WHERE file_id = ?`, fileID); err != nil {
+			return fmt.Errorf("code: delete old symbols direct: %w", err)
+		}
+		if _, err = tx.ExecContext(ctx,
+			`UPDATE code_files SET file_hash=?, language=?, symbols_count=?, indexed_at=? WHERE id=?`,
+			fileHash, language, len(symbols), now, fileID,
+		); err != nil {
+			return fmt.Errorf("code: update file direct: %w", err)
+		}
+	} else {
+		res, err := tx.ExecContext(ctx, `
+			INSERT INTO code_files (project_id, file_path, language, file_hash, symbols_count, indexed_at)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			projectID, filePath, language, fileHash, len(symbols), now,
+		)
+		if err != nil {
+			return fmt.Errorf("code: insert file direct: %w", err)
+		}
+		fileID, err = res.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("code: file last insert id direct: %w", err)
+		}
+	}
+
+	for _, sym := range symbols {
+		metaJSON := "{}"
+		if len(sym.Metadata) > 0 {
+			if b, e := json.Marshal(sym.Metadata); e == nil {
+				metaJSON = string(b)
+			}
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO code_symbols
+				(id, project_id, file_id, file_path, language, symbol_type, name, name_path,
+				 start_line, end_line, start_byte, end_byte,
+				 source_code, signature, doc_string, parent_id, metadata, created_at, updated_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			sym.ID, sym.ProjectID, fileID, sym.FilePath, string(sym.Language),
+			string(sym.SymbolType), sym.Name, sym.NamePath,
+			sym.StartLine, sym.EndLine, sym.StartByte, sym.EndByte,
+			sym.SourceCode, sym.Signature, sym.DocString, sym.ParentID,
+			metaJSON, now, now,
+		); err != nil {
+			return fmt.Errorf("code: insert symbol direct %s: %w", sym.Name, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("code: commit direct: %w", err)
+	}
+
+	return c.embedSymbols(ctx, projectID, fileID, symbols)
+}
+
+// DeleteProjectDirect removes an indexed project and all related data.
+// Called by the primary IPC dispatcher when a secondary forwards a CodeDeleteProject write.
+func (c *CodeIndexer) DeleteProjectDirect(ctx context.Context, projectID string) error {
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("code: begin tx delete project direct: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM code_projects WHERE project_id = ?`, projectID); err != nil {
+		return fmt.Errorf("code: delete project direct: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+// DeleteFileDirect removes a single indexed file and all related symbols.
+// Called by the primary IPC dispatcher when a secondary forwards a CodeDeleteFile write.
+func (c *CodeIndexer) DeleteFileDirect(ctx context.Context, projectID, filePath string) error {
+	if _, err := c.db.ExecContext(ctx,
+		`DELETE FROM code_files WHERE project_id = ? AND file_path = ?`,
+		projectID, filePath,
+	); err != nil {
+		return fmt.Errorf("code: delete file direct: %w", err)
+	}
+	return c.updateLanguageStats(ctx, projectID)
+}
+
+// UpdateLanguageStatsDirect recomputes and persists language statistics for a project.
+// Called by the primary IPC dispatcher when a secondary forwards a CodeUpdateLanguageStats write.
+func (c *CodeIndexer) UpdateLanguageStatsDirect(ctx context.Context, projectID string) error {
+	return c.updateLanguageStats(ctx, projectID)
 }
