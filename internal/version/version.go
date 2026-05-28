@@ -1,6 +1,11 @@
 package version
 
-import "runtime/debug"
+import (
+	"runtime/debug"
+	"strings"
+
+	"github.com/blang/semver"
+)
 
 // Build-time parameters set via -ldflags
 var Version = "unknown"
@@ -22,4 +27,39 @@ func init() {
 	}
 	// bin built using `go install`
 	Version = mainVersion
+}
+
+// Canonical returns the version with a leading v when the current value is a semver.
+func Canonical() string {
+	if normalized, ok := normalize(Version); ok {
+		return normalized
+	}
+	return Version
+}
+
+// Semver returns the current version parsed as semantic version.
+func Semver() (semver.Version, bool) {
+	return Parse(Version)
+}
+
+// Parse parses a version string that may be prefixed with 'v'.
+func Parse(v string) (semver.Version, bool) {
+	normalized, ok := normalize(v)
+	if !ok {
+		return semver.Version{}, false
+	}
+	parsed, err := semver.Parse(strings.TrimPrefix(normalized, "v"))
+	if err != nil {
+		return semver.Version{}, false
+	}
+	return parsed, true
+}
+
+func normalize(v string) (string, bool) {
+	trimmed := strings.TrimSpace(v)
+	trimmed = strings.TrimPrefix(trimmed, "v")
+	if trimmed == "" || trimmed == "unknown" || trimmed == "(devel)" {
+		return "", false
+	}
+	return "v" + trimmed, true
 }

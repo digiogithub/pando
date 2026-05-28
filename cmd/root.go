@@ -208,6 +208,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		// Create main context for the application
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
+		startBackgroundUpdateCheck(ctx)
 
 		// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
 		instanceID := uuid.New().String()

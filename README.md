@@ -161,10 +161,19 @@ pando -p "Explain the use of context in Go"
 # Get response in JSON format
 pando -p "Explain the use of context in Go" -f json
 
+# Check for a newer compatible GitHub release
+pando update --check
+
+# Update the current binary in place
+pando update
+
 # Disable one MCP transport if needed
 pando mcp-server --no-stdio
 pando mcp-server --no-http
 ```
+
+When Pando starts from a released semantic-version build, it also performs a short background
+update check and prints a notice if a newer compatible release is available.
 
 ## Custom Commands
 

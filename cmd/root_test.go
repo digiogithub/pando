@@ -24,3 +24,17 @@ func TestGoalStatusExitCode(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseArch(t *testing.T) {
+	tests := map[string]string{
+		"amd64": "x64",
+		"arm64": "arm64",
+		"386":   "386",
+	}
+
+	for input, want := range tests {
+		if got := releaseArch(input); got != want {
+			t.Fatalf("releaseArch(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
