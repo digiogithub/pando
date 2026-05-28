@@ -8,8 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/version"
+	"github.com/google/go-github/v30/github"
 	"github.com/rhysd/go-github-selfupdate/selfupdate"
 	"github.com/spf13/cobra"
 )
@@ -46,9 +48,7 @@ This command only works for released builds with a semantic version such as v0.3
 		}
 		latest := result.Release
 
-		updater, err := selfupdate.NewUpdater(selfupdate.Config{
-			Filters: updateReleaseFilters(),
-		})
+		updater, err := selfupdate.NewUpdater(selfupdate.Config{})
 		if err != nil {
 			return fmt.Errorf("configure self-update: %w", err)
 		}
@@ -108,13 +108,6 @@ func startBackgroundUpdateCheck(ctx context.Context) {
 }
 
 func detectLatestRelease(ctx context.Context) (*updateCheckResult, error) {
-	updater, err := selfupdate.NewUpdater(selfupdate.Config{
-		Filters: updateReleaseFilters(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("configure self-update: %w", err)
-	}
-
 	type response struct {
 		release *selfupdate.Release
 		found   bool
@@ -123,7 +116,7 @@ func detectLatestRelease(ctx context.Context) (*updateCheckResult, error) {
 
 	resultCh := make(chan response, 1)
 	go func() {
-		release, found, err := updater.DetectLatest(selfUpdateRepoSlug)
+		release, found, err := detectLatestReleaseManual()
 		resultCh <- response{release: release, found: found, err: err}
 	}()
 
@@ -136,6 +129,71 @@ func detectLatestRelease(ctx context.Context) (*updateCheckResult, error) {
 		}
 		return &updateCheckResult{Release: result.release, Found: result.found}, nil
 	}
+}
+
+func detectLatestReleaseManual() (*selfupdate.Release, bool, error) {
+	client := github.NewClient(nil)
+	repo := strings.Split(selfUpdateRepoSlug, "/")
+	if len(repo) != 2 {
+		return nil, false, fmt.Errorf("invalid repository slug %q", selfUpdateRepoSlug)
+	}
+
+	releases, _, err := client.Repositories.ListReleases(context.Background(), repo[0], repo[1], nil)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return selectReleaseForTargets(releases, repo[0], repo[1], releaseArchAliases(runtime.GOOS, runtime.GOARCH))
+}
+
+func selectReleaseForTargets(releases []*github.RepositoryRelease, repoOwner, repoName string, targets []releaseTarget) (*selfupdate.Release, bool, error) {
+	for _, rel := range releases {
+		if rel.GetDraft() {
+			continue
+		}
+		parsed, ok := parseReleaseVersion(rel.GetTagName())
+		if !ok {
+			continue
+		}
+		for _, target := range targets {
+			assetName := fmt.Sprintf("pando-%s-%s.zip", target.OS, target.Arch)
+			for _, asset := range rel.Assets {
+				if asset.GetName() != assetName {
+					continue
+				}
+				publishedAt := rel.GetPublishedAt().Time
+				return &selfupdate.Release{
+					Version:       parsed,
+					AssetURL:      asset.GetBrowserDownloadURL(),
+					AssetByteSize: asset.GetSize(),
+					AssetID:       asset.GetID(),
+					URL:           rel.GetHTMLURL(),
+					ReleaseNotes:  rel.GetBody(),
+					Name:          rel.GetName(),
+					PublishedAt:   &publishedAt,
+					RepoOwner:     repoOwner,
+					RepoName:      repoName,
+				}, true, nil
+			}
+		}
+	}
+
+	return nil, false, nil
+}
+
+func parseReleaseVersion(tag string) (semver.Version, bool) {
+	trimmed := strings.TrimSpace(tag)
+	if trimmed == "" {
+		return semver.Version{}, false
+	}
+	if strings.HasPrefix(trimmed, "v") {
+		trimmed = trimmed[1:]
+	}
+	parsed, err := semver.ParseTolerant(trimmed)
+	if err != nil {
+		return semver.Version{}, false
+	}
+	return parsed, true
 }
 
 type updateCheckResult struct {

@@ -30,6 +30,7 @@ require (
 	github.com/go-logfmt/logfmt v0.6.0
 	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/google/go-containerregistry v0.21.5
+	github.com/google/go-github/v30 v30.1.0
 	github.com/google/uuid v1.6.0
 	github.com/kaptinlin/jsonrepair v0.2.4
 	github.com/layeh/gopher-json v0.0.0-20201124131017-552bb3c4c3bf
@@ -92,7 +93,6 @@ require (
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
-	github.com/google/go-github/v30 v30.1.0 // indirect
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf // indirect
