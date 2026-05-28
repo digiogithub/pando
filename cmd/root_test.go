@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/digiogithub/pando/internal/llm/agent"
@@ -25,16 +26,85 @@ func TestGoalStatusExitCode(t *testing.T) {
 	}
 }
 
-func TestReleaseArch(t *testing.T) {
-	tests := map[string]string{
-		"amd64": "x64",
-		"arm64": "arm64",
-		"386":   "386",
+func TestReleaseArchAliases(t *testing.T) {
+	tests := []struct {
+		name   string
+		goos   string
+		goarch string
+		want   []releaseTarget
+	}{
+		{
+			name:   "linux amd64",
+			goos:   "linux",
+			goarch: "amd64",
+			want: []releaseTarget{
+				{OS: "linux", Arch: "x64"},
+				{OS: "linux", Arch: "amd64"},
+			},
+		},
+		{
+			name:   "darwin amd64",
+			goos:   "darwin",
+			goarch: "amd64",
+			want: []releaseTarget{
+				{OS: "darwin", Arch: "x64"},
+				{OS: "darwin", Arch: "amd64"},
+			},
+		},
+		{
+			name:   "darwin arm64",
+			goos:   "darwin",
+			goarch: "arm64",
+			want: []releaseTarget{
+				{OS: "darwin", Arch: "arm64"},
+				{OS: "darwin", Arch: "aarch64"},
+			},
+		},
+		{
+			name:   "linux arm64",
+			goos:   "linux",
+			goarch: "arm64",
+			want: []releaseTarget{
+				{OS: "linux", Arch: "arm64"},
+			},
+		},
 	}
 
-	for input, want := range tests {
-		if got := releaseArch(input); got != want {
-			t.Fatalf("releaseArch(%q) = %q, want %q", input, got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := releaseArchAliases(tt.goos, tt.goarch)
+			if len(got) != len(tt.want) {
+				t.Fatalf("releaseArchAliases(%q, %q) len = %d, want %d (%v)", tt.goos, tt.goarch, len(got), len(tt.want), got)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Fatalf("releaseArchAliases(%q, %q)[%d] = %+v, want %+v", tt.goos, tt.goarch, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestReleaseAssetPatternUsesPrimaryTarget(t *testing.T) {
+	target := primaryReleaseTarget(runtime.GOOS, runtime.GOARCH)
+	want := `^pando[-_]` + target.OS + `[-_]` + target.Arch + `\.zip$`
+	if got := releaseAssetPattern(); got != want {
+		t.Fatalf("releaseAssetPattern() = %q, want %q", got, want)
+	}
+}
+
+func TestUpdateReleaseFiltersIncludePrimaryTarget(t *testing.T) {
+	filters := updateReleaseFilters()
+	target := primaryReleaseTarget(runtime.GOOS, runtime.GOARCH)
+	want := `^pando[-_]` + target.OS + `[-_]` + target.Arch + `\.zip$`
+	found := false
+	for _, filter := range filters {
+		if filter == want {
+			found = true
+			break
 		}
+	}
+	if !found {
+		t.Fatalf("expected primary filter %q in %v", want, filters)
 	}
 }

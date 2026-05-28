@@ -47,7 +47,7 @@ This command only works for released builds with a semantic version such as v0.3
 		latest := result.Release
 
 		updater, err := selfupdate.NewUpdater(selfupdate.Config{
-			Filters: []string{releaseAssetPattern()},
+			Filters: updateReleaseFilters(),
 		})
 		if err != nil {
 			return fmt.Errorf("configure self-update: %w", err)
@@ -109,7 +109,7 @@ func startBackgroundUpdateCheck(ctx context.Context) {
 
 func detectLatestRelease(ctx context.Context) (*updateCheckResult, error) {
 	updater, err := selfupdate.NewUpdater(selfupdate.Config{
-		Filters: []string{releaseAssetPattern()},
+		Filters: updateReleaseFilters(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("configure self-update: %w", err)
@@ -143,17 +143,62 @@ type updateCheckResult struct {
 	Found   bool
 }
 
+func updateReleaseFilters() []string {
+	targets := releaseArchAliases(runtime.GOOS, runtime.GOARCH)
+	filters := make([]string, 0, len(targets))
+	for _, target := range targets {
+		filters = append(filters, fmt.Sprintf(`^pando[-_]%s[-_]%s\.zip$`, target.OS, target.Arch))
+	}
+	return filters
+}
+
 func releaseAssetPattern() string {
-	osName := runtime.GOOS
-	archName := releaseArch(runtime.GOARCH)
-	return fmt.Sprintf(`^pando[-_]%s[-_]%s\.zip$`, osName, archName)
+	target := primaryReleaseTarget(runtime.GOOS, runtime.GOARCH)
+	return fmt.Sprintf(`^pando[-_]%s[-_]%s\.zip$`, target.OS, target.Arch)
+}
+
+type releaseTarget struct {
+	OS   string
+	Arch string
+}
+
+func primaryReleaseTarget(goos, goarch string) releaseTarget {
+	aliases := releaseArchAliases(goos, goarch)
+	return aliases[0]
+}
+
+func releaseArchAliases(goos, goarch string) []releaseTarget {
+	normalizedOS := strings.ToLower(strings.TrimSpace(goos))
+	normalizedArch := strings.ToLower(strings.TrimSpace(goarch))
+
+	targets := []releaseTarget{{OS: normalizedOS, Arch: normalizedArch}}
+	switch normalizedArch {
+	case "amd64":
+		targets = append([]releaseTarget{{OS: normalizedOS, Arch: "x64"}}, targets...)
+	case "arm64":
+		if normalizedOS == "darwin" {
+			targets = append([]releaseTarget{{OS: normalizedOS, Arch: "arm64"}, {OS: normalizedOS, Arch: "aarch64"}}, targets...)
+			return dedupeReleaseTargets(targets)
+		}
+	}
+
+	return dedupeReleaseTargets(targets)
+}
+
+func dedupeReleaseTargets(targets []releaseTarget) []releaseTarget {
+	seen := make(map[string]struct{}, len(targets))
+	result := make([]releaseTarget, 0, len(targets))
+	for _, target := range targets {
+		key := target.OS + "/" + target.Arch
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, target)
+	}
+	return result
 }
 
 func releaseArch(goarch string) string {
-	switch strings.ToLower(strings.TrimSpace(goarch)) {
-	case "amd64":
-		return "x64"
-	default:
-		return goarch
-	}
+	return primaryReleaseTarget(runtime.GOOS, goarch).Arch
 }
