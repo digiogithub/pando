@@ -209,8 +209,7 @@ func (a *PandoACPAgent) processAgentEventStream(
 					a.startedToolCalls[tc.ID] = true
 					a.pendingToolCallsMu.Unlock()
 					if entries := parseTodoWritePlan(tc.Input); len(entries) > 0 {
-						a.sendCurrentModeUpdate(ctx, acpSession.ID, "plan")
-						if err := acpSession.SendUpdate(acpsdk.UpdatePlan(entries...)); err != nil {
+						if err := a.sendPlanModeUpdate(acpSession, entries); err != nil {
 							a.logger.Printf("[ACP AGENT] Failed to send plan update (streaming): %v", err)
 						}
 					}
@@ -688,8 +687,7 @@ func (a *PandoACPAgent) processAgentResponse(
 		// clients render it as a structured plan instead of a plain tool call.
 		if strings.EqualFold(toolCall.Name, "TodoWrite") {
 			if entries := parseTodoWritePlan(toolCall.Input); len(entries) > 0 {
-				a.sendCurrentModeUpdate(acpSession.Context(), acpSession.ID, "plan")
-				if err := acpSession.SendUpdate(acpsdk.UpdatePlan(entries...)); err != nil {
+				if err := a.sendPlanModeUpdate(acpSession, entries); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send plan update: %v", err)
 				}
 			}
@@ -911,12 +909,31 @@ func (a *PandoACPAgent) handleTodoWritePlan(acpSession *ACPServerSession, toolRe
 		return
 	}
 
-	// Send plan update to the ACP client
-	if err := a.planService.SendPlanUpdate(context.Background(), a.conn, acpSession.ID, plan); err != nil {
+	entries := make([]acpsdk.PlanEntry, 0, len(plan.Entries))
+	for _, e := range plan.Entries {
+		entries = append(entries, acpsdk.NewPlanEntry(
+			e.Content,
+			acpsdk.ParsePlanEntryStatus(e.Status),
+			acpsdk.ParsePlanEntryPriority(e.Priority),
+		))
+	}
+
+	if err := a.sendPlanModeUpdate(acpSession, entries); err != nil {
 		a.logger.Printf("[ACP AGENT] Failed to send plan update: %v", err)
 	} else {
 		a.logger.Printf("[ACP AGENT] Successfully sent plan update with %d entries", len(plan.Entries))
 	}
+}
+
+func (a *PandoACPAgent) sendPlanModeUpdate(acpSession *ACPServerSession, entries []acpsdk.PlanEntry) error {
+	if acpSession == nil || len(entries) == 0 {
+		return nil
+	}
+
+	if err := acpSession.SendUpdate(acpsdk.UpdateCurrentMode(acpsdk.SessionModeId("plan"))); err != nil {
+		return err
+	}
+	return acpSession.SendUpdate(acpsdk.UpdatePlan(entries...))
 }
 
 // mapFinishReasonToStopReason maps Pando finish reasons to ACP stop reasons.

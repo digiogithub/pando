@@ -20,12 +20,21 @@ const (
 	sessionConfigAgentID         = "agent"
 	askPermissionYesValue        = "yes"
 	askPermissionNoValue         = "no"
-	goalCommandName              = "/goal"
-	autopilotCommandName         = "/autopilot"
-	goalStatusCommandName        = "/goal-status"
-	goalCancelCommandName        = "/goal-cancel"
-	compactCommandName           = "/compact"
-	summarizeCommandName         = "/summarize"
+	goalCommandToken             = "goal"
+	autopilotCommandToken        = "autopilot"
+	goalStatusCommandToken       = "goal-status"
+	goalCancelCommandToken       = "goal-cancel"
+	compactCommandToken          = "compact"
+	summarizeCommandToken        = "summarize"
+)
+
+const (
+	goalCommandName       = "/" + goalCommandToken
+	autopilotCommandName  = "/" + autopilotCommandToken
+	goalStatusCommandName = "/" + goalStatusCommandToken
+	goalCancelCommandName = "/" + goalCancelCommandToken
+	compactCommandName    = "/" + compactCommandToken
+	summarizeCommandName  = "/" + summarizeCommandToken
 )
 
 func availableModes(_ AgentService) []acpsdk.SessionMode {
@@ -316,27 +325,27 @@ func boolToAskPermissionValue(enabled bool) string {
 func availableCommands() []acpsdk.AvailableCommand {
 	return []acpsdk.AvailableCommand{
 		{
-			Name:        goalCommandName,
+			Name:        goalCommandToken,
 			Description: "Start goal mode with a persistent objective: /goal <objective>",
 		},
 		{
-			Name:        autopilotCommandName,
+			Name:        autopilotCommandToken,
 			Description: "Alias for /goal <objective>",
 		},
 		{
-			Name:        goalStatusCommandName,
+			Name:        goalStatusCommandToken,
 			Description: "Show the status of the current goal",
 		},
 		{
-			Name:        goalCancelCommandName,
+			Name:        goalCancelCommandToken,
 			Description: "Cancel the current goal execution",
 		},
 		{
-			Name:        compactCommandName,
+			Name:        compactCommandToken,
 			Description: "Create a manual compact summary for the current session",
 		},
 		{
-			Name:        summarizeCommandName,
+			Name:        summarizeCommandToken,
 			Description: "Alias for /compact",
 		},
 	}
@@ -448,8 +457,9 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 					// regular tool_call so history playback matches live behaviour.
 					if strings.EqualFold(p.Name, "TodoWrite") {
 						if entries := parseTodoWritePlan(p.Input); len(entries) > 0 {
-							sendUpdate(acpsdk.UpdateCurrentMode(acpsdk.SessionModeId("plan")))
-							sendUpdate(acpsdk.UpdatePlan(entries...))
+							if err := a.sendPlanModeUpdate(acpSession, entries); err != nil {
+								a.logger.Printf("[ACP AGENT] streamSessionHistory: failed to send plan replay for session %s: %v", sessionID, err)
+							}
 						}
 						continue
 					}

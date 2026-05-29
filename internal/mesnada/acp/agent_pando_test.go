@@ -148,6 +148,42 @@ func TestProcessAgentResponseUsesMessageIDForAssistantChunks(t *testing.T) {
 	}
 }
 
+func TestSendAgentTextUsesStableSlashCommandMessageID(t *testing.T) {
+	acpSession := NewACPServerSession(acpsdk.SessionId("session-1"), "/tmp", nil, "pando-session-1")
+	agent := newTestPandoAgent()
+
+	if err := agent.sendAgentText(acpSession, "Goal mode activated."); err != nil {
+		t.Fatalf("sendAgentText failed: %v", err)
+	}
+
+	update := updateAgentMessageTextWithID("Goal mode activated.", "pando-session-1-slash-command")
+	if update.AgentMessageChunk == nil || update.AgentMessageChunk.MessageId == nil {
+		t.Fatal("expected slash command assistant message to include messageId")
+	}
+	if got := *update.AgentMessageChunk.MessageId; got != "pando-session-1-slash-command" {
+		t.Fatalf("unexpected slash command messageId: %q", got)
+	}
+}
+
+func TestStartManualSummaryDoesNotEmitSyntheticSummarizeMessages(t *testing.T) {
+	agent := newTestPandoAgent()
+	mockAgent := agent.agentService.(*mockAgentService)
+
+	events, err := agent.startManualSummary(context.Background(), "pando-session-1")
+	if err != nil {
+		t.Fatalf("startManualSummary failed: %v", err)
+	}
+	if !mockAgent.summarizeCalled {
+		t.Fatal("expected summarize to be invoked")
+	}
+
+	for event := range events {
+		if event.Type == AgentEventTypeSummarize || event.Progress != "" || event.Delta != "" {
+			t.Fatalf("expected no synthetic summarize feedback events, got %#v", event)
+		}
+	}
+}
+
 func TestMapToolKind(t *testing.T) {
 	if got := mapToolKind("TodoWrite"); got != acpsdk.ToolKindThink {
 		t.Fatalf("TodoWrite kind = %q, want %q", got, acpsdk.ToolKindThink)
@@ -762,6 +798,21 @@ func TestTodoWritePlanUpdateImpliesPlanModeUpdate(t *testing.T) {
 	}
 	if update.Plan.Entries[0].Content != "Investigate logs" {
 		t.Fatalf("unexpected content: %q", update.Plan.Entries[0].Content)
+	}
+}
+
+func TestSendPlanModeUpdateNilSessionIsNoop(t *testing.T) {
+	t.Parallel()
+
+	agent := newTestPandoAgent()
+	entries := []acpsdk.PlanEntry{
+		acpsdk.NewPlanEntry("Investigate logs", acpsdk.PlanEntryStatusInProgress, acpsdk.PlanEntryPriorityHigh),
+	}
+	if err := agent.sendPlanModeUpdate(nil, entries); err != nil {
+		t.Fatalf("sendPlanModeUpdate(nil, entries) error = %v", err)
+	}
+	if err := agent.sendPlanModeUpdate(NewACPServerSession(acpsdk.SessionId("session-plan"), "/tmp", nil, "pando-session-plan"), nil); err != nil {
+		t.Fatalf("sendPlanModeUpdate(session, nil) error = %v", err)
 	}
 }
 
@@ -1652,6 +1703,29 @@ func TestPandoACPAgent_HandleSlashGoalCancelCancelsGoal(t *testing.T) {
 	}
 }
 
+func TestPandoACPAgent_HandleSlashGoalWithoutObjectiveShowsUsage(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	acpSession, err := agent.getSession(resp.SessionId)
+	if err != nil {
+		t.Fatalf("getSession failed: %v", err)
+	}
+
+	stopReason, err := agent.handleSlashCommand(ctx, resp.SessionId, acpSession, slashCommand{Kind: slashCommandGoal})
+	if err != nil {
+		t.Fatalf("handleSlashCommand failed: %v", err)
+	}
+	if stopReason != acpsdk.StopReasonEndTurn {
+		t.Fatalf("expected end turn stop reason, got %q", stopReason)
+	}
+}
+
 func TestPandoACPAgent_HandleSlashSummarizeStartsManualSummary(t *testing.T) {
 	agent := newTestPandoAgent()
 	ctx := context.Background()
@@ -1680,37 +1754,6 @@ func TestPandoACPAgent_HandleSlashSummarizeStartsManualSummary(t *testing.T) {
 	}
 	if mockAgent.summarizeSessionID != string(resp.SessionId) {
 		t.Fatalf("expected summarize session %q, got %q", resp.SessionId, mockAgent.summarizeSessionID)
-	}
-}
-
-func TestParseSlashCommand_NormalizesClientDoubleSlashPrefix(t *testing.T) {
-	tests := []struct {
-		name          string
-		input         string
-		wantKind      slashCommandKind
-		wantObjective string
-	}{
-		{name: "double slash compact", input: "//compact", wantKind: slashCommandSummarize},
-		{name: "double slash summarize", input: "//summarize", wantKind: slashCommandSummarize},
-		{name: "double slash goal status", input: "//goal", wantKind: slashCommandGoalStatus},
-		{name: "double slash goal objective", input: "//goal Implement phase two", wantKind: slashCommandGoal, wantObjective: "Implement phase two"},
-		{name: "triple slash autopilot objective", input: "///autopilot Implement phase three", wantKind: slashCommandGoal, wantObjective: "Implement phase three"},
-		{name: "double slash goal cancel", input: " //goal-cancel ", wantKind: slashCommandGoalCancel},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, ok := parseSlashCommand(tt.input)
-			if !ok {
-				t.Fatalf("expected %q to be parsed as slash command", tt.input)
-			}
-			if got.Kind != tt.wantKind {
-				t.Fatalf("parseSlashCommand(%q) kind = %q, want %q", tt.input, got.Kind, tt.wantKind)
-			}
-			if got.Objective != tt.wantObjective {
-				t.Fatalf("parseSlashCommand(%q) objective = %q, want %q", tt.input, got.Objective, tt.wantObjective)
-			}
-		})
 	}
 }
 
@@ -1845,9 +1888,12 @@ func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 	got := map[string]acpsdk.AvailableCommand{}
 	for _, cmd := range commands {
 		got[cmd.Name] = cmd
+		if strings.HasPrefix(cmd.Name, "/") {
+			t.Fatalf("expected available command %q to omit leading slash for ACP clients", cmd.Name)
+		}
 	}
 
-	for _, name := range []string{goalCommandName, autopilotCommandName, goalStatusCommandName, goalCancelCommandName, compactCommandName, summarizeCommandName} {
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken} {
 		if _, ok := got[name]; !ok {
 			t.Fatalf("expected available command %q to be exposed", name)
 		}

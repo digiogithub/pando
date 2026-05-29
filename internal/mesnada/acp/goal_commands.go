@@ -24,6 +24,9 @@ func (a *PandoACPAgent) handleSlashCommand(
 		}
 		return a.processGoalPrompt(ctx, sessionID, acpSession, command.Objective)
 	case slashCommandGoalStatus:
+		if err := a.sendAgentText(acpSession, "Checking goal status..."); err != nil {
+			return "", err
+		}
 		goal, err := a.syncGoalState(ctx, sessionID, false)
 		if err != nil {
 			return "", err
@@ -34,6 +37,9 @@ func (a *PandoACPAgent) handleSlashCommand(
 		}
 		return acpsdk.StopReasonEndTurn, nil
 	case slashCommandGoalCancel:
+		if err := a.sendAgentText(acpSession, "Cancelling current goal..."); err != nil {
+			return "", err
+		}
 		acpSession.CancelGoalExecution()
 		goal, err := a.sessionService.CancelGoal(context.Background(), acpSession.PandoSessionID())
 		if err != nil {
@@ -75,6 +81,10 @@ func (a *PandoACPAgent) processGoalPrompt(
 		return acpsdk.StopReasonEndTurn, nil
 	}
 
+	if err := a.sendAgentText(acpSession, "Starting goal mode..."); err != nil {
+		return "", err
+	}
+
 	acpSession.SetMode(goalModeID)
 	acpSession.SetAskPermission(defaultAskPermissionForMode(goalModeID))
 	acpSession.SetPermissionConfigured(false)
@@ -108,15 +118,47 @@ func (a *PandoACPAgent) processGoalPrompt(
 	if finalGoal != nil && finalGoal.Status == "cancelled" {
 		stopReason = acpsdk.StopReasonCancelled
 	}
-	return stopReason, err
+	if err != nil {
+		return stopReason, err
+	}
+	if stopReason == acpsdk.StopReasonCancelled {
+		if err := a.sendAgentText(acpSession, "Goal mode cancelled."); err != nil {
+			return stopReason, err
+		}
+		return stopReason, nil
+	}
+	if finalGoal != nil {
+		if err := a.sendAgentText(acpSession, "Goal mode complete.\n\n"+formatGoalStatus(finalGoal)); err != nil {
+			return stopReason, err
+		}
+	} else {
+		if err := a.sendAgentText(acpSession, "Goal mode complete."); err != nil {
+			return stopReason, err
+		}
+	}
+	return stopReason, nil
 }
 
 func (a *PandoACPAgent) processSummarizeCommand(ctx context.Context, acpSession *ACPServerSession) (acpsdk.StopReason, error) {
+	if err := a.sendAgentText(acpSession, "Starting session summary..."); err != nil {
+		return "", err
+	}
+
 	eventChan, err := a.startManualSummary(ctx, acpSession.PandoSessionID())
 	if err != nil {
 		return "", err
 	}
-	return a.processAgentEventStream(ctx, acpSession, eventChan)
+
+	stopReason, err := a.processAgentEventStream(ctx, acpSession, eventChan)
+	if err != nil {
+		return stopReason, err
+	}
+	if stopReason != acpsdk.StopReasonCancelled {
+		if err := a.sendAgentText(acpSession, "Session summary complete."); err != nil {
+			return stopReason, err
+		}
+	}
+	return stopReason, nil
 }
 
 func (a *PandoACPAgent) startManualSummary(ctx context.Context, sessionID string) (<-chan AgentEvent, error) {
@@ -133,8 +175,6 @@ func (a *PandoACPAgent) startManualSummary(ctx context.Context, sessionID string
 			return
 		default:
 		}
-		events <- AgentEvent{Type: AgentEventTypeSummarize, Delta: "Starting summarization..."}
-		events <- AgentEvent{Type: AgentEventTypeSummarize, Delta: "Summary complete"}
 	}()
 	return events, nil
 }
@@ -143,5 +183,6 @@ func (a *PandoACPAgent) sendAgentText(acpSession *ACPServerSession, text string)
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
-	return acpSession.SendUpdate(acpsdk.UpdateAgentMessageText(text))
+	messageID := acpSession.PandoSessionID() + "-slash-command"
+	return acpSession.SendUpdate(updateAgentMessageTextWithID(text, messageID))
 }
