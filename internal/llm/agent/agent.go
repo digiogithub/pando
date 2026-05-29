@@ -394,7 +394,7 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 	if !a.provider.Model().SupportsAttachments && attachments != nil {
 		attachments = nil
 	}
-	events := make(chan AgentEvent, 256)
+	events := make(chan AgentEvent, 512)
 	if a.IsSessionBusy(sessionID) {
 		return nil, ErrSessionBusy
 	}
@@ -890,6 +890,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 					Name:       toolCall.Name,
 					Content:    fmt.Sprintf("Tool not found: %s", toolCall.Name),
 					IsError:    true,
+					Input:      toolCall.Input,
 				}
 				a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]})
 				select {
@@ -910,6 +911,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 						Name:       toolCall.Name,
 						Content:    "Permission denied",
 						IsError:    true,
+						Input:      toolCall.Input,
 					}
 					a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]})
 					select {
@@ -922,6 +924,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 							Name:       toolCalls[j].Name,
 							Content:    "Tool execution canceled by user",
 							IsError:    true,
+							Input:      toolCalls[j].Input,
 						}
 						a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[j]})
 						select {
@@ -937,6 +940,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 					Name:       toolCall.Name,
 					Content:    toolErr.Error(),
 					IsError:    true,
+					Input:      toolCall.Input,
 				}
 				a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]})
 				select {
@@ -957,6 +961,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 				Content:    toolResult.Content,
 				Metadata:   toolResult.Metadata,
 				IsError:    toolResult.IsError,
+				Input:      toolCall.Input,
 			}
 			a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]})
 			select {
@@ -1044,11 +1049,12 @@ func (a *agent) processEvent(
 	case provider.EventThinkingDelta:
 		logging.Debug("Event: ThinkingDelta", "sessionID", sessionID, "contentLength", len(event.Thinking))
 		assistantMsg.AppendReasoningContent(event.Thinking)
+		// ThinkingDelta is delivered to TUI/WebUI subscribers via publishEvent (pubsub).
+		// It is intentionally not sent to eventCh: the ACP consumer has no handler for
+		// it and the high-frequency tokens would fill the 512-slot buffer, causing
+		// subsequent ToolCall events to be dropped. ACP receives the full reasoning
+		// content in the AgentEventTypeResponse payload.
 		a.publishEvent(AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Thinking})
-		select {
-		case eventCh <- AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Thinking}:
-		default:
-		}
 		return a.messages.Update(ctx, *assistantMsg)
 	case provider.EventContentDelta:
 		logging.Debug("Event: ContentDelta", "sessionID", sessionID, "contentLength", len(event.Content))

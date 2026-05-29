@@ -16,7 +16,7 @@ Env = []
 Args = []
 Type = 'streamable-http'
 URL = 'https://mcp.deepwiki.com/mcp'
-Timeout = ''
+Timeout = '5m'
 
 [MCPServers.mycommandmcp]
 Command = 'mycommandmcp'

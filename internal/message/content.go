@@ -99,6 +99,11 @@ type ToolResult struct {
 	Content    string `json:"content"`
 	Metadata   string `json:"metadata"`
 	IsError    bool   `json:"is_error"`
+	// Input holds the original tool call input JSON. It is NOT persisted to the
+	// database (json:"-") and is populated in-flight by the agent so that the
+	// ACP layer can include rawInput in tool_call_update messages even when the
+	// streaming AgentEventTypeToolCall events were dropped due to buffer overflow.
+	Input string `json:"-"`
 }
 
 func (ToolResult) isPart() {}

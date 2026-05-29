@@ -387,6 +387,20 @@ func (a *PandoACPAgent) processAgentEventStream(
 				}
 				a.pendingToolCallsMu.Unlock()
 
+				// Fallback: if the streaming AgentEventTypeToolCall events were
+				// dropped (buffer overflow), storedInput is empty but tr.Input
+				// carries the full original tool call JSON populated by agent.go.
+				if storedInput == "" && tr.Input != "" {
+					storedInput = tr.Input
+					// Also pre-populate pendingToolCalls for edit tools so that
+					// sendWriteTextFile can find the file path later.
+					if isEditTool(tr.Name) {
+						a.pendingToolCallsMu.Lock()
+						a.pendingToolCalls[tr.ToolCallID] = tr.Input
+						a.pendingToolCallsMu.Unlock()
+					}
+				}
+
 				// Guarantee that a tool_call (start) always precedes the first
 				// tool_call_update for the same toolCallId.  Without it Zed (and other
 				// ACP clients) have no entry for the tool call and silently ignore the

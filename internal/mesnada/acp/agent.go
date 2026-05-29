@@ -764,7 +764,23 @@ func (a *PandoACPAgent) safeSessionUpdate(acpSession *ACPServerSession, sessionI
 	if acpSession == nil {
 		return fmt.Errorf("session not found: %s", sessionID)
 	}
-	return acpSession.SendUpdate(update)
+	sendErr := acpSession.SendUpdate(update)
+	if sendErr != nil && isEntityReleasedError(sendErr) {
+		// The ACP client released this session entity (e.g. Zed closed the thread).
+		// Remove it from our map so we stop sending updates to a ghost session.
+		a.sessionsMu.Lock()
+		delete(a.sessions, sessionID)
+		a.sessionsMu.Unlock()
+		a.logger.Printf("[ACP AGENT] Session %s removed: ACP client released the entity", sessionID)
+	}
+	return sendErr
+}
+
+// isEntityReleasedError returns true when the error originates from the ACP
+// client reporting that the session entity was already released. Zed encodes
+// this as a JSON-RPC -32603 error with data="entity released".
+func isEntityReleasedError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "entity released")
 }
 
 func (a *PandoACPAgent) currentUsageSnapshot(ctx context.Context, acpSession *ACPServerSession) (used int, size int, ok bool) {
@@ -1021,23 +1037,21 @@ func (a *PandoACPAgent) handleExtensionOpenClaudeUsage(context.Context, json.Raw
 // SetConnection stores a reference to the AgentSideConnection so the agent can
 // stream session updates back to the client.  Called by transport_stdio.go
 // immediately after NewAgentSideConnection() returns.
+//
+// NOTE: we deliberately do NOT send sendAvailableCommandsUpdate for all known
+// sessions here. When the transport reconnects (e.g. Zed restarts), existing
+// sessions in the map were registered during the previous connection. The new
+// client does not know about them yet and will report "unknown session" warnings
+// for any proactive notifications. Instead, each session receives its available
+// commands only when the client explicitly calls NewSession or LoadSession,
+// both of which already call sendAvailableCommandsUpdate.
 func (a *PandoACPAgent) SetConnection(conn *acpsdk.AgentSideConnection) {
 	a.sessionsMu.Lock()
 	defer a.sessionsMu.Unlock()
 
 	a.conn = conn
-	sessionIDs := make([]acpsdk.SessionId, 0, len(a.sessions))
-	for id, sess := range a.sessions {
+	for _, sess := range a.sessions {
 		sess.SetAgentConnection(conn)
-		sessionIDs = append(sessionIDs, id)
-	}
-
-	if conn == nil {
-		return
-	}
-
-	for _, sessionID := range sessionIDs {
-		go a.sendAvailableCommandsUpdate(context.Background(), sessionID)
 	}
 }
 
@@ -1101,7 +1115,15 @@ func (a *PandoACPAgent) StartNotificationBroadcast(ctx context.Context) {
 
 			for _, sess := range sessions {
 				if err := sess.SendUpdate(update); err != nil {
-					a.logger.Printf("[ACP AGENT] Failed to broadcast notification to session %s: %v", sess.ID, err)
+					if isEntityReleasedError(err) {
+						a.sessionsMu.Lock()
+						delete(a.sessions, sess.ID)
+						a.sessionsMu.Unlock()
+						a.logger.Printf("[ACP AGENT] Session %s removed during broadcast: ACP client released the entity", sess.ID)
+					} else {
+						a.logger.Printf("[ACP AGENT] Failed to broadcast notification to session %s: %v", sess.ID, err)
+					}
+					continue
 				}
 				if visibleMessage != "" {
 					if err := sess.SendUpdate(acpsdk.UpdateAgentMessageText(visibleMessage)); err != nil {
