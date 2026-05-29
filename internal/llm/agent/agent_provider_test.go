@@ -8,6 +8,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/llm/prompt"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -71,6 +72,56 @@ func TestDefaultAnthropicThinkingMode(t *testing.T) {
 				t.Fatalf("defaultAnthropicThinkingMode() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestEffectiveReasoningEffortPrecedence(t *testing.T) {
+	agentConfig := config.Agent{ReasoningEffort: "low"}
+
+	if got := effectiveReasoningEffort(agentConfig, SessionLLMOverrides{ReasoningEffort: "high"}); got != "high" {
+		t.Fatalf("effectiveReasoningEffort() override = %q, want %q", got, "high")
+	}
+	if got := effectiveReasoningEffort(agentConfig, SessionLLMOverrides{}); got != "low" {
+		t.Fatalf("effectiveReasoningEffort() config fallback = %q, want %q", got, "low")
+	}
+	if got := effectiveReasoningEffort(config.Agent{}, SessionLLMOverrides{}); got != "" {
+		t.Fatalf("effectiveReasoningEffort() empty fallback = %q, want empty", got)
+	}
+}
+
+func TestEffectiveAnthropicThinkingModePrecedence(t *testing.T) {
+	model := models.Model{Provider: models.ProviderAnthropic, CanReason: true}
+
+	if got := effectiveAnthropicThinkingMode(model, config.Agent{ThinkingMode: config.ThinkingLow}, SessionLLMOverrides{ThinkingMode: config.ThinkingHigh}); got != config.ThinkingHigh {
+		t.Fatalf("effectiveAnthropicThinkingMode() override = %q, want %q", got, config.ThinkingHigh)
+	}
+	if got := effectiveAnthropicThinkingMode(model, config.Agent{ThinkingMode: config.ThinkingDisabled}, SessionLLMOverrides{}); got != config.ThinkingDisabled {
+		t.Fatalf("effectiveAnthropicThinkingMode() config fallback = %q, want %q", got, config.ThinkingDisabled)
+	}
+	if got := effectiveAnthropicThinkingMode(model, config.Agent{}, SessionLLMOverrides{}); got != config.ThinkingMedium {
+		t.Fatalf("effectiveAnthropicThinkingMode() default fallback = %q, want %q", got, config.ThinkingMedium)
+	}
+}
+
+func TestSetSessionLLMOverridesNormalizesAndClears(t *testing.T) {
+	ctx := context.WithValue(context.Background(), prompt.SessionIDKey, "session-1")
+
+	SetSessionLLMOverrides("session-1", SessionLLMOverrides{
+		ReasoningEffort: " HIGH ",
+		ThinkingMode:    config.ThinkingMode(" Disabled "),
+	})
+	t.Cleanup(func() {
+		SetSessionLLMOverrides("session-1", SessionLLMOverrides{})
+	})
+
+	got := sessionLLMOverridesForContext(ctx)
+	if got.ReasoningEffort != "high" || got.ThinkingMode != config.ThinkingDisabled {
+		t.Fatalf("sessionLLMOverridesForContext() = %#v, want normalized high/disabled", got)
+	}
+
+	SetSessionLLMOverrides("session-1", SessionLLMOverrides{})
+	if got := sessionLLMOverridesForContext(ctx); got != (SessionLLMOverrides{}) {
+		t.Fatalf("sessionLLMOverridesForContext() after clear = %#v, want empty", got)
 	}
 }
 

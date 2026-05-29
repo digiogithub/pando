@@ -254,6 +254,10 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 		a.sessions[sessionID] = acpSession
 	}
 	a.sessionsMu.Unlock()
+	reconcileACPThinkingSession(a.agentService, acpSession)
+	if err := a.persistACPState(ctx, acpSession); err != nil {
+		return acpsdk.NewSessionResponse{}, err
+	}
 
 	a.logger.Printf("[ACP AGENT] NewSession created: SessionID=%s, PandoSessionID=%s, WorkDir=%s",
 		sessionID, pandoSessionID, workDir)
@@ -262,7 +266,7 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 
 	return acpsdk.NewSessionResponse{
 		SessionId:     sessionID,
-		ConfigOptions: buildSessionConfigOptions(a.agentService, acpSession.Model(), currentMode, acpSession.Persona(), acpSession.AskPermission()),
+		ConfigOptions: buildSessionConfigOptions(a.agentService, acpSession),
 		Modes:         buildSessionModeState(a.agentService, currentMode),
 		Models:        buildSessionModelState(a.agentService, acpSession.Model()),
 		Meta:          mergeMetaMaps(personaStateToMeta(buildSessionPersonaState(a.agentService, acpSession.Persona())), goalMeta(acpSession.Goal())),
@@ -453,6 +457,16 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 		acpSession = sess
 	}
 	a.sessionsMu.RUnlock()
+	hadPersistedACPState, err := a.restoreACPState(ctx, acpSession)
+	if err != nil {
+		return acpsdk.LoadSessionResponse{}, err
+	}
+	reconcileACPThinkingSession(a.agentService, acpSession)
+	if hadPersistedACPState {
+		if err := a.persistACPState(ctx, acpSession); err != nil {
+			return acpsdk.LoadSessionResponse{}, err
+		}
+	}
 
 	go a.sendAvailableCommandsUpdate(context.Background(), req.SessionId)
 
@@ -461,7 +475,7 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 	go a.streamSessionHistory(context.Background(), req.SessionId, string(req.SessionId))
 
 	return acpsdk.LoadSessionResponse{
-		ConfigOptions: buildSessionConfigOptions(a.agentService, a.mustSessionModel(req.SessionId), currentMode, currentPersona, a.mustSessionAskPermission(req.SessionId)),
+		ConfigOptions: buildSessionConfigOptions(a.agentService, acpSession),
 		Modes:         buildSessionModeState(a.agentService, currentMode),
 		Models:        buildSessionModelState(a.agentService, a.mustSessionModel(req.SessionId)),
 		Meta:          mergeMetaMaps(personaStateToMeta(buildSessionPersonaState(a.agentService, currentPersona)), goalMeta(acpSession.Goal())),
@@ -514,7 +528,7 @@ func (a *PandoACPAgent) SetSessionConfigOption(ctx context.Context, req acpsdk.S
 		if err := a.validateModel(value); err != nil {
 			return acpsdk.SetSessionConfigOptionResponse{}, err
 		}
-		acpSession.SetModel(value)
+		a.setSessionModelValue(acpSession, value)
 	case sessionConfigModeID:
 		if err := validateModeID(value); err != nil {
 			return acpsdk.SetSessionConfigOptionResponse{}, err
@@ -531,6 +545,27 @@ func (a *PandoACPAgent) SetSessionConfigOption(ctx context.Context, req acpsdk.S
 		}
 		acpSession.SetAskPermission(enabled)
 		acpSession.SetPermissionConfigured(true)
+	case sessionConfigThinkingStreamModeID:
+		model, ok := selectedACPModelForSession(a.agentService, acpSession)
+		mode, err := validateACPThinkingConfigValue(model, ok, resolvedModelValue(a.agentService, acpSession.Model()), configID, value)
+		if err != nil {
+			return acpsdk.SetSessionConfigOptionResponse{}, err
+		}
+		acpSession.SetThinkingStreamMode(mode)
+	case sessionConfigReasoningEffortID:
+		model, ok := selectedACPModelForSession(a.agentService, acpSession)
+		effort, err := validateACPThinkingConfigValue(model, ok, resolvedModelValue(a.agentService, acpSession.Model()), configID, value)
+		if err != nil {
+			return acpsdk.SetSessionConfigOptionResponse{}, err
+		}
+		acpSession.SetReasoningEffort(effort)
+	case sessionConfigThinkingModeID:
+		model, ok := selectedACPModelForSession(a.agentService, acpSession)
+		mode, err := validateACPThinkingConfigValue(model, ok, resolvedModelValue(a.agentService, acpSession.Model()), configID, value)
+		if err != nil {
+			return acpsdk.SetSessionConfigOptionResponse{}, err
+		}
+		acpSession.SetThinkingMode(mode)
 	case sessionConfigAgentID:
 		if err := a.validatePersona(value); err != nil {
 			return acpsdk.SetSessionConfigOptionResponse{}, err
@@ -540,7 +575,11 @@ func (a *PandoACPAgent) SetSessionConfigOption(ctx context.Context, req acpsdk.S
 		return acpsdk.SetSessionConfigOptionResponse{}, fmt.Errorf("unknown config option: %s", configID)
 	}
 
-	configOptions := buildSessionConfigOptions(a.agentService, acpSession.Model(), acpSession.Mode(), acpSession.Persona(), acpSession.AskPermission())
+	reconcileACPThinkingSession(a.agentService, acpSession)
+	if err := a.persistACPState(ctx, acpSession); err != nil {
+		return acpsdk.SetSessionConfigOptionResponse{}, err
+	}
+	configOptions := buildSessionConfigOptions(a.agentService, acpSession)
 	a.sendSessionConfigOptionsUpdate(ctx, sessionID)
 	return acpsdk.SetSessionConfigOptionResponse{ConfigOptions: configOptions}, nil
 }
@@ -568,8 +607,11 @@ func (a *PandoACPAgent) setSessionModel(ctx context.Context, sessionID acpsdk.Se
 		return acpsdk.SetSessionModelResponse{}, fmt.Errorf("session not found: %s", sessionID)
 	}
 
-	acpSession.SetModel(modelID)
+	a.setSessionModelValue(acpSession, modelID)
 	a.logger.Printf("[ACP AGENT] SetSessionModel: model set to %s for session %s", modelID, sessionID)
+	if err := a.persistACPState(ctx, acpSession); err != nil {
+		return acpsdk.SetSessionModelResponse{}, err
+	}
 	a.sendSessionConfigOptionsUpdate(ctx, sessionID)
 	return acpsdk.SetSessionModelResponse{}, nil
 }
@@ -596,6 +638,7 @@ func (a *PandoACPAgent) CloseSession(ctx context.Context, req acpsdk.CloseSessio
 		a.permissionService.RemoveAutoApproveSession(sid)
 		a.permissionService.UnregisterSessionHandler(sid)
 	}
+	a.agentService.SetSessionLLMOverrides(acpSession.PandoSessionID(), SessionLLMOverrides{})
 
 	a.sessionsMu.Lock()
 	delete(a.sessions, req.SessionId)
@@ -656,7 +699,16 @@ func (a *PandoACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSess
 
 	a.logger.Printf("[ACP AGENT] ResumeSession: session %s resumed", req.SessionId)
 	acpSession, _ := a.getSession(req.SessionId)
-	configOptions := buildSessionConfigOptions(a.agentService, acpSession.Model(), currentMode, acpSession.Persona(), acpSession.AskPermission())
+	hadPersistedACPState, err := a.restoreACPState(ctx, acpSession)
+	if err != nil {
+		return acpsdk.ResumeSessionResponse{}, err
+	}
+	if hadPersistedACPState {
+		if err := a.persistACPState(ctx, acpSession); err != nil {
+			return acpsdk.ResumeSessionResponse{}, err
+		}
+	}
+	configOptions := buildSessionConfigOptions(a.agentService, acpSession)
 	return acpsdk.ResumeSessionResponse{
 		ConfigOptions: buildUnstableSessionConfigOptions(configOptions),
 		Modes:         buildSessionModeState(a.agentService, currentMode),
@@ -749,10 +801,19 @@ func (a *PandoACPAgent) sendSessionConfigOptionsUpdate(_ context.Context, sessio
 	if err != nil {
 		return
 	}
-	update := acpsdk.UpdateConfigOptions(buildSessionConfigOptions(a.agentService, acpSession.Model(), acpSession.Mode(), acpSession.Persona(), acpSession.AskPermission()))
+	reconcileACPThinkingSession(a.agentService, acpSession)
+	update := acpsdk.UpdateConfigOptions(buildSessionConfigOptions(a.agentService, acpSession))
 	if err := a.safeSessionUpdate(acpSession, sessionID, update); err != nil {
 		a.logger.Printf("[ACP AGENT] Failed to send config_option_update for session %s: %v", sessionID, err)
 	}
+}
+
+func (a *PandoACPAgent) setSessionModelValue(acpSession *ACPServerSession, modelID string) {
+	if acpSession == nil {
+		return
+	}
+	acpSession.SetModel(modelID)
+	reconcileACPThinkingSession(a.agentService, acpSession)
 }
 
 func (a *PandoACPAgent) safeSessionUpdate(acpSession *ACPServerSession, sessionID acpsdk.SessionId, update acpsdk.SessionUpdate) (err error) {
@@ -994,6 +1055,14 @@ func (a *PandoACPAgent) mustSessionModel(sessionID acpsdk.SessionId) string {
 		return ""
 	}
 	return acpSession.Model()
+}
+
+func (a *PandoACPAgent) mustSessionThinkingStreamMode(sessionID acpsdk.SessionId) string {
+	acpSession, err := a.getSession(sessionID)
+	if err != nil {
+		return defaultACPThinkingStreamMode
+	}
+	return acpSession.ThinkingStreamMode()
 }
 
 type extensionSetPersonaParams struct {

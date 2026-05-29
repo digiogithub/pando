@@ -649,12 +649,36 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 		acpCoord.SetPublisher(acpPub)
 		dbproxy.RegisterHandlersWithCoordinator(acpBus, acpCoord)
 		bridge.RegisterHandlers(acpBus, acpInstanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+		pandoApp.SetupIPC(acpBus)
 		if busErr := acpBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
 			logger.Printf("IPC: ACP bus failed to start (instances browser will not see this instance): %v", busErr)
 		} else {
 			acpBridge := bridge.New(acpBus, pandoApp.Sessions, pandoApp.CoderAgent)
 			acpBridge.Start(ctx)
+			rt.Watcher.Start(ctx)
 		}
+	} else {
+		busSetupFunc := func(busCtx context.Context, newBus *ipc.Bus, rwConn *sql.DB) error {
+			coord := writecoordinator.New(busCtx, db.New(rwConn), 256)
+			pub := changepub.NewBusPublisher(newBus.Publish, acpInstanceID, cwd)
+			coord.SetPublisher(pub)
+			dbproxy.RegisterHandlersWithCoordinator(newBus, coord)
+			bridge.RegisterHandlers(newBus, acpInstanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+			br := bridge.New(newBus, pandoApp.Sessions, pandoApp.CoderAgent)
+			br.Start(busCtx)
+			return nil
+		}
+		pandoApp.SetIPCSecondaryContext(
+			rt.IPCClient,
+			rt.SQLDB,
+			cwd,
+			acpInstanceID,
+			rt.PubPort,
+			rt.RPCPort,
+			rt.Watcher,
+			busSetupFunc,
+		)
+		rt.Watcher.SetPromoteCallback(pandoApp.PromoteToPrimary)
 	}
 
 	// Build adapters (defined below) that bridge internal services to ACP interfaces,
@@ -801,6 +825,13 @@ func (a *acpAgentAdapter) SetModelOverride(modelID string) error {
 	return config.OverrideAgentModel(config.AgentCoder, models.ModelID(modelID))
 }
 
+func (a *acpAgentAdapter) SetSessionLLMOverrides(sessionID string, overrides acpPkg.SessionLLMOverrides) {
+	agent.SetSessionLLMOverrides(sessionID, agent.SessionLLMOverrides{
+		ReasoningEffort: overrides.ReasoningEffort,
+		ThinkingMode:    config.ThinkingMode(overrides.ThinkingMode),
+	})
+}
+
 // ListPersonas returns all available persona names.
 func (a *acpAgentAdapter) ListPersonas() []string {
 	return agent.ListAvailablePersonas()
@@ -884,6 +915,14 @@ func (a *acpSessionAdapter) ListSessions(ctx context.Context) ([]acpPkg.ACPSessi
 		}
 	}
 	return result, nil
+}
+
+func (a *acpSessionAdapter) GetACPSessionState(ctx context.Context, sessionID string) (string, error) {
+	return a.svc.GetACPSessionState(ctx, sessionID)
+}
+
+func (a *acpSessionAdapter) SaveACPSessionState(ctx context.Context, sessionID string, state string) error {
+	return a.svc.SaveACPSessionState(ctx, sessionID, state)
 }
 
 func (a *acpSessionAdapter) GetActiveGoal(ctx context.Context, sessionID string) (db.SessionGoal, error) {

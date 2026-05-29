@@ -286,6 +286,16 @@ func (o *openaiClient) stream(ctx context.Context, messages []message.Message, t
 	eventChan := make(chan ProviderEvent)
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logging.Error("OpenAI stream goroutine panic", fmt.Errorf("%v", r))
+				select {
+				case eventChan <- ProviderEvent{Type: EventError, Error: fmt.Errorf("stream panic: %v", r)}:
+				default:
+				}
+				close(eventChan)
+			}
+		}()
 		for {
 			attempts++
 			if cfg.Debug {
@@ -329,7 +339,20 @@ func (o *openaiClient) stream(ctx context.Context, messages []message.Message, t
 
 			err := openaiStream.Err()
 			if err == nil || errors.Is(err, io.EOF) {
-				// Stream completed successfully
+				// Stream completed successfully.
+				// Guard against empty choices (e.g. Ollama returning zero tokens when
+				// the model is overloaded or cannot handle the request).
+				if len(acc.ChatCompletion.Choices) == 0 {
+					logging.Warn("OpenAI stream completed with no choices", "model", o.providerOptions.model.APIModel)
+					eventChan <- ProviderEvent{Type: EventComplete, Response: &ProviderResponse{
+						Content:      currentContent,
+						ToolCalls:    toolCalls,
+						Usage:        o.usage(acc.ChatCompletion),
+						FinishReason: message.FinishReasonUnknown,
+					}}
+					close(eventChan)
+					return
+				}
 				finishReason := o.finishReason(string(acc.ChatCompletion.Choices[0].FinishReason))
 				if len(acc.ChatCompletion.Choices[0].Message.ToolCalls) > 0 {
 					toolCalls = append(toolCalls, o.toolCalls(acc.ChatCompletion)...)

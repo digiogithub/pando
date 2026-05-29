@@ -1827,6 +1827,13 @@ func (a *appACPAgentAdapter) SetModelOverride(modelID string) error {
 	return config.OverrideAgentModel(config.AgentCoder, models.ModelID(modelID))
 }
 
+func (a *appACPAgentAdapter) SetSessionLLMOverrides(sessionID string, overrides mesnadaACP.SessionLLMOverrides) {
+	agent.SetSessionLLMOverrides(sessionID, agent.SessionLLMOverrides{
+		ReasoningEffort: overrides.ReasoningEffort,
+		ThinkingMode:    config.ThinkingMode(overrides.ThinkingMode),
+	})
+}
+
 func (a *appACPAgentAdapter) ListPersonas() []string             { return agent.ListAvailablePersonas() }
 func (a *appACPAgentAdapter) GetActivePersona() string           { return agent.GetActivePersona() }
 func (a *appACPAgentAdapter) SetActivePersona(name string) error { return agent.SetActivePersona(name) }
@@ -1886,6 +1893,10 @@ func (a *appACPSessionAdapter) ListSessions(ctx context.Context) ([]mesnadaACP.A
 	return result, nil
 }
 
+func (a *appACPSessionAdapter) GetACPSessionState(ctx context.Context, sessionID string) (string, error) {
+	return a.svc.GetACPSessionState(ctx, sessionID)
+}
+
 func (a *appACPSessionAdapter) GetActiveGoal(ctx context.Context, sessionID string) (db.SessionGoal, error) {
 	return a.q.GetActiveGoal(ctx, sessionID)
 }
@@ -1912,6 +1923,10 @@ func (a *appACPSessionAdapter) CancelGoal(ctx context.Context, sessionID string)
 
 func (a *appACPSessionAdapter) GetMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
 	return a.msgSvc.List(ctx, sessionID)
+}
+
+func (a *appACPSessionAdapter) SaveACPSessionState(ctx context.Context, sessionID string, state string) error {
+	return a.svc.SaveACPSessionState(ctx, sessionID, state)
 }
 
 // ---------------------------------------------------------------------------

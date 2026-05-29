@@ -3,7 +3,9 @@ package session
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/db"
@@ -96,16 +98,24 @@ type Service interface {
 	Create(ctx context.Context, title string) (Session, error)
 	CreateTitleSession(ctx context.Context, parentSessionID string) (Session, error)
 	CreateTaskSession(ctx context.Context, toolCallID, parentSessionID, title string) (Session, error)
+	GetACPSessionState(ctx context.Context, sessionID string) (string, error)
 	Get(ctx context.Context, id string) (Session, error)
 	List(ctx context.Context) ([]Session, error)
+	SaveACPSessionState(ctx context.Context, sessionID string, state string) error
 	Save(ctx context.Context, session Session) (Session, error)
 	Delete(ctx context.Context, id string) error
 	EndSession(ctx context.Context, id string) error
 }
 
+type acpStateQuerier interface {
+	GetSessionACPState(ctx context.Context, id string) (sql.NullString, error)
+	UpdateSessionACPState(ctx context.Context, arg db.UpdateSessionACPStateParams) error
+}
+
 type service struct {
 	*pubsub.Broker[Session]
-	q db.Querier
+	q        db.Querier
+	acpState acpStateQuerier
 }
 
 func (s *service) Create(ctx context.Context, title string) (Session, error) {
@@ -213,6 +223,20 @@ func (s *service) Get(ctx context.Context, id string) (Session, error) {
 	return session, nil
 }
 
+func (s *service) GetACPSessionState(ctx context.Context, sessionID string) (string, error) {
+	if s.acpState == nil {
+		return "", errors.New("ACP session state persistence is not available")
+	}
+	state, err := s.acpState.GetSessionACPState(ctx, sessionID)
+	if err != nil {
+		return "", err
+	}
+	if !state.Valid {
+		return "", nil
+	}
+	return state.String, nil
+}
+
 func (s *service) Save(ctx context.Context, session Session) (Session, error) {
 	dbSession, err := s.q.UpdateSession(ctx, db.UpdateSessionParams{
 		ID:               session.ID,
@@ -233,6 +257,20 @@ func (s *service) Save(ctx context.Context, session Session) (Session, error) {
 	s.publishIPC(ipcTopicSessionUpdate, ipcPayloadFromSession(session))
 	logging.Debug("Session saved", "sessionID", session.ID, "title", session.Title)
 	return session, nil
+}
+
+func (s *service) SaveACPSessionState(ctx context.Context, sessionID string, state string) error {
+	if s.acpState == nil {
+		return errors.New("ACP session state persistence is not available")
+	}
+	state = strings.TrimSpace(state)
+	return s.acpState.UpdateSessionACPState(ctx, db.UpdateSessionACPStateParams{
+		ID: sessionID,
+		ACPState: sql.NullString{
+			String: state,
+			Valid:  state != "",
+		},
+	})
 }
 
 func (s *service) List(ctx context.Context) ([]Session, error) {
@@ -339,8 +377,10 @@ func ipcPayloadFromSession(sess Session) ipcSessionPayload {
 
 func NewService(q db.Querier) Service {
 	broker := pubsub.NewBroker[Session]()
+	acpState, _ := q.(acpStateQuerier)
 	return &service{
-		broker,
-		q,
+		Broker:   broker,
+		q:        q,
+		acpState: acpState,
 	}
 }

@@ -315,6 +315,10 @@ func RenderClaude(cfg CanonicalConfig, workDir string) ClaudeConfig {
 			item.Cwd = resolveCwd(server.Cwd, absWorkDir)
 		}
 
+		if strings.EqualFold(name, "pando") && item.Command == server.Command {
+			item.Cwd = ""
+		}
+
 		out.MCPServers[name] = item
 	}
 
@@ -338,6 +342,10 @@ func RenderGemini(cfg CanonicalConfig, workDir string) GeminiSettings {
 			item.Args = server.Args
 			item.Env = server.Env
 			item.Cwd = resolveCwd(server.Cwd, absWorkDir)
+		}
+
+		if strings.EqualFold(name, "pando") && item.Command == server.Command {
+			item.Cwd = ""
 		}
 
 		out.MCPServers[name] = item

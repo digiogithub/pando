@@ -7,13 +7,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	llmmodels "github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/message"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
@@ -101,9 +104,62 @@ func TestMessageChunkHelpersSetMessageID(t *testing.T) {
 	}
 }
 
+func TestGroupedThinkingStateFlushesOnCharThreshold(t *testing.T) {
+	var state groupedThinkingState
+	now := time.Now()
+
+	state.append(strings.Repeat("a", acpGroupedThinkingFlushChars-1), now)
+	if text, reason := state.readyText(now.Add(10*time.Millisecond), false); text != "" || reason != "" {
+		t.Fatalf("expected no flush below char threshold, got %q", text)
+	}
+
+	state.append("b", now.Add(20*time.Millisecond))
+	if text, reason := state.readyText(now.Add(30*time.Millisecond), false); len(text) != acpGroupedThinkingFlushChars || reason != "size" {
+		t.Fatalf("expected grouped flush at char threshold, got length %d", len(text))
+	}
+}
+
+func TestGroupedThinkingStateFlushesOnTimeThreshold(t *testing.T) {
+	var state groupedThinkingState
+	now := time.Now()
+
+	state.append("thinking", now)
+	if text, reason := state.readyText(now.Add(acpGroupedThinkingFlushInterval-time.Millisecond), false); text != "" || reason != "" {
+		t.Fatalf("expected no flush before time threshold, got %q", text)
+	}
+	if text, reason := state.readyText(now.Add(acpGroupedThinkingFlushInterval), false); text != "thinking" || reason != "time" {
+		t.Fatalf("expected time-based flush, got %q", text)
+	}
+}
+
+func TestGroupedThinkingStateMarkFlushedResetsPending(t *testing.T) {
+	var state groupedThinkingState
+	now := time.Now()
+
+	state.append("first", now)
+	if text, reason := state.readyText(now, true); text != "first" || reason != "forced" {
+		t.Fatalf("expected forced flush text, got %q", text)
+	}
+
+	flushedAt := now.Add(25 * time.Millisecond)
+	state.markFlushed(flushedAt)
+	if text, reason := state.readyText(flushedAt, true); text != "" || reason != "" {
+		t.Fatalf("expected pending buffer to reset after flush, got %q", text)
+	}
+
+	state.append("next", flushedAt.Add(10*time.Millisecond))
+	if text, reason := state.readyText(flushedAt.Add(20*time.Millisecond), false); text != "" || reason != "" {
+		t.Fatalf("expected timer to restart after flush, got %q", text)
+	}
+}
+
 func TestProcessPromptWithAgentEmitsUserMessageChunk(t *testing.T) {
-	agent := newTestPandoAgent()
+	agent := newTestPandoAgentWithModels(string(llmmodels.Claude46Sonnet), ACPModelInfo{
+		ID:   string(llmmodels.Claude46Sonnet),
+		Name: "Claude Sonnet 4.6",
+	})
 	acpSession := NewACPServerSession(acpsdk.SessionId("session-1"), "/tmp", nil, "pando-session-1")
+	acpSession.SetThinkingMode(thinkingModeDisabled)
 
 	stopReason, err := agent.processPromptWithAgent(context.Background(), acpSession, "hello world")
 	if err != nil {
@@ -119,6 +175,11 @@ func TestProcessPromptWithAgentEmitsUserMessageChunk(t *testing.T) {
 	}
 	if got := *update.UserMessageChunk.MessageId; got != "pando-session-1-user" {
 		t.Fatalf("unexpected user messageId: %q", got)
+	}
+
+	mockSvc := agent.agentService.(*mockAgentService)
+	if got := mockSvc.sessionOverrides[acpSession.PandoSessionID()]; got.ReasoningEffort != "" || got.ThinkingMode != thinkingModeDisabled {
+		t.Fatalf("expected normalized session overrides to be forwarded before Run, got %#v", got)
 	}
 }
 
@@ -309,6 +370,9 @@ type mockAgentService struct {
 	goalObjective      string
 	summarizeSessionID string
 	lastRunMessages    []string
+	currentModel       string
+	availableModels    []ACPModelInfo
+	sessionOverrides   map[string]SessionLLMOverrides
 }
 
 func (m *mockAgentService) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
@@ -343,18 +407,36 @@ func (m *mockAgentService) LastRunSystemMessages(sessionID string) []string {
 }
 
 func (m *mockAgentService) CurrentModelID() string {
+	if strings.TrimSpace(m.currentModel) != "" {
+		return strings.TrimSpace(m.currentModel)
+	}
 	return "test-model"
 }
 
 func (m *mockAgentService) AvailableModels() []ACPModelInfo {
+	if len(m.availableModels) > 0 {
+		return append([]ACPModelInfo(nil), m.availableModels...)
+	}
+	current := m.CurrentModelID()
 	return []ACPModelInfo{
-		{ID: "test-model", Name: "Test Model"},
+		{ID: current, Name: "Test Model"},
 	}
 }
 
 func (m *mockAgentService) SetModelOverride(modelID string) error {
 	m.modelOverride = modelID
 	return m.modelOverrideErr
+}
+
+func (m *mockAgentService) SetSessionLLMOverrides(sessionID string, overrides SessionLLMOverrides) {
+	if m.sessionOverrides == nil {
+		m.sessionOverrides = make(map[string]SessionLLMOverrides)
+	}
+	if overrides.ReasoningEffort == "" && overrides.ThinkingMode == "" {
+		delete(m.sessionOverrides, sessionID)
+		return
+	}
+	m.sessionOverrides[sessionID] = overrides
 }
 
 func (m *mockAgentService) ListPersonas() []string {
@@ -385,16 +467,18 @@ func (m *mockAgentService) OpenClaudeUsage() error {
 
 // mockSessionService is a test double for SessionService.
 type mockSessionService struct {
-	sessions map[string]ACPSessionInfo
-	goals    map[string]db.SessionGoal
-	created  []string
-	counter  int
+	sessions  map[string]ACPSessionInfo
+	acpStates map[string]string
+	goals     map[string]db.SessionGoal
+	created   []string
+	counter   int
 }
 
 func newMockSessionService() *mockSessionService {
 	return &mockSessionService{
-		sessions: make(map[string]ACPSessionInfo),
-		goals:    make(map[string]db.SessionGoal),
+		sessions:  make(map[string]ACPSessionInfo),
+		acpStates: make(map[string]string),
+		goals:     make(map[string]db.SessionGoal),
 	}
 }
 
@@ -422,8 +506,17 @@ func (m *mockSessionService) ListSessions(ctx context.Context) ([]ACPSessionInfo
 	return result, nil
 }
 
+func (m *mockSessionService) GetACPSessionState(ctx context.Context, sessionID string) (string, error) {
+	return m.acpStates[sessionID], nil
+}
+
 func (m *mockSessionService) GetMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
 	return nil, nil
+}
+
+func (m *mockSessionService) SaveACPSessionState(ctx context.Context, sessionID string, state string) error {
+	m.acpStates[sessionID] = state
+	return nil
 }
 
 func (m *mockSessionService) GetActiveGoal(ctx context.Context, sessionID string) (db.SessionGoal, error) {
@@ -489,6 +582,73 @@ func newTestPandoAgent() *PandoACPAgent {
 	agent := &mockAgentService{}
 	sessions := newMockSessionService()
 	return NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), agent, sessions, nil)
+}
+
+func newTestPandoAgentWithModels(currentModel string, availableModels ...ACPModelInfo) *PandoACPAgent {
+	agent := &mockAgentService{
+		currentModel:    currentModel,
+		availableModels: append([]ACPModelInfo(nil), availableModels...),
+	}
+	sessions := newMockSessionService()
+	return NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), agent, sessions, nil)
+}
+
+func sessionConfigValuesByID(t *testing.T, opts []acpsdk.SessionConfigOption) map[string]string {
+	t.Helper()
+
+	values := make(map[string]string, len(opts))
+	for _, opt := range opts {
+		if opt.Select == nil {
+			t.Fatalf("expected select config option, got %+v", opt)
+		}
+		values[string(opt.Select.Id)] = string(opt.Select.CurrentValue)
+	}
+	return values
+}
+
+func sessionConfigOptionByID(t *testing.T, opts []acpsdk.SessionConfigOption, id string) acpsdk.SessionConfigOption {
+	t.Helper()
+
+	for _, opt := range opts {
+		if opt.Select != nil && string(opt.Select.Id) == id {
+			return opt
+		}
+	}
+	t.Fatalf("expected config option %q in %+v", id, opts)
+	return acpsdk.SessionConfigOption{}
+}
+
+func configOptionValueDescriptionsByID(t *testing.T, opt acpsdk.SessionConfigOption) map[string]string {
+	t.Helper()
+
+	if opt.Select == nil || opt.Select.Options.Ungrouped == nil {
+		t.Fatalf("expected ungrouped select option, got %+v", opt)
+	}
+	descriptions := make(map[string]string, len(*opt.Select.Options.Ungrouped))
+	for _, value := range *opt.Select.Options.Ungrouped {
+		if value.Description != nil {
+			descriptions[string(value.Value)] = *value.Description
+			continue
+		}
+		descriptions[string(value.Value)] = ""
+	}
+	return descriptions
+}
+
+func unstableSessionConfigValuesByID(t *testing.T, opts []acpsdk.UnstableSessionConfigOption) map[string]string {
+	t.Helper()
+
+	raw, err := json.Marshal(opts)
+	if err != nil {
+		t.Fatalf("marshal unstable config options: %v", err)
+	}
+
+	var stable []acpsdk.SessionConfigOption
+	if err := json.Unmarshal(raw, &stable); err != nil {
+		t.Fatalf("unmarshal unstable config options: %v", err)
+	}
+
+	return sessionConfigValuesByID(t, stable)
 }
 
 func TestACPServerSessionCancelResetsRunContextWithoutBreakingUpdates(t *testing.T) {
@@ -1799,6 +1959,17 @@ func TestPandoACPAgent_SetSessionConfigOption_SplitsModePermissionAndAgent(t *te
 		t.Fatalf("SetSessionConfigOption(askPermission) failed: %v", err)
 	}
 
+	thinkingResp, err := agent.SetSessionConfigOption(ctx, acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{
+			SessionId: resp.SessionId,
+			ConfigId:  acpsdk.SessionConfigId(sessionConfigThinkingStreamModeID),
+			Value:     acpsdk.SessionConfigValueId(thinkingStreamModeFull),
+		},
+	})
+	if err != nil {
+		t.Fatalf("SetSessionConfigOption(thinking_stream_mode) failed: %v", err)
+	}
+
 	agentResp, err := agent.SetSessionConfigOption(ctx, acpsdk.SetSessionConfigOptionRequest{
 		ValueId: &acpsdk.SetSessionConfigOptionValueId{
 			SessionId: resp.SessionId,
@@ -1826,13 +1997,16 @@ func TestPandoACPAgent_SetSessionConfigOption_SplitsModePermissionAndAgent(t *te
 	if !acpSess.PermissionConfigured() {
 		t.Fatal("expected explicit askPermission selection to mark permissionConfigured")
 	}
+	if acpSess.ThinkingStreamMode() != thinkingStreamModeFull {
+		t.Fatalf("expected thinking stream mode %q, got %q", thinkingStreamModeFull, acpSess.ThinkingStreamMode())
+	}
 	if acpSess.Persona() != "assistant" {
 		t.Fatalf("expected persona %q, got %q", "assistant", acpSess.Persona())
 	}
 
-	for _, cfgResp := range []acpsdk.SetSessionConfigOptionResponse{modeResp, modelResp, askPermResp, agentResp} {
-		if len(cfgResp.ConfigOptions) != 4 {
-			t.Fatalf("expected 4 config options in response, got %d", len(cfgResp.ConfigOptions))
+	for _, cfgResp := range []acpsdk.SetSessionConfigOptionResponse{modeResp, modelResp, askPermResp, thinkingResp, agentResp} {
+		if len(cfgResp.ConfigOptions) != 5 {
+			t.Fatalf("expected 5 config options in response, got %d", len(cfgResp.ConfigOptions))
 		}
 	}
 }
@@ -1853,17 +2027,11 @@ func TestPandoACPAgent_NewSessionResponse_UsesSeparatedACPSelectors(t *testing.T
 		t.Fatalf("expected 3 legacy modes, got %d", len(resp.Modes.AvailableModes))
 	}
 
-	if len(resp.ConfigOptions) != 4 {
-		t.Fatalf("expected 4 config options, got %d", len(resp.ConfigOptions))
+	if len(resp.ConfigOptions) != 5 {
+		t.Fatalf("expected 5 config options, got %d", len(resp.ConfigOptions))
 	}
 
-	got := map[string]string{}
-	for _, opt := range resp.ConfigOptions {
-		if opt.Select == nil {
-			t.Fatalf("expected select config option, got %+v", opt)
-		}
-		got[string(opt.Select.Id)] = string(opt.Select.CurrentValue)
-	}
+	got := sessionConfigValuesByID(t, resp.ConfigOptions)
 
 	if got[sessionConfigModelID] != "test-model" {
 		t.Fatalf("expected model currentValue %q, got %q", "test-model", got[sessionConfigModelID])
@@ -1874,9 +2042,430 @@ func TestPandoACPAgent_NewSessionResponse_UsesSeparatedACPSelectors(t *testing.T
 	if got[sessionConfigAskPermissionID] != askPermissionNoValue {
 		t.Fatalf("expected askPermission currentValue %q, got %q", askPermissionNoValue, got[sessionConfigAskPermissionID])
 	}
+	if got[sessionConfigThinkingStreamModeID] != thinkingStreamModeGrouped {
+		t.Fatalf("expected thinking stream mode currentValue %q, got %q", thinkingStreamModeGrouped, got[sessionConfigThinkingStreamModeID])
+	}
 	if got[sessionConfigAgentID] != "default" {
 		t.Fatalf("expected agent currentValue %q, got %q", "default", got[sessionConfigAgentID])
 	}
+}
+
+func TestPandoACPAgent_NewSessionResponse_ModelAwareThinkingOptions(t *testing.T) {
+	reasoningModelID := llmmodels.ModelID("test.reasoning-effort-model")
+	llmmodels.SupportedModels[reasoningModelID] = llmmodels.Model{
+		ID:                      reasoningModelID,
+		Name:                    "Reasoning Effort Test Model",
+		Provider:                llmmodels.ProviderOpenAI,
+		CanReason:               true,
+		SupportsReasoningEffort: true,
+	}
+	defer delete(llmmodels.SupportedModels, reasoningModelID)
+
+	availableModels := []ACPModelInfo{
+		{ID: string(llmmodels.Claude46Sonnet), Name: "Claude Sonnet 4.6"},
+		{ID: string(llmmodels.Claude3Haiku), Name: "Claude 3 Haiku"},
+		{ID: string(reasoningModelID), Name: "Reasoning Effort Test Model"},
+	}
+
+	testCases := []struct {
+		name         string
+		currentModel string
+		wantPresent  []string
+		wantAbsent   []string
+	}{
+		{
+			name:         "anthropic reasoning model shows thinking mode",
+			currentModel: string(llmmodels.Claude46Sonnet),
+			wantPresent:  []string{sessionConfigThinkingStreamModeID, sessionConfigThinkingModeID},
+			wantAbsent:   []string{sessionConfigReasoningEffortID},
+		},
+		{
+			name:         "reasoning effort model shows reasoning effort",
+			currentModel: string(reasoningModelID),
+			wantPresent:  []string{sessionConfigThinkingStreamModeID, sessionConfigReasoningEffortID},
+			wantAbsent:   []string{sessionConfigThinkingModeID},
+		},
+		{
+			name:         "non reasoning model hides inference reasoning controls",
+			currentModel: string(llmmodels.Claude3Haiku),
+			wantPresent:  []string{sessionConfigThinkingStreamModeID},
+			wantAbsent:   []string{sessionConfigReasoningEffortID, sessionConfigThinkingModeID},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := newTestPandoAgentWithModels(tc.currentModel, availableModels...)
+			resp, err := agent.NewSession(context.Background(), acpsdk.NewSessionRequest{Cwd: "/tmp"})
+			if err != nil {
+				t.Fatalf("NewSession failed: %v", err)
+			}
+
+			got := sessionConfigValuesByID(t, resp.ConfigOptions)
+			for _, optionID := range tc.wantPresent {
+				if _, ok := got[optionID]; !ok {
+					t.Fatalf("expected config option %q to be present, got %v", optionID, got)
+				}
+			}
+			for _, optionID := range tc.wantAbsent {
+				if _, ok := got[optionID]; ok {
+					t.Fatalf("expected config option %q to be absent, got %v", optionID, got)
+				}
+			}
+		})
+	}
+}
+
+func TestPandoACPAgent_NewSession_DefaultsThinkingOverridesForReasoningModel(t *testing.T) {
+	availableModels := []ACPModelInfo{
+		{ID: string(llmmodels.Claude46Sonnet), Name: "Claude Sonnet 4.6"},
+	}
+	agent := newTestPandoAgentWithModels(string(llmmodels.Claude46Sonnet), availableModels...)
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	acpSession, err := agent.getSession(resp.SessionId)
+	if err != nil {
+		t.Fatalf("getSession failed: %v", err)
+	}
+	if acpSession.ThinkingStreamMode() != defaultACPThinkingStreamMode {
+		t.Fatalf("expected thinking_stream_mode %q, got %q", defaultACPThinkingStreamMode, acpSession.ThinkingStreamMode())
+	}
+	if acpSession.ThinkingMode() != defaultACPThinkingMode {
+		t.Fatalf("expected thinking_mode %q, got %q", defaultACPThinkingMode, acpSession.ThinkingMode())
+	}
+	if acpSession.ReasoningEffort() != "" {
+		t.Fatalf("expected reasoning_effort to remain empty for anthropic model, got %q", acpSession.ReasoningEffort())
+	}
+
+	values := sessionConfigValuesByID(t, resp.ConfigOptions)
+	if got := values[sessionConfigThinkingStreamModeID]; got != defaultACPThinkingStreamMode {
+		t.Fatalf("expected thinking_stream_mode currentValue %q, got %q", defaultACPThinkingStreamMode, got)
+	}
+	if got := values[sessionConfigThinkingModeID]; got != defaultACPThinkingMode {
+		t.Fatalf("expected thinking_mode currentValue %q, got %q", defaultACPThinkingMode, got)
+	}
+
+	if _, err := agent.processPromptWithAgent(ctx, acpSession, "hello world"); err != nil {
+		t.Fatalf("processPromptWithAgent failed: %v", err)
+	}
+	mockSvc := agent.agentService.(*mockAgentService)
+	if got := mockSvc.sessionOverrides[acpSession.PandoSessionID()]; got.ThinkingMode != defaultACPThinkingMode || got.ReasoningEffort != "" {
+		t.Fatalf("expected default thinking override to be forwarded, got %#v", got)
+	}
+
+	rawState := agent.sessionService.(*mockSessionService).acpStates[acpSession.PandoSessionID()]
+	state, err := unmarshalPersistedACPState(rawState)
+	if err != nil {
+		t.Fatalf("unmarshal persisted ACP state: %v", err)
+	}
+	if state.Model != string(llmmodels.Claude46Sonnet) {
+		t.Fatalf("expected persisted model %q, got %q", llmmodels.Claude46Sonnet, state.Model)
+	}
+	if state.ThinkingMode != defaultACPThinkingMode {
+		t.Fatalf("expected persisted thinking_mode %q, got %q", defaultACPThinkingMode, state.ThinkingMode)
+	}
+	if state.ThinkingStreamMode != defaultACPThinkingStreamMode {
+		t.Fatalf("expected persisted thinking_stream_mode %q, got %q", defaultACPThinkingStreamMode, state.ThinkingStreamMode)
+	}
+}
+
+func TestPandoACPAgent_ModelChange_ClearsIncompatibleThinkingOverrides(t *testing.T) {
+	reasoningModelID := llmmodels.ModelID("test.reasoning-effort-model")
+	llmmodels.SupportedModels[reasoningModelID] = llmmodels.Model{
+		ID:                      reasoningModelID,
+		Name:                    "Reasoning Effort Test Model",
+		Provider:                llmmodels.ProviderOpenAI,
+		CanReason:               true,
+		SupportsReasoningEffort: true,
+	}
+	defer delete(llmmodels.SupportedModels, reasoningModelID)
+
+	availableModels := []ACPModelInfo{
+		{ID: string(llmmodels.Claude46Sonnet), Name: "Claude Sonnet 4.6"},
+		{ID: string(llmmodels.Claude3Haiku), Name: "Claude 3 Haiku"},
+		{ID: string(reasoningModelID), Name: "Reasoning Effort Test Model"},
+	}
+	agent := newTestPandoAgentWithModels(string(llmmodels.Claude46Sonnet), availableModels...)
+	ctx := context.Background()
+
+	var updates bytes.Buffer
+	conn := acpsdk.NewAgentSideConnection(
+		NewSimpleACPAgent("1.0.0-test", log.New(io.Discard, "", 0)),
+		&updates,
+		bytes.NewReader(nil),
+	)
+	agent.SetConnection(conn)
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	if _, err := agent.SetSessionConfigOption(ctx, acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{
+			SessionId: resp.SessionId,
+			ConfigId:  acpsdk.SessionConfigId(sessionConfigThinkingModeID),
+			Value:     acpsdk.SessionConfigValueId(thinkingModeHigh),
+		},
+	}); err != nil {
+		t.Fatalf("SetSessionConfigOption(thinking_mode) failed: %v", err)
+	}
+
+	acpSession, err := agent.getSession(resp.SessionId)
+	if err != nil {
+		t.Fatalf("getSession failed: %v", err)
+	}
+	if acpSession.ThinkingMode() != thinkingModeHigh {
+		t.Fatalf("expected thinking mode %q, got %q", thinkingModeHigh, acpSession.ThinkingMode())
+	}
+
+	modelResp, err := agent.SetSessionConfigOption(ctx, acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{
+			SessionId: resp.SessionId,
+			ConfigId:  acpsdk.SessionConfigId(sessionConfigModelID),
+			Value:     acpsdk.SessionConfigValueId(string(reasoningModelID)),
+		},
+	})
+	if err != nil {
+		t.Fatalf("SetSessionConfigOption(model) failed: %v", err)
+	}
+
+	if acpSession.ThinkingMode() != "" {
+		t.Fatalf("expected incompatible thinking mode to be cleared, got %q", acpSession.ThinkingMode())
+	}
+	if acpSession.ReasoningEffort() != defaultACPReasoningEffort {
+		t.Fatalf("expected reasoning effort to default to %q, got %q", defaultACPReasoningEffort, acpSession.ReasoningEffort())
+	}
+	modelValues := sessionConfigValuesByID(t, modelResp.ConfigOptions)
+	if _, ok := modelValues[sessionConfigThinkingModeID]; ok {
+		t.Fatalf("expected thinking_mode option to be removed after model switch, got %v", modelValues)
+	}
+	if got := modelValues[sessionConfigReasoningEffortID]; got != defaultACPReasoningEffort {
+		t.Fatalf("expected reasoning_effort currentValue %q, got %q", defaultACPReasoningEffort, got)
+	}
+
+	if _, err := agent.SetSessionConfigOption(ctx, acpsdk.SetSessionConfigOptionRequest{
+		ValueId: &acpsdk.SetSessionConfigOptionValueId{
+			SessionId: resp.SessionId,
+			ConfigId:  acpsdk.SessionConfigId(sessionConfigReasoningEffortID),
+			Value:     acpsdk.SessionConfigValueId(reasoningEffortHigh),
+		},
+	}); err != nil {
+		t.Fatalf("SetSessionConfigOption(reasoning_effort) failed: %v", err)
+	}
+	if acpSession.ReasoningEffort() != reasoningEffortHigh {
+		t.Fatalf("expected reasoning effort %q, got %q", reasoningEffortHigh, acpSession.ReasoningEffort())
+	}
+
+	updates.Reset()
+	if _, err := agent.UnstableSetSessionModel(ctx, acpsdk.UnstableSetSessionModelRequest{
+		SessionId: resp.SessionId,
+		ModelId:   acpsdk.UnstableModelId(llmmodels.Claude3Haiku),
+	}); err != nil {
+		t.Fatalf("UnstableSetSessionModel failed: %v", err)
+	}
+
+	if acpSession.ReasoningEffort() != "" {
+		t.Fatalf("expected incompatible reasoning effort to be cleared, got %q", acpSession.ReasoningEffort())
+	}
+	rawUpdates := updates.String()
+	if !strings.Contains(rawUpdates, sessionConfigThinkingStreamModeID) || strings.Contains(rawUpdates, sessionConfigReasoningEffortID) || strings.Contains(rawUpdates, sessionConfigThinkingModeID) {
+		t.Fatalf("expected refreshed config options for non-reasoning model, got raw updates: %s", rawUpdates)
+	}
+}
+
+func TestPandoACPAgent_ProcessAgentEventStream_HonorsThinkingStreamMode(t *testing.T) {
+	testCases := []struct {
+		name string
+		mode string
+		want []string
+	}{
+		{
+			name: "off streams only final reasoning",
+			mode: thinkingStreamModeOff,
+			want: []string{"alphabeta"},
+		},
+		{
+			name: "grouped flushes buffered reasoning once",
+			mode: thinkingStreamModeGrouped,
+			want: []string{"alphabeta"},
+		},
+		{
+			name: "full streams each thinking delta",
+			mode: thinkingStreamModeFull,
+			want: []string{"alpha", "beta"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := newTestPandoAgent()
+			acpSession, updates := newThoughtCaptureSession(t)
+			acpSession.SetThinkingStreamMode(tc.mode)
+
+			eventChan := make(chan AgentEvent, 3)
+			eventChan <- AgentEvent{Type: AgentEventTypeThinkingDelta, Delta: "alpha"}
+			eventChan <- AgentEvent{Type: AgentEventTypeThinkingDelta, Delta: "beta"}
+			eventChan <- AgentEvent{
+				Type: AgentEventTypeResponse,
+				Message: message.Message{
+					ID: "assistant-msg-1",
+					Parts: []message.ContentPart{
+						message.ReasoningContent{Thinking: "alphabeta"},
+					},
+				},
+			}
+			close(eventChan)
+
+			stopReason, err := agent.processAgentEventStream(context.Background(), acpSession, eventChan)
+			if err != nil {
+				t.Fatalf("processAgentEventStream failed: %v", err)
+			}
+			if stopReason != acpsdk.StopReasonEndTurn {
+				t.Fatalf("unexpected stop reason: %q", stopReason)
+			}
+
+			if got := thoughtUpdateTexts(t, updates.String()); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("unexpected thought updates for mode %q: got %#v want %#v\nraw=%s", tc.mode, got, tc.want, updates.String())
+			}
+		})
+	}
+}
+
+func TestPandoACPAgent_ProcessAgentEventStream_LogsGroupedThinkingFlush(t *testing.T) {
+	var logs bytes.Buffer
+	logger := log.New(&logs, "", 0)
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", logger, &mockAgentService{}, newMockSessionService(), nil)
+	acpSession, _ := newThoughtCaptureSession(t)
+	acpSession.SetThinkingStreamMode(thinkingStreamModeGrouped)
+
+	eventChan := make(chan AgentEvent, 2)
+	eventChan <- AgentEvent{Type: AgentEventTypeThinkingDelta, Delta: strings.Repeat("x", acpGroupedThinkingFlushChars)}
+	eventChan <- AgentEvent{
+		Type: AgentEventTypeResponse,
+		Message: message.Message{
+			ID: "assistant-msg-1",
+			Parts: []message.ContentPart{
+				message.ReasoningContent{Thinking: strings.Repeat("x", acpGroupedThinkingFlushChars)},
+			},
+		},
+	}
+	close(eventChan)
+
+	if _, err := agent.processAgentEventStream(context.Background(), acpSession, eventChan); err != nil {
+		t.Fatalf("processAgentEventStream failed: %v", err)
+	}
+
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, `Applied thinking stream mode "grouped"`) {
+		t.Fatalf("expected applied thinking stream mode log, got %s", logOutput)
+	}
+	if !strings.Contains(logOutput, "Flushing grouped thinking") || !strings.Contains(logOutput, "reason=size") {
+		t.Fatalf("expected grouped thinking flush log with size reason, got %s", logOutput)
+	}
+}
+
+func TestPandoACPAgent_ProcessPromptWithAgent_LogsAppliedThinkingSettings(t *testing.T) {
+	var logs bytes.Buffer
+	logger := log.New(&logs, "", 0)
+	mockAgent := &mockAgentService{
+		currentModel: string(llmmodels.Claude46Sonnet),
+		availableModels: []ACPModelInfo{
+			{ID: string(llmmodels.Claude46Sonnet), Name: "Claude Sonnet 4.6"},
+		},
+	}
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", logger, mockAgent, newMockSessionService(), nil)
+	acpSession := NewACPServerSession(acpsdk.SessionId("session-1"), "/tmp", nil, "pando-session-1")
+	acpSession.SetModel(string(llmmodels.Claude46Sonnet))
+	acpSession.SetThinkingStreamMode(thinkingStreamModeFull)
+	acpSession.SetThinkingMode(thinkingModeHigh)
+
+	if _, err := agent.processPromptWithAgent(context.Background(), acpSession, "hello world"); err != nil {
+		t.Fatalf("processPromptWithAgent failed: %v", err)
+	}
+
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, `Applying ACP thinking settings for session session-1: stream_mode="full" reasoning_effort="" thinking_mode="high"`) {
+		t.Fatalf("expected ACP thinking settings log, got %s", logOutput)
+	}
+}
+
+func TestBuildSessionConfigOptions_ThinkingVisibilityDescriptions(t *testing.T) {
+	agent := newTestPandoAgentWithModels(string(llmmodels.Claude46Sonnet),
+		ACPModelInfo{ID: string(llmmodels.Claude46Sonnet), Name: "Claude Sonnet 4.6"},
+	)
+	session := NewACPServerSession(acpsdk.SessionId("session-1"), "/tmp", nil, "pando-session-1")
+	session.SetModel(string(llmmodels.Claude46Sonnet))
+
+	options := buildSessionConfigOptions(agent.agentService, session)
+	option := sessionConfigOptionByID(t, options, sessionConfigThinkingStreamModeID)
+	if option.Select == nil || option.Select.Description == nil {
+		t.Fatalf("expected thinking visibility description, got %+v", option)
+	}
+	if got := *option.Select.Description; got != "How reasoning is shown while the model is generating a response" {
+		t.Fatalf("unexpected thinking visibility description %q", got)
+	}
+
+	values := configOptionValueDescriptionsByID(t, option)
+	if got := values[thinkingStreamModeOff]; got != "Show only the final reasoning summary" {
+		t.Fatalf("unexpected off description %q", got)
+	}
+	if got := values[thinkingStreamModeGrouped]; got != "Show reasoning in periodic grouped blocks" {
+		t.Fatalf("unexpected grouped description %q", got)
+	}
+	if got := values[thinkingStreamModeFull]; got != "Show every reasoning chunk as it arrives; may be noisy" {
+		t.Fatalf("unexpected full description %q", got)
+	}
+}
+
+func newThoughtCaptureSession(t *testing.T) (*ACPServerSession, *bytes.Buffer) {
+	t.Helper()
+
+	var updates bytes.Buffer
+	conn := acpsdk.NewAgentSideConnection(
+		NewSimpleACPAgent("1.0.0-test", log.New(io.Discard, "", 0)),
+		&updates,
+		bytes.NewReader(nil),
+	)
+
+	return NewACPServerSession(acpsdk.SessionId("session-1"), "/tmp", conn, "pando-session-1"), &updates
+}
+
+func thoughtUpdateTexts(t *testing.T, raw string) []string {
+	t.Helper()
+
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	type notification struct {
+		Params struct {
+			Update struct {
+				SessionUpdate string `json:"sessionUpdate"`
+				Content       struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"update"`
+		} `json:"params"`
+	}
+
+	var texts []string
+	for {
+		var note notification
+		if err := decoder.Decode(&note); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			t.Fatalf("decode ACP update: %v", err)
+		}
+		if note.Params.Update.SessionUpdate == "agent_thought_chunk" {
+			texts = append(texts, note.Params.Update.Content.Text)
+		}
+	}
+
+	return texts
 }
 
 func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
@@ -1930,8 +2519,110 @@ func TestPandoACPAgent_ResumeSession_IncludesConfigOptions(t *testing.T) {
 		t.Fatalf("ResumeSession failed: %v", err)
 	}
 
-	if len(resumeResp.ConfigOptions) != 4 {
-		t.Fatalf("expected 4 resume config options, got %d", len(resumeResp.ConfigOptions))
+	if len(resumeResp.ConfigOptions) != 5 {
+		t.Fatalf("expected 5 resume config options, got %d", len(resumeResp.ConfigOptions))
+	}
+}
+
+func TestPandoACPAgent_LoadSession_RestoresPersistedACPThinkingPreferences(t *testing.T) {
+	agent := newTestPandoAgentWithModels(
+		string(llmmodels.Claude46Sonnet),
+		ACPModelInfo{ID: string(llmmodels.Claude46Sonnet), Name: "Claude Sonnet 4.6"},
+	)
+	ctx := context.Background()
+	sessID := "persisted-load-session"
+	sessionSvc := agent.sessionService.(*mockSessionService)
+	sessionSvc.sessions[sessID] = ACPSessionInfo{ID: sessID, Title: "Persisted Load"}
+
+	payload, err := json.Marshal(persistedACPState{
+		Model:              string(llmmodels.Claude46Sonnet),
+		ThinkingMode:       thinkingModeHigh,
+		ThinkingStreamMode: thinkingStreamModeFull,
+	})
+	if err != nil {
+		t.Fatalf("marshal persisted state: %v", err)
+	}
+	sessionSvc.acpStates[sessID] = string(payload)
+
+	resp, err := agent.LoadSession(ctx, acpsdk.LoadSessionRequest{
+		SessionId: acpsdk.SessionId(sessID),
+		Cwd:       "/tmp",
+	})
+	if err != nil {
+		t.Fatalf("LoadSession failed: %v", err)
+	}
+
+	acpSession, err := agent.getSession(acpsdk.SessionId(sessID))
+	if err != nil {
+		t.Fatalf("getSession failed: %v", err)
+	}
+	if acpSession.Model() != string(llmmodels.Claude46Sonnet) {
+		t.Fatalf("expected restored model %q, got %q", llmmodels.Claude46Sonnet, acpSession.Model())
+	}
+	if acpSession.ThinkingMode() != thinkingModeHigh {
+		t.Fatalf("expected restored thinking_mode %q, got %q", thinkingModeHigh, acpSession.ThinkingMode())
+	}
+	if acpSession.ThinkingStreamMode() != thinkingStreamModeFull {
+		t.Fatalf("expected restored thinking_stream_mode %q, got %q", thinkingStreamModeFull, acpSession.ThinkingStreamMode())
+	}
+
+	values := sessionConfigValuesByID(t, resp.ConfigOptions)
+	if got := values[sessionConfigThinkingModeID]; got != thinkingModeHigh {
+		t.Fatalf("expected LoadSession thinking_mode %q, got %q", thinkingModeHigh, got)
+	}
+	if got := values[sessionConfigThinkingStreamModeID]; got != thinkingStreamModeFull {
+		t.Fatalf("expected LoadSession thinking_stream_mode %q, got %q", thinkingStreamModeFull, got)
+	}
+}
+
+func TestPandoACPAgent_ResumeSession_RestoresPersistedACPThinkingPreferences(t *testing.T) {
+	agent := newTestPandoAgentWithModels(
+		string(llmmodels.Claude46Sonnet),
+		ACPModelInfo{ID: string(llmmodels.Claude46Sonnet), Name: "Claude Sonnet 4.6"},
+	)
+	ctx := context.Background()
+	sessID := "persisted-resume-session"
+	sessionSvc := agent.sessionService.(*mockSessionService)
+	sessionSvc.sessions[sessID] = ACPSessionInfo{ID: sessID, Title: "Persisted Resume"}
+
+	payload, err := json.Marshal(persistedACPState{
+		Model:              string(llmmodels.Claude46Sonnet),
+		ThinkingMode:       thinkingModeLow,
+		ThinkingStreamMode: thinkingStreamModeOff,
+	})
+	if err != nil {
+		t.Fatalf("marshal persisted state: %v", err)
+	}
+	sessionSvc.acpStates[sessID] = string(payload)
+
+	resp, err := agent.ResumeSession(ctx, acpsdk.ResumeSessionRequest{
+		SessionId: acpsdk.SessionId(sessID),
+		Cwd:       "/tmp",
+	})
+	if err != nil {
+		t.Fatalf("ResumeSession failed: %v", err)
+	}
+
+	acpSession, err := agent.getSession(acpsdk.SessionId(sessID))
+	if err != nil {
+		t.Fatalf("getSession failed: %v", err)
+	}
+	if acpSession.Model() != string(llmmodels.Claude46Sonnet) {
+		t.Fatalf("expected restored model %q, got %q", llmmodels.Claude46Sonnet, acpSession.Model())
+	}
+	if acpSession.ThinkingMode() != thinkingModeLow {
+		t.Fatalf("expected restored thinking_mode %q, got %q", thinkingModeLow, acpSession.ThinkingMode())
+	}
+	if acpSession.ThinkingStreamMode() != thinkingStreamModeOff {
+		t.Fatalf("expected restored thinking_stream_mode %q, got %q", thinkingStreamModeOff, acpSession.ThinkingStreamMode())
+	}
+
+	values := unstableSessionConfigValuesByID(t, resp.ConfigOptions)
+	if got := values[sessionConfigThinkingModeID]; got != thinkingModeLow {
+		t.Fatalf("expected ResumeSession thinking_mode %q, got %q", thinkingModeLow, got)
+	}
+	if got := values[sessionConfigThinkingStreamModeID]; got != thinkingStreamModeOff {
+		t.Fatalf("expected ResumeSession thinking_stream_mode %q, got %q", thinkingStreamModeOff, got)
 	}
 }
 

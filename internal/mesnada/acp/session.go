@@ -48,6 +48,15 @@ type ACPServerSession struct {
 	// askPermission controls whether tool calls require ACP approval prompts.
 	askPermission bool
 
+	// thinkingStreamMode controls how reasoning/thinking is streamed to ACP clients.
+	thinkingStreamMode string
+
+	// reasoningEffort stores the session-scoped ACP reasoning_effort override.
+	reasoningEffort string
+
+	// thinkingMode stores the session-scoped ACP thinking_mode override.
+	thinkingMode string
+
 	// permissionConfigured reports whether askPermission was explicitly chosen
 	// through config options instead of being inherited from legacy mode defaults.
 	permissionConfigured bool
@@ -96,13 +105,14 @@ func NewACPServerSession(
 	runCtx, runCancel := context.WithCancel(context.Background())
 
 	return &ACPServerSession{
-		ID:             sessionID,
-		WorkDir:        workDir,
-		CreatedAt:      time.Now(),
-		agentConn:      agentConn,
-		runCtx:         runCtx,
-		runCancel:      runCancel,
-		pandoSessionID: pandoSessionID,
+		ID:                 sessionID,
+		WorkDir:            workDir,
+		CreatedAt:          time.Now(),
+		agentConn:          agentConn,
+		runCtx:             runCtx,
+		runCancel:          runCancel,
+		pandoSessionID:     pandoSessionID,
+		thinkingStreamMode: defaultACPThinkingStreamMode,
 	}
 }
 
@@ -220,6 +230,48 @@ func (s *ACPServerSession) AskPermission() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.askPermission
+}
+
+// SetThinkingStreamMode stores how reasoning/thinking should be streamed to ACP clients.
+func (s *ACPServerSession) SetThinkingStreamMode(mode string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.thinkingStreamMode = normalizeThinkingStreamMode(mode)
+}
+
+// ThinkingStreamMode returns the configured ACP thinking visibility mode.
+func (s *ACPServerSession) ThinkingStreamMode() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return normalizeThinkingStreamMode(s.thinkingStreamMode)
+}
+
+// SetReasoningEffort stores the session-scoped ACP reasoning_effort override.
+func (s *ACPServerSession) SetReasoningEffort(value string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reasoningEffort = normalizeReasoningEffortValue(value)
+}
+
+// ReasoningEffort returns the stored ACP reasoning_effort override, if any.
+func (s *ACPServerSession) ReasoningEffort() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return normalizeReasoningEffortValue(s.reasoningEffort)
+}
+
+// SetThinkingMode stores the session-scoped ACP thinking_mode override.
+func (s *ACPServerSession) SetThinkingMode(value string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.thinkingMode = normalizeThinkingModeValue(value)
+}
+
+// ThinkingMode returns the stored ACP thinking_mode override, if any.
+func (s *ACPServerSession) ThinkingMode() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return normalizeThinkingModeValue(s.thinkingMode)
 }
 
 // SetPermissionConfigured records whether askPermission was explicitly selected.

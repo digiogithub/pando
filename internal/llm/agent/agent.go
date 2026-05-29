@@ -1049,12 +1049,11 @@ func (a *agent) processEvent(
 	case provider.EventThinkingDelta:
 		logging.Debug("Event: ThinkingDelta", "sessionID", sessionID, "contentLength", len(event.Thinking))
 		assistantMsg.AppendReasoningContent(event.Thinking)
-		// ThinkingDelta is delivered to TUI/WebUI subscribers via publishEvent (pubsub).
-		// It is intentionally not sent to eventCh: the ACP consumer has no handler for
-		// it and the high-frequency tokens would fill the 512-slot buffer, causing
-		// subsequent ToolCall events to be dropped. ACP receives the full reasoning
-		// content in the AgentEventTypeResponse payload.
 		a.publishEvent(AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Thinking})
+		select {
+		case eventCh <- AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Thinking}:
+		default:
+		}
 		return a.messages.Update(ctx, *assistantMsg)
 	case provider.EventContentDelta:
 		logging.Debug("Event: ContentDelta", "sessionID", sessionID, "contentLength", len(event.Content))
@@ -1728,7 +1727,9 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 
 	// For models with special provider options (reasoning effort, thinking mode),
 	// build opts explicitly using resolved account credentials.
+	sessionOverrides := sessionLLMOverridesForContext(ctx)
 	needsExtraOpts := (model.Provider == models.ProviderOpenAI && model.CanReason) ||
+		(model.Provider == models.ProviderCopilot && model.CanReason) ||
 		(model.Provider == models.ProviderLocal && model.CanReason) ||
 		(model.Provider == models.ProviderAnthropic && model.CanReason)
 
@@ -1742,13 +1743,18 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 		}
 		if (model.Provider == models.ProviderOpenAI || model.Provider == models.ProviderLocal) && model.CanReason {
 			opts = append(opts, provider.WithOpenAIOptions(
-				provider.WithReasoningEffort(agentConfig.ReasoningEffort),
+				provider.WithReasoningEffort(effectiveReasoningEffort(agentConfig, sessionOverrides)),
+			))
+		}
+		if model.Provider == models.ProviderCopilot && model.CanReason {
+			opts = append(opts, provider.WithCopilotOptions(
+				provider.WithCopilotReasoningEffort(effectiveReasoningEffort(agentConfig, sessionOverrides)),
 			))
 		}
 		if model.Provider == models.ProviderAnthropic && model.CanReason {
 			opts = append(opts, provider.WithAnthropicOptions(
-				provider.WithAnthropicThinkingMode(defaultAnthropicThinkingMode(model, agentConfig.ThinkingMode)),
-				provider.WithAnthropicReasoningEffort(agentConfig.ReasoningEffort),
+				provider.WithAnthropicThinkingMode(effectiveAnthropicThinkingMode(model, agentConfig, sessionOverrides)),
+				provider.WithAnthropicReasoningEffort(effectiveReasoningEffort(agentConfig, sessionOverrides)),
 			))
 		}
 		if acc.BaseURL != "" && model.Provider == models.ProviderOllama {
@@ -1998,7 +2004,6 @@ func trimTextToContextWindow(text string, contextWindow int64, reservation int64
 	))
 	return trimmed
 }
-
 
 // CreateAgentProvider creates a provider for the given agent name.
 // It is exported for use in app-layer code that needs a provider outside of the agent itself

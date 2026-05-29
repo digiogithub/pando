@@ -50,6 +50,11 @@ displayName = 'openrouter'
 type = 'openrouter'
 apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6OG52TGN0bHlnakEzeEEyNElrTElwc1ZIR3VCVVRwb0lzc0FxejZXUHhBCko4cEMwVWl3RTBlck5vMGRKY3BjZzFnMEtXQTdLWVEwSndwYVVRWWp3Y00KLS0tICtDRXJuRUMwV3RBcEpYSjZudFZBVGp5Uk94WXA2Y1Y2U0JxOEF5VW5NVFUKjprAHYTkIdmNL4Dz8JCwKgRtzvw6Bc9CjMlkd3WqxqK7K/k2RgvH1f4dxDgZbw9WoPyqkzZ+2bLPkEqjCMwBjpYiQTBALRcwBqCenmLS9mSHqtUxIwRrAX34uVCceR9FeHYtiA3IeC7x'
 
+[[providerAccounts]]
+id = 'ollama'
+displayName = 'ollama'
+type = 'ollama'
+
 [LSP]
 [LSP.gopls]
 Disabled = false
@@ -68,7 +73,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'gemini.gemini-3.5-flash'
+Model = 'ollama.gemma4-e2b:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -123,7 +128,7 @@ AutoUpdate = false
 DefaultScope = ''
 
 [TUI]
-Theme = 'tokyonight'
+Theme = 'pando'
 
 [Permissions]
 AutoApproveTools = true
@@ -203,6 +208,12 @@ ContextEnrichmentEventsResults = 5
 ContextEnrichmentEventsSubject = ''
 ContextEnrichmentEventsLastDays = 10
 ContextEnrichmentMinScore = 0.0
+ContextEnrichmentKBMaxChars = 0
+ContextEnrichmentCodeMaxChars = 0
+ContextEnrichmentEventsMaxChars = 0
+ContextEnrichmentTotalMaxChars = 0
+ContextEnrichmentUseAgentPlanner = false
+ContextEnrichmentPlannerFallbackToCoder = false
 
 [Server]
 Enabled = true

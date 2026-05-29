@@ -84,8 +84,14 @@ func (s *indexingSessionService) CreateTaskSession(ctx context.Context, toolCall
 func (s *indexingSessionService) Get(ctx context.Context, id string) (session.Session, error) {
 	return s.sess, nil
 }
+func (s *indexingSessionService) GetACPSessionState(ctx context.Context, sessionID string) (string, error) {
+	return "", errors.New("not implemented")
+}
 func (s *indexingSessionService) List(ctx context.Context) ([]session.Session, error) {
 	return nil, errors.New("not implemented")
+}
+func (s *indexingSessionService) SaveACPSessionState(ctx context.Context, sessionID string, state string) error {
+	return errors.New("not implemented")
 }
 func (s *indexingSessionService) Save(ctx context.Context, sess session.Session) (session.Session, error) {
 	return session.Session{}, errors.New("not implemented")

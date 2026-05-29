@@ -227,7 +227,8 @@ func (s *PandoCLISpawner) waitForCompletion(proc *Process) {
 			}
 		} else {
 			proc.task.Status = models.TaskStatusFailed
-			proc.task.Error = err.Error()
+			proc.task.RawError = err.Error()
+			proc.task.Error = s.buildTaskError(proc.task.RawError, proc.task.OutputTail, proc.task.LogFile)
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				code := exitErr.ExitCode()
 				proc.task.ExitCode = &code
@@ -256,6 +257,31 @@ func (s *PandoCLISpawner) getTail(output string, lines int) string {
 		return output
 	}
 	return strings.Join(allLines[len(allLines)-lines:], "\n")
+}
+
+func (s *PandoCLISpawner) buildTaskError(rawErr, outputTail, logFile string) string {
+	message := strings.TrimSpace(rawErr)
+	if stderrTail := extractStderrTail(outputTail); stderrTail != "" {
+		message = fmt.Sprintf("%s\nstderr:\n%s", message, stderrTail)
+	}
+	if logFile != "" {
+		message = fmt.Sprintf("%s\nlog_file: %s", message, logFile)
+	}
+	return message
+}
+
+func extractStderrTail(output string) string {
+	if output == "" {
+		return ""
+	}
+	lines := strings.Split(output, "\n")
+	stderr := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if trimmed := strings.TrimPrefix(line, "[stderr] "); trimmed != line {
+			stderr = append(stderr, trimmed)
+		}
+	}
+	return strings.TrimSpace(strings.Join(stderr, "\n"))
 }
 
 // Cancel stops a running pando CLI process.

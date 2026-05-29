@@ -88,6 +88,7 @@ type Task struct {
 	PID          int           `json:"pid,omitempty"`
 	Output       string        `json:"output,omitempty"`
 	OutputTail   string        `json:"output_tail,omitempty"`
+	RawError     string        `json:"raw_error,omitempty"`
 	Error        string        `json:"error,omitempty"`
 	ExitCode     *int          `json:"exit_code,omitempty"`
 	Model        string        `json:"model,omitempty"`

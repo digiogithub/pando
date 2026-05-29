@@ -7,10 +7,77 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/digiogithub/pando/internal/message"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
+
+const (
+	acpGroupedThinkingFlushInterval = 300 * time.Millisecond
+	acpGroupedThinkingFlushChars    = 360
+)
+
+type groupedThinkingState struct {
+	pending   strings.Builder
+	lastFlush time.Time
+}
+
+func (s *groupedThinkingState) append(delta string, now time.Time) {
+	if delta == "" {
+		return
+	}
+	if s.lastFlush.IsZero() {
+		s.lastFlush = now
+	}
+	s.pending.WriteString(delta)
+}
+
+func (s *groupedThinkingState) hasPending() bool {
+	return s.pending.Len() > 0
+}
+
+func (s *groupedThinkingState) shouldFlush(now time.Time) bool {
+	if !s.hasPending() {
+		return false
+	}
+	if s.pending.Len() >= acpGroupedThinkingFlushChars {
+		return true
+	}
+	return now.Sub(s.lastFlush) >= acpGroupedThinkingFlushInterval
+}
+
+func (s *groupedThinkingState) flushReason(now time.Time, force bool) string {
+	if !s.hasPending() {
+		return ""
+	}
+	if force {
+		return "forced"
+	}
+	if s.pending.Len() >= acpGroupedThinkingFlushChars {
+		return "size"
+	}
+	if now.Sub(s.lastFlush) >= acpGroupedThinkingFlushInterval {
+		return "time"
+	}
+	return ""
+}
+
+func (s *groupedThinkingState) readyText(now time.Time, force bool) (string, string) {
+	if !s.hasPending() {
+		return "", ""
+	}
+	reason := s.flushReason(now, force)
+	if reason == "" {
+		return "", ""
+	}
+	return s.pending.String(), reason
+}
+
+func (s *groupedThinkingState) markFlushed(now time.Time) {
+	s.pending.Reset()
+	s.lastFlush = now
+}
 
 // extractPromptContent extracts text and image attachments from a Prompt (slice of ContentBlocks).
 // Supports text blocks (ContentBlock::Text) and image blocks (ContentBlock::Image, requires 6d capability).
@@ -129,12 +196,25 @@ func (a *PandoACPAgent) processPromptWithAgent(
 	promptText string,
 	attachments ...message.Attachment,
 ) (acpsdk.StopReason, error) {
+	reconcileACPThinkingSession(a.agentService, acpSession)
 	if promptText != "" && acpSession.HasAgentConnection() {
 		userMessageID := acpSession.PandoSessionID() + "-user"
 		if err := acpSession.SendUpdate(updateUserMessageTextWithID(promptText, userMessageID)); err != nil {
 			a.logger.Printf("[ACP AGENT] Failed to send user message chunk: %v", err)
 		}
 	}
+	overrides := SessionLLMOverrides{
+		ReasoningEffort: acpSession.ReasoningEffort(),
+		ThinkingMode:    acpSession.ThinkingMode(),
+	}
+	a.logger.Printf(
+		"[ACP AGENT] Applying ACP thinking settings for session %s: stream_mode=%q reasoning_effort=%q thinking_mode=%q",
+		acpSession.ID,
+		acpSession.ThinkingStreamMode(),
+		overrides.ReasoningEffort,
+		overrides.ThinkingMode,
+	)
+	a.agentService.SetSessionLLMOverrides(acpSession.PandoSessionID(), overrides)
 	eventChan, err := a.agentService.Run(ctx, acpSession.PandoSessionID(), promptText, attachments...)
 	if err != nil {
 		return "", fmt.Errorf("failed to start agent: %w", err)
@@ -149,19 +229,68 @@ func (a *PandoACPAgent) processAgentEventStream(
 ) (acpsdk.StopReason, error) {
 	var finalStopReason acpsdk.StopReason
 	var currentMessageID string
+	thinkingStreamMode := acpSession.ThinkingStreamMode()
+	a.logger.Printf("[ACP AGENT] Applied thinking stream mode %q for session %s", thinkingStreamMode, acpSession.ID)
 	// Track whether streaming deltas were sent so processAgentResponse can skip
 	// re-sending the full content (which would cause duplicate text in the client).
 	var sentContentDeltas, sentThinkingDeltas bool
+	var thinkingState groupedThinkingState
+	sendThinking := func(text string) {
+		if text == "" {
+			return
+		}
+		if err := acpSession.SendUpdate(updateAgentThoughtTextWithID(text, currentMessageID)); err != nil {
+			a.logger.Printf("[ACP AGENT] Failed to send thinking update: %v", err)
+			return
+		}
+		sentThinkingDeltas = true
+	}
+	flushThinking := func(force bool) {
+		if thinkingStreamMode != thinkingStreamModeGrouped {
+			return
+		}
+		now := time.Now()
+		text, reason := thinkingState.readyText(now, force)
+		if text == "" {
+			return
+		}
+		a.logger.Printf(
+			"[ACP AGENT] Flushing grouped thinking for session %s: reason=%s chars=%d",
+			acpSession.ID,
+			reason,
+			len(text),
+		)
+		beforeSent := sentThinkingDeltas
+		sendThinking(text)
+		if sentThinkingDeltas == beforeSent {
+			return
+		}
+		thinkingState.markFlushed(now)
+	}
 	for event := range eventChan {
 		switch event.Type {
 		case AgentEventTypeError:
+			flushThinking(true)
 			if event.Error != nil {
 				a.logger.Printf("[ACP AGENT] Agent error: %v", event.Error)
 				return acpsdk.StopReasonRefusal, event.Error
 			}
 
+		case AgentEventTypeThinkingDelta:
+			if event.Delta != "" {
+				switch thinkingStreamMode {
+				case thinkingStreamModeOff:
+				case thinkingStreamModeFull:
+					sendThinking(event.Delta)
+				default:
+					thinkingState.append(event.Delta, time.Now())
+					flushThinking(false)
+				}
+			}
+
 		case AgentEventTypeResponse:
 			currentMessageID = event.Message.ID
+			flushThinking(true)
 			if err := a.processAgentResponse(acpSession, event.Message, sentContentDeltas, sentThinkingDeltas); err != nil {
 				a.logger.Printf("[ACP AGENT] Failed to process response: %v", err)
 				return acpsdk.StopReasonRefusal, err
@@ -178,6 +307,7 @@ func (a *PandoACPAgent) processAgentEventStream(
 			}
 
 		case AgentEventTypeSystemMessage:
+			flushThinking(true)
 			msg := strings.TrimSpace(event.SystemMessage)
 			if msg == "" {
 				continue
@@ -196,6 +326,7 @@ func (a *PandoACPAgent) processAgentEventStream(
 			}
 
 		case AgentEventTypeToolCall:
+			flushThinking(true)
 			if event.ToolCall != nil {
 				tc := event.ToolCall
 
@@ -351,6 +482,7 @@ func (a *PandoACPAgent) processAgentEventStream(
 			}
 
 		case AgentEventTypeToolResult:
+			flushThinking(true)
 			if event.ToolResult != nil {
 				tr := event.ToolResult
 
@@ -564,6 +696,7 @@ func (a *PandoACPAgent) processAgentEventStream(
 			}
 
 		case AgentEventTypeSummarize:
+			flushThinking(true)
 			if event.Progress != "" {
 				if err := acpSession.SendUpdate(updateAgentMessageTextWithID(event.Progress+"\n", currentMessageID)); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send summarize update: %v", err)
@@ -573,6 +706,8 @@ func (a *PandoACPAgent) processAgentEventStream(
 			}
 		}
 	}
+
+	flushThinking(true)
 
 	if finalStopReason == "" {
 		finalStopReason = acpsdk.StopReasonEndTurn

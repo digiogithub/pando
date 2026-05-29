@@ -489,13 +489,21 @@ func (t *MesnadaGetOutputTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		output = task.OutputTail
 	}
 
-	return encodeMesnadaResult(map[string]any{
+	result := map[string]any{
 		"task_id":  task.ID,
 		"status":   task.Status,
 		"output":   output,
 		"log_file": task.LogFile,
 		"is_tail":  useTail,
-	})
+	}
+	if task.Error != "" {
+		result["error"] = task.Error
+	}
+	if task.RawError != "" {
+		result["raw_error"] = task.RawError
+	}
+
+	return encodeMesnadaResult(result)
 }
 
 func decodeMesnadaInput(input string, target any) error {

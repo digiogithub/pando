@@ -5,27 +5,44 @@ import (
 	"encoding/json"
 	"strings"
 
+	llmmodels "github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/message"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 const (
-	defaultACPMode               = "agent"
-	askModeID                    = "ask"
-	agentModeID                  = "agent"
-	goalModeID                   = "goal"
-	sessionConfigModelID         = "model"
-	sessionConfigModeID          = "mode"
-	sessionConfigAskPermissionID = "askPermission"
-	sessionConfigAgentID         = "agent"
-	askPermissionYesValue        = "yes"
-	askPermissionNoValue         = "no"
-	goalCommandToken             = "goal"
-	autopilotCommandToken        = "autopilot"
-	goalStatusCommandToken       = "goal-status"
-	goalCancelCommandToken       = "goal-cancel"
-	compactCommandToken          = "compact"
-	summarizeCommandToken        = "summarize"
+	defaultACPMode                    = "agent"
+	askModeID                         = "ask"
+	agentModeID                       = "agent"
+	goalModeID                        = "goal"
+	sessionConfigModelID              = "model"
+	sessionConfigModeID               = "mode"
+	sessionConfigAskPermissionID      = "askPermission"
+	sessionConfigThinkingStreamModeID = "thinking_stream_mode"
+	sessionConfigReasoningEffortID    = "reasoning_effort"
+	sessionConfigThinkingModeID       = "thinking_mode"
+	sessionConfigAgentID              = "agent"
+	askPermissionYesValue             = "yes"
+	askPermissionNoValue              = "no"
+	reasoningEffortLow                = "low"
+	reasoningEffortMedium             = "medium"
+	reasoningEffortHigh               = "high"
+	thinkingStreamModeOff             = "off"
+	thinkingStreamModeGrouped         = "grouped"
+	thinkingStreamModeFull            = "full"
+	thinkingModeDisabled              = "disabled"
+	thinkingModeLow                   = "low"
+	thinkingModeMedium                = "medium"
+	thinkingModeHigh                  = "high"
+	defaultACPReasoningEffort         = reasoningEffortMedium
+	defaultACPThinkingMode            = thinkingModeMedium
+	defaultACPThinkingStreamMode      = thinkingStreamModeGrouped
+	goalCommandToken                  = "goal"
+	autopilotCommandToken             = "autopilot"
+	goalStatusCommandToken            = "goal-status"
+	goalCancelCommandToken            = "goal-cancel"
+	compactCommandToken               = "compact"
+	summarizeCommandToken             = "summarize"
 )
 
 const (
@@ -125,9 +142,27 @@ func buildSessionPersonaState(svc AgentService, currentPersona string) *SessionP
 	}
 }
 
-func buildSessionConfigOptions(svc AgentService, currentModel, currentMode, currentPersona string, askPermission bool) []acpsdk.SessionConfigOption {
+func buildSessionConfigOptions(svc AgentService, session *ACPServerSession) []acpsdk.SessionConfigOption {
+	var (
+		currentModel   string
+		currentMode    string
+		currentPersona string
+		askPermission  bool
+	)
+	if session != nil {
+		currentModel = session.Model()
+		currentMode = session.Mode()
+		currentPersona = session.Persona()
+		askPermission = session.AskPermission()
+	}
 	if currentMode == "" {
 		currentMode = defaultACPMode
+	}
+	selectedModel, hasSelectedModel := selectedACPModel(svc, currentModel)
+	thinkingSettings := normalizedACPThinkingSettingsForSession(svc, session)
+	thinkingStreamDescription := "How reasoning is shown while the model is generating a response"
+	if hasSelectedModel && !supportsACPThinkingStreaming(selectedModel) {
+		thinkingStreamDescription = "How reasoning would be shown if the selected model emitted thinking output"
 	}
 
 	options := []acpsdk.SessionConfigOption{
@@ -162,6 +197,49 @@ func buildSessionConfigOptions(svc AgentService, currentModel, currentMode, curr
 				{Value: askPermissionNoValue, Name: "No", Description: "Automatically approve tool calls"},
 			},
 		),
+		newSelectConfigOption(
+			sessionConfigThinkingStreamModeID,
+			"Thinking Visibility",
+			thinkingStreamDescription,
+			"thinking",
+			thinkingSettings.ThinkingStreamMode,
+			[]configOptionValue{
+				{Value: thinkingStreamModeOff, Name: "Off", Description: "Show only the final reasoning summary"},
+				{Value: thinkingStreamModeGrouped, Name: "Grouped", Description: "Show reasoning in periodic grouped blocks"},
+				{Value: thinkingStreamModeFull, Name: "Full", Description: "Show every reasoning chunk as it arrives; may be noisy"},
+			},
+		),
+	}
+
+	if hasSelectedModel && supportsACPReasoningEffort(selectedModel) {
+		options = append(options, newSelectConfigOption(
+			sessionConfigReasoningEffortID,
+			"Reasoning Effort",
+			"How much reasoning effort the selected model should use",
+			"thinking",
+			thinkingSettings.ReasoningEffort,
+			[]configOptionValue{
+				{Value: reasoningEffortLow, Name: "Low", Description: "Prefer faster responses with less reasoning effort"},
+				{Value: reasoningEffortMedium, Name: "Medium", Description: "Use a balanced amount of reasoning effort"},
+				{Value: reasoningEffortHigh, Name: "High", Description: "Prefer deeper reasoning when the model supports it"},
+			},
+		))
+	}
+
+	if hasSelectedModel && supportsACPThinkingMode(selectedModel) {
+		options = append(options, newSelectConfigOption(
+			sessionConfigThinkingModeID,
+			"Thinking Mode",
+			"How much extended thinking the selected Anthropic model should use",
+			"thinking",
+			thinkingSettings.ThinkingMode,
+			[]configOptionValue{
+				{Value: thinkingModeDisabled, Name: "Disabled", Description: "Disable extended thinking for this session"},
+				{Value: thinkingModeLow, Name: "Low", Description: "Use a small amount of extended thinking"},
+				{Value: thinkingModeMedium, Name: "Medium", Description: "Use a balanced amount of extended thinking"},
+				{Value: thinkingModeHigh, Name: "High", Description: "Use the deepest available extended thinking"},
+			},
+		))
 	}
 
 	if personaOption := buildPersonaConfigOption(svc, currentPersona); personaOption != nil {
@@ -258,6 +336,15 @@ func buildPersonaConfigOption(svc AgentService, currentPersona string) *acpsdk.S
 		values,
 	)
 	return &opt
+}
+
+func selectedACPModel(svc AgentService, currentModel string) (llmmodels.Model, bool) {
+	modelID := strings.TrimSpace(resolvedModelValue(svc, currentModel))
+	if modelID == "" {
+		return llmmodels.Model{}, false
+	}
+	model, ok := llmmodels.SupportedModels[llmmodels.ModelID(modelID)]
+	return model, ok
 }
 
 func sessionConfigCategory(name string) *acpsdk.SessionConfigOptionCategory {

@@ -47,6 +47,11 @@ type ACPModelInfo struct {
 	Name string
 }
 
+type SessionLLMOverrides struct {
+	ReasoningEffort string
+	ThinkingMode    string
+}
+
 // AgentService defines the interface for interacting with Pando's LLM agent.
 // This is intentionally minimal to avoid import cycles.
 type AgentService interface {
@@ -64,6 +69,8 @@ type AgentService interface {
 	// SetModelOverride temporarily changes the active model (in-memory only).
 	// Pass empty string to clear any previous override.
 	SetModelOverride(modelID string) error
+	// SetSessionLLMOverrides applies request-scoped inference overrides for the session.
+	SetSessionLLMOverrides(sessionID string, overrides SessionLLMOverrides)
 	// ListPersonas returns the names of all available personas.
 	ListPersonas() []string
 	// GetActivePersona returns the currently active persona name (empty = none).
@@ -99,6 +106,8 @@ type SessionService interface {
 	CreateSession(ctx context.Context, title string) (string, error)
 	GetSession(ctx context.Context, id string) (ACPSessionInfo, error)
 	ListSessions(ctx context.Context) ([]ACPSessionInfo, error)
+	GetACPSessionState(ctx context.Context, sessionID string) (string, error)
+	SaveACPSessionState(ctx context.Context, sessionID string, state string) error
 	GetActiveGoal(ctx context.Context, sessionID string) (db.SessionGoal, error)
 	GetGoalBySession(ctx context.Context, sessionID string) (db.SessionGoal, error)
 	CancelGoal(ctx context.Context, sessionID string) (db.SessionGoal, error)
@@ -152,10 +161,10 @@ type editToolInput struct {
 type TodoInfo struct {
 	// Content is the description of the todo/task
 	Content string `json:"content"`
-	
+
 	// Status is the current status: "pending", "in_progress", "completed", "cancelled"
 	Status string `json:"status"`
-	
+
 	// Priority is the priority level: "high", "medium", "low"
 	Priority string `json:"priority"`
 }
@@ -164,10 +173,10 @@ type TodoInfo struct {
 type DecodeTodosResult struct {
 	// Success indicates if the decoding was successful
 	Success bool `json:"success"`
-	
+
 	// Todos contains the decoded todos if successful
 	Todos []TodoInfo `json:"todos,omitempty"`
-	
+
 	// Error contains any error message if decoding failed
 	Error string `json:"error,omitempty"`
 }

@@ -50,8 +50,16 @@ func (m *mockSessionService) Get(_ context.Context, id string) (session.Session,
 	return session.Session{}, nil
 }
 
+func (m *mockSessionService) GetACPSessionState(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 func (m *mockSessionService) List(_ context.Context) ([]session.Session, error) {
 	return m.sessions, nil
+}
+
+func (m *mockSessionService) SaveACPSessionState(_ context.Context, _, _ string) error {
+	return nil
 }
 
 func (m *mockSessionService) Save(_ context.Context, s session.Session) (session.Session, error) {

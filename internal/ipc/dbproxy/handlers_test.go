@@ -39,6 +39,21 @@ func (r *recordingQuerier) CreateSession(ctx context.Context, arg db.CreateSessi
 	return r.createSessionResult, nil
 }
 
+func invokeCreateSessionHandler(handler ipc.HandlerFunc) (json.RawMessage, error) {
+	if handler == nil {
+		return nil, errors.New("expected db.write handler to be registered")
+	}
+	payload, err := json.Marshal(db.CreateSessionParams{ID: "sess-123", Title: "non-interactive"})
+	if err != nil {
+		return nil, err
+	}
+	request, err := json.Marshal(WriteRequest{Method: "CreateSession", Params: payload})
+	if err != nil {
+		return nil, err
+	}
+	return handler(context.Background(), MethodDBWrite, request)
+}
+
 func TestRegisterHandlers_RegistersDBWriteBeforeBusStart(t *testing.T) {
 	bus := &busRecorder{}
 	querier := &recordingQuerier{
@@ -47,21 +62,7 @@ func TestRegisterHandlers_RegistersDBWriteBeforeBusStart(t *testing.T) {
 
 	RegisterHandlers(bus, querier)
 
-	payload, err := json.Marshal(db.CreateSessionParams{ID: "sess-123", Title: "non-interactive"})
-	if err != nil {
-		t.Fatalf("marshal params: %v", err)
-	}
-	request, err := json.Marshal(WriteRequest{Method: "CreateSession", Params: payload})
-	if err != nil {
-		t.Fatalf("marshal write request: %v", err)
-	}
-
-	handler := bus.handler
-	if handler == nil {
-		t.Fatal("expected db.write handler to be registered")
-	}
-
-	raw, err := handler(context.Background(), MethodDBWrite, request)
+	raw, err := invokeCreateSessionHandler(bus.handler)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -78,6 +79,43 @@ func TestRegisterHandlers_RegistersDBWriteBeforeBusStart(t *testing.T) {
 	}
 	if got.ID != querier.createSessionResult.ID {
 		t.Fatalf("expected session ID %q, got %q", querier.createSessionResult.ID, got.ID)
+	}
+}
+
+type submitterRecorder struct {
+	called bool
+	result json.RawMessage
+	err    error
+}
+
+func (s *submitterRecorder) Submit(_ context.Context, req WriteRequest) (json.RawMessage, error) {
+	s.called = true
+	if req.Method != "CreateSession" {
+		return nil, errors.New("unexpected method: " + req.Method)
+	}
+	return s.result, s.err
+}
+
+func TestRegisterHandlersWithCoordinator_RegistersDBWriteBeforeBusStart(t *testing.T) {
+	bus := &busRecorder{}
+	submitter := &submitterRecorder{result: json.RawMessage(`{"id":"sess-123","title":"non-interactive"}`)}
+
+	RegisterHandlersWithCoordinator(bus, submitter)
+
+	raw, err := invokeCreateSessionHandler(bus.handler)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if !submitter.called {
+		t.Fatal("expected CreateSession to be dispatched through coordinator")
+	}
+
+	var got db.Session
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if got.ID != "sess-123" {
+		t.Fatalf("expected session ID %q, got %q", "sess-123", got.ID)
 	}
 }
 

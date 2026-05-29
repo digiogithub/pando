@@ -83,7 +83,7 @@ func CleanupMCPConfig(taskID, baseDir string) error {
 }
 
 // ConvertMCPConfigForCopilot converts Mesnada MCP config to GitHub Copilot CLI format.
-// Copilot accepts the same mcpServers schema as Claude CLI (command/args/env per entry).
+// Copilot uses the canonical mcpServers schema (compatible with VS Code mcp.json entries).
 func ConvertMCPConfigForCopilot(mcpConfigPath, taskID, baseDir, workDir string) (string, error) {
 	if mcpConfigPath == "" {
 		return "", nil
@@ -93,7 +93,7 @@ func ConvertMCPConfigForCopilot(mcpConfigPath, taskID, baseDir, workDir string) 
 		return "", err
 	}
 	tempDir := filepath.Join(baseDir, "copilot-mcp", taskID)
-	return mcpconv.WriteJSONFile(tempDir, "copilot-mcp-config.json", mcpconv.RenderClaude(cfg, workDir))
+	return mcpconv.WriteJSONFile(tempDir, "copilot-mcp-config.json", mcpconv.RenderVSCode(cfg))
 }
 
 // CleanupCopilotMCPConfig removes the temporary Copilot MCP config for a task.

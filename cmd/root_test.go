@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"os"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -175,5 +177,25 @@ func TestSelectReleaseForTargetsPrefersLinuxX64Asset(t *testing.T) {
 	}
 	if release.Version.String() != "0.311.0" {
 		t.Fatalf("selected version = %q", release.Version.String())
+	}
+}
+
+func TestRunACPServerWithOptions_ConfiguresSecondaryIPCFailoverPath(t *testing.T) {
+	source, err := os.ReadFile("root.go")
+	if err != nil {
+		t.Fatalf("read root.go: %v", err)
+	}
+	body := string(source)
+
+	checks := []string{
+		"pandoApp.SetIPCSecondaryContext(",
+		"rt.Watcher.SetPromoteCallback(pandoApp.PromoteToPrimary)",
+		"pandoApp.SetupIPC(acpBus)",
+		"rt.Watcher.Start(ctx)",
+	}
+	for _, needle := range checks {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("runACPServerWithOptions is missing %q", needle)
+		}
 	}
 }
