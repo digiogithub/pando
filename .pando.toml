@@ -10,6 +10,14 @@ AutoCompact = true
 Directory = './.pando/data'
 
 [MCPServers]
+[MCPServers.deepwiki]
+Command = ''
+Env = []
+Args = []
+Type = 'streamable-http'
+URL = 'https://mcp.deepwiki.com/mcp'
+Timeout = ''
+
 [MCPServers.mycommandmcp]
 Command = 'mycommandmcp'
 Env = []
