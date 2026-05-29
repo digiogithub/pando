@@ -77,6 +77,7 @@ type App struct {
 	CronService         *cronjob.Service
 	MesnadaServer       *mesnadaServer.Server
 	Remembrances        *rag.RemembrancesService
+	ContextEnricher     *rag.ContextEnricher
 	LuaManager          *luaengine.FilterManager
 	MCPGateway          *mcpgateway.Gateway
 	Evaluator           *evaluator.EvaluatorService
@@ -284,8 +285,41 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 							TotalMaxChars:  cfg.Remembrances.ContextEnrichmentTotalMaxChars,
 						},
 					)
+
+					// Phase 2: optionally replace the heuristic planner with an LLM-based one.
+					plannerMode := "heuristic"
+					if cfg.Remembrances.ContextEnrichmentUseAgentPlanner {
+						primaryProv, primaryErr := agent.CreateAgentProvider(ctx, config.AgentContextEnricher)
+						if primaryErr == nil {
+							var secondary rag.PlannerProvider
+							if cfg.Remembrances.ContextEnrichmentPlannerFallbackToCoder {
+								coderProv, coderErr := agent.CreateAgentProvider(ctx, config.AgentCoder)
+								if coderErr == nil {
+									secondary = &plannerProviderAdapter{p: coderProv}
+								} else {
+									logging.Debug("context enricher: coder fallback provider unavailable", "error", coderErr)
+								}
+							}
+							promptFn := func(providerName string) string {
+								return prompt.ContextEnricherPrompt(models.ModelProvider(providerName))
+							}
+							llmPlanner := rag.NewLLMPlanner(
+								&plannerProviderAdapter{p: primaryProv},
+								secondary,
+								promptFn,
+							)
+							enricher.SetPlanner(llmPlanner)
+							plannerMode = "llm"
+						} else {
+							logging.Warn("context enricher: agent planner requested but provider unavailable; falling back to heuristic",
+								"error", primaryErr)
+						}
+					}
+
+					app.ContextEnricher = enricher
 					agent.SetContextEnricher(enricher)
 					logging.Info("remembrances: context enricher enabled",
+						"planner", plannerMode,
 						"kb_results", cfg.Remembrances.ContextEnrichmentKBResults,
 						"code_results", cfg.Remembrances.ContextEnrichmentCodeResults,
 						"code_project", cfg.Remembrances.ContextEnrichmentCodeProject,

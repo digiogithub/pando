@@ -50,12 +50,13 @@ type MCPServer struct {
 type AgentName string
 
 const (
-	AgentCoder           AgentName = "coder"
-	AgentSummarizer      AgentName = "summarizer"
-	AgentTask            AgentName = "task"
-	AgentTitle           AgentName = "title"
-	AgentCLIAssist       AgentName = "cli-assist"
-	AgentPersonaSelector AgentName = "persona-selector"
+	AgentCoder             AgentName = "coder"
+	AgentSummarizer        AgentName = "summarizer"
+	AgentTask              AgentName = "task"
+	AgentTitle             AgentName = "title"
+	AgentCLIAssist         AgentName = "cli-assist"
+	AgentPersonaSelector   AgentName = "persona-selector"
+	AgentContextEnricher   AgentName = "context-enricher"
 )
 
 // CLIAssistConfig defines configuration for the CLI assist mode.
@@ -262,6 +263,15 @@ type RemembrancesConfig struct {
 	ContextEnrichmentEventsMaxChars int `json:"context_enrichment_events_max_chars" toml:"ContextEnrichmentEventsMaxChars"`
 	// ContextEnrichmentTotalMaxChars caps the combined context block (all sections). 0 = unlimited.
 	ContextEnrichmentTotalMaxChars int `json:"context_enrichment_total_max_chars" toml:"ContextEnrichmentTotalMaxChars"`
+
+	// ContextEnrichmentUseAgentPlanner enables the LLM-based query planner for context enrichment.
+	// When true the agent defined by AgentContextEnricher is called before each retrieval to derive
+	// optimised per-source queries from the raw user prompt.
+	// When false (default) the heuristic planner is used (no extra LLM call).
+	ContextEnrichmentUseAgentPlanner bool `json:"context_enrichment_use_agent_planner" toml:"ContextEnrichmentUseAgentPlanner"`
+	// ContextEnrichmentPlannerFallbackToCoder allows the planner to fall back to the coder agent
+	// when the dedicated context-enricher agent fails. Defaults to true.
+	ContextEnrichmentPlannerFallbackToCoder bool `json:"context_enrichment_planner_fallback_to_coder" toml:"ContextEnrichmentPlannerFallbackToCoder"`
 }
 
 // APIServerConfig holds configuration for the HTTP API server (WebUI backend).
@@ -640,6 +650,8 @@ func AutoBudgetByRole(name AgentName) int64 {
 		return 64
 	case AgentCLIAssist:
 		return 256
+	case AgentContextEnricher:
+		return 256
 	case AgentTask:
 		return 2048
 	case AgentSummarizer:
@@ -657,6 +669,8 @@ func roleCeilingTokens(name AgentName) int64 {
 	case AgentTitle, AgentPersonaSelector:
 		return 128
 	case AgentCLIAssist:
+		return 512
+	case AgentContextEnricher:
 		return 512
 	case AgentTask:
 		return 4096
@@ -2128,7 +2142,7 @@ func setDefaultModelForAgent(agent AgentName) bool {
 		reasoningEffort := ""
 
 		switch agent {
-		case AgentTitle:
+		case AgentTitle, AgentContextEnricher:
 			modelID = models.GPT41Mini
 		case AgentTask:
 			modelID = models.GPT41Mini
@@ -2147,7 +2161,7 @@ func setDefaultModelForAgent(agent AgentName) bool {
 	if os.Getenv("OPENROUTER_API_KEY") != "" {
 		var modelID models.ModelID
 		switch agent {
-		case AgentTitle:
+		case AgentTitle, AgentContextEnricher:
 			modelID = models.OpenRouterClaude35Haiku
 		default:
 			modelID = models.OpenRouterClaude37Sonnet
@@ -2158,7 +2172,7 @@ func setDefaultModelForAgent(agent AgentName) bool {
 
 	if os.Getenv("GEMINI_API_KEY") != "" {
 		var modelID models.ModelID
-		if agent == AgentTitle {
+		if agent == AgentTitle || agent == AgentContextEnricher {
 			modelID = models.Gemini25Flash
 		} else {
 			modelID = models.Gemini25
@@ -2182,7 +2196,7 @@ func setDefaultModelForAgent(agent AgentName) bool {
 
 	if hasVertexAICredentials() {
 		var modelID models.ModelID
-		if agent == AgentTitle {
+		if agent == AgentTitle || agent == AgentContextEnricher {
 			modelID = models.VertexAIGemini25Flash
 		} else {
 			modelID = models.VertexAIGemini25
@@ -2928,7 +2942,7 @@ func ensureAgentDefaults() {
 		cfg.Agents = make(map[AgentName]Agent)
 	}
 
-	for _, agentName := range []AgentName{AgentCoder, AgentSummarizer, AgentTask, AgentTitle} {
+	for _, agentName := range []AgentName{AgentCoder, AgentSummarizer, AgentTask, AgentTitle, AgentContextEnricher} {
 		if strings.TrimSpace(string(cfg.Agents[agentName].Model)) != "" {
 			continue
 		}

@@ -1964,6 +1964,25 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 				Type:  settings.FieldText,
 				Value: fmt.Sprint(rem.ContextEnrichmentEventsLastDays),
 			},
+			// Phase 2 — LLM planner options
+			settings.Field{
+				Label: "Use Agent Planner",
+				Key:   "remembrances.context_enrichment_use_agent_planner",
+				Type:  settings.FieldToggle,
+				Value: boolString(rem.ContextEnrichmentUseAgentPlanner),
+			},
+		)
+		if rem.ContextEnrichmentUseAgentPlanner {
+			fields = append(fields,
+				settings.Field{
+					Label: "Planner Fallback to Coder",
+					Key:   "remembrances.context_enrichment_planner_fallback_to_coder",
+					Type:  settings.FieldToggle,
+					Value: boolString(rem.ContextEnrichmentPlannerFallbackToCoder),
+				},
+			)
+		}
+		fields = append(fields,
 			settings.Field{
 				Label: "Index working directory",
 				Key:   "action:remembrances_index_workdir",
@@ -3353,6 +3372,18 @@ func saveRemembrances(field settings.Field) error {
 			return fmt.Errorf("events last days must be between 1 and 365")
 		}
 		remCfg.ContextEnrichmentEventsLastDays = n
+	case "remembrances.context_enrichment_use_agent_planner":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid use agent planner value: %w", err)
+		}
+		remCfg.ContextEnrichmentUseAgentPlanner = v
+	case "remembrances.context_enrichment_planner_fallback_to_coder":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid planner fallback to coder value: %w", err)
+		}
+		remCfg.ContextEnrichmentPlannerFallbackToCoder = v
 	default:
 		return fmt.Errorf("unsupported Remembrances setting %q", field.Key)
 	}

@@ -125,3 +125,54 @@ func sanitizeProjectID(path string) string {
 	}
 	return string(out)
 }
+
+// enrichmentStatusResponse is the JSON body for enrichment status and toggle endpoints.
+type enrichmentStatusResponse struct {
+	Enabled     bool   `json:"enabled"`
+	PlannerMode string `json:"planner_mode"` // "llm" or "heuristic"
+}
+
+// handleGetEnrichmentStatus returns the current context enrichment state.
+// GET /api/v1/remembrances/enrichment
+func (s *Server) handleGetEnrichmentStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	e := s.app.ContextEnricher
+	resp := enrichmentStatusResponse{
+		Enabled:     e.IsEnabled(),
+		PlannerMode: e.PlannerMode(),
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleToggleEnrichment enables or disables context enrichment at runtime without restart.
+// PUT /api/v1/remembrances/enrichment
+// Body: { "enabled": true|false }
+func (s *Server) handleToggleEnrichment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.app.ContextEnricher == nil {
+		writeError(w, http.StatusServiceUnavailable, "context enricher not initialized")
+		return
+	}
+
+	var body struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	s.app.ContextEnricher.SetEnabled(body.Enabled)
+
+	resp := enrichmentStatusResponse{
+		Enabled:     s.app.ContextEnricher.IsEnabled(),
+		PlannerMode: s.app.ContextEnricher.PlannerMode(),
+	}
+	writeJSON(w, http.StatusOK, resp)
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/digiogithub/pando/internal/logging"
@@ -36,6 +37,8 @@ type ContextEnricher struct {
 	svc     *RemembrancesService
 	cfg     EnricherConfig
 	planner QueryPlanner
+	// enabled allows runtime toggling without replacing the global enricher pointer.
+	enabled atomic.Bool
 }
 
 // NewContextEnricher creates a ContextEnricher from the given RemembrancesService and config values.
@@ -60,20 +63,65 @@ func NewContextEnricher(svc *RemembrancesService, cfg EnricherConfig) *ContextEn
 	if cfg.MinScore <= 0 {
 		cfg.MinScore = 0.55
 	}
-	return &ContextEnricher{
+	e := &ContextEnricher{
 		svc:     svc,
 		cfg:     cfg,
 		planner: &HeuristicPlanner{},
 	}
+	e.enabled.Store(true)
+	return e
+}
+
+// SetPlanner replaces the query planner used to derive per-source queries.
+// Pass nil to revert to the default HeuristicPlanner.
+func (e *ContextEnricher) SetPlanner(p QueryPlanner) {
+	if e == nil {
+		return
+	}
+	if p == nil {
+		p = &HeuristicPlanner{}
+	}
+	e.planner = p
+}
+
+// SetEnabled enables or disables enrichment at runtime without removing the enricher
+// from the agent. When disabled, EnrichContext returns an empty string immediately.
+func (e *ContextEnricher) SetEnabled(v bool) {
+	if e == nil {
+		return
+	}
+	e.enabled.Store(v)
+}
+
+// IsEnabled reports whether context enrichment is currently active.
+func (e *ContextEnricher) IsEnabled() bool {
+	if e == nil {
+		return false
+	}
+	return e.enabled.Load()
+}
+
+// PlannerMode returns "llm" when an LLMPlanner is active, "heuristic" otherwise.
+func (e *ContextEnricher) PlannerMode() string {
+	if e == nil {
+		return "heuristic"
+	}
+	if _, ok := e.planner.(*LLMPlanner); ok {
+		return "llm"
+	}
+	return "heuristic"
 }
 
 // EnrichContext searches KB, events, and code index in parallel using queries derived
 // from the raw user prompt via the QueryPlanner, filters results below minScore,
 // and returns a formatted context block.
 // Sections with no results above the threshold are omitted entirely.
-// Returns an empty string when nothing relevant is found.
+// Returns an empty string when nothing relevant is found or enrichment is disabled.
 func (e *ContextEnricher) EnrichContext(ctx context.Context, query string) string {
 	if e == nil || e.svc == nil {
+		return ""
+	}
+	if !e.enabled.Load() {
 		return ""
 	}
 

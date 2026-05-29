@@ -29,6 +29,16 @@ type QueryPlanner interface {
 	Plan(ctx context.Context, prompt string) (*EnrichmentPlan, error)
 }
 
+// PlannerProvider is a minimal interface for LLM providers used by LLMPlanner.
+// It avoids importing llm/provider (which would create an import cycle via llm/tools→rag).
+// Implementations live in app/ where both sides can be imported safely.
+type PlannerProvider interface {
+	// SendRequest sends a simple system+user message and returns the text response.
+	SendRequest(ctx context.Context, systemPrompt, userPrompt string) (string, error)
+	// ProviderName returns the model provider name (used to select the system prompt variant).
+	ProviderName() string
+}
+
 // -- heuristic planner -------------------------------------------------------
 
 // HeuristicPlanner derives queries without calling an LLM.

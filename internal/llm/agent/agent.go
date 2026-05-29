@@ -1998,3 +1998,11 @@ func trimTextToContextWindow(text string, contextWindow int64, reservation int64
 	))
 	return trimmed
 }
+
+
+// CreateAgentProvider creates a provider for the given agent name.
+// It is exported for use in app-layer code that needs a provider outside of the agent itself
+// (e.g. the context-enricher LLM planner adapter).
+func CreateAgentProvider(ctx context.Context, agentName config.AgentName) (provider.Provider, error) {
+	return createAgentProvider(ctx, agentName, nil, nil, nil)
+}
