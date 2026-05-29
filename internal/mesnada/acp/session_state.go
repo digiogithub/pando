@@ -360,6 +360,10 @@ func (a *PandoACPAgent) sendAvailableCommandsUpdate(ctx context.Context, session
 			}
 		}()
 		if err := a.conn.SessionUpdate(ctx, update); err != nil {
+			if isEntityReleasedError(err) || strings.Contains(err.Error(), "unknown session") {
+				a.logger.Printf("[ACP AGENT] sendAvailableCommandsUpdate: skipped session %s after reconnect: %v", sessionID, err)
+				return
+			}
 			a.logger.Printf("[ACP AGENT] sendAvailableCommandsUpdate: failed for session %s: %v", sessionID, err)
 		}
 	}()

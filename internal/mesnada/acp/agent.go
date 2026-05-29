@@ -1035,23 +1035,29 @@ func (a *PandoACPAgent) handleExtensionOpenClaudeUsage(context.Context, json.Raw
 }
 
 // SetConnection stores a reference to the AgentSideConnection so the agent can
-// stream session updates back to the client.  Called by transport_stdio.go
+// stream session updates back to the client. Called by transport_stdio.go
 // immediately after NewAgentSideConnection() returns.
 //
-// NOTE: we deliberately do NOT send sendAvailableCommandsUpdate for all known
-// sessions here. When the transport reconnects (e.g. Zed restarts), existing
-// sessions in the map were registered during the previous connection. The new
-// client does not know about them yet and will report "unknown session" warnings
-// for any proactive notifications. Instead, each session receives its available
-// commands only when the client explicitly calls NewSession or LoadSession,
-// both of which already call sendAvailableCommandsUpdate.
+// Re-send available commands for known sessions after a transport reconnect so
+// clients that restore thread state can repopulate their slash-command UI.
+// Unknown or released sessions are tolerated by sendAvailableCommandsUpdate,
+// which keeps this best-effort replay from reintroducing hard reconnect errors.
 func (a *PandoACPAgent) SetConnection(conn *acpsdk.AgentSideConnection) {
 	a.sessionsMu.Lock()
-	defer a.sessionsMu.Unlock()
-
 	a.conn = conn
-	for _, sess := range a.sessions {
+	sessionIDs := make([]acpsdk.SessionId, 0, len(a.sessions))
+	for id, sess := range a.sessions {
 		sess.SetAgentConnection(conn)
+		sessionIDs = append(sessionIDs, id)
+	}
+	a.sessionsMu.Unlock()
+
+	if conn == nil {
+		return
+	}
+
+	for _, sessionID := range sessionIDs {
+		go a.sendAvailableCommandsUpdate(context.Background(), sessionID)
 	}
 }
 
