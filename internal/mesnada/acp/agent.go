@@ -51,6 +51,9 @@ type PandoACPAgent struct {
 	// If nil, permissions are handled by the default TUI flow.
 	permissionService PermissionService
 
+	// planService handles plan-related operations for ACP sessions.
+	planService PlanService
+
 	// clientSupportsWriteFile indicates the connected client supports fs/write_text_file.
 	// Set during Initialize from ClientCapabilities.Fs.WriteTextFile.
 	clientSupportsWriteFile bool
@@ -97,6 +100,7 @@ func NewPandoACPAgent(
 		agentService:      agentService,
 		sessionService:    sessionService,
 		permissionService: permSvc,
+		planService:       NewPlanService(logger),
 		capabilities: acpsdk.AgentCapabilities{
 			LoadSession: true,
 			McpCapabilities: acpsdk.McpCapabilities{

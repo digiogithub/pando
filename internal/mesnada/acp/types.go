@@ -144,3 +144,91 @@ type ToolCallInfo struct {
 	// Meta carries ACP-specific metadata associated with the tool update.
 	Meta map[string]interface{}
 }
+
+// PlanEntry represents a single entry in a plan sent via ACP session update.
+// This matches the OpenCode standard for plan communication.
+type PlanEntry struct {
+	// Priority is the priority level of the task: "high", "medium", "low"
+	Priority string `json:"priority"`
+
+	// Status is the current status of the task: "pending", "in_progress", "completed"
+	Status string `json:"status"`
+
+	// Content is the description or title of the task
+	Content string `json:"content"`
+}
+
+// SessionPlan represents a complete plan sent to ACP clients.
+type SessionPlan struct {
+	// Entries is the list of plan entries
+	Entries []PlanEntry `json:"entries"`
+}
+
+// SessionUpdateType represents the different types of session updates.
+type SessionUpdateType string
+
+const (
+	// SessionUpdateUsage is for usage/cost updates
+	SessionUpdateUsage SessionUpdateType = "usage_update"
+	
+	// SessionUpdateToolCall is for tool call status updates
+	SessionUpdateToolCall SessionUpdateType = "tool_call_update"
+	
+	// SessionUpdatePlan is for plan information (new feature)
+	SessionUpdatePlan SessionUpdateType = "plan"
+	
+	// SessionUpdateAgentMessage is for streaming agent messages
+	SessionUpdateAgentMessage SessionUpdateType = "agent_message_chunk"
+	
+	// SessionUpdateUserMessage is for streaming user messages
+	SessionUpdateUserMessage SessionUpdateType = "user_message_chunk"
+	
+	// SessionUpdateAgentThought is for streaming agent thoughts/reasoning
+	SessionUpdateAgentThought SessionUpdateType = "agent_thought_chunk"
+)
+
+// SessionUpdate represents a structured session update message.
+// This extends the current SessionUpdateInfo to support the OpenCode standard.
+type SessionUpdate struct {
+	// Type is the type of update
+	Type SessionUpdateType `json:"type"`
+	
+	// SessionID is the ACP session ID
+	SessionID string `json:"sessionId"`
+	
+	// MessageText is the text content (for message updates)
+	MessageText string `json:"messageText,omitempty"`
+	
+	// ThinkingText is the model's reasoning content (for thought updates)
+	ThinkingText string `json:"thinkingText,omitempty"`
+	
+	// ToolCall contains tool information (for tool updates)
+	ToolCall *ToolCallInfo `json:"toolCall,omitempty"`
+	
+	// Plan contains planning information (for plan updates)
+	Plan *SessionPlan `json:"plan,omitempty"`
+	
+	// Usage contains usage information (for usage updates)
+	Usage *UsageInfo `json:"usage,omitempty"`
+	
+	// StopReason indicates why the agent stopped (if applicable)
+	StopReason string `json:"stopReason,omitempty"`
+	
+	// Error contains any error message
+	Error string `json:"error,omitempty"`
+}
+
+// UsageInfo represents token usage and cost information.
+type UsageInfo struct {
+	// InputTokens is the number of input tokens used
+	InputTokens int64 `json:"inputTokens"`
+	
+	// OutputTokens is the number of output tokens used
+	OutputTokens int64 `json:"outputTokens"`
+	
+	// TotalTokens is the total tokens used
+	TotalTokens int64 `json:"totalTokens"`
+	
+	// Cost is the estimated cost in USD
+	Cost float64 `json:"cost"`
+}

@@ -422,7 +422,7 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 				switch p := part.(type) {
 				case message.TextContent:
 					if p.Text != "" {
-						sendUpdate(acpsdk.UpdateUserMessageText(p.Text))
+						sendUpdate(updateUserMessageTextWithID(p.Text, msg.ID))
 					}
 				}
 			}
@@ -433,11 +433,11 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 				switch p := part.(type) {
 				case message.TextContent:
 					if p.Text != "" {
-						sendUpdate(acpsdk.UpdateAgentMessageText(p.Text))
+						sendUpdate(updateAgentMessageTextWithID(p.Text, msg.ID))
 					}
 				case message.ReasoningContent:
 					if p.Thinking != "" {
-						sendUpdate(acpsdk.UpdateAgentThoughtText(p.Thinking))
+						sendUpdate(updateAgentThoughtTextWithID(p.Thinking, msg.ID))
 					}
 				case message.ToolCall:
 					// TodoWrite → plan: emit a plan notification instead of a
@@ -501,15 +501,7 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 					}
 
 					// Build structured rawOutput matching the streaming path.
-					rawOutput := map[string]interface{}{"output": tr.Content}
-					if tr.Metadata != "" {
-						var meta interface{}
-						if jerr := json.Unmarshal([]byte(tr.Metadata), &meta); jerr == nil {
-							rawOutput["metadata"] = meta
-						} else {
-							rawOutput["metadata"] = tr.Metadata
-						}
-					}
+					rawOutput := buildRawOutput(tr.Content, tr.Metadata, tr.IsError)
 
 					// Use the tool name to reconstruct rich content.
 					outputContent := toolResultContent(tr.Name, tr.Content, tr.IsError)
@@ -529,6 +521,37 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 						}
 						if storedInput != "" {
 							break
+						}
+					}
+
+					// For edit tools, add filediff metadata to match opencode standard
+					if isEditTool(tr.Name) && !tr.IsError && storedInput != "" {
+						var ep editToolInput
+						if jerr := json.Unmarshal([]byte(storedInput), &ep); jerr == nil && ep.FilePath != "" {
+							if tr.Name == "edit" {
+								// Add filediff metadata for edit tools
+								if rawOutput["metadata"] == nil {
+									rawOutput["metadata"] = map[string]interface{}{}
+								}
+								meta := rawOutput["metadata"].(map[string]interface{})
+								meta["filediff"] = map[string]interface{}{
+									"file":      ep.FilePath,
+									"before":    ep.OldString,
+									"after":     ep.NewString,
+									"additions": countLines(ep.NewString),
+									"deletions": countLines(ep.OldString),
+								}
+							} else if tr.Name == "write" {
+								// For write tools, include additions count
+								if rawOutput["metadata"] == nil {
+									rawOutput["metadata"] = map[string]interface{}{}
+								}
+								meta := rawOutput["metadata"].(map[string]interface{})
+								meta["filediff"] = map[string]interface{}{
+									"file":      ep.FilePath,
+									"additions": countLines(ep.Content),
+								}
+							}
 						}
 					}
 

@@ -97,6 +97,30 @@ func (a *PandoACPAgent) toolStartContent(toolName, toolCallID string, fallback [
 	return fallback
 }
 
+func updateUserMessageTextWithID(text, messageID string) acpsdk.SessionUpdate {
+	update := acpsdk.UpdateUserMessageText(text)
+	if update.UserMessageChunk != nil && messageID != "" {
+		update.UserMessageChunk.MessageId = &messageID
+	}
+	return update
+}
+
+func updateAgentMessageTextWithID(text, messageID string) acpsdk.SessionUpdate {
+	update := acpsdk.UpdateAgentMessageText(text)
+	if update.AgentMessageChunk != nil && messageID != "" {
+		update.AgentMessageChunk.MessageId = &messageID
+	}
+	return update
+}
+
+func updateAgentThoughtTextWithID(text, messageID string) acpsdk.SessionUpdate {
+	update := acpsdk.UpdateAgentThoughtText(text)
+	if update.AgentThoughtChunk != nil && messageID != "" {
+		update.AgentThoughtChunk.MessageId = &messageID
+	}
+	return update
+}
+
 // processPromptWithAgent processes a prompt using the Pando LLM agent.
 // attachments carries any image/binary content extracted from the prompt (6d).
 func (a *PandoACPAgent) processPromptWithAgent(
@@ -105,6 +129,12 @@ func (a *PandoACPAgent) processPromptWithAgent(
 	promptText string,
 	attachments ...message.Attachment,
 ) (acpsdk.StopReason, error) {
+	if promptText != "" && acpSession.HasAgentConnection() {
+		userMessageID := acpSession.PandoSessionID() + "-user"
+		if err := acpSession.SendUpdate(updateUserMessageTextWithID(promptText, userMessageID)); err != nil {
+			a.logger.Printf("[ACP AGENT] Failed to send user message chunk: %v", err)
+		}
+	}
 	eventChan, err := a.agentService.Run(ctx, acpSession.PandoSessionID(), promptText, attachments...)
 	if err != nil {
 		return "", fmt.Errorf("failed to start agent: %w", err)
@@ -118,6 +148,7 @@ func (a *PandoACPAgent) processAgentEventStream(
 	eventChan <-chan AgentEvent,
 ) (acpsdk.StopReason, error) {
 	var finalStopReason acpsdk.StopReason
+	var currentMessageID string
 	// Track whether streaming deltas were sent so processAgentResponse can skip
 	// re-sending the full content (which would cause duplicate text in the client).
 	var sentContentDeltas, sentThinkingDeltas bool
@@ -130,6 +161,7 @@ func (a *PandoACPAgent) processAgentEventStream(
 			}
 
 		case AgentEventTypeResponse:
+			currentMessageID = event.Message.ID
 			if err := a.processAgentResponse(acpSession, event.Message, sentContentDeltas, sentThinkingDeltas); err != nil {
 				a.logger.Printf("[ACP AGENT] Failed to process response: %v", err)
 				return acpsdk.StopReasonRefusal, err
@@ -138,7 +170,7 @@ func (a *PandoACPAgent) processAgentEventStream(
 
 		case AgentEventTypeContentDelta:
 			if event.Delta != "" {
-				if err := acpSession.SendUpdate(acpsdk.UpdateAgentMessageText(event.Delta)); err != nil {
+				if err := acpSession.SendUpdate(updateAgentMessageTextWithID(event.Delta, currentMessageID)); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send content delta: %v", err)
 				} else {
 					sentContentDeltas = true
@@ -156,7 +188,7 @@ func (a *PandoACPAgent) processAgentEventStream(
 						a.logger.Printf("[ACP AGENT] Failed to send system usage update: %v", err)
 					}
 				}
-				if err := acpSession.SendUpdate(acpsdk.UpdateAgentMessageText(normalized)); err != nil {
+				if err := acpSession.SendUpdate(updateAgentMessageTextWithID(normalized, currentMessageID)); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send system message update: %v", err)
 				} else {
 					sentContentDeltas = true
@@ -323,9 +355,10 @@ func (a *PandoACPAgent) processAgentEventStream(
 			if event.ToolResult != nil {
 				tr := event.ToolResult
 
-				// TodoWrite results are suppressed — the plan notification already
-				// carries all relevant information. Clean up pending state and skip.
+				// For TodoWrite tools, decode the output and send plan update to client
 				if strings.EqualFold(tr.Name, "TodoWrite") {
+					go a.handleTodoWritePlan(acpSession, tr)
+					// Clean up pending state and skip regular tool result processing
 					a.pendingToolCallsMu.Lock()
 					delete(a.pendingToolCalls, tr.ToolCallID)
 					delete(a.startedToolCalls, tr.ToolCallID)
@@ -391,16 +424,37 @@ func (a *PandoACPAgent) processAgentEventStream(
 				// Rebuild rawInput so clients can display tool arguments alongside the result.
 				rawInput := parseRawInput(storedInput)
 
-				// Build rawOutput matching the opencode format: { output, metadata }.
-				rawOutput := map[string]interface{}{
-					"output": tr.Content,
-				}
-				if tr.Metadata != "" {
-					var meta interface{}
-					if jerr := json.Unmarshal([]byte(tr.Metadata), &meta); jerr == nil {
-						rawOutput["metadata"] = meta
-					} else {
-						rawOutput["metadata"] = tr.Metadata
+				// Build rawOutput matching the opencode format: { output/error, metadata }.
+				rawOutput := buildRawOutput(tr.Content, tr.Metadata, tr.IsError)
+
+				// For edit tools, add filediff metadata to match opencode standard
+				if isEditTool(tr.Name) && !tr.IsError && storedInput != "" {
+					var ep editToolInput
+					if jerr := json.Unmarshal([]byte(storedInput), &ep); jerr == nil && ep.FilePath != "" {
+						if tr.Name == "edit" {
+							// Add filediff metadata for edit tools
+							if rawOutput["metadata"] == nil {
+								rawOutput["metadata"] = map[string]interface{}{}
+							}
+							meta := rawOutput["metadata"].(map[string]interface{})
+							meta["filediff"] = map[string]interface{}{
+								"file":      ep.FilePath,
+								"before":    ep.OldString,
+								"after":     ep.NewString,
+								"additions": countLines(ep.NewString),
+								"deletions": countLines(ep.OldString),
+							}
+						} else if tr.Name == "write" {
+							// For write tools, include additions count
+							if rawOutput["metadata"] == nil {
+								rawOutput["metadata"] = map[string]interface{}{}
+							}
+							meta := rawOutput["metadata"].(map[string]interface{})
+							meta["filediff"] = map[string]interface{}{
+								"file":      ep.FilePath,
+								"additions": countLines(ep.Content),
+							}
+						}
 					}
 				}
 
@@ -498,7 +552,7 @@ func (a *PandoACPAgent) processAgentEventStream(
 
 		case AgentEventTypeSummarize:
 			if event.Progress != "" {
-				if err := acpSession.SendUpdate(acpsdk.UpdateAgentMessageText(event.Progress + "\n")); err != nil {
+				if err := acpSession.SendUpdate(updateAgentMessageTextWithID(event.Progress+"\n", currentMessageID)); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send summarize update: %v", err)
 				} else {
 					sentContentDeltas = true
@@ -587,7 +641,7 @@ func (a *PandoACPAgent) processAgentResponse(
 ) error {
 	if !sentContentDeltas {
 		if content := msg.Content(); content.String() != "" {
-			update := acpsdk.UpdateAgentMessageText(content.String())
+			update := updateAgentMessageTextWithID(content.String(), msg.ID)
 			if err := acpSession.SendUpdate(update); err != nil {
 				a.logger.Printf("[ACP AGENT] Failed to send message update: %v", err)
 			}
@@ -596,7 +650,7 @@ func (a *PandoACPAgent) processAgentResponse(
 
 	if !sentThinkingDeltas {
 		if reasoning := msg.ReasoningContent(); reasoning.String() != "" {
-			update := acpsdk.UpdateAgentThoughtText(reasoning.String())
+			update := updateAgentThoughtTextWithID(reasoning.String(), msg.ID)
 			if err := acpSession.SendUpdate(update); err != nil {
 				a.logger.Printf("[ACP AGENT] Failed to send thought update: %v", err)
 			}
@@ -745,15 +799,7 @@ func (a *PandoACPAgent) processAgentResponse(
 		a.pendingToolCallsMu.Unlock()
 
 		rawInput := parseRawInput(storedInput)
-		rawOutput := map[string]interface{}{"output": toolResult.Content}
-		if toolResult.Metadata != "" {
-			var meta interface{}
-			if err := json.Unmarshal([]byte(toolResult.Metadata), &meta); err == nil {
-				rawOutput["metadata"] = meta
-			} else {
-				rawOutput["metadata"] = toolResult.Metadata
-			}
-		}
+		rawOutput := buildRawOutput(toolResult.Content, toolResult.Metadata, toolResult.IsError)
 
 		content := toolResultContent(toolResult.Name, toolResult.Content, toolResult.IsError)
 		if isEditTool(toolResult.Name) && !toolResult.IsError && storedInput != "" {
@@ -828,6 +874,35 @@ func (a *PandoACPAgent) processAgentResponse(
 	}
 
 	return nil
+}
+
+// handleTodoWritePlan processes TodoWrite tool output and sends plan update to ACP client.
+// This implements the OpenCode standard for plan communication via ACP.
+func (a *PandoACPAgent) handleTodoWritePlan(acpSession *ACPServerSession, toolResult *message.ToolResult) {
+	a.logger.Printf("[ACP AGENT] Processing TodoWrite plan for session: %s", acpSession.ID)
+
+	// Decode the TodoWrite output
+	decodeResult := a.planService.DecodeTodos(toolResult.Content)
+	if !decodeResult.Success {
+		a.logger.Printf("[ACP AGENT] Failed to decode TodoWrite output: %s", decodeResult.Error)
+		return
+	}
+
+	// Create session plan from decoded todos
+	plan := a.planService.CreateSessionPlan(decodeResult.Todos)
+
+	// Validate the plan
+	if err := a.planService.ValidateSessionPlan(plan); err != nil {
+		a.logger.Printf("[ACP AGENT] Invalid plan: %v", err)
+		return
+	}
+
+	// Send plan update to the ACP client
+	if err := a.planService.SendPlanUpdate(context.Background(), a.conn, acpSession.ID, plan); err != nil {
+		a.logger.Printf("[ACP AGENT] Failed to send plan update: %v", err)
+	} else {
+		a.logger.Printf("[ACP AGENT] Successfully sent plan update with %d entries", len(plan.Entries))
+	}
 }
 
 // mapFinishReasonToStopReason maps Pando finish reasons to ACP stop reasons.

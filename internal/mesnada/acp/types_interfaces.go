@@ -3,6 +3,8 @@ package acp
 import (
 	"context"
 
+	acpsdk "github.com/madeindigio/acp-go-sdk"
+
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/message"
 )
@@ -143,6 +145,52 @@ type editToolInput struct {
 	Content   string `json:"content"`    // write tool
 	OldString string `json:"old_string"` // edit tool
 	NewString string `json:"new_string"` // edit tool
+}
+
+// TodoInfo represents a single todo/task in a plan.
+// This matches the structure used by the todowrite tool in OpenCode.
+type TodoInfo struct {
+	// Content is the description of the todo/task
+	Content string `json:"content"`
+	
+	// Status is the current status: "pending", "in_progress", "completed", "cancelled"
+	Status string `json:"status"`
+	
+	// Priority is the priority level: "high", "medium", "low"
+	Priority string `json:"priority"`
+}
+
+// DecodeTodosResult represents the result of decoding todo output.
+type DecodeTodosResult struct {
+	// Success indicates if the decoding was successful
+	Success bool `json:"success"`
+	
+	// Todos contains the decoded todos if successful
+	Todos []TodoInfo `json:"todos,omitempty"`
+	
+	// Error contains any error message if decoding failed
+	Error string `json:"error,omitempty"`
+}
+
+// ToolHandlerFunc is a function type for handling tool completion events.
+type ToolHandlerFunc func(ctx context.Context, toolName string, toolOutput string) error
+
+// PlanService defines the interface for plan-related operations.
+type PlanService interface {
+	// DecodeTodos parses the output of a todowrite tool into TodoInfo structures
+	DecodeTodos(output string) DecodeTodosResult
+
+	// CreatePlanEntry converts TodoInfo to PlanEntry with proper state mapping
+	CreatePlanEntry(todo TodoInfo) PlanEntry
+
+	// CreateSessionPlan converts a list of TodoInfo to a SessionPlan
+	CreateSessionPlan(todos []TodoInfo) *SessionPlan
+
+	// ValidateSessionPlan validates a complete session plan
+	ValidateSessionPlan(plan *SessionPlan) error
+
+	// SendPlanUpdate sends a plan update to the ACP client
+	SendPlanUpdate(ctx context.Context, conn *acpsdk.AgentSideConnection, sessionID acpsdk.SessionId, plan *SessionPlan) error
 }
 
 // PersonaInfo describes a single available persona for ACP responses.

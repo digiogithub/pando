@@ -131,9 +131,14 @@ func (s *ACPServerSession) Cancel() {
 }
 
 // SendUpdate sends a SessionUpdate notification to the client via the AgentSideConnection.
-func (s *ACPServerSession) SendUpdate(update acpsdk.SessionUpdate) error {
+func (s *ACPServerSession) SendUpdate(update acpsdk.SessionUpdate) (err error) {
 	s.updateMu.Lock()
 	defer s.updateMu.Unlock()
+	defer func() {
+		if r := recover(); r != nil {
+			err = nil
+		}
+	}()
 
 	s.mu.Lock()
 	agentConn := s.agentConn

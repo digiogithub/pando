@@ -57,6 +57,33 @@ func hasUsefulRawInput(rawInput interface{}) bool {
 	}
 }
 
+// countLines counts the number of lines in a string.
+func countLines(s string) int {
+	if s == "" {
+		return 0
+	}
+	return strings.Count(s, "\n") + 1
+}
+
+// buildRawOutput constructs a rawOutput object matching the opencode standard.
+// When isError is true, uses "error" key instead of "output" key.
+func buildRawOutput(content string, metadata string, isError bool) map[string]interface{} {
+	key := "output"
+	if isError {
+		key = "error"
+	}
+	out := map[string]interface{}{key: content}
+	if metadata != "" {
+		var m interface{}
+		if json.Unmarshal([]byte(metadata), &m) == nil {
+			out["metadata"] = m
+		} else {
+			out["metadata"] = metadata
+		}
+	}
+	return out
+}
+
 func toDisplayPath(path string, cwd string) string {
 	if strings.TrimSpace(path) == "" {
 		return path
@@ -115,16 +142,16 @@ func toolDisplayTitle(toolName string, rawInput interface{}, cwd string) string 
 	case "bash", "execute_command":
 		if m, ok := rawInput.(map[string]interface{}); ok {
 			if command, ok := m["command"].(string); ok && strings.TrimSpace(command) != "" {
+				if len(command) > 80 {
+					command = command[:77] + "..."
+				}
 				return command
-			}
-			if description, ok := m["description"].(string); ok && strings.TrimSpace(description) != "" {
-				return description
 			}
 		}
 		if name == "execute_command" {
 			return "Execute command"
 		}
-		return "Bash"
+		return "Terminal"
 	case "read", "view":
 		if path := firstToolInputString(rawInput, "file_path", "path"); path != "" {
 			displayPath := toDisplayPath(path, cwd)
