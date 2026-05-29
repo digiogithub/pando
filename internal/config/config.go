@@ -252,6 +252,16 @@ type RemembrancesConfig struct {
 	// ContextEnrichmentMinScore is the minimum relevance score (0–1) for a result to be included.
 	// Results below this threshold are discarded; entire sections are dropped if all results fail.
 	ContextEnrichmentMinScore float64 `json:"context_enrichment_min_score" toml:"ContextEnrichmentMinScore"`
+
+	// ContextEnrichmentKBMaxChars limits the number of characters emitted for the KB section.
+	// 0 means no limit beyond the individual result truncation.
+	ContextEnrichmentKBMaxChars int `json:"context_enrichment_kb_max_chars" toml:"ContextEnrichmentKBMaxChars"`
+	// ContextEnrichmentCodeMaxChars limits characters for the Code Index section.
+	ContextEnrichmentCodeMaxChars int `json:"context_enrichment_code_max_chars" toml:"ContextEnrichmentCodeMaxChars"`
+	// ContextEnrichmentEventsMaxChars limits characters for the Past Session Events section.
+	ContextEnrichmentEventsMaxChars int `json:"context_enrichment_events_max_chars" toml:"ContextEnrichmentEventsMaxChars"`
+	// ContextEnrichmentTotalMaxChars caps the combined context block (all sections). 0 = unlimited.
+	ContextEnrichmentTotalMaxChars int `json:"context_enrichment_total_max_chars" toml:"ContextEnrichmentTotalMaxChars"`
 }
 
 // APIServerConfig holds configuration for the HTTP API server (WebUI backend).

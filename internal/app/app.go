@@ -270,13 +270,19 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 				if cfg.Remembrances.ContextEnrichmentEnabled {
 					enricher := rag.NewContextEnricher(
 						remembrances,
-						cfg.Remembrances.ContextEnrichmentKBResults,
-						cfg.Remembrances.ContextEnrichmentCodeResults,
-						cfg.Remembrances.ContextEnrichmentCodeProject,
-						cfg.Remembrances.ContextEnrichmentEventsResults,
-						cfg.Remembrances.ContextEnrichmentEventsSubject,
-						cfg.Remembrances.ContextEnrichmentEventsLastDays,
-						cfg.Remembrances.ContextEnrichmentMinScore,
+						rag.EnricherConfig{
+							KBResults:      cfg.Remembrances.ContextEnrichmentKBResults,
+							CodeResults:    cfg.Remembrances.ContextEnrichmentCodeResults,
+							CodeProject:    cfg.Remembrances.ContextEnrichmentCodeProject,
+							EventsResults:  cfg.Remembrances.ContextEnrichmentEventsResults,
+							EventsSubject:  cfg.Remembrances.ContextEnrichmentEventsSubject,
+							EventsLastDays: cfg.Remembrances.ContextEnrichmentEventsLastDays,
+							MinScore:       cfg.Remembrances.ContextEnrichmentMinScore,
+							KBMaxChars:     cfg.Remembrances.ContextEnrichmentKBMaxChars,
+							CodeMaxChars:   cfg.Remembrances.ContextEnrichmentCodeMaxChars,
+							EventsMaxChars: cfg.Remembrances.ContextEnrichmentEventsMaxChars,
+							TotalMaxChars:  cfg.Remembrances.ContextEnrichmentTotalMaxChars,
+						},
 					)
 					agent.SetContextEnricher(enricher)
 					logging.Info("remembrances: context enricher enabled",
@@ -286,6 +292,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 						"events_results", cfg.Remembrances.ContextEnrichmentEventsResults,
 						"events_subject", cfg.Remembrances.ContextEnrichmentEventsSubject,
 						"events_last_days", cfg.Remembrances.ContextEnrichmentEventsLastDays,
+						"min_score", cfg.Remembrances.ContextEnrichmentMinScore,
 					)
 				}
 			}
