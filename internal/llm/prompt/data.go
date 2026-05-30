@@ -20,8 +20,9 @@ type PromptData struct {
 	ProjectListing   string
 
 	// Provider
-	Provider string
-	Model    string
+	Provider    string
+	Model       string
+	ModelFamily ModelFamily // Classified model family for template selection
 
 	// Capabilities (conditional section flags)
 	HasRemembrances  bool

@@ -400,6 +400,7 @@ func BuildPrompt(ctx context.Context, agentName config.AgentName, provider model
 		ProjectListing:   o.projectListing,
 		Provider:         string(provider),
 		Model:            o.model,
+		ModelFamily:      ClassifyModelFamily(string(provider), o.model),
 		HasRemembrances:  caps["remembrances"],
 		HasOrchestration: caps["orchestration"],
 		HasWebSearch:     caps["web_search"],

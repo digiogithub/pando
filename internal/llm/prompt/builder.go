@@ -283,18 +283,24 @@ func (b *PromptBuilder) checkCapability(ctx context.Context, name string, availa
 
 // selectProvider determines which provider template to use, allowing Lua
 // hook_provider_select to override the default selection.
+//
+// Resolution order:
+//  1. Lua hook_provider_select override (highest priority)
+//  2. Family-specific template: providers/{provider}/{family}  (e.g. providers/openai/o-series)
+//  3. Provider-level fallback: providers/{provider}            (e.g. providers/openai)
 func (b *PromptBuilder) selectProvider(ctx context.Context) string {
 	providerName := strings.ToLower(b.provider)
 	if providerName == "" {
 		return ""
 	}
-	defaultTemplate := "providers/" + providerName
 
+	// 1. Allow Lua hook to override entirely
 	if b.luaMgr != nil && b.luaMgr.IsEnabled() {
 		hookData := map[string]interface{}{
-			"provider":   b.provider,
-			"model":      b.data.Model,
-			"agent_name": b.agentName,
+			"provider":     b.provider,
+			"model":        b.data.Model,
+			"model_family": string(b.data.ModelFamily),
+			"agent_name":   b.agentName,
 		}
 		result, err := b.luaMgr.ExecuteHook(ctx, luaengine.HookProviderSelect, hookData)
 		if err == nil && result != nil && result.Modified {
@@ -304,7 +310,17 @@ func (b *PromptBuilder) selectProvider(ctx context.Context) string {
 		}
 	}
 
-	return defaultTemplate
+	// 2. Try family-specific template first
+	if b.data.ModelFamily != FamilyDefault {
+		familyTemplate := "providers/" + providerName + "/" + string(b.data.ModelFamily)
+		if b.registry.Exists(familyTemplate) {
+			logging.Debug("Using model-family template", "provider", providerName, "family", string(b.data.ModelFamily), "template", familyTemplate)
+			return familyTemplate
+		}
+	}
+
+	// 3. Fall back to provider-level template
+	return "providers/" + providerName
 }
 
 // applyComposeHook applies Lua hook_prompt_compose to allow reordering,
