@@ -18,6 +18,8 @@ const (
 	acpGroupedThinkingFlushChars    = 360
 )
 
+type cleanModeContextKey struct{}
+
 type groupedThinkingState struct {
 	pending   strings.Builder
 	lastFlush time.Time
@@ -196,6 +198,9 @@ func (a *PandoACPAgent) processPromptWithAgent(
 	promptText string,
 	attachments ...message.Attachment,
 ) (acpsdk.StopReason, error) {
+	if acpSession.CleanMode() {
+		ctx = context.WithValue(ctx, cleanModeContextKey{}, true)
+	}
 	reconcileACPThinkingSession(a.agentService, acpSession)
 	if promptText != "" && acpSession.HasAgentConnection() {
 		userMessageID := acpSession.PandoSessionID() + "-user"

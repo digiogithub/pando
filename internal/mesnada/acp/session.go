@@ -45,6 +45,9 @@ type ACPServerSession struct {
 	// persona is the persona name requested by the client (set via SetSessionPersona)
 	persona string
 
+	// cleanMode disables all extra system/prompt-builder instructions for the session.
+	cleanMode bool
+
 	// askPermission controls whether tool calls require ACP approval prompts.
 	askPermission bool
 
@@ -216,6 +219,20 @@ func (s *ACPServerSession) Persona() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.persona
+}
+
+// SetCleanMode stores whether the session should run in clean mode.
+func (s *ACPServerSession) SetCleanMode(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanMode = enabled
+}
+
+// CleanMode reports whether the session should run in clean mode.
+func (s *ACPServerSession) CleanMode() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cleanMode
 }
 
 // SetAskPermission stores whether tool calls require explicit approval.

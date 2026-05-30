@@ -220,3 +220,25 @@ func TestBuildSystemMessageUsesTemplatePromptBuilder(t *testing.T) {
 	assert.NotContains(t, msg, "There are more than 1000 files")
 	assert.NotContains(t, msg, "<project>")
 }
+
+func TestBuildSystemMessageCleanModeReturnsEmptyPrompt(t *testing.T) {
+	ctx := context.WithValue(context.Background(), cleanModeContextKey{}, true)
+	msg := buildSystemMessage(
+		ctx,
+		config.AgentCoder,
+		models.ProviderAnthropic,
+		nil,
+		nil,
+		nil,
+		"persona",
+	)
+
+	assert.Equal(t, "", msg)
+}
+
+func TestCleanModeCatalogToolHasExpectedContract(t *testing.T) {
+	info := cleanModeCatalogTool{}.Info()
+	assert.Equal(t, "list_mcp_catalog", info.Name)
+	assert.Empty(t, info.Required)
+	assert.Empty(t, info.Parameters)
+}

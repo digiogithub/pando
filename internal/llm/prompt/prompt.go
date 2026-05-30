@@ -67,6 +67,24 @@ func GetAgentPrompt(agentName config.AgentName, provider models.ModelProvider, l
 	return finalPrompt
 }
 
+func FormatMCPToolsForPrompt(toolNames []string) string {
+	if len(toolNames) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	builder.WriteString("# MCP Tools Catalog\n")
+	for _, name := range toolNames {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		builder.WriteString("- ")
+		builder.WriteString(trimmed)
+		builder.WriteByte('\n')
+	}
+	return strings.TrimRight(builder.String(), "\n")
+}
+
 func InjectSkillsMetadata(availableSkills []skills.SkillMetadata) string {
 	if len(availableSkills) == 0 {
 		return ""

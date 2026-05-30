@@ -28,6 +28,32 @@ import (
 	"github.com/digiogithub/pando/internal/skills"
 )
 
+type cleanModeContextKey struct{}
+
+type cleanModeCatalogTool struct{}
+
+func isCleanModeContext(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	enabled, _ := ctx.Value(cleanModeContextKey{}).(bool)
+	return enabled
+}
+
+func (cleanModeCatalogTool) Info() tools.ToolInfo {
+	return tools.ToolInfo{
+		Name:        "list_mcp_catalog",
+		Description: "Return the MCP catalog listing as normally exposed by the prompt builder. This tool takes no arguments.",
+		Parameters:  map[string]any{},
+		Required:    []string{},
+	}
+}
+
+func (cleanModeCatalogTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolResponse, error) {
+	_ = params
+	return tools.NewTextResponse(promptMcpCatalogListing(ctx)), nil
+}
+
 // Common errors
 var (
 	ErrRequestCancelled = errors.New("request cancelled by user")
@@ -564,6 +590,9 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	// This is done before creating the user message so the content (user query)
 	// can be used for auto-selection without modifying the user message itself.
 	personaContent := getPersonaContent(ctx, content)
+	if isCleanModeContext(ctx) {
+		personaContent = ""
+	}
 	if activePersona := strings.TrimSpace(GetActivePersona()); activePersona != "" {
 		a.addRunStatusMessage(sessionID, fmt.Sprintf("Selected persona: %s", activePersona))
 	}
@@ -1662,6 +1691,9 @@ func (a *agent) compactContext(ctx context.Context, sessionID string) error {
 
 func (a *agent) prepareProvider(ctx context.Context, userPrompt string, personaContent string) (provider.Provider, error) {
 	logging.Debug("prepareProvider", "agentName", string(a.agentName), "hasSkillManager", a.skillManager != nil, "hasPersona", personaContent != "")
+	if isCleanModeContext(ctx) {
+		return createAgentProvider(ctx, a.agentName, []tools.BaseTool{cleanModeCatalogTool{}}, nil, nil, "")
+	}
 
 	// When there is no skill manager and no persona, use the pre-built provider as-is.
 	if a.skillManager == nil && personaContent == "" {
@@ -1803,6 +1835,9 @@ func buildSystemMessage(
 	activeSkillInstructions []string,
 	personaContent string,
 ) string {
+	if isCleanModeContext(ctx) {
+		return ""
+	}
 	cfg := config.Get()
 	if cfg == nil {
 		return prompt.GetAgentPrompt(agentName, modelProvider, globalLuaManager)
@@ -1862,6 +1897,11 @@ func buildSystemMessage(
 		"system_prompt", finalPrompt,
 	)
 	return finalPrompt
+}
+
+func promptMcpCatalogListing(ctx context.Context) string {
+	toolNames := promptToolNames(GetMcpTools(ctx, permission.NewPermissionService()))
+	return prompt.FormatMCPToolsForPrompt(toolNames)
 }
 
 func promptMCPServerNames(cfg *config.Config) []string {

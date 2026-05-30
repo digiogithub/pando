@@ -370,6 +370,7 @@ type mockAgentService struct {
 	goalObjective      string
 	summarizeSessionID string
 	lastRunMessages    []string
+	activePersona      string
 	currentModel       string
 	availableModels    []ACPModelInfo
 	sessionOverrides   map[string]SessionLLMOverrides
@@ -444,11 +445,66 @@ func (m *mockAgentService) ListPersonas() []string {
 }
 
 func (m *mockAgentService) GetActivePersona() string {
+	if m.activePersona != "" {
+		return m.activePersona
+	}
 	return "default"
 }
 
 func (m *mockAgentService) SetActivePersona(name string) error {
+	m.activePersona = name
 	return nil
+}
+
+func TestSetSessionModeCleanModeFlag(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	if _, err := agent.SetSessionMode(ctx, acpsdk.SetSessionModeRequest{SessionId: resp.SessionId, ModeId: acpsdk.SessionModeId(cleanModeID)}); err != nil {
+		t.Fatalf("SetSessionMode failed: %v", err)
+	}
+
+	sess, err := agent.getSession(resp.SessionId)
+	if err != nil {
+		t.Fatalf("getSession failed: %v", err)
+	}
+	if !sess.CleanMode() {
+		t.Fatal("expected clean mode flag to be enabled")
+	}
+}
+
+func TestPromptCleanModeClearsPersonaOverride(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+	if err := agent.SetSessionPersona(ctx, resp.SessionId, "assistant"); err != nil {
+		t.Fatalf("SetSessionPersona failed: %v", err)
+	}
+	if _, err := agent.SetSessionMode(ctx, acpsdk.SetSessionModeRequest{SessionId: resp.SessionId, ModeId: acpsdk.SessionModeId(cleanModeID)}); err != nil {
+		t.Fatalf("SetSessionMode failed: %v", err)
+	}
+
+	_, err = agent.Prompt(ctx, acpsdk.PromptRequest{
+		SessionId: resp.SessionId,
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("hello")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt failed: %v", err)
+	}
+
+	mockSvc := agent.agentService.(*mockAgentService)
+	if mockSvc.activePersona != "" {
+		t.Fatalf("expected clean mode to clear active persona, got %q", mockSvc.activePersona)
+	}
 }
 
 func (m *mockAgentService) Summarize(ctx context.Context, sessionID string) error {
@@ -2023,8 +2079,8 @@ func TestPandoACPAgent_NewSessionResponse_UsesSeparatedACPSelectors(t *testing.T
 	if resp.Modes == nil {
 		t.Fatal("expected legacy modes to be present")
 	}
-	if len(resp.Modes.AvailableModes) != 3 {
-		t.Fatalf("expected 3 legacy modes, got %d", len(resp.Modes.AvailableModes))
+	if len(resp.Modes.AvailableModes) != 4 {
+		t.Fatalf("expected 4 modes including clean, got %d", len(resp.Modes.AvailableModes))
 	}
 
 	if len(resp.ConfigOptions) != 5 {

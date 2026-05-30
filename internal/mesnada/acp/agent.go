@@ -237,6 +237,7 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 		pandoSessionID,
 	)
 	acpSession.SetMode(defaultACPMode)
+	acpSession.SetCleanMode(false)
 	acpSession.SetAskPermission(false)
 
 	currentMode := acpSession.Mode()
@@ -305,7 +306,9 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 	}
 
 	// Apply per-session persona override if set.
-	if personaName := acpSession.Persona(); personaName != "" {
+	if acpSession.CleanMode() {
+		_ = a.agentService.SetActivePersona("")
+	} else if personaName := acpSession.Persona(); personaName != "" {
 		if err := a.agentService.SetActivePersona(personaName); err != nil {
 			a.logger.Printf("[ACP AGENT] Warning: could not apply persona %q: %v", personaName, err)
 		} else {
@@ -320,6 +323,7 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 	if mode == "" {
 		mode = defaultACPMode
 	}
+	acpSession.SetCleanMode(mode == cleanModeID)
 
 	// Configure permissions from the dedicated approval selector.
 	askPermission := acpSession.AskPermission()
@@ -501,6 +505,7 @@ func (a *PandoACPAgent) SetSessionMode(ctx context.Context, req acpsdk.SetSessio
 	}
 
 	acpSession.SetMode(modeID)
+	acpSession.SetCleanMode(modeID == cleanModeID)
 	acpSession.SetAskPermission(defaultAskPermissionForMode(modeID))
 	acpSession.SetPermissionConfigured(false)
 	a.logger.Printf("[ACP AGENT] Session mode set: SessionID=%s, Mode=%s (mode will take effect on next prompt)", req.SessionId, modeID)
@@ -534,6 +539,7 @@ func (a *PandoACPAgent) SetSessionConfigOption(ctx context.Context, req acpsdk.S
 			return acpsdk.SetSessionConfigOptionResponse{}, err
 		}
 		acpSession.SetMode(value)
+		acpSession.SetCleanMode(value == cleanModeID)
 		if !acpSession.PermissionConfigured() {
 			acpSession.SetAskPermission(defaultAskPermissionForMode(value))
 		}
@@ -1034,7 +1040,7 @@ func (a *PandoACPAgent) configurePermissionMode(sessionID acpsdk.SessionId, mode
 
 func validateModeID(modeID string) error {
 	switch strings.TrimSpace(modeID) {
-	case agentModeID, askModeID, goalModeID:
+	case agentModeID, askModeID, goalModeID, cleanModeID:
 		return nil
 	default:
 		return fmt.Errorf("unknown mode: %s", modeID)
