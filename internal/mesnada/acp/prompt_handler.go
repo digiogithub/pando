@@ -491,10 +491,10 @@ func (a *PandoACPAgent) processAgentEventStream(
 			if event.ToolResult != nil {
 				tr := event.ToolResult
 
-				// For TodoWrite tools, decode the output and send plan update to client
+				// For TodoWrite tools, send plan update from the tool call INPUT
+				// (not the text output) and skip regular tool result processing.
 				if strings.EqualFold(tr.Name, "TodoWrite") {
-					go a.handleTodoWritePlan(acpSession, tr)
-					// Clean up pending state and skip regular tool result processing
+					a.handleTodoWritePlan(acpSession, tr)
 					a.pendingToolCallsMu.Lock()
 					delete(a.pendingToolCalls, tr.ToolCallID)
 					delete(a.startedToolCalls, tr.ToolCallID)
@@ -1028,40 +1028,33 @@ func (a *PandoACPAgent) processAgentResponse(
 	return nil
 }
 
-// handleTodoWritePlan processes TodoWrite tool output and sends plan update to ACP client.
-// This implements the OpenCode standard for plan communication via ACP.
+// handleTodoWritePlan processes a TodoWrite tool result and sends a plan update
+// to the ACP client. It uses the tool call INPUT (JSON with the todos array)
+// rather than the tool result content (human-readable text) because the plan
+// schema lives in the input, not the output.
+// This is the primary plan-delivery path for non-streaming providers
+// (OpenAI/Copilot/Gemini) that do not emit EventToolUseStart/Delta/Stop and
+// therefore never trigger the streaming plan path in processAgentEventStream.
 func (a *PandoACPAgent) handleTodoWritePlan(acpSession *ACPServerSession, toolResult *message.ToolResult) {
-	a.logger.Printf("[ACP AGENT] Processing TodoWrite plan for session: %s", acpSession.ID)
-
-	// Decode the TodoWrite output
-	decodeResult := a.planService.DecodeTodos(toolResult.Content)
-	if !decodeResult.Success {
-		a.logger.Printf("[ACP AGENT] Failed to decode TodoWrite output: %s", decodeResult.Error)
+	// The tool call input ({"todos": [...]}) is the canonical plan source.
+	// toolResult.Content is the human-readable confirmation text produced by
+	// the TodoWrite tool's Run method and cannot be parsed as plan JSON.
+	input := toolResult.Input
+	if input == "" {
+		a.logger.Printf("[ACP AGENT] TodoWrite result has no input for session %s, skipping plan update", acpSession.ID)
 		return
 	}
 
-	// Create session plan from decoded todos
-	plan := a.planService.CreateSessionPlan(decodeResult.Todos)
-
-	// Validate the plan
-	if err := a.planService.ValidateSessionPlan(plan); err != nil {
-		a.logger.Printf("[ACP AGENT] Invalid plan: %v", err)
+	entries := parseTodoWritePlan(input)
+	if len(entries) == 0 {
+		a.logger.Printf("[ACP AGENT] Failed to parse TodoWrite input as plan for session %s", acpSession.ID)
 		return
-	}
-
-	entries := make([]acpsdk.PlanEntry, 0, len(plan.Entries))
-	for _, e := range plan.Entries {
-		entries = append(entries, acpsdk.NewPlanEntry(
-			e.Content,
-			acpsdk.ParsePlanEntryStatus(e.Status),
-			acpsdk.ParsePlanEntryPriority(e.Priority),
-		))
 	}
 
 	if err := a.sendPlanModeUpdate(acpSession, entries); err != nil {
 		a.logger.Printf("[ACP AGENT] Failed to send plan update: %v", err)
 	} else {
-		a.logger.Printf("[ACP AGENT] Successfully sent plan update with %d entries", len(plan.Entries))
+		a.logger.Printf("[ACP AGENT] Successfully sent plan update with %d entries (from tool result)", len(entries))
 	}
 }
 
