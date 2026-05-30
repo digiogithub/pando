@@ -43,6 +43,9 @@ type PromptData struct {
 	LSPInfo         string
 	MCPInstructions string
 
+	// Task context (optional; used for task-type-aware skill injection)
+	UserRequest string
+
 	// Config reference
 	Config *config.Config
 }

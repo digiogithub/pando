@@ -67,3 +67,22 @@ type contextKey string
 
 // SelectedTemplateKey is used to store the selected template ID in context.
 const SelectedTemplateKey contextKey = "selected_template_id"
+
+// ContextProfileKey is used to store a ContextProfile in the request context.
+const ContextProfileKey contextKey = "context_profile"
+
+// ContextProfile is produced by the ContextTrimmer at session start.
+// It guides the PromptBuilder and agent tool assembly to include only
+// what is relevant for the current task.
+type ContextProfile struct {
+	// TaskType is the classified task type (e.g. "code", "debug", "refactor").
+	TaskType string
+	// RelevantToolNames lists the tool names to keep for this task.
+	// An empty slice means keep all tools (no filtering).
+	RelevantToolNames []string
+	// SkipSections lists prompt section names that are not needed for this task.
+	SkipSections []string
+	// Confidence is a 0.0–1.0 measure of the trimmer's certainty.
+	// Profiles with Confidence < 0.5 should be ignored and defaults used.
+	Confidence float64
+}

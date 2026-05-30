@@ -29,6 +29,9 @@ type PromptEvaluator interface {
 	SelectTemplate(ctx context.Context, sectionName string) (*PromptEvaluatorTemplate, error)
 	GetActiveSkills(ctx context.Context, taskType string) ([]PromptEvaluatorSkill, error)
 	RecordTemplateSelection(ctx context.Context, sessionID, templateID string)
+	// ClassifyTask returns a task type label from the user's first message.
+	// Returns "general" if no pattern matches.
+	ClassifyTask(text string) string
 }
 
 // promptEvaluator is the internal alias kept for backward-compatibility within this file.
@@ -162,7 +165,13 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 
 	// 8b. Learned optimization rules from the Skill Library (injected by the evaluator).
 	if b.evaluator != nil {
-		if learnedSkills, err := b.evaluator.GetActiveSkills(ctx, "general"); err == nil && len(learnedSkills) > 0 {
+		// Prefer the evaluator's pattern-based classifier (Phase 1); fall back to
+		// the built-in keyword classifier (Phase 0) when the evaluator is unavailable.
+		taskType := b.evaluator.ClassifyTask(b.data.UserRequest)
+		if taskType == "" {
+			taskType = classifyTaskType(b.data.UserRequest)
+		}
+		if learnedSkills, err := b.evaluator.GetActiveSkills(ctx, taskType); err == nil && len(learnedSkills) > 0 {
 			var skillsText strings.Builder
 			skillsText.WriteString("## Learned Optimization Rules\n")
 			for _, sk := range learnedSkills {
@@ -174,7 +183,7 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 				Name:    "evaluator/learned_skills",
 				Content: skillsText.String(),
 			})
-			logging.Debug("Self-improvement learned skills injected", "count", len(learnedSkills), "agent", b.agentName)
+			logging.Debug("Self-improvement learned skills injected", "count", len(learnedSkills), "task_type", taskType, "agent", b.agentName)
 		} else if err != nil {
 			logging.Debug("Self-improvement learned skills unavailable", "agent", b.agentName, "error", err)
 		}
@@ -386,4 +395,37 @@ func (b *PromptBuilder) applyLuaSystemPromptHook(ctx context.Context, prompt str
 // homeDir returns the user's home directory.
 func homeDir() (string, error) {
 	return os.UserHomeDir()
+}
+
+// classifyTaskType returns a task type label from a user message using simple keyword matching.
+// This is the Phase 0 fallback used when no evaluator is available.
+// Returns "general" if no pattern matches.
+func classifyTaskType(text string) string {
+	lower := strings.ToLower(text)
+	switch {
+	case containsAny(lower, "fix", "bug", "error", "crash", "broken", "failing", "exception", "panic", "traceback"):
+		return "debug"
+	case containsAny(lower, "refactor", "rename", "reorganize", "clean up", "extract", "move"):
+		return "refactor"
+	case containsAny(lower, "explain", "how does", "what is", "describe", "understand", "document"):
+		return "explain"
+	case containsAny(lower, "test", "spec", "coverage", "assert", "mock"):
+		return "test"
+	case containsAny(lower, "implement", "create", "add feature", "write", "build"):
+		return "code"
+	case containsAny(lower, "find", "search", "where is", "locate", "grep for"):
+		return "search"
+	default:
+		return "general"
+	}
+}
+
+// containsAny reports whether s contains any of the given substrings.
+func containsAny(s string, substrings ...string) bool {
+	for _, sub := range substrings {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }

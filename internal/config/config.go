@@ -422,6 +422,14 @@ type PersonaAutoSelectConfig struct {
 	PersonaPath string `json:"personaPath,omitempty"`
 }
 
+// TaskPatternConfig maps a regex pattern to a task type label.
+type TaskPatternConfig struct {
+	// Pattern is a regular expression matched against the user's first message (case-insensitive).
+	Pattern string `toml:"pattern" json:"pattern"`
+	// TaskType is the label returned when the pattern matches (e.g. "debug", "refactor").
+	TaskType string `toml:"taskType" json:"taskType"`
+}
+
 // EvaluatorConfig controls the self-improvement evaluation loop.
 type EvaluatorConfig struct {
 	// Enabled activates the evaluation loop. Default: false (opt-in).
@@ -449,6 +457,9 @@ type EvaluatorConfig struct {
 	JudgePromptTemplate string `toml:"judgePromptTemplate"`
 	// Async runs evaluation in background after session end. Default: true.
 	Async bool `toml:"async"`
+	// TaskPatterns maps regex patterns to task type labels for ClassifyTask.
+	// Evaluated in order; first match wins. Falls back to "general" if none match.
+	TaskPatterns []TaskPatternConfig `toml:"taskPatterns" json:"taskPatterns,omitempty"`
 }
 
 // ACPConfig defines the configuration for the ACP (Agent Client Protocol) stdio server.
@@ -3406,6 +3417,16 @@ func EvaluatorWithDefaults(eval EvaluatorConfig) EvaluatorConfig {
 	// when the struct is fully unset so we don't override a deliberate false.
 	if fullyUnset {
 		eval.Async = true
+	}
+	if len(eval.TaskPatterns) == 0 {
+		eval.TaskPatterns = []TaskPatternConfig{
+			{Pattern: `fix|bug|error|crash|exception|failing|panic|traceback`, TaskType: "debug"},
+			{Pattern: `refactor|rename|reorganize|clean\s+up|extract|move`, TaskType: "refactor"},
+			{Pattern: `explain|how\s+does|what\s+is|describe|understand|document`, TaskType: "explain"},
+			{Pattern: `test|spec|coverage|assert|mock`, TaskType: "test"},
+			{Pattern: `implement|create|add\s+feature|build`, TaskType: "code"},
+			{Pattern: `find|search|where\s+is|locate|grep\s+for`, TaskType: "search"},
+		}
 	}
 	return eval
 }

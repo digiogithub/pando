@@ -26,6 +26,7 @@ func (s stubEvaluatorService) GetStats(_ context.Context) (*evaluator.Stats, err
 }
 func (s stubEvaluatorService) IsEnabled() bool                                        { return true }
 func (s stubEvaluatorService) RecordTemplateSelection(_ context.Context, _, _ string) {}
+func (s stubEvaluatorService) ClassifyTask(_ string) string                           { return "general" }
 
 func TestEvaluatorViewStaysWithinTerminalHeight(t *testing.T) {
 	stats := &evaluator.Stats{

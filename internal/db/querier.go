@@ -52,6 +52,9 @@ type Querier interface {
 	ListAllActiveSkills(ctx context.Context) ([]SkillLibrary, error)
 	CountActiveSkills(ctx context.Context) (int64, error)
 	DeactivateLowestSkill(ctx context.Context) error
+	// DeactivateUnderperformingSkills deactivates skills that have low success rate and
+	// high usage, indicating they do not improve outcomes despite being frequently selected.
+	DeactivateUnderperformingSkills(ctx context.Context) error
 	IncrementSkillUsage(ctx context.Context, id string) error
 	ListUCBRanking(ctx context.Context) ([]ListUCBRankingRow, error)
 	GetEvaluatorStats(ctx context.Context) (GetEvaluatorStatsRow, error)

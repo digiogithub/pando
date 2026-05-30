@@ -76,6 +76,19 @@ func SetContextEnricher(e ContextEnricher) {
 	globalContextEnricher = e
 }
 
+// trimmedToolsKey is the context key used to store the pre-computed list of relevant tool names
+// produced by the ContextTrimmer at session start.
+type trimmedToolsKey struct{}
+
+// globalContextTrimmer is the optional pre-session context trimmer injected from app.go.
+var globalContextTrimmer ContextTrimmer
+
+// SetContextTrimmer sets the context trimmer used to filter the tool list for new sessions.
+// Pass nil to disable context trimming (all tools will always be included).
+func SetContextTrimmer(ct ContextTrimmer) {
+	globalContextTrimmer = ct
+}
+
 // globalNonInteractive indicates that Pando is running in non-interactive CLI mode (-p flag).
 // When true, the system prompt instructs agents to act autonomously without requesting user input.
 var globalNonInteractive bool
@@ -625,16 +638,31 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		return a.err(err)
 	}
 
+	// Pre-session context trimming: for the first message of a session, analyze the task
+	// and store the recommended tool subset in the context so streamAndHandleEvents can
+	// filter the advertised tool list. This reduces context window usage by removing
+	// irrelevant tools. Falls back silently to all tools on any error.
+	runCtx := ctx
+	if globalContextTrimmer != nil && len(msgs) == 0 {
+		toolDescs := toolDescriptionsFrom(a.tools)
+		if filteredNames, trimErr := globalContextTrimmer.ProfileTask(ctx, content, toolDescs); trimErr == nil && len(filteredNames) > 0 {
+			runCtx = context.WithValue(ctx, trimmedToolsKey{}, filteredNames)
+			logging.Debug("Context trimmer applied", "original_tools", len(a.tools), "filtered_tools", len(filteredNames))
+		} else if trimErr != nil {
+			logging.Debug("Context trimmer failed, using all tools", "error", trimErr)
+		}
+	}
+
 	for {
 		// Check for cancellation before each iteration
 		select {
-		case <-ctx.Done():
-			return a.err(ctx.Err())
+		case <-runCtx.Done():
+			return a.err(runCtx.Err())
 		default:
 			// Continue processing
 		}
 		logging.Debug("processGeneration iteration", "sessionID", sessionID, "historyLength", len(msgHistory))
-		agentMessage, toolResults, err := a.streamAndHandleEvents(ctx, sessionID, msgHistory, requestProvider, eventCh)
+		agentMessage, toolResults, err := a.streamAndHandleEvents(runCtx, sessionID, msgHistory, requestProvider, eventCh)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				agentMessage.AddFinish(message.FinishReasonCanceled)
@@ -847,7 +875,17 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 	if cache, ok := tools.GetSessionCacheByID(sessionID); ok {
 		ctx = context.WithValue(ctx, tools.SessionCacheContextKey, cache)
 	}
-	providerEventChan := requestProvider.StreamResponse(ctx, msgHistory, a.tools)
+
+	// Apply context-trimmed tool list if a pre-session profile was computed.
+	// Only the advertised tool list is filtered; tool execution still looks up from a.tools
+	// so any tool can always be invoked (e.g. if the LLM calls one based on prior context).
+	activeTools := a.tools
+	if filteredNames, ok := ctx.Value(trimmedToolsKey{}).([]string); ok && len(filteredNames) > 0 {
+		activeTools = filterToolsByNames(a.tools, filteredNames)
+		logging.Debug("streamAndHandleEvents: using trimmed tool list", "active", len(activeTools), "total", len(a.tools))
+	}
+
+	providerEventChan := requestProvider.StreamResponse(ctx, msgHistory, activeTools)
 
 	assistantMsg, err := a.messages.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.Assistant,

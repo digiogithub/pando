@@ -276,6 +276,7 @@ type buildOptions struct {
 	version          string
 	model            string
 	contextFiles     []ContextFile
+	userRequest      string
 }
 
 // WithMCPServers sets the list of MCP server names for capability detection.
@@ -361,6 +362,13 @@ func WithContextFiles(files []ContextFile) BuildOption {
 	}
 }
 
+// WithUserRequest sets the user's first message for task-type-aware skill injection.
+func WithUserRequest(request string) BuildOption {
+	return func(o *buildOptions) {
+		o.userRequest = request
+	}
+}
+
 // BuildPrompt constructs a system prompt using the template-based builder.
 // This is the new entry point that uses the template infrastructure while
 // keeping GetAgentPrompt available for backward compatibility.
@@ -407,6 +415,7 @@ func BuildPrompt(ctx context.Context, agentName config.AgentName, provider model
 		LSPInfo:          o.lspInfo,
 		MCPInstructions:  o.mcpInstructions,
 		Config:           cfg,
+		UserRequest:      o.userRequest,
 	}
 
 	builder := NewPromptBuilder(string(agentName), string(provider), data, luaMgr)

@@ -378,6 +378,11 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			session.SetEvaluator(evalSvc)
 			// Wire evaluator into prompt builder via adapter (UCB template selection + skill injection).
 			prompt.SetGlobalEvaluator(&evaluatorPromptAdapter{svc: evalSvc})
+			// Wire ContextTrimmer into agent for pre-session tool filtering (Phase 3).
+			if ct := evalSvc.NewContextTrimmer(); ct != nil {
+				agent.SetContextTrimmer(&agentContextTrimmerAdapter{trimmer: ct})
+				logging.Info("evaluator: context trimmer initialized")
+			}
 			logging.Info("evaluator: self-improvement system initialized", "model", cfg.Evaluator.Model)
 		}
 	}
@@ -901,6 +906,29 @@ func (a *evaluatorPromptAdapter) GetActiveSkills(ctx context.Context, taskType s
 
 func (a *evaluatorPromptAdapter) RecordTemplateSelection(ctx context.Context, sessionID, templateID string) {
 	a.svc.RecordTemplateSelection(ctx, sessionID, templateID)
+}
+
+func (a *evaluatorPromptAdapter) ClassifyTask(text string) string {
+	return a.svc.ClassifyTask(text)
+}
+
+// agentContextTrimmerAdapter adapts *evaluator.ContextTrimmer to the agent.ContextTrimmer
+// interface. It converts tool descriptions and delegates the profile confidence check so
+// the agent package never needs to import the evaluator package directly.
+type agentContextTrimmerAdapter struct {
+	trimmer *evaluator.ContextTrimmer
+}
+
+func (a *agentContextTrimmerAdapter) ProfileTask(ctx context.Context, firstMessage string, availableTools []agent.ToolDescription) ([]string, error) {
+	infos := make([]evaluator.ToolInfo, len(availableTools))
+	for i, t := range availableTools {
+		infos[i] = evaluator.ToolInfo{Name: t.Name, Description: t.Description}
+	}
+	profile, err := a.trimmer.ProfileTask(ctx, firstMessage, infos)
+	if err != nil || profile == nil || profile.Confidence < 0.5 {
+		return nil, err //nolint:nilerr // intentional fallback: low confidence → use all tools
+	}
+	return profile.RelevantToolNames, nil
 }
 
 // initTheme sets the application theme based on the configuration

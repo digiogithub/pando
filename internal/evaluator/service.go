@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 
@@ -37,16 +38,21 @@ type Service interface {
 
 	// RecordTemplateSelection records which template was selected for a session.
 	RecordTemplateSelection(ctx context.Context, sessionID, templateID string)
+
+	// ClassifyTask returns a task type label from the user's first message.
+	// Returns "general" if no pattern matches.
+	ClassifyTask(text string) string
 }
 
 // EvaluatorService is the concrete implementation of Service.
 type EvaluatorService struct {
-	cfg      config.EvaluatorConfig
-	db       db.Querier
-	msgs     message.Service
-	judge    *Judge
-	patterns []*regexp.Regexp
-	mu       sync.Mutex
+	cfg          config.EvaluatorConfig
+	db           db.Querier
+	msgs         message.Service
+	judge        *Judge
+	patterns     []*regexp.Regexp
+	taskPatterns []compiledPattern
+	mu           sync.Mutex
 	// sessionTemplates maps sessionID -> templateID for the current session
 	sessionTemplates sync.Map
 }
@@ -70,10 +76,11 @@ func New(cfg config.EvaluatorConfig, q db.Querier, msgs message.Service) (*Evalu
 	}
 
 	svc := &EvaluatorService{
-		cfg:      cfg,
-		db:       q,
-		msgs:     msgs,
-		patterns: patterns,
+		cfg:          cfg,
+		db:           q,
+		msgs:         msgs,
+		patterns:     patterns,
+		taskPatterns: compileTaskPatterns(cfg.TaskPatterns),
 	}
 
 	// Create judge (soft failure: log warning, continue without judge).
@@ -429,8 +436,17 @@ func buildTranscript(msgs []message.Message) string {
 	return sb.String()
 }
 
+// NewContextTrimmer creates a ContextTrimmer backed by this service's judge infrastructure.
+// Returns nil if the evaluator has no judge configured or if the evaluator itself is nil.
+func (s *EvaluatorService) NewContextTrimmer() *ContextTrimmer {
+	if s == nil || s.judge == nil {
+		return nil
+	}
+	return NewContextTrimmer(s.cfg, s.judge)
+}
+
 // saveSkillFromJudge persists a new skill from judge output if confidence is high enough.
-// Enforces MaxSkills by deactivating the lowest-performing skill before inserting.
+// It enforces MaxSkills, deduplicates against existing skills, and prunes underperformers.
 func (s *EvaluatorService) saveSkillFromJudge(ctx context.Context, out *JudgeOutput, sessionID, templateID string) error {
 	if out == nil || out.NewSkill == "" || out.Confidence < 0.7 {
 		return nil
@@ -439,6 +455,24 @@ func (s *EvaluatorService) saveSkillFromJudge(ctx context.Context, out *JudgeOut
 	taskType := out.TaskType
 	if taskType == "" {
 		taskType = "general"
+	}
+
+	// Prune underperforming skills (low success rate despite high usage) before inserting.
+	// This runs asynchronously to avoid blocking the save path.
+	go func() {
+		pruneCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := s.db.DeactivateUnderperformingSkills(pruneCtx); err != nil {
+			slog.Debug("evaluator: skill pruning failed", "err", err)
+		}
+	}()
+
+	// Deduplication: load existing skills of the same task type and skip insertion
+	// if the new skill's content is substantially similar to an existing one.
+	existing, listErr := s.db.ListAllActiveSkills(ctx)
+	if listErr == nil && isDuplicateSkill(out.NewSkill, existing) {
+		slog.Debug("evaluator: skill deduplicated (near-duplicate already exists)", "task_type", taskType)
+		return nil
 	}
 
 	// Enforce MaxSkills limit.
@@ -466,4 +500,71 @@ func (s *EvaluatorService) saveSkillFromJudge(ctx context.Context, out *JudgeOut
 
 	slog.Info("evaluator: new skill saved", "task_type", taskType, "confidence", out.Confidence)
 	return nil
+}
+
+// isDuplicateSkill reports whether newContent is substantially similar to any existing skill.
+// It uses a word-overlap ratio: if more than 70% of the significant words in newContent
+// already appear in an existing skill's content, it is considered a duplicate.
+func isDuplicateSkill(newContent string, existing []db.SkillLibrary) bool {
+	newWords := tokenizeSkill(newContent)
+	if len(newWords) == 0 {
+		return false
+	}
+	for _, sk := range existing {
+		existingWords := tokenizeSkill(sk.Content)
+		if skillWordOverlap(newWords, existingWords) > 0.70 {
+			return true
+		}
+	}
+	return false
+}
+
+// tokenizeSkill lowercases s and extracts significant words (length ≥ 4),
+// filtering out stop words to focus on meaningful content.
+func tokenizeSkill(s string) []string {
+	lower := strings.ToLower(s)
+	words := strings.FieldsFunc(lower, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	out := words[:0]
+	for _, w := range words {
+		if len(w) >= 4 && !isStopWord(w) {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// stopWords is a small set of common English words to exclude from skill similarity checks.
+var stopWords = map[string]bool{
+	"this": true, "that": true, "with": true, "from": true, "have": true,
+	"will": true, "when": true, "your": true, "what": true, "should": true,
+	"always": true, "never": true, "make": true, "sure": true, "using": true,
+	"used": true, "only": true, "also": true, "then": true, "than": true,
+	"more": true, "less": true, "each": true, "such": true, "been": true,
+	"they": true, "them": true, "their": true, "there": true, "these": true,
+	"those": true, "must": true, "need": true,
+}
+
+func isStopWord(w string) bool {
+	return stopWords[w]
+}
+
+// skillWordOverlap returns the fraction of words in `a` that are present in `b`.
+// Returns 0 if either slice is empty.
+func skillWordOverlap(a, b []string) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	setB := make(map[string]bool, len(b))
+	for _, w := range b {
+		setB[w] = true
+	}
+	matches := 0
+	for _, w := range a {
+		if setB[w] {
+			matches++
+		}
+	}
+	return float64(matches) / float64(len(a))
 }

@@ -14,6 +14,65 @@ import (
 	"github.com/digiogithub/pando/internal/rag"
 )
 
+// ToolDescription carries the minimal information the ContextTrimmer needs about each tool.
+type ToolDescription struct {
+	Name        string
+	Description string
+}
+
+// ContextTrimmer analyzes the user's first message and recommends a minimal tool set
+// to reduce context window usage by filtering irrelevant tools from the initial API call.
+// It is wired from app.go via SetContextTrimmer.
+type ContextTrimmer interface {
+	// ProfileTask returns the recommended tool names for the task.
+	// Returns nil/empty to indicate "use all tools" (e.g., on error or low confidence).
+	ProfileTask(ctx context.Context, firstMessage string, availableTools []ToolDescription) ([]string, error)
+}
+
+// alwaysIncludedTools is the core safe set that must remain in the tool list regardless
+// of context trimming. These tools are needed for basic file operations that any task may require.
+var alwaysIncludedTools = map[string]bool{
+	"bash":  true,
+	"edit":  true,
+	"view":  true,
+	"glob":  true,
+	"grep":  true,
+	"write": true,
+	"patch": true,
+	"ls":    true,
+}
+
+// filterToolsByNames returns the subset of allTools whose names are in the allowed set
+// or in alwaysIncludedTools. If names is empty, all tools are returned unchanged.
+func filterToolsByNames(allTools []tools.BaseTool, names []string) []tools.BaseTool {
+	if len(names) == 0 {
+		return allTools
+	}
+	allowed := make(map[string]bool, len(names))
+	for _, n := range names {
+		allowed[n] = true
+	}
+	result := make([]tools.BaseTool, 0, len(names)+len(alwaysIncludedTools))
+	for _, t := range allTools {
+		name := t.Info().Name
+		if allowed[name] || alwaysIncludedTools[name] {
+			result = append(result, t)
+		}
+	}
+	return result
+}
+
+// toolDescriptionsFrom builds a []ToolDescription slice from a []tools.BaseTool
+// so the ContextTrimmer knows the name and purpose of each available tool.
+func toolDescriptionsFrom(baseTools []tools.BaseTool) []ToolDescription {
+	descs := make([]ToolDescription, len(baseTools))
+	for i, t := range baseTools {
+		info := t.Info()
+		descs[i] = ToolDescription{Name: info.Name, Description: info.Description}
+	}
+	return descs
+}
+
 func CoderAgentTools(
 	permissions permission.Service,
 	history history.Service,
