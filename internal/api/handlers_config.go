@@ -122,6 +122,16 @@ type AgentConfigItem struct {
 	AutoCompactThreshold float64             `json:"autoCompactThreshold"`
 }
 
+var webUIAgentOrder = []config.AgentName{
+	config.AgentCoder,
+	config.AgentSummarizer,
+	config.AgentTask,
+	config.AgentTitle,
+	config.AgentCLIAssist,
+	config.AgentPersonaSelector,
+	config.AgentContextEnricher,
+}
+
 func (s *Server) handleConfigAgents(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -140,8 +150,9 @@ func (s *Server) handleGetConfigAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := make([]AgentConfigItem, 0, len(cfg.Agents))
-	for name, a := range cfg.Agents {
+	items := make([]AgentConfigItem, 0, len(cfg.Agents)+len(webUIAgentOrder))
+	seen := make(map[config.AgentName]struct{}, len(cfg.Agents))
+	appendAgent := func(name config.AgentName, a config.Agent) {
 		model := models.SupportedModels[a.Model]
 		items = append(items, AgentConfigItem{
 			Name:                 string(name),
@@ -153,6 +164,18 @@ func (s *Server) handleGetConfigAgents(w http.ResponseWriter, r *http.Request) {
 			AutoCompact:          a.AutoCompact,
 			AutoCompactThreshold: a.AutoCompactThreshold,
 		})
+		seen[name] = struct{}{}
+	}
+
+	for _, name := range webUIAgentOrder {
+		appendAgent(name, cfg.Agents[name])
+	}
+
+	for name, a := range cfg.Agents {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		appendAgent(name, a)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"agents": items})
@@ -202,6 +225,7 @@ type MCPServerConfigItem struct {
 	Type    config.MCPType    `json:"type"`
 	URL     string            `json:"url"`
 	Headers map[string]string `json:"headers"`
+	Running bool              `json:"running"`
 	Tools   []MCPToolInfo     `json:"tools"`
 }
 
@@ -248,6 +272,10 @@ func (s *Server) handleGetConfigMCPServers(w http.ResponseWriter, r *http.Reques
 		if tools == nil {
 			tools = []MCPToolInfo{}
 		}
+		running := false
+		if s.app != nil && s.app.MCPGateway != nil {
+			running = s.app.MCPGateway.HasClient(name)
+		}
 		items = append(items, MCPServerConfigItem{
 			Name:    name,
 			Command: srv.Command,
@@ -256,6 +284,7 @@ func (s *Server) handleGetConfigMCPServers(w http.ResponseWriter, r *http.Reques
 			Type:    srv.Type,
 			URL:     srv.URL,
 			Headers: srv.Headers,
+			Running: running,
 			Tools:   tools,
 		})
 	}
@@ -793,7 +822,7 @@ func (s *Server) handleConfigEvaluator(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "configuration not loaded")
 			return
 		}
-		writeJSON(w, http.StatusOK, cfg.Evaluator)
+		writeJSON(w, http.StatusOK, config.EvaluatorWithDefaults(cfg.Evaluator))
 	case http.MethodPut:
 		var req config.EvaluatorConfig
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

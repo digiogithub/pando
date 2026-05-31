@@ -41,6 +41,14 @@ func (app *App) initRemembrancesProjectIndexing(ctx context.Context, svc *rag.Re
 		return
 	}
 
+	// Skip code indexing when running from the user's home directory.
+	// Indexing the entire home tree is expensive and rarely intentional.
+	// KB sync (handled separately) will still run if configured.
+	if config.IsHomeDirectory(rootPath) {
+		logging.Info("remembrances code: startup indexing skipped (running from home directory)", "path", rootPath)
+		return
+	}
+
 	projectID := strings.TrimSpace(cfg.ContextEnrichmentCodeProject)
 	if projectID == "" {
 		projectID = sanitizeRemembrancesProjectID(rootPath)

@@ -3,22 +3,24 @@ import { useAgentsStore } from '@/stores/settingsStore'
 import ModelCombobox from '@/components/shared/ModelCombobox'
 import type { AgentConfigItem } from '@/types'
 
-const AGENT_NAMES = ['coder', 'summarizer', 'task', 'title', 'cliassist', 'persona-selector']
+const AGENT_NAMES = ['coder', 'summarizer', 'task', 'title', 'cli-assist', 'persona-selector', 'context-enricher']
 
 const AGENT_LABELS: Record<string, string> = {
   coder: 'Coder',
   summarizer: 'Summarizer',
   task: 'Task',
   title: 'Title',
-  cliassist: 'CLI Assist',
+  'cli-assist': 'CLI Assist',
   'persona-selector': 'Persona Selector',
+  'context-enricher': 'Content Enricher',
 }
 
 // Automatic token budgets per agent role (mirrors config.AutoBudgetByRole)
 const AUTO_TOKEN_BUDGET: Record<string, number> = {
   title: 80,
   'persona-selector': 64,
-  cliassist: 256,
+  'cli-assist': 256,
+  'context-enricher': 256,
   task: 2048,
   summarizer: 4096,
   coder: 8192,
@@ -29,8 +31,9 @@ const AGENT_DESCRIPTIONS: Record<string, string> = {
   summarizer: 'Summarizes sessions and content',
   task: 'Manages and executes tasks',
   title: 'Generates session titles',
-  cliassist: 'Assists with CLI and terminal tasks',
+  'cli-assist': 'Assists with CLI and terminal tasks',
   'persona-selector': 'Selects and switches personas automatically',
+  'context-enricher': 'Plans and enriches prompts with relevant remembered context before retrieval',
 }
 
 const REASONING_EFFORT_OPTIONS = [

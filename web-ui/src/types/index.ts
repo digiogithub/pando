@@ -262,6 +262,7 @@ export interface MCPServerConfig {
   type: MCPType
   url: string
   headers: Record<string, string>
+  running?: boolean
   tools?: MCPToolInfo[]
 }
 

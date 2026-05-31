@@ -2450,6 +2450,21 @@ func WorkingDirectory() string {
 	return cfg.WorkingDir
 }
 
+// IsHomeDirectory returns true if the given path is the user's home directory.
+// It normalises both paths to absolute form before comparing, and works
+// correctly on Windows, Linux, and macOS.
+func IsHomeDirectory(path string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return false
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	return filepath.Clean(abs) == filepath.Clean(home)
+}
+
 func UpdateAgentModel(agentName AgentName, modelID models.ModelID) error {
 	return setAgentModel(agentName, models.NormalizeModelID(string(modelID)), true)
 }

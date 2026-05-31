@@ -127,6 +127,15 @@ func (p *MCPClientPool) StopAll() {
 	logging.Debug("MCP client pool: all clients stopped")
 }
 
+// HasClient reports whether the pool currently has a live cached client for the given server.
+func (p *MCPClientPool) HasClient(serverName string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	_, ok := p.clients[serverName]
+	return ok
+}
+
 // newPooledClient constructs a concrete MCP client based on the server type.
 func newPooledClient(ctx context.Context, serverName string, srv config.MCPServer) (pooledMCPClient, error) {
 	return mcpclient.New(ctx, serverName, srv)

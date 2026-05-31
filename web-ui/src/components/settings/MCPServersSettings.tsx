@@ -24,7 +24,7 @@ const dividerStyle: React.CSSProperties = {
   margin: '1.5rem 0',
 }
 
-function ServerStatusBadge({ enabled }: { enabled: boolean }) {
+function ServerStatusBadge({ running }: { running: boolean }) {
   return (
     <span
       style={{
@@ -34,11 +34,11 @@ function ServerStatusBadge({ enabled }: { enabled: boolean }) {
         borderRadius: 9999,
         fontSize: 11,
         fontWeight: 600,
-        background: enabled ? 'var(--success)' : 'var(--secondary)',
-        color: enabled ? 'white' : 'var(--fg)',
+        background: running ? 'var(--success)' : 'var(--secondary)',
+        color: running ? 'white' : 'var(--fg)',
       }}
     >
-      {enabled ? 'Enabled' : 'Disabled'}
+      {running ? 'Running' : 'Stopped'}
     </span>
   )
 }
@@ -349,20 +349,26 @@ export default function MCPServersSettings() {
                   {s.type === 'stdio' ? s.command : s.url}
                 </td>
                 <td style={{ padding: '0.625rem 0.75rem' }}>
-                  {(s.tools?.length ?? 0) > 0 ? (
-                    <button
-                      onClick={() => setToolsOverlay({ name: s.name, tools: s.tools! })}
-                      title="Click to view tools"
-                      style={{ background: 'var(--primary)', color: 'var(--primary-fg)', border: 'none', borderRadius: 9999, fontSize: 11, fontWeight: 700, padding: '0.125rem 0.5rem', cursor: 'pointer', fontFamily: 'inherit' }}
-                    >
-                      {s.tools!.length}
-                    </button>
-                  ) : (
-                    <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>—</span>
-                  )}
+                  <button
+                    onClick={() => setToolsOverlay({ name: s.name, tools: s.tools ?? [] })}
+                    title="Click to view tools"
+                    style={{
+                      background: (s.tools?.length ?? 0) > 0 ? 'var(--primary)' : 'var(--secondary)',
+                      color: (s.tools?.length ?? 0) > 0 ? 'var(--primary-fg)' : 'var(--fg)',
+                      border: 'none',
+                      borderRadius: 9999,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '0.125rem 0.5rem',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    {s.tools?.length ?? 0}
+                  </button>
                 </td>
                 <td style={{ padding: '0.625rem 0.75rem' }}>
-                  <ServerStatusBadge enabled />
+                  <ServerStatusBadge running={Boolean(s.running)} />
                 </td>
                 <td style={{ padding: '0.625rem 0.75rem' }}>
                   <div style={{ display: 'flex', gap: '0.375rem' }}>

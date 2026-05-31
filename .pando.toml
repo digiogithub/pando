@@ -64,7 +64,7 @@ Languages = []
 
 [Agents]
 [Agents.cliassist]
-Model = 'copilot.gpt-4o'
+Model = 'deepseek/deepseek-v4-flash:free'
 MaxTokens = 5000
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -73,12 +73,21 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'ollama.gemma4-e2b:latest'
+Model = 'gpt-5.4'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = true
 AutoCompactThreshold = 0.9
+ContextWindowOverride = 0
+
+[Agents.context-enricher]
+Model = 'gpt-4.1'
+MaxTokens = 0
+ReasoningEffort = ''
+ThinkingMode = ''
+AutoCompact = false
+AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.persona-selector]
@@ -100,16 +109,16 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.task]
-Model = 'gemini.gemini-3-flash-preview'
-MaxTokens = 8192
+Model = 'openai/gpt-oss-120b:free'
+MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
-AutoCompact = false
-AutoCompactThreshold = 0.0
+AutoCompact = true
+AutoCompactThreshold = 0.9
 ContextWindowOverride = 0
 
 [Agents.title]
-Model = 'ollama.gemma4-e2b:latest'
+Model = 'openai/gpt-oss-20b:free'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -180,7 +189,7 @@ Args = []
 
 [Bash]
 BannedCommands = []
-AllowedCommands = []
+AllowedCommands = ['curl']
 
 [Remembrances]
 Enabled = true
@@ -279,6 +288,30 @@ maxTokensBaseline = 50
 maxSkills = 100
 judgePromptTemplate = ''
 async = true
+
+[[evaluator.taskPatterns]]
+pattern = 'fix|bug|error|crash|exception|failing|panic|traceback'
+taskType = 'debug'
+
+[[evaluator.taskPatterns]]
+pattern = 'refactor|rename|reorganize|clean\s+up|extract|move'
+taskType = 'refactor'
+
+[[evaluator.taskPatterns]]
+pattern = 'explain|how\s+does|what\s+is|describe|understand|document'
+taskType = 'explain'
+
+[[evaluator.taskPatterns]]
+pattern = 'test|spec|coverage|assert|mock'
+taskType = 'test'
+
+[[evaluator.taskPatterns]]
+pattern = 'implement|create|add\s+feature|build'
+taskType = 'code'
+
+[[evaluator.taskPatterns]]
+pattern = 'find|search|where\s+is|locate|grep\s+for'
+taskType = 'search'
 
 [cliAssist]
 Model = ''

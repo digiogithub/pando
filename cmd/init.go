@@ -467,6 +467,11 @@ func askInitTarget(currentDir string) (string, error) {
 
 // runProjectInit initialises Pando in the given project directory.
 func runProjectInit(projectDir string, force bool) error {
+	// Refuse to create a project config in the user's home directory.
+	if config.IsHomeDirectory(projectDir) {
+		return fmt.Errorf("cannot initialise a project in the home directory — use 'pando init --target profile' instead")
+	}
+
 	fmt.Printf("\nInitialising Pando project in: %s\n\n", projectDir)
 
 	configPath := filepath.Join(projectDir, ".pando.toml")

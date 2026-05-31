@@ -516,6 +516,12 @@ func HasPandoDirectoryAt(dir string) bool {
 // Returns an error if any step fails. It is idempotent: existing files/dirs
 // are not overwritten (same behaviour as "pando init" without --force).
 func InitializeProjectAt(dir string) error {
+	// Refuse to create a project config in the user's home directory.
+	// Home-directory instances must use the global profile config instead.
+	if IsHomeDirectory(dir) {
+		return fmt.Errorf("InitializeProjectAt: refusing to create project config in the home directory — use 'pando init --target profile' instead")
+	}
+
 	dataDir := filepath.Join(dir, pandoDirName, "data")
 	mesnadaDir := filepath.Join(dir, pandoDirName, "mesnada")
 	logsDir := filepath.Join(mesnadaDir, "logs")

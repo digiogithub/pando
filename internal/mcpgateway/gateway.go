@@ -41,6 +41,14 @@ func (g *Gateway) Close() {
 	g.pool.StopAll()
 }
 
+// HasClient reports whether the gateway currently has an active pooled client for a server.
+func (g *Gateway) HasClient(serverName string) bool {
+	if g == nil || g.pool == nil {
+		return false
+	}
+	return g.pool.HasClient(serverName)
+}
+
 // Initialize discovers all MCP server tools and populates the registry.
 func (g *Gateway) Initialize(ctx context.Context, mcpServers map[string]config.MCPServer) error {
 	if len(mcpServers) == 0 {
