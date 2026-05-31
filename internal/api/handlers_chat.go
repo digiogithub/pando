@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/commands"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
@@ -139,6 +140,12 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(w, "event: session\ndata: {\"sessionId\":%q,\"running\":true}\n\n", sess.ID)
 	flusher.Flush()
+
+	// Intercept slash commands before sending to agent.
+	if cmdName, cmdArgs, isCmd := commands.Parse(req.Prompt); isCmd {
+		s.handleSlashCommandStream(w, flusher, r.Context(), sess.ID, cmdName, cmdArgs)
+		return
+	}
 
 	// Submit the run to the background manager. The agent goroutine uses a
 	// context.Background()-derived context so it survives HTTP disconnects.
@@ -625,4 +632,75 @@ func (s *Server) getOrCreateSession(ctx context.Context, sessionID string) (*ses
 	}
 
 	return &sess, nil
+}
+
+// handleSlashCommandStream processes a slash command and writes results as SSE events.
+func (s *Server) handleSlashCommandStream(w http.ResponseWriter, flusher http.Flusher, ctx context.Context, sessionID, cmdName, cmdArgs string) {
+	switch cmdName {
+	case "compact", "summarize":
+		writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Starting session compaction..."})
+		if err := s.app.CoderAgent.Summarize(ctx, sessionID); err != nil {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": "compaction failed: " + err.Error()})
+		} else {
+			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "\nSession compacted successfully."})
+		}
+	case "goal", "autopilot":
+		if strings.TrimSpace(cmdArgs) == "" {
+			// No objective: show status
+			goal, err := s.getGoalBySession(ctx, sessionID)
+			if err != nil {
+				writeSSEEvent(w, flusher, "error", map[string]string{"error": err.Error()})
+			} else {
+				writeSSEEvent(w, flusher, "goal_status", map[string]any{"goal": goal})
+			}
+		} else {
+			// Start goal: submit as regular prompt with goal prefix
+			agentSvc := s.app.CoderAgent
+			submitErr := s.bgRunner.Submit(sessionID, func(bgCtx context.Context) (<-chan agent.AgentEvent, error) {
+				return agentSvc.Run(bgCtx, sessionID, "/goal "+cmdArgs)
+			})
+			if submitErr != nil {
+				writeSSEEvent(w, flusher, "error", map[string]string{"error": submitErr.Error()})
+				return
+			}
+			eventChan, unsubFn, _ := s.bgRunner.Subscribe(sessionID)
+			s.streamSessionEvents(w, flusher, ctx, sessionID, unsubFn, eventChan)
+			return
+		}
+	case "goal-status":
+		goal, err := s.getGoalBySession(ctx, sessionID)
+		if err != nil {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": err.Error()})
+		} else {
+			writeSSEEvent(w, flusher, "goal_status", map[string]any{"goal": goal})
+		}
+	case "goal-cancel":
+		goal, err := s.cancelPersistedGoal(ctx, sessionID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				writeSSEEvent(w, flusher, "error", map[string]string{"error": "no active goal"})
+			} else {
+				writeSSEEvent(w, flusher, "error", map[string]string{"error": err.Error()})
+			}
+		} else {
+			s.bgRunner.Cancel(sessionID)
+			writeSSEEvent(w, flusher, "goal_status", map[string]any{"goal": goalStateFromDB(goal)})
+		}
+	default:
+		// Unknown or custom command: pass through to agent as regular prompt
+		agentSvc := s.app.CoderAgent
+		submitErr := s.bgRunner.Submit(sessionID, func(bgCtx context.Context) (<-chan agent.AgentEvent, error) {
+			return agentSvc.Run(bgCtx, sessionID, "/"+cmdName+" "+cmdArgs)
+		})
+		if submitErr != nil {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": submitErr.Error()})
+			return
+		}
+		eventChan, unsubFn, _ := s.bgRunner.Subscribe(sessionID)
+		s.streamSessionEvents(w, flusher, ctx, sessionID, unsubFn, eventChan)
+		return
+	}
+
+	// For non-streaming commands, send completion event
+	writeSSEEvent(w, flusher, "session", map[string]any{"sessionId": sessionID, "running": false})
 }

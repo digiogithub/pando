@@ -191,6 +191,9 @@ type FocusChatEditorMsg struct{}
 // BlurChatEditorMsg is sent to the chat editor to relinquish textarea focus.
 type BlurChatEditorMsg struct{}
 
+// ShowSlashCompletionMsg is emitted when "/" is typed at the start of an empty editor.
+type ShowSlashCompletionMsg struct{}
+
 func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
@@ -291,6 +294,11 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.textarea.Focused() && key.Matches(msg, editorMaps.Send) {
 			return m, m.send()
+		}
+		// Slash command completion: "/" at the start of an empty textarea
+		if m.textarea.Focused() && len(msg.Runes) == 1 && msg.Runes[0] == '/' && m.textarea.Value() == "" {
+			m.textarea, cmd = m.textarea.Update(msg)
+			return m, tea.Batch(cmd, util.CmdHandler(ShowSlashCompletionMsg{}))
 		}
 		// History navigation: Up navigates to older sent messages.
 		// Only activate when the cursor is on the first line so normal

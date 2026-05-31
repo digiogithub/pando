@@ -25,6 +25,9 @@ type SessionSelectedMsg = session.Session
 
 type SessionClearedMsg struct{}
 
+// CompactSessionMsg requests a manual compaction of the current session.
+type CompactSessionMsg struct{}
+
 type EditorFocusMsg bool
 
 // TodosUpdatedMsg is dispatched when the TodoWrite tool updates the plan.

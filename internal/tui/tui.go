@@ -516,6 +516,9 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case chat.CompactSessionMsg:
+		// Start compacting the current session (triggered from page via /compact)
+		return a, util.CmdHandler(startCompactSessionMsg{})
 	case startCompactSessionMsg:
 		// Start compacting the current session
 		a.isCompacting = true

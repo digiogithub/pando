@@ -61,8 +61,10 @@ type ChatPageModel struct {
 	editorChatPanel      layout.Container
 	messages             layout.Container
 	editor               layout.Container
-	completionDialog     dialog.CompletionDialog
-	showCompletionDialog bool
+	completionDialog          dialog.CompletionDialog
+	showCompletionDialog      bool
+	slashCompletionDialog     dialog.CompletionDialog
+	showSlashCompletionDialog bool
 
 	chatTabWorkspace *editorChatTabWorkspace
 
@@ -84,12 +86,13 @@ type ChatPageModel struct {
 }
 
 type ChatKeyMap struct {
-	ShowCompletionDialog key.Binding
-	NewSession           key.Binding
-	Cancel               key.Binding
-	ToggleSidebar        key.Binding
-	NextPanel            key.Binding
-	ToggleEditorChat     key.Binding
+	ShowCompletionDialog      key.Binding
+	ShowSlashCompletionDialog key.Binding
+	NewSession                key.Binding
+	Cancel                    key.Binding
+	ToggleSidebar             key.Binding
+	NextPanel                 key.Binding
+	ToggleEditorChat          key.Binding
 }
 
 type editorWorkspace struct {
@@ -105,6 +108,10 @@ var keyMap = ChatKeyMap{
 	ShowCompletionDialog: key.NewBinding(
 		key.WithKeys("@"),
 		key.WithHelp("@", "complete"),
+	),
+	ShowSlashCompletionDialog: key.NewBinding(
+		key.WithKeys("/"),
+		key.WithHelp("/", "slash commands"),
 	),
 	NewSession: key.NewBinding(
 		key.WithKeys("ctrl+n"),
@@ -409,20 +416,26 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.height = msg.Height
 		cmds = append(cmds, p.layout.SetSize(msg.Width, msg.Height))
 		return p, tea.Batch(cmds...)
+	case chat.ShowSlashCompletionMsg:
+		p.showSlashCompletionDialog = true
 	case dialog.CompletionDialogCloseMsg:
 		p.showCompletionDialog = false
+		p.showSlashCompletionDialog = false
 	case filetree.FileSelectedMsg:
 		p.showCompletionDialog = false
+		p.showSlashCompletionDialog = false
 		p.focus = focusEditor
 		cmds = append(cmds, p.applyLayoutMode(SidebarEditor), p.editorWorkspace.OpenFile(msg.Path))
 		return p, tea.Batch(cmds...)
 	case editor.OpenEditableFileMsg:
 		p.showCompletionDialog = false
+		p.showSlashCompletionDialog = false
 		p.focus = focusEditor
 		cmds = append(cmds, p.applyLayoutMode(SidebarEditor), p.editorWorkspace.OpenEditableFile(msg.Path))
 		return p, tea.Batch(cmds...)
 	case editor.CloseViewerMsg:
 		p.showCompletionDialog = false
+		p.showSlashCompletionDialog = false
 		p.focus = focusFileTree
 		return p, p.applyLayoutMode(SidebarChat)
 	case chat.SendMsg:
@@ -491,6 +504,18 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if p.showSlashCompletionDialog {
+		dialogModel, dialogCmd := p.slashCompletionDialog.Update(msg)
+		p.slashCompletionDialog = dialogModel.(dialog.CompletionDialog)
+		if dialogCmd != nil {
+			cmds = append(cmds, dialogCmd)
+		}
+
+		if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "enter" {
+			return p, tea.Batch(cmds...)
+		}
+	}
+
 	cmds = append(cmds, p.routeMessage(msg)...)
 	return p, tea.Batch(cmds...)
 }
@@ -501,6 +526,7 @@ func (p *ChatPageModel) handleKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 		return true, p.cancelGoal()
 	case key.Matches(msg, keyMap.ToggleEditorChat):
 		p.showCompletionDialog = false
+		p.showSlashCompletionDialog = false
 		switch p.layoutMode {
 		case ChatOnly:
 			return true, p.applyLayoutMode(SidebarChat)
@@ -517,6 +543,7 @@ func (p *ChatPageModel) handleKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 		return true, nil
 	case key.Matches(msg, keyMap.ToggleSidebar):
 		p.showCompletionDialog = false
+		p.showSlashCompletionDialog = false
 		switch p.layoutMode {
 		case ChatOnly:
 			return true, p.applyLayoutMode(SidebarChat)
@@ -531,6 +558,7 @@ func (p *ChatPageModel) handleKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 			return true, nil
 		}
 		p.showCompletionDialog = false
+		p.showSlashCompletionDialog = false
 		p.advanceFocus()
 		if p.chatHasFocus() {
 			return true, util.CmdHandler(chat.FocusChatEditorMsg{})
@@ -669,6 +697,9 @@ func (p *ChatPageModel) sendMessage(text string, attachments []message.Attachmen
 	if cmd, ok := p.handleGoalCommand(text); ok {
 		return cmd
 	}
+	if cmd, ok := p.handleCompactCommand(text); ok {
+		return cmd
+	}
 
 	cmds, err := p.ensureSession()
 	if err != nil {
@@ -698,12 +729,18 @@ func (p *ChatPageModel) GetSize() (int, int) {
 func (p *ChatPageModel) View() string {
 	layoutView := p.layout.View()
 
-	if p.showCompletionDialog && p.chatHasFocus() {
+	if (p.showCompletionDialog || p.showSlashCompletionDialog) && p.chatHasFocus() {
 		_, layoutHeight := p.layout.GetSize()
 		editorWidth, editorHeight := p.editor.GetSize()
 
-		p.completionDialog.SetWidth(editorWidth)
-		overlay := p.completionDialog.View()
+		var overlay string
+		if p.showSlashCompletionDialog {
+			p.slashCompletionDialog.SetWidth(editorWidth)
+			overlay = p.slashCompletionDialog.View()
+		} else {
+			p.completionDialog.SetWidth(editorWidth)
+			overlay = p.completionDialog.View()
+		}
 
 		layoutView = layout.PlaceOverlay(
 			p.editorOverlayX(),
@@ -946,6 +983,14 @@ func (p *ChatPageModel) handleGoalCommand(input string) (tea.Cmd, bool) {
 	default:
 		return nil, false
 	}
+}
+
+func (p *ChatPageModel) handleCompactCommand(input string) (tea.Cmd, bool) {
+	line := strings.TrimSpace(input)
+	if line == "/compact" || line == "/summarize" {
+		return util.CmdHandler(chat.CompactSessionMsg{}), true
+	}
+	return nil, false
 }
 
 func (p *ChatPageModel) startGoal(objective string) tea.Cmd {
@@ -1233,6 +1278,8 @@ func formatGoalStatus(goal *chat.GoalState) string {
 func NewChatPage(app *app.App) *ChatPageModel {
 	cg := completions.NewFileAndFolderContextGroup()
 	completionDialog := dialog.NewCompletionDialogCmp(cg)
+	slashCg := completions.NewSlashCommandsProvider()
+	slashCompletionDialog := dialog.NewCompletionDialogCmp(slashCg)
 
 	messagesContainer := layout.NewContainer(
 		chat.NewMessagesCmp(app),
@@ -1288,8 +1335,9 @@ func NewChatPage(app *app.App) *ChatPageModel {
 		tabBar:           tabBar,
 		editorWorkspace:  editorWorkspace,
 		editorPanel:      editorPanel,
-		completionDialog: completionDialog,
-		goalRunner:       agentpkg.NewGoalRunner(app.CoderAgent, app.DBQuerier),
+		completionDialog:      completionDialog,
+		slashCompletionDialog: slashCompletionDialog,
+		goalRunner:            agentpkg.NewGoalRunner(app.CoderAgent, app.DBQuerier),
 	}
 	page.rebuildLayout()
 	return page

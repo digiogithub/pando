@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/commands"
 	llmmodels "github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/message"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
@@ -417,32 +418,15 @@ func boolToAskPermissionValue(enabled bool) string {
 }
 
 func availableCommands() []acpsdk.AvailableCommand {
-	return []acpsdk.AvailableCommand{
-		{
-			Name:        goalCommandToken,
-			Description: "Start goal mode with a persistent objective: /goal <objective>",
-		},
-		{
-			Name:        autopilotCommandToken,
-			Description: "Alias for /goal <objective>",
-		},
-		{
-			Name:        goalStatusCommandToken,
-			Description: "Show the status of the current goal",
-		},
-		{
-			Name:        goalCancelCommandToken,
-			Description: "Cancel the current goal execution",
-		},
-		{
-			Name:        compactCommandToken,
-			Description: "Create a manual compact summary for the current session",
-		},
-		{
-			Name:        summarizeCommandToken,
-			Description: "Alias for /compact",
-		},
+	builtins := commands.BuiltinCommands()
+	result := make([]acpsdk.AvailableCommand, 0, len(builtins))
+	for _, cmd := range builtins {
+		result = append(result, acpsdk.AvailableCommand{
+			Name:        cmd.Name,
+			Description: cmd.Description,
+		})
 	}
+	return result
 }
 
 // sendAvailableCommandsUpdate publishes the ACP slash commands supported by Pando.

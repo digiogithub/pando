@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, useCallback, type KeyboardEvent, type ChangeEvent } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPaperPlane, faStop } from '@fortawesome/free-solid-svg-icons'
+import SlashCommandMenu, { type SlashCommandItem } from './SlashCommandMenu'
 
 const MAX_CHARS = 8000
 // 6 lines × (14px font × 1.5 line-height) = 126px
@@ -21,6 +22,20 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
   const [focused, setFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // Slash command menu state
+  const [slashMenuOpen, setSlashMenuOpen] = useState(false)
+  const [slashFilter, setSlashFilter] = useState('')
+  const [slashSelectedIdx, setSlashSelectedIdx] = useState(0)
+  const [slashCommands, setSlashCommands] = useState<SlashCommandItem[]>([])
+
+  // Fetch available commands on mount
+  useEffect(() => {
+    fetch('/api/v1/commands')
+      .then((res) => res.json())
+      .then((cmds: SlashCommandItem[]) => setSlashCommands(cmds))
+      .catch(() => {})
+  }, [])
+
   // Auto-resize: grow up to MAX_LINES, then scroll
   const resize = useCallback(() => {
     const el = textareaRef.current
@@ -38,11 +53,61 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
     resize()
   }, [value, resize])
 
+  // Compute filtered commands for the menu
+  const filteredCommands = slashCommands.filter((cmd) =>
+    cmd.name.toLowerCase().startsWith(slashFilter.toLowerCase())
+  )
+
   const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
-    setValue(e.target.value)
+    const newValue = e.target.value
+    setValue(newValue)
+
+    // Detect slash command: value starts with "/" and is on a single line
+    if (newValue.startsWith('/') && !newValue.includes('\n')) {
+      const filter = newValue.slice(1) // strip leading "/"
+      setSlashFilter(filter)
+      setSlashSelectedIdx(0)
+      setSlashMenuOpen(true)
+    } else {
+      setSlashMenuOpen(false)
+    }
+  }
+
+  const handleSlashSelect = (cmd: SlashCommandItem) => {
+    const newValue = '/' + cmd.name + (cmd.acceptsArgs ? ' ' : '')
+    setValue(newValue)
+    setSlashMenuOpen(false)
+    textareaRef.current?.focus()
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Slash menu keyboard navigation
+    if (slashMenuOpen && filteredCommands.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSlashSelectedIdx((prev) => Math.min(prev + 1, filteredCommands.length - 1))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSlashSelectedIdx((prev) => Math.max(prev - 1, 0))
+        return
+      }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault()
+        const selected = filteredCommands[slashSelectedIdx]
+        if (selected) {
+          handleSlashSelect(selected)
+        }
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setSlashMenuOpen(false)
+        return
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
@@ -53,6 +118,7 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
     const text = value.trim()
     if (!text || streaming || disabled) return
     setValue('')
+    setSlashMenuOpen(false)
     if (textareaRef.current) {
       textareaRef.current.style.height = `${LINE_HEIGHT}px`
     }
@@ -74,6 +140,7 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
       {/* Input field styled per design: $ prefix + textarea + send button */}
       <div
         style={{
+          position: 'relative',
           display: 'flex',
           alignItems: 'flex-start',
           gap: 8,
@@ -84,6 +151,15 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
           transition: 'border-color 0.15s',
         }}
       >
+        {/* Slash command menu overlay */}
+        <SlashCommandMenu
+          commands={slashCommands}
+          filter={slashFilter}
+          selectedIndex={slashSelectedIdx}
+          onSelect={handleSlashSelect}
+          visible={slashMenuOpen}
+        />
+
         {/* $ prompt prefix */}
         <span
           style={{
@@ -188,7 +264,7 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
           color: 'var(--fg-dim)',
         }}
       >
-        <span>{goalActive ? '/goal, /goal-status, /goal-cancel supported' : 'Enter to send · Shift+Enter for newline'}</span>
+        <span>{goalActive ? 'Type / for commands' : 'Enter to send · / for commands · Shift+Enter for newline'}</span>
         <span style={{ color: charCount > MAX_CHARS * 0.9 ? 'var(--warning)' : 'var(--fg-dim)' }}>
           {charCount.toLocaleString()} / {MAX_CHARS.toLocaleString()}
         </span>

@@ -24,6 +24,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/fs/browse", s.handleFSBrowse)
 	mux.HandleFunc("/api/v1/chat", s.handleChat)
 	mux.HandleFunc("/api/v1/chat/stream", s.handleChatStream)
+	mux.HandleFunc("GET /api/v1/commands", s.handleGetCommands)
 	// Settings
 	mux.HandleFunc("/api/v1/settings", s.handleSettings)
 	mux.HandleFunc("/api/v1/settings/providers", s.handleGetProviders)
