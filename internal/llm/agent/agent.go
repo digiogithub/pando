@@ -293,6 +293,7 @@ func (a *agent) GetTools() []tools.BaseTool {
 
 func (a *agent) SetLuaManager(fm *luaengine.FilterManager) {
 	a.luaMgr = fm
+	globalLuaManagerForTools = fm
 }
 
 func (a *agent) Cancel(sessionID string) {

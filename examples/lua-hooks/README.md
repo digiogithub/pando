@@ -4,10 +4,11 @@ This folder contains example Lua scripts that show the current customization sur
 
 ## What Pando supports today
 
-Pando currently supports two Lua customization mechanisms:
+Pando currently supports three Lua customization mechanisms:
 
 1. **Lifecycle hooks** via `hook_<name>(ctx)` functions.
 2. **MCP input/output filters** via `<server-name>-input(ctx)` and `<server-name>-output(ctx)` names, with `global-input(ctx)` and `global-output(ctx)` fallbacks.
+3. **MVP Lua tools** via `pando_register_tool({...})` plus a `pando_run_tool(ctx)` dispatcher.
 
 It also exposes helper functions inside Lua prompt hooks:
 
@@ -19,16 +20,22 @@ It also exposes helper functions inside Lua prompt hooks:
 
 ## Important limitation
 
-At the time of writing, Pando **does not create new tools dynamically from Lua**. Lua can:
+At the time of writing, Pando supports an **MVP** for Lua-defined tools. Lua can:
 
 - modify prompt composition,
 - intercept MCP server tool inputs,
 - intercept MCP server tool outputs,
-- react to session and conversation lifecycle events.
+- react to session and conversation lifecycle events,
+- register simple text-returning tools through `pando_register_tool({...})`.
 
-But Lua **cannot register a new first-class tool** in the native tool registry.
+Current MVP limits for Lua tools:
 
-See `tool-creation-analysis.md` for implementation notes on how this could be added in the future.
+- tool names must start with `lua_`,
+- execution is routed through a single `pando_run_tool(ctx)` dispatcher,
+- tools currently return text or error through a Lua table,
+- advanced capabilities like direct shell/network helper APIs are not part of this MVP.
+
+See `tool-creation-analysis.md` for the broader design beyond the MVP.
 
 ## Files in this folder
 
@@ -36,6 +43,7 @@ See `tool-creation-analysis.md` for implementation notes on how this could be ad
 - `prompt-hooks.lua`: focused examples for system prompt and template customization.
 - `mcp-filters.lua`: focused examples for MCP input/output filtering.
 - `fetch-mcp-example.lua`: example of filtering an MCP server named `fetch`.
+- `lua-tools-mvp.lua`: MVP example of declaring Lua-defined tools with `pando_register_tool`.
 - `tool-creation-analysis.md`: analysis of current support and an implementation proposal for Lua-defined tools.
 
 ## Example config
@@ -88,3 +96,29 @@ end)
 Pando normalizes server names by replacing `_` and `.` with `-` before resolving the Lua global name.
 
 So an MCP server configured as `github_docs` is matched by the Lua global `"github-docs-input"`.
+
+### MVP Lua tools
+
+Register tools with:
+
+```lua
+pando_register_tool({
+    name = "lua_echo",
+    description = "Echoes text",
+    parameters = {
+        text = { type = "string", description = "Text to echo" }
+    },
+    required = { "text" }
+})
+```
+
+And dispatch execution with:
+
+```lua
+function pando_run_tool(ctx)
+    if ctx.tool_name == "lua_echo" then
+        return { content = tostring((ctx.arguments or {}).text or "") }
+    end
+    return { error = "unknown tool" }
+end
+```

@@ -21,6 +21,7 @@ type FilterManager struct {
 	strictMode   bool
 	mu           sync.RWMutex
 	scriptLoaded bool
+	luaTools      []LuaToolDefinition
 }
 
 // NewFilterManager creates a new FilterManager instance.
@@ -32,6 +33,7 @@ func NewFilterManager(scriptPath string, timeout time.Duration, strictMode bool)
 		enabled:    true,
 		timeout:    timeout,
 		strictMode: strictMode,
+		luaTools:   make([]LuaToolDefinition, 0),
 	}
 
 	fm.L = NewLuaState()
@@ -72,6 +74,9 @@ func (fm *FilterManager) LoadScript() error {
 	if err := fm.L.DoFile(fm.scriptPath); err != nil {
 		return fmt.Errorf("failed to execute script %s: %w", fm.scriptPath, err)
 	}
+	if err := fm.collectRegisteredTools(); err != nil {
+		return err
+	}
 
 	fm.scriptLoaded = true
 	logging.Info("Lua filter script loaded", "script_path", fm.scriptPath)
@@ -93,6 +98,9 @@ func (fm *FilterManager) ReloadScript() error {
 
 	if err := fm.L.DoFile(fm.scriptPath); err != nil {
 		return fmt.Errorf("failed to reload script %s: %w", fm.scriptPath, err)
+	}
+	if err := fm.collectRegisteredTools(); err != nil {
+		return err
 	}
 
 	fm.scriptLoaded = true
@@ -164,6 +172,38 @@ func (fm *FilterManager) RegisterPromptFunctions(opts *PromptFunctionOptions) {
 	if fm.L != nil {
 		RegisterPromptFunctions(fm.L, opts)
 	}
+}
+
+// LuaTools returns the tools registered by the loaded Lua script.
+func (fm *FilterManager) LuaTools() []LuaToolDefinition {
+	fm.mu.RLock()
+	defer fm.mu.RUnlock()
+	tools := make([]LuaToolDefinition, len(fm.luaTools))
+	copy(tools, fm.luaTools)
+	return tools
+}
+
+// ExecuteLuaTool executes a registered Lua tool through the MVP dispatcher.
+func (fm *FilterManager) ExecuteLuaTool(ctx context.Context, toolName string, data map[string]interface{}) (*HookResult, error) {
+	if !fm.enabled || !fm.scriptLoaded {
+		return nil, fmt.Errorf("lua tools are not available")
+	}
+	hookCtx := &HookContext{
+		ToolName:   toolName,
+		Parameters: data,
+		Timestamp:  time.Now().Unix(),
+		FilterType: FilterInput,
+	}
+	return fm.executeFilter(ctx, "pando_run_tool", hookCtx)
+}
+
+func (fm *FilterManager) collectRegisteredTools() error {
+	tools, err := CollectRegisteredTools(fm.L)
+	if err != nil {
+		return err
+	}
+	fm.luaTools = tools
+	return nil
 }
 
 // buildFilterFunctionName builds the Lua function name for a filter.

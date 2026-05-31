@@ -7,12 +7,22 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/mcpgateway"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/rag"
 )
+
+var globalLuaManagerForTools *luaengine.FilterManager
+
+func appendLuaTools(base []tools.BaseTool) []tools.BaseTool {
+	if globalLuaManagerForTools == nil {
+		return base
+	}
+	return append(base, tools.NewLuaTools(globalLuaManagerForTools)...)
+}
 
 // ToolDescription carries the minimal information the ContextTrimmer needs about each tool.
 type ToolDescription struct {
@@ -122,7 +132,7 @@ func CoderAgentTools(
 			)
 		}
 	}
-	return append(
+	result := append(
 		[]tools.BaseTool{
 			tools.NewBashTool(permissions),
 			tools.NewEditTool(lspClients, permissions, history),
@@ -137,6 +147,7 @@ func CoderAgentTools(
 			tools.NewTodoWriteTool(),
 		}, otherTools...,
 	)
+	return appendLuaTools(result)
 }
 
 func CoderAgentToolsWithMesnada(
@@ -257,7 +268,7 @@ func CoderAgentToolsWithMesnada(
 			tools.NewCodeSearchPatternTool(remembrances.Code),
 		)
 	}
-	return baseTools
+	return appendLuaTools(baseTools)
 }
 
 func TaskAgentTools(lspClients map[string]*lsp.Client) []tools.BaseTool {
@@ -271,5 +282,5 @@ func TaskAgentTools(lspClients map[string]*lsp.Client) []tools.BaseTool {
 	if cfg := config.Get(); cfg != nil && cfg.InternalTools.SourcegraphEnabled {
 		base = append(base, tools.NewSourcegraphTool())
 	}
-	return base
+	return appendLuaTools(base)
 }

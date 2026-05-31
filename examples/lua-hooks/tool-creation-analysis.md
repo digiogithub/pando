@@ -2,7 +2,7 @@
 
 ## Short answer
 
-No, not today.
+Partially: there is now an MVP path for Lua-defined tools, but it is still intentionally limited.
 
 ## What exists today
 
@@ -12,6 +12,8 @@ The current Lua runtime supports:
 - MCP tool input filters through `FilterManager.ApplyInputFilter(...)`
 - MCP tool output filters through `FilterManager.ApplyOutputFilter(...)`
 - prompt helper functions registered with `RegisterPromptFunctions(...)`
+- MVP tool registration via `pando_register_tool({...})`
+- MVP tool execution via `pando_run_tool(ctx)`
 
 One implementation detail matters for MCP filters: Pando resolves filter names with dashes, such as `fetch-input` or `global-output`, and looks them up as Lua globals. In Lua source, these should be assigned with `rawset(_G, "fetch-input", function(...) ... end)` because `function fetch-input(...)` is invalid syntax, and some editors/parsers also complain about direct `_G["..."] = function(...)` forms.
 
@@ -21,36 +23,44 @@ The native tool registry is still built in Go code. Tools are instantiated with 
 - `tools.NewFetchTool(...)`
 - `tools.NewWriteTool(...)`
 - `agent.NewMcpTool(...)`
+- `tools.NewLuaTools(...)` for the current MVP adapter layer
 
-There is no Lua API that:
+The MVP now covers the basics through:
 
-- declares a tool schema,
-- registers a tool name/description,
-- exposes that tool to the LLM,
-- dispatches tool execution back into Lua.
+- `pando_register_tool({...})`
+- automatic exposure as agent tools
+- a generic `pando_run_tool(ctx)` dispatcher
 
-## Why the current architecture does not allow it
+What is still missing is a full-featured production design with richer outputs, stronger capability controls, and first-class integration across every subsystem.
 
-The current runtime model separates concerns like this:
+## Current MVP constraints
+
+- tool names must start with `lua_`
+- execution uses a single dispatcher function: `pando_run_tool(ctx)`
+- the tool should return a Lua table with `content`, `output`, or `error`
+- advanced helper APIs are not yet exposed specifically for Lua tools
+- permission-gated side effects are not yet implemented as a dedicated Lua capability model
+
+## Why the original architecture did not allow it
+
+The runtime model was originally separated like this:
 
 1. **Tool registration** happens in Go when the agent starts.
 2. **Lua execution** is used as a customization layer over prompts and MCP traffic.
 3. **Tool metadata** (`ToolInfo`) and execution (`Run`) are implemented by Go structs that satisfy the internal tool interface.
 
-Because of that, Lua can modify requests and responses for MCP-backed tools, but it cannot contribute a new `BaseTool` implementation on its own.
+Because of that, Lua could modify requests and responses for MCP-backed tools, but it could not contribute a new `BaseTool` implementation on its own. The MVP bridges that gap with a Go adapter over Lua-registered definitions.
 
-## How Lua-defined tools could be implemented
+## How a fuller Lua tool system could evolve
 
-A practical design would be:
+### 1. Richer registration schema
 
-### 1. Add a Lua tool registry in the Lua engine
-
-Expose a function like:
+Extend:
 
 ```lua
 pando_register_tool({
-  name = "my_lua_tool",
-  description = "Summarize project-local metadata",
+  name = "lua_repo_summary",
+  description = "Summarize repository-local metadata",
   parameters = {
     path = { type = "string", description = "Path to inspect" }
   },
@@ -58,23 +68,26 @@ pando_register_tool({
 })
 ```
 
-The Lua engine would persist these definitions after loading the script.
+with stronger schema validation and richer types.
 
-### 2. Add a Go adapter implementing `tools.BaseTool`
+### 2. Dedicated tool handlers
 
-Create a Go type like `luaToolAdapter` with:
+The MVP uses one dispatcher:
 
-- `Info() ToolInfo`
-- `Run(ctx context.Context, call ToolCall) (ToolResponse, error)`
+```lua
+function pando_run_tool(ctx)
+    -- branch on ctx.tool_name
+end
+```
 
-`Run(...)` would call back into Lua using a naming convention such as:
+A fuller design could also allow per-tool handlers such as:
 
-- `tool_my_lua_tool(ctx)`
-- or a generic dispatcher like `pando_run_tool(name, ctx)`
+- `tool_lua_repo_summary(ctx)`
+- or explicit handler names declared during registration.
 
-### 3. Expose safe helper APIs to Lua tools
+### 3. Safe helper APIs to Lua tools
 
-Lua tools would need limited, explicit capabilities, for example:
+Lua tools need limited, explicit capabilities, for example:
 
 - read-only filesystem helpers,
 - prompt/config helpers,
@@ -83,11 +96,9 @@ Lua tools would need limited, explicit capabilities, for example:
 
 These helpers should be capability-scoped, not unrestricted.
 
-### 4. Integrate Lua-defined tools into tool discovery
+### 4. Broader integration
 
-Where the agent currently aggregates Go tools, append Lua tool adapters after loading the script.
-
-That would allow Lua tools to appear in:
+Lua tools should become visible in:
 
 - system prompts,
 - MCP server exposure if desired,
@@ -105,19 +116,16 @@ Every Lua tool should still pass through:
 
 ## Recommended implementation notes
 
-- Keep Lua tools **opt-in** behind config, e.g. `Lua.EnableToolRegistration = true`.
+- Keep Lua tools **opt-in** behind config if the feature expands further.
 - Require explicit JSON-schema-like parameter definitions.
 - Enforce per-tool execution timeouts.
 - Do not expose arbitrary shell or network primitives without permission checks.
-- Consider a separate namespace like `lua_<name>` to avoid collisions with built-in tools.
+- Keep the `lua_` namespace to avoid collisions with built-in tools.
 
-## Suggested first milestone
+## Suggested next milestones
 
-Implement **read-only Lua tools** first:
-
-- registration API,
-- tool metadata exposure,
-- Lua dispatcher,
-- text-only output.
-
-Then later add structured output and optional permission-gated side effects.
+1. structured metadata outputs
+2. explicit capability helpers for Lua tools
+3. permission-gated side effects
+4. MCP/server/UI integration
+5. better diagnostics and tests
