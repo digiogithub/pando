@@ -2,10 +2,12 @@ package luaengine
 
 import (
 	gopherjson "github.com/layeh/gopher-json"
+	gluash "github.com/otm/gluash"
 	lua "github.com/yuin/gopher-lua"
 
 	luabase64 "github.com/vadv/gopher-lua-libs/base64"
 	luabit "github.com/vadv/gopher-lua-libs/bit"
+	luacmd "github.com/vadv/gopher-lua-libs/cmd"
 	luacrypto "github.com/vadv/gopher-lua-libs/crypto"
 	luadb "github.com/vadv/gopher-lua-libs/db"
 	luafilepath "github.com/vadv/gopher-lua-libs/filepath"
@@ -17,18 +19,19 @@ import (
 	luaioutil "github.com/vadv/gopher-lua-libs/ioutil"
 	luare "github.com/vadv/gopher-lua-libs/regexp"
 	luaruntime "github.com/vadv/gopher-lua-libs/runtime"
+	luashellescape "github.com/vadv/gopher-lua-libs/shellescape"
 	luastats "github.com/vadv/gopher-lua-libs/stats"
 	luastorage "github.com/vadv/gopher-lua-libs/storage"
 	luastrings "github.com/vadv/gopher-lua-libs/strings"
 	luatac "github.com/vadv/gopher-lua-libs/tac"
+	luatcp "github.com/vadv/gopher-lua-libs/tcp"
 	luatemplate "github.com/vadv/gopher-lua-libs/template"
 	luatime "github.com/vadv/gopher-lua-libs/time"
 	luaxmlpath "github.com/vadv/gopher-lua-libs/xmlpath"
 	luayaml "github.com/vadv/gopher-lua-libs/yaml"
 )
 
-// NewLuaState initializes a new sandboxed Lua state with the supported modules preloaded.
-// Unsafe shell and AWS-oriented modules are intentionally excluded.
+// NewLuaState initializes a new Lua state with the supported modules preloaded.
 func NewLuaState() *lua.LState {
 	L := lua.NewState(lua.Options{
 		CallStackSize:       120,
@@ -42,6 +45,7 @@ func NewLuaState() *lua.LState {
 	luare.Preload(L)
 	luabase64.Preload(L)
 	luabit.Preload(L)
+	luacmd.Preload(L)
 	luacrypto.Preload(L)
 	luadb.Preload(L)
 	luafilepath.Preload(L)
@@ -52,18 +56,18 @@ func NewLuaState() *lua.LState {
 	luainspect.Preload(L)
 	luaioutil.Preload(L)
 	luaruntime.Preload(L)
+	luashellescape.Preload(L)
 	luastats.Preload(L)
 	luastorage.Preload(L)
 	luatac.Preload(L)
+	luatcp.Preload(L)
 	luatemplate.Preload(L)
 	luaxmlpath.Preload(L)
 	luayaml.Preload(L)
 
-	// Use the lightweight layeh JSON module name expected by existing Lua scripts.
 	L.PreloadModule("json", gopherjson.Loader)
+	L.PreloadModule("sh", gluash.Loader)
 
-	// Note: sh, os.exec/cmd, argparse, plugin, pprof, prometheus, tcp, telegram,
-	// shellescape, chef, cert_util, and aws modules are intentionally NOT loaded.
 	return L
 }
 

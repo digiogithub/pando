@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/digiogithub/pando/internal/luaengine"
+	lua "github.com/yuin/gopher-lua"
 )
 
 func TestHelpers_RoundTrip(t *testing.T) {
@@ -88,5 +89,50 @@ func TestHelpers_MapToLuaTable(t *testing.T) {
 		if result[k] != v {
 			t.Errorf("key %q: got %v, want %v", k, result[k], v)
 		}
+	}
+}
+
+func TestNewLuaState_PreloadedModules(t *testing.T) {
+	L := luaengine.NewLuaState()
+	defer luaengine.CloseLuaState(L)
+
+	modules := []string{
+		"base64",
+		"bit",
+		"cmd",
+		"crypto",
+		"db",
+		"filepath",
+		"goos",
+		"hex",
+		"http",
+		"humanize",
+		"inspect",
+		"ioutil",
+		"json",
+		"regexp",
+		"runtime",
+		"shellescape",
+		"sh",
+		"stats",
+		"storage",
+		"strings",
+		"tac",
+		"tcp",
+		"template",
+		"time",
+		"xmlpath",
+		"yaml",
+	}
+
+	for _, moduleName := range modules {
+		t.Run(moduleName, func(t *testing.T) {
+			pkg := L.GetField(L.Get(lua.EnvironIndex), "package")
+			preload := L.GetField(pkg, "preload")
+			loader := L.GetField(preload, moduleName)
+			if _, ok := loader.(*lua.LFunction); !ok {
+				t.Fatalf("expected module %q to be preloaded, got %T", moduleName, loader)
+			}
+		})
 	}
 }
