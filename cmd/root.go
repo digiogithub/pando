@@ -565,12 +565,18 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 		}
 	}
 
+	if debug && logFile == "" {
+		return fmt.Errorf("--debug in ACP stdio mode requires --log-file to avoid corrupting the ACP protocol stream")
+	}
+
+	quietStdioLogs := logFile == ""
+
 	logFlags := log.LstdFlags
 	if debug {
 		logFlags |= log.Lshortfile
 	}
 
-	logOutput := io.Writer(os.Stderr)
+	logOutput := io.Writer(io.Discard)
 	var logFileHandle *os.File
 	if logFile != "" {
 		logDir := filepath.Dir(logFile)
@@ -587,7 +593,9 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 	}
 
 	logger := log.New(logOutput, "[ACP] ", logFlags)
-	logger.Printf("Starting Pando ACP Agent v%s (cwd=%s, debug=%v, logFile=%q, autoPerm=%v)", version.Version, cwd, debug, logFile, autoPerm)
+	if !quietStdioLogs {
+		logger.Printf("Starting Pando ACP Agent v%s (cwd=%s, debug=%v, logFile=%q, autoPerm=%v)", version.Version, cwd, debug, logFile, autoPerm)
+	}
 
 	// Load config (required to connect DB and initialize agent)
 	cfg, err := config.Load(cwd, debug, logFile)
@@ -623,7 +631,7 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 	// ACP stdio mode is non-interactive from Pando's perspective.
 	// Always auto-approve permissions so tool calls never block waiting for
 	// terminal UI confirmation that does not exist in this mode.
-	if !cfg.ACP.AutoPermission && !autoPerm {
+	if !cfg.ACP.AutoPermission && !autoPerm && !quietStdioLogs {
 		logger.Printf("ACP auto-permission forced on for stdio mode")
 	}
 	pandoApp.Permissions.SetGlobalAutoApprove(true)
@@ -713,7 +721,9 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 	go pandoAgent.StartNotificationBroadcast(ctx)
 
 	transport := acpPkg.NewStdioTransport(pandoAgent, logger)
-	logger.Printf("ACP agent listening on stdio")
+	if !quietStdioLogs {
+		logger.Printf("ACP agent listening on stdio")
+	}
 	return transport.Run(ctx)
 }
 

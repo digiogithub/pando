@@ -28,8 +28,8 @@ This is the mode used by editors like VS Code, Zed, and JetBrains.`,
   # Start with explicit subcommand
   pando acp start
 
-  # Start with debug logging
-  pando acp --debug`,
+  # Start with debug logging written to a file
+  pando acp --debug --log-file /tmp/pando-acp.log`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, _ := cmd.Flags().GetString("cwd")
 		if cwd == "" {
@@ -66,8 +66,8 @@ Configuration is read from .pando.toml or can be overridden with flags.`,
   # Start with HTTP transport
   pando acp start --transport http
 
-  # Start with debug logging
-  pando acp start --debug`,
+  # Start with debug logging written to a file
+  pando acp start --debug --log-file /tmp/pando-acp.log`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, _ := cmd.Flags().GetString("cwd")
 		if cwd == "" {
@@ -272,8 +272,8 @@ func init() {
 
 	// Persistent flags available to all acp subcommands
 	acpCmd.PersistentFlags().String("cwd", "", "Working directory (default: current directory)")
-	acpCmd.PersistentFlags().Bool("debug", false, "Enable debug logging")
-	acpCmd.PersistentFlags().String("log-file", "", "Path to log file (enables debug logging to file)")
+	acpCmd.PersistentFlags().Bool("debug", false, "Enable debug logging (requires --log-file in ACP stdio mode)")
+	acpCmd.PersistentFlags().String("log-file", "", "Path to log file for ACP debug output")
 	acpCmd.PersistentFlags().Bool("auto-permission", false, "Automatically approve tool permission requests")
 
 	// Flags for start command (start-specific options)

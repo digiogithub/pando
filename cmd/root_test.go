@@ -199,3 +199,13 @@ func TestRunACPServerWithOptions_ConfiguresSecondaryIPCFailoverPath(t *testing.T
 		}
 	}
 }
+
+func TestRunACPServerWithOptions_RequiresLogFileWhenDebugEnabled(t *testing.T) {
+	err := runACPServerWithOptions(t.TempDir(), true, "", false)
+	if err == nil {
+		t.Fatal("expected error when ACP debug is enabled without log file")
+	}
+	if !strings.Contains(err.Error(), "requires --log-file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

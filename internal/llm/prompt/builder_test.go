@@ -220,6 +220,34 @@ func TestPromptBuilderOrchestrationCapability(t *testing.T) {
 	assert.True(t, hasOrchContent, "should include orchestration content when enabled")
 }
 
+func TestPromptBuilderPrioritizesRemembrancesAndOrchestrationBeforeProvider(t *testing.T) {
+	t.Parallel()
+	data := &PromptData{
+		AgentName:        "coder",
+		Provider:         "anthropic",
+		Model:            "claude-opus-4-6",
+		ModelFamily:      ClassifyModelFamily("anthropic", "claude-opus-4-6"),
+		HasRemembrances:  true,
+		HasOrchestration: true,
+		WorkingDir:       "/test",
+		Platform:         "linux",
+		Date:             "3/17/2026",
+	}
+	builder := NewPromptBuilder("coder", "anthropic", data, nil)
+	result, err := builder.Build(context.Background())
+	require.NoError(t, err)
+
+	remIdx := strings.Index(result, "# Knowledge Management")
+	orchIdx := strings.Index(result, "# Agent Orchestration")
+	providerIdx := strings.Index(result, "# Provider Guidelines")
+
+	require.NotEqual(t, -1, remIdx, "expected remembrances section to be included")
+	require.NotEqual(t, -1, orchIdx, "expected orchestration section to be included")
+	require.NotEqual(t, -1, providerIdx, "expected provider section to be included")
+	assert.Less(t, remIdx, providerIdx, "remembrances section should appear before provider guidance")
+	assert.Less(t, orchIdx, providerIdx, "orchestration section should appear before provider guidance")
+}
+
 func TestPromptBuilderGitContext(t *testing.T) {
 	t.Parallel()
 	data := &PromptData{

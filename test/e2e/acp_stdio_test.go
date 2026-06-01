@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -151,11 +152,15 @@ func startACPSubprocess(t *testing.T) (*exec.Cmd, *acpsdk.ClientSideConnection) 
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
 	}
-	cmd.Stderr = os.Stderr
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatalf("stderr pipe: %v", err)
+	}
 
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start pando acp: %v", err)
 	}
+	go func() { _, _ = io.Copy(io.Discard, stderr) }()
 
 	conn := acpsdk.NewClientSideConnection(&noopClient{}, stdin, stdout)
 

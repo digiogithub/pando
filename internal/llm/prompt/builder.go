@@ -95,15 +95,7 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 		sections = append(sections, s)
 	}
 
-	// 2. Provider-specific section (with optional Lua override)
-	providerTemplate := b.selectProvider(ctx)
-	if providerTemplate != "" && b.registry.Exists(providerTemplate) {
-		if s := b.renderSection(ctx, providerTemplate); s.Content != "" {
-			sections = append(sections, s)
-		}
-	}
-
-	// 3. Agent-specific section
+	// 2. Agent-specific section
 	agentName := strings.ToLower(b.agentName)
 	if agentName != "" && b.registry.Exists("agents/"+agentName) {
 		if s := b.renderSection(ctx, "agents/"+agentName); s.Content != "" {
@@ -111,42 +103,67 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 		}
 	}
 
-	// 3b. Workflow guidelines (shared behavioral rules)
+	// 3. Workflow guidelines (shared behavioral rules)
 	if b.registry.Exists("base/workflow") {
 		if s := b.renderSection(ctx, "base/workflow"); s.Content != "" {
 			sections = append(sections, s)
 		}
 	}
 
-	// 3c. Coding conventions (language-agnostic code style rules)
+	// 4. Coding conventions (language-agnostic code style rules)
 	if b.registry.Exists("base/conventions") {
 		if s := b.renderSection(ctx, "base/conventions"); s.Content != "" {
 			sections = append(sections, s)
 		}
 	}
 
-	// 4. Environment
+	// 5. Environment
 	if s := b.renderSection(ctx, "base/environment"); s.Content != "" {
 		sections = append(sections, s)
 	}
 
-	// 5. Capabilities
-	capabilityMap := map[string]bool{
-		"remembrances":  b.data.HasRemembrances,
-		"orchestration": b.data.HasOrchestration,
-		"web_search":    b.data.HasWebSearch,
-		"code_indexing": b.data.HasCodeIndexing,
-		"lsp":           b.data.HasLSP,
+	// 6. Priority capabilities that should guide the initial analysis flow.
+	priorityCapabilities := []struct {
+		name      string
+		available bool
+	}{
+		{name: "remembrances", available: b.data.HasRemembrances},
+		{name: "orchestration", available: b.data.HasOrchestration},
 	}
-	for name, available := range capabilityMap {
-		if b.checkCapability(ctx, name, available) && b.registry.Exists("capabilities/"+name) {
-			if s := b.renderSection(ctx, "capabilities/"+name); s.Content != "" {
+	for _, capability := range priorityCapabilities {
+		if b.checkCapability(ctx, capability.name, capability.available) && b.registry.Exists("capabilities/"+capability.name) {
+			if s := b.renderSection(ctx, "capabilities/"+capability.name); s.Content != "" {
 				sections = append(sections, s)
 			}
 		}
 	}
 
-	// 6. Git context
+	// 7. Provider-specific section (with optional Lua override)
+	providerTemplate := b.selectProvider(ctx)
+	if providerTemplate != "" && b.registry.Exists(providerTemplate) {
+		if s := b.renderSection(ctx, providerTemplate); s.Content != "" {
+			sections = append(sections, s)
+		}
+	}
+
+	// 8. Remaining capabilities
+	remainingCapabilities := []struct {
+		name      string
+		available bool
+	}{
+		{name: "web_search", available: b.data.HasWebSearch},
+		{name: "code_indexing", available: b.data.HasCodeIndexing},
+		{name: "lsp", available: b.data.HasLSP},
+	}
+	for _, capability := range remainingCapabilities {
+		if b.checkCapability(ctx, capability.name, capability.available) && b.registry.Exists("capabilities/"+capability.name) {
+			if s := b.renderSection(ctx, "capabilities/"+capability.name); s.Content != "" {
+				sections = append(sections, s)
+			}
+		}
+	}
+
+	// 9. Git context
 	if s := b.renderSection(ctx, "context/git"); s.Content != "" {
 		sections = append(sections, s)
 	}
