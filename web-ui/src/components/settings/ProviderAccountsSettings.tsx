@@ -19,11 +19,12 @@ const PROVIDER_TYPES = [
   { value: 'bedrock', label: 'AWS Bedrock', icon: '🏔️' },
   { value: 'vertexai', label: 'Google Vertex AI', icon: '🔷' },
   { value: 'copilot', label: 'GitHub Copilot', icon: '🐙' },
+  { value: 'antigravity', label: 'Antigravity', icon: '🪐' },
 ]
 
 const TYPES_WITH_BASE_URL = ['openai-compatible', 'azure', 'ollama', 'openai']
 const TYPES_WITH_EXTRA_HEADERS = ['openai-compatible', 'azure', 'openai', 'anthropic', 'openrouter']
-const TYPES_WITH_OAUTH = ['copilot', 'vertexai']
+const TYPES_WITH_OAUTH = ['copilot', 'vertexai', 'antigravity']
 
 const labelStyle: React.CSSProperties = {
   fontSize: 12,

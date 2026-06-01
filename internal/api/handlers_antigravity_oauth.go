@@ -323,6 +323,73 @@ func parseAbsoluteURL(raw string) (string, error) {
 	return parsed.String(), nil
 }
 
+// handleAntigravityOAuthRedirect is the GET handler for the OAuth redirect from Google.
+// Google sends: GET /...?code=...&state=...
+// It finds the account by state, exchanges the code, and redirects to the settings page.
+func (s *Server) handleAntigravityOAuthRedirect(w http.ResponseWriter, r *http.Request) {
+	if errParam := r.URL.Query().Get("error"); errParam != "" {
+		http.Redirect(w, r, "/settings?authError="+url.QueryEscape(errParam), http.StatusFound)
+		return
+	}
+
+	code := r.URL.Query().Get("code")
+	state := r.URL.Query().Get("state")
+	if code == "" || state == "" {
+		http.Redirect(w, r, "/settings?authError="+url.QueryEscape("missing code or state"), http.StatusFound)
+		return
+	}
+
+	// Find the provider account that owns this OAuth state.
+	account := findAccountByOAuthState(state)
+	if account == nil {
+		http.Redirect(w, r, "/settings?authError="+url.QueryEscape("invalid OAuth state"), http.StatusFound)
+		return
+	}
+
+	session, err := antigravitySessionFromAccount(*account)
+	if err != nil {
+		http.Redirect(w, r, "/settings?authError="+url.QueryEscape(err.Error()), http.StatusFound)
+		return
+	}
+	if err := session.ValidateCallback(state); err != nil {
+		http.Redirect(w, r, "/settings?authError="+url.QueryEscape(err.Error()), http.StatusFound)
+		return
+	}
+
+	token, err := oauthantigravity.ExchangeCode(nil, code, session.CodeVerifier, session.RedirectURI)
+	if err != nil {
+		http.Redirect(w, r, "/settings?authError="+url.QueryEscape("failed to exchange code: "+err.Error()), http.StatusFound)
+		return
+	}
+	if strings.TrimSpace(token.RefreshToken) == "" && strings.TrimSpace(account.OAuthRefreshToken) != "" {
+		token.RefreshToken = account.OAuthRefreshToken
+	}
+
+	updated, err := s.hydrateAntigravityAccount(*account, *token)
+	if err != nil {
+		http.Redirect(w, r, "/settings?authError="+url.QueryEscape(err.Error()), http.StatusFound)
+		return
+	}
+	if err := config.UpdateProviderAccount(account.ID, updated); err != nil {
+		http.Redirect(w, r, "/settings?authError="+url.QueryEscape("failed to save account: "+err.Error()), http.StatusFound)
+		return
+	}
+
+	publishProviderAccountChanged()
+	http.Redirect(w, r, "/settings?authSuccess=antigravity&account="+url.QueryEscape(account.ID), http.StatusFound)
+}
+
+// findAccountByOAuthState returns the provider account whose OAuthState matches state.
+func findAccountByOAuthState(state string) *config.ProviderAccount {
+	for _, a := range config.GetProviderAccounts() {
+		if strings.TrimSpace(a.OAuthState) == state {
+			copy := a
+			return &copy
+		}
+	}
+	return nil
+}
+
 func (s *Server) defaultAntigravityRedirectURI(callbackPath string) string {
 	scheme := "http"
 	if s.IsTLS() {
@@ -335,7 +402,8 @@ func (s *Server) defaultAntigravityRedirectURI(callbackPath string) string {
 	port := s.config.Port
 	path := strings.TrimSpace(callbackPath)
 	if path == "" {
-		path = "/api/v1/config/provider-accounts/antigravity/callback"
+		// Default to the GET redirect handler so Google's redirect works correctly.
+		path = "/api/v1/config/provider-accounts/antigravity/oauth-redirect"
 	}
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path

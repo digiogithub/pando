@@ -1,4 +1,5 @@
 import api from '@/services/api'
+import { useToastStore } from '@/stores/toastStore'
 import type { ProviderTypeInfo } from '@/types'
 
 export interface LauncherCommand {
@@ -172,7 +173,14 @@ export async function loadLauncherCommands(notify: (message: string, type?: 'suc
         action: async () => {
           const result = await api.post<CopilotLoginStartResponse>('/api/v1/auth/providers/copilot/login', {})
           window.open(result.verificationUri, '_blank', 'noopener,noreferrer')
-          notify(`${result.message} Code: ${result.userCode}`, 'info')
+          // Show a persistent toast (ttlMs=0) so the device code stays visible
+          // until the user manually dismisses it — the code is needed to complete
+          // the authorization at github.com/login/device.
+          useToastStore.getState().addToast(
+            `GitHub Copilot — Enter code: ${result.userCode} at ${result.verificationUri}`,
+            'info',
+            0,
+          )
         },
       })
     }

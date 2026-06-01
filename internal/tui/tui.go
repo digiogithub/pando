@@ -285,32 +285,33 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(cmds...)
 	case util.AlertMsg:
 		if msg.Persist {
-			// Persistent alerts last 10 minutes and are dismissed with Esc
-			longAlert := bubbleup.NewAlertModel(60, false, 10*time.Minute)
-			cmds = append(cmds, longAlert.NewAlertCmd(msg.Type, msg.Msg))
-		} else {
-			cmds = append(cmds, a.alert.NewAlertCmd(msg.Type, msg.Msg))
+			// Persistent alerts last 10 minutes and are dismissed with Esc.
+			// Replace a.alert so the command is tied to the long-duration model.
+			a.alert = bubbleup.NewAlertModel(60, false, 10*time.Minute).
+				WithPosition(bubbleup.TopRightPosition).
+				WithMinWidth(20).
+				WithUnicodePrefix().
+				WithAllowEscToClose()
 		}
+		cmds = append(cmds, a.alert.NewAlertCmd(msg.Type, msg.Msg))
 		outAlert, outCmd := a.alert.Update(msg)
 		a.alert = outAlert.(bubbleup.AlertModel)
 		cmds = append(cmds, outCmd)
 		return a, tea.Batch(cmds...)
 
-	// Copilot device code received - show alert and start polling
+	// Copilot device code received - show persistent alert and start polling.
 	case copilotDeviceCodeMsg:
-		// Use a long-duration alert (10 min) so the user has time to copy
-		// the code and complete the flow. The alert is dismissed on Esc or
-		// when the login completes.
-		longAlert := bubbleup.NewAlertModel(60, false, 10*time.Minute)
-		cmds = append(cmds, longAlert.NewAlertCmd(bubbleup.WarnKey, msg.instructions))
-		outAlert, outCmd := a.alert.Update(msg)
-		a.alert = outAlert.(bubbleup.AlertModel)
-		cmds = append(cmds, outCmd)
+		cmds = append(cmds, util.AlertPersist(bubbleup.WarnKey, msg.instructions))
 		cmds = append(cmds, copilotPollCommand(msg.deviceCode))
 		return a, tea.Batch(cmds...)
 
-	// Copilot login flow completed - show result (replaces device code alert)
+	// Copilot login flow completed - restore default alert duration and show result.
 	case copilotLoginDoneMsg:
+		a.alert = bubbleup.NewAlertModel(60, false, 5*time.Second).
+			WithPosition(bubbleup.TopRightPosition).
+			WithMinWidth(20).
+			WithUnicodePrefix().
+			WithAllowEscToClose()
 		if msg.err != nil {
 			cmds = append(cmds, a.alert.NewAlertCmd(bubbleup.ErrorKey, fmt.Sprintf("Copilot login failed: %v", msg.err)))
 		} else {

@@ -10,7 +10,6 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
-import { useServerStore } from '@/stores/serverStore'
 import PersonaSelector from '@/components/shared/PersonaSelector'
 
 export default function Header() {
@@ -18,7 +17,6 @@ export default function Header() {
   const navigate = useNavigate()
   const { toggleSidebar, sidebarOpen, setChatMode } = useLayoutStore()
   const { themeMode: theme, toggleMode: toggleTheme } = useTheme()
-  const connected = useServerStore((s) => s.connected)
   const [version, setVersion] = useState<string>('')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const mobileMenuRef = useRef<HTMLElement>(null)
@@ -160,8 +158,8 @@ export default function Header() {
             style={({ isActive }) => ({
               display: 'flex',
               alignItems: 'center',
-              gap: '0.375rem',
-              padding: '0 0.875rem',
+              gap: 0,
+              padding: '0 0.75rem',
               textDecoration: 'none',
               fontSize: 13,
               fontWeight: isActive ? 600 : 500,
@@ -171,8 +169,7 @@ export default function Header() {
               transition: 'color 0.15s, border-color 0.15s, background 0.15s',
             })}
           >
-            <FontAwesomeIcon icon={tab.icon} style={{ fontSize: 11 }} />
-            <span className="header-tab-label">{tab.label}</span>
+            <FontAwesomeIcon icon={tab.icon} style={{ fontSize: 13 }} />
           </NavLink>
         ))}
       </nav>
@@ -255,18 +252,6 @@ export default function Header() {
 
       {/* Right actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-        {/* Connection status dot */}
-        <div
-          title={connected ? t('common.connected') : t('common.disconnected')}
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: '50%',
-            background: connected ? 'var(--success)' : 'var(--error)',
-            marginRight: '0.25rem',
-          }}
-        />
-
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
