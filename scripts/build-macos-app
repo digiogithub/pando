@@ -233,15 +233,19 @@ else
     cp "$UNSIGNED_PKG" "$FINAL_PKG"
 fi
 
-# Compress in zip the universal binary
-zip "$DIST_DIR/pando-osx" "$DIST_DIR/pando-osx.zip"
-# Compress pkg in zip
-zip "$DIST_DIR/pando-${VERSION}.pkg" "$DIST_DIR/pando-osx-installer-${VERSION}.zip"
+# Compress universal binary (consistent with other release archives)
+echo "Compressing dist/pando-osx.zip..."
+(cd "$DIST_DIR" && zip -qm "pando-osx.zip" "pando-osx")
+
+# Compress .pkg for easy distribution
+echo "Compressing dist/pando-${VERSION}.pkg.zip..."
+(cd "$DIST_DIR" && zip -q "pando-${VERSION}.pkg.zip" "pando-${VERSION}.pkg")
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 
 echo ""
 echo "Done!"
-echo "  Universal binary : dist/pando-osx"
+echo "  Universal binary : dist/pando-osx.zip"
 echo "  macOS .app bundle: dist/Pando.app"
 echo "  macOS .pkg        : dist/pando-${VERSION}.pkg"
+echo "  macOS .pkg (zip)  : dist/pando-${VERSION}.pkg.zip"
