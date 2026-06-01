@@ -9,6 +9,9 @@
 #
 #   VERSION  Optional. Defaults to the latest git tag (git describe --tags --abbrev=0).
 #
+# When running over SSH, allocate a TTY so the keychain password prompt works:
+#   ssh -t mac-mini-de-digio "cd ~/www/MCP/Pando/pando && bash scripts/build-macos-app"
+#
 # Prerequisites (macOS only):
 #   - Xcode Command Line Tools: lipo, iconutil, sips, pkgbuild, productbuild
 #   - codesign-digio   custom signing tool (optional — steps are skipped when absent)
@@ -18,7 +21,7 @@
 #   dist/pando-darwin-arm64.zip
 #
 # Outputs in dist/:
-#   pando-osx              Universal binary (fat Mach-O)
+#   pando-osx.zip          Universal binary (fat Mach-O), compressed
 #   Pando.app              Signed .app bundle
 #   pando-<VERSION>.pkg    Signed flat-package installer
 
@@ -43,6 +46,53 @@ for tool in lipo iconutil sips pkgbuild productbuild; do
     }
 done
 
+# ── Locate codesign-digio ────────────────────────────────────────────────────
+# Check PATH first, then ~/bin/ (SSH sessions often omit the user's PATH).
+
+CODESIGN_DIGIO=""
+if command -v codesign-digio >/dev/null 2>&1; then
+    CODESIGN_DIGIO="$(command -v codesign-digio)"
+elif [[ -x "$HOME/bin/codesign-digio" ]]; then
+    CODESIGN_DIGIO="$HOME/bin/codesign-digio"
+fi
+
+# ── Keychain unlock (required over SSH — no GUI session) ────────────────────
+# codesign accesses the login keychain which is locked in headless sessions.
+# We prompt once here, before any build work starts, then re-lock on exit.
+
+KEYCHAIN_DB="$HOME/Library/Keychains/login.keychain-db"
+KEYCHAIN_UNLOCKED=false
+
+if [[ -n "$CODESIGN_DIGIO" ]]; then
+    echo "Code signing tool: $CODESIGN_DIGIO"
+    # Only prompt if we have a TTY (i.e. the user can type a password).
+    # Skip silently when KEYCHAIN_PASSWORD is already set in the environment.
+    if [[ -z "${KEYCHAIN_PASSWORD:-}" ]]; then
+        if [[ -t 0 ]]; then
+            read -r -s -p "Keychain password (for code signing): " KEYCHAIN_PASSWORD
+            echo
+        else
+            echo "Warning: no TTY detected — run with 'ssh -t' to enable keychain unlock." >&2
+            echo "  Code signing will be attempted but may fail with errSecInternalComponent." >&2
+        fi
+    fi
+    if [[ -n "${KEYCHAIN_PASSWORD:-}" ]]; then
+        echo "Unlocking login keychain..."
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_DB"
+        KEYCHAIN_UNLOCKED=true
+    fi
+else
+    echo "Warning: codesign-digio not found — artifacts will not be signed."
+fi
+
+relock_keychain() {
+    if [[ "$KEYCHAIN_UNLOCKED" == "true" ]]; then
+        echo "Re-locking keychain."
+        security lock-keychain "$KEYCHAIN_DB" 2>/dev/null || true
+    fi
+}
+trap 'relock_keychain; rm -rf "$WORK_DIR"' EXIT
+
 # ── Version ─────────────────────────────────────────────────────────────────
 
 VERSION="${1:-$(git -C "$REPO_ROOT" describe --tags --abbrev=0 2>/dev/null || echo "dev")}"
@@ -66,7 +116,6 @@ done
 # ── Workspace ───────────────────────────────────────────────────────────────
 
 WORK_DIR="$(mktemp -d)"
-trap 'rm -rf "$WORK_DIR"' EXIT
 
 mkdir -p "$DIST_DIR"
 
@@ -91,11 +140,11 @@ chmod +x "$UNIVERSAL"
 
 # ── 3. Sign universal binary ─────────────────────────────────────────────────
 
-if command -v codesign-digio >/dev/null 2>&1; then
-    echo "Signing universal binary with codesign-digio..."
-    codesign-digio "$UNIVERSAL"
+if [[ -n "$CODESIGN_DIGIO" ]]; then
+    echo "Signing universal binary..."
+    "$CODESIGN_DIGIO" "$UNIVERSAL"
 else
-    echo "codesign-digio not found — skipping binary signing."
+    echo "Skipping binary signing (codesign-digio not found)."
 fi
 
 # ── 4. Build .app bundle ──────────────────────────────────────────────────────
@@ -146,11 +195,11 @@ FINAL_APP="$DIST_DIR/Pando.app"
 rm -rf "$FINAL_APP"
 cp -R "$APP_DIR" "$FINAL_APP"
 
-if command -v codesign-digio >/dev/null 2>&1; then
+if [[ -n "$CODESIGN_DIGIO" ]]; then
     echo "Signing Pando.app bundle..."
-    codesign-digio "$FINAL_APP"
+    "$CODESIGN_DIGIO" "$FINAL_APP"
 else
-    echo "codesign-digio not found — skipping .app bundle signing."
+    echo "Skipping .app bundle signing (codesign-digio not found)."
 fi
 
 # ── 8. Copy universal binary to dist/pando-osx ───────────────────────────────
@@ -227,14 +276,13 @@ productbuild \
 
 FINAL_PKG="$DIST_DIR/pando-${VERSION}.pkg"
 
-if command -v codesign-digio >/dev/null 2>&1; then
-    echo "Signing .pkg installer with codesign-digio..."
-    codesign-digio "$UNSIGNED_PKG"
-    cp "$UNSIGNED_PKG" "$FINAL_PKG"
+if [[ -n "$CODESIGN_DIGIO" ]]; then
+    echo "Signing .pkg installer..."
+    "$CODESIGN_DIGIO" "$UNSIGNED_PKG"
 else
-    echo "codesign-digio not found — .pkg left unsigned."
-    cp "$UNSIGNED_PKG" "$FINAL_PKG"
+    echo "Skipping .pkg signing (codesign-digio not found)."
 fi
+cp "$UNSIGNED_PKG" "$FINAL_PKG"
 
 # Compress universal binary (consistent with other release archives)
 echo "Compressing dist/pando-osx.zip..."

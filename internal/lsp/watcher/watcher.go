@@ -11,6 +11,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/fileutil"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/lsp/protocol"
@@ -100,8 +101,10 @@ func (w *WorkspaceWatcher) AddRegistrations(ctx context.Context, id string, watc
 	// Check if this server has sent file watchers
 	hasFileWatchers := len(watchers) > 0
 
-	// For servers that need file preloading, we'll use a smart approach
-	if shouldPreloadFiles(serverName) || !hasFileWatchers {
+	// For servers that need file preloading, we'll use a smart approach.
+	// Skip entirely when the workspace is not a recognised project directory
+	// to avoid scanning the user's home directory or the filesystem root.
+	if (shouldPreloadFiles(serverName) || !hasFileWatchers) && fileutil.IsSafeWorkingDirectory(w.workspacePath) {
 		go func() {
 			startTime := time.Now()
 			filesOpened := 0
@@ -138,7 +141,13 @@ func (w *WorkspaceWatcher) AddRegistrations(ctx context.Context, id string, watc
 				return
 			}
 
-			// For the remaining slots, walk the directory and open matching files
+			// For the remaining slots, walk the directory and open matching files.
+			// Skip when the workspace is not a recognised project directory to
+			// avoid traversing the user's entire home directory.
+			if !fileutil.IsSafeWorkingDirectory(w.workspacePath) {
+				logging.Debug("workspace watcher: skipping file preload – not a project directory", "path", w.workspacePath)
+				return
+			}
 
 			err := filepath.WalkDir(w.workspacePath, func(path string, d os.DirEntry, err error) error {
 				if err != nil {
@@ -331,34 +340,47 @@ func (w *WorkspaceWatcher) WatchWorkspace(ctx context.Context, workspacePath str
 	}
 	defer watcher.Close()
 
-	// Watch the workspace recursively
-	err = filepath.WalkDir(workspacePath, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
+	// Only watch the workspace recursively when it is a recognised project
+	// directory. Skipping the walk prevents pando from registering thousands
+	// of fsnotify watches (and reading hundreds of GB) when the user runs it
+	// from their home directory or the filesystem root.
+	if !fileutil.IsSafeWorkingDirectory(workspacePath) {
+		logging.Debug("workspace watcher: skipping recursive walk – not a project directory", "path", workspacePath)
+		// Still watch the top-level directory so LSP events for files created
+		// directly in the workspace root are delivered.
+		if err := watcher.Add(workspacePath); err != nil {
+			logging.Error("Error watching workspace root", "path", workspacePath, "error", err)
 		}
-
-		// Skip excluded directories (except workspace root)
-		if d.IsDir() && path != workspacePath {
-			if shouldExcludeDir(path) {
-				if cnf.DebugLSP {
-					logging.Debug("Skipping excluded directory", "path", path)
-				}
-				return filepath.SkipDir
-			}
-		}
-
-		// Add directories to watcher
-		if d.IsDir() {
-			err = watcher.Add(path)
+	} else {
+		// Watch the workspace recursively
+		err = filepath.WalkDir(workspacePath, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
-				logging.Error("Error watching path", "path", path, "error", err)
+				return err
 			}
-		}
 
-		return nil
-	})
-	if err != nil {
-		logging.Error("Error walking workspace", "error", err)
+			// Skip excluded directories (except workspace root)
+			if d.IsDir() && path != workspacePath {
+				if shouldExcludeDir(path) {
+					if cnf.DebugLSP {
+						logging.Debug("Skipping excluded directory", "path", path)
+					}
+					return filepath.SkipDir
+				}
+			}
+
+			// Add directories to watcher
+			if d.IsDir() {
+				err = watcher.Add(path)
+				if err != nil {
+					logging.Error("Error watching path", "path", path, "error", err)
+				}
+			}
+
+			return nil
+		})
+		if err != nil {
+			logging.Error("Error walking workspace", "error", err)
+		}
 	}
 
 	// Event loop

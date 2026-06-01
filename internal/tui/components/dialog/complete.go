@@ -264,13 +264,12 @@ func (c *completionDialogCmp) BindingKeys() []key.Binding {
 func NewCompletionDialogCmp(completionProvider CompletionProvider) CompletionDialog {
 	ti := textarea.New()
 
-	items, err := completionProvider.GetChildEntries("")
-	if err != nil {
-		logging.Error("Failed to get child entries", err)
-	}
-
+	// Do NOT pre-load entries here: for large directories (e.g. the user's
+	// home directory) this would block the TUI startup while scanning the
+	// entire filesystem.  Entries are loaded on-demand when the user opens
+	// the dialog (handled in Update when the textarea is not yet focused).
 	li := utilComponents.NewSimpleList(
-		items,
+		[]CompletionItemI{},
 		7,
 		"No file matches found",
 		false,

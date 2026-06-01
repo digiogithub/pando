@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/fileutil"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/search"
 )
@@ -43,7 +44,15 @@ var alwaysSkipDirs = []string{
 
 // Scan walks rootDir recursively and returns a SnapshotFile for every file
 // that passes the ignore rules. Directories are recorded without hashing.
+// If rootDir is not a recognised project directory (e.g. the user's home
+// directory) the scan is skipped and an empty list is returned to avoid
+// traversing huge directory trees.
 func (sc *scanner) Scan(rootDir string) ([]SnapshotFile, error) {
+	if !fileutil.IsSafeWorkingDirectory(rootDir) {
+		logging.Debug("scanner: skipping scan – not a project directory", "dir", rootDir)
+		return nil, nil
+	}
+
 	ignoreMatcher, err := search.LoadIgnoreFiles(rootDir)
 	if err != nil {
 		// Non-fatal: proceed without ignore rules.

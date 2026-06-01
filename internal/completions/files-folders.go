@@ -2,11 +2,16 @@ package completions
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/digiogithub/pando/internal/fileutil"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/tui/components/dialog"
 )
+
+// maxCompletionFiles is the maximum number of files returned by the file
+// completion provider.  Keeping this small avoids UI freezes in large trees.
+const maxCompletionFiles = 500
 
 type filesAndFoldersContextGroup struct {
 	prefix string
@@ -24,8 +29,20 @@ func (cg *filesAndFoldersContextGroup) GetEntry() dialog.CompletionItemI {
 }
 
 func (cg *filesAndFoldersContextGroup) getFiles(query string) ([]string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	// Skip recursive glob in non-project directories (home, root, …) to
+	// avoid freezing the TUI by scanning hundreds of GB.
+	if !fileutil.IsSafeWorkingDirectory(cwd) {
+		logging.Debug("file completions: skipping glob – not a project directory", "cwd", cwd)
+		return nil, nil
+	}
+
 	logging.Debug("Using doublestar for file listing")
-	files, _, err := fileutil.GlobWithDoublestar("**/*", ".", 0)
+	files, _, err := fileutil.GlobWithDoublestar("**/*", ".", maxCompletionFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to glob files: %w", err)
 	}
