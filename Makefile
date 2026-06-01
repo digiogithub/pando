@@ -112,6 +112,10 @@ define build_release
 	if [ "$(1)" != "darwin" ] && command -v $(UPX) >/dev/null 2>&1; then \
 		$(UPX) --best --lzma $(DIST_DIR)/pando-$(3)$(4); \
 	else echo "Skipping UPX for $(3)"; fi
+	if [ "$(1)" = "darwin" ] && command -v codesign-digio >/dev/null 2>&1; then \
+		echo "Signing $(DIST_DIR)/pando-$(3)$(4) with codesign-digio..."; \
+		codesign-digio "$(DIST_DIR)/pando-$(3)$(4)"; \
+	fi
 	cd $(DIST_DIR) && zip -qm pando-$(3).zip pando-$(3)$(4)
 endef
 

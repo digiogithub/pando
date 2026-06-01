@@ -1,0 +1,242 @@
+#!/usr/bin/env bash
+# build-macos-app — Build a universal macOS .app bundle and .pkg installer for Pando.
+#
+# Extracts the arch-specific binaries from dist/, creates a universal binary
+# with lipo, assembles a Pando.app bundle, and produces a signed .pkg installer.
+#
+# Usage:
+#   scripts/build-macos-app [VERSION]
+#
+#   VERSION  Optional. Defaults to the latest git tag (git describe --tags --abbrev=0).
+#
+# Prerequisites (macOS only):
+#   - Xcode Command Line Tools: lipo, iconutil, sips, pkgbuild, productbuild
+#   - codesign-digio   custom signing tool (optional — steps are skipped when absent)
+#
+# Required dist/ artifacts (produced by 'make release-darwin-amd64 release-darwin-arm64'):
+#   dist/pando-darwin-x64.zip
+#   dist/pando-darwin-arm64.zip
+#
+# Outputs in dist/:
+#   pando-osx              Universal binary (fat Mach-O)
+#   Pando.app              Signed .app bundle
+#   pando-<VERSION>.pkg    Signed flat-package installer
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DIST_DIR="$REPO_ROOT/dist"
+ASSETS_DIR="$REPO_ROOT/assets"
+
+# ── Guards ──────────────────────────────────────────────────────────────────
+
+if [[ "$(uname)" != "Darwin" ]]; then
+    echo "Error: this script must be run on macOS." >&2
+    exit 1
+fi
+
+for tool in lipo iconutil sips pkgbuild productbuild; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        echo "Error: required tool '$tool' not found. Install Xcode Command Line Tools." >&2
+        exit 1
+    }
+done
+
+# ── Version ─────────────────────────────────────────────────────────────────
+
+VERSION="${1:-$(git -C "$REPO_ROOT" describe --tags --abbrev=0 2>/dev/null || echo "dev")}"
+# Strip leading 'v' for CFBundleVersion (e.g. v1.2.3 → 1.2.3)
+BUNDLE_VERSION="${VERSION#v}"
+echo "Building Pando.app  version: ${VERSION}  bundle: ${BUNDLE_VERSION}"
+
+# ── Input zips ──────────────────────────────────────────────────────────────
+
+AMD64_ZIP="$DIST_DIR/pando-darwin-x64.zip"
+ARM64_ZIP="$DIST_DIR/pando-darwin-arm64.zip"
+
+for f in "$AMD64_ZIP" "$ARM64_ZIP"; do
+    [[ -f "$f" ]] || {
+        echo "Error: missing $f"
+        echo "  Run 'make release-darwin-amd64 release-darwin-arm64' first." >&2
+        exit 1
+    }
+done
+
+# ── Workspace ───────────────────────────────────────────────────────────────
+
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+mkdir -p "$DIST_DIR"
+
+# ── 1. Extract arch binaries ─────────────────────────────────────────────────
+
+echo "Extracting arch binaries..."
+ARCH_DIR="$WORK_DIR/arch"
+mkdir -p "$ARCH_DIR"
+unzip -q "$AMD64_ZIP" -d "$ARCH_DIR"   # → pando-darwin-x64
+unzip -q "$ARM64_ZIP" -d "$ARCH_DIR"   # → pando-darwin-arm64
+chmod +x "$ARCH_DIR/pando-darwin-x64" "$ARCH_DIR/pando-darwin-arm64"
+
+# ── 2. Universal binary ──────────────────────────────────────────────────────
+
+echo "Creating universal binary with lipo..."
+UNIVERSAL="$WORK_DIR/pando-universal"
+lipo -create \
+    "$ARCH_DIR/pando-darwin-x64" \
+    "$ARCH_DIR/pando-darwin-arm64" \
+    -output "$UNIVERSAL"
+chmod +x "$UNIVERSAL"
+
+# ── 3. Sign universal binary ─────────────────────────────────────────────────
+
+if command -v codesign-digio >/dev/null 2>&1; then
+    echo "Signing universal binary with codesign-digio..."
+    codesign-digio "$UNIVERSAL"
+else
+    echo "codesign-digio not found — skipping binary signing."
+fi
+
+# ── 4. Build .app bundle ──────────────────────────────────────────────────────
+
+APP_DIR="$WORK_DIR/Pando.app"
+MACOS_DIR="$APP_DIR/Contents/MacOS"
+RES_DIR="$APP_DIR/Contents/Resources"
+mkdir -p "$MACOS_DIR" "$RES_DIR"
+
+# Actual binary (also accessible as /usr/local/bin/pando → this file)
+cp "$UNIVERSAL" "$MACOS_DIR/pando"
+chmod +x "$MACOS_DIR/pando"
+
+# Launcher wrapper — CFBundleExecutable — invoked when user opens the .app
+cat > "$MACOS_DIR/Pando" <<'WRAPPER'
+#!/bin/bash
+# Launch Pando in desktop mode when opened as a macOS application.
+SELF="$(cd "$(dirname "$0")" && pwd)"
+exec "$SELF/pando" desktop
+WRAPPER
+chmod +x "$MACOS_DIR/Pando"
+
+# ── 5. Icon: PNG → ICNS ───────────────────────────────────────────────────────
+
+echo "Converting icon to AppIcon.icns..."
+SRC_ICON="$ASSETS_DIR/pando_icon0_optim.png"
+ICONSET="$WORK_DIR/AppIcon.iconset"
+mkdir -p "$ICONSET"
+
+for size in 16 32 64 128 256 512; do
+    sips -z "$size" "$size" "$SRC_ICON" --out "$ICONSET/icon_${size}x${size}.png"      >/dev/null 2>&1
+    dbl=$((size * 2))
+    sips -z "$dbl" "$dbl" "$SRC_ICON" --out "$ICONSET/icon_${size}x${size}@2x.png"   >/dev/null 2>&1
+done
+iconutil -c icns "$ICONSET" -o "$RES_DIR/AppIcon.icns"
+
+# ── 6. Info.plist ─────────────────────────────────────────────────────────────
+
+sed "s/{{VERSION}}/$BUNDLE_VERSION/g" "$SCRIPT_DIR/Info.plist.tpl" \
+    > "$APP_DIR/Contents/Info.plist"
+
+# ── 7. Copy .app to dist/ ─────────────────────────────────────────────────────
+
+FINAL_APP="$DIST_DIR/Pando.app"
+rm -rf "$FINAL_APP"
+cp -R "$APP_DIR" "$FINAL_APP"
+
+if command -v codesign-digio >/dev/null 2>&1; then
+    echo "Signing Pando.app bundle..."
+    codesign-digio "$FINAL_APP"
+else
+    echo "codesign-digio not found — skipping .app bundle signing."
+fi
+
+# ── 8. Copy universal binary to dist/pando-osx ───────────────────────────────
+
+cp "$UNIVERSAL" "$DIST_DIR/pando-osx"
+echo "Universal binary: dist/pando-osx"
+
+# ── 9. Build .pkg installer ───────────────────────────────────────────────────
+
+echo "Building .pkg installer..."
+PKG_WORK="$WORK_DIR/pkg"
+APP_STAGE="$PKG_WORK/app-root"
+LAUNCHER_STAGE="$PKG_WORK/launcher-root"
+mkdir -p "$APP_STAGE/Applications" \
+         "$LAUNCHER_STAGE/usr/local/bin"
+
+# Signed .app goes under /Applications
+cp -R "$FINAL_APP" "$APP_STAGE/Applications/"
+
+# /usr/local/bin/pando — thin wrapper calling the binary inside the .app
+cat > "$LAUNCHER_STAGE/usr/local/bin/pando" <<'LAUNCHER'
+#!/bin/sh
+exec /Applications/Pando.app/Contents/MacOS/pando "$@"
+LAUNCHER
+chmod +x "$LAUNCHER_STAGE/usr/local/bin/pando"
+
+# Component packages
+APP_PKG="$PKG_WORK/pando-app.pkg"
+LAUNCHER_PKG="$PKG_WORK/pando-launcher.pkg"
+
+pkgbuild \
+    --root "$APP_STAGE" \
+    --identifier "es.digio.pando" \
+    --version "$BUNDLE_VERSION" \
+    --install-location "/" \
+    "$APP_PKG"
+
+pkgbuild \
+    --root "$LAUNCHER_STAGE" \
+    --identifier "es.digio.pando.launcher" \
+    --version "$BUNDLE_VERSION" \
+    --install-location "/" \
+    "$LAUNCHER_PKG"
+
+# Distribution descriptor
+DIST_XML="$PKG_WORK/distribution.xml"
+cat > "$DIST_XML" <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>Pando ${VERSION}</title>
+    <organization>es.digio</organization>
+    <domains enable_localSystem="true"/>
+    <options customize="never" require-scripts="false"/>
+    <choices-outline>
+        <line choice="app"/>
+        <line choice="launcher"/>
+    </choices-outline>
+    <choice id="app" visible="false">
+        <pkg-ref id="es.digio.pando"/>
+    </choice>
+    <choice id="launcher" visible="false">
+        <pkg-ref id="es.digio.pando.launcher"/>
+    </choice>
+    <pkg-ref id="es.digio.pando"         version="${BUNDLE_VERSION}" onConclusion="none">pando-app.pkg</pkg-ref>
+    <pkg-ref id="es.digio.pando.launcher" version="${BUNDLE_VERSION}" onConclusion="none">pando-launcher.pkg</pkg-ref>
+</installer-gui-script>
+XML
+
+UNSIGNED_PKG="$PKG_WORK/pando-${VERSION}-unsigned.pkg"
+productbuild \
+    --distribution "$DIST_XML" \
+    --package-path "$PKG_WORK" \
+    "$UNSIGNED_PKG"
+
+FINAL_PKG="$DIST_DIR/pando-${VERSION}.pkg"
+
+if command -v codesign-digio >/dev/null 2>&1; then
+    echo "Signing .pkg installer with codesign-digio..."
+    codesign-digio "$UNSIGNED_PKG"
+    cp "$UNSIGNED_PKG" "$FINAL_PKG"
+else
+    echo "codesign-digio not found — .pkg left unsigned."
+    cp "$UNSIGNED_PKG" "$FINAL_PKG"
+fi
+
+# ── Done ─────────────────────────────────────────────────────────────────────
+
+echo ""
+echo "Done!"
+echo "  Universal binary : dist/pando-osx"
+echo "  macOS .app bundle: dist/Pando.app"
+echo "  macOS .pkg        : dist/pando-${VERSION}.pkg"
