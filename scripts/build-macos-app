@@ -233,6 +233,11 @@ else
     cp "$UNSIGNED_PKG" "$FINAL_PKG"
 fi
 
+# Compress in zip the universal binary
+zip "$DIST_DIR/pando-osx" "$DIST_DIR/pando-osx.zip"
+# Compress pkg in zip
+zip "$DIST_DIR/pando-${VERSION}.pkg" "$DIST_DIR/pando-osx-installer-${VERSION}.zip"
+
 # ── Done ─────────────────────────────────────────────────────────────────────
 
 echo ""
