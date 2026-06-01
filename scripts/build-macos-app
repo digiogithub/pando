@@ -105,18 +105,21 @@ MACOS_DIR="$APP_DIR/Contents/MacOS"
 RES_DIR="$APP_DIR/Contents/Resources"
 mkdir -p "$MACOS_DIR" "$RES_DIR"
 
-# Actual binary (also accessible as /usr/local/bin/pando → this file)
-cp "$UNIVERSAL" "$MACOS_DIR/pando"
-chmod +x "$MACOS_DIR/pando"
+# Actual binary — named pando-bin to avoid case-collision with the wrapper on
+# case-insensitive APFS/HFS+ volumes (pando == Pando on default macOS fs).
+# /usr/local/bin/pando calls this file directly for full CLI access.
+cp "$UNIVERSAL" "$MACOS_DIR/pando-bin"
+chmod +x "$MACOS_DIR/pando-bin"
 
-# Launcher wrapper — CFBundleExecutable — invoked when user opens the .app
-cat > "$MACOS_DIR/Pando" <<'WRAPPER'
+# CFBundleExecutable wrapper — invoked when the user opens the .app.
+# Calls pando-bin with the 'desktop' subcommand to launch the desktop UI.
+cat > "$MACOS_DIR/pando" <<'WRAPPER'
 #!/bin/bash
 # Launch Pando in desktop mode when opened as a macOS application.
 SELF="$(cd "$(dirname "$0")" && pwd)"
-exec "$SELF/pando" desktop
+exec "$SELF/pando-bin" desktop
 WRAPPER
-chmod +x "$MACOS_DIR/Pando"
+chmod +x "$MACOS_DIR/pando"
 
 # ── 5. Icon: PNG → ICNS ───────────────────────────────────────────────────────
 
@@ -167,10 +170,10 @@ mkdir -p "$APP_STAGE/Applications" \
 # Signed .app goes under /Applications
 cp -R "$FINAL_APP" "$APP_STAGE/Applications/"
 
-# /usr/local/bin/pando — thin wrapper calling the binary inside the .app
+# /usr/local/bin/pando — calls the real binary inside the .app (not the desktop wrapper)
 cat > "$LAUNCHER_STAGE/usr/local/bin/pando" <<'LAUNCHER'
 #!/bin/sh
-exec /Applications/Pando.app/Contents/MacOS/pando "$@"
+exec /Applications/Pando.app/Contents/MacOS/pando-bin "$@"
 LAUNCHER
 chmod +x "$LAUNCHER_STAGE/usr/local/bin/pando"
 
