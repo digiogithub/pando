@@ -511,8 +511,8 @@ func setupSubscriptions(app *app.App, parentCtx context.Context) (chan tea.Msg, 
 	if app.CronService != nil {
 		setupSubscriber(ctx, &wg, "cronjobs", app.CronService.Subscribe, ch)
 	}
-	if app.Snapshots != nil {
-		setupSubscriber(ctx, &wg, "snapshots", app.Snapshots.Subscribe, ch)
+	if app.AgentVCS != nil {
+		setupSubscriber(ctx, &wg, "agentvcs", app.AgentVCS.Subscribe, ch)
 	}
 
 	cleanupFunc := func() {

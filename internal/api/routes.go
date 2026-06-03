@@ -114,7 +114,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/orchestrator/tasks/{id}/cancel", s.handleCancelTask)
 	// Terminal
 	mux.HandleFunc("POST /api/v1/terminal/exec", s.handleTerminalExec)
-	// Snapshots
+	// Snapshots (backward-compatible, delegating to agent-vcs)
 	mux.HandleFunc("GET /api/v1/snapshots/count", s.handleSnapshotsCount)
 	mux.HandleFunc("GET /api/v1/snapshots", s.handleGetSnapshots)
 	mux.HandleFunc("POST /api/v1/snapshots", s.handleCreateSnapshot)
@@ -122,6 +122,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/snapshots/{id}/apply", s.handleApplySnapshot)
 	mux.HandleFunc("POST /api/v1/snapshots/{id}/revert", s.handleRevertSnapshot)
 	mux.HandleFunc("DELETE /api/v1/snapshots/{id}", s.handleDeleteSnapshot)
+	// Agent-VCS native endpoints
+	mux.HandleFunc("GET /api/v1/agentvcs/sessions", s.handleAgentVCSSessions)
+	mux.HandleFunc("GET /api/v1/agentvcs/sessions/{id}/log", s.handleAgentVCSLog)
+	mux.HandleFunc("GET /api/v1/agentvcs/commits/{id}", s.handleAgentVCSCommit)
+	mux.HandleFunc("GET /api/v1/agentvcs/commits/{id}/diff", s.handleAgentVCSDiff)
 	// Evaluator
 	mux.HandleFunc("GET /api/v1/evaluator/metrics", s.handleGetEvaluatorMetrics)
 	mux.HandleFunc("GET /api/v1/evaluator/templates", s.handleGetEvaluatorTemplates)

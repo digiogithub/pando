@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from 'react'
+import { useEffect, useCallback, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPlus } from '@fortawesome/free-solid-svg-icons'
@@ -10,6 +10,7 @@ import { useLayoutStore } from '@/stores/layoutStore'
 import MessageList from './MessageList'
 import ChatInput from './ChatInput'
 import GoalStatus from './GoalStatus'
+import PlanView from './PlanView'
 
 export default function ChatView() {
   const { t } = useTranslation()
@@ -17,7 +18,6 @@ export default function ChatView() {
   const { notify } = useDesktopNotifications()
   const sidebarOpen = useLayoutStore((s) => s.sidebarOpen)
   const { goal, applyGoalEvent, cancelGoal, cancelling } = useGoal(activeSessionId)
-
   const handleDone = useCallback(() => {
     const session = sessions.find((s) => s.id === activeSessionId)
     const title = session?.title ?? t('chat.agentDoneTitle')
@@ -46,6 +46,17 @@ export default function ChatView() {
       }
     },
   })
+
+  // Persist plan across stream completions so it stays visible after done
+  const [persistentPlan, setPersistentPlan] = useState<{ title: string; status: string }[]>([])
+  useEffect(() => {
+    if (streamingState.plan.length > 0) {
+      setPersistentPlan(streamingState.plan)
+    }
+  }, [streamingState.plan])
+  useEffect(() => { setPersistentPlan([]) }, [activeSessionId])
+
+  const activePlan = streamingState.plan.length > 0 ? streamingState.plan : persistentPlan
 
   // Track which session we last reconnected to avoid duplicate connections.
   const reconnectedSessionRef = useRef<string | null>(null)
@@ -109,6 +120,7 @@ export default function ChatView() {
         </button>
       )}
       <GoalStatus goal={goal ?? streamingState.goal} cancelling={cancelling} onCancel={() => void cancelGoal()} />
+      {activePlan.length > 0 && <PlanView plan={activePlan} />}
       <MessageList messages={messages} streaming={streaming} streamingState={streamingState} />
 
       {error && (

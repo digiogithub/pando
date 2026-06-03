@@ -8,8 +8,8 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/digiogithub/pando/internal/agentvcs"
 	"github.com/digiogithub/pando/internal/pubsub"
-	"github.com/digiogithub/pando/internal/snapshot"
 	"github.com/digiogithub/pando/internal/tui/layout"
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
@@ -36,19 +36,19 @@ func (c *tableCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case pubsub.Event[snapshot.Snapshot]:
-		snap := msg.Payload
-		row := snapshotToRow(snap)
+	case pubsub.Event[agentvcs.Commit]:
+		commit := msg.Payload
+		row := commitToRow(commit)
 
 		switch msg.Type {
 		case pubsub.DeletedEvent:
 			c.rows = slices.DeleteFunc(c.rows, func(r SnapshotRow) bool {
-				return r.ID == snap.ID
+				return r.ID == commit.ID
 			})
 		case pubsub.CreatedEvent, pubsub.UpdatedEvent:
 			found := false
 			for i, r := range c.rows {
-				if r.ID == snap.ID {
+				if r.ID == commit.ID {
 					c.rows[i] = row
 					found = true
 					break
@@ -83,7 +83,6 @@ func (c *tableCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						SessionID:   row.SessionID,
 						Type:        row.Type,
 						Description: row.Description,
-						WorkingDir:  row.WorkingDir,
 						FileCount:   row.FileCount,
 						TotalSize:   row.TotalSize,
 						CreatedAt:   row.CreatedAt,
@@ -111,7 +110,6 @@ func (c *tableCmp) selectedSnapshotCmd() tea.Cmd {
 		SessionID:   row.SessionID,
 		Type:        row.Type,
 		Description: row.Description,
-		WorkingDir:  row.WorkingDir,
 		FileCount:   row.FileCount,
 		TotalSize:   row.TotalSize,
 		CreatedAt:   row.CreatedAt,
@@ -172,15 +170,13 @@ func (c *tableCmp) syncRows() {
 	c.table.SetRows(tableRows)
 }
 
-// typeIcon returns a human-friendly label with an icon for the snapshot type.
+// typeIcon returns a human-friendly label for the commit type.
 func typeIcon(t string) string {
 	switch t {
-	case snapshot.SnapshotTypeStart:
-		return "⬆ start"
-	case snapshot.SnapshotTypeEnd:
-		return "⬇ end"
-	case snapshot.SnapshotTypeManual:
-		return "📌 manual"
+	case "start":
+		return "○ start"
+	case "delta":
+		return "● delta"
 	default:
 		return t
 	}
@@ -205,17 +201,20 @@ func formatSize(bytes int64) string {
 	}
 }
 
-// snapshotToRow converts a snapshot.Snapshot into a SnapshotRow.
-func snapshotToRow(snap snapshot.Snapshot) SnapshotRow {
+// commitToRow converts an agentvcs.Commit into a SnapshotRow.
+func commitToRow(c agentvcs.Commit) SnapshotRow {
+	commitType := "delta"
+	if c.ParentID == "" {
+		commitType = "start"
+	}
 	return SnapshotRow{
-		ID:          snap.ID,
-		SessionID:   snap.SessionID,
-		Type:        snap.Type,
-		Description: snap.Description,
-		WorkingDir:  snap.WorkingDir,
-		FileCount:   snap.FileCount,
-		TotalSize:   snap.TotalSize,
-		CreatedAt:   snap.CreatedAt,
+		ID:          c.ID,
+		SessionID:   c.SessionID,
+		Type:        commitType,
+		Description: c.Description,
+		FileCount:   c.FileCount,
+		TotalSize:   c.TotalSize,
+		CreatedAt:   c.CreatedAt,
 	}
 }
 

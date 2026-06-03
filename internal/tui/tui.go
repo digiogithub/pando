@@ -2406,17 +2406,17 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Category:    dialog.CommandCategoryGeneral,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return func() tea.Msg {
-				if app.Snapshots != nil {
+				if app.AgentVCS != nil {
 					ctx := context.Background()
 					sessionID := model.selectedSession.ID
 					if sessionID == "" {
 						sessionID = "manual"
 					}
-					_, err := app.Snapshots.Create(ctx, sessionID, "manual", "Manual snapshot")
+					_, err := app.AgentVCS.Record(ctx, sessionID, "Manual commit")
 					if err != nil {
-						logging.Error("Failed to create manual snapshot", "error", err)
+						logging.Error("Failed to create manual commit", "error", err)
 					} else {
-						logging.Info("Manual snapshot created")
+						logging.Info("Manual commit created")
 					}
 				}
 				return nil

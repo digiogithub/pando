@@ -88,8 +88,6 @@ func (d *detailCmp) updateContent() {
 	content.WriteString("\n")
 	content.WriteString(padding.Render(field("Size", formatSize(d.currentSnapshot.TotalSize))))
 	content.WriteString("\n")
-	content.WriteString(padding.Render(field("Working Dir", d.currentSnapshot.WorkingDir)))
-	content.WriteString("\n")
 
 	if d.currentSnapshot.Description != "" {
 		content.WriteString("\n")
@@ -100,7 +98,7 @@ func (d *detailCmp) updateContent() {
 	// Action hints
 	content.WriteString("\n")
 	hintStyle := lipgloss.NewStyle().Foreground(t.TextMuted()).Italic(true)
-	content.WriteString(hintStyle.Render("[r] Revert  [d] Delete  [c] Compare"))
+	content.WriteString(hintStyle.Render("[r] Revert  [c] Compare"))
 
 	d.viewport.SetContent(content.String())
 }

@@ -6,38 +6,53 @@ import (
 	"strings"
 	"time"
 
-	"github.com/digiogithub/pando/internal/snapshot"
+	"github.com/digiogithub/pando/internal/agentvcs"
 )
 
-// SnapshotResponse is the JSON representation of a snapshot for the web-UI.
+// SnapshotResponse is the JSON representation of a commit for the web-UI.
+// Field names preserve backward compatibility with the old snapshot API.
 type SnapshotResponse struct {
 	ID         string    `json:"id"`
+	ShortID    string    `json:"short_id"`
 	Name       string    `json:"name"`
 	SessionID  string    `json:"session_id"`
+	ParentID   string    `json:"parent_id,omitempty"`
 	Type       string    `json:"type"`
 	Status     string    `json:"status"`
-	WorkingDir string    `json:"working_dir"`
 	CreatedAt  time.Time `json:"created_at"`
 	Size       int64     `json:"size"`
 	FilesCount int       `json:"files_count"`
 }
 
-// snapshotToResponse maps the internal snapshot.Snapshot to SnapshotResponse.
-func snapshotToResponse(s snapshot.Snapshot) SnapshotResponse {
-	name := s.Description
+// commitToResponse maps an agentvcs.Commit to the API response format.
+func commitToResponse(c agentvcs.Commit) SnapshotResponse {
+	name := c.Description
 	if name == "" {
-		name = s.Type + "-" + s.ID[:8]
+		sid := c.ID
+		if len(sid) > 8 {
+			sid = sid[:8]
+		}
+		name = "commit-" + sid
+	}
+	commitType := "delta"
+	if c.ParentID == "" {
+		commitType = "start"
+	}
+	shortID := c.ID
+	if len(shortID) > 12 {
+		shortID = shortID[:12]
 	}
 	return SnapshotResponse{
-		ID:         s.ID,
+		ID:         c.ID,
+		ShortID:    shortID,
 		Name:       name,
-		SessionID:  s.SessionID,
-		Type:       s.Type,
+		SessionID:  c.SessionID,
+		ParentID:   c.ParentID,
+		Type:       commitType,
 		Status:     "active",
-		WorkingDir: s.WorkingDir,
-		CreatedAt:  time.Unix(s.CreatedAt, 0),
-		Size:       s.TotalSize,
-		FilesCount: s.FileCount,
+		CreatedAt:  time.Unix(c.CreatedAt, 0),
+		Size:       c.TotalSize,
+		FilesCount: c.FileCount,
 	}
 }
 
@@ -49,21 +64,59 @@ type createSnapshotRequest struct {
 }
 
 // handleGetSnapshots handles GET /api/v1/snapshots.
+// When a ?session_id query param is present, returns only that session's commits.
 func (s *Server) handleGetSnapshots(w http.ResponseWriter, r *http.Request) {
-	if s.app.Snapshots == nil {
+	if s.app.AgentVCS == nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"snapshots": []interface{}{}})
 		return
 	}
 
-	snapshots, err := s.app.Snapshots.List(r.Context())
+	sessionID := r.URL.Query().Get("session_id")
+
+	if sessionID != "" {
+		log, err := s.app.AgentVCS.Log(r.Context(), sessionID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		items := make([]map[string]interface{}, 0, len(log))
+		for _, cs := range log {
+			items = append(items, map[string]interface{}{
+				"id":            cs.ID,
+				"short_id":      cs.ShortID,
+				"parent_id":     cs.ParentID,
+				"session_id":    cs.SessionID,
+				"description":   cs.Description,
+				"file_count":    cs.FileCount,
+				"total_size":    cs.TotalSize,
+				"changed_files": cs.ChangedFiles,
+				"created_at":    time.Unix(cs.CreatedAt, 0),
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{"commits": items})
+		return
+	}
+
+	// List all sessions and their latest commits.
+	sessions, err := s.app.AgentVCS.ListSessions(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	items := make([]SnapshotResponse, 0, len(snapshots))
-	for _, snap := range snapshots {
-		items = append(items, snapshotToResponse(snap))
+	var items []SnapshotResponse
+	for _, sid := range sessions {
+		log, err := s.app.AgentVCS.Log(r.Context(), sid)
+		if err != nil || len(log) == 0 {
+			continue
+		}
+		// Return the latest commit per session for the overview.
+		latest := log[len(log)-1]
+		c, err := s.app.AgentVCS.GetCommit(r.Context(), latest.ID)
+		if err != nil {
+			continue
+		}
+		items = append(items, commitToResponse(c))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"snapshots": items})
@@ -71,8 +124,8 @@ func (s *Server) handleGetSnapshots(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateSnapshot handles POST /api/v1/snapshots.
 func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
-	if s.app.Snapshots == nil {
-		writeError(w, http.StatusServiceUnavailable, "snapshot service is disabled")
+	if s.app.AgentVCS == nil {
+		writeError(w, http.StatusServiceUnavailable, "agent-vcs service is disabled")
 		return
 	}
 
@@ -82,87 +135,69 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snapshotType := req.Type
-	if snapshotType == "" {
-		snapshotType = snapshot.SnapshotTypeManual
+	desc := req.Description
+	if desc == "" {
+		desc = "Manual commit"
 	}
 
-	snap, err := s.app.Snapshots.Create(r.Context(), req.SessionID, snapshotType, req.Description)
+	commit, err := s.app.AgentVCS.Record(r.Context(), req.SessionID, desc)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, snapshotToResponse(snap))
+	writeJSON(w, http.StatusCreated, commitToResponse(commit))
 }
 
 // handleGetSnapshotByID handles GET /api/v1/snapshots/{id}.
 func (s *Server) handleGetSnapshotByID(w http.ResponseWriter, r *http.Request) {
-	if s.app.Snapshots == nil {
-		writeError(w, http.StatusServiceUnavailable, "snapshot service is disabled")
+	if s.app.AgentVCS == nil {
+		writeError(w, http.StatusServiceUnavailable, "agent-vcs service is disabled")
 		return
 	}
 
 	id := r.PathValue("id")
 	if id == "" {
-		// Fallback for older Go versions or non-pattern routes.
 		id = strings.TrimPrefix(r.URL.Path, "/api/v1/snapshots/")
 		id = strings.TrimSuffix(id, "/")
 	}
 
-	snap, err := s.app.Snapshots.Get(r.Context(), id)
+	commit, err := s.app.AgentVCS.GetCommit(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "snapshot not found")
+		writeError(w, http.StatusNotFound, "commit not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, snapshotToResponse(snap))
-}
+	// Include diff from parent.
+	diffs, _ := s.app.AgentVCS.DiffFromParent(r.Context(), id)
 
-// applySnapshotRequest is the body accepted by POST /api/v1/snapshots/{id}/apply.
-// to_snapshot_id is the target snapshot; the {id} in the path is the "from" snapshot.
-type applySnapshotRequest struct {
-	ToSnapshotID string `json:"to_snapshot_id"`
+	resp := map[string]interface{}{
+		"commit": commitToResponse(commit),
+		"diff":   diffs,
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleApplySnapshot handles POST /api/v1/snapshots/{id}/apply.
+// In agent-vcs this is a no-op placeholder — use revert instead.
 func (s *Server) handleApplySnapshot(w http.ResponseWriter, r *http.Request) {
-	if s.app.Snapshots == nil {
-		writeError(w, http.StatusServiceUnavailable, "snapshot service is disabled")
+	if s.app.AgentVCS == nil {
+		writeError(w, http.StatusServiceUnavailable, "agent-vcs service is disabled")
 		return
 	}
-
-	id := extractSnapshotIDFromAction(r, "apply")
-
-	var req applySnapshotRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	if req.ToSnapshotID == "" {
-		writeError(w, http.StatusBadRequest, "to_snapshot_id is required")
-		return
-	}
-
-	if err := s.app.Snapshots.Apply(r.Context(), id, req.ToSnapshotID); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+	writeError(w, http.StatusNotImplemented, "use revert endpoint to restore a commit state")
 }
 
 // handleRevertSnapshot handles POST /api/v1/snapshots/{id}/revert.
 func (s *Server) handleRevertSnapshot(w http.ResponseWriter, r *http.Request) {
-	if s.app.Snapshots == nil {
-		writeError(w, http.StatusServiceUnavailable, "snapshot service is disabled")
+	if s.app.AgentVCS == nil {
+		writeError(w, http.StatusServiceUnavailable, "agent-vcs service is disabled")
 		return
 	}
 
 	id := extractSnapshotIDFromAction(r, "revert")
 
-	if err := s.app.Snapshots.Revert(r.Context(), id); err != nil {
+	if err := s.app.AgentVCS.Revert(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -171,36 +206,22 @@ func (s *Server) handleRevertSnapshot(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDeleteSnapshot handles DELETE /api/v1/snapshots/{id}.
+// In agent-vcs, individual commit deletion is not supported (commits are immutable).
 func (s *Server) handleDeleteSnapshot(w http.ResponseWriter, r *http.Request) {
-	if s.app.Snapshots == nil {
-		writeError(w, http.StatusServiceUnavailable, "snapshot service is disabled")
+	if s.app.AgentVCS == nil {
+		writeError(w, http.StatusServiceUnavailable, "agent-vcs service is disabled")
 		return
 	}
-
-	id := r.PathValue("id")
-	if id == "" {
-		id = strings.TrimPrefix(r.URL.Path, "/api/v1/snapshots/")
-		id = strings.TrimSuffix(id, "/")
-	}
-
-	if err := s.app.Snapshots.Delete(r.Context(), id); err != nil {
-		writeError(w, http.StatusNotFound, "snapshot not found")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	writeError(w, http.StatusNotImplemented, "commits are immutable; use cleanup to prune old sessions")
 }
 
 // extractSnapshotIDFromAction parses the snapshot ID from paths like
 // /api/v1/snapshots/{id}/apply or /api/v1/snapshots/{id}/revert.
-// It first tries PathValue (Go 1.22+ mux pattern), then falls back to
-// manual parsing for compatibility with the prefix-based route fallback.
 func extractSnapshotIDFromAction(r *http.Request, action string) string {
 	id := r.PathValue("id")
 	if id != "" {
 		return id
 	}
-	// Manual parse: strip prefix and suffix action segment.
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/snapshots/")
 	path = strings.TrimSuffix(path, "/"+action)
 	return path

@@ -54,7 +54,7 @@ import (
 	ragproxy "github.com/digiogithub/pando/internal/rag/proxy"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
-	"github.com/digiogithub/pando/internal/snapshot"
+	"github.com/digiogithub/pando/internal/agentvcs"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/version"
 )
@@ -70,7 +70,7 @@ type App struct {
 
 	Projects            project.Service
 	ProjectManager      *project.Manager
-	Snapshots           snapshot.Service
+	AgentVCS            agentvcs.Service
 	LSPClients          map[string]*lsp.Client
 	SkillManager        *skills.SkillManager
 	MesnadaOrchestrator *mesnadaOrch.Orchestrator
@@ -353,16 +353,18 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		}
 	}
 
-	// Initialize Snapshot service if enabled
+	// Initialize agent-vcs (replaces legacy snapshot service).
+	// When snapshots are enabled, agent-vcs provides a jj-inspired commit chain
+	// per session instead of isolated snapshot captures.
 	cfg = config.Get()
 	if cfg != nil && cfg.Snapshots.Enabled {
-		snapshotSvc, err := snapshot.NewService()
+		vcsSvc, err := agentvcs.NewService()
 		if err != nil {
-			logging.Error("Failed to create snapshot service", "error", err)
+			logging.Error("Failed to create agent-vcs service", "error", err)
 		} else {
-			app.Snapshots = snapshotSvc
-			session.SetSnapshotCreator(snapshot.NewAdapter(snapshotSvc))
-			logging.Info("Snapshot service initialized")
+			app.AgentVCS = vcsSvc
+			session.SetSnapshotCreator(agentvcs.NewAdapter(vcsSvc))
+			logging.Info("Agent-VCS service initialized (replaces snapshots)")
 		}
 	}
 
@@ -1696,13 +1698,13 @@ func (app *App) Shutdown() {
 		}
 	}
 
-	// Cleanup old snapshots
-	if app.Snapshots != nil {
+	// Cleanup old agent-vcs data
+	if app.AgentVCS != nil {
 		cfg := config.Get()
 		if cfg != nil {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			if err := app.Snapshots.Cleanup(cleanupCtx, cfg.Snapshots.AutoCleanupDays, cfg.Snapshots.MaxSnapshots); err != nil {
-				logging.Error("Failed to cleanup snapshots", "error", err)
+			if err := app.AgentVCS.Cleanup(cleanupCtx, cfg.Snapshots.AutoCleanupDays, cfg.Snapshots.MaxSnapshots); err != nil {
+				logging.Error("Failed to cleanup agent-vcs", "error", err)
 			}
 			cancel()
 		}

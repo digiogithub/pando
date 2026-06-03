@@ -24,18 +24,26 @@ func (s *Server) handleSnapshotsCount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.app.Snapshots == nil {
+	if s.app.AgentVCS == nil {
 		writeJSON(w, http.StatusOK, map[string]int{"count": 0})
 		return
 	}
 
-	snapshots, err := s.app.Snapshots.List(r.Context())
+	sessions, err := s.app.AgentVCS.ListSessions(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list snapshots: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to list sessions: "+err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]int{"count": len(snapshots)})
+	total := 0
+	for _, sid := range sessions {
+		n, err := s.app.AgentVCS.SessionCommitCount(r.Context(), sid)
+		if err == nil {
+			total += n
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]int{"count": total})
 }
 
 // handleRegenerateAPIToken handles POST /api/v1/config/api-server/regenerate-token.

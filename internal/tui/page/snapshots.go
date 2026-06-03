@@ -106,28 +106,38 @@ func NewSnapshotsPage(app *app.App) SnapshotPage {
 }
 
 func (p *snapshotsPage) loadSnapshotsCmd() tea.Cmd {
-	if p.app == nil || p.app.Snapshots == nil {
+	if p.app == nil || p.app.AgentVCS == nil {
 		return nil
 	}
 
 	return func() tea.Msg {
-		items, err := p.app.Snapshots.List(context.Background())
+		ctx := context.Background()
+		sessions, err := p.app.AgentVCS.ListSessions(ctx)
 		if err != nil {
 			return snapshotsLoadedMsg{err: err}
 		}
 
-		rows := make([]snapshots.SnapshotRow, 0, len(items))
-		for _, snap := range items {
-			rows = append(rows, snapshots.SnapshotRow{
-				ID:          snap.ID,
-				SessionID:   snap.SessionID,
-				Type:        snap.Type,
-				Description: snap.Description,
-				WorkingDir:  snap.WorkingDir,
-				FileCount:   snap.FileCount,
-				TotalSize:   snap.TotalSize,
-				CreatedAt:   snap.CreatedAt,
-			})
+		var rows []snapshots.SnapshotRow
+		for _, sid := range sessions {
+			log, err := p.app.AgentVCS.Log(ctx, sid)
+			if err != nil {
+				continue
+			}
+			for _, cs := range log {
+				commitType := "delta"
+				if cs.ParentID == "" {
+					commitType = "start"
+				}
+				rows = append(rows, snapshots.SnapshotRow{
+					ID:          cs.ID,
+					SessionID:   cs.SessionID,
+					Type:        commitType,
+					Description: cs.Description,
+					FileCount:   cs.FileCount,
+					TotalSize:   cs.TotalSize,
+					CreatedAt:   cs.CreatedAt,
+				})
+			}
 		}
 		return snapshotsLoadedMsg{rows: rows}
 	}
