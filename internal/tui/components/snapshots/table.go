@@ -8,115 +8,61 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/digiogithub/pando/internal/agentvcs"
-	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/tui/layout"
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
 )
 
-// TableComponent is the public interface for the snapshot table component.
-type TableComponent interface {
+// SessionsTableComponent is the public interface for the sessions table component.
+type SessionsTableComponent interface {
 	tea.Model
 	layout.Sizeable
 	layout.Bindings
 }
 
-type tableCmp struct {
+type sessionsTableCmp struct {
 	table table.Model
-	rows  []SnapshotRow
+	rows  []SessionRow
 }
 
-func (c *tableCmp) Init() tea.Cmd {
+func (c *sessionsTableCmp) Init() tea.Cmd {
 	return nil
 }
 
-func (c *tableCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
+func (c *sessionsTableCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case pubsub.Event[agentvcs.Commit]:
-		commit := msg.Payload
-		row := commitToRow(commit)
-
-		switch msg.Type {
-		case pubsub.DeletedEvent:
-			c.rows = slices.DeleteFunc(c.rows, func(r SnapshotRow) bool {
-				return r.ID == commit.ID
-			})
-		case pubsub.CreatedEvent, pubsub.UpdatedEvent:
-			found := false
-			for i, r := range c.rows {
-				if r.ID == commit.ID {
-					c.rows[i] = row
-					found = true
-					break
-				}
-			}
-			if !found {
-				c.rows = append(c.rows, row)
-			}
-		}
-
+	case SessionListMsg:
+		c.rows = msg.Sessions
 		c.syncRows()
-		return c, c.selectedSnapshotCmd()
-
-	case SnapshotListMsg:
-		c.rows = msg.Snapshots
-		c.syncRows()
-		return c, c.selectedSnapshotCmd()
+		return c, c.selectedSessionCmd()
 	}
 
 	prevSelected := c.table.SelectedRow()
 	t, cmd := c.table.Update(msg)
-	cmds = append(cmds, cmd)
 	c.table = t
 
 	selected := c.table.SelectedRow()
-	if selected != nil {
-		if prevSelected == nil || selected[0] != prevSelected[0] {
-			for _, row := range c.rows {
-				if row.ID == selected[0] {
-					cmds = append(cmds, util.CmdHandler(SelectedSnapshotMsg{
-						ID:          row.ID,
-						SessionID:   row.SessionID,
-						Type:        row.Type,
-						Description: row.Description,
-						FileCount:   row.FileCount,
-						TotalSize:   row.TotalSize,
-						CreatedAt:   row.CreatedAt,
-					}))
-					break
-				}
-			}
-		}
+	if selected != nil && (prevSelected == nil || selected[0] != prevSelected[0]) {
+		return c, c.selectedSessionCmd()
 	}
 
-	return c, tea.Batch(cmds...)
+	return c, cmd
 }
 
-func (c *tableCmp) selectedSnapshotCmd() tea.Cmd {
+func (c *sessionsTableCmp) selectedSessionCmd() tea.Cmd {
 	if len(c.rows) == 0 {
 		c.table.SetCursor(0)
-		return util.CmdHandler(SelectedSnapshotMsg{})
+		return util.CmdHandler(SelectedSessionMsg{})
 	}
 
 	cursor := util.Clamp(c.table.Cursor(), 0, len(c.rows)-1)
 	c.table.SetCursor(cursor)
 	row := c.rows[cursor]
-	return util.CmdHandler(SelectedSnapshotMsg{
-		ID:          row.ID,
-		SessionID:   row.SessionID,
-		Type:        row.Type,
-		Description: row.Description,
-		FileCount:   row.FileCount,
-		TotalSize:   row.TotalSize,
-		CreatedAt:   row.CreatedAt,
-	})
+	return util.CmdHandler(SelectedSessionMsg{SessionID: row.SessionID})
 }
 
-func (c *tableCmp) View() string {
+func (c *sessionsTableCmp) View() string {
 	t := theme.CurrentTheme()
 	defaultStyles := table.DefaultStyles()
 	defaultStyles.Selected = defaultStyles.Selected.Foreground(t.Primary())
@@ -124,11 +70,11 @@ func (c *tableCmp) View() string {
 	return styles.ForceReplaceBackgroundWithLipgloss(c.table.View(), t.Background())
 }
 
-func (c *tableCmp) GetSize() (int, int) {
+func (c *sessionsTableCmp) GetSize() (int, int) {
 	return c.table.Width(), c.table.Height()
 }
 
-func (c *tableCmp) SetSize(width int, height int) tea.Cmd {
+func (c *sessionsTableCmp) SetSize(width int, height int) tea.Cmd {
 	c.table.SetWidth(width)
 	c.table.SetHeight(height)
 	columns := c.table.Columns()
@@ -140,13 +86,113 @@ func (c *tableCmp) SetSize(width int, height int) tea.Cmd {
 	return nil
 }
 
-func (c *tableCmp) BindingKeys() []key.Binding {
+func (c *sessionsTableCmp) BindingKeys() []key.Binding {
 	return layout.KeyMapToSlice(c.table.KeyMap)
 }
 
-// syncRows sorts c.rows newest-first and pushes them into the table model.
-func (c *tableCmp) syncRows() {
-	slices.SortFunc(c.rows, func(a, b SnapshotRow) int {
+func (c *sessionsTableCmp) syncRows() {
+	slices.SortFunc(c.rows, func(a, b SessionRow) int {
+		if a.LatestAt > b.LatestAt {
+			return -1
+		}
+		if a.LatestAt < b.LatestAt {
+			return 1
+		}
+		return 0
+	})
+
+	tableRows := make([]table.Row, 0, len(c.rows))
+	for _, row := range c.rows {
+		tableRows = append(tableRows, table.Row{
+			row.SessionID,
+			fmt.Sprintf("%d", row.CommitCount),
+			time.Unix(row.LatestAt, 0).Format("2006-01-02 15:04"),
+			truncate(row.Description, 40),
+		})
+	}
+	c.table.SetRows(tableRows)
+}
+
+// CommitsTableComponent is the public interface for the commits table component.
+type CommitsTableComponent interface {
+	tea.Model
+	layout.Sizeable
+	layout.Bindings
+}
+
+type commitsTableCmp struct {
+	table     table.Model
+	sessionID string
+	rows      []CommitRow
+}
+
+func (c *commitsTableCmp) Init() tea.Cmd {
+	return nil
+}
+
+func (c *commitsTableCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case CommitListMsg:
+		c.sessionID = msg.SessionID
+		c.rows = msg.Commits
+		c.syncRows()
+		return c, c.selectedCommitCmd()
+	}
+
+	prevSelected := c.table.SelectedRow()
+	t, cmd := c.table.Update(msg)
+	c.table = t
+
+	selected := c.table.SelectedRow()
+	if selected != nil && (prevSelected == nil || selected[0] != prevSelected[0]) {
+		return c, c.selectedCommitCmd()
+	}
+
+	return c, cmd
+}
+
+func (c *commitsTableCmp) selectedCommitCmd() tea.Cmd {
+	if len(c.rows) == 0 {
+		c.table.SetCursor(0)
+		return util.CmdHandler(SelectedCommitMsg{})
+	}
+
+	cursor := util.Clamp(c.table.Cursor(), 0, len(c.rows)-1)
+	c.table.SetCursor(cursor)
+	row := c.rows[cursor]
+	return util.CmdHandler(SelectedCommitMsg{Commit: row})
+}
+
+func (c *commitsTableCmp) View() string {
+	t := theme.CurrentTheme()
+	defaultStyles := table.DefaultStyles()
+	defaultStyles.Selected = defaultStyles.Selected.Foreground(t.Primary())
+	c.table.SetStyles(defaultStyles)
+	return styles.ForceReplaceBackgroundWithLipgloss(c.table.View(), t.Background())
+}
+
+func (c *commitsTableCmp) GetSize() (int, int) {
+	return c.table.Width(), c.table.Height()
+}
+
+func (c *commitsTableCmp) SetSize(width int, height int) tea.Cmd {
+	c.table.SetWidth(width)
+	c.table.SetHeight(height)
+	columns := c.table.Columns()
+	for i, col := range columns {
+		col.Width = (width / len(columns)) - 2
+		columns[i] = col
+	}
+	c.table.SetColumns(columns)
+	return nil
+}
+
+func (c *commitsTableCmp) BindingKeys() []key.Binding {
+	return layout.KeyMapToSlice(c.table.KeyMap)
+}
+
+func (c *commitsTableCmp) syncRows() {
+	slices.SortFunc(c.rows, func(a, b CommitRow) int {
 		if a.CreatedAt > b.CreatedAt {
 			return -1
 		}
@@ -159,12 +205,12 @@ func (c *tableCmp) syncRows() {
 	tableRows := make([]table.Row, 0, len(c.rows))
 	for _, row := range c.rows {
 		tableRows = append(tableRows, table.Row{
-			row.ID,
-			row.SessionID,
+			row.ShortID,
 			typeIcon(row.Type),
 			time.Unix(row.CreatedAt, 0).Format("2006-01-02 15:04"),
 			fmt.Sprintf("%d", row.FileCount),
 			formatSize(row.TotalSize),
+			truncate(row.Description, 40),
 		})
 	}
 	c.table.SetRows(tableRows)
@@ -201,41 +247,48 @@ func formatSize(bytes int64) string {
 	}
 }
 
-// commitToRow converts an agentvcs.Commit into a SnapshotRow.
-func commitToRow(c agentvcs.Commit) SnapshotRow {
-	commitType := "delta"
-	if c.ParentID == "" {
-		commitType = "start"
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
 	}
-	return SnapshotRow{
-		ID:          c.ID,
-		SessionID:   c.SessionID,
-		Type:        commitType,
-		Description: c.Description,
-		FileCount:   c.FileCount,
-		TotalSize:   c.TotalSize,
-		CreatedAt:   c.CreatedAt,
+	if n <= 3 {
+		return s[:n]
+	}
+	return s[:n-3] + "..."
+}
+
+func NewSessionsTable() SessionsTableComponent {
+	columns := []table.Column{
+		{Title: "Session", Width: 20},
+		{Title: "Commits", Width: 8},
+		{Title: "Latest", Width: 16},
+		{Title: "Description", Width: 30},
+	}
+
+	tableModel := table.New(table.WithColumns(columns))
+	tableModel.Focus()
+
+	return &sessionsTableCmp{
+		table: tableModel,
+		rows:  []SessionRow{},
 	}
 }
 
-// NewSnapshotsTable creates and returns a new snapshot table component.
-func NewSnapshotsTable() TableComponent {
+func NewCommitsTable() CommitsTableComponent {
 	columns := []table.Column{
 		{Title: "ID", Width: 10},
-		{Title: "Session", Width: 10},
 		{Title: "Type", Width: 10},
 		{Title: "Date", Width: 16},
 		{Title: "Files", Width: 6},
 		{Title: "Size", Width: 10},
+		{Title: "Description", Width: 30},
 	}
 
-	tableModel := table.New(
-		table.WithColumns(columns),
-	)
+	tableModel := table.New(table.WithColumns(columns))
 	tableModel.Focus()
 
-	return &tableCmp{
+	return &commitsTableCmp{
 		table: tableModel,
-		rows:  []SnapshotRow{},
+		rows:  []CommitRow{},
 	}
 }

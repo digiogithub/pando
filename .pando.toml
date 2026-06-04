@@ -48,7 +48,7 @@ apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBIalJySUZJeDNDd3AzZFVHM
 id = 'openrouter'
 displayName = 'openrouter'
 type = 'openrouter'
-apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6OG52TGN0bHlnakEzeEEyNElrTElwc1ZIR3VCVVRwb0lzc0FxejZXUHhBCko4cEMwVWl3RTBlck5vMGRKY3BjZzFnMEtXQTdLWVEwSndwYVVRWWp3Y00KLS0tICtDRXJuRUMwV3RBcEpYSjZudFZBVGp5Uk94WXA2Y1Y2U0JxOEF5VW5NVFUKjprAHYTkIdmNL4Dz8JCwKgRtzvw6Bc9CjMlkd3WqxqK7K/k2RgvH1f4dxDgZbw9WoPyqkzZ+2bLPkEqjCMwBjpYiQTBALRcwBqCenmLS9mSHqtUxIwRrAX34uVCceR9FeHYtiA3IeC7x'
+apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB5Q0R1NXB2S1ZJVnFJQ25LNDJyZlNoNTRWL0N6S01adUxGbGVxM2p6aEdBClRsb2doc1hXd0NlWmh6RkJPMVJyRDYzY1RMQ3Z1bXg3UkhQbjRPTFZoaDQKLS0tIHNqSE95OE1MWFFXNm9YNlZKMUM2WmV6QU0wN2VvOGpXZCt3OTYvNWllaFUKHnx8qe2FzcLr7DTb9GL7YT9KoYLL2/ifcg0VRR0w2USgMEo7EM1XjiCFG3Q2Z396n+plFnWX0LQU2S2hI4FRP66MbR04Ax83MZ3K0yT+g7tQjSDTDc6FjxaCS+y2h0RTSKiCF0u3WxkP'
 
 [[providerAccounts]]
 id = 'ollama'
@@ -269,10 +269,10 @@ BrowserUserDataDir = ''
 BrowserMaxSessions = 3
 
 [Snapshots]
-Enabled = false
-MaxSnapshots = 0
+Enabled = true
+MaxSnapshots = 5
 MaxFileSize = '10MB'
-ExcludePatterns = []
+ExcludePatterns = ['dist', 'node_modules', '.env', '.pando']
 AutoCleanupDays = 5
 
 [evaluator]

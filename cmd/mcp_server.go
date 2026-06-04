@@ -309,6 +309,18 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 		llmtools.NewCacheStatsTool(),
 	}
 
+	// Context7 library documentation tools
+	if cfg != nil && cfg.InternalTools.Context7Enabled {
+		tools = append(tools, llmtools.NewContext7Tools()...)
+		logging.Info("MCP server: Context7 tools enabled")
+	}
+
+	// Sourcegraph code search tool
+	if cfg != nil && cfg.InternalTools.SourcegraphEnabled {
+		tools = append(tools, llmtools.NewSourcegraphTool())
+		logging.Info("MCP server: Sourcegraph tool enabled")
+	}
+
 	if appSvc.MesnadaOrchestrator != nil {
 		tools = append(tools,
 			llmtools.NewMesnadaSpawnTool(appSvc.MesnadaOrchestrator),

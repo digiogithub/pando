@@ -106,12 +106,19 @@ Write-Step "Extracting archive..."
 $extractDir = Join-Path $tmpDir "extracted"
 Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
 
-# Find the binary (may be in a sub-folder inside the zip)
-$exeFile = Get-ChildItem -Recurse -Filter "pando.exe" -Path $extractDir |
+# Find the binary (archive contains architecture-specific file name)
+$expectedExe = "pando-windows-$zipArch.exe"
+$exeFile = Get-ChildItem -Recurse -Filter $expectedExe -Path $extractDir |
            Select-Object -First 1
 
 if (-not $exeFile) {
-    Write-Fail "pando.exe not found inside $zipName"
+    # Fallback for possible packaging layout/name variations
+    $exeFile = Get-ChildItem -Recurse -Filter "pando*.exe" -Path $extractDir |
+               Select-Object -First 1
+}
+
+if (-not $exeFile) {
+    Write-Fail "Pando executable not found inside $zipName"
     Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
     exit 1
 }

@@ -123,10 +123,15 @@ main() {
     info "Extracting archive..."
     unzip -q "${tmp_dir}/${zip_name}" -d "${tmp_dir}/extracted"
 
-    # Find the pando binary (may be at root or inside a subdirectory)
+    # Find the release binary (archive contains arch-specific name)
+    local expected_bin="pando-linux-${arch}"
     local pando_bin
-    pando_bin="$(find "${tmp_dir}/extracted" -type f -name "pando" | head -n1)"
-    [[ -z "${pando_bin}" ]] && error "Could not find 'pando' binary inside the downloaded archive."
+    pando_bin="$(find "${tmp_dir}/extracted" -type f -name "${expected_bin}" | head -n1)"
+    if [[ -z "${pando_bin}" ]]; then
+        # Fallback for possible packaging layout/name variations
+        pando_bin="$(find "${tmp_dir}/extracted" -type f -name "pando*" | head -n1)"
+    fi
+    [[ -z "${pando_bin}" ]] && error "Could not find Pando binary inside the downloaded archive."
 
     # Install binary
     mkdir -p "${INSTALL_DIR}"
