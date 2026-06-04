@@ -13,6 +13,8 @@ builds:
       - arm64
     ldflags:
       - -s -w -X github.com/digiogithub/pando/internal/version.Version={{.Version}}
+      - -X github.com/digiogithub/pando/internal/auth.CopilotClientID={{.Env.COPILOT_CLIENT_ID}}
+      - -X github.com/digiogithub/pando/internal/auth.ClaudeClientID={{.Env.CLAUDE_CLIENT_ID}}
     main: ./main.go
 
 archives:

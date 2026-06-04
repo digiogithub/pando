@@ -4,7 +4,12 @@
 
 GOPATH ?= $(shell go env GOPATH)
 VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X github.com/digiogithub/pando/internal/version.Version=$(VERSION)
+COPILOT_CLIENT_ID ?= Ov23li8tweQw6odWQebz
+CLAUDE_CLIENT_ID ?= 9d1c250a-e61b-44d9-88ed-5944d1962f5e
+LDFLAGS := -s -w \
+	-X github.com/digiogithub/pando/internal/version.Version=$(VERSION) \
+	-X github.com/digiogithub/pando/internal/auth.CopilotClientID=$(COPILOT_CLIENT_ID) \
+	-X github.com/digiogithub/pando/internal/auth.ClaudeClientID=$(CLAUDE_CLIENT_ID)
 DIST_DIR := dist
 WEB_UI_DIR := web-ui
 WEB_UI_INSTALL_CMD ?= bun install

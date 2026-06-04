@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	CopilotClientID                = "Ov23li8tweQw6odWQebz"
 	copilotDefaultGitHubDomain     = "github.com"
 	copilotPollingSafetyMargin     = 3 * time.Second
 	copilotSessionProvider         = "github-copilot"
