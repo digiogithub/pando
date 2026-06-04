@@ -125,7 +125,7 @@ main() {
 
     # Find the pando binary (may be at root or inside a subdirectory)
     local pando_bin
-    pando_bin="$(find "${tmp_dir}/extracted" -type f -name "pando" | head -n1)"
+    pando_bin="$(find "${tmp_dir}/extracted" -type f -name "pando*" | head -n1)"
     [[ -z "${pando_bin}" ]] && error "Could not find 'pando' binary inside the downloaded archive."
 
     # Install binary
