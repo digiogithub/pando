@@ -8,6 +8,6 @@ package auth
 //	  -X github.com/digiogithub/pando/internal/auth.ClaudeClientID=your_claude_id \
 //	'
 var (
-	CopilotClientID = "Ov23li8tweQw6odWQebz"
-	ClaudeClientID  = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	CopilotClientID = "your-copilot-client-id"
+	ClaudeClientID  = "your-claude-client-id"
 )
