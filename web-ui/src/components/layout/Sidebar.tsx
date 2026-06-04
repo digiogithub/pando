@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
-  faComments, faPlus, faNetworkWired, faFileLines, faCamera,
+  faComments, faPlus, faNetworkWired, faFileLines, faCodeBranch,
   faStar, faCode, faTerminal, faCog, faChevronDown, faChevronRight,
   faCircle, faFolderOpen, faServer
 } from '@fortawesome/free-solid-svg-icons'
@@ -29,7 +29,7 @@ export default function Sidebar() {
     { path: '/chat/simple', label: t('nav.simpleChat'), icon: faComments },
     { path: '/orchestrator', label: t('nav.orchestrator'), icon: faNetworkWired },
     { path: '/logs', label: t('nav.logs'), icon: faFileLines },
-    { path: '/snapshots', label: t('nav.snapshots'), icon: faCamera },
+    { path: '/snapshots', label: t('nav.agentVcs'), icon: faCodeBranch },
     { path: '/evaluator', label: t('nav.selfImprovement'), icon: faStar },
     { path: '/editor', label: t('nav.codeEditor'), icon: faCode },
     { path: '/terminal', label: t('nav.terminal'), icon: faTerminal },

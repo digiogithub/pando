@@ -35,6 +35,170 @@ detect_arch() {
     esac
 }
 
+# ── Distribution helpers ─────────────────────────────────────────────────────
+detect_distro_id() {
+    if [[ -r /etc/os-release ]]; then
+        . /etc/os-release
+        echo "${ID:-}"
+    else
+        echo ""
+    fi
+}
+
+detect_distro_like() {
+    if [[ -r /etc/os-release ]]; then
+        . /etc/os-release
+        echo "${ID_LIKE:-}"
+    else
+        echo ""
+    fi
+}
+
+pkg_manager() {
+    if command -v apt-get &>/dev/null; then
+        echo "apt"
+    elif command -v dnf &>/dev/null; then
+        echo "dnf"
+    elif command -v pacman &>/dev/null; then
+        echo "pacman"
+    elif command -v zypper &>/dev/null; then
+        echo "zypper"
+    else
+        echo ""
+    fi
+}
+
+# ── Dependency checks (Wails desktop runtime/libs) ──────────────────────────
+# Based on Wails Linux package guidance (v2.x) and distro package naming.
+build_runtime_dependency_list() {
+    local pm="$1"
+    case "${pm}" in
+        apt)
+            echo "libgtk-3-0"
+            echo "libwebkit2gtk-4.0-37"
+            ;;
+        dnf)
+            echo "gtk3"
+            echo "webkit2gtk3"
+            ;;
+        pacman)
+            echo "gtk3"
+            echo "webkit2gtk"
+            ;;
+        zypper)
+            echo "gtk3"
+            echo "webkit2gtk3"
+            ;;
+        *)
+            ;;
+    esac
+}
+
+package_installed() {
+    local pm="$1"
+    local pkg="$2"
+    case "${pm}" in
+        apt) dpkg -s "${pkg}" &>/dev/null ;;
+        dnf) rpm -q "${pkg}" &>/dev/null ;;
+        pacman) pacman -Q "${pkg}" &>/dev/null ;;
+        zypper) rpm -q "${pkg}" &>/dev/null ;;
+        *) return 1 ;;
+    esac
+}
+
+run_sudo_install_cmd() {
+    local pm="$1"
+    shift
+    local missing=("$@")
+
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    if ! command -v sudo &>/dev/null; then
+        error "sudo is required to install missing system packages automatically. Install sudo and re-run."
+    fi
+
+    info "Requesting sudo access to install missing desktop runtime libraries..."
+    sudo -v
+
+    case "${pm}" in
+        apt)
+            sudo apt-get update
+            sudo apt-get install -y "${missing[@]}"
+            ;;
+        dnf)
+            sudo dnf install -y "${missing[@]}"
+            ;;
+        pacman)
+            sudo pacman -Sy --needed --noconfirm "${missing[@]}"
+            ;;
+        zypper)
+            sudo zypper --non-interactive install --auto-agree-with-licenses "${missing[@]}"
+            ;;
+        *)
+            error "Unsupported package manager for automatic installation: ${pm}"
+            ;;
+    esac
+}
+
+ensure_wails_runtime_dependencies() {
+    local pm
+    pm="$(pkg_manager)"
+
+    if [[ -z "${pm}" ]]; then
+        warn "Could not detect a supported package manager (apt/dnf/pacman/zypper)."
+        warn "Skipping automatic dependency installation for Wails desktop runtime."
+        warn "Please ensure your system has GTK and WebKitGTK runtime libraries installed."
+        return 0
+    fi
+
+    local deps=()
+    local missing=()
+
+    while IFS= read -r dep; do
+        [[ -n "${dep}" ]] && deps+=("${dep}")
+    done < <(build_runtime_dependency_list "${pm}")
+
+    if [[ ${#deps[@]} -eq 0 ]]; then
+        warn "No dependency map defined for package manager '${pm}'. Skipping runtime dependency check."
+        return 0
+    fi
+
+    info "Checking Linux desktop runtime dependencies (Wails) for ${pm}..."
+
+    local dep
+    for dep in "${deps[@]}"; do
+        if package_installed "${pm}" "${dep}"; then
+            success "Dependency present: ${dep}"
+        else
+            warn "Missing dependency: ${dep}"
+            missing+=("${dep}")
+        fi
+    done
+
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        success "All required desktop runtime dependencies are installed."
+        return 0
+    fi
+
+    warn "Installing missing dependencies with sudo: ${missing[*]}"
+    run_sudo_install_cmd "${pm}" "${missing[@]}"
+
+    local still_missing=()
+    for dep in "${missing[@]}"; do
+        if ! package_installed "${pm}" "${dep}"; then
+            still_missing+=("${dep}")
+        fi
+    done
+
+    if [[ ${#still_missing[@]} -gt 0 ]]; then
+        error "Some dependencies are still missing after installation: ${still_missing[*]}"
+    fi
+
+    success "Desktop runtime dependencies installed successfully."
+}
+
 # ── Get latest release version from GitHub ──────────────────────────────────
 get_latest_version() {
     if command -v curl &>/dev/null; then
@@ -79,6 +243,15 @@ require_tool unzip
 main() {
     echo -e "${BOLD}Pando Linux Installer${RESET}"
     echo "────────────────────────────────────────"
+
+    local distro_id distro_like
+    distro_id="$(detect_distro_id)"
+    distro_like="$(detect_distro_like)"
+    if [[ -n "${distro_id}" ]]; then
+        info "Detected distro: ${distro_id}${distro_like:+ (like: ${distro_like})}"
+    fi
+
+    ensure_wails_runtime_dependencies
 
     local arch
     arch="$(detect_arch)"

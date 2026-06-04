@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { createSSEStream, createGETSSEStream } from '@/services/sse'
 import { useSessionStore } from '@/stores/sessionStore'
+import { useFileChangesStore } from '@/stores/fileChangesStore'
 import type {
   Message, SSEEvent, SSEToolCall, SSEToolResult, SSEToolCallUpdate,
   ContentPart, ToolKind, ToolCallStatus, ToolCallLocation, SSEPlanEntry, GoalStatus,
@@ -80,6 +81,7 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
     planRef.current = []
     itemsRef.current = []
     goalRef.current = null
+    useFileChangesStore.getState().clearChanges()
   }, [])
 
   /** Process a single SSE event and update React state. */
@@ -268,6 +270,23 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
               : tc,
           ),
         }))
+
+        // Track file changes for the FileChangesBar
+        if (tr.diff && !tr.is_error) {
+          const meta = tr.raw_output?.metadata as { additions?: number; removals?: number } | undefined
+          const oldStr = tr.diff.old_string ?? ''
+          const newStr = tr.diff.new_string ?? tr.diff.new_content ?? ''
+          // Use backend metadata if available, otherwise estimate from content
+          const additions = meta?.additions ?? (newStr ? newStr.split('\n').length : 0)
+          const removals = meta?.removals ?? (oldStr ? oldStr.split('\n').length : 0)
+          useFileChangesStore.getState().addChange(
+            tr.diff.file_path,
+            additions,
+            removals,
+            oldStr,
+            newStr,
+          )
+        }
       }
 
       if (event.type === 'plan_update' && event.plan_entries) {

@@ -1,7 +1,10 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -117,6 +120,140 @@ func (s *Server) handleAgentVCSCommit(w http.ResponseWriter, r *http.Request) {
 		"diff":   diffs,
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleAgentVCSBlobContent handles GET /api/v1/agentvcs/blobs/{hash}.
+// Returns the raw file content for a given blob hash.
+func (s *Server) handleAgentVCSBlobContent(w http.ResponseWriter, r *http.Request) {
+	if s.app.AgentVCS == nil {
+		writeError(w, http.StatusServiceUnavailable, "agent-vcs service is disabled")
+		return
+	}
+
+	hash := r.PathValue("hash")
+	if hash == "" {
+		hash = strings.TrimPrefix(r.URL.Path, "/api/v1/agentvcs/blobs/")
+		hash = strings.TrimSuffix(hash, "/")
+	}
+
+	content, err := s.app.AgentVCS.GetFileContent(r.Context(), hash)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "blob not found")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write(content)
+}
+
+// handleAgentVCSRevert handles POST /api/v1/agentvcs/commits/{id}/revert.
+// Reverts the entire working directory to the state of the given commit.
+func (s *Server) handleAgentVCSRevert(w http.ResponseWriter, r *http.Request) {
+	if s.app.AgentVCS == nil {
+		writeError(w, http.StatusServiceUnavailable, "agent-vcs service is disabled")
+		return
+	}
+
+	commitID := r.PathValue("id")
+	if commitID == "" {
+		commitID = extractPathSegment(r.URL.Path, "/api/v1/agentvcs/commits/", "/revert")
+	}
+
+	if err := s.app.AgentVCS.Revert(r.Context(), commitID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "reverted"})
+}
+
+// revertFilesRequest is the body for POST /api/v1/agentvcs/commits/{id}/revert-files.
+type revertFilesRequest struct {
+	Files []string `json:"files"`
+}
+
+// handleAgentVCSRevertFiles handles POST /api/v1/agentvcs/commits/{id}/revert-files.
+// Reverts only the specified files to the state captured in the given commit.
+func (s *Server) handleAgentVCSRevertFiles(w http.ResponseWriter, r *http.Request) {
+	if s.app.AgentVCS == nil {
+		writeError(w, http.StatusServiceUnavailable, "agent-vcs service is disabled")
+		return
+	}
+
+	commitID := r.PathValue("id")
+	if commitID == "" {
+		commitID = extractPathSegment(r.URL.Path, "/api/v1/agentvcs/commits/", "/revert-files")
+	}
+
+	var req revertFilesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req.Files) == 0 {
+		writeError(w, http.StatusBadRequest, "files list is required")
+		return
+	}
+
+	commit, err := s.app.AgentVCS.GetCommit(r.Context(), commitID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "commit not found")
+		return
+	}
+
+	tree, err := s.app.AgentVCS.GetTree(r.Context(), commit.TreeID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load tree")
+		return
+	}
+
+	// Index target files by path.
+	treeIdx := make(map[string]string, len(tree.Entries))
+	for _, e := range tree.Entries {
+		if !e.IsDir {
+			treeIdx[e.Path] = e.Hash
+		}
+	}
+
+	workingDir, err := os.Getwd()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get working directory")
+		return
+	}
+
+	restored := make([]string, 0, len(req.Files))
+	for _, filePath := range req.Files {
+		hash, ok := treeIdx[filePath]
+		if !ok {
+			// File doesn't exist in target commit — delete from working dir.
+			absPath := filepath.Join(workingDir, filepath.FromSlash(filePath))
+			if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
+				continue
+			}
+			restored = append(restored, filePath)
+			continue
+		}
+
+		content, err := s.app.AgentVCS.GetFileContent(r.Context(), hash)
+		if err != nil {
+			continue
+		}
+
+		absPath := filepath.Join(workingDir, filepath.FromSlash(filePath))
+		if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+			continue
+		}
+		if err := os.WriteFile(absPath, content, 0o644); err != nil {
+			continue
+		}
+		restored = append(restored, filePath)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":   "partial_revert",
+		"restored": restored,
+	})
 }
 
 // extractPathSegment extracts a segment between prefix and suffix in a URL path.

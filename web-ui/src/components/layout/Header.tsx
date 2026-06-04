@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faComments, faFileLines, faNetworkWired,
-  faCamera, faStar, faCog, faMoon, faSun,
+  faCodeBranch, faStar, faCog, faMoon, faSun,
   faChevronLeft, faChevronRight, faCode, faTerminal, faComment, faFolderOpen, faCircleQuestion,
   faBars, faTimes,
 } from '@fortawesome/free-solid-svg-icons'
@@ -37,7 +37,7 @@ export default function Header() {
     { path: '/projects', label: t('nav.projects'), icon: faFolderOpen },
     { path: '/orchestrator', label: t('nav.orchestrator'), icon: faNetworkWired },
     { path: '/evaluator', label: t('nav.selfImprovement'), icon: faStar },
-    { path: '/snapshots', label: t('nav.snapshots'), icon: faCamera },
+    { path: '/snapshots', label: t('nav.agentVcs'), icon: faCodeBranch },
     { path: '/logs', label: t('nav.logs'), icon: faFileLines },
     { path: '/editor', label: t('nav.codeEditor'), icon: faCode },
     { path: '/terminal', label: t('nav.terminal'), icon: faTerminal },

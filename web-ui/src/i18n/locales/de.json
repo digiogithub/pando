@@ -24,6 +24,7 @@
     "orchestrator": "Orchestrator",
     "logs": "Protokolle",
     "snapshots": "Snapshots",
+    "agentVcs": "Agent VCS",
     "selfImprovement": "Self-Improvement",
     "codeEditor": "Code-Editor",
     "terminal": "Terminal",

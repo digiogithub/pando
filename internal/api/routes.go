@@ -127,6 +127,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/agentvcs/sessions/{id}/log", s.handleAgentVCSLog)
 	mux.HandleFunc("GET /api/v1/agentvcs/commits/{id}", s.handleAgentVCSCommit)
 	mux.HandleFunc("GET /api/v1/agentvcs/commits/{id}/diff", s.handleAgentVCSDiff)
+	mux.HandleFunc("GET /api/v1/agentvcs/blobs/{hash}", s.handleAgentVCSBlobContent)
+	mux.HandleFunc("POST /api/v1/agentvcs/commits/{id}/revert", s.handleAgentVCSRevert)
+	mux.HandleFunc("POST /api/v1/agentvcs/commits/{id}/revert-files", s.handleAgentVCSRevertFiles)
 	// Evaluator
 	mux.HandleFunc("GET /api/v1/evaluator/metrics", s.handleGetEvaluatorMetrics)
 	mux.HandleFunc("GET /api/v1/evaluator/templates", s.handleGetEvaluatorTemplates)

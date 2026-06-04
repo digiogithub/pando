@@ -12,7 +12,7 @@ import SettingsView from '@/components/settings/SettingsView'
 import LogsView from '@/components/logs/LogsView'
 import OrchestratorView from '@/components/orchestrator/OrchestratorView'
 import TerminalView from '@/components/terminal/TerminalView'
-import SnapshotsView from '@/components/snapshots/SnapshotsView'
+import AgentVcsView from '@/components/agentvcs/AgentVcsView'
 import SelfImprovementView from '@/components/evaluator/SelfImprovementView'
 import CodeEditorView from '@/components/editor/CodeEditorView'
 import ProjectsView from '@/components/projects/ProjectsView'
@@ -104,7 +104,7 @@ function App() {
                 <Route path="chat" element={<ChatView />} />
                 <Route path="orchestrator" element={<OrchestratorView />} />
                 <Route path="logs" element={<LogsView />} />
-                <Route path="snapshots" element={<SnapshotsView />} />
+                <Route path="snapshots" element={<AgentVcsView />} />
                 <Route path="evaluator" element={<SelfImprovementView />} />
                 <Route path="editor" element={<Navigate to="/editor" replace />} />
                 <Route path="terminal" element={<TerminalView />} />

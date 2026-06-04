@@ -13,6 +13,7 @@ import { useLayoutStore } from '@/stores/layoutStore'
 import { authenticate } from '@/services/auth'
 import MessageList from './MessageList'
 import ChatInput from './ChatInput'
+import FileChangesBar from './FileChangesBar'
 import ModelSwitcher from '@/components/overlays/ModelSwitcher'
 import QuickMenu from '@/components/overlays/QuickMenu'
 import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
@@ -342,7 +343,8 @@ export default function SimpleChatView() {
               </div>
             )}
 
-            {/* Input */}
+            {/* File changes + Input */}
+            <FileChangesBar />
             <ChatInput onSend={sendMessage} streaming={streaming} onCancel={cancelStreaming} />
           </div>
         </div>

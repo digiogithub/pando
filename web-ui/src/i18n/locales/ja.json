@@ -24,6 +24,7 @@
     "orchestrator": "オーケストレーター",
     "logs": "ログ",
     "snapshots": "スナップショット",
+    "agentVcs": "Agent VCS",
     "selfImprovement": "Self-Improvement",
     "codeEditor": "コードエディター",
     "terminal": "ターミナル",

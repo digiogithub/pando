@@ -24,6 +24,7 @@
     "orchestrator": "编排器",
     "logs": "日志",
     "snapshots": "快照",
+    "agentVcs": "Agent VCS",
     "selfImprovement": "Self-Improvement",
     "codeEditor": "代码编辑器",
     "terminal": "终端",

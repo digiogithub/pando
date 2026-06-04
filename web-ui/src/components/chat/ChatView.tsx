@@ -7,8 +7,10 @@ import { useGoal } from '@/hooks/useGoal'
 import { useDesktopNotifications } from '@/hooks/useDesktopNotifications'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useLayoutStore } from '@/stores/layoutStore'
+import { useFileChangesStore } from '@/stores/fileChangesStore'
 import MessageList from './MessageList'
 import ChatInput from './ChatInput'
+import FileChangesBar from './FileChangesBar'
 import GoalStatus from './GoalStatus'
 import PlanView from './PlanView'
 
@@ -54,7 +56,10 @@ export default function ChatView() {
       setPersistentPlan(streamingState.plan)
     }
   }, [streamingState.plan])
-  useEffect(() => { setPersistentPlan([]) }, [activeSessionId])
+  useEffect(() => {
+    setPersistentPlan([])
+    useFileChangesStore.getState().clearChanges()
+  }, [activeSessionId])
 
   const activePlan = streamingState.plan.length > 0 ? streamingState.plan : persistentPlan
 
@@ -138,6 +143,7 @@ export default function ChatView() {
         </div>
       )}
 
+      <FileChangesBar />
       <ChatInput onSend={sendMessage} streaming={streaming} onCancel={() => void cancelStreaming()} goalActive={(goal ?? streamingState.goal)?.status === 'running'} />
     </div>
   )
