@@ -179,9 +179,35 @@ func (s *service) createCommitFromEntries(_ context.Context, sessionID, parentID
 		return Commit{}, fmt.Errorf("agentvcs: save tree: %w", err)
 	}
 
-	// Store blobs for new/changed files.
+	var changedFiles []DiffEntry
+	if parentID != "" {
+		var err error
+		changedFiles, err = s.diffTreeAgainstParent(parentID, tree)
+		if err != nil {
+			return Commit{}, err
+		}
+	} else {
+		changedFiles = diffTrees(Tree{}, tree)
+	}
+
+	changedPaths := make(map[string]struct{}, len(changedFiles))
+	var changedTotalSize int64
+	for _, diff := range changedFiles {
+		changedPaths[diff.Path] = struct{}{}
+		switch diff.Type {
+		case DiffDeleted:
+			changedTotalSize += diff.OldSize
+		default:
+			changedTotalSize += diff.NewSize
+		}
+	}
+
+	// Store blobs only for files introduced or modified by this commit.
 	for _, e := range entries {
 		if e.IsDir || e.Hash == "" {
+			continue
+		}
+		if _, ok := changedPaths[e.Path]; !ok {
 			continue
 		}
 		if s.storage.BlobExists(e.Hash) {
@@ -206,15 +232,17 @@ func (s *service) createCommitFromEntries(_ context.Context, sessionID, parentID
 	commitID := computeCommitID(parentID, treeID, sessionID, description, now)
 
 	commit := Commit{
-		ID:          commitID,
-		ParentID:    parentID,
-		SessionID:   sessionID,
-		TreeID:      treeID,
-		Description: description,
-		Author:      "agent",
-		CreatedAt:   now,
-		FileCount:   fileCount,
-		TotalSize:   totalSize,
+		ID:               commitID,
+		ParentID:         parentID,
+		SessionID:        sessionID,
+		TreeID:           treeID,
+		Description:      description,
+		Author:           "agent",
+		CreatedAt:        now,
+		FileCount:        fileCount,
+		TotalSize:        totalSize,
+		ChangedFileCount: len(changedFiles),
+		ChangedTotalSize: changedTotalSize,
 	}
 
 	if err := s.storage.SaveCommit(commit); err != nil {
@@ -259,14 +287,7 @@ func (s *service) Log(_ context.Context, sessionID string) ([]CommitSummary, err
 			logging.Error("agentvcs: load commit for log", "id", cid, "error", err)
 			continue
 		}
-		changed := 0
-		if c.ParentID != "" {
-			diffs, err := s.diffCommits(c.ParentID, c.ID)
-			if err == nil {
-				changed = len(diffs)
-			}
-		}
-		summaries = append(summaries, c.toSummary(changed))
+		summaries = append(summaries, c.toSummary())
 	}
 	return summaries, nil
 }
@@ -335,6 +356,18 @@ func (s *service) diffCommits(id1, id2 string) ([]DiffEntry, error) {
 	}
 
 	return diffTrees(t1, t2), nil
+}
+
+func (s *service) diffTreeAgainstParent(parentID string, tree Tree) ([]DiffEntry, error) {
+	parent, err := s.storage.LoadCommit(parentID)
+	if err != nil {
+		return nil, fmt.Errorf("agentvcs: load parent commit %s: %w", parentID, err)
+	}
+	parentTree, err := s.storage.LoadTree(parent.TreeID)
+	if err != nil {
+		return nil, fmt.Errorf("agentvcs: load tree %s: %w", parent.TreeID, err)
+	}
+	return diffTrees(parentTree, tree), nil
 }
 
 // diffTrees computes file-level changes between two trees.

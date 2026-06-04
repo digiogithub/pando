@@ -31,15 +31,16 @@ func (s *Server) handleAgentVCSLog(w http.ResponseWriter, r *http.Request) {
 	items := make([]map[string]interface{}, 0, len(log))
 	for _, cs := range log {
 		items = append(items, map[string]interface{}{
-			"id":            cs.ID,
-			"short_id":      cs.ShortID,
-			"parent_id":     cs.ParentID,
-			"session_id":    cs.SessionID,
-			"description":   cs.Description,
-			"file_count":    cs.FileCount,
-			"total_size":    cs.TotalSize,
-			"changed_files": cs.ChangedFiles,
-			"created_at":    time.Unix(cs.CreatedAt, 0),
+			"id":                 cs.ID,
+			"short_id":           cs.ShortID,
+			"parent_id":          cs.ParentID,
+			"session_id":         cs.SessionID,
+			"description":        cs.Description,
+			"file_count":         cs.FileCount,
+			"total_size":         cs.TotalSize,
+			"changed_files":      cs.ChangedFiles,
+			"changed_total_size": cs.ChangedTotalSize,
+			"created_at":         time.Unix(cs.CreatedAt, 0),
 		})
 	}
 

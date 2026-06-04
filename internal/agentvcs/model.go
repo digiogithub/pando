@@ -15,15 +15,17 @@ import (
 // Commit is an immutable point-in-time snapshot of the working directory.
 // Commits form a singly-linked list via ParentID within a session.
 type Commit struct {
-	ID          string `json:"id"`           // Content-derived hash
-	ParentID    string `json:"parent_id"`    // Previous commit (empty for root)
-	SessionID   string `json:"session_id"`   // Owning agent session
-	TreeID      string `json:"tree_id"`      // Hash of the Tree object
-	Description string `json:"description"`  // Human-readable label
-	Author      string `json:"author"`       // "agent" or user identifier
-	CreatedAt   int64  `json:"created_at"`   // Unix timestamp
-	FileCount   int    `json:"file_count"`   // Number of tracked files
-	TotalSize   int64  `json:"total_size"`   // Sum of file sizes in bytes
+	ID               string `json:"id"`                           // Content-derived hash
+	ParentID         string `json:"parent_id"`                    // Previous commit (empty for root)
+	SessionID        string `json:"session_id"`                   // Owning agent session
+	TreeID           string `json:"tree_id"`                      // Hash of the Tree object
+	Description      string `json:"description"`                  // Human-readable label
+	Author           string `json:"author"`                       // "agent" or user identifier
+	CreatedAt        int64  `json:"created_at"`                   // Unix timestamp
+	FileCount        int    `json:"file_count"`                   // Number of tracked files in the resulting tree
+	TotalSize        int64  `json:"total_size"`                   // Sum of file sizes in the resulting tree
+	ChangedFileCount int    `json:"changed_file_count,omitempty"` // Files changed vs parent for this commit
+	ChangedTotalSize int64  `json:"changed_total_size,omitempty"` // Aggregate size of changed files for this commit
 }
 
 // Tree represents the full file listing for a commit. It is stored
@@ -35,9 +37,9 @@ type Tree struct {
 
 // TreeEntry is a single file (or directory marker) inside a Tree.
 type TreeEntry struct {
-	Path    string `json:"path"`              // Slash-separated relative path
-	Hash    string `json:"hash,omitempty"`    // SHA-256 of file content
-	Size    int64  `json:"size,omitempty"`    // File size in bytes
+	Path    string `json:"path"`             // Slash-separated relative path
+	Hash    string `json:"hash,omitempty"`   // SHA-256 of file content
+	Size    int64  `json:"size,omitempty"`   // File size in bytes
 	ModTime int64  `json:"mod_time"`         // Last modification (Unix)
 	IsDir   bool   `json:"is_dir,omitempty"` // Directory marker
 }
@@ -71,15 +73,16 @@ type DiffEntry struct {
 
 // CommitSummary is a lightweight view of a commit used in log listings.
 type CommitSummary struct {
-	ID          string `json:"id"`
-	ShortID     string `json:"short_id"` // First 12 hex chars
-	ParentID    string `json:"parent_id,omitempty"`
-	SessionID   string `json:"session_id"`
-	Description string `json:"description"`
-	FileCount   int    `json:"file_count"`
-	TotalSize   int64  `json:"total_size"`
-	CreatedAt   int64  `json:"created_at"`
-	ChangedFiles int   `json:"changed_files"` // Files changed vs parent
+	ID               string `json:"id"`
+	ShortID          string `json:"short_id"` // First 12 hex chars
+	ParentID         string `json:"parent_id,omitempty"`
+	SessionID        string `json:"session_id"`
+	Description      string `json:"description"`
+	FileCount        int    `json:"file_count"`
+	TotalSize        int64  `json:"total_size"`
+	CreatedAt        int64  `json:"created_at"`
+	ChangedFiles     int    `json:"changed_files"`      // Files changed vs parent
+	ChangedTotalSize int64  `json:"changed_total_size"` // Aggregate size of changed files
 }
 
 // computeCommitID derives a deterministic ID from the commit's content fields.
@@ -108,17 +111,18 @@ func shortID(id string) string {
 }
 
 // toSummary converts a Commit to a lightweight CommitSummary.
-func (c *Commit) toSummary(changedFiles int) CommitSummary {
+func (c *Commit) toSummary() CommitSummary {
 	return CommitSummary{
-		ID:           c.ID,
-		ShortID:      shortID(c.ID),
-		ParentID:     c.ParentID,
-		SessionID:    c.SessionID,
-		Description:  c.Description,
-		FileCount:    c.FileCount,
-		TotalSize:    c.TotalSize,
-		CreatedAt:    c.CreatedAt,
-		ChangedFiles: changedFiles,
+		ID:               c.ID,
+		ShortID:          shortID(c.ID),
+		ParentID:         c.ParentID,
+		SessionID:        c.SessionID,
+		Description:      c.Description,
+		FileCount:        c.FileCount,
+		TotalSize:        c.TotalSize,
+		CreatedAt:        c.CreatedAt,
+		ChangedFiles:     c.ChangedFileCount,
+		ChangedTotalSize: c.ChangedTotalSize,
 	}
 }
 

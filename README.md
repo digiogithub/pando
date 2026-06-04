@@ -306,11 +306,13 @@ make release-darwin-arm64
 # macOS x64
 make release-darwin-amd64
 
-ssh mac-mini-de-digio "export PATH=\$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && cd ~/www/MCP/Pando/pando && git pull origin main && git fetch origin --tags && rm -rf dist && mkdir -p dist && xc build && make release-darwin-arm64 && make release-darwin-amd64 && bash scripts/build-macos-app"
+ssh -t mac-mini-de-digio "export PATH=\$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && export PKG_SIGN_IDENTITY='Developer ID Installer: Digio Soluciones Digitales SL (TEAMID)' && cd ~/www/MCP/Pando/pando && git pull origin main && git fetch origin --tags && rm -rf dist && mkdir -p dist && xc build && make release-darwin-arm64 && make release-darwin-amd64 && bash scripts/build-macos-app"
 scp mac-mini-de-digio:~/www/MCP/Pando/pando/dist/*.zip dist/
 
 echo "Release builds completed in dist/"
 ```
+
+For macOS signing, `codesign-digio` should continue to sign Mach-O artifacts (`dist/pando-darwin-*`, `dist/pando-osx`, `Pando.app`) with the Developer ID Application certificate it already encapsulates. The installer package must be signed separately with `productsign` and a `Developer ID Installer` identity via `PKG_SIGN_IDENTITY`; reusing the application certificate for the `.pkg` makes Gatekeeper report the package as unsigned or invalid. `scripts/build-macos-app` now verifies all three outputs after signing with `codesign`, `spctl`, and `pkgutil --check-signature`.
 
 ## ACP Support
 

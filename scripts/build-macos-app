@@ -13,8 +13,11 @@
 #   ssh -t mac-mini-de-digio "cd ~/www/MCP/Pando/pando && bash scripts/build-macos-app"
 #
 # Prerequisites (macOS only):
-#   - Xcode Command Line Tools: lipo, iconutil, sips, pkgbuild, productbuild
+#   - Xcode Command Line Tools: lipo, iconutil, sips, pkgbuild, productbuild, productsign,
+#     pkgutil, codesign, spctl
 #   - codesign-digio   custom signing tool (optional — steps are skipped when absent)
+#   - PKG_SIGN_IDENTITY (recommended) Installer certificate common name for productsign,
+#     e.g. "Developer ID Installer: Example Corp (TEAMID)"
 #
 # Required dist/ artifacts (produced by 'make release-darwin-amd64 release-darwin-arm64'):
 #   dist/pando-darwin-x64.zip
@@ -39,7 +42,7 @@ if [[ "$(uname)" != "Darwin" ]]; then
     exit 1
 fi
 
-for tool in lipo iconutil sips pkgbuild productbuild; do
+for tool in lipo iconutil sips pkgbuild productbuild productsign pkgutil codesign spctl; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "Error: required tool '$tool' not found. Install Xcode Command Line Tools." >&2
         exit 1
@@ -55,6 +58,34 @@ if command -v codesign-digio >/dev/null 2>&1; then
 elif [[ -x "$HOME/bin/codesign-digio" ]]; then
     CODESIGN_DIGIO="$HOME/bin/codesign-digio"
 fi
+PKG_SIGN_IDENTITY="${PKG_SIGN_IDENTITY:-}"
+
+run_codesign_digio() {
+    local target="$1"
+    shift || true
+    "$CODESIGN_DIGIO" "$@" "$target"
+}
+
+verify_macho_signature() {
+    local target="$1"
+    echo "Verifying Mach-O signature: $target"
+    codesign --verify --deep --strict --verbose=2 "$target"
+    spctl --assess --type execute --verbose=2 "$target"
+}
+
+verify_app_signature() {
+    local target="$1"
+    echo "Verifying app bundle signature: $target"
+    codesign --verify --deep --strict --verbose=2 "$target"
+    spctl --assess --type execute --verbose=2 "$target"
+}
+
+verify_pkg_signature() {
+    local target="$1"
+    echo "Verifying pkg signature: $target"
+    pkgutil --check-signature "$target"
+    spctl --assess --type install --verbose=2 "$target"
+}
 
 # ── Keychain unlock (required over SSH — no GUI session) ────────────────────
 # codesign accesses the login keychain which is locked in headless sessions.
@@ -142,7 +173,8 @@ chmod +x "$UNIVERSAL"
 
 if [[ -n "$CODESIGN_DIGIO" ]]; then
     echo "Signing universal binary..."
-    "$CODESIGN_DIGIO" "$UNIVERSAL"
+    run_codesign_digio "$UNIVERSAL"
+    verify_macho_signature "$UNIVERSAL"
 else
     echo "Skipping binary signing (codesign-digio not found)."
 fi
@@ -197,7 +229,8 @@ cp -R "$APP_DIR" "$FINAL_APP"
 
 if [[ -n "$CODESIGN_DIGIO" ]]; then
     echo "Signing Pando.app bundle..."
-    "$CODESIGN_DIGIO" "$FINAL_APP"
+    run_codesign_digio "$FINAL_APP"
+    verify_app_signature "$FINAL_APP"
 else
     echo "Skipping .app bundle signing (codesign-digio not found)."
 fi
@@ -277,12 +310,22 @@ productbuild \
 FINAL_PKG="$DIST_DIR/pando-${VERSION}.pkg"
 
 if [[ -n "$CODESIGN_DIGIO" ]]; then
-    echo "Signing .pkg installer..."
-    "$CODESIGN_DIGIO" "$UNSIGNED_PKG"
+    if [[ -z "$PKG_SIGN_IDENTITY" ]]; then
+        echo "Error: PKG_SIGN_IDENTITY must be set to sign the installer package." >&2
+        echo "Use the Developer ID Installer identity, not the application identity used by codesign-digio." >&2
+        exit 1
+    fi
+    echo "Signing .pkg installer with productsign..."
+    productsign --sign "$PKG_SIGN_IDENTITY" "$UNSIGNED_PKG" "$FINAL_PKG"
+    verify_pkg_signature "$FINAL_PKG"
 else
     echo "Skipping .pkg signing (codesign-digio not found)."
+    cp "$UNSIGNED_PKG" "$FINAL_PKG"
 fi
-cp "$UNSIGNED_PKG" "$FINAL_PKG"
+
+if [[ -n "$CODESIGN_DIGIO" ]]; then
+    verify_macho_signature "$DIST_DIR/pando-osx"
+fi
 
 # Compress universal binary (consistent with other release archives)
 echo "Compressing dist/pando-osx.zip..."

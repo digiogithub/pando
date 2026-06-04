@@ -105,15 +105,14 @@ var agentVCSLogCmd = &cobra.Command{
 					fmt.Printf("  %s\n", cs.Description)
 				}
 				if cs.ChangedFiles > 0 {
-					fmt.Printf("  %s changed, %d files total, %s\n",
+					fmt.Printf("  %s changed, %s\n",
 						colorCyan(fmt.Sprintf("%d files", cs.ChangedFiles)),
-						cs.FileCount,
-						formatSize(cs.TotalSize),
+						formatSize(cs.ChangedTotalSize),
 					)
 				} else if cs.ParentID == "" {
-					fmt.Printf("  %s (initial), %s\n",
-						colorCyan(fmt.Sprintf("%d files", cs.FileCount)),
-						formatSize(cs.TotalSize),
+					fmt.Printf("  %s changed (initial), %s\n",
+						colorCyan(fmt.Sprintf("%d files", cs.ChangedFiles)),
+						formatSize(cs.ChangedTotalSize),
 					)
 				}
 				if i > 0 {
@@ -354,11 +353,11 @@ func formatSize(bytes int64) string {
 }
 
 // ANSI color helpers (no-op when piped, but simple enough for now).
-func colorYellow(s string) string  { return "\033[33m" + s + "\033[0m" }
-func colorGreen(s string) string   { return "\033[32m" + s + "\033[0m" }
-func colorRed(s string) string     { return "\033[31m" + s + "\033[0m" }
-func colorCyan(s string) string    { return "\033[36m" + s + "\033[0m" }
-func colorBold(s string) string    { return "\033[1m" + s + "\033[0m" }
+func colorYellow(s string) string { return "\033[33m" + s + "\033[0m" }
+func colorGreen(s string) string  { return "\033[32m" + s + "\033[0m" }
+func colorRed(s string) string    { return "\033[31m" + s + "\033[0m" }
+func colorCyan(s string) string   { return "\033[36m" + s + "\033[0m" }
+func colorBold(s string) string   { return "\033[1m" + s + "\033[0m" }
 
 // isTerminal returns true if stdout is a terminal (for future color gating).
 func isTerminal() bool {
@@ -368,4 +367,3 @@ func isTerminal() bool {
 	}
 	return fi.Mode()&os.ModeCharDevice != 0
 }
-

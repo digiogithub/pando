@@ -154,7 +154,7 @@ Enabled = true
 
 [Mesnada.Server]
 Host = ''
-Port = 5011
+Port = 5012
 
 [Mesnada.Orchestrator]
 StorePath = './.pando/mesnada'

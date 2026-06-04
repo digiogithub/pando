@@ -17,7 +17,7 @@ import (
 const defaultMaxFileSize int64 = 256 * 1024 * 1024 // 256 MiB
 
 // alwaysSkipDirs are excluded regardless of ignore rules.
-var alwaysSkipDirs = []string{".pando", ".git"}
+var alwaysSkipDirs = []string{".pando", ".git", ".jj"}
 
 // scanner walks a directory tree and produces TreeEntry slices.
 type scanner struct {

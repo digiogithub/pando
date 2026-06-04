@@ -3,7 +3,10 @@ package agentvcs
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/digiogithub/pando/internal/pubsub"
 )
 
 // setupTestStorage creates a temp directory with storage and scanner for testing.
@@ -212,9 +215,9 @@ func TestDiffTrees(t *testing.T) {
 		{Path: "c.go", Hash: "h3", Size: 30},
 	}}
 	t2 := Tree{Entries: []TreeEntry{
-		{Path: "a.go", Hash: "h1", Size: 10},   // unchanged
-		{Path: "b.go", Hash: "h2x", Size: 25},  // modified
-		{Path: "d.go", Hash: "h4", Size: 40},    // added
+		{Path: "a.go", Hash: "h1", Size: 10},  // unchanged
+		{Path: "b.go", Hash: "h2x", Size: 25}, // modified
+		{Path: "d.go", Hash: "h4", Size: 40},  // added
 		// c.go deleted
 	}}
 
@@ -290,6 +293,24 @@ func TestScannerExcludePatterns(t *testing.T) {
 	}
 }
 
+func TestScannerAlwaysSkipsJujutsuMetadata(t *testing.T) {
+	dir := createTestWorkDir(t)
+	os.MkdirAll(filepath.Join(dir, ".jj", "repo"), 0o755)
+	writeFile(t, dir, ".jj/repo/op_store", "metadata")
+
+	scan := newScanner(defaultMaxFileSize, nil)
+	entries, err := scan.Scan(dir)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	for _, e := range entries {
+		if e.Path == ".jj" || strings.HasPrefix(e.Path, ".jj/") {
+			t.Fatalf(".jj should be excluded, found: %s", e.Path)
+		}
+	}
+}
+
 func TestShortID(t *testing.T) {
 	if got := shortID("abcdef1234567890"); got != "abcdef123456" {
 		t.Fatalf("shortID = %q, want abcdef123456", got)
@@ -299,20 +320,72 @@ func TestShortID(t *testing.T) {
 	}
 }
 
-func TestCommitToSummary(t *testing.T) {
+func TestCommitSummaryUsesChangedStats(t *testing.T) {
 	c := Commit{
-		ID:        "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-		SessionID: "s1",
-		FileCount: 5,
-		TotalSize: 1000,
-		CreatedAt: 12345,
+		ID:               "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+		SessionID:        "s1",
+		FileCount:        120,
+		TotalSize:        58600000,
+		CreatedAt:        12345,
+		ChangedFileCount: 1,
+		ChangedTotalSize: 512,
 	}
-	s := c.toSummary(3)
+
+	s := c.toSummary()
 	if s.ShortID != "abcdef123456" {
 		t.Fatalf("ShortID = %q", s.ShortID)
 	}
-	if s.ChangedFiles != 3 {
-		t.Fatalf("ChangedFiles = %d, want 3", s.ChangedFiles)
+	if s.ChangedFiles != 1 {
+		t.Fatalf("ChangedFiles = %d, want 1", s.ChangedFiles)
+	}
+	if s.ChangedTotalSize != 512 {
+		t.Fatalf("ChangedTotalSize = %d, want 512", s.ChangedTotalSize)
+	}
+}
+
+func TestCreateCommitTracksChangedStats(t *testing.T) {
+	stor, scan, _ := setupTestStorage(t)
+	workDir := createTestWorkDir(t)
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(oldwd)
+	}()
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+
+	svc := &service{Broker: pubsub.NewBroker[Commit](), storage: stor, scanner: scan}
+
+	first, err := svc.NewChange(t.Context(), "session-1", "initial")
+	if err != nil {
+		t.Fatalf("NewChange: %v", err)
+	}
+	if first.ChangedFileCount != first.FileCount {
+		t.Fatalf("initial ChangedFileCount = %d, want %d", first.ChangedFileCount, first.FileCount)
+	}
+	if first.ChangedTotalSize != first.TotalSize {
+		t.Fatalf("initial ChangedTotalSize = %d, want %d", first.ChangedTotalSize, first.TotalSize)
+	}
+
+	writeFile(t, workDir, "main.go", "package main\n\nfunc main() {}\n")
+	second, err := svc.Record(t.Context(), "session-1", "update main")
+	if err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if second.ID == first.ID {
+		t.Fatal("expected a new commit after modifying main.go")
+	}
+	if second.ChangedFileCount != 1 {
+		t.Fatalf("ChangedFileCount = %d, want 1", second.ChangedFileCount)
+	}
+	if second.ChangedTotalSize <= 0 {
+		t.Fatalf("ChangedTotalSize = %d, want > 0", second.ChangedTotalSize)
+	}
+	if second.FileCount != first.FileCount {
+		t.Fatalf("FileCount changed unexpectedly: %d -> %d", first.FileCount, second.FileCount)
 	}
 }
 
