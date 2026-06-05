@@ -67,7 +67,7 @@ run_codesign_digio() {
         echo "Removed existing signature from $target before re-signing."
     fi
 
-    "$CODESIGN_DIGIO" --force "$@" "$target"
+    "$CODESIGN_DIGIO" "$@" --force "$target"
 }
 
 verify_macho_signature() {
