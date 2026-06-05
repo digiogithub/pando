@@ -3,9 +3,12 @@ package tools
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/digiogithub/pando/internal/rag/kb"
 )
+
+const timeLayoutRFC3339 = time.RFC3339
 
 // KB tool names
 const (
@@ -71,7 +74,7 @@ func NewKBDeleteDocumentTool(store *kb.KBStore) BaseTool {
 func (t *KBAddDocumentTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        kbAddDocumentToolName,
-		Description: "Adds or updates a document in the knowledge base with automatic chunking and embedding. Use this to store important documentation, notes, plans, or any text content for future retrieval.",
+		Description: "Adds or updates a document in the knowledge base with automatic chunking and embedding. Use this to store important documentation, notes, plans, or any text content for future retrieval. Documents are automatically timestamped (created_at on first add, updated_at on every update). Tags are stored and can be used to filter search results.",
 		Parameters: map[string]any{
 			"file_path": map[string]any{
 				"type":        "string",
@@ -81,9 +84,14 @@ func (t *KBAddDocumentTool) Info() ToolInfo {
 				"type":        "string",
 				"description": "The full text content to store.",
 			},
+			"tags": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"description": "Optional list of tags to associate with the document for filtering and categorization (e.g. [\"plan\", \"architecture\"]).",
+			},
 			"metadata": map[string]any{
 				"type":        "object",
-				"description": "Optional key-value metadata to associate with the document (e.g. {\"source\": \"user\", \"tags\": [\"important\"]}).",
+				"description": "Optional key-value metadata to associate with the document (e.g. {\"source\": \"user\"}).",
 			},
 		},
 		Required: []string{"file_path", "content"},
@@ -94,6 +102,7 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 	var req struct {
 		FilePath string                 `json:"file_path"`
 		Content  string                 `json:"content"`
+		Tags     []string               `json:"tags"`
 		Metadata map[string]interface{} `json:"metadata"`
 	}
 	if err := DecodeToolInput(params.Input, &req); err != nil {
@@ -106,6 +115,12 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 		return NewTextErrorResponse("content is required"), nil
 	}
 
+	// Strip any user-provided front matter from content — we manage it internally.
+	bodyContent := kb.StripFrontMatter(req.Content)
+
+	// Inject tags into metadata.
+	req.Metadata = kb.InjectTagsIntoMetadata(req.Metadata, req.Tags)
+
 	// Check if document already exists (update vs add)
 	existing, err := t.store.GetDocument(ctx, req.FilePath)
 	if err != nil {
@@ -113,23 +128,37 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 	}
 
 	if existing != nil {
-		if err := t.store.UpdateDocument(ctx, req.FilePath, req.Content, req.Metadata); err != nil {
+		// Merge front matter: preserve created_at, update updated_at, merge tags.
+		existingFM := kb.FrontMatter{
+			CreatedAt: existing.CreatedAt,
+			UpdatedAt: existing.UpdatedAt,
+			Tags:      existing.Tags,
+		}
+		incomingFM := kb.FrontMatter{Tags: req.Tags}
+		mergedFM := kb.MergeFrontMatter(existingFM, incomingFM)
+
+		if err := t.store.UpdateDocument(ctx, req.FilePath, bodyContent, req.Metadata); err != nil {
 			return NewTextErrorResponse(fmt.Sprintf("kb update error: %v", err)), nil
 		}
-		if err := t.store.WriteDocumentToFilesystem(req.FilePath, req.Content); err != nil {
+		mirrorContent := kb.SerializeFrontMatter(mergedFM, bodyContent)
+		if err := t.store.WriteDocumentToFilesystem(req.FilePath, mirrorContent); err != nil {
 			return NewTextErrorResponse(fmt.Sprintf("kb filesystem mirror error: %v", err)), nil
 		}
-		return NewTextResponse(fmt.Sprintf("Document updated: %s", req.FilePath)), nil
+		return NewTextResponse(fmt.Sprintf("Document updated: %s (tags: %v)", req.FilePath, mergedFM.Tags)), nil
 	}
 
-	if err := t.store.AddDocument(ctx, req.FilePath, req.Content, req.Metadata); err != nil {
+	// New document: create front matter with current time.
+	newFM := kb.NewFrontMatter(req.Tags)
+
+	if err := t.store.AddDocument(ctx, req.FilePath, bodyContent, req.Metadata); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("kb add error: %v", err)), nil
 	}
-	if err := t.store.WriteDocumentToFilesystem(req.FilePath, req.Content); err != nil {
+	mirrorContent := kb.SerializeFrontMatter(newFM, bodyContent)
+	if err := t.store.WriteDocumentToFilesystem(req.FilePath, mirrorContent); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("kb filesystem mirror error: %v", err)), nil
 	}
 
-	return NewTextResponse(fmt.Sprintf("Document added: %s", req.FilePath)), nil
+	return NewTextResponse(fmt.Sprintf("Document added: %s (tags: %v)", req.FilePath, newFM.Tags)), nil
 }
 
 // ---- KBImportPathTool ----
@@ -190,7 +219,7 @@ func (t *KBImportPathTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 func (t *KBSearchDocumentsTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        kbSearchDocumentsToolName,
-		Description: "Searches the knowledge base for documents semantically similar to the query. Combines vector similarity and full-text search for best results. Use this to retrieve stored documentation, notes, or plans.",
+		Description: "Searches the knowledge base for documents semantically similar to the query. Combines vector similarity and full-text search for best results. Use this to retrieve stored documentation, notes, or plans. Results include tags and timestamps, and can optionally be filtered by tags or sorted chronologically.",
 		Parameters: map[string]any{
 			"query": map[string]any{
 				"type":        "string",
@@ -200,6 +229,15 @@ func (t *KBSearchDocumentsTool) Info() ToolInfo {
 				"type":        "integer",
 				"description": "Maximum number of results to return (default: 5, max: 20).",
 			},
+			"tags": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"description": "Optional list of tags to filter results. Uses fuzzy matching — documents matching any of the provided tags are included.",
+			},
+			"sort_by_date": map[string]any{
+				"type":        "boolean",
+				"description": "When true, sort results by updated_at descending (newest first) instead of relevance score.",
+			},
 		},
 		Required: []string{"query"},
 	}
@@ -207,8 +245,10 @@ func (t *KBSearchDocumentsTool) Info() ToolInfo {
 
 func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
 	var req struct {
-		Query string `json:"query"`
-		Limit int    `json:"limit"`
+		Query      string   `json:"query"`
+		Limit      int      `json:"limit"`
+		Tags       []string `json:"tags"`
+		SortByDate bool     `json:"sort_by_date"`
 	}
 	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
@@ -223,7 +263,11 @@ func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolR
 		req.Limit = 20
 	}
 
-	results, err := t.store.SearchDocuments(ctx, req.Query, req.Limit)
+	opts := kb.SearchOptions{
+		Tags:       req.Tags,
+		SortByDate: req.SortByDate,
+	}
+	results, err := t.store.SearchDocumentsWithOptions(ctx, req.Query, req.Limit, opts)
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("kb search error: %v", err)), nil
 	}
@@ -237,6 +281,9 @@ func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolR
 		ChunkContent string                 `json:"chunk_content"`
 		Score        float64                `json:"score"`
 		Rank         int                    `json:"rank"`
+		Tags         []string               `json:"tags,omitempty"`
+		CreatedAt    string                 `json:"created_at"`
+		UpdatedAt    string                 `json:"updated_at"`
 		Metadata     map[string]interface{} `json:"metadata,omitempty"`
 	}
 
@@ -247,6 +294,9 @@ func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolR
 			ChunkContent: r.ChunkContent,
 			Score:        r.Score,
 			Rank:         r.Rank,
+			Tags:         r.Document.Tags,
+			CreatedAt:    r.Document.CreatedAt.UTC().Format(timeLayoutRFC3339),
+			UpdatedAt:    r.Document.UpdatedAt.UTC().Format(timeLayoutRFC3339),
 			Metadata:     r.Document.Metadata,
 		}
 	}
@@ -295,9 +345,10 @@ func (t *KBGetDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 	return NewStructuredResponse(map[string]any{
 		"file_path":  doc.FilePath,
 		"content":    doc.Content,
+		"tags":       doc.Tags,
 		"metadata":   doc.Metadata,
-		"created_at": doc.CreatedAt,
-		"updated_at": doc.UpdatedAt,
+		"created_at": doc.CreatedAt.UTC().Format(timeLayoutRFC3339),
+		"updated_at": doc.UpdatedAt.UTC().Format(timeLayoutRFC3339),
 	}), nil
 }
 

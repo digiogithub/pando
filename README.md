@@ -283,6 +283,8 @@ rm -f *.upx
 
 Compiles the binaries for the different platforms (Linux x64, Windows x64, macOS aarch64) and zip them into `dist/`.
 
+interactive:true
+
 ```bash
 # Create dist folder
 mkdir -p dist

@@ -12,8 +12,15 @@ type Document struct {
 	FilePath  string
 	Content   string
 	Metadata  map[string]interface{}
+	Tags      []string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+// SearchOptions provides optional filtering/sorting for search queries.
+type SearchOptions struct {
+	Tags       []string // filter results by tags (fuzzy match)
+	SortByDate bool     // sort results by updated_at descending
 }
 
 // SearchResult represents a ranked search result from the knowledge base.

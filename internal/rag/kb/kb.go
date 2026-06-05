@@ -272,6 +272,7 @@ func (s *KBStore) GetDocument(ctx context.Context, filePath string) (*Document, 
 			return nil, fmt.Errorf("kb: unmarshal metadata: %w", err)
 		}
 	}
+	doc.Tags = ExtractTagsFromMetadata(doc.Metadata)
 
 	return &doc, nil
 }
@@ -538,8 +539,22 @@ func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, conte
 // SearchDocuments performs hybrid search combining vector similarity and FTS.
 // Results are fused using Reciprocal Rank Fusion (RRF).
 func (s *KBStore) SearchDocuments(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+	return s.SearchDocumentsWithOptions(ctx, query, limit, SearchOptions{})
+}
+
+// SearchDocumentsWithOptions performs hybrid search with optional tag filtering
+// and chronological ordering. When opts.Tags is non-empty, results are filtered
+// to documents whose tags fuzzy-match any of the requested tags. When
+// opts.SortByDate is true, results are sorted by updated_at descending.
+func (s *KBStore) SearchDocumentsWithOptions(ctx context.Context, query string, limit int, opts SearchOptions) ([]SearchResult, error) {
 	if limit <= 0 {
 		limit = 5
+	}
+
+	// When filtering by tags, fetch more candidates to compensate for post-filter reduction.
+	fetchLimit := limit
+	if len(opts.Tags) > 0 {
+		fetchLimit = limit * 5
 	}
 
 	// Generate query embedding
@@ -549,7 +564,7 @@ func (s *KBStore) SearchDocuments(ctx context.Context, query string, limit int) 
 	}
 
 	// Fetch more candidates for better fusion
-	subLimit := limit * 3
+	subLimit := fetchLimit * 3
 
 	// Concurrent vector and FTS search
 	type result struct {
@@ -579,8 +594,65 @@ func (s *KBStore) SearchDocuments(ctx context.Context, query string, limit int) 
 		return nil, fmt.Errorf("kb: fts search: %w", fts.err)
 	}
 
-	// Fuse results using RRF
-	return rrfFuse(vec.items, fts.items, limit), nil
+	// Fuse results using RRF — fetch more than limit to allow post-filtering.
+	fused := rrfFuse(vec.items, fts.items, fetchLimit)
+
+	// Apply tag filtering if requested.
+	if len(opts.Tags) > 0 {
+		fused = filterByTags(fused, opts.Tags)
+	}
+
+	// Apply chronological sorting if requested.
+	if opts.SortByDate {
+		sort.SliceStable(fused, func(i, j int) bool {
+			return fused[i].Document.UpdatedAt.After(fused[j].Document.UpdatedAt)
+		})
+	}
+
+	// Trim to requested limit and re-rank.
+	if len(fused) > limit {
+		fused = fused[:limit]
+	}
+	for i := range fused {
+		fused[i].Rank = i + 1
+	}
+
+	return fused, nil
+}
+
+// filterByTags returns results whose document tags fuzzy-match any of the query tags.
+func filterByTags(results []SearchResult, queryTags []string) []SearchResult {
+	if len(queryTags) == 0 {
+		return results
+	}
+
+	// Normalize query tags for case-insensitive matching.
+	normalizedQuery := make([]string, len(queryTags))
+	for i, t := range queryTags {
+		normalizedQuery[i] = strings.ToLower(strings.TrimSpace(t))
+	}
+
+	filtered := make([]SearchResult, 0, len(results))
+	for _, r := range results {
+		if matchesTags(r.Document.Tags, normalizedQuery) {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
+}
+
+// matchesTags returns true if any document tag fuzzy-matches any query tag.
+// Fuzzy matching: case-insensitive substring containment.
+func matchesTags(docTags []string, queryTags []string) bool {
+	for _, dt := range docTags {
+		dtLower := strings.ToLower(dt)
+		for _, qt := range queryTags {
+			if strings.Contains(dtLower, qt) || strings.Contains(qt, dtLower) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // searchVector performs vector similarity search on chunks.
@@ -630,6 +702,7 @@ func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit in
 				continue // Skip malformed metadata
 			}
 		}
+		c.document.Tags = ExtractTagsFromMetadata(c.document.Metadata)
 
 		vec := deserializeFloat32(blob)
 		if len(vec) != len(queryEmb) {
@@ -728,6 +801,7 @@ func (s *KBStore) searchFTS(ctx context.Context, query string, limit int) ([]Sea
 				continue // Skip malformed metadata
 			}
 		}
+		r.Document.Tags = ExtractTagsFromMetadata(r.Document.Metadata)
 
 		r.Score = rawScore
 		r.Rank = len(results) + 1
@@ -784,6 +858,7 @@ func (s *KBStore) ListDocuments(ctx context.Context, limit, offset int) ([]Docum
 				return nil, fmt.Errorf("kb: unmarshal metadata: %w", err)
 			}
 		}
+		doc.Tags = ExtractTagsFromMetadata(doc.Metadata)
 
 		docs = append(docs, doc)
 	}

@@ -191,9 +191,20 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			continue
 		}
 
+		// Parse YAML front matter from file content to extract tags.
+		// Store only the body (without front matter) in the database.
+		fm, bodyContent, _ := ParseFrontMatter(res.content)
+		if strings.TrimSpace(bodyContent) == "" {
+			bodyContent = res.content // Fallback if parse strips everything.
+		}
+
 		meta := map[string]interface{}{
 			"source_path":       res.job.absPath,
 			"source_mtime_unix": res.job.mtimeUnix,
+		}
+		// Inject tags from front matter into metadata.
+		if len(fm.Tags) > 0 {
+			meta = InjectTagsIntoMetadata(meta, fm.Tags)
 		}
 
 		processingCtx, cancel := context.WithTimeout(ctxSync, kbSyncPerFileTimeout)
@@ -202,9 +213,9 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			logging.Debug("kb sync: indexing document",
 				"doc_path", res.job.docPath,
 				"mode", "add",
-				"bytes", len(res.content),
+				"bytes", len(bodyContent),
 			)
-			if addErr := s.AddDocument(processingCtx, res.job.docPath, res.content, meta); addErr != nil {
+			if addErr := s.AddDocument(processingCtx, res.job.docPath, bodyContent, meta); addErr != nil {
 				cancel()
 				errorCount++
 				if firstErr == nil {
@@ -227,9 +238,9 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		logging.Debug("kb sync: indexing document",
 			"doc_path", res.job.docPath,
 			"mode", "update",
-			"bytes", len(res.content),
+			"bytes", len(bodyContent),
 		)
-		if updateErr := s.UpdateDocument(processingCtx, res.job.docPath, res.content, meta); updateErr != nil {
+		if updateErr := s.UpdateDocument(processingCtx, res.job.docPath, bodyContent, meta); updateErr != nil {
 			cancel()
 			errorCount++
 			if firstErr == nil {
