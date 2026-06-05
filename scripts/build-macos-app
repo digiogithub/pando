@@ -183,7 +183,7 @@ chmod +x "$UNIVERSAL"
 # ── 3. Sign universal binary ─────────────────────────────────────────────────
 
 echo "Signing universal binary..."
-run_codesign --options runtime "$UNIVERSAL"
+run_codesign -o runtime "$UNIVERSAL"
 verify_macho_signature "$UNIVERSAL"
 
 # ── 4. Build .app bundle ──────────────────────────────────────────────────────
@@ -235,7 +235,7 @@ rm -rf "$FINAL_APP"
 cp -R "$APP_DIR" "$FINAL_APP"
 
 echo "Signing Pando.app bundle..."
-run_codesign --deep --options runtime "$FINAL_APP"
+run_codesign --deep -o runtime "$FINAL_APP"
 verify_app_signature "$FINAL_APP"
 
 # ── 8. Copy universal binary to dist/pando-osx ───────────────────────────────
