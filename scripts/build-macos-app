@@ -58,8 +58,9 @@ elif [[ -x "$HOME/bin/codesign-digio" ]]; then
     CODESIGN_DIGIO="$HOME/bin/codesign-digio"
 fi
 PKG_SIGN_IDENTITY="${PKG_SIGN_IDENTITY:-}"
+SIGNING_IDENTITY="4749EC5719E91D7ADFE5FDB4CB546057A8CFB9AD"
 
-run_codesign_digio() {
+run_codesign() {
     local target="$1"
     shift || true
 
@@ -67,7 +68,7 @@ run_codesign_digio() {
         echo "Removed existing signature from $target before re-signing."
     fi
 
-    "$CODESIGN_DIGIO" "$@" --force "$target"
+    codesign --sign "$SIGNING_IDENTITY" --force "$@" "$target"
 }
 
 verify_macho_signature() {
@@ -127,7 +128,7 @@ if [[ -n "$CODESIGN_DIGIO" ]]; then
         KEYCHAIN_UNLOCKED=true
     fi
 else
-    echo "Warning: codesign-digio not found — artifacts will not be signed."
+    echo "Warning: codesign-digio not found — proceeding with direct codesign using the configured identity."
 fi
 
 relock_keychain() {
@@ -185,13 +186,9 @@ chmod +x "$UNIVERSAL"
 
 # ── 3. Sign universal binary ─────────────────────────────────────────────────
 
-if [[ -n "$CODESIGN_DIGIO" ]]; then
-    echo "Signing universal binary..."
-    run_codesign_digio -o runtime "$UNIVERSAL"
-    verify_macho_signature "$UNIVERSAL"
-else
-    echo "Skipping binary signing (codesign-digio not found)."
-fi
+echo "Signing universal binary..."
+run_codesign --options runtime "$UNIVERSAL"
+verify_macho_signature "$UNIVERSAL"
 
 # ── 4. Build .app bundle ──────────────────────────────────────────────────────
 
@@ -241,13 +238,9 @@ FINAL_APP="$DIST_DIR/Pando.app"
 rm -rf "$FINAL_APP"
 cp -R "$APP_DIR" "$FINAL_APP"
 
-if [[ -n "$CODESIGN_DIGIO" ]]; then
-    echo "Signing Pando.app bundle..."
-    run_codesign_digio --deep -o runtime "$FINAL_APP"
-    verify_app_signature "$FINAL_APP"
-else
-    echo "Skipping .app bundle signing (codesign-digio not found)."
-fi
+echo "Signing Pando.app bundle..."
+run_codesign --deep --options runtime "$FINAL_APP"
+verify_app_signature "$FINAL_APP"
 
 # ── 8. Copy universal binary to dist/pando-osx ───────────────────────────────
 
