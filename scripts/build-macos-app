@@ -9,8 +9,7 @@
 #
 #   VERSION  Optional. Defaults to the latest git tag (git describe --tags --abbrev=0).
 #
-# When running over SSH, allocate a TTY so the keychain password prompt works:
-#   ssh -t mac-mini-de-digio "cd ~/www/MCP/Pando/pando && bash scripts/build-macos-app"
+# The login keychain password is read from $KEYSTORE_PASS when code signing is enabled.
 #
 # Prerequisites (macOS only):
 #   - Xcode Command Line Tools: lipo, iconutil, sips, pkgbuild, productbuild, productsign,
@@ -87,27 +86,29 @@ verify_pkg_signature() {
     spctl --assess --type install --verbose=2 "$target"
 }
 
-# ── Keychain unlock (required over SSH — no GUI session) ────────────────────
-# codesign accesses the login keychain which is locked in headless sessions.
-# We prompt once here, before any build work starts, then re-lock on exit.
+is_macho_signed() {
+    local target="$1"
+    codesign --verify --verbose=2 "$target" >/dev/null 2>&1
+}
+
+is_pkg_signed() {
+    local target="$1"
+    pkgutil --check-signature "$target" >/dev/null 2>&1
+}
+
+# ── Keychain unlock ──────────────────────────────────────────────────────────
+# codesign accesses the login keychain which is often locked in headless sessions.
+# Use KEYSTORE_PASS from the environment so builds can run non-interactively.
 
 KEYCHAIN_DB="$HOME/Library/Keychains/login.keychain-db"
 KEYCHAIN_UNLOCKED=false
+KEYCHAIN_PASSWORD="${KEYSTORE_PASS:-}"
 
 if [[ -n "$CODESIGN_DIGIO" ]]; then
     echo "Code signing tool: $CODESIGN_DIGIO"
-    # Only prompt if we have a TTY (i.e. the user can type a password).
-    # Skip silently when KEYCHAIN_PASSWORD is already set in the environment.
-    if [[ -z "${KEYCHAIN_PASSWORD:-}" ]]; then
-        if [[ -t 0 ]]; then
-            read -r -s -p "Keychain password (for code signing): " KEYCHAIN_PASSWORD
-            echo
-        else
-            echo "Warning: no TTY detected — run with 'ssh -t' to enable keychain unlock." >&2
-            echo "  Code signing will be attempted but may fail with errSecInternalComponent." >&2
-        fi
-    fi
-    if [[ -n "${KEYCHAIN_PASSWORD:-}" ]]; then
+    if [[ -z "$KEYCHAIN_PASSWORD" ]]; then
+        echo "Warning: KEYSTORE_PASS is not set — code signing will be attempted but may fail with errSecInternalComponent." >&2
+    else
         echo "Unlocking login keychain..."
         security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_DB"
         KEYCHAIN_UNLOCKED=true
@@ -172,8 +173,12 @@ chmod +x "$UNIVERSAL"
 # ── 3. Sign universal binary ─────────────────────────────────────────────────
 
 if [[ -n "$CODESIGN_DIGIO" ]]; then
-    echo "Signing universal binary..."
-    run_codesign_digio "$UNIVERSAL"
+    if is_macho_signed "$UNIVERSAL"; then
+        echo "Universal binary already signed, skipping signing step."
+    else
+        echo "Signing universal binary..."
+        run_codesign_digio "$UNIVERSAL"
+    fi
     verify_macho_signature "$UNIVERSAL"
 else
     echo "Skipping binary signing (codesign-digio not found)."
@@ -228,8 +233,12 @@ rm -rf "$FINAL_APP"
 cp -R "$APP_DIR" "$FINAL_APP"
 
 if [[ -n "$CODESIGN_DIGIO" ]]; then
-    echo "Signing Pando.app bundle..."
-    run_codesign_digio "$FINAL_APP"
+    if is_macho_signed "$FINAL_APP"; then
+        echo "Pando.app bundle already signed, skipping signing step."
+    else
+        echo "Signing Pando.app bundle..."
+        run_codesign_digio "$FINAL_APP"
+    fi
     verify_app_signature "$FINAL_APP"
 else
     echo "Skipping .app bundle signing (codesign-digio not found)."
@@ -310,13 +319,17 @@ productbuild \
 FINAL_PKG="$DIST_DIR/pando-${VERSION}.pkg"
 
 if [[ -n "$CODESIGN_DIGIO" ]]; then
-    if [[ -z "$PKG_SIGN_IDENTITY" ]]; then
-        echo "Error: PKG_SIGN_IDENTITY must be set to sign the installer package." >&2
-        echo "Use the Developer ID Installer identity, not the application identity used by codesign-digio." >&2
-        exit 1
+    if is_pkg_signed "$FINAL_PKG"; then
+        echo ".pkg installer already signed, skipping signing step."
+    else
+        if [[ -z "$PKG_SIGN_IDENTITY" ]]; then
+            echo "Error: PKG_SIGN_IDENTITY must be set to sign the installer package." >&2
+            echo "Use the Developer ID Installer identity, not the application identity used by codesign-digio." >&2
+            exit 1
+        fi
+        echo "Signing .pkg installer with productsign..."
+        productsign --sign "$PKG_SIGN_IDENTITY" "$UNSIGNED_PKG" "$FINAL_PKG"
     fi
-    echo "Signing .pkg installer with productsign..."
-    productsign --sign "$PKG_SIGN_IDENTITY" "$UNSIGNED_PKG" "$FINAL_PKG"
     verify_pkg_signature "$FINAL_PKG"
 else
     echo "Skipping .pkg signing (codesign-digio not found)."
