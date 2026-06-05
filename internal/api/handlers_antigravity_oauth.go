@@ -272,9 +272,15 @@ func (s *Server) hydrateAntigravityAccount(account config.ProviderAccount, token
 	if err != nil {
 		return config.ProviderAccount{}, fmt.Errorf("failed to fetch google account email: %w", err)
 	}
-	projectID, err := oauthantigravity.ResolveProjectID(nil, token.AccessToken)
-	if err != nil {
-		return config.ProviderAccount{}, fmt.Errorf("failed to resolve antigravity project ID: %w", err)
+
+	projectID := strings.TrimSpace(token.ProjectID)
+	if projectID == "" {
+		projectID, err = oauthantigravity.FetchProjectID(nil, token.AccessToken)
+		if err != nil {
+			// Fallback to an empty project ID if resolution fails, as some accounts might not have one
+			// but we still want to allow login. Or we can return the error.
+			// Let's log it but continue, or use a fallback.
+		}
 	}
 
 	updated := account

@@ -184,6 +184,38 @@ export async function loadLauncherCommands(notify: (message: string, type?: 'suc
         },
       })
     }
+
+    if (provider.type === 'antigravity') {
+      commands.push({
+        id: 'antigravity:login',
+        label: 'Antigravity Login',
+        description: 'Start Antigravity Google OAuth login flow',
+        group: 'account',
+        keywords: [...keywords, 'login', 'google', 'oauth', 'sign in'],
+        action: async () => {
+          // Find first antigravity account to use as accountId.
+          const accounts = await api.get<{ providerAccounts: { id: string; type: string; displayName: string }[] }>(
+            '/api/v1/config/provider-accounts'
+          )
+          const agAccount = accounts.providerAccounts?.find((a) => a.type === 'antigravity')
+          if (!agAccount) {
+            useToastStore.getState().addToast('No Antigravity account configured. Add one in Settings > Providers.', 'warning')
+            return
+          }
+          const result = await api.post<{ authUrl: string }>(
+            '/api/v1/config/provider-accounts/antigravity/start',
+            { accountId: agAccount.id, displayName: agAccount.displayName }
+          )
+          if (result.authUrl) {
+            window.open(result.authUrl, '_blank', 'noopener,noreferrer')
+            useToastStore.getState().addToast(
+              `Antigravity — Complete Google login for "${agAccount.displayName}" in the opened browser tab.`,
+              'info',
+            )
+          }
+        },
+      })
+    }
   }
 
   return commands

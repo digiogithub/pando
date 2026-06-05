@@ -185,11 +185,11 @@ func TestHandleAntigravityOAuthCallbackPersistsTokens(t *testing.T) {
 
 	oldTokenURL := antigravity.GoogleTokenURL
 	oldUserInfoURL := antigravity.GoogleUserInfoURL
-	oldProjectsURL := antigravity.AntigravityProjectsURL
+	oldProjectsURL := antigravity.AntigravityLoadURLProd
 	defer func() {
 		antigravity.GoogleTokenURL = oldTokenURL
 		antigravity.GoogleUserInfoURL = oldUserInfoURL
-		antigravity.AntigravityProjectsURL = oldProjectsURL
+		antigravity.AntigravityLoadURLProd = oldProjectsURL
 	}()
 
 	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -215,10 +215,10 @@ func TestHandleAntigravityOAuthCallbackPersistsTokens(t *testing.T) {
 	antigravity.GoogleUserInfoURL = userServer.URL
 
 	projectServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"projects": []map[string]string{{"id": "project-123"}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"cloudaicompanionProject": map[string]string{"id": "project-123"}})
 	}))
 	defer projectServer.Close()
-	antigravity.AntigravityProjectsURL = projectServer.URL
+	antigravity.AntigravityLoadURLProd = projectServer.URL
 
 	body := strings.NewReader(`{"accountId":"antigravity-work","code":"auth-code","state":"state-123"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/config/provider-accounts/antigravity/callback", body)
@@ -337,11 +337,11 @@ func TestHandleAntigravityOAuthCallbackReusesExistingRefreshToken(t *testing.T) 
 
 	oldTokenURL := antigravity.GoogleTokenURL
 	oldUserInfoURL := antigravity.GoogleUserInfoURL
-	oldProjectsURL := antigravity.AntigravityProjectsURL
+	oldProjectsURL := antigravity.AntigravityLoadURLProd
 	defer func() {
 		antigravity.GoogleTokenURL = oldTokenURL
 		antigravity.GoogleUserInfoURL = oldUserInfoURL
-		antigravity.AntigravityProjectsURL = oldProjectsURL
+		antigravity.AntigravityLoadURLProd = oldProjectsURL
 	}()
 
 	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -360,10 +360,10 @@ func TestHandleAntigravityOAuthCallbackReusesExistingRefreshToken(t *testing.T) 
 	antigravity.GoogleUserInfoURL = userServer.URL
 
 	projectServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"projects": []map[string]string{{"id": "project-123"}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"cloudaicompanionProject": map[string]string{"id": "project-123"}})
 	}))
 	defer projectServer.Close()
-	antigravity.AntigravityProjectsURL = projectServer.URL
+	antigravity.AntigravityLoadURLProd = projectServer.URL
 
 	body := strings.NewReader(`{"accountId":"antigravity-work","code":"auth-code","state":"state-123"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/config/provider-accounts/antigravity/callback", body)
@@ -407,11 +407,11 @@ func TestHandleAntigravityOAuthRefreshRefreshesExpiredAccount(t *testing.T) {
 
 	oldTokenURL := antigravity.GoogleTokenURL
 	oldUserInfoURL := antigravity.GoogleUserInfoURL
-	oldProjectsURL := antigravity.AntigravityProjectsURL
+	oldProjectsURL := antigravity.AntigravityLoadURLProd
 	defer func() {
 		antigravity.GoogleTokenURL = oldTokenURL
 		antigravity.GoogleUserInfoURL = oldUserInfoURL
-		antigravity.AntigravityProjectsURL = oldProjectsURL
+		antigravity.AntigravityLoadURLProd = oldProjectsURL
 	}()
 
 	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -437,10 +437,10 @@ func TestHandleAntigravityOAuthRefreshRefreshesExpiredAccount(t *testing.T) {
 	antigravity.GoogleUserInfoURL = userServer.URL
 
 	projectServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"projects": []map[string]string{{"id": "project-123"}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"cloudaicompanionProject": map[string]string{"id": "project-123"}})
 	}))
 	defer projectServer.Close()
-	antigravity.AntigravityProjectsURL = projectServer.URL
+	antigravity.AntigravityLoadURLProd = projectServer.URL
 
 	body := strings.NewReader(`{"accountId":"antigravity-work","force":true}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/config/provider-accounts/antigravity/refresh", body)

@@ -146,24 +146,24 @@ func TestExchangeCodeParsesTokenResponse(t *testing.T) {
 	}
 }
 
-func TestResolveProjectIDReturnsFirstProject(t *testing.T) {
+func TestFetchProjectIDReturnsProjectFromLoadCodeAssist(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer access-123" {
 			t.Fatalf("authorization = %q", got)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"projects": []map[string]string{{"id": "project-1", "name": "Default"}},
+			"cloudaicompanionProject": map[string]string{"id": "project-1"},
 		})
 	}))
 	defer server.Close()
 
-	oldURL := AntigravityProjectsURL
-	AntigravityProjectsURL = server.URL
-	defer func() { AntigravityProjectsURL = oldURL }()
+	oldURL := AntigravityLoadURLProd
+	AntigravityLoadURLProd = server.URL
+	defer func() { AntigravityLoadURLProd = oldURL }()
 
-	projectID, err := ResolveProjectID(server.Client(), "access-123")
+	projectID, err := FetchProjectID(server.Client(), "access-123")
 	if err != nil {
-		t.Fatalf("ResolveProjectID(): %v", err)
+		t.Fatalf("FetchProjectID(): %v", err)
 	}
 	if projectID != "project-1" {
 		t.Fatalf("projectID = %q, want project-1", projectID)

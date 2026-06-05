@@ -236,12 +236,14 @@ function AccountCard({
   onEdit,
   onDelete,
   onTest,
+  onLogin,
   testStatus,
 }: {
   account: ProviderAccount
   onEdit: () => void
   onDelete: () => void
   onTest: () => void
+  onLogin?: () => void
   testStatus: TestStatus
 }) {
   const meta = PROVIDER_TYPES.find((t) => t.value === account.type)
@@ -281,6 +283,24 @@ function AccountCard({
         </div>
       </div>
       <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', flexShrink: 0 }}>
+        {onLogin && (
+          <button
+            onClick={onLogin}
+            style={{
+              padding: '0.25rem 0.625rem',
+              background: 'transparent',
+              border: '1px solid var(--primary)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 12,
+              cursor: 'pointer',
+              color: 'var(--primary)',
+              fontWeight: 600,
+              fontFamily: 'inherit',
+            }}
+          >
+            Login
+          </button>
+        )}
         <button
           onClick={onEdit}
           style={{
@@ -643,6 +663,25 @@ export default function ProviderAccountsSettings() {
 
   useEffect(() => {
     loadAccounts()
+
+    // Handle OAuth redirect results from query params.
+    const params = new URLSearchParams(window.location.search)
+    const authSuccess = params.get('authSuccess')
+    const authError = params.get('authError')
+    const authAccount = params.get('account')
+    if (authSuccess) {
+      toast.success(`Login successful${authAccount ? ` for "${authAccount}"` : ''}`)
+      // Clean up URL params.
+      const url = new URL(window.location.href)
+      url.searchParams.delete('authSuccess')
+      url.searchParams.delete('account')
+      window.history.replaceState({}, '', url.toString())
+    } else if (authError) {
+      toast.error(`Login failed: ${authError}`)
+      const url = new URL(window.location.href)
+      url.searchParams.delete('authError')
+      window.history.replaceState({}, '', url.toString())
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -703,6 +742,21 @@ export default function ProviderAccountsSettings() {
       await loadAccounts()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Delete failed')
+    }
+  }
+
+  async function handleLogin(account: ProviderAccount) {
+    try {
+      const result = await api.post<{ authUrl: string; accountId: string }>(
+        '/api/v1/config/provider-accounts/antigravity/start',
+        { accountId: account.id, displayName: account.displayName }
+      )
+      if (result.authUrl) {
+        window.open(result.authUrl, '_blank', 'noopener,noreferrer')
+        toast.info(`Complete Google login for "${account.displayName}" in the opened browser tab.`)
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to start login')
     }
   }
 
@@ -779,6 +833,7 @@ export default function ProviderAccountsSettings() {
               onEdit={() => openEdit(a)}
               onDelete={() => setConfirmDelete(a.id)}
               onTest={() => handleTest(a.id)}
+              onLogin={TYPES_WITH_OAUTH.includes(a.type) && a.type === 'antigravity' ? () => handleLogin(a) : undefined}
             />
           ))}
         </div>

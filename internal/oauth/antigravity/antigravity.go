@@ -15,23 +15,35 @@ import (
 )
 
 const (
-	GoogleClientID     = "407408718192.apps.googleusercontent.com"
+	GoogleClientID     = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+	GoogleClientSecret = "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"
 	defaultHTTPTimeout = 15 * time.Second
 )
 
 var (
-	GoogleAuthorizeURL     = "https://accounts.google.com/o/oauth2/v2/auth"
-	GoogleTokenURL         = "https://oauth2.googleapis.com/token"
-	GoogleUserInfoURL      = "https://openidconnect.googleapis.com/v1/userinfo"
-	AntigravityProjectsURL = "https://antigravity.ai/api/v1/projects"
+	GoogleAuthorizeURL      = "https://accounts.google.com/o/oauth2/v2/auth"
+	GoogleTokenURL          = "https://oauth2.googleapis.com/token"
+	GoogleUserInfoURL       = "https://openidconnect.googleapis.com/v1/userinfo"
+	AntigravityLoadURLProd  = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
+	AntigravityLoadURLDaily = "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:loadCodeAssist"
 )
 
-var DefaultScopes = []string{"openid", "email", "profile", "https://www.googleapis.com/auth/cloud-platform.read-only"}
+var DefaultScopes = []string{
+	"openid",
+	"email",
+	"profile",
+	"https://www.googleapis.com/auth/cloud-platform",
+	"https://www.googleapis.com/auth/userinfo.email",
+	"https://www.googleapis.com/auth/userinfo.profile",
+	"https://www.googleapis.com/auth/cclog",
+	"https://www.googleapis.com/auth/experimentsandconfigs",
+}
 
 type Session struct {
 	State        string `json:"state"`
 	CodeVerifier string `json:"codeVerifier"`
 	RedirectURI  string `json:"redirectUri"`
+	ProjectID    string `json:"projectId,omitempty"`
 }
 
 type Token struct {
@@ -41,6 +53,7 @@ type Token struct {
 	Expiry       int64    `json:"expiry,omitempty"`
 	Scopes       []string `json:"scopes,omitempty"`
 	IDToken      string   `json:"idToken,omitempty"`
+	ProjectID    string   `json:"projectId,omitempty"`
 }
 
 type UserInfo struct {
@@ -128,6 +141,7 @@ func ExchangeCode(client *http.Client, code, verifier, redirectURI string) (*Tok
 	values := url.Values{}
 	values.Set("grant_type", "authorization_code")
 	values.Set("client_id", GoogleClientID)
+	values.Set("client_secret", GoogleClientSecret)
 	values.Set("code", strings.TrimSpace(code))
 	values.Set("code_verifier", strings.TrimSpace(verifier))
 	values.Set("redirect_uri", strings.TrimSpace(redirectURI))
@@ -138,6 +152,7 @@ func RefreshToken(client *http.Client, refreshToken string) (*Token, error) {
 	values := url.Values{}
 	values.Set("grant_type", "refresh_token")
 	values.Set("client_id", GoogleClientID)
+	values.Set("client_secret", GoogleClientSecret)
 	values.Set("refresh_token", strings.TrimSpace(refreshToken))
 	return doTokenRequest(client, values)
 }
@@ -156,19 +171,29 @@ func FetchUserInfo(client *http.Client, accessToken string) (*UserInfo, error) {
 	return &info, nil
 }
 
-func ResolveProjectID(client *http.Client, accessToken string) (string, error) {
+type loadCodeAssistResponse struct {
+	CloudaicompanionProject struct {
+		ID string `json:"id,omitempty"`
+	} `json:"cloudaicompanionProject,omitempty"`
+}
+
+func FetchProjectID(client *http.Client, accessToken string) (string, error) {
 	if strings.TrimSpace(accessToken) == "" {
 		return "", fmt.Errorf("access token is required")
 	}
 
-	var envelope projectsEnvelope
-	if err := doJSONRequest(client, http.MethodGet, AntigravityProjectsURL, accessToken, nil, &envelope); err != nil {
-		return "", err
+	endpoints := []string{AntigravityLoadURLProd, AntigravityLoadURLDaily}
+	for _, endpoint := range endpoints {
+		var resp loadCodeAssistResponse
+		body := bytes.NewBufferString(`{"metadata":{"ideType":"ANTIGRAVITY","platform":"MACOS","pluginType":"GEMINI"}}`)
+		if err := doJSONRequest(client, http.MethodPost, endpoint, accessToken, body, &resp); err != nil {
+			continue
+		}
+		if id := strings.TrimSpace(resp.CloudaicompanionProject.ID); id != "" {
+			return id, nil
+		}
 	}
-	if len(envelope.Projects) == 0 {
-		return "", fmt.Errorf("no antigravity projects available for account")
-	}
-	return envelope.Projects[0].ID, nil
+	return "", fmt.Errorf("failed to resolve project ID from loadCodeAssist")
 }
 
 func httpClient(client *http.Client) *http.Client {
@@ -181,6 +206,9 @@ func httpClient(client *http.Client) *http.Client {
 func doTokenRequest(client *http.Client, values url.Values) (*Token, error) {
 	if strings.TrimSpace(values.Get("client_id")) == "" {
 		return nil, fmt.Errorf("client_id is required")
+	}
+	if strings.TrimSpace(values.Get("client_secret")) == "" {
+		return nil, fmt.Errorf("client_secret is required")
 	}
 	if strings.TrimSpace(values.Get("grant_type")) == "authorization_code" {
 		if strings.TrimSpace(values.Get("code")) == "" {
@@ -202,6 +230,9 @@ func doTokenRequest(client *http.Client, values url.Values) (*Token, error) {
 		return nil, fmt.Errorf("create token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "google-api-nodejs-client/9.15.1")
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 
 	resp, err := httpClient(client).Do(req)
 	if err != nil {

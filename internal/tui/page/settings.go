@@ -479,19 +479,23 @@ func (p *settingsPage) deleteProviderAccount(id string) tea.Cmd {
 }
 
 func (p *settingsPage) loginProviderAccount(id string) tea.Cmd {
-	return func() tea.Msg {
-		id = strings.TrimSpace(id)
-		if id == "" {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return func() tea.Msg {
 			return providerAccountActionMsg{err: fmt.Errorf("provider account ID cannot be empty")}
 		}
-		acc, ok := config.GetProviderAccount(id)
-		if !ok {
+	}
+	acc, ok := config.GetProviderAccount(id)
+	if !ok {
+		return func() tea.Msg {
 			return providerAccountActionMsg{err: fmt.Errorf("provider account %q not found", id)}
 		}
-		if acc.Type != models.ProviderAntigravity {
-			return providerAccountActionMsg{err: fmt.Errorf("provider account %q does not support Google login", id)}
-		}
-		return providerAccountActionMsg{info: fmt.Sprintf("Start Google login for %s via POST /api/v1/config/provider-accounts/antigravity/start and open the returned authUrl.", acc.DisplayName)}
+	}
+	if acc.Type == models.ProviderAntigravity {
+		return antigravityLoginCommand(id)
+	}
+	return func() tea.Msg {
+		return providerAccountActionMsg{err: fmt.Errorf("provider account %q does not support login", id)}
 	}
 }
 
@@ -520,22 +524,23 @@ func (p *settingsPage) verifyProviderAccount(id string) tea.Cmd {
 }
 
 func (p *settingsPage) refreshProviderAccount(id string) tea.Cmd {
-	return func() tea.Msg {
-		id = strings.TrimSpace(id)
-		if id == "" {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return func() tea.Msg {
 			return providerAccountActionMsg{err: fmt.Errorf("provider account ID cannot be empty")}
 		}
-		acc, ok := config.GetProviderAccount(id)
-		if !ok {
+	}
+	acc, ok := config.GetProviderAccount(id)
+	if !ok {
+		return func() tea.Msg {
 			return providerAccountActionMsg{err: fmt.Errorf("provider account %q not found", id)}
 		}
-		if acc.Type != models.ProviderAntigravity {
-			return providerAccountActionMsg{err: fmt.Errorf("provider account %q does not support refresh", id)}
-		}
-		if strings.TrimSpace(acc.OAuthRefreshToken) == "" {
-			return providerAccountActionMsg{err: fmt.Errorf("provider account %q is not connected yet", id)}
-		}
-		return providerAccountActionMsg{info: fmt.Sprintf("Use POST /api/v1/config/provider-accounts/antigravity/refresh for %s to refresh the OAuth token.", acc.DisplayName)}
+	}
+	if acc.Type == models.ProviderAntigravity {
+		return antigravityRefreshCommand(id)
+	}
+	return func() tea.Msg {
+		return providerAccountActionMsg{err: fmt.Errorf("provider account %q does not support refresh", id)}
 	}
 }
 
