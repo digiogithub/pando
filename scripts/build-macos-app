@@ -99,11 +99,6 @@ verify_pkg_signature() {
     spctl --assess --type install --verbose=2 "$target"
 }
 
-is_macho_signed() {
-    local target="$1"
-    codesign --verify --verbose=2 "$target" >/dev/null 2>&1
-}
-
 is_pkg_signed() {
     local target="$1"
     pkgutil --check-signature "$target" >/dev/null 2>&1
@@ -186,12 +181,8 @@ chmod +x "$UNIVERSAL"
 # ── 3. Sign universal binary ─────────────────────────────────────────────────
 
 if [[ -n "$CODESIGN_DIGIO" ]]; then
-    if is_macho_signed "$UNIVERSAL"; then
-        echo "Universal binary already signed, skipping signing step."
-    else
-        echo "Signing universal binary..."
-        run_codesign_digio "$UNIVERSAL"
-    fi
+    echo "Signing universal binary..."
+    run_codesign_digio "$UNIVERSAL"
     verify_macho_signature "$UNIVERSAL"
 else
     echo "Skipping binary signing (codesign-digio not found)."
@@ -246,12 +237,8 @@ rm -rf "$FINAL_APP"
 cp -R "$APP_DIR" "$FINAL_APP"
 
 if [[ -n "$CODESIGN_DIGIO" ]]; then
-    if is_macho_signed "$FINAL_APP"; then
-        echo "Pando.app bundle already signed, skipping signing step."
-    else
-        echo "Signing Pando.app bundle..."
-        run_codesign_digio "$FINAL_APP"
-    fi
+    echo "Signing Pando.app bundle..."
+    run_codesign_digio "$FINAL_APP"
     verify_app_signature "$FINAL_APP"
 else
     echo "Skipping .app bundle signing (codesign-digio not found)."
