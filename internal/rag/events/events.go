@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -445,28 +444,22 @@ func (s *EventStore) searchVector(ctx context.Context, embedding []float32, limi
 	return results, nil
 }
 
-// validFTSColumns are the column names defined in the events_fts virtual table.
-var validFTSColumns = map[string]bool{
-	"subject": true,
-	"content": true,
-}
-
-// ftsColumnFilter matches FTS5 column-filter syntax: word: or word:"phrase"
-var ftsColumnFilter = regexp.MustCompile(`(?i)\b(\w+):`)
-
-// sanitizeFTSQuery removes column-filter prefixes for columns that don't exist in
-// events_fts. FTS5 interprets "col:term" as a column filter; if "col" is not a
-// valid column SQLite returns "no such column: col".
+// sanitizeFTSQuery converts a natural language query to a safe FTS5 MATCH expression.
+// Each word is wrapped in double quotes to prevent FTS5 syntax errors from
+// special characters such as ., (, ), *, ^, :, AND, OR, NOT.
 func sanitizeFTSQuery(query string) string {
-	return ftsColumnFilter.ReplaceAllStringFunc(query, func(match string) string {
-		col := strings.ToLower(strings.TrimSuffix(match, ":"))
-		if validFTSColumns[col] {
-			return match
+	words := strings.Fields(query)
+	if len(words) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(words))
+	for _, w := range words {
+		w = strings.ReplaceAll(w, `"`, `""`)
+		if w != "" {
+			parts = append(parts, `"`+w+`"`)
 		}
-		// Replace invalid column prefix with the word followed by a space so the
-		// term is still searched as plain text.
-		return strings.TrimSuffix(match, ":") + " "
-	})
+	}
+	return strings.Join(parts, " ")
 }
 
 // searchFTS performs full-text search with temporal and subject filters.
