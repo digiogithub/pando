@@ -61,21 +61,13 @@ PKG_SIGN_IDENTITY="${PKG_SIGN_IDENTITY:-}"
 
 run_codesign_digio() {
     local target="$1"
-    local sign_output
     shift || true
 
-    if sign_output="$("$CODESIGN_DIGIO" "$@" "$target" 2>&1)"; then
-        printf '%s\n' "$sign_output"
-        return 0
+    if codesign --remove-signature "$target" >/dev/null 2>&1; then
+        echo "Removed existing signature from $target before re-signing."
     fi
 
-    printf '%s\n' "$sign_output" >&2
-    if [[ "$sign_output" == *"is already signed"* ]]; then
-        echo "Skipping signing for already signed target: $target"
-        return 0
-    fi
-
-    return 1
+    "$CODESIGN_DIGIO" --force "$@" "$target"
 }
 
 verify_macho_signature() {
@@ -195,7 +187,7 @@ chmod +x "$UNIVERSAL"
 
 if [[ -n "$CODESIGN_DIGIO" ]]; then
     echo "Signing universal binary..."
-    run_codesign_digio "$UNIVERSAL"
+    run_codesign_digio --options runtime "$UNIVERSAL"
     verify_macho_signature "$UNIVERSAL"
 else
     echo "Skipping binary signing (codesign-digio not found)."
@@ -251,7 +243,7 @@ cp -R "$APP_DIR" "$FINAL_APP"
 
 if [[ -n "$CODESIGN_DIGIO" ]]; then
     echo "Signing Pando.app bundle..."
-    run_codesign_digio "$FINAL_APP"
+    run_codesign_digio --deep --options runtime "$FINAL_APP"
     verify_app_signature "$FINAL_APP"
 else
     echo "Skipping .app bundle signing (codesign-digio not found)."
