@@ -111,24 +111,20 @@ is_pkg_signed() {
 }
 
 # ── Keychain unlock ──────────────────────────────────────────────────────────
-# codesign accesses the login keychain which is often locked in headless sessions.
-# Use KEYSTORE_PASS from the environment so builds can run non-interactively.
+# codesign accesses the login keychain which may be locked in headless sessions.
+# Only try an explicit unlock when KEYSTORE_PASS is provided.
 
 KEYCHAIN_DB="$HOME/Library/Keychains/login.keychain-db"
 KEYCHAIN_UNLOCKED=false
 KEYCHAIN_PASSWORD="${KEYSTORE_PASS:-}"
 
-if [[ -n "$CODESIGN_DIGIO" ]]; then
-    echo "Code signing tool: $CODESIGN_DIGIO"
-    if [[ -z "$KEYCHAIN_PASSWORD" ]]; then
-        echo "Warning: KEYSTORE_PASS is not set — code signing will be attempted but may fail with errSecInternalComponent." >&2
-    else
-        echo "Unlocking login keychain..."
-        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_DB"
-        KEYCHAIN_UNLOCKED=true
-    fi
+echo "Using signing identity: $SIGNING_IDENTITY"
+if [[ -z "$KEYCHAIN_PASSWORD" ]]; then
+    echo "KEYSTORE_PASS not set — using the current keychain session as-is."
 else
-    echo "Warning: codesign-digio not found — proceeding with direct codesign using the configured identity."
+    echo "Unlocking login keychain..."
+    security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_DB"
+    KEYCHAIN_UNLOCKED=true
 fi
 
 relock_keychain() {
