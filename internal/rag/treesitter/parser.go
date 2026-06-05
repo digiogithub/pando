@@ -303,6 +303,22 @@ func FindChildrenByType(node *sitter.Node, nodeType string) []*sitter.Node {
 
 // GetNodeContent returns the source code content for a node
 func GetNodeContent(node *sitter.Node, sourceCode []byte) string {
+	if node == nil || len(sourceCode) == 0 {
+		return ""
+	}
+
+	start := int(node.StartByte())
+	end := int(node.EndByte())
+	if start < 0 || end < 0 || start > end || end > len(sourceCode) {
+		return ""
+	}
+
+	defer func() {
+		if recover() != nil {
+			// Guard against unexpected panics in go-tree-sitter Node.Content.
+		}
+	}()
+
 	return node.Content(sourceCode)
 }
 

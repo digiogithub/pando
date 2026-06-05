@@ -570,7 +570,7 @@ func (c *CodeIndexer) ReindexFile(ctx context.Context, projectID, filePath strin
 	}
 
 	absPath := filepath.Join(rootPath, filePath)
-	err = c.indexFile(ctx, projectID, rootPath, absPath)
+	err = c.safeIndexFile(ctx, projectID, rootPath, absPath)
 	if shouldIgnoreCodePathError(err) || errors.Is(err, errCodeIgnorePath) {
 		return nil
 	}
