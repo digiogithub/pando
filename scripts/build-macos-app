@@ -61,14 +61,18 @@ PKG_SIGN_IDENTITY="${PKG_SIGN_IDENTITY:-}"
 SIGNING_IDENTITY="4749EC5719E91D7ADFE5FDB4CB546057A8CFB9AD"
 
 run_codesign() {
-    local target="$1"
-    shift || true
+    local target="${@: -1}"
+    local args=()
+
+    if (($# > 1)); then
+        args=("${@:1:$#-1}")
+    fi
 
     if codesign --remove-signature "$target" >/dev/null 2>&1; then
         echo "Removed existing signature from $target before re-signing."
     fi
 
-    codesign "$@" --sign "$SIGNING_IDENTITY" --force "$target"
+    codesign "${args[@]}" --sign "$SIGNING_IDENTITY" --force "$target"
 }
 
 verify_macho_signature() {
