@@ -68,7 +68,7 @@ run_codesign() {
         echo "Removed existing signature from $target before re-signing."
     fi
 
-    codesign --sign "$SIGNING_IDENTITY" --force "$@" "$target"
+    codesign "$@" --sign "$SIGNING_IDENTITY" --force "$target"
 }
 
 verify_macho_signature() {
