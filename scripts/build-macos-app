@@ -187,7 +187,7 @@ chmod +x "$UNIVERSAL"
 
 if [[ -n "$CODESIGN_DIGIO" ]]; then
     echo "Signing universal binary..."
-    run_codesign_digio --options runtime "$UNIVERSAL"
+    run_codesign_digio -o runtime "$UNIVERSAL"
     verify_macho_signature "$UNIVERSAL"
 else
     echo "Skipping binary signing (codesign-digio not found)."
@@ -243,7 +243,7 @@ cp -R "$APP_DIR" "$FINAL_APP"
 
 if [[ -n "$CODESIGN_DIGIO" ]]; then
     echo "Signing Pando.app bundle..."
-    run_codesign_digio --deep --options runtime "$FINAL_APP"
+    run_codesign_digio --deep -o runtime "$FINAL_APP"
     verify_app_signature "$FINAL_APP"
 else
     echo "Skipping .app bundle signing (codesign-digio not found)."
