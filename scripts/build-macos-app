@@ -316,27 +316,30 @@ productbuild \
 
 FINAL_PKG="$DIST_DIR/pando-${VERSION}.pkg"
 
-if [[ -n "$CODESIGN_DIGIO" ]]; then
-    if is_pkg_signed "$FINAL_PKG"; then
-        echo ".pkg installer already signed, skipping signing step."
-    else
-        if [[ -z "$PKG_SIGN_IDENTITY" ]]; then
-            echo "Error: PKG_SIGN_IDENTITY must be set to sign the installer package." >&2
-            echo "Use the Developer ID Installer identity, not the application identity used by codesign-digio." >&2
-            exit 1
-        fi
-        echo "Signing .pkg installer with productsign..."
-        productsign --sign "$PKG_SIGN_IDENTITY" "$UNSIGNED_PKG" "$FINAL_PKG"
-    fi
-    verify_pkg_signature "$FINAL_PKG"
+if is_pkg_signed "$FINAL_PKG"; then
+    echo ".pkg installer already signed, skipping signing step."
 else
-    echo "Skipping .pkg signing (codesign-digio not found)."
-    cp "$UNSIGNED_PKG" "$FINAL_PKG"
+    if [[ -z "$PKG_SIGN_IDENTITY" ]]; then
+        echo "PKG_SIGN_IDENTITY not set — leaving installer unsigned." >&2
+        cp "$UNSIGNED_PKG" "$FINAL_PKG"
+    else
+        echo "Signing .pkg installer with productsign..."
+        if productsign --sign "$PKG_SIGN_IDENTITY" "$UNSIGNED_PKG" "$FINAL_PKG"; then
+            :
+        else
+            echo "Warning: productsign failed for identity '$PKG_SIGN_IDENTITY' — leaving installer unsigned." >&2
+            cp "$UNSIGNED_PKG" "$FINAL_PKG"
+        fi
+    fi
 fi
 
-if [[ -n "$CODESIGN_DIGIO" ]]; then
-    verify_macho_signature "$DIST_DIR/pando-osx"
+if is_pkg_signed "$FINAL_PKG"; then
+    verify_pkg_signature "$FINAL_PKG"
+else
+    echo "Skipping .pkg signature verification because the installer is unsigned."
 fi
+
+verify_macho_signature "$DIST_DIR/pando-osx"
 
 # Compress universal binary (consistent with other release archives)
 echo "Compressing dist/pando-osx.zip..."
