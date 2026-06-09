@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -223,7 +224,8 @@ func runMCPServerMode(cmd *cobra.Command) error {
 }
 
 // enableMCPServerFeatures turns on subsystems required for the standard MCP
-// server tool set (fetch, search, browser, mesnada, remembrances).
+// server tool set (mesnada, remembrances, and internal tools that are properly configured).
+// Search tools are only enabled when their API keys are present.
 func enableMCPServerFeatures() {
 	cfg := config.Get()
 	if cfg == nil {
@@ -233,11 +235,22 @@ func enableMCPServerFeatures() {
 	cfg.Mesnada.Enabled = true
 	cfg.Remembrances.Enabled = true
 	cfg.InternalTools.FetchEnabled = true
-	cfg.InternalTools.GoogleSearchEnabled = true
-	cfg.InternalTools.BraveSearchEnabled = true
-	cfg.InternalTools.PerplexitySearchEnabled = true
-	cfg.InternalTools.ExaSearchEnabled = true
 	cfg.InternalTools.BrowserEnabled = true
+
+	// Only enable search tools if their API keys are configured.
+	it := cfg.InternalTools
+	if strings.TrimSpace(it.GoogleAPIKey) != "" {
+		cfg.InternalTools.GoogleSearchEnabled = true
+	}
+	if strings.TrimSpace(it.BraveAPIKey) != "" {
+		cfg.InternalTools.BraveSearchEnabled = true
+	}
+	if strings.TrimSpace(it.PerplexityAPIKey) != "" {
+		cfg.InternalTools.PerplexitySearchEnabled = true
+	}
+	if strings.TrimSpace(it.ExaAPIKey) != "" {
+		cfg.InternalTools.ExaSearchEnabled = true
+	}
 
 	// Enable MCPGateway if gateway-expose is configured.
 	if cfg.MCPServer.GatewayExpose.Enabled {
@@ -290,35 +303,50 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 	cfg := config.Get()
 
 	tools := []llmtools.BaseTool{
-		llmtools.NewFetchTool(appSvc.Permissions),
-		llmtools.NewGoogleSearchTool(appSvc.Permissions),
-		llmtools.NewBraveSearchTool(appSvc.Permissions),
-		llmtools.NewPerplexitySearchTool(appSvc.Permissions),
-		llmtools.NewExaSearchTool(appSvc.Permissions),
-		llmtools.NewBrowserNavigateTool(),
-		llmtools.NewBrowserScreenshotTool(),
-		llmtools.NewBrowserGetContentTool(),
-		llmtools.NewBrowserEvaluateTool(),
-		llmtools.NewBrowserClickTool(),
-		llmtools.NewBrowserFillTool(),
-		llmtools.NewBrowserScrollTool(),
-		llmtools.NewBrowserConsoleLogsTool(),
-		llmtools.NewBrowserNetworkTool(),
-		llmtools.NewBrowserPDFTool(),
 		llmtools.NewCacheReadTool(),
 		llmtools.NewCacheStatsTool(),
 	}
 
-	// Context7 library documentation tools
-	if cfg != nil && cfg.InternalTools.Context7Enabled {
-		tools = append(tools, llmtools.NewContext7Tools()...)
-		logging.Info("MCP server: Context7 tools enabled")
-	}
-
-	// Sourcegraph code search tool
-	if cfg != nil && cfg.InternalTools.SourcegraphEnabled {
-		tools = append(tools, llmtools.NewSourcegraphTool())
-		logging.Info("MCP server: Sourcegraph tool enabled")
+	// Only expose internal tools that are enabled and properly configured (API keys present).
+	if cfg != nil {
+		it := cfg.InternalTools
+		if it.FetchEnabled {
+			tools = append(tools, llmtools.NewFetchTool(appSvc.Permissions))
+		}
+		if it.GoogleSearchEnabled && strings.TrimSpace(it.GoogleAPIKey) != "" {
+			tools = append(tools, llmtools.NewGoogleSearchTool(appSvc.Permissions))
+		}
+		if it.BraveSearchEnabled && strings.TrimSpace(it.BraveAPIKey) != "" {
+			tools = append(tools, llmtools.NewBraveSearchTool(appSvc.Permissions))
+		}
+		if it.PerplexitySearchEnabled && strings.TrimSpace(it.PerplexityAPIKey) != "" {
+			tools = append(tools, llmtools.NewPerplexitySearchTool(appSvc.Permissions))
+		}
+		if it.ExaSearchEnabled && strings.TrimSpace(it.ExaAPIKey) != "" {
+			tools = append(tools, llmtools.NewExaSearchTool(appSvc.Permissions))
+		}
+		if it.BrowserEnabled {
+			tools = append(tools,
+				llmtools.NewBrowserNavigateTool(),
+				llmtools.NewBrowserScreenshotTool(),
+				llmtools.NewBrowserGetContentTool(),
+				llmtools.NewBrowserEvaluateTool(),
+				llmtools.NewBrowserClickTool(),
+				llmtools.NewBrowserFillTool(),
+				llmtools.NewBrowserScrollTool(),
+				llmtools.NewBrowserConsoleLogsTool(),
+				llmtools.NewBrowserNetworkTool(),
+				llmtools.NewBrowserPDFTool(),
+			)
+		}
+		if it.Context7Enabled {
+			tools = append(tools, llmtools.NewContext7Tools()...)
+			logging.Info("MCP server: Context7 tools enabled")
+		}
+		if it.SourcegraphEnabled {
+			tools = append(tools, llmtools.NewSourcegraphTool())
+			logging.Info("MCP server: Sourcegraph tool enabled")
+		}
 	}
 
 	if appSvc.MesnadaOrchestrator != nil {
@@ -379,10 +407,19 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 		logging.Info("MCP server: system execution tools enabled")
 	}
 
-	if cfg != nil && cfg.MCPServer.GatewayExpose.Enabled && appSvc.MCPGateway != nil {
-		gatewayTools := agent.GetMcpToolsWithGateway(ctx, appSvc.Permissions, appSvc.MCPGateway)
-		tools = append(tools, gatewayTools...)
-		logging.Info("MCP server: gateway tools exposed", "count", len(gatewayTools))
+	// Expose configured MCP server tools as proxy tools.
+	// When the gateway is active, tools are routed through it (catalog + call proxy + favorites);
+	// otherwise they are exposed as direct MCP tool wrappers.
+	if cfg != nil && len(cfg.MCPServers) > 0 {
+		if cfg.MCPServer.GatewayExpose.Enabled && appSvc.MCPGateway != nil {
+			gatewayTools := agent.GetMcpToolsWithGateway(ctx, appSvc.Permissions, appSvc.MCPGateway)
+			tools = append(tools, gatewayTools...)
+			logging.Info("MCP server: gateway tools exposed", "count", len(gatewayTools))
+		} else {
+			mcpProxyTools := agent.GetMcpTools(ctx, appSvc.Permissions)
+			tools = append(tools, mcpProxyTools...)
+			logging.Info("MCP server: MCP proxy tools exposed", "count", len(mcpProxyTools))
+		}
 	}
 
 	if cfg != nil && cfg.MCPServer.SelfImprovement.Enabled && appSvc.Evaluator != nil {
