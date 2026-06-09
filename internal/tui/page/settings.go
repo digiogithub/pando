@@ -54,6 +54,17 @@ type codeIndexStartedMsg struct {
 	err       error
 }
 
+type embeddingTestResultMsg struct {
+	embType   string // "document" or "code"
+	ok        bool
+	latencyMS int64
+	dimension int
+	provider  string
+	model     string
+	baseURL   string
+	err       error
+}
+
 type providerAccountActionMsg struct {
 	info string
 	err  error
@@ -147,6 +158,12 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Field.Key == "action:remembrances_index_workdir" {
 			return p, p.indexWorkingDirectory()
 		}
+		if msg.Field.Key == "action:remembrances_test_doc_embedding" {
+			return p, p.testEmbeddingConnection("document")
+		}
+		if msg.Field.Key == "action:remembrances_test_code_embedding" {
+			return p, p.testEmbeddingConnection("code")
+		}
 		return p, p.saveField(msg)
 	case skillUninstalledMsg:
 		p.settings.SetSections(buildSections(p.app))
@@ -234,6 +251,14 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, util.ReportError(msg.err)
 		}
 		return p, util.ReportInfo(fmt.Sprintf("Indexing started for project %q (job: %s)", msg.projectID, msg.jobID))
+	case embeddingTestResultMsg:
+		if msg.err != nil {
+			return p, util.ReportError(fmt.Errorf("%s embedding test failed: %w", msg.embType, msg.err))
+		}
+		return p, util.ReportInfo(fmt.Sprintf(
+			"%s embedding OK — provider: %s, model: %s, dim: %d, latency: %dms",
+			msg.embType, msg.provider, msg.model, msg.dimension, msg.latencyMS,
+		))
 	case providerAccountActionMsg:
 		p.settings.SetSections(buildSections(p.app))
 		p.settings.SetSize(p.width, p.height)
@@ -566,6 +591,74 @@ func providerAccountMetadataValue(value string) string {
 		return "—"
 	}
 	return value
+}
+
+// testEmbeddingConnection creates a fresh embedder from current config and runs a test query.
+// embType must be "document" or "code".
+func (p *settingsPage) testEmbeddingConnection(embType string) tea.Cmd {
+	return func() tea.Msg {
+		cfg := config.Get()
+		if cfg == nil {
+			return embeddingTestResultMsg{embType: embType, err: fmt.Errorf("configuration not loaded")}
+		}
+		rem := cfg.Remembrances
+
+		var provider, model, customAPIKey, customBaseURL string
+		if embType == "document" || (embType == "code" && rem.UseSameModel) {
+			provider = rem.DocumentEmbeddingProvider
+			model = rem.DocumentEmbeddingModel
+			customAPIKey = rem.DocumentEmbeddingAPIKey
+			customBaseURL = rem.DocumentEmbeddingBaseURL
+		} else {
+			provider = rem.CodeEmbeddingProvider
+			model = rem.CodeEmbeddingModel
+			customAPIKey = rem.CodeEmbeddingAPIKey
+			customBaseURL = rem.CodeEmbeddingBaseURL
+		}
+
+		provider = strings.ToLower(strings.TrimSpace(provider))
+		model = strings.TrimSpace(model)
+
+		result := embeddingTestResultMsg{embType: embType, provider: provider, model: model}
+		if provider == "" {
+			result.err = fmt.Errorf("provider not configured")
+			return result
+		}
+		if model == "" {
+			result.err = fmt.Errorf("model not configured")
+			return result
+		}
+
+		var apiKey, baseURL string
+		if provider == "openai-compatible" {
+			apiKey = customAPIKey
+			baseURL = customBaseURL
+		} else {
+			apiKey, baseURL = remembrancesProviderCredentials(cfg, provider)
+			if provider == "ollama" && strings.TrimSpace(customBaseURL) != "" {
+				baseURL = models.ResolveOllamaRawBaseURL(strings.TrimSpace(customBaseURL))
+			}
+		}
+		result.baseURL = baseURL
+
+		emb, err := embeddings.NewEmbedder(provider, model, apiKey, baseURL)
+		if err != nil {
+			result.err = fmt.Errorf("failed to create embedder: %w", err)
+			return result
+		}
+
+		start := time.Now()
+		vec, err := emb.EmbedQuery(context.Background(), "test connection")
+		result.latencyMS = time.Since(start).Milliseconds()
+		if err != nil {
+			result.err = err
+			return result
+		}
+
+		result.ok = true
+		result.dimension = len(vec)
+		return result
+	}
 }
 
 // indexWorkingDirectory starts a code indexing job for the current working directory.
@@ -1841,6 +1934,26 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 			ReadOnly: true,
 		},
 	)
+
+	// Test connection actions
+	fields = append(fields,
+		settings.Field{
+			Label: "Test Doc Embedding",
+			Key:   "action:remembrances_test_doc_embedding",
+			Type:  settings.FieldAction,
+			Value: "Ping " + rem.DocumentEmbeddingProvider + "/" + rem.DocumentEmbeddingModel,
+		},
+	)
+	if !useSameModel {
+		fields = append(fields,
+			settings.Field{
+				Label: "Test Code Embedding",
+				Key:   "action:remembrances_test_code_embedding",
+				Type:  settings.FieldAction,
+				Value: "Ping " + codeProvider + "/" + codeModel,
+			},
+		)
+	}
 
 	fields = append(fields,
 		settings.Field{

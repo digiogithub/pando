@@ -40,7 +40,22 @@ const selectStyle: React.CSSProperties = {
   cursor: 'pointer',
 }
 
-const EMBEDDING_PROVIDERS = ['', 'openai', 'openai-compatible', 'anthropic', 'ollama', 'nomic']
+const EMBEDDING_PROVIDERS = ['', 'openai', 'openai-compatible', 'anthropic', 'ollama']
+
+interface EmbeddingTestResult {
+  ok: boolean
+  error?: string
+  latency_ms: number
+  dimension?: number
+  provider: string
+  model: string
+  base_url?: string
+}
+
+interface TestConnectionResponse {
+  document?: EmbeddingTestResult
+  code?: EmbeddingTestResult
+}
 
 export default function RemembrancesSettings() {
   const { config, dirty, loading, saving, error, fetchServices, updateRemembrances, saveServices, resetServices } =
@@ -48,6 +63,10 @@ export default function RemembrancesSettings() {
 
   const [projects, setProjects] = useState<CodeProjectInfo[]>([])
   const [indexing, setIndexing] = useState(false)
+  const [testingDoc, setTestingDoc] = useState(false)
+  const [testingCode, setTestingCode] = useState(false)
+  const [docTestResult, setDocTestResult] = useState<EmbeddingTestResult | null>(null)
+  const [codeTestResult, setCodeTestResult] = useState<EmbeddingTestResult | null>(null)
 
   useEffect(() => {
     fetchServices()
@@ -67,6 +86,32 @@ export default function RemembrancesSettings() {
   }
 
   const rem = config.remembrances
+
+  async function handleTestDocEmbedding() {
+    setTestingDoc(true)
+    setDocTestResult(null)
+    try {
+      const result = await api.post<TestConnectionResponse>('/api/v1/remembrances/test-connection', { type: 'document' })
+      setDocTestResult(result.document ?? null)
+    } catch (e) {
+      setDocTestResult({ ok: false, error: e instanceof Error ? e.message : 'Request failed', latency_ms: 0, provider: '', model: '' })
+    } finally {
+      setTestingDoc(false)
+    }
+  }
+
+  async function handleTestCodeEmbedding() {
+    setTestingCode(true)
+    setCodeTestResult(null)
+    try {
+      const result = await api.post<TestConnectionResponse>('/api/v1/remembrances/test-connection', { type: 'code' })
+      setCodeTestResult(result.code ?? null)
+    } catch (e) {
+      setCodeTestResult({ ok: false, error: e instanceof Error ? e.message : 'Request failed', latency_ms: 0, provider: '', model: '' })
+    } finally {
+      setTestingCode(false)
+    }
+  }
 
   async function handleReindexAll() {
     try {
@@ -168,12 +213,12 @@ export default function RemembrancesSettings() {
           placeholder="text-embedding-3-small"
         />
 
-        {rem.document_embedding_provider === 'openai-compatible' && (
+        {(rem.document_embedding_provider === 'openai-compatible' || rem.document_embedding_provider === 'ollama') && (
           <TextInput
             label="Base URL"
             value={rem.document_embedding_base_url}
             onChange={(e) => updateRemembrances('document_embedding_base_url', e.target.value)}
-            placeholder="https://api.example.com/v1"
+            placeholder={rem.document_embedding_provider === 'ollama' ? 'http://localhost:11434' : 'https://api.example.com/v1'}
           />
         )}
 
@@ -183,6 +228,34 @@ export default function RemembrancesSettings() {
           onChange={(v) => updateRemembrances('document_embedding_api_key', v)}
           placeholder="sk-…"
         />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.25rem' }}>
+          <button
+            onClick={handleTestDocEmbedding}
+            disabled={testingDoc || !rem.document_embedding_provider || !rem.document_embedding_model}
+            style={{
+              padding: '0.4rem 0.875rem',
+              background: 'transparent',
+              color: testingDoc ? 'var(--fg-dim)' : 'var(--primary)',
+              border: `1px solid ${testingDoc ? 'var(--border)' : 'var(--primary)'}`,
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: testingDoc ? 'not-allowed' : 'pointer',
+              fontFamily: 'inherit',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {testingDoc ? 'Testing…' : 'Test Connection'}
+          </button>
+          {docTestResult && (
+            <span style={{ fontSize: 12, color: docTestResult.ok ? 'var(--success, #4ade80)' : 'var(--error, #f87171)' }}>
+              {docTestResult.ok
+                ? `✓ OK — ${docTestResult.dimension}d, ${docTestResult.latency_ms}ms`
+                : `✗ ${docTestResult.error}`}
+            </span>
+          )}
+        </div>
       </div>
 
       <div style={dividerStyle} />
@@ -222,12 +295,12 @@ export default function RemembrancesSettings() {
               placeholder="nomic-embed-code"
             />
 
-            {rem.code_embedding_provider === 'openai-compatible' && (
+            {(rem.code_embedding_provider === 'openai-compatible' || rem.code_embedding_provider === 'ollama') && (
               <TextInput
                 label="Base URL"
                 value={rem.code_embedding_base_url}
                 onChange={(e) => updateRemembrances('code_embedding_base_url', e.target.value)}
-                placeholder="https://api.example.com/v1"
+                placeholder={rem.code_embedding_provider === 'ollama' ? 'http://localhost:11434' : 'https://api.example.com/v1'}
               />
             )}
 
@@ -239,6 +312,34 @@ export default function RemembrancesSettings() {
             />
           </>
         )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.25rem' }}>
+          <button
+            onClick={handleTestCodeEmbedding}
+            disabled={testingCode}
+            style={{
+              padding: '0.4rem 0.875rem',
+              background: 'transparent',
+              color: testingCode ? 'var(--fg-dim)' : 'var(--primary)',
+              border: `1px solid ${testingCode ? 'var(--border)' : 'var(--primary)'}`,
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: testingCode ? 'not-allowed' : 'pointer',
+              fontFamily: 'inherit',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {testingCode ? 'Testing…' : 'Test Connection'}
+          </button>
+          {codeTestResult && (
+            <span style={{ fontSize: 12, color: codeTestResult.ok ? 'var(--success, #4ade80)' : 'var(--error, #f87171)' }}>
+              {codeTestResult.ok
+                ? `✓ OK — ${codeTestResult.dimension}d, ${codeTestResult.latency_ms}ms`
+                : `✗ ${codeTestResult.error}`}
+            </span>
+          )}
+        </div>
       </div>
 
       <div style={dividerStyle} />
