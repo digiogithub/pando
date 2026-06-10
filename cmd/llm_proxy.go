@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/instanceregistry"
 	"github.com/digiogithub/pando/internal/llmproxy"
@@ -73,6 +74,9 @@ Compatible with any OpenAI client (LiteLLM, Continue.dev, etc.).`,
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
+
+		// Refresh dynamic models from configured providers and keep them fresh every 24 h.
+		go app.StartModelRefreshLoop(ctx)
 
 		sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer stopSignals()

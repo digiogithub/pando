@@ -73,12 +73,12 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'gpt-5.4'
+Model = 'ollama.mannix/gemma4-98e-v7-coderx:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
-AutoCompact = true
-AutoCompactThreshold = 0.9
+AutoCompact = false
+AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.context-enricher]

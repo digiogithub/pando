@@ -11,29 +11,55 @@ var (
 	dynamicModels sync.Map // map[ModelID]Model
 )
 
-// RegisterDynamicModel adds a dynamically discovered model
+// RegisterDynamicModel adds a dynamically discovered model.
 func RegisterDynamicModel(model Model) {
 	dynamicModels.Store(model.ID, model)
 	SupportedModels[model.ID] = model
 }
 
-// RefreshProviderModels fetches and registers models from a provider
+// pruneDynamicModelsForProvider removes dynamic models whose provider matches
+// but whose ID is not in keepIDs. Call this after a successful provider fetch
+// so that deleted models (e.g. removed from Ollama) disappear from the registry.
+func pruneDynamicModelsForProvider(provider ModelProvider, keepIDs map[ModelID]struct{}) {
+	dynamicModels.Range(func(key, _ any) bool {
+		id := key.(ModelID)
+		m, ok := dynamicModels.Load(id)
+		if !ok {
+			return true
+		}
+		if m.(Model).Provider != provider {
+			return true
+		}
+		if _, keep := keepIDs[id]; !keep {
+			dynamicModels.Delete(id)
+			delete(SupportedModels, id)
+		}
+		return true
+	})
+}
+
+// RefreshProviderModels fetches and registers models from a provider.
+// Models previously registered for this provider that are no longer returned
+// by the API are removed from the registry and cache.
 func RefreshProviderModels(ctx context.Context, provider ModelProvider, apiKey string, bearerToken string, baseURL string) error {
 	fetched, err := FetchModelsFromProvider(ctx, provider, apiKey, bearerToken, baseURL)
 	if err != nil {
 		return fmt.Errorf("fetch models from %s: %w", provider, err)
 	}
 
+	keepIDs := make(map[ModelID]struct{}, len(fetched))
 	for _, fm := range fetched {
 		modelID := ModelID(fmt.Sprintf("%s.%s", provider, fm.ID))
 
 		// Don't overwrite statically defined models
 		if _, exists := SupportedModels[modelID]; exists {
+			keepIDs[modelID] = struct{}{}
 			continue
 		}
 
 		// Don't add duplicates by APIModel (handles cases where static model ID differs from dynamic)
 		if modelExistsByAPIModel(provider, fm.ID) {
+			keepIDs[modelID] = struct{}{}
 			continue
 		}
 
@@ -61,8 +87,10 @@ func RefreshProviderModels(ctx context.Context, provider ModelProvider, apiKey s
 		}
 
 		RegisterDynamicModel(model)
+		keepIDs[modelID] = struct{}{}
 	}
 
+	pruneDynamicModelsForProvider(provider, keepIDs)
 	return nil
 }
 
@@ -100,20 +128,24 @@ type AccountModelRefreshParams struct {
 
 // RefreshProviderModelsForAccount fetches and registers models for a named provider account.
 // Model IDs are prefixed with accountID when AllAccountsOfType > 1 (disambiguates multiple accounts of same type).
+// Models previously registered for this account that are no longer returned by the API are removed.
 func RefreshProviderModelsForAccount(ctx context.Context, params AccountModelRefreshParams) error {
 	fetched, err := FetchModelsFromProvider(ctx, params.ProviderType, params.APIKey, params.BearerToken, params.BaseURL)
 	if err != nil {
 		return fmt.Errorf("fetch models from account %s (%s): %w", params.AccountID, params.ProviderType, err)
 	}
 
+	keepIDs := make(map[ModelID]struct{}, len(fetched))
 	for _, fm := range fetched {
 		model := modelFromFetchedAccountModel(params, fm)
+		keepIDs[model.ID] = struct{}{}
 		if shouldSkipAccountScopedModel(params.ProviderType, model.ID, model.APIModel) {
 			continue
 		}
 		RegisterDynamicModel(model)
 	}
 
+	pruneDynamicModelsForProvider(params.ProviderType, keepIDs)
 	return nil
 }
 

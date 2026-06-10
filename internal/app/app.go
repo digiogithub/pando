@@ -1483,7 +1483,28 @@ func writeGoalProgress(w io.Writer, format string, args ...any) {
 }
 
 // refreshDynamicModels fetches model lists from configured provider accounts asynchronously.
+// modelRefreshInterval is how often dynamic models are re-fetched from providers while running.
+const modelRefreshInterval = 24 * time.Hour
+
 func (app *App) refreshDynamicModels(ctx context.Context) {
+	RefreshDynamicModels(ctx)
+
+	ticker := time.NewTicker(modelRefreshInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			RefreshDynamicModels(ctx)
+		}
+	}
+}
+
+// RefreshDynamicModels fetches and caches models from all configured provider accounts.
+// It is safe to call concurrently and is exported so other startup modes (e.g. LLM Proxy)
+// can trigger the same refresh without a full App instance.
+func RefreshDynamicModels(ctx context.Context) {
 	cfg := config.Get()
 	if cfg == nil {
 		return
@@ -1540,6 +1561,23 @@ func (app *App) refreshDynamicModels(ctx context.Context) {
 			if err := models.SaveModelCache(); err != nil {
 				logging.Debug("Failed to save model cache", "error", err)
 			}
+		}
+	}
+}
+
+// StartModelRefreshLoop refreshes dynamic models immediately and then every 24 h until ctx is cancelled.
+// Use this in startup modes that do not create a full App instance (e.g. LLM Proxy).
+func StartModelRefreshLoop(ctx context.Context) {
+	RefreshDynamicModels(ctx)
+
+	ticker := time.NewTicker(modelRefreshInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			RefreshDynamicModels(ctx)
 		}
 	}
 }
