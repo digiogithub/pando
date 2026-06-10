@@ -132,7 +132,7 @@ func CoderAgentTools(
 			)
 		}
 	}
-	result := append(
+	base := append(
 		[]tools.BaseTool{
 			tools.NewBashTool(permissions),
 			tools.NewEditTool(lspClients, permissions, history),
@@ -147,7 +147,8 @@ func CoderAgentTools(
 			tools.NewTodoWriteTool(),
 		}, otherTools...,
 	)
-	return appendLuaTools(result)
+	result := appendLuaTools(base)
+	return ApplyToolDiscovery(result)
 }
 
 func CoderAgentToolsWithMesnada(
@@ -268,7 +269,8 @@ func CoderAgentToolsWithMesnada(
 			tools.NewCodeSearchPatternTool(remembrances.Code),
 		)
 	}
-	return appendLuaTools(baseTools)
+	result := appendLuaTools(baseTools)
+	return ApplyToolDiscovery(result)
 }
 
 func TaskAgentTools(lspClients map[string]*lsp.Client) []tools.BaseTool {

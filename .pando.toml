@@ -63,9 +63,18 @@ Args = []
 Languages = []
 
 [Agents]
+[Agents.cli-assist]
+Model = 'gpt-5.4-mini'
+MaxTokens = 0
+ReasoningEffort = ''
+ThinkingMode = ''
+AutoCompact = false
+AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
+
 [Agents.cliassist]
-Model = 'deepseek/deepseek-v4-flash:free'
-MaxTokens = 5000
+Model = 'copilot.gpt-4o'
+MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
 AutoCompact = false
@@ -73,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'ollama.mannix/gemma4-98e-v7-coderx:latest'
+Model = 'ollama.qwen-coder:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -82,7 +91,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.context-enricher]
-Model = 'gpt-4.1'
+Model = 'copilot.gpt-4o'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -91,7 +100,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.persona-selector]
-Model = 'ollama.gemma4-e2b:latest'
+Model = 'copilot.gpt-4o'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -109,16 +118,16 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.task]
-Model = 'openai/gpt-oss-120b:free'
+Model = 'gpt-5-mini'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
-AutoCompact = true
-AutoCompactThreshold = 0.9
+AutoCompact = false
+AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.title]
-Model = 'openai/gpt-oss-20b:free'
+Model = 'gpt-5-mini'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -239,11 +248,19 @@ HotReload = false
 LogFilteredData = false
 
 [MCPGateway]
-Enabled = false
+Enabled = true
 FavoriteThreshold = 3
 MaxFavorites = 10
 FavoriteWindowDays = 7
 DecayDays = 30
+
+[ToolDiscovery]
+Enabled = false
+Mode = ''
+MaxDirectTools = 0
+SearchLimit = 0
+NonDeferredTools = []
+DeferredSources = []
 
 [InternalTools]
 FetchEnabled = true

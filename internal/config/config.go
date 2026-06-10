@@ -343,6 +343,22 @@ type MCPServerSelfImprovementConfig struct {
 	Enabled bool `json:"enabled,omitempty" toml:"Enabled"`
 }
 
+// ToolDiscoveryConfig configures dynamic tool discovery and deferred tool selection.
+type ToolDiscoveryConfig struct {
+	// Enabled activates the tool discovery subsystem. Default: true.
+	Enabled bool `json:"enabled,omitempty" toml:"Enabled"`
+	// Mode controls when deferred selection activates: "auto" (default), "always", or "off".
+	Mode string `json:"mode,omitempty" toml:"Mode"`
+	// MaxDirectTools is the tool-count threshold above which auto mode activates. Default: 64.
+	MaxDirectTools int `json:"maxDirectTools,omitempty" toml:"MaxDirectTools"`
+	// SearchLimit is the default number of results returned by tool_search. Default: 8.
+	SearchLimit int `json:"searchLimit,omitempty" toml:"SearchLimit"`
+	// NonDeferredTools lists tool names that are always visible regardless of threshold.
+	NonDeferredTools []string `json:"nonDeferredTools,omitempty" toml:"NonDeferredTools"`
+	// DeferredSources lists source labels whose tools are deferred by default (e.g. "mcp", "lua").
+	DeferredSources []string `json:"deferredSources,omitempty" toml:"DeferredSources"`
+}
+
 // MCPGatewayConfig defines configuration for the MCP gateway subsystem.
 type MCPGatewayConfig struct {
 	Enabled            bool `json:"enabled,omitempty" toml:"Enabled"`
@@ -628,6 +644,7 @@ type Config struct {
 	Server            APIServerConfig                   `json:"server,omitempty"`
 	Lua               LuaConfig                         `json:"lua,omitempty"`
 	MCPGateway        MCPGatewayConfig                  `json:"mcpGateway,omitempty"`
+	ToolDiscovery     ToolDiscoveryConfig               `json:"toolDiscovery,omitempty" toml:"ToolDiscovery"`
 	InternalTools     InternalToolsConfig               `json:"internalTools,omitempty"`
 	Snapshots         SnapshotsConfig                   `json:"snapshots,omitempty"`
 	Evaluator         EvaluatorConfig                   `json:"evaluator,omitempty" toml:"evaluator"`
