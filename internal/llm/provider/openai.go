@@ -29,6 +29,11 @@ type openaiOptions struct {
 	disableCache    bool
 	reasoningEffort string
 	extraHeaders    map[string]string
+	// parseThinkTags enables extraction of <think>...</think> content from the
+	// response stream, routing it as EventThinkingDelta instead of EventContentDelta.
+	// Used for Ollama and similar OpenAI-compat providers that embed reasoning in
+	// the content field rather than a dedicated reasoning_content extra field.
+	parseThinkTags bool
 }
 
 type OpenAIOption func(*openaiOptions)
@@ -107,6 +112,24 @@ func (o *openaiClient) convertMessages(messages []message.Message) (openaiMessag
 			// Always set Content (even if empty) to avoid nil content errors
 			// with providers like Ollama that require a non-nil content field.
 			contentStr := msg.Content().String()
+
+			thinking := msg.ReasoningContent().Thinking
+			if thinking != "" {
+				if o.options.parseThinkTags {
+					// For providers using <think> tags (Ollama), re-inject the thinking
+					// into the content field so multi-turn history preserves the
+					// model's reasoning context exactly as it was generated.
+					contentStr = "<think>" + thinking + "</think>" + contentStr
+				} else {
+					// For providers that use a separate reasoning_content field
+					// (e.g. SiliconFlow via OpenRouter), pass it back as an extra field.
+					// Without this, multi-turn conversations with thinking models return a 400 error.
+					assistantMsg.WithExtraFields(map[string]any{
+						"reasoning_content": thinking,
+					})
+				}
+			}
+
 			assistantMsg.Content = openai.ChatCompletionAssistantMessageParamContentUnion{
 				OfString: openai.String(contentStr),
 			}
@@ -123,14 +146,6 @@ func (o *openaiClient) convertMessages(messages []message.Message) (openaiMessag
 						},
 					}
 				}
-			}
-
-			// Pass reasoning_content back for providers that require it (e.g. SiliconFlow via OpenRouter).
-			// Without this, multi-turn conversations with thinking models return a 400 error.
-			if thinking := msg.ReasoningContent().Thinking; thinking != "" {
-				assistantMsg.WithExtraFields(map[string]any{
-					"reasoning_content": thinking,
-				})
 			}
 
 			openaiMessages = append(openaiMessages, openai.ChatCompletionMessageParamUnion{
@@ -210,6 +225,12 @@ func (o *openaiClient) preparedParams(messages []openai.ChatCompletionMessagePar
 		params.MaxTokens = openai.Int(o.providerOptions.maxTokens)
 	}
 
+	// For providers that route thinking via the Ollama "reasoning" field,
+	// explicitly request thinking output so the model activates its reasoning mode.
+	if o.options.parseThinkTags {
+		params.WithExtraFields(map[string]any{"think": true})
+	}
+
 	return params
 }
 
@@ -249,6 +270,10 @@ func (o *openaiClient) send(ctx context.Context, messages []message.Message, too
 		content := ""
 		if openaiResponse.Choices[0].Message.Content != "" {
 			content = openaiResponse.Choices[0].Message.Content
+		}
+		if o.options.parseThinkTags {
+			_, content = extractThinkTags(content)
+			content = filterImageTags(content)
 		}
 
 		toolCalls := o.toolCalls(*openaiResponse)
@@ -310,30 +335,76 @@ func (o *openaiClient) stream(ctx context.Context, messages []message.Message, t
 			currentContent := ""
 			toolCalls := make([]message.ToolCall, 0)
 
+			var thinkParser *thinkTagParser
+			if o.options.parseThinkTags {
+				thinkParser = &thinkTagParser{}
+			}
+
 			for openaiStream.Next() {
 				chunk := openaiStream.Current()
 				acc.AddChunk(chunk)
 
 				for _, choice := range chunk.Choices {
 					if choice.Delta.Content != "" {
-						eventChan <- ProviderEvent{
-							Type:    EventContentDelta,
-							Content: choice.Delta.Content,
-						}
-						currentContent += choice.Delta.Content
-					}
-					// Capture reasoning_content from providers like SiliconFlow via OpenRouter.
-					if rc, ok := choice.Delta.JSON.ExtraFields["reasoning_content"]; ok {
-						if raw := rc.Raw(); raw != "" && raw != "null" {
-							var rcStr string
-							if err := json.Unmarshal([]byte(raw), &rcStr); err == nil && rcStr != "" {
+						if thinkParser != nil {
+							thinking, regular := thinkParser.feed(choice.Delta.Content)
+							if thinking != "" {
 								eventChan <- ProviderEvent{
 									Type:     EventThinkingDelta,
-									Thinking: rcStr,
+									Thinking: thinking,
+								}
+							}
+							regular = filterImageTags(regular)
+							if regular != "" {
+								eventChan <- ProviderEvent{
+									Type:    EventContentDelta,
+									Content: regular,
+								}
+								currentContent += regular
+							}
+						} else {
+							eventChan <- ProviderEvent{
+								Type:    EventContentDelta,
+								Content: choice.Delta.Content,
+							}
+							currentContent += choice.Delta.Content
+						}
+					}
+					// Capture "reasoning" (Ollama) and "reasoning_content" (SiliconFlow/OpenRouter)
+					// from the raw delta JSON. Both providers route thinking tokens to a
+					// dedicated field rather than embedding <think> tags in content.
+					// Parsing RawJSON() directly is more reliable than ExtraFields because
+					// it doesn't depend on the SDK's reflection-based unmarshalling.
+					if rawDelta := choice.Delta.RawJSON(); rawDelta != "" {
+						var deltaMap map[string]json.RawMessage
+						if err := json.Unmarshal([]byte(rawDelta), &deltaMap); err == nil {
+							for _, fieldName := range []string{"reasoning", "reasoning_content"} {
+								if rcRaw, ok := deltaMap[fieldName]; ok {
+									var rcStr string
+									if err := json.Unmarshal(rcRaw, &rcStr); err == nil && rcStr != "" {
+										logging.Debug("Thinking token received", "field", fieldName, "len", len(rcStr))
+										eventChan <- ProviderEvent{
+											Type:     EventThinkingDelta,
+											Thinking: rcStr,
+										}
+									}
 								}
 							}
 						}
 					}
+				}
+			}
+
+			// Flush any partial tag buffered at the end of the stream.
+			if thinkParser != nil {
+				thinking, regular := thinkParser.flush()
+				if thinking != "" {
+					eventChan <- ProviderEvent{Type: EventThinkingDelta, Thinking: thinking}
+				}
+				regular = filterImageTags(regular)
+				if regular != "" {
+					eventChan <- ProviderEvent{Type: EventContentDelta, Content: regular}
+					currentContent += regular
 				}
 			}
 
@@ -496,6 +567,16 @@ func WithOpenAIExtraHeaders(headers map[string]string) OpenAIOption {
 func WithOpenAIDisableCache() OpenAIOption {
 	return func(options *openaiOptions) {
 		options.disableCache = true
+	}
+}
+
+// WithThinkTagParsing enables extraction of <think>...</think> content from
+// the response stream. Thinking tokens are routed as EventThinkingDelta events
+// and stripped from the regular content. Intended for Ollama and other
+// OpenAI-compat providers that embed reasoning in the content field.
+func WithThinkTagParsing() OpenAIOption {
+	return func(options *openaiOptions) {
+		options.parseThinkTags = true
 	}
 }
 

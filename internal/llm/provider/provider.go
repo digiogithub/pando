@@ -182,10 +182,14 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 	case models.ProviderOllama:
 		// Ollama's current /v1/chat/completions and /v1/models endpoints are compatible
 		// with the OpenAI client flow already used throughout Pando.
+		// Ollama embeds reasoning traces in <think>...</think> tags within the content
+		// field (OpenAI compat has no dedicated reasoning field). Enable tag extraction
+		// so thinking tokens are routed correctly instead of appearing as raw text.
 		clientOptions.openaiOptions = ensureOpenAIBaseURL(
 			clientOptions.openaiOptions,
 			models.ResolveOllamaBaseURL(""),
 		)
+		clientOptions.openaiOptions = append(clientOptions.openaiOptions, WithThinkTagParsing())
 		return wrapInstrumented(&baseProvider[OpenAIClient]{
 			options: clientOptions,
 			client:  newOpenAIClient(clientOptions),

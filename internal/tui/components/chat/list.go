@@ -536,7 +536,11 @@ func (m *messagesCmp) working() string {
 		} else if hasUnfinishedToolCalls(m.messages) {
 			task = "Building tool call..."
 		} else if !lastMessage.IsFinished() {
-			task = "Generating..."
+			if lastMessage.IsThinking() {
+				task = "Thinking..."
+			} else {
+				task = "Generating..."
+			}
 		}
 		if task != "" {
 			text += baseStyle.

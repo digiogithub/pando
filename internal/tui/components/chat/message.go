@@ -108,6 +108,34 @@ func renderUserMessage(msg message.Message, isFocused bool, width int, position 
 	return userMsg
 }
 
+// renderThinkingBlock renders a model's reasoning trace with a muted style
+// to visually distinguish it from the final answer.
+// inProgress is true while the model is still producing thinking tokens.
+func renderThinkingBlock(thinking string, width int, inProgress bool) string {
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+
+	headerText := "Thinking"
+	if inProgress {
+		headerText = "Thinking..."
+	}
+	header := baseStyle.
+		Foreground(t.TextMuted()).
+		Italic(true).
+		Render(headerText)
+
+	body := strings.TrimSuffix(renderMarkdown(thinking, width), "\n")
+
+	blockStyle := styles.BaseStyle().
+		Width(width - 1).
+		BorderLeft(true).
+		Foreground(t.TextMuted()).
+		BorderForeground(t.TextMuted()).
+		BorderStyle(lipgloss.NormalBorder())
+
+	return lipgloss.JoinVertical(lipgloss.Left, header, blockStyle.Render(body))
+}
+
 // Returns multiple uiMessages because of the tool calls
 func renderAssistantMessage(
 	msg message.Message,
@@ -121,7 +149,6 @@ func renderAssistantMessage(
 ) []uiMessage {
 	messages := []uiMessage{}
 	content := msg.Content().String()
-	thinking := msg.IsThinking()
 	thinkingContent := msg.ReasoningContent().Thinking
 	finished := msg.IsFinished()
 	finishData := msg.FinishPart()
@@ -160,6 +187,23 @@ func renderAssistantMessage(
 			)
 		}
 	}
+	// Render thinking block whenever reasoning content is present:
+	// - While streaming with no text yet: shows the in-progress reasoning trace.
+	// - After content arrives or message is finished: prepends a "Thinking" block
+	//   before the answer so the reasoning is always visible.
+	if thinkingContent != "" {
+		thinkingRendered := renderThinkingBlock(thinkingContent, width, msg.IsThinking())
+		messages = append(messages, uiMessage{
+			ID:          msg.ID,
+			messageType: assistantMessageType,
+			position:    position,
+			height:      lipgloss.Height(thinkingRendered),
+			content:     thinkingRendered,
+		})
+		position += lipgloss.Height(thinkingRendered)
+		position++ // for the space
+	}
+
 	if content != "" || (finished && finishData.Reason == message.FinishReasonEndTurn) {
 		if content == "" {
 			content = "*Finished without output*"
@@ -169,6 +213,8 @@ func renderAssistantMessage(
 		}
 
 		content = renderMessage(content, false, true, width, info...)
+		// Re-index position for the content block since thinking may have shifted it.
+		contentIdx := len(messages)
 		messages = append(messages, uiMessage{
 			ID:          msg.ID,
 			messageType: assistantMessageType,
@@ -176,11 +222,8 @@ func renderAssistantMessage(
 			height:      lipgloss.Height(content),
 			content:     content,
 		})
-		position += messages[0].height
+		position += messages[contentIdx].height
 		position++ // for the space
-	} else if thinking && thinkingContent != "" {
-		// Render the thinking content
-		content = renderMessage(thinkingContent, false, msg.ID == focusedUIMessageId, width)
 	}
 
 	for i, toolCall := range msg.ToolCalls() {

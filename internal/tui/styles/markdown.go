@@ -147,7 +147,7 @@ func generateMarkdownStyleConfig() ansi.StyleConfig {
 		Image: ansi.StylePrimitive{
 			Color:     stringPtr(adaptiveColorToString(t.MarkdownImage())),
 			Underline: boolPtr(true),
-			Format:    "🖼 {{.text}}",
+			Format:    "󰋩 {{.text}}",
 		},
 		ImageText: ansi.StylePrimitive{
 			Color:  stringPtr(adaptiveColorToString(t.MarkdownImageText())),
