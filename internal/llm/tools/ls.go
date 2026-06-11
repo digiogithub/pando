@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/digiogithub/pando/internal/config"
 )
 
 type LSParams struct {
@@ -93,25 +92,11 @@ func (l *lsTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
 		return NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
 	}
 
-	workingDir := ""
-	if cfg := config.Get(); cfg != nil {
-		workingDir = cfg.WorkingDir
-	}
-	if workingDir == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return ToolResponse{}, fmt.Errorf("error resolving working directory: %w", err)
-		}
-		workingDir = wd
-	}
-
 	searchPath := params.Path
 	if searchPath == "" {
-		searchPath = workingDir
-	}
-
-	if !filepath.IsAbs(searchPath) {
-		searchPath = filepath.Join(workingDir, searchPath)
+		searchPath = workingDirectory()
+	} else {
+		searchPath = resolveToolPath(searchPath)
 	}
 
 	if _, err := os.Stat(searchPath); os.IsNotExist(err) {
@@ -143,12 +128,18 @@ func listDirectory(initialPath string, ignorePatterns []string, limit int) ([]st
 	var results []string
 	truncated := false
 
+	// When the root is itself a hidden directory the caller explicitly asked to
+	// list it, so we disable the hidden-entry filter for the whole walk.
+	rootBase := filepath.Base(initialPath)
+	skipHidden := rootBase == "." || !strings.HasPrefix(rootBase, ".")
+
 	err := filepath.Walk(initialPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // Skip files we don't have permission to access
 		}
 
-		if shouldSkip(path, ignorePatterns) {
+		// Skip hidden entries only when the root itself is not hidden.
+		if skipHidden && path != initialPath && shouldSkip(path, ignorePatterns) {
 			if info.IsDir() {
 				return filepath.SkipDir
 			}

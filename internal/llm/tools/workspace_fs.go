@@ -10,6 +10,19 @@ import (
 	"github.com/digiogithub/pando/internal/runtime"
 )
 
+// workingDirectory returns the configured working directory, falling back to
+// os.Getwd() when no config is loaded (e.g. during tests).
+func workingDirectory() string {
+	if cfg := config.Get(); cfg != nil && cfg.WorkingDir != "" {
+		return cfg.WorkingDir
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return wd
+}
+
 func getWorkspaceFS(ctx context.Context) runtime.WorkspaceFS {
 	if fs, ok := ctx.Value(WorkspaceFSContextKey).(runtime.WorkspaceFS); ok {
 		return fs
@@ -30,7 +43,7 @@ func resolveToolPath(path string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
-	wd := config.WorkingDirectory()
+	wd := workingDirectory()
 	// Detect if the model echoed back the working dir as a relative prefix.
 	// e.g. wd="/www/CVN", path="www/CVN/docker-compose.yaml"
 	relWD := strings.TrimPrefix(wd, "/")

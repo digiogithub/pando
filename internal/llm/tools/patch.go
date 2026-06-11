@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/diff"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/logging"
@@ -100,11 +99,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 	// Identify all files needed for the patch and verify they've been read
 	filesToRead := diff.IdentifyFilesNeeded(params.PatchText)
 	for _, filePath := range filesToRead {
-		absPath := filePath
-		if !filepath.IsAbs(absPath) {
-			wd := config.WorkingDirectory()
-			absPath = filepath.Join(wd, absPath)
-		}
+		absPath := resolveToolPath(filePath)
 
 		if getLastReadTime(absPath).IsZero() {
 			return NewTextErrorResponse(fmt.Sprintf("you must read the file %s before patching it. Use the View tool first", filePath)), nil
@@ -135,11 +130,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 	// Check for new files to ensure they don't already exist
 	filesToAdd := diff.IdentifyFilesAdded(params.PatchText)
 	for _, filePath := range filesToAdd {
-		absPath := filePath
-		if !filepath.IsAbs(absPath) {
-			wd := config.WorkingDirectory()
-			absPath = filepath.Join(wd, absPath)
-		}
+		absPath := resolveToolPath(filePath)
 
 		_, err := workspaceFS.Stat(ctx, absPath)
 		if err == nil {
@@ -152,11 +143,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 	// Load all required files
 	currentFiles := make(map[string]string)
 	for _, filePath := range filesToRead {
-		absPath := filePath
-		if !filepath.IsAbs(absPath) {
-			wd := config.WorkingDirectory()
-			absPath = filepath.Join(wd, absPath)
-		}
+		absPath := resolveToolPath(filePath)
 
 		content, err := workspaceFS.ReadFile(ctx, absPath)
 		if err != nil {
@@ -262,11 +249,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 
 	// Apply the changes to the filesystem
 	err = diff.ApplyCommit(commit, func(path string, content string) error {
-		absPath := path
-		if !filepath.IsAbs(absPath) {
-			wd := config.WorkingDirectory()
-			absPath = filepath.Join(wd, absPath)
-		}
+		absPath := resolveToolPath(path)
 
 		// Create parent directories if needed
 		dir := filepath.Dir(absPath)
@@ -276,12 +259,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 
 		return workspaceFS.WriteFile(ctx, absPath, []byte(content), 0o644)
 	}, func(path string) error {
-		absPath := path
-		if !filepath.IsAbs(absPath) {
-			wd := config.WorkingDirectory()
-			absPath = filepath.Join(wd, absPath)
-		}
-		return workspaceFS.Remove(ctx, absPath)
+		return workspaceFS.Remove(ctx, resolveToolPath(path))
 	})
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("failed to apply patch: %s", err)), nil
@@ -293,11 +271,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 	totalRemovals := 0
 
 	for path, change := range commit.Changes {
-		absPath := path
-		if !filepath.IsAbs(absPath) {
-			wd := config.WorkingDirectory()
-			absPath = filepath.Join(wd, absPath)
-		}
+		absPath := resolveToolPath(path)
 		changedFiles = append(changedFiles, absPath)
 
 		oldContent := ""

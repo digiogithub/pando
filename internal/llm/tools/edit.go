@@ -129,10 +129,7 @@ func (e *editTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return NewTextErrorResponse("file_path is required"), nil
 	}
 
-	if !filepath.IsAbs(params.FilePath) {
-		wd := config.WorkingDirectory()
-		params.FilePath = filepath.Join(wd, params.FilePath)
-	}
+	params.FilePath = resolveToolPath(params.FilePath)
 
 	logging.Debug("edit tool called", "filePath", params.FilePath, "oldStringLen", len(params.OldString), "newStringLen", len(params.NewString))
 

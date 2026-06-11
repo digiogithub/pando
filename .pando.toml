@@ -163,7 +163,7 @@ Enabled = true
 
 [Mesnada.Server]
 Host = ''
-Port = 5012
+Port = 5013
 
 [Mesnada.Orchestrator]
 StorePath = './.pando/mesnada'
@@ -176,7 +176,7 @@ PersonaPath = './.pando/mesnada/personas'
 
 [Mesnada.ACP]
 Enabled = false
-DefaultAgent = 'copilot'
+DefaultAgent = 'pando'
 AutoPermission = true
 
 [Mesnada.ACP.Server]
@@ -189,8 +189,8 @@ SessionTimeout = '30m'
 RequireAuth = false
 
 [Mesnada.TUI]
-Enabled = true
-WebUI = true
+Enabled = false
+WebUI = false
 
 [Shell]
 Path = ''
@@ -232,6 +232,14 @@ ContextEnrichmentEventsMaxChars = 0
 ContextEnrichmentTotalMaxChars = 0
 ContextEnrichmentUseAgentPlanner = false
 ContextEnrichmentPlannerFallbackToCoder = false
+MemoryEnabled = false
+MemoryContextEnrichmentEnabled = false
+MemoryContextMaxItems = 0
+MemoryContextMaxChars = 0
+MemoryDefaultTTLDays = 0
+MemoryGCInterval = ''
+MemoryAutoCapture = false
+MemoryPinnedScopes = []
 
 [Server]
 Enabled = true

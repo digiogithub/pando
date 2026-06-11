@@ -51,6 +51,11 @@ func SearchFiles(ctx context.Context, opts WalkOptions) ([]FileMatch, bool, erro
 	var resultMu sync.Mutex
 	var results []FileMatch
 
+	// When the root itself is a hidden directory the caller explicitly asked to
+	// search inside it, so we disable the hidden-entry filter for the whole walk.
+	rootBase := filepath.Base(opts.RootPath)
+	skipHidden := rootBase == "." || !strings.HasPrefix(rootBase, ".")
+
 	// Producer: walk the directory tree
 	go func() {
 		defer close(pathCh)
@@ -59,8 +64,9 @@ func SearchFiles(ctx context.Context, opts WalkOptions) ([]FileMatch, bool, erro
 				return nil
 			}
 			base := filepath.Base(path)
-			// Skip hidden files and directories
-			if base != "." && strings.HasPrefix(base, ".") {
+			// Skip hidden files and directories only when the root is not hidden.
+			// If the root is a hidden dir (e.g. ".kb"), traverse everything inside it.
+			if skipHidden && path != opts.RootPath && base != "." && strings.HasPrefix(base, ".") {
 				if d.IsDir() {
 					return filepath.SkipDir
 				}
