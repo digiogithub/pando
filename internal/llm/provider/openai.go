@@ -137,12 +137,18 @@ func (o *openaiClient) convertMessages(messages []message.Message) (openaiMessag
 			if len(msg.ToolCalls()) > 0 {
 				assistantMsg.ToolCalls = make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls()))
 				for i, call := range msg.ToolCalls() {
+					args := call.Input
+					if normalized, err := tools.NormalizeJSONInput(args); err == nil {
+						args = normalized
+					} else {
+						logging.Warn("Failed to normalize tool call arguments, sending as-is", "tool", call.Name, "error", err)
+					}
 					assistantMsg.ToolCalls[i] = openai.ChatCompletionMessageToolCallParam{
 						ID:   call.ID,
 						Type: "function",
 						Function: openai.ChatCompletionMessageToolCallFunctionParam{
 							Name:      call.Name,
-							Arguments: call.Input,
+							Arguments: args,
 						},
 					}
 				}

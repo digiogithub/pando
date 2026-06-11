@@ -234,9 +234,15 @@ func (a *anthropicClient) convertMessages(messages []message.Message) (anthropic
 			}
 
 			for _, toolCall := range msg.ToolCalls() {
+				input := toolCall.Input
+				if normalized, err := toolsPkg.NormalizeJSONInput(input); err == nil {
+					input = normalized
+				} else {
+					logging.Warn("Failed to normalize tool call arguments", "tool", toolCall.Name, "error", err)
+				}
 				var inputMap map[string]any
-				err := json.Unmarshal([]byte(toolCall.Input), &inputMap)
-				if err != nil {
+				if err := json.Unmarshal([]byte(input), &inputMap); err != nil {
+					logging.Warn("Skipping tool call with unparseable arguments", "tool", toolCall.Name, "error", err)
 					continue
 				}
 				blocks = append(blocks, anthropic.NewToolUseBlock(toolCall.ID, inputMap, toolCall.Name))

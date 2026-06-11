@@ -557,9 +557,15 @@ func WithGeminiDisableCache() GeminiOption {
 
 // Helper functions
 func parseJsonToMap(jsonStr string) (map[string]interface{}, error) {
+	normalized, err := tools.NormalizeJSONInput(jsonStr)
+	if err != nil {
+		return nil, err
+	}
 	var result map[string]interface{}
-	err := json.Unmarshal([]byte(jsonStr), &result)
-	return result, err
+	if err := json.Unmarshal([]byte(normalized), &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func convertSchemaProperties(parameters map[string]interface{}) map[string]*genai.Schema {
