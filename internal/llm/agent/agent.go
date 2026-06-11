@@ -954,17 +954,14 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 		default:
 			// Continue processing
 			var tool tools.BaseTool
+			// Resolve cross-model alias first (e.g. "read" → "view" for non-Anthropic models).
+			resolvedName := tools.ResolveToolAlias(toolCall.Name)
 			for _, availableTool := range a.tools {
-				if availableTool.Info().Name == toolCall.Name {
+				name := availableTool.Info().Name
+				if name == toolCall.Name || name == resolvedName {
 					tool = availableTool
 					break
 				}
-				// Monkey patch for Copilot Sonnet-4 tool repetition obfuscation
-				// if strings.HasPrefix(toolCall.Name, availableTool.Info().Name) &&
-				// 	strings.HasPrefix(toolCall.Name, availableTool.Info().Name+availableTool.Info().Name) {
-				// 	tool = availableTool
-				// 	break
-				// }
 			}
 
 			// Tool not found

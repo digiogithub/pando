@@ -28,15 +28,21 @@ type PolicyConfig struct {
 
 // DefaultPolicyConfig returns conservative defaults.
 func DefaultPolicyConfig() PolicyConfig {
+	// Start with the canonical core tools that must always be visible.
+	coreTools := []string{
+		"bash", "edit", "view", "glob", "grep", "write", "patch", "ls",
+		"cache_read", "cache_stats", "todo_write", "tool_search",
+		"mcp_query_catalog", "mcp_call_tool",
+	}
+	// Append cross-model aliases so that if a model emits an alias name (e.g.
+	// "read" for "view") during tool-search result evaluation it is still treated
+	// as a non-deferred, always-visible capability.
+	nonDeferred := append(coreTools, tools.CrossModelAliasNames()...)
 	return PolicyConfig{
-		Mode:           ModeAuto,
-		MaxDirectTools: 64,
-		NonDeferredTools: []string{
-			"bash", "edit", "view", "glob", "grep", "write", "patch", "ls",
-			"cache_read", "cache_stats", "todo_write", "tool_search",
-			"mcp_query_catalog", "mcp_call_tool",
-		},
-		DeferredSources: []string{string(SourceMCP), string(SourceLua)},
+		Mode:             ModeAuto,
+		MaxDirectTools:   64,
+		NonDeferredTools: nonDeferred,
+		DeferredSources:  []string{string(SourceMCP), string(SourceLua)},
 	}
 }
 
