@@ -56,6 +56,14 @@ const DEFAULT_REMEMBRANCES: RemembrancesConfig = {
   context_enrichment_events_results: 3,
   context_enrichment_events_subject: '',
   context_enrichment_events_last_days: 30,
+  // Memory System
+  memory_enabled: false,
+  memory_context_enrichment_enabled: false,
+  memory_context_max_items: 10,
+  memory_context_max_chars: 2000,
+  memory_default_ttl_days: 0,
+  memory_gc_interval: '1h',
+  memory_auto_capture: false,
 }
 
 const DEFAULT_SNAPSHOTS: SnapshotsConfig = {

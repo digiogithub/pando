@@ -1,67 +1,67 @@
-# Implementación del Desktop Web UI para Pando (Fase 1)
+# Desktop Web UI Implementation for Pando (Phase 1)
 
-## Servidor HTTP y API del Motor Pando (The Engine Server)
+## Pando Engine HTTP Server and API (The Engine Server)
 
-**Objetivo:** Desarrollar o habilitar un servidor HTTP embebido en Pando (`pando serve`) para proporcionar la API de respaldo que interactuará con la Interfaz Web (UI).
+**Goal:** Develop or enable an embedded HTTP server in Pando (`pando serve`) to provide the backend API that will interact with the Web UI.
 
-**Estado: COMPLETADO** ✅
+**Status: COMPLETED** ✅
 
-### Componentes Implementados:
+### Implemented Components:
 
-1. **Comando `pando serve` (cmd/serve.go):**
+1. **`pando serve` Command (cmd/serve.go):**
    - Flags: --host, --port, --debug
-   - Puerto por defecto: 8765
-   - Integración con app.App de Pando
-   - Shutdown graceful con señales SIGINT/SIGTERM
+   - Default port: 8765
+   - Integration with Pando's app.App
+   - Graceful shutdown with SIGINT/SIGTERM signals
 
-2. **Servidor HTTP (internal/api/):**
-   - Autenticación por token local
-   - CORS middleware para WebUI
-   - Soporte SSE para streaming
+2. **HTTP Server (internal/api/):**
+   - Local token authentication
+   - CORS middleware for WebUI
+   - SSE support for streaming
 
-3. **Endpoints REST implementados:**
+3. **Implemented REST Endpoints:**
    - `GET /health` - Health check
-   - `GET /api/v1/token` - Obtener token de autenticación
-   - `GET /api/v1/project` - Info del proyecto actual
-   - `GET /api/v1/project/context` - Contexto del proyecto
-   - `GET /api/v1/sessions` - Lista de sesiones
-   - `GET /api/v1/sessions/:id` - Detalle de sesión con mensajes
-   - `GET /api/v1/tools` - Lista herramientas MCP disponibles
-   - `GET /api/v1/files` - Navegación de archivos del proyecto
-   - `GET /api/v1/files/:path` - Leer archivo específico
-   - `POST /api/v1/chat` - Enviar prompt (respuesta síncrona)
-   - `GET/POST /api/v1/chat/stream` - SSE streaming de respuestas LLM
+   - `GET /api/v1/token` - Get authentication token
+   - `GET /api/v1/project` - Current project info
+   - `GET /api/v1/project/context` - Project context
+   - `GET /api/v1/sessions` - Session list
+   - `GET /api/v1/sessions/:id` - Session detail with messages
+   - `GET /api/v1/tools` - Available MCP tools list
+   - `GET /api/v1/files` - Project file navigation
+   - `GET /api/v1/files/:path` - Read specific file
+   - `POST /api/v1/chat` - Send prompt (synchronous response)
+   - `GET/POST /api/v1/chat/stream` - SSE streaming of LLM responses
 
-4. **Streaming SSE:**
-   - Conecta con `CoderAgent.Run()` para streaming
-   - Eventos: session, content, done, error
-   - Compatible con EventSource API del navegador
+4. **SSE Streaming:**
+   - Connects with `CoderAgent.Run()` for streaming
+   - Events: session, content, done, error
+   - Compatible with browser EventSource API
 
-5. **Autenticación Local:**
-   - Token generado al iniciar servidor
-   - Header `X-Pando-Token` o query param `?token=`
-   - Endpoints públicos: /health, /api/v1/token
+5. **Local Authentication:**
+   - Token generated when server starts
+   - Header `X-Pando-Token` or query param `?token=`
+   - Public endpoints: /health, /api/v1/token
 
-6. **Configuración:**
-   - Sección `[server]` en .pando.toml
-   - Campos: enabled, host, port, requireAuth
+6. **Configuration:**
+   - `[server]` section in .pando.toml
+   - Fields: enabled, host, port, requireAuth
    - Defaults: localhost:8765, requireAuth=true
 
-### Criterios de Finalización Cumplidos:
-- ✅ El servidor `pando serve` inicia una API local en puerto 8765
-- ✅ Existen endpoints para devolver contexto del proyecto
-- ✅ Existen endpoints para listar sesiones
-- ✅ Existe endpoint SSE para enviar prompts al agente
+### Completion Criteria Met:
+- ✅ The `pando serve` server starts a local API on port 8765
+- ✅ Endpoints exist to return project context
+- ✅ Endpoints exist to list sessions
+- ✅ SSE endpoint exists to send prompts to the agent
 
-### Archivos Creados:
-- `cmd/serve.go` - Comando CLI
-- `internal/api/server.go` - Servidor HTTP
-- `internal/api/routes.go` - Registro de rutas
-- `internal/api/handlers_base.go` - Handlers base
-- `internal/api/handlers_sessions.go` - Handlers de sesiones
-- `internal/api/handlers_tools.go` - Handler de tools
-- `internal/api/handlers_files.go` - Handlers de archivos
-- `internal/api/handlers_chat.go` - Handlers de chat/SSE
+### Files Created:
+- `cmd/serve.go` - CLI command
+- `internal/api/server.go` - HTTP server
+- `internal/api/routes.go` - Route registration
+- `internal/api/handlers_base.go` - Base handlers
+- `internal/api/handlers_sessions.go` - Session handlers
+- `internal/api/handlers_tools.go` - Tools handler
+- `internal/api/handlers_files.go` - File handlers
+- `internal/api/handlers_chat.go` - Chat/SSE handlers
 
-### Siguiente Paso:
-Continuar con **Fase 2: Frontend SolidJS UI** - Crear la interfaz web que consuma esta API.
+### Next Step:
+Continue with **Phase 2: Frontend SolidJS UI** - Create the web interface that consumes this API.

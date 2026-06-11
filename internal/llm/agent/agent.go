@@ -89,6 +89,22 @@ func SetContextTrimmer(ct ContextTrimmer) {
 	globalContextTrimmer = ct
 }
 
+// MemoryInjector injects a <memories> block into the system prompt before each turn.
+// It is a separate interface from ContextEnricher so memory enrichment can be enabled
+// independently of the main context-enrichment pipeline.
+type MemoryInjector interface {
+	BuildMemoryBlock(ctx context.Context, query string) string
+}
+
+// globalMemoryInjector is injected from app.go when MemoryContextEnrichmentEnabled is true.
+var globalMemoryInjector MemoryInjector
+
+// SetMemoryInjector wires the memory injector used to prepend a <memories> block to the
+// system prompt. Pass nil to disable memory injection.
+func SetMemoryInjector(m MemoryInjector) {
+	globalMemoryInjector = m
+}
+
 // globalNonInteractive indicates that Pando is running in non-interactive CLI mode (-p flag).
 // When true, the system prompt instructs agents to act autonomously without requesting user input.
 var globalNonInteractive bool
@@ -1925,7 +1941,15 @@ func buildSystemMessage(
 		sections = append(sections, nonInteractiveInstructions)
 	}
 
+	// Memories block is prepended before the main system prompt so the model treats
+	// stored memories as pre-loaded knowledge rather than appended context.
 	finalPrompt := systemMessage
+	if globalMemoryInjector != nil {
+		memBlock := globalMemoryInjector.BuildMemoryBlock(ctx, "")
+		if memBlock != "" {
+			finalPrompt = memBlock + "\n\n" + finalPrompt
+		}
+	}
 	if len(sections) > 0 {
 		finalPrompt += "\n\n" + strings.Join(sections, "\n\n")
 	}

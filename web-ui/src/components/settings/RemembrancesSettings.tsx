@@ -525,6 +525,70 @@ export default function RemembrancesSettings() {
 
       <div style={dividerStyle} />
 
+      {/* Memory System */}
+      <p style={subSectionTitle}>Memory System</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <Toggle
+          label="Memory Enabled"
+          description="Enable the key-value memory subsystem (stored memories survive across sessions)"
+          checked={rem.memory_enabled ?? false}
+          onChange={(v) => updateRemembrances('memory_enabled', v)}
+        />
+        <Toggle
+          label="Auto-inject in context"
+          description="Prepend relevant stored memories into the system prompt before each turn"
+          checked={rem.memory_context_enrichment_enabled ?? false}
+          onChange={(v) => updateRemembrances('memory_context_enrichment_enabled', v)}
+        />
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <div style={{ flex: 1 }}>
+            <TextInput
+              label="Context max items"
+              type="number"
+              value={String(rem.memory_context_max_items ?? 10)}
+              onChange={(e) => updateRemembrances('memory_context_max_items', Number(e.target.value))}
+              placeholder="10"
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <TextInput
+              label="Context max chars"
+              type="number"
+              value={String(rem.memory_context_max_chars ?? 2000)}
+              onChange={(e) => updateRemembrances('memory_context_max_chars', Number(e.target.value))}
+              placeholder="2000"
+            />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <div style={{ flex: 1 }}>
+            <TextInput
+              label="Default TTL (days)"
+              type="number"
+              value={String(rem.memory_default_ttl_days ?? 0)}
+              onChange={(e) => updateRemembrances('memory_default_ttl_days', Number(e.target.value))}
+              placeholder="0 = no expiry"
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <TextInput
+              label="GC interval"
+              value={rem.memory_gc_interval ?? '1h'}
+              onChange={(e) => updateRemembrances('memory_gc_interval', e.target.value)}
+              placeholder="1h"
+            />
+          </div>
+        </div>
+        <Toggle
+          label="Auto-capture memories"
+          description="Automatically extract and store key facts from conversations"
+          checked={rem.memory_auto_capture ?? false}
+          onChange={(v) => updateRemembrances('memory_auto_capture', v)}
+        />
+      </div>
+
+      <div style={dividerStyle} />
+
       {error && (
         <div
           style={{

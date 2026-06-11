@@ -74,7 +74,7 @@ func NewKBDeleteDocumentTool(store *kb.KBStore) BaseTool {
 func (t *KBAddDocumentTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        kbAddDocumentToolName,
-		Description: "Adds or updates a document in the knowledge base with automatic chunking and embedding. Use this to store important documentation, notes, plans, or any text content for future retrieval. Documents are automatically timestamped (created_at on first add, updated_at on every update). Tags are stored and can be used to filter search results.",
+		Description: "Adds or updates a document in the knowledge base with automatic chunking and embedding. Use this to store important documentation, notes, plans, or any text content for future retrieval. Documents are automatically timestamped (created_at on first add, updated_at on every update). Tags are stored and can be used to filter search results. When tag 'memory' and key are provided, performs a key-based upsert via the memory subsystem.",
 		Parameters: map[string]any{
 			"file_path": map[string]any{
 				"type":        "string",
@@ -93,6 +93,10 @@ func (t *KBAddDocumentTool) Info() ToolInfo {
 				"type":        "object",
 				"description": "Optional key-value metadata to associate with the document (e.g. {\"source\": \"user\"}).",
 			},
+			"key": map[string]any{
+				"type":        "string",
+				"description": "Optional memory upsert key. When provided along with tag 'memory', performs key-based upsert via the memory subsystem.",
+			},
 		},
 		Required: []string{"file_path", "content"},
 	}
@@ -104,6 +108,7 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 		Content  string                 `json:"content"`
 		Tags     []string               `json:"tags"`
 		Metadata map[string]interface{} `json:"metadata"`
+		Key      string                 `json:"key"`
 	}
 	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
@@ -117,6 +122,44 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 
 	// Strip any user-provided front matter from content — we manage it internally.
 	bodyContent := kb.StripFrontMatter(req.Content)
+
+	// Route through memory subsystem when tag "memory" and key are both set.
+	isMemory := false
+	for _, tag := range req.Tags {
+		if tag == "memory" {
+			isMemory = true
+			break
+		}
+	}
+
+	if isMemory && req.Key != "" {
+		scope := ""
+		if s, ok := req.Metadata["scope"].(string); ok {
+			scope = s
+		}
+		importance := 0.0
+		if imp, ok := req.Metadata["importance"].(float64); ok {
+			importance = imp
+		}
+		created, err := t.store.UpsertMemory(ctx, kb.MemoryUpsertOptions{
+			FilePath:   req.FilePath,
+			Key:        req.Key,
+			Scope:      scope,
+			Content:    bodyContent,
+			Tags:       req.Tags,
+			Metadata:   req.Metadata,
+			Importance: importance,
+			Source:     "kb_add_document",
+		})
+		if err != nil {
+			return NewTextErrorResponse(fmt.Sprintf("kb memory upsert error: %v", err)), nil
+		}
+		action := "updated"
+		if created {
+			action = "added"
+		}
+		return NewTextResponse(fmt.Sprintf("Memory %s: %s (key: %s)", action, req.FilePath, req.Key)), nil
+	}
 
 	// Inject tags into metadata.
 	req.Metadata = kb.InjectTagsIntoMetadata(req.Metadata, req.Tags)
@@ -148,7 +191,7 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 	}
 
 	// New document: create front matter with current time.
-	newFM := kb.NewFrontMatter(req.Tags)
+	newFM := kb.NewFrontMatter(req.Tags, nil)
 
 	if err := t.store.AddDocument(ctx, req.FilePath, bodyContent, req.Metadata); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("kb add error: %v", err)), nil
@@ -238,6 +281,14 @@ func (t *KBSearchDocumentsTool) Info() ToolInfo {
 				"type":        "boolean",
 				"description": "When true, sort results by updated_at descending (newest first) instead of relevance score.",
 			},
+			"exclude_outdated": map[string]any{
+				"type":        "boolean",
+				"description": "When true (default), exclude memory documents marked as outdated.",
+			},
+			"scope": map[string]any{
+				"type":        "string",
+				"description": "Optional memory scope prefix to restrict results (e.g. 'user/', 'project/'). Empty means all scopes.",
+			},
 		},
 		Required: []string{"query"},
 	}
@@ -245,10 +296,12 @@ func (t *KBSearchDocumentsTool) Info() ToolInfo {
 
 func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
 	var req struct {
-		Query      string   `json:"query"`
-		Limit      int      `json:"limit"`
-		Tags       []string `json:"tags"`
-		SortByDate bool     `json:"sort_by_date"`
+		Query           string   `json:"query"`
+		Limit           int      `json:"limit"`
+		Tags            []string `json:"tags"`
+		SortByDate      bool     `json:"sort_by_date"`
+		ExcludeOutdated *bool    `json:"exclude_outdated"`
+		Scope           string   `json:"scope"`
 	}
 	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
@@ -263,9 +316,17 @@ func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolR
 		req.Limit = 20
 	}
 
+	// exclude_outdated defaults to true when not explicitly set.
+	excludeOutdated := true
+	if req.ExcludeOutdated != nil {
+		excludeOutdated = *req.ExcludeOutdated
+	}
+
 	opts := kb.SearchOptions{
-		Tags:       req.Tags,
-		SortByDate: req.SortByDate,
+		Tags:            req.Tags,
+		SortByDate:      req.SortByDate,
+		ExcludeOutdated: excludeOutdated,
+		Scope:           req.Scope,
 	}
 	results, err := t.store.SearchDocumentsWithOptions(ctx, req.Query, req.Limit, opts)
 	if err != nil {

@@ -14,9 +14,26 @@ const (
 
 // FrontMatter holds the YAML front matter fields for KB documents.
 type FrontMatter struct {
-	CreatedAt time.Time `yaml:"created_at,omitempty"`
-	UpdatedAt time.Time `yaml:"updated_at,omitempty"`
-	Tags      []string  `yaml:"tags,omitempty"`
+	CreatedAt time.Time  `yaml:"created_at,omitempty"`
+	UpdatedAt time.Time  `yaml:"updated_at,omitempty"`
+	Tags      []string   `yaml:"tags,omitempty"`
+	// Memory fields — only serialized when non-zero/non-empty
+	Key        string     `yaml:"key,omitempty"`
+	Scope      string     `yaml:"scope,omitempty"`
+	Outdated   bool       `yaml:"outdated,omitempty"`
+	ExpiresAt  *time.Time `yaml:"expires_at,omitempty"`
+	Hits       int        `yaml:"hits,omitempty"`
+	Importance float64    `yaml:"importance,omitempty"`
+	Source     string     `yaml:"source,omitempty"`
+}
+
+// MemoryOptions carries optional memory-layer settings for NewFrontMatter.
+type MemoryOptions struct {
+	Key        string
+	Scope      string
+	Source     string
+	Importance float64
+	TTLDays    int // 0 = no expiry
 }
 
 // ParseFrontMatter splits YAML front matter from the body of a document.
@@ -111,17 +128,68 @@ func MergeFrontMatter(existing, incoming FrontMatter) FrontMatter {
 		merged.Tags = existing.Tags
 	}
 
+	// Preserve identity fields from existing when caller doesn't supply them.
+	if incoming.Key != "" {
+		merged.Key = incoming.Key
+	} else {
+		merged.Key = existing.Key
+	}
+	if incoming.Scope != "" {
+		merged.Scope = incoming.Scope
+	} else {
+		merged.Scope = existing.Scope
+	}
+	if incoming.Source != "" {
+		merged.Source = incoming.Source
+	} else {
+		merged.Source = existing.Source
+	}
+
+	// Outdated is managed explicitly by the caller.
+	merged.Outdated = incoming.Outdated
+
+	// Hits are managed by the store, never reset by a merge.
+	merged.Hits = existing.Hits
+
+	// ExpiresAt: keep existing when incoming doesn't specify.
+	if incoming.ExpiresAt != nil {
+		merged.ExpiresAt = incoming.ExpiresAt
+	} else {
+		merged.ExpiresAt = existing.ExpiresAt
+	}
+
+	// Importance: use incoming when caller supplies a value > 0.
+	if incoming.Importance > 0 {
+		merged.Importance = incoming.Importance
+	} else {
+		merged.Importance = existing.Importance
+	}
+
 	return merged
 }
 
 // NewFrontMatter creates a fresh FrontMatter with created_at/updated_at set to now.
-func NewFrontMatter(tags []string) FrontMatter {
+// When opts is non-nil, memory fields are populated from it.
+func NewFrontMatter(tags []string, opts *MemoryOptions) FrontMatter {
 	now := time.Now().UTC()
-	return FrontMatter{
+	fm := FrontMatter{
 		CreatedAt: now,
 		UpdatedAt: now,
 		Tags:      tags,
 	}
+	if opts != nil {
+		fm.Key = opts.Key
+		fm.Scope = opts.Scope
+		fm.Source = opts.Source
+		if opts.Importance > 0 {
+			fm.Importance = opts.Importance
+		}
+		if opts.TTLDays > 0 {
+			exp := now.AddDate(0, 0, opts.TTLDays)
+			fm.ExpiresAt = &exp
+		}
+	}
+	return fm
 }
 
 // StripFrontMatter removes any YAML front matter from raw content and returns

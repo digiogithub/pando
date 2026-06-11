@@ -2110,6 +2110,59 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 		)
 	}
 
+	// Memory System subsection
+	fields = append(fields,
+		settings.Field{
+			Label:    "Memory System",
+			Key:      "remembrances.memory.header",
+			Type:     settings.FieldText,
+			Value:    "── Memory System ──────────────────────────────────────",
+			ReadOnly: true,
+		},
+		settings.Field{
+			Label: "Memory Enabled",
+			Key:   "remembrances.memory_enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(rem.MemoryEnabled),
+		},
+		settings.Field{
+			Label: "Auto-inject in context",
+			Key:   "remembrances.memory_context_enrichment_enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(rem.MemoryContextEnrichmentEnabled),
+		},
+		settings.Field{
+			Label: "Context max items",
+			Key:   "remembrances.memory_context_max_items",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(rem.MemoryContextMaxItems),
+		},
+		settings.Field{
+			Label: "Context max chars",
+			Key:   "remembrances.memory_context_max_chars",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(rem.MemoryContextMaxChars),
+		},
+		settings.Field{
+			Label: "Default TTL (days)",
+			Key:   "remembrances.memory_default_ttl_days",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(rem.MemoryDefaultTTLDays),
+		},
+		settings.Field{
+			Label: "GC interval",
+			Key:   "remembrances.memory_gc_interval",
+			Type:  settings.FieldText,
+			Value: rem.MemoryGCInterval,
+		},
+		settings.Field{
+			Label: "Auto-capture memories",
+			Key:   "remembrances.memory_auto_capture",
+			Type:  settings.FieldToggle,
+			Value: boolString(rem.MemoryAutoCapture),
+		},
+	)
+
 	validationMessage := "Configuration looks valid."
 	if err := validateRemembrancesConfig(cfg, rem); err != nil {
 		validationMessage = err.Error()
@@ -3502,6 +3555,56 @@ func saveRemembrances(field settings.Field) error {
 			return fmt.Errorf("invalid planner fallback to coder value: %w", err)
 		}
 		remCfg.ContextEnrichmentPlannerFallbackToCoder = v
+	// Memory System fields
+	case "remembrances.memory.header":
+		// read-only header — no-op
+	case "remembrances.memory_enabled":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid memory enabled value: %w", err)
+		}
+		remCfg.MemoryEnabled = v
+	case "remembrances.memory_context_enrichment_enabled":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid memory context enrichment enabled value: %w", err)
+		}
+		remCfg.MemoryContextEnrichmentEnabled = v
+	case "remembrances.memory_context_max_items":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid memory context max items: %w", err)
+		}
+		if n < 1 || n > 100 {
+			return fmt.Errorf("memory context max items must be between 1 and 100")
+		}
+		remCfg.MemoryContextMaxItems = n
+	case "remembrances.memory_context_max_chars":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid memory context max chars: %w", err)
+		}
+		if n < 100 {
+			return fmt.Errorf("memory context max chars must be at least 100")
+		}
+		remCfg.MemoryContextMaxChars = n
+	case "remembrances.memory_default_ttl_days":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid memory default TTL days: %w", err)
+		}
+		if n < 0 {
+			return fmt.Errorf("memory default TTL days cannot be negative")
+		}
+		remCfg.MemoryDefaultTTLDays = n
+	case "remembrances.memory_gc_interval":
+		remCfg.MemoryGCInterval = strings.TrimSpace(field.Value)
+	case "remembrances.memory_auto_capture":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid memory auto-capture value: %w", err)
+		}
+		remCfg.MemoryAutoCapture = v
 	default:
 		return fmt.Errorf("unsupported Remembrances setting %q", field.Key)
 	}

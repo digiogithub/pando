@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'ollama.qwen-coder:latest'
+Model = 'openrouter.xiaomi/mimo-v2.5'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''

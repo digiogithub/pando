@@ -268,6 +268,13 @@ func CoderAgentToolsWithMesnada(
 			tools.NewCodeListProjectsTool(remembrances.Code),
 			tools.NewCodeSearchPatternTool(remembrances.Code),
 		)
+		if cfg := config.Get(); cfg != nil && cfg.Remembrances.MemoryEnabled {
+			baseTools = append(baseTools,
+				tools.NewRememberTool(remembrances.KB, cfg.Remembrances.MemoryDefaultTTLDays),
+				tools.NewRecallTool(remembrances.KB, cfg.Remembrances.MemoryDefaultTTLDays),
+				tools.NewForgetTool(remembrances.KB),
+			)
+		}
 	}
 	result := appendLuaTools(baseTools)
 	return ApplyToolDiscovery(result)

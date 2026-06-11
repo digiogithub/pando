@@ -272,6 +272,16 @@ type RemembrancesConfig struct {
 	// ContextEnrichmentPlannerFallbackToCoder allows the planner to fall back to the coder agent
 	// when the dedicated context-enricher agent fails. Defaults to true.
 	ContextEnrichmentPlannerFallbackToCoder bool `json:"context_enrichment_planner_fallback_to_coder" toml:"ContextEnrichmentPlannerFallbackToCoder"`
+
+	// Memory System — key/value store layered on top of KB with TTL, scoping, and auto-injection.
+	MemoryEnabled                    bool     `json:"memory_enabled" toml:"MemoryEnabled"`
+	MemoryContextEnrichmentEnabled   bool     `json:"memory_context_enrichment_enabled" toml:"MemoryContextEnrichmentEnabled"`
+	MemoryContextMaxItems            int      `json:"memory_context_max_items" toml:"MemoryContextMaxItems"`
+	MemoryContextMaxChars            int      `json:"memory_context_max_chars" toml:"MemoryContextMaxChars"`
+	MemoryDefaultTTLDays             int      `json:"memory_default_ttl_days" toml:"MemoryDefaultTTLDays"`
+	MemoryGCInterval                 string   `json:"memory_gc_interval" toml:"MemoryGCInterval"`
+	MemoryAutoCapture                bool     `json:"memory_auto_capture" toml:"MemoryAutoCapture"`
+	MemoryPinnedScopes               []string `json:"memory_pinned_scopes" toml:"MemoryPinnedScopes"`
 }
 
 // APIServerConfig holds configuration for the HTTP API server (WebUI backend).
@@ -1219,6 +1229,13 @@ func setDefaults(debug bool) {
 	viper.SetDefault("remembrances.context_enrichment_code_results", 5)
 	viper.SetDefault("remembrances.context_enrichment_code_project", "")
 	viper.SetDefault("remembrances.context_enrichment_min_score", 0.45)
+	viper.SetDefault("remembrances.memory_enabled", false)
+	viper.SetDefault("remembrances.memory_context_enrichment_enabled", false)
+	viper.SetDefault("remembrances.memory_context_max_items", 10)
+	viper.SetDefault("remembrances.memory_context_max_chars", 2000)
+	viper.SetDefault("remembrances.memory_default_ttl_days", 0)
+	viper.SetDefault("remembrances.memory_gc_interval", "1h")
+	viper.SetDefault("remembrances.memory_auto_capture", false)
 
 	// Internal Tools defaults
 	viper.SetDefault("internalTools.fetchEnabled", true)

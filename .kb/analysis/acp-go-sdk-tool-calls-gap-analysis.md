@@ -1,127 +1,127 @@
-# Análisis: Tool Calls en Agent Client Protocol — Implementación Go SDK vs Especificación Oficial (Rust)
+# Analysis: Tool Calls in Agent Client Protocol — Go SDK Implementation vs Official Specification (Rust)
 
-## Resumen Ejecutivo
+## Executive Summary
 
-El SDK Go (`acp-go-sdk`) es una reimplementación fiel pero incompleta del protocolo **Agent Client Protocol (ACP)**, basada en el schema JSON `0.12.0` generado automáticamente desde la especificación oficial. Soporta el ciclo de vida completo de tool calls (creación, actualización, tipos de contenido, estados) pero tiene varios gaps significativos comparado con el SDK oficial de Rust (`agent-client-protocol` v0.11.1).
+The Go SDK (`acp-go-sdk`) is a faithful but incomplete reimplementation of the **Agent Client Protocol (ACP)**, based on the auto-generated JSON schema `0.12.0` from the official specification. It supports the complete tool call lifecycle (creation, updates, content types, states) but has several significant gaps compared to the official Rust SDK (`agent-client-protocol` v0.11.1).
 
-## Arquitectura del protocolo ACP para Tool Calls
+## ACP Protocol Architecture for Tool Calls
 
-### Flujo de comunicación
+### Communication flow
 ```
 Client                           Agent
   |                                |
   |--- session/prompt ------------>|
-  |                                | (LLM decide ejecutar tool)
-  |<--- session/update (tool_call)-|  ← notificación: nuevo tool call
+  |                                | (LLM decides to execute tool)
+  |<--- session/update (tool_call)-|  ← notification: new tool call
   |                                |
-  |<--- session/request_permission-|  ← request: pedir permiso al usuario
+  |<--- session/request_permission-|  ← request: ask user for permission
   |--- response (outcome) ------->|
-  |                                | (ejecución del tool)
-  |<--- session/update (update) ---|  ← notificación: progreso/resultado
+  |                                | (tool execution)
+  |<--- session/update (update) ---|  ← notification: progress/result
   |                                |
-  |<--- session/prompt response ---|  ← respuesta final con StopReason
+  |<--- session/prompt response ---|  ← final response with StopReason
 ```
 
-### Tipos de contenido de tool calls (ToolCallContent)
+### Tool call content types (ToolCallContent)
 
-El protocolo define **3 variantes** de contenido:
+The protocol defines **3 content variants**:
 
-1. **Content** (`"type": "content"`): Bloques de contenido estándar (texto, imágenes, recursos) — compatibles con MCP
-2. **Diff** (`"type": "diff"`): Representación de cambios en archivos (`path`, `oldText`, `newText`)
-3. **Terminal** (`"type": "terminal"`): Embedding de terminales vivas por `terminalId`
+1. **Content** (`"type": "content"`): Standard content blocks (text, images, resources) — compatible with MCP
+2. **Diff** (`"type": "diff"`): File change representation (`path`, `oldText`, `newText`)
+3. **Terminal** (`"type": "terminal"`): Live terminal embedding by `terminalId`
 
-### Estados de un tool call (ToolCallStatus)
+### Tool call states (ToolCallStatus)
 
-| Estado | Descripción |
+| State | Description |
 |--------|-------------|
-| `pending` | No ha comenzado (esperando input o aprobación) |
-| `in_progress` | Ejecutándose |
-| `completed` | Completado exitosamente |
-| `failed` | Falló con error |
+| `pending` | Has not started (waiting for input or approval) |
+| `in_progress` | Executing |
+| `completed` | Successfully completed |
+| `failed` | Failed with error |
 
-### Tipos de herramientas (ToolKind)
+### Tool kinds (ToolKind)
 
 `read`, `edit`, `delete`, `move`, `search`, `execute`, `think`, `fetch`, `switch_mode`, `other`
 
-Estos tipos ayudan al cliente a elegir iconos y optimizar la visualización.
+These types help the client choose icons and optimize the display.
 
-### Sistema de permisos
+### Permission system
 
-El agente puede solicitar permiso al usuario antes de ejecutar un tool call mediante `session/request_permission`. Las opciones incluyen: `allow_once`, `allow_always`, `reject_once`, `reject_always`. El cliente puede auto-aprobar/rechazar según configuración del usuario.
+The agent can request permission from the user before executing a tool call via `session/request_permission`. Options include: `allow_once`, `allow_always`, `reject_once`, `reject_always`. The client can auto-approve/reject based on user configuration.
 
-## Análisis del SDK Go (acp-go-sdk)
+## Go SDK Analysis (acp-go-sdk)
 
-### Lo que SÍ está implementado correctamente
+### What IS correctly implemented
 
-| Feature | Estado |
+| Feature | Status |
 |---------|--------|
-| Tipos `SessionUpdateToolCall` y `SessionToolCallUpdate` | ✅ Completo |
-| Enums: `ToolKind`, `ToolCallStatus` | ✅ Completo (incluye `switch_mode`) |
-| `ToolCallContent` con 3 variantes (content, diff, terminal) | ✅ Completo |
-| `ToolCallLocation` con `path` y `line` opcionales | ✅ Completo |
-| `RequestPermissionRequest/Response` con opciones y outcomes | ✅ Completo |
-| Helpers: `StartToolCall()`, `UpdateToolCall()`, `ToolContent()`, etc. | ✅ Rico conjunto de builders |
-| Helper `StartToolCallStreaming()` | ✅ Específico para streaming |
-| Sistema de extensiones (`_` prefixed methods) | ✅ Completo |
-| Custom JSON marshal/unmarshal para `SessionUpdate` (discriminator `sessionUpdate`) | ✅ Implementación manual robusta |
-| `ToolCall` como struct completo (no solo update) | ✅ Completo |
-| `Plan` y `PlanEntry` para execution plans | ✅ Completo |
+| `SessionUpdateToolCall` and `SessionToolCallUpdate` types | ✅ Complete |
+| Enums: `ToolKind`, `ToolCallStatus` | ✅ Complete (includes `switch_mode`) |
+| `ToolCallContent` with 3 variants (content, diff, terminal) | ✅ Complete |
+| `ToolCallLocation` with optional `path` and `line` | ✅ Complete |
+| `RequestPermissionRequest/Response` with options and outcomes | ✅ Complete |
+| Helpers: `StartToolCall()`, `UpdateToolCall()`, `ToolContent()`, etc. | ✅ Rich builder set |
+| `StartToolCallStreaming()` helper | ✅ Specific for streaming |
+| Extension system (`_` prefixed methods) | ✅ Complete |
+| Custom JSON marshal/unmarshal for `SessionUpdate` (discriminator `sessionUpdate`) | ✅ Robust manual implementation |
+| `ToolCall` as complete struct (not just update) | ✅ Complete |
+| `Plan` and `PlanEntry` for execution plans | ✅ Complete |
 
-### Gaps y carencias detectados
+### Detected gaps and deficiencies
 
-#### 1. Faltan tipos de MCP Proxy Protocol
-El SDK Rust incluye un módulo `proxy_protocol` con tipos para tunneling de MCP sobre ACP:
+#### 1. Missing MCP Proxy Protocol types
+The Rust SDK includes a `proxy_protocol` module with types for MCP tunneling over ACP:
 
-| Tipo | SDK Go | SDK Rust |
+| Type | Go SDK | Rust SDK |
 |------|--------|----------|
-| `McpConnectRequest/Response` | ❌ Ausente | ✅ |
-| `McpDisconnectNotification` | ❌ Ausente | ✅ |
-| `McpOverAcpMessage` | ❌ Ausente | ✅ |
-| `SuccessorMessage` | ❌ Ausente | ✅ |
-| `InitializeProxyRequest` | ❌ Ausente | ✅ |
+| `McpConnectRequest/Response` | ❌ Missing | ✅ |
+| `McpDisconnectNotification` | ❌ Missing | ✅ |
+| `McpOverAcpMessage` | ❌ Missing | ✅ |
+| `SuccessorMessage` | ❌ Missing | ✅ |
+| `InitializeProxyRequest` | ❌ Missing | ✅ |
 
-**Impacto**: El SDK Go no puede participar como proxy ACP sin implementar extension methods manuales.
+**Impact**: The Go SDK cannot participate as an ACP proxy without implementing manual extension methods.
 
-#### 2. Métodos como "Unstable" que ya son estables en upstream
+#### 2. Methods marked as "Unstable" that are already stable upstream
 
-Varios métodos están en la interfaz `AgentExperimental` del SDK Go cuando en el schema upstream (`0.12.0`) ya son estables:
+Several methods are in the Go SDK's `AgentExperimental` interface when in the upstream schema (`0.12.0`) they are already stable:
 
-| Método | SDK Go | Upstream |
+| Method | Go SDK | Upstream |
 |--------|--------|----------|
-| `session/close` | `UnstableCloseSession` | `CloseSession` (estable) |
-| `session/resume` | `UnstableResumeSession` | `ResumeSession` (estable) |
-| `session/fork` | `UnstableForkSession` | No en spec estable |
-| `session/set_model` | `UnstableSetSessionModel` | `SetSessionModel` (estable) |
+| `session/close` | `UnstableCloseSession` | `CloseSession` (stable) |
+| `session/resume` | `UnstableResumeSession` | `ResumeSession` (stable) |
+| `session/fork` | `UnstableForkSession` | Not in stable spec |
+| `session/set_model` | `UnstableSetSessionModel` | `SetSessionModel` (stable) |
 
-**Impacto**: Los consumidores usan APIs marcadas como inestables para features estables del protocolo.
+**Impact**: Consumers use APIs marked as unstable for stable protocol features.
 
-#### 3. ToolCallUpdateFields no existe como tipo separado
-En el SDK Rust, `ToolCallUpdateFields` es un struct que agrupa campos opcionales de actualización y es usado como building block. En Go no existe; los campos están inline en `SessionToolCallUpdate`.
+#### 3. ToolCallUpdateFields doesn't exist as a separate type
+In the Rust SDK, `ToolCallUpdateFields` is a struct that groups optional update fields and is used as a building block. In Go it doesn't exist; the fields are inline in `SessionToolCallUpdate`.
 
-**Impacto**: Menor. Es más una diferencia de diseño que una carencia funcional.
+**Impact**: Minor. It's more of a design difference than a functional deficiency.
 
-#### 4. Faltan builders para SessionUpdate completos
-Aunque hay builders para tool calls, faltan builders equivalentes para otros tipos de `SessionUpdate`:
-- No hay `StartPlan()`, `UpdatePlan()`
-- No hay builders para `UserMessageChunk`, `AgentMessageChunk`, `AgentThoughtChunk`
-- No hay builder para `AvailableCommandsUpdate`
-- No hay builder para `SessionInfoUpdate`
+#### 4. Missing builders for complete SessionUpdate
+Although there are builders for tool calls, equivalent builders are missing for other `SessionUpdate` types:
+- No `StartPlan()`, `UpdatePlan()`
+- No builders for `UserMessageChunk`, `AgentMessageChunk`, `AgentThoughtChunk`
+- No builder for `AvailableCommandsUpdate`
+- No builder for `SessionInfoUpdate`
 
-**Impacto**: El código cliente debe construir estos structs manualmente sin ayuda de builders tipados.
+**Impact**: Client code must construct these structs manually without typed builder assistance.
 
-#### 5. No hay soporte para `_meta` en helpers
-Los helpers (`StartToolCall`, `UpdateToolCall`, etc.) aceptan `_meta` vía `WithStartMeta`/`WithUpdateMeta`, pero los tipos de contenido (`ToolContent`, `ToolDiffContent`, `ToolTerminalRef`) no exponen `_meta`.
+#### 5. No `_meta` support in helpers
+The helpers (`StartToolCall`, `UpdateToolCall`, etc.) accept `_meta` via `WithStartMeta`/`WithUpdateMeta`, but the content types (`ToolContent`, `ToolDiffContent`, `ToolTerminalRef`) don't expose `_meta`.
 
-**Impacto**: Menor. `_meta` es opcional para extensibilidad.
+**Impact**: Minor. `_meta` is optional for extensibility.
 
-#### 6. La validación de `SessionUpdate` es manual y verbosa
-El marshaling/unmarshaling de `SessionUpdate` (líneas ~4700-5300 en types_gen.go) es código generado muy extenso (~600 líneas) para manejar el discriminador `sessionUpdate`. Sería más mantenible con una tabla de dispatch.
+#### 6. SessionUpdate validation is manual and verbose
+The marshaling/unmarshaling of `SessionUpdate` (lines ~4700-5300 in types_gen.go) is very extensive generated code (~600 lines) to handle the `sessionUpdate` discriminator. It would be more maintainable with a dispatch table.
 
-**Impacto**: Mantenibilidad, no funcionalidad.
+**Impact**: Maintainability, not functionality.
 
-## Comparativa lado a lado
+## Side-by-side comparison
 
-### Crear un tool call
+### Creating a tool call
 
 **Rust SDK:**
 ```rust
@@ -147,9 +147,9 @@ conn.SessionUpdate(ctx, SessionNotification{
 })
 ```
 
-Ambos SDKs son equivalentes en expresividad para este caso.
+Both SDKs are equivalent in expressiveness for this case.
 
-### Actualizar un tool call
+### Updating a tool call
 
 **Rust SDK:**
 ```rust
@@ -171,27 +171,27 @@ conn.SessionUpdate(ctx, SessionNotification{
 })
 ```
 
-Equivalentes.
+Equivalent.
 
-## Recomendaciones
+## Recommendations
 
-### Prioridad Alta
-1. **Añadir tipos MCP Proxy Protocol**: `McpConnect`, `McpDisconnect`, `McpOverAcpMessage`, `SuccessorMessage`, `InitializeProxy`
-2. **Promover métodos a estables**: `session/close` y `session/resume` deben salir de `AgentExperimental`
+### High Priority
+1. **Add MCP Proxy Protocol types**: `McpConnect`, `McpDisconnect`, `McpOverAcpMessage`, `SuccessorMessage`, `InitializeProxy`
+2. **Promote methods to stable**: `session/close` and `session/resume` should exit `AgentExperimental`
 
-### Prioridad Media
-3. **Añadir builders para otros SessionUpdate types**: `StartPlan()`, `UpdatePlan()`, builders para message chunks
-4. **Añadir `_meta` a los helpers de contenido**: `WithContentMeta()` en `ToolContent()`, `ToolDiffContent()`, `ToolTerminalRef()`
+### Medium Priority
+3. **Add builders for other SessionUpdate types**: `StartPlan()`, `UpdatePlan()`, builders for message chunks
+4. **Add `_meta` to content helpers**: `WithContentMeta()` on `ToolContent()`, `ToolDiffContent()`, `ToolTerminalRef()`
 
-### Prioridad Baja
-5. **Refactorizar el dispatcher de SessionUpdate**: Reemplazar el switch gigante por tabla de dispatch para mantenibilidad
-6. **Añadir `ToolCallUpdateFields` como tipo separado**: Por consistencia con Rust SDK
+### Low Priority
+5. **Refactor the SessionUpdate dispatcher**: Replace the giant switch with a dispatch table for maintainability
+6. **Add `ToolCallUpdateFields` as a separate type**: For consistency with the Rust SDK
 
-## Conclusión
+## Conclusion
 
-El SDK Go de ACP es funcionalmente **correcto y utilizable** para el ciclo de vida completo de tool calls. Las carencias principales están en:
-- Faltan tipos para MCP Proxy Protocol (bloquea uso como proxy ACP)
-- Varios métodos estables están marcados como `Unstable`
-- Faltan builders para tipos de SessionUpdate no relacionados con tool calls
+The Go ACP SDK is functionally **correct and usable** for the complete tool call lifecycle. The main deficiencies are:
+- Missing types for MCP Proxy Protocol (blocks use as ACP proxy)
+- Several stable methods are marked as `Unstable`
+- Missing builders for SessionUpdate types not related to tool calls
 
-El mapeo de tipos, serialización JSON, y el modelo de tool calls (creación, actualización, contenido, permisos, estados) está implementado correctamente y es compatible con la especificación oficial.
+The type mapping, JSON serialization, and tool call model (creation, update, content, permissions, states) are correctly implemented and compatible with the official specification.

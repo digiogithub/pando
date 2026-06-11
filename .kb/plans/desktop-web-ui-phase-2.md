@@ -1,23 +1,23 @@
-# Implementación del Desktop Web UI para Pando (Fase 2)
+# Desktop Web UI Implementation for Pando (Phase 2)
 
-## Construcción de la Interfaz Web Frontend (The UI)
+## Frontend Web Interface Construction (The UI)
 
-**Objetivo:** Crear una Single Page Application (SPA), probablemente con React o SolidJS y TailwindCSS, para que actúe como la cara gráfica de Pando.
+**Goal:** Create a Single Page Application (SPA), likely using React or SolidJS with TailwindCSS, to serve as the graphical face of Pando.
 
-### Componentes Principales:
-1. **Configuración Inicial del Proyecto:**
-   - Implementar un bundler (como Vite) en la carpeta de Pando (ej: `ui/web`).
-   - Definir sistema de componentes y diseño (basado en TailwindCSS).
+### Main Components:
+1. **Initial Project Setup:**
+   - Implement a bundler (like Vite) in the Pando folder (e.g., `ui/web`).
+   - Define component system and design (based on TailwindCSS).
    
-2. **Integración con Servidor (ServerGate):**
-   - Emular la abstracción `ServerConnection` vista en OpenCode, con rutinas de reinicio automático y sondeo de salud (Health Check) a los endpoints del backend de Go (Pando HTTP Server).
+2. **Server Integration (ServerGate):**
+   - Emulate the `ServerConnection` abstraction seen in OpenCode, with auto-restart routines and health check polling against the Go backend endpoints (Pando HTTP Server).
 
-3. **Subsistemas Web:**
-   - **Área de Chat y Prompts:** Vista de burbuja fluida (SSE stream renderer).
-   - **Área Editor/File Tree:** Un árbol de archivos y renderizado de *markdown* y código.
-   - **Notificaciones y Preferencias:** Módulos de configuración con guardado en `localStorage`.
+3. **Web Subsystems:**
+   - **Chat and Prompts Area:** Fluid bubble view (SSE stream renderer).
+   - **Editor/File Tree Area:** A file tree and *markdown* and code rendering.
+   - **Notifications and Preferences:** Configuration modules with `localStorage` persistence.
 
-### Criterios de Finalización:
-- La UI se compila estáticamente.
-- Puede conectarse a un demonio de Pando local usando un mecanismo HTTP.
-- Muestra el mismo nivel de capacidad conversacional y herramientas que el *bubbletea* del CLI.
+### Completion Criteria:
+- The UI compiles statically.
+- It can connect to a local Pando daemon using an HTTP mechanism.
+- It shows the same level of conversational capability and tools as the CLI *bubbletea*.

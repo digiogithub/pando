@@ -1,21 +1,20 @@
-# Implementación del Desktop Web UI para Pando (Fase 4)
+# Desktop Web UI Implementation for Pando (Phase 3)
 
-## Funcionalidades Avanzadas de Pando en GUI (The Advantage)
+## Desktop Packaging via Tauri/Wails (The App)
 
-**Objetivo:** Diferenciar el Front-end de Pando respecto al de OpenCode, sumando funcionalidades gráficas nativas exclusivas para las capacidades que Pando ofrece.
+**Goal:** Bundle and package the SPA developed in Phase 2 into a native desktop application (Desktop App).
 
-### Componentes Principales:
-1. **Control Panel de Agentes (Mesnada):**
-   - Una pestaña o panel que liste cada sub-agente engendrado (List Agent Spawns).
-   - Ver sus logs (STDIO/STDERR interceptado y emitido por Websocket).
-   - Pausarlos o controlarlos y ver cómo las "facciones" trabajan colaborativamente.
+### Main Components:
+1. **Wrapper Selection:**
+   - Option A: **Wails:** Much more straightforward for Pando (would compile the UI + Go into the same executable, without needing a sidecar process).
+   - Option B: **Tauri (Rust) + Pando Sidecar:** Identical to the OpenCode structure. The SolidJS UI + Tauri communicates with or invokes the local `pando` process.
+   
+2. **App Lifecycle (Sidecar Management - If Using Tauri):**
+   - Same as what `src-tauri/src/cli.rs` does in OpenCode, Pando Desktop will start a subprocess (`ChildProcess`) of the Pando server on startup, capture `stdout`/`stderr`, and force termination when the GUI is closed.
 
-2. **Visualizador del Code of Remembrances:**
-   - Explorador de bases de datos SQLite integrado (`remembrances.db`), navegable y filtrable para acceder a "Facts", "Skills" e historial de planes.
-   - Herramientas visuales para buscar y editar recuerdos que formarán el LLM Context.
+3. **OS Capabilities:**
+   - Configure Deep Linking, managed Clipboard (`@tauri-apps/plugin-clipboard-manager`), system notifications for automation status, and System Tray mode.
 
-3. **Autenticación (Local):**
-   - Interfaz gráfica para gestionar los Tool Requests e integraciones de MCP dinámicamente, con aprobación mediante la UI ("Yolo" mode toggle interactivo).
-
-### Criterios de Finalización:
-- El Desktop app supera las capacidades de OpenCode, al permitir la visibilidad completa del paradigma "Mesnada" y mostrar gráficamente el árbol de los "Remembrances Tools" integrados de forma transparente.
+### Completion Criteria:
+- An executable binary `.AppImage`, `.dmg` or `.exe`.
+- On open, it displays the Web window, initializes the Go abstractions (the local agent) in the background, and they are interconnected without manual intervention.

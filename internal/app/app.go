@@ -51,6 +51,7 @@ import (
 	"github.com/digiogithub/pando/internal/project"
 	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
+	"github.com/digiogithub/pando/internal/rag/kb"
 	ragproxy "github.com/digiogithub/pando/internal/rag/proxy"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
@@ -328,6 +329,40 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 						"events_last_days", cfg.Remembrances.ContextEnrichmentEventsLastDays,
 						"min_score", cfg.Remembrances.ContextEnrichmentMinScore,
 					)
+				}
+
+				// Memory system — inject stored memories into the system prompt when enabled.
+				if cfg.Remembrances.MemoryEnabled && cfg.Remembrances.MemoryContextEnrichmentEnabled && remembrances.KB != nil {
+					injector := &memoryInjectorAdapter{
+						store: remembrances.KB,
+						cfg:   cfg.Remembrances,
+					}
+					agent.SetMemoryInjector(injector)
+					logging.Info("remembrances: memory context injection enabled",
+						"max_items", cfg.Remembrances.MemoryContextMaxItems,
+						"max_chars", cfg.Remembrances.MemoryContextMaxChars,
+					)
+				}
+
+				// Memory GC service — periodically marks expired memories as outdated.
+				if cfg.Remembrances.MemoryEnabled && remembrances.KB != nil {
+					gcInterval := time.Hour
+					if cfg.Remembrances.MemoryGCInterval != "" {
+						if d, err := time.ParseDuration(cfg.Remembrances.MemoryGCInterval); err == nil && d > 0 {
+							gcInterval = d
+						}
+					}
+					gcSvc := kb.NewMemoryGCService(remembrances.KB, gcInterval)
+					gcCtx, gcCancel := context.WithCancel(ctx)
+					app.cancelFuncsMutex.Lock()
+					app.watcherCancelFuncs = append(app.watcherCancelFuncs, gcCancel)
+					app.cancelFuncsMutex.Unlock()
+					app.watcherWG.Add(1)
+					go func() {
+						defer app.watcherWG.Done()
+						gcSvc.Start(gcCtx)
+					}()
+					logging.Info("remembrances: memory GC service started", "interval", gcInterval)
 				}
 			}
 		}

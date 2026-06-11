@@ -187,7 +187,7 @@ func TestMergeFrontMatter_KeepsExistingTagsWhenNoIncoming(t *testing.T) {
 
 func TestNewFrontMatter(t *testing.T) {
 	before := time.Now().UTC()
-	fm := NewFrontMatter([]string{"test"})
+	fm := NewFrontMatter([]string{"test"}, nil)
 	after := time.Now().UTC()
 
 	if fm.CreatedAt.Before(before) || fm.CreatedAt.After(after) {

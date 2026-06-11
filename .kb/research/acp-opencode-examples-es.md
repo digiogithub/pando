@@ -1,4 +1,4 @@
-# Ejemplos de mensajes ACP (Agent Client Protocol) en sst/opencode
+# ACP Messages Examples (Agent Client Protocol) in sst/opencode
 
 ## 1. tool_call_update (in_progress, bash)
 ```json
@@ -236,5 +236,5 @@
 }
 ```
 
-### Referencia
-Este documento resume los principales tipos de mensaje ACP usados en sst/opencode para tool usage, status, plan y recursos. Cada ejemplo corresponde a los formatos utilizados y cubre los campos clave: sessionId, sessionUpdate, tool kind, rawInput, content, rawOutput, y detalles específicos según el tipo de mensaje.
+### Reference
+This document summarizes the main ACP message types used in sst/opencode for tool usage, status, plan, and resources. Each example corresponds to the formats used and covers the key fields: sessionId, sessionUpdate, tool kind, rawInput, content, rawOutput, and type-specific details.

@@ -602,6 +602,16 @@ func (s *KBStore) SearchDocumentsWithOptions(ctx context.Context, query string, 
 		fused = filterByTags(fused, opts.Tags)
 	}
 
+	// Exclude outdated memory documents when requested.
+	if opts.ExcludeOutdated {
+		fused = filterOutdated(fused)
+	}
+
+	// Filter by memory scope prefix when requested.
+	if opts.Scope != "" {
+		fused = filterByScope(fused, opts.Scope)
+	}
+
 	// Apply chronological sorting if requested.
 	if opts.SortByDate {
 		sort.SliceStable(fused, func(i, j int) bool {
@@ -641,6 +651,41 @@ func filterByTags(results []SearchResult, queryTags []string) []SearchResult {
 	return filtered
 }
 
+// filterOutdated drops results whose document has outdated set.
+// The Document.Metadata field is checked for the "outdated" key set by UpsertMemory updates.
+// Since the vector/FTS scans don't load the new columns, we rely on the flag being absent
+// for non-memory documents and correct for memory documents loaded via the new query paths.
+func filterOutdated(results []SearchResult) []SearchResult {
+	filtered := make([]SearchResult, 0, len(results))
+	for _, r := range results {
+		if v, ok := r.Document.Metadata["outdated"]; ok {
+			switch vt := v.(type) {
+			case bool:
+				if vt {
+					continue
+				}
+			case float64:
+				if vt != 0 {
+					continue
+				}
+			}
+		}
+		filtered = append(filtered, r)
+	}
+	return filtered
+}
+
+// filterByScope keeps only results whose MemoryScope starts with the given prefix.
+func filterByScope(results []SearchResult, scope string) []SearchResult {
+	filtered := make([]SearchResult, 0, len(results))
+	for _, r := range results {
+		if strings.HasPrefix(r.Document.MemoryScope, scope) {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
+}
+
 // matchesTags returns true if any document tag fuzzy-matches any query tag.
 // Fuzzy matching: case-insensitive substring containment.
 func matchesTags(docTags []string, queryTags []string) bool {
@@ -665,7 +710,10 @@ func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit in
 	// Load all chunks with embeddings
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.document_id, c.content, c.embedding,
-		       d.file_path, d.content, d.metadata, d.created_at, d.updated_at
+		       d.file_path, d.content, d.metadata, d.created_at, d.updated_at,
+		       COALESCE(d.memory_key,''), COALESCE(d.memory_scope,''),
+		       COALESCE(d.importance,0.5), COALESCE(d.hits,0),
+		       COALESCE(d.source,''), COALESCE(d.outdated,0), d.expires_at
 		FROM kb_chunks c
 		JOIN kb_documents d ON d.id = c.document_id
 		WHERE c.embedding IS NOT NULL
@@ -687,13 +735,22 @@ func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit in
 		var c candidate
 		var blob []byte
 		var metaJSON string
+		var outdated int
+		var expiresAt sql.NullTime
 
 		if err := rows.Scan(
 			&c.chunkID, &c.document.ID, &c.chunkContent, &blob,
 			&c.document.FilePath, &c.document.Content, &metaJSON,
 			&c.document.CreatedAt, &c.document.UpdatedAt,
+			&c.document.MemoryKey, &c.document.MemoryScope, &c.document.Importance, &c.document.Hits,
+			&c.document.Source, &outdated, &expiresAt,
 		); err != nil {
 			return nil, fmt.Errorf("kb: scan chunk: %w", err)
+		}
+		c.document.Outdated = outdated != 0
+		if expiresAt.Valid {
+			t := expiresAt.Time
+			c.document.ExpiresAt = &t
 		}
 
 		// Parse metadata
@@ -765,7 +822,10 @@ func (s *KBStore) searchFTS(ctx context.Context, query string, limit int) ([]Sea
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.content,
 		       d.id, d.file_path, d.content, d.metadata, d.created_at, d.updated_at,
-		       -bm25(kb_fts) AS score
+		       -bm25(kb_fts) AS score,
+		       COALESCE(d.memory_key,''), COALESCE(d.memory_scope,''),
+		       COALESCE(d.importance,0.5), COALESCE(d.hits,0),
+		       COALESCE(d.source,''), COALESCE(d.outdated,0), d.expires_at
 		FROM kb_fts
 		JOIN kb_chunks c ON c.id = kb_fts.rowid
 		JOIN kb_documents d ON d.id = c.document_id
@@ -786,13 +846,22 @@ func (s *KBStore) searchFTS(ctx context.Context, query string, limit int) ([]Sea
 		var metaJSON string
 		var rawScore float64
 
+		var ftsOutdated int
+		var ftsExpiresAt sql.NullTime
 		if err := rows.Scan(
 			&chunkID, &r.ChunkContent,
 			&r.Document.ID, &r.Document.FilePath, &r.Document.Content, &metaJSON,
 			&r.Document.CreatedAt, &r.Document.UpdatedAt,
 			&rawScore,
+			&r.Document.MemoryKey, &r.Document.MemoryScope, &r.Document.Importance, &r.Document.Hits,
+			&r.Document.Source, &ftsOutdated, &ftsExpiresAt,
 		); err != nil {
 			return nil, fmt.Errorf("kb: scan fts result: %w", err)
+		}
+		r.Document.Outdated = ftsOutdated != 0
+		if ftsExpiresAt.Valid {
+			t := ftsExpiresAt.Time
+			r.Document.ExpiresAt = &t
 		}
 
 		// Parse metadata

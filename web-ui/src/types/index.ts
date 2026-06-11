@@ -539,6 +539,14 @@ export interface RemembrancesConfig {
   context_enrichment_events_results: number
   context_enrichment_events_subject: string
   context_enrichment_events_last_days: number
+  // Memory System
+  memory_enabled: boolean
+  memory_context_enrichment_enabled: boolean
+  memory_context_max_items: number
+  memory_context_max_chars: number
+  memory_default_ttl_days: number
+  memory_gc_interval: string
+  memory_auto_capture: boolean
 }
 
 export interface CodeProjectInfo {
