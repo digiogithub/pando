@@ -164,15 +164,6 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		background = *req.Background
 	}
 
-	// When neither engine nor model are specified, default to pando engine with
-	// the currently active coder model so a prompt-only call just works.
-	if req.Engine == "" && req.Model == "" {
-		req.Engine = string(models.EnginePando)
-		if cfg := config.Get(); cfg != nil {
-			req.Model = string(cfg.Agents[config.AgentCoder].Model)
-		}
-	}
-
 	// Relaunch an existing task in-place when task_id is provided.
 	if req.TaskID != "" {
 		logging.Debug("mesnada relaunch called", "task_id", req.TaskID, "engine", req.Engine, "model", req.Model, "background", background)
@@ -208,6 +199,33 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 
 	if req.Prompt == "" {
 		return NewTextErrorResponse("prompt is required"), nil
+	}
+
+	// Apply configured defaults for new tasks when engine and/or model are
+	// omitted. This block is intentionally placed after the relaunch check so
+	// relaunches preserve the original task's engine/model.
+	if req.Engine == "" || req.Model == "" {
+		cfg := config.Get()
+		// Apply configured default engine when none is specified.
+		if req.Engine == "" && cfg != nil && cfg.Mesnada.Orchestrator.DefaultEngine != "" {
+			req.Engine = cfg.Mesnada.Orchestrator.DefaultEngine
+		}
+		// Determine the effective engine after normalization. When still empty the
+		// orchestrator will fall back to its built-in default (pando), so treat
+		// that case the same way.
+		effectiveEngine := normalizeMesnadaEngine(req.Engine)
+		if effectiveEngine == "" {
+			effectiveEngine = models.DefaultEngine()
+		}
+		// For the pando engine, resolve the active coder model so the subprocess
+		// uses the correct provider+model (e.g. "copilot.gpt-5.3-codex").
+		// Other engines (copilot CLI, claude CLI, …) do not use provider prefixes
+		// and rely on their own built-in defaults when no model is specified.
+		if req.Model == "" && effectiveEngine == models.EnginePando {
+			if cfg != nil {
+				req.Model = string(cfg.Agents[config.AgentCoder].Model)
+			}
+		}
 	}
 
 	logging.Debug("mesnada spawn called", "prompt_length", len(req.Prompt), "engine", req.Engine, "model", req.Model, "background", background)
