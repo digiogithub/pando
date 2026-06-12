@@ -310,9 +310,6 @@ make release-darwin-arm64
 make release-darwin-amd64
 
 # request user input for KEYSTORE_PASS variable (secret)
-read -r -s 'KEYSTORE_PASS'
-export KEYSTORE_PASS
-
 
 ssh -t mac-mini-de-digio "export PATH=\$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && export PKG_SIGN_IDENTITY='Developer ID Installer: Digio Soluciones Digitales SL (TEAMID)' && cd ~/www/MCP/Pando/pando && git pull origin main && git fetch origin --tags && rm -rf dist && mkdir -p dist && xc build && security unlock-keychain -p $KEYSTORE_PASS /Users/digio/Library/Keychains/login.keychain-db && make release-darwin-arm64 && make release-darwin-amd64 && bash scripts/build-macos-app"
 scp mac-mini-de-digio:~/www/MCP/Pando/pando/dist/*.zip dist/
