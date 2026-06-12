@@ -755,6 +755,9 @@ func convertToMesnadaAppConfig(cfg *config.Config) *mesnadaConfig.Config {
 	if personaPath := expandMesnadaPath(cfg.Mesnada.Orchestrator.PersonaPath); personaPath != "" {
 		mesnadaCfg.Orchestrator.PersonaPath = personaPath
 	}
+	if enginesDir := expandMesnadaPath(cfg.Mesnada.Orchestrator.EnginesDir); enginesDir != "" {
+		mesnadaCfg.Orchestrator.EnginesDir = enginesDir
+	}
 
 	mesnadaCfg.ACP.Enabled = cfg.Mesnada.ACP.Enabled
 	mesnadaCfg.ACP.DefaultAgent = cfg.Mesnada.ACP.DefaultAgent

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
@@ -79,6 +80,16 @@ func NewMesnadaGetOutputTool(orch *orchestrator.Orchestrator) BaseTool {
 }
 
 func (t *MesnadaSpawnTool) Info() ToolInfo {
+	// Base set of built-in engines.
+	engineEnum := []string{"pando", "copilot", "claude", "gemini", "opencode", "mistral", "acp", "acp-claude", "acp-codex", "ollama-claude", "ollama-opencode"}
+	engineDesc := "CLI engine to use for the task. 'pando' (default) runs Pando itself as a CLI subprocess — NOT an ACP agent. Other CLI engines: copilot, claude, gemini, opencode, mistral. ACP engines: acp (requires acp_agent), acp-claude, acp-codex. NOTE: choosing engine=pando with model=copilot.gpt-5.4 does NOT use the copilot engine; it uses the Copilot provider inside Pando CLI."
+
+	// Append custom template engines when available.
+	if customEngines := t.orchestrator.ListCustomEngines(); len(customEngines) > 0 {
+		engineEnum = append(engineEnum, customEngines...)
+		engineDesc += " Custom template engines: " + strings.Join(customEngines, ", ") + "."
+	}
+
 	return ToolInfo{
 		Name:        mesnadaSpawnToolName,
 		Description: "Creates and executes a new Mesnada orchestrator task, or relaunches an existing task in-place. When task_id is provided the task is reset and re-executed preserving its ID so dependent tasks are automatically unblocked.\n\nSimplest usage — provide only 'prompt': the task runs with engine=pando using the currently active coder model, in background (fire-and-forget). No need to specify engine, model, or background unless you want to override the defaults.",
@@ -97,8 +108,8 @@ func (t *MesnadaSpawnTool) Info() ToolInfo {
 			},
 			"engine": map[string]any{
 				"type":        "string",
-				"description": "CLI engine to use for the task. 'pando' (default) runs Pando itself as a CLI subprocess — NOT an ACP agent. Other CLI engines: copilot, claude, gemini, opencode, mistral. ACP engines: acp (requires acp_agent), acp-claude, acp-codex. NOTE: choosing engine=pando with model=copilot.gpt-5.4 does NOT use the copilot engine; it uses the Copilot provider inside Pando CLI.",
-				"enum":        []string{"pando", "copilot", "claude", "gemini", "opencode", "mistral", "acp", "acp-claude", "acp-codex", "ollama-claude", "ollama-opencode"},
+				"description": engineDesc,
+				"enum":        engineEnum,
 			},
 			"model": map[string]any{
 				"type":        "string",
@@ -542,6 +553,11 @@ func normalizeMesnadaEngine(engine string) models.Engine {
 
 	normalized := models.Engine(engine)
 	if models.ValidEngine(normalized) {
+		return normalized
+	}
+	// Preserve unknown engine names so the manager can resolve them against
+	// the custom template registry. An empty string means "use default".
+	if engine != "" {
 		return normalized
 	}
 	return ""

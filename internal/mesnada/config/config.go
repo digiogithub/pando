@@ -56,6 +56,9 @@ type ServerConfig struct {
 type OrchestratorConfig struct {
 	StorePath        string `json:"store_path" yaml:"store_path"`
 	LogDir           string `json:"log_dir" yaml:"log_dir"`
+	// EnginesDir is the directory scanned for *.template.yaml custom engine files.
+	// Defaults to <dirname(LogDir)>/engines when empty.
+	EnginesDir       string `json:"engines_dir,omitempty" yaml:"engines_dir,omitempty"`
 	MaxParallel      int    `json:"max_parallel" yaml:"max_parallel"`
 	DefaultMCPConfig string `json:"default_mcp_config" yaml:"default_mcp_config"`
 	DefaultEngine    string `json:"default_engine" yaml:"default_engine"`

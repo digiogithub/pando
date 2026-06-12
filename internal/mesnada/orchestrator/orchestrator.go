@@ -40,6 +40,9 @@ type Orchestrator struct {
 type Config struct {
 	StorePath   string
 	LogDir      string
+	// EnginesDir is the directory scanned at startup for *.template.yaml custom
+	// engine files. When empty the manager derives it from LogDir.
+	EnginesDir  string
 	MaxParallel int
 	// DefaultMCPConfig is an optional explicit override for the MCP config file
 	// passed to subagents. When empty (the default), pando builds a dynamic
@@ -990,6 +993,11 @@ func generateID() string {
 // ListPersonas returns a list of available persona names.
 func (o *Orchestrator) ListPersonas() []string {
 	return o.personaManager.ListPersonas()
+}
+
+// ListCustomEngines returns the names of all custom engine templates loaded at startup.
+func (o *Orchestrator) ListCustomEngines() []string {
+	return o.manager.CustomEngineNames()
 }
 
 func logTaskReceived(task *models.Task) {

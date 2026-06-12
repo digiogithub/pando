@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	llmtools "github.com/digiogithub/pando/internal/llm/tools"
@@ -199,6 +200,15 @@ func (s *Server) getToolDefinitions() []Tool {
 		modelEnum = append(modelEnum, modelID)
 	}
 
+	// Build engine enum: built-in engines + any loaded custom template engines.
+	builtinEngines := []string{"copilot", "claude-code", "gemini-cli", "opencode", "ollama-claude", "ollama-opencode"}
+	engineEnumServer := append([]string{}, builtinEngines...)
+	engineDescServer := "CLI engine to use: 'copilot' (GitHub Copilot CLI, default), 'claude-code' (Anthropic Claude CLI), 'gemini-cli' (Google Gemini CLI), 'opencode' (OpenCode.ai CLI), 'ollama-claude' (Ollama Claude interface), or 'ollama-opencode' (Ollama OpenCode interface). If not specified but model is provided, engine will be auto-detected based on the model configuration."
+	if customEngines := s.orchestrator.ListCustomEngines(); len(customEngines) > 0 {
+		engineEnumServer = append(engineEnumServer, customEngines...)
+		engineDescServer += " Custom template engines: " + strings.Join(customEngines, ", ") + "."
+	}
+
 	tools := []Tool{
 		{
 			Name:        "spawn_agent",
@@ -220,8 +230,8 @@ func (s *Server) getToolDefinitions() []Tool {
 					},
 					"engine": map[string]interface{}{
 						"type":        "string",
-						"description": "CLI engine to use: 'copilot' (GitHub Copilot CLI, default), 'claude-code' (Anthropic Claude CLI), 'gemini-cli' (Google Gemini CLI), 'opencode' (OpenCode.ai CLI), 'ollama-claude' (Ollama Claude interface), or 'ollama-opencode' (Ollama OpenCode interface). If not specified but model is provided, engine will be auto-detected based on the model configuration.",
-						"enum":        []string{"copilot", "claude-code", "gemini-cli", "opencode", "ollama-claude", "ollama-opencode"},
+						"description": engineDescServer,
+						"enum":        engineEnumServer,
 					},
 					"model": map[string]interface{}{
 						"type":        "string",

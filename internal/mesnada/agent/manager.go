@@ -4,6 +4,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -22,7 +23,8 @@ type Manager struct {
 	mistralSpawner        *MistralSpawner
 	acpSpawner            *ACPSpawner
 	pandoCLISpawner       *PandoCLISpawner
-	taskEngines           map[string]models.Engine // Maps task ID to engine
+	templateRegistry      *TemplateRegistry           // custom engine templates loaded at startup
+	taskEngines           map[string]models.Engine    // Maps task ID to engine
 	mu                    sync.RWMutex
 }
 
@@ -36,6 +38,21 @@ func NewManager(cfg *mesnadaconfig.Config, logDir string, onComplete func(task *
 		resolver = modelResolver[0]
 	}
 
+	// Determine the engines directory from config; default to sibling of logDir.
+	enginesDir := ""
+	if cfg != nil && cfg.Orchestrator.EnginesDir != "" {
+		enginesDir = cfg.Orchestrator.EnginesDir
+	} else if logDir != "" {
+		enginesDir = logDir + "/../engines"
+	}
+	if enginesDir != "" {
+		if abs, err := filepath.Abs(enginesDir); err == nil {
+			enginesDir = abs
+		}
+	}
+
+	_ = EnsureEnginesDirExists(enginesDir)
+
 	m := &Manager{
 		copilotSpawner:        NewCopilotSpawner(logDir, onComplete),
 		claudeSpawner:         NewClaudeSpawner(logDir, onComplete),
@@ -45,6 +62,7 @@ func NewManager(cfg *mesnadaconfig.Config, logDir string, onComplete func(task *
 		ollamaOpenCodeSpawner: NewOllamaOpenCodeSpawner(logDir, onComplete),
 		mistralSpawner:        NewMistralSpawner(logDir, onComplete),
 		pandoCLISpawner:       NewPandoCLISpawner(logDir, onComplete, resolver),
+		templateRegistry:      NewTemplateRegistry(enginesDir, logDir, onComplete),
 		taskEngines:           make(map[string]models.Engine),
 	}
 
@@ -54,6 +72,23 @@ func NewManager(cfg *mesnadaconfig.Config, logDir string, onComplete func(task *
 	}
 
 	return m
+}
+
+// TemplateRegistry returns the loaded custom engine template registry.
+// Used by tool description builders to enumerate available custom engines.
+func (m *Manager) TemplateRegistryInfo() []EngineTemplateInfo {
+	if m.templateRegistry == nil {
+		return nil
+	}
+	return m.templateRegistry.Infos()
+}
+
+// CustomEngineNames returns the names of all loaded custom engine templates.
+func (m *Manager) CustomEngineNames() []string {
+	if m.templateRegistry == nil {
+		return nil
+	}
+	return m.templateRegistry.ListEngines()
 }
 
 // Spawn starts a new agent using the appropriate engine.
@@ -92,6 +127,10 @@ func (m *Manager) Spawn(ctx context.Context, task *models.Task) error {
 	case models.EngineCopilot:
 		return m.copilotSpawner.Spawn(ctx, task)
 	default:
+		// Check custom template engines first.
+		if spawner, ok := m.templateRegistry.Get(string(engine)); ok {
+			return spawner.Spawn(ctx, task)
+		}
 		// Check if it's a dynamic ACP engine (prefix "acp-")
 		if strings.HasPrefix(string(engine), "acp-") {
 			if m.acpSpawner == nil {
@@ -128,6 +167,9 @@ func (m *Manager) Cancel(taskID string) error {
 		}
 		return fmt.Errorf("ACP spawner not available")
 	default:
+		if spawner, ok := m.templateRegistry.Get(string(engine)); ok {
+			return spawner.Cancel(taskID)
+		}
 		if strings.HasPrefix(string(engine), "acp-") && m.acpSpawner != nil {
 			return m.acpSpawner.Cancel(taskID)
 		}
@@ -160,6 +202,9 @@ func (m *Manager) Pause(taskID string) error {
 		}
 		return fmt.Errorf("ACP spawner not available")
 	default:
+		if spawner, ok := m.templateRegistry.Get(string(engine)); ok {
+			return spawner.Pause(taskID)
+		}
 		if strings.HasPrefix(string(engine), "acp-") && m.acpSpawner != nil {
 			return m.acpSpawner.Pause(taskID)
 		}
@@ -192,6 +237,9 @@ func (m *Manager) Wait(ctx context.Context, taskID string) error {
 		}
 		return fmt.Errorf("ACP spawner not available")
 	default:
+		if spawner, ok := m.templateRegistry.Get(string(engine)); ok {
+			return spawner.Wait(ctx, taskID)
+		}
 		if strings.HasPrefix(string(engine), "acp-") && m.acpSpawner != nil {
 			return m.acpSpawner.Wait(ctx, taskID)
 		}
@@ -224,6 +272,9 @@ func (m *Manager) IsRunning(taskID string) bool {
 		}
 		return false
 	default:
+		if spawner, ok := m.templateRegistry.Get(string(engine)); ok {
+			return spawner.IsRunning(taskID)
+		}
 		if strings.HasPrefix(string(engine), "acp-") && m.acpSpawner != nil {
 			return m.acpSpawner.IsRunning(taskID)
 		}
@@ -238,7 +289,8 @@ func (m *Manager) RunningCount() int {
 		m.geminiSpawner.RunningCount() +
 		m.opencodeSpawner.RunningCount() +
 		m.mistralSpawner.RunningCount() +
-		m.pandoCLISpawner.RunningCount()
+		m.pandoCLISpawner.RunningCount() +
+		m.templateRegistry.RunningCount()
 
 	m.ollamaClaudeSpawner.mu.RLock()
 	count += len(m.ollamaClaudeSpawner.processes)
@@ -265,6 +317,7 @@ func (m *Manager) Shutdown() {
 	m.pandoCLISpawner.Shutdown()
 	m.ollamaClaudeSpawner.Cleanup()
 	m.ollamaOpenCodeSpawner.Cleanup()
+	m.templateRegistry.Shutdown()
 
 	if m.acpSpawner != nil {
 		m.acpSpawner.Shutdown()
@@ -296,14 +349,19 @@ func (m *Manager) GetProcess(taskID string) (*Process, bool) {
 }
 
 // ValidateEngine checks if an engine string is valid.
-func ValidateEngine(engine string) error {
+// Pass an optional manager to also accept loaded custom template engines.
+func ValidateEngine(engine string, mgr ...*Manager) error {
 	e := models.Engine(engine)
 	// Allow dynamic ACP engines (prefix "acp-")
 	if strings.HasPrefix(engine, "acp-") {
 		return nil
 	}
 	if e != "" && !models.ValidEngine(e) {
-		return fmt.Errorf("invalid engine: %s (valid: copilot, claude, gemini, opencode, ollama-claude, ollama-opencode, mistral, acp, pando, acp-*, acp-claude, acp-codex, acp-custom)", engine)
+		// Check custom template engines when a manager is provided.
+		if len(mgr) > 0 && mgr[0] != nil && mgr[0].templateRegistry.Has(engine) {
+			return nil
+		}
+		return fmt.Errorf("invalid engine: %s (valid: copilot, claude, gemini, opencode, ollama-claude, ollama-opencode, mistral, acp, pando, acp-*, acp-claude, acp-codex, acp-custom, or any custom template engine)", engine)
 	}
 	return nil
 }

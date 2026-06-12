@@ -141,6 +141,9 @@ type MesnadaServerConfig struct {
 type MesnadaOrchestratorConfig struct {
 	StorePath        string `json:"storePath,omitempty"`
 	LogDir           string `json:"logDir,omitempty"`
+	// EnginesDir is the directory scanned for *.template.yaml custom engine files.
+	// Defaults to <dirname(LogDir)>/engines when empty.
+	EnginesDir       string `json:"enginesDir,omitempty"`
 	MaxParallel      int    `json:"maxParallel,omitempty"`
 	DefaultEngine    string `json:"defaultEngine,omitempty"`
 	DefaultModel     string `json:"defaultModel,omitempty"`
