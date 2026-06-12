@@ -1,31 +1,31 @@
-# Plan de Implementación: Proxy IPC para Escrituras de Remembrances (KB, Events, Code Indexer)
+# Implementation Plan: IPC Proxy for Remembrances Writes (KB, Events, Code Indexer)
 
-**Fecha**: 2026-05-27  
-**Estado**: Listo para ejecución  
-**Proyecto**: pando  
-**Autor**: Pando Agent  
-
----
-
-## 1. Antecedentes y Diagnóstico
-
-Actualmente, Pando implementa un modelo de único escritor (single-writer) para SQLite donde:
-- La instancia **primaria** abre el archivo `pando.db` en modo de lectura y escritura (`rw`) y tiene el control exclusivo de las transacciones mutadoras.
-- Las instancias **secundarias** abren la base de datos en modo solo lectura (`ro`) y redirigen las escrituras del `db.Querier` tradicional a través de llamadas RPC ZMQ (`db.write`) hacia la primaria, que las ejecuta de forma serializada usando el `writecoordinator`.
-
-Sin embargo, las operaciones de **Remembrances** (Knowledge Base, Events e Indexación de Código) se ejecutan mediante SQL directo con `*sql.DB` (`BeginTx`, `ExecContext`) en lugar del `db.Querier` generado por sqlc. 
-Esto causa fallas críticas (`database is readonly`) en instancias secundarias (por ejemplo, sub-agentes ejecutados en paralelo bajo el motor `engine=pando` o procesos de fondo de secondaries) cuando intentan:
-1. Añadir/Actualizar/Borrar documentos en la base de conocimientos (`KBStore`).
-2. Registrar eventos de sesión o decisiones (`EventStore`).
-3. Registrar/Actualizar el estado de indexación de código (`CodeIndexer`).
-
-### Desafío de Diseño
-El despachador de red `dbproxy.dispatchWrite` solo posee acceso al objeto `db.Querier`. No tiene acceso al `RemembrancesService` ni a sus sub-stores locales. 
-Para resolver esto de forma elegante y conforme con la directriz del usuario (*"seguramente implique una implementación de clase para este uso diferente por lo que no tiene porqué ampliarse el original si complica o exige más modificaciones"*), diseñaremos un **desacoplamiento modular** por medio de una interfaz despachadora opcional.
+**Date**: 2026-05-27  
+**Status**: Ready for execution  
+**Project**: pando  
+**Author**: Pando Agent  
 
 ---
 
-## 2. Arquitectura de la Solución
+## 1. Background and Diagnosis
+
+Currently, Pando implements a single-writer model for SQLite where:
+- The **primary** instance opens the `pando.db` file in read-write mode (`rw`) and has exclusive control over mutating transactions.
+- **Secondary** instances open the database in read-only mode (`ro`) and redirect writes from the traditional `db.Querier` through ZMQ RPC calls (`db.write`) to the primary, which executes them serialized using the `writecoordinator`.
+
+However, **Remembrances** operations (Knowledge Base, Events, and Code Indexing) execute direct SQL with `*sql.DB` (`BeginTx`, `ExecContext`) instead of the sqlc-generated `db.Querier`. 
+This causes critical failures (`database is readonly`) in secondary instances (e.g., sub-agents running in parallel under the `engine=pando` engine or secondary background processes) when they try to:
+1. Add/Update/Delete documents in the knowledge base (`KBStore`).
+2. Record session events or decisions (`EventStore`).
+3. Record/Update code indexing state (`CodeIndexer`).
+
+### Design Challenge
+The network dispatcher `dbproxy.dispatchWrite` only has access to the `db.Querier` object. It has no access to the `RemembrancesService` or its local sub-stores. 
+To solve this elegantly and in accordance with the user's directive (*"it surely involves a class implementation for this different use so the original doesn't need to be expanded if it complicates or requires more modifications"*), we will design a **modular decoupling** through an optional dispatcher interface.
+
+---
+
+## 2. Solution Architecture
 
 ```
 [Secondary Instance (RO SQL)]
@@ -58,197 +58,197 @@ Para resolver esto de forma elegante y conforme con la directriz del usuario (*"
 
 ---
 
-## 3. Plan de Implementación por Fases
+## 3. Phased Implementation Plan
 
-### Fase 1: Abstracción e Interfaz en `dbproxy`
+### Phase 1: Abstraction and Interface in `dbproxy`
 
-Para evitar dependencias circulares entre el paquete `dbproxy` (infraestructura de red IPC) y los paquetes de `rag` (lógica de negocio), introduciremos una interfaz y un registro dinámico en `internal/ipc/dbproxy`.
+To avoid circular dependencies between the `dbproxy` package (IPC network infrastructure) and the `rag` packages (business logic), we will introduce an interface and dynamic registry in `internal/ipc/dbproxy`.
 
-1. **Definir la interfaz `RemembrancesDispatcher`** en `internal/ipc/dbproxy/proxy.go` o un archivo nuevo `internal/ipc/dbproxy/remembrances.go`:
-   ```go
-   package dbproxy
+1. **Define the `RemembrancesDispatcher` interface** in `internal/ipc/dbproxy/proxy.go` or a new file `internal/ipc/dbproxy/remembrances.go`:
+    ```go
+    package dbproxy
 
-   import (
-       "context"
-       "encoding/json"
-   )
+    import (
+        "context"
+        "encoding/json"
+    )
 
-   // RemembrancesDispatcher define el contrato para despachar escrituras de RAG
-   // en la instancia primaria.
-   type RemembrancesDispatcher interface {
-       DispatchRemembrancesWrite(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error)
-   }
+    // RemembrancesDispatcher defines the contract for dispatching RAG writes
+    // on the primary instance.
+    type RemembrancesDispatcher interface {
+        DispatchRemembrancesWrite(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error)
+    }
 
-   var remembrancesDispatcher RemembrancesDispatcher
+    var remembrancesDispatcher RemembrancesDispatcher
 
-   // RegisterRemembrancesDispatcher registra el despachador de RAG en la primaria.
-   func RegisterRemembrancesDispatcher(d RemembrancesDispatcher) {
-       remembrancesDispatcher = d
-   }
-   ```
+    // RegisterRemembrancesDispatcher registers the RAG dispatcher on the primary.
+    func RegisterRemembrancesDispatcher(d RemembrancesDispatcher) {
+        remembrancesDispatcher = d
+    }
+    ```
 
-2. **Modificar `dispatchWrite`** en `internal/ipc/dbproxy/handlers.go` para usar este despachador en el bloque `default`:
-   ```go
-   // ... dentro de dispatchWrite ...
-   default:
-       if remembrancesDispatcher != nil {
-           return remembrancesDispatcher.DispatchRemembrancesWrite(ctx, req.Method, req.Params)
-       }
-       return nil, &WriteError{
-           Code:    ErrCodeMethodNotFound,
-           Method:  req.Method,
-           Message: fmt.Sprintf("unknown write method %q", req.Method),
-       }
-   ```
+2. **Modify `dispatchWrite`** in `internal/ipc/dbproxy/handlers.go` to use this dispatcher in the `default` block:
+    ```go
+    // ... inside dispatchWrite ...
+    default:
+        if remembrancesDispatcher != nil {
+            return remembrancesDispatcher.DispatchRemembrancesWrite(ctx, req.Method, req.Params)
+        }
+        return nil, &WriteError{
+            Code:    ErrCodeMethodNotFound,
+            Method:  req.Method,
+            Message: fmt.Sprintf("unknown write method %q", req.Method),
+        }
+    ```
 
 ---
 
-### Fase 2: Métodos de Escritura de Bajo Nivel (Primary-Side Stores)
+### Phase 2: Low-Level Write Methods (Primary-Side Stores)
 
-Cuando la secundaria genera un documento o evento, calcula el chunking y los embeddings vectoriales localmente (usando las API keys del cliente) para no sobrecargar de CPU a la primaria. El payload de RPC ya viaja con vectores y chunks precomputados.
-Necesitamos asegurarnos de que las tiendas locales de la primaria puedan insertar estos datos directamente sin re-calcularlos.
+When the secondary generates a document or event, it computes chunking and vector embeddings locally (using client API keys) to avoid overloading the primary's CPU. The RPC payload already travels with precomputed vectors and chunks.
+We need to ensure the primary's local stores can insert this data directly without re-computing it.
 
 1. **`KBStore` (`internal/rag/kb/kb.go`)**:
-   - `AddDocument` y `UpdateDocument` ya admiten flujos a través del proxy.
-   - Implementar un método local en la primaria (o extraer el flujo interno de base de datos) que acepte chunks y embeddings precomputados:
-     ```go
-     func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, content string, metadata map[string]interface{}, chunks []string, embeddings [][]float32) error
-     ```
-   - Este método encapsulará la transacción SQL actual (`INSERT INTO kb_documents`, `INSERT INTO kb_chunks`, `INSERT INTO kb_fts`) evitando llamar a `s.embedder.EmbedDocuments`.
+    - `AddDocument` and `UpdateDocument` already support flows through the proxy.
+    - Implement a local method on the primary (or extract the internal database flow) that accepts precomputed chunks and embeddings:
+      ```go
+      func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, content string, metadata map[string]interface{}, chunks []string, embeddings [][]float32) error
+      ```
+    - This method will encapsulate the current SQL transaction (`INSERT INTO kb_documents`, `INSERT INTO kb_chunks`, `INSERT INTO kb_fts`) avoiding calls to `s.embedder.EmbedDocuments`.
 
 2. **`EventStore` (`internal/rag/events/events.go`)**:
-   - Agregar un método de bajo nivel que reciba el embedding ya generado:
-     ```go
-     func (s *EventStore) SaveEventWithEmbedding(ctx context.Context, subject, content string, metadata map[string]interface{}, embedding []float32) (int64, error)
-     ```
-   - Este método realiza el `INSERT INTO events` y el `INSERT INTO events_fts` sin volver a invocar a `s.embedder.EmbedQuery`.
+    - Add a low-level method that receives the already-generated embedding:
+      ```go
+      func (s *EventStore) SaveEventWithEmbedding(ctx context.Context, subject, content string, metadata map[string]interface{}, embedding []float32) (int64, error)
+      ```
+    - This method performs the `INSERT INTO events` and `INSERT INTO events_fts` without re-invoking `s.embedder.EmbedQuery`.
 
 3. **`CodeIndexer` (`internal/rag/code/indexer.go`)**:
-   - Adaptar las inserciones transaccionales de proyectos (`code_projects`) y archivos (`code_files` / `code_symbols`) para que puedan ser gatilladas de forma limpia en la primaria a partir de structs serializados de deserialización RPC.
+    - Adapt transactional insertions for projects (`code_projects`) and files (`code_files` / `code_symbols`) so they can be cleanly triggered on the primary from deserialized RPC structs.
 
 ---
 
-### Fase 3: Implementación de la Clase `RemembrancesWriteDispatcher`
+### Phase 3: `RemembrancesWriteDispatcher` Class Implementation
 
-Crearemos un módulo despachador dedicado que actuará como el "puente de clase para este uso diferente" sugerido por el usuario.
+We will create a dedicated dispatcher module that will act as the "class bridge for this different use" suggested by the user.
 
-1. **Crear el archivo `internal/rag/proxy/dispatcher.go`** o `internal/rag/dispatcher.go`:
-   ```go
-   package proxy // o dentro del paquete rag
+1. **Create the file `internal/rag/proxy/dispatcher.go`** or `internal/rag/dispatcher.go`:
+    ```go
+    package proxy // or inside the rag package
 
-   import (
-       "context"
-       "encoding/json"
-       "fmt"
-       "github.com/digiogithub/pando/internal/rag"
-       "github.com/digiogithub/pando/internal/ipc/dbproxy"
-   )
+    import (
+        "context"
+        "encoding/json"
+        "fmt"
+        "github.com/digiogithub/pando/internal/rag"
+        "github.com/digiogithub/pando/internal/ipc/dbproxy"
+    )
 
-   type RemembrancesWriteDispatcher struct {
-       svc *rag.RemembrancesService
-   }
+    type RemembrancesWriteDispatcher struct {
+        svc *rag.RemembrancesService
+    }
 
-   func NewRemembrancesWriteDispatcher(svc *rag.RemembrancesService) *RemembrancesWriteDispatcher {
-       return &RemembrancesWriteDispatcher{svc: svc}
-   }
+    func NewRemembrancesWriteDispatcher(svc *rag.RemembrancesService) *RemembrancesWriteDispatcher {
+        return &RemembrancesWriteDispatcher{svc: svc}
+    }
 
-   func (d *RemembrancesWriteDispatcher) DispatchRemembrancesWrite(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
-       switch method {
-       case "KBAddDocument":
-           var req kbAddDocumentRequest // Definido en kb.go o accesible
-           if err := json.Unmarshal(params, &req); err != nil {
-               return nil, err
-           }
-           err := d.svc.KB.AddDocumentWithEmbeddings(ctx, req.FilePath, req.Content, req.Metadata, req.Chunks, req.Embeddings)
-           return nil, err
+    func (d *RemembrancesWriteDispatcher) DispatchRemembrancesWrite(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+        switch method {
+        case "KBAddDocument":
+            var req kbAddDocumentRequest // Defined in kb.go or accessible
+            if err := json.Unmarshal(params, &req); err != nil {
+                return nil, err
+            }
+            err := d.svc.KB.AddDocumentWithEmbeddings(ctx, req.FilePath, req.Content, req.Metadata, req.Chunks, req.Embeddings)
+            return nil, err
 
-       case "KBUpdateDocument":
-           var req kbAddDocumentRequest
-           if err := json.Unmarshal(params, &req); err != nil {
-               return nil, err
-           }
-           // Eliminar previo e insertar nuevo
-           _ = d.svc.KB.DeleteDocument(ctx, req.FilePath)
-           err := d.svc.KB.AddDocumentWithEmbeddings(ctx, req.FilePath, req.Content, req.Metadata, req.Chunks, req.Embeddings)
-           return nil, err
+        case "KBUpdateDocument":
+            var req kbAddDocumentRequest
+            if err := json.Unmarshal(params, &req); err != nil {
+                return nil, err
+            }
+            // Delete previous and insert new
+            _ = d.svc.KB.DeleteDocument(ctx, req.FilePath)
+            err := d.svc.KB.AddDocumentWithEmbeddings(ctx, req.FilePath, req.Content, req.Metadata, req.Chunks, req.Embeddings)
+            return nil, err
 
-       case "KBDeleteDocument":
-           var filePath string
-           if err := json.Unmarshal(params, &filePath); err != nil {
-               return nil, err
-           }
-           err := d.svc.KB.DeleteDocument(ctx, filePath)
-           return nil, err
+        case "KBDeleteDocument":
+            var filePath string
+            if err := json.Unmarshal(params, &filePath); err != nil {
+                return nil, err
+            }
+            err := d.svc.KB.DeleteDocument(ctx, filePath)
+            return nil, err
 
-       case "SaveEvent":
-           var req saveEventRequest // Definido en events.go o accesible
-           if err := json.Unmarshal(params, &req); err != nil {
-               return nil, err
-           }
-           id, err := d.svc.Events.SaveEventWithEmbedding(ctx, req.Subject, req.Content, req.Metadata, req.Embedding)
-           if err != nil {
-               return nil, err
-           }
-           return json.Marshal(id)
+        case "SaveEvent":
+            var req saveEventRequest // Defined in events.go or accessible
+            if err := json.Unmarshal(params, &req); err != nil {
+                return nil, err
+            }
+            id, err := d.svc.Events.SaveEventWithEmbedding(ctx, req.Subject, req.Content, req.Metadata, req.Embedding)
+            if err != nil {
+                return nil, err
+            }
+            return json.Marshal(id)
 
-       case "CodeUpsertProject":
-           // Lógica de deserialización y llamada directa a c.Code.UpsertProjectLocal(...)
-           // ...
-       
-       case "CodeSetProjectStatus":
-           // Lógica de deserialización y actualización directa en code_projects
-           // ...
+        case "CodeUpsertProject":
+            // Deserialization logic and direct call to c.Code.UpsertProjectLocal(...)
+            // ...
+        
+        case "CodeSetProjectStatus":
+            // Deserialization logic and direct update in code_projects
+            // ...
 
-       case "CodeIndexFile":
-           // Lógica de deserialización de codeIndexFileRequest y ejecución de transacciones
-           // ...
+        case "CodeIndexFile":
+            // Deserialization logic for codeIndexFileRequest and transaction execution
+            // ...
 
-       case "CodeDeleteProject":
-           // Lógica de borrado local en la primaria
-           // ...
+        case "CodeDeleteProject":
+            // Local deletion logic on the primary
+            // ...
 
-       default:
-           return nil, fmt.Errorf("unsupported remembrances write method: %s", method)
-       }
-   }
-   ```
-
----
-
-### Fase 4: Registro e Integración de Ciclo de Vida (`internal/app/app.go`)
-
-1. **Resolver el error de compilación actual en `internal/app/app.go`** asegurando la importación correcta de `"github.com/digiogithub/pando/internal/ipc/dbproxy"`.
-2. **Registrar el despachador en la primaria**:
-   Dentro de `SetupIPC` de `App` en `internal/app/app.go`:
-   ```go
-   func (app *App) SetupIPC(bus *ipc.Bus) {
-       app.IPCBus = bus
-       app.IPCIsPrimary = true
-       session.SetIPCPublisher(bus)
-
-       // REGISTRO DEL DISPATCHER DE REMEMBRANCES
-       if app.Remembrances != nil {
-           dispatcher := ragproxy.NewRemembrancesWriteDispatcher(app.Remembrances)
-           dbproxy.RegisterRemembrancesDispatcher(dispatcher)
-           logging.Info("Remembrances IPC write dispatcher registered successfully on primary")
-       }
-       logging.Info("IPC bus wired to session service", "pubAddr", bus.PubAddr, "rpcAddr", bus.RPCAddr)
-   }
-   ```
+        default:
+            return nil, fmt.Errorf("unsupported remembrances write method: %s", method)
+        }
+    }
+    ```
 
 ---
 
-### Fase 5: Pruebas y Validación
+### Phase 4: Lifecycle Registration and Integration (`internal/app/app.go`)
 
-1. **Prueba unitaria del despachador (`internal/ipc/dbproxy/handlers_test.go`)**:
-   - Crear un test que registre un despachador ficticio (`mockDispatcher`) y verifique que `dbproxy.DispatchWrite` de forma exitosa delega las peticiones no resueltas a dicho despachador.
-2. **Prueba de integración extremo a extremo**:
-   - Ejecutar una simulación con un cliente secundario de `RemembrancesService` configurado con un proxy IPC ficticio que apunte a un bus con el despachador real de la primaria y verificar la persistencia correcta en la base de datos de destino.
+1. **Resolve the current compilation error in `internal/app/app.go`** by ensuring the correct import of `"github.com/digiogithub/pando/internal/ipc/dbproxy"`.
+2. **Register the dispatcher on the primary**:
+   Inside `App.SetupIPC` in `internal/app/app.go`:
+    ```go
+    func (app *App) SetupIPC(bus *ipc.Bus) {
+        app.IPCBus = bus
+        app.IPCIsPrimary = true
+        session.SetIPCPublisher(bus)
+
+        // REMEMBRANCES DISPATCHER REGISTRATION
+        if app.Remembrances != nil {
+            dispatcher := ragproxy.NewRemembrancesWriteDispatcher(app.Remembrances)
+            dbproxy.RegisterRemembrancesDispatcher(dispatcher)
+            logging.Info("Remembrances IPC write dispatcher registered successfully on primary")
+        }
+        logging.Info("IPC bus wired to session service", "pubAddr", bus.PubAddr, "rpcAddr", bus.RPCAddr)
+    }
+    ```
 
 ---
 
-## 4. Mitigación de Riesgos y Buenas Prácticas
+### Phase 5: Tests and Validation
 
-1. **Transacciones Atómicas**: Asegurar que toda operación de despachado en la primaria abra y complete su propia transacción en SQLite de manera atómica para evitar estados inconsistentes (especialmente FTS desalineados).
-2. **Timeouts Adecuados**: Indexar código o procesar documentos KB de gran tamaño puede tardar más tiempo del límite predeterminado. Usar el canal `WriteWithRetry` con `dbproxy.DefaultWriteTimeouts.Long` (30 segundos) garantiza tolerancia a picos de latencia de red de IPC.
-3. **No Redundancia**: El chunking y embeddings deben completarse de forma estricta en el nodo originador (secundario), evitando dobles llamadas costosas de red externa en la primaria.
+1. **Dispatcher unit test (`internal/ipc/dbproxy/handlers_test.go`)**:
+    - Create a test that registers a mock dispatcher and verifies that `dbproxy.DispatchWrite` successfully delegates unresolved requests to that dispatcher.
+2. **End-to-end integration test**:
+    - Run a simulation with a secondary `RemembrancesService` client configured with a mock IPC proxy pointing to a bus with the primary's real dispatcher, and verify correct persistence in the target database.
+
+---
+
+## 4. Risk Mitigation and Best Practices
+
+1. **Atomic Transactions**: Ensure that every dispatch operation on the primary opens and completes its own SQLite transaction atomically to prevent inconsistent states (especially misaligned FTS).
+2. **Proper Timeouts**: Indexing code or processing large KB documents may take longer than the default limit. Using the `WriteWithRetry` channel with `dbproxy.DefaultWriteTimeouts.Long` (30 seconds) ensures tolerance for IPC network latency spikes.
+3. **No Redundancy**: Chunking and embeddings must be completed strictly on the originating node (secondary), avoiding costly double calls to the external network on the primary.

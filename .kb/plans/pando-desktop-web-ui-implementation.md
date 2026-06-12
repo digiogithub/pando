@@ -4,22 +4,22 @@ description: Análisis y estrategia de implementación para Pando inspirado en l
 fases: 4
 ---
 
-# Plan de Implementación de la Interfaz Pando Desktop / Web
+# Pando Desktop / Web Interface Implementation Plan
 
-Tras el análisis de OpenCode `desktop/` y `app/`, identificamos que este funciona como un envoltorio de la CLI. Implementaremos una topología equivalente en Pando:
+After analyzing OpenCode `desktop/` and `app/`, we identified that it works as a wrapper around the CLI. We will implement an equivalent topology in Pando:
 
-## 1. Topología Recomendada
+## 1. Recommended Topology
 
-- **Engine Server:** Utilizaremos la infraestructura de `cmd/acp.go` e implementaremos por completo el servidor TCP/HTTP REST/SSE en Go, similar al comando `--serve` en OpenCode (*Ver Fase 1*).
-- **Web Frontend:** Se optará por crear un cliente desacoplado (Single Page Application). Recomendado en SolidJS tal cual lo hace OpenCode (por su velocidad, minimalismo y similitud nativa con React), empaquetable y hosteado inicialmente por Vite (*Ver Fase 2*).
-- **Desktop Host:** Para empaquetar, en vez de obligar al uso de un binario Sidecar a través de Tauri (como en OpenCode, combinando Rust y Go sidecar), recomendamos **Wails**, que permite empaquetar Go puro (donde corre Pando) con frontend SolidJS, logrando un binario único más compacto y natural (*Ver Fase 3*). Si se prefiere compatibilidad exacta arquitectónica con OpenCode, se puede usar **Tauri v2** + un sidecar `pando`.
-- **Ventajas Competitivas:** Integración visual interactiva al sistema "Mesnada" (Engendrador de subagentes) y la "Code of Remembrances" (Exploración Visual) (*Ver Fase 4*).
+- **Engine Server:** We will use the `cmd/acp.go` infrastructure and fully implement the TCP/HTTP REST/SSE server in Go, similar to the `--serve` command in OpenCode (*See Phase 1*).
+- **Web Frontend:** We will create a decoupled client (Single Page Application). Recommended in SolidJS just like OpenCode (for its speed, minimalism, and native similarity with React), packageable and initially hosted by Vite (*See Phase 2*).
+- **Desktop Host:** For packaging, instead of forcing the use of a Sidecar binary through Tauri (as in OpenCode, combining Rust and Go sidecar), we recommend **Wails**, which allows packaging pure Go (where Pando runs) with a SolidJS frontend, achieving a more compact and native single binary (*See Phase 3*). If exact architectural compatibility with OpenCode is preferred, **Tauri v2** + a `pando` sidecar can be used.
+- **Competitive Advantages:** Interactive visual integration with the "Mesnada" system (Subagent Generator) and the "Code of Remembrances" (Visual Exploration) (*See Phase 4*).
 
-## Fases y Detalles Adicionales almacenados (Facts de Remembrances):
+## Phases and Additional Details stored (Remembrances Facts):
 
-- [Fase 1: Engine HTTP API](desktop-web-ui-phase-1.md)
-- [Fase 2: Frontend SolidJS UI](desktop-web-ui-phase-2.md)
-- [Fase 3: Wrapper Native/Desktop](desktop-web-ui-phase-3.md)
-- [Fase 4: Funcionalidades Avanzadas Pando](desktop-web-ui-phase-4.md)
+- [Phase 1: Engine HTTP API](desktop-web-ui-phase-1.md)
+- [Phase 2: Frontend SolidJS UI](desktop-web-ui-phase-2.md)
+- [Phase 3: Native/Desktop Wrapper](desktop-web-ui-phase-3.md)
+- [Phase 4: Advanced Pando Features](desktop-web-ui-phase-4.md)
 
-Paso sugerido a continuación: Desarrollar o unificar `pando serve` o terminar el servidor ACP sobre transporte HTTP de la Fase 1 en `acp.go`.
+Suggested next step: Develop or unify `pando serve` or finish the ACP server over HTTP transport from Phase 1 in `acp.go`.

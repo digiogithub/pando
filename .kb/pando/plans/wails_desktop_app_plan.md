@@ -1,132 +1,132 @@
-# Plan: Pando Desktop App con Wails
+# Plan: Pando Desktop App with Wails
 
-**Fecha**: 2026-04-11  
-**Estado**: Planificado  
-**Objetivo**: Empaquetar Pando como aplicación de escritorio nativa usando Wails, combinando el servidor HTTP interno (`internal/api`) con la web UI React en un binario standalone multiplataforma.
+**Date**: 2026-04-11  
+**Status**: Planned  
+**Objective**: Package Pando as a native desktop application using Wails, combining the internal HTTP server (`internal/api`) with the React web UI into a standalone cross-platform binary.
 
 ---
 
-## Análisis de la arquitectura actual
+## Current Architecture Analysis
 
-### Modos de ejecución actuales:
-| Modo | Comando | Descripción |
+### Current execution modes:
+| Mode | Command | Description |
 |------|---------|-------------|
-| **Comando** | `pando -p "prompt"` | No interactivo, stream a stdout, `app.RunNonInteractive()` |
-| **TUI** | `pando` | Bubble Tea UI completa, suscripciones pubsub, keyboard nav |
-| **Web backend** | `pando serve` | HTTP REST+SSE en puerto 8765, `internal/api.Server` |
-| **ACP** | `pando --acp-server` | JSON-RPC sobre stdio para IDEs |
+| **Command** | `pando -p "prompt"` | Non-interactive, stream to stdout, `app.RunNonInteractive()` |
+| **TUI** | `pando` | Full Bubble Tea UI, pubsub subscriptions, keyboard nav |
+| **Web backend** | `pando serve` | HTTP REST+SSE on port 8765, `internal/api.Server` |
+| **ACP** | `pando --acp-server` | JSON-RPC over stdio for IDEs |
 
-### Stack web-ui:
+### web-ui stack:
 - **Frontend**: React 19 + Vite + TypeScript + TailwindCSS
-- **API**: `fetch('/api/v1/...')` con URLs relativas, token en localStorage
-- **Auth**: Token via `/api/v1/token`, guardado en localStorage
+- **API**: `fetch('/api/v1/...')` with relative URLs, token in localStorage
+- **Auth**: Token via `/api/v1/token`, stored in localStorage
 - **Build**: `npm run build` → `web-ui/dist/`
 
-### Módulo Go: `github.com/digiogithub/pando`
+### Go module: `github.com/digiogithub/pando`
 
 ---
 
-## Estrategia Wails
+## Wails Strategy
 
-Wails crea una ventana nativa con WebView embebido. La arquitectura desktop:
-1. El proceso Wails arranca el servidor HTTP (`internal/api`) en un puerto libre aleatorio en `127.0.0.1`
-2. Wails sirve el frontend React desde assets embebidos (`web-ui/dist/`)
-3. Un handler custom inyecta `window.__PANDO__ = {apiBase, token}` en el HTML antes de servir
-4. El frontend detecta `window.__PANDO__` y usa la URL absoluta interna + token pre-inyectado
+Wails creates a native window with embedded WebView. The desktop architecture:
+1. The Wails process starts the HTTP server (`internal/api`) on a random free port on `127.0.0.1`
+2. Wails serves the React frontend from embedded assets (`web-ui/dist/`)
+3. A custom handler injects `window.__PANDO__ = {apiBase, token}` into the HTML before serving
+4. The frontend detects `window.__PANDO__` and uses the absolute internal URL + pre-injected token
 
 ---
 
-## Fases de implementación
+## Implementation Phases
 
 ### Phase 1: Wails Setup & Scaffolding
 **Fact ID**: `desktop_wails_phase1_setup`
 
-Añadir Wails como dependencia Go y crear la estructura base:
+Add Wails as a Go dependency and create the base structure:
 - `go get github.com/wailsapp/wails/v2`
-- Crear `desktop/` con `main.go` y `wails.json`
-- Crear `internal/desktop/app.go` y `internal/desktop/embed.go`
-- Assets de plataforma en `desktop/build/` (iconos, manifests)
+- Create `desktop/` with `main.go` and `wails.json`
+- Create `internal/desktop/app.go` and `internal/desktop/embed.go`
+- Platform assets in `desktop/build/` (icons, manifests)
 
-**Archivos**: `desktop/main.go`, `desktop/wails.json`, `desktop/build/`, `internal/desktop/app.go`, `internal/desktop/embed.go`
+**Files**: `desktop/main.go`, `desktop/wails.json`, `desktop/build/`, `internal/desktop/app.go`, `internal/desktop/embed.go`
 
 ---
 
 ### Phase 2: Backend API Server Integration
 **Fact ID**: `desktop_wails_phase2_backend`
 
-Arrancar `internal/api.Server` en puerto libre dentro del proceso Wails:
-- `internal/desktop/server.go`: `StartAPIServer(ctx, cwd)` → busca puerto libre con `net.Listen("tcp","127.0.0.1:0")`
-- Hook `OnStartup` en `DesktopApp` arranca el server y guarda URL+token
-- Handler `inject.go` inserta `<script>window.__PANDO__={apiBase,token}</script>` en el HTML index
+Start `internal/api.Server` on a free port within the Wails process:
+- `internal/desktop/server.go`: `StartAPIServer(ctx, cwd)` → find free port with `net.Listen("tcp","127.0.0.1:0")`
+- `OnStartup` hook in `DesktopApp` starts the server and stores URL+token
+- `inject.go` handler inserts `<script>window.__PANDO__={apiBase,token}</script>` into the index HTML
 
-**Archivos**: `internal/desktop/server.go`, `internal/desktop/inject.go`, `internal/desktop/app.go` (modificado)
+**Files**: `internal/desktop/server.go`, `internal/desktop/inject.go`, `internal/desktop/app.go` (modified)
 
 ---
 
 ### Phase 3: Frontend Adaptation
 **Fact ID**: `desktop_wails_phase3_frontend`
 
-Adaptar `web-ui/` para modo web (URLs relativas) y modo desktop (URL absoluta + token pre-inyectado):
-- `web-ui/src/services/desktop.ts`: detecta `window.__PANDO__`, exporta `isDesktop`, `desktopConfig`
-- `web-ui/src/services/api.ts`: usa `window.__PANDO__?.apiBase ?? ''` como base URL, pre-carga token
-- `web-ui/src/services/auth.ts`: en modo desktop, salta health check HTTP
-- `web-ui/src/App.tsx`: en modo desktop, salta splash de conexión de red
-- `web-ui/vite.config.ts`: añadir modo `desktop` con `base: './'`
-- `web-ui/package.json`: añadir script `"build:desktop"`
+Adapt `web-ui/` for web mode (relative URLs) and desktop mode (absolute URL + pre-injected token):
+- `web-ui/src/services/desktop.ts`: detects `window.__PANDO__`, exports `isDesktop`, `desktopConfig`
+- `web-ui/src/services/api.ts`: uses `window.__PANDO__?.apiBase ?? ''` as base URL, pre-loads token
+- `web-ui/src/services/auth.ts`: in desktop mode, skips HTTP health check
+- `web-ui/src/App.tsx`: in desktop mode, skips network connection splash
+- `web-ui/vite.config.ts`: add `desktop` mode with `base: './'`
+- `web-ui/package.json`: add `"build:desktop"` script
 
-**Archivos**: `web-ui/src/services/desktop.ts` (nuevo), `web-ui/src/services/api.ts`, `web-ui/src/services/auth.ts`, `web-ui/src/App.tsx`, `web-ui/vite.config.ts`, `web-ui/package.json`
+**Files**: `web-ui/src/services/desktop.ts` (new), `web-ui/src/services/api.ts`, `web-ui/src/services/auth.ts`, `web-ui/src/App.tsx`, `web-ui/vite.config.ts`, `web-ui/package.json`
 
 ---
 
 ### Phase 4: Wails Go Bindings
 **Fact ID**: `desktop_wails_phase4_bindings`
 
-Exponer funciones Go nativas al frontend TypeScript vía Wails bindings:
+Expose native Go functions to the TypeScript frontend via Wails bindings:
 - `GetServerURL()`, `GetToken()`, `GetVersion()`
-- Diálogos nativos: `SelectDirectory()`, `OpenFileDialog()`, `SaveFileDialog()`
-- Control de ventana: `Minimize()`, `Maximize()`, `ToggleFullscreen()`, `SetTitle()`
-- Sistema: `OpenInBrowser(url)`, `ShowNotification(title, body)`
-- (Opcional) System tray con menu básico
-- Wails auto-genera `wailsjs/go/...` TypeScript; crear wrapper `web-ui/src/services/wailsBindings.ts`
+- Native dialogs: `SelectDirectory()`, `OpenFileDialog()`, `SaveFileDialog()`
+- Window control: `Minimize()`, `Maximize()`, `ToggleFullscreen()`, `SetTitle()`
+- System: `OpenInBrowser(url)`, `ShowNotification(title, body)`
+- (Optional) System tray with basic menu
+- Wails auto-generates `wailsjs/go/...` TypeScript; create wrapper `web-ui/src/services/wailsBindings.ts`
 
-**Archivos**: `internal/desktop/bindings.go`, `internal/desktop/tray.go` (opcional), `web-ui/src/services/wailsBindings.ts` (nuevo)
+**Files**: `internal/desktop/bindings.go`, `internal/desktop/tray.go` (optional), `web-ui/src/services/wailsBindings.ts` (new)
 
 ---
 
 ### Phase 5: Build Pipeline & Asset Embedding
 **Fact ID**: `desktop_wails_phase5_build`
 
-Configurar pipeline completo de build:
+Configure complete build pipeline:
 - `Makefile` targets: `desktop-deps`, `desktop-ui`, `desktop-build`, `desktop-dev`, `desktop-package`
-- `desktop/wails.json` con `frontend:build`, `frontend:dir` apuntando a `../web-ui`
-- `internal/desktop/embed.go` usa `//go:embed all:frontend` (symlink a `web-ui/dist/`)
-- Modo dev: `wails dev` con hot reload del frontend
+- `desktop/wails.json` with `frontend:build`, `frontend:dir` pointing to `../web-ui`
+- `internal/desktop/embed.go` uses `//go:embed all:frontend` (symlink to `web-ui/dist/`)
+- Dev mode: `wails dev` with frontend hot reload
 
-**Archivos**: `Makefile` (targets añadidos), `desktop/wails.json`, `internal/desktop/embed.go`
+**Files**: `Makefile` (targets added), `desktop/wails.json`, `internal/desktop/embed.go`
 
 ---
 
 ### Phase 6: Packaging & Distribution
 **Fact ID**: `desktop_wails_phase6_packaging`
 
-Generar instaladores nativos multiplataforma:
+Generate native cross-platform installers:
 - **macOS**: fat binary (arm64+amd64), `.app` bundle, DMG, code signing + notarization
 - **Windows**: `.exe`, NSIS installer (`wails build -nsis`), `wails.exe.manifest`
 - **Linux**: AppImage, `.deb` via `nfpm`, `.rpm` via `nfpm`
 - **CI/CD**: GitHub Actions matrix (macos-latest, windows-latest, ubuntu-latest)
-- **Versioning**: script `scripts/bump-version.sh` sincroniza `internal/version` + `desktop/wails.json`
+- **Versioning**: `scripts/bump-version.sh` script synchronizes `internal/version` + `desktop/wails.json`
 
-**Archivos**: `desktop/build/darwin/`, `desktop/build/windows/`, `desktop/build/linux/`, `.github/workflows/desktop-build.yml`, `scripts/bump-version.sh`
+**Files**: `desktop/build/darwin/`, `desktop/build/windows/`, `desktop/build/linux/`, `.github/workflows/desktop-build.yml`, `scripts/bump-version.sh`
 
 ---
 
-## Árbol de archivos final
+## Final File Tree
 
 ```
 pando/
 ├── desktop/
-│   ├── main.go                    # Entry point Wails
-│   ├── wails.json                 # Config Wails
+│   ├── main.go                    # Wails entry point
+│   ├── wails.json                 # Wails config
 │   └── build/
 │       ├── appicon.png
 │       ├── darwin/{icon.icns, Info.plist}
@@ -134,23 +134,23 @@ pando/
 │       └── linux/icon.png
 ├── internal/desktop/
 │   ├── app.go                     # DesktopApp + lifecycle hooks
-│   ├── bindings.go                # Bindings nativos expuestos al frontend
-│   ├── server.go                  # Arranca internal/api en puerto libre
-│   ├── inject.go                  # Inyecta window.__PANDO__ en HTML
+│   ├── bindings.go                # Native bindings exposed to frontend
+│   ├── server.go                  # Starts internal/api on free port
+│   ├── inject.go                  # Injects window.__PANDO__ into HTML
 │   ├── embed.go                   # //go:embed web-ui/dist
-│   └── tray.go                    # System tray (opcional)
+│   └── tray.go                    # System tray (optional)
 ├── web-ui/src/services/
-│   ├── desktop.ts                 # Detección modo desktop + tipos window.__PANDO__
-│   └── wailsBindings.ts           # Re-exporta bindings Wails con fallbacks web
-├── Makefile                       # Targets desktop-*
+│   ├── desktop.ts                 # Desktop mode detection + window.__PANDO__ types
+│   └── wailsBindings.ts           # Re-exports Wails bindings with web fallbacks
+├── Makefile                       # desktop-* targets
 ├── scripts/bump-version.sh
 └── .github/workflows/desktop-build.yml
 ```
 
-## Notas de implementación
+## Implementation Notes
 
-- **Sin conflicto con `pando serve`**: el desktop app usa un puerto aleatorio en 127.0.0.1, nunca el 8765
-- **Token seguro**: generado en startup, inyectado en HTML, no expuesto en red pública
-- **Compatibilidad web**: todos los cambios en `web-ui/src/services/` son backward-compatible (fallback sin `window.__PANDO__`)
-- **TUI no afectada**: `internal/tui` y `cmd/root.go` no se modifican
-- **Modo comando no afectado**: `pando -p` sigue funcionando igual
+- **No conflict with `pando serve`**: the desktop app uses a random port on 127.0.0.1, never 8765
+- **Secure token**: generated at startup, injected into HTML, not exposed on public network
+- **Web compatibility**: all changes in `web-ui/src/services/` are backward-compatible (fallback without `window.__PANDO__`)
+- **TUI unaffected**: `internal/tui` and `cmd/root.go` are not modified
+- **Command mode unaffected**: `pando -p` continues to work the same way

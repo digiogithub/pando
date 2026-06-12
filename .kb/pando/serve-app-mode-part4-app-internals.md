@@ -1,166 +1,166 @@
-# Análisis de la Implementación del Servidor Pando — Parte 4: App Interna y Servicios
+# Analysis of the Pando Server Implementation — Part 4: App Internals and Services
 
-## 6. App — Núcleo de la Aplicación
+## 6. App — Application Core
 
 ### `internal/app/app.go`
-- **Fichero:** `/www/MCP/Pando/pando/internal/app/app.go` (~1500 líneas)
-- **Estructura `App`:**
+- **File:** `/www/MCP/Pando/pando/internal/app/app.go` (~1500 lines)
+- **`App` Structure:**
 ```go
 type App struct {
-    Sessions    session.Service      // Servicio de sesiones
-    Messages    message.Service      // Servicio de mensajes
-    History     history.Service      // Servicio de historial de archivos
-    Permissions permission.Service   // Servicio de permisos (auto-aprobación)
-    CoderAgent  agent.Service        // Agente LLM principal
+    Sessions    session.Service      // Session service
+    Messages    message.Service      // Message service
+    History     history.Service      // File history service
+    Permissions permission.Service   // Permissions service (auto-approval)
+    CoderAgent  agent.Service        // Main LLM agent
 
-    Projects            *project.Service       // Gestión de proyectos
-    ProjectManager      *project.Manager       // Manager de proyectos (ciclo de vida)
-    Snapshots           *snapshot.Service      // Snapshots de sesiones
-    LSPClients          map[string]*lsp.Client // Clientes LSP por lenguaje
-    SkillManager        *skills.SkillManager   // Gestor de skills
-    MesnadaOrchestrator *mesnadaOrch.Orchestrator // Orquestador Mesnada
-    CronService         *cronjob.Service       // Servicio de cron jobs
-    MesnadaServer       *mesnadaServer.Server  // Servidor HTTP del orquestador
-    Remembrances        *rag.RemembrancesService // Servicio RAG/KB/code indexing
-    LuaManager          *luaengine.FilterManager // Manager de filtros Lua
-    MCPGateway          *mcpgateway.Gateway    // Gateway de servidores MCP con favoritos
-    Evaluator           *evaluator.EvaluatorService // Auto-mejora (self-improvement)
+    Projects            *project.Service       // Project management
+    ProjectManager      *project.Manager       // Project manager (lifecycle)
+    Snapshots           *snapshot.Service      // Session snapshots
+    LSPClients          map[string]*lsp.Client // LSP clients per language
+    SkillManager        *skills.SkillManager   // Skill manager
+    MesnadaOrchestrator *mesnadaOrch.Orchestrator // Mesnada orchestrator
+    CronService         *cronjob.Service       // Cron jobs service
+    MesnadaServer       *mesnadaServer.Server  // Orchestrator HTTP server
+    Remembrances        *rag.RemembrancesService // RAG/KB/code indexing service
+    LuaManager          *luaengine.FilterManager // Lua filter manager
+    MCPGateway          *mcpgateway.Gateway    // MCP server gateway with favorites
+    Evaluator           *evaluator.EvaluatorService // Self-improvement
 
-    IPCBus       *ipc.Bus    // Bus ZMQ (solo primaria)
-    IPCIsPrimary bool        // Es instancia primaria?
+    IPCBus       *ipc.Bus    // ZMQ bus (primary only)
+    IPCIsPrimary bool        // Is primary instance?
 }
 ```
 
-### Inicialización en `New()` (proceso secuencial):
+### Initialization in `New()` (sequential process):
 
-1. **Servicios base:** Sessions, Messages, History, Projects, Permissions
-2. **ProjectManager:** Manager de proyectos con capacidades de ciclo de vida
-3. **Auto-registro global:** Registra el CWD como proyecto global para descubrimiento entre instancias
-4. **Theme:** Inicializa tema según configuración
-5. **Skills:** Si está habilitado, descubre y carga skills de los paths configurados
-6. **LSP Clients:** Inicializa clientes LSP en background (omitido en modo ACP)
-7. **Modelos dinámicos:** Refresca modelos de proveedores configurados
-8. **OpenLit:** Inicializa OpenLit para observabilidad (tracing distribuido)
+1. **Base services:** Sessions, Messages, History, Projects, Permissions
+2. **ProjectManager:** Project manager with lifecycle capabilities
+3. **Global auto-registration:** Registers the CWD as a global project for cross-instance discovery
+4. **Theme:** Initializes theme according to configuration
+5. **Skills:** If enabled, discovers and loads skills from configured paths
+6. **LSP Clients:** Initializes LSP clients in background (skipped in ACP mode)
+7. **Dynamic models:** Refreshes models from configured providers
+8. **OpenLit:** Initializes OpenLit for observability (distributed tracing)
 9. **Remembrances (RAG):**
-   - Servicio de búsqueda semántica (KB, code indexing, eventos)
-   - Sincroniza documentos KB desde disco
-   - Indexa sesiones automáticamente
-   - **Context Enricher:** Busca contexto relevante antes de cada prompt de usuario
-10. **Lua Filter Manager:** Filtros Lua para personalizar comportamiento del agente (si está habilitado)
-11. **Snapshots:** Servicio de snapshots (auto-cleanup configurable)
-12. **Evaluator:** Sistema de auto-mejora con selección UCB de templates y skills
-13. **Browser Registry:** Inicializa registro de navegadores para web browsing
-14. **MCP Gateway:** Gateway que gestiona servidores MCP con sistema de favoritos por uso
-15. **Mesnada Orchestrator:** Orquestador de sub-agentes (si está habilitado) con:
-    - Servicio de cron jobs
-    - Servidor ACP (Agent Communication Protocol) HTTP opcional
-    - Servidor HTTP embebido del orquestador
-16. **CoderAgent:** Agente LLM principal con todas las herramientas configuradas
-17. **Persona Manager:** Gestor de personas (built-in + definidas por usuario)
-18. **Persona Selector:** Selección automática de persona
+   - Semantic search service (KB, code indexing, events)
+   - Syncs KB documents from disk
+   - Automatically indexes sessions
+   - **Context Enricher:** Searches for relevant context before each user prompt
+10. **Lua Filter Manager:** Lua filters for customizing agent behavior (if enabled)
+11. **Snapshots:** Snapshot service (configurable auto-cleanup)
+12. **Evaluator:** Self-improvement system with UCB selection of templates and skills
+13. **Browser Registry:** Initializes browser registry for web browsing
+14. **MCP Gateway:** Gateway managing MCP servers with usage-based favorites system
+15. **Mesnada Orchestrator:** Sub-agent orchestrator (if enabled) with:
+    - Cron jobs service
+    - Optional ACP (Agent Communication Protocol) HTTP server
+    - Embedded orchestrator HTTP server
+16. **CoderAgent:** Main LLM agent with all configured tools
+17. **Persona Manager:** Persona manager (built-in + user-defined)
+18. **Persona Selector:** Automatic persona selection
 
-### `Shutdown()` — Apagado ordenado:
+### `Shutdown()` — Ordered shutdown:
 1. MesnadaServer → CronService → MesnadaOrchestrator
 2. Snapshot cleanup → Browser sessions → Watchers → LSP clients
 3. OpenLit shutdown → Project manager → IPC bus
 
 ### `SetupIPC(bus)`:
-Configura el bus ZMQ como publisher IPC para el servicio de sesiones (`session.SetIPCPublisher(bus)`), permitiendo que eventos de sesión se transmitan a otras instancias.
+Configures the ZMQ bus as an IPC publisher for the session service (`session.SetIPCPublisher(bus)`), allowing session events to be broadcast to other instances.
 
 ---
 
-## 7. Mecanismo de Streaming SSE en Chat
+## 7. SSE Streaming Mechanism in Chat
 
-El flujo de chat en streaming funciona así:
+The streaming chat flow works as follows:
 
-1. **POST /api/v1/chat/stream** recibe `{sessionId, prompt}`
-2. Crea/obtiene sesión con `getOrCreateSession()`
-3. Establece headers SSE (`text/event-stream`)
-4. Envía evento `session` con `{sessionId, running:true}`
-5. **Submit** al `BackgroundSessionManager` que ejecuta el agente en un goroutine con `context.Background()` (independiente del HTTP)
-6. **Subscribe** al canal de eventos de la sesión
-7. `streamSessionEvents()` itera eventos del canal:
-   - `contentDelta` → SSE evento `content` con el delta de texto
-   - `toolCall` → SSE evento `tool_call` con nombre y parámetros
-   - `toolResult` → SSE evento `tool_result` con resultado/error
-   - `response` → SSE evento `done` (finalización)
-   - `error` → SSE evento `error`
-   - Manejo especial de llamadas a herramientas con entradas pendientes (tool-use con confirmación)
+1. **POST /api/v1/chat/stream** receives `{sessionId, prompt}`
+2. Creates/gets session with `getOrCreateSession()`
+3. Sets SSE headers (`text/event-stream`)
+4. Sends `session` event with `{sessionId, running:true}`
+5. **Submits** to the `BackgroundSessionManager` which runs the agent in a goroutine with `context.Background()` (independent of HTTP)
+6. **Subscribes** to the session event channel
+7. `streamSessionEvents()` iterates events from the channel:
+   - `contentDelta` → SSE `content` event with text delta
+   - `toolCall` → SSE `tool_call` event with name and parameters
+   - `toolResult` → SSE `tool_result` event with result/error
+   - `response` → SSE `done` event (completion)
+   - `error` → SSE `error` event
+   - Special handling of tool calls with pending inputs (tool-use with confirmation)
 
-8. Si el cliente se desconecta, el agente sigue ejecutándose en background
-9. **Reconexión:** `GET /api/v1/sessions/{id}/stream` permite reconectarse y recibir replay de eventos bufferizados
+8. If the client disconnects, the agent continues running in the background
+9. **Reconnection:** `GET /api/v1/sessions/{id}/stream` allows reconnecting and receiving buffered event replay
 
 ---
 
-## 8. Relación entre Modos y Funcionalidades
+## 8. Relationship between Modes and Features
 
-| Característica | TUI (primaria) | TUI (secundaria) | Serve | App | ACP |
+| Feature | TUI (primary) | TUI (secondary) | Serve | App | ACP |
 |---|---|---|---|---|---|
-| **Servidor HTTP REST** | ✗ | ✗ | ✓ | ✓ + WebUI | ✗ |
-| **Bus ZMQ (PUB/ROUTER)** | ✓ (primaria) | ✗ | ✓ | ✓ | ✓ |
-| **Bridge eventos → ZMQ** | ✓ | ✗ | ✓ | ✓ | ✓ |
+| **REST HTTP Server** | ✗ | ✗ | ✓ | ✓ + WebUI | ✗ |
+| **ZMQ Bus (PUB/ROUTER)** | ✓ (primary) | ✗ | ✓ | ✓ | ✓ |
+| **Events → ZMQ Bridge** | ✓ | ✗ | ✓ | ✓ | ✓ |
 | **DBProxy writes** | ✗ | ✓ | ✗ | ✗ | ✗ |
-| **Gestión de sesiones** | ✓ | ✓ (lectura local, escritura proxy) | ✓ | ✓ | ✓ |
-| **Lock primario** | ✓ | ✗ | ✗ | ✗ | ✗ |
+| **Session management** | ✓ | ✓ (local read, proxy write) | ✓ | ✓ | ✓ |
+| **Primary lock** | ✓ | ✗ | ✗ | ✗ | ✗ |
 | **Instance Registry** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Context Enricher** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Auto-apertura navegador** | ✗ | ✗ | ✗ | ✓ | ✗ |
+| **Auto-open browser** | ✗ | ✗ | ✗ | ✓ | ✗ |
 
 ---
 
-## 9. Resumen de Ficheros Clave
+## 9. Key Files Summary
 
-| Fichero | Propósito |
-|---------|-----------|
-| `cmd/serve.go` | Comando `pando serve` (servidor HTTP sin WebUI) |
-| `cmd/app_command.go` | Comando `pando app` (servidor HTTP con WebUI) |
-| `cmd/app.go` | Lógica compartida `runAppMode()` |
-| `cmd/root.go` | Modo TUI (interactivo, con IPC completo y lock) |
-| `internal/api/server.go` | Servidor HTTP: Server struct, NewServer, middleware, HTTP server config |
-| `internal/api/routes.go` | Registro de todas las rutas API (+ utilidades writeJSON/writeError) |
+| File | Purpose |
+|------|---------|
+| `cmd/serve.go` | `pando serve` command (HTTP server without WebUI) |
+| `cmd/app_command.go` | `pando app` command (HTTP server with WebUI) |
+| `cmd/app.go` | Shared `runAppMode()` logic |
+| `cmd/root.go` | TUI mode (interactive, with full IPC and lock) |
+| `internal/api/server.go` | HTTP server: Server struct, NewServer, middleware, HTTP server config |
+| `internal/api/routes.go` | All API routes registration (+ writeJSON/writeError utilities) |
 | `internal/api/handlers_base.go` | Handlers: health, project, project context |
-| `internal/api/handlers_chat.go` | Handlers: chat síncrono, chat stream, session stream |
-| `internal/api/handlers_sessions.go` | Handlers CRUD de sesiones |
-| `internal/api/handlers_config.go` | Handlers de configuración (proveedores, agentes, LSP, etc.) |
-| `internal/api/handlers_container.go` | Handlers de container runtime |
-| `internal/api/handlers_cronjobs.go` | Handlers CRUD de cron jobs |
-| `internal/api/handlers_evaluator.go` | Handlers del evaluador |
-| `internal/api/handlers_extras.go` | Handlers varios |
-| `internal/api/handlers_files.go` | Handlers de archivos |
-| `internal/api/handlers_instances.go` | Handlers de instancias (proxy IPC → REST) |
-| `internal/api/handlers_logs.go` | Handlers de logs |
-| `internal/api/handlers_models.go` | Handlers de modelos LLM |
-| `internal/api/handlers_notifications.go` | SSE de notificaciones |
-| `internal/api/handlers_orchestrator.go` | Handlers del orquestador Mesnada |
-| `internal/api/handlers_personas.go` | Handlers de personas |
-| `internal/api/handlers_projects.go` | Handlers CRUD de proyectos |
-| `internal/api/handlers_provider_accounts.go` | Handlers de cuentas de proveedores |
-| `internal/api/handlers_remembrances.go` | Handlers de remembranzas (RAG/index) |
-| `internal/api/handlers_settings.go` | Handlers de ajustes |
-| `internal/api/handlers_snapshots.go` | Handlers de snapshots |
-| `internal/api/handlers_terminal.go` | Handler de terminal |
-| `internal/api/handlers_tools.go` | Handler de herramientas MCP |
-| `internal/api/handlers_browser_config.go` | Handler de configuración de navegadores |
-| `internal/api/handlers_config_events.go` | SSE de eventos de configuración |
-| `internal/api/handlers_config_init.go` | Handlers de inicialización/config generate |
-| `internal/api/background_runner.go` | BackgroundSessionManager para sesiones asíncronas |
-| `internal/api/ui_assets_app.go` | WebUI embebida (embed.FS) |
+| `internal/api/handlers_chat.go` | Handlers: sync chat, chat stream, session stream |
+| `internal/api/handlers_sessions.go` | Session CRUD handlers |
+| `internal/api/handlers_config.go` | Configuration handlers (providers, agents, LSP, etc.) |
+| `internal/api/handlers_container.go` | Container runtime handlers |
+| `internal/api/handlers_cronjobs.go` | Cron jobs CRUD handlers |
+| `internal/api/handlers_evaluator.go` | Evaluator handlers |
+| `internal/api/handlers_extras.go` | Miscellaneous handlers |
+| `internal/api/handlers_files.go` | File handlers |
+| `internal/api/handlers_instances.go` | Instance handlers (IPC → REST proxy) |
+| `internal/api/handlers_logs.go` | Log handlers |
+| `internal/api/handlers_models.go` | LLM model handlers |
+| `internal/api/handlers_notifications.go` | Notification SSE |
+| `internal/api/handlers_orchestrator.go` | Mesnada orchestrator handlers |
+| `internal/api/handlers_personas.go` | Persona handlers |
+| `internal/api/handlers_projects.go` | Project CRUD handlers |
+| `internal/api/handlers_provider_accounts.go` | Provider account handlers |
+| `internal/api/handlers_remembrances.go` | Remembrances handlers (RAG/index) |
+| `internal/api/handlers_settings.go` | Settings handlers |
+| `internal/api/handlers_snapshots.go` | Snapshot handlers |
+| `internal/api/handlers_terminal.go` | Terminal handler |
+| `internal/api/handlers_tools.go` | MCP tools handler |
+| `internal/api/handlers_browser_config.go` | Browser configuration handler |
+| `internal/api/handlers_config_events.go` | Configuration event SSE |
+| `internal/api/handlers_config_init.go` | Initialization/config generate handlers |
+| `internal/api/background_runner.go` | BackgroundSessionManager for async sessions |
+| `internal/api/ui_assets_app.go` | Embedded WebUI (embed.FS) |
 | `internal/app/app.go` | App struct, New(), Shutdown(), SetupIPC() |
-| `internal/ipc/bus.go` | Bus ZMQ (PUB+ROUTER) con JSON-RPC |
-| `internal/ipc/client.go` | Cliente ZMQ (SUB+DEALER) con soporte multi-endpoint |
-| `internal/ipc/envelope.go` | Envelope estándar para mensajes PUB |
-| `internal/ipc/ports.go` | Asignación de puertos (hash FNV + fallback) |
-| `internal/ipc/lock_common.go` | LockInfo y rutas de fichero de lock |
-| `internal/ipc/lock_unix.go` | flock para primacía de instancia |
-| `internal/ipc/options.go` | Timeouts de conexión/llamada |
-| `internal/ipc/errors.go` | Errores del protocolo IPC |
-| `internal/ipc/protocol/rpc.go` | Constantes y tipos JSON-RPC |
-| `internal/ipc/protocol/topics.go` | Constantes de topics PUB |
-| `internal/ipc/protocol/payloads.go` | Tipos de payloads para eventos |
-| `internal/ipc/bridge/bridge.go` | Bridge eventos in-process → ZMQ PUB |
-| `internal/ipc/bridge/handlers.go` | Handlers JSON-RPC registrados en el Bus |
-| `internal/ipc/dbproxy/proxy.go` | DBProxy: proxy de escrituras BD via ZMQ |
-| `internal/ipc/dbproxy/handlers.go` | Handlers RPC de db.write |
-| `internal/instanceregistry/entry.go` | Entry y tipos Mode para instancias |
-| `internal/instanceregistry/announce.go` | Anunciar/revocar instancia en /tmp |
-| `internal/instanceregistry/registry.go` | Listar/obtener instancias vivas |
+| `internal/ipc/bus.go` | ZMQ bus (PUB+ROUTER) with JSON-RPC |
+| `internal/ipc/client.go` | ZMQ client (SUB+DEALER) with multi-endpoint support |
+| `internal/ipc/envelope.go` | Standard envelope for PUB messages |
+| `internal/ipc/ports.go` | Port assignment (FNV hash + fallback) |
+| `internal/ipc/lock_common.go` | LockInfo and lock file paths |
+| `internal/ipc/lock_unix.go` | flock for instance primacy |
+| `internal/ipc/options.go` | Connection/call timeouts |
+| `internal/ipc/errors.go` | IPC protocol errors |
+| `internal/ipc/protocol/rpc.go` | JSON-RPC constants and types |
+| `internal/ipc/protocol/topics.go` | PUB topic constants |
+| `internal/ipc/protocol/payloads.go` | Event payload types |
+| `internal/ipc/bridge/bridge.go` | In-process events → ZMQ PUB bridge |
+| `internal/ipc/bridge/handlers.go` | JSON-RPC handlers registered on the Bus |
+| `internal/ipc/dbproxy/proxy.go` | DBProxy: database write proxy via ZMQ |
+| `internal/ipc/dbproxy/handlers.go` | db.write RPC handlers |
+| `internal/instanceregistry/entry.go` | Entry and Mode types for instances |
+| `internal/instanceregistry/announce.go` | Announce/revoke instance in /tmp |
+| `internal/instanceregistry/registry.go` | List/get living instances |

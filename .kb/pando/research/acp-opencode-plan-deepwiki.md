@@ -1,74 +1,74 @@
 # DeepWiki Q&A with Code Context for Repository: sst/opencode
 ## Q1
-analiza y muéstrame cómo funciona el flujo de la herramienta todowrite y cómo expone el plan y actualizaciones del mismo a través del modo ACP
+Analyze and show me how the todowrite tool flow works and how it exposes the plan and its updates through ACP mode
 ### Answer
-# Flujo de la herramienta todowrite y exposición a través de ACP
+# Todowrite Tool Flow and ACP Exposure
 
-## Resumen
+## Summary
 
-La herramienta `todowrite` permite al LLM gestionar listas de tareas durante sesiones de codificación. Cuando se usa en modo ACP (Agent Client Protocol), las tareas se convierten automáticamente en entradas de plan que se exponen al cliente ACP a través de actualizaciones de sesión. opencode:25-57 
+The `todowrite` tool allows the LLM to manage task lists during coding sessions. When used in ACP mode (Agent Client Protocol), tasks are automatically converted into plan entries that are exposed to the ACP client through session updates. opencode:25-57
 
-## Implementación de la herramienta todowrite
+## Todowrite Tool Implementation
 
-### Definición y parámetros
+### Definition and Parameters
 
-La herramienta `TodoWriteTool` se define en `packages/opencode/src/tool/todo.ts` y utiliza un esquema de parámetros que incluye un array de items todo con contenido, estado y prioridad. opencode:9-19 
+The `TodoWriteTool` is defined in `packages/opencode/src/tool/todo.ts` and uses a parameter schema that includes an array of todo items with content, status and priority. opencode:9-19
 
-### Ejecución de la herramienta
+### Tool Execution
 
-Cuando el LLM invoca `todowrite`, la herramienta:
-1. Solicita permiso con `ctx.ask` para la acción `todowrite` opencode:35-40 
-2. Actualiza el estado de todos mediante `todo.update` con el sessionID y los nuevos todos opencode:42-45 
-3. Retorna los todos actualizados como metadata opencode:47-53 
+When the LLM invokes `todowrite`, the tool:
+1. Requests permission with `ctx.ask` for the `todowrite` action opencode:35-40
+2. Updates todo state via `todo.update` with the sessionID and new todos opencode:42-45
+3. Returns the updated todos as metadata opencode:47-53
 
-## Integración con ACP
+## ACP Integration
 
-### Detección de completación de todowrite
+### Detection of todowrite Completion
 
-En el agente ACP (`packages/opencode/src/acp/agent.ts`), cuando se procesa un mensaje con partes de tipo `tool`, el sistema verifica si el tool es `todowrite` y si su estado es `completed`. opencode:343-374 
+In the ACP agent (`packages/opencode/src/acp/agent.ts`), when a message with parts of type `tool` is processed, the system checks if the tool is `todowrite` and if its state is `completed`. opencode:343-374
 
-### Conversión a plan ACP
+### Conversion to ACP Plan
 
-Cuando se detecta un `todowrite` completado:
-1. Se parsea el output usando `decodeTodos` opencode:350-351 
-2. Se mapea cada todo a una entrada `PlanEntry` con:
-   - `priority`: "medium" (fijo)
-   - `status`: convertido del estado del todo (cancelled → completed)
-   - `content`: el contenido del todo opencode:357-365 
-3. Se envía al cliente ACP mediante `connection.sessionUpdate` con tipo `sessionUpdate: "plan"` opencode:352-367 
+When a completed `todowrite` is detected:
+1. The output is parsed using `decodeTodos` opencode:350-351
+2. Each todo is mapped to a `PlanEntry` with:
+   - `priority`: "medium" (fixed)
+   - `status`: converted from todo state (cancelled → completed)
+   - `content`: the todo content opencode:357-365
+3. It is sent to the ACP client via `connection.sessionUpdate` with type `sessionUpdate: "plan"` opencode:352-367
 
-### Flujo completo en ACP
+### Complete Flow in ACP
 
 ```mermaid
 graph TD
-    LLM["LLM invoca todowrite"] --> Tool["TodoWriteTool.execute"]
+    LLM["LLM invokes todowrite"] --> Tool["TodoWriteTool.execute"]
     Tool --> Update["todo.update sessionID, todos"]
-    Update --> Event["Evento session message"]
-    Event --> Process["processMessage en ACP"]
+    Update --> Event["session message event"]
+    Event --> Process["processMessage in ACP"]
     Process --> Check{part.tool === todowrite?}
-    Check -->|Sí| Parse["decodeTodos output"]
-    Parse --> Map["Mapear a PlanEntry"]
+    Check -->|Yes| Parse["decodeTodos output"]
+    Parse --> Map["Map to PlanEntry"]
     Map --> Send["connection.sessionUpdate plan"]
-    Check -->|No| Other["Procesar otros tools"]
+    Check -->|No| Other["Process other tools"]
 ```
 
-## Exposición en UI TUI
+## TUI UI Exposure
 
-### Visualización en TUI
+### TUI Visualization
 
-En la interfaz TUI, los todos se muestran de dos formas:
-1. **Estado completado**: Muestra un bloque con la lista de todos y sus iconos de estado opencode:967-978 
-2. **Estado pendiente**: Muestra un indicador inline "Updating todos..." opencode:980-985 
+In the TUI interface, todos are shown in two ways:
+1. **Completed state**: Shows a block with the todo list and their status icons opencode:967-978
+2. **Pending state**: Shows an inline "Updating todos..." indicator opencode:980-985
 
-### Instrucciones al LLM
+### LLM Instructions
 
-El sistema prompt instruye al LLM a usar `todowrite` frecuentemente para gestionar tareas y dar visibilidad al usuario sobre el progreso. opencode:23-27 
+The system prompt instructs the LLM to use `todowrite` frequently to manage tasks and give the user visibility into progress. opencode:23-27
 
-## Notas
+## Notes
 
-- La herramienta `todowrite` está deshabilitada por defecto para subagentes pero puede habilitarse manualmente opencode:232-234 
-- En modo ACP, los todos se convierten a planes con prioridad fija "medium" independientemente de la prioridad original opencode:361-364 
-- El estado "cancelled" se convierte a "completed" en el plan ACP opencode:358-359 
+- The `todowrite` tool is disabled by default for subagents but can be manually enabled opencode:232-234
+- In ACP mode, todos are converted to plans with a fixed "medium" priority regardless of the original priority opencode:361-364
+- The "cancelled" state is converted to "completed" in the ACP plan opencode:358-359
 
 Wiki pages you might want to explore:
 - [Glossary (sst/opencode)](/wiki/sst/opencode#11)
@@ -199,89 +199,89 @@ This tool is disabled for subagents by default, but you can enable it manually. 
 :::
 ```
 ## Q2
-Describe también el tipo de mensajes ACP que se envían y el flujo de envío de estos mensajes
+Also describe the ACP message types that are sent and the flow of sending these messages
 ### Answer
-# Tipos de mensajes ACP y flujo de envío
+# ACP Message Types and Sending Flow
 
-## Resumen
+## Summary
 
-El sistema ACP envía múltiples tipos de mensajes a través de `connection.sessionUpdate()` para mantener sincronizado al cliente con el estado del agente. Estos mensajes se generan a partir de eventos del SDK y se procesan en el agente ACP antes de ser enviados al cliente. opencode:173-188 
+The ACP system sends multiple types of messages through `connection.sessionUpdate()` to keep the client synchronized with the agent state. These messages are generated from SDK events and processed in the ACP agent before being sent to the client. opencode:173-188
 
-## Tipos de mensajes ACP enviados
+## ACP Message Types Sent
 
-### Actualizaciones de sesión
+### Session Updates
 
-| Tipo de mensaje | Propósito | Ubicación |
+| Message Type | Purpose | Location |
 |---|---|---|
-| `plan` | Actualización del plan de tareas (desde todowrite) | opencode:836-849  |
-| `tool_call_update` | Estado de ejecución de herramientas (pending, running, completed, failed) | opencode:809-822  |
-| `agent_message_chunk` | Chunks de texto del mensaje del agente | opencode:465-476  |
-| `agent_thought_chunk` | Chunks de razonamiento del agente | opencode:484-495  |
-| `user_message_chunk` | Chunks de texto del mensaje del usuario | opencode:914-926  |
-| `usage_update` | Actualización de uso de tokens y costos | opencode:117-126  |
-| `available_commands_update` | Actualización de comandos disponibles | opencode:1186-1192  |
+| `plan` | Task plan update (from todowrite) | opencode:836-849 |
+| `tool_call_update` | Tool execution state (pending, running, completed, failed) | opencode:809-822 |
+| `agent_message_chunk` | Agent message text chunks | opencode:465-476 |
+| `agent_thought_chunk` | Agent reasoning chunks | opencode:484-495 |
+| `user_message_chunk` | User message text chunks | opencode:914-926 |
+| `usage_update` | Token usage and cost update | opencode:117-126 |
+| `available_commands_update` | Available commands update | opencode:1186-1192 |
 
-## Flujo de envío de mensajes
+## Message Sending Flow
 
-### Suscripción a eventos del SDK
+### SDK Event Subscription
 
-El agente ACP se suscribe a eventos globales del SDK mediante `sdk.global.event()` en un bucle infinito que procesa eventos a medida que llegan. opencode:173-188 
+The ACP agent subscribes to global SDK events via `sdk.global.event()` in an infinite loop that processes events as they arrive. opencode:173-188
 
 ```mermaid
 graph TD
-    SDK["sdk.global.event"] --> Loop["Bucle infinito"]
+    SDK["sdk.global.event"] --> Loop["Infinite loop"]
     Loop --> Event["for await event of events.stream"]
     Event --> Handle["handleEvent payload"]
     Handle --> Switch["switch event.type"]
 ```
 
-### Procesamiento de eventos y envío de actualizaciones
+### Event Processing and Update Sending
 
-El método `handleEvent` procesa diferentes tipos de eventos y envía las actualizaciones correspondientes al cliente ACP. opencode:190-192 
+The `handleEvent` method processes different event types and sends corresponding updates to the ACP client. opencode:190-192
 
-#### Evento `message.part.delta`
+#### `message.part.delta` Event
 
-Cuando se recibe un delta de parte de mensaje, el sistema:
-1. Obtiene el mensaje completo del SDK
-2. Identifica la parte específica que cambió
-3. Envía el chunk apropiado según el tipo de parte y campo opencode:438-501 
+When a message part delta is received, the system:
+1. Gets the complete message from the SDK
+2. Identifies the specific part that changed
+3. Sends the appropriate chunk based on the part type and field opencode:438-501
 
 ```mermaid
 graph TD
     Delta["message.part.delta"] --> Fetch["sdk.session.message"]
     Fetch --> CheckRole{role === assistant?}
     CheckRole -->|No| Return
-    CheckRole -->|Sí| FindPart["find part by partID"]
+    CheckRole -->|Yes| FindPart["find part by partID"]
     FindPart --> Type{part.type}
     Type -->|text| TextChunk["agent_message_chunk"]
     Type -->|reasoning| ThoughtChunk["agent_thought_chunk"]
     Type -->|other| Return
 ```
 
-#### Evento `session.message`
+#### `session.message` Event
 
-Para mensajes completos, el sistema procesa cada parte del mensaje y envía actualizaciones según el tipo de parte. opencode:785-832 
+For complete messages, the system processes each message part and sends updates based on the part type. opencode:785-832
 
-**Partes de tipo `tool`:**
-- Estado `pending`: limpia snapshots de shell
-- Estado `running`: envía `tool_call_update` con estado `in_progress` opencode:809-822 
-- Estado `completed`: envía `tool_call_update` con estado `completed` o `plan` si es `todowrite` opencode:827-849 
-- Estado `failed`: envía `tool_call_update` con estado `failed` opencode:881-905 
+**Parts of type `tool`:**
+- `pending` state: clears shell snapshots
+- `running` state: sends `tool_call_update` with `in_progress` state opencode:809-822
+- `completed` state: sends `tool_call_update` with `completed` state or `plan` if it's `todowrite` opencode:827-849
+- `failed` state: sends `tool_call_update` with `failed` state opencode:881-905
 
-**Partes de tipo `text`:**
-Envía `user_message_chunk` o `agent_message_chunk` según el rol del mensaje opencode:911-930 
+**Parts of type `text`:**
+Sends `user_message_chunk` or `agent_message_chunk` based on the message role opencode:911-930
 
-**Partes de tipo `file`:**
-Convierte archivos a bloques ACP apropiados (`resource_link`, `image`, `resource`) opencode:931-1010 
+**Parts of type `file`:**
+Converts files to appropriate ACP blocks (`resource_link`, `image`, `resource`) opencode:931-1010
 
-**Partes de tipo `reasoning`:**
-Envía `agent_thought_chunk` con el texto de razonamiento opencode:1012-1029 
+**Parts of type `reasoning`:**
+Sends `agent_thought_chunk` with reasoning text opencode:1012-1029
 
-### Envío de actualizaciones de uso
+### Usage Update Sending
 
-La función `sendUsageUpdate` calcula el uso de tokens y costos, luego envía una actualización al cliente ACP. opencode:82-130 
+The `sendUsageUpdate` function calculates token usage and costs, then sends an update to the ACP client. opencode:82-130
 
-## Flujo completo de envío de mensajes
+## Complete Message Sending Flow
 
 ```mermaid
 sequenceDiagram
@@ -319,11 +319,11 @@ sequenceDiagram
     end
 ```
 
-## Notas
+## Notes
 
-- Todos los mensajes se envían a través de `connection.sessionUpdate()` que utiliza el protocolo NDJSON sobre stdin/stdout opencode:33-61 
-- Los errores de envío se capturan y registran pero no interrumpen el flujo del agente opencode:823-825 
-- El sistema maneja múltiples sesiones simultáneamente sin contaminación cruzada de eventos opencode:333-369 
+- All messages are sent through `connection.sessionUpdate()` which uses the NDJSON protocol over stdin/stdout opencode:33-61
+- Sending errors are caught and logged but do not interrupt the agent flow opencode:823-825
+- The system handles multiple sessions simultaneously without cross-session event contamination opencode:333-369
 
 Wiki pages you might want to explore:
 - [Command-Line Interface (CLI) (sst/opencode)](/wiki/sst/opencode#6.1)

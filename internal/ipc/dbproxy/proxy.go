@@ -404,5 +404,11 @@ func (p *DBProxy) DeleteProject(ctx context.Context, id string) error {
 		"DeleteProject", id, DefaultWriteTimeouts.Default)
 }
 
+func (p *DBProxy) UpdateSessionACPState(ctx context.Context, arg db.UpdateSessionACPStateParams) error {
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.UpdateSessionACPState(ctx, arg) },
+		"UpdateSessionACPState", arg, DefaultWriteTimeouts.Default)
+}
+
 // Ensure DBProxy satisfies db.Querier at compile time.
 var _ db.Querier = (*DBProxy)(nil)

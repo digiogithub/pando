@@ -1,37 +1,37 @@
-# Análisis de la Implementación del Servidor Pando — Parte 3: Protocolo IPC y Comunicación Entre Instancias
+# Pando Server Implementation Analysis — Part 3: IPC Protocol and Inter-Instance Communication
 
-## 5. Protocolo IPC (Inter-Process Communication)
+## 5. IPC Protocol (Inter-Process Communication)
 
-### Visión General
+### Overview
 
-El protocolo IPC de Pando permite que múltiples instancias en el mismo directorio de trabajo se comuniquen entre sí. Está implementado sobre **ZMQ** (librería `go-zeromq/zmq4`) usando un patrón **PUB/SUB + ROUTER/DEALER**.
+Pando's IPC protocol allows multiple instances in the same working directory to communicate with each other. It is implemented over **ZMQ** (library `go-zeromq/zmq4`) using a **PUB/SUB + ROUTER/DEALER** pattern.
 
-**Ficheros principales del protocolo:**
-- `/www/MCP/Pando/pando/internal/ipc/bus.go` — Bus (servidor) PUB + ROUTER
-- `/www/MCP/Pando/pando/internal/ipc/client.go` — Client (cliente) SUB + DEALER
-- `/www/MCP/Pando/pando/internal/ipc/envelope.go` — Envelope (mensaje estándar)
-- `/www/MCP/Pando/pando/internal/ipc/ports.go` — Asignación de puertos
-- `/www/MCP/Pando/pando/internal/ipc/lock_common.go` — LockInfo y fichero de lock
-- `/www/MCP/Pando/pando/internal/ipc/lock_unix.go` — Adquisición de lock (flock)
-- `/www/MCP/Pando/pando/internal/ipc/options.go` — Configuración (timeouts)
-- `/www/MCP/Pando/pando/internal/ipc/errors.go` — Definiciones de errores
-- `/www/MCP/Pando/pando/internal/ipc/protocol/rpc.go` — Constantes y tipos RPC
-- `/www/MCP/Pando/pando/internal/ipc/protocol/topics.go` — Constantes de topics PUB
-- `/www/MCP/Pando/pando/internal/ipc/protocol/payloads.go` — Tipos de payloads
-- `/www/MCP/Pando/pando/internal/ipc/bridge/bridge.go` — Bridge: conecta eventos in-process al bus
-- `/www/MCP/Pando/pando/internal/ipc/bridge/handlers.go` — Handlers JSON-RPC
+**Main protocol files:**
+- `/www/MCP/Pando/pando/internal/ipc/bus.go` — Bus (server) PUB + ROUTER
+- `/www/MCP/Pando/pando/internal/ipc/client.go` — Client (client) SUB + DEALER
+- `/www/MCP/Pando/pando/internal/ipc/envelope.go` — Envelope (standard message)
+- `/www/MCP/Pando/pando/internal/ipc/ports.go` — Port assignment
+- `/www/MCP/Pando/pando/internal/ipc/lock_common.go` — LockInfo and lock file
+- `/www/MCP/Pando/pando/internal/ipc/lock_unix.go` — Lock acquisition (flock)
+- `/www/MCP/Pando/pando/internal/ipc/options.go` — Configuration (timeouts)
+- `/www/MCP/Pando/pando/internal/ipc/errors.go` — Error definitions
+- `/www/MCP/Pando/pando/internal/ipc/protocol/rpc.go` — RPC constants and types
+- `/www/MCP/Pando/pando/internal/ipc/protocol/topics.go` — PUB topic constants
+- `/www/MCP/Pando/pando/internal/ipc/protocol/payloads.go` — Payload types
+- `/www/MCP/Pando/pando/internal/ipc/bridge/bridge.go` — Bridge: connects in-process events to the bus
+- `/www/MCP/Pando/pando/internal/ipc/bridge/handlers.go` — JSON-RPC handlers
 
-### Arquitectura de Sockets
+### Socket Architecture
 
-**Bus (servidor — instancia primaria):**
-- **PUB socket** (`tcp://127.0.0.1:{pubPort}`): Broadcasting de eventos a todas las instancias suscritas
-- **ROUTER socket** (`tcp://127.0.0.1:{rpcPort}`): Atiende peticiones JSON-RPC request/response
+**Bus (server — primary instance):**
+- **PUB socket** (`tcp://127.0.0.1:{pubPort}`): Broadcasts events to all subscribed instances
+- **ROUTER socket** (`tcp://127.0.0.1:{rpcPort}`): Handles JSON-RPC request/response calls
 
-**Client (cliente — instancias secundarias/observadoras):**
-- **SUB socket**: Se conecta al PUB del Bus para recibir eventos filtrando por topic
-- **DEALER socket** (cacheado): Se conecta al ROUTER del Bus para hacer llamadas RPC
+**Client (client — secondary/observer instances):**
+- **SUB socket**: Connects to the Bus's PUB to receive events filtered by topic
+- **DEALER socket** (cached): Connects to the Bus's ROUTER to make RPC calls
 
-### Formato de Mensajes
+### Message Format
 
 **Envelope (PUB):** (`envelope.go`)
 ```go
@@ -44,7 +44,7 @@ type Envelope struct {
     Payload    json.RawMessage `json:"payload"`
 }
 ```
-El frame ZMQ se forma como: `[topic_bytes + 0x00 + json_envelope_bytes]`, permitiendo a los subscribers filtrar por prefijo de topic.
+The ZMQ frame is formed as: `[topic_bytes + 0x00 + json_envelope_bytes]`, allowing subscribers to filter by topic prefix.
 
 **JSON-RPC (ROUTER):** (`bus.go`)
 ```go
@@ -65,18 +65,18 @@ type rpcResponse struct {
 }
 ```
 
-### Asignación de Puertos (`ports.go`)
+### Port Assignment (`ports.go`)
 
-- **Puertos deterministas (hash FNV-32a):** `PortsForPath(absPath)` → puerto base = `40000 + (fnv32a(path) % 20000)`, pub = base, rpc = base+1
-- **Puertos libres (fallback):** `FindFreePorts()` → dos puertos TCP asignados por el SO (para instancias secundarias que no pueden usar los puertos deterministas ya ocupados por la primaria)
-- **Rango de puertos base:** 40000-60000
+- **Deterministic ports (FNV-32a hash):** `PortsForPath(absPath)` → base port = `40000 + (fnv32a(path) % 20000)`, pub = base, rpc = base+1
+- **Free ports (fallback):** `FindFreePorts()` → two TCP ports assigned by the OS (for secondary instances that cannot use the deterministic ports already occupied by the primary)
+- **Base port range:** 40000-60000
 
-### Lock de Instancia Primaria (`lock_unix.go`)
+### Primary Instance Lock (`lock_unix.go`)
 
-El mecanismo de **flock** (exclusivo por proceso) en `.pando/ipc.lock` determina qué instancia es la "primaria":
-- **Primera instancia:** adquiere el lock (`LOCK_EX|LOCK_NB`), escribe su `LockInfo` (instanceID, PID, puertos), y se convierte en primaria
-- **Instancias posteriores:** fallan al adquirir el lock, leen el `LockInfo` de la primaria existente y se convierten en secundarias
-- Las secundarias abren la BD en modo read-only y usan DBProxy para escribir via RPC
+The **flock** mechanism (exclusive per process) in `.pando/ipc.lock` determines which instance is the "primary":
+- **First instance:** acquires the lock (`LOCK_EX|LOCK_NB`), writes its `LockInfo` (instanceID, PID, ports), and becomes primary
+- **Subsequent instances:** fail to acquire the lock, read the existing primary's `LockInfo`, and become secondary
+- Secondary instances open the database in read-only mode and use DBProxy to write via RPC
 
 ### LockInfo (`lock_common.go`)
 ```go
@@ -91,108 +91,108 @@ type LockInfo struct {
 
 ### Instance Registry (`instanceregistry/`)
 
-- **Ficheros:**
-  - `entry.go` — Definición de `Entry` y `Mode` (TUI, WebUI, Desktop, ACP, NonInteractive, Proxy)
-  - `announce.go` — `Announce()` escribe JSON en `/tmp/pando-instances/<instanceID>.json`; `Revoke()` lo elimina
-  - `registry.go` — `Registry.List()` escanea `/tmp/pando-instances/`, verifica que los PID estén vivos (`signal(0)`), y limpia entradas obsoletas
-- **Propósito:** Permitir a cualquier instancia descubrir todas las demás instancias Pando en ejecución en el sistema, independientemente del directorio de trabajo
+- **Files:**
+  - `entry.go` — `Entry` and `Mode` definition (TUI, WebUI, Desktop, ACP, NonInteractive, Proxy)
+  - `announce.go` — `Announce()` writes JSON to `/tmp/pando-instances/<instanceID>.json`; `Revoke()` removes it
+  - `registry.go` — `Registry.List()` scans `/tmp/pando-instances/`, verifies PIDs are alive (`signal(0)`), and cleans up stale entries
+- **Purpose:** Allow any instance to discover all other Pando instances running on the system, regardless of working directory
 
-### Topics del PUB Socket (`protocol/topics.go`)
+### PUB Socket Topics (`protocol/topics.go`)
 
-**Sesiones:**
-- `session.list` — Lista completa de sesiones
-- `session.update` — Sesión creada o actualizada
-- `session.activated` — Sesión activa cambiada
-- `session.deleted` — Sesión eliminada
+**Sessions:**
+- `session.list` — Complete session list
+- `session.update` — Session created or updated
+- `session.activated` — Active session changed
+- `session.deleted` — Session deleted
 
-**Mensajes:**
-- `message.append` — Nuevo mensaje añadido
+**Messages:**
+- `message.append` — New message added
 
 **LLM (streaming):**
-- `llm.token` — Cada token streaming del LLM
-- `llm.start` — Inicio de llamada LLM
-- `llm.end` — Fin de llamada LLM (con tokens in/out)
+- `llm.token` — Each streaming token from the LLM
+- `llm.start` — LLM call start
+- `llm.end` — LLM call end (with tokens in/out)
 
-**Herramientas:**
-- `tool.start` — Inicio de ejecución de herramienta
-- `tool.end` — Fin de ejecución de herramienta
+**Tools:**
+- `tool.start` — Tool execution start
+- `tool.end` — Tool execution end
 
-**Instancia:**
-- `instance.heartbeat` — Cada 5 segundos (liveness)
-- `instance.shutdown` — Shutdown graceful
+**Instance:**
+- `instance.heartbeat` — Every 5 seconds (liveness)
+- `instance.shutdown` — Graceful shutdown
 
-### Métodos JSON-RPC (`protocol/rpc.go`)
+### JSON-RPC Methods (`protocol/rpc.go`)
 
-| Método | Parámetros | Descripción |
+| Method | Parameters | Description |
 |--------|-----------|-------------|
-| `instance.ping` | — | Verifica que la instancia está viva. Respuesta: `PingResult{Status, InstanceID, Uptime}` |
-| `instance.info` | — | Información detallada |
-| `session.list` | — | Lista todas las sesiones |
-| `session.get` | `{session_id}` | Obtiene sesión por ID |
-| `session.activate` | `{session_id}` | Cambia sesión activa (publica evento `session.activated`) |
-| `message.send` | `{session_id, content}` | Envía mensaje a agente local (inicia procesamiento LLM) |
-| `message.list` | `{session_id}` | Historial de mensajes de una sesión |
-| `session.interrupt` | `{session_id}` | Cancela generación LLM en curso |
-| `state.sync` | `{project_id}` | Solicita snapshot completo de estado |
+| `instance.ping` | — | Checks if instance is alive. Response: `PingResult{Status, InstanceID, Uptime}` |
+| `instance.info` | — | Detailed information |
+| `session.list` | — | Lists all sessions |
+| `session.get` | `{session_id}` | Gets session by ID |
+| `session.activate` | `{session_id}` | Changes active session (publishes `session.activated` event) |
+| `message.send` | `{session_id, content}` | Sends message to local agent (starts LLM processing) |
+| `message.list` | `{session_id}` | Message history for a session |
+| `session.interrupt` | `{session_id}` | Cancels ongoing LLM generation |
+| `state.sync` | `{project_id}` | Requests complete state snapshot |
 
-### Bridge — Conexión de Eventos In-process al Bus (`bridge/bridge.go`)
+### Bridge — Connecting In-Process Events to the Bus (`bridge/bridge.go`)
 
-El **Bridge** suscribe los eventos internos de las sesiones y el agente, y los re-publica en el bus ZMQ:
+The **Bridge** subscribes to internal session and agent events, and re-publishes them on the ZMQ bus:
 
-- `bridgeSessions()` — Suscribe eventos de `session.Service.Subscribe()` y los mapea a topics PUB:
+- `bridgeSessions()` — Subscribes to `session.Service.Subscribe()` events and maps them to PUB topics:
   - `pubsub.CreatedEvent` → `session.update`
   - `pubsub.UpdatedEvent` → `session.update`
   - `pubsub.DeletedEvent` → `session.deleted`
-- `bridgeAgent()` — Suscribe eventos de `agent.Service.Subscribe()` y los mapea:
-  - `AgentEventTypeContentDelta` → `llm.token` (cada token)
+- `bridgeAgent()` — Subscribes to `agent.Service.Subscribe()` events and maps them:
+  - `AgentEventTypeContentDelta` → `llm.token` (each token)
   - `AgentEventTypeToolCall` → `tool.start`
-  - `AgentEventTypeToolResult` → `tool.end` (resultado truncado a 512 chars)
+  - `AgentEventTypeToolResult` → `tool.end` (result truncated to 512 chars)
   - `AgentEventTypeResponse` → `llm.end`
-- `runHeartbeat()` — Publica `instance.heartbeat` cada 5 segundos con uptime y session count
+- `runHeartbeat()` — Publishes `instance.heartbeat` every 5 seconds with uptime and session count
 
-### Handlers RPC del Bridge (`bridge/handlers.go`)
+### Bridge RPC Handlers (`bridge/handlers.go`)
 
-`RegisterHandlersWithAgent()` registra todos los métodos RPC en el Bus:
-- `instance.ping` → devuelve estado, instanceID, uptime
-- `session.list` → lista sesiones desde `session.Service`
-- `session.get` → obtiene sesión por ID
-- `session.activate` → verifica que la sesión existe, publica `session.activated`, devuelve OK
-- `message.send` → ejecuta `runner.RunMessage()` (agente local) para procesar mensaje
-- `session.interrupt` → ejecuta `interrupter.Cancel()` para cancelar LLM
-- `message.list` → lista mensajes desde `message.Service`
+`RegisterHandlersWithAgent()` registers all RPC methods on the Bus:
+- `instance.ping` → returns status, instanceID, uptime
+- `session.list` → lists sessions from `session.Service`
+- `session.get` → gets session by ID
+- `session.activate` → verifies session exists, publishes `session.activated`, returns OK
+- `message.send` → runs `runner.RunMessage()` (local agent) to process message
+- `session.interrupt` → runs `interrupter.Cancel()` to cancel LLM
+- `message.list` → lists messages from `message.Service`
 
-`RegisterHandlers()` es una versión simplificada sin agente (runner/interrupter a nil).
+`RegisterHandlers()` is a simplified version without agent (runner/interrupter set to nil).
 
-### DBProxy — Proxy de Escrituras a BD (`ipc/dbproxy/`)
+### DBProxy — Database Write Proxy (`ipc/dbproxy/`)
 
-- **Ficheros:**
-  - `/www/MCP/Pando/pando/internal/ipc/dbproxy/proxy.go` — `DBProxy` implementa `db.Querier`
-  - `/www/MCP/Pando/pando/internal/ipc/dbproxy/handlers.go` — `RegisterHandlers()` para el Bus
-- **Propósito:** Instancias secundarias abren la BD SQLite en modo read-only y redirigen todas las escrituras a la instancia primaria via ZMQ JSON-RPC
-- **Método RPC:** `db.write` con `WriteRequest{Method, Params}`
-- **Dispatcher:** `dispatchWrite()` enruta a la función `db.Querier` correspondiente (CreateSession, UpdateSession, DeleteSession, CreateMessage, UpdateMessage, DeleteMessage, CreateFile, UpdateFile, DeleteFile, InsertPromptTemplate, InsertSessionScore, InsertSkill, DeactivateLowestSkill, IncrementSkillUsage, CreateProject, UpdateProjectStatus, UpdateProjectLastOpened, MarkProjectInitialized, DeleteProject)
+- **Files:**
+  - `/www/MCP/Pando/pando/internal/ipc/dbproxy/proxy.go` — `DBProxy` implements `db.Querier`
+  - `/www/MCP/Pando/pando/internal/ipc/dbproxy/handlers.go` — `RegisterHandlers()` for the Bus
+- **Purpose:** Secondary instances open the SQLite database in read-only mode and redirect all writes to the primary instance via ZMQ JSON-RPC
+- **RPC Method:** `db.write` with `WriteRequest{Method, Params}`
+- **Dispatcher:** `dispatchWrite()` routes to the corresponding `db.Querier` function (CreateSession, UpdateSession, DeleteSession, CreateMessage, UpdateMessage, DeleteMessage, CreateFile, UpdateFile, DeleteFile, InsertPromptTemplate, InsertSessionScore, InsertSkill, DeactivateLowestSkill, IncrementSkillUsage, CreateProject, UpdateProjectStatus, UpdateProjectLastOpened, MarkProjectInitialized, DeleteProject)
 
-### Configuración del Bus en los Modos Serve/App/TUI
+### Bus Configuration in Serve/App/TUI Modes
 
-**En modo TUI (primaria):** (`cmd/root.go`)
+**In TUI mode (primary):** (`cmd/root.go`)
 ```go
 bus := ipc.NewBus(instanceID)
 bus.Start(ctx, pubPort, rpcPort)
-dbproxy.RegisterHandlers(bus, db.New(conn))     // handlers de escritura DB para secundarias
-bridge.RegisterHandlers(bus, instanceID, ...)    // handlers RPC de sesiones/mensajes
-pandoApp.SetupIPC(bus)                           // configura el bus como publisher de sesiones
-br := bridge.New(bus, ...)                       // bridge eventos in-process → ZMQ PUB
+dbproxy.RegisterHandlers(bus, db.New(conn))     // DB write handlers for secondary instances
+bridge.RegisterHandlers(bus, instanceID, ...)    // session/message RPC handlers
+pandoApp.SetupIPC(bus)                           // configures bus as session publisher
+br := bridge.New(bus, ...)                       // bridge in-process events → ZMQ PUB
 br.Start(ctx)
 ```
 
-**En modo Serve/App:** (`cmd/serve.go` y `cmd/app.go`)
-- Anuncian instancia en registry (NO primarias, NO hacen lock)
-- Crean Bus e inician con puertos libres
-- Solo registran `bridge.RegisterHandlers()` (NO registran `dbproxy.RegisterHandlers`)
-- Crean y arrancan `bridge.New()` con el CoderAgent como MessageRunner
-- El bridge permite que el modo serve/app reciba mensajes entrantes via RPC y los procese con su agente local
+**In Serve/App mode:** (`cmd/serve.go` and `cmd/app.go`)
+- Announce instance in registry (NOT primary, no lock)
+- Create Bus and start with free ports
+- Only register `bridge.RegisterHandlers()` (don't register `dbproxy.RegisterHandlers`)
+- Create and start `bridge.New()` with CoderAgent as MessageRunner
+- The bridge allows serve/app mode to receive incoming messages via RPC and process them with its local agent
 
-**En modo ACP:** (`cmd/root.go` función `runACPServerWithOptions()`)
-- Similar a serve/app pero con puertos deterministas (same-path collision permitida)
-- Anuncia instancia como `ModeACP`
-- Solo registra `bridge.RegisterHandlers()` (sin dbproxy)
+**In ACP mode:** (`cmd/root.go` function `runACPServerWithOptions()`)
+- Similar to serve/app but with deterministic ports (same-path collision allowed)
+- Announce instance as `ModeACP`
+- Only register `bridge.RegisterHandlers()` (no dbproxy)

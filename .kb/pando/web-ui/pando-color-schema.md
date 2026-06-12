@@ -1,33 +1,33 @@
-Aquí tienes una paleta inspirada en la imagen con tonos dominados por el árbol pando / álamo temblón: amarillos dorados, ocres, corteza clara y sombras profundas para mantener una interfaz agradable, clara y natural.
+Here is a palette inspired by the image with tones dominated by the pando tree / trembling aspen: golden yellows, ochres, light bark and deep shadows to keep the interface pleasant, clean and natural.
 
-Paleta principal
-Rol	Color	Hex	Uso recomendado
-Primario	🟡 Oro pando	#D6A21D	Botones principales, enlaces activos, highlights
-Secundario	🍯 Ámbar hoja	#C87E1D	Estados hover, badges, acentos cálidos
-Acento	🌿 Verde bosque oscuro	#2F3A24	Contraste, navegación, elementos de énfasis
-Fondo claro	🌾 Marfil cálido	#F6F0E3	Fondo general limpio y suave
-Superficie	🤍 Hueso suave	#EEE5D2	Cards, paneles, contenedores
-Texto principal	🪵 Carbón natural	#2B241D	Texto y títulos
-Texto secundario	🌫️ Gris pardo	#6E655A	Descripciones, labels, metadatos
-Línea / borde	🍂 Arena grisácea	#CBB89B	Bordes, divisores, separadores
-Tonos de apoyo
-Rol	Color	Hex
-Amarillo claro	#E8C94B	
-Dorado suave	#D8B14A	
-Naranja otoñal	#B86A24	
-Corteza	#7A5A3A	
-Sombra profunda	#1F1B16	
-Propuesta visual clara para la app
-Para que la interfaz se vea limpia y moderna, te recomiendo esta distribución:
+Main palette
+Role	Color	Hex	Recommended use
+Primary	🟡 Pando gold	#D6A21D	Main buttons, active links, highlights
+Secondary	🍯 Leaf amber	#C87E1D	Hover states, badges, warm accents
+Accent	🌿 Dark forest green	#2F3A24	Contrast, navigation, emphasis elements
+Light background	🌾 Warm ivory	#F6F0E3	Clean and soft general background
+Surface	🤍 Soft bone	#EEE5D2	Cards, panels, containers
+Main text	🪵 Natural charcoal	#2B241D	Text and headings
+Secondary text	🌫️ Brownish gray	#6E655A	Descriptions, labels, metadata
+Line / border	🍂 Grayish sand	#CBB89B	Borders, dividers, separators
+Supporting tones
+Role	Color	Hex
+Light yellow	#E8C94B	
+Soft gold	#D8B14A	
+Autumnal orange	#B86A24	
+Bark	#7A5A3A	
+Deep shadow	#1F1B16	
+Clear visual proposal for the app
+For the interface to look clean and modern, I recommend this layout:
 
-Fondo general: #F6F0E3
-Tarjetas / paneles: #EEE5D2
-Texto principal: #2B241D
-Botón primario: #D6A21D
-Hover del botón: #C87E1D
-Elemento de contraste: #2F3A24
-Mini ejemplo de uso
-Primario: oro pando para acciones importantes
-Secundario: ámbar para estados interactivos
-Neutros: marfil y hueso para dar aire y claridad
-Oscuros: carbón y verde bosque para anclar la identidad visual
+General background: #F6F0E3
+Cards / panels: #EEE5D2
+Main text: #2B241D
+Primary button: #D6A21D
+Button hover: #C87E1D
+Contrast element: #2F3A24
+Mini usage example
+Primary: pando gold for important actions
+Secondary: amber for interactive states
+Neutrals: ivory and bone for air and clarity
+Darks: charcoal and forest green to anchor the visual identity

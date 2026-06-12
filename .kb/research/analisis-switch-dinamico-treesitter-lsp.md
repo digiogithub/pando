@@ -1,21 +1,21 @@
-# Análisis Profundo: Switch Dinámico de Modelos y LSP vs Tree-sitter
+# Deep Analysis: Dynamic Model Switching & LSP vs Tree-sitter
 
-## Resumen Ejecutivo
+## Executive Summary
 
-Este documento analiza dos aspectos críticos para la modernización de OpenCode:
+This document analyzes two critical aspects for OpenCode modernization:
 
-1. **Switch Dinámico de Modelos**: Implementación inspirada en Crush para cambiar modelos mid-session basado en complejidad de tarea, coste, y rendimiento
-2. **LSP vs Tree-sitter**: Evaluación de arquitectura híbrida para análisis de código, con recomendación de usar Tree-sitter para parsing sintáctico y LSP para análisis semántico
+1. **Dynamic Model Switching**: Implementation inspired by Crush for switching models mid-session based on task complexity, cost, and performance
+2. **LSP vs Tree-sitter**: Hybrid architecture evaluation for code analysis, with recommendation to use Tree-sitter for syntactic parsing and LSP for semantic analysis
 
-**Recomendación clave**: Implementar arquitectura híbrida Tree-sitter + LSP + Switch dinámico de modelos para optimizar rendimiento (10x más rápido), costes (hasta 70% reducción), y capacidades semánticas.
+**Key recommendation**: Implement hybrid Tree-sitter + LSP + dynamic model switching architecture to optimize performance (10x faster), costs (up to 70% reduction), and semantic capabilities.
 
 ---
 
-## Parte 1: Switch Dinámico de Modelos
+## Part 1: Dynamic Model Switching
 
-### 1.1 Arquitectura de Crush
+### 1.1 Crush Architecture
 
-Según el análisis de código y documentación de Crush, el sistema de switch dinámico funciona así:
+Based on code analysis and Crush documentation, the dynamic switching system works as follows:
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -58,18 +58,18 @@ Según el análisis de código y documentación de Crush, el sistema de switch d
 └─────────────────────────────────────────────────────┘
 ```
 
-### 1.2 Metodologías de Selección Dinámica
+### 1.2 Dynamic Selection Methodologies
 
-Basándome en la investigación académica y la implementación de Crush, existen dos enfoques principales:
+Based on academic research and Crush implementation, there are two main approaches:
 
-#### **Enfoque 1: Model Cascading (Cascada de Modelos)**
+#### **Approach 1: Model Cascading**
 
 ```
 Task Input
     ↓
 ┌─────────────────────┐
-│ Classifier Model    │  <- Modelo ligero que categoriza
-│ (cheap, fast)       │     la complejidad de la tarea
+│ Classifier Model    │  <- Lightweight model that categorizes
+│ (cheap, fast)       │     task complexity
 └──────┬──────────────┘
        │
        ├─→ Simple Task → ┌──────────────┐
@@ -80,17 +80,17 @@ Task Input
        │                 │ Medium Model │ (GPT-4, Claude Sonnet)
        │                 └──────────────┘
        │
-       └─→ Complex Task → ┌──────────────┐
-                          │ Heavy Model  │ (GPT-4-turbo, Opus)
-                          └──────────────┘
+       └─→ Complex Task → ┌──────────────┘
+                           │ Heavy Model  │ (GPT-4-turbo, Opus)
+                           └──────────────┘
 ```
 
-**Ventajas**:
-- Ahorro de costes hasta 70%
-- Reduce latencia en tareas simples
-- Optimiza uso de recursos
+**Advantages**:
+- Cost savings up to 70%
+- Reduces latency for simple tasks
+- Optimizes resource usage
 
-**Implementación**:
+**Implementation**:
 ```go
 type TaskComplexity int
 
@@ -107,27 +107,27 @@ type ModelCascade struct {
 }
 
 func (mc *ModelCascade) SelectModel(ctx context.Context, task string) (provider.Provider, error) {
-    // Fase 1: Clasificar tarea (modelo ligero y rápido)
+    // Phase 1: Classify task (lightweight and fast model)
     complexity, err := mc.classifier.Classify(ctx, task)
     if err != nil {
         return nil, err
     }
     
-    // Fase 2: Seleccionar modelo apropiado
+    // Phase 2: Select appropriate model
     model, ok := mc.models[complexity]
     if !ok {
         return mc.models[ComplexityMedium], nil // Fallback
     }
     
-    // Fase 3: Log de decisión
+    // Phase 3: Log decision
     mc.costTracker.LogModelSelection(task, complexity, model.Name())
     
     return model, nil
 }
 
-// Clasificador de complejidad (usa modelo barato)
+// Complexity classifier (uses cheap model)
 type ModelClassifier struct {
-    provider provider.Provider // GPT-4o-mini o Haiku
+    provider provider.Provider // GPT-4o-mini or Haiku
 }
 
 func (c *ModelClassifier) Classify(ctx context.Context, task string) (TaskComplexity, error) {
@@ -145,12 +145,12 @@ Respond with only: SIMPLE, MEDIUM, or COMPLEX`, task)
         Messages: []provider.Message{
             {Role: "user", Content: prompt},
         },
-        Temperature: 0.0, // Determinístico
+        Temperature: 0.0, // Deterministic
         MaxTokens:   10,
     })
     
     if err != nil {
-        return ComplexityMedium, err // Fallback a medium
+        return ComplexityMedium, err // Fallback to medium
     }
     
     switch strings.ToUpper(strings.TrimSpace(resp.Content)) {
@@ -164,7 +164,7 @@ Respond with only: SIMPLE, MEDIUM, or COMPLEX`, task)
 }
 ```
 
-#### **Enfoque 2: Model Routing (Enrutamiento de Modelos)**
+#### **Approach 2: Model Routing**
 
 ```
 Task Input
@@ -191,7 +191,7 @@ Task Input
                → Route to: Ollama (Qwen 2.5 Coder)
 ```
 
-**Implementación**:
+**Implementation**:
 ```go
 type RoutingRule struct {
     Condition func(TaskMetadata) bool
@@ -218,11 +218,11 @@ type TaskMetadata struct {
 func NewModelRouter(providers map[string]provider.Provider) *ModelRouter {
     router := &ModelRouter{
         providers: providers,
-        fallback:  providers["anthropic"], // Claude como fallback
+        fallback:  providers["anthropic"], // Claude as fallback
         rules:     make([]RoutingRule, 0),
     }
     
-    // Definir reglas de enrutamiento (prioridad descendente)
+    // Define routing rules (descending priority)
     router.AddRule(RoutingRule{
         Priority: 100,
         Condition: func(m TaskMetadata) bool {
@@ -282,36 +282,36 @@ func NewModelRouter(providers map[string]provider.Provider) *ModelRouter {
 
 func (r *ModelRouter) AddRule(rule RoutingRule) {
     r.rules = append(r.rules, rule)
-    // Ordenar por prioridad descendente
+    // Sort by descending priority
     sort.Slice(r.rules, func(i, j int) bool {
         return r.rules[i].Priority > r.rules[j].Priority
     })
 }
 
 func (r *ModelRouter) Route(ctx context.Context, metadata TaskMetadata) (provider.Provider, string, error) {
-    // Evaluar reglas en orden de prioridad
+    // Evaluate rules in priority order
     for _, rule := range r.rules {
         if rule.Condition(metadata) {
             p, ok := r.providers[rule.Provider]
             if !ok {
-                continue // Provider no disponible, probar siguiente regla
+                continue // Provider not available, try next rule
             }
             
             return p, rule.Model, nil
         }
     }
     
-    // No hay regla que coincida, usar fallback
+    // No matching rule, use fallback
     return r.fallback, "claude-3-5-sonnet-20241022", nil
 }
 ```
 
-### 1.3 Tool de Switch In-Process (Crush.switch_model)
+### 1.3 In-Process Switch Tool (Crush.switch_model)
 
-Crush tiene una propuesta (Issue #859) para permitir que los **agentes cambien de modelo mid-session**:
+Crush has a proposal (Issue #859) to allow **agents to switch models mid-session**:
 
 ```go
-// Tool integrado que permite al agente cambiar de modelo
+// Built-in tool that allows the agent to switch models
 type SwitchModelTool struct {
     session *session.Manager
     router  *ModelRouter
@@ -337,10 +337,10 @@ type ModelInfo struct {
 }
 
 func (t *SwitchModelTool) Execute(ctx context.Context, req SwitchModelRequest) (*SwitchModelResponse, error) {
-    // Obtener modelo actual
+    // Get current model
     currentProvider, currentModel := t.session.CurrentModel()
     
-    // Validar que el nuevo modelo existe
+    // Validate that the new model exists
     newProvider, ok := t.router.providers[req.Provider]
     if !ok {
         return &SwitchModelResponse{
@@ -349,7 +349,7 @@ func (t *SwitchModelTool) Execute(ctx context.Context, req SwitchModelRequest) (
         }, nil
     }
     
-    // Validar que el modelo está disponible
+    // Validate that the model is available
     models := newProvider.Models()
     modelExists := false
     for _, m := range models {
@@ -366,10 +366,10 @@ func (t *SwitchModelTool) Execute(ctx context.Context, req SwitchModelRequest) (
         }, nil
     }
     
-    // Realizar el switch
+    // Perform the switch
     warning := ""
     if t.session.ContextSize() > newProvider.Capabilities().ContextCache {
-        // Necesitamos compactar el historial
+        // We need to compact the history
         err := t.session.CompactHistory(newProvider.Capabilities().ContextCache)
         if err != nil {
             return &SwitchModelResponse{
@@ -380,10 +380,10 @@ func (t *SwitchModelTool) Execute(ctx context.Context, req SwitchModelRequest) (
         warning = "History compacted to fit new model context window"
     }
     
-    // Actualizar sesión
+    // Update session
     t.session.SetModel(req.Provider, req.Model)
     
-    // Auditar el cambio
+    // Audit the change
     t.audit.Log(AuditEvent{
         Type:         "model_switch",
         Timestamp:    time.Now(),
@@ -409,11 +409,11 @@ func (t *SwitchModelTool) Execute(ctx context.Context, req SwitchModelRequest) (
     }, nil
 }
 
-// El agente puede llamar a este tool durante la conversación
-// Ejemplo de uso en el contexto de un agente:
+// The agent can call this tool during conversation
+// Usage example in agent context:
 /*
-Agent thinks: "Esta tarea de diseño de arquitectura es compleja, 
-necesito cambiar a un modelo más potente"
+Agent thinks: "This architecture design task is complex, 
+I need to switch to a more powerful model"
 
 Agent calls tool: {
   "tool": "crush.switch_model",
@@ -434,11 +434,11 @@ Agent continues with new model...
 */
 ```
 
-### 1.4 Gestión de Contexto Durante Switch
+### 1.4 Context Management During Switch
 
-**Problema**: Diferentes modelos tienen diferentes límites de contexto.
+**Problem**: Different models have different context limits.
 
-**Solución**: Implementar compactación determinística del historial.
+**Solution**: Implement deterministic history compaction.
 
 ```go
 type ContextManager struct {
@@ -449,28 +449,28 @@ type ContextManager struct {
 
 func (cm *ContextManager) CompactHistory(newMaxTokens int) error {
     if cm.tokenCounter.Count(cm.history) <= newMaxTokens {
-        return nil // No necesita compactación
+        return nil // No compaction needed
     }
     
-    // Estrategia de compactación:
-    // 1. Preservar siempre el mensaje del sistema
-    // 2. Preservar los últimos N mensajes (ventana reciente)
-    // 3. Resumir mensajes antiguos en bloques
+    // Compaction strategy:
+    // 1. Always preserve the system message
+    // 2. Preserve the last N messages (recent window)
+    // 3. Summarize old messages into blocks
     
-    systemMsg := cm.history[0] // Siempre preservar
+    systemMsg := cm.history[0] // Always preserve
     
-    // Calcular cuántos mensajes recientes podemos mantener
+    // Calculate how many recent messages we can keep
     recentWindow := cm.calculateRecentWindow(newMaxTokens)
     recentMsgs := cm.history[len(cm.history)-recentWindow:]
     
-    // Resumir mensajes del medio
+    // Summarize middle messages
     middleMsgs := cm.history[1 : len(cm.history)-recentWindow]
     summarizedMiddle, err := cm.summarizeMessages(middleMsgs, newMaxTokens/4)
     if err != nil {
         return err
     }
     
-    // Reconstruir historial
+    // Rebuild history
     newHistory := []provider.Message{systemMsg}
     newHistory = append(newHistory, summarizedMiddle...)
     newHistory = append(newHistory, recentMsgs...)
@@ -480,13 +480,13 @@ func (cm *ContextManager) CompactHistory(newMaxTokens int) error {
 }
 
 func (cm *ContextManager) summarizeMessages(messages []provider.Message, maxTokens int) ([]provider.Message, error) {
-    // Agrupar mensajes en bloques conversacionales
+    // Group messages into conversational blocks
     blocks := cm.groupConversationalBlocks(messages)
     
     summaries := make([]provider.Message, 0)
     for _, block := range blocks {
-        // Crear resumen del bloque
-        summary := fmt.Sprintf("[Resumen de %d mensajes: %s]", 
+        // Create block summary
+        summary := fmt.Sprintf("[Summary of %d messages: %s]", 
             len(block), 
             cm.extractKeyPoints(block))
         
@@ -500,7 +500,7 @@ func (cm *ContextManager) summarizeMessages(messages []provider.Message, maxToke
 }
 
 func (cm *ContextManager) calculateRecentWindow(maxTokens int) int {
-    // Reservar 50% del contexto para mensajes recientes
+    // Reserve 50% of context for recent messages
     recentBudget := maxTokens / 2
     count := 0
     tokens := 0
@@ -518,7 +518,7 @@ func (cm *ContextManager) calculateRecentWindow(maxTokens int) int {
 }
 ```
 
-### 1.5 Cost Tracking y Optimización
+### 1.5 Cost Tracking and Optimization
 
 ```go
 type CostTracker struct {
@@ -601,7 +601,7 @@ func (ct *CostTracker) GetSessionReport(sessionID string) *SessionCostReport {
         })
     }
     
-    // Ordenar por coste descendente
+    // Sort by descending cost
     sort.Slice(report.Breakdown, func(i, j int) bool {
         return report.Breakdown[i].Cost > report.Breakdown[j].Cost
     })
@@ -646,7 +646,7 @@ func (r *SessionCostReport) Print() {
 }
 ```
 
-### 1.6 Ejemplo de Uso Completo
+### 1.6 Complete Usage Example
 
 ```go
 func ExampleDynamicModelSelection() {
@@ -734,9 +734,9 @@ func ExampleDynamicModelSelection() {
 
 ---
 
-## Parte 2: LSP vs Tree-sitter - Análisis Comparativo
+## Part 2: LSP vs Tree-sitter - Comparative Analysis
 
-### 2.1 Arquitectura Actual de OpenCode (LSP)
+### 2.1 Current OpenCode Architecture (LSP)
 
 ```
 ┌────────────────────────────────────────────┐
@@ -767,14 +767,14 @@ func ExampleDynamicModelSelection() {
 └────────────────────────────────────────────┘
 ```
 
-**Problemas con LSP puro**:
-- ❌ **Latencia alta**: 100-500ms para completions en proyectos grandes
-- ❌ **Alto uso de CPU**: LSP puede consumir 100% CPU durante horas en codebases grandes
-- ❌ **Syntax highlighting lento**: 2-5 minutos en archivos grandes
-- ❌ **No incremental**: Re-parsing completo en cada cambio
-- ❌ **Memoria intensiva**: Language servers pueden usar 1-2GB RAM por proyecto
+**Problems with pure LSP**:
+- ❌ **High latency**: 100-500ms for completions in large projects
+- ❌ **High CPU usage**: LSP can consume 100% CPU for hours in large codebases
+- ❌ **Slow syntax highlighting**: 2-5 minutes in large files
+- ❌ **Not incremental**: Complete re-parsing on each change
+- ❌ **Memory intensive**: Language servers can use 1-2GB RAM per project
 
-### 2.2 Propuesta: Arquitectura Híbrida Tree-sitter + LSP
+### 2.2 Proposal: Hybrid Tree-sitter + LSP Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -806,11 +806,11 @@ func ExampleDynamicModelSelection() {
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 2.3 Benchmarks Comparativos
+### 2.3 Comparative Benchmarks
 
-Basado en data de editores modernos (Zed, Helix, Neovim):
+Based on data from modern editors (Zed, Helix, Neovim):
 
-| Operación | LSP Solo | Tree-sitter Solo | Híbrido | Mejora |
+| Operation | LSP Only | Tree-sitter Only | Hybrid | Improvement |
 |-----------|----------|------------------|---------|---------|
 | **Syntax Highlighting** | 2000-5000ms | 10-50ms | 10-50ms | **40-100x** |
 | **Code Folding** | 500-1000ms | 1-5ms | 1-5ms | **100-500x** |
@@ -819,27 +819,27 @@ Basado en data de editores modernos (Zed, Helix, Neovim):
 | **Go to Definition** | 50-200ms | N/A | 50-150ms | **1.3-2x** (Tree-sitter pre-filter) |
 | **Diagnostics** | 200-1000ms | N/A | 200-800ms | **1.2-1.5x** |
 | **Large File (10k LOC)** | 5-10s | 100-300ms | 200-500ms | **10-50x** |
-| **Memory Usage** | 1-2GB | 10-50MB | 100-300MB | **3-20x menos** |
-| **CPU Usage (idle)** | 5-15% | <1% | 1-3% | **5-15x menos** |
+| **Memory Usage** | 1-2GB | 10-50MB | 100-300MB | **3-20x less** |
+| **CPU Usage (idle)** | 5-15% | <1% | 1-3% | **5-15x less** |
 
-**Casos de uso reales**:
+**Real-world use cases**:
 
-1. **Proyecto TypeScript 3000 archivos** (VS Code vs Zed):
-   - VS Code (LSP solo): Syntax highlight inicial 2.3s
-   - Zed (Híbrido): Syntax highlight inicial 200ms
-   - **Mejora: 11.5x más rápido**
+1. **TypeScript project with 3000 files** (VS Code vs Zed):
+   - VS Code (LSP only): Initial syntax highlight 2.3s
+   - Zed (Hybrid): Initial syntax highlight 200ms
+   - **Improvement: 11.5x faster**
 
-2. **Archivo Rust 5000 líneas**:
-   - LSP solo: 5-10s para highlighting completo
-   - Tree-sitter: 100ms para highlighting completo
-   - **Mejora: 50-100x más rápido**
+2. **Rust file with 5000 lines**:
+   - LSP only: 5-10s for full highlighting
+   - Tree-sitter: 100ms for full highlighting
+   - **Improvement: 50-100x faster**
 
-3. **Markdown LSP (2500 archivos)**:
-   - Parsing secuencial: 2.3s
-   - Tree-sitter paralelo (rayon): 200-300ms
-   - **Mejora: 8-12x más rápido**
+3. **Markdown LSP (2500 files)**:
+   - Sequential parsing: 2.3s
+   - Parallel Tree-sitter (rayon): 200-300ms
+   - **Improvement: 8-12x faster**
 
-### 2.4 División de Responsabilidades
+### 2.4 Responsibility Division
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
@@ -870,9 +870,9 @@ Legend:
 ✗ Not suitable / not available
 ```
 
-### 2.5 Implementación de Arquitectura Híbrida
+### 2.5 Hybrid Architecture Implementation
 
-#### **Estructura de archivos**:
+#### **File structure**:
 
 ```
 internal/
@@ -889,16 +889,16 @@ internal/
 │   │   └── navigation.go      # AST navigation
 │   │
 │   └── hybrid/
-│       ├── manager.go         # Hybrid manager (coordina TS + LSP)
-│       ├── cache.go           # Cache de resultados
-│       └── router.go          # Routing de features
+│       ├── manager.go         # Hybrid manager (coordinates TS + LSP)
+│       ├── cache.go           # Results cache
+│       └── router.go          # Feature routing
 │
 └── lsp/
-    ├── client.go              # LSP client existente
+    ├── client.go              # Existing LSP client
     └── semantic.go            # Semantic features
 ```
 
-#### **Implementación del Parser Tree-sitter**:
+#### **Tree-sitter Parser Implementation**:
 
 ```go
 package treesitter
@@ -947,7 +947,7 @@ func NewParser(lang string) (*Parser, error) {
     }, nil
 }
 
-// Parse realiza parsing completo (solo en carga inicial)
+// Parse performs full parsing (only on initial load)
 func (p *Parser) Parse(source []byte) error {
     p.mu.Lock()
     defer p.mu.Unlock()
@@ -962,7 +962,7 @@ func (p *Parser) Parse(source []byte) error {
     return nil
 }
 
-// Edit realiza parsing incremental (O(n) donde n = cambios)
+// Edit performs incremental parsing (O(n) where n = changes)
 func (p *Parser) Edit(startByte, oldEndByte, newEndByte uint32, newSource []byte) error {
     p.mu.Lock()
     defer p.mu.Unlock()
@@ -971,7 +971,7 @@ func (p *Parser) Edit(startByte, oldEndByte, newEndByte uint32, newSource []byte
         return p.Parse(newSource)
     }
     
-    // Informar a Tree-sitter sobre el edit
+    // Inform Tree-sitter about the edit
     p.tree.Edit(sitter.EditInput{
         StartByte:  startByte,
         OldEndByte: oldEndByte,
@@ -990,7 +990,7 @@ func (p *Parser) Edit(startByte, oldEndByte, newEndByte uint32, newSource []byte
         },
     })
     
-    // Re-parse incremental (solo afecta nodos cambiados)
+    // Re-parse incrementally (only affects changed nodes)
     newTree, err := p.parser.ParseCtx(context.Background(), p.tree, newSource)
     if err != nil {
         return err
@@ -1001,7 +1001,7 @@ func (p *Parser) Edit(startByte, oldEndByte, newEndByte uint32, newSource []byte
     return nil
 }
 
-// GetHighlights obtiene tokens para syntax highlighting
+// GetHighlights gets tokens for syntax highlighting
 func (p *Parser) GetHighlights(query string) ([]Highlight, error) {
     p.mu.RLock()
     defer p.mu.RUnlock()
@@ -1048,7 +1048,7 @@ type Highlight struct {
     Text        []byte
 }
 
-// GetSymbols extrae símbolos del documento (funciones, clases, etc.)
+// GetSymbols extracts symbols from the document (functions, classes, etc.)
 func (p *Parser) GetSymbols() ([]Symbol, error) {
     p.mu.RLock()
     defer p.mu.RUnlock()
@@ -1059,7 +1059,7 @@ func (p *Parser) GetSymbols() ([]Symbol, error) {
     
     symbols := make([]Symbol, 0)
     
-    // Query para extraer símbolos (ejemplo para Go)
+    // Query to extract symbols (example for Go)
     query := `
         (function_declaration name: (identifier) @func.name) @func.def
         (method_declaration name: (field_identifier) @method.name) @method.def
@@ -1157,7 +1157,7 @@ type Position struct {
 }
 
 func (p *Parser) byteToRow(byte uint32) uint32 {
-    // Implementación simplificada - en producción usar índice de líneas
+    // Simplified implementation - in production use line index
     row := uint32(0)
     for i := uint32(0); i < byte && i < uint32(len(p.source)); i++ {
         if p.source[i] == '\n' {
@@ -1168,7 +1168,7 @@ func (p *Parser) byteToRow(byte uint32) uint32 {
 }
 
 func (p *Parser) byteToColumn(byte uint32) uint32 {
-    // Implementación simplificada
+    // Simplified implementation
     col := uint32(0)
     for i := int(byte) - 1; i >= 0; i-- {
         if p.source[i] == '\n' {
@@ -1180,7 +1180,7 @@ func (p *Parser) byteToColumn(byte uint32) uint32 {
 }
 ```
 
-#### **Hybrid Manager (Coordina Tree-sitter + LSP)**:
+#### **Hybrid Manager (Coordinates Tree-sitter + LSP)**:
 
 ```go
 package hybrid
@@ -1251,14 +1251,14 @@ func NewManager(lang string, lspClient *lsp.Client) (*Manager, error) {
     }, nil
 }
 
-// GetHighlights usa Tree-sitter (fast path)
+// GetHighlights uses Tree-sitter (fast path)
 func (m *Manager) GetHighlights(ctx context.Context, source []byte) ([]treesitter.Highlight, error) {
     // Check cache
     if cached, ok := m.cache.GetHighlights(source); ok {
         return cached, nil
     }
     
-    // Parse con Tree-sitter
+    // Parse with Tree-sitter
     if err := m.tsParser.Parse(source); err != nil {
         return nil, err
     }
@@ -1274,7 +1274,7 @@ func (m *Manager) GetHighlights(ctx context.Context, source []byte) ([]treesitte
     return highlights, nil
 }
 
-// GetSymbols usa Tree-sitter primero (fast), luego enriquece con LSP si es necesario
+// GetSymbols uses Tree-sitter first (fast), then enriches with LSP if needed
 func (m *Manager) GetSymbols(ctx context.Context, source []byte) ([]Symbol, error) {
     // Fast path: Tree-sitter
     tsSymbols, err := m.tsParser.GetSymbols()
@@ -1293,24 +1293,24 @@ func (m *Manager) GetSymbols(ctx context.Context, source []byte) ([]Symbol, erro
     }
     
     // Intelligent path: Enrich with LSP if available
-    // (opcional, solo si se necesita información semántica adicional)
+    // (optional, only if additional semantic information is needed)
     
     return symbols, nil
 }
 
-// GetCompletions usa LSP (semantic path)
+// GetCompletions uses LSP (semantic path)
 func (m *Manager) GetCompletions(ctx context.Context, uri string, position lsp.Position) ([]lsp.CompletionItem, error) {
-    // Pre-filter usando Tree-sitter para contexto local
-    // (reduce carga en LSP)
+    // Pre-filter using Tree-sitter for local context
+    // (reduces load on LSP)
     localSymbols, _ := m.tsParser.GetSymbols()
     
-    // Query LSP con contexto
+    // Query LSP with context
     completions, err := m.lspClient.Completion(ctx, uri, position)
     if err != nil {
         return nil, err
     }
     
-    // Post-process: priorizar símbolos locales
+    // Post-process: prioritize local symbols
     for i := range completions {
         for _, sym := range localSymbols {
             if completions[i].Label == sym.Name {
@@ -1323,9 +1323,9 @@ func (m *Manager) GetCompletions(ctx context.Context, uri string, position lsp.P
     return completions, nil
 }
 
-// HandleEdit procesa cambios de forma incremental
+// HandleEdit processes changes incrementally
 func (m *Manager) HandleEdit(ctx context.Context, edit Edit) error {
-    // Tree-sitter: incremental parse (O(n) donde n = cambios)
+    // Tree-sitter: incremental parse (O(n) where n = changes)
     err := m.tsParser.Edit(
         edit.StartByte,
         edit.OldEndByte,
@@ -1346,7 +1346,7 @@ func (m *Manager) HandleEdit(ctx context.Context, edit Edit) error {
 }
 
 func (m *Manager) getHighlightQuery() string {
-    // Query Tree-sitter para highlighting (depende del lenguaje)
+    // Tree-sitter query for highlighting (depends on language)
     return `
         (comment) @comment
         (string) @string
@@ -1426,8 +1426,8 @@ func (c *Cache) InvalidateRange(startByte, endByte uint32) {
     c.mu.Lock()
     defer c.mu.Unlock()
     
-    // Invalidar todas las entradas afectadas
-    // (implementación simplificada - en producción sería más granular)
+    // Invalidate all affected entries
+    // (simplified implementation - in production would be more granular)
     c.highlights = make(map[string]cacheEntry[[]treesitter.Highlight])
     c.symbols = make(map[string]cacheEntry[[]Symbol])
 }
@@ -1438,26 +1438,26 @@ func (c *Cache) hash(data []byte) string {
 }
 ```
 
-### 2.6 Integración con AI Agent
+### 2.6 AI Agent Integration
 
-La arquitectura híbrida mejora significativamente las capacidades del agente AI:
+The hybrid architecture significantly improves AI agent capabilities:
 
 ```go
-// El agente puede solicitar contexto de código usando Tree-sitter (fast)
+// The agent can request code context using Tree-sitter (fast)
 func (agent *AIAgent) GetCodeContext(ctx context.Context, file string, position Position) (*CodeContext, error) {
-    // Fast: Extraer contexto sintáctico con Tree-sitter
+    // Fast: Extract syntactic context with Tree-sitter
     symbols, err := agent.hybrid.GetSymbols(ctx, []byte(file))
     if err != nil {
         return nil, err
     }
     
-    // Encontrar función/clase que contiene la posición
+    // Find function/class containing the position
     containingSymbol := findContainingSymbol(symbols, position)
     
-    // Fast: Extraer código de la función/clase
+    // Fast: Extract function/class code
     functionCode := extractCode(file, containingSymbol.Range)
     
-    // Intelligent: Obtener información semántica adicional si es necesario
+    // Intelligent: Get additional semantic information if needed
     var typeInfo string
     if agent.needsSemanticInfo {
         hover, _ := agent.hybrid.lspClient.Hover(ctx, file, position)
@@ -1474,15 +1474,15 @@ func (agent *AIAgent) GetCodeContext(ctx context.Context, file string, position 
     }, nil
 }
 
-// El agente usa este contexto para tomar decisiones inteligentes
+// The agent uses this context to make intelligent decisions
 func (agent *AIAgent) AnalyzeAndSuggest(ctx context.Context, task string) (*Suggestion, error) {
-    // Obtener contexto rápido con Tree-sitter
+    // Get fast context with Tree-sitter
     context, err := agent.GetCodeContext(ctx, agent.currentFile, agent.cursorPosition)
     if err != nil {
         return nil, err
     }
     
-    // Preparar prompt para LLM con contexto sintáctico
+    // Prepare prompt for LLM with syntactic context
     prompt := fmt.Sprintf(`Task: %s
 
 Current context:
@@ -1494,10 +1494,10 @@ Current context:
 
 Suggest a solution.`, task, context.CurrentFunction, context.Code, context.Symbols)
     
-    // Enviar a LLM seleccionado dinámicamente
+    // Send to dynamically selected LLM
     response, err := agent.llmRouter.Route(ctx, TaskMetadata{
         Type:       "code_suggestion",
-        TokenCount: len(prompt) / 4, // Aproximado
+        TokenCount: len(prompt) / 4, // Approximate
     })
     
     return parseSuggestion(response), nil
@@ -1506,9 +1506,9 @@ Suggest a solution.`, task, context.CurrentFunction, context.Code, context.Symbo
 
 ---
 
-## Parte 3: Recomendaciones para OpenCode
+## Part 3: Recommendations for OpenCode
 
-### 3.1 Arquitectura Propuesta Final
+### 3.1 Final Proposed Architecture
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
@@ -1558,143 +1558,143 @@ Suggest a solution.`, task, context.CurrentFunction, context.Code, context.Symbo
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Roadmap de Implementación Actualizado
+### 3.2 Updated Implementation Roadmap
 
-#### **Fase 1: Sistema de Proveedores con Switch Dinámico (2-3 semanas)**
+#### **Phase 1: Provider System with Dynamic Switching (2-3 weeks)**
 
-**Semana 1-2:**
-1. Crear interfaz `Provider` unificada
-2. Implementar proveedores actualizados (Anthropic, OpenAI, Groq, Ollama)
-3. Implementar `ModelRouter` con reglas configurables
-4. Implementar `TaskComplexity` classifier
-5. Sistema de `CostTracker`
+**Week 1-2:**
+1. Create unified `Provider` interface
+2. Implement updated providers (Anthropic, OpenAI, Groq, Ollama)
+3. Implement `ModelRouter` with configurable rules
+4. Implement `TaskComplexity` classifier
+5. `CostTracker` system
 
-**Semana 3:**
-6. Tool `crush.switch_model` para agentes
-7. `ContextManager` con compactación inteligente
-8. Pruebas de integración
-9. Configuración de ejemplo
+**Week 3:**
+6. `crush.switch_model` tool for agents
+7. `ContextManager` with intelligent compaction
+8. Integration tests
+9. Example configuration
 
-**Entregables:**
-- ✅ 6 proveedores funcionales
-- ✅ Switch dinámico basado en complejidad
-- ✅ Cost tracking por sesión
-- ✅ Documentación de uso
+**Deliverables:**
+- ✅ 6 functional providers
+- ✅ Dynamic switching based on complexity
+- ✅ Cost tracking per session
+- ✅ Usage documentation
 
-#### **Fase 2: Tree-sitter + LSP Híbrido (3-4 semanas)**
+#### **Phase 2: Tree-sitter + LSP Hybrid (3-4 weeks)**
 
-**Semana 1:**
-1. Setup Tree-sitter para Go, Rust, TypeScript, Python
-2. Implementar `Parser` con parsing incremental
-3. Queries para syntax highlighting
-4. Queries para symbol extraction
+**Week 1:**
+1. Setup Tree-sitter for Go, Rust, TypeScript, Python
+2. Implement `Parser` with incremental parsing
+3. Queries for syntax highlighting
+4. Queries for symbol extraction
 
-**Semana 2:**
-5. Implementar `HybridManager`
-6. Sistema de cache inteligente
-7. Routing de features (Tree-sitter vs LSP)
-8. Integración con TUI existente
+**Week 2:**
+5. Implement `HybridManager`
+6. Intelligent cache system
+7. Feature routing (Tree-sitter vs LSP)
+8. Integration with existing TUI
 
-**Semana 3:**
-9. Optimización de performance
-10. Batching de LSP requests
-11. Paralelización con Rayon/goroutines
+**Week 3:**
+9. Performance optimization
+10. LSP request batching
+11. Parallelization with Rayon/goroutines
 12. Memory profiling
 
-**Semana 4:**
-13. Testing exhaustivo
-14. Benchmarking comparativo
-15. Ajustes de performance
-16. Documentación
+**Week 4:**
+13. Exhaustive testing
+14. Comparative benchmarking
+15. Performance tuning
+16. Documentation
 
-**Entregables:**
-- ✅ Parsing incremental con Tree-sitter
-- ✅ 10-40x mejora en syntax highlighting
-- ✅ Integración transparente con LSP
-- ✅ Cache inteligente
-- ✅ Benchmarks comparativos
+**Deliverables:**
+- ✅ Incremental parsing with Tree-sitter
+- ✅ 10-40x improvement in syntax highlighting
+- ✅ Transparent LSP integration
+- ✅ Intelligent cache
+- ✅ Comparative benchmarks
 
-#### **Fase 3: Protocolo ACP (2-3 semanas)**
+#### **Phase 3: ACP Protocol (2-3 weeks)**
 
-(Sin cambios respecto al plan original)
+(No changes from original plan)
 
-#### **Fase 4: TUI Multi-Agente (2-3 semanas)**
+#### **Phase 4: Multi-Agent TUI (2-3 weeks)**
 
-(Sin cambios respecto al plan original)
+(No changes from original plan)
 
-#### **Fase 5: Integración Final (1-2 semanas)**
+#### **Phase 5: Final Integration (1-2 weeks)**
 
-**Nueva integración:**
-1. Tree-sitter context en prompts de AI
-2. Switch dinámico basado en análisis AST
-3. LSP diagnostics en feedback loop
-4. Performance tuning final
+**New integration:**
+1. Tree-sitter context in AI prompts
+2. Dynamic switching based on AST analysis
+3. LSP diagnostics in feedback loop
+4. Final performance tuning
 
-### 3.3 Comparativa de Enfoques
+### 3.3 Approach Comparison
 
-| Aspecto | LSP Solo | Tree-sitter Solo | Híbrido (Recomendado) |
+| Aspect | LSP Only | Tree-sitter Only | Hybrid (Recommended) |
 |---------|----------|------------------|----------------------|
-| **Syntax Highlighting** | Lento (2-5s) | Rápido (10-50ms) | **Rápido (10-50ms)** |
-| **Completions** | Bueno | No disponible | **Bueno + cache local** |
-| **Diagnostics** | Bueno | No semántico | **Bueno** |
-| **Symbol Outline** | Lento | Rápido | **Rápido + enriquecido** |
-| **Memory Usage** | Alto (1-2GB) | Bajo (10-50MB) | **Medio (100-300MB)** |
-| **CPU Usage** | Alto (5-15%) | Bajo (<1%) | **Bajo (1-3%)** |
-| **Large Files** | Muy lento | Rápido | **Rápido** |
-| **Incremental** | No | Sí (O(n)) | **Sí (O(n))** |
-| **Semantic Info** | Completo | No | **Completo** |
-| **Cross-file** | Sí | No | **Sí** |
-| **Complejidad** | Baja | Media | **Alta** |
-| **Mantenimiento** | LSP updates | Grammar updates | **Ambos** |
+| **Syntax Highlighting** | Slow (2-5s) | Fast (10-50ms) | **Fast (10-50ms)** |
+| **Completions** | Good | Not available | **Good + local cache** |
+| **Diagnostics** | Good | Not semantic | **Good** |
+| **Symbol Outline** | Slow | Fast | **Fast + enriched** |
+| **Memory Usage** | High (1-2GB) | Low (10-50MB) | **Medium (100-300MB)** |
+| **CPU Usage** | High (5-15%) | Low (<1%) | **Low (1-3%)** |
+| **Large Files** | Very slow | Fast | **Fast** |
+| **Incremental** | No | Yes (O(n)) | **Yes (O(n))** |
+| **Semantic Info** | Complete | No | **Complete** |
+| **Cross-file** | Yes | No | **Yes** |
+| **Complexity** | Low | Medium | **High** |
+| **Maintenance** | LSP updates | Grammar updates | **Both** |
 
-**Veredicto**: **Arquitectura híbrida es claramente superior** para un coding agent moderno. Combina lo mejor de ambos mundos con overhead manejable.
+**Verdict**: **Hybrid architecture is clearly superior** for a modern coding agent. It combines the best of both worlds with manageable overhead.
 
-### 3.4 Estimación de Mejoras
+### 3.4 Improvement Estimates
 
 **Performance**:
-- Syntax highlighting: **40-100x más rápido**
-- Symbol extraction: **25-40x más rápido**
-- Startup time: **10-20x más rápido**
-- Memory footprint: **3-5x menor**
-- CPU idle: **5-10x menor**
+- Syntax highlighting: **40-100x faster**
+- Symbol extraction: **25-40x faster**
+- Startup time: **10-20x faster**
+- Memory footprint: **3-5x smaller**
+- CPU idle: **5-10x smaller**
 
-**Costes**:
-- AI inference: **60-70% reducción** (switch dinámico)
-- API calls: **50-60% reducción** (cache + routing inteligente)
-- Development cost: **+30-40%** (complejidad adicional)
-- Maintenance cost: **+20-30%** (dos sistemas)
+**Costs**:
+- AI inference: **60-70% reduction** (dynamic switching)
+- API calls: **50-60% reduction** (cache + intelligent routing)
+- Development cost: **+30-40%** (additional complexity)
+- Maintenance cost: **+20-30%** (two systems)
 
 **User Experience**:
-- Latency percibida: **Significativamente mejor**
-- Responsiveness: **Instantánea para operaciones sintácticas**
-- Battery life (laptops): **20-30% mejora**
-- Large projects: **Uso práctico vs impracticable**
+- Perceived latency: **Significantly better**
+- Responsiveness: **Instant for syntactic operations**
+- Battery life (laptops): **20-30% improvement**
+- Large projects: **Practical use vs impractical**
 
 ---
 
-## Conclusión
+## Conclusion
 
-### Recomendaciones Finales
+### Final Recommendations
 
-1. **Implementar Switch Dinámico de Modelos** (Prioridad: **ALTA**)
-   - ROI inmediato: 60-70% reducción de costes
-   - Implementación: 2-3 semanas
-   - Enfoque: Model Routing (más flexible que Cascading)
+1. **Implement Dynamic Model Switching** (Priority: **HIGH**)
+   - Immediate ROI: 60-70% cost reduction
+   - Implementation: 2-3 weeks
+   - Approach: Model Routing (more flexible than Cascading)
 
-2. **Implementar Arquitectura Híbrida Tree-sitter + LSP** (Prioridad: **ALTA**)
-   - Mejora de performance: 10-100x según feature
-   - Implementación: 3-4 semanas
-   - Complejidad: Alta pero manejable
+2. **Implement Hybrid Tree-sitter + LSP Architecture** (Priority: **HIGH**)
+   - Performance improvement: 10-100x depending on feature
+   - Implementation: 3-4 weeks
+   - Complexity: High but manageable
 
-3. **Priorizar Tree-sitter para**:
+3. **Prioritize Tree-sitter for**:
    - ✅ Syntax highlighting
    - ✅ Code folding
    - ✅ Symbol outline
    - ✅ Bracket matching
    - ✅ Indentation
-   - ✅ Context extraction para AI
+   - ✅ Context extraction for AI
 
-4. **Mantener LSP para**:
+4. **Maintain LSP for**:
    - ✅ Completions
    - ✅ Diagnostics
    - ✅ Go to definition
@@ -1702,35 +1702,35 @@ Suggest a solution.`, task, context.CurrentFunction, context.Code, context.Symbo
    - ✅ Refactoring
    - ✅ Hover information
 
-5. **Arquitectura de Tres Capas**:
+5. **Three-Layer Architecture**:
    ```
    Fast Layer (Tree-sitter) → < 10ms
    Cache Layer              → < 50ms
    Semantic Layer (LSP)     → < 500ms
    ```
 
-### Métricas de Éxito
+### Success Metrics
 
-**Técnicas**:
-- [ ] Syntax highlighting < 50ms (vs 2-5s actual)
-- [ ] Symbol extraction < 20ms (vs 200-500ms actual)
-- [ ] Memory usage < 300MB (vs 1-2GB actual)
-- [ ] CPU idle < 3% (vs 5-15% actual)
+**Technical**:
+- [ ] Syntax highlighting < 50ms (vs 2-5s current)
+- [ ] Symbol extraction < 20ms (vs 200-500ms current)
+- [ ] Memory usage < 300MB (vs 1-2GB current)
+- [ ] CPU idle < 3% (vs 5-15% current)
 - [ ] AI cost reduction > 60%
 
-**Negocio**:
+**Business**:
 - [ ] User satisfaction > 90%
-- [ ] Adoption rate > 80% (vs OpenCode vanilla)
+- [ ] Adoption rate > 80% (vs vanilla OpenCode)
 - [ ] Monthly cost per user < $5
 - [ ] Bug report rate < 5/month
 - [ ] Community contributions > 10/month
 
-**Comparativa con Crush**:
-- [ ] Performance paridad o mejor
-- [ ] Feature paridad + multi-agent
+**Comparison with Crush**:
+- [ ] Performance parity or better
+- [ ] Feature parity + multi-agent
 - [ ] Open source (vs Crush license change)
 - [ ] Community-driven
 
 ---
 
-**La combinación de switch dinámico de modelos + arquitectura híbrida Tree-sitter/LSP posiciona a OpenCode como un coding agent de próxima generación, superior a Crush en capacidades multi-agente y con performance competitiva o superior.**
+**The combination of dynamic model switching + hybrid Tree-sitter/LSP architecture positions OpenCode as a next-generation coding agent, superior to Crush in multi-agent capabilities with competitive or superior performance.**

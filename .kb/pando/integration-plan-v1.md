@@ -1,163 +1,163 @@
-# Plan de Integración de Nuevas Características en Pando
+# Integration Plan for New Features in Pando
 
-## Estado Actual del Proyecto
+## Current Project Status
 
 ### Pando (github.com/digiogithub/pando)
-- **Lenguaje**: Go 1.24, fork de OpenCode/Crush
+- **Language**: Go 1.24, fork of OpenCode/Crush
 - **TUI**: bubbletea (charmbracelet) + lipgloss
-- **Config**: Viper, soporta `.pando.json` y `.pando.toml` (global `~/.pando.*` + local `.pando.*`)
-- **Páginas TUI**: Solo 2 — ChatPage, LogsPage
-- **Diálogos**: Help, Quit, Session, Command, Model, Theme, Filepicker, Init, Permissions, MultiArguments
-- **Providers LLM**: Anthropic, OpenAI, Copilot, Gemini, Groq, OpenRouter, XAI, Azure, Bedrock, VertexAI
-- **Herramientas**: bash, edit, file, glob, grep, fetch, ls, patch, write, view, diagnostics, sourcegraph
+- **Config**: Viper, supports `.pando.json` and `.pando.toml` (global `~/.pando.*` + local `.pando.*`)
+- **TUI Pages**: Only 2 — ChatPage, LogsPage
+- **Dialogs**: Help, Quit, Session, Command, Model, Theme, Filepicker, Init, Permissions, MultiArguments
+- **LLM Providers**: Anthropic, OpenAI, Copilot, Gemini, Groq, OpenRouter, XAI, Azure, Bedrock, VertexAI
+- **Tools**: bash, edit, file, glob, grep, fetch, ls, patch, write, view, diagnostics, sourcegraph
 - **MCP**: via mcp-go (mark3labs/mcp-go)
 - **DB**: SQLite (ncruces/go-sqlite3)
 - **CLI**: spf13/cobra
-- **NO tiene**: skills, configuración TUI, orquestador de subagentes
+- **Does NOT have**: skills, TUI configuration, subagent orchestrator
 
 ### Mesnada (github.com/sevir/mesnada) v4.1.1
-- **Lenguaje**: Go 1.23.4
-- **TUI**: bubbletea (charmbracelet) — TUI independiente con dashboard
+- **Language**: Go 1.23.4
+- **TUI**: bubbletea (charmbracelet) — standalone TUI with dashboard
 - **Config**: YAML/JSON (`~/.mesnada/config.yaml`)
-- **Servidor HTTP**: Gin + stdlib mux, endpoints MCP JSON-RPC, SSE, REST API, WebUI embebida
-- **Orquestador**: Completo con spawn, cancel, pause, resume, retry, dependencias entre tareas
+- **HTTP Server**: Gin + stdlib mux, MCP JSON-RPC endpoints, SSE, REST API, embedded WebUI
+- **Orchestrator**: Full-featured with spawn, cancel, pause, resume, retry, task dependencies
 - **Agent Spawners**: Copilot, Claude, Gemini, OpenCode, Ollama (Claude/OpenCode), Mistral, ACP
-- **Store**: File-based JSON store para persistencia de tareas
-- **Personas**: Sistema de personas via markdown
+- **Store**: File-based JSON store for task persistence
+- **Personas**: Markdown-based persona system
 - **ACP**: Agent Communication Protocol via coder/acp-go-sdk
-- **Tools MCP**: spawn_agent, get_task, list_tasks, wait_task, wait_multiple, cancel_task, pause_task, resume_task, delete_task, get_stats, get_task_output, set_progress, acp_session_control
+- **MCP Tools**: spawn_agent, get_task, list_tasks, wait_task, wait_multiple, cancel_task, pause_task, resume_task, delete_task, get_stats, get_task_output, set_progress, acp_session_control
 
-### Arquitectura Skills VTCode (referencia)
-- **3 niveles de carga**: Metadata (~50 tokens), Instructions (<5K tokens), Resources (on-demand)
+### VTCode Skills Architecture (reference)
+- **3-level loading**: Metadata (~50 tokens), Instructions (<5K tokens), Resources (on-demand)
 - **SKILL.md**: YAML frontmatter + Markdown body
-- **Descubrimiento**: Múltiples rutas con precedencia (user > project)
-- **Tipos**: Traditional (SKILL.md), CLI Tool (executable), Hybrid
+- **Discovery**: Multiple paths with precedence (user > project)
+- **Types**: Traditional (SKILL.md), CLI Tool (executable), Hybrid
 - **Routing**: via metadata (description, when-to-use, when-not-to-use)
-- **Invocación**: Implícita (model-driven), Explícita (/skill), Programática (CLI)
+- **Invocation**: Implicit (model-driven), Explicit (/skill), Programmatic (CLI)
 
 ---
 
-## FASE 1: Interfaz TUI de Configuración
+## PHASE 1: TUI Settings Interface
 
-**Objetivo**: Añadir una página de Settings en la TUI de Pando que permita visualizar y modificar la configuración.
+**Goal**: Add a Settings page to Pando's TUI that allows viewing and modifying configuration.
 
-### Tareas:
+### Tasks:
 
-#### 1.1 — Crear PageID y estructura base
-- Añadir `SettingsPage` a `internal/tui/page/page.go`
-- Crear `internal/tui/page/settings.go` con el modelo bubbletea básico
-- Registrar la nueva página en `internal/tui/tui.go` (mapa de pages + init)
-- **Delegable a subagente**: SÍ
+#### 1.1 — Create PageID and base structure
+- Add `SettingsPage` to `internal/tui/page/page.go`
+- Create `internal/tui/page/settings.go` with the basic bubbletea model
+- Register the new page in `internal/tui/tui.go` (page map + init)
+- **Delegable to subagent**: YES
 
-#### 1.2 — Crear componentes de settings
-- Crear `internal/tui/components/settings/` con componentes:
-  - `settings.go` — Componente principal con secciones navegables
-  - `section.go` — Sección genérica con campos editables
-  - `field.go` — Campo de formulario (text input, toggle, dropdown)
-- Implementar navegación por secciones con Tab/Shift+Tab
-- **Delegable a subagente**: SÍ
+#### 1.2 — Create settings components
+- Create `internal/tui/components/settings/` with components:
+  - `settings.go` — Main component with navigable sections
+  - `section.go` — Generic section with editable fields
+  - `field.go` — Form field (text input, toggle, dropdown)
+- Implement section navigation with Tab/Shift+Tab
+- **Delegable to subagent**: YES
 
-#### 1.3 — Implementar secciones de configuración
-- **Sección General**: tema, autoCompact, debug, shell
-- **Sección Providers**: listar providers con estado (activo/disabled), editar API keys
-- **Sección Agents/Models**: editar modelo por agente (coder, summarizer, task, title)
-- **Sección MCP Servers**: listar, añadir, editar, eliminar MCP servers
-- **Sección LSP**: listar y editar configuraciones LSP
-- **Delegable a subagente**: SÍ (subdividir por sección)
+#### 1.3 — Implement configuration sections
+- **General Section**: theme, autoCompact, debug, shell
+- **Providers Section**: list providers with status (active/disabled), edit API keys
+- **Agents/Models Section**: edit model per agent (coder, summarizer, task, title)
+- **MCP Servers Section**: list, add, edit, remove MCP servers
+- **LSP Section**: list and edit LSP configurations
+- **Delegable to subagent**: YES (subdivide by section)
 
-#### 1.4 — Integrar persistencia de config
-- Usar `updateCfgFile()` existente para guardar cambios
-- Añadir validación en tiempo real al editar
-- Mostrar feedback visual (toast/status) al guardar
-- **Delegable a subagente**: SÍ
+#### 1.4 — Integrate config persistence
+- Use existing `updateCfgFile()` to save changes
+- Add real-time validation when editing
+- Show visual feedback (toast/status) on save
+- **Delegable to subagent**: YES
 
-#### 1.5 — Añadir navegación y keybinding
-- Añadir keybinding `ctrl+g` para abrir Settings
-- Añadir comando "Settings" al command dialog (ctrl+k)
-- **Delegable a subagente**: SÍ
+#### 1.5 — Add navigation and keybinding
+- Add `ctrl+g` keybinding to open Settings
+- Add "Settings" command to the command dialog (ctrl+k)
+- **Delegable to subagent**: YES
 
 ---
 
-## FASE 2: Sistema de Skills (estilo VTCode)
+## PHASE 2: Skills System (VTCode-style)
 
-**Objetivo**: Implementar un sistema de skills con carga progresiva de 3 niveles siguiendo la arquitectura de VTCode.
+**Goal**: Implement a skills system with 3-level progressive loading following the VTCode architecture.
 
-### Tareas:
+### Tasks:
 
-#### 2.1 — Crear paquete core de skills
-- Crear `internal/skills/types.go` — Tipos: SkillMetadata, SkillInstruction, SkillResource, Skill
-- Crear `internal/skills/parser.go` — Parser de SKILL.md (YAML frontmatter + markdown)
-- Crear `internal/skills/manager.go` — SkillManager con cache LRU para instrucciones
-- **Delegable a subagente**: SÍ
+#### 2.1 — Create core skills package
+- Create `internal/skills/types.go` — Types: SkillMetadata, SkillInstruction, SkillResource, Skill
+- Create `internal/skills/parser.go` — SKILL.md parser (YAML frontmatter + markdown)
+- Create `internal/skills/manager.go` — SkillManager with LRU cache for instructions
+- **Delegable to subagent**: YES
 
-#### 2.2 — Implementar descubrimiento de skills
-- Crear `internal/skills/discovery.go` — Scanner de filesystem
-- Rutas de búsqueda con precedencia:
+#### 2.2 — Implement skills discovery
+- Create `internal/skills/discovery.go` — Filesystem scanner
+- Search paths with precedence:
   1. `~/.pando/skills/` (user global)
   2. `.pando/skills/` (project local)
-  3. `~/.claude/skills/` (compatibilidad Claude)
-  4. `.claude/skills/` (compatibilidad Claude project)
-- Soporte para descubrimiento recursivo
-- **Delegable a subagente**: SÍ
+  3. `~/.claude/skills/` (Claude compatibility)
+  4. `.claude/skills/` (Claude project compatibility)
+- Support recursive discovery
+- **Delegable to subagent**: YES
 
-#### 2.3 — Implementar carga progresiva de 3 niveles
-- **Nivel 1**: Cargar metadata de todas las skills al inicio (~50 tokens/skill)
-- **Nivel 2**: Cargar instrucciones bajo demanda con cache LRU, eviction al 80% de contexto
-- **Nivel 3**: Cargar recursos solo cuando el modelo los solicite explícitamente
-- Crear `internal/skills/context.go` — Gestión de contexto y eviction
-- **Delegable a subagente**: SÍ
+#### 2.3 — Implement 3-level progressive loading
+- **Level 1**: Load metadata for all skills at startup (~50 tokens/skill)
+- **Level 2**: Load instructions on demand with LRU cache, eviction at 80% context
+- **Level 3**: Load resources only when the model explicitly requests them
+- Create `internal/skills/context.go` — Context management and eviction
+- **Delegable to subagent**: YES
 
-#### 2.4 — Integrar skills en el sistema de prompts
-- Modificar `internal/llm/prompt/prompt.go` para inyectar metadata de skills activas
-- Modificar `internal/llm/prompt/coder.go` para incluir instrucciones de skills activadas
-- Añadir campo `Skills` a la configuración (`internal/config/config.go`)
-- **Delegable a subagente**: SÍ
+#### 2.4 — Integrate skills into the prompt system
+- Modify `internal/llm/prompt/prompt.go` to inject active skills metadata
+- Modify `internal/llm/prompt/coder.go` to include activated skills instructions
+- Add `Skills` field to configuration (`internal/config/config.go`)
+- **Delegable to subagent**: YES
 
-#### 2.5 — Implementar invocación de skills
-- Añadir slash command `/skills` (list, info, activate, deactivate)
-- Integrar en el command dialog de la TUI
-- Routing automático basado en metadata (when-to-use)
-- **Delegable a subagente**: SÍ
+#### 2.5 — Implement skills invocation
+- Add `/skills` slash command (list, info, activate, deactivate)
+- Integrate into the TUI command dialog
+- Automatic routing based on metadata (when-to-use)
+- **Delegable to subagent**: YES
 
-#### 2.6 — Añadir gestión de skills a TUI Settings
-- Añadir sección "Skills" en la página de Settings (Fase 1)
-- Mostrar skills descubiertas con estado, nivel de carga, y controles
-- Permitir activar/desactivar skills desde la TUI
-- **Delegable a subagente**: SÍ
+#### 2.6 — Add skills management to TUI Settings
+- Add "Skills" section in the Settings page (Phase 1)
+- Show discovered skills with status, loading level, and controls
+- Allow enabling/disabling skills from the TUI
+- **Delegable to subagent**: YES
 
-#### 2.7 — Soporte CLI Tool Skills
-- Crear `internal/skills/tool_bridge.go` — Bridge para ejecutables CLI como skills
-- Registrar CLI tools descubiertos en el tool registry de Pando
-- **Delegable a subagente**: SÍ
+#### 2.7 — CLI Tool Skills Support
+- Create `internal/skills/tool_bridge.go` — Bridge for CLI executables as skills
+- Register discovered CLI tools in Pando's tool registry
+- **Delegable to subagent**: YES
 
 ---
 
-## FASE 3: Integración de Mesnada (Orquestador de Subagentes)
+## PHASE 3: Mesnada Integration (Subagent Orchestrator)
 
-**Objetivo**: Integrar la funcionalidad completa de Mesnada dentro del binario de Pando, incluyendo orquestador, servidor HTTP, spawners de agentes, y protocolo ACP.
+**Goal**: Integrate the full Mesnada functionality into the Pando binary, including orchestrator, HTTP server, agent spawners, and ACP protocol.
 
-### Tareas:
+### Tasks:
 
-#### 3.1 — Migrar paquetes core de Mesnada a Pando
-- Copiar y adaptar (cambiar module paths) los siguientes paquetes:
+#### 3.1 — Migrate Mesnada core packages to Pando
+- Copy and adapt (change module paths) the following packages:
   - `internal/mesnada/orchestrator/` ← mesnada/internal/orchestrator/
-  - `internal/mesnada/agent/` ← mesnada/internal/agent/ (todos los spawners)
+  - `internal/mesnada/agent/` ← mesnada/internal/agent/ (all spawners)
   - `internal/mesnada/store/` ← mesnada/internal/store/
   - `internal/mesnada/persona/` ← mesnada/internal/persona/
   - `internal/mesnada/acp/` ← mesnada/internal/acp/
   - `pkg/mesnada/models/` ← mesnada/pkg/models/
-- Adaptar imports a `github.com/digiogithub/pando/internal/mesnada/...`
-- **Delegable a subagente**: SÍ (puede ser tarea mecánica)
+- Adapt imports to `github.com/digiogithub/pando/internal/mesnada/...`
+- **Delegable to subagent**: YES (may be mechanical work)
 
-#### 3.2 — Migrar servidor HTTP/MCP
-- Copiar y adaptar:
+#### 3.2 — Migrate HTTP/MCP server
+- Copy and adapt:
   - `internal/mesnada/server/` ← mesnada/internal/server/ (server.go, tools.go, api.go, gin.go, ui.go)
   - `internal/mesnada/mcpconv/` ← mesnada/internal/mcpconv/
-- Mantener endpoints: /mcp, /mcp/sse, /health, /api/*, /ui
-- **Delegable a subagente**: SÍ
+- Maintain endpoints: /mcp, /mcp/sse, /health, /api/*, /ui
+- **Delegable to subagent**: YES
 
-#### 3.3 — Añadir configuración de Mesnada al .toml de Pando
-- Extender `internal/config/config.go` con nuevas secciones:
+#### 3.3 — Add Mesnada configuration to Pando's .toml
+- Extend `internal/config/config.go` with new sections:
 ```toml
 [mesnada]
 enabled = true
@@ -187,92 +187,92 @@ default_model = "gpt-4.1"
 id = "gpt-4.1"
 description = "GPT-4.1 via GitHub Copilot"
 ```
-- **Delegable a subagente**: SÍ
+- **Delegable to subagent**: YES
 
-#### 3.4 — Integrar inicio del servidor HTTP en Pando
-- Modificar `internal/app/app.go` para inicializar el orquestador de Mesnada
-- Levantar servidor HTTP en goroutine de background cuando `mesnada.enabled = true`
-- Registrar shutdown en el ciclo de vida de la app
-- Exponer el orquestador al resto de componentes de Pando
-- **Delegable a subagente**: SÍ
+#### 3.4 — Integrate HTTP server startup in Pando
+- Modify `internal/app/app.go` to initialize the Mesnada orchestrator
+- Start HTTP server in a background goroutine when `mesnada.enabled = true`
+- Register shutdown in the app lifecycle
+- Expose the orchestrator to the rest of Pando's components
+- **Delegable to subagent**: YES
 
-#### 3.5 — Crear página TUI de Orchestrator Dashboard
-- Crear `internal/tui/page/orchestrator.go` — Nueva página con dashboard de tareas
-- Componentes:
-  - Lista de tareas con estado, progreso, engine, modelo
-  - Panel de detalle de tarea seleccionada
-  - Acciones: spawn, cancel, pause, resume, delete
-- Añadir keybinding `ctrl+m` para acceder al dashboard
-- **Delegable a subagente**: SÍ
+#### 3.5 — Create Orchestrator Dashboard TUI Page
+- Create `internal/tui/page/orchestrator.go` — New page with task dashboard
+- Components:
+  - Task list with status, progress, engine, model
+  - Detail panel for selected task
+  - Actions: spawn, cancel, pause, resume, delete
+- Add `ctrl+m` keybinding to access the dashboard
+- **Delegable to subagent**: YES
 
-#### 3.6 — Registrar tools de Mesnada en el registry LLM de Pando
-- Crear `internal/llm/tools/mesnada.go` con herramientas:
+#### 3.6 — Register Mesnada tools in Pando's LLM registry
+- Create `internal/llm/tools/mesnada.go` with tools:
   - spawn_agent, get_task, list_tasks, wait_task, cancel_task, etc.
-- Registrar en `internal/llm/tools/tools.go`
-- Permitir que el agente coder de Pando orqueste subagentes directamente
-- **Delegable a subagente**: SÍ
+- Register in `internal/llm/tools/tools.go`
+- Allow Pando's coder agent to orchestrate subagents directly
+- **Delegable to subagent**: YES
 
-#### 3.7 — Añadir dependencias Go necesarias
-- Añadir a go.mod:
-  - `github.com/gin-gonic/gin` (HTTP framework para API/WebUI)
+#### 3.7 — Add required Go dependencies
+- Add to go.mod:
+  - `github.com/gin-gonic/gin` (HTTP framework for API/WebUI)
   - `github.com/coder/acp-go-sdk` (ACP protocol)
-  - `gopkg.in/yaml.v2` (ya lo tiene viper indirectamente)
-- Resolver conflictos de versiones con dependencias existentes
-- **Delegable a subagente**: SÍ
+  - `gopkg.in/yaml.v2` (already has viper indirectly)
+- Resolve version conflicts with existing dependencies
+- **Delegable to subagent**: YES
 
-#### 3.8 — Integrar WebUI embebida
-- Copiar `ui/` (assets web embebidos) de mesnada
-- Adaptar embed.go para incluir en el binario de Pando
-- **Delegable a subagente**: SÍ
+#### 3.8 — Integrate embedded WebUI
+- Copy `ui/` (embedded web assets) from mesnada
+- Adapt embed.go to include in the Pando binary
+- **Delegable to subagent**: YES
 
-#### 3.9 — Añadir configuración de Mesnada a la TUI Settings (Fase 1)
-- Sección "Mesnada/Orchestrator" en Settings
-- Configurar: host, port, max_parallel, default_engine, personas
-- Gestionar engines y modelos disponibles
-- Gestionar agentes ACP
-- **Delegable a subagente**: SÍ
+#### 3.9 — Add Mesnada configuration to TUI Settings (Phase 1)
+- "Mesnada/Orchestrator" section in Settings
+- Configure: host, port, max_parallel, default_engine, personas
+- Manage available engines and models
+- Manage ACP agents
+- **Delegable to subagent**: YES
 
 ---
 
-## Orden de Ejecución Recomendado
+## Recommended Execution Order
 
 ```
-FASE 1 (TUI Config) ──────────────────────────────────────────→
-FASE 2 (Skills)      ─────────────────────────→ (depende 2.6 de Fase 1)
-FASE 3 (Mesnada)     ────────────────────────────────────────→ (depende 3.5, 3.9 de Fase 1)
+PHASE 1 (TUI Config) ──────────────────────────────────────────→
+PHASE 2 (Skills)      ─────────────────────────→ (2.6 depends on Phase 1)
+PHASE 3 (Mesnada)     ────────────────────────────────────────→ (3.5, 3.9 depend on Phase 1)
 ```
 
-- **Fase 1 y Fase 2 (2.1-2.5)** pueden ejecutarse en paralelo
-- **Fase 2.6** depende de que Fase 1 esté completa (sección skills en settings)
-- **Fase 3.5 y 3.9** dependen de Fase 1 (páginas TUI y settings)
-- **Fase 3.1-3.4** son independientes y pueden empezar en paralelo con Fases 1 y 2
+- **Phase 1 and Phase 2 (2.1-2.5)** can run in parallel
+- **Phase 2.6** depends on Phase 1 being complete (skills section in settings)
+- **Phase 3.5 and 3.9** depend on Phase 1 (TUI pages and settings)
+- **Phase 3.1-3.4** are independent and can start in parallel with Phases 1 and 2
 
-## Subdivisión para Subagentes Mesnada
+## Subdivision for Mesnada Subagents
 
-Cada tarea marcada como "Delegable a subagente: SÍ" puede ser asignada a un subagente de mesnada con:
+Each task marked as "Delegable to subagent: YES" can be assigned to a Mesnada subagent with:
 - **Engine**: copilot
-- **Modelo**: gpt-4.1 (o gpt-4.6 si disponible)
+- **Model**: gpt-4.1 (or gpt-4.6 if available)
 - **WorkDir**: /www/MCP/Pando/pando
-- **MCP Config**: Acceso a tools de búsqueda y edición
+- **MCP Config**: Access to search and editing tools
 
-### Agrupación sugerida de tareas paralelas:
+### Suggested parallel task grouping:
 
-**Batch 1 (paralelo)**:
-- Subagente A: Fase 1.1 + 1.2 (estructura base settings)
-- Subagente B: Fase 2.1 + 2.2 (core skills + discovery)
-- Subagente C: Fase 3.1 (migración de paquetes mesnada)
+**Batch 1 (parallel)**:
+- Subagent A: Phase 1.1 + 1.2 (base settings structure)
+- Subagent B: Phase 2.1 + 2.2 (core skills + discovery)
+- Subagent C: Phase 3.1 (Mesnada package migration)
 
-**Batch 2 (tras Batch 1)**:
-- Subagente D: Fase 1.3 (secciones de config)
-- Subagente E: Fase 2.3 + 2.4 (carga progresiva + prompts)
-- Subagente F: Fase 3.2 + 3.3 (servidor HTTP + config)
+**Batch 2 (after Batch 1)**:
+- Subagent D: Phase 1.3 (config sections)
+- Subagent E: Phase 2.3 + 2.4 (progressive loading + prompts)
+- Subagent F: Phase 3.2 + 3.3 (HTTP server + config)
 
-**Batch 3 (tras Batch 2)**:
-- Subagente G: Fase 1.4 + 1.5 (persistencia + keybindings)
-- Subagente H: Fase 2.5 + 2.6 + 2.7 (invocación + TUI + CLI tools)
-- Subagente I: Fase 3.4 + 3.7 (integración app + dependencias)
+**Batch 3 (after Batch 2)**:
+- Subagent G: Phase 1.4 + 1.5 (persistence + keybindings)
+- Subagent H: Phase 2.5 + 2.6 + 2.7 (invocation + TUI + CLI tools)
+- Subagent I: Phase 3.4 + 3.7 (app integration + dependencies)
 
 **Batch 4 (final)**:
-- Subagente J: Fase 3.5 (dashboard TUI orchestrator)
-- Subagente K: Fase 3.6 (tools LLM mesnada)
-- Subagente L: Fase 3.8 + 3.9 (WebUI + settings mesnada)
+- Subagent J: Phase 3.5 (TUI orchestrator dashboard)
+- Subagent K: Phase 3.6 (Mesnada LLM tools)
+- Subagent L: Phase 3.8 + 3.9 (WebUI + Mesnada settings)

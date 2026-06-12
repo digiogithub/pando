@@ -1,6 +1,6 @@
 # Storage Diagnostics
 
-Documento de prueba para verificar que el Knowledge Base está funcionando correctamente.
+Test document to verify that the Knowledge Base is working correctly.
 
-Fecha: 2026-05-13
-Estado: Diagnosticando errores de almacenamiento reportados por el usuario.
+Date: 2026-05-13
+Status: Diagnosing storage errors reported by the user.

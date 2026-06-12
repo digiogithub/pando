@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -107,15 +106,9 @@ type Service interface {
 	EndSession(ctx context.Context, id string) error
 }
 
-type acpStateQuerier interface {
-	GetSessionACPState(ctx context.Context, id string) (sql.NullString, error)
-	UpdateSessionACPState(ctx context.Context, arg db.UpdateSessionACPStateParams) error
-}
-
 type service struct {
 	*pubsub.Broker[Session]
-	q        db.Querier
-	acpState acpStateQuerier
+	q db.Querier
 }
 
 func (s *service) Create(ctx context.Context, title string) (Session, error) {
@@ -224,10 +217,7 @@ func (s *service) Get(ctx context.Context, id string) (Session, error) {
 }
 
 func (s *service) GetACPSessionState(ctx context.Context, sessionID string) (string, error) {
-	if s.acpState == nil {
-		return "", errors.New("ACP session state persistence is not available")
-	}
-	state, err := s.acpState.GetSessionACPState(ctx, sessionID)
+	state, err := s.q.GetSessionACPState(ctx, sessionID)
 	if err != nil {
 		return "", err
 	}
@@ -260,11 +250,8 @@ func (s *service) Save(ctx context.Context, session Session) (Session, error) {
 }
 
 func (s *service) SaveACPSessionState(ctx context.Context, sessionID string, state string) error {
-	if s.acpState == nil {
-		return errors.New("ACP session state persistence is not available")
-	}
 	state = strings.TrimSpace(state)
-	return s.acpState.UpdateSessionACPState(ctx, db.UpdateSessionACPStateParams{
+	return s.q.UpdateSessionACPState(ctx, db.UpdateSessionACPStateParams{
 		ID: sessionID,
 		ACPState: sql.NullString{
 			String: state,
@@ -377,10 +364,8 @@ func ipcPayloadFromSession(sess Session) ipcSessionPayload {
 
 func NewService(q db.Querier) Service {
 	broker := pubsub.NewBroker[Session]()
-	acpState, _ := q.(acpStateQuerier)
 	return &service{
-		Broker:   broker,
-		q:        q,
-		acpState: acpState,
+		Broker: broker,
+		q:      q,
 	}
 }

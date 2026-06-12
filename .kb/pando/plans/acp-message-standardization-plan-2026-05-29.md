@@ -1,60 +1,60 @@
-# Plan: Estandarización de mensajes ACP en Pando (basado en opencode)
+# Plan: ACP Message Standardization in Pando (based on opencode)
 
-> Fecha: 2026-05-29  
-> Fuente de referencia: `.kb/research/acp-opencode-message-structure.md`  
-> Estado: PLANIFICADO
+> Date: 2026-05-29
+> Reference source: `.kb/research/acp-opencode-message-structure.md`
+> Status: PLANNED
 
 ---
 
-## 1. Análisis comparativo: opencode vs pando
+## 1. Comparative analysis: opencode vs pando
 
-### 1.1 Lo que opencode hace (estándar de referencia)
+### 1.1 What opencode does (reference standard)
 
-| Mensaje ACP | Campo clave | Comportamiento opencode |
+| ACP Message | Key field | opencode behavior |
 |-------------|-------------|------------------------|
-| `agent_message_chunk` | `messageId` | Incluye `messageId` (UUID) en cada chunk para agrupar fragmentos del mismo mensaje |
-| `agent_thought_chunk` | `messageId` | Incluye `messageId` compartido con el mensaje del mismo turno |
-| `user_message_chunk` | `messageId` | Emitido al recibir el prompt del usuario |
-| `tool_call` | `rawInput` | Siempre estructurado como objeto JSON (igual que Pando) |
-| `tool_call_update` (failed) | `rawOutput.error` | Usa `rawOutput.error` para fallos, no `rawOutput.output` |
-| `edit` tool | `rawOutput.metadata.filediff` | Incluye `filediff` con `before`/`after`/`additions`/`deletions` |
-| `bash` tool | título | Usa el comando real como título: `input.command ? input.command : "Terminal"` |
-| `grep`/`glob` | `locations` | `[{ "path": input.path }]` cuando path está disponible |
+| `agent_message_chunk` | `messageId` | Includes `messageId` (UUID) in each chunk to group fragments of the same message |
+| `agent_thought_chunk` | `messageId` | Includes `messageId` shared with the message of the same turn |
+| `user_message_chunk` | `messageId` | Emitted when receiving the user's prompt |
+| `tool_call` | `rawInput` | Always structured as a JSON object (same as Pando) |
+| `tool_call_update` (failed) | `rawOutput.error` | Uses `rawOutput.error` for failures, not `rawOutput.output` |
+| `edit` tool | `rawOutput.metadata.filediff` | Includes `filediff` with `before`/`after`/`additions`/`deletions` |
+| `bash` tool | title | Uses the actual command as title: `input.command ? input.command : "Terminal"` |
+| `grep`/`glob` | `locations` | `[{ "path": input.path }]` when path is available |
 
-**Nota importante:** Opencode sí usa `rawInput` estructurado como objeto JSON, igual que Pando. El problema en Zed que menciona ("no muestra los datos de input de una tool") sugiere que hay otros factores que afectan la renderización en Zed (posiblemente related al lifecycle, timing, o cómo se muestran los datos en la UI).
+**Important note:** Opencode does use `rawInput` structured as a JSON object, same as Pando. The issue in Zed mentioned ("does not show input data from a tool") suggests there are other factors affecting rendering in Zed (possibly related to lifecycle, timing, or how data is displayed in the UI).
 
-### 1.2 Estado actual de Pando
+### 1.2 Current state of Pando
 
-**Lo que Pando ya hace bien:**
-- ✅ `rawInput` estructurado como objeto (igual que opencode)
-- ✅ `rawOutput: { output, metadata }` en completados
-- ✅ `tool_call` antes de cualquier `tool_call_update`
+**What Pando already does well:**
+- ✅ `rawInput` structured as object (same as opencode)
+- ✅ `rawOutput: { output, metadata }` on completions
+- ✅ `tool_call` before any `tool_call_update`
 - ✅ Lifecycle: `pending` → `in_progress` → `completed/failed`
-- ✅ `ToolDiffContent` para `edit`/`write`
-- ✅ Terminal `_meta` (terminal_info, terminal_output, terminal_exit) para bash
-- ✅ `UpdatePlan` en lugar de `StartToolCall` para `TodoWrite`
-- ✅ `sendCurrentModeUpdate("plan")` antes del `UpdatePlan`
-- ✅ Replay de historial con `streamSessionHistory`
-- ✅ Síntesis de `StartToolCall` cuando el start fue perdido
+- ✅ `ToolDiffContent` for `edit`/`write`
+- ✅ Terminal `_meta` (terminal_info, terminal_output, terminal_exit) for bash
+- ✅ `UpdatePlan` instead of `StartToolCall` for `TodoWrite`
+- ✅ `sendCurrentModeUpdate("plan")` before the `UpdatePlan`
+- ✅ History replay with `streamSessionHistory`
+- ✅ Synthesis of `StartToolCall` when the start was lost
 
-**Gaps identificados vs opencode:**
+**Identified gaps vs opencode:**
 
-| Gap | Severidad | Archivo(s) afectado(s) |
+| Gap | Severity | Affected file(s) |
 |-----|-----------|------------------------|
-| **G1**: `messageId` ausente en `agent_message_chunk` / `agent_thought_chunk` | Alta | `prompt_handler.go`, `session_state.go` |
-| **G2**: `user_message_chunk` no se emite al recibir el prompt | Alta | `prompt_handler.go` |
-| **G3**: `rawOutput.error` no se usa en fallos de bash/tools; usa `output` siempre | Media | `prompt_handler.go`, `session_state.go` |
-| **G4**: `rawOutput.metadata.filediff` ausente en `edit` completado | Media | `prompt_handler.go`, `session_state.go` |
-| **G5**: Título de bash usa nombre de herramienta genérico, no el comando | Media | `tool_render.go` |
-| **G6**: Terminal metadata no está capability-gated de forma consistente en replay | Baja | `session_state.go` |
-| **G7**: `user_message_chunk` no se emite en replay de historial | Baja | `session_state.go` |
-| **G8**: `agent_message_chunk`/`agent_thought_chunk` carecen de `messageId` en replay | Baja | `session_state.go` |
+| **G1**: `messageId` missing in `agent_message_chunk` / `agent_thought_chunk` | High | `prompt_handler.go`, `session_state.go` |
+| **G2**: `user_message_chunk` not emitted when receiving prompt | High | `prompt_handler.go` |
+| **G3**: `rawOutput.error` not used in bash/tool failures; always uses `output` | Medium | `prompt_handler.go`, `session_state.go` |
+| **G4**: `rawOutput.metadata.filediff` missing in completed `edit` | Medium | `prompt_handler.go`, `session_state.go` |
+| **G5**: Bash title uses generic tool name, not the command | Medium | `tool_render.go` |
+| **G6**: Terminal metadata not capability-gated consistently in replay | Low | `session_state.go` |
+| **G7**: `user_message_chunk` not emitted in history replay | Low | `session_state.go` |
+| **G8**: `agent_message_chunk`/`agent_thought_chunk` lack `messageId` in replay | Low | `session_state.go` |
 
 ---
 
-## 2. Descripción detallada de cada gap
+## 2. Detailed description of each gap
 
-### G1: messageId ausente en agent_message_chunk / agent_thought_chunk
+### G1: messageId missing in agent_message_chunk / agent_thought_chunk
 
 **Opencode behavior:**
 ```json
@@ -65,24 +65,24 @@
 }
 ```
 
-**Pando actual:**
+**Current Pando:**
 ```go
-acpsdk.UpdateAgentMessageText(event.Delta)  // sin messageId
+acpsdk.UpdateAgentMessageText(event.Delta)  // without messageId
 ```
 
-El ACP SDK Go (`SessionUpdateAgentMessageChunk`) tiene campo `MessageId *string` (UNSTABLE pero implementado). Sin él, los clientes que agrupan chunks por messageId (como Zed) pueden tener problemas al unir fragmentos de distintos mensajes.
+The ACP SDK Go (`SessionUpdateAgentMessageChunk`) has field `MessageId *string` (UNSTABLE but implemented). Without it, clients that group chunks by messageId (like Zed) may have problems joining fragments from different messages.
 
-**Fix:** Usar `msg.ID` (de `message.Message`) como `messageId` al emitir chunks de contenido en modo streaming. Crear helper `UpdateAgentMessageTextWithID(text, msgID string)`.
+**Fix:** Use `msg.ID` (from `message.Message`) as `messageId` when emitting content chunks in streaming mode. Create helper `UpdateAgentMessageTextWithID(text, msgID string)`.
 
-### G2: user_message_chunk no se emite al recibir el prompt
+### G2: user_message_chunk not emitted when receiving prompt
 
-**Opencode behavior:** Cuando llega el prompt del usuario, emite `user_message_chunk` antes de procesar.
+**Opencode behavior:** When the user's prompt arrives, it emits `user_message_chunk` before processing.
 
-**Pando actual:** El prompt del usuario se procesa directamente sin emitir `user_message_chunk`. En `streamSessionHistory` sí se replayan mensajes de usuario, pero en live no se emite este update al recibir el prompt.
+**Current Pando:** The user's prompt is processed directly without emitting `user_message_chunk`. In `streamSessionHistory` user messages are replayed, but in live mode this update is not emitted when receiving the prompt.
 
-**Fix:** En `HandlePrompt` / `processPromptWithAgent`, antes de llamar al agente, emitir `acpsdk.UpdateUserMessageText(promptText)` con el `messageId` de la sesión actual.
+**Fix:** In `HandlePrompt` / `processPromptWithAgent`, before calling the agent, emit `acpsdk.UpdateUserMessageText(promptText)` with the `messageId` of the current session.
 
-### G3: rawOutput.error en fallos
+### G3: rawOutput.error on failures
 
 **Opencode behavior (failed):**
 ```json
@@ -94,16 +94,16 @@ El ACP SDK Go (`SessionUpdateAgentMessageChunk`) tiene campo `MessageId *string`
 }
 ```
 
-**Pando actual:**
+**Current Pando:**
 ```go
 rawOutput := map[string]interface{}{
-    "output": tr.Content,  // siempre "output", incluso en errores
+    "output": tr.Content,  // always "output", even on errors
 }
 ```
 
-**Fix:** Cuando `tr.IsError == true`, usar `"error"` como clave en lugar de `"output"` para alinear con el estándar opencode.
+**Fix:** When `tr.IsError == true`, use `"error"` as key instead of `"output"` to align with the opencode standard.
 
-### G4: rawOutput.metadata.filediff en edit completado
+### G4: rawOutput.metadata.filediff on completed edit
 
 **Opencode behavior:**
 ```json
@@ -123,88 +123,88 @@ rawOutput := map[string]interface{}{
 }
 ```
 
-**Pando actual:** Solo usa `ToolDiffContent` en el campo `content`, pero `rawOutput.metadata` no contiene el `filediff`. El diff visual existe pero no en el formato estándar de rawOutput.
+**Current Pando:** Only uses `ToolDiffContent` in the `content` field, but `rawOutput.metadata` does not contain the `filediff`. The visual diff exists but not in the standard rawOutput format.
 
-**Fix:** Añadir `rawOutput.metadata.filediff` con `{ file, before, after, additions, deletions }` para herramientas `edit`. Para `write`, puede incluir `{ file, additions: linesCount }`.
+**Fix:** Add `rawOutput.metadata.filediff` with `{ file, before, after, additions, deletions }` for `edit` tools. For `write`, can include `{ file, additions: linesCount }`.
 
-### G5: Título de bash usa nombre genérico
+### G5: Bash title uses generic name
 
 **Opencode / claude-agent-acp behavior:**
 ```
-title: "bun test --filter session"  // el comando real
+title: "bun test --filter session"  // the actual command
 ```
 
-**Pando actual (`tool_render.go:toolDisplayTitle`):**
+**Current Pando (`tool_render.go:toolDisplayTitle`):**
 ```
-title: "bash"  // o "Bash" — título genérico
+title: "bash"  // or "Bash" — generic title
 ```
 
-**Fix:** En `toolDisplayTitle` para bash tools, usar el campo `command` del rawInput como título cuando está disponible y es suficientemente corto (ej. max 80 chars).
+**Fix:** In `toolDisplayTitle` for bash tools, use the `command` field from rawInput as title when available and sufficiently short (e.g., max 80 chars).
 
-### G6 & G7: Replay - user_message_chunk y terminal capability gating
+### G6 & G7: Replay - user_message_chunk and terminal capability gating
 
-**G6:** En `streamSessionHistory`, los mensajes de usuario (role=User) ya emiten `UpdateUserMessageText`, pero el campo `messageId` no se pobla.
+**G6:** In `streamSessionHistory`, user messages (role=User) already emit `UpdateUserMessageText`, but the `messageId` field is not populated.
 
-**G7:** Terminal metadata en el replay no tiene mecanismo de capability gating consistente (el campo `a.terminalOutputEnabled()` sí existe, pero debe verificarse que funcione también en el contexto de replay).
+**G7:** Terminal metadata in replay has no consistent capability gating mechanism (the field `a.terminalOutputEnabled()` does exist, but must be verified that it also works in the replay context).
 
-### G8: messageId en replay
+### G8: messageId in replay
 
-En `streamSessionHistory`, los `UpdateAgentMessageText` y `UpdateAgentThoughtText` no incluyen `messageId`. Deben usar `msg.ID` como `messageId`.
+In `streamSessionHistory`, `UpdateAgentMessageText` and `UpdateAgentThoughtText` do not include `messageId`. They must use `msg.ID` as `messageId`.
 
 ---
 
-## 3. Plan de implementación por fases
+## 3. Implementation plan by phases
 
-### Fase 1 — Alta prioridad: messageId + user_message_chunk (estándar básico)
+### Phase 1 — High priority: messageId + user_message_chunk (basic standard)
 
-**Archivos:** `prompt_handler.go`, `session_state.go`, posiblemente nuevo helper en `tool_render.go`
+**Files:** `prompt_handler.go`, `session_state.go`, possibly new helper in `tool_render.go`
 
-#### 1a. Añadir messageId a agent_message_chunk y agent_thought_chunk
+#### 1a. Add messageId to agent_message_chunk and agent_thought_chunk
 
-En `processAgentEventStream`:
+In `processAgentEventStream`:
 ```go
-// En AgentEventTypeContentDelta:
+// In AgentEventTypeContentDelta:
 update := SessionUpdate{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{
     Content:   acpsdk.TextBlock(event.Delta),
-    MessageId: &currentMessageID,  // nuevo campo
+    MessageId: &currentMessageID,  // new field
 }}
 ```
 
-Donde `currentMessageID` se actualiza en `AgentEventTypeResponse` con `event.Message.ID`.
+Where `currentMessageID` is updated in `AgentEventTypeResponse` with `event.Message.ID`.
 
-En `processAgentResponse`:
+In `processAgentResponse`:
 ```go
-// Pasar el msgID al enviar content/reasoning completo
+// Pass msgID when sending complete content/reasoning
 update := SessionUpdate{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{
     Content:   acpsdk.TextBlock(content.String()),
     MessageId: &msg.ID,
 }}
 ```
 
-#### 1b. Emitir user_message_chunk al recibir prompt
+#### 1b. Emit user_message_chunk when receiving prompt
 
-En `HandlePrompt` o `processPromptWithAgent`, antes de llamar al agente:
+In `HandlePrompt` or `processPromptWithAgent`, before calling the agent:
 ```go
-userMsgID := generateMessageID()  // o recuperar de la sesión pando
+userMsgID := generateMessageID()  // or retrieve from pando session
 acpSession.SendUpdate(SessionUpdate{UserMessageChunk: &acpsdk.SessionUpdateUserMessageChunk{
     Content:   acpsdk.TextBlock(promptText),
     MessageId: &userMsgID,
 }})
 ```
 
-#### 1c. messageId en streamSessionHistory
+#### 1c. messageId in streamSessionHistory
 
-Para cada mensaje de usuario/asistente en el replay, usar `msg.ID` como `MessageId`.
+For each user/assistant message in the replay, use `msg.ID` as `MessageId`.
 
 ---
 
-### Fase 2 — Media prioridad: rawOutput.error + filediff
+### Phase 2 — Medium priority: rawOutput.error + filediff
 
-**Archivos:** `prompt_handler.go`, `session_state.go`
+**Files:** `prompt_handler.go`, `session_state.go`
 
 #### 2a. rawOutput key error vs output
 
-Crear helper:
+Create helper:
 ```go
 func buildRawOutput(content string, metadata string, isError bool) map[string]interface{} {
     key := "output"
@@ -224,17 +224,17 @@ func buildRawOutput(content string, metadata string, isError bool) map[string]in
 }
 ```
 
-Sustituir los dos bloques `rawOutput` duplicados en `processAgentEventStream` y `processAgentResponse`.
+Replace the two duplicated `rawOutput` blocks in `processAgentEventStream` and `processAgentResponse`.
 
-#### 2b. rawOutput.metadata.filediff para edit
+#### 2b. rawOutput.metadata.filediff for edit
 
-En la sección de `ToolResult` para edit tools:
+In the `ToolResult` section for edit tools:
 ```go
 if isEditTool(tr.Name) && !tr.IsError && storedInput != "" {
     var ep editToolInput
     if json.Unmarshal([]byte(storedInput), &ep) == nil && ep.FilePath != "" {
         if tr.Name == "edit" {
-            // Contar líneas para additions/deletions
+            // Count lines for additions/deletions
             rawOutput["metadata"] = map[string]interface{}{
                 "filediff": map[string]interface{}{
                     "file":      ep.FilePath,
@@ -251,13 +251,13 @@ if isEditTool(tr.Name) && !tr.IsError && storedInput != "" {
 
 ---
 
-### Fase 3 — Media prioridad: bash title + corrección de títulos
+### Phase 3 — Medium priority: bash title + title correction
 
-**Archivos:** `tool_render.go`
+**Files:** `tool_render.go`
 
-#### 3a. Título de bash como comando real
+#### 3a. Bash title as actual command
 
-En `toolDisplayTitle`:
+In `toolDisplayTitle`:
 ```go
 case "bash", "execute_command":
     if m, ok := rawInput.(map[string]interface{}); ok {
@@ -273,63 +273,63 @@ case "bash", "execute_command":
 
 ---
 
-### Fase 4 — Baja prioridad: Unificación live/replay + tests
+### Phase 4 — Low priority: Live/replay unification + tests
 
-**Archivos:** `prompt_handler.go`, `session_state.go`, `agent_pando_test.go`
+**Files:** `prompt_handler.go`, `session_state.go`, `agent_pando_test.go`
 
-#### 4a. Extraer helper compartido para rawOutput
+#### 4a. Extract shared helper for rawOutput
 
-Factorizar `buildRawOutput` en `tool_render.go` para que tanto `prompt_handler.go` como `session_state.go` lo usen.
+Factor `buildRawOutput` into `tool_render.go` so that both `prompt_handler.go` and `session_state.go` use it.
 
-#### 4b. Tests de lifecycle ACP con messageId
+#### 4b. ACP lifecycle tests with messageId
 
-Añadir tests en `agent_pando_test.go`:
-- `TestAgentMessageChunkHasMessageId`: verifica que cada chunk tiene `messageId`
-- `TestUserMessageChunkEmittedOnPrompt`: verifica que se emite `user_message_chunk`
-- `TestRawOutputErrorKeyOnFailure`: verifica `rawOutput.error` vs `rawOutput.output`
-- `TestEditToolRawOutputFilediff`: verifica `rawOutput.metadata.filediff`
-- `TestBashTitleUsesCommand`: verifica que el título de bash usa el comando
+Add tests in `agent_pando_test.go`:
+- `TestAgentMessageChunkHasMessageId`: verifies that each chunk has `messageId`
+- `TestUserMessageChunkEmittedOnPrompt`: verifies that `user_message_chunk` is emitted
+- `TestRawOutputErrorKeyOnFailure`: verifies `rawOutput.error` vs `rawOutput.output`
+- `TestEditToolRawOutputFilediff`: verifies `rawOutput.metadata.filediff`
+- `TestBashTitleUsesCommand`: verifies that bash title uses the command
 
 ---
 
-## 4. Resumen de cambios por archivo
+## 4. Summary of changes by file
 
-| Archivo | Cambios |
+| File | Changes |
 |---------|---------|
-| `internal/mesnada/acp/prompt_handler.go` | G1 (messageId en streaming), G2 (user_message_chunk), G3 (rawOutput error key) |
-| `internal/mesnada/acp/session_state.go` | G1 (messageId en replay), G7 (terminal gating replay), G8 (messageId replay) |
+| `internal/mesnada/acp/prompt_handler.go` | G1 (messageId in streaming), G2 (user_message_chunk), G3 (rawOutput error key) |
+| `internal/mesnada/acp/session_state.go` | G1 (messageId in replay), G7 (terminal gating replay), G8 (messageId replay) |
 | `internal/mesnada/acp/tool_render.go` | G3 (buildRawOutput helper), G4 (filediff), G5 (bash title) |
-| `internal/mesnada/acp/agent_pando_test.go` | Tests para G1, G2, G3, G4, G5 |
+| `internal/mesnada/acp/agent_pando_test.go` | Tests for G1, G2, G3, G4, G5 |
 
 ---
 
-## 5. Orden de ejecución recomendado
+## 5. Recommended execution order
 
 ```
-Fase 1 → Fase 2 → Fase 3 → Fase 4
+Phase 1 → Phase 2 → Phase 3 → Phase 4
 ```
 
-Cada fase es independiente y desplegable por separado. La Fase 1 es la de mayor impacto de compatibilidad con clientes ACP estándar (Zed, etc.).
+Each phase is independent and deployable separately. Phase 1 has the greatest compatibility impact with standard ACP clients (Zed, etc.).
 
 ---
 
-## 6. Checklist de cumplimiento ACP post-implementación
+## 6. ACP compliance checklist post-implementation
 
-- [ ] `agent_message_chunk` incluye `messageId` (UUID del mensaje)
-- [ ] `agent_thought_chunk` incluye `messageId` compartido
-- [ ] `user_message_chunk` se emite al recibir prompt (live)
-- [ ] `user_message_chunk` se emite en replay de historial
-- [ ] `rawOutput.error` se usa cuando `isError == true`
-- [ ] `rawOutput.metadata.filediff` presente para herramienta `edit`
-- [ ] Título de bash usa el comando real cuando está disponible
-- [ ] Todos los cambios tienen tests en `agent_pando_test.go`
-- [ ] Live y replay producen la misma forma de payload (paridad)
+- [ ] `agent_message_chunk` includes `messageId` (message UUID)
+- [ ] `agent_thought_chunk` includes shared `messageId`
+- [ ] `user_message_chunk` emitted when receiving prompt (live)
+- [ ] `user_message_chunk` emitted in history replay
+- [ ] `rawOutput.error` used when `isError == true`
+- [ ] `rawOutput.metadata.filediff` present for `edit` tool
+- [ ] Bash title uses actual command when available
+- [ ] All changes have tests in `agent_pando_test.go`
+- [ ] Live and replay produce the same payload shape (parity)
 
 ---
 
-## 7. Referencias
+## 7. References
 
-- Documento fuente: `.kb/research/acp-opencode-message-structure.md`
-- Análisis previo: `.kb/pando/analysis/acp-tool-call-compatibility-improvements-from-opencode-and-claude-agent-acp-2026-05-25.md`
+- Source document: `.kb/research/acp-opencode-message-structure.md`
+- Previous analysis: `.kb/pando/analysis/acp-tool-call-compatibility-improvements-from-opencode-and-claude-agent-acp-2026-05-25.md`
 - ACP SDK Go: `/www/MCP/Pando/acp-go-sdk/helpers.go`, `types_gen.go`
-- Implementación actual: `internal/mesnada/acp/prompt_handler.go`, `session_state.go`, `tool_render.go`
+- Current implementation: `internal/mesnada/acp/prompt_handler.go`, `session_state.go`, `tool_render.go`

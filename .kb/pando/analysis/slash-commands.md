@@ -1,24 +1,24 @@
-Cambio 1: dejar de anunciar tools como `available_commands`
-En `sendAvailableCommandsUpdate(...)` no debería usarse `ListAvailableTools()` directamente para poblar commands ACP.
+Change 1: stop announcing tools as `available_commands`
+In `sendAvailableCommandsUpdate(...)`, `ListAvailableTools()` should not be used directly to populate ACP commands.
 
-Los commands ACP deberían ser una lista propia, algo como:
+ACP commands should be their own list, something like:
 - `goal`
 - `goal-status`
 - `goal-cancel`
 - `compact`
 - `summarize`
 
-### Cambio 2: crear un registro real de slash commands ACP
-En vez de tener solo `parseSlashCommand(...)` hardcoded, debería haber una tabla/registro de comandos ACP con:
-- nombre
-- descripción
-- uso
+### Change 2: create a real ACP slash command registry
+Instead of having only `parseSlashCommand(...)` hardcoded, there should be a table/registry of ACP commands with:
+- name
+- description
+- usage
 - handler
 
-### Cambio 3: implementar compactación manual en ACP
-Aprovechando la lógica ya existente del agente:
+### Change 3: implement manual compaction in ACP
+Leveraging the existing agent logic:
 - `/compact`
-- o `/summarize`
+- or `/summarize`
 
-### Cambio 4: decidir si tools deben exponerse como tools, no como commands
-Si el cliente ACP ya sabe renderizar tools/llamadas de herramienta, no hace falta venderlas como slash commands.
+### Change 4: decide whether tools should be exposed as tools, not as commands
+If the ACP client already knows how to render tools/tool calls, there's no need to sell them as slash commands.

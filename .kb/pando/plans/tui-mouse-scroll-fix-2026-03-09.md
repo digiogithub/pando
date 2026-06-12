@@ -6,12 +6,12 @@
 2. Mouse wheel doesn't work in AI chat viewport (only PageUp/PageDown work)
 3. Can't type in chat input when chat is shown in the right panel
 
-## FASE 1: Forward mouse events to viewport in messagesCmp
+## PHASE 1: Forward mouse events to viewport in messagesCmp
 **File:** `internal/tui/components/chat/list.go`
 **Problem:** `messagesCmp.Update()` only forwards `tea.KeyMsg` to the viewport (lines 104-110). Mouse events never reach the viewport even though `MouseWheelEnabled=true`.
 **Fix:** Add `tea.MouseMsg` case in Update() that forwards to `m.viewport.Update(msg)`.
 
-## FASE 2: Route mouse events only to hovered component  
+## PHASE 2: Route mouse events only to hovered component
 **File:** `internal/tui/page/chat.go`
 **Problem:** `routeMessage()` sends all non-KeyMsg messages to ALL components. Mouse wheel events reach every viewport simultaneously.
 **Fix:** Add `tea.MouseMsg` case in `routeMessage()` that routes based on mouse X position and panel widths from `GetSize()`.
@@ -23,7 +23,7 @@ Panel routing by layout mode:
 - EditorChatSplit: X < ftWidth → fileTree, X < ftWidth+edWidth → editorWorkspace, else → chatLayout
 - EditorChatTab: X < ftWidth → fileTree, else → chatTabWorkspace
 
-## FASE 3: Fix chat input in right panel
+## PHASE 3: Fix chat input in right panel
 **Files:** `internal/tui/page/chat.go`, `internal/tui/components/chat/editor.go`
 **Problem:** When chat is in right panel (EditorChatSplit/EditorChatTab), textarea doesn't accept input.
 **Root causes:**

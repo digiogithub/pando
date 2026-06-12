@@ -1,160 +1,160 @@
-# Análisis de la Implementación del Servidor Pando — Parte 2: Endpoints API REST Detallados
+# Pando Server Implementation Analysis — Part 2: Detailed REST API Endpoints
 
-## 4. Endpoints de la API REST
+## 4. REST API Endpoints
 
-Los endpoints se registran en `internal/api/routes.go`. Todos los handlers están en ficheros separados dentro de `internal/api/`.
+Endpoints are registered in `internal/api/routes.go`. All handlers are in separate files within `internal/api/`.
 
-### Sistema y Proyecto (`handlers_base.go`)
-- **GET /health** → `handleHealth()` — Devuelve `{"status":"healthy","version":"..."}`
-- **GET /api/v1/project** → `handleProject()` — CWD y versión
-- **GET /api/v1/project/context** → `handleProjectContext()` — Contexto del proyecto
+### System and Project (`handlers_base.go`)
+- **GET /health** → `handleHealth()` — Returns `{"status":"healthy","version":"..."}`
+- **GET /api/v1/project** → `handleProject()` — CWD and version
+- **GET /api/v1/project/context** → `handleProjectContext()` — Project context
 
-### Sesiones (`handlers_sessions.go`)
-- **GET /api/v1/sessions** → Lista todas las sesiones con estado `is_running`
-- **GET /api/v1/sessions/{id}** → Obtiene sesión con todos sus mensajes
-- **DELETE /api/v1/sessions/{id}** → Elimina sesión y sus mensajes
-- **PATCH /api/v1/sessions/{id}** → Actualiza título de sesión
-- **GET /api/v1/sessions/{id}/stream** → SSE stream de eventos de sesión con replay
+### Sessions (`handlers_sessions.go`)
+- **GET /api/v1/sessions** — Lists all sessions with `is_running` state
+- **GET /api/v1/sessions/{id}** — Gets session with all its messages
+- **DELETE /api/v1/sessions/{id}** — Deletes session and its messages
+- **PATCH /api/v1/sessions/{id}** — Updates session title
+- **GET /api/v1/sessions/{id}/stream** — SSE stream of session events with replay
 
 ### Chat / LLM (`handlers_chat.go`)
-- **POST /api/v1/chat** → Chat síncrono: envía prompt, espera respuesta completa
-- **GET|POST /api/v1/chat/stream** → Chat asíncrono con streaming SSE:
-  - La ejecución del agente se desacopla del HTTP (corre en background)
-  - El cliente puede reconectarse via `GET /sessions/{id}/stream` y recibir replay de eventos
-  - Usa `BackgroundSessionManager` para gestionar el ciclo de vida
+- **POST /api/v1/chat** — Synchronous chat: sends prompt, waits for complete response
+- **GET|POST /api/v1/chat/stream** — Asynchronous chat with SSE streaming:
+  - Agent execution is decoupled from HTTP (runs in background)
+  - Client can reconnect via `GET /sessions/{id}/stream` and receive event replay
+  - Uses `BackgroundSessionManager` to manage lifecycle
 
 ### BackgroundSessionManager (`background_runner.go`)
-- **Fichero:** `internal/api/background_runner.go`
-- Gestiona ejecuciones de agente en background independientes de conexiones HTTP
-- Buffer circular de 500 eventos por sesión (replay para reconexiones)
-- TTL de 10 minutos para sesiones completadas (luego garbage collection)
-- Soporta múltiples suscriptores SSE por sesión (subscribers lentos se saltan)
-- Cancelación de sesiones activas
+- **File:** `internal/api/background_runner.go`
+- Manages background agent executions independent of HTTP connections
+- Circular buffer of 500 events per session (replay for reconnections)
+- 10-minute TTL for completed sessions (then garbage collection)
+- Supports multiple SSE subscribers per session (slow subscribers are skipped)
+- Cancellation of active sessions
 
-### Herramientas MCP (`handlers_tools.go`)
-- **GET /api/v1/tools** → Lista herramientas MCP disponibles con nombre, descripción, parámetros y campos requeridos
+### MCP Tools (`handlers_tools.go`)
+- **GET /api/v1/tools** — Lists available MCP tools with name, description, parameters, and required fields
 
-### Archivos (`handlers_files.go`)
-- **GET /api/v1/files** → Lista archivos de una sesión/proyecto
-- **GET /api/v1/files/rename** → Renombra archivo
-- **GET /api/v1/files/search** → Busca archivos textualmente
-- **GET /api/v1/files/raw/{path}** → Contenido raw de archivo
-- **GET /api/v1/files/{path}** → Metadatos de archivo por ruta
-- **GET /api/v1/fs/browse** → Navegación del sistema de archivos (browse directorios)
+### Files (`handlers_files.go`)
+- **GET /api/v1/files** — Lists files for a session/project
+- **GET /api/v1/files/rename** — Renames file
+- **GET /api/v1/files/search** — Text search for files
+- **GET /api/v1/files/raw/{path}** — Raw file content
+- **GET /api/v1/files/{path}** — File metadata by path
+- **GET /api/v1/fs/browse** — Filesystem browsing (browse directories)
 
-### Configuración (`handlers_config.go`)
-- **GET/PUT /api/v1/settings** → Ajustes generales (lectura/escritura de config)
-- **GET /api/v1/settings/providers** → Proveedores LLM disponibles
-- **GET/PUT /api/v1/config/providers** → CRUD de proveedores (API keys enmascaradas en GET)
-- **GET/PUT /api/v1/config/agents** → Configuración de agentes LLM
-- **GET/PUT /api/v1/config/mcp-servers** → Servidores MCP
-- **DELETE /api/v1/config/mcp-servers/{name}** → Eliminar servidor MCP
-- **POST /api/v1/config/mcp-servers/{name}/reload** → Recargar servidor MCP
-- **GET/PUT /api/v1/config/mcp-gateway** → Configuración MCP Gateway
-- **GET/PUT /api/v1/config/lsp** → Configuración de servidores LSP
-- **DELETE /api/v1/config/lsp/{language}** → Eliminar LSP para lenguaje
-- **GET/PUT /api/v1/config/tools** → Configuración de herramientas internas
-- **GET /api/v1/config/browsers** → Configuración de navegadores
-- **GET/PUT /api/v1/config/openlit** → Configuración de OpenLit (observabilidad)
-- **GET/PUT /api/v1/config/bash** → Configuración de shell
-- **GET/PUT /api/v1/config/extensions** → Extensiones de herramienta
-- **GET/PUT /api/v1/config/services** → Servicios
-- **GET/PUT /api/v1/config/evaluator** → Configuración del evaluador (self-improvement)
-- **GET /api/v1/config/provider-accounts** → Lista cuentas de proveedores
-- **POST /api/v1/config/provider-accounts** → Crea cuenta de proveedor
-- **GET /api/v1/config/provider-types** → Lista tipos de proveedor disponibles
-- **GET/PUT/DELETE /api/v1/config/provider-accounts/{id}** → CRUD cuenta específica
-- **POST /api/v1/config/provider-accounts/{id}/test** → Prueba conexión
-- **POST /api/v1/config/api-server/regenerate-token** → Regenera token de API
-- **GET /api/v1/config/init-status** → Estado de inicialización de configuración
-- **POST /api/v1/config/generate** → Genera configuración inicial
+### Configuration (`handlers_config.go`)
+- **GET/PUT /api/v1/settings** — General settings (config read/write)
+- **GET /api/v1/settings/providers** — Available LLM providers
+- **GET/PUT /api/v1/config/providers** — Provider CRUD (API keys masked on GET)
+- **GET/PUT /api/v1/config/agents** — LLM agent configuration
+- **GET/PUT /api/v1/config/mcp-servers** — MCP servers
+- **DELETE /api/v1/config/mcp-servers/{name}** — Delete MCP server
+- **POST /api/v1/config/mcp-servers/{name}/reload** — Reload MCP server
+- **GET/PUT /api/v1/config/mcp-gateway** — MCP Gateway configuration
+- **GET/PUT /api/v1/config/lsp** — LSP server configuration
+- **DELETE /api/v1/config/lsp/{language}** — Delete LSP for language
+- **GET/PUT /api/v1/config/tools** — Internal tools configuration
+- **GET /api/v1/config/browsers** — Browser configuration
+- **GET/PUT /api/v1/config/openlit** — OpenLit configuration (observability)
+- **GET/PUT /api/v1/config/bash** — Shell configuration
+- **GET/PUT /api/v1/config/extensions** — Tool extensions
+- **GET/PUT /api/v1/config/services** — Services
+- **GET/PUT /api/v1/config/evaluator** — Evaluator configuration (self-improvement)
+- **GET /api/v1/config/provider-accounts** — Lists provider accounts
+- **POST /api/v1/config/provider-accounts** — Creates provider account
+- **GET /api/v1/config/provider-types** — Lists available provider types
+- **GET/PUT/DELETE /api/v1/config/provider-accounts/{id}** — Specific account CRUD
+- **POST /api/v1/config/provider-accounts/{id}/test** — Test connection
+- **POST /api/v1/config/api-server/regenerate-token** — Regenerate API token
+- **GET /api/v1/config/init-status** — Configuration initialization status
+- **POST /api/v1/config/generate** — Generates initial configuration
 
 ### Container Runtime (`handlers_container.go`)
-- **GET /api/v1/container/capabilities** → Capacidades del runtime
-- **GET /api/container/config** → Configuración del contenedor (ruta legacy sin /v1)
-- **GET /api/v1/container/sessions** → Sesiones activas en contenedores
-- **POST /api/v1/container/sessions/{sessionId}/stop** → Detiene sesión en contenedor
-- **GET /api/v1/container/events** → Eventos del runtime de contenedores
-- **GET /api/v1/container/images** → Lista imágenes disponibles
-- **DELETE /api/v1/container/images/{ref...}** → Elimina imagen
-- **POST /api/v1/container/images/gc** → Garbage collection de imágenes
+- **GET /api/v1/container/capabilities** — Runtime capabilities
+- **GET /api/container/config** — Container configuration (legacy route without /v1)
+- **GET /api/v1/container/sessions** — Active sessions in containers
+- **POST /api/v1/container/sessions/{sessionId}/stop** — Stops session in container
+- **GET /api/v1/container/events** — Container runtime events
+- **GET /api/v1/container/images** — Lists available images
+- **DELETE /api/v1/container/images/{ref...}** — Deletes image
+- **POST /api/v1/container/images/gc** — Image garbage collection
 
-### Eventos y Notificaciones SSE
-- **GET /api/v1/config/events** → SSE para hot-reload de configuración
-- **GET /api/v1/notifications/stream** → SSE para notificaciones de usuario (errores LLM, errores de herramientas, diagnósticos LSP)
+### Events and SSE Notifications
+- **GET /api/v1/config/events** — SSE for configuration hot-reload
+- **GET /api/v1/notifications/stream** — SSE for user notifications (LLM errors, tool errors, LSP diagnostics)
 
 ### Remembrances (RAG + Code Indexing)
-- **GET /api/v1/remembrances/projects** → Proyectos indexados
-- **POST /api/v1/remembrances/projects/index** → Indexa un proyecto de código
+- **GET /api/v1/remembrances/projects** — Indexed projects
+- **POST /api/v1/remembrances/projects/index** — Indexes a code project
 
 ### Skills
-- **GET /api/v1/skills/installed** → Skills instalados
-- **GET /api/v1/skills/catalog** → Catálogo de skills disponibles
-- **POST /api/v1/skills/install** → Instala un skill
-- **DELETE /api/v1/skills/{name}** → Desinstala skill
+- **GET /api/v1/skills/installed** — Installed skills
+- **GET /api/v1/skills/catalog** — Available skills catalog
+- **POST /api/v1/skills/install** — Installs a skill
+- **DELETE /api/v1/skills/{name}** — Uninstalls skill
 
 ### Logs
-- **GET /api/v1/logs** → Obtiene logs históricos
-- **GET /api/v1/logs/stream** → SSE streaming de logs en tiempo real
+- **GET /api/v1/logs** — Gets historical logs
+- **GET /api/v1/logs/stream** — SSE streaming of real-time logs
 
 ### Orchestrator (Mesnada)
-- **GET /api/v1/orchestrator/tasks** → Lista tareas del orquestador
-- **POST /api/v1/orchestrator/tasks** → Crea nueva tarea
-- **GET /api/v1/orchestrator/tasks/{id}** → Obtiene tarea por ID
-- **DELETE /api/v1/orchestrator/tasks/{id}** → Elimina tarea
-- **POST /api/v1/orchestrator/tasks/{id}/cancel** → Cancela tarea
+- **GET /api/v1/orchestrator/tasks** — Lists orchestrator tasks
+- **POST /api/v1/orchestrator/tasks** — Creates new task
+- **GET /api/v1/orchestrator/tasks/{id}** — Gets task by ID
+- **DELETE /api/v1/orchestrator/tasks/{id}** — Deletes task
+- **POST /api/v1/orchestrator/tasks/{id}/cancel** — Cancels task
 
 ### Terminal
-- **POST /api/v1/terminal/exec** → Ejecuta comando en terminal y devuelve resultado
+- **POST /api/v1/terminal/exec** — Executes command in terminal and returns result
 
 ### Snapshots (`handlers_snapshots.go`)
-- **GET /api/v1/snapshots/count** → Cuenta de snapshots
-- **GET /api/v1/snapshots** → Lista snapshots
-- **POST /api/v1/snapshots** → Crea snapshot
-- **GET /api/v1/snapshots/{id}** → Obtiene snapshot por ID
-- **POST /api/v1/snapshots/{id}/apply** → Aplica snapshot
-- **POST /api/v1/snapshots/{id}/revert** → Revierte snapshot
-- **DELETE /api/v1/snapshots/{id}** → Elimina snapshot
+- **GET /api/v1/snapshots/count** — Snapshot count
+- **GET /api/v1/snapshots** — Lists snapshots
+- **POST /api/v1/snapshots** — Creates snapshot
+- **GET /api/v1/snapshots/{id}** — Gets snapshot by ID
+- **POST /api/v1/snapshots/{id}/apply** — Applies snapshot
+- **POST /api/v1/snapshots/{id}/revert** — Reverts snapshot
+- **DELETE /api/v1/snapshots/{id}** — Deletes snapshot
 
 ### Evaluator
-- **GET /api/v1/evaluator/metrics** → Métricas de evaluación
-- **GET /api/v1/evaluator/templates** → Templates de prompt
-- **GET /api/v1/evaluator/skills** → Skills del evaluador
-- **GET /api/v1/evaluator/sessions** → Sesiones evaluadas
+- **GET /api/v1/evaluator/metrics** — Evaluation metrics
+- **GET /api/v1/evaluator/templates** — Prompt templates
+- **GET /api/v1/evaluator/skills** — Evaluator skills
+- **GET /api/v1/evaluator/sessions** — Evaluated sessions
 
 ### Models
-- **GET /api/v1/models** → Lista modelos disponibles
-- **PUT /api/v1/models/active** → Establece modelo activo
+- **GET /api/v1/models** — Lists available models
+- **PUT /api/v1/models/active** — Sets active model
 
 ### Personas
-- **GET /api/v1/personas** → Lista personas
-- **GET /api/v1/personas/active** → Obtiene persona activa
-- **PUT /api/v1/personas/active** → Establece persona activa
+- **GET /api/v1/personas** — Lists personas
+- **GET /api/v1/personas/active** — Gets active persona
+- **PUT /api/v1/personas/active** — Sets active persona
 
 ### CronJobs
-- **GET /api/v1/cronjobs** → Lista cron jobs
-- **POST /api/v1/cronjobs** → Crea cron job
-- **PUT/DELETE /api/v1/cronjobs/{name}** → Actualiza/elimina cron job
-- **POST /api/v1/cronjobs/{name}/run** → Ejecuta cron job inmediatamente
+- **GET /api/v1/cronjobs** — Lists cron jobs
+- **POST /api/v1/cronjobs** — Creates cron job
+- **PUT/DELETE /api/v1/cronjobs/{name}** — Updates/deletes cron job
+- **POST /api/v1/cronjobs/{name}/run** — Runs cron job immediately
 
 ### Projects
-- **GET /api/v1/projects** → Lista proyectos
-- **POST /api/v1/projects** → Crea proyecto
-- **GET /api/v1/projects/active** → Obtiene proyecto activo
-- **GET /api/v1/projects/events** → Eventos de proyecto
-- **GET /api/v1/projects/{id}** → Obtiene proyecto por ID
-- **DELETE /api/v1/projects/{id}** → Elimina proyecto
-- **PATCH /api/v1/projects/{id}** → Renombra proyecto
-- **POST /api/v1/projects/{id}/activate** → Activa proyecto
-- **POST /api/v1/projects/{id}/deactivate** → Desactiva proyecto
-- **POST /api/v1/projects/{id}/init** → Inicializa proyecto
+- **GET /api/v1/projects** — Lists projects
+- **POST /api/v1/projects** — Creates project
+- **GET /api/v1/projects/active** — Gets active project
+- **GET /api/v1/projects/events** — Project events
+- **GET /api/v1/projects/{id}** — Gets project by ID
+- **DELETE /api/v1/projects/{id}** — Deletes project
+- **PATCH /api/v1/projects/{id}** — Renames project
+- **POST /api/v1/projects/{id}/activate** — Activates project
+- **POST /api/v1/projects/{id}/deactivate** — Deactivates project
+- **POST /api/v1/projects/{id}/init** — Initializes project
 
-### Instancias (observación y control remoto vía IPC) (`handlers_instances.go`)
-- **GET /api/v1/instances** → Lista todas las instancias Pando vivas
-- **GET /api/v1/instances/{id}** → Obtiene instancia por ID
-- **GET /api/v1/instances/{id}/stream** → Proxy del PUB stream ZMQ como SSE
-- **GET /api/v1/instances/{id}/sessions** → Lista sesiones remotas via RPC `session.list`
-- **GET /api/v1/instances/{id}/sessions/{sid}** → Obtiene sesión remota via RPC `session.get`
-- **GET /api/v1/instances/{id}/sessions/{sid}/stream** → Proxy PUB stream filtrado por session_id
-- **DELETE /api/v1/instances/{id}/sessions/{sid}/cancel** → Interrumpe generación LLM remota via RPC `session.interrupt`
-- **POST /api/v1/instances/{id}/sessions/{sid}/message** → Envía mensaje a sesión remota via RPC `message.send`
+### Instances (observation and remote control via IPC) (`handlers_instances.go`)
+- **GET /api/v1/instances** — Lists all live Pando instances
+- **GET /api/v1/instances/{id}** — Gets instance by ID
+- **GET /api/v1/instances/{id}/stream** — Proxies ZMQ PUB stream as SSE
+- **GET /api/v1/instances/{id}/sessions** — Lists remote sessions via `session.list` RPC
+- **GET /api/v1/instances/{id}/sessions/{sid}** — Gets remote session via `session.get` RPC
+- **GET /api/v1/instances/{id}/sessions/{sid}/stream** — Proxies PUB stream filtered by session_id
+- **DELETE /api/v1/instances/{id}/sessions/{sid}/cancel** — Interrupts remote LLM generation via `session.interrupt` RPC
+- **POST /api/v1/instances/{id}/sessions/{sid}/message** — Sends message to remote session via `message.send` RPC

@@ -1,29 +1,29 @@
-# Configurar OpenLit con Pando
+# Setting up OpenLit with Pando
 
-OpenLit añade observabilidad a todas las llamadas LLM de Pando: trazas por conversación, tokens consumidos, tool calls, latencia y proveedor. Es **opcional** — si no se configura, no tiene ningún impacto en el rendimiento.
+OpenLit adds observability to all Pando LLM calls: traces per conversation, tokens consumed, tool calls, latency and provider. It is **optional** — if not configured, it has no impact on performance.
 
-## ¿Qué se captura?
+## What is captured?
 
-Por cada llamada a un proveedor LLM (Anthropic, OpenAI, Copilot, Gemini, Ollama, etc.) se genera una **traza OpenTelemetry** con:
+For each call to an LLM provider (Anthropic, OpenAI, Copilot, Gemini, Ollama, etc.), an **OpenTelemetry trace** is generated with:
 
-- `gen_ai.system` — proveedor (anthropic, openai, gemini…)
-- `gen_ai.operation.name` — siempre `chat`
-- `gen_ai.request.model` — modelo exacto usado
-- `gen_ai.request.max_tokens` — límite de tokens configurado
-- `gen_ai.request.message_count` — número de mensajes en el contexto
-- `gen_ai.request.tool_count` — número de tools disponibles
-- `gen_ai.usage.input_tokens` — tokens de entrada consumidos
-- `gen_ai.usage.output_tokens` — tokens de salida generados
-- `gen_ai.response.finish_reasons` — razón de fin (stop, tool_use, max_tokens…)
-- `gen_ai.usage.cache_read_input_tokens` — tokens leídos de caché (Anthropic)
-- `gen_ai.usage.cache_creation_input_tokens` — tokens escritos en caché (Anthropic)
-- Eventos `gen_ai.tool.call` por cada tool call con `gen_ai.tool.name` y `gen_ai.tool.call.id`
+- `gen_ai.system` — provider (anthropic, openai, gemini…)
+- `gen_ai.operation.name` — always `chat`
+- `gen_ai.request.model` — exact model used
+- `gen_ai.request.max_tokens` — configured token limit
+- `gen_ai.request.message_count` — number of messages in context
+- `gen_ai.request.tool_count` — number of available tools
+- `gen_ai.usage.input_tokens` — input tokens consumed
+- `gen_ai.usage.output_tokens` — output tokens generated
+- `gen_ai.response.finish_reasons` — finish reason (stop, tool_use, max_tokens…)
+- `gen_ai.usage.cache_read_input_tokens` — tokens read from cache (Anthropic)
+- `gen_ai.usage.cache_creation_input_tokens` — tokens written to cache (Anthropic)
+- `gen_ai.tool.call` events per tool call with `gen_ai.tool.name` and `gen_ai.tool.call.id`
 
-Los datos se envían vía **OTLP HTTP** al servidor OpenLit.
+Data is sent via **OTLP HTTP** to the OpenLit server.
 
 ---
 
-## Levantar OpenLit (Docker)
+## Starting OpenLit (Docker)
 
 ```bash
 docker run -d \
@@ -34,12 +34,12 @@ docker run -d \
   ghcr.io/openlit/openlit:latest
 ```
 
-- Puerto **3000** → dashboard web (http://localhost:3000)
-- Puerto **4318** → OTLP HTTP receiver (donde apunta Pando)
+- Port **3000** → web dashboard (http://localhost:3000)
+- Port **4318** → OTLP HTTP receiver (where Pando points)
 
-Credenciales por defecto: `user@openlit.io` / `openlituser@1`
+Default credentials: `user@openlit.io` / `openlituser@1`
 
-Con Docker Compose:
+With Docker Compose:
 
 ```yaml
 services:
@@ -54,11 +54,11 @@ services:
 
 ---
 
-## Configurar Pando
+## Configuring Pando
 
-### Opción 1 — Archivo `.pando.toml`
+### Option 1 — `.pando.toml` file
 
-Añade o edita la sección `[OpenLit]` en tu archivo de configuración:
+Add or edit the `[OpenLit]` section in your configuration file:
 
 ```toml
 [OpenLit]
@@ -68,29 +68,29 @@ ServiceName = "pando"
 Insecure = true
 ```
 
-Para un servidor OpenLit remoto con HTTPS y autenticación:
+For a remote OpenLit server with HTTPS and authentication:
 
 ```toml
 [OpenLit]
 Enabled = true
-Endpoint = "https://openlit.mi-empresa.com"
-ServiceName = "pando-produccion"
+Endpoint = "https://openlit.my-company.com"
+ServiceName = "pando-production"
 Insecure = false
 
 [OpenLit.CustomHeaders]
-Authorization = "Bearer mi-api-key"
+Authorization = "Bearer my-api-key"
 ```
 
-### Opción 2 — API REST (Web UI / programática)
+### Option 2 — REST API (Web UI / programmatic)
 
 ```bash
-# Ver configuración actual
+# View current configuration
 curl http://localhost:8765/api/v1/config/openlit \
-  -H "X-Pando-Token: TU_TOKEN"
+  -H "X-Pando-Token: YOUR_TOKEN"
 
-# Activar OpenLit
+# Enable OpenLit
 curl -X POST http://localhost:8765/api/v1/config/openlit \
-  -H "X-Pando-Token: TU_TOKEN" \
+  -H "X-Pando-Token: YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "enabled": true,
@@ -100,67 +100,67 @@ curl -X POST http://localhost:8765/api/v1/config/openlit \
   }'
 ```
 
-### Opción 3 — Panel de configuración TUI
+### Option 3 — TUI configuration panel
 
-En el TUI de Pando, ve a **Settings** (tecla `s` o desde el menú lateral) y busca la sección **"OpenLit Observability"**. Puedes activar/desactivar y cambiar el endpoint desde ahí sin reiniciar.
+In the Pando TUI, go to **Settings** (key `s` or from the side menu) and look for the **"OpenLit Observability"** section. You can enable/disable and change the endpoint from there without restarting.
 
 ---
 
-## Parámetros de configuración
+## Configuration parameters
 
-| Campo | Tipo | Por defecto | Descripción |
+| Field | Type | Default | Description |
 |-------|------|-------------|-------------|
-| `Enabled` | bool | `false` | Activa/desactiva la observabilidad |
-| `Endpoint` | string | `http://localhost:4318` | URL base del servidor OpenLit (OTLP HTTP) |
-| `ServiceName` | string | `pando` | Nombre del servicio en las trazas |
-| `Insecure` | bool | `true` | Omitir verificación TLS (útil en local) |
-| `CustomHeaders` | map | `{}` | Headers HTTP adicionales (autenticación, etc.) |
+| `Enabled` | bool | `false` | Enables/disables observability |
+| `Endpoint` | string | `http://localhost:4318` | OpenLit server base URL (OTLP HTTP) |
+| `ServiceName` | string | `pando` | Service name in traces |
+| `Insecure` | bool | `true` | Skip TLS verification (useful locally) |
+| `CustomHeaders` | map | `{}` | Additional HTTP headers (authentication, etc.) |
 
 ---
 
-## Cómo funciona internamente
+## How it works internally
 
 ```
-Pando (llamada LLM)
-  └── instrumentedProvider (wrapper OTel)
-        ├── Crea span con atributos GenAI
-        ├── Llama al provider real (Anthropic, OpenAI, etc.)
-        ├── Añade usage tokens y tool calls al span
-        └── Envía traza vía OTLP HTTP → OpenLit :4318
+Pando (LLM call)
+  └── instrumentedProvider (OTel wrapper)
+        ├── Creates span with GenAI attributes
+        ├── Calls real provider (Anthropic, OpenAI, etc.)
+        ├── Adds usage tokens and tool calls to span
+        └── Sends trace via OTLP HTTP → OpenLit :4318
 ```
 
-El wrapper es un **decorator** sobre la interfaz `Provider`. Si `Enabled = false`, el wrapper no se aplica y no hay ningún overhead.
+The wrapper is a **decorator** on the `Provider` interface. If `Enabled = false`, the wrapper is not applied and there is no overhead.
 
-La inicialización ocurre en el arranque de la app (`internal/app/app.go`). El exporter OTLP hace flush de las trazas pendientes al cerrarse Pando (shutdown con timeout de 5s).
-
----
-
-## Verificar que funciona
-
-1. Abre el dashboard de OpenLit: http://localhost:3000
-2. Inicia una conversación en Pando
-3. En OpenLit verás las trazas aparecer con el nombre de operación `chat {modelo}` (ej: `chat claude-sonnet-4-6`)
-
-Si no aparecen trazas, comprueba:
-- Que `Enabled = true` en la config
-- Que el servidor OpenLit esté accesible desde Pando: `curl http://localhost:4318/v1/traces`
-- Los logs de Pando al arrancar — si hay error de conexión OTLP aparecerá un warning
+Initialization happens at app startup (`internal/app/app.go`). The OTLP exporter flushes pending traces when Pando shuts down (shutdown with 5s timeout).
 
 ---
 
-## Conectar con otros backends OTLP
+## Verifying it works
 
-OpenLit es un backend OTLP estándar, pero puedes enviar las trazas de Pando a cualquier backend compatible:
+1. Open the OpenLit dashboard: http://localhost:3000
+2. Start a conversation in Pando
+3. In OpenLit you will see traces appear with operation name `chat {model}` (e.g., `chat claude-sonnet-4-6`)
+
+If no traces appear, check:
+- That `Enabled = true` in config
+- That the OpenLit server is accessible from Pando: `curl http://localhost:4318/v1/traces`
+- Pando logs at startup — if there is an OTLP connection error, a warning will appear
+
+---
+
+## Connecting with other OTLP backends
+
+OpenLit is a standard OTLP backend, but you can send Pando traces to any compatible backend:
 
 | Backend | Endpoint |
 |---------|----------|
-| OpenLit local | `http://localhost:4318` |
-| Jaeger | `http://localhost:4318` (con OTLP receiver habilitado) |
+| Local OpenLit | `http://localhost:4318` |
+| Jaeger | `http://localhost:4318` (with OTLP receiver enabled) |
 | Grafana Tempo | `http://localhost:4318` |
-| New Relic | `https://otlp.nr-data.net:4318` (con API key en CustomHeaders) |
-| Honeycomb | `https://api.honeycomb.io` (con API key en CustomHeaders) |
+| New Relic | `https://otlp.nr-data.net:4318` (with API key in CustomHeaders) |
+| Honeycomb | `https://api.honeycomb.io` (with API key in CustomHeaders) |
 
-Para New Relic:
+For New Relic:
 ```toml
 [OpenLit]
 Enabled = true
@@ -169,16 +169,16 @@ ServiceName = "pando"
 Insecure = false
 
 [OpenLit.CustomHeaders]
-"api-key" = "TU_NEW_RELIC_LICENSE_KEY"
+"api-key" = "YOUR_NEW_RELIC_LICENSE_KEY"
 ```
 
 ---
 
-## Referencia técnica
+## Technical reference
 
-- Implementación: `internal/observability/observability.go`, `internal/observability/genai.go`
-- Wrapper de providers: `internal/llm/provider/instrumented.go`
+- Implementation: `internal/observability/observability.go`, `internal/observability/genai.go`
+- Provider wrapper: `internal/llm/provider/instrumented.go`
 - Config struct: `internal/config/config.go` → `OpenLitConfig`
 - API endpoint: `GET/POST /api/v1/config/openlit`
-- Protocolo: OTLP HTTP (`/v1/traces`), compatible con OpenTelemetry Collector
+- Protocol: OTLP HTTP (`/v1/traces`), compatible with OpenTelemetry Collector
 - Semconv: OpenTelemetry GenAI Semantic Conventions v1.27

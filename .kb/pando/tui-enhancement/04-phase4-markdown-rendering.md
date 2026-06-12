@@ -1,61 +1,61 @@
-# Fase 4: Markdown Rendering Mejorado (Estilo Glow)
+# Phase 4: Improved Markdown Rendering (Glow Style)
 
-## Objetivo
-Mejorar la visualización de respuestas AI con rendering de markdown de alta calidad usando glamour, con code blocks con syntax highlighting, tablas formateadas, y estilo visual atractivo.
+## Objective
+Improve AI response display with high-quality markdown rendering using glamour, with code blocks with syntax highlighting, formatted tables, and attractive visual styling.
 
-## Referencias
+## References
 
 ### Glow (charmbracelet/glow)
-- TUI para renderizar markdown en terminal
-- Usa glamour internamente para el rendering
-- Soporte completo de GFM (GitHub Flavored Markdown)
-- Temas personalizables (dark/light)
-- Paginación con viewport
+- TUI for rendering markdown in terminal
+- Uses glamour internally for rendering
+- Complete GFM (GitHub Flavored Markdown) support
+- Customizable themes (dark/light)
+- Pagination with viewport
 
 ### Glamour (charmbracelet/glamour)
-- Librería Go para rendering de markdown a texto ANSI
-- Basada en goldmark (parser) + chroma (code highlighting)
-- Estilos configurables vía JSON o programáticamente
-- Soporte: headers, listas, tablas, code blocks, blockquotes, links, imágenes (placeholder)
+- Go library for rendering markdown to ANSI text
+- Based on goldmark (parser) + chroma (code highlighting)
+- Configurable styles via JSON or programmatically
+- Support: headers, lists, tables, code blocks, blockquotes, links, images (placeholder)
 
 ### Crush - MarkdownRenderer (`internal/ui/common/markdown.go`)
 ```go
 func MarkdownRenderer(sty *styles.Styles, width int) *glamour.TermRenderer {
     r, _ := glamour.NewTermRenderer(
-        glamour.WithStyles(sty.Markdown),  // estilos custom
-        glamour.WithWordWrap(width),        // word wrap al ancho del viewport
+        glamour.WithStyles(sty.Markdown),  // custom styles
+        glamour.WithWordWrap(width),        // word wrap to viewport width
     )
     return r
 }
 ```
 
 ### Crush - Chat Message Rendering
-- Los mensajes del asistente se renderizan con markdown
-- Code blocks tienen syntax highlighting via chroma
-- Se usa un sistema de cache para evitar re-rendering
+- Assistant messages are rendered with markdown
+- Code blocks have syntax highlighting via chroma
+- A cache system is used to avoid re-rendering
 
-## Plan de Implementación
+## Implementation Plan
 
-### 4.1 Configuración de Glamour
+### 4.1 Glamour Configuration
 
 ```go
 // internal/tui/components/chat/markdown.go
 import "github.com/charmbracelet/glamour"
 
 func NewMarkdownRenderer(theme *theme.Theme, width int) *glamour.TermRenderer {
-    // Crear estilos basados en el tema actual
+    // Create styles based on current theme
     mdStyle := createMarkdownStyle(theme)
     
     r, _ := glamour.NewTermRenderer(
         glamour.WithStyles(mdStyle),
         glamour.WithWordWrap(width),
-        glamour.WithEmoji(),  // Soporte de emoji
+        glamour.WithEmoji(),  // Emoji support
     )
     return r
 }
 
 func createMarkdownStyle(t *theme.Theme) glamour.TermRendererOption {
-    // Mapear colores del tema a estilos de glamour
+    // Map theme colors to glamour styles
     return glamour.WithStyles(ansi.StyleConfig{
         Document: ansi.StyleBlock{
             Margin: uintPtr(0),
@@ -73,9 +73,9 @@ func createMarkdownStyle(t *theme.Theme) glamour.TermRendererOption {
                 Color:  stringPtr(t.Accent),
             },
         },
-        // ... más estilos
+        // ... more styles
         CodeBlock: ansi.StyleCodeBlock{
-            Theme:   t.ChromaTheme, // Tema de chroma para code blocks
+            Theme:   t.ChromaTheme, // chroma theme for code blocks
             Chroma:  &ansi.Chroma{},
             Margin:  uintPtr(1),
         },
@@ -120,7 +120,7 @@ func createMarkdownStyle(t *theme.Theme) glamour.TermRendererOption {
 }
 ```
 
-### 4.2 Cache de Rendering
+### 4.2 Rendering Cache
 
 ```go
 // internal/tui/components/chat/render_cache.go
@@ -132,7 +132,7 @@ type RenderCache struct {
 
 type CacheEntry struct {
     rendered  string
-    width     int       // ancho al que se renderizó
+    width     int       // width at which it was rendered
     timestamp time.Time
 }
 
@@ -149,7 +149,7 @@ func (c *RenderCache) Get(content string, width int) (string, bool) {
 func (c *RenderCache) Set(content string, width int, rendered string) {
     c.mu.Lock()
     defer c.mu.Unlock()
-    // Evict si se supera maxSize
+    // Evict if maxSize exceeded
     c.entries[hashKey(content)] = CacheEntry{
         rendered:  rendered,
         width:     width,
@@ -158,37 +158,37 @@ func (c *RenderCache) Set(content string, width int, rendered string) {
 }
 ```
 
-### 4.3 Rendering de Mensajes AI
+### 4.3 AI Message Rendering
 
 ```go
-// Modificar internal/tui/components/chat/message.go
+// Modify internal/tui/components/chat/message.go
 func (m *uiMessage) renderAssistantMessage(width int) string {
-    // 1. Intentar cache
+    // 1. Try cache
     if cached, ok := m.cache.Get(m.content, width); ok {
         return cached
     }
     
-    // 2. Renderizar markdown
+    // 2. Render markdown
     renderer := NewMarkdownRenderer(m.theme, width)
     rendered, err := renderer.Render(m.content)
     if err != nil {
-        // Fallback: texto plano
+        // Fallback: plain text
         rendered = m.content
     }
     
-    // 3. Limpiar trailing whitespace
+    // 3. Clean trailing whitespace
     rendered = strings.TrimRight(rendered, "\n")
     
-    // 4. Cachear
+    // 4. Cache
     m.cache.Set(m.content, width, rendered)
     
     return rendered
 }
 ```
 
-### 4.4 Streaming con Markdown Parcial
+### 4.4 Streaming with Partial Markdown
 
-Problema: El AI envía tokens incrementalmente. Necesitamos renderizar markdown parcial.
+Problem: The AI sends tokens incrementally. We need to render partial markdown.
 
 ```go
 // internal/tui/components/chat/streaming.go
@@ -198,20 +198,20 @@ type StreamingRenderer struct {
     renderer   *glamour.TermRenderer
     width      int
     
-    // Para evitar re-render en cada token
+    // To avoid re-rendering on each token
     debounceTimer *time.Timer
-    minInterval   time.Duration // ej: 50ms
+    minInterval   time.Duration // e.g: 50ms
 }
 
 func (s *StreamingRenderer) AppendToken(token string) {
     s.buffer.WriteString(token)
-    // Debounce: no re-renderizar en cada token individual
+    // Debounce: don't re-render on each individual token
 }
 
 func (s *StreamingRenderer) Render() string {
     content := s.buffer.String()
     
-    // Si el contenido termina en medio de un code block, cerrar temporalmente
+    // If content ends in the middle of a code block, temporarily close it
     if isInCodeBlock(content) {
         content += "\n```"
     }
@@ -226,12 +226,12 @@ func (s *StreamingRenderer) Render() string {
 }
 ```
 
-### 4.5 Elementos Visuales Mejorados
+### 4.5 Improved Visual Elements
 
 ```
-┌─ Asistente ──────────────────────────────────────┐
+┌─ Assistant ──────────────────────────────────────┐
 │                                                    │
-│  He modificado el archivo `main.go`:               │
+│  I have modified the file `main.go`:               │
 │                                                    │
 │  ```go                                             │
 │  func main() {                                     │
@@ -239,39 +239,39 @@ func (s *StreamingRenderer) Render() string {
 │  }                                                 │
 │  ```                                               │
 │                                                    │
-│  │ Nota: Este cambio requiere Go 1.21+             │
+│  │ Note: This change requires Go 1.21+             │
 │                                                    │
-│  Cambios realizados:                               │
-│  • ✓ Actualizado main.go                           │
-│  • ✓ Añadido test                                  │
-│  • Pendiente: documentación                        │
+│  Changes made:                                     │
+│  • ✓ Updated main.go                               │
+│  • ✓ Added test                                    │
+│  • Pending: documentation                          │
 │                                                    │
-│  | Columna 1 | Columna 2 | Columna 3 |            │
-│  |-----------|-----------|-----------|            │
-│  | valor     | dato      | info      |            │
+│  | Column 1 | Column 2 | Column 3 |               │
+│  |-----------|-----------|-----------|              │
+│  | value     | data      | info      |             │
 │                                                    │
 └────────────────────────────────────────────────────┘
 ```
 
-## Archivos a Crear
-1. `internal/tui/components/chat/markdown.go` - Renderer de markdown
-2. `internal/tui/components/chat/render_cache.go` - Cache de rendering
+## Files to Create
+1. `internal/tui/components/chat/markdown.go` - Markdown renderer
+2. `internal/tui/components/chat/render_cache.go` - Rendering cache
 3. `internal/tui/components/chat/streaming.go` - Streaming markdown renderer
 
-## Archivos a Modificar
-1. `internal/tui/components/chat/message.go` - Usar nuevo renderer
-2. `internal/tui/components/chat/list.go` - Integrar cache
-3. `internal/tui/theme/theme.go` - Añadir colores de markdown
+## Files to Modify
+1. `internal/tui/components/chat/message.go` - Use new renderer
+2. `internal/tui/components/chat/list.go` - Integrate cache
+3. `internal/tui/theme/theme.go` - Add markdown colors
 
-## Dependencias
+## Dependencies
 ```
-github.com/charmbracelet/glamour  # Ya debería estar, si no añadir
+github.com/charmbracelet/glamour  # Should already be there, if not add
 ```
 
-## Consideraciones
-- **Performance**: El rendering de markdown es costoso. Cache agresivo es fundamental.
-- **Streaming**: Debounce el re-rendering durante streaming para evitar flicker.
-- **Code blocks**: Deben tener syntax highlighting con chroma (viene incluido en glamour).
-- **Width responsive**: Re-renderizar cuando cambia el ancho del terminal.
-- **Temas**: Los estilos de markdown deben seguir el tema global de Pando.
-- **Links clickeables**: Preparar para integración con bubblezone (Fase 5).
+## Considerations
+- **Performance**: Markdown rendering is expensive. Aggressive caching is essential.
+- **Streaming**: Debounce re-rendering during streaming to avoid flicker.
+- **Code blocks**: Must have syntax highlighting with chroma (included in glamour).
+- **Width responsive**: Re-render when terminal width changes.
+- **Themes**: Markdown styles must follow Pando's global theme.
+- **Clickable links**: Prepare for bubblezone integration (Phase 5).

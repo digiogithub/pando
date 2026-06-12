@@ -6,6 +6,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
@@ -67,6 +68,9 @@ type Querier interface {
 	UpdateProjectLastOpened(ctx context.Context, arg UpdateProjectLastOpenedParams) error
 	MarkProjectInitialized(ctx context.Context, id string) error
 	DeleteProject(ctx context.Context, id string) error
+	// ACP session state
+	GetSessionACPState(ctx context.Context, id string) (sql.NullString, error)
+	UpdateSessionACPState(ctx context.Context, arg UpdateSessionACPStateParams) error
 }
 
 var _ Querier = (*Queries)(nil)

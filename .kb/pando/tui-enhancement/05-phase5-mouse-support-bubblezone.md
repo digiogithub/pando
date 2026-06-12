@@ -1,36 +1,36 @@
-# Fase 5: Mouse Support con Bubblezone
+# Phase 5: Mouse Support with Bubblezone
 
-## Objetivo
-Integrar bubblezone para hacer todos los paneles y elementos clickeables con el mouse, incluyendo el sidebar, tabs del editor, elementos del chat, botones de diálogos, y scroll con wheel.
+## Objective
+Integrate bubblezone to make all panels and elements clickable with the mouse, including the sidebar, editor tabs, chat elements, dialog buttons, and scroll with wheel.
 
-## Referencia: Bubblezone (lrstanley/bubblezone)
+## Reference: Bubblezone (lrstanley/bubblezone)
 
-### Concepto
-Bubblezone añade zonas con mouse tracking sobre componentes bubbletea existentes. Funciona envolviendo el output de `View()` con marcadores de zona, y luego interceptando eventos de mouse para determinar qué zona fue clickeada.
+### Concept
+Bubblezone adds zones with mouse tracking over existing bubbletea components. It works by wrapping the output of `View()` with zone markers, and then intercepting mouse events to determine which zone was clicked.
 
-### Uso Básico
+### Basic Usage
 ```go
 import zone "github.com/lrstanley/bubblezone"
 
-// 1. Crear manager global
+// 1. Create global manager
 var z = zone.New()
 
-// 2. En Init(), habilitar mouse
+// 2. In Init(), enable mouse
 func (m model) Init() tea.Cmd {
-    return tea.EnableMouseAllMotion  // o tea.EnableMouseCellMotion
+    return tea.EnableMouseAllMotion  // or tea.EnableMouseCellMotion
 }
 
-// 3. En View(), marcar zonas
+// 3. In View(), mark zones
 func (m model) View() string {
-    // Envolver cada elemento clickeable con zone.Mark()
+    // Wrap each clickable element with zone.Mark()
     button1 := z.Mark("btn-save", "[ Save ]")
     button2 := z.Mark("btn-cancel", "[ Cancel ]")
     
-    // Escanear el output final
+    // Scan the final output
     return z.Scan(lipgloss.JoinHorizontal(lipgloss.Top, button1, button2))
 }
 
-// 4. En Update(), detectar clicks
+// 4. In Update(), detect clicks
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     switch msg := msg.(type) {
     case tea.MouseMsg:
@@ -47,16 +47,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 ```
 
-### Referencia: Crush Mouse Support
-Crush implementa mouse support nativo sin bubblezone, directamente en `model/chat.go`:
+### Reference: Crush Mouse Support
+Crush implements native mouse support without bubblezone, directly in `model/chat.go`:
 ```go
-// Campos del Chat struct
+// Chat struct fields
 mouseDownY, mouseDragItem, mouseDragY int
 lastClickTime time.Time
 lastClickY, clickCount int
 pendingClickID int
 
-// Métodos
+// Methods
 HandleMouseDown(x, y int) (bool, tea.Cmd)
 HandleMouseUp(x, y int) bool
 HandleMouseDrag(x, y int) bool
@@ -65,9 +65,9 @@ selectWord(itemIdx, x, itemY int)
 selectLine(itemIdx, itemY int)
 ```
 
-## Plan de Implementación
+## Implementation Plan
 
-### 5.1 Setup Global de Bubblezone
+### 5.1 Global Bubblezone Setup
 
 ```go
 // internal/tui/zone/zone.go
@@ -75,7 +75,7 @@ package zone
 
 import zone "github.com/lrstanley/bubblezone"
 
-// Manager global
+// Global manager
 var Manager = zone.New()
 
 // Zone IDs
@@ -105,20 +105,20 @@ const (
     ZoneDialogItem     = "dialog-item-"      // + item index
 )
 
-// Helper: generar zone ID único
+// Helper: generate unique zone ID
 func FileZoneID(prefix, path string) string {
     return prefix + hashPath(path)
 }
 ```
 
-### 5.2 Integración en Modelo Principal
+### 5.2 Integration in Main Model
 
 ```go
 // internal/tui/tui.go
 func (a *appModel) Init() tea.Cmd {
     return tea.Batch(
-        // ... otros cmds ...
-        tea.EnableMouseCellMotion,  // Habilitar mouse
+        // ... other cmds ...
+        tea.EnableMouseCellMotion,  // Enable mouse
     )
 }
 
@@ -150,16 +150,16 @@ func (a *appModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 ```
 
-### 5.3 Mouse en Sidebar (FileTree)
+### 5.3 Mouse in Sidebar (FileTree)
 
 ```go
-// En filetree View()
+// In filetree View()
 func (ft *FileTree) View() string {
     var lines []string
     for _, node := range ft.visibleNodes() {
         line := ft.renderNode(node)
         
-        // Hacer clickeable
+        // Make clickable
         zoneID := zone.FileZoneID(zone.ZoneSidebarFile, node.Path)
         if node.Type == NodeTypeDirectory {
             zoneID = zone.FileZoneID(zone.ZoneSidebarDir, node.Path)
@@ -171,7 +171,7 @@ func (ft *FileTree) View() string {
     return strings.Join(lines, "\n")
 }
 
-// En handleLeftClick
+// In handleLeftClick
 func (a *appModel) handleSidebarClick(msg tea.MouseMsg) tea.Cmd {
     for _, node := range a.fileTree.VisibleNodes() {
         fileZone := zone.FileZoneID(zone.ZoneSidebarFile, node.Path)
@@ -189,22 +189,22 @@ func (a *appModel) handleSidebarClick(msg tea.MouseMsg) tea.Cmd {
 }
 ```
 
-### 5.4 Mouse en Editor Tabs
+### 5.4 Mouse in Editor Tabs
 
 ```go
-// En TabBar View()
+// In TabBar View()
 func (tb *TabBar) View() string {
     var tabs []string
     for i, tab := range tb.tabs {
         rendered := tb.renderTab(tab, i == tb.activeIdx)
         
-        // Zona clickeable para el tab
+        // Clickable zone for the tab
         tabZone := zone.Manager.Mark(
             fmt.Sprintf("%s%d", zone.ZoneEditorTab, i),
             rendered,
         )
         
-        // Botón de cerrar
+        // Close button
         closeBtn := zone.Manager.Mark(
             fmt.Sprintf("%s%d", zone.ZoneEditorTabClose, i),
             " ✕",
@@ -216,27 +216,27 @@ func (tb *TabBar) View() string {
 }
 ```
 
-### 5.5 Mouse en Chat
+### 5.5 Mouse in Chat
 
 ```go
-// Hacer clickeables: code blocks (copiar), links (abrir), archivos mencionados
+// Make clickable: code blocks (copy), links (open), mentioned files
 func (m *messagesCmp) renderMessageWithZones(msg uiMessage) string {
     rendered := msg.Render()
     
-    // Marcar code blocks para click-to-copy
+    // Mark code blocks for click-to-copy
     rendered = markCodeBlocks(rendered, msg.ID)
     
-    // Marcar links para click-to-open
+    // Mark links for click-to-open
     rendered = markLinks(rendered, msg.ID)
     
-    // Marcar archivos mencionados para click-to-view
+    // Mark mentioned files for click-to-view
     rendered = markFileReferences(rendered, msg.ID)
     
     return rendered
 }
 ```
 
-### 5.6 Mouse en Status Bar
+### 5.6 Mouse in Status Bar
 
 ```go
 func (s *statusBar) View() string {
@@ -249,16 +249,16 @@ func (s *statusBar) View() string {
     )
 }
 
-// Click en modelo -> abrir selector de modelos
-// Click en sesión -> abrir lista de sesiones  
-// Click en branch -> mostrar git info
+// Click on model -> open model selector
+// Click on session -> open session list
+// Click on branch -> show git info
 ```
 
-### 5.7 Scroll con Mouse Wheel
+### 5.7 Scroll with Mouse Wheel
 
 ```go
 func (a *appModel) handleScrollUp(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-    // Determinar en qué panel estamos
+    // Determine which panel we are in
     if a.isInSidebarBounds(msg.X, msg.Y) {
         a.fileTree.ScrollUp(3)
     } else if a.isInEditorBounds(msg.X, msg.Y) {
@@ -271,37 +271,37 @@ func (a *appModel) handleScrollUp(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 ```
 
-### 5.8 View Final con Scan
+### 5.8 Final View with Scan
 
 ```go
 func (a *appModel) View() string {
-    // Construir toda la vista
+    // Build the entire view
     view := a.buildView()
     
-    // IMPORTANTE: Scan al final para procesar todas las zonas
+    // IMPORTANT: Scan at the end to process all zones
     return zone.Manager.Scan(view)
 }
 ```
 
-## Archivos a Crear
-1. `internal/tui/zone/zone.go` - Manager global y constantes de zonas
+## Files to Create
+1. `internal/tui/zone/zone.go` - Global manager and zone constants
 
-## Archivos a Modificar
-1. `internal/tui/tui.go` - EnableMouse, handleMouse, View con Scan
-2. `internal/tui/components/filetree/filetree.go` - Marcar zonas
-3. `internal/tui/components/editor/tabs.go` - Marcar zonas
-4. `internal/tui/components/editor/viewer.go` - Scroll con mouse
-5. `internal/tui/components/chat/list.go` - Marcar zonas, clicks
-6. `internal/tui/components/dialog/*.go` - Botones clickeables
+## Files to Modify
+1. `internal/tui/tui.go` - EnableMouse, handleMouse, View with Scan
+2. `internal/tui/components/filetree/filetree.go` - Mark zones
+3. `internal/tui/components/editor/tabs.go` - Mark zones
+4. `internal/tui/components/editor/viewer.go` - Scroll with mouse
+5. `internal/tui/components/chat/list.go` - Mark zones, clicks
+6. `internal/tui/components/dialog/*.go` - Clickable buttons
 
-## Dependencias
+## Dependencies
 ```
 github.com/lrstanley/bubblezone  # Mouse zones
 ```
 
-## Consideraciones
-- **Performance**: `zone.Scan()` debe llamarse UNA vez al final del View()
-- **Zone cleanup**: Las zonas deben limpiarse cuando los componentes se destruyen
-- **Terminal support**: No todos los terminales soportan mouse. Degradar gracefully.
-- **Conflicto con selección de texto**: El mouse tracking puede interferir con la selección de texto del terminal. Considerar un modo "pass-through".
-- **Mobile/SSH**: En terminales remotos el mouse puede no funcionar bien.
+## Considerations
+- **Performance**: `zone.Scan()` must be called ONCE at the end of View()
+- **Zone cleanup**: Zones must be cleaned up when components are destroyed
+- **Terminal support**: Not all terminals support mouse. Degrade gracefully.
+- **Text selection conflict**: Mouse tracking may interfere with terminal text selection. Consider a "pass-through" mode.
+- **Mobile/SSH**: In remote terminals, mouse may not work well.

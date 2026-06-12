@@ -1,66 +1,66 @@
-# Referencia de Librerías Externas para Pando TUI
+# External Libraries Reference for Pando TUI
 
-## 1. Bubbles Components Útiles
+## 1. Useful Bubbles Components
 
-### viewport (YA USADO en Pando)
+### viewport (ALREADY USED in Pando)
 - `SetContent()`, `ScrollUp/Down()`, `PageUp/Down()`
-- **`LeftGutterFunc`** → Perfecto para números de línea en el editor
-- **`StyleLineFunc`** → Estilo por línea (current line highlight, search matches)
-- **`SetHighlights()`** + `HighlightNext/Previous` → Para búsqueda
-- Mouse wheel support nativo
-- High performance mode para alt-screen
+- **`LeftGutterFunc`** → Perfect for line numbers in the editor
+- **`StyleLineFunc`** → Per-line styling (current line highlight, search matches)
+- **`SetHighlights()`** + `HighlightNext/Previous` → For search
+- Native mouse wheel support
+- High performance mode for alt-screen
 
-### list (CONSIDERAR para File Tree)
-- Lista navegable con fuzzy filtering integrado
-- Paginación, spinner, mensajes de estado
-- Podría usarse como base para el file tree o command palette
+### list (CONSIDER for File Tree)
+- Navigable list with integrated fuzzy filtering
+- Pagination, spinner, status messages
+- Could be used as a base for the file tree or command palette
 
-### key/help (YA USADO en Pando)
-- Remapeo de keybindings
-- Vista de ayuda auto-generada
+### key/help (ALREADY USED in Pando)
+- Keybinding remapping
+- Auto-generated help view
 
-## 2. Bubblezone - Detalles de Implementación
+## 2. Bubblezone - Implementation Details
 
-### Mecanismo Interno
-- Usa marcadores ANSI de **ancho cero** (invisibles, no afectan `lipgloss.Width()`)
-- `Scan()` registra posiciones y remueve marcadores
-- SOLO llamar Scan() en el modelo raíz
+### Internal Mechanism
+- Uses **zero-width** ANSI markers (invisible, don't affect `lipgloss.Width()`)
+- `Scan()` registers positions and removes markers
+- ONLY call Scan() in the root model
 
-### API Esencial
+### Essential API
 ```go
 zone.NewGlobal()                         // Init global
-zone.Mark("id", content)                 // Marcar zona
-zone.Scan(view)                          // Escanear (SOLO en raíz)
+zone.Mark("id", content)                 // Mark zone
+zone.Scan(view)                          // Scan (ROOT ONLY)
 zone.Get("id").InBounds(mouseMsg)        // Check click
-zone.Get("id").Pos(mouseMsg)             // Coordenadas relativas
-zone.NewPrefix()                         // Prefijo único para componentes reutilizables
+zone.Get("id").Pos(mouseMsg)             // Relative coordinates
+zone.NewPrefix()                         // Unique prefix for reusable components
 zone.AnyInBoundsAndUpdate()              // Batch process
 ```
 
-### Requisitos
+### Requirements
 ```go
 tea.WithAltScreen()
 tea.WithMouseCellMotion()
 ```
 
-### Mejores Prácticas
-- Scan SOLO en modelo raíz
-- Usar `lipgloss.Width()` (no `len()`)
-- Evitar MaxHeight/MaxWidth de lipgloss (rompe bounds)
-- `NewPrefix()` para componentes reutilizados en la misma vista
+### Best Practices
+- Scan ONLY in root model
+- Use `lipgloss.Width()` (not `len()`)
+- Avoid MaxHeight/MaxWidth from lipgloss (breaks bounds)
+- `NewPrefix()` for components reused in the same view
 
 ## 3. Chroma - Syntax Highlighting
 
-### Uso Rápido
+### Quick Usage
 ```go
 quick.Highlight(writer, code, "go", "terminal256", "monokai")
 ```
 
-### Uso Programático (como crush)
+### Programmatic Usage (like crush)
 ```go
-lexer := lexers.Match("main.go")        // Por filename
-if lexer == nil { lexer = lexers.Analyse(code) } // Por contenido
-lexer = chroma.Coalesce(lexer)           // Optimizar tokens
+lexer := lexers.Match("main.go")        // By filename
+if lexer == nil { lexer = lexers.Analyse(code) } // By content
+lexer = chroma.Coalesce(lexer)           // Optimize tokens
 style := styles.Get("monokai")
 formatter := formatters.Get("terminal16m")  // True color 24-bit
 iterator, _ := lexer.Tokenise(nil, code)
@@ -69,17 +69,17 @@ formatter.Format(&buf, style, iterator)
 result := buf.String()
 ```
 
-### Formatters de Terminal
-- `"terminal16"` → 8/16 colores ANSI (compatible con todo)
-- `"terminal256"` → 256 colores (la mayoría de terminales)
-- `"terminal16m"` → True color 24-bit (terminales modernos)
+### Terminal Formatters
+- `"terminal16"` → 8/16 ANSI colors (compatible with everything)
+- `"terminal256"` → 256 colors (most terminals)
+- `"terminal16m"` → True color 24-bit (modern terminals)
 
-### Integración con Temas de Pando
-Los 9 temas de Pando ya definen 8 colores de syntax:
+### Integration with Pando Themes
+Pando's 9 themes already define 8 syntax colors:
 - SyntaxComment, SyntaxKeyword, SyntaxFunction, SyntaxString
 - SyntaxNumber, SyntaxOperator, SyntaxType, SyntaxVariable
 
-Se puede crear un `chroma.Style` custom que mapee estos colores:
+A custom `chroma.Style` can be created to map these colors:
 ```go
 func ThemeToChromaStyle(t theme.Theme) *chroma.Style {
     return chroma.MustNewStyle("pando", chroma.StyleEntries{
@@ -92,24 +92,24 @@ func ThemeToChromaStyle(t theme.Theme) *chroma.Style {
 }
 ```
 
-## 4. Glamour - Ya en Pando
+## 4. Glamour - Already in Pando
 
-### Configuración Avanzada
+### Advanced Configuration
 ```go
 renderer, _ := glamour.NewTermRenderer(
     glamour.WithAutoStyle(),            // Auto dark/light
     glamour.WithWordWrap(width),        // Word wrap
-    glamour.WithEmoji(),                // Soporte emoji
-    glamour.WithStyles(customStyle),    // Estilos custom
+    glamour.WithEmoji(),                // Emoji support
+    glamour.WithStyles(customStyle),    // Custom styles
     glamour.WithChromaFormatter("terminal16m"), // True color code blocks
 )
 ```
 
-### Integración con Chroma
-Glamour usa chroma internamente para code blocks. Se puede configurar el formatter:
-- `WithChromaFormatter("terminal16m")` para mejor calidad
+### Chroma Integration
+Glamour uses chroma internally for code blocks. The formatter can be configured:
+- `WithChromaFormatter("terminal16m")` for better quality
 
-## 5. Superfile - Patrones de Arquitectura
+## 5. Superfile - Architecture Patterns
 
 ### Panel System
 ```go
@@ -118,44 +118,44 @@ type fileModel struct {
     FocusedPanelIndex int
 }
 ```
-- Array dinámico de paneles
-- Ancho calculado: `fileModelWidth = fullWidth - sidebarWidth - borders`
-- Focus como enum con toggle pattern
+- Dynamic panel array
+- Width calculation: `fileModelWidth = fullWidth - sidebarWidth - borders`
+- Focus as enum with toggle pattern
 
-### Estructura de Handlers (separación de responsabilidades)
+### Handler Structure (separation of concerns)
 ```
-handle_panel_movement.go     # Movimiento entre paneles
-handle_panel_navigation.go   # Navegación dentro de panel
+handle_panel_movement.go     # Movement between panels
+handle_panel_navigation.go   # Navigation within a panel
 handle_file_operations.go    # Copy, move, delete, rename
-handle_modal.go              # Gestión de modales
+handle_modal.go              # Modal management
 ```
 
-### Aplicabilidad a Pando
-- El patrón de `FilePanels[]` con `FocusedPanelIndex` es elegante
-- Podría usarse para el sistema de paneles: Sidebar, Editor, Chat
-- El toggle pattern de focus es limpio
+### Applicability to Pando
+- The `FilePanels[]` with `FocusedPanelIndex` pattern is elegant
+- Could be used for the panel system: Sidebar, Editor, Chat
+- The focus toggle pattern is clean
 
-## 6. Integración Recomendada en Pando
+## 6. Recommended Integration in Pando
 
-### Para el File Tree
-- Usar `bubbles/list` como base con items custom
-- O implementar custom con viewport (más control)
-- Viewport `LeftGutterFunc` para indent indicators
+### For the File Tree
+- Use `bubbles/list` as a base with custom items
+- Or implement custom with viewport (more control)
+- Viewport `LeftGutterFunc` for indent indicators
 
-### Para el Editor/Viewer  
-- Usar `bubbles/viewport` con:
-  - `LeftGutterFunc` → números de línea
+### For the Editor/Viewer
+- Use `bubbles/viewport` with:
+  - `LeftGutterFunc` → line numbers
   - `StyleLineFunc` → current line, search matches
-  - `SetHighlights` → búsqueda
-- Chroma para syntax highlighting del contenido
+  - `SetHighlights` → search
+- Chroma for syntax highlighting of content
 
-### Para Mouse
-- Bubblezone ya importado en go.mod
-- Añadir `zone.Mark()` a cada componente interactivo
-- `zone.Scan()` en el View() final de appModel
-- `zone.NewPrefix()` para file tree items (muchos con mismo patrón)
+### For Mouse
+- Bubblezone already imported in go.mod
+- Add `zone.Mark()` to each interactive component
+- `zone.Scan()` in the final View() of appModel
+- `zone.NewPrefix()` for file tree items (many sharing the same pattern)
 
-### Para Markdown
-- Glamour ya importado
-- Configurar `WithChromaFormatter("terminal16m")` para code blocks
-- Mapear colores MarkdownText/MarkdownHeading/etc del tema
+### For Markdown
+- Glamour already imported
+- Configure `WithChromaFormatter("terminal16m")` for code blocks
+- Map MarkdownText/MarkdownHeading/etc colors from the theme

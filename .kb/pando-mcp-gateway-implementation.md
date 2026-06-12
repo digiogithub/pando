@@ -1,27 +1,27 @@
-# Plan de Implementación: Pando MCP Gateway, Lua Hooks & Tool Favorites
+# Implementation Plan: Pando MCP Gateway, Lua Hooks & Tool Favorites
 
-> **Proyecto**: Pando (fork de OpenCode/Crush)
-> **Basado en**: Análisis completo de Panorganon — MCP Gateway con Lua hooks via gopherlua
-> **Fecha**: 2026-03-12
-> **Fact IDs en Remembrances**: `pando_mcp_gateway_phase1`, `pando_mcp_gateway_phase2`, `pando_mcp_gateway_phase3`, `pando_mcp_gateway_phase4`
-
----
-
-## Resumen Ejecutivo
-
-Este plan integra de forma nativa en Pando la funcionalidad de **MCP Gateway** que actualmente implementa Panorganon como proyecto independiente. Los objetivos son:
-
-1. **Centralizar** todos los servidores MCP configurados bajo un gateway interno que expone al LLM únicamente herramientas proxy genéricas (`mcp_query_catalog`, `mcp_call_tool`) en lugar de exponer directamente todas las tools.
-2. **Sistema de Favoritos**: Rastrear estadísticas de uso de cada tool en SQLite. Las tools más usadas se exponen directamente al LLM (bypass del catálogo), logrando un equilibrio entre velocidad y reducción de ruido en el contexto.
-3. **Lua Hooks**: Implementar extensibilidad via scripts Lua (`github.com/yuin/gopher-lua`) para interceptar y modificar datos en múltiples puntos del ciclo de vida del agente.
+> **Project**: Pando (fork of OpenCode/Crush)
+> **Based on**: Comprehensive analysis of Panorganon — MCP Gateway with Lua hooks via gopherlua
+> **Date**: 2026-03-12
+> **Fact IDs in Remembrances**: `pando_mcp_gateway_phase1`, `pando_mcp_gateway_phase2`, `pando_mcp_gateway_phase3`, `pando_mcp_gateway_phase4`
 
 ---
 
-## Análisis de Panorganon (Proyecto Base)
+## Executive Summary
 
-### Arquitectura
+This plan natively integrates into Pando the **MCP Gateway** functionality currently implemented by Panorganon as a standalone project. The objectives are:
 
-Panorganon es un servidor MCP intermediario escrito en Go que orquesta múltiples servidores MCP downstream:
+1. **Centralize** all configured MCP servers under an internal gateway that exposes to the LLM only generic proxy tools (`mcp_query_catalog`, `mcp_call_tool`) instead of directly exposing all tools.
+2. **Favorites System**: Track usage statistics of each tool in SQLite. The most used tools are exposed directly to the LLM (bypassing the catalog), achieving a balance between speed and noise reduction in context.
+3. **Lua Hooks**: Implement extensibility via Lua scripts (`github.com/yuin/gopher-lua`) to intercept and modify data at multiple points in the agent's lifecycle.
+
+---
+
+## Panorganon Analysis (Base Project)
+
+### Architecture
+
+Panorganon is an intermediary MCP server written in Go that orchestrates multiple downstream MCP servers:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -50,24 +50,24 @@ Panorganon es un servidor MCP intermediario escrito en Go que orquesta múltiple
     └────────┘      └────────┘      └────────┘
 ```
 
-### Componentes clave analizados
+### Key Components Analyzed
 
-| Archivo | Propósito | Líneas | Adaptación para Pando |
-|---------|-----------|--------|----------------------|
-| `luafilters/lua.go` | Inicializa LState con módulos preloaded | 79 | Portar directamente |
-| `luafilters/types.go` | HookContext, HookResult, FilterType | 145 | Extender con HookType |
-| `luafilters/helpers.go` | Converters Go↔Lua bidireccionales | 197 | Portar directamente |
-| `luafilters/manager.go` | FilterManager con timeout, strict mode | 376 | Adaptar para hooks |
-| `tools/discovery.go` | Descubrimiento periódico de tools | 225 | Simplificar para Pando |
-| `tools/executor.go` | Ejecución con hook points input/output | 490 | Integrar en mcpTool.Run() |
-| `tools/search.go` | Búsqueda con LLM sampling + keyword | 341 | Simplificar (keyword only) |
-| `database/schema.go` | Schema SQLite (servers, tools) | 31 | Adaptar a sqlc migrations |
-| `database/queries.go` | CRUD operations para tools/servers | 287 | Reescribir como sqlc |
-| `server/handler.go` | 4 tools MCP: search, exec, list, refresh | 236 | Adaptar a 2: query_catalog, call_tool |
-| `downstream/manager.go` | Pool de clientes downstream | 225 | Opcional (connection pool) |
-| `config/config.go` | Config YAML con filtros y servers | 203 | Extender config existente |
+| File | Purpose | Lines | Adaptation for Pando |
+|------|---------|-------|----------------------|
+| `luafilters/lua.go` | Initializes LState with preloaded modules | 79 | Port directly |
+| `luafilters/types.go` | HookContext, HookResult, FilterType | 145 | Extend with HookType |
+| `luafilters/helpers.go` | Bidirectional Go↔Lua converters | 197 | Port directly |
+| `luafilters/manager.go` | FilterManager with timeout, strict mode | 376 | Adapt for hooks |
+| `tools/discovery.go` | Periodic tool discovery | 225 | Simplify for Pando |
+| `tools/executor.go` | Execution with input/output hook points | 490 | Integrate into mcpTool.Run() |
+| `tools/search.go` | Search with LLM sampling + keyword | 341 | Simplify (keyword only) |
+| `database/schema.go` | SQLite schema (servers, tools) | 31 | Adapt to sqlc migrations |
+| `database/queries.go` | CRUD operations for tools/servers | 287 | Rewrite as sqlc |
+| `server/handler.go` | 4 MCP tools: search, exec, list, refresh | 236 | Adapt to 2: query_catalog, call_tool |
+| `downstream/manager.go` | Downstream client pool | 225 | Optional (connection pool) |
+| `config/config.go` | YAML config with filters and servers | 203 | Extend existing config |
 
-### Flujo de ejecución en Panorganon
+### Execution Flow in Panorganon
 
 ```
 LLM → search_tools(task_description)
@@ -86,21 +86,21 @@ LLM → exec_tool(tool_name, parameters)
 
 ---
 
-## Arquitectura Actual de Pando (Puntos de Integración)
+## Pando's Current Architecture (Integration Points)
 
-### Cómo Pando gestiona MCP tools actualmente
+### How Pando currently manages MCP tools
 
-En `internal/llm/agent/mcp-tools.go`:
+In `internal/llm/agent/mcp-tools.go`:
 
-1. `GetMcpTools()` itera `config.MCPServers`, crea un cliente MCP por servidor, llama `ListTools()`, y wrappea cada tool en un `mcpTool` struct.
-2. **Todas las tools** se exponen directamente al LLM — no hay catálogo ni proxy.
-3. Cada llamada a `mcpTool.Run()` crea un **nuevo cliente MCP** (no hay pooling).
-4. No hay filtros Lua ni hooks en el ciclo de vida.
+1. `GetMcpTools()` iterates `config.MCPServers`, creates an MCP client per server, calls `ListTools()`, and wraps each tool in an `mcpTool` struct.
+2. **All tools** are directly exposed to the LLM — no catalog or proxy.
+3. Each call to `mcpTool.Run()` creates a **new MCP client** (no pooling).
+4. No Lua filters or lifecycle hooks exist.
 
-### Puntos de integración identificados
+### Identified Integration Points
 
-| Componente | Archivo | Función | Tipo de hook |
-|-----------|---------|---------|-------------|
+| Component | File | Function | Hook Type |
+|-----------|------|----------|-----------|
 | System Prompt | `internal/llm/prompt/prompt.go` | `GetAgentPrompt()` | `hook_system_prompt` |
 | Session Create | `internal/session/session.go` | `service.Create()` | `hook_session_start` |
 | Session Load | `internal/session/session.go` | `service.Get()` | `hook_session_restore` |
@@ -112,11 +112,11 @@ En `internal/llm/agent/mcp-tools.go`:
 
 ---
 
-## Fase 1: Core MCP Gateway & Infraestructura Lua
+## Phase 1: Core MCP Gateway & Lua Infrastructure
 
 **Fact ID**: `pando_mcp_gateway_phase1`
 
-### Dependencias Go
+### Go Dependencies
 
 ```bash
 go get github.com/yuin/gopher-lua
@@ -124,29 +124,29 @@ go get github.com/layeh/gopher-json
 go get github.com/vadv/gopher-lua-libs
 ```
 
-### Nuevo paquete: `internal/luaengine/`
+### New Package: `internal/luaengine/`
 
-#### `lua.go` — Estado Lua Sandboxed
-Crea un `*lua.LState` configurado con:
+#### `lua.go` — Sandboxed Lua State
+Creates a `*lua.LState` configured with:
 - `CallStackSize: 120`, `RegistrySize: 1024`
-- Módulos preloaded: `strings`, `http`, `time`, `regexp`, `yaml`, `template`, `json`
-- **Shell excluido** intencionalmente por seguridad
-- Funciones: `InitLuaState()`, `ResetLuaState()`, `CloseLuaState()`
+- Preloaded modules: `strings`, `http`, `time`, `regexp`, `yaml`, `template`, `json`
+- **Shell intentionally excluded** for security
+- Functions: `InitLuaState()`, `ResetLuaState()`, `CloseLuaState()`
 
-#### `types.go` — Tipos del Motor
+#### `types.go` — Engine Types
 ```go
 type FilterType string  // "input" | "output"
 type HookType string    // "system-prompt" | "session-start" | etc.
 
 type HookContext struct {
-    ServerName string                 // Para filtros tool
-    ToolName   string                 // Para filtros tool
-    HookType   HookType              // Para hooks lifecycle
+    ServerName string                 // For tool filters
+    ToolName   string                 // For tool filters
+    HookType   HookType              // For lifecycle hooks
     Parameters map[string]interface{} // Input data
     Result     map[string]interface{} // Output data
     RequestID  string
-    SessionID  string                 // Para hooks lifecycle
-    // ... más campos según hook type
+    SessionID  string                 // For lifecycle hooks
+    // ... more fields depending on hook type
 }
 
 type HookResult struct {
@@ -158,8 +158,8 @@ type HookResult struct {
 }
 ```
 
-#### `helpers.go` — Conversores Bidireccionales Go ↔ Lua
-Port directo de panorganon. Soporta: nil, bool, string, int, int64, float32, float64, map, slice. Detección automática de arrays vs maps en tablas Lua.
+#### `helpers.go` — Bidirectional Go ↔ Lua Converters
+Direct port from Panorganon. Supports: nil, bool, string, int, int64, float32, float64, map, slice. Automatic array vs map detection in Lua tables.
 
 #### `manager.go` — FilterManager
 ```go
@@ -175,16 +175,16 @@ type FilterManager struct {
 }
 ```
 
-Métodos principales:
-- `ApplyInputFilter(ctx, hookCtx)` → Busca `<server>-input`, fallback `global-input`
-- `ApplyOutputFilter(ctx, hookCtx)` → Busca `<server>-output`, fallback `global-output`
-- `ExecuteHook(ctx, hookType, data)` → Busca `hook_<type>`, fallback `hook_global`
-- Ejecución con goroutine + timeout + context cancelation
-- En modo no-strict: errors se logean pero se devuelven datos originales
+Main methods:
+- `ApplyInputFilter(ctx, hookCtx)` → Looks up `<server>-input`, falls back to `global-input`
+- `ApplyOutputFilter(ctx, hookCtx)` → Looks up `<server>-output`, falls back to `global-output`
+- `ExecuteHook(ctx, hookType, data)` → Looks up `hook_<type>`, falls back to `hook_global`
+- Execution with goroutine + timeout + context cancellation
+- In non-strict mode: errors are logged but original data is returned
 
-### Configuración
+### Configuration
 
-Nuevo bloque en `internal/config/config.go`:
+New block in `internal/config/config.go`:
 ```go
 type LuaConfig struct {
     Enabled         bool          `yaml:"enabled"`
@@ -196,18 +196,18 @@ type LuaConfig struct {
 }
 ```
 
-### Integración inicial en tool execution
+### Initial Tool Execution Integration
 
-Modificar `runTool()` en `mcp-tools.go`:
+Modify `runTool()` in `mcp-tools.go`:
 ```go
-// ANTES de c.CallTool():
+// BEFORE c.CallTool():
 if filterManager != nil && filterManager.IsEnabled() {
     hookCtx := NewInputContext(serverName, toolName, args, requestID)
     result, err := filterManager.ApplyInputFilter(ctx, hookCtx)
     if result.Modified { args = result.Data }
 }
 
-// DESPUÉS de c.CallTool():
+// AFTER c.CallTool():
 if filterManager != nil && filterManager.IsEnabled() {
     hookCtx := NewOutputContext(serverName, toolName, resultMap, requestID, duration)
     result, err := filterManager.ApplyOutputFilter(ctx, hookCtx)
@@ -217,11 +217,11 @@ if filterManager != nil && filterManager.IsEnabled() {
 
 ---
 
-## Fase 2: Tool Catalog, Estadísticas de Uso & Sistema de Favoritos
+## Phase 2: Tool Catalog, Usage Statistics & Favorites System
 
 **Fact ID**: `pando_mcp_gateway_phase2`
 
-### Nuevas tablas SQLite
+### New SQLite Tables
 
 ```sql
 CREATE TABLE IF NOT EXISTS mcp_tool_registry (
@@ -245,41 +245,41 @@ CREATE TABLE IF NOT EXISTS mcp_tool_usage_stats (
 );
 ```
 
-### Nuevo paquete: `internal/mcpgateway/`
+### New Package: `internal/mcpgateway/`
 
-#### `registry.go` — Catálogo de Tools
-- `DiscoverAll(ctx)`: Descubre tools de todos los servidores MCP configurados
-- `SearchTools(query, maxResults)`: Búsqueda por keyword en nombre + descripción
-- `GetTool(name)`: Obtiene tool por nombre exacto
-- `GetAllTools()`: Lista completa
+#### `registry.go` — Tool Catalog
+- `DiscoverAll(ctx)`: Discovers tools from all configured MCP servers
+- `SearchTools(query, maxResults)`: Keyword search in name + description
+- `GetTool(name)`: Gets tool by exact name
+- `GetAllTools()`: Full list
 
-#### `stats.go` — Estadísticas de Uso
-- `RecordUsage(toolID, sessionID, durationMs, success)`: Registra cada invocación
-- `GetTopTools(limit, daysWindow)`: Top N tools por frecuencia en ventana temporal
-- `GetFavorites()`: Calcula set actual de favoritos
-- Parámetros configurables: `favorite_threshold=5`, `max_favorites=15`, `favorite_window_days=30`, `decay_days=14`
+#### `stats.go` — Usage Statistics
+- `RecordUsage(toolID, sessionID, durationMs, success)`: Records each invocation
+- `GetTopTools(limit, daysWindow)`: Top N tools by frequency in time window
+- `GetFavorites()`: Computes the current favorites set
+- Configurable parameters: `favorite_threshold=5`, `max_favorites=15`, `favorite_window_days=30`, `decay_days=14`
 
-#### `gateway.go` — Orquestador
-Coordina registry + stats + favorite rotation. Se inicializa en `app.go`.
+#### `gateway.go` — Orchestrator
+Coordinates registry + stats + favorite rotation. Initialized in `app.go`.
 
-### Tools proxy expuestas al LLM
+### Proxy Tools Exposed to LLM
 
-| Tool | Descripción | Parámetros |
-|------|------------|-----------|
-| `mcp_query_catalog` | Busca tools disponibles por descripción | `query: string`, `max_results?: int` |
-| `mcp_call_tool` | Ejecuta cualquier tool del catálogo | `tool_name: string`, `parameters: object`, `server_name?: string` |
+| Tool | Description | Parameters |
+|------|-------------|-----------|
+| `mcp_query_catalog` | Searches available tools by description | `query: string`, `max_results?: int` |
+| `mcp_call_tool` | Executes any tool from the catalog | `tool_name: string`, `parameters: object`, `server_name?: string` |
 
-Plus: Las **top N favoritas** se exponen directamente con su schema original.
+Plus: The **top N favorites** are exposed directly with their original schema.
 
-### Cambio clave en `GetMcpTools()`
+### Key Change in `GetMcpTools()`
 
 ```go
-// ANTES: Expone TODAS las tools directamente
+// BEFORE: Exposes ALL tools directly
 func GetMcpTools(ctx, permissions) []BaseTool {
-    // Itera todos los servers, lista todas las tools
+    // Iterates all servers, lists all tools
 }
 
-// DESPUÉS: Expone proxy + favoritas
+// AFTER: Exposes proxy + favorites
 func GetMcpTools(ctx, permissions, gateway) []BaseTool {
     tools := []BaseTool{
         NewCatalogTool(gateway),    // mcp_query_catalog
@@ -294,24 +294,24 @@ func GetMcpTools(ctx, permissions, gateway) []BaseTool {
 
 ---
 
-## Fase 3: Lua Hooks para el Ciclo de Vida del Agente
+## Phase 3: Lua Hooks for the Agent Lifecycle
 
 **Fact ID**: `pando_mcp_gateway_phase3`
 
-### Hooks Disponibles
+### Available Hooks
 
-| Hook | Cuándo se ejecuta | Datos de entrada | Puede modificar |
-|------|-------------------|-----------------|----------------|
-| `hook_system_prompt` | Al construir el system prompt | system_prompt, agent_name, model_id, provider, skills | Sí (system_prompt) |
-| `hook_session_start` | Al crear una nueva sesión | session_id, title, created_at | No (informativo) |
-| `hook_session_restore` | Al cargar una sesión existente | session_id, title, message_count, tokens, cost | No (informativo) |
-| `hook_conversation_start` | Al inicio de processGeneration | session_id, is_new, message_count | Sí (injected_context) |
-| `hook_user_prompt` | Antes de crear el mensaje de usuario | session_id, user_content, attachments, model_id | Sí (modified_content) |
-| `hook_agent_response_finish` | Al completarse la respuesta | session_id, content, finish_reason, tokens, cost | No (informativo) |
+| Hook | When it executes | Input Data | Can Modify |
+|------|-----------------|------------|------------|
+| `hook_system_prompt` | When building the system prompt | system_prompt, agent_name, model_id, provider, skills | Yes (system_prompt) |
+| `hook_session_start` | When creating a new session | session_id, title, created_at | No (informational) |
+| `hook_session_restore` | When loading an existing session | session_id, title, message_count, tokens, cost | No (informational) |
+| `hook_conversation_start` | At the start of processGeneration | session_id, is_new, message_count | Yes (injected_context) |
+| `hook_user_prompt` | Before creating the user message | session_id, user_content, attachments, model_id | Yes (modified_content) |
+| `hook_agent_response_finish` | When the response completes | session_id, content, finish_reason, tokens, cost | No (informational) |
 
-### Integración
+### Integration
 
-**`GetAgentPrompt()` en prompt.go**:
+**`GetAgentPrompt()` in prompt.go**:
 ```go
 func GetAgentPrompt(agentName, provider, luaManager) string {
     basePrompt := CoderPrompt(provider)
@@ -334,7 +334,7 @@ func GetAgentPrompt(agentName, provider, luaManager) string {
 }
 ```
 
-**`processGeneration()` en agent.go** (conversation-start):
+**`processGeneration()` in agent.go** (conversation-start):
 ```go
 func (a *agent) processGeneration(ctx, sessionID, content, attachments) AgentEvent {
     msgs, _ := a.messages.List(ctx, sessionID)
@@ -357,12 +357,12 @@ func (a *agent) processGeneration(ctx, sessionID, content, attachments) AgentEve
 }
 ```
 
-### Ejemplo de script Lua completo
+### Complete Lua Script Example
 
 ```lua
 -- pando-hooks.lua
 
--- Personalizar el system prompt
+-- Customize the system prompt
 function hook_system_prompt(ctx)
     local prompt = ctx.system_prompt
     prompt = prompt .. "\n\n## Custom Rules\n"
@@ -372,7 +372,7 @@ function hook_system_prompt(ctx)
     return ctx
 end
 
--- Inyectar contexto al inicio de conversación
+-- Inject context at conversation start
 function hook_conversation_start(ctx)
     if ctx.is_new_session then
         ctx.injected_context = "Remember: This project uses Go 1.24 and follows the Pando coding standards."
@@ -380,9 +380,9 @@ function hook_conversation_start(ctx)
     return ctx
 end
 
--- Filtro de entrada para tools MCP
+-- Input filter for MCP tools
 _G["remembrances-input"] = function(ctx)
-    -- Sanitizar queries
+    -- Sanitize queries
     local params = ctx.parameters
     if params.query then
         params.query = string.gsub(params.query, "password", "[FILTERED]")
@@ -390,7 +390,7 @@ _G["remembrances-input"] = function(ctx)
     return params
 end
 
--- Auditoría de respuestas costosas
+-- Audit expensive responses
 function hook_agent_response_finish(ctx)
     if ctx.cost and ctx.cost > 0.05 then
         print("[COST ALERT] Session " .. ctx.session_id .. " cost: $" .. ctx.cost)
@@ -401,38 +401,38 @@ end
 
 ---
 
-## Fase 4: Integración Final, Testing & Documentación
+## Phase 4: Final Integration, Testing & Documentation
 
 **Fact ID**: `pando_mcp_gateway_phase4`
 
-### 4.1 Connection Pool (opcional)
-Adaptar panorganon's `downstream/manager.go` para reutilizar clientes MCP:
-- `internal/mcpgateway/clientpool.go`: Pool con `GetOrStart()`, `Stop()`, `StopAll()`
-- Reduce latencia en tools frecuentes (actualmente se crea y destruye un cliente por cada invocación)
+### 4.1 Connection Pool (optional)
+Adapt Panorganon's `downstream/manager.go` to reuse MCP clients:
+- `internal/mcpgateway/clientpool.go`: Pool with `GetOrStart()`, `Stop()`, `StopAll()`
+- Reduces latency for frequent tools (currently a client is created and destroyed for each invocation)
 
-### 4.2 Integración con Mesnada (subagentes)
-- Los subagentes heredan la config del gateway
-- Las llamadas de subagentes cuentan para las estadísticas de favoritos
-- `mcp_call_tool` disponible para subagentes
+### 4.2 Integration with Mesnada (subagents)
+- Subagents inherit the gateway config
+- Subagent calls count toward favorites statistics
+- `mcp_call_tool` available for subagents
 
 ### 4.3 TUI
-- Indicador de tools favoritas en la barra de estado
-- Modo debug: mostrar ejecución de hooks Lua con timing
-- Mostrar estadísticas de uso con comando dedicado
+- Favorites tool indicator in the status bar
+- Debug mode: show Lua hook execution with timing
+- Show usage statistics with a dedicated command
 
 ### 4.4 Testing
-- Tests unitarios en `internal/luaengine/*_test.go`
-- Tests unitarios en `internal/mcpgateway/*_test.go`
-- Tests de integración en `tests/`
-- Scripts Lua de test en `tests/lua/`
+- Unit tests in `internal/luaengine/*_test.go`
+- Unit tests in `internal/mcpgateway/*_test.go`
+- Integration tests in `tests/`
+- Lua test scripts in `tests/lua/`
 
 ### 4.5 Feature Flags
 ```yaml
-# Habilitar por separado o juntos
+# Enable separately or together
 lua_filters:
-  enabled: true     # Hooks + filtros Lua
+  enabled: true     # Hooks + Lua filters
 mcp_gateway:
-  enabled: true     # Catálogo + favoritos
+  enabled: true     # Catalog + favorites
   max_favorites: 15
   favorite_threshold: 5
   favorite_window_days: 30
@@ -441,42 +441,42 @@ mcp_gateway:
 
 ---
 
-## Orden de Implementación Recomendado
+## Recommended Implementation Order
 
 ```mermaid
 gantt
-    title Plan de Implementación Pando MCP Gateway
+    title Pando MCP Gateway Implementation Plan
     dateFormat  YYYY-MM-DD
-    section Fase 1
-    Dependencias Go           :f1a, 2026-03-13, 1d
+    section Phase 1
+    Go Dependencies           :f1a, 2026-03-13, 1d
     Package luaengine         :f1b, after f1a, 3d
     Config extension          :f1c, after f1b, 1d
     Integration mcp-tools     :f1d, after f1c, 2d
-    Tests Fase 1              :f1e, after f1d, 1d
-    section Fase 2
+    Tests Phase 1             :f1e, after f1d, 1d
+    section Phase 2
     SQLite migrations         :f2a, after f1e, 1d
     Package mcpgateway        :f2b, after f2a, 4d
     Proxy tools               :f2c, after f2b, 2d
     Favorite logic            :f2d, after f2c, 2d
-    Tests Fase 2              :f2e, after f2d, 1d
-    section Fase 3
-    Hook types y contexts     :f3a, after f2e, 2d
+    Tests Phase 2             :f2e, after f2d, 1d
+    section Phase 3
+    Hook types and contexts   :f3a, after f2e, 2d
     ExecuteHook method        :f3b, after f3a, 2d
     Integration points        :f3c, after f3b, 3d
-    Tests Fase 3              :f3d, after f3c, 1d
-    section Fase 4
+    Tests Phase 3             :f3d, after f3c, 1d
+    section Phase 4
     Connection pool           :f4a, after f3d, 2d
     Mesnada integration       :f4b, after f4a, 2d
-    TUI y docs                :f4c, after f4b, 3d
+    TUI and docs              :f4c, after f4b, 3d
     Final testing             :f4d, after f4c, 2d
 ```
 
 ---
 
-## Referencias
+## References
 
-- **Panorganon source code**: `/www/MCP/panorganon/` (indexado en remembrances como `www_MCP_panorganon`)
-- **Pando source code**: `/www/MCP/Pando/pando/` (indexado en remembrances como `www_MCP_Pando_pando`)
+- **Panorganon source code**: `/www/MCP/panorganon/` (indexed in remembrances as `www_MCP_panorganon`)
+- **Pando source code**: `/www/MCP/Pando/pando/` (indexed in remembrances as `www_MCP_Pando_pando`)
 - **gopherlua**: https://github.com/yuin/gopher-lua
 - **gopher-lua-libs**: https://github.com/vadv/gopher-lua-libs
 - **mcp-go**: https://github.com/mark3labs/mcp-go

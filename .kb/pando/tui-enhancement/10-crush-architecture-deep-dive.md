@@ -1,7 +1,7 @@
-# Crush - Análisis Arquitectónico Profundo
+# Crush - Deep Architectural Analysis
 
 ## Ultraviolet (UV) Rendering Framework
-Crush NO usa el patrón tradicional de bubbletea (View() → string). Usa **Ultraviolet**:
+Crush does NOT use the traditional bubbletea pattern (View() → string). It uses **Ultraviolet**:
 
 ```go
 // Canvas-based rendering
@@ -9,37 +9,37 @@ canvas := uv.NewScreenBuffer(width, height)
 m.Draw(canvas, canvas.Bounds())
 v.Content = canvas.Render()
 
-// En componentes
+// In components
 uv.NewStyledString(view).Draw(scr, area)
 ```
 
-**Diferencia con Pando**: Pando usa el patrón tradicional View() → string con lipgloss. No necesita migrar a UV, pero es bueno saber que el rendering de crush es más avanzado.
+**Difference with Pando**: Pando uses the traditional View() → string pattern with lipgloss. It doesn't need to migrate to UV, but it's good to know that crush's rendering is more advanced.
 
 ## UI States Machine
 ```
 uiOnboarding → uiInitialize → uiLanding → uiChat
 ```
-Cada estado tiene su propio set de keybindings y rendering.
+Each state has its own set of keybindings and rendering.
 
 ## Focus States
 ```go
 const (
-    uiFocusNone   // Sin focus (landing, onboarding)
-    uiFocusEditor // Focus en textarea
-    uiFocusMain   // Focus en chat (scroll, select)
+    uiFocusNone   // No focus (landing, onboarding)
+    uiFocusEditor // Focus on textarea
+    uiFocusMain   // Focus on chat (scroll, select)
 )
 ```
 
 ## Key Event Routing (handleKeyPressMsg)
-Orden de prioridad:
-1. `Ctrl+C` → siempre Quit dialog
-2. Diálogos abiertos → router a dialog.HandleMsg()
-3. `Esc` → cancelar agente / limpiar queue
-4. Según estado UI:
+Priority order:
+1. `Ctrl+C` → always Quit dialog
+2. Open dialogs → route to dialog.HandleMsg()
+3. `Esc` → cancel agent / clear queue
+4. Based on UI state:
    - **Editor focus**: Completions → Attachments → Editor keys → Global
    - **Chat focus**: Chat navigation keys
-5. **`@` detection**: trigger completions en tiempo real (línea 1664)
-6. **`/` detection**: cuando textarea vacío, abre command palette (línea 1649)
+5. **`@` detection**: trigger real-time completions (line 1664)
+6. **`/` detection**: when textarea empty, open command palette (line 1649)
 
 ## Commands Dialog (3 tabs)
 ```
@@ -56,12 +56,12 @@ Orden de prioridad:
 │ └─────────────────────────────┘ │
 └─────────────────────────────────┘
 ```
-- Tab/Shift+Tab entre System/User/MCP
-- Búsqueda fuzzy en tiempo real
-- Spinner durante carga async de User/MCP commands
+- Tab/Shift+Tab between System/User/MCP
+- Real-time fuzzy search
+- Spinner during async loading of User/MCP commands
 
 ## Pills (Todo/Queue)
-Sección entre chat y editor:
+Section between chat and editor:
 ```
 │ Chat messages...                    │
 ├─────────────────────────────────────┤
@@ -73,75 +73,75 @@ Sección entre chat y editor:
 ├─────────────────────────────────────┤
 │ Editor (input area)                 │
 ```
-- Toggle con Ctrl+T
+- Toggle with Ctrl+T
 - pillsExpanded boolean
 - pillSectionTodos / pillSectionQueue
 
-## Sidebar de Crush
+## Crush Sidebar
 ```
-├── Logo (small o large según altura)
+├── Logo (small or large based on height)
 ├── Session Title
 ├── Current Working Directory
-├── Model Info (nombre, provider, reasoning)
-├── Files Section (dinámico - máx 10)
-├── LSP Status Section (máx 8)
-└── MCP Status Section (máx 8)
+├── Model Info (name, provider, reasoning)
+├── Files Section (dynamic - max 10)
+├── LSP Status Section (max 8)
+└── MCP Status Section (max 8)
 ```
-- `getDynamicHeightLimits()` distribuye altura entre secciones
-- Modo compact: sidebar desaparece, header compacto + overlay con Ctrl+D
+- `getDynamicHeightLimits()` distributes height between sections
+- Compact mode: sidebar disappears, compact header + overlay with Ctrl+D
 
 ## Chat Message Types
 ```go
-UserMessageItem       // Mensajes del usuario (con attachments)
-AssistantMessageItem  // Respuestas (markdown rendered)
-ToolCallItem          // Herramientas ejecutadas
-TodoItem              // Items de todo (status + nombre)
-ReferencesItem        // Referencias a archivos
-SearchItem            // Búsquedas realizadas
-DiagnosticsItem       // Errores LSP
+UserMessageItem       // User messages (with attachments)
+AssistantMessageItem  // Responses (markdown rendered)
+ToolCallItem          // Executed tools
+TodoItem              // Todo items (status + name)
+ReferencesItem        // File references
+SearchItem            // Searches performed
+DiagnosticsItem       // LSP errors
 ```
 
-Cada uno:
-- Implementa `MessageItem` interface
-- Cache de render por ancho
-- Puede ser animado (solo si visible)
-- Soporta highlight (selección de texto)
-- Soporta focus
+Each one:
+- Implements `MessageItem` interface
+- Render cache by width
+- Can be animated (only if visible)
+- Supports highlight (text selection)
+- Supports focus
 
-## Lista Lazy-Loaded (list/list.go)
+## Lazy-Loaded List (list/list.go)
 ```go
 type List struct {
     items []Item
-    offsetIdx, offsetLine int   // Virtualización
+    offsetIdx, offsetLine int   // Virtualization
     selectedIdx int
-    renderCallbacks []func()    // Hooks pre-render
+    renderCallbacks []func()    // Pre-render hooks
 }
 ```
-- Solo renderiza items visibles
-- Callbacks de render para aplicar focus/highlight
-- Soporta gaps entre items
-- FilterableList con fuzzy search (sahilm/fuzzy)
+- Only renders visible items
+- Render callbacks to apply focus/highlight
+- Supports gaps between items
+- FilterableList with fuzzy search (sahilm/fuzzy)
 
-## Estilos con Gradientes
-- Usa `charmtone` para gradientes de color
-- Aplicados en Pills, herramientas, etc.
-- Estilos semánticos: Primary, Secondary, Tertiary, BgBase, FgBase, etc.
+## Gradient Styles
+- Uses `charmtone` for color gradients
+- Applied in Pills, tools, etc.
+- Semantic styles: Primary, Secondary, Tertiary, BgBase, FgBase, etc.
 
-## Patterns a Portar a Pando
+## Patterns to Port to Pando
 
-### 1. Action Pattern (RECOMENDADO)
-Los diálogos retornan Action types tipados, el modelo principal los procesa.
-Pando actualmente usa tea.Msg genéricos - podría beneficiarse de Actions.
+### 1. Action Pattern (RECOMMENDED)
+Dialogs return typed Action types, the main model processes them.
+Pando currently uses generic tea.Msg - could benefit from Actions.
 
-### 2. Lazy List con Callbacks (RECOMENDADO)
-La lista de crush solo renderiza lo visible y usa callbacks para transformar items.
-Pando usa viewport de bubbles - podría mejorar performance con lazy rendering.
+### 2. Lazy List with Callbacks (RECOMMENDED)
+Crush's list only renders visible items and uses callbacks to transform items.
+Pando uses bubbles viewport - could improve performance with lazy rendering.
 
-### 3. @ y / Detection (PARCIALMENTE IMPLEMENTADO)
-Pando ya tiene @ para completions. Podría mejorar / para slash commands.
+### 3. @ and / Detection (PARTIALLY IMPLEMENTED)
+Pando already has @ for completions. Could improve / for slash commands.
 
-### 4. Pills Todo/Queue (OPCIONAL)
-Podría ser útil para mostrar progreso del agente de forma más visual.
+### 4. Pills Todo/Queue (OPTIONAL)
+Could be useful for showing agent progress in a more visual way.
 
-### 5. Dynamic Sidebar Heights (RECOMENDADO)
-La distribución dinámica de altura entre secciones del sidebar es elegante.
+### 5. Dynamic Sidebar Heights (RECOMMENDED)
+Dynamic height distribution between sidebar sections is elegant.

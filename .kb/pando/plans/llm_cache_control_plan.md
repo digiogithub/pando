@@ -1,38 +1,38 @@
-# LLM Cache Control — Plan de Implementación
+# LLM Cache Control — Implementation Plan
 
-**Fecha**: 2026-04-24  
-**Estado**: Planificado  
-**Scope**: Control global de caché de prompts LLM — config, TUI, Web-UI  
+**Date**: 2026-04-24  
+**Status**: Planned  
+**Scope**: Global control of LLM prompt cache — config, TUI, Web-UI  
 
 ---
 
-## Contexto
+## Context
 
-### Estado actual del caching en cada proveedor
+### Current caching state per provider
 
-| Proveedor | Mecanismo | Controlado por código | Efecto de disableCache |
-|---|---|---|---|
-| **Anthropic** | `CacheControl: {type: "ephemeral"}` en mensajes, tools y system | Sí — `anthropicOptions.disableCache` | Real: elimina headers, ~90% ahorro en hits |
-| **OpenAI** | Automático/server-side (prefijo ≥1024 tokens) | No — `openaiOptions.disableCache` existe sin usar | Ninguno — no hay API para desactivarlo |
-| **Gemini** | Implícito (Gemini 2.5+, automático) + Explicit API (no usado) | No — `geminiOptions.disableCache` existe sin usar | Ninguno para implícito; controlaría explícito (futuro) |
-| **Bedrock** | Siempre desactivado (pasa `WithAnthropicDisableCache()`) | Sí — hardcoded | N/A |
-| **Copilot** | No implementado | No | N/A |
+| Provider | Mechanism | Code-controlled | Effect of disableCache |
+|---|---|---|---|---|
+| **Anthropic** | `CacheControl: {type: "ephemeral"}` on messages, tools and system | Yes — `anthropicOptions.disableCache` | Real: removes headers, ~90% savings on hits |
+| **OpenAI** | Automatic/server-side (prefix ≥1024 tokens) | No — `openaiOptions.disableCache` exists unused | None — no API to disable it |
+| **Gemini** | Implicit (Gemini 2.5+, automatic) + Explicit API (unused) | No — `geminiOptions.disableCache` exists unused | None for implicit; would control explicit (future) |
+| **Bedrock** | Always disabled (passes `WithAnthropicDisableCache()`) | Yes — hardcoded | N/A |
+| **Copilot** | Not implemented | No | N/A |
 
-### Archivos clave
-- `internal/llm/provider/anthropic.go`: `convertMessages()`, `convertTools()`, `preparedMessages()` — CacheControl activo
-- `internal/llm/provider/openai.go`: `disableCache` declarado pero sin efecto
-- `internal/llm/provider/gemini.go`: `disableCache` declarado pero sin efecto
-- `internal/llm/provider/provider.go`: `NewProvider()`, `NewProviderFromAccount()` — puntos de entrada
-- `internal/llm/agent/agent.go`: línea ~1246 — path `needsExtraOpts` crea providers directamente
-- `internal/config/config.go`: struct `Config`, patrón `UpdateXxx()`
+### Key files
+- `internal/llm/provider/anthropic.go`: `convertMessages()`, `convertTools()`, `preparedMessages()` — CacheControl active
+- `internal/llm/provider/openai.go`: `disableCache` declared but unused
+- `internal/llm/provider/gemini.go`: `disableCache` declared but unused
+- `internal/llm/provider/provider.go`: `NewProvider()`, `NewProviderFromAccount()` — entry points
+- `internal/llm/agent/agent.go`: line ~1246 — `needsExtraOpts` path creates providers directly
+- `internal/config/config.go`: `Config` struct, `UpdateXxx()` pattern
 - `internal/tui/page/settings.go`: `buildGeneralSection()`, `persistSetting()`
 - `internal/api/handlers_settings.go`: `SettingsResponse`, `handlePutSettings()`
 - `web-ui/src/stores/settingsStore.ts`: `DEFAULTS`, store
-- `web-ui/src/components/settings/GeneralSettings.tsx`: toggles de la sección General
+- `web-ui/src/components/settings/GeneralSettings.tsx`: General section toggles
 
 ---
 
-## Diseño
+## Design
 
 ### Config key
 ```go
@@ -40,61 +40,61 @@ type LLMCacheConfig struct {
     Enabled bool `json:"enabled" toml:"Enabled"`
 }
 ```
-Campo en `Config`: `LLMCache LLMCacheConfig`  
-Default: `true` (caché activado por defecto)  
-**Nota**: Como el zero-value de bool en Go es `false`, se debe inicializar explícitamente a `true` en el path de carga del config (antes de hacer unmarshal o como post-process).
+Field in `Config`: `LLMCache LLMCacheConfig`  
+Default: `true` (cache enabled by default)  
+**Note**: Since the zero-value of bool in Go is `false`, it must be explicitly initialized to `true` in the config loading path (before unmarshal or as post-processing).
 
-### Propagación
-`config.LLMCache.Enabled = false` → providers reciben `WithXxxDisableCache()` → Anthropic omite CacheControl headers → coste reducido a precio estándar.
+### Propagation
+`config.LLMCache.Enabled = false` → providers receive `WithXxxDisableCache()` → Anthropic omits CacheControl headers → cost reduced to standard pricing.
 
 ---
 
-## Fases
+## Phases
 
 ### Phase 1 — Config struct + UpdateLLMCache
 **Fact ID**: `llm_cache_phase1_config`
 
-- Añadir `LLMCacheConfig` struct al final de los tipos de config
-- Añadir `LLMCache LLMCacheConfig` a `Config`
-- Añadir `UpdateLLMCache(enabled bool) error` (mismo patrón que `UpdateAutoCompact`)
-- Asegurar default `true`: en la función de carga del config, después del unmarshal, si no hay override explícito, forzar `cfg.LLMCache.Enabled = true`. La forma más limpia es usar `initDefaults()` antes del unmarshal o verificar post-unmarshal si el campo fue leído del archivo.
+- Add `LLMCacheConfig` struct at the end of config types
+- Add `LLMCache LLMCacheConfig` to `Config`
+- Add `UpdateLLMCache(enabled bool) error` (same pattern as `UpdateAutoCompact`)
+- Ensure default `true`: in the config loading function, after unmarshal, if there is no explicit override, force `cfg.LLMCache.Enabled = true`. The cleanest way is to use `initDefaults()` before unmarshal or verify post-unmarshal if the field was read from the file.
 
 ### Phase 2 — Provider factory wiring
 **Fact ID**: `llm_cache_phase2_provider_wiring`
 
-- En `provider.go`: añadir helper `CacheDisabledOptions(providerName)` que lee `config.Get().LLMCache.Enabled`
-- Actualizar `NewProviderFromAccount()` para llamar al helper
-- Actualizar path `needsExtraOpts` en `agent.go` para aplicar las opciones de cache
-- Bedrock: sin cambios (siempre desactivado)
+- In `provider.go`: add helper `CacheDisabledOptions(providerName)` that reads `config.Get().LLMCache.Enabled`
+- Update `NewProviderFromAccount()` to call the helper
+- Update `needsExtraOpts` path in `agent.go` to apply cache options
+- Bedrock: no changes (always disabled)
 
 ### Phase 3 — OpenAI + Gemini disableCache implementation  
 **Fact ID**: `llm_cache_phase3_openai_gemini_impl`
 
-- Documentar con comentarios en `openai.go` y `gemini.go` que el flag está wired pero el caching server-side de estos proveedores no se puede desactivar vía API
-- El flag queda preparado para cuando los proveedores añadan esta capacidad
+- Document with comments in `openai.go` and `gemini.go` that the flag is wired but server-side caching from these providers cannot be disabled via API
+- The flag is prepared for when providers add this capability
 
 ### Phase 4 — TUI settings
 **Fact ID**: `llm_cache_phase4_tui_settings`
 
-- En `buildGeneralSection()`: añadir toggle con key `"llmCache.enabled"`, label "LLM Prompt Cache"
-- En `persistSetting()`: añadir case para `"llmCache.enabled"` → llamar `config.UpdateLLMCache()`
-- Ubicación: sección "General" bajo grupo "Core"
+- In `buildGeneralSection()`: add toggle with key `"llmCache.enabled"`, label "LLM Prompt Cache"
+- In `persistSetting()`: add case for `"llmCache.enabled"` → call `config.UpdateLLMCache()`
+- Location: "General" section under "Core" group
 
 ### Phase 5 — Web-UI + API backend
 **Fact ID**: `llm_cache_phase5_webui_api`
 
-- `handlers_settings.go`: añadir `LLMCacheEnabled bool` a respuesta, `*bool` al request, wire en GET y PUT
-- `web-ui/src/types/index.ts`: añadir `llm_cache_enabled: boolean` a `SettingsConfig`
-- `web-ui/src/stores/settingsStore.ts`: añadir a `DEFAULTS` con valor `true`
-- `web-ui/src/components/settings/GeneralSettings.tsx`: añadir Toggle en sección de toggles
-- Añadir claves i18n para label y descripción
+- `handlers_settings.go`: add `LLMCacheEnabled bool` to response, `*bool` to request, wire in GET and PUT
+- `web-ui/src/types/index.ts`: add `llm_cache_enabled: boolean` to `SettingsConfig`
+- `web-ui/src/stores/settingsStore.ts`: add to `DEFAULTS` with value `true`
+- `web-ui/src/components/settings/GeneralSettings.tsx`: add Toggle in toggle section
+- Add i18n keys for label and description
 
-### Phase 6 — Tests + Documentación
+### Phase 6 — Tests + Documentation
 **Fact ID**: `llm_cache_phase6_tests_docs`
 
-- Go tests en `internal/llm/provider/anthropic_test.go` y `internal/config/config_test.go`
-- Python integration tests en `tests/test_llm_cache_config.py`
-- Docs en KB: `pando/docs/llm-cache.md`
+- Go tests in `internal/llm/provider/anthropic_test.go` and `internal/config/config_test.go`
+- Python integration tests in `tests/test_llm_cache_config.py`
+- Docs in KB: `pando/docs/llm-cache.md`
 
 ---
 
@@ -103,7 +103,7 @@ Default: `true` (caché activado por defecto)
 **TOML**:
 ```toml
 [LLMCache]
-  Enabled = false  # Desactiva caching de prompts (afecta principalmente a Anthropic)
+  Enabled = false  # Disables prompt caching (mainly affects Anthropic)
 ```
 
 **JSON**:
@@ -117,9 +117,9 @@ Default: `true` (caché activado por defecto)
 
 ---
 
-## Notas importantes
+## Important notes
 
-1. **Solo Anthropic tiene efecto real**: OpenAI y Gemini usan caching automático server-side sin API para desactivarlo. El flag queda preparado para el futuro.
-2. **Bedrock no cambia**: siempre desactiva cache con `WithAnthropicDisableCache()`.
-3. **Default = true**: caching activado por defecto, alineado con el comportamiento actual.
-4. **Sin restart requerido**: el flag se lee en cada creación de provider (por sesión), por lo que el cambio aplica en la siguiente sesión sin restart.
+1. **Only Anthropic has real effect**: OpenAI and Gemini use automatic server-side caching with no API to disable it. The flag is prepared for the future.
+2. **Bedrock doesn't change**: always disables cache with `WithAnthropicDisableCache()`.
+3. **Default = true**: cache enabled by default, aligned with current behavior.
+4. **No restart required**: the flag is read on each provider creation (per session), so the change applies in the next session without restart.

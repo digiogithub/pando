@@ -1,54 +1,54 @@
 <img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" style="height:64px;margin-right:32px"/>
 
-# uso últimamente con jj vcs . Tiene una funcionalidad de establecer puntos de cambio antes de iniciar cambios y trackea todo mejor que git que debes de añadir ficheros que no existían. Cómo podría añadir una funcionalidad similar a jj vcs en una aplicación golang sin dependencias externas?
+# I've been using jj vcs lately. It has functionality to set change points before starting changes and tracks everything better than git where you have to add files that didn't exist. How could I add similar functionality to jj vcs in a golang application without external dependencies?
 
-Sí: la idea clave de **jj** no es solo “trackear mejor”, sino modelar el trabajo como una *working copy snapshot* asociada a un cambio activo, con auto-snapshot de archivos nuevos y borrados, en vez de depender de un staging explícito como Git.  En Go, sin dependencias externas, puedes replicar bastante bien esa experiencia si diseñas tu app alrededor de “cambios abiertos” + snapshot automático del árbol de trabajo.[^1_1][^1_2]
+Yes: the key idea of **jj** is not just "tracking better", but modeling work as a *working copy snapshot* associated with an active change, with auto-snapshot of new and deleted files, instead of relying on explicit staging like Git. In Go, without external dependencies, you can replicate this experience quite well if you design your app around "open changes" + automatic working tree snapshots.[^1_1][^1_2]
 
-## Qué copiar de jj
+## What to copy from jj
 
-En jj, la copia de trabajo pertenece a un “working-copy commit”, y la herramienta suele crear un nuevo snapshot automáticamente cuando detecta cambios; además, los archivos nuevos se rastrean implícitamente por defecto y los borrados pasan a reflejarse sin `add` manual.  También existe la idea de “abrir un nuevo cambio” para separar el trabajo siguiente, en lugar de ir acumulando todo en el mismo estado.[^1_2][^1_1]
+In jj, the working copy belongs to a "working-copy commit", and the tool usually creates a new snapshot automatically when it detects changes; additionally, new files are implicitly tracked by default and deletions are reflected without manual `add`. There's also the idea of "opening a new change" to separate the next work, instead of accumulating everything in the same state.[^1_2][^1_1]
 
-Eso se puede traducir a tu app como:
+This can be translated to your app as:
 
-- Un cambio activo actual.
-- Un comando tipo `new` o `begin` que crea un punto base antes de editar.[^1_1]
-- Un escaneo del workspace que detecta altas, modificaciones y bajas automáticamente.[^1_1]
-- Reglas de ignore para no meter temporales o builds por accidente.[^1_1]
-
-
-## Diseño mínimo
-
-La arquitectura más simple es guardar un metadirectorio, por ejemplo `.myvcs/`, con:
-
-- `HEAD`: id del cambio activo.
-- `changes/<id>.json`: metadata del cambio, padres, timestamps, mensaje.
-- `objects/`: blobs por hash de contenido.
-- `snapshots/<id>.json`: mapa `path -> blobHash | tombstone`.
-- `index-ignore`: reglas tipo `.gitignore` simplificadas.
-
-Cada “change” puede ser mutable, y cada snapshot nuevo reemplaza el snapshot previo del cambio activo, igual que jj reemplaza la revisión de working copy por otra más reciente cuando detecta cambios.  Si quieres acercarte todavía más a jj, separa `change ID` estable de `snapshot ID` inmutable.[^1_3][^1_1]
-
-## Flujo recomendado
-
-El flujo sería:
-
-1. `begin "mensaje"` crea un cambio vacío con padre = snapshot actual.[^1_1]
-2. El usuario edita archivos libremente.
-3. Cualquier comando relevante (`status`, `diff`, `save`, `log`) primero ejecuta `snapshotWorkingCopy()`.[^1_1]
-4. Ese snapshot compara disco vs snapshot anterior del cambio activo y actualiza automáticamente altas, bajas y modificaciones.[^1_1]
-
-Ejemplo de comportamiento:
-
-- Creas `foo.go` y no llamas a `add`.
-- Ejecutas `status`.
-- Tu app hace escaneo, calcula hash del archivo y lo mete en el snapshot activo automáticamente, como hace jj con archivos nuevos.[^1_2][^1_1]
+- A current active change.
+- A `new` or `begin` command that creates a base point before editing.[^1_1]
+- A workspace scan that automatically detects additions, modifications and deletions.[^1_1]
+- Ignore rules to not accidentally include temporary files or builds.[^1_1]
 
 
-## Implementación en Go
+## Minimum design
 
-Puedes hacerlo solo con librería estándar: `os`, `io`, `path/filepath`, `crypto/sha256`, `encoding/json`, `bufio`, `strings`, `time`. La pieza central es construir un manifiesto del árbol de trabajo y compararlo contra el snapshot anterior.
+The simplest architecture is to store a metadirectory, for example `.myvcs/`, with:
 
-Estructuras simples:
+- `HEAD`: id of the active change.
+- `changes/<id>.json`: change metadata, parents, timestamps, message.
+- `objects/`: blobs by content hash.
+- `snapshots/<id>.json`: map `path -> blobHash | tombstone`.
+- `index-ignore`: simplified `.gitignore`-style rules.
+
+Each "change" can be mutable, and each new snapshot replaces the previous snapshot of the active change, just like jj replaces the working copy revision with a newer one when it detects changes. If you want to get even closer to jj, separate the stable `change ID` from the immutable `snapshot ID`.[^1_3][^1_1]
+
+## Recommended flow
+
+The flow would be:
+
+1. `begin "message"` creates an empty change with parent = current snapshot.[^1_1]
+2. The user edits files freely.
+3. Any relevant command (`status`, `diff`, `save`, `log`) first runs `snapshotWorkingCopy()`.[^1_1]
+4. That snapshot compares disk vs previous snapshot of the active change and automatically updates additions, deletions and modifications.[^1_1]
+
+Behavior example:
+
+- You create `foo.go` and don't call `add`.
+- You run `status`.
+- Your app does a scan, calculates the file hash and puts it in the active snapshot automatically, like jj does with new files.[^1_2][^1_1]
+
+
+## Implementation in Go
+
+You can do it with only the standard library: `os`, `io`, `path/filepath`, `crypto/sha256`, `encoding/json`, `bufio`, `strings`, `time`. The central piece is building a working tree manifest and comparing it against the previous snapshot.
+
+Simple structures:
 
 ```go
 type Change struct {
@@ -68,7 +68,7 @@ type Snapshot struct {
 }
 ```
 
-Pseudocódigo del snapshot:
+Snapshot pseudocode:
 
 ```go
 func snapshotWorkingCopy(root string, current Snapshot, ignore func(string) bool) (Snapshot, error) {
@@ -124,25 +124,25 @@ func snapshotWorkingCopy(root string, current Snapshot, ignore func(string) bool
 }
 ```
 
-El hash del blob puede ser SHA-256, y si el blob no existe aún en `objects/`, lo escribes una sola vez. Eso te da deduplicación básica sin ninguna dependencia externa.
+The blob hash can be SHA-256, and if the blob doesn't exist yet in `objects/`, you write it once. That gives you basic deduplication without any external dependencies.
 
-## Decisiones importantes
+## Important decisions
 
-Si quieres que se sienta realmente como jj, te recomiendo estas decisiones:
+If you want it to really feel like jj, I recommend these decisions:
 
-- Haz auto-snapshot antes de casi cualquier comando, no solo en `commit`, porque jj actualiza el estado de working copy al ejecutar muchos comandos.[^1_1]
-- Considera nuevos archivos como tracked por defecto, salvo ignore match.[^1_2][^1_1]
-- Modela borrados como tombstones en el snapshot, no como ausencia silenciosa, para poder calcular diffs bien.
-- Añade `untrack <path>` para excluir un archivo manteniéndolo en disco, parecido al comportamiento documentado por jj.[^1_1]
+- Do auto-snapshot before almost any command, not just on `commit`, because jj updates the working copy state when running many commands.[^1_1]
+- Consider new files as tracked by default, unless ignore match.[^1_2][^1_1]
+- Model deletions as tombstones in the snapshot, not as silent absence, to be able to calculate diffs properly.
+- Add `untrack <path>` to exclude a file while keeping it on disk, similar to the behavior documented by jj.[^1_1]
 
-Y si quieres algo pragmático para una app de negocio, no hace falta implementar un VCS completo:
+And if you want something pragmatic for a business app, you don't need to implement a complete VCS:
 
-- Mantén un único cambio activo por workspace.
-- Guarda snapshots enteros por simplicidad.
-- Genera diffs al vuelo comparando dos mapas `path -> hash`.
-- Deja merge/rebase para una fase posterior.
+- Keep a single active change per workspace.
+- Store whole snapshots for simplicity.
+- Generate diffs on the fly by comparing two `path -> hash` maps.
+- Leave merge/rebase for a later phase.
 
-Si quieres, te puedo preparar a continuación un prototipo funcional en Go, sin dependencias externas, con comandos `init`, `begin`, `status`, `save` y auto-tracking de archivos nuevos.
+If you want, I can prepare a functional prototype in Go for you next, without external dependencies, with `init`, `begin`, `status`, `save` commands and auto-tracking of new files.
 <span style="display:none">[^1_10][^1_11][^1_12][^1_13][^1_14][^1_15][^1_4][^1_5][^1_6][^1_7][^1_8][^1_9]</span>
 
 <div align="center">⁂</div>
@@ -180,30 +180,30 @@ Si quieres, te puedo preparar a continuación un prototipo funcional en Go, sin 
 
 ---
 
-# cómo podría tener mi propia implementación de jj para que cada sesión de AI trabaje una rama o versión diferente de ficheros que luego puedo incorporar por defecto, o descartar los cambio, dame el comienzo de código
+# how could I have my own jj implementation so that each AI session works on a different branch or file version that I can then incorporate by default, or discard the changes, give me the code start
 
-Sí: para tu caso no necesitas clonar todo jj, sino construir un motor de **workspaces efímeros** donde cada sesión de AI tenga su propio cambio mutable sobre una base común, y luego puedas hacer `apply` o `discard` sobre esa sesión. En jj, la working copy es un snapshot mutable que se autoactualiza y los cambios se organizan como revisiones editables; esa idea encaja muy bien con “una sesión AI = una rama/cambio aislado”.[^2_1][^2_2][^2_3]
+Yes: for your case you don't need to clone all of jj, but build an **ephemeral workspaces engine** where each AI session has its own mutable change on a common base, and then you can `apply` or `discard` that session. In jj, the working copy is a mutable snapshot that auto-updates and changes are organized as editable revisions; that idea fits very well with "one AI session = one isolated branch/change".[^2_1][^2_2][^2_3]
 
-## Modelo mental
+## Mental model
 
-La forma más práctica es pensar en tres capas:
+The most practical way is to think in three layers:
 
-- `base snapshot`: el estado aprobado actual.
-- `session snapshot`: los cambios de una sesión AI concreta.
-- `overlay materializado`: los ficheros que ve esa sesión en disco o en memoria.[^2_3][^2_1]
+- `base snapshot`: the current approved state.
+- `session snapshot`: the changes of a specific AI session.
+- `overlay materialized`: the files that session sees on disk or in memory.[^2_3][^2_1]
 
-En vez de ramas Git, cada sesión puede apuntar a `BaseID + cambios propios`, y cuando termina haces una de dos cosas: incorporar el snapshot de sesión a la base, o abandonarlo. En jj, editar cambios mutables y reubicar trabajo después es parte del flujo normal; aquí usarías el mismo patrón, pero orientado a sesiones de agentes.[^2_4][^2_3]
+Instead of Git branches, each session can point to `BaseID + own changes`, and when it finishes you do one of two things: incorporate the session snapshot into the base, or abandon it. In jj, editing mutable changes and relocating work afterwards is part of the normal flow; here you'd use the same pattern, but oriented to agent sessions.[^2_4][^2_3]
 
-## Diseño simple
+## Simple design
 
-Haz un directorio como `.aijj/` con esta estructura:
+Create a directory like `.aijj/` with this structure:
 
-- `objects/`: blobs por hash.
-- `snapshots/`: mapas `path -> blobHash`.
-- `sessions/`: metadata de cada sesión.
-- `HEAD`: snapshot base actual.[^2_1]
+- `objects/`: blobs by hash.
+- `snapshots/`: maps `path -> blobHash`.
+- `sessions/`: metadata of each session.
+- `HEAD`: current base snapshot.[^2_1]
 
-Tipos mínimos en Go:
+Minimum types in Go:
 
 ```go
 package aijj
@@ -233,24 +233,24 @@ type Session struct {
 }
 ```
 
-La decisión importante es que una sesión no “posee” ficheros completos, sino un `HeadSnapshotID` que representa su versión actual. Así puedes crear muchas sesiones desde la misma base sin duplicar demasiado estado.[^2_5][^2_6]
+The important decision is that a session doesn't "own" complete files, but a `HeadSnapshotID` that represents its current version. This way you can create many sessions from the same base without duplicating too much state.[^2_5][^2_6]
 
-## Flujo de sesiones
+## Session flow
 
-El flujo mínimo sería este:
+The minimum flow would be:
 
-1. `Init(repoRoot)` crea `.aijj/` y un snapshot base vacío o inicial.
-2. `NewSession(name)` crea una sesión nueva apuntando al `HEAD` actual.
-3. La AI escribe archivos en un workspace de sesión o mediante API.
-4. `SaveSession(sessionID)` reescanea archivos y genera un nuevo snapshot.
-5. `ApplySession(sessionID)` convierte ese snapshot en la nueva base.
-6. `DiscardSession(sessionID)` marca la sesión como descartada.[^2_2][^2_1]
+1. `Init(repoRoot)` creates `.aijj/` and an empty or initial base snapshot.
+2. `NewSession(name)` creates a new session pointing to the current `HEAD`.
+3. The AI writes files in a session workspace or via API.
+4. `SaveSession(sessionID)` rescans files and generates a new snapshot.
+5. `ApplySession(sessionID)` converts that snapshot into the new base.
+6. `DiscardSession(sessionID)` marks the session as discarded.[^2_2][^2_1]
 
-Si varias sesiones parten de la misma base, puedes empezar con una política simple: solo permitir `apply` si la base no ha cambiado desde que nació la sesión. Si cambió, devuelves conflicto y más adelante implementas merge de tres vías. Esa restricción te simplifica muchísimo el comienzo.[^2_7]
+If several sessions start from the same base, you can start with a simple policy: only allow `apply` if the base hasn't changed since the session was born. If it changed, return conflict and later implement three-way merge. That restriction simplifies the beginning a lot.[^2_7]
 
-## Comienzo de código
+## Code start
 
-Abajo tienes una base funcional de arranque, sin dependencias externas, centrada en crear sesiones, guardar snapshots y aplicar o descartar. Está pensada para evolucionar luego hacia diff, merge y workspaces materializados.
+Below you have a functional starting base, without external dependencies, focused on creating sessions, saving snapshots and applying or discarding. It's designed to later evolve towards diff, merge and materialized workspaces.
 
 ```go
 package aijj
@@ -639,25 +639,25 @@ func (r *Repo) DiffSession(id SessionID) ([]string, error) {
 ```
 
 
-## Cómo usarlo
+## How to use it
 
-La forma más limpia es que cada sesión AI trabaje en un directorio materializado propio, por ejemplo:
+The cleanest way is for each AI session to work in its own materialized directory, for example:
 
 - `sessions/agent-1/`
 - `sessions/agent-2/`
 - `sessions/reviewer/`
 
-Creas la sesión, materializas su snapshot, dejas que el agente escriba ahí, y luego llamas a `SaveSessionFromDir()`. Si el resultado te gusta, haces `ApplySession()`; si no, `DiscardSession()`. Esto imita bastante bien la idea de cambios editables y snapshots automáticos de jj, pero simplificado a tu caso.[^2_2][^2_3][^2_1]
+You create the session, materialize its snapshot, let the agent write there, and then call `SaveSessionFromDir()`. If you like the result, you do `ApplySession()`; if not, `DiscardSession()`. This imitates jj's idea of editable changes and automatic snapshots quite well, but simplified for your case.[^2_2][^2_3][^2_1]
 
-Lo siguiente que yo implementaría sería:
+What I would implement next is:
 
 - `ignore patterns`
 - `three-way merge`
-- `diff de contenido`
-- `checkout de sesión`
-- `locks` para concurrencia entre agentes
+- content `diff`
+- session `checkout`
+- `locks` for concurrency between agents
 
-Si quieres, en el siguiente mensaje te preparo un **CLI completo en Go** (`init`, `session new`, `session save`, `session diff`, `session apply`, `session discard`) sobre esta base.
+If you want, in the next message I'll prepare a **complete CLI in Go** (`init`, `session new`, `session save`, `session diff`, `session apply`, `session discard`) on this base.
 <span style="display:none">[^2_10][^2_11][^2_12][^2_13][^2_14][^2_15][^2_8][^2_9]</span>
 
 <div align="center">⁂</div>
@@ -695,20 +695,20 @@ Si quieres, en el siguiente mensaje te preparo un **CLI completo en Go** (`init`
 
 ---
 
-# adelante, prepara un cli completo en go
+# go ahead, prepare a complete cli in go
 
-Sí: abajo te dejo un CLI completo en Go, sin dependencias externas, con subcomandos usando `flag.FlagSet`, que es el enfoque estándar para CLI con subcommands en la librería estándar.  La idea sigue el modelo de jj de trabajar sobre una working copy/snapshot mutable, pero adaptado a “sesiones AI” que puedes aplicar o descartar.[^3_1][^3_2][^3_3][^3_4]
+Yes: below I leave you a complete CLI in Go, without external dependencies, with subcommands using `flag.FlagSet`, which is the standard approach for CLIs with subcommands in the standard library. The idea follows jj's model of working on a mutable working copy/snapshot, but adapted to "AI sessions" that you can apply or discard.[^3_1][^3_2][^3_3][^3_4]
 
-## Estructura
+## Structure
 
-Te propongo este layout mínimo:
+I propose this minimal layout:
 
 - `go.mod`
 - `main.go`
 - `aijj/repo.go`
 - `aijj/cli.go`
 
-Con esto tendrás:
+With this you'll have:
 
 - `aijj init`
 - `aijj session new`
@@ -724,7 +724,7 @@ Con esto tendrás:
 ## go.mod
 
 ```go
-module github.com/tuusuario/aijj
+module github.com/youruser/aijj
 
 go 1.22
 ```
@@ -1217,9 +1217,9 @@ func (c *CLI) Run(args []string) int {
 }
 
 func (c *CLI) usage() {
-	fmt.Fprintln(c.Stdout, "aijj - snapshots por sesión AI")
+	fmt.Fprintln(c.Stdout, "aijj - snapshots per AI session")
 	fmt.Fprintln(c.Stdout, "")
-	fmt.Fprintln(c.Stdout, "Uso:")
+	fmt.Fprintln(c.Stdout, "Usage:")
 	fmt.Fprintln(c.Stdout, "  aijj init [-repo PATH]")
 	fmt.Fprintln(c.Stdout, "  aijj head [-repo PATH]")
 	fmt.Fprintln(c.Stdout, "  aijj session new -name NAME [-repo PATH]")
@@ -1235,7 +1235,7 @@ func (c *CLI) runInit(args []string) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 
-	repoPath := fs.String("repo", ".", "ruta del repositorio")
+	repoPath := fs.String("repo", ".", "repository path")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -1253,7 +1253,7 @@ func (c *CLI) runHead(args []string) int {
 	fs := flag.NewFlagSet("head", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 
-	repoPath := fs.String("repo", ".", "ruta del repositorio")
+	repoPath := fs.String("repo", ".", "repository path")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -1308,8 +1308,8 @@ func (c *CLI) runSessionNew(args []string) int {
 	fs := flag.NewFlagSet("session new", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 
-	repoPath := fs.String("repo", ".", "ruta del repositorio")
-	name := fs.String("name", "", "nombre de la sesión")
+	repoPath := fs.String("repo", ".", "repository path")
+	name := fs.String("name", "", "session name")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -1341,7 +1341,7 @@ func (c *CLI) runSessionList(args []string) int {
 	fs := flag.NewFlagSet("session list", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 
-	repoPath := fs.String("repo", ".", "ruta del repositorio")
+	repoPath := fs.String("repo", ".", "repository path")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -1368,7 +1368,7 @@ func (c *CLI) runSessionMaterialize(args []string) int {
 	fs := flag.NewFlagSet("session materialize", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 
-	repoPath := fs.String("repo", ".", "ruta del repositorio")
+	repoPath := fs.String("repo", ".", "repository path")
 	id := fs.String("id", "", "session id")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -1398,9 +1398,9 @@ func (c *CLI) runSessionSave(args []string) int {
 	fs := flag.NewFlagSet("session save", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 
-	repoPath := fs.String("repo", ".", "ruta del repositorio")
+	repoPath := fs.String("repo", ".", "repository path")
 	id := fs.String("id", "", "session id")
-	msg := fs.String("m", "session save", "mensaje del snapshot")
+	msg := fs.String("m", "session save", "snapshot message")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -1431,7 +1431,7 @@ func (c *CLI) runSessionDiff(args []string) int {
 	fs := flag.NewFlagSet("session diff", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 
-	repoPath := fs.String("repo", ".", "ruta del repositorio")
+	repoPath := fs.String("repo", ".", "repository path")
 	id := fs.String("id", "", "session id")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -1468,7 +1468,7 @@ func (c *CLI) runSessionApply(args []string) int {
 	fs := flag.NewFlagSet("session apply", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 
-	repoPath := fs.String("repo", ".", "ruta del repositorio")
+	repoPath := fs.String("repo", ".", "repository path")
 	id := fs.String("id", "", "session id")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -1497,7 +1497,7 @@ func (c *CLI) runSessionDiscard(args []string) int {
 	fs := flag.NewFlagSet("session discard", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 
-	repoPath := fs.String("repo", ".", "ruta del repositorio")
+	repoPath := fs.String("repo", ".", "repository path")
 	id := fs.String("id", "", "session id")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -1532,7 +1532,7 @@ package main
 import (
 	"os"
 
-	"github.com/tuusuario/aijj/aijj"
+	"github.com/youruser/aijj/aijj"
 )
 
 func main() {
@@ -1542,11 +1542,11 @@ func main() {
 ```
 
 
-## Uso real
+## Real usage
 
-Con esto ya tienes un flujo bastante útil para agentes AI que trabajan aislados sobre snapshots, algo conceptualmente cercano a la working copy editable de jj.[^3_3][^3_4]
+With this you already have a quite useful flow for AI agents that work isolated on snapshots, something conceptually close to jj's editable working copy.[^3_3][^3_4]
 
-Ejemplo:
+Example:
 
 ```bash
 go build -o aijj .
@@ -1556,7 +1556,7 @@ go build -o aijj .
 ./aijj session list
 ./aijj session materialize -id sess_20260315T225200.000000000
 
-# la AI escribe en .aijj/workspaces/<session-id>/
+# the AI writes in .aijj/workspaces/<session-id>/
 
 ./aijj session save -id sess_20260315T225200.000000000 -m "refactor auth middleware"
 ./aijj session diff -id sess_20260315T225200.000000000
@@ -1564,17 +1564,17 @@ go build -o aijj .
 ```
 
 
-## Qué mejoraría ya
+## What I would improve now
 
-Para producción, yo añadiría estas piezas primero:
+For production, I would add these pieces first:
 
-- `.aijjignore`, para no snapshotear binarios, caches o `.git/`.
-- Lock de repositorio, para que dos agentes no hagan `apply` a la vez.
-- Merge de tres vías, porque ahora `apply` falla si cambió la base entre medias.
-- Diff de contenido por archivo, porque ahora solo informa `A/M/D`.
-- Un comando `session exec` para lanzar directamente un agente dentro del workspace materializado.[^3_6][^3_1]
+- `.aijjignore`, to not snapshot binaries, caches or `.git/`.
+- Repository lock, so two agents don't `apply` at the same time.
+- Three-way merge, because now `apply` fails if the base changed in between.
+- Per-file content diff, because now it only reports `A/M/D`.
+- A `session exec` command to directly launch an agent in the materialized workspace.[^3_6][^3_1]
 
-Si quieres, el siguiente paso te lo doy ya hecho: un `Makefile`, tests básicos y una mejora para que `session save` detecte automáticamente borrados, ignores y conflictos de aplicación.
+If you want, the next step I'll give you ready-made: a `Makefile`, basic tests and an improvement so that `session save` automatically detects deletions, ignores and application conflicts.
 <span style="display:none">[^3_10][^3_11][^3_12][^3_13][^3_14][^3_15][^3_7][^3_8][^3_9]</span>
 
 <div align="center">⁂</div>
@@ -1608,4 +1608,3 @@ Si quieres, el siguiente paso te lo doy ya hecho: un `Makefile`, tests básicos 
 [^3_14]: https://github.com/cosiner/flag
 
 [^3_15]: https://github.com/jj-vcs/jj/blob/main/docs/git-comparison.md
-

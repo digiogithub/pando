@@ -1,20 +1,20 @@
-# Implementación del Desktop Web UI para Pando (Fase 3)
+# Desktop Web UI Implementation for Pando (Phase 3)
 
-## Empaquetado Desktop mediante Tauri/Wails (The App)
+## Desktop Packaging via Tauri/Wails (The App)
 
-**Objetivo:** Agrupar y empaquetar la SPA desarrollada en la Fase 2 en una aplicación nativa de escritorio (App Desktop).
+**Objective:** Bundle and package the SPA developed in Phase 2 into a native desktop application (Desktop App).
 
-### Componentes Principales:
-1. **Selección del Wrapper:**
-   - Opcion A: **Wails:** Mucho más directo para Pando (compilaría la UI + Go al mismo ejecutable, sin necesidad de un proceso sidecar).
-   - Opción B: **Tauri (Rust) + Pando Sidecar:** Idéntica a la estructura de OpenCode. La UI de SolidJS + Tauri se comunica o invoca el proceso `pando` localmente.
-   
-2. **Ciclo de Vida de la App (Sidecar Management - Si es Tauri):**
-   - Igual que lo que hace `src-tauri/src/cli.rs` en OpenCode, Pando Desktop iniciará un subproceso (`ChildProcess`) del servidor de Pando al iniciarse, capturará `stdout`/`stderr` y forzará la finalización al cerrarse la interfaz gráfica.
+### Main Components:
+1. **Wrapper Selection:**
+   - Option A: **Wails:** Much more straightforward for Pando (would compile the UI + Go into the same executable, without needing a sidecar process).
+   - Option B: **Tauri (Rust) + Pando Sidecar:** Identical to the OpenCode structure. The SolidJS + Tauri UI communicates with or invokes the local `pando` process.
+    
+2. **App Lifecycle (Sidecar Management - If using Tauri):**
+   - Similar to what `src-tauri/src/cli.rs` does in OpenCode, Pando Desktop will start a child process (`ChildProcess`) of the Pando server at startup, capture `stdout`/`stderr`, and force termination when the GUI is closed.
 
-3. **Capacidades del SO:**
-   - Configurar Deep Linking, Portapapeles gestionado (`@tauri-apps/plugin-clipboard-manager`), notificaciones del sistema para estado de automatización, y modo de bandeja de sistema (System Tray).
+3. **OS Capabilities:**
+   - Configure Deep Linking, managed Clipboard (`@tauri-apps/plugin-clipboard-manager`), system notifications for automation status, and System Tray mode.
 
-### Criterios de Finalización:
-- Un binario ejectuable `.AppImage`, `.dmg` o `.exe`.
-- Al abrirlo, muestra la ventana Web, inicializa en el fondo las abstracciones de Go (el agente local), y están interconectados sin intervención manual.
+### Completion Criteria:
+- An executable binary `.AppImage`, `.dmg`, or `.exe`.
+- When opened, it displays the Web window, initializes the Go abstractions (local agent) in the background, and they are interconnected without manual intervention.

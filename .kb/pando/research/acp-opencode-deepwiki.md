@@ -1,29 +1,29 @@
 # DeepWiki Q&A with Code Context for Repository: sst/opencode
 ## Q1
-Soporta opencode una tool todo write y visualización de un plan con tareas a través de ACP?
+Does opencode support a todo write tool and plan visualization with tasks through ACP?
 ### Answer
-Sí, OpenCode soporta la herramienta `todowrite` y la visualización de planes con tareas a través de ACP. opencode:349-374 
+Yes, OpenCode supports the `todowrite` tool and plan visualization with tasks through ACP. opencode:349-374
 
-## Detalles de la implementación
+## Implementation Details
 
-### Herramienta TodoWrite
-La herramienta `todowrite` está disponible en el sistema de herramientas de OpenCode y se usa para gestionar listas de tareas durante sesiones de codificación. opencode:1-57 
+### TodoWrite Tool
+The `todowrite` tool is available in OpenCode's tool system and is used to manage task lists during coding sessions. opencode:1-57
 
-### Integración con ACP
-Cuando la herramienta `todowrite` se completa a través de ACP, el sistema:
+### ACP Integration
+When the `todowrite` tool completes through ACP, the system:
 
-1. **Parsea la salida** del tool `todowrite` usando `decodeTodos()` opencode:350-351 
-2. **Envía una actualización de sesión** al cliente ACP con `sessionUpdate: "plan"` opencode:352-367 
-3. **Transforma los todos** en entradas de plan con:
+1. **Parses the output** of the `todowrite` tool using `decodeTodos()` opencode:350-351
+2. **Sends a session update** to the ACP client with `sessionUpdate: "plan"` opencode:352-367
+3. **Transforms the todos** into plan entries with:
    - `priority`: "medium"
-   - `status`: mapeado desde el estado del todo (cancelled → completed)
-   - `content`: el contenido del todo opencode:357-365 
+   - `status`: mapped from the todo state (cancelled → completed)
+   - `content`: the todo content opencode:357-365
 
-### Soporte ACP
-OpenCode funciona igual a través de ACP que en la terminal, incluyendo todas las herramientas integradas como `todowrite`. opencode:145-156 
+### ACP Support
+OpenCode works the same through ACP as in the terminal, including all built-in tools like `todowrite`. opencode:145-156
 
 ## Notes
-La implementación de ACP para `todowrite` se encuentra en dos lugares del archivo `agent.ts` (líneas 349-374 y 833-858), lo que sugiere que el manejo de planes se realiza tanto en el procesamiento de mensajes como en el procesamiento de partes de herramientas.
+The ACP implementation for `todowrite` is found in two places in `agent.ts` (lines 349-374 and 833-858), suggesting that plan handling is done both in message processing and in tool part processing.
 
 Wiki pages you might want to explore:
 - [Tool System (sst/opencode)](/wiki/sst/opencode#5)
@@ -120,34 +120,34 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 ```
 **File:** packages/web/src/content/docs/es/acp.mdx (L145-156)
 ```text
-OpenCode funciona igual a través de ACP que en la terminal. Todas las funciones son compatibles:
+OpenCode works the same through ACP as in the terminal. All features are supported:
 
 :::note
-Algunos comandos de barra integrados como `/undo` y `/redo` no son compatibles actualmente.
+Some built-in bar commands like `/undo` and `/redo` are not currently supported.
 :::
 
-- Herramientas integradas (operaciones de archivos, comandos de terminal, etc.)
-- Herramientas personalizadas y comandos de barra
-- Servidores MCP configurados en su configuración OpenCode
-- Reglas específicas del proyecto de `AGENTS.md`
-- Formateadores y linters personalizados
-- Sistema de agentes y permisos.
+- Built-in tools (file operations, terminal commands, etc.)
+- Custom tools and bar commands
+- MCP servers configured in your OpenCode configuration
+- Project-specific rules from `AGENTS.md`
+- Custom formatters and linters
+- Agent and permission system.
 ```
 ## Q2
-Quiero que analices el formato de los mensajes que se envían por ACP para informar del plan y sus actualizaciones a un cliente ACP. Mensaje a mensaje, muéstrame el flujo
+I want you to analyze the format of messages sent via ACP to inform about the plan and its updates to an ACP client. Message by message, show me the flow
 ### Answer
-El flujo de mensajes ACP para informar del plan y sus actualizaciones se centra en el uso de `sessionUpdate` con el tipo `"plan"` cuando la herramienta `todowrite` se completa. opencode:349-374 
+The ACP message flow for informing about the plan and its updates centers on using `sessionUpdate` with type `"plan"` when the `todowrite` tool completes. opencode:349-374
 
-## Flujo de mensajes ACP para planes
+## ACP Message Flow for Plans
 
-### 1. Detección de herramienta todowrite completada
-Cuando una herramienta `todowrite` alcanza el estado `"completed"`, el sistema detecta esto y procesa la salida. opencode:343-374 
+### 1. Detection of completed todowrite tool
+When a `todowrite` tool reaches the `"completed"` state, the system detects this and processes the output. opencode:343-374
 
-### 2. Parseo de la salida
-La salida de la herramienta se parsea usando `decodeTodos()` que convierte el JSON string en un array de objetos Todo.Info. opencode:349-351 
+### 2. Output parsing
+The tool output is parsed using `decodeTodos()` which converts the JSON string into an array of Todo.Info objects. opencode:349-351
 
-### 3. Envío de actualización de plan
-Se envía un mensaje `sessionUpdate` al cliente ACP con la siguiente estructura: opencode:352-367 
+### 3. Plan update sending
+A `sessionUpdate` message is sent to the ACP client with the following structure: opencode:352-367
 
 ```typescript
 {
@@ -165,10 +165,10 @@ Se envía un mensaje `sessionUpdate` al cliente ACP con la siguiente estructura:
 }
 ```
 
-### 4. Transformación de estados
-Los estados de los todos se mapean: `cancelled` → `completed`, otros estados se mantienen como están. opencode:357-365 
+### 4. State transformation
+Todo states are mapped: `cancelled` → `completed`, other states are kept as-is. opencode:357-365
 
-## Flujo completo de actualizaciones
+## Complete Update Flow
 
 ```mermaid
 sequenceDiagram
@@ -183,15 +183,15 @@ sequenceDiagram
     Agent->>Client: sessionUpdate({sessionUpdate: "tool_call_update", status: "completed"})
 ```
 
-## Otros tipos de actualizaciones relacionadas
-Además de `"plan"`, el sistema envía otros tipos de `sessionUpdate`: opencode:324-340 
+## Other Related Update Types
+In addition to `"plan"`, the system sends other `sessionUpdate` types: opencode:324-340
 
-- `"tool_call_update"`: para progreso de herramientas (in_progress, completed, failed) opencode:324-340 
-- `"agent_message_chunk"`: para chunks de texto del asistente opencode:464-480 
-- `"agent_thought_chunk"`: para razonamiento del agente opencode:483-499 
+- `"tool_call_update"`: for tool progress (in_progress, completed, failed) opencode:324-340
+- `"agent_message_chunk"`: for assistant text chunks opencode:464-480
+- `"agent_thought_chunk"`: for agent reasoning opencode:483-499
 
 ## Notes
-El manejo de planes se implementa en dos lugares del archivo `agent.ts` (líneas 349-374 para eventos delta y 833-858 para procesamiento de mensajes completos), lo que permite actualizaciones en tiempo real y replay de historial. opencode:833-858 
+Plan handling is implemented in two places in `agent.ts` (lines 349-374 for delta events and 833-858 for complete message processing), enabling real-time updates and history replay. opencode:833-858
 
 Wiki pages you might want to explore:
 - [Configuration System (sst/opencode)](/wiki/sst/opencode#3)
@@ -322,16 +322,16 @@ Wiki pages you might want to explore:
             }
 ```
 ## Q3
-Me interesa también el formato de los mensajes que se usan para que se proporcione al cliente información del uso de la tool, parametros de entrada, ruta del fichero en las tools que de read, write, grep title de los mismos, en la tool de edit las líneas que se editan...
+I am also interested in the format of messages used to provide the client with information about tool usage, input parameters, file path in read/write/grep tools, their titles, and in the edit tool the lines being edited...
 ### Answer
-El formato de mensajes ACP para información de herramientas se centra en `sessionUpdate` con tipo `"tool_call_update"`, que incluye parámetros de entrada, rutas de archivos y contenido específico según el tipo de herramienta. opencode:324-340 
+The ACP message format for tool information centers on `sessionUpdate` with type `"tool_call_update"`, which includes input parameters, file paths and content specific to the tool type. opencode:324-340
 
 ---
 
-## Formato general de tool_call_update
+## General Format of tool_call_update
 
-### Estado in_progress
-Cuando una herramienta está en ejecución, se envía: opencode:324-340 
+### in_progress State
+When a tool is executing, the following is sent: opencode:324-340
 
 ```typescript
 {
@@ -340,17 +340,17 @@ Cuando una herramienta está en ejecución, se envía: opencode:324-340
     sessionUpdate: "tool_call_update",
     toolCallId: string,
     status: "in_progress",
-    kind: string,  // tipo de herramienta
-    title: string,  // nombre de la herramienta
-    locations: [{ path: string }],  // rutas de archivos
-    rawInput: Record<string, any>,  // parámetros de entrada
-    content?: ToolCallContent[]  // contenido opcional
+    kind: string,  // tool type
+    title: string,  // tool name
+    locations: [{ path: string }],  // file paths
+    rawInput: Record<string, any>,  // input parameters
+    content?: ToolCallContent[]  // optional content
   }
 }
 ```
 
-### Estado completed
-Cuando una herramienta termina, se envía: opencode:376-392 
+### completed State
+When a tool finishes, the following is sent: opencode:376-392
 
 ```typescript
 {
@@ -360,53 +360,53 @@ Cuando una herramienta termina, se envía: opencode:376-392
     toolCallId: string,
     status: "completed",
     kind: string,
-    title: string,  // título descriptivo de la herramienta
-    content: ToolCallContent[],  // incluye diff para edit
+    title: string,  // descriptive tool title
+    content: ToolCallContent[],  // includes diff for edit
     rawInput: Record<string, any>,
-    rawOutput: any  // salida cruda de la herramienta
+    rawOutput: any  // raw tool output
   }
 }
 ```
 
-## Extracción de ubicaciones (toLocations)
+## Location Extraction (toLocations)
 
-La función `toLocations` extrae rutas de archivos según el tipo de herramienta: opencode:1575-1595 
+The `toLocations` function extracts file paths based on the tool type: opencode:1575-1595
 
-| Herramienta | Campo usado | Ejemplo |
-|-------------|-------------|---------|
+| Tool | Field Used | Example |
+|------|-----------|---------|
 | `read`, `edit`, `write` | `input.filePath` | `[{ path: "/tmp/example.txt" }]` |
 | `glob`, `grep` | `input.path` | `[{ path: "/src" }]` |
 | `repo_clone`, `repo_overview` | `input.path` | `[{ path: "/repo" }]` |
-| `bash` | - | `[]` (sin ubicaciones) |
+| `bash` | - | `[]` (no locations) |
 
-## Contenido específico por herramienta
+## Tool-Specific Content
 
-### Herramienta edit
-Para `edit`, `completedToolContent` añade un bloque `diff` con información de líneas editadas: opencode:1597-1630 
+### edit Tool
+For `edit`, `completedToolContent` adds a `diff` block with edited line information: opencode:1597-1630
 
 ```typescript
 content.push({
   type: "diff",
-  path: filePath,  // ruta del archivo
-  oldText: input.oldString,  // texto original
-  newText: input.newString || input.content  // texto nuevo
+  path: filePath,  // file path
+  oldText: input.oldString,  // original text
+  newText: input.newString || input.content  // new text
 })
 ```
 
-### Otras herramientas
-Para herramientas que no son `edit`, el contenido es solo texto: opencode:1600-1608 
+### Other Tools
+For tools that are not `edit`, the content is just text: opencode:1600-1608
 
 ```typescript
 {
   type: "content",
   content: {
     type: "text",
-    text: part.state.output  // salida de la herramienta
+    text: part.state.output  // tool output
   }
 }
 ```
 
-## Ejemplos por tipo de herramienta
+## Examples by Tool Type
 
 ### read
 ```typescript
@@ -428,7 +428,7 @@ Para herramientas que no son `edit`, el contenido es solo texto: opencode:1600-1
   toolCallId: "call_write",
   status: "completed",
   kind: "write",
-  title: "src/main.ts",  // ruta relativa del archivo
+  title: "src/main.ts",  // relative file path
   locations: [{ path: input.filePath }],
   rawInput: { filePath: "/src/main.ts", content: "..." },
   rawOutput: { title: "src/main.ts", metadata: { filepath, diagnostics } }
@@ -466,7 +466,7 @@ Para herramientas que no son `edit`, el contenido es solo texto: opencode:1600-1
 ```
 
 ## Notes
-La función `toToolKind` convierte nombres de herramientas a tipos ACP estandarizados, y `completedToolRawOutput` proporciona la salida cruda completa incluyendo metadatos y adjuntos (imágenes, archivos). opencode:346-347 
+The `toToolKind` function converts tool names to standardized ACP types, and `completedToolRawOutput` provides the full raw output including metadata and attachments (images, files). opencode:346-347
 
 Wiki pages you might want to explore:
 - [Tool System (sst/opencode)](/wiki/sst/opencode#5)
@@ -579,16 +579,16 @@ function completedToolContent(part: ToolPart, kind: ToolKind): ToolCallContent[]
 }
 ```
 ## Q4
-Genera un listado completo de los tipos de mensajes ACP y el formato de cada uno así como el flujo de llamadas para el envío del plan y la información de llamada a una tool
+Generate a complete listing of ACP message types and the format of each one, as well as the call flow for sending the plan and tool call information
 ### Answer
-Basándome en el código de `packages/opencode/src/acp/agent.ts`, aquí tienes el listado completo de tipos de mensajes ACP y sus formatos:
+Based on the code in `packages/opencode/src/acp/agent.ts`, here is the complete listing of ACP message types and their formats:
 
 ---
 
-## Tipos de mensajes ACP
+## ACP Message Types
 
 ### 1. tool_call
-Se envía cuando una herramienta se inicia por primera vez (estado pending). opencode:1042-1061 
+Sent when a tool is first initiated (pending state). opencode:1042-1061
 
 ```typescript
 {
@@ -596,19 +596,19 @@ Se envía cuando una herramienta se inicia por primera vez (estado pending). ope
   update: {
     sessionUpdate: "tool_call",
     toolCallId: string,
-    title: string,  // nombre de la herramienta
-    kind: string,   // tipo de herramienta
+    title: string,  // tool name
+    kind: string,   // tool type
     status: "pending",
-    locations: [],  // siempre vacío al inicio
-    rawInput: {}    // siempre vacío al inicio
+    locations: [],  // always empty at start
+    rawInput: {}    // always empty at start
   }
 }
 ```
 
 ### 2. tool_call_update
-Actualizaciones de estado de herramientas durante su ejecución. opencode:324-340 
+Tool state updates during execution. opencode:324-340
 
-#### Estado in_progress
+#### in_progress State
 ```typescript
 {
   sessionId: string,
@@ -618,14 +618,14 @@ Actualizaciones de estado de herramientas durante su ejecución. opencode:324-34
     status: "in_progress",
     kind: string,
     title: string,
-    locations: [{ path: string }],  // rutas de archivos
+    locations: [{ path: string }],  // file paths
     rawInput: Record<string, any>,
-    content?: ToolCallContent[]  // opcional, para output en tiempo real
+    content?: ToolCallContent[]  // optional, for real-time output
   }
 }
 ```
 
-#### Estado completed
+#### completed State
 ```typescript
 {
   sessionId: string,
@@ -635,14 +635,14 @@ Actualizaciones de estado de herramientas durante su ejecución. opencode:324-34
     status: "completed",
     kind: string,
     title: string,
-    content: ToolCallContent[],  // incluye diff para edit
+    content: ToolCallContent[],  // includes diff for edit
     rawInput: Record<string, any>,
     rawOutput: any
   }
 }
 ```
 
-#### Estado failed
+#### failed State
 ```typescript
 {
   sessionId: string,
@@ -660,7 +660,7 @@ Actualizaciones de estado de herramientas durante su ejecución. opencode:324-34
 ```
 
 ### 3. plan
-Actualización del plan cuando se completa la herramienta `todowrite`. opencode:352-367 
+Plan update when the `todowrite` tool completes. opencode:352-367
 
 ```typescript
 {
@@ -679,7 +679,7 @@ Actualización del plan cuando se completa la herramienta `todowrite`. opencode:
 ```
 
 ### 4. agent_message_chunk
-Chunks de texto del asistente en tiempo real. opencode:464-480 
+Assistant text chunks in real time. opencode:464-480
 
 ```typescript
 {
@@ -689,14 +689,14 @@ Chunks de texto del asistente en tiempo real. opencode:464-480
     messageId: string,
     content: {
       type: "text",
-      text: string  // delta del texto
+      text: string  // text delta
     }
   }
 }
 ```
 
 ### 5. agent_thought_chunk
-Razonamiento del agente en tiempo real. opencode:483-499 
+Agent reasoning in real time. opencode:483-499
 
 ```typescript
 {
@@ -706,14 +706,14 @@ Razonamiento del agente en tiempo real. opencode:483-499
     messageId: string,
     content: {
       type: "text",
-      text: string  // delta del razonamiento
+      text: string  // reasoning delta
     }
   }
 }
 ```
 
 ### 6. user_message_chunk
-Chunks de texto del usuario (usado en replay de historial). opencode:914-926 
+User text chunks (used in history replay). opencode:914-926
 
 ```typescript
 {
@@ -724,28 +724,28 @@ Chunks de texto del usuario (usado en replay de historial). opencode:914-926
     content: {
       type: "text",
       text: string,
-      annotations?: { audience: Role[] }  // opcional
+      annotations?: { audience: Role[] }  // optional
     }
   }
 }
 ```
 
 ### 7. available_commands_update
-Actualización de comandos disponibles después de inicializar sesión. opencode:1186-1193 
+Update of available commands after session initialization. opencode:1186-1193
 
 ```typescript
 {
   sessionId: string,
   update: {
     sessionUpdate: "available_commands_update",
-    availableCommands: string[]  // lista de comandos disponibles
+    availableCommands: string[]  // list of available commands
   }
 }
 ```
 
 ---
 
-## Flujo de llamadas para envío del plan
+## Call Flow for Plan Sending
 
 ```mermaid
 sequenceDiagram
@@ -760,11 +760,11 @@ sequenceDiagram
     Agent->>Client: sessionUpdate({sessionUpdate: "tool_call_update", status: "completed"})
 ```
 
-El flujo se implementa en dos lugares: opencode:349-374  para eventos en tiempo real y opencode:833-858  para replay de historial.
+The flow is implemented in two places: opencode:349-374 for real-time events and opencode:833-858 for history replay.
 
 ---
 
-## Flujo de llamadas para información de tool
+## Call Flow for Tool Information
 
 ```mermaid
 sequenceDiagram
@@ -778,7 +778,7 @@ sequenceDiagram
     
     SDK->>Agent: message.part.updated (tool: any, status: running)
     Agent->>Agent: toLocations(tool, input)
-    Agent->>Agent: shellOutput(part) si es bash
+    Agent->>Agent: shellOutput(part) if bash
     Agent->>Client: sessionUpdate({sessionUpdate: "tool_call_update", status: "in_progress", locations, content})
     
     SDK->>Agent: message.part.updated (tool: any, status: completed)
@@ -787,16 +787,16 @@ sequenceDiagram
     Agent->>Client: sessionUpdate({sessionUpdate: "tool_call_update", status: "completed", content, rawOutput})
 ```
 
-### Detalle de funciones auxiliares
+### Helper Function Details
 
-**toLocations**: Extrae rutas de archivos según el tipo de herramienta. opencode:1575-1595 
+**toLocations**: Extracts file paths based on tool type. opencode:1575-1595
 
-**completedToolContent**: Genera contenido específico por herramienta (diff para edit). opencode:1597-1630 
+**completedToolContent**: Generates tool-specific content (diff for edit). opencode:1597-1630
 
-**toolStart**: Envía el mensaje inicial `tool_call` con estado pending. opencode:1042-1061 
+**toolStart**: Sends the initial `tool_call` message with pending state. opencode:1042-1061
 
 ## Notes
-Los mensajes de tipo `resource_link`, `image` y `resource` se envían dentro de `agent_message_chunk` o `user_message_chunk` para adjuntos de archivos. opencode:931-1010 
+Messages of type `resource_link`, `image` and `resource` are sent within `agent_message_chunk` or `user_message_chunk` for file attachments. opencode:931-1010
 
 Wiki pages you might want to explore:
 - [Command-Line Interface (CLI) (sst/opencode)](/wiki/sst/opencode#6.1)

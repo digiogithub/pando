@@ -1,139 +1,139 @@
-# Plan: Sistema Multi-Cuenta de Proveedores en Pando
+# Plan: Multi-Account Provider System in Pando
 
-**Creado**: 2026-04-23  
-**Estado**: planificado  
-**Objetivo**: Permitir múltiples cuentas por proveedor, añadir proveedores OpenAI-compatibles con URL, API key y headers custom, y actualizar TUI + Web-UI para gestionarlos.
+**Created**: 2026-04-23
+**Status**: planned
+**Goal**: Allow multiple accounts per provider, add OpenAI-compatible providers with URL, API key and custom headers, and update TUI + Web-UI to manage them.
 
-## Contexto y motivación
+## Context and motivation
 
-La arquitectura actual usa `Config.Providers map[models.ModelProvider]Provider`, que solo permite **una cuenta por tipo de proveedor**. Para soportar dos cuentas Anthropic, dos OpenAI, etc., se necesita un modelo de "cuentas nombradas" donde cada cuenta tiene un ID único y un tipo de proveedor.
+The current architecture uses `Config.Providers map[models.ModelProvider]Provider`, which only allows **one account per provider type**. To support two Anthropic accounts, two OpenAI accounts, etc., a "named accounts" model is needed where each account has a unique ID and a provider type.
 
-### Estructura actual (limitante)
-- `Config.Providers map[models.ModelProvider]Provider` → clave = tipo ("anthropic"), valor = {APIKey, BaseURL, Disabled, UseOAuth}
-- Un solo proveedor del mismo tipo en todo el sistema
-- No hay soporte para headers HTTP adicionales
+### Current structure (limitation)
+- `Config.Providers map[models.ModelProvider]Provider` → key = type ("anthropic"), value = {APIKey, BaseURL, Disabled, UseOAuth}
+- Only one provider of the same type throughout the system
+- No support for additional HTTP headers
 
-### Estructura propuesta
-- `Config.ProviderAccounts []ProviderAccount` → lista de cuentas nombradas
-- Cada cuenta: `{ID, DisplayName, Type, APIKey, BaseURL, ExtraHeaders, Disabled, UseOAuth}`
-- Nuevo tipo de proveedor: `openai-compatible` para endpoints OpenAI-API-compatibles genéricos
-- Model selector muestra `cuenta: modelo` cuando hay múltiples cuentas del mismo tipo
+### Proposed structure
+- `Config.ProviderAccounts []ProviderAccount` → list of named accounts
+- Each account: `{ID, DisplayName, Type, APIKey, BaseURL, ExtraHeaders, Disabled, UseOAuth}`
+- New provider type: `openai-compatible` for generic OpenAI-API-compatible endpoints
+- Model selector shows `account: model` when there are multiple accounts of the same type
 
 ---
 
-## Fases de implementación
+## Implementation phases
 
-### Fase 1: Modelo de datos ProviderAccount y migración de config
+### Phase 1: ProviderAccount data model and config migration
 **Fact ID**: `multi_account_providers_phase1_data_model`
 
-- Nuevo struct `ProviderAccount` en `internal/config/config.go`
-- Reemplazar `Config.Providers` por `Config.ProviderAccounts []ProviderAccount`
-- Migración automática en `Load()`: si `providerAccounts` vacío y `providers` tiene datos → auto-migrar
-- Funciones CRUD: `AddProviderAccount`, `UpdateProviderAccount`, `DeleteProviderAccount`, `GetProviderAccounts`, `GetProviderAccount`
-- Nuevo `ProviderOpenAICompatible ModelProvider = "openai-compatible"` en `models/models.go`
-- Tests de migración en `config_test.go`
+- New struct `ProviderAccount` in `internal/config/config.go`
+- Replace `Config.Providers` with `Config.ProviderAccounts []ProviderAccount`
+- Automatic migration in `Load()`: if `providerAccounts` empty and `providers` has data → auto-migrate
+- CRUD functions: `AddProviderAccount`, `UpdateProviderAccount`, `DeleteProviderAccount`, `GetProviderAccounts`, `GetProviderAccount`
+- New `ProviderOpenAICompatible ModelProvider = "openai-compatible"` in `models/models.go`
+- Migration tests in `config_test.go`
 
-### Fase 2: Capa de proveedor y registro de modelos
+### Phase 2: Provider layer and model registration
 **Fact ID**: `multi_account_providers_phase2_provider_layer`
 
-- `providerClientOptions` gana campo `extraHeaders map[string]string`
-- Nueva función `NewProviderFromAccount(account config.ProviderAccount, ...)` en `provider.go`
-- Soporte `ProviderOpenAICompatible` en el switch de `NewProvider`
-- `Model` struct gana campo `AccountID string`
-- Nueva función `RefreshProviderModelsForAccount(ctx, account)` en `registry.go`
-- Lógica de prefijo de model ID: si 1 cuenta del tipo → prefijo = tipo (retrocompat); si 2+ → prefijo = account.ID
-- Función `DisplayLabel(allAccounts []ProviderAccount) string` en `Model`
+- `providerClientOptions` gains field `extraHeaders map[string]string`
+- New function `NewProviderFromAccount(account config.ProviderAccount, ...)` in `provider.go`
+- `ProviderOpenAICompatible` support in the `NewProvider` switch
+- `Model` struct gains field `AccountID string`
+- New function `RefreshProviderModelsForAccount(ctx, account)` in `registry.go`
+- Model ID prefix logic: if 1 account of the type → prefix = type (backward compatible); if 2+ → prefix = account.ID
+- Function `DisplayLabel(allAccounts []ProviderAccount) string` in `Model`
 
-### Fase 3: Wiring en App, Agent y selector de modelos
+### Phase 3: Wiring in App, Agent and model selector
 **Fact ID**: `multi_account_providers_phase3_wiring`
 
-- `app.refreshDynamicModels()` itera `ProviderAccounts` en lugar de `Providers`
-- Nueva función `config.ResolveProviderAccount(model)` para lookups por modelo
-- Reemplazar accesos directos `cfg.Providers[model.Provider]` → `config.ResolveProviderAccount(model)`
-- `handleListModels` incluye `accountId` en `ModelInfo` y usa `DisplayLabel()`
-- Actualizar `handlers_models.go` para operar con cuentas
+- `app.refreshDynamicModels()` iterates `ProviderAccounts` instead of `Providers`
+- New function `config.ResolveProviderAccount(model)` for lookups by model
+- Replace direct accesses `cfg.Providers[model.Provider]` → `config.ResolveProviderAccount(model)`
+- `handleListModels` includes `accountId` in `ModelInfo` and uses `DisplayLabel()`
+- Update `handlers_models.go` to operate with accounts
 
-### Fase 4: REST API para gestión de cuentas de proveedor
+### Phase 4: REST API for provider account management
 **Fact ID**: `multi_account_providers_phase4_rest_api`
 
-Nuevas rutas en `routes.go`:
+New routes in `routes.go`:
 ```
-GET    /api/v1/config/provider-accounts         → lista todas las cuentas
-POST   /api/v1/config/provider-accounts         → crear cuenta
-GET    /api/v1/config/provider-accounts/{id}    → obtener cuenta por ID
-PUT    /api/v1/config/provider-accounts/{id}    → actualizar cuenta
-DELETE /api/v1/config/provider-accounts/{id}    → eliminar cuenta
-POST   /api/v1/config/provider-accounts/{id}/test → test conectividad
-GET    /api/v1/config/provider-types            → lista tipos soportados con metadatos
+GET    /api/v1/config/provider-accounts         → list all accounts
+POST   /api/v1/config/provider-accounts         → create account
+GET    /api/v1/config/provider-accounts/{id}    → get account by ID
+PUT    /api/v1/config/provider-accounts/{id}    → update account
+DELETE /api/v1/config/provider-accounts/{id}    → delete account
+POST   /api/v1/config/provider-accounts/{id}/test → test connectivity
+GET    /api/v1/config/provider-types            → list supported types with metadata
 ```
 
-- Nuevo archivo `internal/api/handlers_provider_accounts.go`
-- Retrocompatibilidad: `GET/PUT /api/v1/config/providers` sigue funcionando (lee/escribe en ProviderAccounts)
-- Test endpoint devuelve `{ok: bool, modelCount: int, error?: string}`
+- New file `internal/api/handlers_provider_accounts.go`
+- Backward compatibility: `GET/PUT /api/v1/config/providers` still works (reads/writes to ProviderAccounts)
+- Test endpoint returns `{ok: bool, modelCount: int, error?: string}`
 
-### Fase 5: Panel de configuración TUI
+### Phase 5: TUI configuration panel
 **Fact ID**: `multi_account_providers_phase5_tui`
 
-- Nueva sección "Provider Accounts" en `internal/tui/page/settings.go`
-- Nuevo dialog `internal/tui/components/dialog/provider_account_dialog.go`
-  - Formulario: ID, DisplayName, Type, APIKey, BaseURL, ExtraHeaders (lista dinámica key-value), Disabled, UseOAuth
-  - Acción "Test" inline desde el dialog
-- Teclas en la sección: `a`/`+` añadir, `e`/`Enter` editar, `d`/`Delete` eliminar, `t` testear, `space` toggle
-- Selector de modelos en chat: usa `DisplayLabel()` → "mywork: Claude Sonnet 4.5"
+- New "Provider Accounts" section in `internal/tui/page/settings.go`
+- New dialog `internal/tui/components/dialog/provider_account_dialog.go`
+  - Form: ID, DisplayName, Type, APIKey, BaseURL, ExtraHeaders (dynamic key-value list), Disabled, UseOAuth
+  - Inline "Test" action from the dialog
+- Keys in the section: `a`/`+` add, `e`/`Enter` edit, `d`/`Delete` delete, `t` test, `space` toggle
+- Model selector in chat: uses `DisplayLabel()` → "mywork: Claude Sonnet 4.5"
 
-### Fase 6: Panel de configuración Web-UI
+### Phase 6: Web-UI configuration panel
 **Fact ID**: `multi_account_providers_phase6_webui`
 
-- `web-ui/src/api/providerAccounts.ts` — cliente API tipado
-- `web-ui/src/components/settings/ProviderAccountsSection.tsx` — tabla de cuentas
-- `web-ui/src/components/settings/ProviderAccountDialog.tsx` — modal add/edit con headers dinámicos
-- `web-ui/src/components/ModelSelector.tsx` — actualizar labels con cuenta
-- Validación de ID (slug `/^[a-z0-9-]+$/`)
-- Test de conectividad inline con indicador de carga
+- `web-ui/src/api/providerAccounts.ts` — typed API client
+- `web-ui/src/components/settings/ProviderAccountsSection.tsx` — accounts table
+- `web-ui/src/components/settings/ProviderAccountDialog.tsx` — add/edit modal with dynamic headers
+- `web-ui/src/components/ModelSelector.tsx` — update labels with account
+- ID validation (slug `/^[a-z0-9-]+$/`)
+- Inline connectivity test with loading indicator
 - Hot-reload via SSE `config_changed`
 
 ---
 
-## Consideraciones de diseño
+## Design considerations
 
-### Retrocompatibilidad
-- Configs existentes con `providers: { anthropic: {apiKey: ...} }` se migran automáticamente al cargar
-- Las cuentas migradas reciben `id = string(providerType)` (ej: "anthropic")
-- Model IDs no cambian si solo hay 1 cuenta del tipo (retrocompat total)
-- Los endpoints API legacy siguen funcionando mapeando sobre `ProviderAccounts`
+### Backward compatibility
+- Existing configs with `providers: { anthropic: {apiKey: ...} }` are automatically migrated on load
+- Migrated accounts receive `id = string(providerType)` (e.g., "anthropic")
+- Model IDs don't change if there's only 1 account of the type (full backward compatibility)
+- Legacy API endpoints still work mapping over `ProviderAccounts`
 
-### Esquema de Model ID con múltiples cuentas
+### Model ID scheme with multiple accounts
 ```
-# Caso 1: Solo 1 cuenta Anthropic → retrocompatible
-anthropic.claude-sonnet-4-5  (igual que ahora)
+# Case 1: Only 1 Anthropic account → backward compatible
+anthropic.claude-sonnet-4-5  (same as now)
 
-# Caso 2: 2 cuentas Anthropic → nuevo prefijo por account ID
+# Case 2: 2 Anthropic accounts → new prefix by account ID
 work.claude-sonnet-4-5
 personal.claude-sonnet-4-5
 
-# Caso 3: OpenAI-compatible custom
-my-llm.gpt-4o   (si el endpoint reporta "gpt-4o")
+# Case 3: Custom OpenAI-compatible
+my-llm.gpt-4o   (if the endpoint reports "gpt-4o")
 ```
 
-### Tipos de proveedor soportados
-| Tipo | Requiere APIKey | Requiere BaseURL | Soporta Headers custom |
+### Supported provider types
+| Type | Requires APIKey | Requires BaseURL | Supports custom Headers |
 |------|-----------------|------------------|------------------------|
-| anthropic | Sí (o OAuth) | No | No |
-| openai | Sí | No | No |
-| openai-compatible | Sí/Opcional | Sí (requerido) | Sí |
-| ollama | No | Opcional | No |
+| anthropic | Yes (or OAuth) | No | No |
+| openai | Yes | No | No |
+| openai-compatible | Yes/Optional | Yes (required) | Yes |
+| ollama | No | Optional | No |
 | copilot | OAuth | No | No |
-| gemini | Sí | No | No |
-| groq | Sí | No | No |
-| openrouter | Sí | No | No |
-| xai | Sí | No | No |
-| azure | Sí | Sí | No |
+| gemini | Yes | No | No |
+| groq | Yes | No | No |
+| openrouter | Yes | No | No |
+| xai | Yes | No | No |
+| azure | Yes | Yes | No |
 | bedrock | AWS credentials | No | No |
 | vertexai | GCP credentials | No | No |
 
 ---
 
-## Ejemplo de config TOML resultante
+## Example resulting TOML config
 
 ```toml
 [[providerAccounts]]

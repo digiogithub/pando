@@ -226,6 +226,17 @@ func dispatchWrite(ctx context.Context, q db.Querier, req WriteRequest) (json.Ra
 		}
 		return nil, nil
 
+	// ---- ACP session state writes ----
+	case "UpdateSessionACPState":
+		var p db.UpdateSessionACPStateParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, invalidParamsErr(req.Method, err)
+		}
+		if err := q.UpdateSessionACPState(ctx, p); err != nil {
+			return nil, mapToWriteError(req.Method, err)
+		}
+		return nil, nil
+
 	// ---- Project writes ----
 	case "CreateProject":
 		var p db.CreateProjectParams

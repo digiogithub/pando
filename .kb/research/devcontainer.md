@@ -1,35 +1,35 @@
 <img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" style="height:64px;margin-right:32px"/>
 
-# quiero hacer compatible mi agente ai con devcontainer, por un lado que pueda ejecutarse dentro de uno aislado y por otro que pueda lanzar un subagente dentro de un contenedor aislado, buscame opciones y posibilidades de hacerlo con librerías Golang y como podría añadir esta funcionalidad en mi agente en golang
+# I want to make my AI agent compatible with devcontainer, on one hand to be able to run inside an isolated one and on the other to be able to launch a subagent inside an isolated container, find me options and possibilities to do it with Golang libraries and how I could add this functionality to my agent in golang
 
-Tu agente AI en Go puede soportar DevContainers en dos modos: **ejecutarse dentro de un devcontainer existente** consumiendo su configuración, y **orquestar subagentes aislados** lanzando contenedores programáticamente. Para ello, la base fundamental es el **Docker SDK for Go**, complementado con parsers de `devcontainer.json`.
+Your AI agent in Go can support DevContainers in two modes: **run inside an existing devcontainer** consuming its configuration, and **orchestrate isolated subagents** by launching containers programmatically. For this, the fundamental base is the **Docker SDK for Go**, complemented with `devcontainer.json` parsers.
 
-## Librerías Go relevantes
+## Relevant Go Libraries
 
-| Librería | Propósito | Lenguaje | Relevancia |
+| Library | Purpose | Language | Relevance |
 | :-- | :-- | :-- | :-- |
-| `github.com/docker/docker` | Cliente Docker nativo en Go | Go | Esencial para crear, lanzar y gestionar contenedores [^1_1] |
-| `github.com/colony-2/devcontainer-go` | Interpreta `devcontainer.json` y genera configs `docker run` | Go | Prometedora para parsear configuraciones de devcontainer [^1_2] |
-| `github.com/ar90n/code-code-server/devcontainer` | Parser básico de `devcontainer.json` | Go | Referencia mínima con structs [^1_3] |
-| `github.com/kontainment/devcontainers-go` | Tipos/structs Go del spec | Go | Útil para serializar/deserializar configs [^1_4] |
-| `devcontainers/cli` (oficial) | CLI de referencia del spec | TypeScript | No es Go nativo, pero define el estándar [^1_5] |
-| `github.com/testcontainers/testcontainers-go` | Testing con contenedores | Go | Ideal para tests de integración del agente |
+| `github.com/docker/docker` | Native Docker client in Go | Go | Essential for creating, launching and managing containers [^1_1] |
+| `github.com/colony-2/devcontainer-go` | Interprets `devcontainer.json` and generates `docker run` configs | Go | Promising for parsing devcontainer configurations [^1_2] |
+| `github.com/ar90n/code-code-server/devcontainer` | Basic `devcontainer.json` parser | Go | Minimal reference with structs [^1_3] |
+| `github.com/kontainment/devcontainers-go` | Go types/structs from the spec | Go | Useful for serializing/deserializing configs [^1_4] |
+| `devcontainers/cli` (official) | Official spec reference CLI | TypeScript | Not native Go, but defines the standard [^1_5] |
+| `github.com/testcontainers/testcontainers-go` | Testing with containers | Go | Ideal for agent integration tests |
 
-Para tu caso de producción, recomiendo **combinar el Docker SDK oficial con un parser propio o `colony-2/devcontainer-go`** para leer `devcontainer.json`.
+For your production case, I recommend **combining the official Docker SDK with a custom parser or `colony-2/devcontainer-go`** to read `devcontainer.json`.
 
-## Modo 1: Tu agente ejecutándose dentro de un DevContainer
+## Mode 1: Your agent running inside a DevContainer
 
-Cuando tu agente corre dentro de un devcontainer, necesita detectar que está en ese entorno y adaptar su comportamiento:
+When your agent runs inside a devcontainer, it needs to detect that it's in that environment and adapt its behavior:
 
-- **Detección**: verifica la existencia de variables como `DEVCONTAINER` o `.devcontainer` en rutas estándar. Muchas imágenes oficiales (como `mcr.microsoft.com/devcontainers/go`) inyectan metadatos de entorno [^1_6][^1_7].
-- **Workspace**: la carpeta de trabajo suele montarse en `/workspaces/<proyecto>`. Tu agente debe usar `workspaceFolder` como directorio base.
-- **Servicios vinculados**: si el proyecto usa `dockerComposeFile`, tu agente debe comunicarse con el Docker daemon del host (accesible típicamente vía socket bind).
-- **Puertos y Features**: el agente puede leer `forwardPorts` y `features` de `devcontainer.json` para saber qué servicios auxiliares están disponibles [^1_8][^1_9].
+- **Detection**: verify the existence of variables like `DEVCONTAINER` or `.devcontainer` in standard paths. Many official images (like `mcr.microsoft.com/devcontainers/go`) inject environment metadata [^1_6][^1_7].
+- **Workspace**: the working folder is usually mounted at `/workspaces/<project>`. Your agent must use `workspaceFolder` as the base directory.
+- **Linked services**: if the project uses `dockerComposeFile`, your agent must communicate with the host's Docker daemon (typically accessible via socket bind).
+- **Ports and Features**: the agent can read `forwardPorts` and `features` from `devcontainer.json` to know what auxiliary services are available [^1_8][^1_9].
 
 
-## Modo 2: Lanzar subagentes en contenedores aislados
+## Mode 2: Launching subagents in isolated containers
 
-Aquí usas el Docker SDK para crear contenedores dinámicamente. La clave está en traducir la configuración de `devcontainer.json` a parámetros de `container.Config` y `container.HostConfig`:
+Here you use the Docker SDK to create containers dynamically. The key is translating the `devcontainer.json` configuration to `container.Config` and `container.HostConfig` parameters:
 
 ```go
 package main
@@ -50,24 +50,24 @@ func launchSubagent(ctx context.Context, image, workspace string) (string, error
         return "", err
     }
 
-    // Configuración del contenedor (equivalente a devcontainer.json)
+    // Container configuration (equivalent to devcontainer.json)
     config := &container.Config{
         Image: image,
         Env:   []string{"AGENT_MODE=subagent", "WORKSPACE=" + workspace},
-        // Puedes añadir entrypoint/cmd del subagente
+        // You can add the subagent's entrypoint/cmd
     }
 
-    // HostConfig con aislamiento fuerte
+    // HostConfig with strong isolation
     hostConfig := &container.HostConfig{
-        CapDrop:         []string{"ALL"}, // Eliminar todas las capabilities
-        CapAdd:          []string{"CHOWN", "SETGID", "SETUID"}, // Mínimas necesarias
-        ReadonlyRootfs:  true,           // Filesystem solo lectura
+        CapDrop:         []string{"ALL"}, // Remove all capabilities
+        CapAdd:          []string{"CHOWN", "SETGID", "SETUID"}, // Minimum necessary
+        ReadonlyRootfs:  true,           // Read-only filesystem
         SecurityOpt:     []string{"no-new-privileges:true", "seccomp=default.json"},
         NetworkMode:     container.NetworkMode("bridge"),
         PidMode:         "",
         Resources: container.Resources{
-            Memory:   512 * 1024 * 1024,  // 512MB límite
-            CpuQuota: 50000,              // Medio core
+            Memory:   512 * 1024 * 1024,  // 512MB limit
+            CpuQuota: 50000,              // Half core
         },
         Mounts: []mount.Mount{
             {
@@ -79,7 +79,7 @@ func launchSubagent(ctx context.Context, image, workspace string) (string, error
             {
                 Type:   mount.TypeTmpfs,
                 Target: "/tmp",
-                // tmpfs para escritura efímera
+                // tmpfs for ephemeral writes
             },
         },
     }
@@ -98,50 +98,50 @@ func launchSubagent(ctx context.Context, image, workspace string) (string, error
 ```
 
 
-## Opciones de aislamiento disponibles en Go
+## Available isolation options in Go
 
-Puedes implementar estas técnicas de hardening mediante el Docker SDK:
+You can implement these hardening techniques through the Docker SDK:
 
 
-| Aislamiento | Flag Go (`HostConfig`) | Impacto |
+| Isolation | Go Flag (`HostConfig`) | Impact |
 | :-- | :-- | :-- |
-| Drop de capabilities | `CapDrop: []string{"ALL"}` | Alto — elimina permisos del kernel [^1_10] |
-| Filesystem read-only | `ReadonlyRootfs: true` | Alto — previene modificaciones [^1_10] |
-| Tmpfs para escritura | `Tmpfs: map[string]string{...}` | Medio-Alto — datos volátiles |
-| Seccomp personalizado | `SecurityOpt: []string{"seccomp=..."}` | Alto — filtra syscalls [^1_10] |
-| Limites de recursos | `Resources.Memory`, `Resources.CpuQuota` | Medio — contiene DoS |
-| Aislamiento de red | `NetworkMode: "none"` o bridge | Medio — controla conectividad |
-| Sin privilegios | `SecurityOpt: []string{"no-new-privileges:true"}` | Alto — evita escalada [^1_11] |
+| Drop capabilities | `CapDrop: []string{"ALL"}` | High — removes kernel permissions [^1_10] |
+| Read-only filesystem | `ReadonlyRootfs: true` | High — prevents modifications [^1_10] |
+| Tmpfs for writes | `Tmpfs: map[string]string{...}` | Medium-High — volatile data |
+| Custom Seccomp | `SecurityOpt: []string{"seccomp=..."}` | High — filters syscalls [^1_10] |
+| Resource limits | `Resources.Memory`, `Resources.CpuQuota` | Medium — contains DoS |
+| Network isolation | `NetworkMode: "none"` or bridge | Medium — controls connectivity |
+| No privileges | `SecurityOpt: []string{"no-new-privileges:true"}` | High — prevents escalation [^1_11] |
 
-## Arquitectura recomendada para tu agente
+## Recommended architecture for your agent
 
-### 1. Capa de parsing
+### 1. Parsing layer
 
-Implementa un parser de `devcontainer.json` que mapee a structs Go. El spec utiliza **JSON with Comments (jsonc)**, por lo que necesitarás un parser que soporte comentarios (puedes usar `github.com/tidwall/gjson` con preprocesado o `github.com/colony-2/devcontainer-go` si está maduro).
+Implement a `devcontainer.json` parser that maps to Go structs. The spec uses **JSON with Comments (jsonc)**, so you'll need a parser that supports comments (you can use `github.com/tidwall/gjson` with preprocessing or `github.com/colony-2/devcontainer-go` if mature).
 
-### 2. Capa de orquestación
+### 2. Orchestration layer
 
-Un `ContainerManager` que exponga métodos como:
+A `ContainerManager` that exposes methods like:
 
-- `RunInDevContainer(configPath string) error` — para modo auto-contenedor.
-- `SpawnSubAgent(image string, spec DevContainerSpec, task Task) (AgentInstance, error)` — para subagentes.
+- `RunInDevContainer(configPath string) error` — for self-container mode.
+- `SpawnSubAgent(image string, spec DevContainerSpec, task Task) (AgentInstance, error)` — for subagents.
 - `StopSubAgent(id string) error` — lifecycle management.
 
 
-### 3. Comunicación agente ↔ subagente
+### 3. Agent ↔ subagent communication
 
-Para que el agente principal se comunique con subagentes aislados, considera:
+For the main agent to communicate with isolated subagents, consider:
 
-- **gRPC/HTTP sobre Unix socket** montado como `bind` en el contenedor (más seguro que TCP expuesto).
-- **Redis/NATS** en un contenedor bridge si necesitas pub/sub.
-- **Volúmenes compartidos** para intercambio de resultados (en combinación con read-only).
+- **gRPC/HTTP over Unix socket** mounted as `bind` in the container (more secure than exposed TCP).
+- **Redis/NATS** in a bridge container if you need pub/sub.
+- **Shared volumes** for result exchange (combined with read-only).
 
 
-### 4. DinD (Docker-in-Docker) si el subagente necesita Docker
+### 4. DinD (Docker-in-Docker) if the subagent needs Docker
 
-Si el subagente aislado también necesita lanzar contenedores, monta `/var/run/docker.sock` con cuidado. Considera usar **rootless Docker** dentro del contenedor o **Docker-out-of-Docker** con permisos restringidos para evitar escapes [^1_12].
+If the isolated subagent also needs to launch containers, mount `/var/run/docker.sock` carefully. Consider using **rootless Docker** inside the container or **Docker-out-of-Docker** with restricted permissions to prevent escapes [^1_12].
 
-## Ejemplo de integración en tu agente
+## Integration example in your agent
 
 ```go
 type DevContainerRuntime struct {
@@ -150,18 +150,18 @@ type DevContainerRuntime struct {
 }
 
 func (r *DevContainerRuntime) ExecuteSubAgent(ctx context.Context, task Task) (Result, error) {
-    // 1. Construir/verificar imagen según spec.Image o spec.Build
-    // 2. Aplicar overrides de seguridad
-    // 3. Crear y arrancar contenedor
-    // 4. Exec del binario del subagente
-    // 5. Capturar stdout/stderr vía ContainerExecAttach
-    // 6. Cleanup automático con defer
+    // 1. Build/verify image according to spec.Image or spec.Build
+    // 2. Apply security overrides
+    // 3. Create and start container
+    // 4. Exec the subagent binary
+    // 5. Capture stdout/stderr via ContainerExecAttach
+    // 6. Automatic cleanup with defer
 }
 ```
 
-Si tu agente necesita operar con **GitHub Codespaces** o **GitLab Workspaces**, simplemente adapta el parsing: estos servicios consumen el mismo `devcontainer.json` que el spec estándar [^1_9].
+If your agent needs to work with **GitHub Codespaces** or **GitLab Workspaces**, simply adapt the parsing: these services consume the same `devcontainer.json` as the standard spec [^1_9].
 
-¿Tu agente necesitará que los subagentes aislados tengan acceso a Docker también (Docker-in-Docker), o es suficiente con aislamiento de filesystem y red?
+Will your agent need the isolated subagents to have Docker access too (Docker-in-Docker), or is filesystem and network isolation sufficient?
 <span style="display:none">[^1_13][^1_14][^1_15][^1_16][^1_17][^1_18][^1_19][^1_20][^1_21][^1_22][^1_23][^1_24][^1_25][^1_26][^1_27][^1_28][^1_29][^1_30][^1_31][^1_32][^1_33][^1_34][^1_35][^1_36][^1_37][^1_38]</span>
 
 <div align="center">⁂</div>
@@ -245,24 +245,24 @@ Si tu agente necesita operar con **GitHub Codespaces** o **GitLab Workspaces**, 
 
 ---
 
-# hay librerías Golang para hacerlo con podman o crun o runc? podría embeber runc o el soporte de contenedores en un binario Golang?
+# are there Go libraries to do it with podman or crun or runc? could I embed runc or container support in a Go binary?
 
-Sí, tienes varias opciones Go nativas para alternativas a Docker, y embeber runc en un binario Go es totalmente factible.
+Yes, you have several native Go options for Docker alternatives, and embedding runc in a Go binary is totally feasible.
 
-## Librerías Go para Podman, containerd y runtimes alternativos
+## Go Libraries for Podman, containerd and alternative runtimes
 
-| Runtime | Librería Go | Tipo de integración | Ideal para |
+| Runtime | Go Library | Integration Type | Ideal for |
 | :-- | :-- | :-- | :-- |
-| **Podman** | `github.com/containers/podman/pkg/bindings` | REST API client (gRPC/Unix socket) | Sistemas sin daemon Docker, rootless containers [^2_1][^2_2] |
-| **libpod** | `github.com/containers/libpod/libpod` | Librería core de Podman (más bajo nivel) | Control granular del lifecycle [^2_3][^2_4] |
-| **containerd** | `github.com/containerd/containerd` | Cliente Go nativo (gRPC al daemon) | Producción, Kubernetes, ligereza [^2_5][^2_6] |
-| **runc (libcontainer)** | `github.com/opencontainers/runc/libcontainer` | Librería Go nativa sin daemon | Embeber directamente, máximo control [^2_7] |
-| **nerdctl** | `github.com/containerd/nerdctl/v2/pkg/api/types` | Tipos y helpers (más CLI-oriented) | Docker-compatible sobre containerd [^2_8][^2_9] |
-| **crun** | No hay librería Go nativa | Es C, se embeber como binario | Rendimiento crítico, poca memoria [^2_10] |
+| **Podman** | `github.com/containers/podman/pkg/bindings` | REST API client (gRPC/Unix socket) | Systems without Docker daemon, rootless containers [^2_1][^2_2] |
+| **libpod** | `github.com/containers/libpod/libpod` | Podman core library (lower level) | Granular lifecycle control [^2_3][^2_4] |
+| **containerd** | `github.com/containerd/containerd` | Native Go client (gRPC to daemon) | Production, Kubernetes, lightweight [^2_5][^2_6] |
+| **runc (libcontainer)** | `github.com/opencontainers/runc/libcontainer` | Native Go library without daemon | Direct embedding, maximum control [^2_7] |
+| **nerdctl** | `github.com/containerd/nerdctl/v2/pkg/api/types` | Types and helpers (more CLI-oriented) | Docker-compatible over containerd [^2_8][^2_9] |
+| **crun** | No native Go library | It's C, embed as binary | Critical performance, low memory [^2_10] |
 
-## Opción 1: Usar `libcontainer` de runc como librería embebida (recomendado)
+## Option 1: Use runc's `libcontainer` as embedded library (recommended)
 
-`libcontainer` es el paquete Go subyacente de runc. Permite crear contenedores directamente desde Go **sin necesidad de un binario externo ni daemon** [^2_7].
+`libcontainer` is the underlying Go package of runc. It allows creating containers directly from Go **without needing an external binary or daemon** [^2_7].
 
 ```go
 package main
@@ -275,7 +275,7 @@ import (
 )
 
 func runIsolatedSubagent() error {
-    // 1. Configurar la factory con root de containers
+    // 1. Configure the factory with container root
     factory, err := libcontainer.New("/var/lib/myagent/containers", 
         libcontainer.Cgroupfs, 
         libcontainer.InitArgs(os.Args[^2_0], "init"),
@@ -284,9 +284,9 @@ func runIsolatedSubagent() error {
         return err
     }
 
-    // 2. Crear configuración OCI-like
+    // 2. Create OCI-like configuration
     config := &configs.Config{
-        Rootfs: "/path/to/rootfs", // El filesystem del subagente
+        Rootfs: "/path/to/rootfs", // The subagent's filesystem
         Namespaces: configs.Namespaces{
             {Type: configs.NEWNS},   // Mount namespace
             {Type: configs.NEWUTS},  // UTS
@@ -322,14 +322,14 @@ func runIsolatedSubagent() error {
         },
     }
 
-    // 3. Crear el container
+    // 3. Create the container
     container, err := factory.Create("subagent-001", config)
     if err != nil {
         return err
     }
     defer container.Destroy()
 
-    // 4. Ejecutar el proceso del subagente
+    // 4. Run the subagent process
     process := &libcontainer.Process{
         Args:   []string{"/usr/bin/my-subagent"},
         Env:    []string{"AGENT_MODE=subagent"},
@@ -344,16 +344,16 @@ func runIsolatedSubagent() error {
         return err
     }
 
-    // Esperar y cleanup
+    // Wait and cleanup
     _, err = process.Wait()
     return err
 }
 ```
 
 
-## Opción 2: Embeber runc/crun como binario con `//go:embed`
+## Option 2: Embed runc/crun as binary with `//go:embed`
 
-Si prefieres usar el binario de runc/crun directamente, Go 1.16+ permite embeber archivos binarios en el ejecutable final [^2_11][^2_12][^2_13].
+If you prefer to use the runc/crun binary directly, Go 1.16+ allows embedding binary files in the final executable [^2_11][^2_12][^2_13].
 
 ```go
 package main
@@ -385,18 +385,18 @@ func extractAndRun(runtime string, spec specs.Spec) error {
         path = "/tmp/.myagent/crun"
     }
     
-    // Extraer a disco (necesario para exec)
+    // Extract to disk (required for exec)
     os.MkdirAll("/tmp/.myagent", 0755)
     if err := os.WriteFile(path, binary, 0755); err != nil {
         return err
     }
     
-    // Escribir config.json OCI
+    // Write OCI config.json
     if err := writeOCISpec("/tmp/.myagent/subagent", &spec); err != nil {
         return err
     }
     
-    // Ejecutar runc/crun
+    // Run runc/crun
     cmd := exec.Command(path, "run", "-b", "/tmp/.myagent/subagent", "subagent-001")
     cmd.Stdout = os.Stdout
     cmd.Stderr = os.Stderr
@@ -405,9 +405,9 @@ func extractAndRun(runtime string, spec specs.Spec) error {
 ```
 
 
-## Opción 3: Usar containerd como backend (recomendado para producción)
+## Option 3: Use containerd as backend (recommended for production)
 
-Si necesitas gestión de imágenes, snapshots y redes, containerd es más completo que runc puro [^2_5][^2_6]:
+If you need image management, snapshots and networking, containerd is more complete than pure runc [^2_5][^2_6]:
 
 ```go
 import (
@@ -438,9 +438,9 @@ func runWithContainerd(ctx context.Context, imageRef string) error {
         containerd.WithNewSpec(
             oci.WithImageConfig(image),
             oci.WithProcessArgs("/usr/bin/my-subagent"),
-            // Aislamiento adicional
+            // Additional isolation
             oci.WithPrivileged(false),
-            oci.WithHostNamespace(specs.NetworkNamespace), // o sin red
+            oci.WithHostNamespace(specs.NetworkNamespace), // or no network
         ),
     )
     if err != nil {
@@ -458,9 +458,9 @@ func runWithContainerd(ctx context.Context, imageRef string) error {
 ```
 
 
-## Opción 4: Podman bindings (para rootless sin daemon)
+## Option 4: Podman bindings (for rootless without daemon)
 
-La ventaja de Podman es que no requiere daemon corriendo como root [^2_1][^2_14]:
+The advantage of Podman is that it doesn't require a daemon running as root [^2_1][^2_14]:
 
 ```go
 import (
@@ -494,19 +494,19 @@ func runWithPodman(ctx context.Context) error {
 ```
 
 
-## Cuándo usar cada opción
+## When to use each option
 
-| Escenario | Mejor opción | Razón |
+| Scenario | Best Option | Reason |
 | :-- | :-- | :-- |
-| Binario único autocontenido, sin dependencias externas | `libcontainer` embebido | Zero runtime deps [^2_7] |
-| Necesitas pull de imágenes, snapshots, redes complejas | `containerd` | Feature-complete [^2_6] |
-| Rootless, sin daemon, desarrollo local | `Podman` bindings | Sin privilegios root [^2_1] |
-| Rendimiento máximo, overhead mínimo | `crun` embebido + `//go:embed` | C rápido, poca memoria [^2_10] |
-| Docker-compatible, migración sencilla | `containerd` + `nerdctl` | Drop-in replacement [^2_9] |
+| Single self-contained binary, no external dependencies | Embedded `libcontainer` | Zero runtime deps [^2_7] |
+| Need image pull, snapshots, complex networking | `containerd` | Feature-complete [^2_6] |
+| Rootless, no daemon, local development | `Podman` bindings | No root privileges [^2_1] |
+| Maximum performance, minimum overhead | Embedded `crun` + `//go:embed` | Fast C, low memory [^2_10] |
+| Docker-compatible, easy migration | `containerd` + `nerdctl` | Drop-in replacement [^2_9] |
 
-Para tu agente AI, si buscas **distribuir un único binario Go que pueda lanzar contenedores aislados sin requerir Docker instalado**, la combinación más potente es embeber `libcontainer` de runc para creación nativa de containers, o embeber el binario de `crun` vía `//go:embed` para máximo rendimiento.
+For your AI agent, if you're looking to **distribute a single Go binary that can launch isolated containers without requiring Docker installed**, the most powerful combination is embedding runc's `libcontainer` for native container creation, or embedding the `crun` binary via `//go:embed` for maximum performance.
 
-¿Qué nivel de aislamiento necesitas para los subagentes? ¿Requieren acceso a red y posibilidad de construir imágenes nuevas, o solo ejecutar procesos aislados con filesystem readonly?
+What level of isolation do you need for the subagents? Do they require network access and the ability to build new images, or just isolated processes with read-only filesystem?
 <span style="display:none">[^2_15][^2_16][^2_17][^2_18][^2_19][^2_20][^2_21][^2_22][^2_23][^2_24][^2_25][^2_26][^2_27][^2_28][^2_29][^2_30]</span>
 
 <div align="center">⁂</div>
@@ -574,20 +574,20 @@ Para tu agente AI, si buscas **distribuir un único binario Go que pueda lanzar 
 
 ---
 
-# puedo hacer o soportar con libcontainer el pull de imágenes de repositorios públicos y privados? dame ejemplos
+# can I do or support with libcontainer pulling images from public and private repositories? give me examples
 
-No. `libcontainer` de runc **no sabe nada de imágenes ni registries** — solo ejecuta contenedores a partir de un `rootfs` ya desempaquetado en disco [^3_1][^3_2]. Para hacer pull desde Docker Hub, registries privados o cualquier registry, necesitas combinar `libcontainer` con una librería de imagen.
+No. runc's `libcontainer` **knows nothing about images or registries** — it only runs containers from an already unpacked `rootfs` on disk [^3_1][^3_2]. To pull from Docker Hub, private registries or any registry, you need to combine `libcontainer` with an image library.
 
-La solución más coherente con tu enfoque de no-dependencias-daemon es usar **`github.com/containers/image/v5`** + **`github.com/containers/storage`**. Son las mismas librerías que usa Podman/Buildah y están diseñadas para trabajar sin Docker [^3_3][^3_4].
+The most coherent solution with your no-daemon-dependencies approach is to use **`github.com/containers/image/v5`** + **`github.com/containers/storage`**. These are the same libraries used by Podman/Buildah and are designed to work without Docker [^3_3][^3_4].
 
-## Stack completo: pull de imagen → rootfs → libcontainer
+## Complete stack: image pull → rootfs → libcontainer
 
 ```
-Registry → containers/image → containers/storage (layers + mount) → libcontainer (runtime OCI)
+Registry → containers/image → containers/storage (layers + mount) → libcontainer (OCI runtime)
 ```
 
 
-## Ejemplo 1: Pull desde registry público (Docker Hub)
+## Example 1: Pull from public registry (Docker Hub)
 
 ```go
 package main
@@ -607,19 +607,19 @@ import (
 )
 
 func main() {
-    // reexec trick necesario para storage
+    // reexec trick needed for storage
     if reexec.Init() {
         return
     }
 
     ctx := context.Background()
 
-    // 1. Crear storage store
+    // 1. Create storage store
     storeOptions, err := containerstorage.DefaultStoreOptions(false, 0)
     if err != nil {
         panic(err)
     }
-    // Personalizar paths si quieres todo embebido:
+    // Customize paths if you want everything embedded:
     // storeOptions.GraphRoot = "/var/lib/myagent/storage"
     // storeOptions.RunRoot = "/var/run/myagent/storage"
     
@@ -628,14 +628,14 @@ func main() {
         panic(err)
     }
 
-    // 2. Parsear imagen fuente
+    // 2. Parse source image
     imageName := "docker://alpine:latest"
     srcRef, err := transport.ParseImageName(imageName)
     if err != nil {
         panic(err)
     }
 
-    // 3. Referencia destino en storage local
+    // 3. Destination reference in local storage
     dstName := imageName
     if srcRef.DockerReference() != nil {
         dstName = srcRef.DockerReference().String()
@@ -645,7 +645,7 @@ func main() {
         panic(err)
     }
 
-    // 4. Política de firma (permissiva para demo)
+    // 4. Signature policy (permissive for demo)
     systemCtx := &imagetypes.SystemContext{}
     policy, err := signature.DefaultPolicy(systemCtx)
     if err != nil {
@@ -666,7 +666,7 @@ func main() {
         panic(err)
     }
 
-    // 6. Crear contenedor writable a partir de la imagen
+    // 6. Create writable container from image
     images, err := store.Images()
     if err != nil {
         panic(err)
@@ -674,7 +674,7 @@ func main() {
     
     var imageID string
     for _, img := range images {
-        // Buscar la imagen que acabamos de pull
+        // Find the image we just pulled
         imageID = img.ID
     }
 
@@ -683,28 +683,28 @@ func main() {
         panic(err)
     }
 
-    // 7. Mount → obtienes el rootfs para libcontainer
+    // 7. Mount → get rootfs for libcontainer
     mountPoint, err := store.Mount(container.ID)
     if err != nil {
         panic(err)
     }
 
-    fmt.Printf("Rootfs montado en: %s\n", mountPoint)
-    fmt.Printf("Usa %s como Rootfs en tu config libcontainer\n", mountPoint)
+    fmt.Printf("Rootfs mounted at: %s\n", mountPoint)
+    fmt.Printf("Use %s as Rootfs in your libcontainer config\n", mountPoint)
 
-    // Aquí pasas mountPoint a libcontainer...
+    // Here you pass mountPoint to libcontainer...
     // runLibcontainer(mountPoint)
 
-    // Cleanup al final
+    // Cleanup at the end
     store.Unmount(container.ID)
     store.DeleteContainer(container.ID)
 }
 ```
 
 
-## Ejemplo 2: Pull desde registry privado con autenticación
+## Example 2: Pull from private registry with authentication
 
-Para registries privados (GitHub Container Registry, GitLab, Amazon ECR, Azure ACR, tu propio Harbor), usas `SystemContext.DockerAuthConfig` o `DockerCertPath` [^3_5][^3_6]:
+For private registries (GitHub Container Registry, GitLab, Amazon ECR, Azure ACR, your own Harbor), use `SystemContext.DockerAuthConfig` or `DockerCertPath` [^3_5][^3_6]:
 
 ```go
 package main
@@ -730,31 +730,31 @@ func main() {
 
     ctx := context.Background()
 
-    // Configurar storage
+    // Configure storage
     storeOptions, _ := containerstorage.DefaultStoreOptions(false, 0)
     store, _ := containerstorage.GetStore(storeOptions)
 
-    // === AUTHENTICACIÓN PARA REGISTRY PRIVADO ===
+    // === AUTHENTICATION FOR PRIVATE REGISTRY ===
     systemCtx := &imagetypes.SystemContext{
-        // Opción A: Basic auth directo (usuario + token/password)
+        // Option A: Direct basic auth (user + token/password)
         DockerAuthConfig: &imagetypes.DockerAuthConfig{
-            Username: "tu-usuario",
-            Password: "tu-token-o-password", // o personal access token
+            Username: "your-username",
+            Password: "your-token-or-password", // or personal access token
         },
 
-        // Opción B: Para registries con certificados TLS propios
+        // Option B: For registries with custom TLS certificates
         // DockerCertPath: "/etc/myagent/certs/registry.example.com",
-        // TLSVerify:    imagetypes.NewOptionalBool(false), // solo para dev/testing
+        // TLSVerify:    imagetypes.NewOptionalBool(false), // only for dev/testing
 
-        // Opción C: Docker config.json (lee ~/.docker/config.json)
+        // Option C: Docker config.json (reads ~/.docker/config.json)
         // AuthFilePath: "/root/.docker/config.json",
 
-        // Opción D: Registry mirror / configuración especial
+        // Option D: Registry mirror / special configuration
         // RegistriesDirPath: "/etc/containers/registries.d",
     }
 
-    // Imagen privada
-    imageName := "docker://registry.example.com:5000/mi-proyecto/subagent:v1.2"
+    // Private image
+    imageName := "docker://registry.example.com:5000/my-project/subagent:v1.2"
     srcRef, err := transport.ParseImageName(imageName)
     if err != nil {
         panic(err)
@@ -776,14 +776,14 @@ func main() {
         panic(err)
     }
 
-    fmt.Printf("Pull completado, manifest: %s\n", string(manifest))
+    fmt.Printf("Pull completed, manifest: %s\n", string(manifest))
 }
 ```
 
 
-## Ejemplo 3: Usar `containers-auth.json` (múltiples registries)
+## Example 3: Using `containers-auth.json` (multiple registries)
 
-Para manejar múltiples credenciales de forma elegante, usa el archivo `containers-auth.json` que `containers/image` lee automáticamente [^3_5]:
+To handle multiple credentials elegantly, use the `containers-auth.json` file that `containers/image` reads automatically [^3_5]:
 
 ```go
 // ~/.config/containers/auth.json
@@ -795,17 +795,17 @@ Para manejar múltiples credenciales de forma elegante, usa el archivo `containe
 //   }
 // }
 
-// En tu código, solo apuntas al auth file:
+// In your code, just point to the auth file:
 systemCtx := &imagetypes.SystemContext{
     AuthFilePath: "/root/.config/containers/auth.json",
-    // o usa el default: /run/user/$UID/containers/auth.json
+    // or use the default: /run/user/$UID/containers/auth.json
 }
 ```
 
 
-## Alternativa más moderna: `go-containerregistry` (Google)
+## More modern alternative: `go-containerregistry` (Google)
 
-Si prefieres una API más limpia y moderna, `github.com/google/go-containerregistry` soporta pull y push con autenticación nativa [^3_7][^3_8][^3_9]:
+If you prefer a cleaner and more modern API, `github.com/google/go-containerregistry` supports pull and push with native authentication [^3_7][^3_8][^3_9]:
 
 ```go
 package main
@@ -821,17 +821,17 @@ import (
 )
 
 func main() {
-    imageRef := "registry.example.com/mi-proyecto/subagent:v1.2"
+    imageRef := "registry.example.com/my-project/subagent:v1.2"
 
-    // Opción A: Keychain que lee ~/.docker/config.json automáticamente
+    // Option A: Keychain that reads ~/.docker/config.json automatically
     img, err := crane.Pull(imageRef, crane.WithAuthFromKeychain(authn.DefaultKeychain))
     if err != nil {
         panic(err)
     }
 
-    // Opción B: Auth directo
+    // Option B: Direct auth
     auth := &authn.Basic{
-        Username: "usuario",
+        Username: "user",
         Password: "token",
     }
     img, err = crane.Pull(imageRef, crane.WithAuth(auth))
@@ -839,35 +839,35 @@ func main() {
         panic(err)
     }
 
-    // Guardar como tarball para extraer capas
+    // Save as tarball to extract layers
     if err := crane.Save(img, imageRef, "/tmp/subagent.tar"); err != nil {
         panic(err)
     }
 
-    fmt.Println("Imagen descargada. Extraer capas para usar con libcontainer...")
+    fmt.Println("Image downloaded. Extract layers to use with libcontainer...")
 
-    // Extraer el tarball a un directorio rootfs (puedes usar archive/tar o exec tar)
-    // El directorio resultante es tu Rootfs para libcontainer
+    // Extract the tarball to a rootfs directory (you can use archive/tar or exec tar)
+    // The resulting directory is your Rootfs for libcontainer
 }
 ```
 
 
-## Flujo completo para tu agente
+## Complete flow for your agent
 
 ```
 ┌─────────────────────────────────────────┐
 │  1. Parse devcontainer.json             │
-│     → obtener image: "ghcr.io/..."       │
+│     → get image: "ghcr.io/..."          │
 └─────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────┐
-│  2. Pull con containers/image           │
+│  2. Pull with containers/image          │
 │     → SystemContext + auth              │
-│     → almacena en containers/storage    │
+│     → store in containers/storage       │
 └─────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────┐
-│  3. Mount con storage → rootfs path     │
+│  3. Mount with storage → rootfs path    │
 │     → /var/lib/containers/.../merged    │
 └─────────────────────────────────────────┘
                     ↓
@@ -879,27 +879,27 @@ func main() {
 └─────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────┐
-│  5. container.Run(process)               │
-│     → subagent aislado corriendo        │
+│  5. container.Run(process)              │
+│     → isolated subagent running         │
 └─────────────────────────────────────────┘
 ```
 
 
-## Autenticación por registry type
+## Authentication by registry type
 
-| Registry | Tipo de credencial | Ejemplo |
+| Registry | Credential Type | Example |
 | :-- | :-- | :-- |
-| Docker Hub | Username + password o PAT | `DockerAuthConfig{Username, Password}` [^3_5] |
-| GitHub GHCR | Token de `GITHUB_TOKEN` | `Password: ghp_...` |
-| GitLab | Deploy token o PAT | `DockerAuthConfig{Username, Password}` |
-| Amazon ECR | Token temporal | `authn.DefaultKeychain` detecta helper [^3_9] |
-| Azure ACR | Service principal o admin | `DockerAuthConfig` |
+| Docker Hub | Username + password or PAT | `DockerAuthConfig{Username, Password}` [^3_5] |
+| GitHub GHCR | `GITHUB_TOKEN` token | `Password: ghp_...` |
+| GitLab | Deploy token or PAT | `DockerAuthConfig{Username, Password}` |
+| Amazon ECR | Temporary token | `authn.DefaultKeychain` detects helper [^3_9] |
+| Azure ACR | Service principal or admin | `DockerAuthConfig` |
 | Self-signed TLS | `DockerCertPath` + `TLSVerify` | `SystemContext{DockerCertPath}` |
-| Sin TLS (dev) | `TLSVerify: OptionalBool(false)` | Solo para testing [^3_10] |
+| No TLS (dev) | `TLSVerify: OptionalBool(false)` | Only for testing [^3_10] |
 
-La ventaja de `containers/image` es que soporta **múltiples transports** (`docker://`, `containers-storage://`, `dir://`, `oci://`, `docker-archive://`) y es el mismo código que usa `podman pull` y `skopeo copy` [^3_4][^3_11]. Si tu agente embebe este stack, tiene pull nativo de cualquier registry sin dependencias externas.
+The advantage of `containers/image` is that it supports **multiple transports** (`docker://`, `containers-storage://`, `dir://`, `oci://`, `docker-archive://`) and is the same code used by `podman pull` and `skopeo copy` [^3_4][^3_11]. If your agent embeds this stack, it has native pull from any registry without external dependencies.
 
-¿Quieres que prepare un ejemplo integrado que combine pull de imagen + libcontainer runtime en una sola función con cleanup automático?
+Would you like me to prepare an integrated example that combines image pull + libcontainer runtime in a single function with automatic cleanup?
 <span style="display:none">[^3_12][^3_13][^3_14][^3_15][^3_16][^3_17][^3_18][^3_19][^3_20][^3_21][^3_22][^3_23][^3_24][^3_25][^3_26][^3_27][^3_28]</span>
 
 <div align="center">⁂</div>
@@ -963,28 +963,28 @@ La ventaja de `containers/image` es que soporta **múltiples transports** (`dock
 
 ---
 
-# prepara un ejemplo
+# prepare an example
 
-Aquí tienes el ejemplo completo listo para compilar y ejecutar. He generado un binario Go autocontenido que hace pull de imágenes y lanza subagentes aislados con `libcontainer` .
+Here is the complete example ready to compile and run. I've generated a self-contained Go binary that pulls images and launches isolated subagents with `libcontainer`.
 
-## Cómo funciona el ejemplo
+## How the example works
 
-El flujo completo en un solo binario:
+The complete flow in a single binary:
 
 ```
-Registry → containers/image (pull + auth) → containers/storage (overlay mount) → libcontainer (runtime aislado)
+Registry → containers/image (pull + auth) → containers/storage (overlay mount) → libcontainer (isolated runtime)
 ```
 
 
-## Archivos generados
+## Generated files
 
-| Archivo | Descripción |
+| File | Description |
 | :-- | :-- |
-| `devcontainer_libcontainer_example.go` | Código fuente completo del agente |
-| `go.mod.example` | Dependencias necesarias |
-| `README.md` | Guía de uso y build |
+| `devcontainer_libcontainer_example.go` | Complete source code of the agent |
+| `go.mod.example` | Required dependencies |
+| `README.md` | Usage and build guide |
 
-## Código principal
+## Main code
 
 ### `devcontainer_libcontainer_example.go`
 
@@ -1008,21 +1008,21 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// DevContainerRuntime gestiona pull de imágenes y ejecución con libcontainer
+// DevContainerRuntime manages image pull and execution with libcontainer
 type DevContainerRuntime struct {
 	store   containerstorage.Store
 	factory libcontainer.Factory
 	ctx     context.Context
 }
 
-// NewDevContainerRuntime inicializa storage y libcontainer factory
+// NewDevContainerRuntime initializes storage and libcontainer factory
 func NewDevContainerRuntime(ctx context.Context, storageRoot string) (*DevContainerRuntime, error) {
-	// reexec trick necesario para containers/storage
+	// reexec trick needed for containers/storage
 	if reexec.Init() {
 		os.Exit(0)
 	}
 
-	// Storage con overlay driver
+	// Storage with overlay driver
 	storeOptions := containerstorage.StoreOptions{
 		GraphRoot:         storageRoot + "/storage",
 		RunRoot:           storageRoot + "/run",
@@ -1035,7 +1035,7 @@ func NewDevContainerRuntime(ctx context.Context, storageRoot string) (*DevContai
 		return nil, fmt.Errorf("failed to get store: %w", err)
 	}
 
-	// Factory libcontainer con cgroupfs
+	// libcontainer factory with cgroupfs
 	factory, err := libcontainer.New(
 		storageRoot+"/libcontainer",
 		libcontainer.Cgroupfs,
@@ -1052,7 +1052,7 @@ func NewDevContainerRuntime(ctx context.Context, storageRoot string) (*DevContai
 	}, nil
 }
 
-// PullImage descarga imagen del registry al storage local
+// PullImage downloads image from registry to local storage
 func (r *DevContainerRuntime) PullImage(imageName string, auth *imagetypes.DockerAuthConfig) error {
 	srcRef, err := transport.ParseImageName("docker://" + imageName)
 	if err != nil {
@@ -1081,9 +1081,9 @@ func (r *DevContainerRuntime) PullImage(imageName string, auth *imagetypes.Docke
 	return nil
 }
 
-// RunSubAgent ejecuta un subagente aislado desde imagen ya pulleada
+// RunSubAgent runs an isolated subagent from an already pulled image
 func (r *DevContainerRuntime) RunSubAgent(imageName, containerID string, cmd []string, stdin, stdout, stderr *os.File) (*libcontainer.Process, error) {
-	// Buscar imagen en storage local
+	// Find image in local storage
 	images, err := r.store.Images()
 	if err != nil {
 		return nil, fmt.Errorf("list images: %w", err)
@@ -1103,7 +1103,7 @@ func (r *DevContainerRuntime) RunSubAgent(imageName, containerID string, cmd []s
 		return nil, fmt.Errorf("image %s not found locally", imageName)
 	}
 
-	// Crear contenedor writable desde la imagen
+	// Create writable container from image
 	c, err := r.store.CreateContainer(containerID, nil, targetImage.ID, "", "", nil)
 	if err != nil {
 		return nil, fmt.Errorf("create container: %w", err)
@@ -1117,7 +1117,7 @@ func (r *DevContainerRuntime) RunSubAgent(imageName, containerID string, cmd []s
 	}
 	defer r.store.Unmount(c.ID)
 
-	// Configuración libcontainer con aislamiento fuerte
+	// libcontainer configuration with strong isolation
 	config := &configs.Config{
 		Rootfs: rootfs,
 		Namespaces: configs.Namespaces{
@@ -1211,15 +1211,15 @@ func main() {
 		panic(err)
 	}
 
-	// Pull público
+	// Public pull
 	rt.PullImage("alpine:latest", nil)
 
-	// Pull privado (descomenta según necesidad)
+	// Private pull (uncomment as needed)
 	// rt.PullImage("ghcr.io/org/subagent:v1", &imagetypes.DockerAuthConfig{
 	//     Username: "myuser", Password: "ghp_...",
 	// })
 
-	// Ejecutar subagente aislado
+	// Run isolated subagent
 	proc, err := rt.RunSubAgent(
 		"alpine:latest",
 		"subagent-001",
@@ -1236,39 +1236,39 @@ func main() {
 ```
 
 
-## Build y ejecución
+## Build and run
 
 ```bash
-# Crear módulo
+# Create module
 cp output/go.mod.example go.mod
 go mod tidy
 
-# Compilar
+# Compile
 go build -o agent output/devcontainer_libcontainer_example.go
 
-# Ejecutar (requiere root o subuid/subgid configurado para rootless)
+# Run (requires root or subuid/subgid configured for rootless)
 sudo ./agent
 ```
 
 
-## Autenticación soportada
+## Supported authentication
 
-| Método | Cómo implementarlo |
+| Method | How to implement |
 | :-- | :-- |
-| Auth directo | `DockerAuthConfig{Username, Password}` |
+| Direct auth | `DockerAuthConfig{Username, Password}` |
 | `auth.json` | `SystemContext.AuthFilePath = "/path/to/auth.json"` [^4_1] |
-| Docker config | Apunta a `~/.docker/config.json` |
-| Certificado TLS | `DockerCertPath` + `TLSVerify` |
+| Docker config | Point to `~/.docker/config.json` |
+| TLS certificate | `DockerCertPath` + `TLSVerify` |
 
-## Puntos clave del aislamiento
+## Key isolation points
 
-- **CapDrop ALL** + solo 4 capabilities: el subagente no puede hacer casi nada al nivel del kernel
-- **Readonly rootfs**: la imagen es inmutable; solo puede escribir en tmpfs
-- **Cgroups v1/v2**: límite de RAM (256MB), CPU (512 shares), PIDs (64)
-- **6 namespaces**: aísla filesystem, hostname, procesos, red, usuarios e IPC
-- **Overlay storage**: las capas de imagen son de solo lectura, el container layer es el único writable
+- **CapDrop ALL** + only 4 capabilities: the subagent can do almost nothing at the kernel level
+- **Readonly rootfs**: the image is immutable; can only write to tmpfs
+- **Cgroups v1/v2**: RAM limit (256MB), CPU (512 shares), PIDs (64)
+- **6 namespaces**: isolates filesystem, hostname, processes, network, users and IPC
+- **Overlay storage**: image layers are read-only, the container layer is the only writable one
 
-Para adaptar esto a tu `devcontainer.json`, necesitarás parsear `image`, `runArgs` (mapear a `config.Capabilities` y `config.Mounts`) y `features` (instalar tools en el rootfs antes de lanzar). ¿Quieres que añada un parser de `devcontainer.json` integrado en este mismo ejemplo?
+To adapt this to your `devcontainer.json`, you'll need to parse `image`, `runArgs` (map to `config.Capabilities` and `config.Mounts`) and `features` (install tools in rootfs before launching). Would you like me to add an integrated `devcontainer.json` parser in this same example?
 <span style="display:none">[^4_10][^4_11][^4_12][^4_13][^4_14][^4_15][^4_16][^4_2][^4_3][^4_4][^4_5][^4_6][^4_7][^4_8][^4_9]</span>
 
 <div align="center">⁂</div>
@@ -1308,220 +1308,13 @@ Para adaptar esto a tu `devcontainer.json`, necesitarás parsear `image`, `runAr
 
 ---
 
-# añade el parser
+# add the parser
 
-Aquí tienes el ejemplo completo con parser de `devcontainer.json` integrado .
+The parser is already **integrated** in the `devcontainer_complete_example.go` file I generated in the previous response. Here I show you the specific parser sections:
 
-## Archivos generados
+## Parser sections included
 
-| Archivo | Propósito |
-| :-- | :-- |
-| `devcontainer_complete_example.go` | Código fuente completo: parser + pull + libcontainer |
-| `devcontainer.json.example` | Ejemplo de `devcontainer.json` que el parser consume |
-
-## Qué parsea el código
-
-El parser soporta las propiedades principales del spec [^5_1][^5_2]:
-
-
-| Propiedad | Mapeo a libcontainer |
-| :-- | :-- |
-| `image` | Imagen a descargar vía `containers/image` |
-| `build.dockerfile` | No implementado en este ejemplo (requiere build) |
-| `containerEnv` | Variables de entorno del proceso |
-| `containerUser` / `remoteUser` | User del proceso libcontainer |
-| `workspaceFolder` | Directorio de trabajo por defecto |
-| `workspaceMount` | Mount bind del workspace |
-| `mounts[]` | Mounts adicionales parseados |
-| `runArgs` | `--cap-add`, `--cap-drop`, `--security-opt`, `--read-only`, `--memory`, `--cpus`, `--network`, `--mount`, `-v` |
-| `postCreateCommand` | Comando a ejecutar tras crear el container |
-| `forwardPorts` | Parseado pero sin implementar red puente en este ejemplo |
-| `features` | Parseado pero sin instalar en este ejemplo |
-
-## Build y ejecución
-
-```bash
-# 1. Crear módulo Go
-mkdir agent-devcontainer && cd agent-devcontainer
-go mod init github.com/josefran/agent-devcontainer
-
-# 2. Copiar archivos
-cp output/devcontainer_complete_example.go main.go
-cp output/devcontainer.json.example .devcontainer/devcontainer.json
-
-# 3. Dependencias
-go mod tidy
-
-# 4. Compilar
-go build -o agent .
-
-# 5. Ejecutar (root o rootless con subuid)
-sudo ./agent
-```
-
-
-## Cómo funciona el parser
-
-### 1. `ParseDevContainerJSON(path)`
-
-```go
-devConfig, err := ParseDevContainerJSON(".devcontainer/devcontainer.json")
-```
-
-- Lee el archivo
-- **Elimina comentarios JSONC** (`//` línea y `/* */` bloque)
-- Deserializa en `DevContainerConfig`
-- Aplica defaults (`workspaceFolder = "/workspace"`)
-
-
-### 2. `ApplyDevContainer(cfg, workspaceRoot)`
-
-```go
-parsed, err := ApplyDevContainer(devConfig, "/home/josefran/projects/my-project")
-```
-
-Resuelve:
-
-- **`ResolvedImage`**: la imagen a descargar
-- **Capabilities**: traduce `--cap-add=CHOWN` → `CAP_CHOWN`
-- **Cgroups**: traduce `--memory=256m` → `256*1024*1024` bytes
-- **Mounts**: parsea `--mount type=bind,source=...,target=...` y `-v /host:/container:ro`
-- **Workspace mount**: por defecto o el `workspaceMount` explícito
-- **Post create command**: string → `[]string{"/bin/sh", "-c", cmd}` o array directo
-- **Variables**: interpolación básica `${localEnv:VAR}`
-
-
-### 3. `buildLibcontainerConfig(parsed, rootfs, containerID)`
-
-Genera `configs.Config` con:
-
-- 6 namespaces activados
-- Capabilities aplicadas desde `runArgs`
-- Cgroups limits desde `runArgs`
-- Mounts: proc + tmpfs + workspace + extras
-- `Readonlyfs` si `--read-only`
-- `NoNewPrivileges` si `security-opt no-new-privileges:true`
-
-
-### 4. Ejecución
-
-```go
-process, err := rt.RunDevContainer(parsed, "subagent-001", cmd, nil, os.Stdout, os.Stderr)
-exitCode, err := rt.WaitSubAgent(process)
-```
-
-
-## Ejemplo de devcontainer.json soportado
-
-```json
-{
-    "name": "My AI Agent DevContainer",
-    "image": "alpine:latest",
-    "workspaceFolder": "/workspace",
-    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
-    "containerEnv": {
-        "MY_VAR": "hello-from-devcontainer",
-        "AGENT_MODE": "subagent"
-    },
-    "remoteUser": "vscode",
-    "runArgs": [
-        "--cap-drop=ALL",
-        "--cap-add=CHOWN",
-        "--cap-add=SETGID",
-        "--cap-add=SETUID",
-        "--security-opt", "no-new-privileges:true",
-        "--read-only",
-        "--memory=256m",
-        "--cpus=0.5"
-    ],
-    "mounts": [
-        "source=/tmp/agent-cache,target=/cache,type=bind,readonly"
-    ],
-    "postCreateCommand": "echo 'Container ready' && id"
-}
-```
-
-
-## Flujo completo del agente
-
-```
-┌─────────────────┐    ┌─────────────────────┐    ┌──────────────────┐
-│ devcontainer.json│───▶│ ParseDevContainerJSON│───▶│ ApplyDevContainer│
-│ (.devcontainer/) │    │ (strip JSONC comments) │    │ (resolve mounts, │
-└─────────────────┘    └─────────────────────┘    │ env, caps, cgroups)│
-                                                    └────────┬─────────┘
-                                                             │
-┌────────────────────────────────────────────────────────────┘
-│
-▼
-┌─────────────────────┐    ┌──────────────────┐    ┌─────────────┐
-│ PullImage(resolved) │───▶│ storage.Create   │───▶│ storage.Mount│
-│ (containers/image)   │    │ + libcontainer   │    │ (overlay    │
-│                      │    │   .Create+Run      │    │  rootfs)     │
-└─────────────────────┘    └──────────────────┘    └──────┬──────┘
-                                                          │
-                                                          ▼
-                                                   ┌──────────────┐
-                                                   │ Subagent     │
-                                                   │ Aislado      │
-                                                   └──────────────┘
-```
-
-
-## Features no implementados en este ejemplo (para extender)
-
-- **`build.dockerfile`**: requiere `containers/buildah` o `docker build` para compilar la imagen antes del pull
-- **`features`**: requiere descargar scripts de `ghcr.io/devcontainers/features/...` y ejecutarlos en el rootfs antes de `RunDevContainer`
-- **`dockerComposeFile`**: requiere orquestar múltiples containers (fuera de alcance de libcontainer puro)
-- **`forwardPorts`**: requiere configurar port forwarding desde el namespace de red del container
-- **`overrideFeatureInstallOrder`**: requiere topología de dependencias entre features
-- **Seccomp profiles personalizados**: requiere cargar JSON de syscall filter
-
-¿Quieres que implemente alguna de estas extensiones? El más útil para un agente AI sería probablemente **Features** (instalar herramientas automáticamente) o **forwardPorts** (exponer servicios del subagente).
-<span style="display:none">[^5_10][^5_11][^5_12][^5_13][^5_14][^5_15][^5_3][^5_4][^5_5][^5_6][^5_7][^5_8][^5_9]</span>
-
-<div align="center">⁂</div>
-
-[^5_1]: https://bamurtaugh.github.io/dev-container-spec/implementors/json_reference/
-
-[^5_2]: https://containers.dev/implementors/json_reference/
-
-[^5_3]: https://github.com/devcontainers/spec/blob/main/schemas/devContainer.schema.json
-
-[^5_4]: https://containers.dev/implementors/json_schema/
-
-[^5_5]: https://evuzv.shop/custom/97fca9b1/tara/devcontainers/spec/blob/main/docs/specs/devcontainerjson-reference.md
-
-[^5_6]: https://stackoverflow.com/revisions/70219806/5
-
-[^5_7]: https://github.com/devcontainers/spec/blob/main/docs/specs/devcontainer-features.md
-
-[^5_8]: https://stackoverflow.com/questions/69577685/vscode-extension-remote-container-does-not-allow-me-use-workspacemount
-
-[^5_9]: https://cocalc.com/github/microsoft/vscode/blob/main/extensions/configuration-editing/schemas/devContainer.vscode.schema.json
-
-[^5_10]: https://developer.harness.io/docs/cloud-development-environments/develop-using-cde/run-args/
-
-[^5_11]: https://code.visualstudio.com/blogs/2022/09/15/dev-container-features
-
-[^5_12]: https://devcontainers.github.io/implementors/json_reference/
-
-[^5_13]: https://navigation.ros.org/development_guides/devcontainer_docs/devcontainer_guide.html
-
-[^5_14]: https://github.com/devcontainers/cli/issues/857
-
-[^5_15]: https://github.com/devcontainers/features
-
-
----
-
-# añade el parser
-
-El parser ya está **integrado** en el archivo `devcontainer_complete_example.go` que generé en la respuesta anterior . Aquí te muestro las secciones específicas del parser:
-
-## Secciones del parser incluidas
-
-### 1. Estructura de datos (`DevContainerConfig`)
+### 1. Data structure (`DevContainerConfig`)
 
 ```go
 type DevContainerConfig struct {
@@ -1543,7 +1336,7 @@ type DevContainerConfig struct {
 ```
 
 
-### 2. Parseo de JSON con comentarios (`ParseDevContainerJSON`)
+### 2. JSON with comments parsing (`ParseDevContainerJSON`)
 
 ```go
 func ParseDevContainerJSON(path string) (*DevContainerConfig, error) {
@@ -1569,7 +1362,7 @@ func ParseDevContainerJSON(path string) (*DevContainerConfig, error) {
 ```
 
 
-### 3. Traducción de `runArgs` a libcontainer (`TranslateRunArgs`)
+### 3. Translating `runArgs` to libcontainer (`TranslateRunArgs`)
 
 ```go
 func TranslateRunArgs(runArgs []string) *ParsedDevContainer {
@@ -1601,7 +1394,7 @@ func TranslateRunArgs(runArgs []string) *ParsedDevContainer {
 ```
 
 
-### 4. Aplicación completa del config (`ApplyDevContainer`)
+### 4. Complete config application (`ApplyDevContainer`)
 
 ```go
 func ApplyDevContainer(cfg *DevContainerConfig, workspaceRoot string) (*ParsedDevContainer, error) {
@@ -1613,15 +1406,15 @@ func ApplyDevContainer(cfg *DevContainerConfig, workspaceRoot string) (*ParsedDe
     if parsed.User == "" {
         parsed.User = cfg.RemoteUser
     }
-    // Workspace mount (default o custom)
-    // Mounts adicionales
-    // Post create command como []string
+    // Workspace mount (default or custom)
+    // Additional mounts
+    // Post create command as []string
     return parsed, nil
 }
 ```
 
 
-### 5. Generador de config libcontainer (`buildLibcontainerConfig`)
+### 5. libcontainer config generator (`buildLibcontainerConfig`)
 
 ```go
 func buildLibcontainerConfig(parsed *ParsedDevContainer, rootfs, containerID string) *configs.Config {
@@ -1635,57 +1428,57 @@ func buildLibcontainerConfig(parsed *ParsedDevContainer, rootfs, containerID str
             },
         },
     }
-    // Aplica capabilities de runArgs
-    // Aplica mounts del devcontainer.json
-    // Aplica security-opts (no-new-privileges, seccomp, apparmor)
-    // Aplica cgroups overrides
+    // Apply capabilities from runArgs
+    // Apply mounts from devcontainer.json
+    // Apply security-opts (no-new-privileges, seccomp, apparmor)
+    // Apply cgroups overrides
     return cfg
 }
 ```
 
 
-## Flujo completo en `main()`
+## Complete flow in `main()`
 
 ```go
 func main() {
-    // 1. Parsear
+    // 1. Parse
     devConfig, _ := ParseDevContainerJSON(".devcontainer/devcontainer.json")
     
-    // 2. Interpretar/Resolver
+    // 2. Interpret/Resolve
     parsed, _ := ApplyDevContainer(devConfig, "/home/josefran/projects/my-project")
     
-    // 3. Inicializar runtime
+    // 3. Initialize runtime
     rt, _ := NewDevContainerRuntime(ctx, "/var/lib/myagent")
     
-    // 4. Pull imagen
+    // 4. Pull image
     rt.PullImage(parsed.ResolvedImage, nil)
     
-    // 5. Ejecutar subagente con config del devcontainer.json
+    // 5. Run subagent with devcontainer.json config
     process, _ := rt.RunDevContainer(parsed, "subagent-001", cmd, nil, os.Stdout, os.Stderr)
     
-    // 6. Esperar y cleanup
+    // 6. Wait and cleanup
     rt.WaitSubAgent(process)
     rt.CleanupContainer("subagent-001")
 }
 ```
 
 
-## `runArgs` soportados
+## Supported `runArgs`
 
-| Flag | Traducción |
+| Flag | Translation |
 | :-- | :-- |
-| `--cap-add CHOWN` | `CAP_CHOWN` en bounding/effective/permitted |
-| `--cap-drop ALL` | Vacía capabilities, solo las de `--cap-add` |
+| `--cap-add CHOWN` | `CAP_CHOWN` in bounding/effective/permitted |
+| `--cap-drop ALL` | Empties capabilities, only those from `--cap-add` |
 | `--security-opt no-new-privileges:true` | `NoNewPrivileges = true` |
 | `--read-only` | `Readonlyfs = true` |
 | `--memory 256m` | `Cgroups.Resources.Memory = 256MB` |
 | `--cpus 0.5` | `Cgroups.Resources.CpuQuota = 50000` |
-| `--network none` | Namespace de red aislado |
-| `--mount type=bind,...` | Mount adicional en config |
-| `-v /host:/container:ro` | Mount bind con readonly |
+| `--network none` | Isolated network namespace |
+| `--mount type=bind,...` | Additional mount in config |
+| `-v /host:/container:ro` | Bind mount with readonly |
 | `--privileged` | `Privileged = true` |
 
-## `mounts[]` soportados
+## Supported `mounts[]`
 
 ```json
 "mounts": [
@@ -1694,9 +1487,9 @@ func main() {
 ]
 ```
 
-Se parsean como `configs.Mount` con flags `MS_BIND`, `MS_RDONLY`, etc.
+They are parsed as `configs.Mount` with flags `MS_BIND`, `MS_RDONLY`, etc.
 
-El archivo está listo para compilar. Solo necesitas:
+The file is ready to compile. You just need:
 
 ```bash
 cp output/devcontainer_complete_example.go main.go
@@ -1706,5 +1499,4 @@ go build -o agent .
 sudo ./agent
 ```
 
-¿Hay alguna propiedad específica del `devcontainer.json` que necesites que el parser maneje de forma diferente?
-
+Is there any specific property of `devcontainer.json` that you need the parser to handle differently?

@@ -1,34 +1,34 @@
 <img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" style="height:64px;margin-right:32px"/>
 
-# busco una librería en la que pueda integrar una view de terminal en una app tui hecha con bubbles de charmbracelet
+# I'm looking for a library to integrate a terminal view into a TUI app made with charmbracelet bubbles
 
-Sí: la opción más directa que he encontrado para **integrar una vista de terminal** con una app basada en Bubble Tea/Bubbles es `github.com/BigJk/crt`, porque está pensada justo como un “minimal terminal emulator for Bubbletea” y se puede adjuntar a un `tea.Program` mediante su adaptador para Bubble Tea. [^1_1]
+Yes: the most direct option I've found for **integrating a terminal view** with a Bubble Tea/Bubbles-based app is `github.com/BigJk/crt`, because it's designed exactly as a "minimal terminal emulator for Bubbletea" and can be attached to a `tea.Program` via its Bubble Tea adapter. [^1_1]
 
-## Opción principal
+## Main option
 
-`BigJk/crt` está descrita como una librería que proporciona un emulador de terminal simple que puede adjuntarse a `tea.Program`, con soporte para TrueColor, ratón y teclado, e interpretación de secuencias CSI usadas por Bubble Tea. [^1_1] Además, su README muestra un ejemplo de uso con `bubbleadapter.Window(...)`, donde le pasas tu `tea.Model` y lo renderiza en una ventana propia. [^1_1]
+`BigJk/crt` is described as a library that provides a simple terminal emulator that can be attached to `tea.Program`, with support for TrueColor, mouse and keyboard, and interpretation of CSI sequences used by Bubble Tea. [^1_1] Additionally, its README shows an example usage with `bubbleadapter.Window(...)`, where you pass your `tea.Model` and it renders it in its own window. [^1_1]
 
-Esto encaja bien si lo que buscas no es solo un panel de texto, sino una terminal “real” embebida para una app TUI/terminal-like. [^1_1]
+This fits well if what you're looking for isn't just a text panel, but a "real" embedded terminal for a TUI/terminal-like app. [^1_1]
 
-## Matiz importante
+## Important nuance
 
-Si por “terminal view” te vale un área scrollable para mostrar salida ANSI o logs, `bubbles/viewport` existe y sirve para renderizar un viewport dentro de Bubble Tea, con scroll vertical y horizontal programático. [^1_2][^1_3] Pero `viewport` no es un emulador de terminal ni ejecuta PTY/shell; es un componente de visualización dentro de Bubble Tea. [^1_3]
+If by "terminal view" you mean a scrollable area to display ANSI output or logs, `bubbles/viewport` exists and serves to render a viewport within Bubble Tea, with programmatic vertical and horizontal scrolling. [^1_2][^1_3] But `viewport` is not a terminal emulator nor does it run PTY/shell; it's a display component within Bubble Tea. [^1_3]
 
-En cambio, `crt` sí apunta al caso de emulación/render de terminal asociada a Bubble Tea, aunque usa `ebitengine` para dibujar y su propio README avisa de limitaciones: no todas las secuencias CSI están implementadas y el mapeo de teclas aún puede ser algo irregular. [^1_1]
+On the other hand, `crt` does target the case of terminal emulation/rendering associated with Bubble Tea, although it uses `ebitengine` for drawing and its own README warns of limitations: not all CSI sequences are implemented and key mapping can still be somewhat irregular. [^1_1]
 
-## Recomendación práctica
+## Practical recommendation
 
-Te diría:
+I would say:
 
-- Usa `BigJk/crt` si quieres una terminal embebida de verdad dentro del ecosistema Bubble Tea. [^1_1]
-- Usa `bubbles/viewport` si solo necesitas un panel con contenido desplazable, como logs, salida de comandos ya procesada o texto ANSI limitado. [^1_2][^1_3]
+- Use `BigJk/crt` if you want a truly embedded terminal within the Bubble Tea ecosystem. [^1_1]
+- Use `bubbles/viewport` if you only need a panel with scrollable content, like logs, already-processed command output, or limited ANSI text. [^1_2][^1_3]
 
 
-## Encaje con Bubbles
+## Integration with Bubbles
 
-Bubble Tea es el framework base, y Bubbles aporta componentes reutilizables como `viewport`, listas, inputs y tablas, así que tu arquitectura natural sería seguir con Bubble Tea/Bubbles para la UI y añadir `crt` solo en la zona donde necesites la terminal embebida. [^1_1][^1_3][^1_1]
+Bubble Tea is the base framework, and Bubbles provides reusable components like `viewport`, lists, inputs, and tables, so your natural architecture would be to continue with Bubble Tea/Bubbles for the UI and add `crt` only in the area where you need the embedded terminal. [^1_1][^1_3][^1_1]
 
-Si quieres, puedo proponerte ahora una arquitectura concreta para **Bubble Tea + Bubbles + PTY real** con ejemplo en Go para incrustar una shell dentro de tu TUI.
+If you want, I can now propose a concrete architecture for **Bubble Tea + Bubbles + real PTY** with a Go example to embed a shell inside your TUI.
 <span style="display:none">[^1_10][^1_11][^1_12][^1_13][^1_14][^1_15][^1_4][^1_5][^1_6][^1_7][^1_8][^1_9]</span>
 
 <div align="center">⁂</div>
@@ -66,35 +66,35 @@ Si quieres, puedo proponerte ahora una arquitectura concreta para **Bubble Tea +
 
 ---
 
-# alguna otra librería para embeber un terminal en una tui Golang?
+# Any other library to embed a terminal in a Go TUI?
 
-Sí: además de `crt`, una alternativa bastante clara hoy es `github.com/taigrr/bubbleterm`, que se define como un emulador de terminal headless y embebible en Go, con salida compatible con Bubble Tea. [^2_1]
+Yes: besides `crt`, a pretty clear alternative today is `github.com/taigrr/bubbleterm`, which defines itself as a headless and embeddable terminal emulator in Go, with output compatible with Bubble Tea. [^2_1]
 
-## Librerías útiles
+## Useful libraries
 
-`bubbleterm` parece más alineada con tu caso que `crt` si quieres seguir dentro de una TUI tradicional, porque no renderiza con `ebitengine`, sino que expone un `Model` para Bubble Tea y está pensada para correr comandos dentro de un “terminal bubble”. [^2_1] Su README indica soporte para parsing ANSI, estado de pantalla, 256 colores y true color, scrollback, teclado, ratón, resize y compatibilidad con `xterm-256color`. [^2_1]
+`bubbleterm` seems more aligned with your case than `crt` if you want to stay within a traditional TUI, because it doesn't render with `ebitengine`, but instead exposes a `Model` for Bubble Tea and is designed to run commands inside a "terminal bubble". [^2_1] Its README indicates support for ANSI parsing, screen state, 256 colors and true color, scrollback, keyboard, mouse, resize, and compatibility with `xterm-256color`. [^2_1]
 
-`crt`, por contraste, también sirve para acoplar una terminal a Bubble Tea, pero su enfoque es más de ventana renderizada con `ebitengine`, no tanto de componente TUI nativo renderizado como string dentro del árbol de vistas de Bubble Tea. [^2_2]
+`crt`, by contrast, also serves to couple a terminal to Bubble Tea, but its approach is more of a window rendered with `ebitengine`, not so much a native TUI component rendered as a string within Bubble Tea's view tree. [^2_2]
 
-## Diferencias clave
+## Key differences
 
-| Librería | Enfoque | Encaje con Bubble Tea |
+| Library | Approach | Integration with Bubble Tea |
 | :-- | :-- | :-- |
-| `taigrr/bubbleterm` | Emulador headless embebible; Bubble component; pensado para PTY + TUI. [^2_1] | Muy bueno si quieres un panel terminal dentro de tu layout Bubble Tea. [^2_1] |
-| `BigJk/crt` | Emulador simple acoplado a `tea.Program`, renderizado con `ebitengine`. [^2_2] | Útil si aceptas ese backend gráfico/render distinto. [^2_2] |
-| `creack/pty` / `danielgatis/go-pty` | Gestión de PTY/procesos, no emulación completa de terminal por sí sola. [^2_3][^2_1] | Sirve como base, pero necesitas por encima una capa de emulación/render. [^2_3][^2_1] |
+| `taigrr/bubbleterm` | Embeddable headless emulator; Bubble component; designed for PTY + TUI. [^2_1] | Very good if you want a terminal panel inside your Bubble Tea layout. [^2_1] |
+| `BigJk/crt` | Simple emulator coupled to `tea.Program`, rendered with `ebitengine`. [^2_2] | Useful if you accept that different graphics/render backend. [^2_2] |
+| `creack/pty` / `danielgatis/go-pty` | PTY/process management, not complete terminal emulation by itself. [^2_3][^2_1] | Serves as a base, but you need an emulation/rendering layer on top. [^2_3][^2_1] |
 
-## Mi recomendación
+## My recommendation
 
-Si tu app ya está hecha con Bubbles y quieres una integración limpia, probaría primero `bubbleterm`. [^2_1] De hecho, su documentación incluye `NewWithCommand`, `Update`, `View`, `Resize`, `Focus`, `SendInput` y un ejemplo explícito de integrar `htop` dentro de Bubble Tea, que es justo el tipo de API que suele encajar bien en un layout con panes. [^2_1]
+If your app is already built with Bubbles and you want a clean integration, I would try `bubbleterm` first. [^2_1] In fact, its documentation includes `NewWithCommand`, `Update`, `View`, `Resize`, `Focus`, `SendInput`, and an explicit example of integrating `htop` within Bubble Tea, which is exactly the type of API that usually fits well in a layout with panes. [^2_1]
 
-Si lo que quieres es montar tú el stack, entonces la combinación más flexible sería `creack/pty` o `go-pty` para el proceso/PTY y una librería de emulación como `bubbleterm` por encima. [^2_3][^2_1]
+If what you want is to build the stack yourself, then the most flexible combination would be `creack/pty` or `go-pty` for the process/PTY and an emulation library like `bubbleterm` on top. [^2_3][^2_1]
 
-## Limitaciones
+## Limitations
 
-En `bubbleterm` se documentan limitaciones actuales: no hay damage tracking completo, puede redibujar toda la pantalla en cada frame y el borrado de caracteres puede fallar en algunos casos; incluso mencionan que ejecutar `tmux` dentro del emulador mitiga parte de esos problemas. [^2_1] Eso sugiere que está muy prometedora, pero todavía conviene validarla con casos reales como `bash`, `zsh`, `vim`, `less`, `htop` o `lazygit`. [^2_1]
+In `bubbleterm`, current limitations are documented: there's no complete damage tracking, it may redraw the entire screen on each frame, and character erasing may fail in some cases; they even mention that running `tmux` inside the emulator mitigates some of those issues. [^2_1] This suggests it's very promising, but it's still worth validating with real cases like `bash`, `zsh`, `vim`, `less`, `htop`, or `lazygit`. [^2_1]
 
-Si quieres, te preparo una comparación más técnica entre `bubbleterm`, `crt` y montar `pty + vt10x/tcell` para elegir según tu caso.
+If you want, I can prepare a more technical comparison between `bubbleterm`, `crt`, and building `pty + vt10x/tcell` to choose based on your case.
 <span style="display:none">[^2_10][^2_11][^2_12][^2_13][^2_14][^2_15][^2_16][^2_4][^2_5][^2_6][^2_7][^2_8][^2_9]</span>
 
 <div align="center">⁂</div>
@@ -134,33 +134,33 @@ Si quieres, te preparo una comparación más técnica entre `bubbleterm`, `crt` 
 
 ---
 
-# hazme una tabla comparativa
+# Make me a comparison table
 
-Sí. Aquí tienes una tabla pensada para elegir entre las opciones más razonables para embeber una terminal en una TUI Go, especialmente si ya estás en Bubble Tea. [^3_1][^3_2][^3_3]
+Yes. Here's a table designed to choose among the most reasonable options for embedding a terminal in a Go TUI, especially if you're already in Bubble Tea. [^3_1][^3_2][^3_3]
 
-## Tabla
+## Table
 
-| Opción | Qué es | Integración con Bubble Tea | Pros | Contras | Cuándo la usaría |
+| Option | What it is | Integration with Bubble Tea | Pros | Cons | When to use it |
 | :-- | :-- | :-- | :-- | :-- | :-- |
-| `taigrr/bubbleterm` | Emulador de terminal headless y embebible, con salida compatible con Bubble Tea. [^3_1][^3_2] | Muy alta: expone `Init`, `Update`, `View`, `Resize`, `SendInput`, `StartCommand` y ejemplo directo con Bubble Tea. [^3_1] | Diseñada para este caso; soporta ANSI, UTF-8, 256/true color, scrollback, teclado, ratón y resize. [^3_1][^3_4] | Proyecto joven; la propia doc menciona limitaciones de redibujado/damage tracking según el estado de la implementación publicada. [^3_5][^3_4] | Si quieres un panel-terminal dentro de tu layout Bubble Tea sin inventarte la capa de emulación. [^3_1] |
-| `BigJk/crt` | Emulador mínimo de terminal orientado a Bubble Tea. [^3_6][^3_7] | Media-alta: se acopla a `tea.Program`, pero su implementación usa `ebiten`, así que el modelo de render no es el típico componente string-only de Bubble Tea. [^3_8][^3_5] | Enfoque directo, pensado específicamente para Bubble Tea; útil si aceptas su backend gráfico. [^3_6][^3_5] | Menos “nativo TUI” en el sentido clásico; depende de `ebiten` y no de un render textual puro. [^3_8] | Si quieres algo funcional rápido y no te importa salirte un poco del patrón tradicional de Bubbles. [^3_6][^3_8] |
-| `creack/pty` | Librería PTY para lanzar y controlar procesos con pseudo-terminal en Unix. [^3_9][^3_3] | Baja por sí sola: no renderiza terminal ni interpreta ANSI; solo gestiona el PTY/proceso. [^3_9] | Muy usada y madura; buena base para shells, `vim`, `htop`, `less`, etc. [^3_3] | Necesitas añadir por encima emulación, parser ANSI, pantalla, input mapping y render. [^3_9][^3_1] | Si quieres construir tu propio terminal embebido o combinarla con otra librería de emulación. [^3_9] |
+| `taigrr/bubbleterm` | Headless and embeddable terminal emulator, with Bubble Tea-compatible output. [^3_1][^3_2] | Very high: exposes `Init`, `Update`, `View`, `Resize`, `SendInput`, `StartCommand` and direct Bubble Tea example. [^3_1] | Designed for this case; supports ANSI, UTF-8, 256/true color, scrollback, keyboard, mouse and resize. [^3_1][^3_4] | Young project; the docs themselves mention redrawing/damage tracking limitations depending on the published implementation state. [^3_5][^3_4] | If you want a terminal panel inside your Bubble Tea layout without building the emulation layer yourself. [^3_1] |
+| `BigJk/crt` | Minimal terminal emulator oriented toward Bubble Tea. [^3_6][^3_7] | Medium-high: couples to `tea.Program`, but its implementation uses `ebiten`, so the render model isn't the typical string-only Bubble Tea component. [^3_8][^3_5] | Direct approach, specifically designed for Bubble Tea; useful if you accept its graphics backend. [^3_6][^3_5] | Less "TUI native" in the classic sense; depends on `ebiten` rather than pure textual rendering. [^3_8] | If you want something functional quickly and don't mind deviating a bit from the traditional Bubbles pattern. [^3_6][^3_8] |
+| `creack/pty` | PTY library to launch and control processes with pseudo-terminal on Unix. [^3_9][^3_3] | Low on its own: doesn't render terminal or interpret ANSI; only manages the PTY/process. [^3_9] | Very widely used and mature; good base for shells, `vim`, `htop`, `less`, etc. [^3_3] | You need to add emulation, ANSI parser, screen, input mapping and rendering on top. [^3_9][^3_1] | If you want to build your own embedded terminal or combine it with another emulation library. [^3_9] |
 
-## Lectura rápida
+## Quick read
 
-Si buscas la opción más natural para una app ya hecha con Bubbles, `bubbleterm` es la candidata más clara ahora mismo. [^3_1][^3_2] Si priorizas una base robusta de PTY para montar tu propia solución, `creack/pty` es la pieza de infraestructura correcta, pero no te resuelve la vista de terminal por sí sola. [^3_9][^3_3]
+If you're looking for the most natural option for an app already built with Bubbles, `bubbleterm` is the clearest candidate right now. [^3_1][^3_2] If you prioritize a robust PTY base to build your own solution, `creack/pty` is the right infrastructure piece, but it doesn't solve the terminal view by itself. [^3_9][^3_3]
 
-`crt` queda en medio: sirve para el caso Bubble Tea, pero su enfoque técnico es distinto del patrón habitual de componentes textuales de Bubbles. [^3_8][^3_5]
+`crt` falls in between: it works for the Bubble Tea case, but its technical approach differs from the usual textual component pattern of Bubbles. [^3_8][^3_5]
 
-## Recomendación
+## Recommendation
 
-Para un proyecto nuevo, haría esta elección:
+For a new project, I would make this choice:
 
-- `bubbleterm` si quieres velocidad de integración y una API tipo Bubble Tea. [^3_1]
-- `creack/pty` si necesitas máximo control y no te importa implementar más capas. [^3_9][^3_3]
-- `crt` solo si su modelo de render con `ebiten` te encaja bien desde el principio. [^3_8]
+- `bubbleterm` if you want integration speed and a Bubble Tea-style API. [^3_1]
+- `creack/pty` if you need maximum control and don't mind implementing more layers. [^3_9][^3_3]
+- `crt` only if its `ebiten` render model fits well from the start. [^3_8]
 
-Si quieres, te hago la siguiente tabla comparando ya con criterios más de ingeniería: **mantenimiento, madurez, complejidad de integración, compatibilidad con apps interactivas (`vim`, `tmux`, `lazygit`) y riesgo técnico**.
+If you want, I can make the next table comparing with more engineering criteria: **maintenance, maturity, integration complexity, compatibility with interactive apps (`vim`, `tmux`, `lazygit`), and technical risk**.
 <span style="display:none">[^3_10][^3_11][^3_12][^3_13][^3_14][^3_15][^3_16][^3_17]</span>
 
 <div align="center">⁂</div>
@@ -202,49 +202,49 @@ Si quieres, te hago la siguiente tabla comparando ya con criterios más de ingen
 
 ---
 
-# he integrado bubbluterm pero se cuelga la aplicación cuando intento cargar un terminal, luego hice cambios para que no se colgase pero no aparecía el shell en la view donde cargo el terminal
+# I integrated bubbluterm but the app hangs when I try to load a terminal, then I made changes so it wouldn't hang but the shell doesn't appear in the view where I load the terminal
 
-Lo que describes suena a dos fallos distintos: primero, el terminal se queda bloqueado porque el loop de Bubble Tea no está recibiendo o propagando bien las actualizaciones del `bubbleterm`; después, al evitar el bloqueo, el proceso puede arrancar pero no se está renderizando en la vista correcta o no tiene tamaño/foco válido para dibujarse. [^4_1][^4_2][^4_3]
+What you describe sounds like two different failures: first, the terminal gets blocked because the Bubble Tea loop isn't receiving or propagating the `bubbleterm` updates properly; then, after avoiding the blockage, the process may start but isn't rendering in the correct view or doesn't have a valid size/focus to draw itself. [^4_1][^4_2][^4_3]
 
-## Posibles causas
+## Possible causes
 
-`bubbleterm` documenta un patrón muy concreto: crear el terminal con `NewWithCommand(width, height, cmd)`, devolver `m.terminal.Init()` en `Init()`, reenviar los mensajes a `m.terminal.Update(msg)` dentro de `Update()`, y devolver `m.terminal.View()` en `View()`. [^4_1][^4_2] Si una de esas piezas falta, el proceso puede existir pero la pantalla no actualizarse, o quedarse esperando eventos que nunca llegan. [^4_1]
+`bubbleterm` documents a very specific pattern: create the terminal with `NewWithCommand(width, height, cmd)`, return `m.terminal.Init()` in `Init()`, forward messages to `m.terminal.Update(msg)` within `Update()`, and return `m.terminal.View()` in `View()`. [^4_1][^4_2] If any of those pieces is missing, the process may exist but the screen doesn't update, or it stays waiting for events that never arrive. [^4_1]
 
-Además, la librería expone `SetAutoPoll(false)` y `UpdateTerminal()` para polling manual, lo que implica que si desactivaste el auto-poll y no llamas periódicamente a `UpdateTerminal()`, el shell puede estar ejecutándose pero no generar repaints visibles. [^4_1][^4_2] Eso encaja bastante con “ya no se cuelga, pero no aparece nada”. [^4_1]
+Additionally, the library exposes `SetAutoPoll(false)` and `UpdateTerminal()` for manual polling, which means if you disabled auto-poll and don't periodically call `UpdateTerminal()`, the shell may be running but not generate visible repaints. [^4_1][^4_2] This fits quite well with "it no longer hangs, but nothing appears". [^4_1]
 
-## Qué revisaría
+## What I would check
 
-- Asegúrate de que el terminal se crea con ancho y alto reales, no con `0x0` ni con dimensiones aún no inicializadas. [^4_1][^4_3]
-- Propaga `tea.WindowSizeMsg` al terminal y llama a `Resize(width, height)` cuando cambie el layout, porque Bubble Tea basa mucho del render en ese mensaje y hay casos documentados donde el tamaño no se refresca bien si no lo reinyectas al loop. [^4_1][^4_3]
-- Si usas foco entre panes, confirma que el panel del terminal está en `Focus()` cuando esperas que reciba input. [^4_1]
-- Si cambiaste a polling manual, ejecuta `UpdateTerminal()` con un ticker; si no, deja `SetAutoPoll(true)` o no lo toques. [^4_1][^4_2]
-- Verifica que en tu `View()` principal realmente concatenas o enrutas `m.terminal.View()` dentro del pane visible, porque si la vista activa devuelve otra cosa, el shell puede estar vivo pero fuera del árbol renderizado. [^4_1]
+- Make sure the terminal is created with actual width and height, not with `0x0` or with dimensions not yet initialized. [^4_1][^4_3]
+- Forward `tea.WindowSizeMsg` to the terminal and call `Resize(width, height)` when the layout changes, because Bubble Tea bases much of its rendering on that message and there are documented cases where the size doesn't refresh properly if you don't re-inject it into the loop. [^4_1][^4_3]
+- If you use focus between panes, confirm that the terminal panel is in `Focus()` when you expect it to receive input. [^4_1]
+- If you switched to manual polling, run `UpdateTerminal()` with a ticker; otherwise, leave `SetAutoPoll(true)` or don't touch it. [^4_1][^4_2]
+- Verify that in your main `View()` you're actually concatenating or routing `m.terminal.View()` within the visible pane, because if the active view returns something else, the shell may be alive but outside the render tree. [^4_1]
 
 
-## Patrón mínimo
+## Minimum pattern
 
-La documentación de `bubbleterm` propone algo conceptualmente así: crear el comando, construir el terminal, usar `Init()` del terminal, reenviar todos los `msg` al terminal en `Update()`, y renderizar con `View()`. [^4_1][^4_2] También expone `StartCommand`, `Resize`, `SendInput` y `UpdateTerminal`, así que cualquier integración que reemplace ese flujo base necesita seguir alimentando esos puntos de entrada. [^4_1]
+The `bubbleterm` documentation proposes something conceptually like: create the command, build the terminal, use the terminal's `Init()`, forward all `msg` to the terminal in `Update()`, and render with `View()`. [^4_1][^4_2] It also exposes `StartCommand`, `Resize`, `SendInput`, and `UpdateTerminal`, so any integration that replaces that base flow needs to keep feeding those entry points. [^4_1]
 
-Un fallo muy típico en layouts con Bubbles es crear el terminal antes de conocer el tamaño final del pane, con lo que se inicializa pequeño o vacío, y luego no hacer `Resize()` cuando llega `tea.WindowSizeMsg`. [^4_3][^4_4] En Bubble Tea, el tamaño correcto suele fijarse al recibir `tea.WindowSizeMsg`, no antes. [^4_3][^4_4]
+A very typical failure in Bubbles layouts is creating the terminal before knowing the final pane size, so it initializes small or empty, and then not calling `Resize()` when `tea.WindowSizeMsg` arrives. [^4_3][^4_4] In Bubble Tea, the correct size is usually set upon receiving `tea.WindowSizeMsg`, not before. [^4_3][^4_4]
 
-## Diagnóstico rápido
+## Quick diagnosis
 
-Haz estas comprobaciones en orden:
+Do these checks in order:
 
-1. El comando existe y arranca, por ejemplo `/bin/bash`, `zsh` o `sh`, no uno interactivo raro que falle por entorno. [^4_1]
-2. El terminal recibe `Init()` y luego `Update()` en cada mensaje del programa. [^4_1]
-3. El pane tiene tamaño mayor que cero y llamas a `Resize()` cuando conoces ese tamaño. [^4_1][^4_3]
-4. No has desactivado el auto-poll sin sustituirlo por ticks que llamen a `UpdateTerminal()`. [^4_1]
-5. El `View()` del pane visible devuelve realmente `m.terminal.View()`. [^4_1]
+1. The command exists and starts, for example `/bin/bash`, `zsh` or `sh`, not some weird interactive one that fails due to the environment. [^4_1]
+2. The terminal receives `Init()` and then `Update()` on every program message. [^4_1]
+3. The pane has a size greater than zero and you call `Resize()` when you know that size. [^4_1][^4_3]
+4. You haven't disabled auto-poll without replacing it with ticks that call `UpdateTerminal()`. [^4_1]
+5. The visible pane's `View()` actually returns `m.terminal.View()`. [^4_1]
 
-## Lo más probable
+## Most likely
 
-Por cómo lo cuentas, apostaría más por una de estas dos:
+Based on how you describe it, I would bet more on one of these two:
 
-- Desactivaste el bloqueo, pero dejaste el terminal sin polling o sin `Init()`, así que el proceso no refresca la pantalla. [^4_1][^4_2]
-- El shell sí arranca, pero el componente tiene tamaño `0`, no recibe `Resize()`, o su `View()` no está siendo insertada en el pane activo. [^4_1][^4_3]
+- You disabled the blocking, but left the terminal without polling or without `Init()`, so the process doesn't refresh the screen. [^4_1][^4_2]
+- The shell does start, but the component has size `0`, doesn't receive `Resize()`, or its `View()` isn't being inserted into the active pane. [^4_1][^4_3]
 
-Pégame el `model`, `Init`, `Update` y `View` de esa pantalla, más el punto donde creas `bubbleterm`, y te digo exactamente dónde está el problema.
+Paste me the `model`, `Init`, `Update` and `View` from that screen, plus where you create `bubbleterm`, and I'll tell you exactly where the problem is.
 <span style="display:none">[^4_10][^4_11][^4_12][^4_13][^4_14][^4_15][^4_16][^4_5][^4_6][^4_7][^4_8][^4_9]</span>
 
 <div align="center">⁂</div>
@@ -284,13 +284,13 @@ Pégame el `model`, `Init`, `Update` y `View` de esa pantalla, más el punto don
 
 ---
 
-# Ejemplo código completo para integrar bubbleterm en Bubble Tea
+# Complete code example to integrate bubbleterm in Bubble Tea
 
-Sí. Este es un ejemplo **completo y mínimo** para integrar `bubbleterm` dentro de una app Bubble Tea, siguiendo la API documentada por la librería: crear el terminal con `NewWithCommand`, reenviar mensajes con `Update`, inicializar con `Init`, redimensionar con `Resize`, y renderizar con `View`. [^5_1][^5_2]
+Yes. This is a **complete and minimal** example for integrating `bubbleterm` within a Bubble Tea app, following the API documented by the library: create the terminal with `NewWithCommand`, forward messages with `Update`, initialize with `Init`, resize with `Resize`, and render with `View`. [^5_1][^5_2]
 
-## Ejemplo completo
+## Complete example
 
-La documentación de `bubbleterm` muestra que el flujo correcto es `NewWithCommand(width, height, cmd)`, `m.terminal.Init()`, `m.terminal.Update(msg)` y `m.terminal.View()`. [^5_1] También expone `Resize`, `Focus`, `Blur`, `Close`, `StartCommand` y `UpdateTerminal`, que sirven para una integración más robusta. [^5_1]
+The `bubbleterm` documentation shows that the correct flow is `NewWithCommand(width, height, cmd)`, `m.terminal.Init()`, `m.terminal.Update(msg)` and `m.terminal.View()`. [^5_1] It also exposes `Resize`, `Focus`, `Blur`, `Close`, `StartCommand` and `UpdateTerminal`, which serve for a more robust integration. [^5_1]
 
 ```go
 package main
@@ -317,7 +317,7 @@ func newModel() model {
 }
 
 func (m model) Init() tea.Cmd {
-	// Esperamos a WindowSizeMsg para crear el terminal con tamaño real.
+	// We wait for WindowSizeMsg to create the terminal with real size.
 	return nil
 }
 
@@ -343,7 +343,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.terminal.Focus()
 			m.ready = true
 
-			// Init es parte del flujo documentado por bubbleterm.
+			// Init is part of the flow documented by bubbleterm.
 			return m, m.terminal.Init()
 		}
 
@@ -374,11 +374,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	if m.err != nil {
-		return fmt.Sprintf("error creando terminal: %v\n", m.err)
+		return fmt.Sprintf("error creating terminal: %v\n", m.err)
 	}
 
 	if !m.ready || m.terminal == nil {
-		return "inicializando terminal..."
+		return "initializing terminal..."
 	}
 
 	return m.terminal.View()
@@ -394,38 +394,38 @@ func main() {
 ```
 
 
-## Por qué funciona
+## Why it works
 
-Este ejemplo retrasa la creación del terminal hasta recibir `tea.WindowSizeMsg`, que en Bubble Tea es el momento fiable para conocer el tamaño real de la pantalla o del pane. [^5_3][^5_1] Eso evita uno de los problemas más comunes: crear el terminal con tamaño `0x0` y luego no ver nada en pantalla. [^5_1]
+This example delays terminal creation until receiving `tea.WindowSizeMsg`, which in Bubble Tea is the reliable moment to know the real screen or pane size. [^5_3][^5_1] This avoids one of the most common problems: creating the terminal with size `0x0` and then seeing nothing on screen. [^5_1]
 
-Además, reenvía **todos** los mensajes a `m.terminal.Update(msg)` después de manejar los globales como resize o quit, que es justo el patrón que la documentación enseña para que el terminal procese input, repaints y eventos internos. [^5_1][^5_2]
+Additionally, it forwards **all** messages to `m.terminal.Update(msg)` after handling global ones like resize or quit, which is exactly the pattern that the documentation teaches for the terminal to process input, repaints and internal events. [^5_1][^5_2]
 
-## Versión con layout
+## Layout version
 
-Si quieres meter el terminal en un pane y no a pantalla completa, tienes que crear y redimensionar `bubbleterm` con el tamaño del pane, no con el tamaño completo de la terminal. [^5_1] En ese caso, el `View()` de tu modelo principal debe insertar `m.terminal.View()` dentro del layout visible, porque si devuelves otra vista, el shell puede estar corriendo pero no dibujarse donde esperas. [^5_1]
+If you want to put the terminal in a pane and not full screen, you need to create and resize `bubbleterm` with the pane size, not the full terminal size. [^5_1] In that case, your main model's `View()` must insert `m.terminal.View()` within the visible layout, because if you return a different view, the shell may be running but not drawing where you expect. [^5_1]
 
-Un patrón típico sería calcular `leftWidth`, `rightWidth` y `contentHeight`, y luego hacer `m.terminal.Resize(rightWidth, contentHeight)` cuando llegue `WindowSizeMsg`. [^5_1][^5_3]
+A typical pattern would be to calculate `leftWidth`, `rightWidth` and `contentHeight`, and then do `m.terminal.Resize(rightWidth, contentHeight)` when `WindowSizeMsg` arrives. [^5_1][^5_3]
 
-## Errores típicos
+## Common errors
 
-- Crear `bubbleterm` antes de tener tamaño real. [^5_1]
-- No llamar a `m.terminal.Init()`. [^5_1]
-- No reenviar `msg` a `m.terminal.Update(msg)`. [^5_1]
-- No hacer `Resize()` cuando cambia el tamaño. [^5_1]
-- Cerrar el cuelgue desactivando el polling, pero olvidar `UpdateTerminal()` si has usado `SetAutoPoll(false)`. [^5_1]
+- Creating `bubbleterm` before having real size. [^5_1]
+- Not calling `m.terminal.Init()`. [^5_1]
+- Not forwarding `msg` to `m.terminal.Update(msg)`. [^5_1]
+- Not calling `Resize()` when size changes. [^5_1]
+- Fixing the hang by disabling polling, but forgetting `UpdateTerminal()` if you used `SetAutoPoll(false)`. [^5_1]
 
 
-## Variante recomendada
+## Recommended variant
 
-Si quieres algo más estable para empezar, usa `sh` o `bash` sencillo antes de probar `zsh`, `vim`, `htop` o `lazygit`, porque así reduces variables durante el diagnóstico. [^5_1] La propia documentación usa `htop` como ejemplo de integración, lo que confirma que la intención de la librería es soportar procesos interactivos dentro de Bubble Tea. [^5_2][^5_4]
+If you want something more stable to start with, use `sh` or simple `bash` before trying `zsh`, `vim`, `htop` or `lazygit`, because that reduces variables during diagnosis. [^5_1] The documentation itself uses `htop` as an integration example, which confirms that the library's intention is to support interactive processes within Bubble Tea. [^5_2][^5_4]
 
-Puedo darte ahora una segunda versión más realista con:
+I can now give you a second, more realistic version with:
 
 - header + footer,
-- terminal en panel central,
-- foco entre panes,
-- resize correcto,
-- y ticker manual por si quieres usar `SetAutoPoll(false)`.
+- terminal in center panel,
+- focus between panes,
+- correct resize,
+- and manual ticker in case you want to use `SetAutoPoll(false)`.
 <span style="display:none">[^5_10][^5_11][^5_12][^5_13][^5_14][^5_15][^5_5][^5_6][^5_7][^5_8][^5_9]</span>
 
 <div align="center">⁂</div>
@@ -463,13 +463,13 @@ Puedo darte ahora una segunda versión más realista con:
 
 ---
 
-# Ejemplo avanzado con soporte de resize dinámico
+# Advanced example with dynamic resize support
 
-Sí. Este ejemplo es más **avanzado**: usa `bubbleterm` en un layout con header, footer y panel central; soporta resize dinámico; crea el terminal solo cuando ya conoce el tamaño útil; y además usa polling manual con `SetAutoPoll(false)` + `UpdateTerminal()` para evitar bloqueos y tener más control. [^6_1][^6_2]
+Yes. This example is more **advanced**: it uses `bubbleterm` in a layout with header, footer and center panel; supports dynamic resize; creates the terminal only when it knows the usable size; and also uses manual polling with `SetAutoPoll(false)` + `UpdateTerminal()` to avoid blocking and have more control. [^6_1][^6_2]
 
-## Código completo
+## Complete code
 
-La API documentada por `bubbleterm` incluye `NewWithCommand`, `Init`, `Update`, `View`, `Resize`, `Focus`, `Blur`, `SetAutoPoll(false)` y `UpdateTerminal()`, así que este ejemplo se apoya exactamente en esas piezas. [^6_1][^6_2]
+The API documented by `bubbleterm` includes `NewWithCommand`, `Init`, `Update`, `View`, `Resize`, `Focus`, `Blur`, `SetAutoPoll(false)` and `UpdateTerminal()`, so this example relies exactly on those pieces. [^6_1][^6_2]
 
 ```go
 package main
@@ -635,10 +635,10 @@ func (m model) headerView() string {
 }
 
 func (m model) footerView() string {
-	line1 := "q/ctrl+c salir • ctrl+l clear • ctrl+r reiniciar shell"
-	line2 := "resize dinámico activo"
+	line1 := "q/ctrl+c exit • ctrl+l clear • ctrl+r restart shell"
+	line2 := "dynamic resize active"
 	if m.ready && m.terminal != nil && m.terminal.Focused() {
-		line2 = "resize dinámico activo • terminal con foco"
+		line2 = "dynamic resize active • terminal focused"
 	}
 	return trimWidth(padRight(line1, m.width), m.width) + "\n" +
 		trimWidth(padRight(line2, m.width), m.width)
@@ -650,7 +650,7 @@ func (m model) bodyView() string {
 	}
 
 	if !m.ready || m.terminal == nil {
-		return padBlock("inicializando terminal...", m.termW, m.termH)
+		return padBlock("initializing terminal...", m.termW, m.termH)
 	}
 
 	return padBlock(m.terminal.View(), m.termW, m.termH)
@@ -658,7 +658,7 @@ func (m model) bodyView() string {
 
 func (m model) View() string {
 	if m.width == 0 || m.height == 0 {
-		return "esperando tamaño de terminal..."
+		return "waiting for terminal size..."
 	}
 
 	body := m.bodyView()
@@ -756,23 +756,23 @@ func main() {
 ```
 
 
-## Qué hace bien
+## What it does well
 
-Este patrón evita crear el shell antes de conocer el tamaño útil del área central, que es uno de los problemas más comunes en Bubble Tea cuando un componente depende de `tea.WindowSizeMsg`. [^6_3][^6_1] Además, cada resize recalcula el layout y llama a `terminal.Resize(...)`, que es exactamente la operación que `bubbleterm` expone para adaptar las dimensiones del emulador. [^6_1]
+This pattern avoids creating the shell before knowing the usable size of the center area, which is one of the most common problems in Bubble Tea when a component depends on `tea.WindowSizeMsg`. [^6_3][^6_1] Additionally, each resize recalculates the layout and calls `terminal.Resize(...)`, which is exactly the operation that `bubbleterm` exposes to adapt the emulator dimensions. [^6_1]
 
-También usa polling manual porque la documentación de `bubbleterm` indica que, si desactivas auto-polling con `SetAutoPoll(false)`, debes llamar a `UpdateTerminal()` desde un ticker externo. [^6_1][^6_2] Esto te da más control en integraciones complejas y ayuda a evitar estados donde el proceso existe pero la view no se repinta. [^6_1]
+It also uses manual polling because the `bubbleterm` documentation indicates that if you disable auto-polling with `SetAutoPoll(false)`, you must call `UpdateTerminal()` from an external ticker. [^6_1][^6_2] This gives you more control in complex integrations and helps avoid states where the process exists but the view doesn't repaint. [^6_1]
 
-## Puntos críticos
+## Critical points
 
-En Bubble Tea, el tamaño correcto llega por `tea.WindowSizeMsg`, así que no conviene inicializar el terminal en `Init()` con tamaños ficticios. [^6_3][^6_4] En casos donde el terminal externo cambia de tamaño y no se propaga bien, la comunidad de Bubble Tea también ha usado un ticker que reinyecta eventos de resize para forzar actualización coherente del layout. [^6_5]
+In Bubble Tea, the correct size arrives via `tea.WindowSizeMsg`, so it's not advisable to initialize the terminal in `Init()` with dummy sizes. [^6_3][^6_4] In cases where the external terminal changes size and it doesn't propagate well, the Bubble Tea community has also used a ticker that re-injects resize events to force coherent layout updates. [^6_5]
 
-Si el shell no aparece, revisa cuatro cosas: que `View()` principal realmente incluya `m.terminal.View()`, que el panel tenga ancho y alto mayores que cero, que el terminal reciba `Update(msg)` para todos los mensajes, y que el polling manual esté activo si has llamado a `SetAutoPoll(false)`. [^6_1][^6_2]
+If the shell doesn't appear, check four things: that the main `View()` actually includes `m.terminal.View()`, that the panel has width and height greater than zero, that the terminal receives `Update(msg)` for all messages, and that manual polling is active if you called `SetAutoPoll(false)`. [^6_1][^6_2]
 
-## Ajustes útiles
+## Useful adjustments
 
-Puedes cambiar `exec.Command("bash")` por `exec.Command("zsh")` o por una app como `htop`, porque `bubbleterm` está pensado para ejecutar procesos interactivos dentro de un bubble. [^6_2][^6_6] Si quieres integrarlo en un layout más serio, una opción complementaria es usar un gestor de layout como `bubblelayout`, que traduce `tea.WindowSizeMsg` a tamaños exactos por panel. [^6_7]
+You can change `exec.Command("bash")` to `exec.Command("zsh")` or to an app like `htop`, because `bubbleterm` is designed to run interactive processes within a bubble. [^6_2][^6_6] If you want to integrate it into a more serious layout, a complementary option is to use a layout manager like `bubblelayout`, which translates `tea.WindowSizeMsg` to exact per-panel sizes. [^6_7]
 
-Pásame tu código actual y te lo devuelvo adaptado a este patrón, con tus panes y navegación.
+Send me your current code and I'll return it adapted to this pattern, with your panes and navigation.
 <span style="display:none">[^6_10][^6_11][^6_12][^6_13][^6_14][^6_15][^6_16][^6_8][^6_9]</span>
 
 <div align="center">⁂</div>
@@ -808,4 +808,3 @@ Pásame tu código actual y te lo devuelvo adaptado a este patrón, con tus pane
 [^6_15]: https://awesome.ecosyste.ms/projects/github.com%2Fcharmbracelet%2Fbubbles
 
 [^6_16]: https://substack.com/home/post/p-152418733
-

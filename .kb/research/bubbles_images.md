@@ -1,26 +1,26 @@
 <img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" style="height:64px;margin-right:32px"/>
 
-# como puedo generar un grafico en una interfaz Bubble o bubbletea tui , me refiero a poner un logo que tengo en jpg y lo quiero dibujar pixel a pixel
+# how can I generate a graphic in a Bubble or bubbletea TUI interface, I mean putting a logo I have in jpg and drawing it pixel by pixel
 
-Sí: en **Bubble Tea** puedes “dibujar” un JPG píxel a píxel, pero normalmente no se hace como imagen real incrustada, sino convirtiéndolo a texto coloreado en la `View()` de la TUI. Bubble Tea renderiza la interfaz como strings y se redibuja completo en cada frame, así que el enfoque más estable y portable es representar tu logo como bloques de color, no como bitmap nativo del terminal [^1_1][^1_2].
+Yes: in **Bubble Tea** you can "draw" a JPG pixel by pixel, but it's usually not done as a real embedded image, but by converting it to colored text in the TUI's `View()`. Bubble Tea renders the interface as strings and redraws it completely each frame, so the most stable and portable approach is to represent your logo as color blocks, not as a native terminal bitmap [^1_1][^1_2].
 
-## Enfoque recomendado
+## Recommended approach
 
-Bubble Tea genera la UI desde `View()` y devuelve un `string`, por lo que lo natural es transformar el JPG en una rejilla de caracteres coloreados y mostrarla como parte del layout [^1_1]. Además, el propio equipo de Bubble Tea indica que no hay soporte oficial sólido para imágenes nativas por compatibilidad entre terminales, y mencionan como alternativa viable una implementación con “half-blocks” o renderizado textual [^1_2].
+Bubble Tea generates the UI from `View()` and returns a `string`, so the natural thing is to transform the JPG into a colored character grid and display it as part of the layout [^1_1]. Additionally, the Bubble Tea team itself indicates there's no solid official support for native images due to terminal compatibility, and mention as a viable alternative an implementation with "half-blocks" or textual rendering [^1_2].
 
-La idea práctica es:
+The practical idea is:
 
-- Cargar tu JPG con Go.
-- Redimensionarlo al tamaño que quepa en la terminal.
-- Recorrer píxel a píxel.
-- Convertir cada par de píxeles verticales en un carácter `▀` o `▄` con colores ANSI, o cada píxel en `█` si quieres algo más simple [^1_2].
+- Load your JPG with Go.
+- Resize it to the size that fits in the terminal.
+- Iterate pixel by pixel.
+- Convert each vertical pair of pixels into a `▀` or `▄` character with ANSI colors, or each pixel into `█` if you want something simpler [^1_2].
 
 
-## Opción más robusta
+## More robust option
 
-Si quieres buen resultado en terminal, usa caracteres de bloque Unicode como `▀`, porque con un solo carácter representas dos píxeles verticales: el color de foreground pinta la mitad superior y el background la mitad inferior. Ese enfoque da más resolución que ASCII puro y encaja bien con el modelo de render de Bubble Tea [^1_2].
+If you want good results in terminal, use Unicode block characters like `▀`, because with a single character you represent two vertical pixels: the foreground color paints the top half and the background the bottom half. This approach gives more resolution than pure ASCII and fits well with Bubble Tea's render model [^1_2].
 
-Ejemplo conceptual en Go dentro de Bubble Tea:
+Conceptual example in Go within Bubble Tea:
 
 ```go
 func renderImage(img image.Image, w, h int) string {
@@ -49,31 +49,31 @@ func renderImage(img image.Image, w, h int) string {
 }
 ```
 
-Eso encaja con Bubble Tea porque `View()` solo necesita devolver el string final [^1_1]. Si además usas Lip Gloss para layout, ten cuidado con secuencias ANSI complejas, porque en discusiones de Bubble Tea se menciona que algunas combinaciones de escape codes e imágenes/protocolos gráficos pueden interferir con el renderizado [^1_2].
+This fits with Bubble Tea because `View()` only needs to return the final string [^1_1]. If you also use Lip Gloss for layout, be careful with complex ANSI sequences, because in Bubble Tea discussions it's mentioned that some combinations of escape codes and images/graphic protocols can interfere with rendering [^1_2].
 
-## JPG a pixel art
+## JPG to pixel art
 
-Como tu logo está en JPG, primero conviene pasarlo a una versión pequeña y limpia, porque JPG mete compresión con artefactos. Si quieres un efecto “pixel art”, reduce resolución, opcionalmente limita la paleta, y luego renderiza esa malla reducida en la terminal; si intentas dibujar el JPG original pixel a pixel, en una TUI se verá enorme o borroso según el tamaño disponible [^1_2].
+Since your logo is in JPG, it's best to first convert it to a small, clean version, because JPG introduces compression artifacts. If you want a "pixel art" effect, reduce resolution, optionally limit the palette, and then render that reduced grid in the terminal; if you try to draw the original JPG pixel by pixel, in a TUI it will look huge or blurry depending on available size [^1_2].
 
-Un flujo típico sería:
+A typical flow would be:
 
-- Leer `logo.jpg`.
-- Escalar, por ejemplo, a 48x24 o 64x32.
-- Mapear colores a 24-bit ANSI.
-- Guardar el string renderizado en el modelo.
-- Mostrarlo en `View()` junto con el resto de widgets [^1_1].
+- Read `logo.jpg`.
+- Scale, for example, to 48x24 or 64x32.
+- Map colors to 24-bit ANSI.
+- Store the rendered string in the model.
+- Display it in `View()` alongside the other widgets [^1_1].
 
 
-## Imágenes reales en terminal
+## Real images in terminal
 
-También existe la vía de protocolos gráficos del terminal como **Sixel** o **Kitty graphics**, y Bubble Tea puede llegar a mostrarlos en algunos casos, pero el soporte sigue siendo inconsistente entre emuladores, alt-screen, redibujado y posicionamiento del cursor [^1_2]. Por eso, si quieres algo que funcione bien en Linux, macOS, tmux y distintas terminales, el render con bloques Unicode suele ser la mejor decisión [^1_2].
+There's also the path of terminal graphic protocols like **Sixel** or **Kitty graphics**, and Bubble Tea can sometimes show them, but support remains inconsistent across emulators, alt-screen, redrawing and cursor positioning [^1_2]. That's why, if you want something that works well on Linux, macOS, tmux and different terminals, rendering with Unicode blocks is usually the best decision [^1_2].
 
-Si quieres, te puedo escribir ahora mismo un ejemplo **completo en Go con Bubble Tea** que:
+If you want, I can write you right now a **complete example in Go with Bubble Tea** that:
 
-1. cargue `logo.jpg`,
-2. lo convierta a bloques `▀`,
-3. lo centre en pantalla,
-4. y lo redibuje correctamente al cambiar el tamaño de la terminal.
+1. loads `logo.jpg`,
+2. converts it to `▀` blocks,
+3. centers it on screen,
+4. and redraws it correctly when the terminal size changes.
 <span style="display:none">[^1_10][^1_11][^1_12][^1_13][^1_14][^1_15][^1_3][^1_4][^1_5][^1_6][^1_7][^1_8][^1_9]</span>
 
 <div align="center">⁂</div>
@@ -111,36 +111,36 @@ Si quieres, te puedo escribir ahora mismo un ejemplo **completo en Go con Bubble
 
 ---
 
-# puedo soportar Kitty en una interfaz tui Bubble?
+# can I support Kitty in a Bubble TUI interface?
 
-Sí, **puedes** dar soporte a Kitty en una TUI hecha con Bubble Tea, pero no como una capacidad oficial y estable del framework. Hoy la situación real es “posible con hacks o librerías externas”, mientras que Bubble Tea sigue sin ofrecer soporte nativo garantizado para imágenes en protocolos como Kitty por temas de compatibilidad y redibujado [^2_1].
+Yes, **you can** support Kitty in a TUI made with Bubble Tea, but not as an official and stable capability of the framework. Today the real situation is "possible with hacks or external libraries", while Bubble Tea still doesn't offer guaranteed native support for images in protocols like Kitty due to compatibility and redrawing issues [^2_1].
 
-## Qué sí es posible
+## What is possible
 
-El protocolo gráfico de Kitty está bien definido y permite enviar PNG, RGB o RGBA, colocarlos en posiciones concretas, escalarlos y hasta dibujarlos debajo o encima del texto mediante z-index [^2_2]. Además, Kitty añadió un modo de “Unicode placeholders” para que una app host basada en texto pueda mover imágenes como si fueran texto normal, lo que encaja mejor con TUIs que rehacen la pantalla constantemente [^2_2].
+Kitty's graphic protocol is well defined and allows sending PNG, RGB or RGBA, placing them at specific positions, scaling them and even drawing them below or above text using z-index [^2_2]. Additionally, Kitty added a "Unicode placeholders" mode so that a text-based host app can move images as if they were normal text, which fits better with TUIs that constantly redraw the screen [^2_2].
 
-## El problema con Bubble
+## The problem with Bubble
 
-En la discusión oficial de Bubble Tea, los mantenedores dicen que no hay planes inmediatos para soporte oficial de imágenes, porque la compatibilidad entre terminales sigue siendo irregular y eso choca con la filosofía del proyecto [^2_1]. En esa misma discusión aparecen problemas reales con Kitty dentro de Bubble Tea, como que con `WithAltScreen` puede fallar, que el redibujado/layout cuesta mantenerlo, y que Lip Gloss puede interferir con las secuencias de escape del protocolo gráfico [^2_1].
+In the official Bubble Tea discussion, maintainers say there are no immediate plans for official image support, because terminal compatibility remains irregular and that clashes with the project's philosophy [^2_1]. In that same discussion, real problems with Kitty in Bubble Tea appear, such as it failing with `WithAltScreen`, redrawing/layout being hard to maintain, and Lip Gloss potentially interfering with the graphic protocol's escape sequences [^2_1].
 
-## Cuándo merece la pena
+## When it's worth it
 
-Si tu app va dirigida principalmente a usuarios de Kitty o terminales compatibles, sí merece la pena implementar una capa opcional: detectas soporte, activas Kitty graphics, y si no existe haces fallback a half-blocks o ASCII coloreado [^2_2][^2_1]. Ese enfoque es el más sano porque Bubble Tea maneja muy bien texto, pero las imágenes nativas no se redibujan igual que el texto y pueden romper layout, scroll o alt-screen según terminal y multiplexer [^2_1].
+If your app is mainly targeted at Kitty users or compatible terminals, it's worth implementing an optional layer: you detect support, enable Kitty graphics, and if it doesn't exist, fall back to half-blocks or colored ASCII [^2_2][^2_1]. This approach is the healthiest because Bubble Tea handles text very well, but native images don't redraw the same way as text and can break layout, scroll or alt-screen depending on terminal and multiplexer [^2_1].
 
-## Recomendación práctica
+## Practical recommendation
 
-Yo lo haría así:
+I would do it this way:
 
-- Modo 1: render por bloques Unicode `▀` como fallback universal [^2_1].
-- Modo 2: Kitty graphics solo si detectas soporte explícito del terminal mediante query del protocolo [^2_2].
-- Modo 3: evitar `Lip Gloss` sobre el área de imagen, o aislarla mucho, porque hay reportes de que altera las secuencias ANSI/APC necesarias para que funcione bien [^2_1].
+- Mode 1: Unicode block `▀` rendering as universal fallback [^2_1].
+- Mode 2: Kitty graphics only if you detect explicit terminal support via protocol query [^2_2].
+- Mode 3: avoid `Lip Gloss` over the image area, or isolate it a lot, because there are reports that it alters the ANSI/APC sequences needed for it to work well [^2_1].
 
-Si quieres, te preparo un ejemplo real en Go para Bubble Tea con:
+If you want, I'll prepare a real example in Go for Bubble Tea with:
 
-- detección de soporte Kitty,
-- envío de un PNG/JPG convertido,
-- fallback automático a half-block render,
-- y una estrategia para que no se rompa con `AltScreen`.
+- Kitty support detection,
+- sending a converted PNG/JPG,
+- automatic fallback to half-block render,
+- and a strategy so it doesn't break with `AltScreen`.
 <span style="display:none">[^2_10][^2_11][^2_12][^2_13][^2_14][^2_15][^2_16][^2_17][^2_3][^2_4][^2_5][^2_6][^2_7][^2_8][^2_9]</span>
 
 <div align="center">⁂</div>
@@ -178,4 +178,3 @@ Si quieres, te preparo un ejemplo real en Go para Bubble Tea con:
 [^2_16]: https://github.com/charmbracelet/bubbletea
 
 [^2_17]: https://wallpapers.com/wallpapers/hello-kitty-bubble-tea-sanrio-pfp-lyhbpprp160uzxhg.html
-

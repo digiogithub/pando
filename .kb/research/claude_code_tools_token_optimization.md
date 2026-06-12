@@ -1,51 +1,51 @@
 <img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" style="height:64px;margin-right:32px"/>
 
-# en Claude Code cuando una tool devuelve más de 15k tokens o palabras lo vuelva a fichero que indica que se ha volcado a un fichero temporal para ser leído, también he visto que los ficheros largos genera ficheros temporales donde numera cada línea. puedes explicarme e investigar porque lo hace y como funciona ese mecanismo de optimización?
+# in Claude Code when a tool returns more than 15k tokens or words it returns to a file indicating it has been dumped to a temporary file to be read, I've also seen that for long files it generates temporary files where it numbers each line. Can you explain to me and investigate why it does this and how that optimization mechanism works?
 
-Aquí tienes una explicación detallada del mecanismo de optimización de contexto que usa Claude Code:
+Here is a detailed explanation of the context optimization mechanism used by Claude Code:
 
-## El problema de fondo: el context window
+## The underlying problem: the context window
 
-Claude Code opera dentro de una ventana de contexto finita (200k tokens en los modelos estándar) [^1_1]. Cada vez que una herramienta devuelve datos —salida de un comando Bash, contenido de un archivo, resultado de una búsqueda— esos datos se consumen directamente del presupuesto de tokens de la sesión. Sin optimización, un solo `cat archivo_grande.log` podría colapsar el contexto antes de escribir una sola línea de código [^1_2].
+Claude Code operates within a finite context window (200k tokens in standard models) [^1_1]. Every time a tool returns data —Bash command output, file contents, search results— those data are consumed directly from the session's token budget. Without optimization, a single `cat large_file.log` could collapse the context before writing a single line of code [^1_2].
 
-## Límite de 2000 líneas en la herramienta `View`
+## 2000-line limit in the `View` tool
 
-La herramienta `View` (lectura de ficheros) tiene un **límite hard-coded de 2000 líneas por lectura** [^1_3]. Como se puede ver en el prompt interno de Claude Code, la descripción oficial de la herramienta dice literalmente:
+The `View` tool (file reading) has a **hard-coded limit of 2000 lines per read** [^1_3]. As can be seen in Claude Code's internal prompt, the official tool description literally says:
 
 > *"By default, reads up to 2000 lines starting from the beginning of the file."* [^1_4]
 
-Este límite no es configurable por el usuario [^1_3]. Cuando Claude necesita leer un fichero más largo, lo hace en **chunks secuenciales** usando offsets de línea, leyendo rangos como líneas 1–2000, luego 2001–4000, etc.
+This limit is not configurable by the user [^1_3]. When Claude needs to read a longer file, it does so in **sequential chunks** using line offsets, reading ranges like lines 1–2000, then 2001–4000, etc.
 
-## Por qué numera las líneas
+## Why it numbers lines
 
-Claude Code antepone números de línea al contenido de los ficheros leídos como mecanismo de **anclaje de precisión**. Esto sirve para dos cosas:
+Claude Code prepends line numbers to file contents as a **precision anchoring** mechanism. This serves two purposes:
 
-- **Ediciones quirúrgicas**: las herramientas `Edit` y `Replace` necesitan referencias exactas de línea para hacer cambios sin reescribir el fichero entero.
-- **Reducir errores de localización**: sin numeración, Claude tiende a descontar líneas en hunks de diff, apuntando a la línea equivocada con ~40% de error; con numeración el acierto sube al ~85% [^1_5].
+- **Surgical edits**: the `Edit` and `Replace` tools need exact line references to make changes without rewriting the entire file.
+- **Reduce location errors**: without numbering, Claude tends to miscount lines in diff hunks, pointing to the wrong line with ~40% error; with numbering accuracy rises to ~85% [^1_5].
 
 
-## Por qué vuelca outputs grandes a ficheros temporales
+## Why it dumps large outputs to temporary files
 
-Cuando una tool (típicamente `Bash`) devuelve más de un umbral de tokens (~15k), Claude Code usa el mecanismo de **fichero temporal** en lugar de inyectar el contenido directamente en el contexto [^1_6]. La lógica es:
+When a tool (typically `Bash`) returns more than a token threshold (~15k), Claude Code uses the **temporary file** mechanism instead of injecting the content directly into the context [^1_6]. The logic is:
 
-1. El output se escribe en un fichero temporal en disco (e.g. `/tmp/claude-output-XXXX`)
-2. En el contexto solo se inserta un **mensaje de referencia** indicando la ruta del fichero
-3. Claude puede luego leer selectivamente secciones del fichero con `View` + offsets, consumiendo solo los tokens realmente necesarios
+1. The output is written to a temporary file on disk (e.g. `/tmp/claude-output-XXXX`)
+2. In the context only a **reference message** is inserted indicating the file path
+3. Claude can then selectively read sections of the file with `View` + offsets, consuming only the actually needed tokens
 
-Esto evita el problema descrito en issues de GitHub donde outputs masivos de herramientas (como trazas de compilador) causaban overflow del contexto directamente [^1_6][^1_7].
+This avoids the problem described in GitHub issues where massive tool outputs (like compiler traces) caused direct context overflow [^1_6][^1_7].
 
-## El ciclo completo de gestión de contexto
+## The complete context management cycle
 
-| Situación | Comportamiento |
+| Situation | Behavior |
 | :-- | :-- |
-| Fichero ≤ 2000 líneas | Lo lee completo con numeración de líneas |
-| Fichero > 2000 líneas | Lee en chunks de 2000 líneas con offsets |
-| Tool output > ~15k tokens | Vuelca a fichero temporal, inserta referencia en contexto |
-| Contexto al 75% de capacidad | Dispara **auto-compact** para resumir el historial [^1_2] |
+| File ≤ 2000 lines | Reads it completely with line numbers |
+| File > 2000 lines | Reads in chunks of 2000 lines with offsets |
+| Tool output > ~15k tokens | Dumps to temporary file, inserts reference in context |
+| Context at 75% capacity | Triggers **auto-compact** to summarize history [^1_2] |
 
-## Implicación práctica para tus proyectos
+## Practical implications for your projects
 
-Si trabajas con ficheros grandes en Go/Rust, Claude usará `grep`/`head`/`tail` vía Bash como alternativa más eficiente al `View` chunked, ya que permite extraer solo las líneas relevantes sin saturar el contexto [^1_8]. Para outputs de herramientas propias (MCP servers), si quieres evitar el volcado a temporal y que Claude vea el contenido directamente, mantén las respuestas bajo ese umbral de ~15k tokens o bien estructura el output con paginación explícita.
+If you work with large files in Go/Rust, Claude will use `grep`/`head`/`tail` via Bash as a more efficient alternative to chunked `View`, since it allows extracting only relevant lines without saturating the context [^1_8]. For your own tool outputs (MCP servers), if you want to avoid dumping to temporary and have Claude see the content directly, keep responses below that ~15k token threshold or structure the output with explicit pagination.
 <span style="display:none">[^1_10][^1_11][^1_12][^1_13][^1_14][^1_15][^1_16][^1_17][^1_18][^1_19][^1_20][^1_21][^1_22][^1_23][^1_24][^1_25][^1_26][^1_27][^1_28][^1_29][^1_30][^1_9]</span>
 
 <div align="center">⁂</div>
@@ -113,39 +113,39 @@ Si trabajas con ficheros grandes en Go/Rust, Claude usará `grep`/`head`/`tail` 
 
 ---
 
-# hay más reseñas de tools internas en el prompt del sistema de Claude Code que tengan detalles de optimización?
+# are there more reviews of internal tools in Claude Code's system prompt that have optimization details?
 
-Sí. En esas filtraciones/gists del prompt interno hay **bastantes** pistas adicionales sobre optimización, no solo la del volcado a fichero temporal. Lo más claro es que Claude Code está diseñado para **ahorrar contexto, reducir exploración innecesaria y paralelizar trabajo** siempre que puede. [^2_1]
+Yes. In those leaked/gists of the internal prompt there are **quite a few** additional hints about optimization, not just the temporary file dump. The clearest thing is that Claude Code is designed to **save context, reduce unnecessary exploration and parallelize work** whenever possible. [^2_1]
 
-## Pistas claras
+## Clear hints
 
-En el bloque de `Bash` aparece que, si la salida supera **30000 caracteres**, se trunca antes de devolverse al modelo, lo que confirma un límite explícito de protección de contexto en esa tool. [^2_1] También se insiste en no usar `cat`, `head`, `tail`, `grep`, `find`, `sed`, `awk` o `echo` cuando existan tools dedicadas, porque esas tools parecen estar más controladas y devuelven resultados más compactos y predecibles. [^2_1]
+In the `Bash` block it appears that, if the output exceeds **30000 characters**, it's truncated before being returned to the model, confirming an explicit context protection limit in that tool. [^2_1] It's also insisted on not using `cat`, `head`, `tail`, `grep`, `find`, `sed`, `awk` or `echo` when dedicated tools exist, because those tools seem to be more controlled and return more compact and predictable results. [^2_1]
 
-En `Read` se documenta otra optimización fuerte: por defecto lee solo **2000 líneas**, trunca líneas de más de **2000 caracteres**, y devuelve el contenido en formato `cat -n`, es decir, con numeración de líneas. [^2_1] Eso reduce el volumen bruto, permite lecturas parciales con `offset` y `limit`, y mejora la precisión posterior de `Edit` y `MultiEdit`, que dependen de coincidencias exactas. [^2_1]
+In `Read` another strong optimization is documented: by default it reads only **2000 lines**, truncates lines over **2000 characters**, and returns content in `cat -n` format, i.e., with line numbers. [^2_1] This reduces raw volume, allows partial reads with `offset` and `limit`, and improves subsequent `Edit` and `MultiEdit` precision, which depend on exact matches. [^2_1]
 
-## Búsqueda y exploración
+## Search and exploration
 
-Las tools `Glob` y `Grep` están descritas como herramientas “rápidas” que funcionan bien incluso con codebases grandes, y se recomienda usarlas en lugar de shell commands equivalentes. [^2_1] Además, en otra versión del prompt se empuja mucho el uso de `Task` o agentes de tipo `Explore` para búsquedas abiertas, con la razón explícita de **reducir uso de contexto** y delegar exploración iterativa fuera del hilo principal. [^2_1]
+The `Glob` and `Grep` tools are described as "fast" tools that work well even with large codebases, and it's recommended to use them instead of equivalent shell commands. [^2_1] Additionally, in another version of the prompt there's strong push for using `Task` or `Explore` type agents for open searches, with the explicit reason of **reducing context usage** and delegating iterative exploration out of the main thread. [^2_1]
 
-También hay instrucciones para hacer llamadas en **paralelo** cuando no haya dependencias entre ellas. [^2_1] Eso no ahorra tokens directamente, pero sí reduce rondas agente-herramienta y evita que el modelo tenga que “recordar” durante demasiados turnos búsquedas que podrían resolverse de una vez. [^2_1]
+There are also instructions to make **parallel** calls when there are no dependencies between them. [^2_1] This doesn't save tokens directly, but reduces agent-tool rounds and prevents the model from having to "remember" for too many turns searches that could be resolved at once. [^2_1]
 
-## Caché y background
+## Cache and background
 
-`WebFetch` menciona una **caché autolimpiable de 15 minutos**, pensada para accesos repetidos al mismo recurso sin rehacer todo el trabajo. [^2_1] En la variante con `Task` y `TaskOutput`, también se ve otro patrón de optimización: permitir agentes en **background** con un `output_file`, para no meter toda la ejecución y su salida continuamente en el contexto principal. [^2_1]
+`WebFetch` mentions a **15-minute self-cleaning cache**, designed for repeated access to the same resource without redoing all the work. [^2_1] In the variant with `Task` and `TaskOutput`, another optimization pattern is also seen: allowing **background** agents with an `output_file`, to not keep putting all execution and its output continuously in the main context. [^2_1]
 
-Eso encaja muy bien con lo que viste de ficheros temporales: el sistema externaliza resultados grandes a disco y luego solo reincorpora fragmentos o resúmenes cuando hacen falta. [^2_1]
+This fits very well with what you saw about temporary files: the system externalizes large results to disk and then only re-incorporates fragments or summaries when needed. [^2_1]
 
-## Qué nos dice del diseño
+## What this tells us about the design
 
-El patrón general parece ser este: **contexto principal mínimo, acceso diferido al detalle, y herramientas especializadas con límites duros**. [^2_1] Por eso vemos chunking por líneas, truncado por caracteres, line numbering, agentes exploradores, ejecución en background, caché temporal y preferencia por tools estructuradas frente a Bash crudo. [^2_1]
+The general pattern seems to be: **minimum main context, deferred access to detail, and specialized tools with hard limits**. [^2_1] That's why we see line-based chunking, character truncation, line numbering, explorer agents, background execution, temporary cache and preference for structured tools over raw Bash. [^2_1]
 
-Un ejemplo práctico: en vez de meter 50k líneas de log en el prompt, Claude Code prefiere guardar el output, enseñarle al modelo solo una referencia o una parte, y luego dejar que pida los rangos concretos que necesita. [^2_1]
+A practical example: instead of putting 50k lines of log in the prompt, Claude Code prefers to save the output, show the model only a reference or a part, and then let it request the specific ranges it needs. [^2_1]
 
-## Lo menos seguro
+## What's less certain
 
-Lo que **sí** parece bien respaldado por el prompt es el límite de `Read`, el truncado de `Bash`, la preferencia por tools específicas, el uso de agentes para exploración abierta y la cache de `WebFetch`. [^2_1] Lo que ya es más difícil de afirmar con certeza absoluta solo desde estas fuentes es el umbral exacto en **tokens** del volcado a fichero temporal, porque en los textos accesibles se ve mejor el límite en **caracteres** y la estrategia general que la implementación exacta interna. [^2_2][^2_1]
+What **does** seem well supported by the prompt is the `Read` limit, `Bash` truncation, preference for specific tools, use of agents for open exploration and `WebFetch` cache. [^2_1] What's harder to assert with absolute certainty from just these sources is the exact **token** threshold for the temporary file dump, because in the accessible texts what's better seen is the **character** limit and the general strategy than the exact internal implementation. [^2_2][^2_1]
 
-Si quieres, en el siguiente paso te hago una **tabla tool por tool** con todas las optimizaciones internas inferibles del prompt de Claude Code.
+If you want, in the next step I'll make you a **tool-by-tool table** with all the internal optimizations inferable from Claude Code's prompt.
 <span style="display:none">[^2_10][^2_11][^2_12][^2_13][^2_14][^2_15][^2_16][^2_17][^2_3][^2_4][^2_5][^2_6][^2_7][^2_8][^2_9]</span>
 
 <div align="center">⁂</div>
@@ -187,43 +187,42 @@ Si quieres, en el siguiente paso te hago una **tabla tool por tool** con todas l
 
 ---
 
-# adelante, hazme una tabla
+# go ahead, make me a table
 
-Sí; del prompt interno se pueden extraer varias optimizaciones bastante concretas. [^3_1]
+Yes; from the internal prompt several quite concrete optimizations can be extracted. [^3_1]
 
-## Tabla
+## Table
 
-| Tool / mecanismo | Detalle observado | Qué optimiza realmente | Señal de diseño |
+| Tool / mechanism | Observed detail | What it actually optimizes | Design signal |
 | :-- | :-- | :-- | :-- |
-| `Bash` | La salida se **trunca si supera 30000 caracteres**. [^3_1] | Evita que logs enormes, builds o volcados de comandos llenen el contexto de golpe. [^3_1] | Hay un límite duro de serialización de output. [^3_1] |
-| `Bash` vs tools dedicadas | El prompt dice que se **evite** `find`, `grep`, `cat`, `head`, `tail`, `ls` y se usen `Glob`, `Grep`, `Read`, `LS`. [^3_1] | Reduce ruido, hace outputs más estructurados y más baratos de consumir por el modelo. [^3_1] | Priorizan herramientas con semántica controlada frente a shell libre. [^3_1] |
-| `Read` | Lee por defecto solo **2000 líneas**, permite `offset` y `limit`. [^3_1] | Chunking nativo de ficheros largos para leer solo la porción necesaria. [^3_1] | Acceso incremental en vez de ingestión completa. [^3_1] |
-| `Read` | Las líneas de más de **2000 caracteres** se truncan. [^3_1] | Protege contra minificados, JSON gigantes, blobs o líneas patológicas. [^3_1] | Hay defensas tanto por número de líneas como por longitud de línea. [^3_1] |
-| `Read` | Devuelve en formato `cat -n`, con **números de línea**. [^3_1] | Facilita ediciones precisas y referencias robustas en `Edit`/`MultiEdit`. [^3_1] | El sistema está optimizado para localizar y parchear, no solo para leer. [^3_1] |
-| `Edit` | Requiere haber hecho `Read` antes, y exige coincidencia exacta del texto. [^3_1] | Evita ediciones “a ciegas” y reduce errores de reemplazo por contexto insuficiente. [^3_1] | El flujo está pensado como read-then-patch. [^3_1] |
-| `MultiEdit` | Varias ediciones en una sola operación, aplicadas en secuencia y de forma **atómica**. [^3_1] | Menos rondas tool/model y menos relecturas del mismo archivo. [^3_1] | Se intenta compactar cambios múltiples en una sola transacción. [^3_1] |
-| `Glob` | Se define como búsqueda de patrones **rápida** que funciona con codebases de cualquier tamaño. [^3_1] | Encontrar candidatos por nombre sin recorrer manualmente el árbol con shell. [^3_1] | Búsqueda indexada o al menos más optimizada que Bash genérico. [^3_1] |
-| `Grep` | Se define como búsqueda de contenido **rápida** sobre codebases grandes. [^3_1] | Descubrir archivos relevantes sin abrirlos todos ni llenar contexto. [^3_1] | Favorece recuperación de rutas antes que volcar contenido. [^3_1] |
-| `Agent` / `Task` | Para búsquedas abiertas recomienda delegar a un agente aparte y además lanzarlos **concurrentemente**. [^3_1] | Saca exploración iterativa del hilo principal y reduce rondas de contexto local. [^3_1] | Externalización de trabajo exploratorio y paralelización. [^3_1] |
-| `Agent` / `Task` | Cada agente es **stateless** y devuelve un único informe final. [^3_1] | Evita historiales largos por subagente y fuerza resultados compactos. [^3_1] | Diseño orientado a compresión de contexto por subtarea. [^3_1] |
-| `WebFetch` | Puede **resumir** resultados si el contenido es muy grande. [^3_1] | No mete páginas enteras en contexto cuando basta una extracción guiada. [^3_1] | Lectura mediada por un modelo pequeño/rápido. [^3_1] |
-| `WebFetch` | Tiene una **caché autolimpiable de 15 minutos**. [^3_1] | Evita recomputar fetch + parse + resumen en accesos repetidos. [^3_1] | Hay optimización temporal además de contextual. [^3_1] |
-| `TodoRead` / `TodoWrite` | El prompt insiste en usarlos con mucha frecuencia. [^3_1] | Externaliza el plan y estado de trabajo fuera del texto libre conversacional. [^3_1] | Parte de la memoria operativa se saca a una estructura resumida. [^3_1] |
-| Estilo de respuesta | El prompt ordena **minimizar tokens**, responder corto y evitar preámbulos. [^3_1] | Menor gasto de ventana de contexto en mensajes del propio modelo. [^3_1] | La optimización no solo está en tools; también en la política de salida. [^3_1] |
+| `Bash` | Output is **truncated if it exceeds 30000 characters**. [^3_1] | Prevents huge logs, builds or command dumps from filling the context in one go. [^3_1] | There's a hard limit on output serialization. [^3_1] |
+| `Bash` vs dedicated tools | The prompt says to **avoid** `find`, `grep`, `cat`, `head`, `tail`, `ls` and use `Glob`, `Grep`, `Read`, `LS`. [^3_1] | Reduces noise, makes outputs more structured and cheaper for the model to consume. [^3_1] | They prioritize tools with controlled semantics over free shell. [^3_1] |
+| `Read` | By default reads only **2000 lines**, allows `offset` and `limit`. [^3_1] | Native chunking of long files to read only the necessary portion. [^3_1] | Incremental access instead of complete ingestion. [^3_1] |
+| `Read` | Lines over **2000 characters** are truncated. [^3_1] | Protects against minified files, giant JSON, blobs or pathological lines. [^3_1] | There are defenses both by line count and line length. [^3_1] |
+| `Read` | Returns in `cat -n` format, with **line numbers**. [^3_1] | Facilitates precise edits and robust references in `Edit`/`MultiEdit`. [^3_1] | The system is optimized for locating and patching, not just reading. [^3_1] |
+| `Edit` | Requires having done `Read` before, and demands exact text match. [^3_1] | Prevents "blind" edits and reduces replacement errors from insufficient context. [^3_1] | The flow is designed as read-then-patch. [^3_1] |
+| `MultiEdit` | Multiple edits in a single operation, applied sequentially and **atomically**. [^3_1] | Fewer tool/model rounds and fewer re-reads of the same file. [^3_1] | Tries to compact multiple changes into a single transaction. [^3_1] |
+| `Glob` | Defined as **fast** pattern search that works with codebases of any size. [^3_1] | Find candidates by name without manually traversing the tree with shell. [^3_1] | Indexed or at least more optimized search than generic Bash. [^3_1] |
+| `Grep` | Defined as **fast** content search over large codebases. [^3_1] | Discover relevant files without opening them all or filling context. [^3_1] | Favors path retrieval over content dumping. [^3_1] |
+| `Agent` / `Task` | For open searches recommends delegating to a separate agent and launching them **concurrently**. [^3_1] | Takes iterative exploration out of the main thread and reduces local context rounds. [^3_1] | Externalization of exploratory work and parallelization. [^3_1] |
+| `Agent` / `Task` | Each agent is **stateless** and returns a single final report. [^3_1] | Prevents long histories per subagent and forces compact results. [^3_1] | Design oriented toward context compression per subtask. [^3_1] |
+| `WebFetch` | Can **summarize** results if content is very large. [^3_1] | Doesn't put whole pages in context when a guided extraction suffices. [^3_1] | Reading mediated by a small/fast model. [^3_1] |
+| `WebFetch` | Has a **15-minute self-cleaning cache**. [^3_1] | Avoids recomputing fetch + parse + summary on repeated access. [^3_1] | There's temporal optimization in addition to contextual. [^3_1] |
+| `TodoRead` / `TodoWrite` | The prompt insists on using them very frequently. [^3_1] | Externalizes plan and work state outside the free conversational text. [^3_1] | Part of the operational memory is moved to a summarized structure. [^3_1] |
+| Response style | The prompt orders **minimize tokens**, respond short and avoid preambles. [^3_1] | Less context window spending on the model's own messages. [^3_1] | Optimization isn't just in tools; also in output policy. [^3_1] |
 
-## Lectura técnica
+## Technical reading
 
-El patrón común es que Claude Code intenta trabajar con **referencias, rangos, coincidencias y resúmenes**, no con blobs completos. [^3_1] Eso explica por qué ves truncado de outputs, lectura parcial, numeración de líneas, edición exacta y delegación a agentes para búsquedas amplias. [^3_1]
+The common pattern is that Claude Code tries to work with **references, ranges, matches and summaries**, not complete blobs. [^3_1] This explains why you see output truncation, partial reading, line numbering, exact editing and delegation to agents for broad searches. [^3_1]
 
-También se ve que hay dos niveles de optimización: uno de **I/O estructurado** (`Read`, `Glob`, `Grep`, `MultiEdit`, `WebFetch`) y otro de **disciplina conversacional** (respuestas cortas, agentes stateless, uso de todos para memoria operativa). [^3_1]
+It's also seen that there are two levels of optimization: one of **structured I/O** (`Read`, `Glob`, `Grep`, `MultiEdit`, `WebFetch`) and another of **conversational discipline** (short responses, stateless agents, use of todos for operational memory). [^3_1]
 
-## Qué inferir con cautela
+## What to infer with caution
 
-La tabla anterior recoge cosas que sí aparecen de forma bastante directa en el prompt publicado. [^3_1] Lo que ya entra más en inferencia es si detrás hay índices locales, memoria mmap, ficheros temporales por tool concreta o umbrales tokenizados exactos distintos de los límites por caracteres/líneas visibles en el prompt. [^3_1]
+The table above captures things that do appear quite directly in the published prompt. [^3_1] What's more inferential is whether behind there are local indexes, mmap memory, temporary files per specific tool or exact tokenized thresholds different from the character/line limits visible in the prompt. [^3_1]
 
-Si quieres, el siguiente paso te lo hago como **mapa de arquitectura interna inferida**: `Bash/Read -> truncado -> referencia temporal -> reread selectivo -> edit exacto`.
+If you want, the next step I'll make as an **inferred internal architecture map**: `Bash/Read -> truncation -> temporary reference -> selective re-read -> exact edit`.
 
 <div align="center">⁂</div>
 
 [^3_1]: https://www.reddit.com/r/ClaudeAI/comments/1ohjjwq/claude_now_truncates_output_when_working_with/
-

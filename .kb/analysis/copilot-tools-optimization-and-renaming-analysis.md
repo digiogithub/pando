@@ -1,31 +1,31 @@
 # DeepWiki Q&A with Code Context for Repository: microsoft/vscode
 ## Q1
-copilot dispone de una optimización de tools mcp que no expone todas las tools al agente, sino solo aquellas que estén configuradas, y de éstas, sólo aquellas que puedan ser útiles, cómo funciona el mecanismo?
+copilot has an MCP tools optimization that doesn't expose all tools to the agent, only those that are configured, and from those, only those that could be useful. How does the mechanism work?
 ### Answer
-Copilot utiliza varios mecanismos para optimizar las herramientas MCP expuestas al agente:
+Copilot uses several mechanisms to optimize the MCP tools exposed to the agent:
 
-## Mecanismos de Optimización
+## Optimization Mechanisms
 
-### 1. Filtrado de Herramientas por Configuración
-El sistema controla qué herramientas están disponibles mediante el objeto `allowTools` en `agentIntent.ts`, que habilita/deshabilita herramientas basándose en configuración y experimentos vscode:222-251 .
+### 1. Tool Filtering by Configuration
+The system controls which tools are available through the `allowTools` object in `agentIntent.ts`, which enables/disables tools based on configuration and experiments vscode:222-251 .
 
-### 2. Herramientas Diferidas (Deferred Tools)
-Las herramientas MCP no se cargan todas inicialmente. El agente debe usar la herramienta `tool_search` para descubrir y cargar herramientas diferidas antes de poder usarlas vscode:44-82 . Esto es un requisito obligatorio en el prompt del agente.
+### 2. Deferred Tools
+MCP tools are not all loaded initially. The agent must use the `tool_search` tool to discover and load deferred tools before being able to use them vscode:44-82 . This is a mandatory requirement in the agent's prompt.
 
-### 3. Herramientas Virtuales
-Cuando el número de herramientas excede el límite (128), VS Code agrupa herramientas automáticamente y el modelo puede activar grupos de herramientas en lugar de individuales vscode:871-877 . Este comportamiento es configurable via `github.copilot.chat.virtualTools.threshold`.
+### 3. Virtual Tools
+When the number of tools exceeds the limit (128), VS Code automatically groups tools and the model can activate groups of tools instead of individual ones vscode:871-877 . This behavior is configurable via `github.copilot.chat.virtualTools.threshold`.
 
-### 4. Mapeo de Servidores MCP
-La función `buildMcpServerMappings` crea mapeos entre nombres amigables de servidores MCP y etiquetas de VS Code, mientras que `remapCustomAgentTools` reasigna referencias de herramientas en agentes personalizados vscode:194-266 .
+### 4. MCP Server Mapping
+The `buildMcpServerMappings` function creates mappings between friendly MCP server names and VS Code labels, while `remapCustomAgentTools` reassigns tool references in custom agents vscode:194-266 .
 
-### 5. Selección Basada en Embeddings
-Para usuarios con 100+ herramientas, VS Code usa selección basada en embeddings para filtrar herramientas más rápido y con mayor precisión vscode:267-268 .
+### 5. Embeddings-Based Selection
+For users with 100+ tools, VS Code uses embeddings-based selection to filter tools faster and more accurately vscode:267-268 .
 
 ### 6. Tool Sets
-Los usuarios pueden definir conjuntos de herramientas (tool sets) que agrupan herramientas relacionadas, facilitando habilitar/deshabilitar grupos completos vscode:1417-1441 .
+Users can define tool sets that group related tools together, making it easier to enable/disable complete groups vscode:1417-1441 .
 
 ## Notes
-El mecanismo combina filtrado estático (configuración), descubrimiento dinámico (tool_search), y agrupación inteligente (virtual tools, tool sets) para optimizar qué herramientas MCP se exponen al agente en cada contexto.
+The mechanism combines static filtering (configuration), dynamic discovery (tool_search), and intelligent grouping (virtual tools, tool sets) to optimize which MCP tools are exposed to the agent in each context.
 
 Wiki pages you might want to explore:
 - [AI and Copilot Features (microsoft/vscode)](/wiki/microsoft/vscode#7)
@@ -225,21 +225,21 @@ export function remapCustomAgentTools(
 }
 ```
 ## Q2
-genera un análisis completo de cómo funciona el sistema de descubrimiento dinámico de tool_search, y las deferred tools así como el mapeo con nombres amigables
+generate a complete analysis of how the dynamic tool_search discovery system works, and deferred tools as well as the mapping with friendly names
 ### Answer
-# Análisis del Sistema de Descubrimiento Dinámico tool_search y Deferred Tools
+# Analysis of the Dynamic tool_search Discovery System and Deferred Tools
 
-## Resumen Ejecutivo
+## Executive Summary
 
-El sistema de descubrimiento dinámico de Copilot utiliza `tool_search` para cargar herramientas diferidas (deferred tools) bajo demanda, optimizando el uso de tokens y permitiendo manejar grandes conjuntos de herramientas MCP. El mapeo de nombres amigables convierte nombres legibles por humanos en identificadores internos del SDK.
+Copilot's dynamic discovery system uses `tool_search` to load deferred tools on demand, optimizing token usage and enabling handling of large MCP tool sets. Friendly name mapping converts human-readable names into SDK internal identifiers.
 
 ---
 
-## Arquitectura del Sistema
+## System Architecture
 
-### 1. Herramienta tool_search
+### 1. tool_search Tool
 
-La herramienta `tool_search` está implementada en `ToolSearchTool` y utiliza embeddings semánticos para buscar herramientas relevantes vscode:22-54 .
+The `tool_search` tool is implemented in `ToolSearchTool` and uses semantic embeddings to search for relevant tools vscode:22-54 .
 
 ```typescript
 export class ToolSearchTool implements ICopilotModelSpecificTool<IToolSearchParams> {
@@ -259,14 +259,14 @@ export class ToolSearchTool implements ICopilotModelSpecificTool<IToolSearchPara
 }
 ```
 
-**Características clave:**
-- Usa `IToolEmbeddingsComputer` para búsqueda semántica
-- Retorna nombres de herramientas como JSON
-- Límite predeterminado de 5 resultados
+**Key characteristics:**
+- Uses `IToolEmbeddingsComputer` for semantic search
+- Returns tool names as JSON
+- Default limit of 5 results
 
 ### 2. Deferred Tools
 
-Las herramientas se marcan como diferidas mediante la propiedad `nonDeferred` en el registro de herramientas vscode:91-101 .
+Tools are marked as deferred through the `nonDeferred` property in the tool registry vscode:91-101 .
 
 ```typescript
 export interface ICopilotToolCtor {
@@ -282,16 +282,16 @@ export interface ICopilotToolCtor {
 }
 ```
 
-**Herramientas no diferidas (core):**
+**Non-deferred tools (core):**
 - `read_file`, `list_dir`, `grep_search`, `semantic_search`, `file_search`
 - `replace_string_in_file`, `create_file`, `run_in_terminal`
 - `get_terminal_output`, `get_errors`, `manage_todo_list`
 - `runSubagent`, `search_subagent`, `execution_subagent`
 - `runTests`, `tool_search`, `view_image`, `fetch_webpage` vscode:85-89 
 
-### 3. Instrucciones al Modelo
+### 3. Model Instructions
 
-El prompt del agente incluye instrucciones obligatorias sobre el uso de `tool_search` vscode:29-81 .
+The agent prompt includes mandatory instructions on using `tool_search` vscode:29-81 .
 
 ```tsx
 class ToolSearchToolPrompt extends PromptElement<ToolSearchToolPromptProps> {
@@ -313,48 +313,48 @@ class ToolSearchToolPrompt extends PromptElement<ToolSearchToolPromptProps> {
 
 ---
 
-## Flujo de Descubrimiento Dinámico
+## Dynamic Discovery Flow
 
-### Diagrama de Secuencia
+### Sequence Diagram
 
 ```mermaid
 sequenceDiagram
-    participant Model as Modelo LLM
+    participant Model as LLM Model
     participant ToolSearch as tool_search
     participant Embeddings as IToolEmbeddingsComputer
     participant ToolsService as IToolsService
     participant API as ResponsesAPI/MessagesAPI
 
-    Model->>ToolSearch: Invocar con query natural
-    ToolSearch->>ToolsService: Obtener availableTools
+    Model->>ToolSearch: Invoke with natural query
+    ToolSearch->>ToolsService: Get availableTools
     ToolSearch->>Embeddings: searchToolsByQuery(query, tools)
     Embeddings-->>ToolSearch: matchedToolNames[]
     ToolSearch-->>Model: JSON.stringify(matchedToolNames)
     
-    Model->>API: Llamar herramienta diferida descubierta
-    API->>API: Cargar definición completa de la herramienta
-    API-->>Model: Resultado de ejecución
+    Model->>API: Call discovered deferred tool
+    API->>API: Load full tool definition
+    API-->>Model: Execution result
 ```
 
-### Proceso Paso a Paso
+### Step-by-Step Process
 
-1. **Inicialización**: Solo herramientas `nonDeferred` se envían inicialmente al modelo con sus esquemas completos vscode:126-148 .
+1. **Initialization**: Only `nonDeferred` tools are initially sent to the model with their full schemas vscode:126-148 .
 
-2. **Búsqueda**: El modelo invoca `tool_search` con una consulta en lenguaje natural cuando necesita una capacidad específica vscode:29-44 .
+2. **Search**: The model invokes `tool_search` with a natural language query when it needs a specific capability vscode:29-44 .
 
-3. **Descubrimiento**: `tool_search` usa embeddings semánticos para encontrar herramientas coincidentes y retorna sus nombres vscode:38-53 .
+3. **Discovery**: `tool_search` uses semantic embeddings to find matching tools and returns their names vscode:38-53 .
 
-4. **Carga**: Las herramientas descubiertas se cargan dinámicamente y sus esquemas se envían al modelo en la siguiente interacción vscode:366-424 .
+4. **Loading**: Discovered tools are dynamically loaded and their schemas are sent to the model in the next interaction vscode:366-424 .
 
-5. **Ejecución**: El modelo puede entonces invocar las herramientas recién cargadas.
+5. **Execution**: The model can then invoke the newly loaded tools.
 
 ---
 
-## Mapeo de Nombres Amigables
+## Friendly Name Mapping
 
 ### buildMcpServerMappings
 
-Esta función crea un mapeo desde nombres de servidores MCP (extraídos de `fullReferenceName`) a etiquetas de visualización de VS Code vscode:194-209 .
+This function creates a mapping from MCP server names (extracted from `fullReferenceName`) to VS Code display labels vscode:194-209 .
 
 ```typescript
 export function buildMcpServerMappings(tools: ReadonlyMap<LanguageModelToolInformation, boolean>): McpServerMappings {
@@ -375,11 +375,11 @@ export function buildMcpServerMappings(tools: ReadonlyMap<LanguageModelToolInfor
 }
 ```
 
-**Formato de referencia:** `<server name>/<tool name>`
+**Reference format:** `<server name>/<tool name>`
 
 ### remapCustomAgentTools
 
-Esta función reasigna referencias de herramientas en agentes personalizados desde nombres amigables a nombres de gateway del SDK vscode:223-266 .
+This function reassigns tool references in custom agents from friendly names to SDK gateway names vscode:223-266 .
 
 ```typescript
 export function remapCustomAgentTools(
@@ -414,7 +414,7 @@ export function remapCustomAgentTools(
 }
 ```
 
-### Cadena de Mapeo
+### Mapping Chain
 
 ```mermaid
 graph LR
@@ -430,27 +430,27 @@ graph LR
 
 ---
 
-## Comportamiento con Modelos Soportados
+## Behavior with Supported Models
 
-### Modelos con tool_search
+### Models with tool_search
 
-Para modelos que soportan `tool_search` (GPT-5.4, Claude Sonnet 4.5+, etc.), el sistema:
-1. Agrega `tool_search` como herramienta ejecutada por el cliente (`execution: 'client'`) vscode:126-148 
-2. Marca herramientas diferidas con `defer_loading: true`
-3. Excluye herramientas diferidas del request inicial
+For models that support `tool_search` (GPT-5.4, Claude Sonnet 4.5+, etc.), the system:
+1. Adds `tool_search` as a client-executed tool (`execution: 'client'`) vscode:126-148 
+2. Marks deferred tools with `defer_loading: true`
+3. Excludes deferred tools from the initial request
 
-### Modelos sin soporte
+### Models without support
 
-Para modelos sin soporte (GPT-4o, etc.):
-- No se agrega `tool_search` vscode:113-124 
-- Todas las herramientas se envían sin `defer_loading`
-- Comportamiento tradicional sin descubrimiento dinámico
+For models without support (GPT-4o, etc.):
+- `tool_search` is not added vscode:113-124 
+- All tools are sent without `defer_loading`
+- Traditional behavior without dynamic discovery
 
 ---
 
-## Descubrimiento Dinámico de Herramientas MCP
+## Dynamic MCP Tool Discovery
 
-Los servidores MCP pueden agregar o remover herramientas dinámicamente durante una conversación mediante notificaciones `tools/list_changed` vscode:76-78 .
+MCP servers can add or remove tools dynamically during a conversation via `tools/list_changed` notifications vscode:76-78 .
 
 ```tsx
 <Tag name='dynamicToolDiscovery'>
@@ -458,13 +458,13 @@ Los servidores MCP pueden agregar o remover herramientas dinámicamente durante 
 </Tag>
 ```
 
-Esto permite que el modelo descubra nuevas herramientas que se habilitan después de llamar a ciertas herramientas MCP.
+This allows the model to discover new tools that are enabled after calling certain MCP tools.
 
 ---
 
 ## Notes
 
-El sistema de descubrimiento dinámico optimiza el uso de tokens al no enviar esquemas de todas las herramientas MCP inicialmente. El mapeo de nombres amigables abstrae la complejidad de los identificadores internos del SDK, permitiendo que los archivos de definición de agentes usen nombres legibles por humanos. La integración con embeddings semánticos permite búsquedas contextuales más inteligentes que coincidencias exactas de nombres.
+The dynamic discovery system optimizes token usage by not sending schemas of all MCP tools initially. Friendly name mapping abstracts the complexity of SDK internal identifiers, allowing agent definition files to use human-readable names. Integration with semantic embeddings enables smarter contextual searches than exact name matches.
 
 Wiki pages you might want to explore:
 - [AI and Copilot Features (microsoft/vscode)](/wiki/microsoft/vscode#7)
@@ -754,21 +754,21 @@ export function remapCustomAgentTools(
 }
 ```
 ## Q3
-Revisa sobre los prompts específico por modelo y el mecanismo de tools, parece que hay renombre o alias de tools para modelos que están entrenados especificamente para el uso de ciertas tools de una forma determinada, hazme un análisis detallado
+Review the model-specific prompts and the tool mechanism, it seems there are tool renames or aliases for models that are specifically trained to use certain tools in a specific way, give me a detailed analysis
 ### Answer
-# Análisis de Prompts Específicos por Modelo y Sistema de Alias/Overrides de Tools
+# Analysis of Model-Specific Prompts and Tool Alias/Overrides System
 
-## Resumen Ejecutivo
+## Executive Summary
 
-VS Code Copilot implementa un sistema multicapa para adaptar tools y prompts a diferentes modelos: prompts específicos por modelo (VSCModelPromptA-D), tools específicas por modelo con `overridesTool`, definiciones alternativas por modelo, y aliases semánticos que mapean herramientas entre diferentes ecosistemas (Claude vs Copilot).
+VS Code Copilot implements a multi-layer system to adapt tools and prompts to different models: model-specific prompts (VSCModelPromptA-D), model-specific tools with `overridesTool`, model-specific alternative definitions, and semantic aliases that map tools across different ecosystems (Claude vs Copilot).
 
 ---
 
-## Prompts Específicos por Modelo
+## Model-Specific Prompts
 
 ### VSCModelPrompts
 
-El sistema define prompts específicos para diferentes modelos VSC (Model A, B, C, D) con instrucciones especializadas vscode:16-66 .
+The system defines prompts specific to different VSC models (Model A, B, C, D) with specialized instructions vscode:16-66 .
 
 ```typescript
 class VSCModelPromptA extends PromptElement<DefaultAgentPromptProps> {
@@ -781,19 +781,19 @@ class VSCModelPromptA extends PromptElement<DefaultAgentPromptProps> {
 			</Tag>
 ```
 
-**Características del VSCModelPromptA:**
-- Instrucciones explícitas sobre uso paralelo de tools
-- Reglas de dependencia para operaciones secuenciales vs paralelas
-- Límite máximo de 5 tool calls en un solo `multi_tool_use`
-- Ejemplos de buenos y malos patrones de uso
+**VSCModelPromptA characteristics:**
+- Explicit instructions on parallel tool usage
+- Dependency rules for sequential vs parallel operations
+- Maximum limit of 5 tool calls in a single `multi_tool_use`
+- Examples of good and bad usage patterns
 
 ---
 
-## Sistema de Tools Específicas por Modelo
+## Model-Specific Tool System
 
-### ICopilotModelSpecificTool y overridesTool
+### ICopilotModelSpecificTool and overridesTool
 
-Las herramientas pueden implementar `ICopilotModelSpecificTool` con la propiedad `overridesTool` para reemplazar herramientas base en modelos específicos vscode:75-85 .
+Tools can implement `ICopilotModelSpecificTool` with the `overridesTool` property to replace base tools on specific models vscode:75-85 .
 
 ```typescript
 export interface ICopilotModelSpecificTool<T> extends ICopilotTool<T> {
@@ -806,14 +806,14 @@ export interface ICopilotModelSpecificTool<T> extends ICopilotTool<T> {
 }
 ```
 
-**Comportamiento de overridesTool:**
-- La herramienta específica no es seleccionable individualmente en la UI
-- Reemplaza automáticamente la herramienta base cuando el modelo coincide
-- La herramienta base debe estar registrada y habilitada
+**overridesTool behavior:**
+- The specific tool is not individually selectable in the UI
+- Automatically replaces the base tool when the model matches
+- The base tool must be registered and enabled
 
-### Registro de Tools Específicas
+### Specific Tool Registration
 
-El `ToolRegistry` permite registrar herramientas específicas por modelo con selectores vscode:141-153 .
+The `ToolRegistry` allows registering model-specific tools with selectors vscode:141-153 .
 
 ```typescript
 public registerModelSpecificTool(definition: vscode.LanguageModelToolDefinition, tool: IModelSpecificToolCtor): IDisposable {
@@ -825,9 +825,9 @@ public registerModelSpecificTool(definition: vscode.LanguageModelToolDefinition,
 }
 ```
 
-### Selección de Modelo
+### Model Selection
 
-La función `modelSpecificToolApplies` determina si una herramienta específica aplica a un endpoint dado vscode:160-180 .
+The `modelSpecificToolApplies` function determines if a specific tool applies to a given endpoint vscode:160-180 .
 
 ```typescript
 export function modelSpecificToolApplies(tool: vscode.LanguageModelToolDefinition, endpoint: IChatEndpoint) {
@@ -845,11 +845,11 @@ export function modelSpecificToolApplies(tool: vscode.LanguageModelToolDefinitio
 
 ---
 
-## Definiciones Alternativas por Modelo
+## Model-Specific Alternative Definitions
 
 ### alternativeDefinition
 
-Las herramientas pueden proporcionar definiciones alternativas basadas en el endpoint mediante `alternativeDefinition` vscode:19-29 .
+Tools can provide alternative definitions based on the endpoint through `alternativeDefinition` vscode:19-29 .
 
 ```typescript
 class ManageTodoListTool implements ICopilotTool<unknown> {
@@ -865,13 +865,13 @@ class ManageTodoListTool implements ICopilotTool<unknown> {
 }
 ```
 
-**Ejemplo de uso:**
-- `ManageTodoListTool` cambia su descripción para modelos GPT-5+
-- La descripción optimizada menciona restricciones específicas (solo un step in_progress)
+**Usage example:**
+- `ManageTodoListTool` changes its description for GPT-5+ models
+- The optimized description mentions specific constraints (only one step in_progress at a time)
 
-### Aplicación de Overrides en ToolsService
+### Overrides Application in ToolsService
 
-El `ToolsService` aplica overrides de herramientas específicas en `getEnabledTools` vscode:284-381 .
+The `ToolsService` applies specific tool overrides in `getEnabledTools` vscode:284-381 .
 
 ```typescript
 getEnabledTools(request: vscode.ChatRequest, endpoint: IChatEndpoint, filter?: (tool: vscode.LanguageModelToolInformation) => boolean | undefined): vscode.LanguageModelToolInformation[] {
@@ -880,21 +880,21 @@ getEnabledTools(request: vscode.ChatRequest, endpoint: IChatEndpoint, filter?: (
 	
 	return tools
 		.filter(tool => {
-			// Si la tool tiene override, se mezcla en el 'map' posterior
+			// If the tool has an override, it will be mixed in the 'map' later
 			if (modelSpecificTools.get(tool.name)?.tool.overridesTool) {
 				return false;
 			}
-			// ... otros filtros
+			// ... other filters
 		})
 		.map(tool => {
-			// Aplicar alternativa específica del modelo si está disponible
+			// Apply model-specific alternative if available
 			const toolName = getToolName(tool.name) as ToolName;
 			const override = modelSpecificOverrides.get(toolName);
 			let resultTool = tool;
 			if (override?.tool) {
 				resultTool = { ...override.info, name: resultTool.name };
 			}
-			// Aplicar alternativeDefinition si existe
+			// Apply alternativeDefinition if it exists
 			const owned = override?.tool || this.getCopilotTool(toolName);
 			if (owned?.alternativeDefinition) {
 				resultTool = owned.alternativeDefinition(resultTool, endpoint);
@@ -906,11 +906,11 @@ getEnabledTools(request: vscode.ChatRequest, endpoint: IChatEndpoint, filter?: (
 
 ---
 
-## Preferencias de Tools por Familia de Modelo
+## Tool Preferences by Model Family
 
-### Selección de Tools de Edición
+### Edit Tool Selection
 
-El sistema tiene preferencias hardcoded para diferentes familias de modelos en cuanto a tools de edición vscode:96-138 .
+The system has hardcoded preferences for different model families regarding edit tools vscode:96-138 .
 
 ```typescript
 it('should return ApplyPatch for GPT family models', async () => {
@@ -926,24 +926,24 @@ it('should return ReplaceString tools for Sonnet family models', async () => {
 });
 ```
 
-**Preferencias por familia:**
+**Preferences by family:**
 - **GPT/OpenAI**: `ApplyPatch`
 - **Claude Sonnet**: `ReplaceString`, `MultiReplaceString`
-- **Modelos desconocidos**: `EditFile`, `ReplaceString`
+- **Unknown models**: `EditFile`, `ReplaceString`
 
-### Configuración Experimental por Modelo
+### Experimental Configuration by Model
 
-Algunas tools se habilitan/deshabilitan experimentalmente por modelo específico vscode:300-326 .
+Some tools are experimentally enabled/disabled for specific models vscode:300-326 .
 
 ```typescript
-// Para changed_files_tool, deshabilitar experimentalmente para gpt-5.5
+// For changed_files_tool, disable experimentally for gpt-5.5
 if (tool.name === ToolName.GetScmChanges
 	&& isGpt55(endpoint)
 	&& !this._configurationService.getExperimentBasedConfig(ConfigKey.EnableGpt55GetChangedFilesTool, this._experimentationService)) {
 	return false;
 }
 
-// Para read_file_tool, deshabilitar experimentalmente para gpt-5.5
+// For read_file_tool, disable experimentally for gpt-5.5
 if (tool.name === ToolName.ReadFile
 	&& isGpt55(endpoint)
 	&& !this._configurationService.getExperimentBasedConfig(ConfigKey.EnableGpt55ReadFileTool, this._experimentationService)) {
@@ -953,11 +953,11 @@ if (tool.name === ToolName.ReadFile
 
 ---
 
-## Aliases Semánticos de Tools
+## Tool Semantic Aliases
 
-### knownGithubCopilotTools y knownClaudeTools
+### knownGithubCopilotTools and knownClaudeTools
 
-El sistema define aliases para herramientas entre diferentes ecosistemas vscode:1059-1087 .
+The system defines aliases for tools across different ecosystems vscode:1059-1087 .
 
 ```typescript
 export const knownGithubCopilotTools = [
@@ -981,16 +981,16 @@ export const knownClaudeTools = [
 ];
 ```
 
-**Mapeo de aliases:**
+**Alias mapping:**
 - Claude `Bash` → Copilot `execute`
 - Claude `Edit` → Copilot `edit/editNotebook`, `edit/editFiles`
 - Claude `Glob` → Copilot `search/fileSearch`
 - Claude `Grep` → Copilot `search/textSearch`
 - Claude `Read` → Copilot `read/readFile`, `read/getNotebookSummary`
 
-### Tool Aliases en Agentes Personalizados
+### Tool Aliases in Custom Agents
 
-Los agentes personalizados pueden usar aliases de tools en su configuración vscode:54-73 .
+Custom agents can use tool aliases in their configuration vscode:54-73 .
 
 ```yaml
 ### Tool Aliases
@@ -1015,11 +1015,11 @@ tools: []                         # Conversational only
 
 ---
 
-## Selector de Modelo en Tools
+## Model Selector in Tools
 
 ### ILanguageModelChatSelector
 
-Las herramientas pueden definir selectores de modelo para estar disponibles solo en ciertos modelos vscode:33-95 .
+Tools can define model selectors to be available only on certain models vscode:33-95 .
 
 ```typescript
 export interface ILanguageModelChatSelector {
@@ -1054,9 +1054,9 @@ export function toolMatchesModel(toolData: IToolData, model: ILanguageModelChatM
 }
 ```
 
-### API Propuesta para Tools con Selector de Modelo
+### Proposed API for Tools with Model Selector
 
-La API propuesta `registerToolDefinition` permite registrar tools con selectores de modelo vscode:10-55 .
+The proposed `registerToolDefinition` API allows registering tools with model selectors vscode:10-55 .
 
 ```typescript
 export interface LanguageModelToolDefinition extends LanguageModelToolInformation {
@@ -1082,9 +1082,9 @@ export namespace lm {
 
 ---
 
-## Ejemplo: Tool Search Específico por Modelo
+## Example: Model-Specific Tool Search
 
-La herramienta `tool_search` está registrada solo para modelos específicos vscode:77-90 .
+The `tool_search` tool is registered only for specific models vscode:77-90 .
 
 ```typescript
 ToolRegistry.registerModelSpecificTool(

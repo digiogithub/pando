@@ -1,53 +1,53 @@
-# Plan Revisado de Implementación - Prioridades Corregidas
+# Revised Implementation Plan - Corrected Priorities
 
-## Contexto
-Tras el análisis exhaustivo, Pando ya tiene:
-- glamour y bubblezone como dependencias
-- Sidebar con archivos modificados y diff stats
-- 18+ keybindings definidos
-- Markdown rendering básico con glamour
-- 9 temas con colores para diff, markdown y syntax
-- Overlay system básico
+## Context
+After thorough analysis, Pando already has:
+- glamour and bubblezone as dependencies
+- Sidebar with modified files and diff stats
+- 18+ keybindings defined
+- Basic markdown rendering with glamour
+- 9 themes with colors for diff, markdown, and syntax
+- Basic overlay system
 
-## Fases Revisadas (Ordenadas por Impacto Real)
+## Revised Phases (Ordered by Real Impact)
 
-### Fase 1: File Tree Navigator + Editor Viewer (MAYOR IMPACTO)
-**Prioridad: CRÍTICA** - Es lo que más diferencia un chat de un IDE
+### Phase 1: File Tree Navigator + Editor Viewer (HIGHEST IMPACT)
+**Priority: CRITICAL** - This is what differentiates a chat from an IDE
 
-**1A. File Tree Component** (nuevo componente, no modificar sidebar existente)
-- Directorio: `internal/tui/components/filetree/`
-- Tree view con expand/collapse
-- Git status icons (usa colores de DiffAdded/DiffRemoved del tema)
+**1A. File Tree Component** (new component, don't modify existing sidebar)
+- Directory: `internal/tui/components/filetree/`
+- Tree view with expand/collapse
+- Git status icons (uses DiffAdded/DiffRemoved theme colors)
 - Keybindings: j/k, enter, h/l, /
-- Respeta .gitignore
-- Lazy loading por directorio
+- Respects .gitignore
+- Lazy loading per directory
 
 **1B. File Viewer Component**
-- Directorio: `internal/tui/components/editor/`
-- Viewer read-only con syntax highlighting (chroma)
-- Números de línea, scroll
-- Búsqueda con `/` o ctrl+f
-- **Dependencia nueva**: `github.com/alecthomas/chroma/v2`
-- Usar colores SyntaxComment/SyntaxKeyword/etc del tema existente
+- Directory: `internal/tui/components/editor/`
+- Read-only viewer with syntax highlighting (chroma)
+- Line numbers, scrolling
+- Search with `/` or ctrl+f
+- **New dependency**: `github.com/alecthomas/chroma/v2`
+- Use SyntaxComment/SyntaxKeyword/etc. colors from existing theme
 
 **1C. Tab System**
-- Múltiples archivos abiertos
-- Tab bar con icono + nombre + dirty indicator
-- ctrl+w para cerrar, ctrl+tab para cambiar
+- Multiple open files
+- Tab bar with icon + name + dirty indicator
+- ctrl+w to close, ctrl+tab to switch
 
 **1D. Layout Integration**
-- Toggle sidebar con ctrl+b
-- Usar SplitPaneLayout existente con 3 layouts:
-  - Chat only (actual)
+- Toggle sidebar with ctrl+b
+- Use existing SplitPaneLayout with 3 layouts:
+  - Chat only (current)
   - Sidebar + Chat
-  - Sidebar + Editor (o Sidebar + Editor + Chat en 3 paneles)
+  - Sidebar + Editor (or Sidebar + Editor + Chat in 3 panels)
 
-**Archivos clave a crear**:
+**Key files to create**:
 ```
 internal/tui/components/filetree/
   ├── node.go       # FileNode struct
-  ├── filetree.go   # Componente principal
-  ├── loader.go     # Carga de dirs + git status
+  ├── filetree.go   # Main component
+  ├── loader.go     # Dir loading + git status
   └── keys.go       # Keybindings
 
 internal/tui/components/editor/
@@ -57,109 +57,109 @@ internal/tui/components/editor/
   └── keys.go       # Keybindings
 ```
 
-### Fase 2: DiffView Completo (ALTO IMPACTO)
-**Prioridad: ALTA** - El sidebar ya muestra stats, falta el viewer completo
+### Phase 2: Complete DiffView (HIGH IMPACT)
+**Priority: HIGH** - Sidebar already shows stats, the complete viewer is missing
 
-- Portar concepto de DiffView de crush
-- Modos: unified y split
-- Syntax highlighting en diff (reutilizar chroma de Fase 1)
-- Integrar en:
-  - Permission dialog (ya muestra diffs básicos)
-  - Changes panel (sidebar existente -> click para ver diff completo)
-  - Como página standalone o overlay
-- Navegación entre hunks con ]c / [c
+- Port DiffView concept from crush
+- Modes: unified and split
+- Syntax highlighting in diff (reuse chroma from Phase 1)
+- Integrate into:
+  - Permission dialog (already shows basic diffs)
+  - Changes panel (existing sidebar -> click to view complete diff)
+  - As standalone page or overlay
+- Navigate between hunks with ]c / [c
 
-**Archivos a crear**:
+**Files to create**:
 ```
 internal/tui/components/diff/
   ├── diffview.go     # DiffView unified + split
-  ├── parser.go       # Parseo de diffs
-  └── styles.go       # Estilos (usar DiffAdded/DiffRemoved del tema)
+  ├── parser.go       # Diff parsing
+  └── styles.go       # Styles (use DiffAdded/DiffRemoved from theme)
 ```
 
-### Fase 3: Mouse Support Activo (MEDIO IMPACTO)
-**Prioridad: MEDIA** - bubblezone ya importado, solo falta usarlo
+### Phase 3: Active Mouse Support (MEDIUM IMPACT)
+**Priority: MEDIUM** - bubblezone already imported, just need to use it
 
-- Activar `tea.EnableMouseCellMotion` en Init()
-- Crear zone manager (`internal/tui/zone/`)
-- Hacer clickeable:
-  - File tree items (abrir/expandir)
-  - Tabs del editor (cambiar/cerrar)
-  - Sidebar items (ver diff)
-  - Status bar elements (modelo, sesión)
-  - Botones de diálogos
-- Mouse wheel scroll en todos los viewports
-- `zone.Manager.Scan()` en View() final
+- Enable `tea.EnableMouseCellMotion` in Init()
+- Create zone manager (`internal/tui/zone/`)
+- Make clickable:
+  - File tree items (open/expand)
+  - Editor tabs (switch/close)
+  - Sidebar items (view diff)
+  - Status bar elements (model, session)
+  - Dialog buttons
+- Mouse wheel scroll in all viewports
+- `zone.Manager.Scan()` in final View()
 
-**Archivos a crear/modificar**:
+**Files to create/modify**:
 ```
 internal/tui/zone/zone.go  # Zone manager + IDs
-# Modificar todos los View() para Mark() zones
-# Modificar tui.go para Scan() y handleMouse()
+# Modify all View() to Mark() zones
+# Modify tui.go for Scan() and handleMouse()
 ```
 
-### Fase 4: Command Palette con Fuzzy Search (MEDIO IMPACTO)
-**Prioridad: MEDIA** - CommandDialog existe pero es básico
+### Phase 4: Command Palette with Fuzzy Search (MEDIUM IMPACT)
+**Priority: MEDIUM** - CommandDialog exists but is basic
 
-- Añadir fuzzy matching al CompletionDialog existente
-- Categorías de comandos (General, Files, Sessions, Models, View)
-- Mostrar shortcut junto a cada comando
-- Integrar con todos los comandos registrados
-- Abrir con ctrl+k (ya existe) o ctrl+p
+- Add fuzzy matching to existing CompletionDialog
+- Command categories (General, Files, Sessions, Models, View)
+- Show shortcut next to each command
+- Integrate with all registered commands
+- Open with ctrl+k (already exists) or ctrl+p
 
-**Archivos a modificar**:
+**Files to modify**:
 ```
-internal/tui/components/dialog/commands.go   # Añadir fuzzy
-internal/tui/components/dialog/complete.go   # Reutilizar para fuzzy
-```
-
-### Fase 5: Mejoras de Markdown Rendering (BAJO IMPACTO)
-**Prioridad: BAJA** - glamour ya funciona, solo mejorar
-
-- Verificar que los estilos de glamour usen MarkdownText/MarkdownHeading/etc del tema
-- Mejorar rendering de code blocks con syntax highlighting chroma
-- Streaming markdown parcial con debounce
-- Links clickeables (integrar con bubblezone de Fase 3)
-
-**Archivos a modificar**:
-```
-internal/tui/styles/markdown.go      # Mapear colores del tema
-internal/tui/components/chat/message.go  # Mejorar rendering
+internal/tui/components/dialog/commands.go   # Add fuzzy
+internal/tui/components/dialog/complete.go   # Reuse for fuzzy
 ```
 
-### Fase 6: Refinamiento de Keybindings (BAJO IMPACTO)
-**Prioridad: BAJA** - Ya tiene 18+ shortcuts, solo organizar mejor
+### Phase 5: Markdown Rendering Improvements (LOW IMPACT)
+**Priority: LOW** - glamour already works, just improve
 
-- Extraer KeyMap a struct jerárquico en archivo separado
-- Mejorar Help overlay para mostrar todos los shortcuts por contexto
-- Añadir nuevos shortcuts para las features nuevas (Fase 1-3)
-- Documentar todos los shortcuts en el help
+- Verify glamour styles use MarkdownText/MarkdownHeading/etc. from theme
+- Improve code block rendering with chroma syntax highlighting
+- Partial streaming markdown with debounce
+- Clickable links (integrate with Phase 3 bubblezone)
 
-## Dependencias Nuevas Reales
+**Files to modify**:
 ```
-github.com/alecthomas/chroma/v2  # ÚNICA dependencia nueva necesaria
+internal/tui/styles/markdown.go      # Map theme colors
+internal/tui/components/chat/message.go  # Improve rendering
 ```
 
-## Orden de Ejecución
+### Phase 6: Keybinding Refinement (LOW IMPACT)
+**Priority: LOW** - Already has 18+ shortcuts, just organize better
+
+- Extract KeyMap to hierarchical struct in separate file
+- Improve Help overlay to show all shortcuts by context
+- Add new shortcuts for new features (Phases 1-3)
+- Document all shortcuts in help
+
+## Actual New Dependencies
 ```
-Fase 1 (File Tree + Editor) ─── requiere chroma
+github.com/alecthomas/chroma/v2  # ONLY new dependency needed
+```
+
+## Execution Order
+```
+Phase 1 (File Tree + Editor) ─── requires chroma
          │
-         ├──→ Fase 2 (DiffView) ─── reutiliza chroma
+         ├──→ Phase 2 (DiffView) ─── reuses chroma
          │
-         └──→ Fase 3 (Mouse) ─── reutiliza bubblezone ya importado
-                  │
-                  └──→ Fase 5 (Markdown mejoras)
+         └──→ Phase 3 (Mouse) ─── reuses already imported bubblezone
+                   │
+                   └──→ Phase 5 (Markdown improvements)
 
-Fase 4 (Fuzzy Search) ─── independiente
-Fase 6 (Keybindings) ─── independiente, se hace incrementalmente
+Phase 4 (Fuzzy Search) ─── independent
+Phase 6 (Keybindings) ─── independent, done incrementally
 ```
 
-## Estimación de Esfuerzo (Revisada)
-| Fase | Esfuerzo | Archivos Nuevos | Archivos Modificados |
-|------|----------|-----------------|---------------------|
-| 1 (File Tree + Editor) | Alto | ~8 | ~3 |
-| 2 (DiffView) | Medio | ~3 | ~3 |
-| 3 (Mouse) | Medio | ~1 | ~8 |
-| 4 (Fuzzy) | Bajo | 0 | ~2 |
-| 5 (Markdown) | Bajo | 0 | ~2 |
-| 6 (Keybindings) | Bajo | ~1 | ~2 |
+## Effort Estimation (Revised)
+| Phase | Effort | New Files | Modified Files |
+|-------|--------|-----------|----------------|
+| 1 (File Tree + Editor) | High | ~8 | ~3 |
+| 2 (DiffView) | Medium | ~3 | ~3 |
+| 3 (Mouse) | Medium | ~1 | ~8 |
+| 4 (Fuzzy) | Low | 0 | ~2 |
+| 5 (Markdown) | Low | 0 | ~2 |
+| 6 (Keybindings) | Low | ~1 | ~2 |

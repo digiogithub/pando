@@ -1,64 +1,64 @@
-# Plan de Ejecución con Mesnada - TUI Enhancement
+# Execution Plan with Mesnada - TUI Enhancement
 
-## Configuración Base de Subagentes
+## Base Subagent Configuration
 - **Engine**: `copilot`
 - **Model**: `gpt-5.4`
 - **Working dir**: `/www/MCP/Pando/pando`
-- **Tools comunes**: remembrances (kb_search_documents, kb_get_document, code_hybrid_search, code_find_symbol, code_get_file_symbols)
+- **Common tools**: remembrances (kb_search_documents, kb_get_document, code_hybrid_search, code_find_symbol, code_get_file_symbols)
 
-## Grafo de Dependencias
+## Dependency Graph
 
 ```
-OLEADA 1 (Paralelo - Sin dependencias)
+WAVE 1 (Parallel - No dependencies)
 ├── Agent-1A: File Tree Component
 ├── Agent-1B: Syntax Highlight Base (chroma)
 ├── Agent-4:  Command Palette Fuzzy Search
 └── Agent-6:  Keybindings Refactoring
 
-OLEADA 2 (Depende de 1A + 1B)
-├── Agent-1C: File Viewer Component (usa chroma de 1B)
+WAVE 2 (Depends on 1A + 1B)
+├── Agent-1C: File Viewer Component (uses chroma from 1B)
 └── Agent-1D: Tab System
 
-OLEADA 3 (Depende de 1C + 1D + 1A)
-├── Agent-1E: Layout Integration (conecta filetree + editor + tabs)
-└── Agent-2:  DiffView Component (usa chroma de 1B)
+WAVE 3 (Depends on 1C + 1D + 1A)
+├── Agent-1E: Layout Integration (connects filetree + editor + tabs)
+└── Agent-2:  DiffView Component (uses chroma from 1B)
 
-OLEADA 4 (Depende de oleadas anteriores)
-├── Agent-3:  Mouse Support con Bubblezone
-└── Agent-5:  Markdown Rendering Mejoras
+WAVE 4 (Depends on previous waves)
+├── Agent-3:  Mouse Support with Bubblezone
+└── Agent-5:  Markdown Rendering Improvements
 ```
 
-## Justificación de Oleadas
+## Wave Justification
 
-### Por qué estos son paralelos en Oleada 1:
-- **Agent-1A** (File Tree): Componente aislado en `internal/tui/components/filetree/`, no depende de nada nuevo
-- **Agent-1B** (Chroma): Paquete utilitario de highlighting en `internal/tui/components/editor/highlight.go`, base para otros
-- **Agent-4** (Fuzzy): Modifica `dialog/commands.go` y `dialog/complete.go` existentes, independiente del resto
-- **Agent-6** (Keybindings): Refactor de `tui.go` keyMap a struct jerárquico, independiente
+### Why these are parallel in Wave 1:
+- **Agent-1A** (File Tree): Isolated component in `internal/tui/components/filetree/`, doesn't depend on anything new
+- **Agent-1B** (Chroma): Utility highlighting package in `internal/tui/components/editor/highlight.go`, base for others
+- **Agent-4** (Fuzzy): Modifies existing `dialog/commands.go` and `dialog/complete.go`, independent of the rest
+- **Agent-6** (Keybindings): Refactor of `tui.go` keyMap to hierarchical struct, independent
 
-### Por qué Oleada 2 espera a Oleada 1:
-- **Agent-1C** (Viewer): Necesita `highlight.go` de Agent-1B para syntax highlighting
-- **Agent-1D** (Tabs): Necesita saber la interfaz de FileNode de Agent-1A para abrir archivos
+### Why Wave 2 waits for Wave 1:
+- **Agent-1C** (Viewer): Needs `highlight.go` from Agent-1B for syntax highlighting
+- **Agent-1D** (Tabs): Needs to know the FileNode interface from Agent-1A to open files
 
-### Por qué Oleada 3 espera a Oleada 2:
-- **Agent-1E** (Layout): Necesita todos los componentes (filetree, viewer, tabs) para integrarlos en SplitPane
-- **Agent-2** (DiffView): Reutiliza chroma de 1B, y el patrón de viewer de 1C
+### Why Wave 3 waits for Wave 2:
+- **Agent-1E** (Layout): Needs all components (filetree, viewer, tabs) to integrate them into SplitPane
+- **Agent-2** (DiffView): Reuses chroma from 1B, and the viewer pattern from 1C
 
-### Por qué Oleada 4 espera a Oleada 3:
-- **Agent-3** (Mouse): Necesita que todos los componentes existan para añadir zone.Mark() a sus View()
-- **Agent-5** (Markdown): Mejora code blocks con chroma y links clickeables con bubblezone (necesita Agent-3)
+### Why Wave 4 waits for Wave 3:
+- **Agent-3** (Mouse): Needs all components to exist to add zone.Mark() to their View()
+- **Agent-5** (Markdown): Improves code blocks with chroma and clickable links with bubblezone (needs Agent-3)
 
 ---
 
-## Detalle de Subagentes
+## Subagent Details
 
-### OLEADA 1
+### WAVE 1
 
 #### Agent-1A: File Tree Component
 ```
 ID: tui-filetree
-Dependencias: ninguna
-Archivos a crear:
+Dependencies: none
+Files to create:
   - internal/tui/components/filetree/node.go
   - internal/tui/components/filetree/filetree.go
   - internal/tui/components/filetree/loader.go
@@ -67,309 +67,309 @@ Archivos a crear:
 
 **Prompt**:
 ```
-Eres un experto en Go y bubbletea (charmbracelet). Tu tarea es implementar un componente FileTree para la TUI de Pando.
+You are an expert in Go and bubbletea (charmbracelet). Your task is to implement a FileTree component for Pando's TUI.
 
-## Contexto
-Usa las tools de remembrances para obtener contexto:
-1. `kb_get_document("pando/tui-enhancement/02-phase2-file-explorer.md")` - Especificación completa del file explorer
-2. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Plan revisado, sección 1A
-3. `kb_get_document("pando/tui-enhancement/08-pando-current-state-detailed.md")` - Estado actual de Pando
-4. `kb_get_document("pando/tui-enhancement/11-external-libraries-reference.md")` - Librerías disponibles
+## Context
+Use the remembrances tools to obtain context:
+1. `kb_get_document("pando/tui-enhancement/02-phase2-file-explorer.md")` - Complete file explorer specification
+2. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Revised plan, section 1A
+3. `kb_get_document("pando/tui-enhancement/08-pando-current-state-detailed.md")` - Current state of Pando
+4. `kb_get_document("pando/tui-enhancement/11-external-libraries-reference.md")` - Available libraries
 
-Usa `code_hybrid_search` en el proyecto "pando" para buscar:
-- La estructura existente de componentes en `internal/tui/components/`
-- Cómo se implementan otros componentes (dialog, chat) como referencia de patrones
-- El tema y estilos existentes en `internal/tui/styles/` y `internal/tui/theme/`
-- Cómo se usa `.gitignore` en el proyecto
+Use `code_hybrid_search` in the "pando" project to search for:
+- The existing component structure in `internal/tui/components/`
+- How other components (dialog, chat) are implemented as pattern references
+- The existing theme and styles in `internal/tui/styles/` and `internal/tui/theme/`
+- How `.gitignore` is used in the project
 
-## Requisitos
-Crea el paquete `internal/tui/components/filetree/` con:
+## Requirements
+Create the `internal/tui/components/filetree/` package with:
 
-1. **node.go**: FileNode struct con campos (Name, Path, IsDir, IsExpanded, Children, GitStatus, Depth)
-2. **filetree.go**: Componente bubbletea con:
-   - Tree view con expand/collapse
-   - Navegación j/k (arriba/abajo), h/l (colapsar/expandir), enter (abrir)
-   - Búsqueda con "/"
-   - Método Update(tea.Msg) que retorna (tea.Model, tea.Cmd)
-   - Método View() string
-   - Método SelectedFile() para obtener el archivo seleccionado
-3. **loader.go**: Carga lazy de directorios + integración con git status
-   - Respetar .gitignore
-   - Solo cargar hijos al expandir (lazy)
-   - Iconos de git status usando colores DiffAdded/DiffRemoved del tema
-4. **keys.go**: KeyMap específico del file tree
+1. **node.go**: FileNode struct with fields (Name, Path, IsDir, IsExpanded, Children, GitStatus, Depth)
+2. **filetree.go**: bubbletea component with:
+   - Tree view with expand/collapse
+   - Navigation j/k (up/down), h/l (collapse/expand), enter (open)
+   - Search with "/"
+   - Update(tea.Msg) method that returns (tea.Model, tea.Cmd)
+   - View() string method
+   - SelectedFile() method to get the selected file
+3. **loader.go**: Lazy loading of directories + git status integration
+   - Respect .gitignore
+   - Only load children on expand (lazy)
+   - Git status icons using DiffAdded/DiffRemoved theme colors
+4. **keys.go**: Specific keyMap for the file tree
 
-## Patrones a seguir
-- Usa lipgloss para estilos, reutiliza colores del tema existente
-- El componente debe exponer una interfaz limpia (Init, Update, View, SetSize)
-- NO integrar aún con el layout principal (eso es tarea de Agent-1E)
+## Patterns to follow
+- Use lipgloss for styles, reuse existing theme colors
+- The component should expose a clean interface (Init, Update, View, SetSize)
+- Do NOT integrate with the main layout yet (that's Agent-1E's task)
 ```
 
 #### Agent-1B: Syntax Highlighting Base (Chroma)
 ```
 ID: tui-chroma-highlight
-Dependencias: ninguna
-Archivos a crear:
+Dependencies: none
+Files to create:
   - internal/tui/components/editor/highlight.go
 ```
 
 **Prompt**:
 ```
-Eres un experto en Go. Tu tarea es crear el módulo base de syntax highlighting usando chroma para la TUI de Pando.
+You are an expert in Go. Your task is to create the base syntax highlighting module using chroma for Pando's TUI.
 
-## Contexto
-Usa las tools de remembrances para obtener contexto:
-1. `kb_get_document("pando/tui-enhancement/03-phase3-editor-syntax-highlighting.md")` - Especificación del editor y highlighting
-2. `kb_get_document("pando/tui-enhancement/10-crush-architecture-deep-dive.md")` - Cómo crush implementa highlighting
-3. `kb_get_document("pando/tui-enhancement/11-external-libraries-reference.md")` - Referencia de chroma
+## Context
+Use the remembrances tools to obtain context:
+1. `kb_get_document("pando/tui-enhancement/03-phase3-editor-syntax-highlighting.md")` - Editor and highlighting specification
+2. `kb_get_document("pando/tui-enhancement/10-crush-architecture-deep-dive.md")` - How crush implements highlighting
+3. `kb_get_document("pando/tui-enhancement/11-external-libraries-reference.md")` - chroma reference
 
-Usa `code_hybrid_search` en el proyecto "pando" para buscar:
-- Los colores de syntax en el tema: SyntaxComment, SyntaxKeyword, SyntaxString, etc.
-- El go.mod para verificar si chroma ya está como dependencia
-- La estructura de `internal/tui/theme/` para entender el sistema de temas
+Use `code_hybrid_search` in the "pando" project to search for:
+- The syntax colors in the theme: SyntaxComment, SyntaxKeyword, SyntaxString, etc.
+- The go.mod to check if chroma is already a dependency
+- The structure of `internal/tui/theme/` to understand the theme system
 
-## Requisitos
-Crea `internal/tui/components/editor/highlight.go` con:
+## Requirements
+Create `internal/tui/components/editor/highlight.go` with:
 
-1. **Highlighter struct**: Cache de lexers y resultados
-   - `Highlight(source, fileName string) (string, error)` - Detecta lexer por extensión, aplica highlighting
-   - `HighlightLine(line, fileName string) string` - Highlight de una línea individual
-   - Cache LRU para evitar re-highlighting
-2. Usar `github.com/alecthomas/chroma/v2` con formatter `terminal16m`
-3. Mapear colores del tema de Pando al estilo de chroma
-4. Si chroma no está en go.mod, incluir instrucciones para `go get`
+1. **Highlighter struct**: Lexer and result cache
+   - `Highlight(source, fileName string) (string, error)` - Detect lexer by extension, apply highlighting
+   - `HighlightLine(line, fileName string) string` - Highlight individual line
+   - LRU cache to avoid re-highlighting
+2. Use `github.com/alecthomas/chroma/v2` with `terminal16m` formatter
+3. Map Pando theme colors to chroma style
+4. If chroma is not in go.mod, include instructions for `go get`
 
-## Importante
-- Este módulo será reutilizado por el File Viewer (Agent-1C) y el DiffView (Agent-2)
-- Debe ser un paquete independiente sin acoplamiento a componentes UI específicos
-- Priorizar performance con cache agresivo
+## Important
+- This module will be reused by the File Viewer (Agent-1C) and DiffView (Agent-2)
+- It must be an independent package without coupling to specific UI components
+- Prioritize performance with aggressive caching
 ```
 
-#### Agent-4: Command Palette con Fuzzy Search
+#### Agent-4: Command Palette with Fuzzy Search
 ```
 ID: tui-fuzzy-palette
-Dependencias: ninguna
-Archivos a modificar:
+Dependencies: none
+Files to modify:
   - internal/tui/components/dialog/commands.go
   - internal/tui/components/dialog/complete.go
 ```
 
 **Prompt**:
 ```
-Eres un experto en Go y bubbletea. Tu tarea es mejorar el Command Palette existente de Pando añadiendo fuzzy search.
+You are an expert in Go and bubbletea. Your task is to improve Pando's existing Command Palette by adding fuzzy search.
 
-## Contexto
-Usa las tools de remembrances:
-1. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Fase 4: Command Palette
-2. `kb_get_document("pando/tui-enhancement/01-phase1-keybindings-commands.md")` - Especificación de commands
+## Context
+Use the remembrances tools:
+1. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Phase 4: Command Palette
+2. `kb_get_document("pando/tui-enhancement/01-phase1-keybindings-commands.md")` - Commands specification
 
-Usa `code_hybrid_search` y `code_get_file_symbols` en el proyecto "pando" para:
-- Leer `internal/tui/components/dialog/commands.go` - El dialog de comandos actual
-- Leer `internal/tui/components/dialog/complete.go` - El completion dialog actual
-- Buscar cómo se registran los comandos actualmente
-- Buscar fuzzy matching libraries en Go (sahilm/fuzzy o similar)
+Use `code_hybrid_search` and `code_get_file_symbols` in the "pando" project to:
+- Read `internal/tui/components/dialog/commands.go` - Current command dialog
+- Read `internal/tui/components/dialog/complete.go` - Current completion dialog
+- Search how commands are currently registered
+- Search for fuzzy matching libraries in Go (sahilm/fuzzy or similar)
 
-## Requisitos
-1. Añadir fuzzy matching al filtrado de comandos (usar `sahilm/fuzzy` o implementar scoring básico)
-2. Categorizar comandos: General, Files, Sessions, Models, View
-3. Mostrar shortcut junto a cada comando en la lista
-4. Mantener apertura con ctrl+k, añadir ctrl+p como alias
-5. Ranking por frecuencia de uso + score de fuzzy match
+## Requirements
+1. Add fuzzy matching to command filtering (use `sahilm/fuzzy` or implement basic scoring)
+2. Categorize commands: General, Files, Sessions, Models, View
+3. Show shortcut next to each command in the list
+4. Keep opening with ctrl+k, add ctrl+p as alias
+5. Ranking by usage frequency + fuzzy match score
 
-## Importante
-- NO romper la funcionalidad existente del CommandDialog
-- Mantener compatibilidad con el overlay system actual
+## Important
+- Do NOT break existing CommandDialog functionality
+- Maintain compatibility with current overlay system
 ```
 
 #### Agent-6: Keybindings Refactoring
 ```
 ID: tui-keybindings
-Dependencias: ninguna
-Archivos a crear:
-  - internal/tui/keys.go (extraído de tui.go)
-Archivos a modificar:
+Dependencies: none
+Files to create:
+  - internal/tui/keys.go (extracted from tui.go)
+Files to modify:
   - internal/tui/tui.go
 ```
 
 **Prompt**:
 ```
-Eres un experto en Go y bubbletea. Tu tarea es refactorizar el sistema de keybindings de Pando.
+You are an expert in Go and bubbletea. Your task is to refactor Pando's keybindings system.
 
-## Contexto
-Usa las tools de remembrances:
-1. `kb_get_document("pando/tui-enhancement/01-phase1-keybindings-commands.md")` - Especificación completa
-2. `kb_get_document("pando/tui-enhancement/07-crush-vs-pando-comparison.md")` - Comparativa con crush
-3. `kb_get_document("pando/tui-enhancement/08-pando-current-state-detailed.md")` - Estado actual
+## Context
+Use the remembrances tools:
+1. `kb_get_document("pando/tui-enhancement/01-phase1-keybindings-commands.md")` - Complete specification
+2. `kb_get_document("pando/tui-enhancement/07-crush-vs-pando-comparison.md")` - Comparison with crush
+3. `kb_get_document("pando/tui-enhancement/08-pando-current-state-detailed.md")` - Current state
 
-Usa `code_get_file_symbols` y `code_hybrid_search` en el proyecto "pando" para:
-- Leer `internal/tui/tui.go` completo - keyMap actual y todos los bindings
-- Buscar todos los key.Binding usados en el proyecto
-- Ver cómo el help dialog muestra shortcuts
+Use `code_get_file_symbols` and `code_hybrid_search` in the "pando" project to:
+- Read complete `internal/tui/tui.go` - Current keyMap and all bindings
+- Search all key.Binding used in the project
+- See how the help dialog displays shortcuts
 
-## Requisitos
-1. Extraer keyMap de tui.go a `internal/tui/keys.go`
-2. Crear struct jerárquico:
+## Requirements
+1. Extract keyMap from tui.go to `internal/tui/keys.go`
+2. Create hierarchical struct:
    ```go
    type KeyMap struct {
        Global   GlobalKeys   // Quit, Help, Logs
        Chat     ChatKeys     // Send, NewLine, Cancel, Scroll
-       Editor   EditorKeys   // (preparar para futuro, vacío por ahora)
-       FileTree FileTreeKeys // (preparar para futuro, vacío por ahora)
+       Editor   EditorKeys   // (prepare for future, empty for now)
+       FileTree FileTreeKeys // (prepare for future, empty for now)
    }
    ```
-3. Implementar `help.KeyMap` interface para auto-generar help
-4. Mejorar Help overlay para mostrar shortcuts por contexto/categoría
-5. NO cambiar los shortcuts actuales, solo reorganizar
+3. Implement `help.KeyMap` interface for auto-generating help
+4. Improve Help overlay to show shortcuts by context/category
+5. Do NOT change current shortcuts, only reorganize
 
-## Importante
-- Este es un refactor, NO debe cambiar comportamiento
-- Todos los tests existentes deben seguir pasando
+## Important
+- This is a refactoring, it must NOT change behavior
+- All existing tests must continue passing
 ```
 
 ---
 
-### OLEADA 2 (Esperar a que Oleada 1 termine)
+### WAVE 2 (Wait for Wave 1 to finish)
 
 #### Agent-1C: File Viewer Component
 ```
 ID: tui-file-viewer
-Dependencias: [tui-chroma-highlight]
-Archivos a crear:
+Dependencies: [tui-chroma-highlight]
+Files to create:
   - internal/tui/components/editor/viewer.go
   - internal/tui/components/editor/keys.go
 ```
 
 **Prompt**:
 ```
-Eres un experto en Go y bubbletea. Tu tarea es crear el File Viewer component para la TUI de Pando.
+You are an expert in Go and bubbletea. Your task is to create the File Viewer component for Pando's TUI.
 
-## Contexto
-Usa las tools de remembrances:
-1. `kb_get_document("pando/tui-enhancement/03-phase3-editor-syntax-highlighting.md")` - Especificación completa
-2. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Sección 1B
-3. `kb_get_document("pando/tui-enhancement/11-external-libraries-reference.md")` - viewport de bubbles
+## Context
+Use the remembrances tools:
+1. `kb_get_document("pando/tui-enhancement/03-phase3-editor-syntax-highlighting.md")` - Complete specification
+2. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Section 1B
+3. `kb_get_document("pando/tui-enhancement/11-external-libraries-reference.md")` - bubbles viewport
 
-Usa `code_hybrid_search` y `code_get_file_symbols` en el proyecto "pando" para:
-- Leer `internal/tui/components/editor/highlight.go` - El Highlighter creado previamente
-- Ver cómo se usa viewport de bubbles en el proyecto
-- Buscar patrones de componentes existentes para mantener consistencia
+Use `code_hybrid_search` and `code_get_file_symbols` in the "pando" project to:
+- Read `internal/tui/components/editor/highlight.go` - The Highlighter previously created
+- See how bubbles viewport is used in the project
+- Search existing component patterns for consistency
 
-## Requisitos
-1. **viewer.go**: Componente read-only que muestra archivos con:
-   - Syntax highlighting via el Highlighter existente en highlight.go
-   - Números de línea usando `viewport.LeftGutterFunc`
-   - Scroll vertical/horizontal
-   - Búsqueda con `/` o ctrl+f usando `viewport.SetHighlights()`
-   - Current line highlight usando `viewport.StyleLineFunc`
-   - Método `OpenFile(path string) tea.Cmd` para cargar archivos
-   - Método `SetSize(w, h int)` para responsive layout
-2. **keys.go**: KeyMap del viewer (j/k scroll, g/G top/bottom, / search, n/N next/prev match)
+## Requirements
+1. **viewer.go**: Read-only component that displays files with:
+   - Syntax highlighting via existing Highlighter in highlight.go
+   - Line numbers using `viewport.LeftGutterFunc`
+   - Vertical/horizontal scrolling
+   - Search with `/` or ctrl+f using `viewport.SetHighlights()`
+   - Current line highlight using `viewport.StyleLineFunc`
+   - `OpenFile(path string) tea.Cmd` method to load files
+   - `SetSize(w, h int)` method for responsive layout
+2. **keys.go**: Viewer keyMap (j/k scroll, g/G top/bottom, / search, n/N next/prev match)
 
-## Importante
-- Usar viewport de bubbles como base (ya es dependencia)
-- Reutilizar el Highlighter de highlight.go, NO reimplementar
-- El viewer es read-only por ahora (edición es futuro)
+## Important
+- Use bubbles viewport as base (already a dependency)
+- Reuse the Highlighter from highlight.go, do NOT reimplement
+- The viewer is read-only for now (editing is future)
 ```
 
 #### Agent-1D: Tab System
 ```
 ID: tui-tabs
-Dependencias: [tui-filetree]
-Archivos a crear:
+Dependencies: [tui-filetree]
+Files to create:
   - internal/tui/components/editor/tabs.go
 ```
 
 **Prompt**:
 ```
-Eres un experto en Go y bubbletea/lipgloss. Tu tarea es crear un sistema de tabs para archivos abiertos.
+You are an expert in Go and bubbletea/lipgloss. Your task is to create a tab system for open files.
 
-## Contexto
-Usa las tools de remembrances:
-1. `kb_get_document("pando/tui-enhancement/03-phase3-editor-syntax-highlighting.md")` - Sección de tabs
-2. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Sección 1C
+## Context
+Use the remembrances tools:
+1. `kb_get_document("pando/tui-enhancement/03-phase3-editor-syntax-highlighting.md")` - Tabs section
+2. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Section 1C
 
-Usa `code_hybrid_search` en el proyecto "pando" para:
-- Buscar el FileNode struct en `internal/tui/components/filetree/node.go` (creado por Agent-1A)
-- Ver los iconos disponibles en `internal/tui/styles/icons.go`
-- Ver los estilos y colores del tema
+Use `code_hybrid_search` in the "pando" project to:
+- Search for the FileNode struct in `internal/tui/components/filetree/node.go` (created by Agent-1A)
+- See available icons in `internal/tui/styles/icons.go`
+- See theme styles and colors
 
-## Requisitos
-Crea `internal/tui/components/editor/tabs.go` con:
+## Requirements
+Create `internal/tui/components/editor/tabs.go` with:
 
-1. **TabBar struct**: Barra de tabs con:
-   - Lista de tabs abiertos (path, nombre, dirty flag)
-   - Tab activo highlighted
-   - Icono por tipo de archivo + nombre + indicador dirty (punto)
-   - Overflow con scroll horizontal si hay muchos tabs
-2. **Métodos**:
-   - `OpenTab(path string)` - Abre o enfoca tab existente
-   - `CloseTab(index int)` - Cierra tab
-   - `ActiveTab() string` - Path del tab activo
-   - `SetSize(width int)` - Adaptar al ancho
-3. **Keybindings**: ctrl+w cerrar, ctrl+tab/ctrl+shift+tab cambiar
+1. **TabBar struct**: Tab bar with:
+   - List of open tabs (path, name, dirty flag)
+   - Active tab highlighted
+   - Icon by file type + name + dirty indicator (dot)
+   - Overflow with horizontal scrolling if many tabs
+2. **Methods**:
+   - `OpenTab(path string)` - Open or focus existing tab
+   - `CloseTab(index int)` - Close tab
+   - `ActiveTab() string` - Path of active tab
+   - `SetSize(width int)` - Adapt to width
+3. **Keybindings**: ctrl+w close, ctrl+tab/ctrl+shift+tab switch
 
-## Importante
-- Los tabs solo gestionan estado (qué archivos están abiertos)
-- NO renderizan el contenido del archivo (eso es el Viewer)
-- Diseño visual compacto, una línea de alto
+## Important
+- Tabs only manage state (which files are open)
+- They do NOT render file content (that's the Viewer)
+- Compact visual design, one line height
 ```
 
 ---
 
-### OLEADA 3 (Esperar a que Oleada 2 termine)
+### WAVE 3 (Wait for Wave 2 to finish)
 
 #### Agent-1E: Layout Integration
 ```
 ID: tui-layout-integration
-Dependencias: [tui-filetree, tui-file-viewer, tui-tabs, tui-keybindings]
-Archivos a modificar:
+Dependencies: [tui-filetree, tui-file-viewer, tui-tabs, tui-keybindings]
+Files to modify:
   - internal/tui/tui.go
-  - internal/tui/page/chat.go (o crear nueva página)
-  - internal/tui/layout/ (posibles cambios)
+  - internal/tui/page/chat.go (or create new page)
+  - internal/tui/layout/ (possible changes)
 ```
 
 **Prompt**:
 ```
-Eres un experto en Go y bubbletea. Tu tarea es integrar los nuevos componentes (FileTree, Viewer, Tabs) en el layout principal de Pando.
+You are an expert in Go and bubbletea. Your task is to integrate the new components (FileTree, Viewer, Tabs) into Pando's main layout.
 
-## Contexto
-Usa las tools de remembrances:
-1. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Sección 1D Layout
-2. `kb_get_document("pando/tui-enhancement/08-pando-current-state-detailed.md")` - Arquitectura actual
-3. `kb_get_document("pando/tui-enhancement/10-crush-architecture-deep-dive.md")` - Cómo crush maneja layout
+## Context
+Use the remembrances tools:
+1. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Section 1D Layout
+2. `kb_get_document("pando/tui-enhancement/08-pando-current-state-detailed.md")` - Current architecture
+3. `kb_get_document("pando/tui-enhancement/10-crush-architecture-deep-dive.md")` - How crush handles layout
 
-Usa `code_hybrid_search` y `code_get_file_symbols` en el proyecto "pando" para:
-- Leer `internal/tui/tui.go` - Modelo principal
-- Leer `internal/tui/layout/` - SplitPane existente
-- Leer `internal/tui/page/chat.go` - ChatPage actual
-- Leer los nuevos componentes creados:
+Use `code_hybrid_search` and `code_get_file_symbols` in the "pando" project to:
+- Read `internal/tui/tui.go` - Main model
+- Read `internal/tui/layout/` - Existing SplitPane
+- Read `internal/tui/page/chat.go` - Current ChatPage
+- Read the new components created:
   - `internal/tui/components/filetree/filetree.go`
   - `internal/tui/components/editor/viewer.go`
   - `internal/tui/components/editor/tabs.go`
   - `internal/tui/keys.go`
 
-## Requisitos
-1. Añadir 3 modos de layout al appModel:
-   - **Chat only** (actual, default)
-   - **Sidebar + Chat** (filetree a la izquierda)
-   - **Sidebar + Editor** (filetree + viewer con tabs)
-2. Toggle sidebar con ctrl+b
-3. Cuando se selecciona archivo en filetree → abrir en viewer
-4. Routing de teclas según focus (filetree vs chat vs editor)
-5. Usar SplitPaneLayout existente, extenderlo si es necesario
-6. Responsive: redistribuir paneles al cambiar tamaño del terminal
+## Requirements
+1. Add 3 layout modes to appModel:
+   - **Chat only** (current, default)
+   - **Sidebar + Chat** (filetree on the left)
+   - **Sidebar + Editor** (filetree + viewer with tabs)
+2. Toggle sidebar with ctrl+b
+3. When file is selected in filetree → open in viewer
+4. Key routing based on focus (filetree vs chat vs editor)
+5. Use existing SplitPaneLayout, extend if necessary
+6. Responsive: redistribute panels when terminal size changes
 
-## Importante
-- NO romper la funcionalidad del chat existente
-- El chat debe seguir siendo el modo por defecto
-- Transiciones suaves entre layouts
+## Important
+- Do NOT break existing chat functionality
+- Chat must remain the default mode
+- Smooth transitions between layouts
 ```
 
 #### Agent-2: DiffView Component
 ```
 ID: tui-diffview
-Dependencias: [tui-chroma-highlight]
-Archivos a crear:
+Dependencies: [tui-chroma-highlight]
+Files to create:
   - internal/tui/components/diff/diffview.go
   - internal/tui/components/diff/parser.go
   - internal/tui/components/diff/styles.go
@@ -377,154 +377,154 @@ Archivos a crear:
 
 **Prompt**:
 ```
-Eres un experto en Go y bubbletea. Tu tarea es implementar un DiffView completo para Pando.
+You are an expert in Go and bubbletea. Your task is to implement a complete DiffView for Pando.
 
-## Contexto
-Usa las tools de remembrances:
-1. `kb_get_document("pando/tui-enhancement/06-phase6-diff-viewer-changes.md")` - Especificación COMPLETA del DiffView
-2. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Fase 2
-3. `kb_get_document("pando/tui-enhancement/10-crush-architecture-deep-dive.md")` - Cómo crush implementa diffs
+## Context
+Use the remembrances tools:
+1. `kb_get_document("pando/tui-enhancement/06-phase6-diff-viewer-changes.md")` - COMPLETE DiffView specification
+2. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Phase 2
+3. `kb_get_document("pando/tui-enhancement/10-crush-architecture-deep-dive.md")` - How crush implements diffs
 
-Usa `code_hybrid_search` en el proyecto "pando" para:
-- Buscar `internal/diff/` - Diff computation existente en Pando
-- Leer `internal/tui/components/editor/highlight.go` - Highlighter para syntax en diffs
-- Buscar cómo el permission dialog muestra diffs actualmente
-- Ver colores DiffAdded/DiffRemoved en el tema
+Use `code_hybrid_search` in the "pando" project to:
+- Search `internal/diff/` - Existing diff computation in Pando
+- Read `internal/tui/components/editor/highlight.go` - Highlighter for syntax in diffs
+- Search how the permission dialog currently shows diffs
+- See DiffAdded/DiffRemoved colors in the theme
 
-## Requisitos
-1. **parser.go**: Parsear unified diffs en estructuras Hunk/DiffLine
-2. **diffview.go**: Componente bubbletea con:
-   - Modo unified (default) y split (lado a lado)
-   - Toggle con tecla `t`
-   - Syntax highlighting en contenido (reutilizar Highlighter)
-   - Números de línea old/new
-   - Navegación entre hunks con `]c` / `[c`
-   - Scroll con j/k, page up/down
-   - Context lines configurable (default 3)
-3. **styles.go**: Estilos usando colores del tema (DiffAdded, DiffRemoved, DiffContext)
+## Requirements
+1. **parser.go**: Parse unified diffs into Hunk/DiffLine structures
+2. **diffview.go**: bubbletea component with:
+   - Unified mode (default) and split (side by side)
+   - Toggle with `t` key
+   - Syntax highlighting in content (reuse Highlighter)
+   - Old/new line numbers
+   - Hunk navigation with `]c` / `[c`
+   - Scroll with j/k, page up/down
+   - Configurable context lines (default 3)
+3. **styles.go**: Styles using theme colors (DiffAdded, DiffRemoved, DiffContext)
 
-## Importante
-- Reutilizar el Highlighter de `internal/tui/components/editor/highlight.go`
-- Reutilizar `internal/diff/` si tiene funciones útiles de cómputo de diffs
-- El componente debe poder integrarse como overlay Y como panel
+## Important
+- Reuse the Highlighter from `internal/tui/components/editor/highlight.go`
+- Reuse `internal/diff/` if it has useful diff computation functions
+- The component must be able to integrate as overlay AND as panel
 ```
 
 ---
 
-### OLEADA 4 (Esperar a que Oleada 3 termine)
+### WAVE 4 (Wait for Wave 3 to finish)
 
-#### Agent-3: Mouse Support con Bubblezone
+#### Agent-3: Mouse Support with Bubblezone
 ```
 ID: tui-mouse-support
-Dependencias: [tui-filetree, tui-file-viewer, tui-tabs, tui-diffview, tui-layout-integration]
-Archivos a crear:
+Dependencies: [tui-filetree, tui-file-viewer, tui-tabs, tui-diffview, tui-layout-integration]
+Files to create:
   - internal/tui/zone/zone.go
-Archivos a modificar:
-  - internal/tui/tui.go (Init, View, Update para mouse)
-  - Todos los View() de componentes nuevos
+Files to modify:
+  - internal/tui/tui.go (Init, View, Update for mouse)
+  - All new components' View()
 ```
 
 **Prompt**:
 ```
-Eres un experto en Go, bubbletea y bubblezone. Tu tarea es añadir soporte completo de mouse a Pando.
+You are an expert in Go, bubbletea and bubblezone. Your task is to add complete mouse support to Pando.
 
-## Contexto
-Usa las tools de remembrances:
-1. `kb_get_document("pando/tui-enhancement/05-phase5-mouse-support-bubblezone.md")` - Especificación completa
-2. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Fase 3
+## Context
+Use the remembrances tools:
+1. `kb_get_document("pando/tui-enhancement/05-phase5-mouse-support-bubblezone.md")` - Complete specification
+2. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Phase 3
 3. `kb_get_document("pando/tui-enhancement/11-external-libraries-reference.md")` - bubblezone API
 
-Usa `code_hybrid_search` en el proyecto "pando" para:
-- Buscar cómo se importa bubblezone actualmente (ya es dependencia)
-- Leer todos los View() de los nuevos componentes:
+Use `code_hybrid_search` in the "pando" project to:
+- Search how bubblezone is currently imported (already a dependency)
+- Read all View() of new components:
   - `internal/tui/components/filetree/filetree.go`
   - `internal/tui/components/editor/viewer.go`
   - `internal/tui/components/editor/tabs.go`
   - `internal/tui/components/diff/diffview.go`
-- Leer `internal/tui/tui.go` para entender el Init() y routing
+- Read `internal/tui/tui.go` to understand Init() and routing
 
-## Requisitos
-1. **zone.go**: Zone manager con IDs constantes para cada zona clickeable
-2. Activar `tea.EnableMouseCellMotion` en Init()
-3. Añadir `zone.Mark()` en View() de:
-   - File tree items (click = abrir/expandir)
-   - Tabs (click = activar, middle-click = cerrar)
+## Requirements
+1. **zone.go**: Zone manager with constant IDs for each clickable zone
+2. Activate `tea.EnableMouseCellMotion` in Init()
+3. Add `zone.Mark()` in View() of:
+   - File tree items (click = open/expand)
+   - Tabs (click = activate, middle-click = close)
    - Sidebar items
    - Status bar elements
-   - Botones de diálogos
-4. Mouse wheel scroll en viewports
-5. `zone.Manager.Scan()` en el View() final de tui.go
-6. handleMouse(tea.MouseMsg) en Update() del modelo principal
+   - Dialog buttons
+4. Mouse wheel scroll in viewports
+5. `zone.Manager.Scan()` in tui.go's final View()
+6. handleMouse(tea.MouseMsg) in main model's Update()
 
-## Importante
-- bubblezone YA es dependencia, no añadir
-- No romper navegación por teclado existente
-- Mouse es complemento, no reemplazo
+## Important
+- bubblezone is ALREADY a dependency, do not add
+- Do not break existing keyboard navigation
+- Mouse is complement, not replacement
 ```
 
-#### Agent-5: Markdown Rendering Mejoras
+#### Agent-5: Markdown Rendering Improvements
 ```
 ID: tui-markdown-improve
-Dependencias: [tui-chroma-highlight, tui-mouse-support]
-Archivos a modificar:
-  - internal/tui/components/chat/message.go (o similar)
+Dependencies: [tui-chroma-highlight, tui-mouse-support]
+Files to modify:
+  - internal/tui/components/chat/message.go (or similar)
   - internal/tui/styles/ (markdown styles)
 ```
 
 **Prompt**:
 ```
-Eres un experto en Go, glamour y chroma. Tu tarea es mejorar el rendering de markdown en el chat de Pando.
+You are an expert in Go, glamour and chroma. Your task is to improve markdown rendering in Pando's chat.
 
-## Contexto
-Usa las tools de remembrances:
-1. `kb_get_document("pando/tui-enhancement/04-phase4-markdown-rendering.md")` - Especificación completa
-2. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Fase 5
-3. `kb_get_document("pando/tui-enhancement/08-pando-current-state-detailed.md")` - Estado actual de glamour
+## Context
+Use the remembrances tools:
+1. `kb_get_document("pando/tui-enhancement/04-phase4-markdown-rendering.md")` - Complete specification
+2. `kb_get_document("pando/tui-enhancement/09-revised-implementation-priorities.md")` - Phase 5
+3. `kb_get_document("pando/tui-enhancement/08-pando-current-state-detailed.md")` - Current glamour state
 
-Usa `code_hybrid_search` en el proyecto "pando" para:
-- Buscar cómo se usa glamour actualmente en el proyecto
-- Leer `internal/tui/components/chat/` - Rendering actual de mensajes
-- Leer `internal/tui/components/editor/highlight.go` - Highlighter para code blocks
-- Buscar estilos MarkdownText, MarkdownHeading en el tema
+Use `code_hybrid_search` in the "pando" project to:
+- Search how glamour is currently used in the project
+- Read `internal/tui/components/chat/` - Current message rendering
+- Read `internal/tui/components/editor/highlight.go` - Highlighter for code blocks
+- Search for MarkdownText, MarkdownHeading styles in the theme
 
-## Requisitos
-1. Verificar/mejorar que estilos de glamour usen colores del tema (MarkdownText, MarkdownHeading, etc.)
-2. Code blocks con syntax highlighting via chroma (reutilizar Highlighter)
-3. Streaming: debounce de re-render durante streaming de respuestas AI
-4. Links clickeables integrados con bubblezone (zone.Mark en URLs)
-5. Tablas y listas con mejor formato
+## Requirements
+1. Verify/improve that glamour styles use theme colors (MarkdownText, MarkdownHeading, etc.)
+2. Code blocks with syntax highlighting via chroma (reuse Highlighter)
+3. Streaming: debounce re-render during AI response streaming
+4. Clickable links integrated with bubblezone (zone.Mark on URLs)
+5. Tables and lists with better formatting
 
-## Importante
-- glamour YA es dependencia, no añadir
-- Mejoras incrementales sobre lo existente, no reescribir
-- Performance: cache de renders de markdown, solo re-render en cambio
+## Important
+- glamour is ALREADY a dependency, do not add
+- Incremental improvements on existing, do not rewrite
+- Performance: cache markdown renders, only re-render on change
 ```
 
 ---
 
-## Resumen de Ejecución
+## Execution Summary
 
-| Oleada | Agentes | Paralelos | Tiempo Est. | Bloquea |
-|--------|---------|-----------|-------------|---------|
-| 1 | 1A, 1B, 4, 6 | 4 en paralelo | - | Oleada 2 |
-| 2 | 1C, 1D | 2 en paralelo | - | Oleada 3 |
-| 3 | 1E, 2 | 2 en paralelo | - | Oleada 4 |
-| 4 | 3, 5 | 2 en paralelo | - | Fin |
+| Wave | Agents | Parallel | Est. Time | Blocks |
+|------|--------|----------|-----------|--------|
+| 1 | 1A, 1B, 4, 6 | 4 in parallel | - | Wave 2 |
+| 2 | 1C, 1D | 2 in parallel | - | Wave 3 |
+| 3 | 1E, 2 | 2 in parallel | - | Wave 4 |
+| 4 | 3, 5 | 2 in parallel | - | End |
 
-**Total**: 10 subagentes, 4 oleadas, máximo 4 agentes simultáneos
+**Total**: 10 subagents, 4 waves, maximum 4 simultaneous agents
 
-## Notas de Control
+## Control Notes
 
-### Validación entre oleadas
-Antes de lanzar la siguiente oleada, verificar:
-1. Que los archivos creados compilen (`go build ./...`)
-2. Que las interfaces expuestas sean consistentes entre agentes
-3. Que no haya conflictos en imports o nombres de paquetes
+### Validation between waves
+Before launching the next wave, verify:
+1. That created files compile (`go build ./...`)
+2. That exposed interfaces are consistent between agents
+3. That there are no conflicts in imports or package names
 
 ### Rollback
-Cada oleada debe hacerse en una rama git separada:
+Each wave should be done on a separate git branch:
 - `feat/tui-wave-1`, `feat/tui-wave-2`, etc.
-- Merge a main solo tras validación
+- Merge to main only after validation
 
-### Coordinación de interfaces
-Los agentes de Oleada 2+ deben leer con `code_get_file_symbols` los archivos creados por oleadas anteriores para conocer las interfaces reales, no asumir.
+### Interface Coordination
+Agents in Wave 2+ must use `code_get_file_symbols` to read files created by previous waves to know the actual interfaces, not assume.

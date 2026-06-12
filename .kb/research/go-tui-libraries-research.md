@@ -1,278 +1,278 @@
-# Research: Librerías y Frameworks TUI en Go para IDE-like TUI
+# Research: Go TUI Libraries and Frameworks for IDE-like TUI
 
-Fecha: 2026-03-07
+Date: 2026-03-07
 
 ---
 
-## 1. charmbracelet/bubbles - Componentes TUI para Bubbletea
+## 1. charmbracelet/bubbles - TUI Components for Bubbletea
 
-### Descripción General
-Bubbles es la librería oficial de componentes reutilizables para Bubble Tea (framework TUI basado en arquitectura Elm). Todos los componentes implementan el patrón Model-Update-View.
+### General Description
+Bubbles is the official reusable components library for Bubble Tea (TUI framework based on Elm architecture). All components implement the Model-Update-View pattern.
 
-### Componentes Disponibles
+### Available Components
 
-#### viewport - Area de contenido scrollable
-- **Uso IDE**: Perfecto para paneles de contenido, preview de archivos, output de comandos
-- **API clave**:
-  - `New(opts ...Option)` - constructor con opciones
-  - `SetContent(s string)` / `SetContentLines(lines []string)` - establecer contenido
-  - `GetContent()` - recuperar contenido
+#### viewport - Scrollable content area
+- **IDE Use**: Perfect for content panels, file preview, command output
+- **Key API**:
+  - `New(opts ...Option)` - constructor with options
+  - `SetContent(s string)` / `SetContentLines(lines []string)` - set content
+  - `GetContent()` - retrieve content
   - `ScrollUp(n)`, `ScrollDown(n)`, `PageUp()`, `PageDown()`, `HalfPageUp()`, `HalfPageDown()`
-  - `GotoTop()`, `GotoBottom()` - saltos extremos
-  - `SetYOffset(n)`, `SetXOffset(n)` - posición absoluta
-  - `ScrollLeft(n)`, `ScrollRight(n)` - scroll horizontal
-  - `AtTop()`, `AtBottom()`, `PastBottom()` - estados de posición
-  - `ScrollPercent()`, `HorizontalScrollPercent()` - progreso (0-1)
-  - `TotalLineCount()`, `VisibleLineCount()` - conteos
-  - `SetHighlights(matches [][]int)` - marca rangos para búsqueda
-  - `HighlightNext()`, `HighlightPrevious()` - navegar highlights
-  - `EnsureVisible(line, colstart, colend)` - garantiza visibilidad de línea
-  - `LeftGutterFunc GutterFunc` - para números de línea o indicadores
-  - `StyleLineFunc func(int) lipgloss.Style` - estilo por línea
-- **Campos struct**: width, height, yOffset, xOffset, SoftWrap, FillHeight, MouseWheelEnabled, MouseWheelDelta, Style
-- **High Performance Mode**: campo YPosition para rendering en alt-screen buffer
+  - `GotoTop()`, `GotoBottom()` - extreme jumps
+  - `SetYOffset(n)`, `SetXOffset(n)` - absolute position
+  - `ScrollLeft(n)`, `ScrollRight(n)` - horizontal scroll
+  - `AtTop()`, `AtBottom()`, `PastBottom()` - position states
+  - `ScrollPercent()`, `HorizontalScrollPercent()` - progress (0-1)
+  - `TotalLineCount()`, `VisibleLineCount()` - counts
+  - `SetHighlights(matches [][]int)` - mark ranges for search
+  - `HighlightNext()`, `HighlightPrevious()` - navigate highlights
+  - `EnsureVisible(line, colstart, colend)` - ensure line visibility
+  - `LeftGutterFunc GutterFunc` - for line numbers or indicators
+  - `StyleLineFunc func(int) lipgloss.Style` - style per line
+- **Struct fields**: width, height, yOffset, xOffset, SoftWrap, FillHeight, MouseWheelEnabled, MouseWheelDelta, Style
+- **High Performance Mode**: YPosition field for rendering in alt-screen buffer
 
-#### textinput - Campo de entrada de una línea
-- **Uso IDE**: Barras de búsqueda, command palette, input de nombres
-- **API**: `New()`, `SetValue(s)`, `Value()`, `Focus()`, `Blur()`, validación, placeholder
+#### textinput - Single-line input field
+- **IDE Use**: Search bars, command palette, name input
+- **API**: `New()`, `SetValue(s)`, `Value()`, `Focus()`, `Blur()`, validation, placeholder
 
-#### textarea - Campo de entrada multilínea
-- **Uso IDE**: Editor de texto, editing areas
-- **API**: `New()`, `SetValue(s)`, `Value()`, `LineCount()`, scroll vertical/horizontal, Unicode
+#### textarea - Multi-line input field
+- **IDE Use**: Text editor, editing areas
+- **API**: `New()`, `SetValue(s)`, `Value()`, `LineCount()`, vertical/horizontal scroll, Unicode
 
-#### table - Datos tabulares
-- **Uso IDE**: Listados de archivos, resultados de búsqueda, git status
-- **API**: `New(columns, rows)`, `SetHeight(h)`, `SetWidth(w)`, `SelectedRow()`, navegación, selección
+#### table - Tabular data
+- **IDE Use**: File listings, search results, git status
+- **API**: `New(columns, rows)`, `SetHeight(h)`, `SetWidth(w)`, `SelectedRow()`, navigation, selection
 
-#### list - Lista navegable con búsqueda
-- **Uso IDE**: File explorer, command palette, búsqueda de archivos
-- **Características**: Paginación integrada, fuzzy filtering, ayuda auto-generada, spinner, mensajes de estado
-- **API**: `New(items, delegate, width, height)`, `SetItems(items)`, `SelectedItem()`, filtrado
+#### list - Navigable list with search
+- **IDE Use**: File explorer, command palette, file search
+- **Features**: Built-in pagination, fuzzy filtering, auto-generated help, spinner, status messages
+- **API**: `New(items, delegate, width, height)`, `SetItems(items)`, `SelectedItem()`, filtering
 
-#### filepicker - Selector de archivos
-- **Uso IDE**: Abrir archivos, navegar filesystem
-- **API**: `New()`, `SelectedFile()`, `AllowedTypes(types)`, navegación por directorios
+#### filepicker - File selector
+- **IDE Use**: Open files, navigate filesystem
+- **API**: `New()`, `SelectedFile()`, `AllowedTypes(types)`, directory navigation
 
-#### progress - Barra de progreso
-- **Uso IDE**: Indicadores de carga, progreso de operaciones
-- **API**: `New()`, `SetPercent(float64)`, rellenos sólidos/degradados, animación Harmonica
+#### progress - Progress bar
+- **IDE Use**: Loading indicators, operation progress
+- **API**: `New()`, `SetPercent(float64)`, solid/gradient fills, Harmonica animation
 
-#### spinner - Indicador de actividad
-- **Uso IDE**: Operaciones async, carga de archivos
-- **API**: `New()`, múltiples estilos predefinidos, fotogramas personalizables
+#### spinner - Activity indicator
+- **IDE Use**: Async operations, file loading
+- **API**: `New()`, multiple predefined styles, customizable frames
 
-#### help - Vista de ayuda
-- **Uso IDE**: Barra de atajos de teclado
-- **API**: `New()`, `View(width)`, modo una línea y multilínea, truncamiento automático
+#### help - Help view
+- **IDE Use**: Keyboard shortcut bar
+- **API**: `New()`, `View(width)`, single-line and multi-line mode, automatic truncation
 
-#### key - Gestión de keybindings
-- **Uso IDE**: Sistema de atajos de teclado configurable
-- **API**: `NewBinding(opts)`, `Matches(msg, bindings)`, remapeo, texto de ayuda contextual
+#### key - Keybindings management
+- **IDE Use**: Configurable keyboard shortcut system
+- **API**: `NewBinding(opts)`, `Matches(msg, bindings)`, remapping, contextual help text
 
-#### paginator - Lógica de paginación
-- Estilo dots (iOS) y numeración de páginas
+#### paginator - Pagination logic
+- Dots style (iOS) and page numbering
 
-#### timer / stopwatch - Temporizadores
-- Cuenta regresiva y progresiva
+#### timer / stopwatch - Timers
+- Countdown and count-up
 
-#### cursor - Gestión de cursor
-- Posición y estilo de cursor
+#### cursor - Cursor management
+- Cursor position and style
 
-#### runeutil - Utilidades de runes
-- Procesamiento de Key messages
+#### runeutil - Rune utilities
+- Key message processing
 
-### Patrones de Composición
-- Cada componente es un `Model` con `Update()` y `View()`
-- Se embeben como campos de un modelo padre
-- El modelo padre delega mensajes al componente correspondiente según el estado de foco
-- Se componen visualmente con lipgloss.JoinHorizontal/JoinVertical
+### Composition Patterns
+- Each component is a `Model` with `Update()` and `View()`
+- They are embedded as fields in a parent model
+- The parent model delegates messages to the corresponding component based on focus state
+- They compose visually with lipgloss.JoinHorizontal/JoinVertical
 
 ---
 
-## 2. yorukot/superfile - File Manager TUI (Referencia de Arquitectura)
+## 2. yorukot/superfile - TUI File Manager (Architecture Reference)
 
-### Tecnología
-- Go (88%), construido sobre Bubble Tea + Lipgloss
+### Technology
+- Go (88%), built on Bubble Tea + Lipgloss
 - Binary: `spf`
 
-### Arquitectura del Modelo Principal
+### Main Model Architecture
 
 ```
-model (raíz bubbletea)
-├── fileModel (gestor de múltiples paneles)
-│   ├── FilePanels[] (array de paneles individuales)
-│   ├── FocusedPanelIndex (índice del panel activo)
-│   ├── SinglePanelWidth (ancho calculado dinámicamente)
-│   ├── MaxFilePanel (cantidad máxima de paneles)
-│   └── FilePreview (vista previa de contenido)
-├── sidebarModel (barra lateral con directorios, renombrado)
-├── fileMetaData (metadata via exiftool, con caché)
-├── processBarModel (tareas en segundo plano)
-├── clipboard (portapapeles)
-└── Modales superpuestos:
-    ├── helpMenu (overlay centrado)
-    ├── promptModal (comandos SPF)
-    ├── zoxideModal (navegación rápida)
-    ├── sortModal (clasificación)
-    ├── notifyModel (confirmaciones)
-    ├── typingModal (entrada texto)
-    └── warnModel (confirmación)
+model (bubbletea root)
+├── fileModel (multi-panel manager)
+│   ├── FilePanels[] (individual panels array)
+│   ├── FocusedPanelIndex (active panel index)
+│   ├── SinglePanelWidth (dynamically calculated width)
+│   ├── MaxFilePanel (maximum panel count)
+│   └── FilePreview (content preview)
+├── sidebarModel (sidebar with directories, renaming)
+├── fileMetaData (metadata via exiftool, with cache)
+├── processBarModel (background tasks)
+├── clipboard
+└── Overlapping modals:
+    ├── helpMenu (centered overlay)
+    ├── promptModal (SPF commands)
+    ├── zoxideModal (quick navigation)
+    ├── sortModal (sorting)
+    ├── notifyModel (confirmations)
+    ├── typingModal (text input)
+    └── warnModel (confirmation)
 ```
 
-### Sistema de Paneles Múltiples
-- Array dinámico `FilePanels[]` con índice de foco `FocusedPanelIndex`
-- Cada panel tiene: Location, SearchBar, Rename, PanelMode, IsFocused
-- Ancho calculado dinámicamente: `fileModelWidth = fullWidth - sidebarWidth - borde`
-- Funciones: `getFocusedFilePanel()`, toggle entre paneles
+### Multiple Panels System
+- Dynamic array `FilePanels[]` with focus index `FocusedPanelIndex`
+- Each panel has: Location, SearchBar, Rename, PanelMode, IsFocused
+- Width dynamically calculated: `fileModelWidth = fullWidth - sidebarWidth - border`
+- Functions: `getFocusedFilePanel()`, toggle between panels
 
-### Sistema de Foco
-- Estados: sidebarFocus, processBarFocus, metadataFocus, nonePanelFocus
-- Toggle pattern: activar uno desactiva el anterior
-- Propiedad IsFocused en cada panel de archivos
+### Focus System
+- States: sidebarFocus, processBarFocus, metadataFocus, nonePanelFocus
+- Toggle pattern: activating one deactivates the previous
+- IsFocused property in each file panel
 
-### Navegación
-- `parentDirectory()` - subir al directorio padre
-- `enterPanel()` - entrar a directorio o abrir archivo
-- `sidebarSelectDirectory()` - cambiar directorio desde sidebar
-- Integración con Zoxide para navegación rápida
+### Navigation
+- `parentDirectory()` - go up to parent directory
+- `enterPanel()` - enter directory or open file
+- `sidebarSelectDirectory()` - change directory from sidebar
+- Integration with Zoxide for quick navigation
 
 ### Rendering (model_render.go)
-- Componentes renderizados independientemente: `sidebarRender()`, `processBarRender()`
-- Layout compuesto con lipgloss
-- Validación de tamaño mínimo de terminal: `terminalSizeWarnRender()`
-- Dimensiones: `mainPanelHeight = fullHeight - 2(borde) - footerHeight`
-- Modales se superponen sobre interfaz principal
+- Components rendered independently: `sidebarRender()`, `processBarRender()`
+- Layout composed with lipgloss
+- Minimum terminal size validation: `terminalSizeWarnRender()`
+- Dimensions: `mainPanelHeight = fullHeight - 2(border) - footerHeight`
+- Modals overlay on top of main interface
 
-### Estructura de Código
+### Code Structure
 ```
 src/internal/
-├── model.go                    - Modelo principal
-├── model_msg.go                - Mensajes
+├── model.go                    - Main model
+├── model_msg.go                - Messages
 ├── model_render.go             - Rendering
-├── handle_panel_movement.go    - Movimiento entre paneles
-├── handle_panel_navigation.go  - Navegación dentro de paneles
-├── handle_file_operations.go   - Operaciones de archivos
-├── handle_modal.go             - Gestión de modales
-├── file_operations.go          - Operaciones generales
-├── file_operations_compress.go - Compresión
-├── file_operations_extract.go  - Extracción
-├── key_function.go             - Funciones de teclado
-├── wheel_function.go           - Funciones de rueda del mouse
-├── function.go                 - Funciones principales
-├── config_function.go          - Configuración
-├── default_config.go           - Config por defecto
-├── type.go / type_utils.go     - Tipos
-├── validation.go               - Validaciones
-├── backend/                    - Lógica de backend
-├── common/                     - Código compartido
-└── ui/                         - Interfaz de usuario
+├── handle_panel_movement.go    - Panel movement
+├── handle_panel_navigation.go  - Panel navigation
+├── handle_file_operations.go   - File operations
+├── handle_modal.go             - Modal management
+├── file_operations.go          - General operations
+├── file_operations_compress.go - Compression
+├── file_operations_extract.go  - Extraction
+├── key_function.go             - Keyboard functions
+├── wheel_function.go           - Mouse wheel functions
+├── function.go                 - Main functions
+├── config_function.go          - Configuration
+├── default_config.go           - Default config
+├── type.go / type_utils.go     - Types
+├── validation.go               - Validations
+├── backend/                    - Backend logic
+├── common/                     - Shared code
+└── ui/                         - User interface
 ```
 
-### Lecciones para un IDE-like TUI
-1. Separar handlers por responsabilidad (panel_movement, panel_navigation, file_operations)
-2. Sistema de foco con estados enum
-3. Cálculo dinámico de dimensiones basado en terminal size
-4. Modales como overlay sobre la interfaz principal
-5. Caché para metadata costosa (exiftool)
+### Lessons for an IDE-like TUI
+1. Separate handlers by responsibility (panel_movement, panel_navigation, file_operations)
+2. Focus system with enum states
+3. Dynamic dimension calculation based on terminal size
+4. Modals as overlay on the main interface
+5. Cache for expensive metadata (exiftool)
 
 ---
 
-## 3. charmbracelet/glow - Renderizador Markdown en Terminal
+## 3. charmbracelet/glow - Markdown Renderer in Terminal
 
-### Arquitectura
-- CLI + TUI en Go, usa Bubble Tea para la interfaz interactiva
-- Usa **Glamour** internamente para el rendering de markdown
+### Architecture
+- CLI + TUI in Go, uses Bubble Tea for the interactive interface
+- Uses **Glamour** internally for markdown rendering
 
-### Modos de Operación
-- **TUI**: `glow` sin argumentos - interfaz interactiva para navegar y buscar markdown
-- **CLI**: `glow archivo.md` - renderizado directo
+### Operation Modes
+- **TUI**: `glow` without arguments - interactive interface to navigate and search markdown
+- **CLI**: `glow file.md` - direct rendering
 
-### Fuentes de Contenido
-- Archivos locales
-- Entrada estándar (stdin)
-- URLs HTTP/HTTPS
-- Repositorios GitHub/GitLab
+### Content Sources
+- Local files
+- Standard input (stdin)
+- HTTP/HTTPS URLs
+- GitHub/GitLab repositories
 
 ### Rendering
-- Detección automática de estilo (oscuro/claro) según fondo terminal
-- Salida ANSI formateada
-- Paginación via `less -r`
-- Ancho configurable (`-w`)
+- Automatic style detection (dark/light) based on terminal background
+- Formatted ANSI output
+- Pagination via `less -r`
+- Configurable width (`-w`)
 
-### Configuración (glow.yml)
-- Estilo visual
-- Ancho de renderizado
-- Soporte de ratón
-- Números de línea
+### Configuration (glow.yml)
+- Visual style
+- Rendering width
+- Mouse support
+- Line numbers
 
-### Estructura
+### Structure
 ```
-ui/           - componentes TUI (bubbletea)
-utils/        - utilidades
+ui/           - TUI components (bubbletea)
+utils/        - utilities
 main.go       - entry point
-config_cmd.go - configuración
-style.go      - estilos
-github.go     - integración GitHub
-gitlab.go     - integración GitLab
+config_cmd.go - configuration
+style.go      - styles
+github.go     - GitHub integration
+gitlab.go     - GitLab integration
 ```
 
-### Integración con Bubbletea
-- El modelo TUI usa viewport para scroll del markdown renderizado
-- Glamour renderiza el markdown a string ANSI
-- El string se pasa a viewport.SetContent()
-- El usuario navega con teclado/mouse
+### Integration with Bubbletea
+- The TUI model uses viewport for scrolling rendered markdown
+- Glamour renders markdown to ANSI string
+- The string is passed to viewport.SetContent()
+- User navigates with keyboard/mouse
 
 ---
 
-## 4. lrstanley/bubblezone - Mouse Support para Bubbletea
+## 4. lrstanley/bubblezone - Mouse Support for Bubbletea
 
-### Problema que Resuelve
-Bubbletea provee eventos mouse básicos (MouseButtonLeft, etc.) pero determinar QUÉ componente fue clickeado en interfaces multi-componente es complejo. BubbleZone abstrae esto.
+### Problem It Solves
+Bubbletea provides basic mouse events (MouseButtonLeft, etc.) but determining WHICH component was clicked in multi-component interfaces is complex. BubbleZone abstracts this.
 
-### Concepto Core
-Usa **marcadores ANSI de ancho cero** (zero-printable-width) que:
-1. Son invisibles y no afectan `lipgloss.Width()`
-2. Se insertan alrededor de componentes con `Mark()`
-3. Se escanean con `Scan()` para registrar posiciones
-4. Se remueven del output final antes de renderizar
+### Core Concept
+Uses **zero-printable-width ANSI markers** that:
+1. Are invisible and don't affect `lipgloss.Width()`
+2. Are inserted around components with `Mark()`
+3. Are scanned with `Scan()` to register positions
+4. Are removed from final output before rendering
 
-### API Completa
+### Complete API
 
-#### Inicialización
+#### Initialization
 ```go
-zone.NewGlobal()           // Manager global (accesible via funciones de paquete)
-manager := zone.New()      // Manager local (inyectable)
-defer zone.Close()         // Detener workers
+zone.NewGlobal()           // Global manager (accessible via package functions)
+manager := zone.New()      // Local manager (injectable)
+defer zone.Close()         // Stop workers
 ```
 
-#### Marcado de Zonas
+#### Zone Marking
 ```go
 zone.Mark(id string, content string) string
-// Envuelve content con marcadores identificados por id
-// Ejemplo: zone.Mark("save-btn", saveButton)
+// Wraps content with markers identified by id
+// Example: zone.Mark("save-btn", saveButton)
 ```
 
-#### Escaneo (solo en modelo raíz)
+#### Scanning (only in root model)
 ```go
 zone.Scan(content string) string
-// Escanea todo el view, registra posiciones de zonas, remueve marcadores
-// DEBE llamarse SOLO en el View() del modelo raíz
+// Scans entire view, registers zone positions, removes markers
+// MUST be called ONLY in the root model's View()
 ```
 
-#### Consulta de Zonas
+#### Zone Query
 ```go
 info := zone.Get(id string) *ZoneInfo
-// Retorna info de la zona (nil si desconocida)
+// Returns zone info (nil if unknown)
 
 info.InBounds(msg tea.MouseMsg) bool
-// Verifica si el evento mouse está dentro de la zona
+// Checks if mouse event is within the zone
 
 info.Pos(msg tea.MouseMsg) (x, y int)
-// Coordenadas relativas dentro de la zona (0,0 = top-left)
-// Retorna (-1,-1) si fuera de bounds
+// Relative coordinates within zone (0,0 = top-left)
+// Returns (-1,-1) if out of bounds
 
 info.IsZero() bool
-// True si la zona aún no se conoce
+// True if zone is not yet known
 ```
 
 #### ZoneInfo Struct
@@ -285,16 +285,16 @@ type ZoneInfo struct {
 }
 ```
 
-#### Funciones Auxiliares
+#### Helper Functions
 ```go
-zone.AnyInBounds(model, mouse)                           // Envía MsgZoneInBounds por cada zona en bounds
-zone.AnyInBoundsAndUpdate(model, mouse) (Model, Cmd)     // Igual pero retorna model/cmd actualizados
-zone.NewPrefix() string                                   // Prefijo único para evitar colisiones de IDs
-zone.SetEnabled(bool) / zone.Enabled() bool               // Habilitar/deshabilitar
-zone.Clear(id string)                                     // Limpiar datos de zona
+zone.AnyInBounds(model, mouse)                           // Sends MsgZoneInBounds for each zone in bounds
+zone.AnyInBoundsAndUpdate(model, mouse) (Model, Cmd)     // Same but returns updated model/cmd
+zone.NewPrefix() string                                   // Unique prefix to avoid ID collisions
+zone.SetEnabled(bool) / zone.Enabled() bool               // Enable/disable
+zone.Clear(id string)                                     // Clear zone data
 ```
 
-### Patrón de Uso Completo
+### Complete Usage Pattern
 
 ```go
 // main.go
@@ -305,13 +305,13 @@ func main() {
     p.Run()
 }
 
-// View() - modelo RAÍZ
+// View() - ROOT model
 func (m model) View() string {
     buttons := lipgloss.JoinHorizontal(lipgloss.Top,
         zone.Mark("confirm", okButton),
         zone.Mark("cancel", cancelButton),
     )
-    return zone.Scan(m.style.Render(buttons))  // Scan solo aquí
+    return zone.Scan(m.style.Render(buttons))  // Scan only here
 }
 
 // Update()
@@ -328,10 +328,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 ```
 
-### Para Componentes Anidados (evitar colisiones de ID)
+### For Nested Components (avoid ID collisions)
 ```go
 type childModel struct {
-    id string  // prefijo único
+    id string  // unique prefix
 }
 
 func NewChild() childModel {
@@ -339,130 +339,130 @@ func NewChild() childModel {
 }
 
 func (c childModel) View() string {
-    return zone.Mark(c.id+"item-1", item1)  // ID prefijado
+    return zone.Mark(c.id+"item-1", item1)  // Prefixed ID
 }
 ```
 
-### Mejores Prácticas
-1. `Scan()` SOLO en el modelo raíz
-2. Usar `lipgloss.Width()` (no `len()`) - marcadores son transparentes para Width
-3. Evitar `MaxHeight/MaxWidth` de lipgloss (truncan y rompen zonas)
-4. Los bounds son rectangulares (bounding box)
-5. Para listas: marcar cada item con ID único
-6. `NewPrefix()` para componentes reutilizables
+### Best Practices
+1. `Scan()` ONLY in the root model
+2. Use `lipgloss.Width()` (not `len()`) - markers are transparent to Width
+3. Avoid `MaxHeight/MaxWidth` from lipgloss (they truncate and break zones)
+4. Bounds are rectangular (bounding box)
+5. For lists: mark each item with unique ID
+6. `NewPrefix()` for reusable components
 
-### Requisitos
-- Alt-screen habilitado: `tea.WithAltScreen()`
+### Requirements
+- Alt-screen enabled: `tea.WithAltScreen()`
 - Mouse tracking: `tea.WithMouseCellMotion()`
 
 ---
 
-## 5. charmbracelet/glamour - Rendering de Markdown en Terminal
+## 5. charmbracelet/glamour - Markdown Rendering in Terminal
 
-### Descripción
-Librería Go para renderizar Markdown con estilos en terminales ANSI. "Stylesheet-based markdown rendering for CLI apps."
+### Description
+Go library for rendering Markdown with styles in ANSI terminals. "Stylesheet-based markdown rendering for CLI apps."
 
-### API Principal
+### Main API
 
-#### Rendering Simple
+#### Simple Rendering
 ```go
-out, err := glamour.Render(in, "dark")                    // Con estilo específico
-out, err := glamour.RenderWithEnvironmentConfig(in)        // Usa GLAMOUR_STYLE env
-outBytes, err := glamour.RenderBytes(inBytes, "dark")      // Versión bytes
+out, err := glamour.Render(in, "dark")                    // With specific style
+out, err := glamour.RenderWithEnvironmentConfig(in)        // Uses GLAMOUR_STYLE env
+outBytes, err := glamour.RenderBytes(inBytes, "dark")      // Bytes version
 ```
 
-#### TermRenderer (personalizable)
+#### TermRenderer (customizable)
 ```go
 r, err := glamour.NewTermRenderer(
-    glamour.WithAutoStyle(),          // Detecta fondo claro/oscuro
-    glamour.WithWordWrap(80),         // Ancho de wrapping
-    glamour.WithEmoji(),              // Renderizar emojis
+    glamour.WithAutoStyle(),          // Detects light/dark background
+    glamour.WithWordWrap(80),         // Wrapping width
+    glamour.WithEmoji(),              // Render emojis
 )
 out, err := r.Render(markdownString)
 
-// También implementa io.ReadWriteCloser
+// Also implements io.ReadWriteCloser
 r.Write(bytes)
 r.Read(buf)
 r.Close()
 ```
 
-#### Opciones Disponibles (TermRendererOption)
+#### Available Options (TermRendererOption)
 ```go
-glamour.WithAutoStyle()                    // Detecta tema automáticamente
-glamour.WithStandardStyle("dark")          // Estilo estándar
-glamour.WithStylePath("/path/style.json")  // Estilo desde archivo
-glamour.WithEnvironmentConfig()            // Desde env GLAMOUR_STYLE
-glamour.WithStyles(ansi.StyleConfig{})     // Estilos directos
-glamour.WithStylesFromJSONFile("f.json")   // Desde JSON
-glamour.WithStylesFromJSONBytes(json)      // Desde JSON bytes
-glamour.WithWordWrap(80)                   // Ancho wrapping
-glamour.WithBaseURL("https://...")         // URL base para links relativos
-glamour.WithColorProfile(termenv.TrueColor) // Perfil de color
+glamour.WithAutoStyle()                    // Auto-detect theme
+glamour.WithStandardStyle("dark")          // Standard style
+glamour.WithStylePath("/path/style.json")  // Style from file
+glamour.WithEnvironmentConfig()            // From env GLAMOUR_STYLE
+glamour.WithStyles(ansi.StyleConfig{})     // Direct styles
+glamour.WithStylesFromJSONFile("f.json")   // From JSON
+glamour.WithStylesFromJSONBytes(json)      // From JSON bytes
+glamour.WithWordWrap(80)                   // Wrapping width
+glamour.WithBaseURL("https://...")         // Base URL for relative links
+glamour.WithColorProfile(termenv.TrueColor) // Color profile
 glamour.WithEmoji()                        // Emojis
-glamour.WithPreservedNewLines()            // Preservar saltos
-glamour.WithTableWrap(true)               // Wrap en tablas
-glamour.WithInlineTableLinks(true)        // Links inline en tablas
-glamour.WithChromaFormatter("terminal256") // Formatter de Chroma
-glamour.WithOptions(opt1, opt2...)        // Agrupar opciones
+glamour.WithPreservedNewLines()            // Preserve newlines
+glamour.WithTableWrap(true)               // Table wrapping
+glamour.WithInlineTableLinks(true)        // Inline links in tables
+glamour.WithChromaFormatter("terminal256") // Chroma formatter
+glamour.WithOptions(opt1, opt2...)        // Group options
 ```
 
-### Estilos Predefinidos
-- `"dark"` - Tema oscuro (default)
-- `"light"` - Tema claro
-- `"auto"` - Detecta automáticamente
-- `"notty"` - Para salida sin terminal
-- `"dracula"` - Esquema Dracula
+### Predefined Styles
+- `"dark"` - Dark theme (default)
+- `"light"` - Light theme
+- `"auto"` - Auto-detect
+- `"notty"` - For non-terminal output
+- `"dracula"` - Dracula scheme
 
-### Integración con Chroma
-- Glamour usa Chroma internamente para syntax highlighting en bloques de código
-- Configurable con `WithChromaFormatter()`: "terminal256", "terminal16m", etc.
-- Automático para bloques ``` con lenguaje especificado
+### Chroma Integration
+- Glamour uses Chroma internally for syntax highlighting in code blocks
+- Configurable with `WithChromaFormatter()`: "terminal256", "terminal16m", etc.
+- Automatic for ``` blocks with specified language
 
-### Personalización de Estilos
+### Style Customization
 - Via `ansi.StyleConfig` struct
-- Via archivos JSON
-- Via variable de entorno `GLAMOUR_STYLE`
+- Via JSON files
+- Via environment variable `GLAMOUR_STYLE`
 
-### Integración con Bubbletea (patrón típico)
+### Bubbletea Integration (typical pattern)
 ```go
-// En Init() o Update():
+// In Init() or Update():
 renderer, _ := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(width))
 renderedMarkdown, _ := renderer.Render(rawMarkdown)
 m.viewport.SetContent(renderedMarkdown)
 
-// En View():
+// In View():
 return m.viewport.View()
 ```
 
 ---
 
-## 6. alecthomas/chroma - Syntax Highlighting en Go
+## 6. alecthomas/chroma - Syntax Highlighting in Go
 
-### Descripción
-Librería Go pura para syntax highlighting. Convierte código fuente en HTML coloreado, texto ANSI para terminal, etc. Inspirada en Pygments.
+### Description
+Pure Go library for syntax highlighting. Converts source code to colored HTML, ANSI terminal text, etc. Inspired by Pygments.
 
-### Arquitectura: 3 Componentes
-1. **Lexers** - Convierten texto en flujos de tokens (200+ lenguajes)
-2. **Formatters** - Transforman tokens en salida formateada
-3. **Styles** - Mapean tipos de token a colores/estilos
+### Architecture: 3 Components
+1. **Lexers** - Convert text to token streams (200+ languages)
+2. **Formatters** - Transform tokens to formatted output
+3. **Styles** - Map token types to colors/styles
 
-### Lenguajes Soportados (200+)
-Go, Python, Java, JavaScript, TypeScript, Rust, C/C++, C#, Ruby, PHP, Kotlin, SQL, HTML, XML, JSON, YAML, Markdown, Docker, Terraform, Bash, PowerShell, GraphQL, Haskell, y muchos más.
+### Supported Languages (200+)
+Go, Python, Java, JavaScript, TypeScript, Rust, C/C++, C#, Ruby, PHP, Kotlin, SQL, HTML, XML, JSON, YAML, Markdown, Docker, Terraform, Bash, PowerShell, GraphQL, Haskell, and many more.
 
-### Formatters de Terminal (relevantes para TUI)
-- `"terminal16"` - 8/16 colores ANSI
-- `"terminal256"` - 256 colores ANSI
+### Terminal Formatters (relevant for TUI)
+- `"terminal16"` - 8/16 ANSI colors
+- `"terminal256"` - 256 ANSI colors
 - `"terminal16m"` - True color (24-bit RGB)
-- También: HTML, noop, tokens (debugging)
+- Also: HTML, noop, tokens (debugging)
 
-### Uso Rápido
+### Quick Usage
 ```go
 import "github.com/alecthomas/chroma/v2/quick"
 
 err := quick.Highlight(os.Stdout, sourceCode, "go", "terminal256", "monokai")
 ```
 
-### Uso Programático Detallado
+### Detailed Programmatic Usage
 ```go
 import (
     "github.com/alecthomas/chroma/v2"
@@ -471,42 +471,42 @@ import (
     "github.com/alecthomas/chroma/v2/styles"
 )
 
-// 1. Identificar lenguaje
-lexer := lexers.Match("foo.go")          // Por filename
-lexer := lexers.Get("go")                // Por nombre
-lexer := lexers.Analyse(sourceCode)      // Por contenido
+// 1. Identify language
+lexer := lexers.Match("foo.go")          // By filename
+lexer := lexers.Get("go")                // By name
+lexer := lexers.Analyse(sourceCode)      // By content
 if lexer == nil { lexer = lexers.Fallback }
 
-// 2. Optimizar (combinar tokens idénticos adyacentes)
+// 2. Optimize (merge identical adjacent tokens)
 lexer = chroma.Coalesce(lexer)
 
-// 3. Seleccionar estilo
+// 3. Select style
 style := styles.Get("monokai")
 if style == nil { style = styles.Fallback }
 
-// 4. Seleccionar formatter
+// 4. Select formatter
 formatter := formatters.Get("terminal256")
 if formatter == nil { formatter = formatters.Fallback }
 
-// 5. Tokenizar
+// 5. Tokenize
 iterator, err := lexer.Tokenise(nil, sourceCode)
 
-// 6. Formatear a un writer (puede ser bytes.Buffer)
+// 6. Format to a writer (can be bytes.Buffer)
 var buf bytes.Buffer
 err = formatter.Format(&buf, style, iterator)
 highlightedCode := buf.String()
 ```
 
-### Estilos/Temas Populares
-- `"monokai"` - Oscuro, popular
-- `"github"` - Claro
-- `"dracula"` - Oscuro
-- Todos los estilos de Pygments convertidos
+### Popular Styles/Themes
+- `"monokai"` - Dark, popular
+- `"github"` - Light
+- `"dracula"` - Dark
+- All Pygments styles converted
 - Case-insensitive
 
-### Integración con TUI (patrón para IDE)
+### TUI Integration (IDE pattern)
 ```go
-// Para preview de archivos con syntax highlighting:
+// For file preview with syntax highlighting:
 func highlightFile(content, filename string, width int) string {
     lexer := lexers.Match(filename)
     if lexer == nil { lexer = lexers.Fallback }
@@ -521,43 +521,43 @@ func highlightFile(content, filename string, width int) string {
     return buf.String()
 }
 
-// Luego en bubbletea:
+// Then in bubbletea:
 highlighted := highlightFile(fileContent, "main.go", m.width)
 m.viewport.SetContent(highlighted)
 ```
 
-### Características Adicionales
-- Detección automática de lenguaje por filename, extensión o contenido
-- Jerarquía de tokens: si CommentSpecial no está definido, hereda de Comment
-- `chroma.Coalesce()` mejora rendimiento combinando tokens adyacentes
-- Integración con less: `LESSOPEN` para preview colorizado
+### Additional Features
+- Automatic language detection by filename, extension or content
+- Token hierarchy: if CommentSpecial is not defined, it inherits from Comment
+- `chroma.Coalesce()` improves performance by merging adjacent tokens
+- less integration: `LESSOPEN` for colorized preview
 
 ---
 
-## Resumen de Integración para IDE-like TUI
+## Integration Summary for IDE-like TUI
 
-### Stack Recomendado
+### Recommended Stack
 ```
-bubbletea          → Framework base (Model-Update-View)
-lipgloss           → Estilos y layout (borders, colors, join)
-bubbles/viewport   → Paneles de contenido scrollable
+bubbletea          → Base framework (Model-Update-View)
+lipgloss           → Styles and layout (borders, colors, join)
+bubbles/viewport   → Scrollable content panels
 bubbles/textinput  → Command palette, search bar
-bubbles/textarea   → Editor de texto
+bubbles/textarea   → Text editor
 bubbles/list       → File explorer, fuzzy search
-bubbles/table      → Git status, resultados
-bubbles/help       → Barra de atajos
-bubbles/key        → Sistema de keybindings
-bubblezone         → Mouse support con zonas clickeables
-glamour            → Rendering de markdown (README, docs)
-chroma             → Syntax highlighting de código
+bubbles/table      → Git status, results
+bubbles/help       → Shortcuts bar
+bubbles/key        → Keybindings system
+bubblezone         → Mouse support with clickable zones
+glamour            → Markdown rendering (README, docs)
+chroma             → Code syntax highlighting
 ```
 
-### Patrón de Composición Principal
+### Main Composition Pattern
 ```go
 type IDEModel struct {
     // Layout
     sidebar     SidebarModel      // File tree (bubbles/list)
-    editor      EditorModel       // Editor principal (bubbles/textarea o viewport+chroma)
+    editor      EditorModel       // Main editor (bubbles/textarea or viewport+chroma)
     preview     viewport.Model    // Preview panel (viewport)
     terminal    viewport.Model    // Terminal output
     commandBar  textinput.Model   // Command palette
@@ -565,7 +565,7 @@ type IDEModel struct {
     help        help.Model        // Help bar
     
     // State
-    focusedPanel FocusState       // Qué panel tiene foco
+    focusedPanel FocusState       // Which panel has focus
     keys         KeyMap           // Keybindings (bubbles/key)
     width, height int             // Terminal dimensions
 }
@@ -583,9 +583,9 @@ func (m IDEModel) View() string {
 }
 ```
 
-### Lecciones de Superfile
-1. **Handlers separados**: handle_panel_movement.go, handle_panel_navigation.go
-2. **Foco como enum**: sidebarFocus, editorFocus, previewFocus, etc.
-3. **Dimensiones dinámicas**: Recalcular en WindowSizeMsg
-4. **Modales como overlay**: Renderizar encima del contenido principal
-5. **Caché**: Para operaciones costosas (metadata, highlighting)
+### Lessons from Superfile
+1. **Separate handlers**: handle_panel_movement.go, handle_panel_navigation.go
+2. **Focus as enum**: sidebarFocus, editorFocus, previewFocus, etc.
+3. **Dynamic dimensions**: Recalculate on WindowSizeMsg
+4. **Modals as overlay**: Render on top of main content
+5. **Cache**: For expensive operations (metadata, highlighting)

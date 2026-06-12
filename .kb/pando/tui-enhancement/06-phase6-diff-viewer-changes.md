@@ -1,17 +1,17 @@
-# Fase 6: Diff Viewer y Gestión de Cambios
+# Phase 6: Diff Viewer and Change Management
 
-## Objetivo
-Implementar un diff viewer completo (split y unified) para visualizar cambios del agente AI, panel de archivos modificados, git status integrado, y navegación entre cambios.
+## Objective
+Implement a complete diff viewer (split and unified) to visualize AI agent changes, modified files panel, integrated git status, and navigation between changes.
 
-## Referencia: Crush DiffView
+## Reference: Crush DiffView
 
-### Estructura (`internal/ui/diffview/diffview.go`)
+### Structure (`internal/ui/diffview/diffview.go`)
 ```go
 type DiffView struct {
-    layout          layout           // split o unified
-    before          file             // contenido original
-    after           file             // contenido modificado
-    contextLines    int              // líneas de contexto
+    layout          layout           // split or unified
+    before          file             // original content
+    after           file             // modified content
+    contextLines    int              // context lines
     lineNumbers     bool
     height, width   int
     xOffset, yOffset int             // scroll
@@ -36,31 +36,31 @@ type DiffView struct {
 }
 ```
 
-### Modos de Vista
-- **Unified**: Vista tradicional de diff con +/- indicators
-- **Split**: Vista lado a lado con before/after
+### View Modes
+- **Unified**: Traditional diff view with +/- indicators
+- **Split**: Side-by-side view with before/after
 
 ### Rendering (`renderUnified`, `renderSplit`)
-- Syntax highlighting por línea con cache
-- Colores: verde para adiciones, rojo para eliminaciones
-- Números de línea para ambos lados
-- Hunk headers con información de posición
+- Syntax highlighting per line with cache
+- Colors: green for additions, red for deletions
+- Line numbers for both sides
+- Hunk headers with position information
 
-### Uso en Permisos (`internal/ui/dialog/permissions.go`)
+### Use in Permissions (`internal/ui/dialog/permissions.go`)
 ```go
 func (p *Permissions) hasDiffView() bool
 func (p *Permissions) renderDiff(filePath, oldContent, newContent string, contentWidth int) string
 // diffMaxWidth = 180
 ```
 
-### Generación de Diff (`internal/diff/diff.go`)
+### Diff Generation (`internal/diff/diff.go`)
 ```go
 func GenerateDiff(beforeContent, afterContent, fileName string) (string, int, int)
 ```
 
-## Plan de Implementación
+## Implementation Plan
 
-### 6.1 Componente DiffView
+### 6.1 DiffView Component
 
 ```go
 // internal/tui/components/diff/diffview.go
@@ -73,8 +73,8 @@ const (
 type DiffView struct {
     // Content
     filePath   string
-    before     string  // contenido original
-    after      string  // contenido modificado
+    before     string  // original content
+    after      string  // modified content
     
     // Computed diff
     hunks      []Hunk
@@ -109,8 +109,8 @@ type Hunk struct {
 type DiffLine struct {
     Type    DiffLineType
     Content string
-    OldNum  int  // número de línea en before
-    NewNum  int  // número de línea en after
+    OldNum  int  // line number in before
+    NewNum  int  // line number in after
 }
 
 type DiffLineType int
@@ -121,7 +121,7 @@ const (
 )
 ```
 
-### 6.2 Rendering de Diff
+### 6.2 Diff Rendering
 
 ```go
 func (d *DiffView) renderUnified() string {
@@ -162,8 +162,8 @@ func (d *DiffView) renderUnified() string {
 }
 
 func (d *DiffView) renderSplit() string {
-    // Vista lado a lado
-    halfWidth := (d.width - 3) / 2  // -3 para separador
+    // Side-by-side view
+    halfWidth := (d.width - 3) / 2  // -3 for separator
     
     var sb strings.Builder
     for _, hunk := range d.hunks {
@@ -193,7 +193,7 @@ func (d *DiffView) renderSplit() string {
 }
 ```
 
-### 6.3 Panel de Archivos Modificados
+### 6.3 Modified Files Panel
 
 ```go
 // internal/tui/components/diff/changes_panel.go
@@ -211,7 +211,7 @@ type FileChange struct {
     Status     ChangeStatus
     Additions  int
     Deletions  int
-    OldContent string  // para generar diff
+    OldContent string  // for generating diff
     NewContent string
 }
 
@@ -251,19 +251,19 @@ func (c *ChangesPanel) View() string {
 
 func changeIcon(status ChangeStatus) string {
     switch status {
-    case ChangeStatusModified: return "●"  // amarillo
-    case ChangeStatusAdded:    return "+"   // verde
-    case ChangeStatusDeleted:  return "-"   // rojo
-    case ChangeStatusRenamed:  return "→"   // azul
+    case ChangeStatusModified: return "●"  // yellow
+    case ChangeStatusAdded:    return "+"   // green
+    case ChangeStatusDeleted:  return "-"   // red
+    case ChangeStatusRenamed:  return "→"   // blue
     default:                   return "?"
     }
 }
 ```
 
-### 6.4 Integración con el Agente AI
+### 6.4 Integration with AI Agent
 
 ```go
-// Cuando el agente modifica un archivo, capturar el cambio
+// When the agent modifies a file, capture the change
 type AgentFileChangeMsg struct {
     Path       string
     OldContent string
@@ -271,7 +271,7 @@ type AgentFileChangeMsg struct {
     ToolName   string  // "edit", "write", etc.
 }
 
-// En el modelo principal
+// In the main model
 func (a *appModel) handleAgentChange(msg AgentFileChangeMsg) tea.Cmd {
     change := diff.FileChange{
         Path:       msg.Path,
@@ -280,21 +280,21 @@ func (a *appModel) handleAgentChange(msg AgentFileChangeMsg) tea.Cmd {
         NewContent: msg.NewContent,
     }
     
-    // Calcular stats
+    // Calculate stats
     change.Additions, change.Deletions = countChanges(
         msg.OldContent, msg.NewContent)
     
     a.changesPanel.AddChange(change)
     
-    // Actualizar git status en sidebar
+    // Update git status in sidebar
     return a.fileTree.RefreshGitStatus()
 }
 ```
 
-### 6.5 Vista de Diff en el Chat (Inline)
+### 6.5 Inline Diff in Chat
 
 ```go
-// Cuando el AI muestra un cambio en el chat, renderizar inline diff
+// When AI shows a change in chat, render inline diff
 func renderInlineDiff(filePath, oldContent, newContent string, width int) string {
     dv := diff.NewDiffView(diff.DiffViewOptions{
         FilePath:     filePath,
@@ -310,16 +310,16 @@ func renderInlineDiff(filePath, oldContent, newContent string, width int) string
 }
 ```
 
-### 6.6 Página/Vista de Cambios
+### 6.6 Changes Page/View
 
 ```go
 // internal/tui/page/changes.go
-// Nueva página o modo de vista para gestionar cambios
+// New page or view mode for managing changes
 type ChangesView struct {
-    // Left panel: lista de archivos cambiados
+    // Left panel: list of changed files
     changesPanel *diff.ChangesPanel
     
-    // Right panel: diff del archivo seleccionado
+    // Right panel: diff of selected file
     diffView     *diff.DiffView
     
     // Split layout
@@ -335,15 +335,15 @@ type ChangesKeyMap struct {
     PrevFile     key.Binding // k/up
     ToggleLayout key.Binding // t (unified/split)
     AcceptAll    key.Binding // a
-    RevertFile   key.Binding // r (revert cambio)
-    OpenFile     key.Binding // enter (abrir en editor)
+    RevertFile   key.Binding // r (revert change)
+    OpenFile     key.Binding // enter (open in editor)
     NextHunk     key.Binding // ]c
     PrevHunk     key.Binding // [c
     CopyDiff     key.Binding // y
 }
 ```
 
-### 6.7 Git Status Integrado
+### 6.7 Integrated Git Status
 
 ```go
 // internal/tui/components/git/status.go
@@ -385,31 +385,31 @@ func parseGitStatus(output string) map[string]GitFileStatus {
 }
 ```
 
-## Archivos a Crear
-1. `internal/tui/components/diff/diffview.go` - Componente DiffView
-2. `internal/tui/components/diff/styles.go` - Estilos de diff
-3. `internal/tui/components/diff/changes_panel.go` - Panel de cambios
+## Files to Create
+1. `internal/tui/components/diff/diffview.go` - DiffView component
+2. `internal/tui/components/diff/styles.go` - Diff styles
+3. `internal/tui/components/diff/changes_panel.go` - Changes panel
 4. `internal/tui/components/diff/keys.go` - Keybindings
 5. `internal/tui/components/git/status.go` - Git status integration
-6. `internal/tui/page/changes.go` - Página de cambios (opcional)
+6. `internal/tui/page/changes.go` - Changes page (optional)
 
-## Archivos a Modificar
-1. `internal/tui/tui.go` - Integrar panel de cambios y diff viewer
-2. `internal/tui/components/filetree/filetree.go` - Mostrar git status icons
-3. `internal/tui/components/chat/message.go` - Inline diffs en chat
+## Files to Modify
+1. `internal/tui/tui.go` - Integrate changes panel and diff viewer
+2. `internal/tui/components/filetree/filetree.go` - Show git status icons
+3. `internal/tui/components/chat/message.go` - Inline diffs in chat
 
-## Dependencias
+## Dependencies
 ```
-github.com/alecthomas/chroma/v2  # Ya añadido en Fase 3
-# Para diff: usar go-udiff o implementación propia
-# go-udiff: github.com/nicois/udiff (o similar)
+github.com/alecthomas/chroma/v2  # Already added in Phase 3
+# For diff: use go-udiff or custom implementation
+# go-udiff: github.com/nicois/udiff (or similar)
 ```
 
-## Consideraciones
-- **Diff algorithm**: Usar Myers diff o similar. Crush usa `udiff` package.
-- **Performance**: Diffs grandes necesitan virtualización (solo renderizar visible).
-- **Inline word diff**: Dentro de líneas modificadas, resaltar las palabras exactas que cambiaron.
-- **Binary files**: Detectar y mostrar "Binary file differs".
-- **Large files**: Limitar tamaño de diff mostrado, con opción de ver completo.
-- **Undo/Revert**: Permitir revertir cambios individuales del agente.
-- **Auto-refresh**: Actualizar git status periódicamente o tras cambios del agente.
+## Considerations
+- **Diff algorithm**: Use Myers diff or similar. Crush uses `udiff` package.
+- **Performance**: Large diffs need virtualization (only render visible).
+- **Inline word diff**: Within modified lines, highlight the exact words that changed.
+- **Binary files**: Detect and display "Binary file differs".
+- **Large files**: Limit displayed diff size, with option to view complete.
+- **Undo/Revert**: Allow reverting individual agent changes.
+- **Auto-refresh**: Update git status periodically or after agent changes.

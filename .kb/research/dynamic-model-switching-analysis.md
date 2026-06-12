@@ -1,10 +1,10 @@
-# Análisis Profundo: Dynamic Model Switching & LSP vs Tree-sitter
+# Deep Analysis: Dynamic Model Switching & LSP vs Tree-sitter
 
-## Parte 1: Dynamic Model Switching en Crush
+## Part 1: Dynamic Model Switching in Crush
 
-### 1.1 Arquitectura del Sistema de Switching
+### 1.1 Switching System Architecture
 
-Crush implementa un **orquestador inteligente** que selecciona el modelo óptimo basándose en múltiples factores:
+Crush implements an **intelligent orchestrator** that selects the optimal model based on multiple factors:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -25,9 +25,9 @@ Crush implementa un **orquestador inteligente** que selecciona el modelo óptimo
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 1.2 Implementación Detallada
+### 1.2 Detailed Implementation
 
-**Archivo:** `internal/llm/orchestrator/orchestrator.go`
+**File:** `internal/llm/orchestrator/orchestrator.go`
 
 ```go
 package orchestrator
@@ -40,7 +40,7 @@ import (
     "github.com/digiogithub/opencode/internal/llm/provider"
 )
 
-// Orchestrator coordina la selección y ejecución de modelos
+// Orchestrator coordinates model selection and execution
 type Orchestrator struct {
     providers     map[string]provider.Provider
     selector      *ModelSelector
@@ -49,7 +49,7 @@ type Orchestrator struct {
     metricsCol    *MetricsCollector
 }
 
-// NewOrchestrator crea un nuevo orquestador
+// NewOrchestrator creates a new orchestrator
 func NewOrchestrator(providers map[string]provider.Provider) *Orchestrator {
     return &Orchestrator{
         providers:   providers,
@@ -60,12 +60,12 @@ func NewOrchestrator(providers map[string]provider.Provider) *Orchestrator {
     }
 }
 
-// Execute ejecuta una tarea con el modelo más apropiado
+// Execute executes a task with the most appropriate model
 func (o *Orchestrator) Execute(ctx context.Context, task Task) (*Response, error) {
-    // Paso 1: Analizar la tarea
+    // Step 1: Analyze the task
     analysis := o.analyzeTask(task)
     
-    // Paso 2: Seleccionar modelo óptimo
+    // Step 2: Select optimal model
     modelChoice, err := o.selector.SelectModel(ModelSelectionCriteria{
         TaskType:        analysis.TaskType,
         ContextSize:     analysis.EstimatedTokens,
@@ -80,13 +80,13 @@ func (o *Orchestrator) Execute(ctx context.Context, task Task) (*Response, error
         return nil, fmt.Errorf("model selection failed: %w", err)
     }
     
-    // Paso 3: Ejecutar con fallback automático
+    // Step 3: Execute with automatic fallback
     resp, err := o.executeWithFallback(ctx, modelChoice, task)
     if err != nil {
         return nil, err
     }
     
-    // Paso 4: Registrar métricas
+    // Step 4: Record metrics
     o.metricsCol.Record(MetricRecord{
         Model:     modelChoice.Model.ID,
         Provider:  modelChoice.Provider,
@@ -100,30 +100,30 @@ func (o *Orchestrator) Execute(ctx context.Context, task Task) (*Response, error
     return resp, nil
 }
 
-// analyzeTask analiza la tarea para determinar requisitos
+// analyzeTask analyzes the task to determine requirements
 func (o *Orchestrator) analyzeTask(task Task) TaskAnalysis {
     analysis := TaskAnalysis{}
     
-    // Detectar tipo de tarea mediante patrones
+    // Detect task type using patterns
     analysis.TaskType = o.detectTaskType(task)
     
-    // Estimar tamaño del contexto
+    // Estimate context size
     analysis.EstimatedTokens = o.estimateTokens(task)
     
-    // Detectar necesidad de visión
+    // Detect vision requirement
     analysis.HasImages = len(task.Images) > 0
     
-    // Detectar necesidad de herramientas
+    // Detect tools requirement
     analysis.NeedsTools = o.needsTools(task)
     
     return analysis
 }
 
-// detectTaskType detecta el tipo de tarea mediante heurísticas
+// detectTaskType detects task type using heuristics
 func (o *Orchestrator) detectTaskType(task Task) TaskType {
     prompt := task.Prompt
     
-    // Patrones para arquitectura
+    // Patterns for architecture
     architecturePatterns := []string{
         "design", "architecture", "system design",
         "how should I structure", "best approach",
@@ -132,7 +132,7 @@ func (o *Orchestrator) detectTaskType(task Task) TaskType {
         return TaskTypeArchitecture
     }
     
-    // Patrones para generación de código
+    // Patterns for code generation
     codeGenPatterns := []string{
         "write a function", "implement", "create a class",
         "generate code", "write code for",
@@ -141,7 +141,7 @@ func (o *Orchestrator) detectTaskType(task Task) TaskType {
         return TaskTypeCodeGen
     }
     
-    // Patrones para code review
+    // Patterns for code review
     reviewPatterns := []string{
         "review this code", "check this code", "any issues",
         "improve this code", "optimize this",
@@ -150,7 +150,7 @@ func (o *Orchestrator) detectTaskType(task Task) TaskType {
         return TaskTypeCodeReview
     }
     
-    // Patrones para debugging
+    // Patterns for debugging
     debugPatterns := []string{
         "error", "bug", "not working", "fix", "debug",
         "why doesn't this work",
@@ -159,7 +159,7 @@ func (o *Orchestrator) detectTaskType(task Task) TaskType {
         return TaskTypeDebugging
     }
     
-    // Patrones para documentación
+    // Patterns for documentation
     docPatterns := []string{
         "document", "explain this code", "add comments",
         "write documentation", "readme",
@@ -168,22 +168,22 @@ func (o *Orchestrator) detectTaskType(task Task) TaskType {
         return TaskTypeDocumentation
     }
     
-    // Patrones para consultas rápidas
+    // Patterns for quick queries
     if len(prompt) < 100 && !strings.Contains(prompt, "code") {
         return TaskTypeQuickQuery
     }
     
-    // Por defecto, razonamiento complejo
+    // Default: complex reasoning
     return TaskTypeComplexReasoning
 }
 
-// executeWithFallback ejecuta con mecanismo de fallback
+// executeWithFallback executes with fallback mechanism
 func (o *Orchestrator) executeWithFallback(
     ctx context.Context,
     choice *ModelChoice,
     task Task,
 ) (*Response, error) {
-    // Intentar con el modelo primario
+    // Try with primary model
     provider := o.providers[choice.Provider]
     
     req := provider.ChatRequest{
@@ -199,7 +199,7 @@ func (o *Orchestrator) executeWithFallback(
     resp, err := provider.Chat(ctx, req)
     
     if err != nil {
-        // Fallback: intentar con modelo alternativo
+        // Fallback: try with alternative model
         fallbackChoice := o.fallbackMgr.GetFallback(choice, err)
         if fallbackChoice != nil {
             provider = o.providers[fallbackChoice.Provider]
@@ -218,7 +218,7 @@ func (o *Orchestrator) executeWithFallback(
     
     latency := time.Since(startTime)
     
-    // Calcular coste
+    // Calculate cost
     cost := o.costTracker.CalculateCost(
         choice.Model,
         resp.Usage.InputTokens,
@@ -236,9 +236,9 @@ func (o *Orchestrator) executeWithFallback(
 }
 ```
 
-### 1.3 Selector de Modelos con Scoring
+### 1.3 Model Selector with Scoring
 
-**Archivo:** `internal/llm/orchestrator/selector.go`
+**File:** `internal/llm/orchestrator/selector.go`
 
 ```go
 package orchestrator
@@ -267,7 +267,7 @@ type SelectionRule interface {
     Weight() float64
 }
 
-// ModelSelectionCriteria define los criterios para selección
+// ModelSelectionCriteria defines the criteria for selection
 type ModelSelectionCriteria struct {
     TaskType        TaskType
     ContextSize     int
@@ -291,14 +291,14 @@ func NewModelSelector(providers map[string]provider.Provider) *ModelSelector {
     }
 }
 
-// SelectModel selecciona el modelo óptimo
+// SelectModel selects the optimal model
 func (s *ModelSelector) SelectModel(criteria ModelSelectionCriteria) (*ModelChoice, error) {
-    // Recopilar todos los modelos disponibles
+    // Collect all available models
     var candidates []ModelChoice
     
     for providerName, prov := range s.providers {
         for _, model := range prov.Models() {
-            // Filtro básico: capacidades requeridas
+            // Basic filter: required capabilities
             if !s.meetsRequirements(model, criteria) {
                 continue
             }
@@ -314,25 +314,25 @@ func (s *ModelSelector) SelectModel(criteria ModelSelectionCriteria) (*ModelChoi
         return nil, fmt.Errorf("no models meet the requirements")
     }
     
-    // Calcular score para cada candidato
+    // Calculate score for each candidate
     for i := range candidates {
         score := s.calculateScore(&candidates[i], criteria)
         candidates[i].Score = score
     }
     
-    // Ordenar por score descendente
+    // Sort by descending score
     sort.Slice(candidates, func(i, j int) bool {
         return candidates[i].Score > candidates[j].Score
     })
     
-    // Retornar el mejor candidato
+    // Return the best candidate
     best := candidates[0]
     best.Reason = s.explainChoice(&best, criteria)
     
     return &best, nil
 }
 
-// calculateScore calcula el score total aplicando todas las reglas
+// calculateScore calculates the total score applying all rules
 func (s *ModelSelector) calculateScore(choice *ModelChoice, criteria ModelSelectionCriteria) float64 {
     var totalScore float64
     var totalWeight float64
@@ -352,24 +352,24 @@ func (s *ModelSelector) calculateScore(choice *ModelChoice, criteria ModelSelect
     return totalScore / totalWeight
 }
 
-// meetsRequirements verifica si un modelo cumple requisitos básicos
+// meetsRequirements checks if a model meets basic requirements
 func (s *ModelSelector) meetsRequirements(model provider.Model, criteria ModelSelectionCriteria) bool {
-    // Verificar contexto suficiente
+    // Check sufficient context
     if model.ContextSize < criteria.ContextSize {
         return false
     }
     
-    // Verificar capacidad de visión si es necesario
+    // Check vision capability if needed
     if criteria.RequireVision && !model.Capabilities.Vision {
         return false
     }
     
-    // Verificar capacidad de tools si es necesario
+    // Check tools capability if needed
     if criteria.RequireTools && !model.Capabilities.FunctionCall {
         return false
     }
     
-    // Verificar coste máximo
+    // Check maximum cost
     avgCost := (model.Cost.InputTokens + model.Cost.OutputTokens) / 2.0
     if criteria.MaxCost > 0 && avgCost > criteria.MaxCost {
         return false
@@ -378,7 +378,7 @@ func (s *ModelSelector) meetsRequirements(model provider.Model, criteria ModelSe
     return true
 }
 
-// explainChoice genera explicación de por qué se eligió este modelo
+// explainChoice generates explanation of why this model was chosen
 func (s *ModelSelector) explainChoice(choice *ModelChoice, criteria ModelSelectionCriteria) string {
     reasons := []string{}
     
@@ -407,22 +407,22 @@ func (s *ModelSelector) explainChoice(choice *ModelChoice, criteria ModelSelecti
 }
 ```
 
-### 1.4 Reglas de Selección
+### 1.4 Selection Rules
 
-**Archivo:** `internal/llm/orchestrator/rules.go`
+**File:** `internal/llm/orchestrator/rules.go`
 
 ```go
 package orchestrator
 
 import "github.com/digiogithub/opencode/internal/llm/provider"
 
-// TaskTypeRule: Prefiere modelos optimizados para el tipo de tarea
+// TaskTypeRule: Prefers models optimized for the task type
 type TaskTypeRule struct{}
 
-func (r *TaskTypeRule) Weight() float64 { return 0.35 } // 35% del peso total
+func (r *TaskTypeRule) Weight() float64 { return 0.35 } // 35% of total weight
 
 func (r *TaskTypeRule) Score(model provider.Model, criteria ModelSelectionCriteria) float64 {
-    // Mapeo de tipos de tarea a modelos preferidos
+    // Mapping of task types to preferred models
     preferences := map[TaskType]map[string]float64{
         TaskTypeArchitecture: {
             "claude-3-5-sonnet": 1.0,
@@ -466,21 +466,21 @@ func (r *TaskTypeRule) Score(model provider.Model, criteria ModelSelectionCriter
         }
     }
     
-    return 0.5 // Score neutral por defecto
+    return 0.5 // Neutral score by default
 }
 
-// CostRule: Prefiere modelos más económicos (con balance)
+// CostRule: Prefers cheaper models (with balance)
 type CostRule struct{}
 
-func (r *CostRule) Weight() float64 { return 0.20 } // 20% del peso
+func (r *CostRule) Weight() float64 { return 0.20 } // 20% of weight
 
 func (r *CostRule) Score(model provider.Model, criteria ModelSelectionCriteria) float64 {
-    // Coste promedio por millón de tokens
+    // Average cost per million tokens
     avgCost := (model.Cost.InputTokens + model.Cost.OutputTokens) / 2.0
     
-    // Normalizar: modelos más baratos obtienen mejor score
-    // Claude Opus = $15-75 (más caro) → 0.2
-    // Haiku = $0.25-1.25 (más barato) → 1.0
+    // Normalize: cheaper models get better scores
+    // Claude Opus = $15-75 (most expensive) → 0.2
+    // Haiku = $0.25-1.25 (cheapest) → 1.0
     
     if avgCost <= 1.0 {
         return 1.0
@@ -495,30 +495,30 @@ func (r *CostRule) Score(model provider.Model, criteria ModelSelectionCriteria) 
     }
 }
 
-// PerformanceRule: Prefiere modelos más rápidos cuando se prioriza velocidad
+// PerformanceRule: Prefers faster models when speed is prioritized
 type PerformanceRule struct{}
 
-func (r *PerformanceRule) Weight() float64 { return 0.20 } // 20% del peso
+func (r *PerformanceRule) Weight() float64 { return 0.20 } // 20% of weight
 
 func (r *PerformanceRule) Score(model provider.Model, criteria ModelSelectionCriteria) float64 {
     if criteria.SpeedPriority == 0 {
-        return 0.5 // Neutral si no hay prioridad de velocidad
+        return 0.5 // Neutral if no speed priority
     }
     
-    // Mapeo de modelos conocidos por velocidad
+    // Mapping of known models by speed
     speedScores := map[string]float64{
-        "groq":          1.0,  // Groq es el más rápido
-        "haiku":         0.95, // Haiku muy rápido
+        "groq":          1.0,  // Groq is the fastest
+        "haiku":         0.95, // Haiku very fast
         "gpt-3.5-turbo": 0.9,
         "llama-3.1":     0.85,
         "gpt-4-turbo":   0.7,
         "sonnet":        0.65,
-        "opus":          0.5,  // Opus más lento pero mejor calidad
+        "opus":          0.5,  // Opus slower but better quality
     }
     
     for pattern, score := range speedScores {
         if contains(model.ID, pattern) || contains(model.Name, pattern) {
-            // Ajustar por prioridad de velocidad (1-10)
+            // Adjust by speed priority (1-10)
             priorityFactor := float64(criteria.SpeedPriority) / 10.0
             return score * priorityFactor
         }
@@ -527,19 +527,19 @@ func (r *PerformanceRule) Score(model provider.Model, criteria ModelSelectionCri
     return 0.5
 }
 
-// QualityRule: Prefiere modelos de mayor calidad cuando se prioriza calidad
+// QualityRule: Prefers higher quality models when quality is prioritized
 type QualityRule struct{}
 
-func (r *QualityRule) Weight() float64 { return 0.25 } // 25% del peso
+func (r *QualityRule) Weight() float64 { return 0.25 } // 25% of weight
 
 func (r *QualityRule) Score(model provider.Model, criteria ModelSelectionCriteria) float64 {
     if criteria.QualityPriority == 0 {
-        return 0.5 // Neutral si no hay prioridad de calidad
+        return 0.5 // Neutral if no quality priority
     }
     
-    // Mapeo de modelos conocidos por calidad
+    // Mapping of known models by quality
     qualityScores := map[string]float64{
-        "opus":          1.0,  // Claude Opus máxima calidad
+        "opus":          1.0,  // Claude Opus maximum quality
         "gpt-4-turbo":   0.95,
         "sonnet":        0.9,
         "gemini-pro":    0.85,
@@ -549,7 +549,7 @@ func (r *QualityRule) Score(model provider.Model, criteria ModelSelectionCriteri
     
     for pattern, score := range qualityScores {
         if contains(model.ID, pattern) || contains(model.Name, pattern) {
-            // Ajustar por prioridad de calidad (1-10)
+            // Adjust by quality priority (1-10)
             priorityFactor := float64(criteria.QualityPriority) / 10.0
             return score * priorityFactor
         }
@@ -558,10 +558,10 @@ func (r *QualityRule) Score(model provider.Model, criteria ModelSelectionCriteri
     return 0.5
 }
 
-// CapabilityRule: Verifica capacidades especiales
+// CapabilityRule: Checks special capabilities
 type CapabilityRule struct{}
 
-func (r *CapabilityRule) Weight() float64 { return 0.10 } // 10% del peso
+func (r *CapabilityRule) Weight() float64 { return 0.10 } // 10% of weight
 
 func (r *CapabilityRule) Score(model provider.Model, criteria ModelSelectionCriteria) float64 {
     score := 0.5
@@ -594,9 +594,9 @@ func min(a, b float64) float64 {
 }
 ```
 
-### 1.5 Sistema de Fallback
+### 1.5 Fallback System
 
-**Archivo:** `internal/llm/orchestrator/fallback.go`
+**File:** `internal/llm/orchestrator/fallback.go`
 
 ```go
 package orchestrator
@@ -643,21 +643,21 @@ func NewFallbackManager() *FallbackManager {
     }
 }
 
-// GetFallback obtiene el modelo de fallback apropiado
+// GetFallback gets the appropriate fallback model
 func (f *FallbackManager) GetFallback(original *ModelChoice, err error) *ModelChoice {
-    // Determinar tipo de error
+    // Determine error type
     errorType := f.classifyError(err)
     
-    // Obtener cadena de fallback
+    // Get fallback chain
     chain, ok := f.fallbackChains[original.Model.ID]
     if !ok {
         return nil
     }
     
-    // Seleccionar fallback basado en el error
+    // Select fallback based on error
     switch errorType {
     case ErrorTypeRateLimit:
-        // Para rate limit, intentar con el primer fallback disponible
+        // For rate limit, try with the first available fallback
         if len(chain) > 0 {
             return &ModelChoice{
                 Provider: f.getProviderForModel(chain[0]),
@@ -667,11 +667,11 @@ func (f *FallbackManager) GetFallback(original *ModelChoice, err error) *ModelCh
         }
         
     case ErrorTypeContext:
-        // Para errores de contexto, buscar modelo con mayor contexto
+        // For context errors, find model with larger context
         return f.findLargerContextModel(original)
         
     case ErrorTypeAPI:
-        // Para errores de API, probar todo el chain
+        // For API errors, try the whole chain
         for _, fallbackID := range chain {
             return &ModelChoice{
                 Provider: f.getProviderForModel(fallbackID),
@@ -721,8 +721,8 @@ func (f *FallbackManager) classifyError(err error) ErrorType {
 }
 
 func (f *FallbackManager) findLargerContextModel(original *ModelChoice) *ModelChoice {
-    // Implementar búsqueda de modelo con mayor contexto
-    // Por ahora, retornar claude-3-opus que tiene 200k contexto
+    // Implement search for model with larger context
+    // For now, return claude-3-opus which has 200k context
     return &ModelChoice{
         Provider: "anthropic",
         Model:    f.getModelByID("claude-3-opus"),
@@ -744,17 +744,17 @@ func (f *FallbackManager) getProviderForModel(modelID string) string {
 }
 
 func (f *FallbackManager) getModelByID(modelID string) provider.Model {
-    // Implementar búsqueda real de modelo por ID
-    // Por ahora, retornar modelo mock
+    // Implement real model lookup by ID
+    // For now, return mock model
     return provider.Model{ID: modelID}
 }
 ```
 
 ---
 
-## Parte 2: LSP vs Tree-sitter - Análisis Comparativo
+## Part 2: LSP vs Tree-sitter - Comparative Analysis
 
-### 2.1 Arquitectura de LSP (Language Server Protocol)
+### 2.1 LSP (Language Server Protocol) Architecture
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -767,7 +767,7 @@ func (f *FallbackManager) getModelByID(modelID string) provider.Model {
                 │ (stdio/TCP/WebSocket)
                 ↓
 ┌──────────────────────────────────────────────────┐
-│          Language Server (externo)               │
+│          Language Server (external)              │
 │  ┌────────────────────────────────────────────┐  │
 │  │  Parser → AST → Symbol Table → Analysis   │  │
 │  └────────────────────────────────────────────┘  │
@@ -783,75 +783,75 @@ func (f *FallbackManager) getModelByID(modelID string) provider.Model {
 └──────────────────────────────────────────────────┘
 ```
 
-**Ventajas de LSP:**
-- ✅ **Rico en semántica**: Análisis completo del código (tipos, referencias, scope)
-- ✅ **Features avanzadas**: Autocompletado inteligente, refactoring, navegación
-- ✅ **Maduro**: Ecosystem establecido con servidores para casi todos los lenguajes
-- ✅ **Estándar**: Un solo protocolo para múltiples lenguajes
+**LSP Advantages:**
+- ✅ **Rich in semantics**: Complete code analysis (types, references, scope)
+- ✅ **Advanced features**: Intelligent autocompletion, refactoring, navigation
+- ✅ **Mature**: Established ecosystem with servers for nearly all languages
+- ✅ **Standard**: One protocol for multiple languages
 
-**Desventajas de LSP:**
-- ❌ **Proceso externo**: Requiere ejecutar servidor separado (overhead)
-- ❌ **Latencia**: Comunicación IPC/RPC añade latencia (10-100ms típico)
-- ❌ **Recursos**: Servidor puede consumir memoria significativa (100MB-1GB)
-- ❌ **Setup complejo**: Requiere instalación y configuración del servidor
-- ❌ **Sincronización**: Debe mantener sincronizado el estado del documento
+**LSP Disadvantages:**
+- ❌ **External process**: Requires running a separate server (overhead)
+- ❌ **Latency**: IPC/RPC communication adds latency (10-100ms typical)
+- ❌ **Resources**: Server can consume significant memory (100MB-1GB)
+- ❌ **Complex setup**: Requires server installation and configuration
+- ❌ **Synchronization**: Must keep document state synchronized
 
-### 2.2 Arquitectura de Tree-sitter
+### 2.2 Tree-sitter Architecture
 
 ```
 ┌──────────────────────────────────────────────────┐
 │              Application                         │
 │  ┌────────────────────────────────────────────┐  │
-│  │    Tree-sitter Library (embebido)          │  │
+│  │    Tree-sitter Library (embedded)          │  │
 │  │                                            │  │
 │  │  Source Code → Incremental Parser → AST   │  │
 │  │                                            │  │
 │  │  Features:                                 │  │
 │  │  • Syntax highlighting                     │  │
 │  │  • Code folding                            │  │
-│  │  • Navigation estructural                  │  │
-│  │  • Queries S-expression                    │  │
+│  │  • Structural navigation                   │  │
+│  │  • S-expression queries                    │  │
 │  │  • Error recovery                          │  │
 │  └────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────┘
 ```
 
-**Ventajas de Tree-sitter:**
-- ✅ **Embebido**: Librería nativa en Go, sin procesos externos
-- ✅ **Ultra rápido**: Parsing incremental en <1ms típicamente
-- ✅ **Ligero**: Bajo uso de memoria (~10-50MB)
-- ✅ **Error recovery**: Parsing robusto incluso con código incompleto/inválido
-- ✅ **Incremental**: Solo re-parsea secciones modificadas
-- ✅ **Sin configuración**: No requiere servidores externos
+**Tree-sitter Advantages:**
+- ✅ **Embedded**: Native Go library, no external processes
+- ✅ **Ultra fast**: Incremental parsing in <1ms typically
+- ✅ **Lightweight**: Low memory usage (~10-50MB)
+- ✅ **Error recovery**: Robust parsing even with incomplete/invalid code
+- ✅ **Incremental**: Only re-parses modified sections
+- ✅ **No configuration**: No external servers required
 
-**Desventajas de Tree-sitter:**
-- ❌ **Sintaxis únicamente**: No hace análisis semántico (tipos, referencias)
-- ❌ **Sin completado**: No puede sugerir símbolos basándose en contexto
-- ❌ **Sin navegación semántica**: No conoce definiciones o referencias
-- ❌ **Queries manuales**: Requiere escribir queries S-expression
+**Tree-sitter Disadvantages:**
+- ❌ **Syntax only**: No semantic analysis (types, references)
+- ❌ **No completion**: Can't suggest symbols based on context
+- ❌ **No semantic navigation**: Doesn't know definitions or references
+- ❌ **Manual queries**: Requires writing S-expression queries
 
-### 2.3 Comparación Lado-a-Lado
+### 2.3 Side-by-Side Comparison
 
-| Aspecto | LSP | Tree-sitter | Ganador |
+| Aspect | LSP | Tree-sitter | Winner |
 |---------|-----|-------------|---------|
 | **Performance** | 10-100ms | <1ms | 🏆 Tree-sitter |
-| **Memoria** | 100MB-1GB | 10-50MB | 🏆 Tree-sitter |
-| **Setup** | Complejo | Simple | 🏆 Tree-sitter |
-| **Análisis semántico** | Completo | Ninguno | 🏆 LSP |
-| **Autocompletado** | Inteligente | N/A | 🏆 LSP |
-| **Go to definition** | Sí | No | 🏆 LSP |
-| **Find references** | Sí | No | 🏆 LSP |
-| **Syntax highlighting** | Limitado | Excelente | 🏆 Tree-sitter |
-| **Error recovery** | Limitado | Excelente | 🏆 Tree-sitter |
-| **Incremental parsing** | Limitado | Excelente | 🏆 Tree-sitter |
-| **Latencia** | Alta | Mínima | 🏆 Tree-sitter |
-| **Dependencias** | Servidor externo | Librería embebida | 🏆 Tree-sitter |
-| **Code actions** | Sí | No | 🏆 LSP |
-| **Refactoring** | Sí | No | 🏆 LSP |
+| **Memory** | 100MB-1GB | 10-50MB | 🏆 Tree-sitter |
+| **Setup** | Complex | Simple | 🏆 Tree-sitter |
+| **Semantic analysis** | Complete | None | 🏆 LSP |
+| **Autocompletion** | Intelligent | N/A | 🏆 LSP |
+| **Go to definition** | Yes | No | 🏆 LSP |
+| **Find references** | Yes | No | 🏆 LSP |
+| **Syntax highlighting** | Limited | Excellent | 🏆 Tree-sitter |
+| **Error recovery** | Limited | Excellent | 🏆 Tree-sitter |
+| **Incremental parsing** | Limited | Excellent | 🏆 Tree-sitter |
+| **Latency** | High | Minimal | 🏆 Tree-sitter |
+| **Dependencies** | External server | Embedded library | 🏆 Tree-sitter |
+| **Code actions** | Yes | No | 🏆 LSP |
+| **Refactoring** | Yes | No | 🏆 LSP |
 
-### 2.4 Arquitectura Híbrida Óptima
+### 2.4 Optimal Hybrid Architecture
 
-La **mejor solución** es usar **AMBOS** en una arquitectura híbrida:
+The **best solution** is to use **BOTH** in a hybrid architecture:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -860,7 +860,7 @@ La **mejor solución** es usar **AMBOS** en una arquitectura híbrida:
 │                                                             │
 │  ┌─────────────────────┐      ┌─────────────────────────┐  │
 │  │   Tree-sitter       │      │   LSP Client            │  │
-│  │   (embebido)        │      │   (opcional)            │  │
+│  │   (embedded)        │      │   (optional)            │  │
 │  ├─────────────────────┤      ├─────────────────────────┤  │
 │  │                     │      │                         │  │
 │  │ • Syntax highlight  │      │ • Go to definition      │  │
@@ -869,41 +869,41 @@ La **mejor solución** es usar **AMBOS** en una arquitectura híbrida:
 │  │ • Symbol extraction │      │ • Refactoring           │  │
 │  │ • Error detection   │      │ • Type information      │  │
 │  │                     │      │                         │  │
-│  │ Latencia: <1ms      │      │ Latencia: 10-100ms      │  │
-│  │ Siempre disponible  │      │ Solo si instalado       │  │
+│  │ Latency: <1ms       │      │ Latency: 10-100ms       │  │
+│  │ Always available    │      │ Only if installed       │  │
 │  └─────────────────────┘      └─────────────────────────┘  │
 │            │                             │                  │
 │            └──────────────┬──────────────┘                  │
 │                           ↓                                 │
 │               ┌───────────────────────┐                     │
 │               │  Code Analyzer        │                     │
-│               │  (orquestador)        │                     │
+│               │  (orchestrator)       │                     │
 │               └───────────────────────┘                     │
 │                           │                                 │
 │                           ↓                                 │
 │               ┌───────────────────────┐                     │
 │               │  AI Context Builder   │                     │
-│               │  (para LLM prompts)   │                     │
+│               │  (for LLM prompts)    │                     │
 │               └───────────────────────┘                     │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Estrategia:**
-1. **Tree-sitter como base (siempre activo)**
-   - Parsing rápido y confiable
+**Strategy:**
+1. **Tree-sitter as base (always active)**
+   - Fast and reliable parsing
    - Syntax highlighting
-   - Estructura del código
-   - Extracción de símbolos básicos
+   - Code structure
+   - Basic symbol extraction
 
-2. **LSP como enhancement (opcional)**
-   - Se activa si está disponible
-   - Proporciona features avanzadas
-   - Fallback graceful si no está disponible
+2. **LSP as enhancement (optional)**
+   - Activates if available
+   - Provides advanced features
+   - Graceful fallback if not available
 
-### 2.5 Implementación de Tree-sitter en Go
+### 2.5 Tree-sitter Implementation in Go
 
-**Archivo:** `internal/parser/treesitter.go`
+**File:** `internal/parser/treesitter.go`
 
 ```go
 package parser
@@ -920,14 +920,14 @@ import (
     "github.com/smacker/go-tree-sitter/rust"
 )
 
-// Parser es el wrapper de Tree-sitter
+// Parser is the Tree-sitter wrapper
 type Parser struct {
     parser   *sitter.Parser
     language *sitter.Language
     oldTree  *sitter.Tree
 }
 
-// NewParser crea un parser para un lenguaje específico
+// NewParser creates a parser for a specific language
 func NewParser(lang string) (*Parser, error) {
     parser := sitter.NewParser()
     
@@ -955,28 +955,28 @@ func NewParser(lang string) (*Parser, error) {
     }, nil
 }
 
-// Parse parsea código fuente
+// Parse parses source code
 func (p *Parser) Parse(ctx context.Context, source []byte) (*sitter.Tree, error) {
-    // Parsing incremental si existe árbol previo
+    // Incremental parsing if previous tree exists
     tree, err := p.parser.ParseCtx(ctx, p.oldTree, source)
     if err != nil {
         return nil, err
     }
     
-    // Guardar para próximo parsing incremental
+    // Save for next incremental parsing
     p.oldTree = tree
     
     return tree, nil
 }
 
-// Update actualiza el árbol con un cambio incremental
+// Update updates the tree with an incremental change
 func (p *Parser) Update(ctx context.Context, source []byte, 
                         startByte, oldEndByte, newEndByte uint32) (*sitter.Tree, error) {
     if p.oldTree == nil {
         return p.Parse(ctx, source)
     }
     
-    // Editar el árbol existente
+    // Edit existing tree
     p.oldTree.Edit(sitter.EditInput{
         StartByte:   startByte,
         OldEndByte:  oldEndByte,
@@ -986,15 +986,15 @@ func (p *Parser) Update(ctx context.Context, source []byte,
         NewEndPoint: sitter.Point{Row: 0, Column: 0},
     })
     
-    // Re-parsear incrementalmente
+    // Re-parse incrementally
     return p.Parse(ctx, source)
 }
 
-// ExtractSymbols extrae símbolos del árbol
+// ExtractSymbols extracts symbols from the tree
 func (p *Parser) ExtractSymbols(tree *sitter.Tree, source []byte) ([]Symbol, error) {
     var symbols []Symbol
     
-    // Query específico por lenguaje
+    // Language-specific query
     queryStr := p.getSymbolQuery()
     query, err := sitter.NewQuery([]byte(queryStr), p.language)
     if err != nil {
@@ -1002,12 +1002,12 @@ func (p *Parser) ExtractSymbols(tree *sitter.Tree, source []byte) ([]Symbol, err
     }
     defer query.Close()
     
-    // Ejecutar query
+    // Execute query
     cursor := sitter.NewQueryCursor()
     cursor.Exec(query, tree.RootNode())
     defer cursor.Close()
     
-    // Procesar matches
+    // Process matches
     for {
         match, ok := cursor.NextMatch()
         if !ok {
@@ -1031,9 +1031,9 @@ func (p *Parser) ExtractSymbols(tree *sitter.Tree, source []byte) ([]Symbol, err
     return symbols, nil
 }
 
-// getSymbolQuery retorna el query S-expression para extraer símbolos
+// getSymbolQuery returns the S-expression query to extract symbols
 func (p *Parser) getSymbolQuery() string {
-    // Query para Go
+    // Query for Go
     return `
         (function_declaration
           name: (identifier) @function.name)
@@ -1072,7 +1072,7 @@ func (p *Parser) getSymbolType(nodeType string) SymbolType {
     }
 }
 
-// Symbol representa un símbolo extraído del código
+// Symbol represents a symbol extracted from code
 type Symbol struct {
     Name      string
     Type      SymbolType
@@ -1095,7 +1095,7 @@ const (
     SymbolTypeInterface
 )
 
-// GetCodeStructure obtiene la estructura del código
+// GetCodeStructure gets the code structure
 func (p *Parser) GetCodeStructure(tree *sitter.Tree, source []byte) *CodeStructure {
     structure := &CodeStructure{
         Functions: make([]FunctionInfo, 0),
@@ -1111,7 +1111,7 @@ func (p *Parser) GetCodeStructure(tree *sitter.Tree, source []byte) *CodeStructu
     return structure
 }
 
-// CodeStructure representa la estructura del código
+// CodeStructure represents the code structure
 type CodeStructure struct {
     Functions []FunctionInfo
     Types     []TypeInfo
@@ -1148,14 +1148,14 @@ type FieldInfo struct {
 }
 
 func (p *Parser) walkTree(cursor *sitter.TreeCursor, source []byte, structure *CodeStructure) {
-    // Implementación del walker del árbol
-    // Extraer funciones, tipos, imports, etc.
+    // Tree walker implementation
+    // Extract functions, types, imports, etc.
 }
 ```
 
-### 2.6 Integración Híbrida LSP + Tree-sitter
+### 2.6 Hybrid LSP + Tree-sitter Integration
 
-**Archivo:** `internal/analyzer/hybrid.go`
+**File:** `internal/analyzer/hybrid.go`
 
 ```go
 package analyzer
@@ -1168,14 +1168,14 @@ import (
     "github.com/digiogithub/opencode/internal/lsp"
 )
 
-// HybridAnalyzer combina Tree-sitter y LSP
+// HybridAnalyzer combines Tree-sitter and LSP
 type HybridAnalyzer struct {
     tsParser  *parser.Parser
     lspClient *lsp.Client
     useLSP    bool
 }
 
-// NewHybridAnalyzer crea un analizador híbrido
+// NewHybridAnalyzer creates a hybrid analyzer
 func NewHybridAnalyzer(language string) (*HybridAnalyzer, error) {
     tsParser, err := parser.NewParser(language)
     if err != nil {
@@ -1187,7 +1187,7 @@ func NewHybridAnalyzer(language string) (*HybridAnalyzer, error) {
         useLSP:   false,
     }
     
-    // Intentar conectar con LSP (opcional)
+    // Try to connect to LSP (optional)
     lspClient, err := lsp.Connect(language)
     if err == nil {
         analyzer.lspClient = lspClient
@@ -1197,34 +1197,34 @@ func NewHybridAnalyzer(language string) (*HybridAnalyzer, error) {
     return analyzer, nil
 }
 
-// Analyze analiza código fuente
+// Analyze analyzes source code
 func (a *HybridAnalyzer) Analyze(ctx context.Context, source []byte) (*AnalysisResult, error) {
     result := &AnalysisResult{}
     
-    // 1. Tree-sitter (siempre) - Rápido y confiable
+    // 1. Tree-sitter (always) - Fast and reliable
     tree, err := a.tsParser.Parse(ctx, source)
     if err != nil {
         return nil, fmt.Errorf("tree-sitter parse failed: %w", err)
     }
     
-    // Extraer estructura básica
+    // Extract basic structure
     result.Structure = a.tsParser.GetCodeStructure(tree, source)
     
-    // Extraer símbolos
+    // Extract symbols
     result.Symbols, _ = a.tsParser.ExtractSymbols(tree, source)
     
-    // Detectar errores sintácticos
+    // Detect syntax errors
     result.SyntaxErrors = a.extractSyntaxErrors(tree, source)
     
-    // 2. LSP (si disponible) - Análisis semántico profundo
+    // 2. LSP (if available) - Deep semantic analysis
     if a.useLSP && a.lspClient != nil {
-        // Obtener diagnósticos semánticos
+        // Get semantic diagnostics
         diagnostics, err := a.lspClient.GetDiagnostics(ctx, source)
         if err == nil {
             result.SemanticErrors = diagnostics
         }
         
-        // Obtener información de tipos
+        // Get type information
         typeInfo, err := a.lspClient.GetTypeInfo(ctx, source)
         if err == nil {
             result.TypeInfo = typeInfo
@@ -1234,9 +1234,9 @@ func (a *HybridAnalyzer) Analyze(ctx context.Context, source []byte) (*AnalysisR
     return result, nil
 }
 
-// GetSymbolAt obtiene el símbolo en una posición específica
+// GetSymbolAt gets the symbol at a specific position
 func (a *HybridAnalyzer) GetSymbolAt(ctx context.Context, source []byte, line, col uint32) (*SymbolInfo, error) {
-    // 1. Intentar con LSP primero (más preciso)
+    // 1. Try with LSP first (more accurate)
     if a.useLSP && a.lspClient != nil {
         info, err := a.lspClient.GetHoverInfo(ctx, source, line, col)
         if err == nil {
@@ -1250,7 +1250,7 @@ func (a *HybridAnalyzer) GetSymbolAt(ctx context.Context, source []byte, line, c
         }
     }
     
-    // 2. Fallback a Tree-sitter (más rápido pero menos preciso)
+    // 2. Fallback to Tree-sitter (faster but less accurate)
     tree, err := a.tsParser.Parse(ctx, source)
     if err != nil {
         return nil, err
@@ -1272,15 +1272,15 @@ func (a *HybridAnalyzer) GetSymbolAt(ctx context.Context, source []byte, line, c
     }, nil
 }
 
-// BuildContextForLLM construye contexto para enviar al LLM
+// BuildContextForLLM builds context to send to the LLM
 func (a *HybridAnalyzer) BuildContextForLLM(ctx context.Context, source []byte, focusLine uint32) (string, error) {
-    // Analizar código
+    // Analyze code
     analysis, err := a.Analyze(ctx, source)
     if err != nil {
         return "", err
     }
     
-    // Construir contexto estructurado
+    // Build structured context
     context := fmt.Sprintf(`# Code Analysis
 
 ## Structure
@@ -1304,7 +1304,7 @@ func (a *HybridAnalyzer) BuildContextForLLM(ctx context.Context, source []byte, 
         context += fmt.Sprintf("- %s (%s, lines %d-%d)\n", typ.Name, typ.Kind, typ.StartLine, typ.EndLine)
     }
     
-    // Incluir errores si existen
+    // Include errors if they exist
     if len(analysis.SyntaxErrors) > 0 {
         context += "\n## Syntax Errors\n"
         for _, err := range analysis.SyntaxErrors {
@@ -1335,7 +1335,7 @@ type SymbolInfo struct {
     Type       string
     Definition string
     Doc        string
-    Source     string // "LSP" o "Tree-sitter"
+    Source     string // "LSP" or "Tree-sitter"
 }
 
 type Error struct {
@@ -1386,7 +1386,7 @@ func (a *HybridAnalyzer) walkForErrors(cursor *sitter.TreeCursor, source []byte,
 }
 ```
 
-### 2.7 Benchmarks Comparativos
+### 2.7 Comparative Benchmarks
 
 ```go
 // internal/analyzer/benchmark_test.go
@@ -1440,68 +1440,68 @@ func BenchmarkLSPAnalyze(b *testing.B) {
     }
 }
 
-// Resultados típicos:
+// Typical results:
 // BenchmarkTreeSitterParse-8    50000    25000 ns/op    (0.025ms)
 // BenchmarkLSPAnalyze-8         100      15000000 ns/op  (15ms)
 // 
-// Tree-sitter es ~600x más rápido
+// Tree-sitter is ~600x faster
 ```
 
 ---
 
-## Recomendación Final
+## Final Recommendation
 
-### Para OpenCode Multi-Agent:
+### For OpenCode Multi-Agent:
 
-**Implementar arquitectura híbrida:**
+**Implement hybrid architecture:**
 
-1. **Tree-sitter como base (OBLIGATORIO)**
-   - ✅ Parsing ultra-rápido (<1ms)
-   - ✅ Siempre disponible, sin dependencias
-   - ✅ Excelente para:
-     - Syntax highlighting en TUI
-     - Extracción de estructura de código
-     - Construir contexto para LLMs
-     - Navegación rápida
-     - Error detection básico
+1. **Tree-sitter as base (REQUIRED)**
+   - ✅ Ultra-fast parsing (<1ms)
+   - ✅ Always available, no dependencies
+   - ✅ Excellent for:
+     - Syntax highlighting in TUI
+     - Code structure extraction
+     - Building context for LLMs
+     - Fast navigation
+     - Basic error detection
 
-2. **LSP como enhancement (OPCIONAL)**
-   - ✅ Activar si el usuario lo configura
-   - ✅ Proporciona features avanzadas:
+2. **LSP as enhancement (OPTIONAL)**
+   - ✅ Activate if user configures it
+   - ✅ Provides advanced features:
      - Go to definition
      - Find references
      - Type information
      - Intelligent completion
-   - ✅ Graceful degradation si no está disponible
+   - ✅ Graceful degradation if not available
 
-3. **Beneficios de esta arquitectura:**
-   - **Performance óptimo**: Tree-sitter para operaciones frecuentes
-   - **Features avanzadas**: LSP cuando se necesita análisis profundo
-   - **Experiencia fluida**: Funciona incluso sin LSP
-   - **Mejor contexto para LLMs**: Análisis rápido y preciso del código
-   - **Multi-lenguaje**: Tree-sitter soporta 50+ lenguajes
+3. **Benefits of this architecture:**
+   - **Optimal performance**: Tree-sitter for frequent operations
+   - **Advanced features**: LSP when deep analysis is needed
+   - **Smooth experience**: Works even without LSP
+   - **Better context for LLMs**: Fast and accurate code analysis
+   - **Multi-language**: Tree-sitter supports 50+ languages
 
-### Estructura de carpetas actualizada:
+### Updated folder structure:
 
 ```
 opencode-multi-agent/
 ├── internal/
-│   ├── parser/              # Tree-sitter (NUEVO)
+│   ├── parser/              # Tree-sitter (NEW)
 │   │   ├── treesitter.go
 │   │   ├── languages.go
 │   │   └── queries.go
 │   │
-│   ├── analyzer/            # Híbrido LSP + Tree-sitter (NUEVO)
+│   ├── analyzer/            # Hybrid LSP + Tree-sitter (NEW)
 │   │   ├── hybrid.go
 │   │   ├── context_builder.go
 │   │   └── symbol_extractor.go
 │   │
-│   ├── lsp/                 # Cliente LSP (MANTENER pero OPCIONAL)
+│   ├── lsp/                 # LSP Client (KEEP but OPTIONAL)
 │   │   ├── client.go
 │   │   └── manager.go
 │   │
 │   ├── llm/
-│   │   ├── orchestrator/    # Dynamic model switching (NUEVO)
+│   │   ├── orchestrator/    # Dynamic model switching (NEW)
 │   │   │   ├── orchestrator.go
 │   │   │   ├── selector.go
 │   │   │   ├── rules.go
@@ -1514,11 +1514,11 @@ opencode-multi-agent/
 │   └── ...
 ```
 
-**Esta arquitectura híbrida es la óptima para un coding agent porque:**
-- 🚀 Velocidad: Tree-sitter para UI responsiva
-- 🧠 Inteligencia: LSP cuando necesitas análisis profundo
-- 💪 Robustez: Funciona siempre, con o sin LSP
-- 🎯 Contexto rico: Mejor input para LLMs
-- 🔧 Flexible: Usuarios avanzados pueden activar LSP
+**This hybrid architecture is optimal for a coding agent because:**
+- 🚀 Speed: Tree-sitter for responsive UI
+- 🧠 Intelligence: LSP when you need deep analysis
+- 💪 Robustness: Always works, with or without LSP
+- 🎯 Rich context: Better input for LLMs
+- 🔧 Flexible: Advanced users can enable LSP
 
-¿Quieres que implemente el código completo para alguna de estas secciones?
+Do you want me to implement the complete code for any of these sections?

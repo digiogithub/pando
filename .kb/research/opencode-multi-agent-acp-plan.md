@@ -1,22 +1,22 @@
-# Plan de Actualización: OpenCode Multi-Agent con Soporte ACP
+# Update Plan: OpenCode Multi-Agent with ACP Support
 
-## Contexto del Proyecto
+## Project Context
 
-Tu fork de **OpenCode** es un cliente terminal AI que ha dejado de mantenerse. El proyecto evolucionó a **Crush** (Charmbracelet), que:
-- Ha cambiado de licencia
-- Tiene soporte actualizado para múltiples proveedores AI
-- Usa arquitectura moderna basada en Bubble Tea
+Your fork of **OpenCode** is a terminal AI client that has stopped being maintained. The project evolved to **Crush** (Charmbracelet), which:
+- Has changed its license
+- Has updated support for multiple AI providers
+- Uses modern architecture based on Bubble Tea
 
-**Objetivo:** Modernizar tu fork con:
-1. Sistema de proveedores AI actualizado (basado en Crush)
-2. Soporte para **Agent Communication Protocol (ACP)** - protocolo IBM/Linux Foundation para comunicación entre agentes
-3. TUI multi-agente para visualizar y gestionar múltiples agentes ACP simultáneamente
+**Goal:** Modernize your fork with:
+1. Updated AI provider system (based on Crush)
+2. Support for **Agent Communication Protocol (ACP)** - IBM/Linux Foundation protocol for inter-agent communication
+3. Multi-agent TUI to visualize and manage multiple ACP agents simultaneously
 
 ---
 
-## Análisis de Arquitectura
+## Architecture Analysis
 
-### OpenCode (Tu Fork)
+### OpenCode (Your Fork)
 ```
 ┌─────────────────────────────────────────┐
 │         OpenCode Architecture           │
@@ -33,7 +33,7 @@ Tu fork de **OpenCode** es un cliente terminal AI que ha dejado de mantenerse. E
 └─────────────────────────────────────────┘
 ```
 
-### Crush (Referencia)
+### Crush (Reference)
 ```
 ┌─────────────────────────────────────────┐
 │          Crush Architecture             │
@@ -66,66 +66,66 @@ Tu fork de **OpenCode** es un cliente terminal AI que ha dejado de mantenerse. E
 
 ---
 
-## Arquitectura Propuesta
+## Proposed Architecture
 
-### Estructura General
+### General Structure
 ```
 opencode-multi-agent/
 ├── cmd/
-│   ├── opencode/          # Cliente principal (TUI)
-│   ├── agent-server/      # Servidor ACP para agentes
+│   ├── opencode/          # Main client (TUI)
+│   ├── agent-server/      # ACP server for agents
 │   └── agent-bridge/      # Bridge OpenCode ↔ ACP
 │
 ├── internal/
 │   ├── llm/
-│   │   ├── provider/      # Proveedores AI actualizados
+│   │   ├── provider/      # Updated AI providers
 │   │   │   ├── anthropic.go
 │   │   │   ├── openai.go
 │   │   │   ├── gemini.go
 │   │   │   ├── groq.go
 │   │   │   ├── openrouter.go
 │   │   │   ├── vercel.go
-│   │   │   └── provider.go (interface común)
+│   │   │   └── provider.go (common interface)
 │   │   │
-│   │   └── client/        # Cliente LLM unificado
+│   │   └── client/        # Unified LLM client
 │   │       └── client.go
 │   │
 │   ├── acp/
-│   │   ├── server/        # Servidor ACP
+│   │   ├── server/        # ACP server
 │   │   │   ├── server.go
 │   │   │   ├── handler.go
 │   │   │   └── registry.go
 │   │   │
-│   │   ├── client/        # Cliente ACP
+│   │   ├── client/        # ACP client
 │   │   │   ├── client.go
 │   │   │   └── discovery.go
 │   │   │
-│   │   ├── protocol/      # Definiciones del protocolo
+│   │   ├── protocol/      # Protocol definitions
 │   │   │   ├── messages.go
 │   │   │   ├── types.go
 │   │   │   └── schema.go
 │   │   │
-│   │   └── agent/         # Wrapper de agente OpenCode
+│   │   └── agent/         # OpenCode agent wrapper
 │   │       ├── agent.go
 │   │       └── capabilities.go
 │   │
 │   ├── tui/
-│   │   ├── app.go         # TUI principal actualizado
-│   │   ├── multiagent/    # Vista multi-agente
+│   │   ├── app.go         # Updated main TUI
+│   │   ├── multiagent/    # Multi-agent view
 │   │   │   ├── view.go
 │   │   │   ├── panel.go
 │   │   │   └── layout.go
 │   │   │
-│   │   └── components/    # Componentes reutilizables
+│   │   └── components/    # Reusable components
 │   │       ├── agent_card.go
 │   │       ├── status_bar.go
 │   │       └── chat_view.go
 │   │
-│   ├── session/           # Gestión de sesiones
+│   ├── session/           # Session management
 │   │   ├── manager.go
 │   │   └── storage.go
 │   │
-│   └── tool/              # Herramientas integradas
+│   └── tool/              # Built-in tools
 │       ├── executor.go
 │       └── lsp.go
 │
@@ -138,11 +138,11 @@ opencode-multi-agent/
 
 ---
 
-## Componentes Clave
+## Key Components
 
-### 1. Sistema de Proveedores AI Actualizado
+### 1. Updated AI Provider System
 
-**Archivo:** `internal/llm/provider/provider.go`
+**File:** `internal/llm/provider/provider.go`
 
 ```go
 package provider
@@ -152,28 +152,28 @@ import (
     "io"
 )
 
-// Provider es la interfaz común para todos los proveedores de AI
+// Provider is the common interface for all AI providers
 type Provider interface {
-    // Name devuelve el nombre del proveedor
+    // Name returns the provider name
     Name() string
     
-    // Models devuelve la lista de modelos disponibles
+    // Models returns the list of available models
     Models() []Model
     
-    // Chat envía un mensaje y recibe una respuesta
+    // Chat sends a message and receives a response
     Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error)
     
-    // Stream envía un mensaje y recibe una respuesta en streaming
+    // Stream sends a message and receives a streaming response
     Stream(ctx context.Context, req ChatRequest) (StreamReader, error)
     
-    // Capabilities devuelve las capacidades del proveedor
+    // Capabilities returns the provider's capabilities
     Capabilities() Capabilities
     
-    // ValidateConfig valida la configuración del proveedor
+    // ValidateConfig validates the provider configuration
     ValidateConfig(cfg Config) error
 }
 
-// Model representa un modelo de AI
+// Model represents an AI model
 type Model struct {
     ID          string
     Name        string
@@ -183,13 +183,13 @@ type Model struct {
     Capabilities ModelCapabilities
 }
 
-// ModelCost representa el coste del modelo
+// ModelCost represents the model cost
 type ModelCost struct {
-    InputTokens  float64 // Coste por millón de tokens de entrada
-    OutputTokens float64 // Coste por millón de tokens de salida
+    InputTokens  float64 // Cost per million input tokens
+    OutputTokens float64 // Cost per million output tokens
 }
 
-// ModelCapabilities representa las capacidades del modelo
+// ModelCapabilities represents the model capabilities
 type ModelCapabilities struct {
     Vision      bool
     FunctionCall bool
@@ -197,7 +197,7 @@ type ModelCapabilities struct {
     JSON        bool
 }
 
-// ChatRequest representa una solicitud de chat
+// ChatRequest represents a chat request
 type ChatRequest struct {
     Model       string
     Messages    []Message
@@ -207,14 +207,14 @@ type ChatRequest struct {
     Tools       []Tool
 }
 
-// Message representa un mensaje en la conversación
+// Message represents a message in the conversation
 type Message struct {
     Role    string // system, user, assistant
     Content string
     ToolCalls []ToolCall
 }
 
-// ChatResponse representa una respuesta de chat
+// ChatResponse represents a chat response
 type ChatResponse struct {
     Content   string
     ToolCalls []ToolCall
@@ -222,27 +222,27 @@ type ChatResponse struct {
     Model     string
 }
 
-// Usage representa el uso de tokens
+// Usage represents token usage
 type Usage struct {
     InputTokens  int
     OutputTokens int
     TotalTokens  int
 }
 
-// StreamReader es un reader para respuestas en streaming
+// StreamReader is a reader for streaming responses
 type StreamReader interface {
     io.ReadCloser
     Next() (*StreamChunk, error)
 }
 
-// StreamChunk representa un fragmento de respuesta streaming
+// StreamChunk represents a streaming response chunk
 type StreamChunk struct {
     Content string
     Delta   string
     Done    bool
 }
 
-// Capabilities representa las capacidades del proveedor
+// Capabilities represents the provider capabilities
 type Capabilities struct {
     Streaming    bool
     Vision       bool
@@ -251,7 +251,7 @@ type Capabilities struct {
     ContextCache bool
 }
 
-// Config representa la configuración de un proveedor
+// Config represents a provider configuration
 type Config struct {
     APIKey      string
     BaseURL     string
@@ -261,14 +261,14 @@ type Config struct {
     Extra       map[string]interface{}
 }
 
-// Tool representa una herramienta disponible para el modelo
+// Tool represents a tool available to the model
 type Tool struct {
     Name        string
     Description string
     Parameters  interface{}
 }
 
-// ToolCall representa una llamada a una herramienta
+// ToolCall represents a tool call
 type ToolCall struct {
     ID       string
     Name     string
@@ -276,7 +276,7 @@ type ToolCall struct {
 }
 ```
 
-**Ejemplo de implementación (Anthropic):**
+**Implementation example (Anthropic):**
 
 ```go
 package provider
@@ -349,7 +349,7 @@ func (p *AnthropicProvider) Models() []Model {
 }
 
 func (p *AnthropicProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
-    // Convertir mensajes al formato de Anthropic
+    // Convert messages to Anthropic format
     messages := make([]anthropic.Message, len(req.Messages))
     for i, msg := range req.Messages {
         messages[i] = anthropic.Message{
@@ -358,7 +358,7 @@ func (p *AnthropicProvider) Chat(ctx context.Context, req ChatRequest) (*ChatRes
         }
     }
     
-    // Crear solicitud
+    // Create request
     resp, err := p.client.Messages.Create(ctx, anthropic.MessageCreateParams{
         Model:       req.Model,
         Messages:    messages,
@@ -382,7 +382,7 @@ func (p *AnthropicProvider) Chat(ctx context.Context, req ChatRequest) (*ChatRes
 }
 
 func (p *AnthropicProvider) Stream(ctx context.Context, req ChatRequest) (StreamReader, error) {
-    // Implementar streaming
+    // Implement streaming
     // ...
     return nil, nil
 }
@@ -407,9 +407,9 @@ func (p *AnthropicProvider) ValidateConfig(cfg Config) error {
 
 ---
 
-### 2. Implementación del Protocolo ACP
+### 2. ACP Protocol Implementation
 
-**Archivo:** `internal/acp/protocol/types.go`
+**File:** `internal/acp/protocol/types.go`
 
 ```go
 package protocol
@@ -418,10 +418,10 @@ import (
     "time"
 )
 
-// ACPVersion es la versión del protocolo ACP
+// ACPVersion is the ACP protocol version
 const ACPVersion = "1.0"
 
-// Message es el mensaje base de ACP
+// Message is the ACP base message
 type Message struct {
     ID          string                 `json:"id"`
     Type        MessageType            `json:"type"`
@@ -434,7 +434,7 @@ type Message struct {
     CorrelationID string               `json:"correlation_id,omitempty"`
 }
 
-// MessageType define los tipos de mensajes ACP
+// MessageType defines ACP message types
 type MessageType string
 
 const (
@@ -445,14 +445,14 @@ const (
     MessageTypeStream      MessageType = "stream"
 )
 
-// AgentID identifica un agente de forma única
+// AgentID uniquely identifies an agent
 type AgentID struct {
     Name      string `json:"name"`
     Instance  string `json:"instance"`
     Framework string `json:"framework"`
 }
 
-// AgentManifest describe las capacidades de un agente
+// AgentManifest describes an agent's capabilities
 type AgentManifest struct {
     ID           AgentID             `json:"id"`
     Version      string              `json:"version"`
@@ -462,7 +462,7 @@ type AgentManifest struct {
     Metadata     map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// Capability describe una capacidad del agente
+// Capability describes an agent capability
 type Capability struct {
     Name        string                 `json:"name"`
     Description string                 `json:"description"`
@@ -472,7 +472,7 @@ type Capability struct {
     Streaming   bool                   `json:"streaming"`
 }
 
-// Endpoint define un endpoint REST del agente
+// Endpoint defines an agent REST endpoint
 type Endpoint struct {
     Path        string   `json:"path"`
     Method      string   `json:"method"`
@@ -480,7 +480,7 @@ type Endpoint struct {
     ContentType []string `json:"content_type"`
 }
 
-// TaskRequest representa una solicitud de tarea
+// TaskRequest represents a task request
 type TaskRequest struct {
     Action      string                 `json:"action"`
     Parameters  map[string]interface{} `json:"parameters"`
@@ -489,7 +489,7 @@ type TaskRequest struct {
     Timeout     *time.Duration         `json:"timeout,omitempty"`
 }
 
-// TaskResponse representa una respuesta de tarea
+// TaskResponse represents a task response
 type TaskResponse struct {
     Status  TaskStatus             `json:"status"`
     Result  interface{}            `json:"result,omitempty"`
@@ -497,7 +497,7 @@ type TaskResponse struct {
     Metrics TaskMetrics            `json:"metrics,omitempty"`
 }
 
-// TaskStatus define el estado de una tarea
+// TaskStatus defines task status
 type TaskStatus string
 
 const (
@@ -508,7 +508,7 @@ const (
     TaskStatusCancelled TaskStatus = "cancelled"
 )
 
-// TaskMetrics contiene métricas de ejecución
+// TaskMetrics contains execution metrics
 type TaskMetrics struct {
     StartTime    time.Time     `json:"start_time"`
     EndTime      time.Time     `json:"end_time"`
@@ -517,14 +517,14 @@ type TaskMetrics struct {
     Cost         float64       `json:"cost,omitempty"`
 }
 
-// ErrorDetails proporciona información detallada del error
+// ErrorDetails provides detailed error information
 type ErrorDetails struct {
     Code    string `json:"code"`
     Message string `json:"message"`
     Details interface{} `json:"details,omitempty"`
 }
 
-// StreamChunk representa un fragmento de respuesta en streaming
+// StreamChunk represents a streaming response chunk
 type StreamChunk struct {
     TaskID    string      `json:"task_id"`
     Sequence  int         `json:"sequence"`
@@ -534,7 +534,7 @@ type StreamChunk struct {
 }
 ```
 
-**Archivo:** `internal/acp/server/server.go`
+**File:** `internal/acp/server/server.go`
 
 ```go
 package server
@@ -550,7 +550,7 @@ import (
     "github.com/gorilla/mux"
 )
 
-// Server es el servidor ACP
+// Server is the ACP server
 type Server struct {
     addr     string
     router   *mux.Router
@@ -559,19 +559,19 @@ type Server struct {
     server   *http.Server
 }
 
-// AgentHandler maneja las solicitudes para un agente específico
+// AgentHandler handles requests for a specific agent
 type AgentHandler struct {
     manifest protocol.AgentManifest
     executor TaskExecutor
 }
 
-// TaskExecutor ejecuta tareas del agente
+// TaskExecutor executes agent tasks
 type TaskExecutor interface {
     Execute(ctx context.Context, req protocol.TaskRequest) (*protocol.TaskResponse, error)
     Stream(ctx context.Context, req protocol.TaskRequest) (<-chan protocol.StreamChunk, error)
 }
 
-// NewServer crea un nuevo servidor ACP
+// NewServer creates a new ACP server
 func NewServer(addr string) *Server {
     router := mux.NewRouter()
     
@@ -581,7 +581,7 @@ func NewServer(addr string) *Server {
         agents: make(map[string]*AgentHandler),
     }
     
-    // Rutas del protocolo ACP
+    // ACP protocol routes
     router.HandleFunc("/acp/v1/discover", s.handleDiscover).Methods("GET")
     router.HandleFunc("/acp/v1/agents", s.handleListAgents).Methods("GET")
     router.HandleFunc("/acp/v1/agents/{agent}", s.handleAgentManifest).Methods("GET")
@@ -591,7 +591,7 @@ func NewServer(addr string) *Server {
     return s
 }
 
-// RegisterAgent registra un nuevo agente en el servidor
+// RegisterAgent registers a new agent on the server
 func (s *Server) RegisterAgent(manifest protocol.AgentManifest, executor TaskExecutor) error {
     s.mu.Lock()
     defer s.mu.Unlock()
@@ -610,7 +610,7 @@ func (s *Server) RegisterAgent(manifest protocol.AgentManifest, executor TaskExe
     return nil
 }
 
-// Start inicia el servidor
+// Start starts the server
 func (s *Server) Start(ctx context.Context) error {
     s.server = &http.Server{
         Addr:    s.addr,
@@ -625,7 +625,7 @@ func (s *Server) Start(ctx context.Context) error {
     return s.server.ListenAndServe()
 }
 
-// handleDiscover maneja la solicitud de descubrimiento
+// handleDiscover handles the discovery request
 func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
     s.mu.RLock()
     defer s.mu.RUnlock()
@@ -642,7 +642,7 @@ func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
     })
 }
 
-// handleListAgents lista todos los agentes
+// handleListAgents lists all agents
 func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
     s.mu.RLock()
     defer s.mu.RUnlock()
@@ -656,7 +656,7 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(agentIDs)
 }
 
-// handleAgentManifest devuelve el manifiesto de un agente
+// handleAgentManifest returns an agent's manifest
 func (s *Server) handleAgentManifest(w http.ResponseWriter, r *http.Request) {
     vars := mux.Vars(r)
     agentKey := vars["agent"]
@@ -674,7 +674,7 @@ func (s *Server) handleAgentManifest(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(handler.manifest)
 }
 
-// handleTask maneja una solicitud de tarea
+// handleTask handles a task request
 func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {
     vars := mux.Vars(r)
     agentKey := vars["agent"]
@@ -704,7 +704,7 @@ func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(resp)
 }
 
-// handleStream maneja una solicitud de streaming
+// handleStream handles a streaming request
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
     vars := mux.Vars(r)
     agentKey := vars["agent"]
@@ -724,7 +724,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
         return
     }
     
-    // Configurar SSE
+    // Configure SSE
     w.Header().Set("Content-Type", "text/event-stream")
     w.Header().Set("Cache-Control", "no-cache")
     w.Header().Set("Connection", "keep-alive")
@@ -753,7 +753,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-**Archivo:** `internal/acp/client/client.go`
+**File:** `internal/acp/client/client.go`
 
 ```go
 package client
@@ -768,13 +768,13 @@ import (
     "github.com/digiogithub/opencode/internal/acp/protocol"
 )
 
-// Client es el cliente ACP
+// Client is the ACP client
 type Client struct {
     baseURL    string
     httpClient *http.Client
 }
 
-// NewClient crea un nuevo cliente ACP
+// NewClient creates a new ACP client
 func NewClient(baseURL string) *Client {
     return &Client{
         baseURL:    baseURL,
@@ -782,7 +782,7 @@ func NewClient(baseURL string) *Client {
     }
 }
 
-// Discover descubre agentes disponibles
+// Discover discovers available agents
 func (c *Client) Discover(ctx context.Context) ([]protocol.AgentManifest, error) {
     url := fmt.Sprintf("%s/acp/v1/discover", c.baseURL)
     
@@ -813,7 +813,7 @@ func (c *Client) Discover(ctx context.Context) ([]protocol.AgentManifest, error)
     return result.Agents, nil
 }
 
-// SendTask envía una tarea a un agente
+// SendTask sends a task to an agent
 func (c *Client) SendTask(ctx context.Context, agentKey string, req protocol.TaskRequest) (*protocol.TaskResponse, error) {
     url := fmt.Sprintf("%s/acp/v1/agents/%s/task", c.baseURL, agentKey)
     
@@ -846,7 +846,7 @@ func (c *Client) SendTask(ctx context.Context, agentKey string, req protocol.Tas
     return &taskResp, nil
 }
 
-// StreamTask envía una tarea y recibe la respuesta en streaming
+// StreamTask sends a task and receives the streaming response
 func (c *Client) StreamTask(ctx context.Context, agentKey string, req protocol.TaskRequest) (<-chan protocol.StreamChunk, error) {
     url := fmt.Sprintf("%s/acp/v1/agents/%s/stream", c.baseURL, agentKey)
     
@@ -902,9 +902,9 @@ func (c *Client) StreamTask(ctx context.Context, agentKey string, req protocol.T
 
 ---
 
-### 3. TUI Multi-Agente
+### 3. Multi-Agent TUI
 
-**Archivo:** `internal/tui/multiagent/view.go`
+**File:** `internal/tui/multiagent/view.go`
 
 ```go
 package multiagent
@@ -917,7 +917,7 @@ import (
     "github.com/digiogithub/opencode/internal/acp/protocol"
 )
 
-// Model es el modelo para la vista multi-agente
+// Model is the model for the multi-agent view
 type Model struct {
     agents       []AgentPanel
     activeAgent  int
@@ -926,7 +926,7 @@ type Model struct {
     layout       Layout
 }
 
-// AgentPanel representa el panel de un agente
+// AgentPanel represents an agent panel
 type AgentPanel struct {
     ID       protocol.AgentID
     Manifest protocol.AgentManifest
@@ -935,7 +935,7 @@ type AgentPanel struct {
     Active   bool
 }
 
-// AgentStatus representa el estado de un agente
+// AgentStatus represents agent status
 type AgentStatus string
 
 const (
@@ -945,24 +945,24 @@ const (
     AgentStatusOffline AgentStatus = "offline"
 )
 
-// Message representa un mensaje en el panel del agente
+// Message represents a message in the agent panel
 type Message struct {
     Role      string
     Content   string
     Timestamp string
 }
 
-// Layout define el diseño de los paneles
+// Layout defines panel layout
 type Layout string
 
 const (
-    LayoutGrid       Layout = "grid"       // Cuadrícula
+    LayoutGrid       Layout = "grid"       // Grid
     LayoutHorizontal Layout = "horizontal" // Horizontal
     LayoutVertical   Layout = "vertical"   // Vertical
-    LayoutFocus      Layout = "focus"      // Un agente en foco grande
+    LayoutFocus      Layout = "focus"      // One agent focused large
 )
 
-// NewModel crea un nuevo modelo multi-agente
+// NewModel creates a new multi-agent model
 func NewModel() Model {
     return Model{
         agents:      make([]AgentPanel, 0),
@@ -971,12 +971,12 @@ func NewModel() Model {
     }
 }
 
-// Init inicializa el modelo
+// Init initializes the model
 func (m Model) Init() tea.Cmd {
     return nil
 }
 
-// Update actualiza el modelo
+// Update updates the model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     switch msg := msg.(type) {
     case tea.KeyMsg:
@@ -985,12 +985,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             return m, tea.Quit
             
         case "tab":
-            // Cambiar al siguiente agente
+            // Switch to next agent
             m.activeAgent = (m.activeAgent + 1) % len(m.agents)
             return m, nil
             
         case "shift+tab":
-            // Cambiar al agente anterior
+            // Switch to previous agent
             m.activeAgent = (m.activeAgent - 1 + len(m.agents)) % len(m.agents)
             return m, nil
             
@@ -1023,7 +1023,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         return m, nil
         
     case AgentMessageMsg:
-        // Añadir mensaje al agente
+        // Add message to agent
         for i := range m.agents {
             if m.agents[i].ID == msg.AgentID {
                 m.agents[i].Messages = append(m.agents[i].Messages, Message{
@@ -1037,7 +1037,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         return m, nil
         
     case AgentStatusMsg:
-        // Actualizar estado del agente
+        // Update agent status
         for i := range m.agents {
             if m.agents[i].ID == msg.AgentID {
                 m.agents[i].Status = msg.Status
@@ -1050,7 +1050,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     return m, nil
 }
 
-// View renderiza la vista
+// View renders the view
 func (m Model) View() string {
     if len(m.agents) == 0 {
         return noAgentsView(m.width, m.height)
@@ -1070,13 +1070,13 @@ func (m Model) View() string {
     }
 }
 
-// gridView renderiza la vista en cuadrícula
+// gridView renders the grid view
 func (m Model) gridView() string {
     if len(m.agents) == 0 {
         return ""
     }
     
-    // Calcular dimensiones de la cuadrícula
+    // Calculate grid dimensions
     cols := 2
     if len(m.agents) == 1 {
         cols = 1
@@ -1084,7 +1084,7 @@ func (m Model) gridView() string {
     rows := (len(m.agents) + cols - 1) / cols
     
     panelWidth := m.width / cols
-    panelHeight := (m.height - 3) / rows // -3 para barra de estado
+    panelHeight := (m.height - 3) / rows // -3 for status bar
     
     var grid []string
     for row := 0; row < rows; row++ {
@@ -1106,7 +1106,7 @@ func (m Model) gridView() string {
     return lipgloss.JoinVertical(lipgloss.Left, content, statusBar)
 }
 
-// horizontalView renderiza la vista horizontal
+// horizontalView renders the horizontal view
 func (m Model) horizontalView() string {
     panelWidth := m.width / len(m.agents)
     panelHeight := m.height - 3
@@ -1124,7 +1124,7 @@ func (m Model) horizontalView() string {
     return lipgloss.JoinVertical(lipgloss.Left, content, statusBar)
 }
 
-// verticalView renderiza la vista vertical
+// verticalView renders the vertical view
 func (m Model) verticalView() string {
     panelWidth := m.width
     panelHeight := (m.height - 3) / len(m.agents)
@@ -1142,7 +1142,7 @@ func (m Model) verticalView() string {
     return lipgloss.JoinVertical(lipgloss.Left, content, statusBar)
 }
 
-// focusView renderiza la vista enfocada
+// focusView renders the focused view
 func (m Model) focusView() string {
     if m.activeAgent >= len(m.agents) {
         return ""
@@ -1155,12 +1155,12 @@ func (m Model) focusView() string {
     return lipgloss.JoinVertical(lipgloss.Left, panel, statusBar)
 }
 
-// renderAgentPanel renderiza un panel de agente
+// renderAgentPanel renders an agent panel
 func renderAgentPanel(agent AgentPanel, width, height int, active bool) string {
-    // Estilos
+    // Styles
     borderColor := lipgloss.Color("240")
     if active {
-        borderColor = lipgloss.Color("86") // Verde
+        borderColor = lipgloss.Color("86") // Green
     }
     
     borderStyle := lipgloss.NewStyle().
@@ -1173,13 +1173,13 @@ func renderAgentPanel(agent AgentPanel, width, height int, active bool) string {
     statusColor := lipgloss.Color("240")
     switch agent.Status {
     case AgentStatusIdle:
-        statusColor = lipgloss.Color("86") // Verde
+        statusColor = lipgloss.Color("86") // Green
     case AgentStatusBusy:
-        statusColor = lipgloss.Color("226") // Amarillo
+        statusColor = lipgloss.Color("226") // Yellow
     case AgentStatusError:
-        statusColor = lipgloss.Color("196") // Rojo
+        statusColor = lipgloss.Color("196") // Red
     case AgentStatusOffline:
-        statusColor = lipgloss.Color("240") // Gris
+        statusColor = lipgloss.Color("240") // Gray
     }
     
     statusStyle := lipgloss.NewStyle().
@@ -1218,7 +1218,7 @@ func renderAgentPanel(agent AgentPanel, width, height int, active bool) string {
     return borderStyle.Render(content)
 }
 
-// renderStatusBar renderiza la barra de estado
+// renderStatusBar renders the status bar
 func renderStatusBar(m Model) string {
     statusStyle := lipgloss.NewStyle().
         Background(lipgloss.Color("235")).
@@ -1245,7 +1245,7 @@ func renderStatusBar(m Model) string {
     return statusStyle.Width(m.width).Render(status)
 }
 
-// noAgentsView renderiza la vista cuando no hay agentes
+// noAgentsView renders the view when no agents are connected
 func noAgentsView(width, height int) string {
     style := lipgloss.NewStyle().
         Width(width).
@@ -1256,7 +1256,7 @@ func noAgentsView(width, height int) string {
     return style.Render("No agents connected.\n\nPress 'q' to quit.")
 }
 
-// Mensajes personalizados
+// Custom messages
 
 type AgentAddedMsg struct {
     ID       protocol.AgentID
@@ -1278,47 +1278,47 @@ type AgentStatusMsg struct {
 
 ---
 
-## Plan de Implementación
+## Implementation Plan
 
-### Fase 1: Actualización del Sistema de Proveedores (1-2 semanas)
+### Phase 1: Provider System Update (1-2 weeks)
 
-**Tareas:**
-1. ✅ Crear interfaz unificada `Provider` en `internal/llm/provider/provider.go`
-2. ✅ Implementar proveedor Anthropic actualizado
-3. ✅ Implementar proveedor OpenAI actualizado
-4. ✅ Implementar proveedor Google Gemini
-5. ✅ Implementar proveedor Groq
-6. ✅ Implementar proveedor OpenRouter
-7. ✅ Implementar proveedor Vercel AI Gateway
-8. ✅ Crear sistema de registro de proveedores
-9. ✅ Actualizar configuración para soportar múltiples proveedores
-10. ✅ Pruebas unitarias para cada proveedor
+**Tasks:**
+1. ✅ Create unified `Provider` interface in `internal/llm/provider/provider.go`
+2. ✅ Implement updated Anthropic provider
+3. ✅ Implement updated OpenAI provider
+4. ✅ Implement Google Gemini provider
+5. ✅ Implement Groq provider
+6. ✅ Implement OpenRouter provider
+7. ✅ Implement Vercel AI Gateway provider
+8. ✅ Create provider registry system
+9. ✅ Update configuration to support multiple providers
+10. ✅ Unit tests for each provider
 
-**Archivos a crear/modificar:**
-- `internal/llm/provider/provider.go` (nuevo)
-- `internal/llm/provider/anthropic.go` (actualizar)
-- `internal/llm/provider/openai.go` (actualizar)
-- `internal/llm/provider/gemini.go` (actualizar)
-- `internal/llm/provider/groq.go` (nuevo)
-- `internal/llm/provider/openrouter.go` (nuevo)
-- `internal/llm/provider/vercel.go` (nuevo)
-- `internal/llm/provider/registry.go` (nuevo)
-- `pkg/config/config.go` (actualizar)
+**Files to create/modify:**
+- `internal/llm/provider/provider.go` (new)
+- `internal/llm/provider/anthropic.go` (update)
+- `internal/llm/provider/openai.go` (update)
+- `internal/llm/provider/gemini.go` (update)
+- `internal/llm/provider/groq.go` (new)
+- `internal/llm/provider/openrouter.go` (new)
+- `internal/llm/provider/vercel.go` (new)
+- `internal/llm/provider/registry.go` (new)
+- `pkg/config/config.go` (update)
 
-### Fase 2: Implementación del Protocolo ACP (2-3 semanas)
+### Phase 2: ACP Protocol Implementation (2-3 weeks)
 
-**Tareas:**
-1. ✅ Definir tipos del protocolo ACP en `internal/acp/protocol/`
-2. ✅ Implementar servidor ACP
-3. ✅ Implementar cliente ACP
-4. ✅ Crear wrapper de agente OpenCode
-5. ✅ Implementar descubrimiento de agentes
-6. ✅ Implementar comunicación síncrona
-7. ✅ Implementar comunicación asíncrona
-8. ✅ Implementar streaming SSE
-9. ✅ Pruebas de integración
+**Tasks:**
+1. ✅ Define ACP protocol types in `internal/acp/protocol/`
+2. ✅ Implement ACP server
+3. ✅ Implement ACP client
+4. ✅ Create OpenCode agent wrapper
+5. ✅ Implement agent discovery
+6. ✅ Implement synchronous communication
+7. ✅ Implement asynchronous communication
+8. ✅ Implement SSE streaming
+9. ✅ Integration tests
 
-**Archivos a crear:**
+**Files to create:**
 - `internal/acp/protocol/types.go`
 - `internal/acp/protocol/messages.go`
 - `internal/acp/server/server.go`
@@ -1330,22 +1330,22 @@ type AgentStatusMsg struct {
 - `internal/acp/agent/capabilities.go`
 - `cmd/agent-server/main.go`
 
-### Fase 3: TUI Multi-Agente (2-3 semanas)
+### Phase 3: Multi-Agent TUI (2-3 weeks)
 
-**Tareas:**
-1. ✅ Diseñar arquitectura de la vista multi-agente
-2. ✅ Implementar modelo Bubble Tea para multi-agente
-3. ✅ Implementar vista en cuadrícula
-4. ✅ Implementar vista horizontal
-5. ✅ Implementar vista vertical
-6. ✅ Implementar vista enfocada
-7. ✅ Implementar componente de panel de agente
-8. ✅ Implementar barra de estado
-9. ✅ Integrar con cliente ACP
-10. ✅ Añadir hotkeys para navegación
-11. ✅ Pruebas de interfaz
+**Tasks:**
+1. ✅ Design multi-agent view architecture
+2. ✅ Implement Bubble Tea model for multi-agent
+3. ✅ Implement grid view
+4. ✅ Implement horizontal view
+5. ✅ Implement vertical view
+6. ✅ Implement focused view
+7. ✅ Implement agent panel component
+8. ✅ Implement status bar
+9. ✅ Integrate with ACP client
+10. ✅ Add hotkeys for navigation
+11. ✅ UI tests
 
-**Archivos a crear:**
+**Files to create:**
 - `internal/tui/multiagent/view.go`
 - `internal/tui/multiagent/model.go`
 - `internal/tui/multiagent/panel.go`
@@ -1354,23 +1354,23 @@ type AgentStatusMsg struct {
 - `internal/tui/components/status_bar.go`
 - `internal/tui/components/chat_view.go`
 
-### Fase 4: Integración y Pruebas (1-2 semanas)
+### Phase 4: Integration and Testing (1-2 weeks)
 
-**Tareas:**
-1. ✅ Integrar sistema de proveedores con TUI
-2. ✅ Integrar servidor ACP con agentes
-3. ✅ Crear comandos CLI para gestionar agentes
-4. ✅ Implementar persistencia de sesiones multi-agente
-5. ✅ Documentación de uso
-6. ✅ Ejemplos de configuración
-7. ✅ Pruebas end-to-end
-8. ✅ Optimización de rendimiento
+**Tasks:**
+1. ✅ Integrate provider system with TUI
+2. ✅ Integrate ACP server with agents
+3. ✅ Create CLI commands to manage agents
+4. ✅ Implement multi-agent session persistence
+5. ✅ Usage documentation
+6. ✅ Configuration examples
+7. ✅ End-to-end tests
+8. ✅ Performance optimization
 
 ---
 
-## Configuración de Ejemplo
+## Example Configuration
 
-**Archivo:** `~/.opencode.json`
+**File:** `~/.opencode.json`
 
 ```json
 {
@@ -1431,89 +1431,89 @@ type AgentStatusMsg struct {
 
 ---
 
-## Uso de la Aplicación
+## Application Usage
 
-### Iniciar Servidor ACP
+### Start ACP Server
 
 ```bash
-# Iniciar servidor ACP en segundo plano
+# Start ACP server in background
 opencode agent-server --config ~/.opencode.json --port 8080
 
-# O como demonio
+# Or as daemon
 opencode agent-server --daemon
 ```
 
-### Iniciar Cliente Multi-Agente
+### Start Multi-Agent Client
 
 ```bash
-# Iniciar TUI con todos los agentes configurados
+# Start TUI with all configured agents
 opencode multi
 
-# Iniciar TUI conectándose a servidor remoto
+# Start TUI connecting to remote server
 opencode multi --server http://remote:8080
 
-# Iniciar con layout específico
+# Start with specific layout
 opencode multi --layout grid
 ```
 
-### Comandos en TUI
+### TUI Commands
 
-- `Tab` / `Shift+Tab`: Navegar entre agentes
-- `1`: Vista en cuadrícula
-- `2`: Vista horizontal
-- `3`: Vista vertical
-- `4`: Vista enfocada (agente activo a pantalla completa)
-- `Ctrl+N`: Nuevo mensaje al agente activo
-- `Ctrl+S`: Cambiar proveedor del agente activo
-- `Ctrl+D`: Desconectar agente
-- `Ctrl+R`: Reconectar agente
-- `Q`: Salir
+- `Tab` / `Shift+Tab`: Navigate between agents
+- `1`: Grid view
+- `2`: Horizontal view
+- `3`: Vertical view
+- `4`: Focused view (active agent full screen)
+- `Ctrl+N`: New message to active agent
+- `Ctrl+S`: Change active agent provider
+- `Ctrl+D`: Disconnect agent
+- `Ctrl+R`: Reconnect agent
+- `Q`: Quit
 
-### Conectar Agentes Externos
+### Connect External Agents
 
 ```bash
-# Descubrir agentes disponibles
+# Discover available agents
 opencode agent discover --server http://localhost:8080
 
-# Conectar agente externo
+# Connect external agent
 opencode agent connect --name external-agent --url http://external:9000
 ```
 
 ---
 
-## Ventajas de la Arquitectura Propuesta
+## Advantages of Proposed Architecture
 
-### 1. Flexibilidad de Proveedores
-- ✅ Soporte para múltiples proveedores simultáneos
-- ✅ Cambio dinámico de proveedor por agente
-- ✅ Optimización de costes usando modelos apropiados por tarea
+### 1. Provider Flexibility
+- ✅ Support for multiple simultaneous providers
+- ✅ Dynamic provider switching per agent
+- ✅ Cost optimization using appropriate models per task
 
-### 2. Interoperabilidad (ACP)
-- ✅ Comunicación estándar entre agentes
-- ✅ Independiente del framework (LangChain, CrewAI, etc.)
-- ✅ Descubrimiento automático de agentes
-- ✅ Soporte para agentes remotos
+### 2. Interoperability (ACP)
+- ✅ Standard inter-agent communication
+- ✅ Framework-independent (LangChain, CrewAI, etc.)
+- ✅ Automatic agent discovery
+- ✅ Support for remote agents
 
-### 3. Experiencia de Usuario
-- ✅ Visualización de múltiples agentes en tiempo real
-- ✅ Múltiples layouts adaptables
-- ✅ Interfaz familiar (Bubble Tea)
-- ✅ Hotkeys intuitivos
+### 3. User Experience
+- ✅ Real-time multi-agent visualization
+- ✅ Multiple adaptable layouts
+- ✅ Familiar interface (Bubble Tea)
+- ✅ Intuitive hotkeys
 
-### 4. Escalabilidad
-- ✅ Arquitectura modular
-- ✅ Fácil añadir nuevos proveedores
-- ✅ Fácil añadir nuevos agentes
-- ✅ Soporte para agentes distribuidos
+### 4. Scalability
+- ✅ Modular architecture
+- ✅ Easy to add new providers
+- ✅ Easy to add new agents
+- ✅ Support for distributed agents
 
-### 5. Open Source & Comunidad
-- ✅ Mantiene espíritu de OpenCode original
-- ✅ Protocolo ACP estándar abierto (Linux Foundation)
-- ✅ Compatible con ecosistema existente
+### 5. Open Source & Community
+- ✅ Maintains original OpenCode spirit
+- ✅ Standard open ACP protocol (Linux Foundation)
+- ✅ Compatible with existing ecosystem
 
 ---
 
-## Dependencias Go
+## Go Dependencies
 
 ```go
 module github.com/digiogithub/opencode
@@ -1551,56 +1551,56 @@ require (
 
 ---
 
-## Próximos Pasos
+## Next Steps
 
-1. **Fork y Setup**
-   - Clonar tu fork
-   - Crear rama `feature/multi-agent-acp`
-   - Setup estructura de carpetas
+1. **Fork and Setup**
+   - Clone your fork
+   - Create `feature/multi-agent-acp` branch
+   - Set up folder structure
 
-2. **Desarrollo Incremental**
-   - Fase 1: Proveedores (mantener funcionalidad actual)
-   - Fase 2: ACP (añadir capacidad de comunicación)
-   - Fase 3: TUI Multi-Agente (nueva interfaz)
+2. **Incremental Development**
+   - Phase 1: Providers (maintain current functionality)
+   - Phase 2: ACP (add communication capability)
+   - Phase 3: Multi-Agent TUI (new interface)
 
-3. **Testing Continuo**
-   - Pruebas unitarias por componente
-   - Pruebas de integración entre fases
-   - Testing manual del TUI
+3. **Continuous Testing**
+   - Unit tests per component
+   - Integration tests between phases
+   - Manual TUI testing
 
-4. **Documentación**
-   - README actualizado
-   - Guías de uso
-   - Ejemplos de configuración
-   - API documentation para ACP
+4. **Documentation**
+   - Updated README
+   - Usage guides
+   - Configuration examples
+   - ACP API documentation
 
 ---
 
-## Recursos Adicionales
+## Additional Resources
 
-### Referencias ACP
-- Especificación: https://agentcommunicationprotocol.dev
+### ACP References
+- Specification: https://agentcommunicationprotocol.dev
 - BeeAI Framework: https://github.com/i-am-bee/bee-agent-framework
 - IBM Research: https://research.ibm.com/projects/agent-communication-protocol
 
-### Referencias Crush
+### Crush References
 - Repo: https://github.com/charmbracelet/crush
 - Docs: https://github.com/charmbracelet/crush/tree/main/docs
 
-### Referencias Bubble Tea
+### Bubble Tea References
 - Repo: https://github.com/charmbracelet/bubbletea
 - Tutorial: https://github.com/charmbracelet/bubbletea/tree/master/tutorials
 - Examples: https://github.com/charmbracelet/bubbletea/tree/master/examples
 
 ---
 
-## Contacto y Soporte
+## Contact and Support
 
-Para dudas sobre la implementación:
-- Issues en el fork de GitHub
-- Discusiones en el repo
-- Documentación inline en el código
+For questions about the implementation:
+- Issues on the GitHub fork
+- Discussions in the repo
+- Inline documentation in the code
 
 ---
 
-**Este plan proporciona una hoja de ruta completa para modernizar tu fork de OpenCode con capacidades multi-agente y comunicación ACP, manteniendo la esencia del proyecto original mientras añade características de nivel empresarial.**
+**This plan provides a complete roadmap for modernizing your OpenCode fork with multi-agent capabilities and ACP communication, maintaining the essence of the original project while adding enterprise-level features.**

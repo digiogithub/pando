@@ -1,117 +1,117 @@
-# Agent-VCS — Mini-jj para Pando
+# Agent-VCS — Mini-jj for Pando
 
-## Qué es
+## What it is
 
-Agent-VCS es un sistema de control de versiones ligero inspirado en Jujutsu (jj) que reemplaza el antiguo sistema de snapshots de Pando. Registra automáticamente los cambios en ficheros del working directory a lo largo de cada sesión de agente, formando una cadena lineal de commits inmutables por sesión.
+Agent-VCS is a lightweight version control system inspired by Jujutsu (jj) that replaces Pando's old snapshot system. It automatically records changes to working directory files throughout each agent session, forming a linear chain of immutable commits per session.
 
-## Objetivo
+## Goal
 
-Tener un histórico o bitácora de cambios por sesión en los ficheros del proyecto. Cada sesión de agente (conversación) produce una secuencia de commits que permite revisar qué cambió, cuándo, y revertir a cualquier punto.
+Maintain a history or log of file changes per session in the project files. Each agent session (conversation) produces a sequence of commits that allows reviewing what changed, when, and reverting to any point.
 
-## Modelo de datos
+## Data model
 
-- **Commit**: inmutable, identificado por hash de contenido. Contiene referencia al tree, parent, session ID, descripción, timestamp, stats de ficheros.
-- **Tree**: lista ordenada de TreeEntry (path, hash SHA-256, size, modtime). Almacenado por hash — si dos commits tienen el mismo árbol, se deduplica.
-- **TreeEntry**: un fichero o directorio dentro de un Tree.
-- **Blob**: contenido de fichero comprimido con gzip, almacenado por hash SHA-256 (content-addressable). Se deduplica entre commits y sesiones.
-- **SessionLog**: lista ordenada de commit IDs para una sesión.
-- **DiffEntry**: cambio a nivel de fichero entre dos commits (added/modified/deleted).
-- **CommitSummary**: vista ligera de un commit para listados (incluye short ID y count de ficheros cambiados).
+- **Commit**: immutable, identified by content hash. Contains reference to tree, parent, session ID, description, timestamp, file stats.
+- **Tree**: ordered list of TreeEntry (path, hash SHA-256, size, modtime). Stored by hash — if two commits have the same tree, it is deduplicated.
+- **TreeEntry**: a file or directory within a Tree.
+- **Blob**: gzip-compressed file content, stored by SHA-256 hash (content-addressable). Deduplicated across commits and sessions.
+- **SessionLog**: ordered list of commit IDs for a session.
+- **DiffEntry**: file-level change between two commits (added/modified/deleted).
+- **CommitSummary**: lightweight view of a commit for listings (includes short ID and changed file count).
 
-## Flujo por sesión
+## Per-session flow
 
-1. **Session Start** → `NewChange(sessionID, description)` — crea el commit raíz con un tree completo del working directory.
-2. **Durante la sesión** (agent loop) → `Record(sessionID, description)` — compara el tree actual con el último commit; si el treeID cambió, crea un nuevo commit delta. Si no hay cambios, no hace nada.
-3. **Session End** → `Record(sessionID, "Session end: ...")` — commit final de la sesión.
+1. **Session Start** → `NewChange(sessionID, description)` — creates the root commit with a complete tree of the working directory.
+2. **During the session** (agent loop) → `Record(sessionID, description)` — compares the current tree with the last commit; if the treeID changed, creates a new delta commit. If there are no changes, does nothing.
+3. **Session End** → `Record(sessionID, "Session end: ...")` — final commit of the session.
 
-La integración usa el Adapter que implementa la interfaz `session.SnapshotCreator`, mapeando "start" a NewChange y el resto a Record.
+The integration uses an Adapter that implements the `session.SnapshotCreator` interface, mapping "start" to NewChange and the rest to Record.
 
-## Almacenamiento en disco
+## Disk storage
 
 ```
 {data-dir}/agent-vcs/
-├── commits/{commitID}.json     # Commit inmutable (JSON)
+├── commits/{commitID}.json     # Immutable commit (JSON)
 ├── trees/{treeID}.json         # Tree snapshot (JSON)
-├── blobs/{h[0:2]}/{h[2:4]}/{h} # Blobs gzip content-addressable
-└── sessions/{sessionID}.json   # Cadena de commits por sesión
+├── blobs/{h[0:2]}/{h[2:4]}/{h} # Content-addressable gzip blobs
+└── sessions/{sessionID}.json   # Commit chain per session
 ```
 
-Se guarda junto a donde se guardaban los snapshots, bajo el directorio de datos configurado.
+Stored alongside where snapshots used to be saved, under the configured data directory.
 
-## Soporte de ficheros ignorados
+## Ignored file support
 
-- Lee `.gitignore` y `.pandoignore` desde el directorio raíz hasta la raíz del filesystem.
-- Siempre ignora `.git/` y `.pando/`.
-- Aplica los `excludePatterns` del config de snapshots (ej: `node_modules/`, `*.log`, `vendor/`).
-- Respeta el límite de tamaño máximo de fichero (`maxFileSize` del config).
-- Solo escanea directorios que sean proyectos reconocidos (con marcadores como `.git`, `go.mod`, etc.).
+- Reads `.gitignore` and `.pandoignore` from the root directory up to the filesystem root.
+- Always ignores `.git/` and `.pando/`.
+- Applies `excludePatterns` from the snapshots config (e.g., `node_modules/`, `*.log`, `vendor/`).
+- Respects the maximum file size limit (`maxFileSize` from config).
+- Only scans directories that are recognized projects (with markers like `.git`, `go.mod`, etc.).
 
-## Ficheros del paquete `internal/agentvcs/`
+## Package files in `internal/agentvcs/`
 
-| Fichero | Rol |
-|---------|-----|
-| `model.go` | Structs (Commit, Tree, TreeEntry, SessionLog, DiffEntry, CommitSummary), funciones de hash (computeCommitID, computeTreeID) |
-| `storage.go` | Persistencia en disco: CRUD de commits, trees, blobs (gzip), session logs. Content-addressable con deduplicación. |
-| `scanner.go` | Escaneo del working directory con soporte .gitignore/.pandoignore y exclude patterns del config |
-| `service.go` | Servicio principal: NewChange, Record, Log, Diff, DiffFromParent, Revert, Cleanup, ListSessions |
-| `adapter.go` | Adapter que implementa `session.SnapshotCreator` para integrar con el ciclo de vida de sesiones |
-| `agentvcs_test.go` | Tests unitarios: storage roundtrip, tree dedup, blob roundtrip, diff, scanner ignore, cleanup |
+| File | Role |
+|------|------|
+| `model.go` | Structs (Commit, Tree, TreeEntry, SessionLog, DiffEntry, CommitSummary), hash functions (computeCommitID, computeTreeID) |
+| `storage.go` | Disk persistence: CRUD for commits, trees, blobs (gzip), session logs. Content-addressable with deduplication. |
+| `scanner.go` | Working directory scanning with .gitignore/.pandoignore support and config exclude patterns |
+| `service.go` | Main service: NewChange, Record, Log, Diff, DiffFromParent, Revert, Cleanup, ListSessions |
+| `adapter.go` | Adapter implementing `session.SnapshotCreator` for session lifecycle integration |
+| `agentvcs_test.go` | Unit tests: storage roundtrip, tree dedup, blob roundtrip, diff, scanner ignore, cleanup |
 
-## Ficheros modificados en la integración
+## Modified files in the integration
 
-| Fichero | Cambio |
-|---------|--------|
-| `internal/app/app.go` | Campo `AgentVCS` reemplaza `Snapshots`. Inicialización con `agentvcs.NewService()`. Cleanup en shutdown. |
-| `cmd/root.go` | Subscriber de pubsub cambiado a `app.AgentVCS` |
-| `cmd/agentvcs.go` | **Nuevo**: 5 subcomandos CLI (sessions, log, show, revert, compact) |
-| `internal/api/handlers_snapshots.go` | Reescrito para delegar a AgentVCS manteniendo API backward-compatible |
-| `internal/api/handlers_agentvcs.go` | **Nuevo**: endpoints nativos (sessions, log, commit, diff) |
-| `internal/api/handlers_extras.go` | `/snapshots/count` cuenta commits via AgentVCS |
-| `internal/api/routes.go` | Registra 4 endpoints nuevos bajo `/api/v1/agentvcs/` |
-| `internal/tui/tui.go` | Comando manual usa `AgentVCS.Record` |
-| `internal/tui/page/snapshots.go` | Carga commits desde `AgentVCS.Log()` |
-| `internal/tui/components/snapshots/table.go` | Usa `agentvcs.Commit` en los eventos pubsub |
-| `internal/tui/components/snapshots/details.go` | Actualizado para el nuevo modelo |
+| File | Change |
+|------|--------|
+| `internal/app/app.go` | `AgentVCS` field replaces `Snapshots`. Initialized with `agentvcs.NewService()`. Cleanup on shutdown. |
+| `cmd/root.go` | Pubsub subscriber changed to `app.AgentVCS` |
+| `cmd/agentvcs.go` | **New**: 5 CLI subcommands (sessions, log, show, revert, compact) |
+| `internal/api/handlers_snapshots.go` | Rewritten to delegate to AgentVCS while maintaining backward-compatible API |
+| `internal/api/handlers_agentvcs.go` | **New**: native endpoints (sessions, log, commit, diff) |
+| `internal/api/handlers_extras.go` | `/snapshots/count` counts commits via AgentVCS |
+| `internal/api/routes.go` | Registers 4 new endpoints under `/api/v1/agentvcs/` |
+| `internal/tui/tui.go` | Manual command uses `AgentVCS.Record` |
+| `internal/tui/page/snapshots.go` | Loads commits from `AgentVCS.Log()` |
+| `internal/tui/components/snapshots/table.go` | Uses `agentvcs.Commit` in pubsub events |
+| `internal/tui/components/snapshots/details.go` | Updated for the new model |
 
-## Comandos CLI
-
-```
-pando agent-vcs sessions              # Lista sesiones con commits
-pando agent-vcs log <session-id>      # Cadena de commits de una sesión
-pando agent-vcs show <commit-id>      # Detalle + diff de un commit
-pando agent-vcs revert <commit-id>    # Revierte working dir a un commit (con safety backup)
-pando agent-vcs compact --keep N      # Compacta: mantiene solo las N sesiones más recientes
-```
-
-Alias disponible: `pando avcs <command>`.
-
-## API REST
-
-Endpoints backward-compatible bajo `/api/v1/snapshots/` (delegando a AgentVCS) más endpoints nativos:
+## CLI Commands
 
 ```
-GET  /api/v1/agentvcs/sessions              # Lista sesiones
-GET  /api/v1/agentvcs/sessions/{id}/log     # Log de commits por sesión
-GET  /api/v1/agentvcs/commits/{id}          # Detalle de commit + diff
-GET  /api/v1/agentvcs/commits/{id}/diff     # Solo diff de un commit
+pando agent-vcs sessions              # List sessions with commits
+pando agent-vcs log <session-id>      # Commit chain of a session
+pando agent-vcs show <commit-id>      # Commit detail + diff
+pando agent-vcs revert <commit-id>    # Revert working dir to a commit (with safety backup)
+pando agent-vcs compact --keep N      # Compact: keep only the N most recent sessions
 ```
 
-## Compactación y limpieza
+Available alias: `pando avcs <command>`.
 
-- **Automática** al cerrar la app: usa `cfg.Snapshots.AutoCleanupDays` y `cfg.Snapshots.MaxSnapshots` (default 100 sesiones, 30 días).
+## REST API
+
+Backward-compatible endpoints under `/api/v1/snapshots/` (delegating to AgentVCS) plus native endpoints:
+
+```
+GET  /api/v1/agentvcs/sessions              # List sessions
+GET  /api/v1/agentvcs/sessions/{id}/log     # Commit log per session
+GET  /api/v1/agentvcs/commits/{id}          # Commit detail + diff
+GET  /api/v1/agentvcs/commits/{id}/diff     # Commit diff only
+```
+
+## Compaction and cleanup
+
+- **Automatic** on app close: uses `cfg.Snapshots.AutoCleanupDays` and `cfg.Snapshots.MaxSnapshots` (default 100 sessions, 30 days).
 - **Manual** via CLI: `pando avcs compact --keep 50 --days 30`.
-- Las sesiones se ordenan por fecha de última actualización (newest-first); se podan las que exceden el límite.
-- Tras podar sesiones, se eliminan blobs huérfanos no referenciados por ningún tree.
+- Sessions are sorted by last update date (newest-first); those exceeding the limit are pruned.
+- After pruning sessions, orphan blobs not referenced by any tree are deleted.
 
-## Configuración
+## Configuration
 
-Reutiliza la sección `snapshots` del config de Pando:
+Reuses the `snapshots` section from Pando's config:
 
 ```toml
 [snapshots]
 enabled = true
-maxSnapshots = 100        # Máx sesiones a mantener
-maxFileSize = "10MB"      # Tamaño máximo por fichero
+maxSnapshots = 100        # Max sessions to keep
+maxFileSize = "10MB"      # Max file size
 excludePatterns = ["node_modules/", ".git/", "vendor/", "*.log", "*.tmp"]
-autoCleanupDays = 30      # Días antes de podar sesiones antiguas
+autoCleanupDays = 30      # Days before pruning old sessions
 ```

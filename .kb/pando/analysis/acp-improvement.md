@@ -1,178 +1,178 @@
-# Plan: Igualar la visualización de tool calls en tiempo real ACP con la del histórico de sesión
+# Plan: Match real-time ACP tool call display with session history display
 
-## Problema
+## Problem
 
-Cuando se usa Pando por ACP en modo operación en tiempo real (streaming), las tool calls se muestran con metadatos incompletos: `title: "bash"`, `rawInput: {}`, sin `locations`, sin `content`. Sin embargo, cuando se carga el histórico de una sesión ACP, las mismas tool calls se renderizan con datos enriquecidos: `title: "ls -la /tmp"`, `rawInput: {"command": "ls -la /tmp"}`, con `locations` y `content` correctos.
+When using Pando via ACP in real-time operation mode (streaming), tool calls are displayed with incomplete metadata: `title: "bash"`, `rawInput: {}`, no `locations`, no `content`. However, when loading an ACP session history, the same tool calls are rendered with enriched data: `title: "ls -la /tmp"`, `rawInput: {"command": "ls -la /tmp"}`, with correct `locations` and `content`.
 
-## Análisis de Causa Raíz
+## Root Cause Analysis
 
-### Flujo 1: Streaming en tiempo real (`processPromptWithAgent` → `prompt_handler.go`)
+### Flow 1: Real-time streaming (`processPromptWithAgent` → `prompt_handler.go`)
 
-| Evento LLM | ToolCall.Input | Acción ACP | Estado visualizado |
+| LLM Event | ToolCall.Input | ACP Action | Displayed State |
 |---|---|---|---|
-| `EventToolUseStart` | `""` (vacío) | `StartToolCall` con `rawInput: {}`, `title: "bash"` | ❌ Sin enriquecer |
-| `EventToolUseDelta` | se acumula en memoria | **Sin evento al frontend** | — |
-| `EventToolUseStop` | JSON completo | `UpdateToolCall` con datos reales | ✅ Enriquecido |
+| `EventToolUseStart` | `""` (empty) | `StartToolCall` with `rawInput: {}`, `title: "bash"` | ❌ Not enriched |
+| `EventToolUseDelta` | accumulates in memory | **No event to frontend** | — |
+| `EventToolUseStop` | complete JSON | `UpdateToolCall` with real data | ✅ Enriched |
 
-**Problemas identificados:**
-1. El `StartToolCall` inicial tiene `rawInput: {}` y `title: "bash"` porque se envía antes de
-   que el input esté disponible, y el cliente ACP lo renderiza tal cual.
-2. `EventToolUseDelta` no emite eventos al cliente ACP, por lo que durante la acumulación
-   del input el cliente no ve ninguna actualización.
-3. Si el buffer de 256 slots se llena y `EventToolUseStop` se pierde, el correctivo llega
-   después en `processAgentResponse`, pero hay una ventana visible con datos incompletos.
+**Identified problems:**
+1. The initial `StartToolCall` has `rawInput: {}` and `title: "bash"` because it's sent before
+   the input is available, and the ACP client renders it as-is.
+2. `EventToolUseDelta` does not emit events to the ACP client, so during input accumulation
+   the client doesn't see any updates.
+3. If the 256-slot buffer fills up and `EventToolUseStop` is missed, the correction arrives
+   later in `processAgentResponse`, but there's a visible window with incomplete data.
 
-### Flujo 2: Non-streaming (`processAgentResponse` en `prompt_handler.go` líneas 521-638)
+### Flow 2: Non-streaming (`processAgentResponse` in `prompt_handler.go` lines 521-638)
 
-Cuando el proveedor no emite ToolUseStart/Stop (Copilot, OpenAI, Gemini), el código
-corrige enviando `StartToolCall` con los datos completos. Este path funciona bien
-porque ya tiene el input completo.
+When the provider doesn't emit ToolUseStart/Stop (Copilot, OpenAI, Gemini), the code
+corrects by sending `StartToolCall` with complete data. This path works well
+because it already has the complete input.
 
-### Flujo 3: Histórico de sesión (`session_state.go` líneas 238-283)
+### Flow 3: Session history (`session_state.go` lines 238-283)
 
-En el replay del histórico, los `message.ToolCall` ya tienen `p.Input` con el JSON
-completo almacenado en BD:
+In history replay, the `message.ToolCall` instances already have `p.Input` with the
+complete JSON stored in the database:
 
-| Campo | Valor en histórico | Por qué funciona |
+| Field | Value in history | Why it works |
 |---|---|---|
-| `rawInput` | `parseJSONInput(p.Input)` → parsed JSON | Input completo desde BD |
-| `title` | `toolDisplayTitle(p.Name, rawInput, workDir)` | Calculado con datos reales |
-| `locations` | `toLocations(p.Name, p.Input)` | Extraído del JSON completo |
-| `content` | `toolCallContent(p.Name, rawInput)` | Extraído del JSON completo |
-| `status` | `ToolCallStatusInProgress` | Correcto para replay |
+| `rawInput` | `parseJSONInput(p.Input)` → parsed JSON | Complete input from DB |
+| `title` | `toolDisplayTitle(p.Name, rawInput, workDir)` | Calculated with real data |
+| `locations` | `toLocations(p.Name, p.Input)` | Extracted from complete JSON |
+| `content` | `toolCallContent(p.Name, rawInput)` | Extracted from complete JSON |
+| `status` | `ToolCallStatusInProgress` | Correct for replay |
 
-Este path **no tiene el problema de timing** porque lee datos persistidos donde cada
-tool call ya tiene el input completo.
+This path **doesn't have the timing problem** because it reads persisted data where each
+tool call already has the complete input.
 
-## Diferencias concretas por campo
+## Concrete differences by field
 
-| Campo | Streaming start | Streaming in_progress | History replay |
+| Field | Streaming start | Streaming in_progress | History replay |
 |---|---|---|---|
-| `rawInput` | `{}` (vacío) | actualizado (pero solo en stop, no en in_progress intermedio) | JSON parseado |
-| `title` | nombre de la tool | actualizado con `toolDisplayTitle` | calculado con `toolDisplayTitle` |
-| `kind` | ✅ correcto | ✅ correcto | ✅ correcto |
+| `rawInput` | `{}` (empty) | updated (but only on stop, not on intermediate in_progress) | parsed JSON |
+| `title` | tool name | updated with `toolDisplayTitle` | calculated with `toolDisplayTitle` |
+| `kind` | ✅ correct | ✅ correct | ✅ correct |
 | `status` | `in_progress` | `in_progress` | `in_progress` |
-| `locations` | ❌ no enviado | ✅ enviado | ✅ enviado |
-| `content` | ✅ terminal_ref o texto | ✅ enviado | ✅ enviado |
-| `_meta` | ✅ `pando.toolName` | ✅ actualizado | ✅ completo |
+| `locations` | ❌ not sent | ✅ sent | ✅ sent |
+| `content` | ✅ terminal_ref or text | ✅ sent | ✅ sent |
+| `_meta` | ✅ `pando.toolName` | ✅ updated | ✅ complete |
 
-### Gap específico en el streaming `in_progress`:
+### Specific gap in `in_progress` streaming:
 
-En `prompt_handler.go` línea 214-231, el `UpdateToolCall` in_progress sí envía:
+In `prompt_handler.go` line 214-231, the `UpdateToolCall` in_progress does send:
 - `WithUpdateStatus`, `WithUpdateKind`, `WithUpdateTitle`, `WithUpdateRawInput`, `WithUpdateContent`, `WithUpdateLocations`
 
-Pero este solo se envía en el evento **Finished** (`tc.Finished = true`), es decir,
-cuando el tool call está completo. Durante la acumulación no hay ningún update intermedio.
+But this is only sent on the **Finished** event (`tc.Finished = true`), meaning
+when the tool call is complete. During accumulation there are no intermediate updates.
 
-## Plan de Implementación
+## Implementation Plan
 
-### Fase 1: Emitir `AgentEventTypeToolCall` con input acumulado desde `EventToolUseDelta`
+### Phase 1: Emit `AgentEventTypeToolCall` with accumulated input from `EventToolUseDelta`
 
-**Archivo:** `internal/llm/agent/agent.go` (~línea 881)
+**File:** `internal/llm/agent/agent.go` (~line 881)
 
-**Cambio:** Publicar un evento `AgentEventTypeToolCall` en cada `EventToolUseDelta` pero
-con un debounce (mínimo 100ms entre eventos) para no saturar el canal. Esto permite que
-el `prompt_handler.go` reciba actualizaciones del input mientras se acumula y pueda enviar
-`UpdateToolCall` correctivo al cliente ACP.
+**Change:** Publish an `AgentEventTypeToolCall` event on each `EventToolUseDelta` but
+with a debounce (minimum 100ms between events) to avoid saturating the channel. This allows
+`prompt_handler.go` to receive input updates while accumulating and send corrective
+`UpdateToolCall` to the ACP client.
 
-Alternativa (más simple): Publicar un evento **una sola vez** cuando el primer chunk
-de input llega tras el ToolUseStart. Esto evita la saturación pero aún da la primera
-actualización enriquecida al cliente.
+Alternative (simpler): Publish an event **only once** when the first chunk
+of input arrives after ToolUseStart. This avoids saturation but still provides the first
+enriched update to the client.
 
-### Fase 2: Reforzar el correctivo en `processAgentResponse` con `WithUpdateLocations`
+### Phase 2: Strengthen the corrective in `processAgentResponse` with `WithUpdateLocations`
 
-**Archivo:** `internal/mesnada/acp/prompt_handler.go` (~líneas 582-592)
+**File:** `internal/mesnada/acp/prompt_handler.go` (~lines 582-592)
 
-El bloque correctivo (`hadEmptyInput && toolCall.Input != ""`, líneas 571-602) actualmente
-envía: `WithUpdateKind`, `WithUpdateTitle`, `WithUpdateRawInput`.
+The corrective block (`hadEmptyInput && toolCall.Input != ""`, lines 571-602) currently
+sends: `WithUpdateKind`, `WithUpdateTitle`, `WithUpdateRawInput`.
 
-**Añadir:** `WithUpdateLocations(locations)` al correctivo update. Actualmente se calcula
-`locations` en la línea 576 pero NO se incluye en los `correctiveOpts`.
+**Add:** `WithUpdateLocations(locations)` to the corrective update. Currently `locations`
+is calculated on line 576 but is NOT included in the `correctiveOpts`.
 
 ```go
 correctiveOpts := []acpsdk.ToolCallUpdateOpt{
     acpsdk.WithUpdateKind(kind),
     acpsdk.WithUpdateTitle(title),
     acpsdk.WithUpdateRawInput(rawInput),
-    acpsdk.WithUpdateLocations(locations),  // ← AÑADIR
+    acpsdk.WithUpdateLocations(locations),  // ← ADD
 }
 if len(content) > 0 {
     correctiveOpts = append(correctiveOpts, acpsdk.WithUpdateContent(content))
 }
 ```
 
-### Fase 3: Enviar `StartToolCall` con `locations` incluso con input vacío
+### Phase 3: Send `StartToolCall` with `locations` even with empty input
 
-**Archivo:** `internal/mesnada/acp/prompt_handler.go` (~línea 168-185)
+**File:** `internal/mesnada/acp/prompt_handler.go` (~line 168-185)
 
-El `sendStart` callback ya intenta añadir locations, pero `toLocations(tc.Name, tc.Input)`
-retorna nil cuando `tc.Input` está vacío. Para herramientas como `view`, `read`, `edit`
-el location no puede extraerse sin el input, pero para `bash` sí podemos enviar el
-terminal_ref en content.
+The `sendStart` callback already tries to add locations, but `toLocations(tc.Name, tc.Input)`
+returns nil when `tc.Input` is empty. For tools like `view`, `read`, `edit`
+the location can't be extracted without input, but for `bash` we can send the
+terminal_ref in content.
 
-**Cambio:** Para el bash tool, asegurar que el `StartToolCall` siempre lleva el
-`ToolTerminalRef` en content (ya se hace en líneas 164-166). Verificar que esto funciona.
+**Change:** For the bash tool, ensure that `StartToolCall` always carries the
+`ToolTerminalRef` in content (already done on lines 164-166). Verify this works.
 
-### Fase 4: Asegurar paridad en `rawOutput` entre paths
+### Phase 4: Ensure `rawOutput` parity across paths
 
-**Archivo:** `internal/mesnada/acp/prompt_handler.go` (líneas 193-232)
+**File:** `internal/mesnada/acp/prompt_handler.go` (lines 193-232)
 
-En el streaming path, cuando `tc.Finished = true` y `started = true` (el `StartToolCall`
-ya se envió), se envía el `inProgressOpts` update. Este NO incluye `rawOutput` porque
-aún no hay resultado. Esto es correcto.
+In the streaming path, when `tc.Finished = true` and `started = true` (the `StartToolCall`
+was already sent), the `inProgressOpts` update is sent. This does NOT include `rawOutput` because
+there's no result yet. This is correct.
 
-Pero cuando `tc.Finished = true` y `!started` (el StartToolCall nunca se envió), se envía
-un `StartToolCall` sintético (líneas 205-212). Este ya incluye `rawInput`, `kind`,
-`locations`, `content`. ✅ Correcto.
+But when `tc.Finished = true` and `!started` (the StartToolCall was never sent), a synthetic
+`StartToolCall` is sent (lines 205-212). This already includes `rawInput`, `kind`,
+`locations`, `content`. ✅ Correct.
 
-### Fase 5: Paridad `_meta` entre streaming y history replay
+### Phase 5: `_meta` parity between streaming and history replay
 
-**Archivo:** `internal/mesnada/acp/prompt_handler.go`
+**File:** `internal/mesnada/acp/prompt_handler.go`
 
-Verificar que todos los paths incluyen `_meta` consistentemente:
-- Streaming start: ✅ (línea 161-166, inyectado en línea 182-184)
-- Streaming in_progress: ✅ (línea 226-228)
-- Streaming synthetic start: ✅ (línea 280-299)
-- Streaming tool result: ✅ (línea 341-409)
-- Non-streaming start: ✅ (línea 612-635)
-- Non-streaming result: ✅ (línea 690-747)
+Verify that all paths include `_meta` consistently:
+- Streaming start: ✅ (line 161-166, injected at line 182-184)
+- Streaming in_progress: ✅ (line 226-228)
+- Streaming synthetic start: ✅ (line 280-299)
+- Streaming tool result: ✅ (line 341-409)
+- Non-streaming start: ✅ (line 612-635)
+- Non-streaming result: ✅ (line 690-747)
 
 **History replay (`session_state.go`):**
-- ToolCall start: ✅ (líneas 270-282)
-- ToolResult: ✅ (líneas 349-406)
+- ToolCall start: ✅ (lines 270-282)
+- ToolResult: ✅ (lines 349-406)
 
-### Fase 6: Tests
+### Phase 6: Tests
 
-**Archivos:** `internal/mesnada/acp/agent_pando_test.go`
+**Files:** `internal/mesnada/acp/agent_pando_test.go`
 
-Añadir tests que verifiquen:
-1. Que el correctivo `UpdateToolCall` incluye `locations` para herramientas con path
-2. Que el streaming `StartToolCall` para bash incluye `terminal_ref` en content
-3. Que el non-streaming `StartToolCall` siempre lleva `rawInput` completo
-4. Paridad de `_meta` entre todos los paths
+Add tests that verify:
+1. The corrective `UpdateToolCall` includes `locations` for tools with paths
+2. The streaming `StartToolCall` for bash includes `terminal_ref` in content
+3. The non-streaming `StartToolCall` always carries complete `rawInput`
+4. `_meta` parity across all paths
 
-Comparar con los tests existentes `TestToolDisplayTitle` para referencia.
+Compare with existing `TestToolDisplayTitle` tests for reference.
 
-### Fase 7: Verificación
+### Phase 7: Verification
 
 1. `go test ./internal/mesnada/acp ./internal/llm/agent`
 2. `go vet ./internal/mesnada/acp ./internal/llm/agent`
 3. Build: `go build ./cmd/pando`
-4. Prueba manual conectando un cliente ACP (Zed) y observando la visualización
+4. Manual test connecting an ACP client (Zed) and observing the display
 
-## Archivos a modificar
+## Files to modify
 
-| Archivo | Cambio |
+| File | Change |
 |---|---|
-| `internal/llm/agent/agent.go` | Fase 1: Emitir evento en ToolUseDelta |
-| `internal/mesnada/acp/prompt_handler.go` | Fase 2: Añadir locations al correctivo |
-| `internal/mesnada/acp/agent_pando_test.go` | Fase 6: Tests de paridad |
+| `internal/llm/agent/agent.go` | Phase 1: Emit event on ToolUseDelta |
+| `internal/mesnada/acp/prompt_handler.go` | Phase 2: Add locations to corrective |
+| `internal/mesnada/acp/agent_pando_test.go` | Phase 6: Parity tests |
 
-## Criterios de éxito
+## Success criteria
 
-- [ ] Las tool calls en streaming realtime muestran `rawInput` con el comando/parámetros reales
-- [ ] El `title` muestra la misma info enriquecida que en el histórico (ej: "ls -la /tmp" vs "bash")
-- [ ] Los `locations` aparecen en las tool calls de ficheros (view, read, edit) en tiempo real
-- [ ] El `_meta` es consistente entre streaming y replay de histórico
-- [ ] No hay regresión en el comportamiento de tool calls ya funcionales
-- [ ] Los tests existentes siguen pasando
+- [ ] Streaming real-time tool calls show `rawInput` with actual command/parameters
+- [ ] The `title` shows the same enriched info as in history (e.g., "ls -la /tmp" vs "bash")
+- [ ] `locations` appear on real-time file tool calls (view, read, edit)
+- [ ] `_meta` is consistent between streaming and history replay
+- [ ] No regression in already-working tool call behavior
+- [ ] Existing tests continue to pass

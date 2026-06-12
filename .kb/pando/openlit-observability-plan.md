@@ -1,28 +1,28 @@
-# Plan de Implementación: Observabilidad OpenLit en Pando
+# Implementation Plan: OpenLit Observability in Pando
 
-## Proyecto
-- **Repo**: `/www/MCP/Pando/pando` (módulo: `github.com/digiogithub/pando`)
+## Project
+- **Repo**: `/www/MCP/Pando/pando` (module: `github.com/digiogithub/pando`)
 - **Go**: 1.26
-- **Ya tiene**: `go.opentelemetry.io/otel v1.35.0` en go.mod
+- **Already has**: `go.opentelemetry.io/otel v1.35.0` in go.mod
 
-## Objetivo
-Añadir observabilidad opcional a todas las llamadas LLM (mensajes, tool calls, tokens, sesiones) enviándolas a un servidor OpenLit vía OTLP. La integración es **opcional**: solo se activa si `OpenLit.Enabled = true` en la configuración.
+## Objective
+Add optional observability to all LLM calls (messages, tool calls, tokens, sessions) by sending them to an OpenLit server via OTLP. The integration is **optional**: it only activates if `OpenLit.Enabled = true` in the configuration.
 
-## Tecnología
-OpenLit usa OpenTelemetry estándar (OTLP). No hay SDK Go oficial de OpenLit, pero como el proyecto ya tiene OTel, se implementa:
-- **Traces**: Spans por cada llamada LLM con GenAI semantic conventions
-- **OTLP Exporter**: HTTP (`/v1/traces`) o gRPC al endpoint de OpenLit
-- **Sem convenciones**: `gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`, etc.
+## Technology
+OpenLit uses standard OpenTelemetry (OTLP). There is no official Go SDK for OpenLit, but since the project already has OTel, we implement:
+- **Traces**: Spans for each LLM call with GenAI semantic conventions
+- **OTLP Exporter**: HTTP (`/v1/traces`) or gRPC to the OpenLit endpoint
+- **Semantic conventions**: `gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`, etc.
 
 ---
 
-## FASE 1: Configuración (Base de todo)
+## PHASE 1: Configuration (Foundation of everything)
 
-**Archivos a modificar**:
-- `/www/MCP/Pando/pando/internal/config/config.go` — añadir `OpenLitConfig` struct y campo en `Config`
-- `/www/MCP/Pando/pando/.pando.toml` — añadir sección `[OpenLit]` de ejemplo
+**Files to modify**:
+- `/www/MCP/Pando/pando/internal/config/config.go` — add `OpenLitConfig` struct and field in `Config`
+- `/www/MCP/Pando/pando/.pando.toml` — add example `[OpenLit]` section
 
-**Struct a añadir en config.go**:
+**Struct to add in config.go**:
 ```go
 type OpenLitConfig struct {
     Enabled         bool   `json:"enabled" toml:"Enabled"`
@@ -33,12 +33,12 @@ type OpenLitConfig struct {
 }
 ```
 
-**En Config struct** (ya existe en config.go, ~413 líneas), añadir:
+**In Config struct** (already exists in config.go, ~413 lines), add:
 ```go
 OpenLit OpenLitConfig `json:"openlit,omitempty" toml:"OpenLit"`
 ```
 
-**En .pando.toml** añadir sección:
+**In .pando.toml** add section:
 ```toml
 [OpenLit]
 Enabled = false
@@ -47,39 +47,39 @@ ServiceName = "pando"
 Insecure = true
 ```
 
-**Defaults a añadir en la función de defaults** (busca `setDefaults` o similar en config.go):
-- `Endpoint`: `"http://localhost:4318"` 
+**Defaults to add in the defaults function** (search for `setDefaults` or similar in config.go):
+- `Endpoint`: `"http://localhost:4318"`
 - `ServiceName`: `"pando"`
 - `Insecure`: `true`
 
 ---
 
-## FASE 2: Paquete de Observabilidad (depende de Fase 1)
+## PHASE 2: Observability Package (depends on Phase 1)
 
-**Crear**: `/www/MCP/Pando/pando/internal/observability/`
+**Create**: `/www/MCP/Pando/pando/internal/observability/`
 
-**Archivos a crear**:
-- `observability.go` — inicialización del TracerProvider con OTLP exporter
-- `genai.go` — helpers para GenAI semantic conventions
-- `noop.go` — implementación noop cuando OpenLit está deshabilitado
+**Files to create**:
+- `observability.go` — TracerProvider initialization with OTLP exporter
+- `genai.go` — helpers for GenAI semantic conventions
+- `noop.go` — noop implementation when OpenLit is disabled
 
-**Dependencias nuevas a añadir en go.mod**:
+**New dependencies to add in go.mod**:
 ```
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp
 go.opentelemetry.io/otel/sdk
 go.opentelemetry.io/otel/sdk/trace
 ```
-(verificar si ya están como indirectas)
+(check if they are already present as indirect)
 
-**API del paquete**:
+**Package API**:
 ```go
-// Inicializa el TracerProvider global con OTLP exporter
+// Initialize the global TracerProvider with OTLP exporter
 func Init(cfg config.OpenLitConfig, version string) (shutdown func(context.Context) error, err error)
 
-// Devuelve un tracer para instrumentar LLM calls  
+// Return a tracer for instrumenting LLM calls
 func Tracer() trace.Tracer
 
-// Constantes de GenAI semantic conventions (OTel)
+// GenAI semantic convention constants (OTel)
 const (
     AttrGenAISystem          = "gen_ai.system"
     AttrGenAIRequestModel    = "gen_ai.request.model"
@@ -93,31 +93,31 @@ const (
 )
 ```
 
-**Lógica de Init**:
-1. Si `!cfg.Enabled`, registrar un NoopTracerProvider global y retornar noop shutdown
-2. Crear OTLP HTTP exporter apuntando a `cfg.Endpoint + "/v1/traces"`
-3. Configurar `resource` con `service.name = cfg.ServiceName`, `service.version`
-4. Crear `TracerProvider` con BatchSpanProcessor
-5. Registrar como global: `otel.SetTracerProvider(tp)`
-6. Retornar función shutdown
+**Init logic**:
+1. If `!cfg.Enabled`, register a global NoopTracerProvider and return noop shutdown
+2. Create OTLP HTTP exporter pointing to `cfg.Endpoint + "/v1/traces"`
+3. Configure `resource` with `service.name = cfg.ServiceName`, `service.version`
+4. Create `TracerProvider` with BatchSpanProcessor
+5. Register as global: `otel.SetTracerProvider(tp)`
+6. Return shutdown function
 
 ---
 
-## FASE 3: Instrumentación de Providers (depende de Fase 2)
+## PHASE 3: Provider Instrumentation (depends on Phase 2)
 
-**Crear**: `/www/MCP/Pando/pando/internal/llm/provider/instrumented.go`
+**Create**: `/www/MCP/Pando/pando/internal/llm/provider/instrumented.go`
 
-**Patrón**: Decorator/Wrapper sobre la interfaz `Provider` existente:
+**Pattern**: Decorator/Wrapper over the existing `Provider` interface:
 
 ```go
-// Provider interface actual (provider.go):
+// Current Provider interface (provider.go):
 type Provider interface {
     SendMessages(ctx, messages, tools) (*ProviderResponse, error)
     StreamResponse(ctx, messages, tools) <-chan ProviderEvent
     Model() models.Model
 }
 
-// Nuevo wrapper instrumentado:
+// New instrumented wrapper:
 type instrumentedProvider struct {
     inner  Provider
     tracer trace.Tracer
@@ -125,49 +125,49 @@ type instrumentedProvider struct {
 
 func NewInstrumentedProvider(inner Provider) Provider {
     if !observability.IsEnabled() {
-        return inner // sin overhead si OpenLit está deshabilitado
+        return inner // no overhead if OpenLit is disabled
     }
     return &instrumentedProvider{inner: inner, tracer: observability.Tracer()}
 }
 ```
 
-**Instrumentación de SendMessages**:
-- Crear span: `"chat {model}"` (gen_ai.operation.name = "chat")
-- Atributos en el span:
+**SendMessages instrumentation**:
+- Create span: `"chat {model}"` (gen_ai.operation.name = "chat")
+- Span attributes:
   - `gen_ai.system` = provider name (anthropic, openai, gemini, etc.)
   - `gen_ai.request.model` = model API name
   - `gen_ai.request.max_tokens` = maxTokens
   - `gen_ai.request.message_count` = len(messages)
   - `gen_ai.request.tool_count` = len(tools)
-- En respuesta exitosa:
+- On successful response:
   - `gen_ai.usage.input_tokens`
   - `gen_ai.usage.output_tokens`
   - `gen_ai.response.finish_reasons`
   - `gen_ai.response.tool_calls_count`
-- En error: `span.RecordError(err)`, `span.SetStatus(codes.Error, ...)`
+- On error: `span.RecordError(err)`, `span.SetStatus(codes.Error, ...)`
 
-**Instrumentación de StreamResponse**:
-- Crear span al inicio del stream
-- Acumular eventos del canal
-- Al recibir EventComplete con ProviderResponse: añadir atributos de usage
-- Al recibir EventError: RecordError
-- Cerrar span cuando el canal se cierra
+**StreamResponse instrumentation**:
+- Create span at stream start
+- Accumulate channel events
+- On receiving EventComplete with ProviderResponse: add usage attributes
+- On receiving EventError: RecordError
+- Close span when channel closes
 
-**Integración en NewProvider** (provider.go):
+**Integration in NewProvider** (provider.go):
 ```go
 func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption) (Provider, error) {
-    // ... código existente ...
+    // ... existing code ...
     p, err := createBaseProvider(providerName, clientOptions)
     if err != nil {
         return nil, err
     }
-    return NewInstrumentedProvider(p), nil  // ← añadir esta línea
+    return NewInstrumentedProvider(p), nil  // ← add this line
 }
 ```
 
-**Tool calls como eventos de span**:
+**Tool calls as span events**:
 ```go
-// Cuando se recibe EventToolUseStart en el stream:
+// When EventToolUseStart is received in the stream:
 span.AddEvent("gen_ai.tool.call", trace.WithAttributes(
     attribute.String("gen_ai.tool.name", toolCall.Name),
     attribute.String("gen_ai.tool.call.id", toolCall.ID),
@@ -176,50 +176,50 @@ span.AddEvent("gen_ai.tool.call", trace.WithAttributes(
 
 ---
 
-## FASE 4a: TUI Settings (depende de Fase 1, paralela con 4b)
+## PHASE 4a: TUI Settings (depends on Phase 1, parallel with 4b)
 
-**Archivos a modificar**:
+**Files to modify**:
 - `/www/MCP/Pando/pando/internal/tui/components/settings/settings.go`
 
-**Añadir sección "OpenLit" al TUI de settings** con los campos:
+**Add "OpenLit" section to the TUI settings** with the fields:
 - `Enabled` (checkbox/boolean)
 - `Endpoint` (text, default: `http://localhost:4318`)
 - `ServiceName` (text, default: `pando`)
 - `Insecure` (checkbox/boolean)
 
-**Cómo se hace**: En settings.go existe una función que construye las secciones. Añadir una nueva `Section` con `Title: "OpenLit Observability"` y los `Field`s correspondientes.
+**How to do it**: In settings.go there is a function that builds sections. Add a new `Section` with `Title: "OpenLit Observability"` and the corresponding `Field`s.
 
-Busca el patrón de otras secciones como "Remembrances" o "Server" para seguir el mismo estilo.
+Look at the pattern of other sections like "Remembrances" or "Server" to follow the same style.
 
-El handler `SaveFieldMsg` en `page/settings.go` (ya existe) se encarga de persistir el campo modificado en config. Asegurarse de mapear los keys de los fields a las rutas correctas del Config.
-
----
-
-## FASE 4b: API Web UI (depende de Fase 1, paralela con 4a)
-
-**Archivos a modificar**:
-- `/www/MCP/Pando/pando/internal/api/routes.go` — verificar si ya existe endpoint para servicios/observabilidad
-- `/www/MCP/Pando/pando/internal/api/handlers_config.go` (o similar) — añadir soporte para `openlit` en los handlers de config
-
-**Objetivo**: Que los endpoints `/api/v1/config/services` (o el que corresponda) devuelvan y acepten la config de OpenLit.
-
-Buscar cómo están implementados otros servicios similares (Remembrances, Mesnada) en los handlers para seguir el mismo patrón.
-
-Si hay un frontend React (`ui/web/src/`), añadir los campos de OpenLit al panel de configuración correspondiente.
+The `SaveFieldMsg` handler in `page/settings.go` (already exists) handles persisting the modified field to config. Make sure to map the field keys to the correct Config paths.
 
 ---
 
-## FASE 5: Integración en App (depende de Fases 2, 3, 4a, 4b)
+## PHASE 4b: Web UI API (depends on Phase 1, parallel with 4a)
 
-**Archivos a modificar**:
-- `/www/MCP/Pando/pando/internal/app/app.go` — inicializar observabilidad en startup
-- `/www/MCP/Pando/pando/main.go` — gestionar shutdown de OTLP exporter
+**Files to modify**:
+- `/www/MCP/Pando/pando/internal/api/routes.go` — verify if there is already an endpoint for services/observability
+- `/www/MCP/Pando/pando/internal/api/handlers_config.go` (or similar) — add support for `openlit` in config handlers
 
-**En app.go** (función `New` o `Init`):
+**Objective**: Have the `/api/v1/config/services` endpoints (or whichever is appropriate) return and accept the OpenLit config.
+
+Search for how other similar services (Remembrances, Mesnada) are implemented in the handlers to follow the same pattern.
+
+If there is a React frontend (`ui/web/src/`), add the OpenLit fields to the corresponding configuration panel.
+
+---
+
+## PHASE 5: App Integration (depends on Phases 2, 3, 4a, 4b)
+
+**Files to modify**:
+- `/www/MCP/Pando/pando/internal/app/app.go` — initialize observability at startup
+- `/www/MCP/Pando/pando/main.go` — manage OTLP exporter shutdown
+
+**In app.go** (`New` or `Init` function):
 ```go
 import "github.com/digiogithub/pando/internal/observability"
 
-// Después de cargar config:
+// After loading config:
 cfg := config.Get()
 if cfg.OpenLit.Enabled {
     shutdown, err := observability.Init(cfg.OpenLit, version.Version)
@@ -231,7 +231,7 @@ if cfg.OpenLit.Enabled {
 }
 ```
 
-**Graceful shutdown** (en app cleanup o main.go):
+**Graceful shutdown** (in app cleanup or main.go):
 ```go
 if app.openlitShutdown != nil {
     ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -242,28 +242,28 @@ if app.openlitShutdown != nil {
 
 ---
 
-## Grafo de Dependencias
+## Dependency Graph
 
 ```
-Fase 1 (Config)
-    ├── Fase 2 (Observability pkg)
-    │       └── Fase 3 (Provider instrumentation)
-    │                   └── Fase 5 (App integration) ←──┐
-    ├── Fase 4a (TUI Settings) ──────────────────────────┤
-    └── Fase 4b (Web UI/API) ───────────────────────────┘
+Phase 1 (Config)
+    ├── Phase 2 (Observability pkg)
+    │       └── Phase 3 (Provider instrumentation)
+    │                   └── Phase 5 (App integration) ←──┐
+    ├── Phase 4a (TUI Settings) ──────────────────────────┤
+    └── Phase 4b (Web UI/API) ───────────────────────────┘
 ```
 
-**Paralelización**:
-- Fase 1 → lanzar Fase 2, 4a y 4b en PARALELO
-- Fase 2 completa → lanzar Fase 3
-- Fase 3 + 4a + 4b completas → lanzar Fase 5
+**Parallelization**:
+- Phase 1 → launch Phase 2, 4a and 4b in PARALLEL
+- Phase 2 complete → launch Phase 3
+- Phase 3 + 4a + 4b complete → launch Phase 5
 
 ---
 
-## Notas de Implementación
+## Implementation Notes
 
-1. **No hay SDK Go de OpenLit**: Se usa OTLP directo con GenAI semantic conventions (OTel Semconv v1.27+)
-2. **Overhead mínimo**: Si `Enabled=false`, el wrapper retorna el provider original sin wrapping
-3. **El proyecto YA TIENE OTel**: `go.opentelemetry.io/otel v1.35.0` — solo añadir el SDK y el OTLP exporter HTTP
-4. **Config hot-reload**: El EventBus de config ya existe; si OpenLit se habilita en runtime, se puede reinicializar el TracerProvider
-5. **Compatibilidad**: OpenLit acepta OTLP estándar en el puerto 4318 (HTTP) o 4317 (gRPC)
+1. **There is no Go SDK for OpenLit**: We use OTLP directly with GenAI semantic conventions (OTel Semconv v1.27+)
+2. **Minimal overhead**: If `Enabled=false`, the wrapper returns the original provider without wrapping
+3. **The project ALREADY HAS OTel**: `go.opentelemetry.io/otel v1.35.0` — just add the SDK and the HTTP OTLP exporter
+4. **Config hot-reload**: The config EventBus already exists; if OpenLit is enabled at runtime, the TracerProvider can be reinitialized
+5. **Compatibility**: OpenLit accepts standard OTLP on port 4318 (HTTP) or 4317 (gRPC)

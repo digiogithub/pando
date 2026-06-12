@@ -1,25 +1,25 @@
-# Pando TUI Enhancement - Plan Maestro de Implementación
+# Pando TUI Enhancement - Master Implementation Plan
 
-## Visión General
-Transformar Pando de un asistente AI conversacional básico a un IDE TUI completo, inspirado en la arquitectura de crush, con soporte para:
-- Navegación de proyectos con panel lateral de archivos
-- Editor de código con syntax highlighting
-- Visualización de markdown estilo glow
-- Diff viewer para cambios del agente AI
-- Soporte completo de mouse con bubblezone
-- Sistema de keybindings y command palette avanzado
+## Overview
+Transform Pando from a basic conversational AI assistant to a complete TUI IDE, inspired by crush's architecture, with support for:
+- Project navigation with file sidebar panel
+- Code editor with syntax highlighting
+- Glow-style markdown rendering
+- Diff viewer for AI agent changes
+- Full mouse support with bubblezone
+- Advanced keybindings system and command palette
 
-## Estado Actual de Pando (TUI)
+## Current State of Pando (TUI)
 
-### Arquitectura Existente
-- **Modelo principal**: `internal/tui/tui.go` - `appModel` struct con sistema de páginas y diálogos
-- **Páginas**: `internal/tui/page/` - ChatPage, LogsPage
-- **Componentes**: `internal/tui/components/` - chat/, dialog/, logs/, util/
+### Existing Architecture
+- **Main model**: `internal/tui/tui.go` - `appModel` struct with page and dialog system
+- **Pages**: `internal/tui/page/` - ChatPage, LogsPage
+- **Components**: `internal/tui/components/` - chat/, dialog/, logs/, util/
 - **Layout**: `internal/tui/layout/` - SplitPane, overlay, containers
-- **Estilos**: `internal/tui/styles/` - icons, theme
-- **Diálogos existentes**: Permission, Session, Command, Model, Init, Filepicker, Theme, MultiArguments, Completion, Help, Quit
+- **Styles**: `internal/tui/styles/` - icons, theme
+- **Existing dialogs**: Permission, Session, Command, Model, Init, Filepicker, Theme, MultiArguments, Completion, Help, Quit
 
-### Keybindings Actuales (tui.go)
+### Current Keybindings (tui.go)
 ```go
 keyMap struct {
     Logs, Quit, SwitchSession, Filepicker key.Binding
@@ -27,12 +27,12 @@ keyMap struct {
 }
 ```
 
-### Dependencias Charmbracelet Actuales
-- bubbletea, bubbles, lipgloss, glamour (verificar en go.mod)
+### Current Charmbracelet Dependencies
+- bubbletea, bubbles, lipgloss, glamour (verify in go.mod)
 
-## Análisis de Crush (Referencia)
+## Crush Analysis (Reference)
 
-### Arquitectura UI de Crush
+### Crush UI Architecture
 ```
 internal/ui/
 ├── AGENTS.md          # UI development guidelines
@@ -75,68 +75,68 @@ internal/ui/
 └── logo/              # Logo rendering
 ```
 
-### Patrones Clave de Crush
-1. **Overlay System**: Stack de diálogos (`dialog.Overlay`) - último diálogo recibe eventos
-2. **Action Pattern**: Diálogos retornan `Action` types que el modelo principal procesa
-3. **KeyMap Jerárquico**: Editor > Chat > Initialize > Global bindings
-4. **Components Dumb**: No manejan tea.Msg directamente, exponen métodos
-5. **Mouse Support Nativo**: HandleMouseDown/Up/Drag en Chat con selección de texto
-6. **DiffView Completo**: Split/Unified con syntax highlighting via chroma
-7. **Markdown**: glamour.TermRenderer con estilos custom
-8. **Syntax Highlighting**: chroma con cache de lexers
+### Key Crush Patterns
+1. **Overlay System**: Stack of dialogs (`dialog.Overlay`) - last dialog receives events
+2. **Action Pattern**: Dialogs return `Action` types that the main model processes
+3. **Hierarchical KeyMap**: Editor > Chat > Initialize > Global bindings
+4. **Dumb Components**: Don't handle tea.Msg directly, expose methods
+5. **Native Mouse Support**: HandleMouseDown/Up/Drag in Chat with text selection
+6. **Full DiffView**: Split/Unified with syntax highlighting via chroma
+7. **Markdown**: glamour.TermRenderer with custom styles
+8. **Syntax Highlighting**: chroma with lexer cache
 
-## Fases de Implementación
+## Implementation Phases
 
-### Fase 1: Sistema de Keybindings y Command Palette (Prioridad: ALTA)
-- Expandir KeyMap con estructura jerárquica (Editor, Chat, Global)
-- Implementar command palette mejorado (tipo crush)
-- Shortcuts globales: Ctrl+P (commands), Ctrl+M (models), Ctrl+S (sessions)
-- Help overlay con lista de shortcuts
+### Phase 1: Keybindings System and Command Palette (Priority: HIGH)
+- Expand KeyMap with hierarchical structure (Editor, Chat, Global)
+- Implement enhanced command palette (crush-style)
+- Global shortcuts: Ctrl+P (commands), Ctrl+M (models), Ctrl+S (sessions)
+- Help overlay with shortcuts list
 
-### Fase 2: Panel Lateral File Explorer (Prioridad: ALTA)
-- Componente FileTree con árbol de directorios
-- Toggle con keybinding (Ctrl+B o similar)
-- Integración con SplitPane existente
-- Navegación con teclado y mouse
-- Indicadores de archivos modificados (git status)
+### Phase 2: File Explorer Side Panel (Priority: HIGH)
+- FileTree component with directory tree
+- Toggle with keybinding (Ctrl+B or similar)
+- Integration with existing SplitPane
+- Keyboard and mouse navigation
+- Modified file indicators (git status)
 
-### Fase 3: Editor TUI con Syntax Highlighting (Prioridad: MEDIA)
-- Viewer/Editor de archivos con chroma syntax highlighting
-- Números de línea, scroll, búsqueda
-- Tab system para múltiples archivos abiertos
-- Integración con el panel lateral
+### Phase 3: TUI Editor with Syntax Highlighting (Priority: MEDIUM)
+- File viewer/editor with chroma syntax highlighting
+- Line numbers, scroll, search
+- Tab system for multiple open files
+- Integration with side panel
 
-### Fase 4: Markdown Rendering Mejorado (Prioridad: MEDIA)
-- Integrar glamour para renderizar respuestas AI
-- Code blocks con syntax highlighting
-- Soporte para tablas, listas, enlaces
-- Estilo personalizable (tema oscuro/claro)
+### Phase 4: Enhanced Markdown Rendering (Priority: MEDIUM)
+- Integrate glamour to render AI responses
+- Code blocks with syntax highlighting
+- Support for tables, lists, links
+- Customizable style (dark/light theme)
 
-### Fase 5: Mouse Support con Bubblezone (Prioridad: MEDIA)
-- Integrar bubblezone para zonas clickeables
-- Clicks en panel lateral para abrir archivos
-- Clicks en tabs del editor
-- Scroll con mouse wheel
-- Selección de texto en chat (como crush)
+### Phase 5: Mouse Support with Bubblezone (Priority: MEDIUM)
+- Integrate bubblezone for clickable zones
+- Clicks on side panel to open files
+- Clicks on editor tabs
+- Scroll with mouse wheel
+- Text selection in chat (like crush)
 
-### Fase 6: Diff Viewer y Gestión de Cambios (Prioridad: ALTA)
-- Portar DiffView de crush (split/unified modes)
-- Panel de archivos modificados por el agente AI
-- Vista de diff inline en el chat (permisos)
-- Navegación entre cambios
-- Git status integrado
+### Phase 6: Diff Viewer and Change Management (Priority: HIGH)
+- Port DiffView from crush (split/unified modes)
+- Panel of files modified by AI agent
+- Inline diff view in chat (permissions)
+- Navigation between changes
+- Integrated git status
 
-## Dependencias a Añadir
+## Dependencies to Add
 ```
 github.com/charmbracelet/glamour     # Markdown rendering
 github.com/alecthomas/chroma/v2      # Syntax highlighting
 github.com/lrstanley/bubblezone      # Mouse zones
 ```
 
-## Consideraciones Arquitectónicas
-1. **Mantener compatibilidad** con la estructura actual de páginas/diálogos
-2. **SplitPane existente** se puede reutilizar para panel lateral
-3. **Overlay system** de Pando ya funciona, solo necesita expansión
-4. **Componentes deben ser lazy** - no renderizar lo que no se ve
-5. **Cache agresivo** de syntax highlighting (como crush)
-6. **Responsive layout** - adaptar paneles al tamaño del terminal
+## Architectural Considerations
+1. **Maintain compatibility** with the current page/dialog structure
+2. **Existing SplitPane** can be reused for the side panel
+3. **Overlay system** in Pando already works, just needs expansion
+4. **Components must be lazy** - don't render what's not visible
+5. **Aggressive caching** of syntax highlighting (like crush)
+6. **Responsive layout** - adapt panels to terminal size

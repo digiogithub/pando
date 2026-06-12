@@ -1,271 +1,271 @@
-## Cómo funciona hoy el context enrichment
+## How context enrichment works today
 
-El flujo actual es muy directo:
+The current flow is very straightforward:
 
-- En `internal/app/app.go`, si `cfg.Remembrances.ContextEnrichmentEnabled` está activo:
-  - se crea `rag.NewContextEnricher(...)`
-  - se inyecta en el agent con `agent.SetContextEnricher(enricher)`
+- In `internal/app/app.go`, if `cfg.Remembrances.ContextEnrichmentEnabled` is active:
+  - `rag.NewContextEnricher(...)` is created
+  - It is injected into the agent with `agent.SetContextEnricher(enricher)`
 
-- En `internal/llm/agent/agent.go`, antes de enviar el prompt al LLM:
-  - si `globalContextEnricher != nil`
-  - hace `globalContextEnricher.EnrichContext(ctx, content)`
-  - y concatena el resultado al prompt original
+- In `internal/llm/agent/agent.go`, before sending the prompt to the LLM:
+  - if `globalContextEnricher != nil`
+  - it calls `globalContextEnricher.EnrichContext(ctx, content)`
+  - and concatenates the result to the original prompt
 
-- En `internal/rag/enricher.go`, `EnrichContext`:
-  - lanza en paralelo:
+- In `internal/rag/enricher.go`, `EnrichContext`:
+  - launches in parallel:
     - `searchKB(ctx, query)`
     - `searchEvents(ctx, query)`
     - `searchCode(ctx, query)`
-  - usa **el prompt original tal cual** como query en las tres APIs
-  - filtra solo por `minScore`
-  - formatea los resultados completos en un bloque `<context source="remembrances">`
+  - uses **the original prompt as-is** as the query in all three APIs
+  - filters only by `minScore`
+  - formats the complete results into a `<context source="remembrances">` block
 
-## Problemas del diseño actual
+## Issues with the current design
 
-Veo varios motivos por los que los resultados se alejan del prompt real y gastan tokens:
+I see several reasons why results drift from the actual prompt and waste tokens:
 
-### 1. La misma query cruda se reutiliza para todo
-Ahora mismo el sistema pasa el **prompt del usuario sin transformar** a:
+### 1. The same raw query is reused for everything
+Right now the system passes the **untransformed user prompt** to:
 
 - KB search
 - events search
 - code hybrid search
 
-Eso funciona mal cuando el prompt contiene:
-- instrucciones operativas: “haz”, “analiza”, “cambia”
-- contexto conversacional irrelevante
-- varios objetivos mezclados
-- texto largo con ruido
+This works poorly when the prompt contains:
+- operational instructions: "do", "analyze", "change"
+- irrelevant conversational context
+- multiple mixed objectives
+- long noisy text
 
-Ejemplo típico:
-- prompt: _“revisa cómo funciona el context enrichment de pando con remembrances cuando está activo...”_
-- query enviada a Remembrances: exactamente eso
+Typical example:
+- prompt: _"review how pando's context enrichment with remembrances works when enabled..."_
+- query sent to Remembrances: exactly that
 
-Para búsqueda semántica, esa query no es óptima. Mezcla:
-- intención de acción
-- dominio
-- condición
-- petición secundaria
+For semantic search, that query is not optimal. It mixes:
+- action intent
+- domain
+- condition
+- secondary request
 
-Eso degrada recall/precision.
-
----
-
-### 2. No hay estrategia distinta por fuente
-Las tres fuentes usan el mismo query shape, pero cada una necesita algo diferente:
-
-- **KB**: mejor con consulta conceptual resumida
-- **Code**: mejor con términos técnicos, símbolos, subsistemas, nombres de archivo/feature
-- **Events**: mejor con área/proyecto/tema y quizá ventana temporal o subject específico
-
-Hoy no hay especialización.
+This degrades recall/precision.
 
 ---
 
-### 3. El filtro solo usa `minScore`
-Aunque exista `minScore`, eso no basta porque:
+### 2. No different strategy per source
+All three sources use the same query shape, but each needs something different:
 
-- si el embedding/search backend devuelve resultados “medianamente parecidos”, entran
-- no hay reranking cruzado
-- no hay deduplicación semántica
-- no hay límite de presupuesto por sección más allá del número de resultados
-- no hay compresión/selección posterior
+- **KB**: better with a summarized conceptual query
+- **Code**: better with technical terms, symbols, subsystems, file/feature names
+- **Events**: better with area/project/topic and possibly a time window or specific subject
 
-Resultado: entra contexto “válido” desde el punto de vista del motor, pero poco útil para resolver el prompt.
+Today there is no specialization.
 
 ---
 
-### 4. Se inyecta demasiado texto bruto
-`searchKB`, `searchEvents`, `searchCode` hacen truncado simple, pero siguen metiendo:
-- chunks literales
-- eventos largos
-- source snippets de hasta 400 chars por símbolo
+### 3. The filter only uses `minScore`
+Even though `minScore` exists, it's not enough because:
 
-Eso puede consumir muchos tokens aunque el resultado sea marginal.
+- if the embedding/search backend returns "somewhat similar" results, they get included
+- there is no cross-reranking
+- there is no semantic deduplication
+- there is no per-section budget beyond the result count
+- there is no post-selection compression
 
----
-
-### 5. No hay reescritura de query ni selección contextual
-Falta una fase intermedia del tipo:
-- “¿Qué busca realmente el usuario?”
-- “¿Qué conceptos/símbolos conviene usar para cada backend?”
-- “¿Qué resultados merecen entrar en el prompt final?”
-
-Ese es justo el gap que notas.
+Result: "valid" context from the engine's perspective enters, but is of little use for resolving the prompt.
 
 ---
 
-## Qué mejoraría en las consultas directas a Remembrances
+### 4. Too much raw text is injected
+`searchKB`, `searchEvents`, `searchCode` do simple truncation, but they still include:
+- literal chunks
+- long events
+- source snippets of up to 400 chars per symbol
 
-Yo lo dividiría en dos niveles: **mejoras sin modelo** y **mejoras con subagente/modelo dedicado**.
+This can consume many tokens even if the result is marginal.
 
 ---
 
-# 1) Mejoras sin modelo adicional
+### 5. No query rewriting or contextual selection
+An intermediate phase is missing, like:
+- "What is the user really looking for?"
+- "What concepts/symbols work best for each backend?"
+- "What results deserve to enter the final prompt?"
 
-Estas son baratas, seguras y útiles incluso si no añades subagente.
+That is exactly the gap you notice.
 
-## A. Reescritura heurística mínima de la query
-Antes de consultar Remembrances, derivar desde el prompt original:
+---
 
-- `rawQuery`: prompt original
-- `semanticQuery`: prompt limpiado para búsqueda semántica
-- `codeQuery`: query enfocada a código
-- `eventsQuery`: query enfocada a historial/proyecto
+## What I would improve in direct Remembrances queries
 
-Ejemplo de transformación:
-- quitar verbos de ejecución genéricos: “haz”, “analiza”, “revisa”
-- quitar frases meta: “quiero que”, “por favor”
-- preservar nombres técnicos:
+I would split it into two levels: **improvements without a model** and **improvements with a dedicated subagent/model**.
+
+---
+
+# 1) Improvements without an additional model
+
+These are cheap, safe, and useful even without adding a subagent.
+
+## A. Minimal heuristic query rewriting
+Before querying Remembrances, derive from the original prompt:
+
+- `rawQuery`: original prompt
+- `semanticQuery`: prompt cleaned up for semantic search
+- `codeQuery`: query focused on code
+- `eventsQuery`: query focused on history/project
+
+Transformation example:
+- remove generic execution verbs: "do", "analyze", "review"
+- remove meta phrases: "I want you to", "please"
+- preserve technical names:
   - `context enrichment`
   - `remembrances`
   - `pando`
-  - `subagente`
+  - `subagent`
   - `summary`
   - `title`
-  - `modelo fallback`
+  - `fallback model`
 
-Incluso una limpieza simple ya mejoraría bastante.
+Even a simple cleanup would improve things considerably.
 
 ---
 
-## B. Estrategia por fuente
+## B. Per-source strategy
 
 ### KB
-Usar `semanticQuery`, más corta y conceptual.
+Use `semanticQuery`, shorter and more conceptual.
 
 ### Code
-Usar `codeQuery`, priorizando:
-- nombres de feature
-- nombres exactos de config
-- símbolos o conceptos técnicos
+Use `codeQuery`, prioritizing:
+- feature names
+- exact config names
+- symbols or technical concepts
 
-En este caso, algo como:
+In this case, something like:
 - `"context enrichment remembrances ContextEnricher summary title fallback model"`
 
-sería mejor que el prompt completo.
+would be better than the full prompt.
 
 ### Events
-Usar una query más breve y contextual:
+Use a shorter, contextual query:
 - `"context enrichment remembrances"`
-o incluso
+or even
 - `"context enricher"`
 
-Y si el subject está vacío, considerar un default más restrictivo para este caso (`project`), porque los eventos generales tienden a meter ruido.
+And if the subject is empty, consider a more restrictive default for this case (`project`), because general events tend to add noise.
 
 ---
 
-## C. Budget por sección y budget total
-Además de `kbResults/codeResults/eventsResults`, añadir límites de salida:
+## C. Per-section budget and total budget
+In addition to `kbResults/codeResults/eventsResults`, add output limits:
 - `ContextEnrichmentKBMaxChars`
 - `ContextEnrichmentCodeMaxChars`
 - `ContextEnrichmentEventsMaxChars`
 - `ContextEnrichmentMaxChars`
 
-Porque el problema no es solo cuántos resultados entran, sino **cuánto texto final consumen**.
+Because the problem is not just how many results enter, but **how much final text they consume**.
 
 ---
 
-## D. Deduplicación y selección posterior
-Tras recoger resultados:
-- deduplicar paths/símbolos repetidos
-- si un resultado de code ya cubre algo muy concreto, bajar peso de KB/eventos redundantes
-- priorizar:
+## D. Deduplication and post-selection
+After collecting results:
+- deduplicate repeated paths/symbols
+- if a code result already covers something very specific, lower the weight of redundant KB/events
+- prioritize:
   1. code
   2. KB
-  3. events  
-  para prompts claramente de ingeniería/código
+  3. events
+  for prompts clearly about engineering/code
 
-Hoy el orden fijo no es el problema principal, pero sí la falta de priorización por tipo de tarea.
-
----
-
-## E. Compresión mejor del contexto
-En vez de meter chunks casi crudos:
-- KB: título/path + 1-2 frases clave
-- Events: 1 línea de por qué ese evento es relevante
-- Code: símbolo + archivo + docstring breve, y solo source si aporta algo
-
-Es decir: pasar de “retrieval dump” a “retrieval summary”.
+Today the fixed order is not the main problem, but the lack of prioritization by task type is.
 
 ---
 
-## F. Ajustar defaults
-Los defaults actuales:
+## E. Better context compression
+Instead of inserting near-raw chunks:
+- KB: title/path + 1-2 key sentences
+- Events: 1 line on why that event is relevant
+- Code: symbol + file + brief docstring, and only source if it adds value
+
+In other words: move from "retrieval dump" to "retrieval summary".
+
+---
+
+## F. Adjust defaults
+Current defaults:
 - KB 3
 - Code 5
 - Events 3
 - minScore 0.45
 
-Para evitar ruido, yo probaría:
+To avoid noise, I would try:
 - `KBResults = 2`
 - `CodeResults = 3`
 - `EventsResults = 2`
-- `MinScore = 0.55` o `0.60`
+- `MinScore = 0.55` or `0.60`
 
-Sobre todo mientras no haya reranking.
+Especially while there is no reranking.
 
 ---
 
-# 2) Mejoras con modelo/subagente dedicado
+# 2) Improvements with a dedicated model/subagent
 
-Esta parte encaja muy bien con tu idea.
+This part fits very well with your idea.
 
-## Viabilidad arquitectónica
+## Architectural viability
 
-Sí, es viable y además el proyecto **ya tiene el patrón**.
+Yes, it is viable and the project **already has the pattern**.
 
-En `internal/llm/agent/agent.go`:
+In `internal/llm/agent/agent.go`:
 
-- para títulos:
+- for titles:
   - `titleProvider`
-  - creado con `createAgentProvider(..., config.AgentTitle, ...)`
+  - created with `createAgentProvider(..., config.AgentTitle, ...)`
 
-- para summaries:
+- for summaries:
   - `summarizeProvider`
   - `summarizeFallbackProvider`
-  - y en `sendSummaryRequest(...)`:
-    - primero usa `summarizeProvider`
-    - si falla, hace fallback a `summarizeFallbackProvider` (el coder)
+  - and in `sendSummaryRequest(...)`:
+    - first uses `summarizeProvider`
+    - if it fails, falls back to `summarizeFallbackProvider` (the coder)
 
-Esto es exactamente el patrón que propones:
-- modelo especializado
-- fallback al coder si falla
+This is exactly the pattern you propose:
+- specialized model
+- fallback to coder on failure
 
-## Qué propondría
+## What I would propose
 
-Añadir un agente/modelo nuevo, por ejemplo:
+Add a new agent/model, for example:
 
 - `AgentContextEnricher`
-o
+or
 - `AgentRetriever`
 
-con configuración propia en `config`.
+with its own configuration in `config`.
 
-### Config sugerida
-En `internal/config/config.go` y defaults:
+### Suggested config
+In `internal/config/config.go` and defaults:
 
 - `AgentContextEnricher AgentName = "context-enricher"`
 
-Y en config:
+And in config:
 - `agents.context-enricher.model`
 - `agents.context-enricher.max_tokens`
 
-Más una sección Remembrances:
+Plus a Remembrances section:
 - `ContextEnrichmentUseAgent bool`
 - `ContextEnrichmentAgentFallbackToCoder bool`
 
-Opcionalmente:
+Optionally:
 - `ContextEnrichmentAgentEnabled bool`
 
 ---
 
-## Qué haría ese subagente/modelo
+## What that subagent/model would do
 
-No debería hacer todo el trabajo de responder. Solo esto:
+It should not do all the answering work. Just this:
 
-### Fase 1: query planning
-Dado el prompt original, produce algo estructurado como:
+### Phase 1: query planning
+Given the original prompt, produce something structured like:
 
 ```json
 {
@@ -283,120 +283,120 @@ Dado el prompt original, produce algo estructurado como:
 }
 ```
 
-### Fase 2: retrieval
-El sistema ejecuta las búsquedas reales contra Remembrances con esas queries.
+### Phase 2: retrieval
+The system executes the actual searches against Remembrances with those queries.
 
-### Fase 3: contextual compression
-El mismo subagente, o una función local simple, resume lo encontrado en un bloque corto:
-- qué es relevante
-- por qué
-- qué ignorar
+### Phase 3: contextual compression
+The same subagent, or a simple local function, summarizes what was found into a short block:
+- what is relevant
+- why
+- what to ignore
 
-### Fase 4: inject
-Se inyecta un contexto compacto, no el dump bruto.
-
----
-
-## Dos diseños posibles
-
-## Opción A — subagente solo para reescribir queries
-Más simple y robusta.
-
-Flujo:
-1. prompt original
-2. modelo de context-enrichment genera `kb_query`, `code_query`, `events_query`
-3. Go ejecuta búsquedas
-4. Go formatea contexto
-
-### Ventajas
-- implementación más fácil
-- menor riesgo
-- el modelo no necesita acceso a tools
-- fallback sencillo
-- controlas tú el retrieval
-
-### Desventaja
-- la compresión final sigue siendo relativamente tonta si no la mejoras
-
-**Esta es la opción que haría primero.**
+### Phase 4: inject
+A compact context is injected, not a raw dump.
 
 ---
 
-## Opción B — subagente también resume el retrieval
-Flujo:
-1. prompt original
-2. modelo genera queries
-3. Go hace retrieval
-4. modelo recibe resultados brutos
-5. devuelve “contexto final recomendado”
+## Two possible designs
 
-### Ventajas
-- muchísimo mejor control del ruido
-- mejor relación relevancia/tokens
+## Option A — subagent only for query rewriting
+Simpler and more robust.
 
-### Desventajas
-- más latencia
-- más coste
-- más complejidad
-- más puntos de fallo
+Flow:
+1. original prompt
+2. context-enrichment model generates `kb_query`, `code_query`, `events_query`
+3. Go executes searches
+4. Go formats context
 
-Yo la dejaría como fase 2.
+### Advantages
+- easier implementation
+- lower risk
+- the model doesn't need tool access
+- simple fallback
+- you control retrieval
+
+### Disadvantage
+- final compression is still relatively dumb if you don't improve it
+
+**This is the option I would implement first.**
 
 ---
 
-# Cómo encaja con el patrón de summary/title
+## Option B — subagent also summarizes retrieval
+Flow:
+1. original prompt
+2. model generates queries
+3. Go does retrieval
+4. model receives raw results
+5. returns "recommended final context"
 
-Perfectamente.
+### Advantages
+- much better noise control
+- better relevance/token ratio
 
-## Patrón existente reutilizable
-Hoy ya existe esto para summary:
+### Disadvantages
+- more latency
+- more cost
+- more complexity
+- more failure points
+
+I would leave this as phase 2.
+
+---
+
+# How it fits with the summary/title pattern
+
+Perfectly.
+
+## Reusable existing pattern
+Today this already exists for summaries:
 
 - `summarizeProvider`
 - `summarizeFallbackProvider`
 - `sendSummaryRequest(...)`
-- si falla el modelo dedicado:
-  - retry con el coder
+- if the dedicated model fails:
+  - retry with the coder
 
-Esto se puede replicar para enrichment:
+This can be replicated for enrichment:
 
 - `contextEnrichmentProvider`
 - `contextEnrichmentFallbackProvider`
 
-y una función tipo:
+and a function like:
 
 - `planContextEnrichmentQuery(...)`
-o
+or
 - `buildEnrichmentPlan(...)`
 
-con lógica:
+with logic:
 
-1. usar `contextEnrichmentProvider`
-2. si falla:
+1. use `contextEnrichmentProvider`
+2. if it fails:
    - log warning
-   - usar fallback coder
-3. si también falla:
-   - degradar al modo heurístico/directo actual
+   - use fallback coder
+3. if that also fails:
+   - degrade to the current heuristic/direct mode
 
-Eso te da **triple resiliencia**:
-- modelo dedicado
+This gives you **triple resilience**:
+- dedicated model
 - fallback coder
-- fallback heurístico sin modelo
+- heuristic fallback without a model
 
-Muy buen diseño.
+Very good design.
 
 ---
 
-# Diseño concreto recomendado
+# Concrete recommended design
 
-## Nuevo componente
-En vez de meterlo todo en `rag.ContextEnricher`, yo separaría:
+## New component
+Instead of putting everything in `rag.ContextEnricher`, I would separate:
 
-- `ContextEnricher` = orquestador
-- `QueryPlanner` = genera consultas
-- `ContextFormatter` = comprime/sintetiza salida
+- `ContextEnricher` = orchestrator
+- `QueryPlanner` = generates queries
+- `ContextFormatter` = compresses/synthesizes output
 
-### Interfaces sugeridas
-Algo como:
+### Suggested interfaces
+Something like:
 
 ```go
 type EnrichmentQueryPlanner interface {
@@ -418,44 +418,44 @@ type EnrichmentPlan struct {
 }
 ```
 
-Luego `ContextEnricher.EnrichContext(...)` haría:
+Then `ContextEnricher.EnrichContext(...)` would:
 
 1. `plan := planner.Plan(...)`
-2. si falla → fallback planner
-3. ejecutar búsquedas
-4. filtrar
-5. resumir
-6. devolver bloque `<context>`
+2. if it fails → fallback planner
+3. execute searches
+4. filter
+5. summarize
+6. return `<context>` block
 
 ---
 
 ## Planner implementations
 
 ### 1. Heuristic planner
-Sin LLM, siempre disponible.
+No LLM, always available.
 
 ### 2. LLM planner
-Usa provider dedicado:
+Uses dedicated provider:
 - `config.AgentContextEnricher`
-- fallback al coder
+- fallback to coder
 
 ---
 
-# Qué habría que tocar en código
+# What would need to change in code
 
 ## 1. Config
 ### `internal/config/config.go`
-Añadir:
+Add:
 - `AgentContextEnricher`
-- defaults de modelo por provider
-- budgets apropiados
+- model defaults per provider
+- appropriate budgets
 
-Y en `RemembrancesConfig`, nuevos flags tipo:
+And in `RemembrancesConfig`, new flags like:
 - `ContextEnrichmentUseQueryPlanner`
 - `ContextEnrichmentPlannerAgentEnabled`
 - `ContextEnrichmentPlannerFallbackToCoder`
 
-Opcional:
+Optional:
 - `ContextEnrichmentMaxChars`
 - `ContextEnrichmentUseCompression`
 
@@ -463,27 +463,27 @@ Opcional:
 
 ## 2. Agent
 ### `internal/llm/agent/agent.go`
-Si quieres seguir el patrón de summary/title dentro del agent principal:
-- añadir `contextEnrichmentPlannerProvider`
-- añadir `contextEnrichmentPlannerFallbackProvider`
+If you want to follow the summary/title pattern within the main agent:
+- add `contextEnrichmentPlannerProvider`
+- add `contextEnrichmentPlannerFallbackProvider`
 
-Pero sinceramente, para esta feature **mejor no acoplarlo al agent principal**, porque el enrichment sucede antes del prompt final y pertenece más a `rag` o a una capa de preparación de contexto.
+But honestly, for this feature **it's better not to couple it to the main agent**, because enrichment happens before the final prompt and belongs more to `rag` or a context preparation layer.
 
-Yo movería la lógica del provider dedicado a un componente del paquete `rag` o `llm/context`.
+I would move the dedicated provider logic to a component in the `rag` or `llm/context` package.
 
 ---
 
 ## 3. RAG
 ### `internal/rag/enricher.go`
-Refactorizar a:
-- usar plan derivado
-- no usar el prompt raw directamente para todo
-- aplicar budgets y compresión
+Refactor to:
+- use derived plan
+- not use the raw prompt directly for everything
+- apply budgets and compression
 
 ---
 
 ## 4. Prompt/template
-Opcionalmente, podrías marcar el contexto con una estructura más explícita:
+Optionally, you could mark the context with a more explicit structure:
 
 ```xml
 <context source="remembrances">
@@ -495,107 +495,107 @@ Opcionalmente, podrías marcar el contexto con una estructura más explícita:
 </context>
 ```
 
-Eso suele ayudar al modelo final a usar mejor el contexto.
+This usually helps the final model use the context better.
 
 ---
 
-# Mejoras concretas de retrieval que yo haría primero
+# Concrete retrieval improvements I would do first
 
-Si tuviera que priorizar, haría esto:
+If I had to prioritize, I would do this:
 
-## Fase 1 — mejora inmediata, bajo riesgo
-1. Añadir planner heurístico
-2. Query distinta por fuente
-3. Subir `minScore`
-4. Reducir defaults de results
-5. Añadir budget por chars
-6. Compactar mejor salida
+## Phase 1 — immediate improvement, low risk
+1. Add heuristic planner
+2. Different query per source
+3. Increase `minScore`
+4. Reduce result defaults
+5. Add per-char budget
+6. Better output compaction
 
-Con esto ya deberías notar mucha menos basura.
+With this you should already notice much less garbage.
 
-## Fase 2 — modelo dedicado con fallback
-1. Nuevo agente `context-enricher`
-2. Planner con LLM
-3. Fallback al coder
-4. Si falla todo, planner heurístico
+## Phase 2 — dedicated model with fallback
+1. New `context-enricher` agent
+2. LLM-based planner
+3. Fallback to coder
+4. If everything fails, heuristic planner
 
-## Fase 3 — compresión asistida por LLM
-1. retrieval con queries reescritas
-2. resumen final del contexto por el modelo dedicated/fallback
-
----
-
-# Riesgos y consideraciones
-
-## Latencia
-Cada llamada extra a modelo añade latencia antes de responder.
-Mitigaciones:
-- planner muy corto, max tokens bajo
-- modelo rápido/barato
-- timeout corto
-- fallback inmediato
-
-## Coste
-Si activas planner en cada prompt, sube coste.
-Mitigaciones:
-- solo cuando prompt supere cierto umbral de complejidad
-- o cuando haya Remembrances activos y suficientes fuentes
-- o cachear plan por turno
-
-## Fragilidad
-Si el planner devuelve JSON malformado:
-- fallback al coder
-- si vuelve a fallar, fallback heurístico
-
-## Sobreingeniería
-No conviene lanzar un subagente completo tipo Mesnada para esto si basta con un provider dedicado.
-La analogía con `summary/title` sugiere mejor:
-- **provider específico**, no un subproceso/orchestrated agent completo
-
-A menos que quieras explícitamente usar herramientas desde ese subagente, lo cual no parece necesario en la primera versión.
+## Phase 3 — LLM-assisted compression
+1. Retrieval with rewritten queries
+2. Final context summary by the dedicated/fallback model
 
 ---
 
-# Mi valoración final
+# Risks and considerations
 
-## Sí, las consultas directas a Remembrances se pueden mejorar claramente
-Principalmente porque hoy:
-- usan el prompt completo sin reescritura
-- no distinguen por fuente
-- no hacen reranking/compresión real
-- inyectan demasiado texto bruto
+## Latency
+Each extra model call adds latency before responding.
+Mitigations:
+- very short planner, low max tokens
+- fast/cheap model
+- short timeout
+- immediate fallback
 
-## Sí, se puede añadir un modelo/subagente específico con fallback al coder
-Y además el proyecto ya tiene el patrón implementado en `summarizer`, que es la mejor referencia.
+## Cost
+If you enable the planner on every prompt, cost increases.
+Mitigations:
+- only when the prompt exceeds a certain complexity threshold
+- or when Remembrances are active and there are enough sources
+- or cache the plan per turn
 
-## Recomendación de diseño
-La mejor solución práctica sería:
+## Fragility
+If the planner returns malformed JSON:
+- fallback to coder
+- if that fails too, heuristic fallback
 
-1. **No consultar Remembrances con el prompt raw directamente**
-2. Introducir un **planner de enrichment**
-3. Ese planner puede ser:
-   - heurístico por defecto
-   - o LLM-based con modelo dedicado
-4. Si el modelo dedicado falla:
-   - fallback al coder
-5. Si el coder también falla:
-   - fallback heurístico
-6. Mantener budgets estrictos y compresión del contexto final
+## Over-engineering
+It's not worth launching a full Mesnada-style subagent for this if a dedicated provider suffices.
+The analogy with `summary/title` suggests better:
+- **specific provider**, not a full subprocess/orchestrated agent
+
+Unless you explicitly want to use tools from that subagent, which doesn't seem necessary in the first version.
 
 ---
 
-Si quieres, el siguiente paso puedo hacerlo en dos formatos:
+# My final assessment
 
-1. **análisis técnico más aterrizado a código**, con propuesta de structs, interfaces y archivos exactos a modificar  
-2. **implementación directa** de una primera versión mínima:
-   - planner heurístico
-   - queries por fuente
-   - fallback path preparado para luego añadir el modelo dedicado
+## Yes, direct Remembrances queries can clearly be improved
+Mainly because today:
+- they use the full prompt without rewriting
+- they don't differentiate by source
+- they don't do real reranking/compression
+- they inject too much raw text
+
+## Yes, a dedicated model/subagent with fallback to the coder can be added
+And the project already has the pattern implemented in `summarizer`, which is the best reference.
+
+## Design recommendation
+The best practical solution would be:
+
+1. **Don't query Remembrances with the raw prompt directly**
+2. Introduce an **enrichment planner**
+3. That planner can be:
+   - heuristic by default
+   - or LLM-based with a dedicated model
+4. If the dedicated model fails:
+   - fallback to coder
+5. If the coder also fails:
+   - heuristic fallback
+6. Maintain strict budgets and final context compression
+
+---
+
+If you want, the next step I can do in two formats:
+
+1. **more code-grounded technical analysis**, with a proposal for structs, interfaces, and exact files to modify
+2. **direct implementation** of a first minimal version:
+   - heuristic planner
+   - per-source queries
+   - fallback path prepared to later add the dedicated model
 
 ## User
 
-Realiza un plan de implementación de la fase 1 y la fase 2 indicadas, además un nuevo selector en ACP para activar o desactivar el context enrichment manualmente, también a través de un comando en tui y en webuiguarda el plan de implementación que generes en un documento en kb
+Create an implementation plan for phase 1 and phase 2 as indicated, plus a new toggle in ACP to enable or disable context enrichment manually, also through a command in TUI and in web-ui. Save the implementation plan you generate in a document in kb
 
 ## User
 
-continua generando el plan de implementación
+Continue generating the implementation plan

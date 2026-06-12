@@ -1,26 +1,26 @@
-# Fase 3: Editor TUI con Syntax Highlighting
+# Phase 3: TUI Editor with Syntax Highlighting
 
-## Objetivo
-Implementar un viewer/editor de archivos integrado en la TUI con syntax highlighting usando chroma, sistema de tabs para múltiples archivos, y búsqueda integrada.
+## Objective
+Implement an integrated file viewer/editor in the TUI with syntax highlighting using chroma, a tab system for multiple files, and integrated search.
 
-## Referencias de Crush
+## Crush References
 
 ### SyntaxHighlight (`internal/ui/common/highlight.go`)
 ```go
 func SyntaxHighlight(st *styles.Styles, source, fileName string, bg color.Color) (string, error) {
-    // 1. Determinar lexer por nombre de archivo o análisis de contenido
+    // 1. Determine lexer by filename or content analysis
     l := lexers.Match(fileName)
     if l == nil { l = lexers.Analyse(source) }
     if l == nil { l = lexers.Fallback }
     l = chroma.Coalesce(l)
     
-    // 2. Obtener formatter terminal 16M colores
+    // 2. Get terminal 16M colors formatter
     f := formatters.Get("terminal16m")
     
-    // 3. Crear estilo chroma con background personalizado
+    // 3. Create chroma style with custom background
     style := chroma.MustNewStyle("crush", st.ChromaTheme())
     
-    // 4. Tokenizar y formatear
+    // 4. Tokenize and format
     it, _ := l.Tokenise(nil, source)
     var buf bytes.Buffer
     f.Format(&buf, s, it)
@@ -28,17 +28,17 @@ func SyntaxHighlight(st *styles.Styles, source, fileName string, bg color.Color)
 }
 ```
 
-### DiffView usa chroma con cache (`internal/ui/diffview/diffview.go`)
+### DiffView uses chroma with cache (`internal/ui/diffview/diffview.go`)
 ```go
-// Cache lexer para evitar matching caro en cada línea
+// Cache lexer to avoid expensive matching on each line
 cachedLexer chroma.Lexer
-// Cache de líneas highlighted
+// Cache of highlighted lines
 syntaxCache map[string]string
 ```
 
-## Plan de Implementación
+## Implementation Plan
 
-### 3.1 Componente FileViewer
+### 3.1 FileViewer Component
 
 ```go
 // internal/tui/components/editor/viewer.go
@@ -52,8 +52,8 @@ type FileViewer struct {
     // Viewport
     width       int
     height      int
-    yOffset     int      // scroll vertical
-    xOffset     int      // scroll horizontal
+    yOffset     int      // vertical scroll
+    xOffset     int      // horizontal scroll
     
     // Line numbers
     showLineNumbers bool
@@ -74,14 +74,14 @@ type FileViewer struct {
     searchMatches []SearchMatch
     currentMatch  int
     
-    // Selection (para copiar)
+    // Selection (for copying)
     selectionStart Position
     selectionEnd   Position
     hasSelection   bool
     
     // State
     isReadOnly  bool
-    isDirty     bool  // tiene cambios sin guardar
+    isDirty     bool  // has unsaved changes
     
     // Styling
     styles      EditorStyles
@@ -105,27 +105,27 @@ type TabBar struct {
     tabs       []Tab
     activeIdx  int
     width      int
-    scrollOff  int  // cuando hay muchos tabs
+    scrollOff  int  // when there are many tabs
     styles     TabStyles
 }
 
 type Tab struct {
     FilePath  string
-    FileName  string  // basename para display
+    FileName  string  // basename for display
     IsDirty   bool
-    FileType  string  // extensión para icono
+    FileType  string  // extension for icon
 }
 
 func (t *TabBar) Render() string {
-    // Renderizar tabs horizontalmente
-    // Tab activo resaltado
-    // Indicador de dirty (●)
-    // Icono de tipo de archivo
+    // Render tabs horizontally
+    // Active tab highlighted
+    // Dirty indicator (●)
+    // File type icon
     // [󰟓 main.go] [● 󰌛 style.css] [ config.yaml]
 }
 ```
 
-### 3.3 Keybindings del Editor
+### 3.3 Editor Keybindings
 
 ```go
 type EditorKeyMap struct {
@@ -141,11 +141,11 @@ type EditorKeyMap struct {
     SearchPrev  key.Binding  // N
     
     // Actions
-    Copy        key.Binding  // y (copiar selección)
-    Close       key.Binding  // ctrl+w (cerrar tab)
+    Copy        key.Binding  // y (copy selection)
+    Close       key.Binding  // ctrl+w (close tab)
     NextTab     key.Binding  // ctrl+tab, gt
     PrevTab     key.Binding  // ctrl+shift+tab, gT
-    Save        key.Binding  // ctrl+s (si editable)
+    Save        key.Binding  // ctrl+s (if editable)
     
     // View
     ToggleLineNumbers  key.Binding  // ctrl+l
@@ -153,7 +153,7 @@ type EditorKeyMap struct {
 }
 ```
 
-### 3.4 Rendering del Viewer
+### 3.4 Viewer Rendering
 
 ```go
 func (v *FileViewer) View() string {
@@ -197,18 +197,18 @@ func (v *FileViewer) View() string {
 }
 
 func (v *FileViewer) getHighlightedLine(lineIdx int) string {
-    // Usar cache
+    // Use cache
     if cached, ok := v.highlightedLines[lineIdx]; ok {
         return cached
     }
-    // Highlight y cachear
+    // Highlight and cache
     highlighted := highlightLine(v.lexer, v.chromaStyle, v.lines[lineIdx])
     v.highlightedLines[lineIdx] = highlighted
     return highlighted
 }
 ```
 
-### 3.5 Integración de Syntax Highlighting
+### 3.5 Syntax Highlighting Integration
 
 ```go
 // internal/tui/components/editor/highlight.go
@@ -219,7 +219,7 @@ func NewHighlighter(filePath string) *Highlighter {
     }
     lexer = chroma.Coalesce(lexer)
     
-    style := getChromaStyle() // basado en tema actual
+    style := getChromaStyle() // based on current theme
     
     return &Highlighter{
         lexer:   lexer,
@@ -228,7 +228,7 @@ func NewHighlighter(filePath string) *Highlighter {
     }
 }
 
-// Highlight por línea individual (más eficiente para scroll)
+// Highlight individual line (more efficient for scrolling)
 func (h *Highlighter) HighlightLine(line string) string {
     it, _ := h.lexer.Tokenise(nil, line)
     var buf bytes.Buffer
@@ -236,19 +236,19 @@ func (h *Highlighter) HighlightLine(line string) string {
     return buf.String()
 }
 
-// Highlight de bloque (para carga inicial)
+// Highlight block (for initial load)
 func (h *Highlighter) HighlightBlock(content string) []string {
-    // Tokenizar todo el contenido de una vez (mejor precisión)
-    // Luego dividir por líneas
+    // Tokenize all content at once (better accuracy)
+    // Then split by lines
 }
 ```
 
-### 3.6 Integración con el Layout Principal
+### 3.6 Integration with Main Layout
 
 ```go
-// En appModel
+// In appModel
 type appModel struct {
-    // ... existente ...
+    // ... existing ...
     
     // Editor
     editorTabs    *editor.TabBar
@@ -261,17 +261,17 @@ type appModel struct {
 
 type LayoutMode int
 const (
-    LayoutChat       LayoutMode = iota  // Solo chat
+    LayoutChat       LayoutMode = iota  // Chat only
     LayoutSidebar                        // Sidebar + Chat  
     LayoutEditor                         // Sidebar + Editor
-    LayoutSplit                          // Sidebar + Editor + Chat (3 paneles)
+    LayoutSplit                          // Sidebar + Editor + Chat (3 panels)
 )
 ```
 
-### 3.7 Apertura de Archivos
+### 3.7 File Opening
 
 ```go
-// Cuando se selecciona un archivo del FileTree
+// When a file is selected from the FileTree
 func (a *appModel) openFile(path string) tea.Cmd {
     return func() tea.Msg {
         content, err := os.ReadFile(path)
@@ -285,7 +285,7 @@ func (a *appModel) openFile(path string) tea.Cmd {
     }
 }
 
-// En Update
+// In Update
 case FileOpenedMsg:
     tab := editor.Tab{
         FilePath: msg.Path,
@@ -297,29 +297,29 @@ case FileOpenedMsg:
     a.layoutMode = LayoutEditor
 ```
 
-## Archivos a Crear
-1. `internal/tui/components/editor/viewer.go` - Viewer principal
-2. `internal/tui/components/editor/tabs.go` - Sistema de tabs
+## Files to Create
+1. `internal/tui/components/editor/viewer.go` - Main viewer
+2. `internal/tui/components/editor/tabs.go` - Tab system
 3. `internal/tui/components/editor/highlight.go` - Syntax highlighting
 4. `internal/tui/components/editor/keys.go` - Keybindings
-5. `internal/tui/components/editor/styles.go` - Estilos
-6. `internal/tui/components/editor/search.go` - Búsqueda inline
+5. `internal/tui/components/editor/styles.go` - Styles
+6. `internal/tui/components/editor/search.go` - Inline search
 
-## Archivos a Modificar
-1. `internal/tui/tui.go` - Integrar editor y layout modes
-2. `internal/tui/components/filetree/filetree.go` - Conectar apertura de archivos
+## Files to Modify
+1. `internal/tui/tui.go` - Integrate editor and layout modes
+2. `internal/tui/components/filetree/filetree.go` - Connect file opening
 
-## Dependencias Nuevas
+## New Dependencies
 ```
 github.com/alecthomas/chroma/v2          # Syntax highlighting
-github.com/alecthomas/chroma/v2/lexers   # Lexers por lenguaje
-github.com/alecthomas/chroma/v2/styles   # Temas de colores
+github.com/alecthomas/chroma/v2/lexers   # Lexers per language
+github.com/alecthomas/chroma/v2/styles   # Color themes
 ```
 
-## Consideraciones
-- **Read-only por defecto**: El editor empieza como viewer. La edición se puede añadir después.
-- **Cache de highlighting**: Cachear por línea, invalidar al editar
-- **Archivos grandes**: Lazy highlighting solo de líneas visibles
-- **Encoding**: Detectar encoding del archivo (UTF-8, Latin-1, etc.)
-- **Binary files**: Detectar y mostrar mensaje "Binary file, cannot display"
+## Considerations
+- **Read-only by default**: The editor starts as a viewer. Editing can be added later.
+- **Highlighting cache**: Cache per line, invalidate on edit
+- **Large files**: Lazy highlighting of visible lines only
+- **Encoding**: Detect file encoding (UTF-8, Latin-1, etc.)
+- **Binary files**: Detect and show "Binary file, cannot display" message
 - **Tab width**: Configurable (default 4)

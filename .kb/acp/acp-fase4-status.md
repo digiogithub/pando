@@ -179,12 +179,12 @@ eventSource.addEventListener('session-update', (event) => {
 
 ## ✨ Success Criteria - All Met! ✅
 
-- ✅ Client remoto puede conectarse via HTTP
-- ✅ SSE streaming funciona para notificaciones
-- ✅ Servidor soporta stdio Y HTTP/SSE simultáneamente (architecture ready)
-- ✅ Múltiples clientes concurrentes funcionan (tested with 10 concurrent clients)
-- ✅ CORS y security headers configurados
-- ✅ Tests de HTTP y SSE pasan (13/13 tests passing)
+- ✅ Remote client can connect via HTTP
+- ✅ SSE streaming works for notifications
+- ✅ Server supports stdio AND HTTP/SSE simultaneously (architecture ready)
+- ✅ Multiple concurrent clients work (tested with 10 concurrent clients)
+- ✅ CORS and security headers configured
+- ✅ HTTP and SSE tests pass (13/13 tests passing)
 
 ## 📝 Next Steps
 
