@@ -284,7 +284,7 @@ rm -f *.upx
 Compiles the binaries for the different platforms (Linux x64, Windows x64, macOS aarch64) and zip them into `dist/`.
 
 interactive:true
-input: KEYSTORE_PASS
+Inputs: KEYSTORE_PASS
 
 ```bash
 # Create dist folder
@@ -310,7 +310,7 @@ make release-darwin-arm64
 make release-darwin-amd64
 
 # request user input for KEYSTORE_PASS variable (secret)
-read -r -s KEYSTORE_PASS
+read -r -s 'KEYSTORE_PASS'
 export KEYSTORE_PASS
 
 

@@ -57,7 +57,7 @@ if command -v codesign-digio >/dev/null 2>&1; then
 elif [[ -x "$HOME/bin/codesign-digio" ]]; then
     CODESIGN_DIGIO="$HOME/bin/codesign-digio"
 fi
-PKG_SIGN_IDENTITY="${PKG_SIGN_IDENTITY:-}"
+PKG_SIGN_IDENTITY="961FF87CC1EF61866640E471FB84B73E001281AF"
 SIGNING_IDENTITY="4749EC5719E91D7ADFE5FDB4CB546057A8CFB9AD"
 
 run_codesign() {
