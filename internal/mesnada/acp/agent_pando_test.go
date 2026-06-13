@@ -554,6 +554,16 @@ func (m *mockSessionService) GetSession(ctx context.Context, id string) (ACPSess
 	return s, nil
 }
 
+func (m *mockSessionService) SaveSessionTitle(ctx context.Context, id string, title string) (ACPSessionInfo, error) {
+	s, ok := m.sessions[id]
+	if !ok {
+		return ACPSessionInfo{}, errors.New("session not found")
+	}
+	s.Title = title
+	m.sessions[id] = s
+	return s, nil
+}
+
 func (m *mockSessionService) ListSessions(ctx context.Context) ([]ACPSessionInfo, error) {
 	result := make([]ACPSessionInfo, 0, len(m.sessions))
 	for _, s := range m.sessions {

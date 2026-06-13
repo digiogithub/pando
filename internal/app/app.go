@@ -1987,6 +1987,19 @@ func (a *appACPSessionAdapter) GetSession(ctx context.Context, id string) (mesna
 	return mesnadaACP.ACPSessionInfo{ID: sess.ID, Title: sess.Title, UpdatedAt: sess.UpdatedAt}, nil
 }
 
+func (a *appACPSessionAdapter) SaveSessionTitle(ctx context.Context, id string, title string) (mesnadaACP.ACPSessionInfo, error) {
+	sess, err := a.svc.Get(ctx, id)
+	if err != nil {
+		return mesnadaACP.ACPSessionInfo{}, err
+	}
+	sess.Title = title
+	saved, err := a.svc.Save(ctx, sess)
+	if err != nil {
+		return mesnadaACP.ACPSessionInfo{}, err
+	}
+	return mesnadaACP.ACPSessionInfo{ID: saved.ID, Title: saved.Title, UpdatedAt: saved.UpdatedAt}, nil
+}
+
 func (a *appACPSessionAdapter) ListSessions(ctx context.Context) ([]mesnadaACP.ACPSessionInfo, error) {
 	sessions, err := a.svc.List(ctx)
 	if err != nil {

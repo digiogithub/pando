@@ -41,14 +41,29 @@ import (
 
 type startCompactSessionMsg struct{}
 
+const pandoWindowTitleBase = "木 Pando"
+
 func sessionWindowTitle(title string) string {
 	if title == "" || title == "New Session" {
-		return "Pando"
+		return pandoWindowTitleBase
 	}
-	if len(title) > 40 {
-		return "Pando | " + title[:37] + "..."
+	runes := []rune(title)
+	if len(runes) > 40 {
+		return pandoWindowTitleBase + " | " + string(runes[:37]) + "..."
 	}
-	return "Pando | " + title
+	return pandoWindowTitleBase + " | " + title
+}
+
+func sessionWindowTitleRunning(title string) string {
+	const runningPrefix = "⟳ " + pandoWindowTitleBase
+	if title == "" || title == "New Session" {
+		return runningPrefix
+	}
+	runes := []rune(title)
+	if len(runes) > 40 {
+		return runningPrefix + " | " + string(runes[:37]) + "..."
+	}
+	return runningPrefix + " | " + title
 }
 
 // terminalFocusChangedMsg updates terminal focus on the live app model copy
@@ -128,6 +143,8 @@ type appModel struct {
 	isCompacting      bool
 	compactingMessage string
 
+	isAgentRunning bool
+
 	terminalPanel   *terminal.TerminalPanel
 	terminalFocused bool
 
@@ -136,7 +153,7 @@ type appModel struct {
 
 func (a appModel) Init() tea.Cmd {
 	var cmds []tea.Cmd
-	cmds = append(cmds, tea.SetWindowTitle("Pando"))
+	cmds = append(cmds, tea.SetWindowTitle(pandoWindowTitleBase))
 	cmd := a.pages[a.currentPage].Init()
 	a.loadedPages[a.currentPage] = true
 	cmds = append(cmds, cmd)
@@ -552,7 +569,11 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		payload := msg.Payload
 		if payload.Error != nil {
 			a.isCompacting = false
-			return a, util.ReportError(payload.Error)
+			if payload.SessionID == a.selectedSession.ID {
+				a.isAgentRunning = false
+				cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitle(a.selectedSession.Title)))
+			}
+			return a, tea.Batch(append(cmds, util.ReportError(payload.Error))...)
 		}
 
 		a.compactingMessage = payload.Progress
@@ -568,18 +589,34 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Batch(cmds...)
 		}
 
+		// Track agent running state for the selected session and update window title.
+		if payload.SessionID == a.selectedSession.ID {
+			if payload.Done {
+				if a.isAgentRunning {
+					a.isAgentRunning = false
+					cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitle(a.selectedSession.Title)))
+				}
+			} else if !a.isAgentRunning {
+				a.isAgentRunning = true
+				cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitleRunning(a.selectedSession.Title)))
+			}
+		}
+
 		if payload.Done && payload.Type == agent.AgentEventTypeSummarize {
 			a.isCompacting = false
-			return a, util.ReportInfo("Session summarization complete")
+			return a, tea.Batch(append(cmds, util.ReportInfo("Session summarization complete"))...)
 		} else if payload.Done && payload.Type == agent.AgentEventTypeResponse && a.selectedSession.ID != "" {
 			model := a.app.CoderAgent.Model()
 			contextWindow := model.ContextWindow
 			tokens := a.selectedSession.CompletionTokens + a.selectedSession.PromptTokens
 			if (tokens >= int64(float64(contextWindow)*0.95)) && config.Get().AutoCompact {
-				return a, util.CmdHandler(startCompactSessionMsg{})
+				return a, tea.Batch(append(cmds, util.CmdHandler(startCompactSessionMsg{}))...)
 			}
 		}
 		// Continue listening for events
+		if len(cmds) > 0 {
+			return a, tea.Batch(cmds...)
+		}
 		return a, nil
 
 	case dialog.CloseThemeDialogMsg:
@@ -646,7 +683,12 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case chat.SessionSelectedMsg:
 		a.selectedSession = msg
 		a.sessionDialog.SetSelectedSession(msg.ID)
-		cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitle(msg.Title)))
+		a.isAgentRunning = a.app.CoderAgent.IsSessionBusy(msg.ID)
+		if a.isAgentRunning {
+			cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitleRunning(msg.Title)))
+		} else {
+			cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitle(msg.Title)))
+		}
 
 	case dialog.ConfigGeneratedMsg:
 		// .pando.toml has been generated — navigate to Settings so the user can
@@ -659,7 +701,11 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pubsub.Event[session.Session]:
 		if msg.Type == pubsub.UpdatedEvent && msg.Payload.ID == a.selectedSession.ID {
 			a.selectedSession = msg.Payload
-			cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitle(msg.Payload.Title)))
+			if a.isAgentRunning {
+				cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitleRunning(msg.Payload.Title)))
+			} else {
+				cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitle(msg.Payload.Title)))
+			}
 		}
 	case dialog.SessionSelectedMsg:
 		a.showSessionDialog = false

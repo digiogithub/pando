@@ -105,6 +105,7 @@ type ACPSessionInfo struct {
 type SessionService interface {
 	CreateSession(ctx context.Context, title string) (string, error)
 	GetSession(ctx context.Context, id string) (ACPSessionInfo, error)
+	SaveSessionTitle(ctx context.Context, id string, title string) (ACPSessionInfo, error)
 	ListSessions(ctx context.Context) ([]ACPSessionInfo, error)
 	GetACPSessionState(ctx context.Context, sessionID string) (string, error)
 	SaveACPSessionState(ctx context.Context, sessionID string, state string) error

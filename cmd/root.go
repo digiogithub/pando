@@ -909,6 +909,26 @@ func (a *acpSessionAdapter) GetSession(ctx context.Context, id string) (acpPkg.A
 	}, nil
 }
 
+func (a *acpSessionAdapter) SaveSessionTitle(ctx context.Context, id string, title string) (acpPkg.ACPSessionInfo, error) {
+	sess, err := a.svc.Get(ctx, id)
+	if err != nil {
+		return acpPkg.ACPSessionInfo{}, err
+	}
+	sess.Title = title
+	saved, err := a.svc.Save(ctx, sess)
+	if err != nil {
+		return acpPkg.ACPSessionInfo{}, err
+	}
+	return acpPkg.ACPSessionInfo{
+		ID:               saved.ID,
+		Title:            saved.Title,
+		UpdatedAt:        saved.UpdatedAt,
+		PromptTokens:     saved.PromptTokens,
+		CompletionTokens: saved.CompletionTokens,
+		ContextWindow:    0,
+	}, nil
+}
+
 func (a *acpSessionAdapter) ListSessions(ctx context.Context) ([]acpPkg.ACPSessionInfo, error) {
 	sessions, err := a.svc.List(ctx)
 	if err != nil {

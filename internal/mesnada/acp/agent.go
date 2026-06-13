@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/notify"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/safety"
@@ -366,6 +367,7 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 func (a *PandoACPAgent) finishPrompt(ctx context.Context, sessionID acpsdk.SessionId, acpSession *ACPServerSession, stopReason acpsdk.StopReason) (acpsdk.PromptResponse, error) {
 	a.sendRunStatusMeta(ctx, sessionID, acpSession)
 
+	var sessionInfo ACPSessionInfo
 	// Send usage_update and session_info_update after the prompt completes.
 	// Fetch the latest session state so we have accurate token counts and title.
 	if used, size, ok := a.currentUsageSnapshot(ctx, acpSession); ok {
@@ -375,16 +377,25 @@ func (a *PandoACPAgent) finishPrompt(ctx context.Context, sessionID acpsdk.Sessi
 			}
 		}
 	}
-	if sessionInfo, sessErr := a.sessionService.GetSession(ctx, acpSession.PandoSessionID()); sessErr == nil {
-		// session_info_update: send the current session title so clients can
-		// display it in session lists without requiring a full ListSessions call.
-		if sessionInfo.Title != "" && sessionInfo.Title != "ACP Session" {
-			if sendErr := acpSession.SendUpdate(acpsdk.UpdateSessionTitle(sessionInfo.Title)); sendErr != nil {
-				a.logger.Printf("[ACP AGENT] Failed to send session_info_update: %v", sendErr)
-			}
+	if title := a.currentSessionTitle(ctx, acpSession); title != "" && title != "ACP Session" {
+		savedInfo, saveErr := a.sessionService.SaveSessionTitle(ctx, acpSession.PandoSessionID(), title)
+		if saveErr != nil {
+			a.logger.Printf("[ACP AGENT] Failed to persist generated session title: %v", saveErr)
+		} else {
+			sessionInfo = savedInfo
 		}
-	} else {
-		a.logger.Printf("[ACP AGENT] Could not fetch session for post-prompt updates: %v", sessErr)
+	}
+	if sessionInfo.ID == "" {
+		if fetchedInfo, sessErr := a.sessionService.GetSession(ctx, acpSession.PandoSessionID()); sessErr == nil {
+			sessionInfo = fetchedInfo
+		} else {
+			a.logger.Printf("[ACP AGENT] Could not fetch session for post-prompt updates: %v", sessErr)
+		}
+	}
+	if sessionInfo.Title != "" && sessionInfo.Title != "ACP Session" {
+		if sendErr := acpSession.SendUpdate(acpsdk.UpdateSessionTitle(sessionInfo.Title)); sendErr != nil {
+			a.logger.Printf("[ACP AGENT] Failed to send session_info_update: %v", sendErr)
+		}
 	}
 
 	a.logger.Printf("[ACP AGENT] Prompt completed: SessionID=%s, StopReason=%s",
@@ -865,6 +876,26 @@ func (a *PandoACPAgent) currentUsageSnapshot(ctx context.Context, acpSession *AC
 		size = 200000 // safe default for modern frontier models
 	}
 	return used, size, true
+}
+
+func (a *PandoACPAgent) currentSessionTitle(ctx context.Context, acpSession *ACPServerSession) string {
+	if acpSession == nil {
+		return ""
+	}
+	msgs, err := a.sessionService.GetMessages(ctx, acpSession.PandoSessionID())
+	if err != nil || len(msgs) == 0 {
+		return ""
+	}
+	for _, msg := range msgs {
+		if msg.Role != message.User {
+			continue
+		}
+		text := strings.TrimSpace(msg.Content().Text)
+		if text != "" {
+			return text
+		}
+	}
+	return ""
 }
 
 func (a *PandoACPAgent) normalizeSystemMessage(ctx context.Context, acpSession *ACPServerSession, msg string) (*acpsdk.SessionUpdate, string, bool) {

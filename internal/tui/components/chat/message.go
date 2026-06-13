@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"path/filepath"
 	"strings"
 	"time"
@@ -80,6 +81,14 @@ func renderUserMessage(msg message.Message, isFocused bool, width int, position 
 		MarginLeft(1).
 		Background(t.TextMuted()).
 		Foreground(t.Text())
+	info := []string{}
+	if finishData := msg.FinishPart(); finishData != nil {
+		info = append(info, styles.BaseStyle().
+			Width(width-1).
+			Foreground(t.TextMuted()).
+			Render(fmt.Sprintf(" took %s", formatTimestampDiff(msg.CreatedAt, finishData.Time))),
+		)
+	}
 	for _, attachment := range msg.BinaryContent() {
 		file := filepath.Base(attachment.Path)
 		var filename string
@@ -94,10 +103,9 @@ func renderUserMessage(msg message.Message, isFocused bool, width int, position 
 	text := formatUserInput(msg.Content().String())
 	if len(styledAttachments) > 0 {
 		attachmentContent := styles.BaseStyle().Width(width).Render(lipgloss.JoinHorizontal(lipgloss.Left, styledAttachments...))
-		content = renderMessage(text, true, isFocused, width, attachmentContent)
-	} else {
-		content = renderMessage(text, true, isFocused, width)
+		info = append([]string{attachmentContent}, info...)
 	}
+	content = renderMessage(text, true, isFocused, width, info...)
 	userMsg := uiMessage{
 		ID:          msg.ID,
 		messageType: userMessageType,
@@ -678,7 +686,13 @@ func renderToolMessage(
 // Helper function to format the time difference between two Unix timestamps.
 // The TUI intentionally displays elapsed response time using minutes and seconds only.
 func formatTimestampDiff(start, end int64) string {
-	d := time.Duration(end-start) * time.Millisecond
+	startTime := normalizeUnixTimestamp(start)
+	endTime := normalizeUnixTimestamp(end)
+	if startTime == 0 || endTime == 0 {
+		return "0m 00s"
+	}
+
+	d := time.Duration(endTime-startTime) * time.Second
 	if d < 0 {
 		d = 0
 	}
@@ -686,4 +700,14 @@ func formatTimestampDiff(start, end int64) string {
 	minutes := int(d / time.Minute)
 	seconds := int((d % time.Minute) / time.Second)
 	return fmt.Sprintf("%dm %02ds", minutes, seconds)
+}
+
+func normalizeUnixTimestamp(ts int64) int64 {
+	if ts == 0 {
+		return 0
+	}
+	if math.Abs(float64(ts)) >= 1e12 {
+		return ts / 1000
+	}
+	return ts
 }

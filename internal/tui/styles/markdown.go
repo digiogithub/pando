@@ -7,7 +7,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/theme"
 )
 
-const defaultMargin = 1
+const defaultMargin = 0
 
 // Helper functions for style pointers
 func boolPtr(b bool) *bool       { return &b }
@@ -130,20 +130,24 @@ func generateMarkdownStyleConfig() ansi.StyleConfig {
 		},
 		HorizontalRule: ansi.StylePrimitive{
 			Color:  stringPtr(adaptiveColorToString(t.MarkdownHorizontalRule())),
-			Format: "\n─────────────────────────────────────────\n",
+			Format: "─────────────────────────────────────────",
 		},
 		Item: ansi.StylePrimitive{
 			BlockPrefix: "• ",
+			BlockSuffix: "",
 			Color:       stringPtr(adaptiveColorToString(t.MarkdownListItem())),
 		},
 		Enumeration: ansi.StylePrimitive{
 			BlockPrefix: ". ",
+			BlockSuffix: "",
 			Color:       stringPtr(adaptiveColorToString(t.MarkdownListEnumeration())),
 		},
 		Task: ansi.StyleTask{
-			StylePrimitive: ansi.StylePrimitive{},
-			Ticked:         "[✓] ",
-			Unticked:       "[ ] ",
+			StylePrimitive: ansi.StylePrimitive{
+				BlockSuffix: "",
+			},
+			Ticked:   "[✓] ",
+			Unticked: "[ ] ",
 		},
 		Link: ansi.StylePrimitive{
 			Color:     stringPtr(adaptiveColorToString(t.MarkdownLink())),
@@ -264,9 +268,7 @@ func generateMarkdownStyleConfig() ansi.StyleConfig {
 		Table: ansi.StyleTable{
 			StyleBlock: ansi.StyleBlock{
 				StylePrimitive: ansi.StylePrimitive{
-					Color:       stringPtr(adaptiveColorToString(t.MarkdownText())),
-					BlockPrefix: "\n",
-					BlockSuffix: "\n",
+					Color: stringPtr(adaptiveColorToString(t.MarkdownText())),
 				},
 			},
 			CenterSeparator: stringPtr("┼"),
@@ -274,7 +276,8 @@ func generateMarkdownStyleConfig() ansi.StyleConfig {
 			RowSeparator:    stringPtr("─"),
 		},
 		DefinitionDescription: ansi.StylePrimitive{
-			BlockPrefix: "\n ❯ ",
+			BlockPrefix: "❯ ",
+			BlockSuffix: "",
 			Color:       stringPtr(adaptiveColorToString(t.MarkdownLinkText())),
 		},
 		Text: ansi.StylePrimitive{

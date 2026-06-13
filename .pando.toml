@@ -30,7 +30,7 @@ Timeout = ''
 id = 'anthropic'
 displayName = 'Anthropic'
 type = 'anthropic'
-apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBWVFQwemdEWldkM2JtZ2t4WkY3RHhhcUhpSlpvRGJMa2NsaktVYWNzdEVFCmExdE5VaHZ5VVdEb2Z0eFUzRWpXZUpyOHZGTHdqVi9Rcjc5Zzhob0RpaGcKLS0tIHQra0xnUXJQa0Ftd3hmY3JodmpSTTJtd2VXb1I1dS9ESWdwa3pEem40S1kKrA22of8LtXXYVpbQeiE4iTXYgOFYhu/GzP8tEXLqK1S9mGzyT1GvhD0ubPb04+4aQhAc2YXCB8+mcXoKgEdmhmaE1kHUv85DuxHU3XSSmn8L6+9i1OH82LLbZ4oW+sqAFF6/8MMQktiYISYzM4KdKVhRzlvg2fxe7dAEQgDSDsSP2fsGmfO2qZKlyJQ='
+apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA5SVk3ZFNuZGpZSm1yOHBxUG5lbVpvSXM3ZU82UjRya2tuaDRpeDFNNVhVCmNLc0xySjRtLzlBVThDcWJsWHRMSGRZblI3S0lJUnJGYjlXbVg1MDFQWHMKLS0tIFBTMjZwelVhZHdScDhybVpGci9nRithcGs1Rnd0Zi84V3pxUmxEczRLMDQKe4R7grhDGeq+H5/eC3aw4wZ1yllDmMVH1eW1RzKjNETxiHRCfjxv+Y7zON4+nm6nLiLRiIyrr//b6aw+ersK6b6rVHI3Esxz9KLRhifql0EoP8VeYkQoyHpHT5F7LRrzqiUlV7ybEDszUqZXVv58fGUv/WDDhTFuiscN5DA2w/MUscV9+ZBf8I5W1w4='
 
 [[providerAccounts]]
 id = 'copilot'
@@ -100,7 +100,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.persona-selector]
-Model = 'copilot.gpt-4o'
+Model = 'ollama.qwopus:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -109,7 +109,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.summarizer]
-Model = 'copilot.gpt-5.4-mini'
+Model = 'ollama.qwopus:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -118,7 +118,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.task]
-Model = 'gpt-5-mini'
+Model = 'ollama.qwopus:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -127,7 +127,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.title]
-Model = 'gpt-5-mini'
+Model = 'ollama.qwopus:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -146,7 +146,7 @@ AutoUpdate = false
 DefaultScope = ''
 
 [TUI]
-Theme = 'pando'
+Theme = 'light-nobg'
 
 [Permissions]
 AutoApproveTools = true

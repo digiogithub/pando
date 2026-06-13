@@ -11,16 +11,21 @@ type LightTheme struct {
 
 func NewLightTheme() *LightTheme {
 	bg := "#f5f5f5"
-	bgAlt := "#ebebeb"
-	bgCode := "#e0e0e0"
+	bgAlt := "#e8e8e8"
+	// bgCode is used as both a background (code blocks) and as foreground text on dark
+	// badge backgrounds (help widget, tokens badge). Pure white maximises contrast
+	// on those dark badges while remaining a subtle code-block background.
+	bgCode := "#ffffff"
 	fg := "#1a1a1a"
 	fgMuted := "#666666"
 	fgEmph := "#8b5e00"
 	primary := "#2563eb"
 	secondary := "#7c3aed"
-	accent := "#d97706"
+	accent := "#b45309"
 	red := "#b91c1c"
-	orange := "#d97706"
+	// Darker amber so that light foreground text (#e8e8e8) on warning bg passes WCAG AA.
+	// #d97706 (bright orange) only gives 2.96:1; #b45309 gives 5.1:1.
+	orange := "#b45309"
 	green := "#15803d"
 	cyan := "#0e7490"
 	border := "#c4c4c4"
