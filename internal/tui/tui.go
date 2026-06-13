@@ -41,6 +41,16 @@ import (
 
 type startCompactSessionMsg struct{}
 
+func sessionWindowTitle(title string) string {
+	if title == "" || title == "New Session" {
+		return "Pando"
+	}
+	if len(title) > 40 {
+		return "Pando | " + title[:37] + "..."
+	}
+	return "Pando | " + title
+}
+
 // terminalFocusChangedMsg updates terminal focus on the live app model copy
 // stored by Bubble Tea. The terminal panel itself is mutated through a shared
 // pointer, but appModel.terminalFocused must be updated via a message because
@@ -126,6 +136,7 @@ type appModel struct {
 
 func (a appModel) Init() tea.Cmd {
 	var cmds []tea.Cmd
+	cmds = append(cmds, tea.SetWindowTitle("Pando"))
 	cmd := a.pages[a.currentPage].Init()
 	a.loadedPages[a.currentPage] = true
 	cmds = append(cmds, cmd)
@@ -635,6 +646,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case chat.SessionSelectedMsg:
 		a.selectedSession = msg
 		a.sessionDialog.SetSelectedSession(msg.ID)
+		cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitle(msg.Title)))
 
 	case dialog.ConfigGeneratedMsg:
 		// .pando.toml has been generated — navigate to Settings so the user can
@@ -647,6 +659,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pubsub.Event[session.Session]:
 		if msg.Type == pubsub.UpdatedEvent && msg.Payload.ID == a.selectedSession.ID {
 			a.selectedSession = msg.Payload
+			cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitle(msg.Payload.Title)))
 		}
 	case dialog.SessionSelectedMsg:
 		a.showSessionDialog = false

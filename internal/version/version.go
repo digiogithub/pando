@@ -37,6 +37,15 @@ func Canonical() string {
 	return Version
 }
 
+// Normalize returns the version as a clean semantic version string.
+// The +dirty suffix from git is stripped if present, and "v" prefix is added on behalf of caller.
+func Normalize() string {
+	if normalized, ok := normalize(Version); ok {
+		return normalized
+	}
+	return Version
+}
+
 // Semver returns the current version parsed as semantic version.
 func Semver() (semver.Version, bool) {
 	return Parse(Version)
@@ -57,6 +66,7 @@ func Parse(v string) (semver.Version, bool) {
 
 func normalize(v string) (string, bool) {
 	trimmed := strings.TrimSpace(v)
+	trimmed = strings.TrimSuffix(trimmed, "+dirty")
 	trimmed = strings.TrimPrefix(trimmed, "v")
 	if trimmed == "" || trimmed == "unknown" || trimmed == "(devel)" {
 		return "", false

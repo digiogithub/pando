@@ -125,7 +125,7 @@ func runAppMode(cmd *cobra.Command) error {
 	server, err := api.NewServer(ctx, api.ServerConfig{
 		Host:        host,
 		Port:        port,
-		Version:     version.Version,
+		Version:     version.Normalize(),
 		DB:          conn,
 		Querier:     rt.Querier,
 		CWD:         cwd,
@@ -199,10 +199,10 @@ func runAppMode(cmd *cobra.Command) error {
 	}()
 
 	versionPrefix := ""
-	if !strings.HasPrefix(version.Version, "v") {
+	if !strings.HasPrefix(version.Normalize(), "v") {
 		versionPrefix = "v"
 	}
-	fmt.Printf("Pando app %s%s listening on %s\n", versionPrefix, version.Version, baseURL)
+	fmt.Printf("Pando app %s%s listening on %s\n", versionPrefix, version.Normalize(), baseURL)
 	if server.IsTLS() {
 		fmt.Println("TLS enabled (self-signed certificate — accept the browser security warning for local use)")
 	}

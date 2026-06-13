@@ -14,8 +14,8 @@ func TestEditorCtrlJInsertsNewLine(t *testing.T) {
 	editor.textarea.SetCursor(len("hello"))
 
 	model, cmd := editor.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
-	if cmd != nil {
-		t.Fatalf("expected no command, got %v", cmd)
+	if cmd == nil {
+		t.Fatal("expected viewport/update command, got nil")
 	}
 
 	updated := model.(*editorCmp)

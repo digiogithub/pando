@@ -109,7 +109,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			return nil
 		}
 		if cmd.Flag("version").Changed {
-			fmt.Println(version.Version)
+			fmt.Println(version.Normalize())
 			return nil
 		}
 
@@ -594,7 +594,7 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 
 	logger := log.New(logOutput, "[ACP] ", logFlags)
 	if !quietStdioLogs {
-		logger.Printf("Starting Pando ACP Agent v%s (cwd=%s, debug=%v, logFile=%q, autoPerm=%v)", version.Version, cwd, debug, logFile, autoPerm)
+		logger.Printf("Starting Pando ACP Agent v%s (cwd=%s, debug=%v, logFile=%q, autoPerm=%v)", version.Normalize(), cwd, debug, logFile, autoPerm)
 	}
 
 	// Load config (required to connect DB and initialize agent)
@@ -709,7 +709,7 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 	}
 
 	pandoAgent := acpPkg.NewPandoACPAgent(
-		version.Version,
+		version.Normalize(),
 		cwd,
 		logger,
 		agentAdapter,

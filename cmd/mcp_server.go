@@ -161,7 +161,7 @@ func runMCPServerMode(cmd *cobra.Command) error {
 		httpSrv = mesnadaServer.New(mesnadaServer.Config{
 			Addr:         addr,
 			Orchestrator: pandoApp.MesnadaOrchestrator,
-			Version:      version.Version,
+			Version:      version.Normalize(),
 			UseStdio:     false,
 			Remembrances: pandoApp.Remembrances,
 			PandoTools:   toolList,
@@ -192,7 +192,7 @@ func runMCPServerMode(cmd *cobra.Command) error {
 
 	stdioSrv := mesnadaServer.New(mesnadaServer.Config{
 		Orchestrator: pandoApp.MesnadaOrchestrator,
-		Version:      version.Version,
+		Version:      version.Normalize(),
 		UseStdio:     true,
 		Remembrances: pandoApp.Remembrances,
 		PandoTools:   toolList,

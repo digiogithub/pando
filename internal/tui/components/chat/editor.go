@@ -67,7 +67,7 @@ var editorMaps = EditorKeyMaps{
 	),
 	NewLine: key.NewBinding(
 		key.WithKeys("ctrl+enter", "shift+enter", "ctrl+j"),
-		key.WithHelp("ctrl+enter", "new line"),
+		key.WithHelp("ctrl+j", "new line"),
 	),
 	OpenEditor: key.NewBinding(
 		key.WithKeys("ctrl+i"),
@@ -139,17 +139,17 @@ func (m *editorCmp) openEditor() tea.Cmd {
 }
 
 func (m *editorCmp) Init() tea.Cmd {
-	m.currentLines = 1
+	m.currentLines = 3
 	return tea.Batch(
 		textarea.Blink,
-		util.CmdHandler(EditorHeightChangedMsg{Lines: 1}),
+		util.CmdHandler(EditorHeightChangedMsg{Lines: 3}),
 	)
 }
 
 func (m *editorCmp) contentLines() int {
 	n := strings.Count(m.textarea.Value(), "\n") + 1
-	if n < 1 {
-		return 1
+	if n < 3 {
+		return 3
 	}
 	if n > maxEditorLines {
 		return maxEditorLines
@@ -188,7 +188,7 @@ func (m *editorCmp) send() tea.Cmd {
 			Text:        value,
 			Attachments: attachments,
 		}),
-		util.CmdHandler(EditorHeightChangedMsg{Lines: 1}),
+		util.CmdHandler(EditorHeightChangedMsg{Lines: 3}),
 	)
 }
 

@@ -46,6 +46,11 @@ func (c *container) View() string {
 	style := lipgloss.NewStyle()
 	width := c.width
 	height := c.height
+	// maxHeight is the TOTAL allocated height for this container including borders.
+	// We must not reduce it when subtracting border rows from height, because
+	// lipgloss.MaxHeight clips the entire rendered output (border included). Using
+	// the reduced value would clip the last content row.
+	maxHeight := c.height
 
 	style = style.Background(t.Background())
 
@@ -77,7 +82,7 @@ func (c *container) View() string {
 	style = style.
 		Width(width).
 		Height(contentHeight).
-		MaxHeight(height).
+		MaxHeight(maxHeight).
 		PaddingTop(c.paddingTop).
 		PaddingRight(c.paddingRight).
 		PaddingBottom(c.paddingBottom).

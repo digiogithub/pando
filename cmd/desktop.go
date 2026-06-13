@@ -122,7 +122,7 @@ func runDesktopMode(cmd *cobra.Command) error {
 	server, err := api.NewServer(ctx, api.ServerConfig{
 		Host:        host,
 		Port:        port,
-		Version:     version.Version,
+		Version:     version.Normalize(),
 		DB:          conn,
 		Querier:     rt.Querier,
 		CWD:         cwd,
@@ -191,10 +191,10 @@ func runDesktopMode(cmd *cobra.Command) error {
 	}()
 
 	versionPrefix := ""
-	if !strings.HasPrefix(version.Version, "v") {
+	if !strings.HasPrefix(version.Normalize(), "v") {
 		versionPrefix = "v"
 	}
-	fmt.Printf("Pando desktop %s%s — API on %s\n", versionPrefix, version.Version, baseURL)
+	fmt.Printf("Pando desktop %s%s — API on %s\n", versionPrefix, version.Normalize(), baseURL)
 
 	serverReady := make(chan struct{})
 	go func() {

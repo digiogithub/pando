@@ -36,7 +36,7 @@ This command only works for released builds with a semantic version such as v0.3
 		checkOnly, _ := cmd.Flags().GetBool("check")
 		current, ok := version.Semver()
 		if !ok {
-			return fmt.Errorf("self-update requires a released semantic version build, current version is %q", version.Version)
+			return fmt.Errorf("self-update requires a released semantic version build, current version is %q", version.Normalize())
 		}
 
 		result, err := detectLatestRelease(context.Background())

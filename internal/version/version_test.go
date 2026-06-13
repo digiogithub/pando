@@ -13,6 +13,7 @@ func TestParse(t *testing.T) {
 		{name: "bare", input: "1.2.3", want: "1.2.3", wantOK: true},
 		{name: "unknown", input: "unknown", wantOK: false},
 		{name: "devel", input: "(devel)", wantOK: false},
+		{name: "dirty_suffix", input: "v1.2.3+dirty", want: "1.2.3", wantOK: true},
 		{name: "empty", input: "", wantOK: false},
 	}
 
@@ -44,5 +45,10 @@ func TestCanonical(t *testing.T) {
 	Version = "unknown"
 	if got := Canonical(); got != "unknown" {
 		t.Fatalf("Canonical() = %q, want %q", got, "unknown")
+	}
+
+	Version = "1.2.3+dirty"
+	if got := Canonical(); got != "v1.2.3" {
+		t.Fatalf("Canonical() = %q, want %q", got, "v1.2.3")
 	}
 }

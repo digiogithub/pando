@@ -187,7 +187,7 @@ func logo(width int) string {
 
 	versionText := baseStyle.
 		Foreground(t.TextMuted()).
-		Render(version.Version)
+		Render(version.Normalize())
 
 	return baseStyle.
 		Bold(true).
