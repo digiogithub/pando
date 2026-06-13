@@ -60,10 +60,11 @@ func generateMarkdownStyleConfig() ansi.StyleConfig {
 		},
 		Heading: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
-				BlockSuffix: "\n",
+				BlockSuffix: "",
 				Color:       stringPtr(adaptiveColorToString(t.MarkdownHeading())),
 				Bold:        boolPtr(true),
 			},
+			Margin: uintPtr(0),
 		},
 		H1: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
@@ -275,6 +276,7 @@ func generateMarkdownStyleConfig() ansi.StyleConfig {
 			StylePrimitive: ansi.StylePrimitive{
 				Color: stringPtr(adaptiveColorToString(t.MarkdownText())),
 			},
+			Margin: uintPtr(0),
 		},
 	}
 }

@@ -24,6 +24,8 @@ import (
 	"github.com/digiogithub/pando/internal/tui/util"
 )
 
+const maxEditorLines = 10
+
 type editorCmp struct {
 	width        int
 	height       int
@@ -36,6 +38,7 @@ type editorCmp struct {
 	inputHistory []string // sent messages for this session, oldest first
 	historyIdx   int      // -1 = not navigating; 0..len-1 = index in history
 	savedInput   string   // draft saved when entering history navigation mode
+	currentLines int      // last emitted line count (for change detection)
 }
 
 type EditorKeyMaps struct {
@@ -63,8 +66,8 @@ var editorMaps = EditorKeyMaps{
 		key.WithHelp("enter", "send message"),
 	),
 	NewLine: key.NewBinding(
-		key.WithKeys("shift+enter", "ctrl+j"),
-		key.WithHelp("shift+enter", "new line"),
+		key.WithKeys("ctrl+enter", "shift+enter", "ctrl+j"),
+		key.WithHelp("ctrl+enter", "new line"),
 	),
 	OpenEditor: key.NewBinding(
 		key.WithKeys("ctrl+i"),
@@ -136,7 +139,31 @@ func (m *editorCmp) openEditor() tea.Cmd {
 }
 
 func (m *editorCmp) Init() tea.Cmd {
-	return textarea.Blink
+	m.currentLines = 1
+	return tea.Batch(
+		textarea.Blink,
+		util.CmdHandler(EditorHeightChangedMsg{Lines: 1}),
+	)
+}
+
+func (m *editorCmp) contentLines() int {
+	n := strings.Count(m.textarea.Value(), "\n") + 1
+	if n < 1 {
+		return 1
+	}
+	if n > maxEditorLines {
+		return maxEditorLines
+	}
+	return n
+}
+
+func (m *editorCmp) heightChangeCmd() tea.Cmd {
+	lines := m.contentLines()
+	if lines == m.currentLines {
+		return nil
+	}
+	m.currentLines = lines
+	return util.CmdHandler(EditorHeightChangedMsg{Lines: lines})
 }
 
 func (m *editorCmp) send() tea.Cmd {
@@ -155,11 +182,13 @@ func (m *editorCmp) send() tea.Cmd {
 	m.inputHistory = append(m.inputHistory, value)
 	m.historyIdx = -1
 	m.savedInput = ""
+	m.currentLines = 0 // force re-emit on next heightChangeCmd call
 	return tea.Batch(
 		util.CmdHandler(SendMsg{
 			Text:        value,
 			Attachments: attachments,
 		}),
+		util.CmdHandler(EditorHeightChangedMsg{Lines: 1}),
 	)
 }
 
@@ -316,7 +345,7 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// SetValue+CursorEnd don't call repositionView internally.
 				// Run a no-op Update so the viewport scrolls to show the cursor.
 				m.textarea, cmd = m.textarea.Update(nil)
-				return m, cmd
+				return m, tea.Batch(cmd, m.heightChangeCmd())
 			}
 		}
 		// History navigation: Down navigates toward newer messages.
@@ -335,12 +364,12 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// SetValue+CursorEnd don't call repositionView internally.
 			// Run a no-op Update so the viewport scrolls to show the cursor.
 			m.textarea, cmd = m.textarea.Update(nil)
-			return m, cmd
+			return m, tea.Batch(cmd, m.heightChangeCmd())
 		}
 
 	}
 	m.textarea, cmd = m.textarea.Update(msg)
-	return m, cmd
+	return m, tea.Batch(cmd, m.heightChangeCmd())
 }
 
 func (m *editorCmp) View() string {

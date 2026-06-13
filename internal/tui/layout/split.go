@@ -18,13 +18,18 @@ type SplitPaneLayout interface {
 	ClearLeftPanel() tea.Cmd
 	ClearRightPanel() tea.Cmd
 	ClearBottomPanel() tea.Cmd
+
+	// SetFixedBottomHeight pins the bottom panel to exactly h rows.
+	// Pass 0 to revert to ratio-based sizing.
+	SetFixedBottomHeight(h int) tea.Cmd
 }
 
 type splitPaneLayout struct {
-	width         int
-	height        int
-	ratio         float64
-	verticalRatio float64
+	width              int
+	height             int
+	ratio              float64
+	verticalRatio      float64
+	fixedBottomHeight  int
 
 	rightPanel  Container
 	leftPanel   Container
@@ -132,8 +137,15 @@ func (s *splitPaneLayout) SetSize(width, height int) tea.Cmd {
 
 	var topHeight, bottomHeight int
 	if s.bottomPanel != nil {
-		topHeight = int(float64(height) * s.verticalRatio)
-		bottomHeight = height - topHeight
+		if s.fixedBottomHeight > 0 {
+			bottomHeight = s.fixedBottomHeight
+			if bottomHeight > height {
+				bottomHeight = height
+			}
+		} else {
+			bottomHeight = height - int(float64(height)*s.verticalRatio)
+		}
+		topHeight = height - bottomHeight
 	} else {
 		topHeight = height
 		bottomHeight = 0
@@ -215,6 +227,14 @@ func (s *splitPaneLayout) ClearRightPanel() tea.Cmd {
 
 func (s *splitPaneLayout) ClearBottomPanel() tea.Cmd {
 	s.bottomPanel = nil
+	if s.width > 0 && s.height > 0 {
+		return s.SetSize(s.width, s.height)
+	}
+	return nil
+}
+
+func (s *splitPaneLayout) SetFixedBottomHeight(h int) tea.Cmd {
+	s.fixedBottomHeight = h
 	if s.width > 0 && s.height > 0 {
 		return s.SetSize(s.width, s.height)
 	}

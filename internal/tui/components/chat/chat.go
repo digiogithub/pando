@@ -21,6 +21,12 @@ type SendMsg struct {
 	Attachments []message.Attachment
 }
 
+// EditorHeightChangedMsg is emitted by the editor when its line count changes.
+// Lines is clamped to [1, 10].
+type EditorHeightChangedMsg struct {
+	Lines int
+}
+
 type SessionSelectedMsg = session.Session
 
 type SessionClearedMsg struct{}

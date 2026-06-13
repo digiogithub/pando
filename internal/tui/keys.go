@@ -171,8 +171,8 @@ func DefaultKeyMap() KeyMap {
 				key.WithHelp("enter", "send message"),
 			),
 			NewLine: key.NewBinding(
-				key.WithKeys("shift+enter", "ctrl+j"),
-				key.WithHelp("shift+enter", "new line"),
+				key.WithKeys("ctrl+enter", "shift+enter", "ctrl+j"),
+				key.WithHelp("ctrl+enter", "new line"),
 			),
 			Cancel: key.NewBinding(
 				key.WithKeys("esc"),

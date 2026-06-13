@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'openrouter.xiaomi/mimo-v2.5'
+Model = 'ollama.qwopus:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -168,6 +168,7 @@ Port = 5013
 [Mesnada.Orchestrator]
 StorePath = './.pando/mesnada'
 LogDir = './.pando/mesnada/logs'
+EnginesDir = ''
 MaxParallel = 5
 DefaultEngine = 'pando'
 DefaultModel = ''

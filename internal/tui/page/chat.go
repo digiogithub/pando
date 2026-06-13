@@ -438,6 +438,19 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.showSlashCompletionDialog = false
 		p.focus = focusFileTree
 		return p, p.applyLayoutMode(SidebarChat)
+	case chat.EditorHeightChangedMsg:
+		_, totalH := p.chatLayout.GetSize()
+		// editorContainer has a 1-row top border, so container height = Lines + 1.
+		fixedH := msg.Lines + 1
+		// Always leave at least 3 rows for the messages area.
+		if totalH > 0 && fixedH > totalH-3 {
+			if totalH-3 > 2 {
+				fixedH = totalH - 3
+			} else {
+				fixedH = 2
+			}
+		}
+		return p, p.chatLayout.SetFixedBottomHeight(fixedH)
 	case chat.SendMsg:
 		cmd := p.sendMessage(msg.Text, msg.Attachments)
 		if cmd != nil {
