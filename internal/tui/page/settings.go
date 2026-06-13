@@ -13,7 +13,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	pandoapp "github.com/digiogithub/pando/internal/app"
-	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
@@ -935,107 +934,6 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 	}
 }
 
-func buildProvidersSection(cfg *config.Config) settings.Section {
-	providerOrder := []models.ModelProvider{
-		models.ProviderAnthropic,
-		models.ProviderOpenAI,
-		models.ProviderOllama,
-		models.ProviderGemini,
-		models.ProviderGROQ,
-		models.ProviderOpenRouter,
-		models.ProviderXAI,
-		models.ProviderCopilot,
-	}
-
-	fields := make([]settings.Field, 0, len(providerOrder)*2)
-	for _, providerID := range providerOrder {
-		providerCfg, ok := cfg.Providers[providerID]
-		if !ok {
-			providerCfg.Disabled = true
-		}
-		providerName := string(providerID)
-
-		if providerID == models.ProviderCopilot {
-			status := auth.GetCopilotAuthStatus().Message
-
-			fields = append(fields,
-				settings.Field{
-					Label:    fmt.Sprintf("%s Auth", providerName),
-					Key:      fmt.Sprintf("providers.%s.auth", providerName),
-					Value:    status,
-					Type:     settings.FieldText,
-					ReadOnly: true,
-				},
-				settings.Field{
-					Label: fmt.Sprintf("%s Enabled", providerName),
-					Key:   fmt.Sprintf("providers.%s.enabled", providerName),
-					Value: boolString(!providerCfg.Disabled),
-					Type:  settings.FieldToggle,
-				},
-			)
-			continue
-		}
-
-		if providerID == models.ProviderOllama {
-			if strings.TrimSpace(providerCfg.BaseURL) == "" {
-				providerCfg.BaseURL = models.ResolveOllamaBaseURL("")
-			}
-
-			fields = append(fields,
-				settings.Field{
-					Label: fmt.Sprintf("%s Base URL", providerName),
-					Key:   fmt.Sprintf("providers.%s.baseURL", providerName),
-					Value: providerCfg.BaseURL,
-					Type:  settings.FieldText,
-				},
-				settings.Field{
-					Label:  fmt.Sprintf("%s API Key", providerName),
-					Key:    fmt.Sprintf("providers.%s.apiKey", providerName),
-					Value:  providerCfg.APIKey,
-					Type:   settings.FieldText,
-					Masked: true,
-				},
-				settings.Field{
-					Label: fmt.Sprintf("%s Enabled", providerName),
-					Key:   fmt.Sprintf("providers.%s.enabled", providerName),
-					Value: boolString(!providerCfg.Disabled),
-					Type:  settings.FieldToggle,
-				},
-			)
-			continue
-		}
-
-		fields = append(fields,
-			settings.Field{
-				Label:  fmt.Sprintf("%s API Key", providerName),
-				Key:    fmt.Sprintf("providers.%s.apiKey", providerName),
-				Value:  providerCfg.APIKey,
-				Type:   settings.FieldText,
-				Masked: true,
-			},
-			settings.Field{
-				Label: fmt.Sprintf("%s Enabled", providerName),
-				Key:   fmt.Sprintf("providers.%s.enabled", providerName),
-				Value: boolString(!providerCfg.Disabled),
-				Type:  settings.FieldToggle,
-			},
-		)
-		if providerID == models.ProviderAnthropic {
-			fields = append(fields, settings.Field{
-				Label: fmt.Sprintf("%s Use OAuth", providerName),
-				Key:   fmt.Sprintf("providers.%s.useOAuth", providerName),
-				Value: boolString(providerCfg.UseOAuth),
-				Type:  settings.FieldToggle,
-			})
-		}
-	}
-
-	return settings.Section{
-		Title:  "Providers",
-		Fields: fields,
-	}
-}
-
 func buildProviderAccountsSection(cfg *config.Config) settings.Section {
 	accounts := config.GetProviderAccounts()
 	fields := make([]settings.Field, 0, len(accounts)*6+1)
@@ -1734,9 +1632,10 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 			Key:     "mesnada.orchestrator.defaultEngine",
 			Type:    settings.FieldSelect,
 			Value:   cfg.Mesnada.Orchestrator.DefaultEngine,
-			Options: []string{"pando", "copilot", "claude", "gemini", "opencode", "mistral", "acp", "acp-claude", "acp-codex"},
+			Options: ensureOption([]string{"pando", "copilot", "claude", "gemini", "opencode", "mistral", "acp", "acp-claude", "acp-codex"}, cfg.Mesnada.Orchestrator.DefaultEngine),
 		},
 		{Label: "Persona Path", Key: "mesnada.orchestrator.personaPath", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.PersonaPath},
+		{Label: "Engines Dir", Key: "mesnada.orchestrator.enginesDir", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.EnginesDir, Hint: "Directory for *.template.yaml custom engine files. Defaults to <storePath>/../engines"},
 		{Label: "ACP Enabled", Key: "mesnada.acp.enabled", Type: settings.FieldToggle, Value: fmt.Sprint(cfg.Mesnada.ACP.Enabled)},
 		{Label: "ACP Auto Permission", Key: "mesnada.acp.autoPermission", Type: settings.FieldToggle, Value: fmt.Sprint(cfg.Mesnada.ACP.AutoPermission)},
 		{Label: "Orchestrator Store Path", Key: "mesnada.orchestrator.storePath", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.StorePath},
@@ -1759,6 +1658,7 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 			Options: ensureOption([]string{"pando"}, cfg.Mesnada.ACP.DefaultAgent),
 		},
 		{Label: "ACP Server Enabled", Key: "mesnada.acp.server.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.ACP.Server.Enabled)},
+		{Label: "ACP Server Transports", Key: "mesnada.acp.server.transports", Type: settings.FieldText, Value: strings.Join(cfg.Mesnada.ACP.Server.Transports, ","), Hint: "Comma-separated: stdio,http"},
 		{Label: "ACP Server Host", Key: "mesnada.acp.server.host", Type: settings.FieldText, Value: cfg.Mesnada.ACP.Server.Host},
 		{Label: "ACP Server Port", Key: "mesnada.acp.server.port", Type: settings.FieldText, Value: fmt.Sprint(cfg.Mesnada.ACP.Server.Port)},
 		{Label: "ACP Server Max Sessions", Key: "mesnada.acp.server.maxSessions", Type: settings.FieldText, Value: fmt.Sprint(cfg.Mesnada.ACP.Server.MaxSessions)},
@@ -3331,12 +3231,14 @@ func saveMesnada(field settings.Field) error {
 		mesnadaCfg.Orchestrator.MaxParallel = maxParallel
 	case "mesnada.orchestrator.defaultEngine":
 		engine := strings.TrimSpace(field.Value)
-		if !isAllowedMesnadaEngine(engine) {
-			return fmt.Errorf("unsupported Mesnada default engine %q", engine)
+		if engine == "" {
+			return fmt.Errorf("Mesnada default engine cannot be empty")
 		}
 		mesnadaCfg.Orchestrator.DefaultEngine = engine
 	case "mesnada.orchestrator.personaPath":
 		mesnadaCfg.Orchestrator.PersonaPath = strings.TrimSpace(field.Value)
+	case "mesnada.orchestrator.enginesDir":
+		mesnadaCfg.Orchestrator.EnginesDir = strings.TrimSpace(field.Value)
 	case "mesnada.acp.enabled":
 		enabled, err := parseBoolValue(field.Value)
 		if err != nil {
@@ -3365,6 +3267,8 @@ func saveMesnada(field settings.Field) error {
 			return fmt.Errorf("invalid ACP server enabled value: %w", err)
 		}
 		mesnadaCfg.ACP.Server.Enabled = enabled
+	case "mesnada.acp.server.transports":
+		mesnadaCfg.ACP.Server.Transports = parseCSV(field.Value)
 	case "mesnada.acp.server.host":
 		host := strings.TrimSpace(field.Value)
 		if host == "" {
@@ -4356,15 +4260,6 @@ func parseIntValue(value string) (int, error) {
 		return 0, err
 	}
 	return parsedValue, nil
-}
-
-func isAllowedMesnadaEngine(engine string) bool {
-	switch engine {
-	case "pando", "copilot", "claude", "gemini", "opencode", "mistral", "acp", "acp-claude", "acp-codex":
-		return true
-	default:
-		return false
-	}
 }
 
 func parseBoolValue(value string) (bool, error) {
