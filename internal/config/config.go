@@ -2744,6 +2744,24 @@ func UpdateSkillsEnabled(enabled bool) error {
 	return nil
 }
 
+func UpdateSkills(skills SkillsConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	old := cfg.Skills
+	cfg.Skills = skills
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Skills = skills
+	}); err != nil {
+		cfg.Skills = old
+		return err
+	}
+
+	return nil
+}
+
 func UpdateMesnada(mesnadaCfg MesnadaConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")

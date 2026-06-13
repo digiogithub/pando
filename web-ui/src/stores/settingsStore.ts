@@ -5,14 +5,20 @@ import { useToastStore } from './toastStore'
 
 const DEFAULTS: SettingsConfig = {
   home_directory: '',
+  working_directory: '',
   default_model: 'claude-sonnet-4-6',
   default_provider: 'anthropic',
-  language: 'en',
   theme: 'pando-light',
-  auto_save: true,
-  markdown_preview: true,
-  custom_instructions: '',
+  debug: false,
+  log_file: '',
+  auto_compact: true,
+  skills_enabled: true,
+  data_directory: '',
   llm_cache_enabled: true,
+  evaluator_enabled: false,
+  judge_model: '',
+  // UI-only, not persisted via /api/v1/settings
+  language: 'en',
 }
 
 interface SettingsStore {

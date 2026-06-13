@@ -140,6 +140,27 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.Debug != nil {
+		if err := config.UpdateDebug(*req.Debug); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update debug setting")
+			return
+		}
+	}
+
+	if req.AutoCompact != nil {
+		if err := config.UpdateAutoCompact(*req.AutoCompact); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update auto compact setting")
+			return
+		}
+	}
+
+	if req.SkillsEnabled != nil {
+		if err := config.UpdateSkillsEnabled(*req.SkillsEnabled); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update skills enabled setting")
+			return
+		}
+	}
+
 	if req.LLMCacheEnabled != nil {
 		if err := config.UpdateLLMCache(*req.LLMCacheEnabled); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update llm cache setting")

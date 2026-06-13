@@ -359,17 +359,23 @@ export interface Project {
   updated_at: number
 }
 
-// Settings / config types
+// Settings / config types (matching SettingsResponse in handlers_settings.go)
 export interface SettingsConfig {
-  home_directory: string
+  home_directory: string       // read-only: OS home dir
+  working_directory: string    // editable working dir
   default_model: string
   default_provider: string
-  language: string
-  theme: string  // combined theme ID: 'pando-light' | 'pando-dark' | 'claude-light' | etc.
-  auto_save: boolean
-  markdown_preview: boolean
-  custom_instructions: string
+  theme: string                // combined theme ID: 'pando-light' | 'pando-dark' | etc.
+  debug: boolean
+  log_file: string
+  auto_compact: boolean
+  skills_enabled: boolean
+  data_directory: string
   llm_cache_enabled: boolean
+  evaluator_enabled: boolean
+  judge_model: string
+  // UI-only fields (not persisted via /api/v1/settings)
+  language: string
 }
 
 // Tools config (matching ToolsConfigResponse in handlers_config.go)
@@ -434,6 +440,8 @@ export interface ContainerConfig {
   allow_mounts: string[]
   extra_env: string[]
   extra_mounts: string[]
+  embedded_cache_dir: string
+  embedded_gc_keep_n: number
 }
 
 export interface RuntimeCapability {
@@ -477,6 +485,7 @@ export interface MesnadaServerConfig {
 export interface MesnadaOrchestratorConfig {
   storePath: string
   logDir: string
+  enginesDir: string
   maxParallel: number
   defaultEngine: string
   defaultModel: string
@@ -539,6 +548,8 @@ export interface RemembrancesConfig {
   context_enrichment_events_results: number
   context_enrichment_events_subject: string
   context_enrichment_events_last_days: number
+  context_enrichment_use_agent_planner: boolean
+  context_enrichment_planner_fallback_to_coder: boolean
   // Memory System
   memory_enabled: boolean
   memory_context_enrichment_enabled: boolean

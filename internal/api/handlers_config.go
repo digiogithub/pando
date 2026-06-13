@@ -716,7 +716,7 @@ func (s *Server) handleConfigExtensions(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
-		if err := config.UpdateSkillsEnabled(req.Skills.Enabled); err != nil {
+		if err := config.UpdateSkills(req.Skills); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update skills config: "+err.Error())
 			return
 		}

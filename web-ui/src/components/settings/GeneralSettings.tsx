@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { TextInput, SelectInput, Textarea, Toggle } from '@/components/shared/FormInput'
+import { TextInput, SelectInput, Toggle } from '@/components/shared/FormInput'
 import ModelCombobox from '@/components/shared/ModelCombobox'
 import ThemePicker from '@/components/shared/ThemePicker'
 import { SUPPORTED_LANGUAGES } from '@/i18n'
@@ -63,10 +63,16 @@ export default function GeneralSettings() {
       {/* Text fields */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
         <TextInput
+          label={t('settings.general.homeDirectory')}
+          value={config.home_directory}
+          readOnly
+        />
+
+        <TextInput
           label={t('settings.general.workingDirectory')}
           placeholder={t('settings.general.workingDirectoryPlaceholder')}
-          value={config.home_directory}
-          onChange={(e) => updateField('home_directory', e.target.value)}
+          value={config.working_directory}
+          onChange={(e) => updateField('working_directory', e.target.value)}
         />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
@@ -104,35 +110,24 @@ export default function GeneralSettings() {
       {/* Toggles */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <Toggle
-          label={t('settings.general.autoSave')}
-          description={t('settings.general.autoSaveDescription')}
-          checked={config.auto_save}
-          onChange={(v) => updateField('auto_save', v)}
-        />
-        <Toggle
-          label={t('settings.general.markdownPreview')}
-          description={t('settings.general.markdownPreviewDescription')}
-          checked={config.markdown_preview}
-          onChange={(v) => updateField('markdown_preview', v)}
-        />
-        <Toggle
           label={t('settings.general.llmCache')}
           description={t('settings.general.llmCacheDescription')}
           checked={config.llm_cache_enabled}
           onChange={(v) => updateField('llm_cache_enabled', v)}
         />
+        <Toggle
+          label={t('settings.general.autoCompact')}
+          description={t('settings.general.autoCompactDescription')}
+          checked={config.auto_compact}
+          onChange={(v) => updateField('auto_compact', v)}
+        />
+        <Toggle
+          label={t('settings.general.debug')}
+          description={t('settings.general.debugDescription')}
+          checked={config.debug}
+          onChange={(v) => updateField('debug', v)}
+        />
       </div>
-
-      <div style={dividerStyle} />
-
-      {/* Custom instructions */}
-      <Textarea
-        label={t('settings.general.customInstructions')}
-        placeholder={t('settings.general.customInstructionsPlaceholder')}
-        value={config.custom_instructions}
-        rows={5}
-        onChange={(e) => updateField('custom_instructions', e.target.value)}
-      />
 
       <div style={dividerStyle} />
 
