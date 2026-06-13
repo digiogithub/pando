@@ -23,7 +23,7 @@ if ! command -v clang >/dev/null 2>&1; then
     exit 1
 fi
 
-VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo dev)"
+VERSION="$(git describe --tags 2>/dev/null || echo dev)"
 LDFLAGS="-s -w -X github.com/digiogithub/pando/internal/version.Version=${VERSION}"
 
 echo "Version: ${VERSION}"

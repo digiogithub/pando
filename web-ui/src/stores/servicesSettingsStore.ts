@@ -9,6 +9,7 @@ const DEFAULT_MESNADA: MesnadaConfig = {
   orchestrator: {
     storePath: '',
     logDir: '',
+    enginesDir: '',
     maxParallel: 4,
     defaultEngine: 'pando',
     defaultModel: '',
@@ -56,6 +57,8 @@ const DEFAULT_REMEMBRANCES: RemembrancesConfig = {
   context_enrichment_events_results: 3,
   context_enrichment_events_subject: '',
   context_enrichment_events_last_days: 30,
+  context_enrichment_use_agent_planner: false,
+  context_enrichment_planner_fallback_to_coder: false,
   // Memory System
   memory_enabled: false,
   memory_context_enrichment_enabled: false,

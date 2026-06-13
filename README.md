@@ -260,7 +260,7 @@ requires: build-webui, build-desktop
 
 ```bash
 # Get version from last git tag
-VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+VERSION=$(git describe --tags 2>/dev/null || echo "dev")
 #go build -ldflags "-X github.com/digiogithub/pando/internal/version.Version=$VERSION" -o pando .
 make build
 rm -f *.log
@@ -294,7 +294,7 @@ mkdir -p dist
 cd web-ui && bun install && bun run build:embedded && cd ..
 
 # Get version from last git tag
-VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
+VERSION=$(git describe --tags 2>/dev/null || echo "dev")
 
 # Linux x64
 make release-linux-amd64

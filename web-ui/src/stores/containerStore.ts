@@ -26,6 +26,8 @@ const DEFAULT_CONFIG: ContainerConfig = {
   allow_mounts: [],
   extra_env: [],
   extra_mounts: [],
+  embedded_cache_dir: '',
+  embedded_gc_keep_n: 10,
 }
 
 interface ContainerStore {

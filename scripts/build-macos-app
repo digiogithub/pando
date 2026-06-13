@@ -7,7 +7,7 @@
 # Usage:
 #   scripts/build-macos-app [VERSION]
 #
-#   VERSION  Optional. Defaults to the latest git tag (git describe --tags --abbrev=0).
+#   VERSION  Optional. Defaults to the latest git describe output (git describe --tags).
 #
 # The login keychain password is read from $KEYSTORE_PASS when code signing is enabled.
 #
@@ -141,7 +141,7 @@ trap 'relock_keychain; rm -rf "$WORK_DIR"' EXIT
 
 # ── Version ─────────────────────────────────────────────────────────────────
 
-VERSION="${1:-$(git -C "$REPO_ROOT" describe --tags --abbrev=0 2>/dev/null || echo "dev")}"
+VERSION="${1:-$(git -C "$REPO_ROOT" describe --tags 2>/dev/null || echo "dev")}"
 # Strip leading 'v' for CFBundleVersion (e.g. v1.2.3 → 1.2.3)
 BUNDLE_VERSION="${VERSION#v}"
 echo "Building Pando.app  version: ${VERSION}  bundle: ${BUNDLE_VERSION}"

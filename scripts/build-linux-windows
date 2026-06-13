@@ -20,7 +20,7 @@ if ! command -v "$ZIG" >/dev/null 2>&1; then
 fi
 
 # Get version from latest git tag (same as Makefile)
-VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo dev)"
+VERSION="$(git describe --tags 2>/dev/null || echo dev)"
 LDFLAGS="-s -w -X github.com/digiogithub/pando/internal/version.Version=${VERSION}"
 
 echo "Version: ${VERSION}"

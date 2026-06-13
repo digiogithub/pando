@@ -3,7 +3,7 @@
 # ============================================================
 
 GOPATH ?= $(shell go env GOPATH)
-VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)
+VERSION ?= $(shell git describe --tags 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/digiogithub/pando/internal/version.Version=$(VERSION)
 DIST_DIR := dist
 WEB_UI_DIR := web-ui
