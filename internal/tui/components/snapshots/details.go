@@ -138,7 +138,7 @@ func (d *detailCmp) updateContent() {
 
 func (d *detailCmp) View() string {
 	t := theme.CurrentTheme()
-	return styles.ForceReplaceBackgroundWithLipgloss(d.viewport.View(), t.Background())
+	return styles.ApplyThemeBackground(d.viewport.View(), t.Background())
 }
 
 func (d *detailCmp) GetSize() (int, int) {

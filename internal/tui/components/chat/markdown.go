@@ -67,7 +67,12 @@ func renderMarkdownText(renderer *glamour.TermRenderer, content string) string {
 	}
 
 	rendered = strings.Trim(rendered, "\n")
-	rendered = styles.ForceReplaceBackgroundWithLipgloss(rendered, theme.CurrentTheme().Background())
+	t := theme.CurrentTheme()
+	if t.HasBackground() {
+		rendered = styles.ForceReplaceBackgroundWithLipgloss(rendered, t.Background())
+	} else {
+		rendered = styles.StripBackgroundCodes(rendered)
+	}
 	return hyperlinkMarkdownURLs(rendered)
 }
 
@@ -80,24 +85,42 @@ func renderMarkdownCodeBlock(highlighter *editor.Highlighter, source, language s
 	}
 
 	rendered = strings.TrimRight(rendered, "\n")
-	rendered = styles.ForceReplaceBackgroundWithLipgloss(rendered, t.BackgroundDarker())
 
-	codeBlock := styles.BaseStyle().
-		Background(t.BackgroundDarker()).
-		Foreground(t.MarkdownCodeBlock()).
-		Padding(0, 1).
-		Render(rendered)
+	var codeBlock string
+	if t.HasBackground() {
+		rendered = styles.ForceReplaceBackgroundWithLipgloss(rendered, t.BackgroundDarker())
+		codeBlock = styles.BaseStyle().
+			Background(t.BackgroundDarker()).
+			Foreground(t.MarkdownCodeBlock()).
+			Padding(0, 1).
+			Render(rendered)
+	} else {
+		rendered = styles.StripBackgroundCodes(rendered)
+		codeBlock = styles.BaseStyle().
+			Foreground(t.MarkdownCodeBlock()).
+			Padding(0, 1).
+			Render(rendered)
+	}
 
 	if language == "" {
 		return codeBlock
 	}
 
-	label := styles.BaseStyle().
-		Background(t.BackgroundSecondary()).
-		Foreground(t.MarkdownCode()).
-		Bold(true).
-		Padding(0, 1).
-		Render(strings.ToLower(language))
+	var label string
+	if t.HasBackground() {
+		label = styles.BaseStyle().
+			Background(t.BackgroundSecondary()).
+			Foreground(t.MarkdownCode()).
+			Bold(true).
+			Padding(0, 1).
+			Render(strings.ToLower(language))
+	} else {
+		label = styles.BaseStyle().
+			Foreground(t.MarkdownCode()).
+			Bold(true).
+			Padding(0, 1).
+			Render(strings.ToLower(language))
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, label, codeBlock)
 }

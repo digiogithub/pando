@@ -116,7 +116,7 @@ func getLevelStyle(level string) lipgloss.Style {
 
 func (i *detailCmp) View() string {
 	t := theme.CurrentTheme()
-	return styles.ForceReplaceBackgroundWithLipgloss(i.viewport.View(), t.Background())
+	return styles.ApplyThemeBackground(i.viewport.View(), t.Background())
 }
 
 func (i *detailCmp) GetSize() (int, int) {

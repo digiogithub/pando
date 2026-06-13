@@ -26,11 +26,17 @@ var globalManager = &Manager{
 
 // RegisterTheme adds a new theme to the registry.
 // If this is the first theme registered, it becomes the default.
-func RegisterTheme(name string, theme Theme) {
+// A "-nobg" variant is automatically registered alongside each theme.
+func RegisterTheme(name string, t Theme) {
 	globalManager.mu.Lock()
 	defer globalManager.mu.Unlock()
 
-	globalManager.themes[name] = theme
+	globalManager.themes[name] = t
+
+	// Auto-register a transparent-background variant (skip for nobg themes themselves)
+	if !strings.HasSuffix(name, "-nobg") {
+		globalManager.themes[name+"-nobg"] = &NoBackgroundWrapper{Theme: t}
+	}
 
 	// If this is the first theme, make it the default
 	if globalManager.currentName == "" {

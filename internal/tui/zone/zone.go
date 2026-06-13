@@ -26,6 +26,7 @@ const (
 	EditorViewport         = "editor-viewport"
 	DiffViewport           = "diff-viewport"
 	ChatViewport           = "chat-viewport"
+	ChatEditorViewport     = "chat-editor-viewport"
 	PermissionAllow        = "permission-allow"
 	PermissionSession      = "permission-session"
 	PermissionDeny         = "permission-deny"
@@ -113,6 +114,10 @@ func MarkDiffViewport(content string) string {
 
 func MarkChatViewport(content string) string {
 	return Manager.Mark(ChatViewport, content)
+}
+
+func MarkChatEditorViewport(content string) string {
+	return Manager.Mark(ChatEditorViewport, content)
 }
 
 func MarkStatusHelp(content string) string {

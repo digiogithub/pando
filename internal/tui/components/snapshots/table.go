@@ -67,7 +67,7 @@ func (c *sessionsTableCmp) View() string {
 	defaultStyles := table.DefaultStyles()
 	defaultStyles.Selected = defaultStyles.Selected.Foreground(t.Primary())
 	c.table.SetStyles(defaultStyles)
-	return styles.ForceReplaceBackgroundWithLipgloss(c.table.View(), t.Background())
+	return styles.ApplyThemeBackground(c.table.View(), t.Background())
 }
 
 func (c *sessionsTableCmp) GetSize() (int, int) {
@@ -168,7 +168,7 @@ func (c *commitsTableCmp) View() string {
 	defaultStyles := table.DefaultStyles()
 	defaultStyles.Selected = defaultStyles.Selected.Foreground(t.Primary())
 	c.table.SetStyles(defaultStyles)
-	return styles.ForceReplaceBackgroundWithLipgloss(c.table.View(), t.Background())
+	return styles.ApplyThemeBackground(c.table.View(), t.Background())
 }
 
 func (c *commitsTableCmp) GetSize() (int, int) {

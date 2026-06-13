@@ -132,12 +132,14 @@ func (m SettingsCmp) View() string {
 	sidebar := m.renderSidebar()
 	content := m.renderContent()
 
-	return lipgloss.NewStyle().
+	containerStyle := lipgloss.NewStyle().
 		Width(m.width).
 		Height(m.height).
-		Background(t.Background()).
-		Foreground(t.Text()).
-		Render(lipgloss.JoinHorizontal(lipgloss.Top, sidebar, content))
+		Foreground(t.Text())
+	if t.HasBackground() {
+		containerStyle = containerStyle.Background(t.Background())
+	}
+	return containerStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, sidebar, content))
 }
 
 func (m *SettingsCmp) SetSections(sections []Section) {

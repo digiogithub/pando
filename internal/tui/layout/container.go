@@ -52,7 +52,9 @@ func (c *container) View() string {
 	// the reduced value would clip the last content row.
 	maxHeight := c.height
 
-	style = style.Background(t.Background())
+	if t.HasBackground() {
+		style = style.Background(t.Background())
+	}
 
 	// Apply border if any side is enabled
 	if c.borderTop || c.borderRight || c.borderBottom || c.borderLeft {

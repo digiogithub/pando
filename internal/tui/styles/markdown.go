@@ -29,6 +29,14 @@ func GetMarkdownRenderer(width int) *glamour.TermRenderer {
 // using adaptive colors from the provided theme.
 func generateMarkdownStyleConfig() ansi.StyleConfig {
 	t := theme.CurrentTheme()
+	hasBg := t.HasBackground()
+
+	bgColor := func(c lipgloss.AdaptiveColor) *string {
+		if !hasBg {
+			return stringPtr("")
+		}
+		return stringPtr(adaptiveColorToString(c))
+	}
 
 	return ansi.StyleConfig{
 		Document: ansi.StyleBlock{
@@ -42,7 +50,7 @@ func generateMarkdownStyleConfig() ansi.StyleConfig {
 		BlockQuote: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
 				Color:           stringPtr(adaptiveColorToString(t.MarkdownBlockQuote())),
-				BackgroundColor: stringPtr(adaptiveColorToString(t.BackgroundSecondary())),
+				BackgroundColor: bgColor(t.BackgroundSecondary()),
 				Italic:          boolPtr(true),
 				Prefix:          "│ ",
 			},
@@ -157,7 +165,7 @@ func generateMarkdownStyleConfig() ansi.StyleConfig {
 		Code: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
 				Color:           stringPtr(adaptiveColorToString(t.MarkdownCode())),
-				BackgroundColor: stringPtr(adaptiveColorToString(t.BackgroundSecondary())),
+				BackgroundColor: bgColor(t.BackgroundSecondary()),
 				Prefix:          " ",
 				Suffix:          " ",
 			},
@@ -166,7 +174,7 @@ func generateMarkdownStyleConfig() ansi.StyleConfig {
 			StyleBlock: ansi.StyleBlock{
 				StylePrimitive: ansi.StylePrimitive{
 					Color:           stringPtr(adaptiveColorToString(t.MarkdownCodeBlock())),
-					BackgroundColor: stringPtr(adaptiveColorToString(t.BackgroundDarker())),
+					BackgroundColor: bgColor(t.BackgroundDarker()),
 				},
 				Margin: uintPtr(0),
 			},

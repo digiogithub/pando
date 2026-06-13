@@ -734,11 +734,12 @@ func alignHighlightedLines(rawLines, highlightedLines []string) []string {
 }
 
 func applyLineBackground(line string, background, foreground lipgloss.AdaptiveColor) string {
-	styled := styles.ForceReplaceBackgroundWithLipgloss(line, background)
-	return lipgloss.NewStyle().
-		Background(background).
-		Foreground(foreground).
-		Render(styled)
+	styled := styles.ApplyThemeBackground(line, background)
+	s := lipgloss.NewStyle().Foreground(foreground)
+	if tuitheme.CurrentTheme().HasBackground() {
+		s = s.Background(background)
+	}
+	return s.Render(styled)
 }
 
 func truncateRunes(value string, limit int) string {

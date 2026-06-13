@@ -11,12 +11,15 @@ var (
 
 // Style generation functions that use the current theme
 
-// BaseStyle returns the base style with background and foreground colors
+// BaseStyle returns the base style with foreground color, plus background when
+// the current theme requests one.
 func BaseStyle() lipgloss.Style {
 	t := theme.CurrentTheme()
-	return lipgloss.NewStyle().
-		Background(t.Background()).
-		Foreground(t.Text())
+	s := lipgloss.NewStyle().Foreground(t.Text())
+	if t.HasBackground() {
+		s = s.Background(t.Background())
+	}
+	return s
 }
 
 // Regular returns a basic unstyled lipgloss.Style

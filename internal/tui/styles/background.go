@@ -6,9 +6,90 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/digiogithub/pando/internal/tui/theme"
 )
 
 var ansiEscape = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+// StripBackgroundCodes removes all ANSI background color codes from input
+// without replacing them. Used when the active theme has no background.
+func StripBackgroundCodes(input string) string {
+	return ansiEscape.ReplaceAllStringFunc(input, func(seq string) string {
+		const (
+			escPrefixLen = 2
+			escSuffixLen = 1
+		)
+		raw := seq
+		start := escPrefixLen
+		end := len(raw) - escSuffixLen
+
+		var sb strings.Builder
+		sb.Grow(end - start)
+
+		for i := start; i < end; {
+			j := i
+			for j < end && raw[j] != ';' {
+				j++
+			}
+			token := raw[i:j]
+
+			if len(token) == 2 && token[0] == '4' && token[1] == '8' {
+				k := j + 1
+				if k < end {
+					l := k
+					for l < end && raw[l] != ';' {
+						l++
+					}
+					next := raw[k:l]
+					if next == "5" {
+						m := l + 1
+						for m < end && raw[m] != ';' {
+							m++
+						}
+						i = m + 1
+						continue
+					} else if next == "2" {
+						m := l + 1
+						for count := 0; count < 3 && m < end; count++ {
+							for m < end && raw[m] != ';' {
+								m++
+							}
+							m++
+						}
+						i = m
+						continue
+					}
+				}
+			}
+
+			isNum := true
+			val := 0
+			for p := i; p < j; p++ {
+				c := raw[p]
+				if c < '0' || c > '9' {
+					isNum = false
+					break
+				}
+				val = val*10 + int(c-'0')
+			}
+			keep := !isNum ||
+				((val < 40 || val > 47) && (val < 100 || val > 107) && val != 49)
+
+			if keep {
+				if sb.Len() > 0 {
+					sb.WriteByte(';')
+				}
+				sb.WriteString(token)
+			}
+			i = j + 1
+		}
+
+		if sb.Len() == 0 {
+			return ""
+		}
+		return "\x1b[" + sb.String() + "m"
+	})
+}
 
 func getColorRGB(c lipgloss.TerminalColor) (uint8, uint8, uint8) {
 	r, g, b, a := c.RGBA()
@@ -120,4 +201,15 @@ func ForceReplaceBackgroundWithLipgloss(input string, newBgColor lipgloss.Termin
 
 		return "\x1b[" + sb.String() + "m"
 	})
+}
+
+// ApplyThemeBackground replaces ANSI background codes in input with the
+// theme's background color, or strips them entirely when the active theme
+// has no background. Use this instead of ForceReplaceBackgroundWithLipgloss
+// at call sites that should respect the theme's background preference.
+func ApplyThemeBackground(input string, bg lipgloss.TerminalColor) string {
+	if theme.CurrentTheme().HasBackground() {
+		return ForceReplaceBackgroundWithLipgloss(input, bg)
+	}
+	return StripBackgroundCodes(input)
 }

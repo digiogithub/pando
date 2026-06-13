@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,6 +23,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
+	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 )
 
 const maxEditorLines = 10
@@ -39,6 +41,12 @@ type editorCmp struct {
 	historyIdx   int      // -1 = not navigating; 0..len-1 = index in history
 	savedInput   string   // draft saved when entering history navigation mode
 	currentLines int      // last emitted line count (for change detection)
+	mouseDown    bool
+	selectionOn  bool
+	selectStartX int
+	selectEndX   int
+	selectStartY int
+	selectEndY   int
 }
 
 type EditorKeyMaps struct {
@@ -274,6 +282,43 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		m.attachments = append(m.attachments, msg.Attachment)
+	case tea.MouseMsg:
+		if m.goalRunning() {
+			return m, nil
+		}
+		if msg.Button == tea.MouseButtonLeft {
+			zone := tuizone.Manager.Get(tuizone.ChatEditorViewport)
+			if zone != nil && zone.InBounds(msg) {
+				relX, relY := zone.Pos(msg)
+				switch msg.Action {
+				case tea.MouseActionPress:
+					m.mouseDown = true
+					m.selectionOn = false
+					m.selectStartX = relX
+					m.selectEndX = relX
+					m.selectStartY = relY
+					m.selectEndY = relY
+				case tea.MouseActionMotion:
+					if m.mouseDown {
+						m.selectEndX = relX
+						m.selectEndY = relY
+						if m.selectStartX != m.selectEndX || m.selectStartY != m.selectEndY {
+							m.selectionOn = true
+						}
+					}
+				case tea.MouseActionRelease:
+					m.mouseDown = false
+					m.selectEndX = relX
+					m.selectEndY = relY
+					if m.selectStartX != m.selectEndX || m.selectStartY != m.selectEndY {
+						m.selectionOn = true
+						if text := m.selectedPromptText(); text != "" {
+							_ = clipboard.WriteAll(text)
+						}
+					}
+				}
+			}
+		}
 	case tea.KeyMsg:
 		if m.goalRunning() {
 			return m, nil
@@ -386,18 +431,62 @@ func (m *editorCmp) View() string {
 		disabled := styles.BaseStyle().
 			Foreground(t.TextMuted()).
 			Render("Goal in progress — input disabled. Press Ctrl+C to cancel.")
-		return lipgloss.JoinHorizontal(lipgloss.Top, style.Render(">"), disabled)
+		return tuizone.MarkChatEditorViewport(lipgloss.JoinHorizontal(lipgloss.Top, style.Render(">"), disabled))
 	}
 
 	if len(m.attachments) == 0 {
-		return lipgloss.JoinHorizontal(lipgloss.Top, style.Render(">"), m.textarea.View())
+		return tuizone.MarkChatEditorViewport(lipgloss.JoinHorizontal(lipgloss.Top, style.Render(">"), m.textarea.View()))
 	}
 	m.textarea.SetHeight(m.height - 1)
-	return lipgloss.JoinVertical(lipgloss.Top,
+	return tuizone.MarkChatEditorViewport(lipgloss.JoinVertical(lipgloss.Top,
 		m.attachmentsContent(),
 		lipgloss.JoinHorizontal(lipgloss.Top, style.Render(">"),
 			m.textarea.View()),
-	)
+	))
+}
+
+func (m *editorCmp) selectedPromptText() string {
+	lines := strings.Split(m.textarea.Value(), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+
+	startY, endY := m.selectStartY, m.selectEndY
+	startX, endX := m.selectStartX, m.selectEndX
+	if startY > endY || (startY == endY && startX > endX) {
+		startY, endY = endY, startY
+		startX, endX = endX, startX
+	}
+
+	startY = clampSelectionColumn(startY, len(lines)-1)
+	endY = clampSelectionColumn(endY, len(lines)-1)
+	if startY > endY {
+		return ""
+	}
+
+	selected := make([]string, 0, endY-startY+1)
+	for lineIdx := startY; lineIdx <= endY; lineIdx++ {
+		line := []rune(lines[lineIdx])
+		lineStart := 0
+		lineEnd := len(line)
+
+		switch {
+		case startY == endY:
+			lineStart = clampSelectionColumn(startX-1, len(line))
+			lineEnd = clampSelectionColumn(endX-1, len(line))
+		case lineIdx == startY:
+			lineStart = clampSelectionColumn(startX-1, len(line))
+		case lineIdx == endY:
+			lineEnd = clampSelectionColumn(endX-1, len(line))
+		}
+
+		if lineStart > lineEnd {
+			lineStart, lineEnd = lineEnd, lineStart
+		}
+		selected = append(selected, string(line[lineStart:lineEnd]))
+	}
+
+	return strings.TrimRight(strings.Join(selected, "\n"), "\n")
 }
 
 func (m *editorCmp) SetSize(width, height int) tea.Cmd {

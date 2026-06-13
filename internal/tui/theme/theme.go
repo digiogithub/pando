@@ -8,6 +8,11 @@ import (
 // All colors must be defined as lipgloss.AdaptiveColor to support
 // both light and dark terminal backgrounds.
 type Theme interface {
+	// HasBackground returns true if the theme applies background colors.
+	// When false, components must not set background colors, letting the
+	// terminal's own background show through.
+	HasBackground() bool
+
 	// Base colors
 	Primary() lipgloss.AdaptiveColor
 	Secondary() lipgloss.AdaptiveColor
@@ -154,6 +159,9 @@ type BaseTheme struct {
 	SyntaxOperatorColor    lipgloss.AdaptiveColor
 	SyntaxPunctuationColor lipgloss.AdaptiveColor
 }
+
+// HasBackground returns true (base themes always use background colors).
+func (t *BaseTheme) HasBackground() bool { return true }
 
 // Implement the Theme interface for BaseTheme
 func (t *BaseTheme) Primary() lipgloss.AdaptiveColor   { return t.PrimaryColor }

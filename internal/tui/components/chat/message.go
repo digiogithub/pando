@@ -675,14 +675,15 @@ func renderToolMessage(
 	return toolMsg
 }
 
-// Helper function to format the time difference between two Unix timestamps
+// Helper function to format the time difference between two Unix timestamps.
+// The TUI intentionally displays elapsed response time using minutes and seconds only.
 func formatTimestampDiff(start, end int64) string {
-	diffSeconds := float64(end-start) / 1000.0 // Convert to seconds
-	if diffSeconds < 1 {
-		return fmt.Sprintf("%dms", int(diffSeconds*1000))
+	d := time.Duration(end-start) * time.Millisecond
+	if d < 0 {
+		d = 0
 	}
-	if diffSeconds < 60 {
-		return fmt.Sprintf("%.1fs", diffSeconds)
-	}
-	return fmt.Sprintf("%.1fm", diffSeconds/60)
+
+	minutes := int(d / time.Minute)
+	seconds := int((d % time.Minute) / time.Second)
+	return fmt.Sprintf("%dm %02ds", minutes, seconds)
 }

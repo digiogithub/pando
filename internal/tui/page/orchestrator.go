@@ -372,7 +372,7 @@ func (p *orchestratorPage) View() string {
 		Width(max(0, p.width-2)).
 		Height(max(0, tableHeight-2)).
 		MaxHeight(max(0, tableHeight-2)).
-		Render(styles.ForceReplaceBackgroundWithLipgloss(p.table.View(), t.Background()))
+		Render(styles.ApplyThemeBackground(p.table.View(), t.Background()))
 
 	detailContent := p.buildDetailContent()
 	p.detailViewport.SetContent(detailContent)
@@ -383,7 +383,7 @@ func (p *orchestratorPage) View() string {
 		Width(max(0, p.width-2)).
 		Height(max(0, detailHeight-2)).
 		MaxHeight(max(0, detailHeight-2)).
-		Render(styles.ForceReplaceBackgroundWithLipgloss(p.detailViewport.View(), t.Background()))
+		Render(styles.ApplyThemeBackground(p.detailViewport.View(), t.Background()))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, subtitle, tablePane, detailPane)
 	view := baseStyle.Width(p.width).Height(p.height).MaxHeight(p.height).Render(content)

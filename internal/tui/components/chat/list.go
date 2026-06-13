@@ -55,6 +55,8 @@ type messagesCmp struct {
 	selectionActive bool
 	selectionStartY int
 	selectionEndY   int
+	selectionStartX int
+	selectionEndX   int
 	contentLines    []string // plain-text lines for copy
 	copyFeedback    bool     // show "Copied!" notification
 }
@@ -125,7 +127,7 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Button == tea.MouseButtonLeft {
 			zone := tuizone.Manager.Get(tuizone.ChatViewport)
 			if zone != nil && zone.InBounds(msg) {
-				_, relY := zone.Pos(msg)
+				relX, relY := zone.Pos(msg)
 				contentLine := m.viewport.YOffset + relY
 				switch msg.Action {
 				case tea.MouseActionPress:
@@ -133,17 +135,30 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectionActive = false
 					m.selectionStartY = contentLine
 					m.selectionEndY = contentLine
+					m.selectionStartX = relX
+					m.selectionEndX = relX
 				case tea.MouseActionMotion:
 					if m.mouseDown {
 						m.selectionEndY = contentLine
-						if m.selectionStartY != m.selectionEndY {
+						m.selectionEndX = relX
+						if m.selectionStartY != m.selectionEndY || m.selectionStartX != m.selectionEndX {
 							m.selectionActive = true
 						}
 					}
 				case tea.MouseActionRelease:
 					m.mouseDown = false
-					if m.selectionStartY != m.selectionEndY {
+					m.selectionEndY = contentLine
+					m.selectionEndX = relX
+					if m.selectionStartY != m.selectionEndY || m.selectionStartX != m.selectionEndX {
 						m.selectionActive = true
+						if text := m.selectedText(); text != "" {
+							if err := clipboard.WriteAll(text); err == nil {
+								m.copyFeedback = true
+								cmds = append(cmds, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+									return copiedMsg{}
+								}))
+							}
+						}
 					}
 				}
 			} else if msg.Action == tea.MouseActionRelease {
@@ -432,6 +447,62 @@ func (m *messagesCmp) renderView() {
 	}
 
 	m.viewport.SetContent(fullContent)
+}
+
+func (m *messagesCmp) selectedText() string {
+	if len(m.contentLines) == 0 {
+		return ""
+	}
+
+	startY, endY := m.selectionStartY, m.selectionEndY
+	startX, endX := m.selectionStartX, m.selectionEndX
+	if startY > endY || (startY == endY && startX > endX) {
+		startY, endY = endY, startY
+		startX, endX = endX, startX
+	}
+	if startY < 0 {
+		startY = 0
+	}
+	if endY >= len(m.contentLines) {
+		endY = len(m.contentLines) - 1
+	}
+	if startY > endY {
+		return ""
+	}
+
+	selected := make([]string, 0, endY-startY+1)
+	for lineIdx := startY; lineIdx <= endY; lineIdx++ {
+		line := []rune(m.contentLines[lineIdx])
+		lineStart := 0
+		lineEnd := len(line)
+
+		switch {
+		case startY == endY:
+			lineStart = clampSelectionColumn(startX, len(line))
+			lineEnd = clampSelectionColumn(endX, len(line))
+		case lineIdx == startY:
+			lineStart = clampSelectionColumn(startX, len(line))
+		case lineIdx == endY:
+			lineEnd = clampSelectionColumn(endX, len(line))
+		}
+
+		if lineStart > lineEnd {
+			lineStart, lineEnd = lineEnd, lineStart
+		}
+		selected = append(selected, string(line[lineStart:lineEnd]))
+	}
+
+	return strings.TrimRight(strings.Join(selected, "\n"), "\n")
+}
+
+func clampSelectionColumn(col, lineLen int) int {
+	if col < 0 {
+		return 0
+	}
+	if col > lineLen {
+		return lineLen
+	}
+	return col
 }
 
 func (m *messagesCmp) View() string {

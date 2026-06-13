@@ -66,7 +66,7 @@ func (i *tableCmp) View() string {
 	defaultStyles := table.DefaultStyles()
 	defaultStyles.Selected = defaultStyles.Selected.Foreground(t.Primary())
 	i.table.SetStyles(defaultStyles)
-	return styles.ForceReplaceBackgroundWithLipgloss(i.table.View(), t.Background())
+	return styles.ApplyThemeBackground(i.table.View(), t.Background())
 }
 
 func (i *tableCmp) GetSize() (int, int) {
