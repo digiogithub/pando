@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -41,6 +42,10 @@ import (
 
 type startCompactSessionMsg struct{}
 
+type originalWindowTitleMsg struct {
+	title string
+}
+
 const pandoWindowTitleBase = "木 Pando"
 
 func sessionWindowTitle(title string) string {
@@ -75,20 +80,21 @@ type terminalFocusChangedMsg struct {
 }
 
 type appModel struct {
-	width, height   int
-	currentPage     page.PageID
-	previousPage    page.PageID
-	pages           map[page.PageID]tea.Model
-	loadedPages     map[page.PageID]bool
-	keys            KeyMap
-	status          core.StatusCmp
-	app             *app.App
-	selectedSession session.Session
-	chatPage        *page.ChatPageModel
-	fileTree        filetree.Component
-	viewer          editor.FileViewerComponent
-	tabBar          *editor.TabBar
-	layoutMode      page.ChatLayoutMode
+	width, height       int
+	currentPage         page.PageID
+	previousPage        page.PageID
+	pages               map[page.PageID]tea.Model
+	loadedPages         map[page.PageID]bool
+	keys                KeyMap
+	status              core.StatusCmp
+	app                 *app.App
+	selectedSession     session.Session
+	originalWindowTitle string
+	chatPage            *page.ChatPageModel
+	fileTree            filetree.Component
+	viewer              editor.FileViewerComponent
+	tabBar              *editor.TabBar
+	layoutMode          page.ChatLayoutMode
 
 	showPermissions bool
 	permissions     dialog.PermissionDialogCmp
@@ -151,9 +157,40 @@ type appModel struct {
 	alert bubbleup.AlertModel
 }
 
+func currentWindowTitle() tea.Msg {
+	return originalWindowTitleMsg{title: os.Getenv("TERM_TITLE")}
+}
+
+func RestoreWindowTitle(title string) {
+	if title == "" {
+		return
+	}
+	fmt.Printf("\033]2;%s\a", title)
+}
+
+func OriginalWindowTitle(model tea.Model) string {
+	titledModel, ok := model.(interface{ originalWindowTitleValue() string })
+	if !ok {
+		return ""
+	}
+	return titledModel.originalWindowTitleValue()
+}
+
+func (a appModel) originalWindowTitleValue() string {
+	return a.originalWindowTitle
+}
+
+func (a appModel) currentSessionWindowTitle() string {
+	if a.isAgentRunning {
+		return sessionWindowTitleRunning(a.selectedSession.Title)
+	}
+	return sessionWindowTitle(a.selectedSession.Title)
+}
+
 func (a appModel) Init() tea.Cmd {
 	var cmds []tea.Cmd
 	cmds = append(cmds, tea.SetWindowTitle(pandoWindowTitleBase))
+	cmds = append(cmds, currentWindowTitle)
 	cmd := a.pages[a.currentPage].Init()
 	a.loadedPages[a.currentPage] = true
 	cmds = append(cmds, cmd)
@@ -545,6 +582,12 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case originalWindowTitleMsg:
+		if msg.title != "" {
+			a.originalWindowTitle = msg.title
+		}
+		return a, tea.SetWindowTitle(a.currentSessionWindowTitle())
+
 	case chat.CompactSessionMsg:
 		// Start compacting the current session (triggered from page via /compact)
 		return a, util.CmdHandler(startCompactSessionMsg{})
@@ -684,11 +727,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.selectedSession = msg
 		a.sessionDialog.SetSelectedSession(msg.ID)
 		a.isAgentRunning = a.app.CoderAgent.IsSessionBusy(msg.ID)
-		if a.isAgentRunning {
-			cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitleRunning(msg.Title)))
-		} else {
-			cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitle(msg.Title)))
-		}
+		cmds = append(cmds, tea.SetWindowTitle(a.currentSessionWindowTitle()))
 
 	case dialog.ConfigGeneratedMsg:
 		// .pando.toml has been generated — navigate to Settings so the user can
@@ -701,11 +740,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pubsub.Event[session.Session]:
 		if msg.Type == pubsub.UpdatedEvent && msg.Payload.ID == a.selectedSession.ID {
 			a.selectedSession = msg.Payload
-			if a.isAgentRunning {
-				cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitleRunning(msg.Payload.Title)))
-			} else {
-				cmds = append(cmds, tea.SetWindowTitle(sessionWindowTitle(msg.Payload.Title)))
-			}
+			cmds = append(cmds, tea.SetWindowTitle(a.currentSessionWindowTitle()))
 		}
 	case dialog.SessionSelectedMsg:
 		a.showSessionDialog = false

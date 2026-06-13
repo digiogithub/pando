@@ -155,7 +155,7 @@ func getHelpWidget() string {
 
 	return styles.Padded().
 		Background(t.TextMuted()).
-		Foreground(t.BackgroundDarker()).
+		Foreground(t.BadgeText()).
 		Bold(true).
 		Render(helpText)
 }
@@ -250,7 +250,7 @@ func (m statusCmp) View() string {
 	if m.activeProject != "" {
 		projectBadge := styles.Padded().
 			Background(t.Primary()).
-			Foreground(t.Background()).
+			Foreground(t.BadgeText()).
 			Render("⬡ " + m.activeProject)
 		status += projectBadge
 	}
@@ -261,7 +261,7 @@ func (m statusCmp) View() string {
 		tokens := formatTokens(totalTokens, model.ContextWindow)
 		tokensStyle := styles.Padded().
 			Background(t.Text()).
-			Foreground(t.BackgroundSecondary())
+			Foreground(t.BadgeText())
 		var percentage float64
 		if model.ContextWindow > 0 {
 			percentage = (float64(totalTokens) / float64(model.ContextWindow)) * 100
@@ -285,7 +285,7 @@ func (m statusCmp) View() string {
 
 	if m.info.Msg != "" {
 		infoStyle := styles.Padded().
-			Foreground(t.Background()).
+			Foreground(t.BadgeText()).
 			Width(availableWidht)
 
 		switch m.info.Type {
@@ -421,7 +421,7 @@ func (m statusCmp) model() string {
 	if !ok {
 		return styles.Padded().
 			Background(t.Secondary()).
-			Foreground(t.Background()).
+			Foreground(t.BadgeText()).
 			Render("No model")
 	}
 	model, modelOK := models.SupportedModels[coder.Model]
@@ -432,7 +432,7 @@ func (m statusCmp) model() string {
 
 	return styles.Padded().
 		Background(t.Secondary()).
-		Foreground(t.Background()).
+		Foreground(t.BadgeText()).
 		Render(modelName)
 }
 

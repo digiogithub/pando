@@ -4,6 +4,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 )
 
@@ -104,8 +105,10 @@ func (s *Section) View(width int, active bool) string {
 	s.SetWidth(width)
 
 	t := theme.CurrentTheme()
+	base := styles.BaseStyle()
+
 	if len(s.Fields) == 0 {
-		return lipgloss.NewStyle().
+		return base.
 			Foreground(t.TextMuted()).
 			Padding(1, 0).
 			Render("No settings in this section.")
@@ -117,7 +120,7 @@ func (s *Section) View(width int, active bool) string {
 		isEditingField := isActiveField && s.editor != nil
 
 		borderColor := t.BorderNormal()
-		labelStyle := lipgloss.NewStyle().
+		labelStyle := base.
 			Width(s.labelWidth()).
 			Foreground(t.TextMuted())
 		if isActiveField {
@@ -133,7 +136,7 @@ func (s *Section) View(width int, active bool) string {
 			value = s.editor.View()
 		}
 
-		valueStyle := lipgloss.NewStyle().
+		valueStyle := base.
 			Width(s.valueWidth()).
 			Foreground(t.Text()).
 			Align(lipgloss.Right)
@@ -147,20 +150,20 @@ func (s *Section) View(width int, active bool) string {
 		row := lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			labelStyle.Render(field.Label),
-			lipgloss.NewStyle().Width(2).Render(""),
+			base.Width(2).Render(""),
 			valueStyle.Render(value),
 		)
 
 		fieldContent := row
 		if field.Hint != "" {
-			hintStyle := lipgloss.NewStyle().
+			hintStyle := base.
 				Foreground(t.TextMuted()).
 				Italic(true).
 				PaddingLeft(1)
 			fieldContent = lipgloss.JoinVertical(lipgloss.Left, row, hintStyle.Render(field.Hint))
 		}
 
-		fieldViews[i] = lipgloss.NewStyle().
+		fieldViews[i] = base.
 			Width(max(1, width)).
 			Padding(0, 1).
 			Border(lipgloss.NormalBorder()).

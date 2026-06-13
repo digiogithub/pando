@@ -553,7 +553,7 @@ func (v *fileViewer) renderGutter(lineIndex int, isCurrentLine, isMatch, isCurre
 
 	switch {
 	case isCurrentMatch:
-		lineStyle = lineStyle.Foreground(t.Background()).Background(t.Primary()).Bold(true)
+		lineStyle = lineStyle.Foreground(t.BadgeText()).Background(t.Primary()).Bold(true)
 	case isCurrentLine:
 		lineStyle = lineStyle.Foreground(t.Primary()).Background(t.BackgroundSecondary()).Bold(true)
 	case isMatch:

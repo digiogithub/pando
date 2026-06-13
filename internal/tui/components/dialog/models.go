@@ -362,7 +362,7 @@ func (m *modelDialogCmp) View() string {
 			itemStyle := baseStyle.Width(maxDialogWidth)
 			if i == m.selectedIdx {
 				itemStyle = itemStyle.Background(t.Primary()).
-					Foreground(t.Background()).Bold(true)
+					Foreground(t.BadgeText()).Bold(true)
 			}
 			label := mod.Name
 			if mod.CanReason {

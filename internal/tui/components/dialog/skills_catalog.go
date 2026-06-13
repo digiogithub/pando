@@ -287,7 +287,7 @@ func (m SkillsCatalogDialog) View() string {
 			cursor = "▶ "
 			itemStyle = itemStyle.
 				Background(t.Primary()).
-				Foreground(t.Background()).
+				Foreground(t.BadgeText()).
 				Bold(true)
 		}
 

@@ -1265,11 +1265,11 @@ func (e *fileEditor) renderWrappedContent(contentWidth int) (string, []int, int)
 		return "", nil, 0
 	}
 
-	cursorStyle := lipgloss.NewStyle().Background(t.Primary()).Foreground(t.Background())
+	cursorStyle := lipgloss.NewStyle().Background(t.Primary()).Foreground(t.BadgeText())
 	bgStyle := lipgloss.NewStyle().Background(t.BackgroundSecondary()).Foreground(t.Text())
 	selStyle := lipgloss.NewStyle().Background(t.SelectionBackground()).Foreground(t.SelectionForeground())
 	normalStyle := lipgloss.NewStyle().Foreground(t.Text())
-	extraCursorStyle := lipgloss.NewStyle().Background(t.Primary()).Foreground(t.Background()).Faint(true)
+	extraCursorStyle := lipgloss.NewStyle().Background(t.Primary()).Foreground(t.BadgeText()).Faint(true)
 	extraBgStyle := lipgloss.NewStyle().Background(t.BackgroundSecondary()).Foreground(t.Text()).Faint(true)
 
 	rawToFirstVisual := make([]int, len(e.lines))
@@ -1425,7 +1425,7 @@ func (e *fileEditor) decorateLine(highlighted, raw string, lineIdx int, isCurren
 
 		cursorStyle := lipgloss.NewStyle().
 			Background(t.Primary()).
-			Foreground(t.Background())
+			Foreground(t.BadgeText())
 
 		bgStyle := lipgloss.NewStyle().
 			Background(t.BackgroundSecondary()).
@@ -1447,7 +1447,7 @@ func (e *fileEditor) decorateLine(highlighted, raw string, lineIdx int, isCurren
 		}
 		cursorStyle := lipgloss.NewStyle().
 			Background(t.Primary()).
-			Foreground(t.Background()).
+			Foreground(t.BadgeText()).
 			Faint(true)
 		bgStyle := lipgloss.NewStyle().
 			Background(t.BackgroundSecondary()).

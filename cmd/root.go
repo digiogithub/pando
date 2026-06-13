@@ -392,6 +392,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 
 		// Run the TUI
 		result, err := program.Run()
+		tui.RestoreWindowTitle(tui.OriginalWindowTitle(result))
 
 		cleanupDone := make(chan struct{})
 		go func() {

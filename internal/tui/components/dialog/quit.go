@@ -90,10 +90,10 @@ func (q *quitDialogCmp) View() string {
 	spacerStyle := baseStyle.Background(t.Background())
 
 	if q.selectedNo {
-		noStyle = noStyle.Background(t.Primary()).Foreground(t.Background())
+		noStyle = noStyle.Background(t.Primary()).Foreground(t.BadgeText())
 		yesStyle = yesStyle.Background(t.Background()).Foreground(t.Primary())
 	} else {
-		yesStyle = yesStyle.Background(t.Primary()).Foreground(t.Background())
+		yesStyle = yesStyle.Background(t.Primary()).Foreground(t.BadgeText())
 		noStyle = noStyle.Background(t.Background()).Foreground(t.Primary())
 	}
 

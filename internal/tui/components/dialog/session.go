@@ -199,7 +199,7 @@ func (s *sessionDialogCmp) View() string {
 		if i == s.selectedIdx {
 			itemStyle = itemStyle.
 				Background(t.Primary()).
-				Foreground(t.Background()).
+				Foreground(t.BadgeText()).
 				Bold(true)
 		}
 		sessionItems = append(sessionItems, tuizone.MarkSessionItem(sess.ID, itemStyle.Padding(0, 1).Render(line)))

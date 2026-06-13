@@ -293,7 +293,7 @@ func (f *filepickerCmp) View() string {
 		if i == f.cursor {
 			itemStyle = itemStyle.
 				Background(t.Primary()).
-				Foreground(t.Background()).
+				Foreground(t.BadgeText()).
 				Bold(true)
 		}
 		filename := file.Name()

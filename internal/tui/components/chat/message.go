@@ -86,7 +86,7 @@ func renderUserMessage(msg message.Message, isFocused bool, width int, position 
 		info = append(info, styles.BaseStyle().
 			Width(width-1).
 			Foreground(t.TextMuted()).
-			Render(fmt.Sprintf(" took %s", formatTimestampDiff(msg.CreatedAt, finishData.Time))),
+			Render(fmt.Sprintf(" took %s", formatTimestampDiff(msg.CreatedAt, messageDisplayEndTime(msg, finishData.Time)))),
 		)
 	}
 	for _, attachment := range msg.BinaryContent() {
@@ -169,7 +169,7 @@ func renderAssistantMessage(
 	if finished {
 		switch finishData.Reason {
 		case message.FinishReasonEndTurn:
-			took := formatTimestampDiff(msg.CreatedAt, finishData.Time)
+			took := formatTimestampDiff(msg.CreatedAt, messageDisplayEndTime(msg, finishData.Time))
 			info = append(info, baseStyle.
 				Width(width-1).
 				Foreground(t.TextMuted()).
@@ -710,4 +710,13 @@ func normalizeUnixTimestamp(ts int64) int64 {
 		return ts / 1000
 	}
 	return ts
+}
+
+func messageDisplayEndTime(msg message.Message, finishTime int64) int64 {
+	endTime := normalizeUnixTimestamp(finishTime)
+	updatedAt := normalizeUnixTimestamp(msg.UpdatedAt)
+	if updatedAt > endTime {
+		return updatedAt
+	}
+	return endTime
 }

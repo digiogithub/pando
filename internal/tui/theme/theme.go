@@ -34,6 +34,12 @@ type Theme interface {
 	BackgroundSecondary() lipgloss.AdaptiveColor
 	BackgroundDarker() lipgloss.AdaptiveColor
 
+	// BadgeText returns the foreground color for text rendered ON colored
+	// surfaces such as status-bar badges, buttons, or the cursor. It mirrors
+	// Background() in value but is intentionally excluded from the
+	// NoBackgroundWrapper so that badge labels remain legible in no-bg themes.
+	BadgeText() lipgloss.AdaptiveColor
+
 	// Selection colors (for highlighted/selected items)
 	SelectionBackground() lipgloss.AdaptiveColor
 	SelectionForeground() lipgloss.AdaptiveColor
@@ -108,6 +114,7 @@ type BaseTheme struct {
 	BackgroundColor          lipgloss.AdaptiveColor
 	BackgroundSecondaryColor lipgloss.AdaptiveColor
 	BackgroundDarkerColor    lipgloss.AdaptiveColor
+	BadgeTextColor           lipgloss.AdaptiveColor
 
 	// Selection colors
 	SelectionBackgroundColor lipgloss.AdaptiveColor
@@ -180,6 +187,15 @@ func (t *BaseTheme) TextEmphasized() lipgloss.AdaptiveColor { return t.TextEmpha
 func (t *BaseTheme) Background() lipgloss.AdaptiveColor          { return t.BackgroundColor }
 func (t *BaseTheme) BackgroundSecondary() lipgloss.AdaptiveColor { return t.BackgroundSecondaryColor }
 func (t *BaseTheme) BackgroundDarker() lipgloss.AdaptiveColor    { return t.BackgroundDarkerColor }
+
+// BadgeText returns the color for text ON colored badge surfaces. Falls back
+// to BackgroundColor when BadgeTextColor is not explicitly set.
+func (t *BaseTheme) BadgeText() lipgloss.AdaptiveColor {
+	if t.BadgeTextColor.Dark != "" || t.BadgeTextColor.Light != "" {
+		return t.BadgeTextColor
+	}
+	return t.BackgroundColor
+}
 
 func (t *BaseTheme) SelectionBackground() lipgloss.AdaptiveColor { return t.SelectionBackgroundColor }
 func (t *BaseTheme) SelectionForeground() lipgloss.AdaptiveColor { return t.SelectionForegroundColor }

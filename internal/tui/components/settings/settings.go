@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 )
 
@@ -198,10 +199,11 @@ func (m *SettingsCmp) SetActiveField(sectionTitle, fieldKey string) {
 
 func (m SettingsCmp) renderSidebar() string {
 	t := theme.CurrentTheme()
+	base := styles.BaseStyle()
 	width := min(sidebarWidth, max(1, m.width))
 	items := make([]string, 0, len(m.sections)+1)
 
-	title := lipgloss.NewStyle().
+	title := base.
 		Foreground(t.Primary()).
 		Bold(true).
 		Padding(0, 1).
@@ -209,16 +211,16 @@ func (m SettingsCmp) renderSidebar() string {
 	items = append(items, title)
 
 	if len(m.sections) == 0 {
-		items = append(items, lipgloss.NewStyle().
+		items = append(items, base.
+			Width(width-2).
 			Padding(1, 1, 0, 1).
 			Foreground(t.TextMuted()).
 			Render("No sections"))
 	} else {
 		lastGroup := ""
 		for i, section := range m.sections {
-			// Show group header when the group changes
 			if section.Group != "" && section.Group != lastGroup {
-				groupHeader := lipgloss.NewStyle().
+				groupHeader := base.
 					Width(width-2).
 					Padding(0, 1).
 					Foreground(t.TextMuted()).
@@ -227,7 +229,7 @@ func (m SettingsCmp) renderSidebar() string {
 				lastGroup = section.Group
 			}
 
-			style := lipgloss.NewStyle().
+			style := base.
 				Width(width-2).
 				Padding(0, 1).
 				Foreground(t.Text())
@@ -242,7 +244,7 @@ func (m SettingsCmp) renderSidebar() string {
 		}
 	}
 
-	return lipgloss.NewStyle().
+	return base.
 		Width(width).
 		Height(m.height).
 		Padding(1, 0).
@@ -253,11 +255,12 @@ func (m SettingsCmp) renderSidebar() string {
 
 func (m SettingsCmp) renderContent() string {
 	t := theme.CurrentTheme()
+	base := styles.BaseStyle()
 	contentWidth := max(1, m.width-min(sidebarWidth, max(1, m.width))-1)
 	activeSection := m.activeSection()
 
 	title := "Select a section"
-	body := lipgloss.NewStyle().
+	body := base.
 		Foreground(t.TextMuted()).
 		Render("No settings available.")
 	if activeSection != nil {
@@ -265,7 +268,7 @@ func (m SettingsCmp) renderContent() string {
 		body = m.viewport.View()
 	}
 
-	header := lipgloss.NewStyle().
+	header := base.
 		Foreground(t.Primary()).
 		Bold(true).
 		Render(title)
@@ -277,7 +280,7 @@ func (m SettingsCmp) renderContent() string {
 		body,
 	)
 
-	return lipgloss.NewStyle().
+	return base.
 		Width(contentWidth).
 		Height(m.height).
 		Padding(1, 2).

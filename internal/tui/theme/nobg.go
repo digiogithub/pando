@@ -1,19 +1,29 @@
 package theme
 
-// NoBackgroundWrapper wraps any Theme and signals that the terminal's own
-// background should show through instead of the theme's background colors.
+import "github.com/charmbracelet/lipgloss"
+
+// transparent is an empty adaptive color — lipgloss emits no background ANSI
+// sequence when a style's background is set to this.
+var transparent = lipgloss.AdaptiveColor{Dark: "", Light: ""}
+
+// NoBackgroundWrapper wraps any Theme and suppresses its background colors so
+// the terminal's own background shows through.
 //
-// It does NOT modify the color values returned by Background(),
-// BackgroundSecondary(), or BackgroundDarker(). Those colors are still needed
-// when used as foreground text on colored badges (e.g., status bar widgets).
-// The places that must skip setting backgrounds already check HasBackground().
+// Background(), BackgroundSecondary(), and BackgroundDarker() all return an
+// empty AdaptiveColor so that lipgloss does not emit a background sequence.
+// BadgeText() is intentionally NOT suppressed: it must remain a real color so
+// that text rendered ON colored badge surfaces (status bar, cursor) is still
+// legible.
 type NoBackgroundWrapper struct {
 	Theme
 }
 
-func (w *NoBackgroundWrapper) HasBackground() bool { return false }
+func (w *NoBackgroundWrapper) HasBackground() bool                         { return false }
+func (w *NoBackgroundWrapper) Background() lipgloss.AdaptiveColor          { return transparent }
+func (w *NoBackgroundWrapper) BackgroundSecondary() lipgloss.AdaptiveColor { return transparent }
+func (w *NoBackgroundWrapper) BackgroundDarker() lipgloss.AdaptiveColor    { return transparent }
 
-// WrapNoBackground returns a view of t that reports HasBackground() == false.
+// WrapNoBackground returns a view of t with all background colors suppressed.
 func WrapNoBackground(t Theme) Theme {
 	return &NoBackgroundWrapper{Theme: t}
 }

@@ -215,10 +215,10 @@ func (m InitDialogCmp) renderYesNo(
 	}
 
 	if selectedIdx == 0 {
-		yesStyle = yesStyle.Background(borderColor).Foreground(t.Background()).Bold(true)
+		yesStyle = yesStyle.Background(borderColor).Foreground(t.BadgeText()).Bold(true)
 		noStyle = noStyle.Background(t.Background()).Foreground(borderColor)
 	} else {
-		noStyle = noStyle.Background(borderColor).Foreground(t.Background()).Bold(true)
+		noStyle = noStyle.Background(borderColor).Foreground(t.BadgeText()).Bold(true)
 		yesStyle = yesStyle.Background(t.Background()).Foreground(borderColor)
 	}
 

@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 )
@@ -140,11 +141,12 @@ func (c *ToggleFieldCmp) Update(msg tea.Msg) (tea.Cmd, bool) {
 
 func (c ToggleFieldCmp) View() string {
 	t := theme.CurrentTheme()
+	base := styles.BaseStyle()
 
-	selectedStyle := lipgloss.NewStyle().
+	selectedStyle := base.
 		Foreground(t.Primary()).
 		Bold(true)
-	regularStyle := lipgloss.NewStyle().
+	regularStyle := base.
 		Foreground(t.TextMuted())
 
 	trueValue := regularStyle.Render("true")
@@ -239,8 +241,10 @@ func (c *SelectFieldCmp) Update(msg tea.Msg) (tea.Cmd, bool) {
 
 func (c SelectFieldCmp) View() string {
 	t := theme.CurrentTheme()
+	base := styles.BaseStyle()
+
 	if len(c.options) == 0 {
-		return lipgloss.NewStyle().
+		return base.
 			Foreground(t.TextMuted()).
 			Render("(no options)")
 	}
@@ -251,7 +255,7 @@ func (c SelectFieldCmp) View() string {
 	for i := start; i < end; i++ {
 		option := c.options[i]
 		prefix := "  "
-		itemStyle := lipgloss.NewStyle().
+		itemStyle := base.
 			Width(c.renderWidth).
 			Foreground(t.Text())
 
@@ -273,7 +277,7 @@ func (c SelectFieldCmp) View() string {
 		if c.visibleEnd() < len(c.options) {
 			indicator += "↓"
 		}
-		items = append(items, lipgloss.NewStyle().Width(c.renderWidth).Align(lipgloss.Right).Foreground(t.Primary()).Render(strings.TrimSpace(indicator)))
+		items = append(items, base.Width(c.renderWidth).Align(lipgloss.Right).Foreground(t.Primary()).Render(strings.TrimSpace(indicator)))
 	}
 
 	return tuizone.MarkModelList(c.listZoneID(), lipgloss.JoinVertical(lipgloss.Left, items...))

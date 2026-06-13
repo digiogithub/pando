@@ -118,7 +118,7 @@ func goalStatusBadge(status string, running bool, spin string, t theme.Theme) st
 
 	return styles.Padded().
 		Background(color).
-		Foreground(t.Background()).
+		Foreground(t.BadgeText()).
 		Bold(true).
 		Render(label)
 }

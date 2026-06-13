@@ -50,7 +50,7 @@ func PlaceOverlay(
 		var shadowbg string = ""
 		shadowchar := lipgloss.NewStyle().
 			Background(t.BackgroundDarker()).
-			Foreground(t.Background()).
+			Foreground(t.BadgeText()).
 			Render("░")
 		bgchar := baseStyle.Render(" ")
 		for i := 0; i <= fgHeight; i++ {

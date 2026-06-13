@@ -50,6 +50,9 @@ func NewLightTheme() *LightTheme {
 	t.BackgroundColor = c(bg)
 	t.BackgroundSecondaryColor = c(bgAlt)
 	t.BackgroundDarkerColor = c(bgCode)
+	// Light theme uses dark badge-backgrounds (Text, TextMuted, Primary…),
+	// so badge text must be white for legibility.
+	t.BadgeTextColor = c("#ffffff")
 	t.SelectionBackgroundColor = c(selection)
 	t.SelectionForegroundColor = c(selFg)
 	t.BorderNormalColor = c(border)
