@@ -69,30 +69,20 @@ pkg_manager() {
 }
 
 # ── Dependency checks (Wails desktop runtime/libs) ──────────────────────────
-# Based on Wails Linux package guidance (v2.x) and distro package naming.
-build_runtime_dependency_list() {
-    local pm="$1"
-    case "${pm}" in
-        apt)
-            echo "libgtk-3-0"
-            echo "libwebkit2gtk-4.0-37"
-            ;;
-        dnf)
-            echo "gtk3"
-            echo "webkit2gtk3"
-            ;;
-        pacman)
-            echo "gtk3"
-            echo "webkit2gtk"
-            ;;
-        zypper)
-            echo "gtk3"
-            echo "webkit2gtk3"
-            ;;
-        *)
-            ;;
-    esac
-}
+# Dynamically detect available packages using pattern matching.
+# Exact versions of GTK/WebKit vary across distro releases, so we search
+# for the best available package instead of hardcoding version suffixes.
+
+# Patterns per package manager — matched against available/installed packages.
+# Order matters: preferred/newer packages come first.
+# apt (Debian/Ubuntu): version suffixes vary per release (4.0-37, 4.1-0, etc.)
+dep_patterns_apt=("libgtk-3-0" "libgtk-3-dev" "libwebkit2gtk-4.1-*" "libwebkit2gtk-4.0-*" "libwebkit2gtk-4.1-dev" "libwebkit2gtk-4.0-dev")
+# dnf (Fedora): uses webkit2gtk4.0 / webkit2gtk4.1 naming
+dep_patterns_dnf=("gtk3" "webkit2gtk4.1" "webkit2gtk4.0")
+# pacman (Arch Linux): webkit2gtk-4.1 is the current official package
+dep_patterns_pacman=("gtk3" "webkit2gtk-4.1" "webkit2gtk")
+# zypper (openSUSE): uses underscores in version (4_1-0, 4_0-37)
+dep_patterns_zypper=("gtk3" "libwebkit2gtk-4_1-0" "libwebkit2gtk-4_0-*" "webkit2gtk3")
 
 package_installed() {
     local pm="$1"
@@ -104,6 +94,152 @@ package_installed() {
         zypper) rpm -q "${pkg}" &>/dev/null ;;
         *) return 1 ;;
     esac
+}
+
+find_available_package() {
+    local pm="$1"
+    local pattern="$2"
+    local contains_wildcard="${pattern%\*}"
+    contains_wildcard="${contains_wildcard%\*}"
+    local is_globby="false"
+    [[ "${pattern}" == *"*"* ]] && is_globby="true"
+
+    case "${pm}" in
+        apt)
+            # If exact name is installed, return as-is
+            dpkg -s "${pattern}" &>/dev/null 2>&1 && { echo "${pattern}"; return; }
+            # Search apt cache — for glob patterns use --names-only with the pattern,
+            # for exact names anchor with ^...$
+            local search_pat
+            if [[ "${is_globby}" == "true" ]]; then
+                search_pat="${pattern}"
+            else
+                search_pat="^${pattern}$"
+            fi
+            local candidate
+            candidate="$(apt-cache search --names-only "${search_pat}" 2>/dev/null \
+                | awk '{print $1}' | head -n1)"
+            if [[ -n "${candidate}" ]]; then
+                echo "${candidate}"
+            fi
+            ;;
+        dnf)
+            # Check if already installed (exact or glob match via rpm)
+            if rpm -q "${pattern}" &>/dev/null 2>&1; then
+                echo "${pattern}"
+                return
+            fi
+            if command -v dnf &>/dev/null; then
+                # dnf repoquery supports glob natively
+                local candidate
+                candidate="$(dnf repoquery --qf '%{name}' --latest-limit=1 "${pattern}" 2>/dev/null | head -n1)"
+                if [[ -n "${candidate}" ]]; then
+                    echo "${candidate}"
+                fi
+            fi
+            ;;
+        zypper)
+            # Check if already installed
+            if rpm -q "${pattern}" &>/dev/null 2>&1; then
+                echo "${pattern}"
+                return
+            fi
+            if command -v zypper &>/dev/null; then
+                # zypper search -x uses exact match; for globs use -x with the pattern
+                # The output format is: S | Name | Summary
+                # We need to extract the Name column
+                local candidate
+                candidate="$(zypper --non-interactive search -x "${pattern}" 2>/dev/null \
+                    | awk -F'|' 'NR>2{gsub(/^ +| +$/,"",$2); if($2!="") {print $2; exit}}')"
+                if [[ -n "${candidate}" ]]; then
+                    echo "${candidate}"
+                fi
+            fi
+            ;;
+        pacman)
+            # Check if already installed
+            if pacman -Q "${pattern}" &>/dev/null 2>&1; then
+                echo "${pattern}"
+                return
+            fi
+            # pacman -Ss searches sync db; use regex for exact or glob match
+            local search_re
+            if [[ "${is_globby}" == "true" ]]; then
+                # Convert shell glob to regex: * -> .*
+                search_re="^$(echo "${pattern}" | sed 's/[.]/\\./g; s/\*/.*/g')$"
+            else
+                search_re="^${pattern}$"
+            fi
+            if pacman -Ss "${search_re}" &>/dev/null 2>&1; then
+                # Extract package name (format: repo/name version ...)
+                local found_name
+                found_name="$(pacman -Ss "${search_re}" 2>/dev/null | head -n1 | awk '{print $1}' | awk -F'/' '{print $2}')"
+                if [[ -n "${found_name}" ]]; then
+                    echo "${found_name}"
+                fi
+            fi
+            ;;
+    esac
+}
+
+build_runtime_dependency_list() {
+    local pm="$1"
+    local -n patterns="dep_patterns_${pm}"
+    local deps=()
+    local seen=()
+
+    if [[ ${#patterns[@]} -eq 0 ]]; then
+        return
+    fi
+
+    info "Searching for available desktop runtime packages..."
+
+    for pattern in "${patterns[@]}"; do
+        # Skip if we already found a package for this logical dependency
+        # (e.g., once we find webkit2gtk-4.1, skip webkit2gtk)
+        local already_found=false
+        for s in "${seen[@]}"; do
+            case "${pm}" in
+                apt)
+                    # For apt: libwebkit2gtk-4.1-* and libwebkit2gtk-4.0-* are the same logical dep
+                    if [[ "${s}" == "webkit" && "${pattern}" == libwebkit2gtk-* ]]; then
+                        already_found=true; break
+                    fi
+                    ;;
+                dnf)
+                    if [[ "${s}" == "webkit" && "${pattern}" == webkit2gtk* ]]; then
+                        already_found=true; break
+                    fi
+                    ;;
+                pacman)
+                    if [[ "${s}" == "webkit" && "${pattern}" == webkit2gtk* ]]; then
+                        already_found=true; break
+                    fi
+                    ;;
+                zypper)
+                    if [[ "${s}" == "webkit" && "${pattern}" == *webkit* ]]; then
+                        already_found=true; break
+                    fi
+                    ;;
+            esac
+        done
+        [[ "${already_found}" == "true" ]] && continue
+
+        local found
+        found="$(find_available_package "${pm}" "${pattern}")"
+        if [[ -n "${found}" ]]; then
+            deps+=("${found}")
+            success "Found: ${found}"
+            # Mark logical category as seen
+            if [[ "${pattern}" == *gtk* ]]; then
+                seen+=("gtk")
+            elif [[ "${pattern}" == *webkit* ]]; then
+                seen+=("webkit")
+            fi
+        fi
+    done
+
+    printf '%s\n' "${deps[@]}"
 }
 
 run_sudo_install_cmd() {
@@ -161,13 +297,14 @@ ensure_wails_runtime_dependencies() {
     done < <(build_runtime_dependency_list "${pm}")
 
     if [[ ${#deps[@]} -eq 0 ]]; then
-        warn "No dependency map defined for package manager '${pm}'. Skipping runtime dependency check."
+        warn "No runtime dependency packages found for package manager '${pm}'."
+        warn "Skipping automatic dependency installation."
+        warn "Please ensure your system has GTK and WebKitGTK runtime libraries installed."
         return 0
     fi
 
     info "Checking Linux desktop runtime dependencies (Wails) for ${pm}..."
 
-    local dep
     for dep in "${deps[@]}"; do
         if package_installed "${pm}" "${dep}"; then
             success "Dependency present: ${dep}"
