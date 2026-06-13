@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/digiogithub/pando/internal/rag/code"
 	"github.com/digiogithub/pando/internal/rag/treesitter"
@@ -295,44 +294,26 @@ func (t *CodeHybridSearchTool) Run(ctx context.Context, params ToolCall) (ToolRe
 	}
 
 	type symbolItem struct {
-		ID         string                 `json:"id"`
-		FilePath   string                 `json:"file_path"`
-		Language   string                 `json:"language"`
-		SymbolType string                 `json:"symbol_type"`
-		Name       string                 `json:"name"`
-		NamePath   string                 `json:"name_path"`
-		StartLine  int                    `json:"start_line"`
-		EndLine    int                    `json:"end_line"`
-		StartByte  int                    `json:"start_byte"`
-		EndByte    int                    `json:"end_byte"`
-		Signature  string                 `json:"signature,omitempty"`
-		DocString  string                 `json:"doc_string,omitempty"`
-		Metadata   map[string]interface{} `json:"metadata,omitempty"`
-		CreatedAt  time.Time              `json:"created_at"`
-		UpdatedAt  time.Time              `json:"updated_at"`
-		Score      float64                `json:"score"`
-		Rank       int                    `json:"rank"`
+		SymbolType string  `json:"symbol_type"`
+		Name       string  `json:"name"`
+		NamePath   string  `json:"name_path,omitempty"`
+		FilePath   string  `json:"file_path"`
+		StartLine  int     `json:"start_line"`
+		Signature  string  `json:"signature,omitempty"`
+		Score      float64 `json:"score"`
+		Rank       int     `json:"rank"`
 	}
 
 	items := make([]symbolItem, len(results))
 	for i, r := range results {
 		sym := r.Symbol
 		items[i] = symbolItem{
-			ID:         sym.ID,
-			FilePath:   sym.FilePath,
-			Language:   string(sym.Language),
 			SymbolType: string(sym.SymbolType),
 			Name:       sym.Name,
 			NamePath:   sym.NamePath,
+			FilePath:   sym.FilePath,
 			StartLine:  sym.StartLine,
-			EndLine:    sym.EndLine,
-			StartByte:  sym.StartByte,
-			EndByte:    sym.EndByte,
 			Signature:  sym.Signature,
-			DocString:  sym.DocString,
-			Metadata:   sym.Metadata,
-			CreatedAt:  sym.CreatedAt,
-			UpdatedAt:  sym.UpdatedAt,
 			Score:      r.Score,
 			Rank:       r.Rank,
 		}
@@ -449,9 +430,29 @@ func (t *CodeFindSymbolTool) Run(ctx context.Context, params ToolCall) (ToolResp
 		return NewTextResponse("No symbols found matching the pattern."), nil
 	}
 
+	type symItem struct {
+		SymbolType string `json:"symbol_type"`
+		Name       string `json:"name"`
+		NamePath   string `json:"name_path,omitempty"`
+		FilePath   string `json:"file_path"`
+		StartLine  int    `json:"start_line"`
+		Signature  string `json:"signature,omitempty"`
+	}
+	items := make([]symItem, len(symbols))
+	for i, s := range symbols {
+		items[i] = symItem{
+			SymbolType: string(s.SymbolType),
+			Name:       s.Name,
+			NamePath:   s.NamePath,
+			FilePath:   s.FilePath,
+			StartLine:  s.StartLine,
+			Signature:  s.Signature,
+		}
+	}
+
 	return NewStructuredResponse(map[string]any{
-		"count":   len(symbols),
-		"symbols": symbols,
+		"count":   len(items),
+		"symbols": items,
 	}), nil
 }
 
@@ -504,9 +505,27 @@ func (t *CodeGetSymbolsOverviewTool) Run(ctx context.Context, params ToolCall) (
 		return NewTextResponse(fmt.Sprintf("No symbols found in file: %s", req.RelativePath)), nil
 	}
 
+	type symItem struct {
+		SymbolType string `json:"symbol_type"`
+		Name       string `json:"name"`
+		NamePath   string `json:"name_path,omitempty"`
+		StartLine  int    `json:"start_line"`
+		Signature  string `json:"signature,omitempty"`
+	}
+	items := make([]symItem, len(symbols))
+	for i, s := range symbols {
+		items[i] = symItem{
+			SymbolType: string(s.SymbolType),
+			Name:       s.Name,
+			NamePath:   s.NamePath,
+			StartLine:  s.StartLine,
+			Signature:  s.Signature,
+		}
+	}
+
 	return NewStructuredResponse(map[string]any{
-		"count":   len(symbols),
-		"symbols": symbols,
+		"count":   len(items),
+		"symbols": items,
 	}), nil
 }
 
@@ -879,9 +898,27 @@ func (t *CodeFindReferencesTool) Run(ctx context.Context, params ToolCall) (Tool
 		return NewTextResponse("No references found for the requested symbol."), nil
 	}
 
+	type refItem struct {
+		SymbolType string `json:"symbol_type"`
+		Name       string `json:"name"`
+		NamePath   string `json:"name_path,omitempty"`
+		FilePath   string `json:"file_path"`
+		StartLine  int    `json:"start_line"`
+	}
+	refs := make([]refItem, len(symbols))
+	for i, s := range symbols {
+		refs[i] = refItem{
+			SymbolType: string(s.SymbolType),
+			Name:       s.Name,
+			NamePath:   s.NamePath,
+			FilePath:   s.FilePath,
+			StartLine:  s.StartLine,
+		}
+	}
+
 	return NewStructuredResponse(map[string]any{
-		"count":   len(symbols),
-		"symbols": symbols,
+		"count":      len(refs),
+		"references": refs,
 	}), nil
 }
 
