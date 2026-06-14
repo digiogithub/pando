@@ -172,7 +172,7 @@ func DefaultKeyMap() KeyMap {
 			),
 			NewLine: key.NewBinding(
 				key.WithKeys("ctrl+enter", "shift+enter", "ctrl+j"),
-				key.WithHelp("ctrl+enter", "new line"),
+				key.WithHelp("ctrl+j", "new line"),
 			),
 			Cancel: key.NewBinding(
 				key.WithKeys("esc"),

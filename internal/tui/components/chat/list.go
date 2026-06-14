@@ -650,7 +650,7 @@ func (m *messagesCmp) help() string {
 			baseStyle.Foreground(t.TextMuted()).Bold(true).Render("press "),
 			baseStyle.Foreground(t.Text()).Bold(true).Render("enter"),
 			baseStyle.Foreground(t.TextMuted()).Bold(true).Render(" to send the message,"),
-			baseStyle.Foreground(t.Text()).Bold(true).Render(" ctrl+enter"),
+			baseStyle.Foreground(t.Text()).Bold(true).Render(" ctrl+j"),
 			baseStyle.Foreground(t.TextMuted()).Bold(true).Render(" to add a new line"),
 		)
 	}

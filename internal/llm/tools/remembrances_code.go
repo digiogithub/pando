@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/digiogithub/pando/internal/rag/code"
@@ -28,6 +30,79 @@ const (
 
 type codeToolBase struct {
 	indexer *code.CodeIndexer
+}
+
+// maxSearchFieldLen caps the length of textual fields emitted in code search
+// results. Defense in depth against pathological symbols (e.g. markdown doc
+// sections) whose name/name_path/signature would otherwise bloat the context
+// window. Rune-aware so it never splits a UTF-8 character.
+const maxSearchFieldLen = 200
+
+// truncateField shortens s to at most maxSearchFieldLen runes, appending an
+// ellipsis when truncated.
+func truncateField(s string) string {
+	if len(s) <= maxSearchFieldLen {
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= maxSearchFieldLen {
+		return s
+	}
+	return string(r[:maxSearchFieldLen]) + "…"
+}
+
+// defaultMinScoreRatio drops hybrid search results whose normalized relevance
+// (0..1 relative to the top hit) falls below this fraction, trimming the
+// low-signal tail. The top result is always kept. Overridable per call via the
+// min_score parameter.
+const defaultMinScoreRatio = 0.15
+
+// docFileExts identifies documentation files whose symbols are downranked and,
+// by default, excluded from code_hybrid_search results (they bloat context and
+// the agent usually already has them).
+var docFileExts = map[string]bool{
+	".md": true, ".markdown": true, ".mdx": true,
+	".rst": true, ".txt": true, ".adoc": true, ".asciidoc": true,
+}
+
+// isDocFile reports whether path points to a documentation (non-code) file.
+func isDocFile(path string) bool {
+	dot := strings.LastIndexByte(path, '.')
+	if dot < 0 {
+		return false
+	}
+	return docFileExts[strings.ToLower(path[dot:])]
+}
+
+// matchSnippet returns a single short line of context for a pattern match: the
+// first source line containing the pattern, falling back to the signature or
+// the first non-empty source line. The result is trimmed and length-capped.
+func matchSnippet(sym *code.CodeSymbol, pattern string, caseSensitive bool) string {
+	needle := pattern
+	if !caseSensitive {
+		needle = strings.ToLower(pattern)
+	}
+	var firstNonEmpty string
+	for _, line := range strings.Split(sym.SourceCode, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if firstNonEmpty == "" {
+			firstNonEmpty = trimmed
+		}
+		hay := trimmed
+		if !caseSensitive {
+			hay = strings.ToLower(trimmed)
+		}
+		if needle != "" && strings.Contains(hay, needle) {
+			return truncateField(trimmed)
+		}
+	}
+	if sym.Signature != "" {
+		return truncateField(strings.TrimSpace(sym.Signature))
+	}
+	return truncateField(firstNonEmpty)
 }
 
 // CodeIndexProjectTool starts indexing a code project.
@@ -222,7 +297,7 @@ func (t *CodeIndexStatusTool) Run(ctx context.Context, params ToolCall) (ToolRes
 func (t *CodeHybridSearchTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        codeHybridSearchToolName,
-		Description: "Searches indexed code symbols using natural language. Combines vector semantic search with full-text search for best results. Use this to find functions, classes, or code related to a concept.",
+		Description: "Searches indexed code symbols using natural language. Combines vector semantic search with full-text search. Results are ranked with a normalized relevance score (0..1, 1 = best match) and the low-relevance tail is trimmed. Documentation files (.md, .rst, ...) are excluded by default; set include_docs to include them. Use this to find functions, classes, or code related to a concept.",
 		Parameters: map[string]any{
 			"project_id": map[string]any{
 				"type":        "string",
@@ -234,7 +309,11 @@ func (t *CodeHybridSearchTool) Info() ToolInfo {
 			},
 			"limit": map[string]any{
 				"type":        "integer",
-				"description": "Maximum number of results (default: 20, max: 50).",
+				"description": "Maximum number of results per page (default: 20, max: 50).",
+			},
+			"offset": map[string]any{
+				"type":        "integer",
+				"description": "Number of ranked results to skip before the page (default: 0). Use next_offset from a previous response to page forward without re-querying.",
 			},
 			"languages": map[string]any{
 				"type":        "array",
@@ -246,6 +325,18 @@ func (t *CodeHybridSearchTool) Info() ToolInfo {
 				"description": "Optional filter by symbol types (e.g. [\"function\", \"class\", \"method\"]).",
 				"items":       map[string]any{"type": "string"},
 			},
+			"min_score": map[string]any{
+				"type":        "number",
+				"description": "Minimum normalized relevance score (0..1) to keep. Higher values return fewer, more relevant results. Default trims results below 15% of the top hit.",
+			},
+			"include_docs": map[string]any{
+				"type":        "boolean",
+				"description": "Include documentation files (markdown, rst, txt) in results. Default false.",
+			},
+			"debug": map[string]any{
+				"type":        "boolean",
+				"description": "Include raw score breakdown (vector/fts/raw) per result. Default false.",
+			},
 		},
 		Required: []string{"project_id", "query"},
 	}
@@ -256,8 +347,12 @@ func (t *CodeHybridSearchTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		ProjectID   string   `json:"project_id"`
 		Query       string   `json:"query"`
 		Limit       int      `json:"limit"`
+		Offset      int      `json:"offset"`
 		Languages   []string `json:"languages"`
 		SymbolTypes []string `json:"symbol_types"`
+		MinScore    float64  `json:"min_score"`
+		IncludeDocs bool     `json:"include_docs"`
+		Debug       bool     `json:"debug"`
 	}
 	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
@@ -274,6 +369,9 @@ func (t *CodeHybridSearchTool) Run(ctx context.Context, params ToolCall) (ToolRe
 	if req.Limit > 50 {
 		req.Limit = 50
 	}
+	if req.Offset < 0 {
+		req.Offset = 0
+	}
 
 	var langs []code.Language
 	for _, l := range req.Languages {
@@ -284,7 +382,22 @@ func (t *CodeHybridSearchTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		symTypes = append(symTypes, treesitter.SymbolType(s))
 	}
 
-	results, err := t.indexer.HybridSearch(ctx, req.ProjectID, req.Query, req.Limit, langs, symTypes)
+	// Over-fetch enough candidates to cover offset+limit even after doc
+	// filtering and the relevance cutoff trim the result set. The 3x factor
+	// mirrors the original headroom for the filtered tail.
+	want := req.Offset + req.Limit
+	fetchLimit := want
+	if !req.IncludeDocs || req.MinScore > 0 {
+		fetchLimit = want * 3
+	}
+	if fetchLimit > 150 {
+		fetchLimit = 150
+	}
+	if fetchLimit < want {
+		fetchLimit = want
+	}
+
+	results, err := t.indexer.HybridSearch(ctx, req.ProjectID, req.Query, fetchLimit, langs, symTypes)
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("hybrid search error: %v", err)), nil
 	}
@@ -293,36 +406,265 @@ func (t *CodeHybridSearchTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		return NewTextResponse("No symbols found matching the query."), nil
 	}
 
-	type symbolItem struct {
-		SymbolType string  `json:"symbol_type"`
-		Name       string  `json:"name"`
-		NamePath   string  `json:"name_path,omitempty"`
-		FilePath   string  `json:"file_path"`
-		StartLine  int     `json:"start_line"`
-		Signature  string  `json:"signature,omitempty"`
-		Score      float64 `json:"score"`
-		Rank       int     `json:"rank"`
+	// Rank/filter the full candidate set, then page over it. Ranks are
+	// assigned across the whole ranked set so they stay stable across pages.
+	ranked := rankAndFilterHybrid(results, req.MinScore, req.IncludeDocs, req.Debug)
+	if len(ranked) == 0 {
+		return NewTextResponse("No code symbols found matching the query (documentation excluded; set include_docs to include it)."), nil
 	}
 
-	items := make([]symbolItem, len(results))
-	for i, r := range results {
-		sym := r.Symbol
-		items[i] = symbolItem{
-			SymbolType: string(sym.SymbolType),
-			Name:       sym.Name,
-			NamePath:   sym.NamePath,
-			FilePath:   sym.FilePath,
-			StartLine:  sym.StartLine,
-			Signature:  sym.Signature,
-			Score:      r.Score,
-			Rank:       r.Rank,
+	page, meta := paginate(ranked, req.Offset, req.Limit)
+	if len(page) == 0 {
+		return NewTextResponse(fmt.Sprintf("No results at offset %d (total %d).", req.Offset, meta.Total)), nil
+	}
+
+	var sb strings.Builder
+	for _, it := range page {
+		trailer := it.Signature
+		if it.Signature == "" {
+			trailer = it.Name
+		}
+		sb.WriteString(compactLine(it.Rank, it.Score, it.Kind, it.FilePath, it.StartLine, it.NamePath, trailer))
+		sb.WriteByte('\n')
+	}
+	sb.WriteString(compactPaginationFooter(meta, len(page)))
+
+	return WithResponseMetadata(NewTextResponse(sb.String()), map[string]any{
+		"count":      len(page),
+		"total":      meta.Total,
+		"offset":     meta.Offset,
+		"limit":      meta.Limit,
+		"has_more":   meta.HasMore,
+		"next_offset": meta.NextOffset,
+		"results":    page,
+	}), nil
+}
+
+// hybridResultItem is the slim, ranked projection emitted by code_hybrid_search.
+type hybridResultItem struct {
+	SymbolType  string  `json:"symbol_type"`
+	Name        string  `json:"name"`
+	NamePath    string  `json:"name_path,omitempty"`
+	FilePath    string  `json:"file_path"`
+	StartLine   int     `json:"start_line"`
+	Signature   string  `json:"signature,omitempty"`
+	Kind        string  `json:"kind"`
+	Score       float64 `json:"score"`
+	Rank        int     `json:"rank"`
+	RawScore    float64 `json:"raw_score,omitempty"`
+	VectorScore float64 `json:"vector_score,omitempty"`
+	FTSScore    float64 `json:"fts_score,omitempty"`
+}
+
+// rankAndFilterHybrid turns raw hybrid search results into a ranked, slim
+// projection: it drops documentation files (unless includeDocs), normalizes
+// scores to 0..1 relative to the top hit and trims the low-relevance tail
+// (keeping at least the top result). It returns the FULL ranked set so the
+// caller can paginate over it; ranks are assigned across the whole set and
+// remain stable across pages. When debug is set, per-result raw/vector/fts
+// scores are included.
+func rankAndFilterHybrid(results []code.HybridSearchResult, minScore float64, includeDocs, debug bool) []hybridResultItem {
+	// Drop documentation files unless explicitly requested. Build a fresh slice
+	// so the caller's input is never mutated in place.
+	if !includeDocs {
+		filtered := make([]code.HybridSearchResult, 0, len(results))
+		for _, r := range results {
+			if r.Symbol != nil && isDocFile(r.Symbol.FilePath) {
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		results = filtered
+	}
+	if len(results) == 0 {
+		return nil
+	}
+
+	// Normalize scores to 0..1 relative to the top hit (negatives clamped to 0)
+	// so the emitted score is interpretable and a relevance cutoff can apply.
+	top := 0.0
+	for _, r := range results {
+		if r.Score > top {
+			top = r.Score
 		}
 	}
+	cutoff := minScore
+	if cutoff <= 0 {
+		cutoff = defaultMinScoreRatio
+	}
 
-	return NewStructuredResponse(map[string]any{
-		"count":   len(items),
-		"results": items,
-	}), nil
+	items := make([]hybridResultItem, 0, len(results))
+	for _, r := range results {
+		sym := r.Symbol
+		if sym == nil {
+			continue
+		}
+		norm := 0.0
+		if top > 0 {
+			norm = r.Score / top
+			if norm < 0 {
+				norm = 0
+			}
+		}
+		// Apply the cutoff but always keep at least the top result.
+		if top > 0 && norm < cutoff && len(items) > 0 {
+			continue
+		}
+		kind := "code"
+		if isDocFile(sym.FilePath) {
+			kind = "doc"
+		}
+		item := hybridResultItem{
+			SymbolType: string(sym.SymbolType),
+			Name:       truncateField(sym.Name),
+			NamePath:   truncateField(sym.NamePath),
+			FilePath:   sym.FilePath,
+			StartLine:  sym.StartLine,
+			Signature:  truncateField(sym.Signature),
+			Kind:       kind,
+			Score:      roundScore(norm),
+			Rank:       len(items) + 1,
+		}
+		if debug {
+			item.RawScore = r.Score
+			item.VectorScore = r.VectorScore
+			item.FTSScore = r.FTSScore
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+// roundScore rounds a normalized score to 3 decimal places for compact output.
+func roundScore(s float64) float64 {
+	return math.Round(s*1000) / 1000
+}
+
+// paginationMeta is the per-response pagination envelope attached to code search
+// results. total is the number of matches found before the page slice; offset
+// and limit describe the requested window; has_more is true when more results
+// exist past the window and next_offset (only meaningful when has_more) is the
+// offset to request the following page.
+type paginationMeta struct {
+	Total      int  `json:"total"`
+	Offset     int  `json:"offset"`
+	Limit      int  `json:"limit"`
+	HasMore    bool `json:"has_more"`
+	NextOffset int  `json:"next_offset,omitempty"`
+	// TotalIsLowerBound is set when the underlying store was queried with a
+	// "+1 sentinel" page window rather than the full result set, so Total only
+	// counts what was fetched and the real total may be higher.
+	TotalIsLowerBound bool `json:"total_is_lower_bound,omitempty"`
+}
+
+// paginate slices items to the [offset:offset+limit] window and reports
+// pagination metadata. total reflects the full pre-slice count. It is pure and
+// never mutates the input. When totalKnown is false the caller fetched at most
+// offset+limit+1 candidates (so total may understate the real count); in that
+// case has_more is derived from whether a sentinel extra element was present,
+// which callers signal by passing the real fetched length as len(items).
+func paginate[T any](items []T, offset, limit int) ([]T, paginationMeta) {
+	total := len(items)
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = total
+	}
+	meta := paginationMeta{Total: total, Offset: offset, Limit: limit}
+	if offset >= total {
+		return nil, meta
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	page := items[offset:end]
+	if end < total {
+		meta.HasMore = true
+		meta.NextOffset = end
+	}
+	return page, meta
+}
+
+// paginateFetched slices a candidate set that was fetched from the store with a
+// "+1 sentinel" window — i.e. the caller asked the store for offset+limit+1
+// items. If the sentinel element is present there are more results past the
+// page, so has_more is forced true and total is reported as a lower bound. This
+// keeps has_more accurate for SQL-LIMIT-based tools without a separate COUNT.
+func paginateFetched[T any](items []T, offset, limit int) ([]T, paginationMeta) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = len(items)
+	}
+	hasSentinel := len(items) > offset+limit
+	if hasSentinel {
+		items = items[:offset+limit]
+	}
+	page, meta := paginate(items, offset, limit)
+	if hasSentinel {
+		meta.HasMore = true
+		meta.NextOffset = offset + limit
+		meta.TotalIsLowerBound = true
+	}
+	return page, meta
+}
+
+// compactPaginationFooter renders a single trailing line summarizing the
+// pagination window, suitable for appending to the compact one-line-per-result
+// body so the agent can page without re-running the query. shown is the number
+// of results actually emitted in this page.
+func compactPaginationFooter(meta paginationMeta, shown int) string {
+	if meta.Total == 0 || shown == 0 {
+		return fmt.Sprintf("[showing 0 of %d]", meta.Total)
+	}
+	totalStr := strconv.Itoa(meta.Total)
+	if meta.TotalIsLowerBound {
+		totalStr += "+"
+	}
+	if meta.HasMore {
+		return fmt.Sprintf("[showing %d-%d of %s  has_more=true  next_offset=%d]",
+			meta.Offset+1, meta.Offset+shown, totalStr, meta.NextOffset)
+	}
+	return fmt.Sprintf("[showing %d-%d of %s  has_more=false]", meta.Offset+1, meta.Offset+shown, totalStr)
+}
+
+// compactLine renders one search result as a single line:
+//
+//	#<rank> <score> <kind> <file>:<line>  <name_path>  <signature/snippet>
+//
+// Empty optional fields are omitted. Keeping each result on exactly one line
+// lets the line-based session cache paginate by RESULT (cache_read offset/limit
+// map 1:1 to results) instead of by arbitrary serialized lines.
+func compactLine(rank int, score float64, kind, file string, line int, namePath, trailer string) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "#%d", rank)
+	if score > 0 {
+		fmt.Fprintf(&sb, " %.3f", score)
+	}
+	if kind != "" {
+		fmt.Fprintf(&sb, " %s", kind)
+	}
+	fmt.Fprintf(&sb, " %s:%d", file, line)
+	if namePath != "" {
+		fmt.Fprintf(&sb, "  %s", namePath)
+	}
+	if trailer != "" {
+		fmt.Fprintf(&sb, "  %s", trailer)
+	}
+	return sb.String()
+}
+
+// firstNonEmpty returns the first non-empty string among its arguments.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // ---- CodeFindSymbolTool ----
@@ -368,7 +710,11 @@ func (t *CodeFindSymbolTool) Info() ToolInfo {
 			},
 			"limit": map[string]any{
 				"type":        "integer",
-				"description": "Maximum number of results (default: 50).",
+				"description": "Maximum number of results per page (default: 50).",
+			},
+			"offset": map[string]any{
+				"type":        "integer",
+				"description": "Number of results to skip before the page (default: 0). Use next_offset from a previous response to page forward.",
 			},
 		},
 		Required: []string{"project_id", "name_path_pattern"},
@@ -386,6 +732,7 @@ func (t *CodeFindSymbolTool) Run(ctx context.Context, params ToolCall) (ToolResp
 		Depth             int      `json:"depth"`
 		SubstringMatching bool     `json:"substring_matching"`
 		Limit             int      `json:"limit"`
+		Offset            int      `json:"offset"`
 	}
 	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
@@ -398,6 +745,9 @@ func (t *CodeFindSymbolTool) Run(ctx context.Context, params ToolCall) (ToolResp
 	}
 	if req.Limit <= 0 {
 		req.Limit = 50
+	}
+	if req.Offset < 0 {
+		req.Offset = 0
 	}
 
 	var symTypes []code.SymbolType
@@ -418,7 +768,9 @@ func (t *CodeFindSymbolTool) Run(ctx context.Context, params ToolCall) (ToolResp
 		IncludeBody:     req.IncludeBody,
 		Depth:           req.Depth,
 		SubstringMatch:  req.SubstringMatching,
-		Limit:           req.Limit,
+		// Over-fetch to cover the requested page plus a +1 sentinel so the tool
+		// layer can detect has_more accurately without a separate COUNT query.
+		Limit: req.Offset + req.Limit + 1,
 	}
 
 	symbols, err := t.indexer.FindSymbol(ctx, query)
@@ -442,17 +794,36 @@ func (t *CodeFindSymbolTool) Run(ctx context.Context, params ToolCall) (ToolResp
 	for i, s := range symbols {
 		items[i] = symItem{
 			SymbolType: string(s.SymbolType),
-			Name:       s.Name,
-			NamePath:   s.NamePath,
+			Name:       truncateField(s.Name),
+			NamePath:   truncateField(s.NamePath),
 			FilePath:   s.FilePath,
 			StartLine:  s.StartLine,
-			Signature:  s.Signature,
+			Signature:  truncateField(s.Signature),
 		}
 	}
 
-	return NewStructuredResponse(map[string]any{
-		"count":   len(items),
-		"symbols": items,
+	page, meta := paginateFetched(items, req.Offset, req.Limit)
+	if len(page) == 0 {
+		return NewTextResponse(fmt.Sprintf("No symbols at offset %d (total %d).", req.Offset, meta.Total)), nil
+	}
+
+	var sb strings.Builder
+	for i, it := range page {
+		trailer := firstNonEmpty(it.Signature, it.SymbolType)
+		namePath := firstNonEmpty(it.NamePath, it.Name)
+		sb.WriteString(compactLine(meta.Offset+i+1, 0, it.SymbolType, it.FilePath, it.StartLine, namePath, trailer))
+		sb.WriteByte('\n')
+	}
+	sb.WriteString(compactPaginationFooter(meta, len(page)))
+
+	return WithResponseMetadata(NewTextResponse(sb.String()), map[string]any{
+		"count":       len(page),
+		"total":       meta.Total,
+		"offset":      meta.Offset,
+		"limit":       meta.Limit,
+		"has_more":    meta.HasMore,
+		"next_offset": meta.NextOffset,
+		"symbols":     page,
 	}), nil
 }
 
@@ -516,10 +887,10 @@ func (t *CodeGetSymbolsOverviewTool) Run(ctx context.Context, params ToolCall) (
 	for i, s := range symbols {
 		items[i] = symItem{
 			SymbolType: string(s.SymbolType),
-			Name:       s.Name,
-			NamePath:   s.NamePath,
+			Name:       truncateField(s.Name),
+			NamePath:   truncateField(s.NamePath),
 			StartLine:  s.StartLine,
-			Signature:  s.Signature,
+			Signature:  truncateField(s.Signature),
 		}
 	}
 
@@ -704,7 +1075,11 @@ func (t *CodeSearchPatternTool) Info() ToolInfo {
 			},
 			"limit": map[string]any{
 				"type":        "integer",
-				"description": "Maximum number of results (default: 50).",
+				"description": "Maximum number of results per page (default: 50).",
+			},
+			"offset": map[string]any{
+				"type":        "integer",
+				"description": "Number of results to skip before the page (default: 0). Use next_offset from a previous response to page forward.",
 			},
 		},
 		Required: []string{"project_id", "pattern"},
@@ -725,6 +1100,9 @@ func (t *CodeSearchPatternTool) Run(ctx context.Context, params ToolCall) (ToolR
 	if req.Limit <= 0 {
 		req.Limit = 50
 	}
+	if req.Offset < 0 {
+		req.Offset = 0
+	}
 
 	var langs []code.Language
 	for _, l := range req.Languages {
@@ -735,7 +1113,9 @@ func (t *CodeSearchPatternTool) Run(ctx context.Context, params ToolCall) (ToolR
 		symTypes = append(symTypes, treesitter.SymbolType(s))
 	}
 
-	symbols, err := t.indexer.SearchPattern(ctx, req.ProjectID, req.Pattern, req.CaseSensitive, req.IsRegex, req.Limit, langs, symTypes)
+	// Fetch the requested page plus a +1 sentinel so has_more is accurate.
+	fetchLimit := req.Offset + req.Limit + 1
+	symbols, err := t.indexer.SearchPattern(ctx, req.ProjectID, req.Pattern, req.CaseSensitive, req.IsRegex, fetchLimit, langs, symTypes)
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("search pattern error: %v", err)), nil
 	}
@@ -751,9 +1131,53 @@ func (t *CodeSearchPatternTool) Run(ctx context.Context, params ToolCall) (ToolR
 		return NewTextResponse(fmt.Sprintf("No symbols found matching pattern: %s", req.Pattern)), nil
 	}
 
-	return NewStructuredResponse(map[string]any{
-		"count":   len(symbols),
-		"symbols": symbols,
+	// Project to a slim shape with a single-line match snippet instead of
+	// returning the raw CodeSymbol (which carries source_code, doc_string,
+	// metadata, byte offsets and timestamps) and bloats the context window.
+	type patternItem struct {
+		SymbolType string `json:"symbol_type"`
+		Name       string `json:"name"`
+		NamePath   string `json:"name_path,omitempty"`
+		FilePath   string `json:"file_path"`
+		StartLine  int    `json:"start_line"`
+		Signature  string `json:"signature,omitempty"`
+		Snippet    string `json:"snippet,omitempty"`
+	}
+	items := make([]patternItem, len(symbols))
+	for i, s := range symbols {
+		items[i] = patternItem{
+			SymbolType: string(s.SymbolType),
+			Name:       truncateField(s.Name),
+			NamePath:   truncateField(s.NamePath),
+			FilePath:   s.FilePath,
+			StartLine:  s.StartLine,
+			Signature:  truncateField(s.Signature),
+			Snippet:    matchSnippet(s, req.Pattern, req.CaseSensitive),
+		}
+	}
+
+	page, meta := paginateFetched(items, req.Offset, req.Limit)
+	if len(page) == 0 {
+		return NewTextResponse(fmt.Sprintf("No matches at offset %d (total %d).", req.Offset, meta.Total)), nil
+	}
+
+	var sb strings.Builder
+	for i, it := range page {
+		trailer := firstNonEmpty(it.Snippet, it.Signature, it.Name)
+		namePath := firstNonEmpty(it.NamePath, it.Name)
+		sb.WriteString(compactLine(meta.Offset+i+1, 0, it.SymbolType, it.FilePath, it.StartLine, namePath, trailer))
+		sb.WriteByte('\n')
+	}
+	sb.WriteString(compactPaginationFooter(meta, len(page)))
+
+	return WithResponseMetadata(NewTextResponse(sb.String()), map[string]any{
+		"count":       len(page),
+		"total":       meta.Total,
+		"offset":      meta.Offset,
+		"limit":       meta.Limit,
+		"has_more":    meta.HasMore,
+		"next_offset": meta.NextOffset,
+		"symbols":     page,
 	}), nil
 }
 
@@ -765,6 +1189,7 @@ type codeSearchPatternRequest struct {
 	Languages     []string `json:"languages"`
 	SymbolTypes   []string `json:"symbol_types"`
 	Limit         int      `json:"limit"`
+	Offset        int      `json:"offset"`
 }
 
 func (t *CodeSearchPatternTool) fallbackToGrep(ctx context.Context, req codeSearchPatternRequest) (*ToolResponse, error) {
@@ -863,7 +1288,11 @@ func (t *CodeFindReferencesTool) Info() ToolInfo {
 			},
 			"limit": map[string]any{
 				"type":        "integer",
-				"description": "Maximum number of results (default: 50).",
+				"description": "Maximum number of results per page (default: 50).",
+			},
+			"offset": map[string]any{
+				"type":        "integer",
+				"description": "Number of results to skip before the page (default: 0). Use next_offset from a previous response to page forward.",
 			},
 		},
 		Required: []string{"project_id"},
@@ -876,6 +1305,7 @@ func (t *CodeFindReferencesTool) Run(ctx context.Context, params ToolCall) (Tool
 		SymbolID   string `json:"symbol_id"`
 		SymbolName string `json:"symbol_name"`
 		Limit      int    `json:"limit"`
+		Offset     int    `json:"offset"`
 	}
 	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
@@ -889,8 +1319,13 @@ func (t *CodeFindReferencesTool) Run(ctx context.Context, params ToolCall) (Tool
 	if req.Limit <= 0 {
 		req.Limit = 50
 	}
+	if req.Offset < 0 {
+		req.Offset = 0
+	}
 
-	symbols, err := t.indexer.FindReferences(ctx, req.ProjectID, req.SymbolID, req.SymbolName, req.Limit)
+	// Fetch the requested page plus a +1 sentinel so has_more is accurate.
+	fetchLimit := req.Offset + req.Limit + 1
+	symbols, err := t.indexer.FindReferences(ctx, req.ProjectID, req.SymbolID, req.SymbolName, fetchLimit)
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("find references error: %v", err)), nil
 	}
@@ -909,16 +1344,34 @@ func (t *CodeFindReferencesTool) Run(ctx context.Context, params ToolCall) (Tool
 	for i, s := range symbols {
 		refs[i] = refItem{
 			SymbolType: string(s.SymbolType),
-			Name:       s.Name,
-			NamePath:   s.NamePath,
+			Name:       truncateField(s.Name),
+			NamePath:   truncateField(s.NamePath),
 			FilePath:   s.FilePath,
 			StartLine:  s.StartLine,
 		}
 	}
 
-	return NewStructuredResponse(map[string]any{
-		"count":      len(refs),
-		"references": refs,
+	page, meta := paginateFetched(refs, req.Offset, req.Limit)
+	if len(page) == 0 {
+		return NewTextResponse(fmt.Sprintf("No references at offset %d (total %d).", req.Offset, meta.Total)), nil
+	}
+
+	var sb strings.Builder
+	for i, it := range page {
+		namePath := firstNonEmpty(it.NamePath, it.Name)
+		sb.WriteString(compactLine(meta.Offset+i+1, 0, it.SymbolType, it.FilePath, it.StartLine, namePath, ""))
+		sb.WriteByte('\n')
+	}
+	sb.WriteString(compactPaginationFooter(meta, len(page)))
+
+	return WithResponseMetadata(NewTextResponse(sb.String()), map[string]any{
+		"count":       len(page),
+		"total":       meta.Total,
+		"offset":      meta.Offset,
+		"limit":       meta.Limit,
+		"has_more":    meta.HasMore,
+		"next_offset": meta.NextOffset,
+		"references":  page,
 	}), nil
 }
 

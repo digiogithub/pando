@@ -270,7 +270,7 @@ func NewCompletionDialogCmp(completionProvider CompletionProvider) CompletionDia
 	// the dialog (handled in Update when the textarea is not yet focused).
 	li := utilComponents.NewSimpleList(
 		[]CompletionItemI{},
-		7,
+		5,
 		"No file matches found",
 		false,
 	)
