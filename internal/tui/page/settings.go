@@ -883,6 +883,31 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Type:  settings.FieldToggle,
 			},
 			{
+				Label: "Tool Discovery",
+				Key:   "toolDiscovery.enabled",
+				Value: boolString(cfg.ToolDiscovery.Enabled),
+				Type:  settings.FieldToggle,
+			},
+			{
+				Label:   "Tool Discovery Mode",
+				Key:     "toolDiscovery.mode",
+				Value:   toolDiscoveryModeValue(cfg.ToolDiscovery.Mode),
+				Type:    settings.FieldSelect,
+				Options: []string{"auto", "always", "off"},
+			},
+			{
+				Label: "Max Direct Tools",
+				Key:   "toolDiscovery.maxDirectTools",
+				Value: intString(cfg.ToolDiscovery.MaxDirectTools, 64),
+				Type:  settings.FieldText,
+			},
+			{
+				Label: "Tool Search Limit",
+				Key:   "toolDiscovery.searchLimit",
+				Value: intString(cfg.ToolDiscovery.SearchLimit, 8),
+				Type:  settings.FieldText,
+			},
+			{
 				Label: "Debug",
 				Key:   "debug",
 				Value: boolString(cfg.Debug),
@@ -2684,6 +2709,23 @@ func boolString(value bool) string {
 	return "false"
 }
 
+// intString renders an int as a string, substituting fallback when value <= 0
+// so empty/unset config values display their effective default.
+func intString(value, fallback int) string {
+	if value <= 0 {
+		value = fallback
+	}
+	return strconv.Itoa(value)
+}
+
+// toolDiscoveryModeValue normalizes an empty mode to its "auto" default.
+func toolDiscoveryModeValue(mode string) string {
+	if strings.TrimSpace(mode) == "" {
+		return "auto"
+	}
+	return mode
+}
+
 func skillLoadStatus(loaded bool) string {
 	if loaded {
 		return "loaded"
@@ -2768,6 +2810,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveLua(field)
 	case strings.HasPrefix(field.Key, "mcpGateway."):
 		return saveMCPGateway(field)
+	case strings.HasPrefix(field.Key, "toolDiscovery."):
+		return saveToolDiscovery(field)
 	case strings.HasPrefix(field.Key, "snapshots."):
 		return saveSnapshots(field)
 	case strings.HasPrefix(field.Key, "bash."):
@@ -3849,6 +3893,53 @@ func saveLua(field settings.Field) error {
 	}
 
 	return config.UpdateLua(luaCfg)
+}
+
+func saveToolDiscovery(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	tdCfg := cfg.ToolDiscovery
+	switch field.Key {
+	case "toolDiscovery.enabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Tool Discovery enabled value: %w", err)
+		}
+		tdCfg.Enabled = enabled
+	case "toolDiscovery.mode":
+		mode := strings.TrimSpace(field.Value)
+		switch mode {
+		case "", "auto", "always", "off":
+			tdCfg.Mode = mode
+		default:
+			return fmt.Errorf("invalid Tool Discovery mode %q (expected auto, always or off)", mode)
+		}
+	case "toolDiscovery.maxDirectTools":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid max direct tools: %w", err)
+		}
+		if v < 0 {
+			return fmt.Errorf("max direct tools must be >= 0")
+		}
+		tdCfg.MaxDirectTools = v
+	case "toolDiscovery.searchLimit":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid tool search limit: %w", err)
+		}
+		if v < 0 {
+			return fmt.Errorf("tool search limit must be >= 0")
+		}
+		tdCfg.SearchLimit = v
+	default:
+		return fmt.Errorf("unsupported Tool Discovery setting %q", field.Key)
+	}
+
+	return config.UpdateToolDiscovery(tdCfg)
 }
 
 func saveMCPGateway(field settings.Field) error {

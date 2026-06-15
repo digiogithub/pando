@@ -79,7 +79,17 @@
       "customInstructions": "Instrucciones personalizadas",
       "customInstructionsPlaceholder": "Añade instrucciones globales para el asistente de IA…",
       "llmCache": "Caché de prompts LLM",
-      "llmCacheDescription": "Habilitar caché de prompts para proveedores LLM (principalmente Anthropic)"
+      "llmCacheDescription": "Habilitar caché de prompts para proveedores LLM (principalmente Anthropic)",
+      "toolDiscovery": "Descubrimiento de herramientas",
+      "toolDiscoveryDescription": "Mantener fuera del contexto inicial las herramientas no esenciales; el modelo las encuentra bajo demanda con tool_search",
+      "toolDiscoveryMode": "Modo de descubrimiento",
+      "toolDiscoveryModeAuto": "Automático (por encima del umbral)",
+      "toolDiscoveryModeAlways": "Siempre",
+      "toolDiscoveryModeOff": "Desactivado",
+      "toolDiscoveryMaxDirectTools": "Máx. herramientas directas",
+      "toolDiscoveryMaxDirectToolsDescription": "En modo automático, la deferición se activa cuando el número total de herramientas supera este valor",
+      "toolDiscoverySearchLimit": "Límite de búsqueda de herramientas",
+      "toolDiscoverySearchLimitDescription": "Número de resultados devueltos por defecto por tool_search"
     },
     "agents": {
       "title": "Agentes",

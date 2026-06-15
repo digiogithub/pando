@@ -35,7 +35,7 @@ By default this mode enables both transports at the same time:
 Tool groups exposed (configurable via .pando.toml [MCPServer] section or CLI flags):
 - fetch and web search tools
 - browser / Chrome DevTools-style tools
-- remembrances tools
+- remembrances tools (KB, events, code-intelligence, and KB-backed memory: remember/recall/forget)
 - Mesnada orchestration tools
 - cache and pagination tools
 - file tools: view, glob, grep, ls (and optionally write, edit, patch)
@@ -234,6 +234,9 @@ func enableMCPServerFeatures() {
 
 	cfg.Mesnada.Enabled = true
 	cfg.Remembrances.Enabled = true
+	// Enable the KB-backed memory system so the remember/recall/forget tools are
+	// exposed and the lightweight TTL garbage collector runs in server mode.
+	cfg.Remembrances.MemoryEnabled = true
 	cfg.InternalTools.FetchEnabled = true
 	cfg.InternalTools.BrowserEnabled = true
 
@@ -381,6 +384,17 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 			llmtools.NewCodeListProjectsTool(appSvc.Remembrances.Code),
 			llmtools.NewCodeSearchPatternTool(appSvc.Remembrances.Code),
 		)
+
+		// KB-backed persistent memory tools (remember/recall/forget). Gated by
+		// MemoryEnabled, which enableMCPServerFeatures turns on in server mode.
+		if cfg != nil && cfg.Remembrances.MemoryEnabled {
+			tools = append(tools,
+				llmtools.NewRememberTool(appSvc.Remembrances.KB, cfg.Remembrances.MemoryDefaultTTLDays),
+				llmtools.NewRecallTool(appSvc.Remembrances.KB, cfg.Remembrances.MemoryDefaultTTLDays),
+				llmtools.NewForgetTool(appSvc.Remembrances.KB),
+			)
+			logging.Info("MCP server: memory tools enabled")
+		}
 	}
 
 	// --- Conditional tool groups ---

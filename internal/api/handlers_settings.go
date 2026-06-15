@@ -24,6 +24,11 @@ type SettingsResponse struct {
 	LLMCacheEnabled  bool   `json:"llm_cache_enabled"`
 	EvaluatorEnabled bool   `json:"evaluator_enabled"`
 	JudgeModel       string `json:"judge_model"`
+
+	ToolDiscoveryEnabled        bool   `json:"tool_discovery_enabled"`
+	ToolDiscoveryMode           string `json:"tool_discovery_mode"`
+	ToolDiscoveryMaxDirectTools int    `json:"tool_discovery_max_direct_tools"`
+	ToolDiscoverySearchLimit    int    `json:"tool_discovery_search_limit"`
 }
 
 // SettingsUpdateRequest contains the fields that can be updated via PUT /api/v1/settings.
@@ -37,6 +42,11 @@ type SettingsUpdateRequest struct {
 	LLMCacheEnabled  *bool   `json:"llm_cache_enabled,omitempty"`
 	EvaluatorEnabled *bool   `json:"evaluator_enabled,omitempty"`
 	JudgeModel       *string `json:"judge_model,omitempty"`
+
+	ToolDiscoveryEnabled        *bool   `json:"tool_discovery_enabled,omitempty"`
+	ToolDiscoveryMode           *string `json:"tool_discovery_mode,omitempty"`
+	ToolDiscoveryMaxDirectTools *int    `json:"tool_discovery_max_direct_tools,omitempty"`
+	ToolDiscoverySearchLimit    *int    `json:"tool_discovery_search_limit,omitempty"`
 }
 
 // ProviderStatus describes a configured provider and whether it has an API key set.
@@ -86,7 +96,29 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		LLMCacheEnabled:  cfg.LLMCache.Enabled,
 		EvaluatorEnabled: cfg.Evaluator.Enabled,
 		JudgeModel:       string(cfg.Evaluator.Model),
+
+		ToolDiscoveryEnabled:        cfg.ToolDiscovery.Enabled,
+		ToolDiscoveryMode:           toolDiscoveryModeOrDefault(cfg.ToolDiscovery.Mode),
+		ToolDiscoveryMaxDirectTools: intOrDefault(cfg.ToolDiscovery.MaxDirectTools, 64),
+		ToolDiscoverySearchLimit:    intOrDefault(cfg.ToolDiscovery.SearchLimit, 8),
 	}, nil
+}
+
+// toolDiscoveryModeOrDefault normalizes an empty mode to "auto".
+func toolDiscoveryModeOrDefault(mode string) string {
+	if mode == "" {
+		return "auto"
+	}
+	return mode
+}
+
+// intOrDefault returns fallback when value <= 0 so unset config surfaces its
+// effective default in the UI.
+func intOrDefault(value, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 // handleSettings dispatches GET and PUT requests for /api/v1/settings.
@@ -164,6 +196,41 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if req.LLMCacheEnabled != nil {
 		if err := config.UpdateLLMCache(*req.LLMCacheEnabled); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update llm cache setting")
+			return
+		}
+	}
+
+	if req.ToolDiscoveryEnabled != nil || req.ToolDiscoveryMode != nil ||
+		req.ToolDiscoveryMaxDirectTools != nil || req.ToolDiscoverySearchLimit != nil {
+		td := config.Get().ToolDiscovery
+		if req.ToolDiscoveryEnabled != nil {
+			td.Enabled = *req.ToolDiscoveryEnabled
+		}
+		if req.ToolDiscoveryMode != nil {
+			switch *req.ToolDiscoveryMode {
+			case "", "auto", "always", "off":
+				td.Mode = *req.ToolDiscoveryMode
+			default:
+				writeError(w, http.StatusBadRequest, "invalid tool_discovery_mode (expected auto, always or off)")
+				return
+			}
+		}
+		if req.ToolDiscoveryMaxDirectTools != nil {
+			if *req.ToolDiscoveryMaxDirectTools < 0 {
+				writeError(w, http.StatusBadRequest, "tool_discovery_max_direct_tools must be >= 0")
+				return
+			}
+			td.MaxDirectTools = *req.ToolDiscoveryMaxDirectTools
+		}
+		if req.ToolDiscoverySearchLimit != nil {
+			if *req.ToolDiscoverySearchLimit < 0 {
+				writeError(w, http.StatusBadRequest, "tool_discovery_search_limit must be >= 0")
+				return
+			}
+			td.SearchLimit = *req.ToolDiscoverySearchLimit
+		}
+		if err := config.UpdateToolDiscovery(td); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update tool discovery settings")
 			return
 		}
 	}

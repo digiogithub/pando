@@ -81,7 +81,17 @@
       "customInstructions": "Custom instructions",
       "customInstructionsPlaceholder": "Add any global instructions for the AI assistant…",
       "llmCache": "LLM Prompt Cache",
-      "llmCacheDescription": "Enable prompt caching for LLM providers (mainly affects Anthropic)"
+      "llmCacheDescription": "Enable prompt caching for LLM providers (mainly affects Anthropic)",
+      "toolDiscovery": "Tool Discovery",
+      "toolDiscoveryDescription": "Keep non-core tools out of the initial context; the model finds them on demand via tool_search",
+      "toolDiscoveryMode": "Tool Discovery Mode",
+      "toolDiscoveryModeAuto": "Auto (above threshold)",
+      "toolDiscoveryModeAlways": "Always",
+      "toolDiscoveryModeOff": "Off",
+      "toolDiscoveryMaxDirectTools": "Max Direct Tools",
+      "toolDiscoveryMaxDirectToolsDescription": "In auto mode, deferral activates when the total tool count exceeds this number",
+      "toolDiscoverySearchLimit": "Tool Search Limit",
+      "toolDiscoverySearchLimitDescription": "Default number of results returned by tool_search"
     },
     "agents": {
       "title": "Agents",

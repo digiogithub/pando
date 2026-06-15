@@ -131,6 +131,45 @@ export default function GeneralSettings() {
 
       <div style={dividerStyle} />
 
+      {/* Tool Discovery */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <Toggle
+          label={t('settings.general.toolDiscovery')}
+          description={t('settings.general.toolDiscoveryDescription')}
+          checked={config.tool_discovery_enabled}
+          onChange={(v) => updateField('tool_discovery_enabled', v)}
+        />
+        <SelectInput
+          label={t('settings.general.toolDiscoveryMode')}
+          options={[
+            { value: 'auto', label: t('settings.general.toolDiscoveryModeAuto') },
+            { value: 'always', label: t('settings.general.toolDiscoveryModeAlways') },
+            { value: 'off', label: t('settings.general.toolDiscoveryModeOff') },
+          ]}
+          value={config.tool_discovery_mode || 'auto'}
+          disabled={!config.tool_discovery_enabled}
+          onChange={(e) => updateField('tool_discovery_mode', e.target.value)}
+        />
+        <TextInput
+          label={t('settings.general.toolDiscoveryMaxDirectTools')}
+          type="number"
+          min={0}
+          value={config.tool_discovery_max_direct_tools}
+          disabled={!config.tool_discovery_enabled}
+          onChange={(e) => updateField('tool_discovery_max_direct_tools', Number(e.target.value))}
+        />
+        <TextInput
+          label={t('settings.general.toolDiscoverySearchLimit')}
+          type="number"
+          min={0}
+          value={config.tool_discovery_search_limit}
+          disabled={!config.tool_discovery_enabled}
+          onChange={(e) => updateField('tool_discovery_search_limit', Number(e.target.value))}
+        />
+      </div>
+
+      <div style={dividerStyle} />
+
       {/* Error message */}
       {error && (
         <div

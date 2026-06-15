@@ -50,13 +50,13 @@ type MCPServer struct {
 type AgentName string
 
 const (
-	AgentCoder             AgentName = "coder"
-	AgentSummarizer        AgentName = "summarizer"
-	AgentTask              AgentName = "task"
-	AgentTitle             AgentName = "title"
-	AgentCLIAssist         AgentName = "cli-assist"
-	AgentPersonaSelector   AgentName = "persona-selector"
-	AgentContextEnricher   AgentName = "context-enricher"
+	AgentCoder           AgentName = "coder"
+	AgentSummarizer      AgentName = "summarizer"
+	AgentTask            AgentName = "task"
+	AgentTitle           AgentName = "title"
+	AgentCLIAssist       AgentName = "cli-assist"
+	AgentPersonaSelector AgentName = "persona-selector"
+	AgentContextEnricher AgentName = "context-enricher"
 )
 
 // CLIAssistConfig defines configuration for the CLI assist mode.
@@ -139,8 +139,8 @@ type MesnadaServerConfig struct {
 
 // MesnadaOrchestratorConfig holds orchestrator settings
 type MesnadaOrchestratorConfig struct {
-	StorePath        string `json:"storePath,omitempty"`
-	LogDir           string `json:"logDir,omitempty"`
+	StorePath string `json:"storePath,omitempty"`
+	LogDir    string `json:"logDir,omitempty"`
 	// EnginesDir is the directory scanned for *.template.yaml custom engine files.
 	// Defaults to <dirname(LogDir)>/engines when empty.
 	EnginesDir       string `json:"enginesDir,omitempty"`
@@ -277,14 +277,14 @@ type RemembrancesConfig struct {
 	ContextEnrichmentPlannerFallbackToCoder bool `json:"context_enrichment_planner_fallback_to_coder" toml:"ContextEnrichmentPlannerFallbackToCoder"`
 
 	// Memory System — key/value store layered on top of KB with TTL, scoping, and auto-injection.
-	MemoryEnabled                    bool     `json:"memory_enabled" toml:"MemoryEnabled"`
-	MemoryContextEnrichmentEnabled   bool     `json:"memory_context_enrichment_enabled" toml:"MemoryContextEnrichmentEnabled"`
-	MemoryContextMaxItems            int      `json:"memory_context_max_items" toml:"MemoryContextMaxItems"`
-	MemoryContextMaxChars            int      `json:"memory_context_max_chars" toml:"MemoryContextMaxChars"`
-	MemoryDefaultTTLDays             int      `json:"memory_default_ttl_days" toml:"MemoryDefaultTTLDays"`
-	MemoryGCInterval                 string   `json:"memory_gc_interval" toml:"MemoryGCInterval"`
-	MemoryAutoCapture                bool     `json:"memory_auto_capture" toml:"MemoryAutoCapture"`
-	MemoryPinnedScopes               []string `json:"memory_pinned_scopes" toml:"MemoryPinnedScopes"`
+	MemoryEnabled                  bool     `json:"memory_enabled" toml:"MemoryEnabled"`
+	MemoryContextEnrichmentEnabled bool     `json:"memory_context_enrichment_enabled" toml:"MemoryContextEnrichmentEnabled"`
+	MemoryContextMaxItems          int      `json:"memory_context_max_items" toml:"MemoryContextMaxItems"`
+	MemoryContextMaxChars          int      `json:"memory_context_max_chars" toml:"MemoryContextMaxChars"`
+	MemoryDefaultTTLDays           int      `json:"memory_default_ttl_days" toml:"MemoryDefaultTTLDays"`
+	MemoryGCInterval               string   `json:"memory_gc_interval" toml:"MemoryGCInterval"`
+	MemoryAutoCapture              bool     `json:"memory_auto_capture" toml:"MemoryAutoCapture"`
+	MemoryPinnedScopes             []string `json:"memory_pinned_scopes" toml:"MemoryPinnedScopes"`
 }
 
 // APIServerConfig holds configuration for the HTTP API server (WebUI backend).
@@ -1239,6 +1239,12 @@ func setDefaults(debug bool) {
 	viper.SetDefault("remembrances.memory_default_ttl_days", 0)
 	viper.SetDefault("remembrances.memory_gc_interval", "1h")
 	viper.SetDefault("remembrances.memory_auto_capture", false)
+
+	// Tool discovery defaults (must match the ToolDiscoveryConfig doc comments).
+	viper.SetDefault("toolDiscovery.enabled", true)
+	viper.SetDefault("toolDiscovery.mode", "auto")
+	viper.SetDefault("toolDiscovery.maxDirectTools", 64)
+	viper.SetDefault("toolDiscovery.searchLimit", 8)
 
 	// Internal Tools defaults
 	viper.SetDefault("internalTools.fetchEnabled", true)
@@ -2702,6 +2708,25 @@ func UpdatePermissions(perms PermissionsConfig) error {
 		config.Permissions = perms
 	}); err != nil {
 		cfg.Permissions = oldPerms
+		return err
+	}
+
+	return nil
+}
+
+// UpdateToolDiscovery updates the tool discovery configuration and persists it.
+func UpdateToolDiscovery(td ToolDiscoveryConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldValue := cfg.ToolDiscovery
+	cfg.ToolDiscovery = td
+
+	if err := updateCfgFile(func(config *Config) {
+		config.ToolDiscovery = td
+	}); err != nil {
+		cfg.ToolDiscovery = oldValue
 		return err
 	}
 

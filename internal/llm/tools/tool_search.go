@@ -27,14 +27,20 @@ type ToolSearchEntry struct {
 }
 
 type toolSearchTool struct {
-	provider ToolSearchProvider
+	provider     ToolSearchProvider
+	defaultLimit int
 }
 
 // NewToolSearchTool creates the built-in tool_search tool backed by provider.
 // provider should be set to the active *tooldiscovery.Registry after it is
 // wrapped with a thin adapter (see tooldiscovery.RegistrySearchAdapter).
-func NewToolSearchTool(provider ToolSearchProvider) BaseTool {
-	return &toolSearchTool{provider: provider}
+// defaultLimit is the number of results returned when the caller does not
+// specify one; values <= 0 fall back to 8.
+func NewToolSearchTool(provider ToolSearchProvider, defaultLimit int) BaseTool {
+	if defaultLimit <= 0 {
+		defaultLimit = 8
+	}
+	return &toolSearchTool{provider: provider, defaultLimit: defaultLimit}
 }
 
 func (t *toolSearchTool) Info() ToolInfo {
@@ -76,7 +82,7 @@ func (t *toolSearchTool) Run(_ context.Context, params ToolCall) (ToolResponse, 
 	}
 	limit := input.Limit
 	if limit <= 0 {
-		limit = 8
+		limit = t.defaultLimit
 	}
 	if limit > 20 {
 		limit = 20

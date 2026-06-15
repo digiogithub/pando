@@ -46,7 +46,7 @@ func ApplyToolDiscovery(allTools []tools.BaseTool) []tools.BaseTool {
 
 	reg := tooldiscovery.BuildRegistry(allTools, nonDeferredMap)
 	adapter := tooldiscovery.NewRegistrySearchAdapter(reg)
-	searchTool := tools.NewToolSearchTool(adapter)
+	searchTool := tools.NewToolSearchTool(adapter, dc.SearchLimit)
 
 	policy := tooldiscovery.NewSelectionPolicy(policyCfg)
 	return policy.Apply(reg, searchTool)

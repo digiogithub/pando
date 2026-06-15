@@ -374,6 +374,10 @@ export interface SettingsConfig {
   llm_cache_enabled: boolean
   evaluator_enabled: boolean
   judge_model: string
+  tool_discovery_enabled: boolean
+  tool_discovery_mode: string            // 'auto' | 'always' | 'off'
+  tool_discovery_max_direct_tools: number
+  tool_discovery_search_limit: number
   // UI-only fields (not persisted via /api/v1/settings)
   language: string
 }

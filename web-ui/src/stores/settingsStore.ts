@@ -17,6 +17,10 @@ const DEFAULTS: SettingsConfig = {
   llm_cache_enabled: true,
   evaluator_enabled: false,
   judge_model: '',
+  tool_discovery_enabled: true,
+  tool_discovery_mode: 'auto',
+  tool_discovery_max_direct_tools: 64,
+  tool_discovery_search_limit: 8,
   // UI-only, not persisted via /api/v1/settings
   language: 'en',
 }
