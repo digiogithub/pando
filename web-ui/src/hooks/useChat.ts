@@ -115,6 +115,10 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
         }
       }
 
+      if (event.type === 'permission_request' && event.permission_request) {
+        useSessionStore.getState().addPermissionRequest(event.permission_request)
+      }
+
       if (event.type === 'content_delta' && event.content) {
         accumulatedRef.current += event.content
         const last = itemsRef.current[itemsRef.current.length - 1]

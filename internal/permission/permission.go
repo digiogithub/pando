@@ -51,13 +51,22 @@ type Service interface {
 	RegisterSessionHandler(sessionID string, handler func(req CreatePermissionRequest) bool)
 	// UnregisterSessionHandler removes the custom handler for a session.
 	UnregisterSessionHandler(sessionID string)
+	// IsAutoApproveSession reports whether the given session is currently in
+	// auto-approve ("auto mode") state.
+	IsAutoApproveSession(sessionID string) bool
+	// PendingRequests returns the permission requests that have been published
+	// for a session and are still awaiting a response. Used to replay prompts to
+	// clients (e.g. the Web UI) that reconnect to a session stream.
+	PendingRequests(sessionID string) []PermissionRequest
 }
 
 type permissionService struct {
 	*pubsub.Broker[PermissionRequest]
 
+	mu                  sync.RWMutex
 	sessionPermissions  []PermissionRequest
 	pendingRequests     sync.Map
+	pendingBySession    map[string]map[string]PermissionRequest
 	autoApproveSessions []string
 	explicitApproval    []string
 	globalAutoApprove   bool
@@ -70,7 +79,10 @@ func (s *permissionService) GrantPersistant(permission PermissionRequest) {
 	if ok {
 		respCh.(chan bool) <- true
 	}
+	s.removePending(permission.SessionID, permission.ID)
+	s.mu.Lock()
 	s.sessionPermissions = append(s.sessionPermissions, permission)
+	s.mu.Unlock()
 }
 
 func (s *permissionService) Grant(permission PermissionRequest) {
@@ -78,12 +90,39 @@ func (s *permissionService) Grant(permission PermissionRequest) {
 	if ok {
 		respCh.(chan bool) <- true
 	}
+	s.removePending(permission.SessionID, permission.ID)
 }
 
 func (s *permissionService) Deny(permission PermissionRequest) {
 	respCh, ok := s.pendingRequests.Load(permission.ID)
 	if ok {
 		respCh.(chan bool) <- false
+	}
+	s.removePending(permission.SessionID, permission.ID)
+}
+
+// trackPending records a published request so it can be replayed to clients
+// that connect after it was emitted (e.g. a reconnecting Web UI stream).
+func (s *permissionService) trackPending(p PermissionRequest) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	bySession, ok := s.pendingBySession[p.SessionID]
+	if !ok {
+		bySession = make(map[string]PermissionRequest)
+		s.pendingBySession[p.SessionID] = bySession
+	}
+	bySession[p.ID] = p
+}
+
+// removePending clears a tracked request once it has been answered.
+func (s *permissionService) removePending(sessionID, id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if bySession, ok := s.pendingBySession[sessionID]; ok {
+		delete(bySession, id)
+		if len(bySession) == 0 {
+			delete(s.pendingBySession, sessionID)
+		}
 	}
 }
 
@@ -101,12 +140,16 @@ func (s *permissionService) Request(opts CreatePermissionRequest) bool {
 		return resp
 	}
 
+	s.mu.RLock()
 	bypassSessionAutoApprove := opts.RequireExplicitApproval && slices.Contains(s.explicitApproval, opts.SessionID)
-	if !bypassSessionAutoApprove && slices.Contains(s.autoApproveSessions, opts.SessionID) {
+	autoApprove := !bypassSessionAutoApprove && slices.Contains(s.autoApproveSessions, opts.SessionID)
+	globalAutoApprove := s.globalAutoApprove
+	s.mu.RUnlock()
+	if autoApprove {
 		logging.Debug("Permission result via auto-approve session", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", true)
 		return true
 	}
-	if s.globalAutoApprove {
+	if globalAutoApprove {
 		logging.Debug("Permission result via global auto-approve", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", true)
 		return true
 	}
@@ -125,16 +168,22 @@ func (s *permissionService) Request(opts CreatePermissionRequest) bool {
 		Params:      opts.Params,
 	}
 
+	s.mu.RLock()
 	for _, p := range s.sessionPermissions {
 		if p.ToolName == permission.ToolName && p.Action == permission.Action && p.SessionID == permission.SessionID && p.Path == permission.Path {
+			s.mu.RUnlock()
 			return true
 		}
 	}
+	s.mu.RUnlock()
 
 	respCh := make(chan bool, 1)
 
 	s.pendingRequests.Store(permission.ID, respCh)
 	defer s.pendingRequests.Delete(permission.ID)
+
+	s.trackPending(permission)
+	defer s.removePending(permission.SessionID, permission.ID)
 
 	s.Publish(pubsub.CreatedEvent, permission)
 
@@ -145,16 +194,45 @@ func (s *permissionService) Request(opts CreatePermissionRequest) bool {
 }
 
 func (s *permissionService) AutoApproveSession(sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if slices.Contains(s.autoApproveSessions, sessionID) {
+		return
+	}
 	s.autoApproveSessions = append(s.autoApproveSessions, sessionID)
 }
 
 func (s *permissionService) RemoveAutoApproveSession(sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.autoApproveSessions = slices.DeleteFunc(s.autoApproveSessions, func(id string) bool {
 		return id == sessionID
 	})
 }
 
+func (s *permissionService) IsAutoApproveSession(sessionID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return slices.Contains(s.autoApproveSessions, sessionID)
+}
+
+func (s *permissionService) PendingRequests(sessionID string) []PermissionRequest {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	bySession, ok := s.pendingBySession[sessionID]
+	if !ok || len(bySession) == 0 {
+		return nil
+	}
+	out := make([]PermissionRequest, 0, len(bySession))
+	for _, p := range bySession {
+		out = append(out, p)
+	}
+	return out
+}
+
 func (s *permissionService) RequireExplicitApprovalSession(sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if slices.Contains(s.explicitApproval, sessionID) {
 		return
 	}
@@ -162,12 +240,16 @@ func (s *permissionService) RequireExplicitApprovalSession(sessionID string) {
 }
 
 func (s *permissionService) RemoveExplicitApprovalSession(sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.explicitApproval = slices.DeleteFunc(s.explicitApproval, func(id string) bool {
 		return id == sessionID
 	})
 }
 
 func (s *permissionService) SetGlobalAutoApprove(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.globalAutoApprove = enabled
 }
 
@@ -187,6 +269,7 @@ func NewPermissionService() Service {
 	return &permissionService{
 		Broker:             pubsub.NewBroker[PermissionRequest](),
 		sessionPermissions: make([]PermissionRequest, 0),
+		pendingBySession:   make(map[string]map[string]PermissionRequest),
 		sessionHandlers:    make(map[string]func(req CreatePermissionRequest) bool),
 	}
 }

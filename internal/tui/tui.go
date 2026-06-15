@@ -744,6 +744,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.sessionDialog.SetSelectedSession(msg.ID)
 		a.isAgentRunning = a.app.CoderAgent.IsSessionBusy(msg.ID)
 		cmds = append(cmds, tea.SetWindowTitle(a.currentSessionWindowTitle()))
+		cmds = append(cmds, a.applyDefaultAutoApprove(msg.ID))
 
 	case dialog.ConfigGeneratedMsg:
 		// .pando.toml has been generated — navigate to Settings so the user can
@@ -979,6 +980,12 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch {
 
+		case key.Matches(msg, a.keys.Global.ToggleAutoApprove):
+			if a.currentPage == page.ChatPage && a.selectedSession.ID != "" &&
+				!a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog &&
+				!(a.tabBar != nil && a.tabBar.IsActiveEditable()) {
+				return a, a.toggleAutoApprove()
+			}
 		case key.Matches(msg, a.keys.Global.Quit) && !(a.tabBar != nil && a.tabBar.IsActiveEditable()):
 			if a.currentPage == page.ChatPage {
 				if goalPage, ok := a.pages[a.currentPage].(interface{ HasRunningGoal() bool }); ok && goalPage.HasRunningGoal() {
@@ -1430,6 +1437,45 @@ func (a *appModel) viewCronJobTasks(name string) tea.Cmd {
 	return func() tea.Msg {
 		return page.OrchestratorFilterMsg{Tag: "cronjob:" + name}
 	}
+}
+
+// toggleAutoApprove flips the per-session "auto mode" for the selected session,
+// updating the permission service and the status-bar indicator.
+func (a *appModel) toggleAutoApprove() tea.Cmd {
+	sessionID := a.selectedSession.ID
+	if sessionID == "" {
+		return nil
+	}
+	enabled := !a.app.Permissions.IsAutoApproveSession(sessionID)
+	if enabled {
+		a.app.Permissions.AutoApproveSession(sessionID)
+	} else {
+		a.app.Permissions.RemoveAutoApproveSession(sessionID)
+	}
+	status := "off"
+	if enabled {
+		status = "on"
+	}
+	return tea.Batch(
+		util.CmdHandler(core.AutoApproveMsg{SessionID: sessionID, Enabled: enabled}),
+		util.ReportInfo("Auto-approve: "+status),
+	)
+}
+
+// applyDefaultAutoApprove seeds a session's auto-approve state from the
+// Permissions.AutoApproveTools config default and syncs the status-bar indicator.
+func (a *appModel) applyDefaultAutoApprove(sessionID string) tea.Cmd {
+	if sessionID == "" {
+		return nil
+	}
+	enabled := a.app.Permissions.IsAutoApproveSession(sessionID)
+	if !enabled {
+		if cfg := config.Get(); cfg != nil && cfg.Permissions.AutoApproveTools {
+			a.app.Permissions.AutoApproveSession(sessionID)
+			enabled = true
+		}
+	}
+	return util.CmdHandler(core.AutoApproveMsg{SessionID: sessionID, Enabled: enabled})
 }
 
 // showProjectInitConfirmMsg is an internal message to trigger the project init confirmation dialog.

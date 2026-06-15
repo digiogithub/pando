@@ -233,6 +233,21 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
       }
       break
 
+    case 'permission_request':
+      if (typeof raw.id === 'string' && typeof raw.tool_name === 'string') {
+        base.session_id = typeof raw.session_id === 'string' ? raw.session_id : base.session_id
+        base.permission_request = {
+          id: raw.id,
+          session_id: typeof raw.session_id === 'string' ? raw.session_id : '',
+          tool_name: raw.tool_name,
+          description: typeof raw.description === 'string' ? raw.description : undefined,
+          action: typeof raw.action === 'string' ? raw.action : undefined,
+          path: typeof raw.path === 'string' ? raw.path : undefined,
+          params: raw.params,
+        }
+      }
+      break
+
     default:
       // session, content, content_delta, thinking_delta, todos_update, error, done
       // — already handled by base fields

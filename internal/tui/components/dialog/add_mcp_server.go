@@ -142,15 +142,22 @@ func (d *addMCPServerDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return d, nil
 	case "left", "h":
-		if currentIdx == -1 && d.typeIdx > 0 {
-			d.typeIdx--
+		// Only treat h/l (and arrows) as type navigation when the type selector
+		// row is active. When a text input is focused these keys must reach the
+		// input so the user can type "h"/"l" and move the cursor with arrows.
+		if currentIdx == -1 {
+			if d.typeIdx > 0 {
+				d.typeIdx--
+			}
+			return d, nil
 		}
-		return d, nil
 	case "right", "l":
-		if currentIdx == -1 && d.typeIdx < len(d.types)-1 {
-			d.typeIdx++
+		if currentIdx == -1 {
+			if d.typeIdx < len(d.types)-1 {
+				d.typeIdx++
+			}
+			return d, nil
 		}
-		return d, nil
 	case "enter":
 		if d.activePos < len(visible)-1 {
 			if currentIdx >= 0 {

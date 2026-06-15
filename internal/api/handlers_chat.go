@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/commands"
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/toolmeta"
 )
@@ -221,6 +223,16 @@ func (s *Server) streamSessionEvents(
 	startedToolCalls := map[string]bool{}
 	pendingInputs := map[string]string{}
 
+	// Subscribe to permission requests so the UI can prompt when a session is not
+	// in auto-approve mode. The agent goroutine blocks inside Permissions.Request
+	// until the client responds via POST /api/v1/permissions/respond.
+	permCh := s.app.Permissions.Subscribe(clientCtx)
+
+	// Replay any requests already pending for this session (covers reconnects).
+	for _, p := range s.app.Permissions.PendingRequests(sessionID) {
+		writePermissionRequest(w, flusher, p)
+	}
+
 	cleanup := func() {
 		unsubFn()
 		// Drain remaining buffered events to prevent the pump goroutine from
@@ -235,6 +247,14 @@ func (s *Server) streamSessionEvents(
 			// Client disconnected — leave the agent running.
 			go cleanup()
 			return
+		case ev, open := <-permCh:
+			if !open {
+				permCh = nil
+				continue
+			}
+			if ev.Payload.SessionID == sessionID {
+				writePermissionRequest(w, flusher, ev.Payload)
+			}
 		case event, open := <-eventChan:
 			if !open {
 				if err := s.writeCurrentGoalState(w, flusher, sessionID); err != nil {
@@ -247,6 +267,19 @@ func (s *Server) streamSessionEvents(
 			s.dispatchSSEEvent(w, flusher, &mu, startedToolCalls, pendingInputs, workDir, event)
 		}
 	}
+}
+
+// writePermissionRequest emits a permission_request SSE event for the Web UI.
+func writePermissionRequest(w http.ResponseWriter, flusher http.Flusher, p permission.PermissionRequest) {
+	writeSSEEvent(w, flusher, "permission_request", map[string]interface{}{
+		"id":          p.ID,
+		"session_id":  p.SessionID,
+		"tool_name":   p.ToolName,
+		"description": p.Description,
+		"action":      p.Action,
+		"path":        p.Path,
+		"params":      p.Params,
+	})
 }
 
 // dispatchSSEEvent translates a single AgentEvent into SSE writes.
@@ -633,6 +666,7 @@ func (s *Server) getOrCreateSession(ctx context.Context, sessionID string) (*ses
 	if sessionID != "" {
 		sess, err := s.app.Sessions.Get(ctx, sessionID)
 		if err == nil {
+			s.seedAutoApprove(sess.ID)
 			return &sess, nil
 		}
 	}
@@ -642,7 +676,20 @@ func (s *Server) getOrCreateSession(ctx context.Context, sessionID string) (*ses
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
+	s.seedAutoApprove(sess.ID)
 	return &sess, nil
+}
+
+// seedAutoApprove applies the Permissions.AutoApproveTools config default to a
+// session the first time it is used. It runs once per session (tracked in
+// seededSessions) so that a later user toggle is never overridden by the default.
+func (s *Server) seedAutoApprove(sessionID string) {
+	if _, seeded := s.seededSessions.LoadOrStore(sessionID, true); seeded {
+		return
+	}
+	if cfg := config.Get(); cfg != nil && cfg.Permissions.AutoApproveTools {
+		s.app.Permissions.AutoApproveSession(sessionID)
+	}
 }
 
 // handleSlashCommandStream processes a slash command and writes results as SSE events.

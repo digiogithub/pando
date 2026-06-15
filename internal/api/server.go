@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/digiogithub/pando/internal/app"
@@ -49,6 +50,9 @@ type Server struct {
 	staticFS      fs.FS
 	staticHandler http.Handler
 	bgRunner      *BackgroundSessionManager
+	// seededSessions tracks which sessions have already had the auto-approve
+	// config default applied, so a user toggle is not overridden on later prompts.
+	seededSessions sync.Map
 }
 
 func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
@@ -58,7 +62,10 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 		return nil, err
 	}
 
-	application.Permissions.SetGlobalAutoApprove(true)
+	// Tool permissions are governed per-session ("auto mode" toggle). The default
+	// state is seeded from Permissions.AutoApproveTools when a session is used
+	// (see getOrCreateSession); we no longer auto-approve globally so the Web UI
+	// can prompt for permission just like the TUI.
 
 	s := &Server{
 		app:      application,

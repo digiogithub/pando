@@ -62,10 +62,11 @@ type personaKeyMap struct {
 	Escape key.Binding
 	Up     key.Binding
 	Down   key.Binding
-	J      key.Binding
-	K      key.Binding
 }
 
+// NOTE: the search input is always focused, so navigation is bound to the arrow
+// keys only. Letter keys (incl. j/k) must reach the query input so persona
+// names can be typed without being swallowed as list navigation.
 var personaKeys = personaKeyMap{
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
@@ -82,14 +83,6 @@ var personaKeys = personaKeyMap{
 	Down: key.NewBinding(
 		key.WithKeys("down"),
 		key.WithHelp("↓", "next persona"),
-	),
-	J: key.NewBinding(
-		key.WithKeys("j"),
-		key.WithHelp("j", "next persona"),
-	),
-	K: key.NewBinding(
-		key.WithKeys("k"),
-		key.WithHelp("k", "previous persona"),
 	),
 }
 
@@ -162,10 +155,10 @@ func (p *personaDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, util.CmdHandler(PersonaSelectedMsg{Name: selected})
 		case key.Matches(msg, personaKeys.Escape):
 			return p, util.CmdHandler(ClosePersonaDialogMsg{})
-		case key.Matches(msg, personaKeys.Up) || key.Matches(msg, personaKeys.K):
+		case key.Matches(msg, personaKeys.Up):
 			p.moveSelection(-1)
 			return p, nil
-		case key.Matches(msg, personaKeys.Down) || key.Matches(msg, personaKeys.J):
+		case key.Matches(msg, personaKeys.Down):
 			p.moveSelection(1)
 			return p, nil
 		}

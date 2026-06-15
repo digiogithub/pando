@@ -52,13 +52,14 @@ type skillSearchDebounceMsg struct {
 type skillsCatalogKeyMap struct {
 	Up     key.Binding
 	Down   key.Binding
-	K      key.Binding
-	J      key.Binding
 	Enter  key.Binding
 	Global key.Binding
 	Escape key.Binding
 }
 
+// NOTE: the search input is always focused, so navigation is bound to the arrow
+// keys only. Letter keys (incl. j/k) must reach the search input so skill names
+// can be typed without being swallowed as list navigation.
 var skillsCatalogKeys = skillsCatalogKeyMap{
 	Up: key.NewBinding(
 		key.WithKeys("up"),
@@ -67,14 +68,6 @@ var skillsCatalogKeys = skillsCatalogKeyMap{
 	Down: key.NewBinding(
 		key.WithKeys("down"),
 		key.WithHelp("↓", "next"),
-	),
-	K: key.NewBinding(
-		key.WithKeys("k"),
-		key.WithHelp("k", "previous"),
-	),
-	J: key.NewBinding(
-		key.WithKeys("j"),
-		key.WithHelp("j", "next"),
 	),
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
@@ -148,13 +141,13 @@ func (m SkillsCatalogDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, skillsCatalogKeys.Escape):
 			return m, util.CmdHandler(CloseSkillsCatalogMsg{})
 
-		case key.Matches(msg, skillsCatalogKeys.Up) || key.Matches(msg, skillsCatalogKeys.K):
+		case key.Matches(msg, skillsCatalogKeys.Up):
 			if m.selected > 0 {
 				m.selected--
 			}
 			return m, nil
 
-		case key.Matches(msg, skillsCatalogKeys.Down) || key.Matches(msg, skillsCatalogKeys.J):
+		case key.Matches(msg, skillsCatalogKeys.Down):
 			if m.selected < len(m.results)-1 {
 				m.selected++
 			}

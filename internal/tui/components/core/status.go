@@ -75,6 +75,13 @@ type TokenUsageMsg struct {
 	Estimated        bool
 }
 
+// AutoApproveMsg toggles the "auto mode" indicator in the status bar for a session.
+// When Enabled is true the agent auto-approves tool permission requests for SessionID.
+type AutoApproveMsg struct {
+	SessionID string
+	Enabled   bool
+}
+
 type statusCmp struct {
 	info              util.InfoMsg
 	width             int
@@ -91,6 +98,10 @@ type statusCmp struct {
 	estimatedTokens        int64
 	estimatedContextWindow int64
 	estimatedActive        bool
+
+	// autoApprove reflects whether the current session auto-approves tool
+	// permission requests ("auto mode"). Rendered as a chip when true.
+	autoApprove bool
 }
 
 // clearMessageCmd is a command that clears status messages after a timeout
@@ -148,6 +159,10 @@ func (m statusCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Enforce max breadcrumbs
 		if len(m.breadcrumbs) > maxBreadcrumbs {
 			m.breadcrumbs = m.breadcrumbs[len(m.breadcrumbs)-maxBreadcrumbs:]
+		}
+	case AutoApproveMsg:
+		if m.session.ID == "" || msg.SessionID == "" || msg.SessionID == m.session.ID {
+			m.autoApprove = msg.Enabled
 		}
 	case MCPGatewayMsg:
 		m.mcpFavoritesCount = msg.FavoritesCount
@@ -334,8 +349,18 @@ func (m statusCmp) View() string {
 			Render(diagnosticsContent),
 	)
 
+	// Auto-approve ("auto mode") indicator chip.
+	autoApproveBadge := ""
+	if m.autoApprove {
+		autoApproveBadge = styles.Padded().
+			Background(t.Warning()).
+			Foreground(t.BadgeText()).
+			Bold(true).
+			Render("⏵⏵ auto-accept")
+	}
+
 	breadcrumbWidth := lipgloss.Width(breadcrumbs)
-	availableWidht := max(0, m.width-lipgloss.Width(helpWidget)-lipgloss.Width(m.model())-lipgloss.Width(diagnostics)-tokenInfoWidth-breadcrumbWidth)
+	availableWidht := max(0, m.width-lipgloss.Width(helpWidget)-lipgloss.Width(m.model())-lipgloss.Width(diagnostics)-tokenInfoWidth-breadcrumbWidth-lipgloss.Width(autoApproveBadge))
 
 	if m.info.Msg != "" {
 		infoStyle := styles.Padded().
@@ -367,6 +392,9 @@ func (m statusCmp) View() string {
 	}
 
 	status += diagnostics
+	if autoApproveBadge != "" {
+		status += autoApproveBadge
+	}
 	if m.mcpFavoritesCount > 0 {
 		t := theme.CurrentTheme()
 		mcpBadge := styles.Padded().

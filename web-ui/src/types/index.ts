@@ -136,7 +136,7 @@ export interface SSEEvent {
   type: 'session' | 'content' | 'content_delta' | 'thinking_delta'
       | 'tool_call' | 'tool_call_update' | 'tool_result'
       | 'plan_update' | 'todos_update' | 'goal_status'
-      | 'token_usage'
+      | 'token_usage' | 'permission_request'
       | 'error' | 'done'
   session_id?: string
   content?: string
@@ -147,7 +147,22 @@ export interface SSEEvent {
   plan_entries?: SSEPlanEntry[]
   goal?: GoalStatus
   token_usage?: SSETokenUsage
+  permission_request?: PermissionRequest
 }
+
+// PermissionRequest is a pending tool permission prompt surfaced by the agent
+// when a session is not in auto-approve ("auto mode") state.
+export interface PermissionRequest {
+  id: string
+  session_id: string
+  tool_name: string
+  description?: string
+  action?: string
+  path?: string
+  params?: unknown
+}
+
+export type PermissionAction = 'allow' | 'allow_session' | 'deny'
 
 // SSETokenUsage carries a live context-window token update. When estimated is true
 // the value is provisional (estimated while tools run) and rendered with a "~".

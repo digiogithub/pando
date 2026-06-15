@@ -209,10 +209,11 @@ type commandKeyMap struct {
 	Escape key.Binding
 	Up     key.Binding
 	Down   key.Binding
-	J      key.Binding
-	K      key.Binding
 }
 
+// NOTE: the search input is always focused, so navigation is bound to the arrow
+// keys only. Letter keys (incl. j/k) must reach the query input so command
+// names can be typed without being swallowed as list navigation.
 var commandKeys = commandKeyMap{
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
@@ -229,14 +230,6 @@ var commandKeys = commandKeyMap{
 	Down: key.NewBinding(
 		key.WithKeys("down"),
 		key.WithHelp("↓", "next command"),
-	),
-	J: key.NewBinding(
-		key.WithKeys("j"),
-		key.WithHelp("j", "next command"),
-	),
-	K: key.NewBinding(
-		key.WithKeys("k"),
-		key.WithHelp("k", "previous command"),
 	),
 }
 
@@ -332,10 +325,10 @@ func (c *commandDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		case key.Matches(msg, commandKeys.Escape):
 			return c, util.CmdHandler(CloseCommandDialogMsg{})
-		case key.Matches(msg, commandKeys.Up) || key.Matches(msg, commandKeys.K):
+		case key.Matches(msg, commandKeys.Up):
 			c.moveSelection(-1)
 			return c, nil
-		case key.Matches(msg, commandKeys.Down) || key.Matches(msg, commandKeys.J):
+		case key.Matches(msg, commandKeys.Down):
 			c.moveSelection(1)
 			return c, nil
 		}

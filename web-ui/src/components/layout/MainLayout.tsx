@@ -12,6 +12,7 @@ import QuickMenu from '@/components/overlays/QuickMenu'
 import ModelSwitcher from '@/components/overlays/ModelSwitcher'
 import ConfigInitBanner from '@/components/overlays/ConfigInitBanner'
 import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
+import PermissionDialog from '@/components/chat/PermissionDialog'
 
 export default function MainLayout() {
   const { sidebarOpen, quickMenuOpen, modelSwitcherOpen, setSidebarOpen } = useLayoutStore()
@@ -48,6 +49,14 @@ export default function MainLayout() {
       if (e.ctrlKey && e.key === 'b') {
         e.preventDefault()
         toggleSidebar()
+      }
+      // Shift+Tab toggles per-session auto-approve ("auto mode").
+      if (e.shiftKey && e.key === 'Tab') {
+        const { activeSessionId, toggleAutoApprove } = useSessionStore.getState()
+        if (activeSessionId) {
+          e.preventDefault()
+          void toggleAutoApprove(activeSessionId)
+        }
       }
     }
     window.addEventListener('keydown', handler)
@@ -125,6 +134,7 @@ export default function MainLayout() {
       {/* Overlays */}
       {quickMenuOpen && <QuickMenu />}
       {modelSwitcherOpen && <ModelSwitcher />}
+      <PermissionDialog />
 
       <style>{`
         @media (max-width: 768px) {

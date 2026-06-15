@@ -76,10 +76,6 @@ type modelKeyMap struct {
 	Right  key.Binding
 	Enter  key.Binding
 	Escape key.Binding
-	J      key.Binding
-	K      key.Binding
-	H      key.Binding
-	L      key.Binding
 }
 
 var modelKeys = modelKeyMap{
@@ -106,22 +102,6 @@ var modelKeys = modelKeyMap{
 	Escape: key.NewBinding(
 		key.WithKeys("esc"),
 		key.WithHelp("esc", "close"),
-	),
-	J: key.NewBinding(
-		key.WithKeys("j"),
-		key.WithHelp("j", "next model"),
-	),
-	K: key.NewBinding(
-		key.WithKeys("k"),
-		key.WithHelp("k", "previous model"),
-	),
-	H: key.NewBinding(
-		key.WithKeys("h"),
-		key.WithHelp("h", "scroll left"),
-	),
-	L: key.NewBinding(
-		key.WithKeys("l"),
-		key.WithHelp("l", "scroll right"),
 	),
 }
 
@@ -167,9 +147,12 @@ func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, modelKeys.Up) || key.Matches(msg, modelKeys.K):
+		// NOTE: the search input is always focused in this dialog, so list
+		// navigation is bound to the arrow keys only. Letter keys (incl.
+		// h/j/k/l) must reach the query input so model names can be typed.
+		case key.Matches(msg, modelKeys.Up):
 			m.moveSelectionUp()
-		case key.Matches(msg, modelKeys.Down) || key.Matches(msg, modelKeys.J):
+		case key.Matches(msg, modelKeys.Down):
 			m.moveSelectionDown()
 		case key.Matches(msg, modelKeys.Left):
 			if m.hScrollPossible {

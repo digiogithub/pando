@@ -9,6 +9,8 @@ import { useLayoutStore } from '@/stores/layoutStore'
 export default function StatusBar() {
   const { t } = useTranslation()
   const { activeSessionId, sessions } = useSessionStore()
+  const autoApprove = useSessionStore((s) => s.autoApprove)
+  const toggleAutoApprove = useSessionStore((s) => s.toggleAutoApprove)
   const connected = useServerStore((s) => s.connected)
   const activeSession = sessions.find((s) => s.id === activeSessionId)
   const defaultModel = useSettingsStore((s) => s.config.default_model)
@@ -71,6 +73,31 @@ export default function StatusBar() {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {/* Auto-approve ("auto mode") toggle — Shift+Tab also toggles it */}
+        {activeSessionId && (
+          <button
+            onClick={() => { void toggleAutoApprove(activeSessionId) }}
+            title={t('common.toggleAutoApprove', 'Toggle auto-approve (Shift+Tab)')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              background: autoApprove ? 'var(--warning, #d97706)' : 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: autoApprove ? '#fff' : 'var(--fg-muted)',
+              fontSize: 11,
+              fontWeight: autoApprove ? 600 : 400,
+              padding: '0 0.5rem',
+              height: 18,
+              borderRadius: 'var(--radius-sm)',
+              transition: 'color 0.15s, background 0.15s',
+            }}
+          >
+            <span>{autoApprove ? '⏵⏵ auto-accept' : 'auto-accept off'}</span>
+          </button>
+        )}
+
         {/* Model selector button */}
         <button
           onClick={() => setModelSwitcherOpen(true)}

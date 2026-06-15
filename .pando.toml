@@ -303,8 +303,8 @@ AutoCleanupDays = 5
 
 [evaluator]
 enabled = true
-model = 'copilot.gpt-4.1'
-provider = 'copilot'
+model = 'ollama.qwopus:latest'
+provider = 'ollama'
 alphaWeight = 0.8
 betaWeight = 0.2
 explorationC = 1.41

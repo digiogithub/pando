@@ -2588,6 +2588,12 @@ func buildEvaluatorSection(cfg *config.Config) settings.Section {
 
 	if !eval.Enabled {
 		for i := 1; i < len(fields); i++ {
+			// Keep the Judge Model selectable even while the evaluator is
+			// disabled so users can pick a model before turning the feature on;
+			// disabling it would make the model dialog never open.
+			if fields[i].Key == "evaluator.model" {
+				continue
+			}
 			fields[i].Disabled = true
 		}
 	}

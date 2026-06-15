@@ -26,9 +26,10 @@ type GlobalKeys struct {
 	Settings         key.Binding
 	Filepicker       key.Binding
 	SwitchTheme      key.Binding
-	ToggleTerminal   key.Binding
-	NewTerminal      key.Binding
-	NextTerminal     key.Binding
+	ToggleTerminal    key.Binding
+	NewTerminal       key.Binding
+	NextTerminal      key.Binding
+	ToggleAutoApprove key.Binding
 }
 
 type ChatKeys struct {
@@ -163,6 +164,10 @@ func DefaultKeyMap() KeyMap {
 			NextTerminal: key.NewBinding(
 				key.WithKeys("ctrl+shift+y"),
 				key.WithHelp("ctrl+shift+y", "next terminal tab"),
+			),
+			ToggleAutoApprove: key.NewBinding(
+				key.WithKeys("shift+tab"),
+				key.WithHelp("shift+tab", "toggle auto-approve"),
 			),
 		},
 		Chat: ChatKeys{
@@ -308,7 +313,7 @@ func (k GlobalKeys) FullHelp() [][]key.Binding {
 		filterHelpBindings(k.Help, k.Quit),
 		filterHelpBindings(k.Logs, k.Orchestrator, k.Snapshots, k.Evaluator, k.Settings),
 		filterHelpBindings(k.Projects, k.CronJobs, k.InstancesBrowser, k.Filepicker, k.SwitchTheme),
-		filterHelpBindings(k.ToggleTerminal, k.NewTerminal, k.NextTerminal),
+		filterHelpBindings(k.ToggleTerminal, k.NewTerminal, k.NextTerminal, k.ToggleAutoApprove),
 	)
 }
 

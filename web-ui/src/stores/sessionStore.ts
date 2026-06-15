@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Session, Message } from '@/types'
+import type { Session, Message, PermissionRequest, PermissionAction } from '@/types'
 import api from '@/services/api'
 import { mapSession, mapMessages } from '@/services/mappers'
 
@@ -10,6 +10,10 @@ interface SessionStore {
   loading: boolean
   /** true while the active session has a live background run streaming in */
   isStreaming: boolean
+  /** pending tool permission prompts awaiting a user decision */
+  pendingPermissions: PermissionRequest[]
+  /** whether the active session auto-approves tool permissions ("auto mode") */
+  autoApprove: boolean
   fetchSessions: () => Promise<void>
   setActiveSession: (id: string) => Promise<{ isRunning: boolean }>
   setMessages: (msgs: Message[]) => void
@@ -25,6 +29,12 @@ interface SessionStore {
     contextWindow: number,
     estimated: boolean,
   ) => void
+  // Permission / auto-mode handling
+  addPermissionRequest: (req: PermissionRequest) => void
+  respondPermission: (id: string, sessionId: string, action: PermissionAction) => Promise<void>
+  fetchAutoApprove: (sessionId: string) => Promise<void>
+  setAutoApprove: (sessionId: string, enabled: boolean) => Promise<void>
+  toggleAutoApprove: (sessionId: string) => Promise<void>
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,6 +48,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
   messages: [],
   loading: false,
   isStreaming: false,
+  pendingPermissions: [],
+  autoApprove: false,
 
   fetchSessions: async () => {
     set({ loading: true })
@@ -51,7 +63,16 @@ export const useSessionStore = create<SessionStore>((set) => ({
   },
 
   setActiveSession: async (id: string) => {
-    set({ activeSessionId: id, messages: [] })
+    set({ activeSessionId: id, messages: [], pendingPermissions: [] })
+    // Load the session's auto-approve state (best effort).
+    void (async () => {
+      try {
+        const res = await api.get<{ enabled: boolean }>(`/api/v1/sessions/${id}/auto-approve`)
+        set({ autoApprove: Boolean(res.enabled) })
+      } catch {
+        set({ autoApprove: false })
+      }
+    })()
     try {
       const data = await api.get<RawSessionDetail>(`/api/v1/sessions/${id}`)
       const messages = mapMessages(data.messages ?? [])
@@ -119,4 +140,45 @@ export const useSessionStore = create<SessionStore>((set) => ({
           : sess
       ),
     })),
+
+  addPermissionRequest: (req) =>
+    set((s) =>
+      s.pendingPermissions.some((p) => p.id === req.id)
+        ? s
+        : { pendingPermissions: [...s.pendingPermissions, req] }
+    ),
+
+  respondPermission: async (id, sessionId, action) => {
+    // Optimistically remove the prompt; the agent unblocks server-side.
+    set((s) => ({ pendingPermissions: s.pendingPermissions.filter((p) => p.id !== id) }))
+    try {
+      await api.post('/api/v1/permissions/respond', { id, sessionId, action })
+    } catch {
+      // Network failure already surfaced by the api layer.
+    }
+  },
+
+  fetchAutoApprove: async (sessionId) => {
+    try {
+      const res = await api.get<{ enabled: boolean }>(`/api/v1/sessions/${sessionId}/auto-approve`)
+      set({ autoApprove: Boolean(res.enabled) })
+    } catch {
+      // ignore
+    }
+  },
+
+  setAutoApprove: async (sessionId, enabled) => {
+    set({ autoApprove: enabled })
+    try {
+      await api.post(`/api/v1/sessions/${sessionId}/auto-approve`, { enabled })
+    } catch {
+      // Revert on failure.
+      set({ autoApprove: !enabled })
+    }
+  },
+
+  toggleAutoApprove: async (sessionId) => {
+    const next = !useSessionStore.getState().autoApprove
+    await useSessionStore.getState().setAutoApprove(sessionId, next)
+  },
 }))
