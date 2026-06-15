@@ -179,6 +179,77 @@ func TestCompactPaginationFooter(t *testing.T) {
 	}
 }
 
+func TestRenderCompactFlat(t *testing.T) {
+	rows := []compactRow{
+		{Rank: 1, Score: 0.9, Kind: "function", FilePath: "a.go", StartLine: 10, NamePath: "/A", Trailer: "func A()"},
+		{Rank: 2, Score: 0.5, Kind: "method", FilePath: "a.go", StartLine: 20, NamePath: "/A/B", Trailer: "func B()"},
+	}
+	meta := paginationMeta{Total: 2, Offset: 0, Limit: 50}
+	out := renderCompact(rows, meta, false)
+	// Flat mode repeats the file path on each line and has no group header.
+	if strings.Count(out, "a.go:") != 2 {
+		t.Errorf("flat mode should print file:line per row:\n%s", out)
+	}
+	if strings.Contains(out, "a.go (2)") {
+		t.Errorf("flat mode must not emit a group header:\n%s", out)
+	}
+	if !strings.Contains(out, "has_more=false") {
+		t.Errorf("missing footer:\n%s", out)
+	}
+}
+
+func TestRenderCompactGroupByFile(t *testing.T) {
+	rows := []compactRow{
+		{Rank: 1, Score: 0.9, Kind: "function", FilePath: "a.go", StartLine: 10, NamePath: "/A", Trailer: "func A()"},
+		{Rank: 2, Score: 0.7, Kind: "function", FilePath: "b.go", StartLine: 5, NamePath: "/X", Trailer: "func X()"},
+		{Rank: 3, Score: 0.5, Kind: "method", FilePath: "a.go", StartLine: 20, NamePath: "/A/B", Trailer: "func B()"},
+	}
+	meta := paginationMeta{Total: 3, Offset: 0, Limit: 50}
+	out := renderCompact(rows, meta, true)
+
+	// Each file appears once as a header with its hit count; a.go groups both
+	// its rows together preserving first-appearance order (a.go before b.go).
+	if !strings.Contains(out, "a.go (2)") {
+		t.Errorf("missing a.go group header with count:\n%s", out)
+	}
+	if !strings.Contains(out, "b.go (1)") {
+		t.Errorf("missing b.go group header with count:\n%s", out)
+	}
+	if strings.Index(out, "a.go (2)") > strings.Index(out, "b.go (1)") {
+		t.Errorf("first-appearance order not preserved:\n%s", out)
+	}
+	// Grouped rows drop the repeated file path and use the L<line> form.
+	if strings.Contains(out, "a.go:10") {
+		t.Errorf("grouped rows must not repeat the file path:\n%s", out)
+	}
+	if !strings.Contains(out, "L10") || !strings.Contains(out, "L20") {
+		t.Errorf("grouped rows should use L<line> form:\n%s", out)
+	}
+}
+
+func TestCompactLineCoreNoFile(t *testing.T) {
+	line := compactLineCore(1, 0, "function", "a.go", 42, "/A", "func A()", false)
+	if strings.Contains(line, "a.go") {
+		t.Errorf("withFile=false must omit the file path: %q", line)
+	}
+	if !strings.Contains(line, "L42") {
+		t.Errorf("withFile=false should render L42: %q", line)
+	}
+}
+
+func TestFirstSourceLine(t *testing.T) {
+	sym := &code.CodeSymbol{SourceCode: "\n   \n  return doStuff()\nmore"}
+	if got := firstSourceLine(sym); got != "return doStuff()" {
+		t.Errorf("firstSourceLine = %q, want %q", got, "return doStuff()")
+	}
+	if got := firstSourceLine(&code.CodeSymbol{}); got != "" {
+		t.Errorf("firstSourceLine empty = %q, want empty", got)
+	}
+	if got := firstSourceLine(nil); got != "" {
+		t.Errorf("firstSourceLine(nil) = %q, want empty", got)
+	}
+}
+
 func TestMatchSnippet(t *testing.T) {
 	sym := &code.CodeSymbol{
 		Signature: "func Handler()",

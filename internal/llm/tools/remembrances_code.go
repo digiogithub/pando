@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/rag/code"
 	"github.com/digiogithub/pando/internal/rag/treesitter"
 	"github.com/digiogithub/pando/internal/search"
@@ -297,7 +298,7 @@ func (t *CodeIndexStatusTool) Run(ctx context.Context, params ToolCall) (ToolRes
 func (t *CodeHybridSearchTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        codeHybridSearchToolName,
-		Description: "Searches indexed code symbols using natural language. Combines vector semantic search with full-text search. Results are ranked with a normalized relevance score (0..1, 1 = best match) and the low-relevance tail is trimmed. Documentation files (.md, .rst, ...) are excluded by default; set include_docs to include them. Use this to find functions, classes, or code related to a concept.",
+		Description: "Searches indexed code symbols using natural language. Combines vector semantic search with full-text search. Results are ranked with a normalized relevance score (0..1, 1 = best match) and the low-relevance tail is trimmed. Documentation files (.md, .rst, ...) are excluded by default; set include_docs to include them.\n\nWHEN TO USE: conceptual/semantic discovery (\"where is authentication handled\", \"code that parses config\") and finding symbols by meaning across one or more indexed projects. DO NOT use it for exact strings or known identifiers — for a literal substring or regex over the working tree the Grep tool (ripgrep) is faster and returns far less context. Results are paginated (limit/offset; page forward with next_offset); set group_by_file to compact many hits that share a file.",
 		Parameters: map[string]any{
 			"project_id": map[string]any{
 				"type":        "string",
@@ -337,6 +338,10 @@ func (t *CodeHybridSearchTool) Info() ToolInfo {
 				"type":        "boolean",
 				"description": "Include raw score breakdown (vector/fts/raw) per result. Default false.",
 			},
+			"group_by_file": map[string]any{
+				"type":        "boolean",
+				"description": "Group results under a per-file header instead of repeating the file path on every line. Saves tokens when many hits share a file. Default false.",
+			},
 		},
 		Required: []string{"project_id", "query"},
 	}
@@ -353,6 +358,7 @@ func (t *CodeHybridSearchTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		MinScore    float64  `json:"min_score"`
 		IncludeDocs bool     `json:"include_docs"`
 		Debug       bool     `json:"debug"`
+		GroupByFile bool     `json:"group_by_file"`
 	}
 	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
@@ -418,25 +424,30 @@ func (t *CodeHybridSearchTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		return NewTextResponse(fmt.Sprintf("No results at offset %d (total %d).", req.Offset, meta.Total)), nil
 	}
 
-	var sb strings.Builder
-	for _, it := range page {
-		trailer := it.Signature
-		if it.Signature == "" {
-			trailer = it.Name
+	rows := make([]compactRow, len(page))
+	for i, it := range page {
+		rows[i] = compactRow{
+			Rank:      it.Rank,
+			Score:     it.Score,
+			Kind:      it.Kind,
+			FilePath:  it.FilePath,
+			StartLine: it.StartLine,
+			NamePath:  firstNonEmpty(it.NamePath, it.Name),
+			Trailer:   firstNonEmpty(it.Signature, it.Snippet, it.Name),
 		}
-		sb.WriteString(compactLine(it.Rank, it.Score, it.Kind, it.FilePath, it.StartLine, it.NamePath, trailer))
-		sb.WriteByte('\n')
 	}
-	sb.WriteString(compactPaginationFooter(meta, len(page)))
 
-	return WithResponseMetadata(NewTextResponse(sb.String()), map[string]any{
-		"count":      len(page),
-		"total":      meta.Total,
-		"offset":     meta.Offset,
-		"limit":      meta.Limit,
-		"has_more":   meta.HasMore,
+	body := renderCompact(rows, meta, req.GroupByFile)
+	logSearchTelemetry(codeHybridSearchToolName, req.Query, len(page), meta, req.GroupByFile, len(body))
+
+	return WithResponseMetadata(NewTextResponse(body), map[string]any{
+		"count":       len(page),
+		"total":       meta.Total,
+		"offset":      meta.Offset,
+		"limit":       meta.Limit,
+		"has_more":    meta.HasMore,
 		"next_offset": meta.NextOffset,
-		"results":    page,
+		"results":     page,
 	}), nil
 }
 
@@ -448,6 +459,7 @@ type hybridResultItem struct {
 	FilePath    string  `json:"file_path"`
 	StartLine   int     `json:"start_line"`
 	Signature   string  `json:"signature,omitempty"`
+	Snippet     string  `json:"snippet,omitempty"`
 	Kind        string  `json:"kind"`
 	Score       float64 `json:"score"`
 	Rank        int     `json:"rank"`
@@ -524,6 +536,11 @@ func rankAndFilterHybrid(results []code.HybridSearchResult, minScore float64, in
 			Kind:       kind,
 			Score:      roundScore(norm),
 			Rank:       len(items) + 1,
+		}
+		// A 1-line snippet disambiguates hits that lack a signature (e.g.
+		// non-function symbols or headings) without dumping source_code.
+		if item.Signature == "" {
+			item.Snippet = firstSourceLine(sym)
 		}
 		if debug {
 			item.RawScore = r.Score
@@ -639,6 +656,14 @@ func compactPaginationFooter(meta paginationMeta, shown int) string {
 // lets the line-based session cache paginate by RESULT (cache_read offset/limit
 // map 1:1 to results) instead of by arbitrary serialized lines.
 func compactLine(rank int, score float64, kind, file string, line int, namePath, trailer string) string {
+	return compactLineCore(rank, score, kind, file, line, namePath, trailer, true)
+}
+
+// compactLineCore renders a result line, optionally omitting the file path. When
+// withFile is false the location is rendered as "L<line>" only, used in
+// group-by-file mode where the file path is printed once as a group header so it
+// is not repeated on every line (saving tokens for many hits in one file).
+func compactLineCore(rank int, score float64, kind, file string, line int, namePath, trailer string, withFile bool) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "#%d", rank)
 	if score > 0 {
@@ -647,7 +672,11 @@ func compactLine(rank int, score float64, kind, file string, line int, namePath,
 	if kind != "" {
 		fmt.Fprintf(&sb, " %s", kind)
 	}
-	fmt.Fprintf(&sb, " %s:%d", file, line)
+	if withFile {
+		fmt.Fprintf(&sb, " %s:%d", file, line)
+	} else {
+		fmt.Fprintf(&sb, " L%d", line)
+	}
 	if namePath != "" {
 		fmt.Fprintf(&sb, "  %s", namePath)
 	}
@@ -655,6 +684,72 @@ func compactLine(rank int, score float64, kind, file string, line int, namePath,
 		fmt.Fprintf(&sb, "  %s", trailer)
 	}
 	return sb.String()
+}
+
+// compactRow is the rendering-agnostic projection of one result, shared by all
+// code search tools so they can emit either a flat list or a group-by-file view
+// through a single renderer.
+type compactRow struct {
+	Rank      int
+	Score     float64
+	Kind      string
+	FilePath  string
+	StartLine int
+	NamePath  string
+	Trailer   string
+}
+
+// renderCompact renders a page of results plus the pagination footer. When
+// groupByFile is true, results are grouped under a per-file header (preserving
+// first-appearance order) and each line drops the repeated file path; otherwise
+// one self-contained line per result is emitted.
+func renderCompact(rows []compactRow, meta paginationMeta, groupByFile bool) string {
+	var sb strings.Builder
+	if groupByFile {
+		var order []string
+		groups := make(map[string][]compactRow)
+		for _, r := range rows {
+			if _, ok := groups[r.FilePath]; !ok {
+				order = append(order, r.FilePath)
+			}
+			groups[r.FilePath] = append(groups[r.FilePath], r)
+		}
+		for _, f := range order {
+			g := groups[f]
+			fmt.Fprintf(&sb, "%s (%d)\n", f, len(g))
+			for _, r := range g {
+				sb.WriteString("  ")
+				sb.WriteString(compactLineCore(r.Rank, r.Score, r.Kind, r.FilePath, r.StartLine, r.NamePath, r.Trailer, false))
+				sb.WriteByte('\n')
+			}
+		}
+	} else {
+		for _, r := range rows {
+			sb.WriteString(compactLine(r.Rank, r.Score, r.Kind, r.FilePath, r.StartLine, r.NamePath, r.Trailer))
+			sb.WriteByte('\n')
+		}
+	}
+	sb.WriteString(compactPaginationFooter(meta, len(rows)))
+	return sb.String()
+}
+
+// logSearchTelemetry records a lightweight, structured trace of a code search
+// call so token-efficiency and routing can be observed over time (e.g. response
+// byte size, page vs. total, whether grouping was used). It is debug-level so it
+// never adds to the user-visible output or the model context.
+func logSearchTelemetry(tool, query string, shown int, meta paginationMeta, groupByFile bool, respBytes int) {
+	logging.Debug("code search",
+		"tool", tool,
+		"query", query,
+		"shown", shown,
+		"total", meta.Total,
+		"total_is_lower_bound", meta.TotalIsLowerBound,
+		"offset", meta.Offset,
+		"limit", meta.Limit,
+		"has_more", meta.HasMore,
+		"group_by_file", groupByFile,
+		"resp_bytes", respBytes,
+	)
 }
 
 // firstNonEmpty returns the first non-empty string among its arguments.
@@ -667,12 +762,27 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
+// firstSourceLine returns the first non-empty, trimmed line of a symbol's source
+// code, truncated for compact output. It provides a disambiguating snippet when
+// no signature is available (e.g. for semantic hits on non-function symbols).
+func firstSourceLine(sym *code.CodeSymbol) string {
+	if sym == nil || sym.SourceCode == "" {
+		return ""
+	}
+	for _, line := range strings.Split(sym.SourceCode, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			return truncateField(trimmed)
+		}
+	}
+	return ""
+}
+
 // ---- CodeFindSymbolTool ----
 
 func (t *CodeFindSymbolTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        codeFindSymbolToolName,
-		Description: "Finds code symbols (functions, classes, methods, etc.) by name pattern. Supports exact match, suffix match, and substring matching.",
+		Description: "Finds code symbols (functions, classes, methods, etc.) by name pattern. Supports exact match, suffix match, and substring matching.\n\nWHEN TO USE: you know (part of) a symbol's NAME and want its definition location and signature, optionally scoped by language/type. For free-text or regex over raw file contents use the Grep tool (ripgrep) instead — it is faster and lighter. Results are paginated (limit/offset, page with next_offset); set group_by_file to compact hits sharing a file.",
 		Parameters: map[string]any{
 			"project_id": map[string]any{
 				"type":        "string",
@@ -716,6 +826,10 @@ func (t *CodeFindSymbolTool) Info() ToolInfo {
 				"type":        "integer",
 				"description": "Number of results to skip before the page (default: 0). Use next_offset from a previous response to page forward.",
 			},
+			"group_by_file": map[string]any{
+				"type":        "boolean",
+				"description": "Group results under a per-file header instead of repeating the file path on every line. Saves tokens when many hits share a file. Default false.",
+			},
 		},
 		Required: []string{"project_id", "name_path_pattern"},
 	}
@@ -733,6 +847,7 @@ func (t *CodeFindSymbolTool) Run(ctx context.Context, params ToolCall) (ToolResp
 		SubstringMatching bool     `json:"substring_matching"`
 		Limit             int      `json:"limit"`
 		Offset            int      `json:"offset"`
+		GroupByFile       bool     `json:"group_by_file"`
 	}
 	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
@@ -807,16 +922,22 @@ func (t *CodeFindSymbolTool) Run(ctx context.Context, params ToolCall) (ToolResp
 		return NewTextResponse(fmt.Sprintf("No symbols at offset %d (total %d).", req.Offset, meta.Total)), nil
 	}
 
-	var sb strings.Builder
+	rows := make([]compactRow, len(page))
 	for i, it := range page {
-		trailer := firstNonEmpty(it.Signature, it.SymbolType)
-		namePath := firstNonEmpty(it.NamePath, it.Name)
-		sb.WriteString(compactLine(meta.Offset+i+1, 0, it.SymbolType, it.FilePath, it.StartLine, namePath, trailer))
-		sb.WriteByte('\n')
+		rows[i] = compactRow{
+			Rank:      meta.Offset + i + 1,
+			Kind:      it.SymbolType,
+			FilePath:  it.FilePath,
+			StartLine: it.StartLine,
+			NamePath:  firstNonEmpty(it.NamePath, it.Name),
+			Trailer:   firstNonEmpty(it.Signature, it.SymbolType),
+		}
 	}
-	sb.WriteString(compactPaginationFooter(meta, len(page)))
 
-	return WithResponseMetadata(NewTextResponse(sb.String()), map[string]any{
+	body := renderCompact(rows, meta, req.GroupByFile)
+	logSearchTelemetry(codeFindSymbolToolName, req.NamePathPattern, len(page), meta, req.GroupByFile, len(body))
+
+	return WithResponseMetadata(NewTextResponse(body), map[string]any{
 		"count":       len(page),
 		"total":       meta.Total,
 		"offset":      meta.Offset,
@@ -1045,7 +1166,7 @@ func (t *CodeListProjectsTool) Run(ctx context.Context, params ToolCall) (ToolRe
 func (t *CodeSearchPatternTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        codeSearchPatternToolName,
-		Description: "Searches indexed code symbols for literal text or regular expressions across source code, names, paths, signatures, and docs.",
+		Description: "Searches INDEXED code symbols for literal text or regular expressions across symbol source code, names, paths, signatures, and docs.\n\nWHEN TO USE: prefer the Grep tool (ripgrep) for plain literal/regex scans of the working tree — it is faster and returns less context. Use this when you specifically want symbol-scoped matches with structured metadata (symbol type, name path, signature) across indexed, possibly cross-project, code. If nothing is indexed it automatically falls back to grep. Results are paginated (limit/offset, page with next_offset); set group_by_file to compact hits sharing a file.",
 		Parameters: map[string]any{
 			"project_id": map[string]any{
 				"type":        "string",
@@ -1080,6 +1201,10 @@ func (t *CodeSearchPatternTool) Info() ToolInfo {
 			"offset": map[string]any{
 				"type":        "integer",
 				"description": "Number of results to skip before the page (default: 0). Use next_offset from a previous response to page forward.",
+			},
+			"group_by_file": map[string]any{
+				"type":        "boolean",
+				"description": "Group results under a per-file header instead of repeating the file path on every line. Saves tokens when many hits share a file. Default false.",
 			},
 		},
 		Required: []string{"project_id", "pattern"},
@@ -1161,16 +1286,22 @@ func (t *CodeSearchPatternTool) Run(ctx context.Context, params ToolCall) (ToolR
 		return NewTextResponse(fmt.Sprintf("No matches at offset %d (total %d).", req.Offset, meta.Total)), nil
 	}
 
-	var sb strings.Builder
+	rows := make([]compactRow, len(page))
 	for i, it := range page {
-		trailer := firstNonEmpty(it.Snippet, it.Signature, it.Name)
-		namePath := firstNonEmpty(it.NamePath, it.Name)
-		sb.WriteString(compactLine(meta.Offset+i+1, 0, it.SymbolType, it.FilePath, it.StartLine, namePath, trailer))
-		sb.WriteByte('\n')
+		rows[i] = compactRow{
+			Rank:      meta.Offset + i + 1,
+			Kind:      it.SymbolType,
+			FilePath:  it.FilePath,
+			StartLine: it.StartLine,
+			NamePath:  firstNonEmpty(it.NamePath, it.Name),
+			Trailer:   firstNonEmpty(it.Snippet, it.Signature, it.Name),
+		}
 	}
-	sb.WriteString(compactPaginationFooter(meta, len(page)))
 
-	return WithResponseMetadata(NewTextResponse(sb.String()), map[string]any{
+	body := renderCompact(rows, meta, req.GroupByFile)
+	logSearchTelemetry(codeSearchPatternToolName, req.Pattern, len(page), meta, req.GroupByFile, len(body))
+
+	return WithResponseMetadata(NewTextResponse(body), map[string]any{
 		"count":       len(page),
 		"total":       meta.Total,
 		"offset":      meta.Offset,
@@ -1190,6 +1321,7 @@ type codeSearchPatternRequest struct {
 	SymbolTypes   []string `json:"symbol_types"`
 	Limit         int      `json:"limit"`
 	Offset        int      `json:"offset"`
+	GroupByFile   bool     `json:"group_by_file"`
 }
 
 func (t *CodeSearchPatternTool) fallbackToGrep(ctx context.Context, req codeSearchPatternRequest) (*ToolResponse, error) {
@@ -1272,7 +1404,7 @@ func languageTypeFilter(languages []string) string {
 func (t *CodeFindReferencesTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        codeFindReferencesToolName,
-		Description: "Finds symbols that reference a target symbol by ID or name across the indexed project.",
+		Description: "Finds symbols that reference a target symbol by ID or name across the indexed project.\n\nWHEN TO USE: locate call sites/usages of a KNOWN symbol within indexed code. For a quick literal scan of usages in the working tree the Grep tool (ripgrep) may be faster. Results are paginated (limit/offset, page with next_offset); set group_by_file to compact references sharing a file.",
 		Parameters: map[string]any{
 			"project_id": map[string]any{
 				"type":        "string",
@@ -1294,6 +1426,10 @@ func (t *CodeFindReferencesTool) Info() ToolInfo {
 				"type":        "integer",
 				"description": "Number of results to skip before the page (default: 0). Use next_offset from a previous response to page forward.",
 			},
+			"group_by_file": map[string]any{
+				"type":        "boolean",
+				"description": "Group references under a per-file header instead of repeating the file path on every line. Saves tokens when many references share a file. Default false.",
+			},
 		},
 		Required: []string{"project_id"},
 	}
@@ -1301,11 +1437,12 @@ func (t *CodeFindReferencesTool) Info() ToolInfo {
 
 func (t *CodeFindReferencesTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
 	var req struct {
-		ProjectID  string `json:"project_id"`
-		SymbolID   string `json:"symbol_id"`
-		SymbolName string `json:"symbol_name"`
-		Limit      int    `json:"limit"`
-		Offset     int    `json:"offset"`
+		ProjectID   string `json:"project_id"`
+		SymbolID    string `json:"symbol_id"`
+		SymbolName  string `json:"symbol_name"`
+		Limit       int    `json:"limit"`
+		Offset      int    `json:"offset"`
+		GroupByFile bool   `json:"group_by_file"`
 	}
 	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
@@ -1356,15 +1493,22 @@ func (t *CodeFindReferencesTool) Run(ctx context.Context, params ToolCall) (Tool
 		return NewTextResponse(fmt.Sprintf("No references at offset %d (total %d).", req.Offset, meta.Total)), nil
 	}
 
-	var sb strings.Builder
+	rows := make([]compactRow, len(page))
 	for i, it := range page {
-		namePath := firstNonEmpty(it.NamePath, it.Name)
-		sb.WriteString(compactLine(meta.Offset+i+1, 0, it.SymbolType, it.FilePath, it.StartLine, namePath, ""))
-		sb.WriteByte('\n')
+		rows[i] = compactRow{
+			Rank:      meta.Offset + i + 1,
+			Kind:      it.SymbolType,
+			FilePath:  it.FilePath,
+			StartLine: it.StartLine,
+			NamePath:  firstNonEmpty(it.NamePath, it.Name),
+		}
 	}
-	sb.WriteString(compactPaginationFooter(meta, len(page)))
 
-	return WithResponseMetadata(NewTextResponse(sb.String()), map[string]any{
+	refName := firstNonEmpty(req.SymbolName, req.SymbolID)
+	body := renderCompact(rows, meta, req.GroupByFile)
+	logSearchTelemetry(codeFindReferencesToolName, refName, len(page), meta, req.GroupByFile, len(body))
+
+	return WithResponseMetadata(NewTextResponse(body), map[string]any{
 		"count":       len(page),
 		"total":       meta.Total,
 		"offset":      meta.Offset,
