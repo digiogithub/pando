@@ -42,6 +42,11 @@ type TodosUpdatedMsg struct {
 	Todos     []tools.TodoItem
 }
 
+// ChatSidebarConfigChangedMsg is dispatched when the chat info sidebar
+// configuration (enabled mode or minimum width) changes, so the chat page can
+// rebuild its layout to show or hide the sidebar live without a restart.
+type ChatSidebarConfigChangedMsg struct{}
+
 // GoalState is the TUI-friendly projection of the current goal/autopilot state.
 type GoalState struct {
 	Objective      string

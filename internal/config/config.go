@@ -119,6 +119,15 @@ type TUIConfig struct {
 	// are shown in the file tree. Defaults to false (hidden), matching the
 	// historical behavior.
 	ShowHiddenFiles bool `json:"showHiddenFiles,omitempty"`
+	// ChatSidebar controls the info sidebar displayed to the right of the chat
+	// in the Chat tab. Accepted values: "auto" (default — show when the
+	// terminal is wide enough) or "off" (never show). Unknown values are
+	// treated as "auto" for forward compatibility.
+	ChatSidebar string `json:"chatSidebar,omitempty"`
+	// ChatSidebarMinWidth is the minimum terminal width in columns at which the
+	// chat info sidebar becomes visible when ChatSidebar is "auto". When zero
+	// or unset the default of 120 columns is used.
+	ChatSidebarMinWidth int `json:"chatSidebarMinWidth,omitempty"`
 }
 
 // PermissionsConfig defines runtime permission behavior for local interactive sessions.
@@ -2654,6 +2663,82 @@ func UpdateShowHiddenFiles(enabled bool) error {
 		config.TUI.ShowHiddenFiles = enabled
 	}); err != nil {
 		cfg.TUI.ShowHiddenFiles = oldValue
+		return err
+	}
+
+	return nil
+}
+
+// defaultChatSidebarMinWidth is the fallback column threshold used by
+// ChatSidebarMinWidth when the config value is unset (0).
+const defaultChatSidebarMinWidth = 120
+
+// ChatSidebarEnabled reports whether the info sidebar should be shown at all.
+// It returns false only when the TUI.ChatSidebar config value is exactly "off"
+// (case-insensitive). An empty string, "auto", or any unknown value is treated
+// as enabled (the sidebar is governed by width alone).
+func ChatSidebarEnabled() bool {
+	if cfg := Get(); cfg != nil {
+		return !strings.EqualFold(cfg.TUI.ChatSidebar, "off")
+	}
+	return true
+}
+
+// ChatSidebarMinWidth returns the minimum terminal column count at which the
+// info sidebar becomes visible. Falls back to defaultChatSidebarMinWidth (120)
+// when the config value is 0 or the config has not been loaded.
+func ChatSidebarMinWidth() int {
+	if cfg := Get(); cfg != nil && cfg.TUI.ChatSidebarMinWidth > 0 {
+		return cfg.TUI.ChatSidebarMinWidth
+	}
+	return defaultChatSidebarMinWidth
+}
+
+// UpdateChatSidebar updates the chat sidebar mode and persists it to the
+// config file. The input is normalised: "off" disables the sidebar; anything
+// else (including "auto" and empty string) is stored as "auto". Mirrors the
+// pattern used by UpdateShowHiddenFiles.
+func UpdateChatSidebar(mode string) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	normalized := "auto"
+	if strings.EqualFold(mode, "off") {
+		normalized = "off"
+	}
+
+	oldValue := cfg.TUI.ChatSidebar
+	cfg.TUI.ChatSidebar = normalized
+
+	if err := updateCfgFile(func(config *Config) {
+		config.TUI.ChatSidebar = normalized
+	}); err != nil {
+		cfg.TUI.ChatSidebar = oldValue
+		return err
+	}
+
+	return nil
+}
+
+// UpdateChatSidebarMinWidth updates the minimum terminal width threshold for
+// the chat info sidebar and persists it to the config file. A width <= 0 is
+// rejected. Mirrors the pattern used by UpdateShowHiddenFiles.
+func UpdateChatSidebarMinWidth(width int) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	if width <= 0 {
+		return fmt.Errorf("chatSidebarMinWidth must be > 0, got %d", width)
+	}
+
+	oldValue := cfg.TUI.ChatSidebarMinWidth
+	cfg.TUI.ChatSidebarMinWidth = width
+
+	if err := updateCfgFile(func(config *Config) {
+		config.TUI.ChatSidebarMinWidth = width
+	}); err != nil {
+		cfg.TUI.ChatSidebarMinWidth = oldValue
 		return err
 	}
 

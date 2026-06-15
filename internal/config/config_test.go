@@ -596,3 +596,75 @@ func TestUpdateLLMCache(t *testing.T) {
 		t.Error("expected Enabled to be true after setting to true")
 	}
 }
+
+// TestChatSidebarEnabled verifies the accessor returns false only for "off" and
+// true for "auto", empty string, or unknown values.
+func TestChatSidebarEnabled(t *testing.T) {
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+
+	tests := []struct {
+		name     string
+		sidebar  string
+		wantTrue bool
+	}{
+		{"off-lowercase", "off", false},
+		{"off-uppercase", "OFF", false},
+		{"off-mixed", "Off", false},
+		{"auto", "auto", true},
+		{"empty", "", true},
+		{"unknown", "always", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg = &Config{TUI: TUIConfig{ChatSidebar: tc.sidebar}}
+			if got := ChatSidebarEnabled(); got != tc.wantTrue {
+				t.Fatalf("ChatSidebarEnabled() = %v, want %v (ChatSidebar=%q)", got, tc.wantTrue, tc.sidebar)
+			}
+		})
+	}
+}
+
+// TestChatSidebarEnabledNilConfig verifies the function returns true (enabled)
+// when the config singleton has not been loaded.
+func TestChatSidebarEnabledNilConfig(t *testing.T) {
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+
+	cfg = nil
+	if !ChatSidebarEnabled() {
+		t.Fatal("ChatSidebarEnabled() = false, want true when config is nil")
+	}
+}
+
+// TestChatSidebarMinWidthDefault verifies the resolver falls back to 120 when
+// the config value is 0 or the config is nil.
+func TestChatSidebarMinWidthDefault(t *testing.T) {
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+
+	// Unset (zero) value must resolve to default.
+	cfg = &Config{TUI: TUIConfig{ChatSidebarMinWidth: 0}}
+	if got := ChatSidebarMinWidth(); got != defaultChatSidebarMinWidth {
+		t.Fatalf("ChatSidebarMinWidth() = %d, want %d (zero value)", got, defaultChatSidebarMinWidth)
+	}
+
+	// Nil config must also resolve to default.
+	cfg = nil
+	if got := ChatSidebarMinWidth(); got != defaultChatSidebarMinWidth {
+		t.Fatalf("ChatSidebarMinWidth() = %d, want %d (nil config)", got, defaultChatSidebarMinWidth)
+	}
+}
+
+// TestChatSidebarMinWidthExplicit verifies the resolver returns the configured
+// value when it is a positive integer.
+func TestChatSidebarMinWidthExplicit(t *testing.T) {
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+
+	cfg = &Config{TUI: TUIConfig{ChatSidebarMinWidth: 160}}
+	if got := ChatSidebarMinWidth(); got != 160 {
+		t.Fatalf("ChatSidebarMinWidth() = %d, want 160", got)
+	}
+}

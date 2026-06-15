@@ -20,6 +20,7 @@ import (
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 	pandoruntime "github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/skills/catalog"
+	"github.com/digiogithub/pando/internal/tui/components/chat"
 	"github.com/digiogithub/pando/internal/tui/components/dialog"
 	"github.com/digiogithub/pando/internal/tui/components/filetree"
 	"github.com/digiogithub/pando/internal/tui/components/settings"
@@ -476,6 +477,9 @@ func (p *settingsPage) saveField(msg settings.SaveFieldMsg) tea.Cmd {
 			cmds = append(cmds, util.CmdHandler(filetree.SetShowHiddenMsg{ShowHidden: show}))
 		}
 	}
+	if msg.Field.Key == "tui.chatSidebar" || msg.Field.Key == "tui.chatSidebarMinWidth" {
+		cmds = append(cmds, util.CmdHandler(chat.ChatSidebarConfigChangedMsg{}))
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -879,6 +883,19 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Key:   "tui.showHiddenFiles",
 				Value: boolString(cfg.TUI.ShowHiddenFiles),
 				Type:  settings.FieldToggle,
+			},
+			{
+				Label:   "Chat Info Sidebar",
+				Key:     "tui.chatSidebar",
+				Value:   chatSidebarValue(cfg.TUI.ChatSidebar),
+				Type:    settings.FieldSelect,
+				Options: []string{"auto", "off"},
+			},
+			{
+				Label: "Chat Sidebar Min Width",
+				Key:   "tui.chatSidebarMinWidth",
+				Value: intString(cfg.TUI.ChatSidebarMinWidth, 120),
+				Type:  settings.FieldText,
 			},
 			{
 				Label: "AutoCompact",
@@ -2748,6 +2765,16 @@ func toolDiscoveryModeValue(mode string) string {
 	return mode
 }
 
+// chatSidebarValue normalizes the chat info sidebar mode for display, mapping
+// "off" (case-insensitive) to "off" and everything else (including empty) to
+// "auto".
+func chatSidebarValue(mode string) string {
+	if strings.EqualFold(strings.TrimSpace(mode), "off") {
+		return "off"
+	}
+	return "auto"
+}
+
 func skillLoadStatus(loaded bool) string {
 	if loaded {
 		return "loaded"
@@ -2782,6 +2809,14 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 			return fmt.Errorf("invalid Show Hidden Files value: %w", err)
 		}
 		return config.UpdateShowHiddenFiles(value)
+	case field.Key == "tui.chatSidebar":
+		return config.UpdateChatSidebar(field.Value)
+	case field.Key == "tui.chatSidebarMinWidth":
+		value, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Chat Sidebar Min Width value: %w", err)
+		}
+		return config.UpdateChatSidebarMinWidth(value)
 	case field.Key == "autoCompact":
 		value, err := parseBoolValue(field.Value)
 		if err != nil {

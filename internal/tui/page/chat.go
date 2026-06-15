@@ -15,6 +15,7 @@ import (
 	"github.com/digiogithub/pando/internal/completions"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/history"
 	agentpkg "github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -70,6 +71,12 @@ type ChatPageModel struct {
 
 	tabHeader *mainTabBar
 
+	// infoSidebar is the right-hand information column (session/Plan/Modified
+	// Files) shown only in the Chat tab (ChatOnly) when the terminal is wide
+	// enough. infoSidebarContainer wraps it for placement in the split layout.
+	infoSidebar          chat.ChatInfoSidebar
+	infoSidebarContainer layout.Container
+
 	session    session.Session
 	layoutMode ChatLayoutMode
 	focus      panelFocus
@@ -97,6 +104,7 @@ type ChatKeyMap struct {
 	ToggleEditorChat          key.Binding
 	SelectTab                 key.Binding
 	ToggleHiddenFiles         key.Binding
+	ToggleInfoSidebar         key.Binding
 }
 
 type editorWorkspace struct {
@@ -144,6 +152,10 @@ var keyMap = ChatKeyMap{
 	ToggleHiddenFiles: key.NewBinding(
 		key.WithKeys("ctrl+shift+h"),
 		key.WithHelp("ctrl+shift+h", "toggle hidden files"),
+	),
+	ToggleInfoSidebar: key.NewBinding(
+		key.WithKeys("ctrl+shift+b"),
+		key.WithHelp("ctrl+shift+b", "toggle info sidebar"),
 	),
 }
 
@@ -413,6 +425,11 @@ func (p *ChatPageModel) Init() tea.Cmd {
 		p.editorWorkspace.Init(),
 		p.completionDialog.Init(),
 	}
+	if p.infoSidebar != nil {
+		// Starts the modified-files preload + history subscription loop that
+		// keeps the Modified Files section live.
+		cmds = append(cmds, p.infoSidebar.Init())
+	}
 	if p.width > 0 && p.height > 0 {
 		p.tabHeader.SetWidth(p.width)
 		cmds = append(cmds, p.layout.SetSize(p.width, p.layoutHeight()))
@@ -423,11 +440,22 @@ func (p *ChatPageModel) Init() tea.Cmd {
 func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	// Keep the chat info sidebar (Plan + Modified Files) in sync even while it is
+	// hidden, so its content is ready the moment it becomes visible.
+	if cmd := p.routeInfoSidebar(msg); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		p.width = msg.Width
 		p.height = msg.Height
 		p.tabHeader.SetWidth(msg.Width)
+		// Re-evaluate the info sidebar's visibility/width against the new size so
+		// it appears or disappears as the window crosses the width threshold.
+		if p.layoutMode == ChatOnly {
+			p.rebuildLayout()
+		}
 		cmds = append(cmds, p.layout.SetSize(msg.Width, p.layoutHeight()))
 		return p, tea.Batch(cmds...)
 	case chat.ShowSlashCompletionMsg:
@@ -495,6 +523,14 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd != nil {
 			return p, cmd
 		}
+	case chat.ChatSidebarConfigChangedMsg:
+		// The info sidebar config changed (mode or min width); rebuild so it
+		// appears or disappears immediately while in the Chat tab.
+		if p.layoutMode == ChatOnly {
+			p.rebuildLayout()
+			cmds = append(cmds, p.layout.SetSize(p.width, p.layoutHeight()))
+		}
+		return p, tea.Batch(cmds...)
 	case chat.SessionSelectedMsg:
 		p.session = msg
 		if goalMsg, err := p.loadGoalUpdate(msg.ID, false); err != nil {
@@ -579,6 +615,8 @@ func (p *ChatPageModel) handleKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 		return true, nil
 	case key.Matches(msg, keyMap.ToggleHiddenFiles):
 		return true, p.ToggleHiddenFiles()
+	case key.Matches(msg, keyMap.ToggleInfoSidebar):
+		return true, p.ToggleInfoSidebar()
 	case key.Matches(msg, keyMap.SelectTab):
 		p.showCompletionDialog = false
 		p.showSlashCompletionDialog = false
@@ -773,6 +811,11 @@ func (p *ChatPageModel) SetSize(width, height int) tea.Cmd {
 	p.width = width
 	p.height = height
 	p.tabHeader.SetWidth(width)
+	// Re-evaluate the info sidebar's visibility/width against the new size so it
+	// appears or disappears as the window crosses the width threshold.
+	if p.layoutMode == ChatOnly {
+		p.rebuildLayout()
+	}
 	return p.layout.SetSize(width, p.layoutHeight())
 }
 
@@ -855,6 +898,31 @@ func (p *ChatPageModel) ToggleHiddenFiles() tea.Cmd {
 	return tea.Batch(cmd, infoCmd)
 }
 
+// ToggleInfoSidebar flips the chat info sidebar between "auto" and "off",
+// persists the new value to the config file, and rebuilds the layout so the
+// change is visible immediately while in the Chat tab.
+func (p *ChatPageModel) ToggleInfoSidebar() tea.Cmd {
+	mode := "off"
+	if !config.ChatSidebarEnabled() {
+		mode = "auto"
+	}
+	if err := config.UpdateChatSidebar(mode); err != nil {
+		return util.ReportError(fmt.Errorf("failed to save info sidebar setting: %w", err))
+	}
+
+	var cmds []tea.Cmd
+	if p.layoutMode == ChatOnly {
+		p.rebuildLayout()
+		cmds = append(cmds, p.layout.SetSize(p.width, p.layoutHeight()))
+	}
+	if mode == "auto" {
+		cmds = append(cmds, util.ReportInfo("Info sidebar: auto"))
+	} else {
+		cmds = append(cmds, util.ReportInfo("Info sidebar: off"))
+	}
+	return tea.Batch(cmds...)
+}
+
 func (p *ChatPageModel) BindingKeys() []key.Binding {
 	bindings := layout.KeyMapToSlice(keyMap)
 	bindings = append(bindings, p.messages.BindingKeys()...)
@@ -887,6 +955,48 @@ func (p *ChatPageModel) TabBar() *editor.TabBar {
 
 func (p *ChatPageModel) LayoutMode() ChatLayoutMode {
 	return p.layoutMode
+}
+
+// chatInfoSidebarWidth is the target width (in columns) reserved for the info
+// sidebar when it is visible.
+const chatInfoSidebarWidth = 42
+
+// chatSidebarVisible reports whether the info sidebar should currently be shown.
+// It returns false when the sidebar is disabled in config (ChatSidebar = "off"),
+// when not in the Chat tab (ChatOnly), when no sidebar component is present, or
+// when the terminal is narrower than the configured minimum width threshold.
+func (p *ChatPageModel) chatSidebarVisible() bool {
+	return config.ChatSidebarEnabled() &&
+		p.layoutMode == ChatOnly &&
+		p.infoSidebar != nil &&
+		p.width >= config.ChatSidebarMinWidth()
+}
+
+// chatSidebarRatio returns the left-panel (chat) ratio that reserves roughly
+// chatInfoSidebarWidth columns for the sidebar, capping the sidebar width on
+// ultra-wide terminals so the chat does not shrink unnecessarily.
+func (p *ChatPageModel) chatSidebarRatio() float64 {
+	if p.width <= chatInfoSidebarWidth {
+		return 0.75
+	}
+	left := p.width - chatInfoSidebarWidth
+	return float64(left) / float64(p.width)
+}
+
+// routeInfoSidebar forwards the messages the info sidebar depends on so its
+// Plan and Modified Files stay in sync even while the sidebar is hidden.
+func (p *ChatPageModel) routeInfoSidebar(msg tea.Msg) tea.Cmd {
+	if p.infoSidebar == nil {
+		return nil
+	}
+	switch msg.(type) {
+	case chat.SessionSelectedMsg, chat.TodosUpdatedMsg, chat.GoalUpdatedMsg,
+		pubsub.Event[session.Session], pubsub.Event[history.File]:
+		model, cmd := p.infoSidebar.Update(msg)
+		p.infoSidebar = model.(chat.ChatInfoSidebar)
+		return cmd
+	}
+	return nil
 }
 
 func (p *ChatPageModel) applyLayoutMode(mode ChatLayoutMode) tea.Cmd {
@@ -942,9 +1052,17 @@ func (p *ChatPageModel) rebuildLayout() {
 			layout.WithRatio(0.20),
 		)
 	default:
-		p.layout = layout.NewSplitPane(
-			layout.WithLeftPanel(p.chatContainer),
-		)
+		if p.chatSidebarVisible() {
+			p.layout = layout.NewSplitPane(
+				layout.WithLeftPanel(p.chatContainer),
+				layout.WithRightPanel(p.infoSidebarContainer),
+				layout.WithRatio(p.chatSidebarRatio()),
+			)
+		} else {
+			p.layout = layout.NewSplitPane(
+				layout.WithLeftPanel(p.chatContainer),
+			)
+		}
 	}
 }
 
@@ -1431,6 +1549,13 @@ func NewChatPage(app *app.App) *ChatPageModel {
 	editorWorkspace := newEditorWorkspace(viewer, tabBar)
 	editorPanel := layout.NewContainer(editorWorkspace)
 
+	infoSidebar := chat.NewChatInfoSidebar(session.Session{}, app.History)
+	infoSidebarContainer := layout.NewContainer(
+		infoSidebar,
+		layout.WithBorder(false, false, false, true),
+		layout.WithPadding(1, 1, 1, 0),
+	)
+
 	page := &ChatPageModel{
 		app:                   app,
 		layoutMode:            ChatOnly,
@@ -1447,6 +1572,8 @@ func NewChatPage(app *app.App) *ChatPageModel {
 		tabHeader:             newMainTabBar(),
 		editorWorkspace:       editorWorkspace,
 		editorPanel:           editorPanel,
+		infoSidebar:           infoSidebar,
+		infoSidebarContainer:  infoSidebarContainer,
 		completionDialog:      completionDialog,
 		slashCompletionDialog: slashCompletionDialog,
 		goalRunner:            agentpkg.NewGoalRunner(app.CoderAgent, app.DBQuerier),

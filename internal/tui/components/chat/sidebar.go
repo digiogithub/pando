@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -19,6 +20,21 @@ import (
 	"github.com/digiogithub/pando/internal/tui/theme"
 )
 
+// ChatInfoSidebar is the embeddable session info column rendered to the right of
+// the chat in the Chat workspace tab. It exposes the session title, configured
+// LSPs, the current Plan (TodoWrite entries) and the files modified during the
+// session. It satisfies layout.Container (tea.Model + Sizeable + Bindings) so it
+// can be dropped into a SplitPaneLayout panel.
+type ChatInfoSidebar interface {
+	tea.Model
+	SetSize(width, height int) tea.Cmd
+	GetSize() (int, int)
+	BindingKeys() []key.Binding
+	// SetSession switches the sidebar to a different session, reloading its plan
+	// and modified-files state.
+	SetSession(s session.Session)
+}
+
 type sidebarCmp struct {
 	width, height int
 	session       session.Session
@@ -30,29 +46,51 @@ type sidebarCmp struct {
 	}
 	// todos holds the latest plan entries from the TodoWrite tool.
 	todos []tools.TodoItem
+	// filesCh is the single history subscription used to keep the modified-files
+	// list live. It is created once in Init and re-read after each event.
+	filesCh <-chan pubsub.Event[history.File]
 }
 
 func (m *sidebarCmp) Init() tea.Cmd {
-	if m.history != nil {
-		ctx := context.Background()
-		// Subscribe to file events
-		filesCh := m.history.Subscribe(ctx)
+	if m.history == nil {
+		return nil
+	}
+	ctx := context.Background()
 
-		// Initialize the modified files map
+	// Initialize the modified files map
+	if m.modFiles == nil {
 		m.modFiles = make(map[string]struct {
 			additions int
 			removals  int
 		})
-
-		// Load initial files and calculate diffs
-		m.loadModifiedFiles(ctx)
-
-		// Return a command that will send file events to the Update method
-		return func() tea.Msg {
-			return <-filesCh
-		}
 	}
-	return nil
+
+	// Load initial files and calculate diffs
+	m.loadModifiedFiles(ctx)
+
+	// Subscribe exactly once; subsequent events re-read from this same channel
+	// (see waitForFileEvent) instead of re-subscribing, which would leak
+	// subscribers because the background context is never cancelled.
+	if m.filesCh == nil {
+		m.filesCh = m.history.Subscribe(ctx)
+	}
+	return m.waitForFileEvent()
+}
+
+// waitForFileEvent returns a command that blocks on the next history file event
+// from the persistent subscription channel and delivers it to Update.
+func (m *sidebarCmp) waitForFileEvent() tea.Cmd {
+	ch := m.filesCh
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ev, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return ev
+	}
 }
 
 func (m *sidebarCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -72,14 +110,11 @@ func (m *sidebarCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case pubsub.Event[history.File]:
 		if msg.Payload.SessionID == m.session.ID {
-			ctx := context.Background()
-			m.processFileChanges(ctx, msg.Payload)
-			return m, func() tea.Msg {
-				ctx := context.Background()
-				filesCh := m.history.Subscribe(ctx)
-				return <-filesCh
-			}
+			m.processFileChanges(context.Background(), msg.Payload)
 		}
+		// Always keep listening on the same subscription, regardless of whether
+		// this event was for the current session, so the loop never stops.
+		return m, m.waitForFileEvent()
 	case TodosUpdatedMsg:
 		if msg.SessionID == m.session.ID {
 			m.todos = msg.Todos
@@ -111,8 +146,8 @@ func (m *sidebarCmp) View() string {
 
 	return baseStyle.
 		Width(m.width).
-		PaddingLeft(4).
-		PaddingRight(2).
+		PaddingLeft(1).
+		PaddingRight(1).
 		Height(m.height - 1).
 		Render(lipgloss.JoinVertical(lipgloss.Top, sections...))
 }
@@ -294,6 +329,33 @@ func NewSidebarCmp(session session.Session, history history.Service) tea.Model {
 		session: session,
 		history: history,
 	}
+}
+
+// NewChatInfoSidebar builds the embeddable chat info sidebar bound to the given
+// session and history service.
+func NewChatInfoSidebar(s session.Session, history history.Service) ChatInfoSidebar {
+	return &sidebarCmp{
+		session: s,
+		history: history,
+	}
+}
+
+// SetSession switches the sidebar to a different session, reloading its plan
+// (TodoWrite entries) and modified-files state.
+func (m *sidebarCmp) SetSession(s session.Session) {
+	if m.session.ID == s.ID {
+		m.session = s
+		return
+	}
+	m.session = s
+	m.todos = tools.GetSessionTodos(s.ID)
+	m.loadModifiedFiles(context.Background())
+}
+
+// BindingKeys implements layout.Bindings. The sidebar is purely informational
+// and exposes no key bindings of its own.
+func (m *sidebarCmp) BindingKeys() []key.Binding {
+	return nil
 }
 
 func (m *sidebarCmp) loadModifiedFiles(ctx context.Context) {

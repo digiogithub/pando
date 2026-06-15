@@ -688,6 +688,16 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, tea.Batch(cmds...)
 
+	case chat.ChatSidebarConfigChangedMsg:
+		// Broadcast to all pages so the chat page rebuilds its layout live when
+		// the chat info sidebar setting changes from the settings page.
+		for id, p := range a.pages {
+			updated, pcmd := p.Update(msg)
+			a.pages[id] = updated
+			cmds = append(cmds, pcmd)
+		}
+		return a, tea.Batch(cmds...)
+
 	case dialog.CloseThemeDialogMsg:
 		a.showThemeDialog = false
 		return a, nil
