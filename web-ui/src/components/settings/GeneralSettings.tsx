@@ -122,6 +122,12 @@ export default function GeneralSettings() {
           onChange={(v) => updateField('auto_compact', v)}
         />
         <Toggle
+          label={t('settings.general.showHiddenFiles')}
+          description={t('settings.general.showHiddenFilesDescription')}
+          checked={config.show_hidden_files}
+          onChange={(v) => updateField('show_hidden_files', v)}
+        />
+        <Toggle
           label={t('settings.general.debug')}
           description={t('settings.general.debugDescription')}
           checked={config.debug}

@@ -401,6 +401,7 @@ export interface SettingsConfig {
   auto_compact: boolean
   skills_enabled: boolean
   data_directory: string
+  show_hidden_files: boolean
   llm_cache_enabled: boolean
   evaluator_enabled: boolean
   judge_model: string

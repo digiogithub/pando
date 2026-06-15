@@ -115,6 +115,10 @@ type LSPConfig struct {
 // TUIConfig defines the configuration for the Terminal User Interface.
 type TUIConfig struct {
 	Theme string `json:"theme,omitempty"`
+	// ShowHiddenFiles controls whether hidden files and directories (dotfiles)
+	// are shown in the file tree. Defaults to false (hidden), matching the
+	// historical behavior.
+	ShowHiddenFiles bool `json:"showHiddenFiles,omitempty"`
 }
 
 // PermissionsConfig defines runtime permission behavior for local interactive sessions.
@@ -2634,6 +2638,26 @@ func UpdateTheme(themeName string) error {
 	return updateCfgFile(func(config *Config) {
 		config.TUI.Theme = themeName
 	})
+}
+
+// UpdateShowHiddenFiles updates the file tree hidden-files visibility flag and
+// persists it to the config file.
+func UpdateShowHiddenFiles(enabled bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldValue := cfg.TUI.ShowHiddenFiles
+	cfg.TUI.ShowHiddenFiles = enabled
+
+	if err := updateCfgFile(func(config *Config) {
+		config.TUI.ShowHiddenFiles = enabled
+	}); err != nil {
+		cfg.TUI.ShowHiddenFiles = oldValue
+		return err
+	}
+
+	return nil
 }
 
 func UpdateShell(path string, args []string) error {

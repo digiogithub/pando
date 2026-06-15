@@ -94,6 +94,8 @@
       "reasoningHigh": "Hoch",
       "autoCompact": "Automatisch komprimieren",
       "autoCompactDescription": "Kontext automatisch komprimieren",
+      "showHiddenFiles": "Versteckte Dateien anzeigen",
+      "showHiddenFilesDescription": "Versteckte Dateien und Ordner im Dateibaum anzeigen",
       "compactThreshold": "Komprimierungsschwellenwert"
     }
   },

@@ -52,21 +52,23 @@ type ChatPageModel struct {
 	width  int
 	height int
 
-	layout               layout.SplitPaneLayout
-	sidebar              layout.SplitPaneLayout
-	chatLayout           layout.SplitPaneLayout
-	chatContainer        layout.Container
-	fileTreePanel        layout.Container
-	editorPanel          layout.Container
-	editorChatPanel      layout.Container
-	messages             layout.Container
-	editor               layout.Container
+	layout                    layout.SplitPaneLayout
+	sidebar                   layout.SplitPaneLayout
+	chatLayout                layout.SplitPaneLayout
+	chatContainer             layout.Container
+	fileTreePanel             layout.Container
+	editorPanel               layout.Container
+	editorChatPanel           layout.Container
+	messages                  layout.Container
+	editor                    layout.Container
 	completionDialog          dialog.CompletionDialog
 	showCompletionDialog      bool
 	slashCompletionDialog     dialog.CompletionDialog
 	showSlashCompletionDialog bool
 
 	chatTabWorkspace *editorChatTabWorkspace
+
+	tabHeader *mainTabBar
 
 	session    session.Session
 	layoutMode ChatLayoutMode
@@ -93,6 +95,8 @@ type ChatKeyMap struct {
 	ToggleSidebar             key.Binding
 	NextPanel                 key.Binding
 	ToggleEditorChat          key.Binding
+	SelectTab                 key.Binding
+	ToggleHiddenFiles         key.Binding
 }
 
 type editorWorkspace struct {
@@ -132,6 +136,14 @@ var keyMap = ChatKeyMap{
 	ToggleEditorChat: key.NewBinding(
 		key.WithKeys("ctrl+r"),
 		key.WithHelp("ctrl+r", "toggle editor+chat layout"),
+	),
+	SelectTab: key.NewBinding(
+		key.WithKeys("alt+1", "alt+2", "alt+3"),
+		key.WithHelp("alt+1/2/3", "switch workspace tab"),
+	),
+	ToggleHiddenFiles: key.NewBinding(
+		key.WithKeys("ctrl+shift+h"),
+		key.WithHelp("ctrl+shift+h", "toggle hidden files"),
 	),
 }
 
@@ -402,7 +414,8 @@ func (p *ChatPageModel) Init() tea.Cmd {
 		p.completionDialog.Init(),
 	}
 	if p.width > 0 && p.height > 0 {
-		cmds = append(cmds, p.layout.SetSize(p.width, p.height))
+		p.tabHeader.SetWidth(p.width)
+		cmds = append(cmds, p.layout.SetSize(p.width, p.layoutHeight()))
 	}
 	return tea.Batch(cmds...)
 }
@@ -414,7 +427,8 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		p.width = msg.Width
 		p.height = msg.Height
-		cmds = append(cmds, p.layout.SetSize(msg.Width, msg.Height))
+		p.tabHeader.SetWidth(msg.Width)
+		cmds = append(cmds, p.layout.SetSize(msg.Width, p.layoutHeight()))
 		return p, tea.Batch(cmds...)
 	case chat.ShowSlashCompletionMsg:
 		p.showSlashCompletionDialog = true
@@ -563,6 +577,23 @@ func (p *ChatPageModel) handleKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 			return true, p.applyLayoutMode(ChatOnly)
 		}
 		return true, nil
+	case key.Matches(msg, keyMap.ToggleHiddenFiles):
+		return true, p.ToggleHiddenFiles()
+	case key.Matches(msg, keyMap.SelectTab):
+		p.showCompletionDialog = false
+		p.showSlashCompletionDialog = false
+		// keys are "alt+1".."alt+3"; the trailing digit selects the tab.
+		s := msg.String()
+		idx := int(s[len(s)-1] - '1')
+		mode, ok := mainTabModeFor(idx)
+		if !ok {
+			return true, nil
+		}
+		if mode == ChatOnly {
+			p.focus = focusChat
+		}
+		cmd, _ := p.SelectMainTab(idx)
+		return true, cmd
 	case key.Matches(msg, keyMap.ToggleSidebar):
 		p.showCompletionDialog = false
 		p.showSlashCompletionDialog = false
@@ -741,7 +772,18 @@ func (p *ChatPageModel) sendMessage(text string, attachments []message.Attachmen
 func (p *ChatPageModel) SetSize(width, height int) tea.Cmd {
 	p.width = width
 	p.height = height
-	return p.layout.SetSize(width, height)
+	p.tabHeader.SetWidth(width)
+	return p.layout.SetSize(width, p.layoutHeight())
+}
+
+// layoutHeight is the height available to the main split layout once the
+// workspace tab header row is reserved at the top of the page.
+func (p *ChatPageModel) layoutHeight() int {
+	h := p.height - mainTabBarHeight
+	if h < 0 {
+		return 0
+	}
+	return h
 }
 
 func (p *ChatPageModel) GetSize() (int, int) {
@@ -773,7 +815,44 @@ func (p *ChatPageModel) View() string {
 		)
 	}
 
-	return layoutView
+	p.tabHeader.SetWidth(p.width)
+	return lipgloss.JoinVertical(lipgloss.Left, p.tabHeader.View(p.layoutMode), layoutView)
+}
+
+// SelectMainTab switches the workspace to the layout mode bound to the given
+// header tab index. It is used by the app-level mouse handler when a tab is
+// clicked. Returns handled=false if the index is out of range.
+func (p *ChatPageModel) SelectMainTab(idx int) (tea.Cmd, bool) {
+	mode, ok := mainTabModeFor(idx)
+	if !ok {
+		return nil, false
+	}
+	if mode == p.layoutMode {
+		return nil, true
+	}
+	return p.applyLayoutMode(mode), true
+}
+
+// MainTabCount returns the number of workspace header tabs.
+func (p *ChatPageModel) MainTabCount() int {
+	return p.tabHeader.Count()
+}
+
+// ToggleHiddenFiles flips whether hidden files/directories are shown in the
+// file tree, reloads the tree immediately, and persists the new value to the
+// config file so it survives restarts.
+func (p *ChatPageModel) ToggleHiddenFiles() tea.Cmd {
+	cmd := p.fileTree.ToggleHidden()
+	show := p.fileTree.ShowHidden()
+	var infoCmd tea.Cmd
+	if err := config.UpdateShowHiddenFiles(show); err != nil {
+		infoCmd = util.ReportError(fmt.Errorf("failed to save hidden-files setting: %w", err))
+	} else if show {
+		infoCmd = util.ReportInfo("Hidden files: shown")
+	} else {
+		infoCmd = util.ReportInfo("Hidden files: hidden")
+	}
+	return tea.Batch(cmd, infoCmd)
 }
 
 func (p *ChatPageModel) BindingKeys() []key.Binding {
@@ -816,7 +895,7 @@ func (p *ChatPageModel) applyLayoutMode(mode ChatLayoutMode) tea.Cmd {
 	p.rebuildLayout()
 	var cmds []tea.Cmd
 	if p.width > 0 && p.height > 0 {
-		cmds = append(cmds, p.layout.SetSize(p.width, p.height))
+		cmds = append(cmds, p.layout.SetSize(p.width, p.layoutHeight()))
 	}
 	if p.chatHasFocus() {
 		cmds = append(cmds, util.CmdHandler(chat.FocusChatEditorMsg{}))
@@ -1324,7 +1403,10 @@ func NewChatPage(app *app.App) *ChatPageModel {
 	)
 	chatContainer := layout.NewContainer(chatLayout)
 
-	fileTreeCmp := filetree.New(config.WorkingDirectory())
+	fileTreeCmp := filetree.New(
+		config.WorkingDirectory(),
+		filetree.WithShowHidden(showHiddenFilesFromConfig()),
+	)
 	fileTreeContent := layout.NewContainer(
 		fileTreeCmp,
 		layout.WithPadding(1, 1, 1, 1),
@@ -1350,26 +1432,36 @@ func NewChatPage(app *app.App) *ChatPageModel {
 	editorPanel := layout.NewContainer(editorWorkspace)
 
 	page := &ChatPageModel{
-		app:              app,
-		layoutMode:       ChatOnly,
-		focus:            focusChat,
-		messages:         messagesContainer,
-		editor:           editorContainer,
-		sidebar:          sidebarLayout,
-		chatLayout:       chatLayout,
-		chatContainer:    chatContainer,
-		fileTree:         fileTreeCmp,
-		fileTreePanel:    fileTreePanel,
-		viewer:           viewer,
-		tabBar:           tabBar,
-		editorWorkspace:  editorWorkspace,
-		editorPanel:      editorPanel,
+		app:                   app,
+		layoutMode:            ChatOnly,
+		focus:                 focusChat,
+		messages:              messagesContainer,
+		editor:                editorContainer,
+		sidebar:               sidebarLayout,
+		chatLayout:            chatLayout,
+		chatContainer:         chatContainer,
+		fileTree:              fileTreeCmp,
+		fileTreePanel:         fileTreePanel,
+		viewer:                viewer,
+		tabBar:                tabBar,
+		tabHeader:             newMainTabBar(),
+		editorWorkspace:       editorWorkspace,
+		editorPanel:           editorPanel,
 		completionDialog:      completionDialog,
 		slashCompletionDialog: slashCompletionDialog,
 		goalRunner:            agentpkg.NewGoalRunner(app.CoderAgent, app.DBQuerier),
 	}
 	page.rebuildLayout()
 	return page
+}
+
+// showHiddenFilesFromConfig reports the configured file-tree hidden-files
+// visibility, defaulting to false (hidden) when config is unavailable.
+func showHiddenFilesFromConfig() bool {
+	if cfg := config.Get(); cfg != nil {
+		return cfg.TUI.ShowHiddenFiles
+	}
+	return false
 }
 
 func max(a, b int) int {

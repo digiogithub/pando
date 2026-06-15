@@ -94,6 +94,8 @@
       "reasoningHigh": "Élevé",
       "autoCompact": "Compactage automatique",
       "autoCompactDescription": "Compresser le contexte automatiquement",
+      "showHiddenFiles": "Afficher les fichiers cachés",
+      "showHiddenFilesDescription": "Afficher les fichiers et dossiers cachés dans l'arborescence",
       "compactThreshold": "Seuil de compactage"
     }
   },

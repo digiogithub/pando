@@ -94,6 +94,8 @@
       "reasoningHigh": "高",
       "autoCompact": "自動圧縮",
       "autoCompactDescription": "コンテキストを自動的に圧縮する",
+      "showHiddenFiles": "隠しファイルを表示",
+      "showHiddenFilesDescription": "ファイルツリーに隠しファイルとフォルダを表示する",
       "compactThreshold": "圧縮しきい値"
     }
   },

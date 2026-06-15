@@ -14,6 +14,7 @@ const DEFAULTS: SettingsConfig = {
   auto_compact: true,
   skills_enabled: true,
   data_directory: '',
+  show_hidden_files: false,
   llm_cache_enabled: true,
   evaluator_enabled: false,
   judge_model: '',

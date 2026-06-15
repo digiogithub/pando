@@ -23,11 +23,24 @@ type Component interface {
 	layout.Sizeable
 	layout.Bindings
 	SelectedFile() string
+	// ShowHidden reports whether hidden files/directories are currently shown.
+	ShowHidden() bool
+	// SetShowHidden sets the hidden-files visibility and reloads the tree.
+	SetShowHidden(show bool) tea.Cmd
+	// ToggleHidden flips the hidden-files visibility and reloads the tree.
+	ToggleHidden() tea.Cmd
 }
 
 type FileSelectedMsg struct {
 	Path         string
 	RelativePath string
+}
+
+// SetShowHiddenMsg requests the file tree to update its hidden-files visibility
+// and reload. It is broadcast (e.g. from the settings page) so the live tree
+// reflects a config change without a restart.
+type SetShowHiddenMsg struct {
+	ShowHidden bool
 }
 
 type Option func(*FileTree)
@@ -109,10 +122,45 @@ func (t *FileTree) Init() tea.Cmd {
 	)
 }
 
+// ShowHidden reports whether hidden files/directories are currently shown.
+func (t *FileTree) ShowHidden() bool {
+	return t.showHidden
+}
+
+// SetShowHidden sets the hidden-files visibility and reloads the tree (keeping
+// any active fuzzy filter). It is a no-op when the value is unchanged.
+func (t *FileTree) SetShowHidden(show bool) tea.Cmd {
+	if t.showHidden == show {
+		return nil
+	}
+	t.showHidden = show
+	return t.reload()
+}
+
+// ToggleHidden flips the hidden-files visibility and reloads the tree.
+func (t *FileTree) ToggleHidden() tea.Cmd {
+	return t.SetShowHidden(!t.showHidden)
+}
+
+// reload re-reads the tree from disk honoring the current showHidden flag and
+// re-applies the active fuzzy filter, if any.
+func (t *FileTree) reload() tea.Cmd {
+	cmds := []tea.Cmd{
+		LoadFileTree(t.projectPath, LoadOptions{ShowHidden: t.showHidden}),
+		LoadGitStatus(t.projectPath),
+	}
+	if t.filterQuery != "" {
+		cmds = append(cmds, LoadFilteredTree(t.projectPath, t.filterQuery, LoadOptions{ShowHidden: t.showHidden}, t.gitStatuses))
+	}
+	return tea.Batch(cmds...)
+}
+
 func (t *FileTree) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		return t, t.SetSize(msg.Width, msg.Height)
+	case SetShowHiddenMsg:
+		return t, t.SetShowHidden(msg.ShowHidden)
 	case FileTreeRefreshMsg:
 		if msg.Err != nil {
 			t.lastErr = msg.Err

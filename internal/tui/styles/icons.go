@@ -48,6 +48,8 @@ const (
 	SearchIcon    string = "󰍉"
 	SettingsIcon  string = "󰒓"
 	ChatIcon      string = "󰭹"
+	EditorIcon    string = "󰈮"
+	SplitViewIcon string = "󰜫"
 	TerminalIcon  string = "󰆍"
 	CloseIcon     string = "󰅖"
 	PlusIcon      string = "󰐕"

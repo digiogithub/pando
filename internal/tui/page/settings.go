@@ -21,6 +21,7 @@ import (
 	pandoruntime "github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/skills/catalog"
 	"github.com/digiogithub/pando/internal/tui/components/dialog"
+	"github.com/digiogithub/pando/internal/tui/components/filetree"
 	"github.com/digiogithub/pando/internal/tui/components/settings"
 	"github.com/digiogithub/pando/internal/tui/layout"
 	"github.com/digiogithub/pando/internal/tui/theme"
@@ -466,7 +467,16 @@ func (p *settingsPage) saveField(msg settings.SaveFieldMsg) tea.Cmd {
 	p.settings.SetSections(buildSections(p.app))
 	p.settings.SetSize(p.width, p.height)
 	p.settings.SetActiveField(msg.SectionTitle, savedFieldKey(msg.Field))
-	return util.ReportInfo("Setting saved: " + msg.Field.Label)
+
+	cmds := []tea.Cmd{util.ReportInfo("Setting saved: " + msg.Field.Label)}
+	// Live-apply settings that other pages render from, so the change is visible
+	// immediately without a restart.
+	if msg.Field.Key == "tui.showHiddenFiles" {
+		if show, err := parseBoolValue(msg.Field.Value); err == nil {
+			cmds = append(cmds, util.CmdHandler(filetree.SetShowHiddenMsg{ShowHidden: show}))
+		}
+	}
+	return tea.Batch(cmds...)
 }
 
 func (p *settingsPage) deleteMCPServer(name string) tea.Cmd {
@@ -863,6 +873,12 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Value:   currentTheme,
 				Type:    settings.FieldSelect,
 				Options: themeOptions,
+			},
+			{
+				Label: "Show Hidden Files",
+				Key:   "tui.showHiddenFiles",
+				Value: boolString(cfg.TUI.ShowHiddenFiles),
+				Type:  settings.FieldToggle,
 			},
 			{
 				Label: "AutoCompact",
@@ -2760,6 +2776,12 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 	switch {
 	case field.Key == "tui.theme":
 		return saveTheme(field)
+	case field.Key == "tui.showHiddenFiles":
+		value, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Show Hidden Files value: %w", err)
+		}
+		return config.UpdateShowHiddenFiles(value)
 	case field.Key == "autoCompact":
 		value, err := parseBoolValue(field.Value)
 		if err != nil {

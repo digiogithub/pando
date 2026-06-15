@@ -107,6 +107,8 @@
       "reasoningHigh": "High",
       "autoCompact": "Auto-compact",
       "autoCompactDescription": "Compress context automatically",
+      "showHiddenFiles": "Show hidden files",
+      "showHiddenFilesDescription": "Show hidden files and folders in the file tree",
       "compactThreshold": "Compact Threshold"
     }
   },

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/digiogithub/pando/internal/config"
 )
 
 // isSafePath checks that the resolved path is within the working directory.
@@ -60,10 +62,20 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Hidden files/directories follow the configured TUI preference by default,
+	// with an optional per-request override via the "hidden" query parameter.
+	showHidden := false
+	if cfg := config.Get(); cfg != nil {
+		showHidden = cfg.TUI.ShowHiddenFiles
+	}
+	if v := r.URL.Query().Get("hidden"); v != "" {
+		showHidden = v == "true" || v == "1"
+	}
+
 	files := make([]map[string]interface{}, 0, len(entries))
 	for _, entry := range entries {
 		name := entry.Name()
-		if strings.HasPrefix(name, ".") && name != "." {
+		if !showHidden && strings.HasPrefix(name, ".") && name != "." {
 			continue
 		}
 

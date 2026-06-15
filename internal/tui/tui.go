@@ -678,6 +678,16 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case filetree.SetShowHiddenMsg:
+		// Broadcast to all pages so the chat page's file tree reloads live when
+		// the hidden-files setting changes from the settings page.
+		for id, p := range a.pages {
+			updated, pcmd := p.Update(msg)
+			a.pages[id] = updated
+			cmds = append(cmds, pcmd)
+		}
+		return a, tea.Batch(cmds...)
+
 	case dialog.CloseThemeDialogMsg:
 		a.showThemeDialog = false
 		return a, nil
@@ -2239,6 +2249,19 @@ func (a *appModel) handleMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
 			}), true
 		}
 		return nil, true
+	}
+
+	// Left-click on a workspace header tab → switch the chat page layout mode.
+	if a.currentPage == page.ChatPage && a.chatPage != nil {
+		for i := 0; i < a.chatPage.MainTabCount(); i++ {
+			if tuizone.InBounds(tuizone.MainTabID(i), msg) {
+				cmd, handled := a.chatPage.SelectMainTab(i)
+				if handled {
+					logging.Debug("tui: left-click on main tab → switch layout", "idx", i)
+					return cmd, true
+				}
+			}
+		}
 	}
 
 	if a.currentPage == page.ChatPage && tuizone.InBounds(tuizone.StatusSession, msg) {

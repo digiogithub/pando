@@ -147,6 +147,7 @@ DefaultScope = ''
 
 [TUI]
 Theme = 'gruvbox-nobg'
+ShowHiddenFiles = true
 
 [Permissions]
 AutoApproveTools = true

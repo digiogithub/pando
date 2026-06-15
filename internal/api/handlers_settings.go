@@ -21,6 +21,7 @@ type SettingsResponse struct {
 	AutoCompact      bool   `json:"auto_compact"`
 	SkillsEnabled    bool   `json:"skills_enabled"`
 	DataDirectory    string `json:"data_directory"`
+	ShowHiddenFiles  bool   `json:"show_hidden_files"`
 	LLMCacheEnabled  bool   `json:"llm_cache_enabled"`
 	EvaluatorEnabled bool   `json:"evaluator_enabled"`
 	JudgeModel       string `json:"judge_model"`
@@ -39,6 +40,7 @@ type SettingsUpdateRequest struct {
 	Debug            *bool   `json:"debug,omitempty"`
 	AutoCompact      *bool   `json:"auto_compact,omitempty"`
 	SkillsEnabled    *bool   `json:"skills_enabled,omitempty"`
+	ShowHiddenFiles  *bool   `json:"show_hidden_files,omitempty"`
 	LLMCacheEnabled  *bool   `json:"llm_cache_enabled,omitempty"`
 	EvaluatorEnabled *bool   `json:"evaluator_enabled,omitempty"`
 	JudgeModel       *string `json:"judge_model,omitempty"`
@@ -93,6 +95,7 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		AutoCompact:      cfg.AutoCompact,
 		SkillsEnabled:    cfg.Skills.Enabled,
 		DataDirectory:    cfg.Data.Directory,
+		ShowHiddenFiles:  cfg.TUI.ShowHiddenFiles,
 		LLMCacheEnabled:  cfg.LLMCache.Enabled,
 		EvaluatorEnabled: cfg.Evaluator.Enabled,
 		JudgeModel:       string(cfg.Evaluator.Model),
@@ -189,6 +192,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if req.SkillsEnabled != nil {
 		if err := config.UpdateSkillsEnabled(*req.SkillsEnabled); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update skills enabled setting")
+			return
+		}
+	}
+
+	if req.ShowHiddenFiles != nil {
+		if err := config.UpdateShowHiddenFiles(*req.ShowHiddenFiles); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update show hidden files setting")
 			return
 		}
 	}

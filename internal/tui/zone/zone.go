@@ -32,6 +32,7 @@ const (
 	PermissionDeny         = "permission-deny"
 	TerminalPanel          = "terminal-panel"
 	TerminalTabPrefix      = "terminal-tab-"
+	MainTabPrefix          = "main-tab-"
 )
 
 var Manager = bubblezone.New()
@@ -146,6 +147,14 @@ func TerminalTabID(idx int) string {
 
 func MarkTerminalTab(idx int, content string) string {
 	return Manager.Mark(TerminalTabID(idx), content)
+}
+
+func MainTabID(idx int) string {
+	return fmt.Sprintf("%s%d", MainTabPrefix, idx)
+}
+
+func MarkMainTab(idx int, content string) string {
+	return Manager.Mark(MainTabID(idx), content)
 }
 
 func InBounds(id string, msg tea.MouseMsg) bool {

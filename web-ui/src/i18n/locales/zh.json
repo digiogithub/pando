@@ -94,6 +94,8 @@
       "reasoningHigh": "高",
       "autoCompact": "自动压缩",
       "autoCompactDescription": "自动压缩上下文",
+      "showHiddenFiles": "显示隐藏文件",
+      "showHiddenFilesDescription": "在文件树中显示隐藏的文件和文件夹",
       "compactThreshold": "压缩阈值"
     }
   },
