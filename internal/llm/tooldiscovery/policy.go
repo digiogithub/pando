@@ -155,38 +155,60 @@ func BuildRegistry(allTools []tools.BaseTool, nonDeferredNames map[string]bool) 
 	return reg
 }
 
-// classifySource infers the ToolSource from the tool name. MCP tools follow
-// the "<server>_<toolname>" convention established in mcp-tools.go.
+// classifySource infers the ToolSource from the tool name. The set of
+// agent-native tools is sourced from tools.IsBuiltinTool so this classifier and
+// the MCP gateway share a single source of truth: any built-in tool stays a
+// directly-visible source and is never deferred as an MCP tool. Real MCP tools
+// follow the "<server>_<toolname>" convention established in mcp-tools.go.
 func classifySource(name string) ToolSource {
 	switch name {
-	case "bash", "edit", "view", "glob", "grep", "ls", "write", "patch",
-		"todo_write", "cache_read", "cache_stats", "diagnostics", "tool_search":
-		return SourceCore
 	case "mcp_query_catalog", "mcp_call_tool":
 		return SourceGateway
-	case "mesnada_spawn", "mesnada_get_task", "mesnada_list_tasks",
-		"mesnada_wait_task", "mesnada_cancel_task", "mesnada_get_output":
+	}
+	if isCoreToolName(name) {
+		return SourceCore
+	}
+	switch {
+	case strings.HasPrefix(name, "mesnada_"):
 		return SourceMesnada
-	case "kb_add_document", "kb_import_path", "kb_search_documents",
-		"kb_get_document", "kb_delete_document", "save_event", "search_events",
-		"hybrid_search_remembrances", "code_index_project", "code_index_status",
-		"code_hybrid_search", "code_find_symbol", "code_find_references",
-		"code_get_symbols_overview", "code_get_project_stats", "code_delete_project",
-		"code_reindex_file", "code_list_projects", "code_search_pattern":
+	case isRAGToolName(name):
 		return SourceRAG
-	case "fetch", "google_search", "brave_search", "perplexity_search",
-		"exa_search", "sourcegraph", "context7_get_library_docs",
-		"context7_resolve_library_id":
+	}
+	// Any other built-in agent tool (web/search/docs/browser/memory) is internal
+	// and must stay directly visible — never deferred as an MCP tool.
+	if tools.IsBuiltinTool(name) {
 		return SourceInternal
 	}
-	// Browser tools
-	if strings.HasPrefix(name, "browser_") {
-		return SourceInternal
-	}
-	// Anything else with an underscore and matching known MCP prefixes is MCP.
-	// In practice all MCP tools are "<server>_<tool>" format.
+	// Anything else with an underscore is a real MCP "<server>_<tool>".
 	if strings.Contains(name, "_") {
 		return SourceMCP
 	}
 	return SourceInternal
+}
+
+// isCoreToolName reports whether name is one of the always-on core tools
+// (file/edit/search/shell/cache/todo/diagnostics/tool_search).
+func isCoreToolName(name string) bool {
+	switch name {
+	case tools.BashToolName, tools.EditToolName, tools.GlobToolName,
+		tools.GrepToolName, tools.LSToolName, tools.ViewToolName,
+		tools.WriteToolName, tools.PatchToolName, tools.TodoWriteToolName,
+		tools.CacheReadToolName, tools.CacheStatsToolName,
+		tools.DiagnosticsToolName, "tool_search":
+		return true
+	}
+	return false
+}
+
+// isRAGToolName reports whether name belongs to the remembrances / KB /
+// code-intelligence tool group.
+func isRAGToolName(name string) bool {
+	if strings.HasPrefix(name, "kb_") || strings.HasPrefix(name, "code_") {
+		return true
+	}
+	switch name {
+	case "save_event", "search_events", "hybrid_search_remembrances":
+		return true
+	}
+	return false
 }

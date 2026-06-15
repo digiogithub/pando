@@ -266,7 +266,7 @@ Coordinates registry + stats + favorite rotation. Initialized in `app.go`.
 
 | Tool | Description | Parameters |
 |------|-------------|-----------|
-| `mcp_query_catalog` | Searches available tools by description | `query: string`, `max_results?: int` |
+| `mcp_query_catalog` | Searches or lists available tools (paginated). Omit `query` to list the whole catalog; response includes `total`, `has_more`, `next_offset` | `query?: string`, `max_results?: int`, `offset?: int` |
 | `mcp_call_tool` | Executes any tool from the catalog | `tool_name: string`, `parameters: object`, `server_name?: string` |
 
 Plus: The **top N favorites** are exposed directly with their original schema.

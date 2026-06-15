@@ -81,6 +81,12 @@ func (g *Gateway) GetAllTools(ctx context.Context) ([]RegisteredTool, error) {
 	return g.registry.GetAllTools(ctx)
 }
 
+// ListCatalog returns a paginated page of registry tools optionally filtered by
+// query, along with the total count of tools matching the filter.
+func (g *Gateway) ListCatalog(ctx context.Context, query string, offset, limit int) ([]RegisteredTool, int, error) {
+	return g.registry.ListCatalog(ctx, query, offset, limit)
+}
+
 // CallTool executes a registered MCP tool by its ID ("server/tool" or tool_name).
 // It records usage statistics after the call.
 func (g *Gateway) CallTool(ctx context.Context, toolID string, params map[string]interface{}, sessionID string) (interface{}, error) {

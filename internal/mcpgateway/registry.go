@@ -126,6 +126,53 @@ func (r *Registry) SearchTools(ctx context.Context, query string, maxResults int
 	return scanTools(rows)
 }
 
+// ListCatalog returns a page of tools optionally filtered by a keyword query,
+// together with the total number of tools matching the filter (ignoring
+// pagination). An empty query lists the entire catalog. Results are ordered by
+// server_name, tool_name so pagination via offset/limit is stable.
+func (r *Registry) ListCatalog(ctx context.Context, query string, offset, limit int) ([]RegisteredTool, int, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	var (
+		whereClause string
+		filterArgs  []interface{}
+	)
+	if query != "" {
+		pattern := "%" + query + "%"
+		whereClause = "WHERE tool_name LIKE ? OR description LIKE ?"
+		filterArgs = []interface{}{pattern, pattern}
+	}
+
+	var total int
+	if err := r.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM mcp_tool_registry "+whereClause, filterArgs...,
+	).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	listSQL := `
+		SELECT id, server_name, tool_name, description, input_schema, last_discovered
+		FROM mcp_tool_registry ` + whereClause + `
+		ORDER BY server_name, tool_name
+		LIMIT ? OFFSET ?`
+	args := append(append([]interface{}{}, filterArgs...), limit, offset)
+	rows, err := r.db.QueryContext(ctx, listSQL, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	page, err := scanTools(rows)
+	if err != nil {
+		return nil, 0, err
+	}
+	return page, total, nil
+}
+
 // GetAllTools returns all registered tools.
 func (r *Registry) GetAllTools(ctx context.Context) ([]RegisteredTool, error) {
 	rows, err := r.db.QueryContext(ctx, `

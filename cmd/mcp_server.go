@@ -384,6 +384,15 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 	}
 
 	// --- Conditional tool groups ---
+	//
+	// File (view/glob/grep/ls + optional write/edit/patch) and system-execution
+	// (bash) tools are intentionally NOT exposed by default. Most MCP clients are
+	// coding agents that already ship their own editing, listing and terminal
+	// tools, so re-exposing Pando's would duplicate capabilities and cause
+	// ambiguity. They are opt-in only, via CLI flags (--file-tools,
+	// --file-tools-write, --system-exec) or the equivalent .pando.toml
+	// [MCPServer.FileTools] / [MCPServer.SystemExecution] config. Note that
+	// enableMCPServerFeatures() never turns these on, keeping the default safe.
 
 	if cfg != nil && cfg.MCPServer.FileTools.Enabled {
 		tools = append(tools,
