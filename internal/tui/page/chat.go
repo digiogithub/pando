@@ -418,6 +418,15 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return p, tea.Batch(cmds...)
 	case chat.ShowSlashCompletionMsg:
 		p.showSlashCompletionDialog = true
+		// The "/" trigger is detected in the editor and arrives here as a
+		// separate message, so (unlike "@") the original key never reaches the
+		// dialog. Feed it a synthetic "/" key so the dialog focuses its search
+		// field and loads the slash command entries; otherwise the list stays
+		// empty and renders "No file matches found".
+		slashKey := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
+		dialogModel, dialogCmd := p.slashCompletionDialog.Update(slashKey)
+		p.slashCompletionDialog = dialogModel.(dialog.CompletionDialog)
+		return p, dialogCmd
 	case dialog.CompletionDialogCloseMsg:
 		p.showCompletionDialog = false
 		p.showSlashCompletionDialog = false
@@ -1289,7 +1298,14 @@ func formatGoalStatus(goal *chat.GoalState) string {
 }
 
 func NewChatPage(app *app.App) *ChatPageModel {
-	cg := completions.NewFileAndFolderContextGroup()
+	// Wire the code-index lookup when remembrances indexing is available so the
+	// "@" completion can serve indexed files instantly while the filesystem scan
+	// runs in the background.
+	var fileLister completions.IndexedFileLister
+	if app.Remembrances != nil && app.Remembrances.Code != nil {
+		fileLister = app.Remembrances.Code
+	}
+	cg := completions.NewFileAndFolderContextGroup(fileLister)
 	completionDialog := dialog.NewCompletionDialogCmp(cg)
 	slashCg := completions.NewSlashCommandsProvider()
 	slashCompletionDialog := dialog.NewCompletionDialogCmp(slashCg)

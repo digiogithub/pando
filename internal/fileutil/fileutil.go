@@ -1,6 +1,7 @@
 package fileutil
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -200,7 +201,11 @@ func GlobWithDoublestar(pattern, searchPath string, limit int) ([]string, bool, 
 		}
 		return nil
 	})
-	if err != nil {
+	// fs.SkipAll is the sentinel returned by the callback to stop the walk early
+	// once the limit is reached; GlobWalk surfaces it as an error, so it must be
+	// treated as normal completion rather than a failure. Otherwise large
+	// projects (more than limit*2 files) would yield zero results.
+	if err != nil && !errors.Is(err, fs.SkipAll) {
 		return nil, false, fmt.Errorf("glob walk error: %w", err)
 	}
 

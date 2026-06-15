@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'ollama.qwen3-coder-next:cloud'
+Model = 'ollama.qwen-coder:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -146,7 +146,7 @@ AutoUpdate = false
 DefaultScope = ''
 
 [TUI]
-Theme = 'light-nobg'
+Theme = 'gruvbox-nobg'
 
 [Permissions]
 AutoApproveTools = true

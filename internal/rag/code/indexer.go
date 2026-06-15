@@ -560,6 +560,63 @@ func (c *CodeIndexer) HasProject(ctx context.Context, projectID, rootPath string
 	return filepath.Clean(existingRoot) == filepath.Clean(rootPath), nil
 }
 
+// ListIndexedFiles returns up to limit indexed file paths (relative to the
+// project root) for the project whose root_path matches rootPath. When query is
+// non-empty it is used as a substring pre-filter (SQL LIKE) to keep the result
+// small. It returns (nil, nil) when no project is indexed for rootPath, so the
+// caller can transparently fall back to a filesystem scan.
+func (c *CodeIndexer) ListIndexedFiles(ctx context.Context, rootPath, query string, limit int) ([]string, error) {
+	if c == nil || c.db == nil {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+
+	var projectID string
+	err := c.db.QueryRowContext(ctx,
+		`SELECT project_id FROM code_projects WHERE root_path = ? ORDER BY last_indexed_at DESC LIMIT 1`,
+		filepath.Clean(rootPath),
+	).Scan(&projectID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("code: resolve project by path: %w", err)
+	}
+
+	var rows *sql.Rows
+	if strings.TrimSpace(query) == "" {
+		rows, err = c.db.QueryContext(ctx,
+			`SELECT file_path FROM code_files WHERE project_id = ? ORDER BY file_path LIMIT ?`,
+			projectID, limit)
+	} else {
+		rows, err = c.db.QueryContext(ctx,
+			`SELECT file_path FROM code_files WHERE project_id = ? AND file_path LIKE ? ESCAPE '\' ORDER BY file_path LIMIT ?`,
+			projectID, "%"+escapeLike(query)+"%", limit)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("code: list indexed files: %w", err)
+	}
+	defer rows.Close()
+
+	var files []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, fmt.Errorf("code: scan indexed file: %w", err)
+		}
+		files = append(files, p)
+	}
+	return files, rows.Err()
+}
+
+// escapeLike escapes the SQL LIKE wildcards so user input is matched literally.
+func escapeLike(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(s)
+}
+
 // ReindexFile re-indexes a single file in a project.
 func (c *CodeIndexer) ReindexFile(ctx context.Context, projectID, filePath string) error {
 	// Get project root

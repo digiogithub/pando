@@ -82,13 +82,6 @@ func renderUserMessage(msg message.Message, isFocused bool, width int, position 
 		Background(t.TextMuted()).
 		Foreground(t.Text())
 	info := []string{}
-	if finishData := msg.FinishPart(); finishData != nil {
-		info = append(info, styles.BaseStyle().
-			Width(width-1).
-			Foreground(t.TextMuted()).
-			Render(fmt.Sprintf(" took %s", formatTimestampDiff(msg.CreatedAt, messageDisplayEndTime(msg, finishData.Time)))),
-		)
-	}
 	for _, attachment := range msg.BinaryContent() {
 		file := filepath.Base(attachment.Path)
 		var filename string
@@ -169,7 +162,7 @@ func renderAssistantMessage(
 	if finished {
 		switch finishData.Reason {
 		case message.FinishReasonEndTurn:
-			took := formatTimestampDiff(msg.CreatedAt, messageDisplayEndTime(msg, finishData.Time))
+			took := formatTimestampDiff(turnStartTime(allMessages, msgIndex, msg), messageDisplayEndTime(msg, finishData.Time))
 			info = append(info, baseStyle.
 				Width(width-1).
 				Foreground(t.TextMuted()).
@@ -710,6 +703,21 @@ func normalizeUnixTimestamp(ts int64) int64 {
 		return ts / 1000
 	}
 	return ts
+}
+
+// turnStartTime returns the timestamp marking the beginning of the agent turn
+// that produced the assistant message at msgIndex. The elapsed time shown to the
+// user must span from the moment they submitted the prompt until the agent loop
+// hands the turn back, so we walk backwards to the user message that started the
+// turn. If no preceding user message is found, we fall back to the assistant
+// message's own creation time.
+func turnStartTime(allMessages []message.Message, msgIndex int, msg message.Message) int64 {
+	for i := msgIndex - 1; i >= 0 && i < len(allMessages); i-- {
+		if allMessages[i].Role == message.User {
+			return allMessages[i].CreatedAt
+		}
+	}
+	return msg.CreatedAt
 }
 
 func messageDisplayEndTime(msg message.Message, finishTime int64) int64 {
