@@ -452,6 +452,17 @@ func (s *Server) dispatchSSEEvent(
 			})
 		}
 
+	case agent.AgentEventTypeTokenUsage:
+		if event.TokenUsage != nil {
+			writeSSEEvent(w, flusher, "token_usage", map[string]interface{}{
+				"session_id":        event.SessionID,
+				"prompt_tokens":     event.TokenUsage.PromptTokens,
+				"completion_tokens": event.TokenUsage.CompletionTokens,
+				"context_window":    event.TokenUsage.ContextWindow,
+				"estimated":         event.TokenUsage.Estimated,
+			})
+		}
+
 	case agent.AgentEventTypeResponse:
 		// Final response — content already streamed via content_delta events.
 

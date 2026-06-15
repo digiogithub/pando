@@ -223,6 +223,16 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
       }
       break
 
+    case 'token_usage':
+      base.session_id = typeof raw.session_id === 'string' ? raw.session_id : base.session_id
+      base.token_usage = {
+        prompt_tokens: typeof raw.prompt_tokens === 'number' ? raw.prompt_tokens : 0,
+        completion_tokens: typeof raw.completion_tokens === 'number' ? raw.completion_tokens : 0,
+        context_window: typeof raw.context_window === 'number' ? raw.context_window : 0,
+        estimated: Boolean(raw.estimated),
+      }
+      break
+
     default:
       // session, content, content_delta, thinking_delta, todos_update, error, done
       // — already handled by base fields

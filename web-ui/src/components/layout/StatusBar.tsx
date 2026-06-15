@@ -56,7 +56,13 @@ export default function StatusBar() {
             {(activeSession.prompt_tokens > 0 || activeSession.completion_tokens > 0) && (
               <>
                 <span>·</span>
-                <span>{(activeSession.prompt_tokens + activeSession.completion_tokens).toLocaleString()} {t('common.tokens')}</span>
+                <span
+                  title={activeSession.tokens_estimated ? t('common.estimatedTokens', 'Estimated (updates live while the agent runs)') : undefined}
+                  style={activeSession.tokens_estimated ? { opacity: 0.6, fontStyle: 'italic' } : undefined}
+                >
+                  {activeSession.tokens_estimated ? '~' : ''}
+                  {(activeSession.prompt_tokens + activeSession.completion_tokens).toLocaleString()} {t('common.tokens')}
+                </span>
               </>
             )}
           </>

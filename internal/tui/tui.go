@@ -621,6 +621,22 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		a.compactingMessage = payload.Progress
 
+		// Live context-window token updates: forward to the status bar so the
+		// counter reflects consumption as the agent loop runs (tools, file output).
+		if payload.Type == agent.AgentEventTypeTokenUsage && payload.TokenUsage != nil {
+			tokenMsg := core.TokenUsageMsg{
+				SessionID:        payload.SessionID,
+				PromptTokens:     payload.TokenUsage.PromptTokens,
+				CompletionTokens: payload.TokenUsage.CompletionTokens,
+				ContextWindow:    payload.TokenUsage.ContextWindow,
+				Estimated:        payload.TokenUsage.Estimated,
+			}
+			s, sCmd := a.status.Update(tokenMsg)
+			a.status = s.(core.StatusCmp)
+			cmds = append(cmds, sCmd)
+			return a, tea.Batch(cmds...)
+		}
+
 		if payload.Type == agent.AgentEventTypeTodosUpdated && len(payload.Todos) > 0 {
 			// Forward plan updates to all pages so the sidebar can re-render.
 			todosMsg := chat.TodosUpdatedMsg{SessionID: payload.SessionID, Todos: payload.Todos}

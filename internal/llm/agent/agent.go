@@ -145,7 +145,24 @@ const (
 	// LLM response. Unlike ContentDelta these are sent with a blocking channel write
 	// so they are never silently dropped.
 	AgentEventTypeSystemMessage AgentEventType = "system_message"
+	// AgentEventTypeTokenUsage carries a live context-window token update so the
+	// TUI/WebUI can show consumption as it grows during the agent loop (e.g. while
+	// tools execute or a file is produced), not only when the LLM response finishes.
+	// When TokenUsage.Estimated is true the value is a heuristic estimate that the
+	// next confirmed usage (EventComplete) will reconcile.
+	AgentEventTypeTokenUsage AgentEventType = "token_usage"
 )
+
+// TokenUsageInfo carries a live token-usage snapshot for AgentEventTypeTokenUsage.
+// PromptTokens/CompletionTokens are cumulative for the session (same semantics as
+// session.Session), ContextWindow is the effective window for the active model, and
+// Estimated marks the value as provisional (not yet confirmed by the provider).
+type TokenUsageInfo struct {
+	PromptTokens     int64
+	CompletionTokens int64
+	ContextWindow    int64
+	Estimated        bool
+}
 
 type AgentEvent struct {
 	Type       AgentEventType
@@ -167,6 +184,9 @@ type AgentEvent struct {
 	// It carries a human-readable status message (context compaction, retries, etc.)
 	// that should be shown to the user regardless of the transport (TUI, ACP, web).
 	SystemMessage string
+
+	// TokenUsage is populated when Type == AgentEventTypeTokenUsage.
+	TokenUsage *TokenUsageInfo
 }
 
 const (
@@ -938,6 +958,12 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 			return assistantMsg, nil, toolCtxErr
 		}
 	}
+
+	// Capture the last confirmed token totals so we can emit live, provisional
+	// context-window estimates as each tool result is produced. The next confirmed
+	// usage (EventComplete on the following request) reconciles these estimates.
+	tokenBasePrompt, tokenBaseCompletion, tokenContextWindow := a.tokenEstimateBase(ctx, sessionID)
+	var estimatedToolTokens int64
 	for i, toolCall := range toolCalls {
 		select {
 		case <-toolCtx.Done():
@@ -1049,6 +1075,17 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 			case eventCh <- AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]}:
 			default:
 			}
+
+			// Emit a live (estimated) context-window update so the TUI/WebUI counter
+			// grows as this tool result enters the conversation, before the next LLM
+			// request confirms the real usage.
+			estimatedToolTokens += estimateToolResultTokens(toolResults[i])
+			a.publishTokenUsage(sessionID, eventCh, TokenUsageInfo{
+				PromptTokens:     tokenBasePrompt + estimatedToolTokens,
+				CompletionTokens: tokenBaseCompletion,
+				ContextWindow:    tokenContextWindow,
+				Estimated:        true,
+			})
 
 			// Emit todos_updated event so TUI and WebUI can display the current plan.
 			if toolCall.Name == tools.TodoWriteToolName && !toolResult.IsError {
@@ -1228,7 +1265,20 @@ func (a *agent) processEvent(
 			}
 			a.luaMgr.ExecuteHook(ctx, luaengine.HookAgentResponseFinish, hookData) //nolint:errcheck
 		}
-		return a.TrackUsage(ctx, sessionID, requestProvider.Model(), event.Response.Usage)
+		if err := a.TrackUsage(ctx, sessionID, requestProvider.Model(), event.Response.Usage); err != nil {
+			return err
+		}
+		// Emit a confirmed token-usage update so live consumers (WebUI SSE) can
+		// reconcile any provisional estimates shown during tool execution.
+		if sess, err := a.sessions.Get(ctx, sessionID); err == nil {
+			a.publishTokenUsage(sessionID, eventCh, TokenUsageInfo{
+				PromptTokens:     sess.PromptTokens,
+				CompletionTokens: sess.CompletionTokens,
+				ContextWindow:    effectiveContextWindow(a.agentName, requestProvider.Model()),
+				Estimated:        false,
+			})
+		}
+		return nil
 	}
 
 	return nil
@@ -1244,6 +1294,42 @@ func resolveToolCallsOnComplete(existingToolCalls, responseToolCalls []message.T
 	}
 
 	return responseToolCalls
+}
+
+// tokenEstimateBase returns the last confirmed prompt/completion token totals for
+// the session plus the effective context window for the active model. These are
+// used as the base for live, provisional context-window estimates emitted while
+// tools execute. Failures are non-fatal: zeroed values simply mean the estimate
+// starts from scratch and is reconciled on the next confirmed usage.
+func (a *agent) tokenEstimateBase(ctx context.Context, sessionID string) (promptTokens, completionTokens, contextWindow int64) {
+	contextWindow = effectiveContextWindow(a.agentName, a.provider.Model())
+	sess, err := a.sessions.Get(ctx, sessionID)
+	if err != nil {
+		return 0, 0, contextWindow
+	}
+	return sess.PromptTokens, sess.CompletionTokens, contextWindow
+}
+
+// estimateToolResultTokens returns a rough token estimate for a tool result that
+// will be appended to the conversation, using the heuristic of ~4 bytes per token.
+func estimateToolResultTokens(tr message.ToolResult) int64 {
+	chars := int64(len(tr.Content) + len(tr.Metadata))
+	return (chars + 3) / 4
+}
+
+// publishTokenUsage emits a live AgentEventTypeTokenUsage event on both the pubsub
+// broker and the per-run event channel (non-blocking) so the TUI/WebUI can update
+// the context-window counter in real time during the agent loop.
+func (a *agent) publishTokenUsage(sessionID string, eventCh chan<- AgentEvent, info TokenUsageInfo) {
+	infoCopy := info
+	ev := AgentEvent{Type: AgentEventTypeTokenUsage, SessionID: sessionID, TokenUsage: &infoCopy}
+	a.publishEvent(ev)
+	if eventCh != nil {
+		select {
+		case eventCh <- ev:
+		default:
+		}
+	}
 }
 
 func (a *agent) TrackUsage(ctx context.Context, sessionID string, model models.Model, usage provider.TokenUsage) error {

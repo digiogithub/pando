@@ -17,6 +17,14 @@ interface SessionStore {
   updateLastMessage: (content: string) => void
   updateLastMessageParts: (parts: import('@/types').ContentPart[]) => void
   markSessionRunning: (id: string, running: boolean) => void
+  /** apply a live (possibly estimated) context-window token update to a session */
+  updateSessionTokens: (
+    id: string,
+    promptTokens: number,
+    completionTokens: number,
+    contextWindow: number,
+    estimated: boolean,
+  ) => void
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -95,5 +103,20 @@ export const useSessionStore = create<SessionStore>((set) => ({
         sess.id === id ? { ...sess, is_running: running } : sess
       ),
       isStreaming: s.activeSessionId === id ? running : s.isStreaming,
+    })),
+
+  updateSessionTokens: (id, promptTokens, completionTokens, contextWindow, estimated) =>
+    set((s) => ({
+      sessions: s.sessions.map((sess) =>
+        sess.id === id
+          ? {
+              ...sess,
+              prompt_tokens: promptTokens,
+              completion_tokens: completionTokens,
+              context_window: contextWindow > 0 ? contextWindow : sess.context_window,
+              tokens_estimated: estimated,
+            }
+          : sess
+      ),
     })),
 }))

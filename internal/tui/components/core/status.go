@@ -64,6 +64,17 @@ type StatusCmp interface {
 	tea.Model
 }
 
+// TokenUsageMsg carries a live context-window token update for the status bar.
+// When Estimated is true the value is provisional (e.g. estimated while tools run)
+// and is rendered with a "~" prefix and a dimmed style until confirmed.
+type TokenUsageMsg struct {
+	SessionID        string
+	PromptTokens     int64
+	CompletionTokens int64
+	ContextWindow    int64
+	Estimated        bool
+}
+
 type statusCmp struct {
 	info              util.InfoMsg
 	width             int
@@ -73,6 +84,13 @@ type statusCmp struct {
 	breadcrumbs       []string // recently edited file paths
 	mcpFavoritesCount int      // number of MCP gateway favorite tools (0 = gateway off)
 	activeProject     string   // display name of the active project ("" = none)
+
+	// Live token estimate shown while the agent loop runs. estimatedActive is true
+	// while a provisional value should be displayed; it is cleared when a confirmed
+	// session update arrives. estimatedContextWindow overrides the model window when > 0.
+	estimatedTokens        int64
+	estimatedContextWindow int64
+	estimatedActive        bool
 }
 
 // clearMessageCmd is a command that clears status messages after a timeout
@@ -95,10 +113,25 @@ func (m statusCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.session = msg
 	case chat.SessionClearedMsg:
 		m.session = session.Session{}
+		m.estimatedActive = false
+	case TokenUsageMsg:
+		// Apply only to the current session; ignore stale/other-session updates.
+		if m.session.ID == "" || msg.SessionID == m.session.ID {
+			if msg.Estimated {
+				m.estimatedTokens = msg.PromptTokens + msg.CompletionTokens
+				m.estimatedContextWindow = msg.ContextWindow
+				m.estimatedActive = true
+			} else {
+				// Confirmed usage reconciles any provisional estimate.
+				m.estimatedActive = false
+			}
+		}
 	case pubsub.Event[session.Session]:
 		if msg.Type == pubsub.UpdatedEvent {
 			if m.session.ID == msg.Payload.ID {
 				m.session = msg.Payload
+				// A persisted session update carries confirmed token totals.
+				m.estimatedActive = false
 			}
 		}
 	case util.InfoMsg:
@@ -160,7 +193,9 @@ func getHelpWidget() string {
 		Render(helpText)
 }
 
-func formatTokens(tokens, contextWindow int64) string {
+// formatTokens renders the context-window label. When estimated is true the value
+// is provisional (e.g. estimated while tools run) and is prefixed with "~".
+func formatTokens(tokens, contextWindow int64, estimated bool) string {
 	// Format tokens in human-readable format (e.g., 110K, 1.2M)
 	var formattedTokens string
 	switch {
@@ -180,12 +215,17 @@ func formatTokens(tokens, contextWindow int64) string {
 		formattedTokens = strings.Replace(formattedTokens, ".0M", "M", 1)
 	}
 
-	percentage := (float64(tokens) / float64(contextWindow)) * 100
-	if percentage > 80 {
-		// add the warning icon and percentage
-		formattedTokens = fmt.Sprintf("%s(%d%%)", styles.WarningIcon, int(percentage))
+	if contextWindow > 0 {
+		percentage := (float64(tokens) / float64(contextWindow)) * 100
+		if percentage > 80 {
+			// add the warning icon and percentage
+			formattedTokens = fmt.Sprintf("%s(%d%%)", styles.WarningIcon, int(percentage))
+		}
 	}
 
+	if estimated {
+		return fmt.Sprintf("Context: ~%s", formattedTokens)
+	}
 	return fmt.Sprintf("Context: %s", formattedTokens)
 }
 
@@ -258,16 +298,30 @@ func (m statusCmp) View() string {
 	tokenInfoWidth := 0
 	if m.session.ID != "" {
 		totalTokens := m.session.PromptTokens + m.session.CompletionTokens
-		tokens := formatTokens(totalTokens, model.ContextWindow)
+		contextWindow := model.ContextWindow
+		estimated := false
+		// Prefer the live estimate while the agent loop is running, so the counter
+		// grows as tools execute / files are produced before the next confirmed usage.
+		if m.estimatedActive && m.estimatedTokens > totalTokens {
+			totalTokens = m.estimatedTokens
+			if m.estimatedContextWindow > 0 {
+				contextWindow = m.estimatedContextWindow
+			}
+			estimated = true
+		}
+		tokens := formatTokens(totalTokens, contextWindow, estimated)
 		tokensStyle := styles.Padded().
 			Background(t.Text()).
 			Foreground(t.BadgeText())
 		var percentage float64
-		if model.ContextWindow > 0 {
-			percentage = (float64(totalTokens) / float64(model.ContextWindow)) * 100
+		if contextWindow > 0 {
+			percentage = (float64(totalTokens) / float64(contextWindow)) * 100
 		}
 		if percentage > 80 {
 			tokensStyle = tokensStyle.Background(t.Warning())
+		} else if estimated {
+			// Dimmed treatment while the value is provisional.
+			tokensStyle = tokensStyle.Background(t.TextMuted())
 		}
 		tokenInfoWidth = lipgloss.Width(tokens) + 2
 		status += tuizone.MarkStatusSession(tokensStyle.Render(tokens))

@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'ollama.qwopus:latest'
+Model = 'ollama.qwen-coder:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''

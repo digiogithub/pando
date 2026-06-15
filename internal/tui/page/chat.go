@@ -497,7 +497,7 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, p.routeMessage(msg)...)
 		return p, tea.Batch(cmds...)
 	case pubsub.Event[agentpkg.AgentEvent]:
-		if msg.Payload.SessionID == p.session.ID && msg.Payload.Type != agentpkg.AgentEventTypeContentDelta && msg.Payload.Type != agentpkg.AgentEventTypeThinkingDelta {
+		if msg.Payload.SessionID == p.session.ID && msg.Payload.Type != agentpkg.AgentEventTypeContentDelta && msg.Payload.Type != agentpkg.AgentEventTypeThinkingDelta && msg.Payload.Type != agentpkg.AgentEventTypeTokenUsage {
 			if goalMsg, err := p.loadGoalUpdate(msg.Payload.SessionID, false); err != nil {
 				return p, util.ReportError(err)
 			} else {

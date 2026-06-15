@@ -101,6 +101,20 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
         setStreamingState((prev) => ({ ...prev, goal: event.goal ?? null }))
       }
 
+      if (event.type === 'token_usage' && event.token_usage) {
+        const sid = event.session_id ?? activeSessionId
+        if (sid) {
+          const tu = event.token_usage
+          useSessionStore.getState().updateSessionTokens(
+            sid,
+            tu.prompt_tokens,
+            tu.completion_tokens,
+            tu.context_window,
+            tu.estimated,
+          )
+        }
+      }
+
       if (event.type === 'content_delta' && event.content) {
         accumulatedRef.current += event.content
         const last = itemsRef.current[itemsRef.current.length - 1]
@@ -302,7 +316,7 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
         setError(event.error ?? 'Unknown error')
       }
     },
-    [onEvent, onNewSession, updateLastMessage],
+    [onEvent, onNewSession, updateLastMessage, activeSessionId],
   )
 
   /** Called when the stream ends (done event or connection closed). */

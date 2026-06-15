@@ -11,6 +11,10 @@ export interface Session {
   updated_at: string
   /** true when the session has an active background agent run */
   is_running?: boolean
+  /** effective context window for the active model (from live token updates) */
+  context_window?: number
+  /** true while prompt/completion tokens are a provisional live estimate */
+  tokens_estimated?: boolean
 }
 
 export interface ContentPart {
@@ -132,6 +136,7 @@ export interface SSEEvent {
   type: 'session' | 'content' | 'content_delta' | 'thinking_delta'
       | 'tool_call' | 'tool_call_update' | 'tool_result'
       | 'plan_update' | 'todos_update' | 'goal_status'
+      | 'token_usage'
       | 'error' | 'done'
   session_id?: string
   content?: string
@@ -141,6 +146,16 @@ export interface SSEEvent {
   tool_result?: SSEToolResult
   plan_entries?: SSEPlanEntry[]
   goal?: GoalStatus
+  token_usage?: SSETokenUsage
+}
+
+// SSETokenUsage carries a live context-window token update. When estimated is true
+// the value is provisional (estimated while tools run) and rendered with a "~".
+export interface SSETokenUsage {
+  prompt_tokens: number
+  completion_tokens: number
+  context_window: number
+  estimated: boolean
 }
 
 // Log types
