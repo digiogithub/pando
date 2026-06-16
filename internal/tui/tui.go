@@ -37,6 +37,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
 	tuizone "github.com/digiogithub/pando/internal/tui/zone"
+	"github.com/digiogithub/pando/internal/userinput"
 	"go.dalton.dog/bubbleup"
 )
 
@@ -98,6 +99,9 @@ type appModel struct {
 
 	showPermissions bool
 	permissions     dialog.PermissionDialogCmp
+
+	showAskQuestion bool
+	askQuestion     dialog.AskQuestionDialogCmp
 
 	showHelp bool
 	help     dialog.HelpCmp
@@ -303,6 +307,10 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		prm, permCmd := a.permissions.Update(msg)
 		a.permissions = prm.(dialog.PermissionDialogCmp)
 		cmds = append(cmds, permCmd)
+
+		aq, aqCmd := a.askQuestion.Update(msg)
+		a.askQuestion = aq.(dialog.AskQuestionDialogCmp)
+		cmds = append(cmds, aqCmd)
 
 		help, helpCmd := a.help.Update(msg)
 		a.help = help.(dialog.HelpCmp)
@@ -550,6 +558,19 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.showPermissions = false
 		return a, cmd
+
+	// AskUserQuestion
+	case pubsub.Event[userinput.QuestionRequest]:
+		a.showAskQuestion = true
+		return a, a.askQuestion.SetRequest(msg.Payload)
+	case dialog.QuestionResponseMsg:
+		if msg.Cancelled {
+			a.app.UserInput.Cancel(msg.RequestID)
+		} else {
+			a.app.UserInput.Respond(msg.RequestID, userinput.AskResponse{Answers: msg.Answers})
+		}
+		a.showAskQuestion = false
+		return a, nil
 
 	case page.PageChangeMsg:
 		return a, a.moveToPage(msg.ID)
@@ -1232,6 +1253,15 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Batch(cmds...)
 		}
 	}
+	if a.showAskQuestion {
+		d, askCmd := a.askQuestion.Update(msg)
+		a.askQuestion = d.(dialog.AskQuestionDialogCmp)
+		cmds = append(cmds, askCmd)
+		// Only block key messages send all other messages down
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return a, tea.Batch(cmds...)
+		}
+	}
 
 	if a.showSessionDialog {
 		d, sessionCmd := a.sessionDialog.Update(msg)
@@ -1810,6 +1840,12 @@ func (a appModel) dialogHelpSections() []dialog.HelpSection {
 			Bindings: a.permissions.BindingKeys(),
 		})
 	}
+	if a.showAskQuestion {
+		sections = append(sections, dialog.HelpSection{
+			Title:    "Question dialog",
+			Bindings: a.askQuestion.BindingKeys(),
+		})
+	}
 	if a.showQuit {
 		sections = append(sections, dialog.HelpSection{
 			Title:    "Quit dialog",
@@ -1912,6 +1948,21 @@ func (a appModel) View() string {
 
 	if a.showPermissions {
 		overlay := a.permissions.View()
+		row := lipgloss.Height(appView) / 2
+		row -= lipgloss.Height(overlay) / 2
+		col := lipgloss.Width(appView) / 2
+		col -= lipgloss.Width(overlay) / 2
+		appView = layout.PlaceOverlay(
+			col,
+			row,
+			overlay,
+			appView,
+			true,
+		)
+	}
+
+	if a.showAskQuestion {
+		overlay := a.askQuestion.View()
 		row := lipgloss.Height(appView) / 2
 		row -= lipgloss.Height(overlay) / 2
 		col := lipgloss.Width(appView) / 2
@@ -2205,7 +2256,7 @@ func (a *appModel) buildDiagnosticsSummary() string {
 }
 
 func (a *appModel) handleMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
-	if a.showQuit || a.showPermissions || a.showSessionDialog || a.showCommandDialog ||
+	if a.showQuit || a.showPermissions || a.showAskQuestion || a.showSessionDialog || a.showCommandDialog ||
 		a.showModelDialog || a.showInitDialog || a.showFilepicker || a.showThemeDialog ||
 		a.showMultiArgumentsDialog {
 		return nil, false
@@ -2341,6 +2392,7 @@ func New(app *app.App) tea.Model {
 		commandDialog:     dialog.NewCommandDialogCmp(),
 		modelDialog:       dialog.NewModelDialogCmp(),
 		permissions:       dialog.NewPermissionDialogCmp(),
+		askQuestion:       dialog.NewAskQuestionDialogCmp(),
 		initDialog:        dialog.NewInitDialogCmp(),
 		themeDialog:       dialog.NewThemeDialogCmp(),
 		personaDialog:     dialog.NewPersonaDialogCmp(),

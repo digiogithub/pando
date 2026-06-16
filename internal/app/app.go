@@ -57,6 +57,7 @@ import (
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
 	"github.com/digiogithub/pando/internal/tui/theme"
+	"github.com/digiogithub/pando/internal/userinput"
 	"github.com/digiogithub/pando/internal/version"
 )
 
@@ -65,6 +66,7 @@ type App struct {
 	Messages    message.Service
 	History     history.Service
 	Permissions permission.Service
+	UserInput   userinput.Service
 	DBQuerier   db.Querier
 
 	CoderAgent agent.Service
@@ -190,6 +192,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		Messages:    messages,
 		History:     files,
 		Permissions: permission.NewPermissionService(),
+		UserInput:   userinput.NewService(),
 		DBQuerier:   q,
 		Projects:    projects,
 		LSPClients:  make(map[string]*lsp.Client),
@@ -569,6 +572,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			app.Permissions,
 			app.History,
 			app.LSPClients,
+			app.UserInput,
 		),
 		app.SkillManager,
 	)

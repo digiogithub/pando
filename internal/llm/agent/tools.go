@@ -7,12 +7,13 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/tools"
-	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/lsp"
+	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/mcpgateway"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/rag"
+	"github.com/digiogithub/pando/internal/userinput"
 )
 
 var globalLuaManagerForTools *luaengine.FilterManager
@@ -50,6 +51,9 @@ var alwaysIncludedTools = map[string]bool{
 	"write": true,
 	"patch": true,
 	"ls":    true,
+	// AskUserQuestion lets the agent ask the user for input; it must never be
+	// trimmed away, otherwise the agent loses the ability to clarify mid-task.
+	tools.AskUserQuestionToolName: true,
 }
 
 // filterToolsByNames returns the subset of allTools whose names are in the allowed set
@@ -87,6 +91,7 @@ func CoderAgentTools(
 	permissions permission.Service,
 	history history.Service,
 	lspClients map[string]*lsp.Client,
+	userInput userinput.Service,
 ) []tools.BaseTool {
 	ctx := context.Background()
 	otherTools := GetMcpTools(ctx, permissions)
@@ -145,6 +150,7 @@ func CoderAgentTools(
 			tools.NewPatchTool(lspClients, permissions, history),
 			tools.NewWriteTool(lspClients, permissions, history),
 			tools.NewTodoWriteTool(),
+			tools.NewAskUserQuestionTool(userInput),
 		}, otherTools...,
 	)
 	result := appendLuaTools(base)
@@ -158,6 +164,7 @@ func CoderAgentToolsWithMesnada(
 	permissions permission.Service,
 	history history.Service,
 	lspClients map[string]*lsp.Client,
+	userInput userinput.Service,
 ) []tools.BaseTool {
 	ctx := context.Background()
 
@@ -178,6 +185,7 @@ func CoderAgentToolsWithMesnada(
 				tools.NewPatchTool(lspClients, permissions, history),
 				tools.NewWriteTool(lspClients, permissions, history),
 				tools.NewTodoWriteTool(),
+				tools.NewAskUserQuestionTool(userInput),
 			},
 			gatewayTools...,
 		)
@@ -191,6 +199,7 @@ func CoderAgentToolsWithMesnada(
 			permissions,
 			history,
 			lspClients,
+			userInput,
 		)
 	}
 	// Only add internal tools when using the gateway path; CoderAgentTools already
