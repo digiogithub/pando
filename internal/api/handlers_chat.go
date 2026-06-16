@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -164,6 +165,52 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	// Subscribe to receive buffered + live events from the background run.
 	eventChan, unsubFn, _ := s.bgRunner.Subscribe(sessionID)
 	s.streamSessionEvents(w, flusher, r.Context(), sessionID, unsubFn, eventChan)
+}
+
+// SteerRequest is the body accepted by POST /api/v1/sessions/{id}/steer.
+type SteerRequest struct {
+	Prompt string `json:"prompt"`
+}
+
+// handleSteer queues a mid-run feedback message for an active session. The
+// message is injected into the agent loop at the next safe boundary without
+// cancelling the run; injection events flow over the existing SSE stream.
+// POST /api/v1/sessions/{id}/steer
+func (s *Server) handleSteer(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "session id required")
+		return
+	}
+
+	var req SteerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.Prompt) == "" {
+		writeError(w, http.StatusBadRequest, "prompt is required")
+		return
+	}
+
+	err := s.app.CoderAgent.Steer(sessionID, req.Prompt)
+	if err != nil {
+		if errors.Is(err, agent.ErrSessionNotBusy) {
+			// No active run to steer; the client should start a normal chat instead.
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"error": "not_busy",
+				"hint":  "no active run for this session; send a normal chat message instead",
+			})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("steer error: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+		"sessionId": sessionID,
+		"queued":    s.app.CoderAgent.PendingSteering(sessionID),
+	})
 }
 
 // handleSessionStream lets clients reconnect to an in-progress (or recently
@@ -495,6 +542,18 @@ func (s *Server) dispatchSSEEvent(
 				"estimated":         event.TokenUsage.Estimated,
 			})
 		}
+
+	case agent.AgentEventTypeSteeringQueued:
+		writeSSEEvent(w, flusher, "steering_queued", map[string]interface{}{
+			"session_id": event.SessionID,
+			"message":    event.SystemMessage,
+		})
+
+	case agent.AgentEventTypeSteeringInjected:
+		writeSSEEvent(w, flusher, "steering_injected", map[string]interface{}{
+			"session_id": event.SessionID,
+			"message":    event.SystemMessage,
+		})
 
 	case agent.AgentEventTypeResponse:
 		// Final response — content already streamed via content_delta events.

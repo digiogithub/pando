@@ -374,6 +374,10 @@ type mockAgentService struct {
 	currentModel       string
 	availableModels    []ACPModelInfo
 	sessionOverrides   map[string]SessionLLMOverrides
+	busy               bool
+	steerErr           error
+	steerCalls         []string
+	pendingSteering    int
 }
 
 func (m *mockAgentService) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
@@ -400,6 +404,19 @@ func (m *mockAgentService) RunGoal(ctx context.Context, sessionID string, object
 func (m *mockAgentService) Cancel(sessionID string) {
 	m.cancelCalled = true
 }
+
+func (m *mockAgentService) Steer(sessionID string, content string, attachments ...message.Attachment) error {
+	m.steerCalls = append(m.steerCalls, content)
+	if m.steerErr != nil {
+		return m.steerErr
+	}
+	m.pendingSteering++
+	return nil
+}
+
+func (m *mockAgentService) PendingSteering(sessionID string) int { return m.pendingSteering }
+
+func (m *mockAgentService) IsSessionBusy(sessionID string) bool { return m.busy }
 
 func (m *mockAgentService) LastRunSystemMessages(sessionID string) []string {
 	msgs := append([]string(nil), m.lastRunMessages...)
@@ -1620,6 +1637,60 @@ func TestPandoACPAgent_Prompt_AgentModeAutoApprovesSession(t *testing.T) {
 	}
 	if len(permSvc.registered) != 0 {
 		t.Fatalf("did not expect ask-mode handler registration, got %+v", permSvc.registered)
+	}
+}
+
+func TestPandoACPAgent_Prompt_BusySessionQueuesSteering(t *testing.T) {
+	mockAgent := &mockAgentService{busy: true}
+	sessions := newMockSessionService()
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), mockAgent, sessions, nil)
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	_, err = agent.Prompt(ctx, acpsdk.PromptRequest{
+		SessionId: resp.SessionId,
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("focus on the auth bug")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt failed: %v", err)
+	}
+
+	if len(mockAgent.steerCalls) != 1 || mockAgent.steerCalls[0] != "focus on the auth bug" {
+		t.Fatalf("expected steering to be queued, got steerCalls=%v", mockAgent.steerCalls)
+	}
+	if mockAgent.runCalled {
+		t.Fatal("expected Run NOT to be called while session is busy")
+	}
+}
+
+func TestPandoACPAgent_Prompt_IdleSessionRunsNormally(t *testing.T) {
+	mockAgent := &mockAgentService{busy: false}
+	sessions := newMockSessionService()
+	agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), mockAgent, sessions, nil)
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	_, err = agent.Prompt(ctx, acpsdk.PromptRequest{
+		SessionId: resp.SessionId,
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("hello")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt failed: %v", err)
+	}
+
+	if len(mockAgent.steerCalls) != 0 {
+		t.Fatalf("did not expect steering for idle session, got %v", mockAgent.steerCalls)
+	}
+	if !mockAgent.runCalled {
+		t.Fatal("expected Run to be called for idle session")
 	}
 }
 

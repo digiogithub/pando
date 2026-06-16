@@ -297,6 +297,28 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 	a.logger.Printf("[ACP AGENT] Processing prompt (length=%d, attachments=%d) for session %s",
 		len(promptText), len(attachments), req.SessionId)
 
+	// Mid-run steering: if a run is already active for this session and the new
+	// prompt is not a slash command, queue it as feedback to be injected into the
+	// running loop at the next safe boundary instead of starting a new run. We do
+	// NOT apply model/persona overrides in this path to avoid mutating the active
+	// run mid-flight.
+	pandoSessionID := acpSession.PandoSessionID()
+	if _, isCmd := parseSlashCommand(promptText); !isCmd && a.agentService.IsSessionBusy(pandoSessionID) {
+		if steerErr := a.agentService.Steer(pandoSessionID, promptText, attachments...); steerErr != nil {
+			// The run likely finished between the busy check and Steer (race), or
+			// steering was rejected. Fall through to normal processing below.
+			a.logger.Printf("[ACP AGENT] Steer failed for session %s, falling back to normal run: %v", req.SessionId, steerErr)
+		} else {
+			a.logger.Printf("[ACP AGENT] Queued steering feedback for active session %s (pending=%d)",
+				req.SessionId, a.agentService.PendingSteering(pandoSessionID))
+			if sendErr := acpSession.SendUpdate(acpsdk.UpdateAgentMessageText(
+				"💬 Feedback queued — it will be injected into the running task at the next step.")); sendErr != nil {
+				a.logger.Printf("[ACP AGENT] Failed to send steering acknowledgement: %v", sendErr)
+			}
+			return a.finishPrompt(ctx, req.SessionId, acpSession, acpsdk.StopReasonEndTurn)
+		}
+	}
+
 	// Apply per-session model override if set.
 	if modelID := acpSession.Model(); modelID != "" {
 		if err := a.agentService.SetModelOverride(modelID); err != nil {

@@ -58,6 +58,14 @@ type AgentService interface {
 	Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error)
 	RunGoal(ctx context.Context, sessionID string, objective string) (<-chan AgentEvent, error)
 	Cancel(sessionID string)
+	// Steer queues a mid-run feedback message for an active session. It is injected
+	// into the agent loop at the next safe boundary without cancelling the run.
+	// Returns ErrSessionNotBusy if there is no active run for the session.
+	Steer(sessionID string, content string, attachments ...message.Attachment) error
+	// PendingSteering reports how many steering messages are queued for the session.
+	PendingSteering(sessionID string) int
+	// IsSessionBusy reports whether a run is currently active for the session.
+	IsSessionBusy(sessionID string) bool
 	// LastRunSystemMessages returns internal status/progress messages emitted while
 	// preparing or running the most recent prompt for the session (persona selection,
 	// self-improvement prompt tuning, retries, compaction, etc.).

@@ -248,6 +248,12 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
       }
       break
 
+    case 'steering_queued':
+    case 'steering_injected':
+      base.session_id = typeof raw.session_id === 'string' ? raw.session_id : base.session_id
+      base.message = typeof raw.message === 'string' ? raw.message : undefined
+      break
+
     default:
       // session, content, content_delta, thinking_delta, todos_update, error, done
       // — already handled by base fields

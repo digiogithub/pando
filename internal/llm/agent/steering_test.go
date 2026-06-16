@@ -44,7 +44,7 @@ func (m *steeringMockMessages) Get(ctx context.Context, id string) (message.Mess
 func (m *steeringMockMessages) List(ctx context.Context, sessionID string) ([]message.Message, error) {
 	return nil, nil
 }
-func (m *steeringMockMessages) Delete(ctx context.Context, id string) error                  { return nil }
+func (m *steeringMockMessages) Delete(ctx context.Context, id string) error { return nil }
 func (m *steeringMockMessages) DeleteSessionMessages(ctx context.Context, sessionID string) error {
 	return nil
 }

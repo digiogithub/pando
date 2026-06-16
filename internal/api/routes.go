@@ -12,6 +12,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/project/context", s.handleProjectContext)
 	mux.HandleFunc("/api/v1/sessions", s.handleSessions)
 	mux.HandleFunc("GET /api/v1/sessions/{id}/stream", s.handleSessionStream)
+	mux.HandleFunc("POST /api/v1/sessions/{id}/steer", s.handleSteer)
 	mux.HandleFunc("GET /api/v1/sessions/{id}/goal", s.handleGoalStatus)
 	mux.HandleFunc("POST /api/v1/sessions/{id}/goal/cancel", s.handleCancelGoal)
 	mux.HandleFunc("GET /api/v1/sessions/{id}/auto-approve", s.handleGetAutoApprove)

@@ -799,6 +799,18 @@ func (a *acpAgentAdapter) Cancel(sessionID string) {
 	a.svc.Cancel(sessionID)
 }
 
+func (a *acpAgentAdapter) Steer(sessionID string, content string, attachments ...message.Attachment) error {
+	return a.svc.Steer(sessionID, content, attachments...)
+}
+
+func (a *acpAgentAdapter) PendingSteering(sessionID string) int {
+	return a.svc.PendingSteering(sessionID)
+}
+
+func (a *acpAgentAdapter) IsSessionBusy(sessionID string) bool {
+	return a.svc.IsSessionBusy(sessionID)
+}
+
 func (a *acpAgentAdapter) LastRunSystemMessages(sessionID string) []string {
 	return a.svc.LastRunSystemMessages(sessionID)
 }

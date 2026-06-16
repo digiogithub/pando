@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { createSSEStream, createGETSSEStream } from '@/services/sse'
+import { api } from '@/services/api'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useFileChangesStore } from '@/stores/fileChangesStore'
 import type {
@@ -360,9 +361,45 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
     [updateLastMessageParts, fetchSessions, markSessionRunning, onDone],
   )
 
+  /**
+   * Queue mid-run feedback for the active session. The message is injected into
+   * the agent loop at the next safe boundary without cancelling the run. Used
+   * when the user submits while a run is already streaming.
+   */
+  const steer = useCallback(
+    async (text: string): Promise<boolean> => {
+      const sessionId = activeSessionId
+      if (!text.trim() || !sessionId) return false
+
+      // Optimistically render the user's feedback in the conversation.
+      addMessage({
+        id: `tmp-steer-${Date.now()}`,
+        session_id: sessionId,
+        role: 'user',
+        content: [{ type: 'text', text }],
+        created_at: new Date().toISOString(),
+      })
+
+      try {
+        await api.post(`/api/v1/sessions/${sessionId}/steer`, { prompt: text })
+        return true
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'failed to queue feedback')
+        return false
+      }
+    },
+    [activeSessionId, addMessage],
+  )
+
   const sendMessage = useCallback(
     async (text: string) => {
-      if (!text.trim() || streaming) return
+      if (!text.trim()) return
+      // While a run is active, route the message as steering feedback instead of
+      // rejecting it or starting a new run.
+      if (streaming) {
+        await steer(text)
+        return
+      }
       setError(null)
       setStreaming(true)
       resetAccum()
@@ -400,7 +437,7 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
         () => handleDone(sessionId),
       )
     },
-    [activeSessionId, streaming, addMessage, handleEvent, handleDone, resetAccum],
+    [activeSessionId, streaming, steer, addMessage, handleEvent, handleDone, resetAccum],
   )
 
   /**
@@ -454,5 +491,5 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
     await onCancelled?.(sessionId)
   }, [activeSessionId, markSessionRunning, onCancelled])
 
-  return { sendMessage, reconnectSession, streaming, error, cancelStreaming, streamingState }
+  return { sendMessage, steer, reconnectSession, streaming, error, cancelStreaming, streamingState }
 }

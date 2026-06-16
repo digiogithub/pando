@@ -137,9 +137,11 @@ export interface SSEEvent {
       | 'tool_call' | 'tool_call_update' | 'tool_result'
       | 'plan_update' | 'todos_update' | 'goal_status'
       | 'token_usage' | 'permission_request'
+      | 'steering_queued' | 'steering_injected'
       | 'error' | 'done'
   session_id?: string
   content?: string
+  message?: string
   error?: string
   tool_call?: SSEToolCall
   tool_call_update?: SSEToolCallUpdate

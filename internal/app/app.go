@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/digiogithub/pando/internal/agentvcs"
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/cronjob"
@@ -55,7 +56,6 @@ import (
 	ragproxy "github.com/digiogithub/pando/internal/rag/proxy"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
-	"github.com/digiogithub/pando/internal/agentvcs"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/version"
 )
@@ -1904,6 +1904,18 @@ func (a *appACPAgentAdapter) forwardEvents(ctx context.Context, realCh <-chan ag
 }
 
 func (a *appACPAgentAdapter) Cancel(sessionID string) { a.svc.Cancel(sessionID) }
+
+func (a *appACPAgentAdapter) Steer(sessionID string, content string, attachments ...message.Attachment) error {
+	return a.svc.Steer(sessionID, content, attachments...)
+}
+
+func (a *appACPAgentAdapter) PendingSteering(sessionID string) int {
+	return a.svc.PendingSteering(sessionID)
+}
+
+func (a *appACPAgentAdapter) IsSessionBusy(sessionID string) bool {
+	return a.svc.IsSessionBusy(sessionID)
+}
 
 func (a *appACPAgentAdapter) LastRunSystemMessages(sessionID string) []string {
 	return a.svc.LastRunSystemMessages(sessionID)
