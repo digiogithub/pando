@@ -56,6 +56,26 @@ var alwaysIncludedTools = map[string]bool{
 	tools.AskUserQuestionToolName: true,
 }
 
+// askUserQuestionEnabled reports whether the AskUserQuestion tool should be
+// registered. It is enabled by default and only removed when explicitly
+// disabled via [InternalTools] AskUserQuestionDisabled.
+func askUserQuestionEnabled() bool {
+	cfg := config.Get()
+	if cfg == nil {
+		return true
+	}
+	return !cfg.InternalTools.AskUserQuestionDisabled
+}
+
+// maybeAskUserQuestionTool returns the AskUserQuestion tool wrapped in a slice
+// (empty when disabled) so it can be spread into a base tool list.
+func maybeAskUserQuestionTool(userInput userinput.Service) []tools.BaseTool {
+	if !askUserQuestionEnabled() {
+		return nil
+	}
+	return []tools.BaseTool{tools.NewAskUserQuestionTool(userInput)}
+}
+
 // filterToolsByNames returns the subset of allTools whose names are in the allowed set
 // or in alwaysIncludedTools. If names is empty, all tools are returned unchanged.
 func filterToolsByNames(allTools []tools.BaseTool, names []string) []tools.BaseTool {
@@ -137,22 +157,21 @@ func CoderAgentTools(
 			)
 		}
 	}
-	base := append(
-		[]tools.BaseTool{
-			tools.NewBashTool(permissions),
-			tools.NewEditTool(lspClients, permissions, history),
-			tools.NewGlobTool(),
-			tools.NewGrepTool(),
-			tools.NewLsTool(),
-			tools.NewViewTool(lspClients),
-			tools.NewCacheReadTool(),
-			tools.NewCacheStatsTool(),
-			tools.NewPatchTool(lspClients, permissions, history),
-			tools.NewWriteTool(lspClients, permissions, history),
-			tools.NewTodoWriteTool(),
-			tools.NewAskUserQuestionTool(userInput),
-		}, otherTools...,
-	)
+	base := []tools.BaseTool{
+		tools.NewBashTool(permissions),
+		tools.NewEditTool(lspClients, permissions, history),
+		tools.NewGlobTool(),
+		tools.NewGrepTool(),
+		tools.NewLsTool(),
+		tools.NewViewTool(lspClients),
+		tools.NewCacheReadTool(),
+		tools.NewCacheStatsTool(),
+		tools.NewPatchTool(lspClients, permissions, history),
+		tools.NewWriteTool(lspClients, permissions, history),
+		tools.NewTodoWriteTool(),
+	}
+	base = append(base, maybeAskUserQuestionTool(userInput)...)
+	base = append(base, otherTools...)
 	result := appendLuaTools(base)
 	return ApplyToolDiscovery(result)
 }
@@ -185,10 +204,10 @@ func CoderAgentToolsWithMesnada(
 				tools.NewPatchTool(lspClients, permissions, history),
 				tools.NewWriteTool(lspClients, permissions, history),
 				tools.NewTodoWriteTool(),
-				tools.NewAskUserQuestionTool(userInput),
 			},
-			gatewayTools...,
+			maybeAskUserQuestionTool(userInput)...,
 		)
+		baseTools = append(baseTools, gatewayTools...)
 		if len(lspClients) > 0 {
 			baseTools = append(baseTools, tools.NewDiagnosticsTool(lspClients))
 		}

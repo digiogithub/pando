@@ -19,6 +19,7 @@ import (
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/toolmeta"
+	"github.com/digiogithub/pando/internal/userinput"
 )
 
 type ChatRequest struct {
@@ -275,9 +276,17 @@ func (s *Server) streamSessionEvents(
 	// until the client responds via POST /api/v1/permissions/respond.
 	permCh := s.app.Permissions.Subscribe(clientCtx)
 
+	// Subscribe to AskUserQuestion requests so the UI can prompt the user. The
+	// agent goroutine blocks inside UserInput.Ask until the client responds via
+	// POST /api/v1/questions/respond.
+	questionCh := s.app.UserInput.Subscribe(clientCtx)
+
 	// Replay any requests already pending for this session (covers reconnects).
 	for _, p := range s.app.Permissions.PendingRequests(sessionID) {
 		writePermissionRequest(w, flusher, p)
+	}
+	for _, q := range s.app.UserInput.PendingRequests(sessionID) {
+		writeQuestionRequest(w, flusher, q)
 	}
 
 	cleanup := func() {
@@ -301,6 +310,14 @@ func (s *Server) streamSessionEvents(
 			}
 			if ev.Payload.SessionID == sessionID {
 				writePermissionRequest(w, flusher, ev.Payload)
+			}
+		case ev, open := <-questionCh:
+			if !open {
+				questionCh = nil
+				continue
+			}
+			if ev.Payload.SessionID == sessionID {
+				writeQuestionRequest(w, flusher, ev.Payload)
 			}
 		case event, open := <-eventChan:
 			if !open {
@@ -326,6 +343,16 @@ func writePermissionRequest(w http.ResponseWriter, flusher http.Flusher, p permi
 		"action":      p.Action,
 		"path":        p.Path,
 		"params":      p.Params,
+	})
+}
+
+// writeQuestionRequest emits an AskUserQuestion question_request SSE event for
+// the Web UI.
+func writeQuestionRequest(w http.ResponseWriter, flusher http.Flusher, q userinput.QuestionRequest) {
+	writeSSEEvent(w, flusher, "question_request", map[string]interface{}{
+		"id":         q.ID,
+		"session_id": q.SessionID,
+		"questions":  q.Questions,
 	})
 }
 

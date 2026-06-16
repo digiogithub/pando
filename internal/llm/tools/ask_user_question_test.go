@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/digiogithub/pando/internal/mesnada/acp"
 	"github.com/digiogithub/pando/internal/userinput"
 )
 
@@ -27,6 +28,23 @@ func TestAskUserQuestion_ACPMode_ReturnsText(t *testing.T) {
 	}
 	if !strings.Contains(resp.Content, "A — first") {
 		t.Fatalf("expected formatted option in ACP response, got: %s", resp.Content)
+	}
+}
+
+func TestAskUserQuestion_ACPModeKey_ReturnsText(t *testing.T) {
+	tool := NewAskUserQuestionTool(userinput.NewService())
+
+	// The ACP prompt flow sets acp.ACPModeContextKey rather than a client conn.
+	ctx := context.WithValue(context.Background(), acp.ACPModeContextKey{}, true)
+	resp, err := tool.Run(ctx, ToolCall{Input: askCallInput})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.IsError {
+		t.Fatalf("unexpected error response: %s", resp.Content)
+	}
+	if !strings.Contains(resp.Content, "Which approach?") {
+		t.Fatalf("expected question text in ACP response, got: %s", resp.Content)
 	}
 }
 

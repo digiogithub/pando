@@ -20,6 +20,13 @@ const (
 
 type cleanModeContextKey struct{}
 
+// ACPModeContextKey marks a context as running under an ACP client session.
+// Tools that import this package can read it to fall back to text-only behavior
+// when a blocking interactive UI is unavailable (e.g. AskUserQuestion). The
+// `tools` package already depends on `acp`, so this key is safe to read there
+// without creating an import cycle.
+type ACPModeContextKey struct{}
+
 type groupedThinkingState struct {
 	pending   strings.Builder
 	lastFlush time.Time
@@ -198,6 +205,10 @@ func (a *PandoACPAgent) processPromptWithAgent(
 	promptText string,
 	attachments ...message.Attachment,
 ) (acpsdk.StopReason, error) {
+	// Mark the context as ACP so tools without a usable blocking UI (e.g.
+	// AskUserQuestion) switch to their text-mode behavior. This value flows
+	// through agent.Run -> genCtx into each tool's Run call.
+	ctx = context.WithValue(ctx, ACPModeContextKey{}, true)
 	if acpSession.CleanMode() {
 		ctx = context.WithValue(ctx, cleanModeContextKey{}, true)
 	}

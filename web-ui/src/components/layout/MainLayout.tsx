@@ -13,6 +13,7 @@ import ModelSwitcher from '@/components/overlays/ModelSwitcher'
 import ConfigInitBanner from '@/components/overlays/ConfigInitBanner'
 import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
 import PermissionDialog from '@/components/chat/PermissionDialog'
+import QuestionDialog from '@/components/chat/QuestionDialog'
 
 export default function MainLayout() {
   const { sidebarOpen, quickMenuOpen, modelSwitcherOpen, setSidebarOpen } = useLayoutStore()
@@ -135,6 +136,7 @@ export default function MainLayout() {
       {quickMenuOpen && <QuickMenu />}
       {modelSwitcherOpen && <ModelSwitcher />}
       <PermissionDialog />
+      <QuestionDialog />
 
       <style>{`
         @media (max-width: 768px) {

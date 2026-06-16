@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/mesnada/acp"
 	"github.com/digiogithub/pando/internal/userinput"
 )
 
@@ -155,8 +156,10 @@ func (t *askUserQuestionTool) Run(ctx context.Context, call ToolCall) (ToolRespo
 	}
 
 	// ACP mode: no blocking selection UI available. Format the questions as text
-	// and end the turn; the user replies in writing.
-	if acpConn := ctx.Value(ACPClientConnContextKey); acpConn != nil {
+	// and end the turn; the user replies in writing. The ACP prompt flow sets
+	// acp.ACPModeContextKey; ACPClientConnContextKey is also honored for parity
+	// with the file/terminal tools that run over a client connection.
+	if ctx.Value(acp.ACPModeContextKey{}) != nil || ctx.Value(ACPClientConnContextKey) != nil {
 		return NewTextResponse(formatQuestionsAsText(questions)), nil
 	}
 

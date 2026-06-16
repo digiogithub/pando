@@ -432,6 +432,10 @@ type InternalToolsConfig struct {
 	BrowserTimeout     int    `json:"browserTimeout,omitempty" toml:"BrowserTimeout"`
 	BrowserUserDataDir string `json:"browserUserDataDir,omitempty" toml:"BrowserUserDataDir"`
 	BrowserMaxSessions int    `json:"browserMaxSessions,omitempty" toml:"BrowserMaxSessions"`
+
+	// AskUserQuestion lets the agent ask the user selectable questions mid-task.
+	// It is enabled by default; set this to true to remove the tool entirely.
+	AskUserQuestionDisabled bool `json:"askUserQuestionDisabled,omitempty" toml:"AskUserQuestionDisabled"`
 }
 
 // LuaConfig defines configuration for the Lua scripting engine.

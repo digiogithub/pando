@@ -136,7 +136,7 @@ export interface SSEEvent {
   type: 'session' | 'content' | 'content_delta' | 'thinking_delta'
       | 'tool_call' | 'tool_call_update' | 'tool_result'
       | 'plan_update' | 'todos_update' | 'goal_status'
-      | 'token_usage' | 'permission_request'
+      | 'token_usage' | 'permission_request' | 'question_request'
       | 'steering_queued' | 'steering_injected'
       | 'error' | 'done'
   session_id?: string
@@ -150,6 +150,7 @@ export interface SSEEvent {
   goal?: GoalStatus
   token_usage?: SSETokenUsage
   permission_request?: PermissionRequest
+  question_request?: QuestionRequest
 }
 
 // PermissionRequest is a pending tool permission prompt surfaced by the agent
@@ -165,6 +166,34 @@ export interface PermissionRequest {
 }
 
 export type PermissionAction = 'allow' | 'allow_session' | 'deny'
+
+// QuestionRequest is a set of selectable questions the agent asks the user via
+// the AskUserQuestion tool. The agent blocks until the user responds.
+export interface QuestionRequest {
+  id: string
+  session_id: string
+  questions: QuestionItem[]
+}
+
+export interface QuestionItem {
+  id: string
+  header: string
+  question: string
+  multi_select: boolean
+  options: QuestionOption[]
+}
+
+export interface QuestionOption {
+  label: string
+  description: string
+}
+
+// QuestionAnswer is the user's answer to a single question.
+export interface QuestionAnswer {
+  questionId: string
+  selected: string[]
+  otherText: string
+}
 
 // SSETokenUsage carries a live context-window token update. When estimated is true
 // the value is provisional (estimated while tools run) and rendered with a "~".

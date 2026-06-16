@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Session, Message, PermissionRequest, PermissionAction } from '@/types'
+import type { Session, Message, PermissionRequest, PermissionAction, QuestionRequest, QuestionAnswer } from '@/types'
 import api from '@/services/api'
 import { mapSession, mapMessages } from '@/services/mappers'
 
@@ -12,6 +12,8 @@ interface SessionStore {
   isStreaming: boolean
   /** pending tool permission prompts awaiting a user decision */
   pendingPermissions: PermissionRequest[]
+  /** pending AskUserQuestion prompts awaiting a user answer */
+  pendingQuestions: QuestionRequest[]
   /** whether the active session auto-approves tool permissions ("auto mode") */
   autoApprove: boolean
   fetchSessions: () => Promise<void>
@@ -32,6 +34,10 @@ interface SessionStore {
   // Permission / auto-mode handling
   addPermissionRequest: (req: PermissionRequest) => void
   respondPermission: (id: string, sessionId: string, action: PermissionAction) => Promise<void>
+  // AskUserQuestion handling
+  addQuestionRequest: (req: QuestionRequest) => void
+  respondQuestion: (id: string, sessionId: string, answers: QuestionAnswer[]) => Promise<void>
+  cancelQuestion: (id: string, sessionId: string) => Promise<void>
   fetchAutoApprove: (sessionId: string) => Promise<void>
   setAutoApprove: (sessionId: string, enabled: boolean) => Promise<void>
   toggleAutoApprove: (sessionId: string) => Promise<void>
@@ -49,6 +55,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   loading: false,
   isStreaming: false,
   pendingPermissions: [],
+  pendingQuestions: [],
   autoApprove: false,
 
   fetchSessions: async () => {
@@ -63,7 +70,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   },
 
   setActiveSession: async (id: string) => {
-    set({ activeSessionId: id, messages: [], pendingPermissions: [] })
+    set({ activeSessionId: id, messages: [], pendingPermissions: [], pendingQuestions: [] })
     // Load the session's auto-approve state (best effort).
     void (async () => {
       try {
@@ -153,6 +160,32 @@ export const useSessionStore = create<SessionStore>((set) => ({
     set((s) => ({ pendingPermissions: s.pendingPermissions.filter((p) => p.id !== id) }))
     try {
       await api.post('/api/v1/permissions/respond', { id, sessionId, action })
+    } catch {
+      // Network failure already surfaced by the api layer.
+    }
+  },
+
+  addQuestionRequest: (req) =>
+    set((s) =>
+      s.pendingQuestions.some((q) => q.id === req.id)
+        ? s
+        : { pendingQuestions: [...s.pendingQuestions, req] }
+    ),
+
+  respondQuestion: async (id, sessionId, answers) => {
+    // Optimistically remove the prompt; the agent unblocks server-side.
+    set((s) => ({ pendingQuestions: s.pendingQuestions.filter((q) => q.id !== id) }))
+    try {
+      await api.post('/api/v1/questions/respond', { id, sessionId, answers })
+    } catch {
+      // Network failure already surfaced by the api layer.
+    }
+  },
+
+  cancelQuestion: async (id, sessionId) => {
+    set((s) => ({ pendingQuestions: s.pendingQuestions.filter((q) => q.id !== id) }))
+    try {
+      await api.post('/api/v1/questions/respond', { id, sessionId, cancelled: true })
     } catch {
       // Network failure already surfaced by the api layer.
     }

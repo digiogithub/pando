@@ -248,6 +248,28 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
       }
       break
 
+    case 'question_request':
+      if (typeof raw.id === 'string' && Array.isArray(raw.questions)) {
+        base.session_id = typeof raw.session_id === 'string' ? raw.session_id : base.session_id
+        base.question_request = {
+          id: raw.id,
+          session_id: typeof raw.session_id === 'string' ? raw.session_id : '',
+          questions: (raw.questions as Record<string, unknown>[]).map((q) => ({
+            id: typeof q.id === 'string' ? q.id : '',
+            header: typeof q.header === 'string' ? q.header : '',
+            question: typeof q.question === 'string' ? q.question : '',
+            multi_select: Boolean(q.multi_select),
+            options: Array.isArray(q.options)
+              ? (q.options as Record<string, unknown>[]).map((o) => ({
+                  label: typeof o.label === 'string' ? o.label : '',
+                  description: typeof o.description === 'string' ? o.description : '',
+                }))
+              : [],
+          })),
+        }
+      }
+      break
+
     case 'steering_queued':
     case 'steering_injected':
       base.session_id = typeof raw.session_id === 'string' ? raw.session_id : base.session_id

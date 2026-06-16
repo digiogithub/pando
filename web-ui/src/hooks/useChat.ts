@@ -120,6 +120,10 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
         useSessionStore.getState().addPermissionRequest(event.permission_request)
       }
 
+      if (event.type === 'question_request' && event.question_request) {
+        useSessionStore.getState().addQuestionRequest(event.question_request)
+      }
+
       if (event.type === 'content_delta' && event.content) {
         accumulatedRef.current += event.content
         const last = itemsRef.current[itemsRef.current.length - 1]
