@@ -792,6 +792,22 @@ func (p *ChatPageModel) sendMessage(text string, attachments []message.Attachmen
 		return cmd
 	}
 
+	// If a run is already active for this session, route the message as steering
+	// feedback: it is queued and injected into the agent loop at the next safe
+	// boundary instead of starting a new run or being rejected.
+	if p.session.ID != "" && p.app.CoderAgent.IsSessionBusy(p.session.ID) {
+		if err := p.app.CoderAgent.Steer(p.session.ID, text, attachments...); err != nil {
+			if errors.Is(err, agentpkg.ErrSessionNotBusy) {
+				// Race: the run finished between the busy check and Steer. Fall
+				// through to a normal Run below.
+			} else {
+				return util.ReportError(err)
+			}
+		} else {
+			return util.ReportInfo("💬 Feedback queued — it will be injected at the next step.")
+		}
+	}
+
 	cmds, err := p.ensureSession()
 	if err != nil {
 		return util.ReportError(err)

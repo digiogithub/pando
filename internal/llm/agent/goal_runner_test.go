@@ -68,6 +68,12 @@ func (s *stubGoalService) Cancel(sessionID string) {}
 
 func (s *stubGoalService) LastRunSystemMessages(sessionID string) []string { return nil }
 
+func (s *stubGoalService) Steer(sessionID string, content string, attachments ...message.Attachment) error {
+	return ErrSessionNotBusy
+}
+
+func (s *stubGoalService) PendingSteering(sessionID string) int { return 0 }
+
 func (s *stubGoalService) IsSessionBusy(sessionID string) bool { return false }
 
 func (s *stubGoalService) IsBusy() bool { return false }

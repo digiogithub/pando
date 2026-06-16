@@ -613,6 +613,13 @@ func (m *messagesCmp) working() string {
 				task = "Generating..."
 			}
 		}
+		// Surface any queued steering feedback so the user knows their mid-run input
+		// was accepted and will be injected at the next safe boundary.
+		if m.app.CoderAgent != nil && m.session.ID != "" {
+			if pending := m.app.CoderAgent.PendingSteering(m.session.ID); pending > 0 {
+				task = fmt.Sprintf("%s (%d feedback queued)", task, pending)
+			}
+		}
 		if task != "" {
 			text += baseStyle.
 				Width(m.width).
@@ -641,8 +648,10 @@ func (m *messagesCmp) help() string {
 		text += lipgloss.JoinHorizontal(
 			lipgloss.Left,
 			baseStyle.Foreground(t.TextMuted()).Bold(true).Render("press "),
+			baseStyle.Foreground(t.Text()).Bold(true).Render("enter"),
+			baseStyle.Foreground(t.TextMuted()).Bold(true).Render(" to queue feedback, "),
 			baseStyle.Foreground(t.Text()).Bold(true).Render("esc"),
-			baseStyle.Foreground(t.TextMuted()).Bold(true).Render(" to exit cancel"),
+			baseStyle.Foreground(t.TextMuted()).Bold(true).Render(" to cancel"),
 		)
 	} else {
 		text += lipgloss.JoinHorizontal(

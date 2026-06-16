@@ -175,10 +175,10 @@ func (m *editorCmp) heightChangeCmd() tea.Cmd {
 }
 
 func (m *editorCmp) send() tea.Cmd {
-	if m.app.CoderAgent.IsSessionBusy(m.session.ID) {
-		return util.ReportWarn("Agent is working, please wait...")
-	}
-
+	// Note: we intentionally do NOT reject sending while the agent is busy. When a
+	// run is active the message is routed as steering feedback (see
+	// ChatPageModel.sendMessage) and injected into the loop at the next safe
+	// boundary instead of starting a new run.
 	value := m.textarea.Value()
 	m.textarea.Reset()
 	attachments := m.attachments

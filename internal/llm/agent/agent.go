@@ -58,6 +58,9 @@ func (cleanModeCatalogTool) Run(ctx context.Context, params tools.ToolCall) (too
 var (
 	ErrRequestCancelled = errors.New("request cancelled by user")
 	ErrSessionBusy      = errors.New("session is currently processing another request")
+	// ErrSessionNotBusy is returned by Steer when the session has no active run to
+	// steer. Callers should fall back to a normal Run in that case.
+	ErrSessionNotBusy = errors.New("session is not currently processing a request")
 )
 
 // ContextEnricher is the interface used by the agent to enrich the user's prompt with
@@ -151,6 +154,14 @@ const (
 	// When TokenUsage.Estimated is true the value is a heuristic estimate that the
 	// next confirmed usage (EventComplete) will reconcile.
 	AgentEventTypeTokenUsage AgentEventType = "token_usage"
+	// AgentEventTypeSteeringQueued is emitted when the user submits a steering
+	// message (mid-run feedback) that is queued for injection at the next safe
+	// boundary of the agent loop. SystemMessage carries a human-readable note.
+	AgentEventTypeSteeringQueued AgentEventType = "steering_queued"
+	// AgentEventTypeSteeringInjected is emitted when one or more queued steering
+	// messages have been injected into the conversation and the loop will continue
+	// taking them into account. SystemMessage carries a human-readable note.
+	AgentEventTypeSteeringInjected AgentEventType = "steering_injected"
 )
 
 // TokenUsageInfo carries a live token-usage snapshot for AgentEventTypeTokenUsage.
@@ -217,6 +228,13 @@ type Service interface {
 	Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error)
 	LastRunSystemMessages(sessionID string) []string
 	Cancel(sessionID string)
+	// Steer queues a mid-run feedback message for the given session. It is injected
+	// into the conversation at the next safe boundary of the agent loop (after the
+	// current iteration's tool results, or at the end of the current turn) without
+	// cancelling the run. Returns ErrSessionNotBusy if there is no active run.
+	Steer(sessionID string, content string, attachments ...message.Attachment) error
+	// PendingSteering reports how many steering messages are queued for the session.
+	PendingSteering(sessionID string) int
 	IsSessionBusy(sessionID string) bool
 	IsBusy() bool
 	Update(agentName config.AgentName, modelID models.ModelID) (models.Model, error)
@@ -251,6 +269,18 @@ type agent struct {
 	toolCallThrottle  sync.Map
 	runStatusMu       sync.Mutex
 	runStatusMessages map[string][]string
+
+	// steeringMu guards steeringQueue. steeringQueue holds mid-run feedback
+	// messages, keyed by sessionID, that are injected into the conversation at the
+	// next safe boundary of the agent loop (see drainSteeringInto).
+	steeringMu    sync.Mutex
+	steeringQueue map[string][]steeringMessage
+}
+
+// steeringMessage is a queued mid-run feedback message awaiting injection.
+type steeringMessage struct {
+	content     string
+	attachments []message.Attachment
 }
 
 func NewAgent(
@@ -310,6 +340,7 @@ func NewAgent(
 		contextManager:            contextManager,
 		activeRequests:            sync.Map{},
 		runStatusMessages:         make(map[string][]string),
+		steeringQueue:             make(map[string][]steeringMessage),
 	}
 
 	logging.Debug("Agent created", "name", string(agentName), "model", modelID, "toolCount", len(agentTools))
@@ -333,6 +364,9 @@ func (a *agent) SetLuaManager(fm *luaengine.FilterManager) {
 }
 
 func (a *agent) Cancel(sessionID string) {
+	// Drop any queued steering messages for this session; the run is being aborted.
+	a.clearSteering(sessionID)
+
 	// Cancel regular requests
 	if cancelFunc, exists := a.activeRequests.LoadAndDelete(sessionID); exists {
 		if cancel, ok := cancelFunc.(context.CancelFunc); ok {
@@ -348,6 +382,109 @@ func (a *agent) Cancel(sessionID string) {
 			cancel()
 		}
 	}
+}
+
+// Steer queues a mid-run feedback message for injection at the next safe boundary
+// of the agent loop. It only succeeds while a run is active for the session;
+// otherwise it returns ErrSessionNotBusy so the caller can fall back to Run.
+func (a *agent) Steer(sessionID string, content string, attachments ...message.Attachment) error {
+	if strings.TrimSpace(content) == "" {
+		return fmt.Errorf("cannot steer with empty content")
+	}
+	if !a.IsSessionBusy(sessionID) {
+		return ErrSessionNotBusy
+	}
+
+	a.steeringMu.Lock()
+	a.steeringQueue[sessionID] = append(a.steeringQueue[sessionID], steeringMessage{
+		content:     content,
+		attachments: attachments,
+	})
+	queued := len(a.steeringQueue[sessionID])
+	a.steeringMu.Unlock()
+
+	logging.Debug("Steering message queued", "sessionID", sessionID, "queued", queued)
+	ev := AgentEvent{
+		Type:          AgentEventTypeSteeringQueued,
+		SessionID:     sessionID,
+		SystemMessage: "💬 Feedback queued — it will be injected at the next step.",
+	}
+	a.publishEvent(ev)
+	return nil
+}
+
+// PendingSteering reports how many steering messages are queued for the session.
+func (a *agent) PendingSteering(sessionID string) int {
+	a.steeringMu.Lock()
+	defer a.steeringMu.Unlock()
+	return len(a.steeringQueue[sessionID])
+}
+
+// dequeueSteering atomically removes and returns all queued steering messages for
+// the session.
+func (a *agent) dequeueSteering(sessionID string) []steeringMessage {
+	a.steeringMu.Lock()
+	defer a.steeringMu.Unlock()
+	msgs := a.steeringQueue[sessionID]
+	if len(msgs) == 0 {
+		return nil
+	}
+	delete(a.steeringQueue, sessionID)
+	return msgs
+}
+
+// clearSteering drops any queued steering messages for the session.
+func (a *agent) clearSteering(sessionID string) {
+	a.steeringMu.Lock()
+	defer a.steeringMu.Unlock()
+	delete(a.steeringQueue, sessionID)
+}
+
+// drainSteeringInto materializes any queued steering messages as persisted user
+// messages and appends them to msgHistory. It returns the (possibly extended)
+// history and whether any messages were injected. Injection happens only at safe
+// loop boundaries (never between a tool_call and its tool_result).
+func (a *agent) drainSteeringInto(ctx context.Context, sessionID string, msgHistory []message.Message, eventCh chan<- AgentEvent) ([]message.Message, bool) {
+	queued := a.dequeueSteering(sessionID)
+	if len(queued) == 0 {
+		return msgHistory, false
+	}
+
+	injected := 0
+	for _, sm := range queued {
+		var attachmentParts []message.ContentPart
+		for _, attachment := range sm.attachments {
+			attachmentParts = append(attachmentParts, message.BinaryContent{
+				Path:     attachment.FilePath,
+				MIMEType: attachment.MimeType,
+				Data:     attachment.Content,
+			})
+		}
+		userMsg, err := a.createUserMessage(ctx, sessionID, sm.content, attachmentParts)
+		if err != nil {
+			logging.ErrorPersist(fmt.Sprintf("failed to inject steering message: %v", err))
+			continue
+		}
+		msgHistory = append(msgHistory, userMsg)
+		injected++
+	}
+	if injected == 0 {
+		return msgHistory, false
+	}
+
+	logging.Debug("Steering messages injected", "sessionID", sessionID, "count", injected)
+	a.addRunStatusMessage(sessionID, fmt.Sprintf("Injected %d steering message(s)", injected))
+	ev := AgentEvent{
+		Type:          AgentEventTypeSteeringInjected,
+		SessionID:     sessionID,
+		SystemMessage: "💬 Feedback injected — continuing with your input.",
+	}
+	a.publishEvent(ev)
+	select {
+	case eventCh <- ev:
+	default:
+	}
+	return msgHistory, true
 }
 
 func (a *agent) IsBusy() bool {
@@ -493,6 +630,9 @@ func (a *agent) Run(ctx context.Context, sessionID string, content string, attac
 		}
 		logging.Debug("Request completed", "sessionID", sessionID)
 		a.activeRequests.Delete(sessionID)
+		// Drop any steering messages that were not consumed by the loop so they do
+		// not leak into a subsequent run for the same session.
+		a.clearSteering(sessionID)
 		cancel()
 		a.publishEvent(result)
 		events <- result
@@ -719,6 +859,11 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			// We are not done, we need to respond with the tool response
 			msgHistory = append(msgHistory, agentMessage, *toolResults)
 
+			// Safe boundary: inject any queued steering feedback now that the
+			// tool results for this iteration are persisted and the history is in a
+			// valid tool_call/tool_result shape.
+			msgHistory, _ = a.drainSteeringInto(ctx, sessionID, msgHistory, eventCh)
+
 			// Check if we should auto-compact context before continuing the loop
 			if sess, sessErr := a.sessions.Get(ctx, sessionID); sessErr == nil && a.shouldCompact(sess) {
 				compactMsg := "\n\n⚡ Auto-compacting context to free space...\n"
@@ -740,6 +885,20 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 
 			continue
 		}
+
+		// End of turn: before finishing, check for queued steering feedback. If the
+		// user provided input while the model was responding, inject it as a new
+		// user turn and continue the loop instead of returning, so the run keeps
+		// going without the user having to resend.
+		if newHistory, injected := a.drainSteeringInto(ctx, sessionID, append(msgHistory, agentMessage), eventCh); injected {
+			fitted, fitErr := a.ensureHistoryFitsBeforeSend(ctx, sessionID, newHistory, requestProvider, eventCh)
+			if fitErr != nil {
+				return a.err(fitErr)
+			}
+			msgHistory = fitted
+			continue
+		}
+
 		return AgentEvent{
 			Type:      AgentEventTypeResponse,
 			Message:   agentMessage,
