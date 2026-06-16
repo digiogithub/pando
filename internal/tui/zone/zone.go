@@ -33,6 +33,7 @@ const (
 	TerminalPanel          = "terminal-panel"
 	TerminalTabPrefix      = "terminal-tab-"
 	MainTabPrefix          = "main-tab-"
+	SidebarRepo            = "sidebar-repo"
 )
 
 var Manager = bubblezone.New()
@@ -155,6 +156,10 @@ func MainTabID(idx int) string {
 
 func MarkMainTab(idx int, content string) string {
 	return Manager.Mark(MainTabID(idx), content)
+}
+
+func MarkSidebarRepo(content string) string {
+	return Manager.Mark(SidebarRepo, content)
 }
 
 func InBounds(id string, msg tea.MouseMsg) bool {

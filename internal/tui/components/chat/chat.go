@@ -13,8 +13,12 @@ import (
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
-	"github.com/digiogithub/pando/internal/version"
+	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 )
+
+// RepoURL is the Pando repository URL shown (and clickable) in the chat
+// sidebar header.
+const RepoURL = "https://github.com/digiogithub/pando"
 
 type SendMsg struct {
 	Text        string
@@ -116,7 +120,6 @@ func extractGoalObjective(text string) (string, bool) {
 func header(width int) string {
 	return lipgloss.JoinVertical(
 		lipgloss.Top,
-		logo(width),
 		repo(width),
 		"",
 		cwd(width),
@@ -185,36 +188,17 @@ func lspsConfigured(width int) string {
 		)
 }
 
-func logo(width int) string {
-	logo := fmt.Sprintf("%s %s", styles.PandoIcon, "Pando")
-	t := theme.CurrentTheme()
-	baseStyle := styles.BaseStyle()
-
-	versionText := baseStyle.
-		Foreground(t.TextMuted()).
-		Render(version.Normalize())
-
-	return baseStyle.
-		Bold(true).
-		Width(width).
-		Render(
-			lipgloss.JoinHorizontal(
-				lipgloss.Left,
-				logo,
-				" ",
-				versionText,
-			),
-		)
-}
-
 func repo(width int) string {
-	repo := "https://github.com/digiogithub/pando"
 	t := theme.CurrentTheme()
+
+	link := styles.BaseStyle().
+		Foreground(t.TextMuted()).
+		Underline(true).
+		Render(RepoURL)
 
 	return styles.BaseStyle().
-		Foreground(t.TextMuted()).
 		Width(width).
-		Render(repo)
+		Render(tuizone.MarkSidebarRepo(link))
 }
 
 func cwd(width int) string {

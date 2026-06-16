@@ -2274,6 +2274,14 @@ func (a *appModel) handleMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
 		}
 	}
 
+	// Left-click on the sidebar repository URL → open it in the browser.
+	if tuizone.InBounds(tuizone.SidebarRepo, msg) {
+		if err := auth.OpenBrowser(chat.RepoURL); err != nil {
+			logging.Debug("tui: failed to open repo URL", "err", err)
+		}
+		return nil, true
+	}
+
 	if a.currentPage == page.ChatPage && tuizone.InBounds(tuizone.StatusSession, msg) {
 		return a.openSessionDialog(), true
 	}

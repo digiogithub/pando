@@ -1,14 +1,19 @@
 package page
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 	tuistyles "github.com/digiogithub/pando/internal/tui/styles"
 	tuitheme "github.com/digiogithub/pando/internal/tui/theme"
 	tuizone "github.com/digiogithub/pando/internal/tui/zone"
+	"github.com/digiogithub/pando/internal/version"
 )
 
 // mainTabBarHeight is the fixed height, in rows, of the workspace tab header
-// rendered at the top of the chat page.
+// rendered at the top of the chat page. The Pando logo and the clickable
+// workspace tabs share this single row.
 const mainTabBarHeight = 1
 
 // mainTab describes a single clickable top-level workspace tab.
@@ -93,16 +98,44 @@ func (b *mainTabBar) View(mode ChatLayoutMode) string {
 		Padding(0, 2)
 
 	activeIdx := mainTabIndexFor(mode)
-	parts := make([]string, len(mainTabs))
+	parts := make([]string, 0, len(mainTabs)+1)
+	parts = append(parts, b.logoSegment(th, base))
 	for i, t := range mainTabs {
 		content := t.icon + " " + t.label
 		style := inactive
 		if i == activeIdx {
 			style = active
 		}
-		parts[i] = tuizone.MarkMainTab(i, style.Render(content))
+		parts = append(parts, tuizone.MarkMainTab(i, style.Render(content)))
 	}
 
-	joined := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-	return container.Render(joined)
+	left := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+
+	// Right-align the version, dropping it when the header is too narrow to fit
+	// both the logo+tabs and the version on a single row.
+	versionText := base.
+		Background(th.BackgroundDarker()).
+		Foreground(th.TextMuted()).
+		Padding(0, 2).
+		Render(version.Normalize())
+
+	if gap := b.width - lipgloss.Width(left) - lipgloss.Width(versionText); gap >= 0 {
+		filler := base.
+			Background(th.BackgroundDarker()).
+			Render(strings.Repeat(" ", gap))
+		left = lipgloss.JoinHorizontal(lipgloss.Top, left, filler, versionText)
+	}
+
+	return container.Render(left)
+}
+
+// logoSegment renders the Pando icon and name as the left-most part of the
+// header row, sitting inline before the clickable workspace tabs.
+func (b *mainTabBar) logoSegment(th tuitheme.Theme, base lipgloss.Style) string {
+	return base.
+		Background(th.BackgroundDarker()).
+		Foreground(th.Text()).
+		Bold(true).
+		Padding(0, 2).
+		Render(fmt.Sprintf("%s %s", tuistyles.PandoIcon, "Pando"))
 }
