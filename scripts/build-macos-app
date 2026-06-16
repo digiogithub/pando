@@ -125,10 +125,26 @@ KEYCHAIN_PASSWORD="${KEYSTORE_PASS:-}"
 echo "Using signing identity: $SIGNING_IDENTITY"
 if [[ -z "$KEYCHAIN_PASSWORD" ]]; then
     echo "KEYSTORE_PASS not set — using the current keychain session as-is."
+    echo "  Note: in headless/SSH sessions productsign may fail with"
+    echo "  'errSecInteractionNotAllowed' unless the signing keys' partition list"
+    echo "  already allows non-interactive access. Set KEYSTORE_PASS to fix it."
 else
     echo "Unlocking login keychain..."
     security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_DB"
     KEYCHAIN_UNLOCKED=true
+
+    # Allow Apple signing tools (codesign, productsign, …) to use the private
+    # keys without a GUI confirmation prompt. Without this, productsign fails in
+    # headless/SSH sessions with errSecInteractionNotAllowed (-25308) even though
+    # the keychain is unlocked, because the key's ACL still demands interaction.
+    echo "Authorizing signing tools on keychain keys (set-key-partition-list)..."
+    if ! security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_DB" >/dev/null 2>&1; then
+        echo "Warning: set-key-partition-list failed — productsign may still" >&2
+        echo "  prompt for interaction and fail in this session." >&2
+    fi
 fi
 
 relock_keychain() {
