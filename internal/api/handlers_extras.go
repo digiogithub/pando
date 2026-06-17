@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
@@ -77,91 +78,84 @@ type InstalledSkillResponse struct {
 }
 
 // handleListInstalledSkills handles GET /api/v1/skills/installed.
-// Scans ~/.pando/skills/ and .pando/skills/ for installed SKILL.md files,
+// Discovers SKILL.md files across every configured search path (the built-in
+// .pando/.claude directories plus any extra paths from [Skills] config),
 // enriches with catalog-lock.json data, and reports whether each is active.
 func (s *Server) handleListInstalledSkills(w http.ResponseWriter, r *http.Request) {
-	type dirEntry struct {
-		dir      string
-		isGlobal bool
+	workDir := config.WorkingDirectory()
+
+	var extraPaths []string
+	if cfg := config.Get(); cfg != nil {
+		extraPaths = cfg.Skills.Paths
 	}
 
-	dirs := []dirEntry{
-		{catalog.ResolveSkillsDir(false), true}, // global: ~/.pando/skills/
-		{catalog.ResolveSkillsDir(true), false}, // project-local: .pando/skills/
+	// Use the same discovery logic as the agent's skill loader so the UI lists
+	// exactly the skills that will actually be loaded, including custom paths.
+	paths := skills.ConfiguredDiscoveryPaths(workDir, extraPaths)
+	discovered, err := skills.DiscoverSkills(paths)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to discover skills: "+err.Error())
+		return
 	}
 
-	// Read lock files for both directories.
-	locks := map[string]*catalog.CatalogLock{}
-	for _, d := range dirs {
-		if lock, err := catalog.ReadLock(d.dir); err == nil {
-			locks[d.dir] = lock
+	// Catalog lock files only live in the .pando skills dirs (global + project).
+	locks := []*catalog.CatalogLock{}
+	for _, dir := range []string{catalog.ResolveSkillsDir(false), catalog.ResolveSkillsDir(true)} {
+		if lock, err := catalog.ReadLock(dir); err == nil {
+			locks = append(locks, lock)
 		}
 	}
 
-	seen := map[string]bool{}
-	var result []InstalledSkillResponse
+	home, _ := os.UserHomeDir()
 
-	for _, d := range dirs {
-		entries, err := os.ReadDir(d.dir)
-		if err != nil {
-			continue // directory doesn't exist yet
+	result := make([]InstalledSkillResponse, 0, len(discovered))
+	for _, sk := range discovered {
+		name := sk.Metadata.Name
+
+		item := InstalledSkillResponse{
+			Name:        name,
+			Description: sk.Metadata.Description,
+			Version:     sk.Metadata.Version,
+			Source:      "(local)",
+			Scope:       skillScope(sk.SourcePath, home, workDir),
 		}
 
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
+		// Enrich with catalog lock data if the skill was installed from a catalog.
+		for _, lock := range locks {
+			if entry, ok := lock.Skills[name]; ok {
+				item.Source = entry.Source
+				item.Scope = entry.Scope
+				item.SkillID = entry.SkillID
+				break
 			}
-			skillFile := filepath.Join(d.dir, entry.Name(), skills.SkillFileName)
-			if _, err := os.Stat(skillFile); err != nil {
-				continue // no SKILL.md in this dir
-			}
-
-			name := entry.Name()
-			if seen[name] {
-				continue // prefer global over project-local if both exist
-			}
-			seen[name] = true
-
-			item := InstalledSkillResponse{
-				Name:   name,
-				Source: "(local)",
-				Scope:  "global",
-			}
-			if !d.isGlobal {
-				item.Scope = "project"
-			}
-
-			// Enrich with lock data.
-			if lock, ok := locks[d.dir]; ok {
-				if entry, ok := lock.Skills[name]; ok {
-					item.Source = entry.Source
-					item.Scope = entry.Scope
-					item.SkillID = entry.SkillID
-				}
-			}
-
-			// Parse SKILL.md for description/version.
-			if parsed, err := skills.ParseSkillFile(skillFile); err == nil {
-				item.Description = parsed.Metadata.Description
-				item.Version = parsed.Metadata.Version
-				if item.Name == "" {
-					item.Name = parsed.Metadata.Name
-				}
-			}
-
-			// Check if active in running SkillManager.
-			if s.app.SkillManager != nil {
-				item.Active = s.app.SkillManager.IsLoaded(name)
-			}
-
-			result = append(result, item)
 		}
+
+		// Check if active in the running SkillManager.
+		if s.app.SkillManager != nil {
+			item.Active = s.app.SkillManager.IsLoaded(name)
+		}
+
+		result = append(result, item)
 	}
 
-	if result == nil {
-		result = []InstalledSkillResponse{}
-	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"skills": result})
+}
+
+// skillScope classifies a discovered skill by its source path: skills under the
+// user's home directory are "global", those under the working directory are
+// "project", and anything else (custom configured paths) is "(local)".
+func skillScope(sourcePath, home, workDir string) string {
+	if workDir != "" {
+		if rel, err := filepath.Rel(workDir, sourcePath); err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+			return "project"
+		}
+	}
+	if home != "" {
+		if rel, err := filepath.Rel(home, sourcePath); err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+			return "global"
+		}
+	}
+	return "(local)"
 }
 
 // handleSkillsCatalog handles GET /api/v1/skills/catalog?q=<query>.

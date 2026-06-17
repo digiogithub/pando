@@ -833,16 +833,7 @@ func expandMesnadaMCPConfig(value string) string {
 }
 
 func newSkillManager(cfg *config.Config) (*skills.SkillManager, error) {
-	discoveryPaths := append([]string{}, skills.DiscoveryPaths(config.WorkingDirectory())...)
-	for _, skillPath := range cfg.Skills.Paths {
-		if strings.TrimSpace(skillPath) == "" {
-			continue
-		}
-		if !filepath.IsAbs(skillPath) {
-			skillPath = filepath.Join(cfg.WorkingDir, skillPath)
-		}
-		discoveryPaths = append(discoveryPaths, filepath.Clean(skillPath))
-	}
+	discoveryPaths := skills.ConfiguredDiscoveryPaths(config.WorkingDirectory(), cfg.Skills.Paths)
 
 	discoveredSkills, err := skills.DiscoverSkills(discoveryPaths)
 	if err != nil {

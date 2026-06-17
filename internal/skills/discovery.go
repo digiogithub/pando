@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // DiscoveryPaths returns the ordered list of skill search paths (highest precedence first).
@@ -17,6 +18,25 @@ func DiscoveryPaths(workDir string) []string {
 		filepath.Join(home, ".claude", "skills"),
 		filepath.Join(workDir, ".claude", "skills"),
 	}
+}
+
+// ConfiguredDiscoveryPaths returns the full ordered list of skill search paths
+// (highest precedence first): the built-in discovery paths followed by any extra
+// paths from configuration. Relative extra paths are resolved against workDir.
+// This is the single source of truth shared by the agent's skill loader and the
+// API/UI skill listing so they never diverge.
+func ConfiguredDiscoveryPaths(workDir string, extraPaths []string) []string {
+	paths := append([]string{}, DiscoveryPaths(workDir)...)
+	for _, p := range extraPaths {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(workDir, p)
+		}
+		paths = append(paths, filepath.Clean(p))
+	}
+	return paths
 }
 
 // DiscoverSkills scans all paths for SKILL.md files and returns skills ordered by precedence.
