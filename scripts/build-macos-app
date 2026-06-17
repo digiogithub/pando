@@ -60,6 +60,11 @@ fi
 PKG_SIGN_IDENTITY="961FF87CC1EF61866640E471FB84B73E001281AF"
 SIGNING_IDENTITY="4749EC5719E91D7ADFE5FDB4CB546057A8CFB9AD"
 
+# notarytool keychain profile created with:
+#   xcrun notarytool store-credentials "pando-notary" --apple-id ... --team-id ... --password ...
+# Leave empty (or unset NOTARY_PROFILE) to skip notarization & stapling.
+NOTARY_PROFILE="${NOTARY_PROFILE:-pando-notary}"
+
 run_codesign() {
     local target="${@: -1}"
     local args=()
@@ -72,7 +77,9 @@ run_codesign() {
         echo "Removed existing signature from $target before re-signing."
     fi
 
-    codesign "${args[@]}" --sign "$SIGNING_IDENTITY" --force "$target"
+    # --timestamp is mandatory for notarization (the notary service rejects
+    # signatures without a secure timestamp).
+    codesign "${args[@]}" --timestamp --sign "$SIGNING_IDENTITY" --force "$target"
 }
 
 verify_macho_signature() {
@@ -112,6 +119,37 @@ verify_pkg_signature() {
 is_pkg_signed() {
     local target="$1"
     pkgutil --check-signature "$target" >/dev/null 2>&1
+}
+
+# Submit an artifact to Apple's notary service and staple the resulting ticket.
+# Without notarization, Gatekeeper rejects Developer ID packages with
+# "rejected (source=Unnotarized Developer ID)". Skipped when NOTARY_PROFILE is
+# empty or xcrun/notarytool are unavailable.
+notarize_and_staple() {
+    local target="$1"
+
+    if [[ -z "$NOTARY_PROFILE" ]]; then
+        echo "NOTARY_PROFILE not set — skipping notarization for $target." >&2
+        return 0
+    fi
+    if ! command -v xcrun >/dev/null 2>&1; then
+        echo "Warning: xcrun not found — skipping notarization for $target." >&2
+        return 0
+    fi
+
+    echo "Submitting to Apple notary service (profile: $NOTARY_PROFILE): $target"
+    if ! xcrun notarytool submit "$target" \
+            --keychain-profile "$NOTARY_PROFILE" \
+            --wait; then
+        echo "Error: notarization failed for $target." >&2
+        echo "  Inspect the log with:" >&2
+        echo "  xcrun notarytool log <submission-id> --keychain-profile \"$NOTARY_PROFILE\"" >&2
+        return 1
+    fi
+
+    echo "Stapling notarization ticket: $target"
+    xcrun stapler staple "$target"
+    xcrun stapler validate "$target"
 }
 
 # ── Keychain unlock ──────────────────────────────────────────────────────────
@@ -350,9 +388,13 @@ else
 fi
 
 if is_pkg_signed "$FINAL_PKG"; then
+    # Notarize & staple before the spctl assessment: an unnotarized Developer ID
+    # package fails 'spctl --assess --type install', which would abort the script
+    # under 'set -e'.
+    notarize_and_staple "$FINAL_PKG"
     verify_pkg_signature "$FINAL_PKG"
 else
-    echo "Skipping .pkg signature verification because the installer is unsigned."
+    echo "Skipping .pkg notarization & verification because the installer is unsigned."
 fi
 
 verify_macho_signature "$DIST_DIR/pando-osx"
