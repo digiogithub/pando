@@ -8,8 +8,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/digiogithub/pando/internal/config"
-	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/provider"
 )
 
@@ -89,41 +87,26 @@ func (s *LLMProxyServer) handleChatCompletions(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Find model in supported models
-	normalizedID := models.NormalizeModelID(req.Model)
-	model, ok := models.SupportedModels[normalizedID]
+	// Resolve the requested model to a concrete model + provider account. This
+	// accepts registry IDs, raw upstream model IDs and shorthand aliases, so any
+	// model returned by GET /v1/models can actually be used here.
+	resolved, ok := resolveModel(req.Model)
 	if !ok {
 		writeOpenAIError(w, http.StatusNotFound, openAIErrorDetail{
-			Message: fmt.Sprintf("model '%s' not found", req.Model),
+			Message: fmt.Sprintf("model '%s' not found or no provider configured for it", req.Model),
 			Type:    "invalid_request_error",
 			Code:    "model_not_found",
 		})
 		return
 	}
-
-	// Find provider account for this model
-	accounts := config.GetProviderAccounts()
-	var account *config.ProviderAccount
-	for i := range accounts {
-		if accounts[i].Disabled {
-			continue
-		}
-		if accounts[i].Type == model.Provider {
-			account = &accounts[i]
-			break
-		}
-	}
-	if account == nil {
-		writeOpenAIError(w, http.StatusServiceUnavailable, openAIErrorDetail{
-			Message: fmt.Sprintf("no provider configured for model '%s' (provider: %s)", req.Model, model.Provider),
-			Type:    "server_error",
-			Code:    "provider_not_configured",
-		})
-		return
-	}
+	model := resolved.model
+	account := resolved.account
 
 	// Determine max tokens
 	maxTokens := model.DefaultMaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 4096
+	}
 	if req.MaxTokens != nil {
 		maxTokens = *req.MaxTokens
 	}
@@ -131,8 +114,11 @@ func (s *LLMProxyServer) handleChatCompletions(w http.ResponseWriter, r *http.Re
 	// Extract system message
 	systemMsg := extractSystemMessage(req.Messages)
 
+	// Convert inbound tool definitions so the upstream model can call them.
+	reqTools := openAIToolsToBaseTools(req.Tools)
+
 	// Create provider
-	prov, err := provider.NewProviderFromAccount(*account, model, maxTokens, systemMsg)
+	prov, err := provider.NewProviderFromAccount(account, model, maxTokens, systemMsg)
 	if err != nil {
 		writeOpenAIError(w, http.StatusInternalServerError, openAIErrorDetail{
 			Message: fmt.Sprintf("failed to create provider: %s", err.Error()),
@@ -173,7 +159,7 @@ func (s *LLMProxyServer) handleChatCompletions(w http.ResponseWriter, r *http.Re
 			return nil
 		}
 
-		events := prov.StreamResponse(ctx, internalMsgs, nil)
+		events := prov.StreamResponse(ctx, internalMsgs, reqTools)
 		for event := range events {
 			switch event.Type {
 			case provider.EventContentDelta:
@@ -198,6 +184,30 @@ func (s *LLMProxyServer) handleChatCompletions(w http.ResponseWriter, r *http.Re
 				}
 			case provider.EventComplete:
 				stopReason := "stop"
+				if event.Response != nil {
+					stopReason = openAIFinishReason(event.Response.FinishReason, len(event.Response.ToolCalls) > 0)
+					// Emit any tool calls (with their full arguments) before finishing.
+					if len(event.Response.ToolCalls) > 0 {
+						toolChunk := openAIStreamChunk{
+							ID:      chatID,
+							Object:  "chat.completion.chunk",
+							Created: created,
+							Model:   string(model.ID),
+							Choices: []openAIChoice{
+								{
+									Index: 0,
+									Delta: &openAIChatMessage{
+										Role:      "assistant",
+										ToolCalls: toolCallsToOpenAI(event.Response.ToolCalls),
+									},
+								},
+							},
+						}
+						if err := writeSSEChunk(toolChunk); err != nil {
+							return
+						}
+					}
+				}
 				chunk := openAIStreamChunk{
 					ID:      chatID,
 					Object:  "chat.completion.chunk",
@@ -239,7 +249,7 @@ func (s *LLMProxyServer) handleChatCompletions(w http.ResponseWriter, r *http.Re
 		}
 	} else {
 		// Non-streaming response
-		resp, err := prov.SendMessages(ctx, internalMsgs, nil)
+		resp, err := prov.SendMessages(ctx, internalMsgs, reqTools)
 		if err != nil {
 			writeOpenAIError(w, http.StatusInternalServerError, openAIErrorDetail{
 				Message: fmt.Sprintf("provider error: %s", err.Error()),
@@ -248,7 +258,14 @@ func (s *LLMProxyServer) handleChatCompletions(w http.ResponseWriter, r *http.Re
 			return
 		}
 
-		stopReason := "stop"
+		stopReason := openAIFinishReason(resp.FinishReason, len(resp.ToolCalls) > 0)
+		respMsg := &openAIChatMessage{
+			Role:    "assistant",
+			Content: resp.Content,
+		}
+		if len(resp.ToolCalls) > 0 {
+			respMsg.ToolCalls = toolCallsToOpenAI(resp.ToolCalls)
+		}
 		oaiResp := openAIChatResponse{
 			ID:      chatID,
 			Object:  "chat.completion",
@@ -256,11 +273,8 @@ func (s *LLMProxyServer) handleChatCompletions(w http.ResponseWriter, r *http.Re
 			Model:   string(model.ID),
 			Choices: []openAIChoice{
 				{
-					Index: 0,
-					Message: &openAIChatMessage{
-						Role:    "assistant",
-						Content: resp.Content,
-					},
+					Index:        0,
+					Message:      respMsg,
 					FinishReason: &stopReason,
 				},
 			},

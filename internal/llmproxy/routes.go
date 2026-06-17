@@ -12,6 +12,7 @@ func (s *LLMProxyServer) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/models", s.handleListModels)
 	mux.HandleFunc("GET /v1/models/{id}", s.handleGetModel)
 	mux.HandleFunc("POST /v1/chat/completions", s.handleChatCompletions)
+	mux.HandleFunc("POST /v1/messages", s.handleAnthropicMessages)
 	mux.HandleFunc("POST /v1/embeddings", s.handleEmbeddings)
 }
 

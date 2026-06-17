@@ -3,10 +3,9 @@ package llmproxy
 import (
 	"context"
 	"net/http"
-	"sync"
+	"sort"
 	"time"
 
-	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 )
@@ -25,7 +24,11 @@ type openAIModelList struct {
 	Data   []openAIModel `json:"data"`
 }
 
-// handleListModels handles GET /v1/models, returning an OpenAI-compatible model list.
+// handleListModels handles GET /v1/models, returning an OpenAI-compatible model
+// list. Models are served from the shared registry (the same source normal mode
+// uses), so the IDs are provider/account-prefixed (e.g. "openai.gpt-4o",
+// "work.gpt-4o") and never collide between providers. Every listed ID is
+// directly usable by /v1/chat/completions and /v1/messages.
 func (s *LLMProxyServer) handleListModels(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -38,114 +41,52 @@ func (s *LLMProxyServer) handleListModels(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
+	accounts := activeAccounts()
 
-	accounts := config.GetProviderAccounts()
-
-	type accountEntry struct {
-		account     config.ProviderAccount
-		bearerToken string
-		skip        bool
-	}
-
-	entries := make([]accountEntry, 0, len(accounts))
+	// Build the set of configured providers and account IDs so we only expose
+	// models the proxy can actually serve.
+	configuredProviders := make(map[models.ModelProvider]bool)
+	configuredAccountIDs := make(map[string]bool)
 	for _, acc := range accounts {
-		if acc.Disabled {
-			continue
+		configuredProviders[acc.Type] = true
+		if acc.ID != "" {
+			configuredAccountIDs[acc.ID] = true
 		}
-		entry := accountEntry{account: acc}
-		if acc.Type == models.ProviderCopilot {
-			if token, err := auth.LoadGitHubOAuthToken(); err == nil && token != "" {
-				entry.bearerToken = token
-			} else if session, err := auth.LoadCopilotSession(); err == nil && session != nil {
-				entry.bearerToken = session.AccessToken
-			}
-			if entry.bearerToken == "" {
-				entry.skip = true
-			}
+	}
+	// Honour the legacy Providers map as well.
+	for provider, providerCfg := range cfg.Providers {
+		if !providerCfg.Disabled {
+			configuredProviders[provider] = true
 		}
-		entries = append(entries, entry)
 	}
 
-	type accountResult struct {
-		provider models.ModelProvider
-		items    []openAIModel
+	// If the registry has no models for the configured providers yet (e.g. the
+	// background refresh loop has not completed at startup), refresh on demand so
+	// the listing mirrors normal mode.
+	if !registryHasModelsForProviders(configuredProviders) {
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		refreshAccountModels(ctx, accounts)
 	}
 
-	resultCh := make(chan accountResult, len(entries))
-	var wg sync.WaitGroup
+	allModels := collectRegistryModels(configuredProviders, configuredAccountIDs)
 
-	for _, e := range entries {
-		e := e
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			acc := e.account
-			if e.skip {
-				resultCh <- accountResult{provider: acc.Type}
-				return
-			}
-
-			fetched, err := models.FetchModelsFromProvider(ctx, acc.Type, acc.APIKey, e.bearerToken, acc.BaseURL)
-			if err != nil || len(fetched) == 0 {
-				resultCh <- accountResult{provider: acc.Type}
-				return
-			}
-
-			items := make([]openAIModel, 0, len(fetched))
-			for _, m := range fetched {
-				modelID := models.NormalizeModelID(m.ID)
-				created := m.Created
-				if created == 0 {
-					created = 1715000000
-				}
-				items = append(items, openAIModel{
-					ID:      string(modelID),
-					Object:  "model",
-					Created: created,
-					OwnedBy: string(acc.Type),
-				})
-			}
-			resultCh <- accountResult{provider: acc.Type, items: items}
-		}()
-	}
-
-	wg.Wait()
-	close(resultCh)
-
-	allModels := make([]openAIModel, 0)
-	for res := range resultCh {
-		allModels = append(allModels, res.items...)
-	}
-
-	// Fallback: if no dynamic models, use static SupportedModels for configured providers.
+	// Fallback: if still empty, expose static models for the configured providers.
 	if len(allModels) == 0 {
-		seenProviders := make(map[models.ModelProvider]bool)
-		for _, acc := range accounts {
-			if !acc.Disabled {
-				seenProviders[acc.Type] = true
+		for _, m := range models.SupportedModels {
+			if !configuredProviders[m.Provider] {
+				continue
 			}
-		}
-		for provider, providerCfg := range cfg.Providers {
-			if !providerCfg.Disabled {
-				seenProviders[provider] = true
-			}
-		}
-		for provider := range seenProviders {
-			for _, m := range models.SupportedModels {
-				if m.Provider != provider {
-					continue
-				}
-				allModels = append(allModels, openAIModel{
-					ID:      string(m.ID),
-					Object:  "model",
-					Created: 1715000000,
-					OwnedBy: string(m.Provider),
-				})
-			}
+			allModels = append(allModels, openAIModel{
+				ID:      string(m.ID),
+				Object:  "model",
+				Created: 1715000000,
+				OwnedBy: string(m.Provider),
+			})
 		}
 	}
+
+	sort.Slice(allModels, func(i, j int) bool { return allModels[i].ID < allModels[j].ID })
 
 	writeJSON(w, http.StatusOK, openAIModelList{
 		Object: "list",
@@ -153,21 +94,60 @@ func (s *LLMProxyServer) handleListModels(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// handleGetModel handles GET /v1/models/{id}, returning an OpenAI-compatible model object.
+// registryHasModelsForProviders reports whether the registry contains at least
+// one model for any of the configured providers.
+func registryHasModelsForProviders(providers map[models.ModelProvider]bool) bool {
+	for _, m := range models.GetAllModels() {
+		if providers[m.Provider] {
+			return true
+		}
+	}
+	return false
+}
+
+// collectRegistryModels returns the registry models that belong to a configured
+// provider (and a configured account, when the model is account-scoped),
+// deduplicated by ID.
+func collectRegistryModels(providers map[models.ModelProvider]bool, accountIDs map[string]bool) []openAIModel {
+	seen := make(map[string]bool)
+	out := make([]openAIModel, 0)
+	for _, m := range models.GetAllModels() {
+		if !providers[m.Provider] {
+			continue
+		}
+		// Account-scoped dynamic models are only listed when their account exists.
+		if m.AccountID != "" && !accountIDs[m.AccountID] {
+			continue
+		}
+		id := string(m.ID)
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, openAIModel{
+			ID:      id,
+			Object:  "model",
+			Created: 1715000000,
+			OwnedBy: string(m.Provider),
+		})
+	}
+	return out
+}
+
+// handleGetModel handles GET /v1/models/{id}, returning an OpenAI-compatible
+// model object. The ID is resolved with the same logic as chat/messages, so
+// prefixed IDs, raw upstream IDs and aliases all work.
 func (s *LLMProxyServer) handleGetModel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	// Search SupportedModels for a matching model.
-	for _, m := range models.SupportedModels {
-		if string(m.ID) == id {
-			writeJSON(w, http.StatusOK, openAIModel{
-				ID:      string(m.ID),
-				Object:  "model",
-				Created: 1715000000,
-				OwnedBy: string(m.Provider),
-			})
-			return
-		}
+	if resolved, ok := resolveModel(id); ok {
+		writeJSON(w, http.StatusOK, openAIModel{
+			ID:      string(resolved.model.ID),
+			Object:  "model",
+			Created: 1715000000,
+			OwnedBy: string(resolved.model.Provider),
+		})
+		return
 	}
 
 	writeJSON(w, http.StatusNotFound, map[string]any{

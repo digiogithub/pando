@@ -184,11 +184,22 @@ func (s *KBStore) upsertMemoryByKey(ctx context.Context, opts MemoryUpsertOption
 	now := time.Now().UTC()
 	ttlStr := fmt.Sprintf("%d", opts.DefaultTTLDays)
 
-	res, err := s.db.ExecContext(ctx, `
+	// Determine insert vs update up front: SQLite's RowsAffected() returns 1 for
+	// both branches of an INSERT ... ON CONFLICT DO UPDATE, so it cannot be used
+	// to tell them apart.
+	var existingID int64
+	existedErr := s.db.QueryRowContext(ctx,
+		`SELECT id FROM kb_documents WHERE memory_key = ?`, opts.Key).Scan(&existingID)
+	if existedErr != nil && existedErr != sql.ErrNoRows {
+		return false, fmt.Errorf("kb: upsert memory key existence check: %w", existedErr)
+	}
+	existed := existedErr == nil
+
+	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO kb_documents (file_path, content, metadata, memory_key, memory_scope,
 		    importance, source, expires_at, hits, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', '+`+ttlStr+` days'), 0, ?, ?)
-		ON CONFLICT(memory_key) DO UPDATE SET
+		ON CONFLICT(memory_key) WHERE memory_key != '' DO UPDATE SET
 		    content    = excluded.content,
 		    metadata   = excluded.metadata,
 		    updated_at = excluded.updated_at,
@@ -204,8 +215,7 @@ func (s *KBStore) upsertMemoryByKey(ctx context.Context, opts MemoryUpsertOption
 		return false, fmt.Errorf("kb: upsert memory key db: %w", err)
 	}
 
-	rowsAff, _ := res.RowsAffected()
-	wasCreated := rowsAff > 0
+	wasCreated := !existed
 
 	// Re-read the doc to get current state for front matter (hits, expires_at etc).
 	doc, err := s.GetMemoryByKey(ctx, opts.Key)

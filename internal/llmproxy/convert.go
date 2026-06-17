@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/message"
 )
 
@@ -46,6 +47,57 @@ type openAIFunctionDef struct {
 	Name        string      `json:"name"`
 	Description string      `json:"description,omitempty"`
 	Parameters  interface{} `json:"parameters,omitempty"`
+}
+
+// openAIToolsToBaseTools converts OpenAI tool definitions into proxy tools that
+// can be advertised to the upstream provider.
+func openAIToolsToBaseTools(defs []openAIToolDef) []tools.BaseTool {
+	if len(defs) == 0 {
+		return nil
+	}
+	result := make([]tools.BaseTool, 0, len(defs))
+	for _, d := range defs {
+		if d.Function.Name == "" {
+			continue
+		}
+		result = append(result, schemaToProxyTool(d.Function.Name, d.Function.Description, d.Function.Parameters))
+	}
+	return result
+}
+
+// openAIFinishReason maps an internal finish reason to an OpenAI finish_reason.
+func openAIFinishReason(reason message.FinishReason, hasToolCalls bool) string {
+	switch reason {
+	case message.FinishReasonToolUse:
+		return "tool_calls"
+	case message.FinishReasonMaxTokens:
+		return "length"
+	case message.FinishReasonEndTurn:
+		return "stop"
+	}
+	if hasToolCalls {
+		return "tool_calls"
+	}
+	return "stop"
+}
+
+// toolCallsToOpenAI converts internal tool calls into OpenAI tool_call objects.
+func toolCallsToOpenAI(calls []message.ToolCall) []openAIToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	result := make([]openAIToolCall, 0, len(calls))
+	for _, c := range calls {
+		result = append(result, openAIToolCall{
+			ID:   c.ID,
+			Type: "function",
+			Function: openAIFunctionCall{
+				Name:      c.Name,
+				Arguments: c.Input,
+			},
+		})
+	}
+	return result
 }
 
 // extractContentString extracts the text content from an openAIChatMessage's Content field.
