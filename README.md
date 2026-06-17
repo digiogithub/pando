@@ -284,7 +284,6 @@ rm -f *.upx
 Compiles the binaries for the different platforms (Linux x64, Windows x64, macOS aarch64) and zip them into `dist/`.
 
 interactive:true
-Inputs: KEYSTORE_PASS
 
 ```bash
 # Create dist folder
@@ -309,9 +308,13 @@ make release-darwin-arm64
 # macOS x64
 make release-darwin-amd64
 
-# request user input for KEYSTORE_PASS variable (secret)
+echo "Run in osx terminal the command:"
+echo "    xc release-osx <keystore_pass>"
+echo
+read -n 1 -s -r -p "When the command finish, press any key to continue..."
+echo
 
-ssh -t mac-mini-de-digio "export PATH=\$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && export PKG_SIGN_IDENTITY='Developer ID Installer: Digio Soluciones Digitales SL (TEAMID)' && cd ~/www/MCP/Pando/pando && git pull origin main && git fetch origin --tags && rm -rf dist && mkdir -p dist && xc build && export KEYSTORE_PASS='$KEYSTORE_PASS' && security unlock-keychain -p \"\$KEYSTORE_PASS\" /Users/digio/Library/Keychains/login.keychain-db && make release-darwin-arm64 && make release-darwin-amd64 && bash scripts/build-macos-app"
+
 scp mac-mini-de-digio:~/www/MCP/Pando/pando/dist/*.zip dist/
 
 echo "Release builds completed in dist/"
@@ -327,9 +330,8 @@ interactive:true
 Inputs: KEYSTORE_PASS
 
 ```bash
+export PATH=\$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && export PKG_SIGN_IDENTITY='Developer ID Installer: Digio Soluciones Digitales SL (TEAMID)' && cd ~/www/MCP/Pando/pando && git pull origin main && git fetch origin --tags && rm -rf dist && mkdir -p dist && xc build && export KEYSTORE_PASS='$KEYSTORE_PASS' && security unlock-keychain -p \"\$KEYSTORE_PASS\" /Users/digio/Library/Keychains/login.keychain-db && make release-darwin-arm64 && make release-darwin-amd64 && bash scripts/build-macos-app
 
-ssh -t mac-mini-de-digio "export PATH=\$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && export PKG_SIGN_IDENTITY='Developer ID Installer: Digio Soluciones Digitales SL (TEAMID)' && cd ~/www/MCP/Pando/pando && git pull origin main && git fetch origin --tags && rm -rf dist && mkdir -p dist && xc build && export KEYSTORE_PASS=$KEYSTORE_PASS && security unlock-keychain -p $KEYSTORE_PASS /Users/digio/Library/Keychains/login.keychain-db && make release-darwin-arm64 && make release-darwin-amd64 && bash scripts/build-macos-app"
-scp mac-mini-de-digio:~/www/MCP/Pando/pando/dist/*.zip dist/
 
 echo "Release builds completed in dist/"
 ```
