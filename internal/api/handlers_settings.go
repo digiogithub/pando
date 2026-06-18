@@ -167,9 +167,10 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Apply model update for the coder agent.
+	// Apply model update for the coder agent. Use the shared helper so the
+	// running agent's provider is rebuilt, not just the persisted config.
 	if req.DefaultModel != nil {
-		if err := config.UpdateAgentModel(config.AgentCoder, models.ModelID(*req.DefaultModel)); err != nil {
+		if err := s.setCoderModel(models.ModelID(*req.DefaultModel)); err != nil {
 			writeError(w, http.StatusBadRequest, "failed to update model: "+err.Error())
 			return
 		}

@@ -10,8 +10,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"syscall"
+	"time"
 
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/ipc"
@@ -19,6 +22,19 @@ import (
 	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/ipc/failover"
 	"github.com/digiogithub/pando/internal/logging"
+)
+
+const (
+	// pingMethod is a lightweight RPC the primary answers to prove its RPC loop
+	// is alive. A current primary replies immediately; an old primary that lacks
+	// the handler still replies with a "method not found" error, which equally
+	// proves liveness. Only a timeout (suspended/hung primary) means "no response".
+	pingMethod = "ipc.ping"
+
+	// stalePrimaryProbeTimeout is how long a freshly started secondary waits for
+	// the existing primary to answer pingMethod before declaring it unresponsive
+	// and killing it so this instance can take over.
+	stalePrimaryProbeTimeout = 10 * time.Second
 )
 
 // Role describes the IPC role that this instance took during bootstrap.
@@ -82,6 +98,17 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 		logging.Warn("IPC lock acquisition failed, continuing as primary without IPC", "error", lockErr)
 	}
 
+	// We acquired the secondary role, which means another process holds the lock.
+	// That process may, however, be suspended (SIGSTOP) or hung while still
+	// holding the flock — in which case this secondary would block forever on the
+	// DB proxy. Probe the primary; if it does not answer within the timeout, kill
+	// it and re-acquire the lock so we become the primary instead of hanging.
+	if !isPrimary && lockErr == nil && lockInfo != nil {
+		if killStalePrimary(ctx, workdir, lockInfo) {
+			isPrimary, lockInfo, lockFile, lockErr = reacquireAfterKill(workdir, instanceID, pubPort, rpcPort)
+		}
+	}
+
 	res := &BootstrapResult{
 		InstanceID: instanceID,
 		PubPort:    pubPort,
@@ -110,6 +137,11 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 		logging.Debug("IPC: primary DB opened", "role", RolePrimary, "workdir", workdir)
 
 		bus := ipc.NewBus(instanceID)
+		// Answer liveness probes from newly started secondaries so they can tell a
+		// healthy primary apart from a suspended/hung one (see killStalePrimary).
+		bus.RegisterMethod(pingMethod, func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(`"pong"`), nil
+		})
 
 		watcher := failover.NewWatcherForPrimary(
 			failover.DefaultConfig(),
@@ -227,6 +259,121 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 		"primaryPub", fmt.Sprintf("tcp://127.0.0.1:%d", lockInfo.PubPort),
 		"primaryRPC", rpcAddr)
 	return res, nil
+}
+
+// killStalePrimary probes the primary recorded in lockInfo. If it does not
+// respond to pingMethod within stalePrimaryProbeTimeout (e.g. it is suspended or
+// hung while still holding the flock), the primary process is killed so this
+// instance can take over. Returns true when the primary was killed and the lock
+// should be re-acquired.
+func killStalePrimary(ctx context.Context, workdir string, lockInfo *ipc.LockInfo) bool {
+	if lockInfo == nil || lockInfo.PID <= 0 || lockInfo.PID == os.Getpid() {
+		return false
+	}
+
+	rpcAddr := fmt.Sprintf("tcp://127.0.0.1:%d", lockInfo.RPCPort)
+	if primaryResponds(ctx, rpcAddr) {
+		return false
+	}
+
+	logging.Warn("IPC: primary did not respond within timeout, killing it to take over",
+		"workdir", workdir,
+		"primary_pid", lockInfo.PID,
+		"primary_instance", lockInfo.InstanceID,
+		"timeout", stalePrimaryProbeTimeout,
+	)
+
+	if err := killProcess(lockInfo.PID); err != nil {
+		logging.Warn("IPC: failed to kill unresponsive primary", "pid", lockInfo.PID, "error", err)
+		return false
+	}
+
+	// Wait for the killed process to fully exit so the kernel releases the flock.
+	waitForProcessExit(lockInfo.PID, 2*time.Second)
+	return true
+}
+
+// primaryResponds reports whether the primary at rpcAddr answers an RPC within
+// stalePrimaryProbeTimeout. Any reply — including a "method not found" error from
+// an older primary that lacks the ping handler — counts as alive; only a timeout
+// (or inability to reach the RPC loop at all) counts as unresponsive.
+func primaryResponds(ctx context.Context, rpcAddr string) bool {
+	probeCtx, cancel := context.WithTimeout(ctx, stalePrimaryProbeTimeout)
+	defer cancel()
+
+	client, err := ipc.NewClient(probeCtx)
+	if err != nil {
+		// We could not even build a probe client; be conservative and assume the
+		// primary is alive so a local fault never causes us to kill it.
+		logging.Warn("IPC: failed to create probe client; assuming primary alive", "error", err)
+		return true
+	}
+	defer client.Close()
+
+	if _, err := client.Call(probeCtx, rpcAddr, pingMethod, nil); err != nil {
+		// A method-not-found reply still proves the RPC loop is serving.
+		if errors.Is(err, ipc.ErrMethodNotFound) {
+			return true
+		}
+		// A timeout means the primary is suspended/hung. Treat any other transport
+		// failure the same way: the primary holds the lock but cannot serve us, so
+		// continuing as secondary would hang.
+		logging.Warn("IPC: primary probe failed", "rpc", rpcAddr, "error", err)
+		return false
+	}
+	return true
+}
+
+// killProcess sends SIGKILL to pid. SIGKILL (not SIGTERM) is required because a
+// SIGSTOP-suspended process will not act on catchable signals until resumed,
+// whereas SIGKILL cannot be blocked, caught, or ignored.
+func killProcess(pid int) error {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	return proc.Kill()
+}
+
+// waitForProcessExit blocks until pid is gone or the deadline elapses.
+func waitForProcessExit(pid int, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !processAlive(pid) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// processAlive reports whether pid refers to a live process.
+func processAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	// Signal 0 performs error checking only: nil means the process exists.
+	return proc.Signal(syscall.Signal(0)) == nil
+}
+
+// reacquireAfterKill retries AcquireLock after a stale primary was killed. The
+// kernel releases the dead process's flock asynchronously during teardown, so we
+// poll briefly until we win the lock (become primary) or hit a hard error.
+func reacquireAfterKill(workdir, instanceID string, pubPort, rpcPort int) (bool, *ipc.LockInfo, *os.File, error) {
+	var (
+		isPrimary bool
+		lockInfo  *ipc.LockInfo
+		lockFile  *os.File
+		lockErr   error
+	)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		isPrimary, lockInfo, lockFile, lockErr = ipc.AcquireLock(workdir, instanceID, pubPort, rpcPort)
+		if isPrimary || lockErr != nil || time.Now().After(deadline) {
+			return isPrimary, lockInfo, lockFile, lockErr
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // handleWriteChanges drains the change-event channel published by the primary

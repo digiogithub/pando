@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/provider"
@@ -68,6 +70,21 @@ func publishProviderAccountChanged() {
 	})
 }
 
+// refreshDynamicModelsAfterAccountChange re-fetches and registers the models for
+// every configured provider account so a newly added/updated account's models
+// become selectable immediately. Without this, dynamic models (e.g. Copilot's
+// gpt-5.x) are only registered at startup or on the 24h refresh, so right after
+// adding an account the model switcher and agent validation reject every model
+// from it ("model not supported"), and the only workaround was to restart the
+// app (which the TUI implicitly did). Runs with a bounded timeout that is
+// independent of the HTTP request lifetime so it is not cancelled when the
+// handler returns its response.
+func refreshDynamicModelsAfterAccountChange() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	app.RefreshDynamicModels(ctx)
+}
+
 func (s *Server) handleListProviderAccounts(w http.ResponseWriter, r *http.Request) {
 	accounts := config.GetProviderAccounts()
 	result := make([]config.ProviderAccount, 0, len(accounts))
@@ -106,6 +123,7 @@ func (s *Server) handleCreateProviderAccount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	refreshDynamicModelsAfterAccountChange()
 	publishProviderAccountChanged()
 
 	created, ok := config.GetProviderAccount(account.ID)
@@ -154,6 +172,7 @@ func (s *Server) handleUpdateProviderAccount(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	refreshDynamicModelsAfterAccountChange()
 	publishProviderAccountChanged()
 
 	result, ok := config.GetProviderAccount(id)

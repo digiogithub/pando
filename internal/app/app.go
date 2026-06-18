@@ -1580,8 +1580,24 @@ func RefreshDynamicModels(ctx context.Context) {
 			apiKey = ""
 		case models.ProviderOllama:
 			// Ollama does not require an API key
-		default:
+		case models.ProviderAnthropic:
+			// Anthropic accounts may authenticate via Claude.ai OAuth instead of an
+			// API key. Without this, an OAuth-only account is skipped here, never
+			// registers per-account models, and selection silently falls back to
+			// another (API-key) account of the same type.
 			if apiKey == "" {
+				token, err := auth.LoadClaudeBearerToken()
+				if err != nil || token == "" {
+					continue
+				}
+				bearerToken = token
+			}
+		default:
+			// Providers with a static catalog but no listing API (e.g. Vertex AI,
+			// which authenticates via OAuth and has no API key) still need their
+			// per-account static models registered, so don't skip them for a
+			// missing key. Listing-capable providers do need a key to fetch.
+			if apiKey == "" && models.ProviderSupportsModelListing(acc.Type) {
 				continue
 			}
 		}

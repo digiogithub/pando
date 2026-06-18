@@ -1555,8 +1555,78 @@ func mergeLocalConfig(workingDir string) {
 
 	// Merge local config if it exists
 	if err := local.ReadInConfig(); err == nil {
+		// Viper's map merge overwrites slices wholesale instead of appending, so a
+		// project that defines providerAccounts would otherwise hide the global
+		// (profile) accounts entirely. Capture both scopes before the merge and
+		// re-merge them by ID so global accounts remain visible and selectable
+		// alongside project-scoped ones. Persistence is unaffected because
+		// updateCfgFile rewrites whichever file is being edited from its own
+		// on-disk contents, not from this merged in-memory view.
+		globalAccounts := toProviderAccountMaps(viper.Get("providerAccounts"))
+		localAccounts := toProviderAccountMaps(local.Get("providerAccounts"))
+
 		viper.MergeConfigMap(local.AllSettings())
+
+		if merged := mergeProviderAccountMaps(globalAccounts, localAccounts); merged != nil {
+			viper.Set("providerAccounts", merged)
+		}
 	}
+}
+
+// toProviderAccountMaps coerces a raw viper value (a list of provider accounts as
+// parsed from a config file) into a slice of generic maps. Returns nil when the
+// value is absent or not a list.
+func toProviderAccountMaps(v any) []map[string]any {
+	list, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(list))
+	for _, item := range list {
+		if m, ok := item.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// providerAccountMapID extracts the account ID from a raw account map,
+// tolerating the key-casing differences that can arise between config formats.
+func providerAccountMapID(m map[string]any) string {
+	for k, v := range m {
+		if strings.EqualFold(k, "id") {
+			if s, ok := v.(string); ok {
+				return strings.TrimSpace(s)
+			}
+		}
+	}
+	return ""
+}
+
+// mergeProviderAccountMaps merges provider accounts from the global and local
+// (project) scopes by ID. Local accounts take precedence and are listed first;
+// global accounts whose ID is not redefined locally are appended so they stay
+// visible and usable. Returns nil when neither scope defines any accounts, so
+// the caller can leave viper untouched.
+func mergeProviderAccountMaps(global, local []map[string]any) []map[string]any {
+	if len(global) == 0 && len(local) == 0 {
+		return nil
+	}
+	merged := make([]map[string]any, 0, len(global)+len(local))
+	seen := make(map[string]bool, len(local))
+	for _, m := range local {
+		merged = append(merged, m)
+		if id := providerAccountMapID(m); id != "" {
+			seen[id] = true
+		}
+	}
+	for _, m := range global {
+		if id := providerAccountMapID(m); id != "" && seen[id] {
+			continue
+		}
+		merged = append(merged, m)
+	}
+	return merged
 }
 
 func resolveLegacyGlobalConfigPath() (string, error) {

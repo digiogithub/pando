@@ -22,6 +22,21 @@ type FetchedModel struct {
 	ContextWindow int64  `json:"context_window,omitempty"`
 }
 
+// ProviderSupportsModelListing reports whether a provider exposes a model-listing
+// API that FetchModelsFromProvider can query. Providers that return false (e.g.
+// Azure, Vertex AI, Bedrock) rely on a curated static catalog instead, and must
+// register per-account model copies separately to support multiple accounts.
+func ProviderSupportsModelListing(provider ModelProvider) bool {
+	switch provider {
+	case ProviderCopilot, ProviderOpenAI, ProviderOllama, ProviderAnthropic,
+		ProviderGemini, ProviderGROQ, ProviderOpenRouter, ProviderXAI,
+		ProviderLlamaCpp, ProviderOpenAICompatible:
+		return true
+	default:
+		return false
+	}
+}
+
 // FetchModelsFromProvider queries a provider's API for available models
 func FetchModelsFromProvider(ctx context.Context, provider ModelProvider, apiKey string, bearerToken string, baseURL string) ([]FetchedModel, error) {
 	switch provider {

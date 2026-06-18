@@ -85,6 +85,13 @@ type addProviderDialogCmp struct {
 
 var addProviderSlugRe = regexp.MustCompile(`[^a-z0-9-]`)
 
+// sanitizeAccountID lowercases the value and replaces any character outside
+// [a-z0-9-] with a hyphen. Unlike slugify it preserves existing (and trailing)
+// hyphens so it is safe to apply on every keystroke while the user types an ID.
+func sanitizeAccountID(s string) string {
+	return addProviderSlugRe.ReplaceAllString(strings.ToLower(s), "-")
+}
+
 func slugify(s string) string {
 	s = strings.ToLower(s)
 	var b strings.Builder
@@ -247,9 +254,15 @@ func (d *addProviderDialogCmp) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if inputIdx == 0 && d.idAutoSynced {
 		d.inputs[1].SetValue(slugify(d.inputs[0].Value()))
 	}
-	// Once the user focuses the ID field and types, disable auto-sync
+	// Once the user focuses the ID field and types, disable auto-sync and
+	// sanitize the value live so spaces and other invalid characters can never
+	// be entered (the ID must match ^[a-z0-9-]+$).
 	if inputIdx == 1 {
 		d.idAutoSynced = false
+		if sanitized := sanitizeAccountID(d.inputs[1].Value()); sanitized != d.inputs[1].Value() {
+			d.inputs[1].SetValue(sanitized)
+			d.inputs[1].CursorEnd()
+		}
 	}
 
 	return d, cmd

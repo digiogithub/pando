@@ -177,6 +177,9 @@ func (s *Server) handleAntigravityOAuthCallback(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Now that the account holds valid OAuth credentials, fetch its models so
+	// they are selectable without waiting for a restart.
+	refreshDynamicModelsAfterAccountChange()
 	publishProviderAccountChanged()
 	writeJSON(w, http.StatusOK, antigravityOAuthResponseFromAccount(updated))
 }

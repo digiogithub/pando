@@ -573,6 +573,30 @@ func GetClaudeToken(creds *ClaudeCredentials) (string, *ClaudeCredentials, error
 	return creds.ClaudeAiOauth.AccessToken, nil, nil
 }
 
+// LoadClaudeBearerToken returns a valid Claude.ai OAuth access token, refreshing
+// and persisting it when expired. It mirrors the token resolution the Anthropic
+// provider performs at request time (see provider.go) so model-listing code paths
+// can authenticate OAuth-based Anthropic accounts that have no API key. Returns an
+// empty string (and no error) when no Claude credentials are configured.
+func LoadClaudeBearerToken() (string, error) {
+	creds, source, err := LoadClaudeCredentials()
+	if err != nil || creds == nil {
+		return "", err
+	}
+	token, updatedCreds, err := GetClaudeToken(creds)
+	if err != nil {
+		return "", err
+	}
+	if updatedCreds != nil {
+		if source == "claude-code" {
+			_ = SaveClaudeCodeCredentials(updatedCreds)
+		} else {
+			_ = SaveClaudeCredentials(updatedCreds)
+		}
+	}
+	return token, nil
+}
+
 func ClaudeLogout() error {
 	path, err := claudeCredentialFilePath()
 	if err != nil {

@@ -82,7 +82,8 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		entry := accountEntry{account: acc}
-		if acc.Type == models.ProviderCopilot {
+		switch acc.Type {
+		case models.ProviderCopilot:
 			if token, err := auth.LoadGitHubOAuthToken(); err == nil && token != "" {
 				entry.bearerToken = token
 			} else if session, err := auth.LoadCopilotSession(); err == nil && session != nil {
@@ -91,6 +92,18 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			if entry.bearerToken == "" {
 				entry.skip = true
 				entry.skipReason = "no GitHub OAuth token found — run 'pando auth login'"
+			}
+		case models.ProviderAnthropic:
+			// OAuth-only Anthropic accounts have no API key; authenticate the model
+			// listing with the Claude.ai OAuth token so the account's models appear
+			// in the selector instead of falling back to another account's.
+			if acc.APIKey == "" {
+				if token, err := auth.LoadClaudeBearerToken(); err == nil && token != "" {
+					entry.bearerToken = token
+				} else {
+					entry.skip = true
+					entry.skipReason = "no Anthropic credentials found — set an API key or run Claude.ai login"
+				}
 			}
 		}
 		entries = append(entries, entry)
@@ -114,6 +127,18 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			acc := e.account
 			if e.skip {
 				resultCh <- accountResult{accountID: acc.ID, provider: acc.Type, err: e.skipReason}
+				return
+			}
+
+			// Providers with no listing API (Azure, Vertex AI, …) expose a static
+			// catalog. Surface per-account copies so each account is independently
+			// selectable instead of erroring on the (unsupported) fetch.
+			if !models.ProviderSupportsModelListing(acc.Type) && acc.Type != models.ProviderAntigravity {
+				resultCh <- accountResult{
+					accountID: acc.ID,
+					provider:  acc.Type,
+					items:     staticModelInfosForAccount(acc, typeCount[acc.Type]),
+				}
 				return
 			}
 
@@ -161,10 +186,15 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 					})
 				}
 
-				// Disambiguate display name when multiple accounts share the same provider type
+				// Disambiguate display name when multiple accounts share the same provider type.
+				// Prefer the human-friendly account Display Name; fall back to the ID slug.
 				displayName := name
 				if sameTypeCount > 1 {
-					displayName = acc.ID + ": " + name
+					accLabel := strings.TrimSpace(acc.DisplayName)
+					if accLabel == "" {
+						accLabel = acc.ID
+					}
+					displayName = accLabel + ": " + name
 				}
 				knownModel := models.SupportedModels[modelID]
 				items = append(items, ModelInfo{
@@ -244,6 +274,53 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// staticModelInfosForAccount builds the selectable model list for a provider that
+// has no listing API. With multiple accounts of the type it emits account-scoped
+// copies (prefixed IDs + AccountID, registered so validateAgent accepts them),
+// labelled with the account Display Name; with a single account it emits the
+// account-less static models, which resolve to that one account by type.
+func staticModelInfosForAccount(acc config.ProviderAccount, sameTypeCount int) []ModelInfo {
+	accLabel := strings.TrimSpace(acc.DisplayName)
+	if accLabel == "" {
+		accLabel = acc.ID
+	}
+
+	var src []models.Model
+	prefixed := sameTypeCount > 1
+	if prefixed {
+		src = models.AccountScopedStaticModels(acc.Type, acc.ID, sameTypeCount)
+		for _, m := range src {
+			if _, exists := models.SupportedModels[m.ID]; !exists {
+				models.RegisterDynamicModel(m)
+			}
+		}
+	} else {
+		src = models.StaticModelsForProvider(acc.Type)
+	}
+
+	items := make([]ModelInfo, 0, len(src))
+	for _, m := range src {
+		name := m.Name
+		if name == "" {
+			name = string(m.ID)
+		}
+		displayName := name
+		if prefixed {
+			displayName = accLabel + ": " + name
+		}
+		items = append(items, ModelInfo{
+			ID:                      string(m.ID),
+			Name:                    displayName,
+			Provider:                string(acc.Type),
+			AccountID:               acc.ID,
+			Badges:                  badgesForModel(m.APIModel),
+			CanReason:               m.CanReason,
+			SupportsReasoningEffort: m.SupportsReasoningEffort,
+		})
+	}
+	return items
+}
+
 func logicalAntigravityModelInfos(accounts []config.ProviderAccount) []ModelInfo {
 	hasAntigravity := false
 	for _, acc := range accounts {
@@ -298,10 +375,29 @@ func (s *Server) handleSetActiveModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := config.UpdateAgentModel(config.AgentCoder, models.ModelID(req.Model)); err != nil {
+	if err := s.setCoderModel(models.ModelID(req.Model)); err != nil {
 		writeError(w, http.StatusBadRequest, "failed to update model: "+err.Error())
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"model": req.Model})
+}
+
+// setCoderModel persists the coder agent model and, when a live agent exists,
+// recreates its provider so the change takes effect in the current process.
+//
+// Calling config.UpdateAgentModel alone only writes the config file; the
+// already-running CoderAgent keeps its previous provider (which is nil when no
+// model was selected at startup, e.g. on a freshly configured machine). That
+// left the web-UI/desktop in a state where the model appeared selected but the
+// agent still returned "no model configured" on the next message until a
+// restart. The TUI never hit this because it routes selections through
+// CoderAgent.Update, which both persists and rebuilds the provider; this
+// mirrors that behaviour for the API.
+func (s *Server) setCoderModel(modelID models.ModelID) error {
+	if s.app != nil && s.app.CoderAgent != nil {
+		_, err := s.app.CoderAgent.Update(config.AgentCoder, modelID)
+		return err
+	}
+	return config.UpdateAgentModel(config.AgentCoder, modelID)
 }

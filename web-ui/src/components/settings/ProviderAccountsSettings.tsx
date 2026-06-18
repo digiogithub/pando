@@ -227,6 +227,13 @@ function slugify(s: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+// Sanitize the Account ID as the user types: lowercase and replace any character
+// outside [a-z0-9-] with a hyphen. Trailing hyphens are preserved so a hyphen can
+// still be typed mid-word; this guarantees the ID never contains spaces.
+function sanitizeAccountId(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9-]+/g, '-')
+}
+
 type TestStatus = 'idle' | 'testing' | 'ok' | 'fail'
 
 // ── AccountCard ──────────────────────────────────────────────────────────────
@@ -533,9 +540,9 @@ function AccountModal({
           {!editId && (
             <TextInput
               label="Account ID"
-              placeholder="my-account (auto-generated, editable)"
+              placeholder="my-account (lowercase, letters, numbers, hyphens)"
               value={form.id}
-              onChange={(e) => setField('id', e.target.value)}
+              onChange={(e) => setField('id', sanitizeAccountId(e.target.value))}
             />
           )}
 

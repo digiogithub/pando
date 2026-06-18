@@ -196,6 +196,12 @@ func (s *Server) handleCopilotLoginStart(w http.ResponseWriter, r *http.Request)
 		if _, err := auth.CompleteCopilotDeviceFlow(bgCtx, enterpriseURL, deviceCode); err != nil {
 			return
 		}
+		// The Copilot OAuth token is now stored. Fetch the account's models so
+		// they become selectable in the current process without a restart;
+		// otherwise the model switcher and agent validation reject every Copilot
+		// model until the next startup/24h refresh.
+		refreshDynamicModelsAfterAccountChange()
+		publishProviderAccountChanged()
 	}(deviceCode, req.EnterpriseURL)
 
 	writeJSON(w, http.StatusOK, copilotLoginStartResponse{

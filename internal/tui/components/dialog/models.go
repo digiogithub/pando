@@ -67,6 +67,10 @@ type modelDialogCmp struct {
 	hScrollOffset   int
 	hScrollPossible bool
 	queryInput      textinput.Model
+
+	// accountDisplayNames maps a provider-account ID to its human-friendly Display
+	// Name, used to label models when several accounts share a provider type.
+	accountDisplayNames map[string]string
 }
 
 type modelKeyMap struct {
@@ -118,6 +122,72 @@ func (m *modelDialogCmp) emitSelection(model models.Model) tea.Msg {
 	return ModelSelectedMsg{Model: model}
 }
 
+// sameTypeAccountCount returns how many distinct provider accounts contribute
+// models to the currently displayed provider. When greater than one, model
+// labels are prefixed with their account Display Name (via accountLabel) so
+// models from a global and a project-level account of the same provider type can
+// be told apart.
+func (m *modelDialogCmp) sameTypeAccountCount() int {
+	seen := make(map[string]struct{})
+	for _, model := range m.models {
+		if model.AccountID != "" {
+			seen[model.AccountID] = struct{}{}
+		}
+	}
+	return len(seen)
+}
+
+// accountLabel renders a model's label, prefixing it with the owning account's
+// Display Name (falling back to its ID) when more than one account of the same
+// provider type is present. This is the dialog-layer equivalent of
+// Model.DisplayLabel, but resolves the account ID slug to its Display Name —
+// which the low-level models package cannot do without importing config.
+func (m *modelDialogCmp) accountLabel(model models.Model, sameTypeCount int) string {
+	if model.AccountID == "" || sameTypeCount <= 1 {
+		return model.Name
+	}
+	name := model.AccountID
+	if dn := m.accountDisplayNames[model.AccountID]; strings.TrimSpace(dn) != "" {
+		name = dn
+	}
+	return name + ": " + model.Name
+}
+
+// loadAccountDisplayNames refreshes the account ID → Display Name map from config.
+func (m *modelDialogCmp) loadAccountDisplayNames() {
+	names := make(map[string]string)
+	for _, acc := range config.GetProviderAccounts() {
+		names[acc.ID] = acc.DisplayName
+	}
+	m.accountDisplayNames = names
+}
+
+// dropAmbiguousStaticModels hides the account-less static models (AccountID == "")
+// for a provider type once two or more accounts of that type contribute models.
+// The static entries always resolve to the first configured account, so leaving
+// them visible alongside the per-account ones is what made every selection appear
+// to use the "global" account. Per-account copies inherit the static metadata
+// (see registry.modelFromFetchedAccountModel), so nothing is lost by hiding them.
+func dropAmbiguousStaticModels(in []models.Model) []models.Model {
+	seen := make(map[string]struct{})
+	for _, model := range in {
+		if model.AccountID != "" {
+			seen[model.AccountID] = struct{}{}
+		}
+	}
+	if len(seen) < 2 {
+		return in
+	}
+	out := in[:0:0]
+	for _, model := range in {
+		if model.AccountID == "" {
+			continue
+		}
+		out = append(out, model)
+	}
+	return out
+}
+
 func (m *modelDialogCmp) filterModels() {
 	query := strings.TrimSpace(m.queryInput.Value())
 	if query == "" {
@@ -125,9 +195,10 @@ func (m *modelDialogCmp) filterModels() {
 		return
 	}
 
+	sameTypeCount := m.sameTypeAccountCount()
 	names := make([]string, len(m.models))
 	for i, model := range m.models {
-		names[i] = model.Name
+		names[i] = m.accountLabel(model, sameTypeCount)
 	}
 
 	matches := fuzzy.Find(strings.ToLower(query), lowerStrings(names))
@@ -340,6 +411,7 @@ func (m *modelDialogCmp) View() string {
 	if len(m.filteredModels) == 0 {
 		modelItems = append(modelItems, baseStyle.Width(maxDialogWidth).Padding(0, 1).Foreground(t.TextMuted()).Render("No models found"))
 	} else {
+		sameTypeCount := m.sameTypeAccountCount()
 		for i := m.scrollOffset; i < endIdx; i++ {
 			mod := m.filteredModels[i]
 			itemStyle := baseStyle.Width(maxDialogWidth)
@@ -347,7 +419,7 @@ func (m *modelDialogCmp) View() string {
 				itemStyle = itemStyle.Background(t.Primary()).
 					Foreground(t.BadgeText()).Bold(true)
 			}
-			label := mod.Name
+			label := m.accountLabel(mod, sameTypeCount)
 			if mod.CanReason {
 				label += " ⚡"
 			}
@@ -420,6 +492,7 @@ func (m *modelDialogCmp) BindingKeys() []key.Binding {
 }
 
 func (m *modelDialogCmp) setupModels() {
+	m.loadAccountDisplayNames()
 	if len(m.customProviderModels) > 0 {
 		m.availableProviders = make([]models.ModelProvider, 0, len(m.customProviderModels))
 		for provider := range m.customProviderModels {
@@ -518,7 +591,7 @@ func (m *modelDialogCmp) setupModelsForProvider(provider models.ModelProvider) {
 	if len(m.customProviderModels) > 0 {
 		m.models = append([]models.Model(nil), m.customProviderModels[provider]...)
 	} else {
-		m.models = getModelsForProvider(provider)
+		m.models = dropAmbiguousStaticModels(getModelsForProvider(provider))
 	}
 	m.selectedIdx = 0
 	m.scrollOffset = 0

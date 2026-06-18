@@ -39,6 +39,32 @@ func pruneDynamicModelsForProvider(provider ModelProvider, keepIDs map[ModelID]s
 	})
 }
 
+// pruneDynamicModelsForAccount removes dynamic models belonging to a specific
+// provider account whose ID is no longer returned by the latest fetch. Unlike
+// pruneDynamicModelsForProvider it is scoped by AccountID, so refreshing one
+// account does not delete the models of another account of the same provider
+// type (e.g. a global and a project-level Anthropic account). It also clears
+// stale entries left over when an account transitions between prefixed and
+// unprefixed IDs (the AccountID still matches even though the ID changed).
+func pruneDynamicModelsForAccount(provider ModelProvider, accountID string, keepIDs map[ModelID]struct{}) {
+	dynamicModels.Range(func(key, _ any) bool {
+		id := key.(ModelID)
+		mv, ok := dynamicModels.Load(id)
+		if !ok {
+			return true
+		}
+		m := mv.(Model)
+		if m.Provider != provider || m.AccountID != accountID {
+			return true
+		}
+		if _, keep := keepIDs[id]; !keep {
+			dynamicModels.Delete(id)
+			delete(SupportedModels, id)
+		}
+		return true
+	})
+}
+
 // RefreshProviderModels fetches and registers models from a provider.
 // Models previously registered for this provider that are no longer returned
 // by the API are removed from the registry and cache.
@@ -131,6 +157,22 @@ type AccountModelRefreshParams struct {
 // Model IDs are prefixed with accountID when AllAccountsOfType > 1 (disambiguates multiple accounts of same type).
 // Models previously registered for this account that are no longer returned by the API are removed.
 func RefreshProviderModelsForAccount(ctx context.Context, params AccountModelRefreshParams) error {
+	// Providers without a model-listing API (Azure, Vertex AI, …) expose a static
+	// catalog only. With multiple accounts of such a type, register per-account
+	// copies of those static models so each account is independently selectable
+	// and resolves to its own credentials — otherwise selection silently falls
+	// back to the first account, exactly like the account-less static models did
+	// for the listing-capable providers.
+	if !ProviderSupportsModelListing(params.ProviderType) {
+		keepIDs := make(map[ModelID]struct{})
+		for _, m := range AccountScopedStaticModels(params.ProviderType, params.AccountID, params.AllAccountsOfType) {
+			RegisterDynamicModel(m)
+			keepIDs[m.ID] = struct{}{}
+		}
+		pruneDynamicModelsForAccount(params.ProviderType, params.AccountID, keepIDs)
+		return nil
+	}
+
 	fetched, err := FetchModelsFromProvider(ctx, params.ProviderType, params.APIKey, params.BearerToken, params.BaseURL)
 	if err != nil {
 		return fmt.Errorf("fetch models from account %s (%s): %w", params.AccountID, params.ProviderType, err)
@@ -146,13 +188,30 @@ func RefreshProviderModelsForAccount(ctx context.Context, params AccountModelRef
 		RegisterDynamicModel(model)
 	}
 
-	pruneDynamicModelsForProvider(params.ProviderType, keepIDs)
+	// Scope pruning to this account so refreshing it does not wipe out the
+	// models of another account that shares the same provider type.
+	pruneDynamicModelsForAccount(params.ProviderType, params.AccountID, keepIDs)
 	return nil
 }
 
 func modelFromFetchedAccountModel(params AccountModelRefreshParams, fetched FetchedModel) Model {
 	prefix := dynamicModelPrefix(params.ProviderType, params.AccountID, params.AllAccountsOfType)
 	modelID := ModelID(fmt.Sprintf("%s.%s", prefix, fetched.ID))
+
+	// When a statically-defined model exists for this provider+APIModel (e.g. the
+	// curated Anthropic catalogue), inherit its rich metadata — reasoning support,
+	// costs, context window, attachments — and override only the identity fields.
+	// Otherwise per-account copies would lose "thinking" mode and cost data, which
+	// matters once the ambiguous account-less static entries are hidden from the
+	// selectors for multi-account provider types.
+	if static, ok := staticModelByAPIModel(params.ProviderType, fetched.ID); ok {
+		static.ID = modelID
+		static.Provider = params.ProviderType
+		static.APIModel = fetched.ID
+		static.AccountID = params.AccountID
+		return static
+	}
+
 	name := fetchedModelName(fetched)
 	contextWindow := fetchedModelContextWindow(fetched.ContextWindow)
 
@@ -170,6 +229,58 @@ func modelFromFetchedAccountModel(params AccountModelRefreshParams, fetched Fetc
 		DefaultMaxTokens: maxTokens,
 		AccountID:        params.AccountID,
 	}
+}
+
+// staticModelByAPIModel returns a copy of the statically-defined model for the
+// given provider and API model identifier, if one exists. Only static models are
+// considered (dynamic ones carry an AccountID), so this is a stable source of
+// curated metadata regardless of refresh ordering.
+func staticModelByAPIModel(provider ModelProvider, apiModel string) (Model, bool) {
+	for _, m := range SupportedModels {
+		if m.AccountID == "" && m.Provider == provider && m.APIModel == apiModel {
+			return m, true
+		}
+	}
+	return Model{}, false
+}
+
+// StaticModelsForProvider returns copies of every statically-defined (account-less)
+// model for a provider type (exported for listing handlers).
+func StaticModelsForProvider(provider ModelProvider) []Model {
+	var out []Model
+	for _, m := range SupportedModels {
+		if m.AccountID == "" && m.Provider == provider {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// AccountScopedStaticModels returns per-account copies of a provider's static
+// models, with account-prefixed IDs and AccountID set. It returns nothing when
+// fewer than two accounts of the type exist: with a single account the prefix
+// equals the provider type, so the prefixed ID would collide with the static one
+// and the account-less static models (which already resolve to that single
+// account) are used as-is. Used both to register the models (RefreshProviderModels-
+// ForAccount) and to list them (the /api/v1/models handler) for providers that
+// have no model-listing API.
+func AccountScopedStaticModels(provider ModelProvider, accountID string, allAccountsOfType int) []Model {
+	if allAccountsOfType <= 1 {
+		return nil
+	}
+	prefix := dynamicModelPrefix(provider, accountID, allAccountsOfType)
+	statics := StaticModelsForProvider(provider)
+	out := make([]Model, 0, len(statics))
+	for _, sm := range statics {
+		if sm.APIModel == "" {
+			continue
+		}
+		m := sm
+		m.ID = ModelID(fmt.Sprintf("%s.%s", prefix, sm.APIModel))
+		m.AccountID = accountID
+		out = append(out, m)
+	}
+	return out
 }
 
 func dynamicModelPrefix(providerType ModelProvider, accountID string, allAccountsOfType int) string {
