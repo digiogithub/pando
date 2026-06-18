@@ -410,16 +410,16 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 
 	if cfg != nil && cfg.MCPServer.FileTools.Enabled {
 		tools = append(tools,
-			llmtools.NewViewTool(appSvc.LSPClients),
+			llmtools.NewViewTool(appSvc),
 			llmtools.NewGlobTool(),
 			llmtools.NewGrepTool(),
 			llmtools.NewLsTool(),
 		)
 		if cfg.MCPServer.FileTools.AllowWrite {
 			tools = append(tools,
-				llmtools.NewWriteTool(appSvc.LSPClients, appSvc.Permissions, appSvc.History),
-				llmtools.NewEditTool(appSvc.LSPClients, appSvc.Permissions, appSvc.History),
-				llmtools.NewPatchTool(appSvc.LSPClients, appSvc.Permissions, appSvc.History),
+				llmtools.NewWriteTool(appSvc, appSvc.Permissions, appSvc.History),
+				llmtools.NewEditTool(appSvc, appSvc.Permissions, appSvc.History),
+				llmtools.NewPatchTool(appSvc, appSvc.Permissions, appSvc.History),
 			)
 		}
 		logging.Info("MCP server: file tools enabled", "allow_write", cfg.MCPServer.FileTools.AllowWrite)

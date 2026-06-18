@@ -7,7 +7,6 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/tools"
-	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/mcpgateway"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
@@ -110,13 +109,13 @@ func toolDescriptionsFrom(baseTools []tools.BaseTool) []ToolDescription {
 func CoderAgentTools(
 	permissions permission.Service,
 	history history.Service,
-	lspClients map[string]*lsp.Client,
+	lspProvider tools.LSPProvider,
 	userInput userinput.Service,
 ) []tools.BaseTool {
 	ctx := context.Background()
 	otherTools := GetMcpTools(ctx, permissions)
-	if len(lspClients) > 0 {
-		otherTools = append(otherTools, tools.NewDiagnosticsTool(lspClients))
+	if lspProvider != nil {
+		otherTools = append(otherTools, tools.NewDiagnosticsTool(lspProvider))
 	}
 	cfg := config.Get()
 	if cfg != nil {
@@ -159,15 +158,15 @@ func CoderAgentTools(
 	}
 	base := []tools.BaseTool{
 		tools.NewBashTool(permissions),
-		tools.NewEditTool(lspClients, permissions, history),
+		tools.NewEditTool(lspProvider, permissions, history),
 		tools.NewGlobTool(),
 		tools.NewGrepTool(),
 		tools.NewLsTool(),
-		tools.NewViewTool(lspClients),
+		tools.NewViewTool(lspProvider),
 		tools.NewCacheReadTool(),
 		tools.NewCacheStatsTool(),
-		tools.NewPatchTool(lspClients, permissions, history),
-		tools.NewWriteTool(lspClients, permissions, history),
+		tools.NewPatchTool(lspProvider, permissions, history),
+		tools.NewWriteTool(lspProvider, permissions, history),
 		tools.NewTodoWriteTool(),
 	}
 	base = append(base, maybeAskUserQuestionTool(userInput)...)
@@ -182,7 +181,7 @@ func CoderAgentToolsWithMesnada(
 	gateway *mcpgateway.Gateway,
 	permissions permission.Service,
 	history history.Service,
-	lspClients map[string]*lsp.Client,
+	lspProvider tools.LSPProvider,
 	userInput userinput.Service,
 ) []tools.BaseTool {
 	ctx := context.Background()
@@ -194,22 +193,22 @@ func CoderAgentToolsWithMesnada(
 		baseTools = append(
 			[]tools.BaseTool{
 				tools.NewBashTool(permissions),
-				tools.NewEditTool(lspClients, permissions, history),
+				tools.NewEditTool(lspProvider, permissions, history),
 				tools.NewGlobTool(),
 				tools.NewGrepTool(),
 				tools.NewLsTool(),
-				tools.NewViewTool(lspClients),
+				tools.NewViewTool(lspProvider),
 				tools.NewCacheReadTool(),
 				tools.NewCacheStatsTool(),
-				tools.NewPatchTool(lspClients, permissions, history),
-				tools.NewWriteTool(lspClients, permissions, history),
+				tools.NewPatchTool(lspProvider, permissions, history),
+				tools.NewWriteTool(lspProvider, permissions, history),
 				tools.NewTodoWriteTool(),
 			},
 			maybeAskUserQuestionTool(userInput)...,
 		)
 		baseTools = append(baseTools, gatewayTools...)
-		if len(lspClients) > 0 {
-			baseTools = append(baseTools, tools.NewDiagnosticsTool(lspClients))
+		if lspProvider != nil {
+			baseTools = append(baseTools, tools.NewDiagnosticsTool(lspProvider))
 		}
 	} else {
 		// CoderAgentTools already includes MCP server tools and internal tools
@@ -217,7 +216,7 @@ func CoderAgentToolsWithMesnada(
 		baseTools = CoderAgentTools(
 			permissions,
 			history,
-			lspClients,
+			lspProvider,
 			userInput,
 		)
 	}
@@ -308,12 +307,12 @@ func CoderAgentToolsWithMesnada(
 	return ApplyToolDiscovery(result)
 }
 
-func TaskAgentTools(lspClients map[string]*lsp.Client) []tools.BaseTool {
+func TaskAgentTools(lspProvider tools.LSPProvider) []tools.BaseTool {
 	base := []tools.BaseTool{
 		tools.NewGlobTool(),
 		tools.NewGrepTool(),
 		tools.NewLsTool(),
-		tools.NewViewTool(lspClients),
+		tools.NewViewTool(lspProvider),
 		tools.NewCacheReadTool(),
 	}
 	if cfg := config.Get(); cfg != nil && cfg.InternalTools.SourcegraphEnabled {

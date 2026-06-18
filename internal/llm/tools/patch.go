@@ -9,7 +9,6 @@ import (
 	"github.com/digiogithub/pando/internal/diff"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/logging"
-	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/permission"
 )
 
@@ -24,7 +23,7 @@ type PatchResponseMetadata struct {
 }
 
 type patchTool struct {
-	lspClients  map[string]*lsp.Client
+	lspProvider LSPProvider
 	permissions permission.Service
 	files       history.Service
 }
@@ -61,9 +60,9 @@ CRITICAL REQUIREMENTS FOR USING THIS TOOL:
 The tool will apply all changes in a single atomic operation.`
 )
 
-func NewPatchTool(lspClients map[string]*lsp.Client, permissions permission.Service, files history.Service) BaseTool {
+func NewPatchTool(lspProvider LSPProvider, permissions permission.Service, files history.Service) BaseTool {
 	return &patchTool{
-		lspClients:  lspClients,
+		lspProvider: lspProvider,
 		permissions: permissions,
 		files:       files,
 	}
@@ -324,7 +323,9 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 
 	// Run LSP diagnostics on all changed files
 	for _, filePath := range changedFiles {
-		waitForLspDiagnostics(ctx, filePath, p.lspClients)
+		p.lspProvider.EnsureForFile(ctx, filePath)
+		clients := p.lspProvider.ClientsForFile(filePath)
+		waitForLspDiagnostics(ctx, filePath, clients)
 	}
 
 	logging.Debug("patch applied", "filesChanged", len(changedFiles), "additions", totalAdditions, "removals", totalRemovals)
@@ -333,7 +334,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 
 	diagnosticsText := ""
 	for _, filePath := range changedFiles {
-		diagnosticsText += getDiagnostics(filePath, p.lspClients)
+		diagnosticsText += getDiagnostics(filePath, p.lspProvider.ClientsForFile(filePath))
 	}
 
 	if diagnosticsText != "" {

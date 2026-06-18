@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/digiogithub/pando/internal/logging"
-	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/mesnada/acp"
 )
 
@@ -24,7 +23,7 @@ type ViewParams struct {
 }
 
 type viewTool struct {
-	lspClients map[string]*lsp.Client
+	lspProvider LSPProvider
 }
 
 type ViewResponseMetadata struct {
@@ -75,9 +74,9 @@ TIPS:
 - When viewing large files, use the offset parameter to read specific sections`
 )
 
-func NewViewTool(lspClients map[string]*lsp.Client) BaseTool {
+func NewViewTool(lspProvider LSPProvider) BaseTool {
 	return &viewTool{
-		lspClients,
+		lspProvider,
 	}
 }
 
@@ -190,7 +189,9 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	}
 
 	logging.Debug("view file read", "filePath", filePath, "lineCount", lineCount)
-	notifyLspOpenFile(ctx, filePath, v.lspClients)
+	v.lspProvider.EnsureForFile(ctx, filePath)
+	clients := v.lspProvider.ClientsForFile(filePath)
+	notifyLspOpenFile(ctx, filePath, clients)
 	output := "<file>\n"
 	// Format the output with line numbers
 	output += addLineNumbers(content, params.Offset+1)
@@ -201,7 +202,7 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 			params.Offset+len(strings.Split(content, "\n")))
 	}
 	output += "\n</file>\n"
-	output += getDiagnostics(filePath, v.lspClients)
+	output += getDiagnostics(filePath, clients)
 	recordFileRead(filePath)
 	return WithResponseMetadata(
 		NewTextResponse(output),

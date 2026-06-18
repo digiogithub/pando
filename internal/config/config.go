@@ -110,6 +110,10 @@ type LSPConfig struct {
 	// this server handles. Used to filter which LSP clients are queried for a
 	// given file. If empty, the server is queried for all files.
 	Languages []string `json:"languages,omitempty"`
+	// Autostart, when true, eagerly starts this server at application boot
+	// instead of waiting for a file of its language to be edited. Defaults to
+	// false: servers are activated lazily on demand (see LSPAutoActivate).
+	Autostart bool `json:"autostart,omitempty" toml:"Autostart,omitempty"`
 }
 
 // TUIConfig defines the configuration for the Terminal User Interface.
@@ -656,6 +660,11 @@ type Config struct {
 	// New code should use ProviderAccounts instead.
 	Providers         map[models.ModelProvider]Provider `json:"providers,omitempty"`
 	LSP               map[string]LSPConfig              `json:"lsp,omitempty"`
+	// LSPAutoActivate enables on-demand activation of language servers: when a
+	// file is edited or opened, the matching server from the built-in presets
+	// (or user config) is started automatically if its binary is found on PATH.
+	// Defaults to true. Set to false to only run servers with Autostart=true.
+	LSPAutoActivate   bool                              `json:"lspAutoActivate,omitempty" toml:"LSPAutoActivate"`
 	Agents            map[AgentName]Agent               `json:"agents,omitempty"`
 	Debug             bool                              `json:"debug,omitempty"`
 	LogFile           string                            `json:"logFile,omitempty"`
@@ -1132,6 +1141,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("skills.enabled", true)
 	viper.SetDefault("skillsCatalog.enabled", true)
 	viper.SetDefault("llmCache.enabled", true) // LLM prompt caching enabled by default
+	viper.SetDefault("lspAutoActivate", true)  // lazily start language servers on demand
 	viper.SetDefault("skillsCatalog.baseUrl", "https://skills.sh")
 	viper.SetDefault("skillsCatalog.autoUpdate", false)
 	viper.SetDefault("skillsCatalog.defaultScope", "global")

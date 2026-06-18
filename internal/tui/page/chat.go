@@ -476,13 +476,13 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.showCompletionDialog = false
 		p.showSlashCompletionDialog = false
 		p.focus = focusEditor
-		cmds = append(cmds, p.applyLayoutMode(SidebarEditor), p.editorWorkspace.OpenFile(msg.Path))
+		cmds = append(cmds, p.applyLayoutMode(SidebarEditor), p.editorWorkspace.OpenFile(msg.Path), p.ensureLSPCmd(msg.Path))
 		return p, tea.Batch(cmds...)
 	case editor.OpenEditableFileMsg:
 		p.showCompletionDialog = false
 		p.showSlashCompletionDialog = false
 		p.focus = focusEditor
-		cmds = append(cmds, p.applyLayoutMode(SidebarEditor), p.editorWorkspace.OpenEditableFile(msg.Path))
+		cmds = append(cmds, p.applyLayoutMode(SidebarEditor), p.editorWorkspace.OpenEditableFile(msg.Path), p.ensureLSPCmd(msg.Path))
 		return p, tea.Batch(cmds...)
 	case editor.CloseViewerMsg:
 		p.showCompletionDialog = false
@@ -750,6 +750,20 @@ func (p *ChatPageModel) updateFileTree(msg tea.Msg) tea.Cmd {
 	model, cmd := p.fileTree.Update(msg)
 	p.fileTree = model.(filetree.Component)
 	return cmd
+}
+
+// ensureLSPCmd lazily activates the language server matching the given file when
+// it is opened in the editor/file-tree. The work runs off the UI goroutine and
+// is a no-op when on-demand activation is disabled or the binary is missing.
+func (p *ChatPageModel) ensureLSPCmd(path string) tea.Cmd {
+	if p.app == nil || path == "" {
+		return nil
+	}
+	app := p.app
+	return func() tea.Msg {
+		app.EnsureLSPForFile(context.Background(), path)
+		return nil
+	}
 }
 
 func (p *ChatPageModel) updateSidebar(msg tea.Msg) tea.Cmd {

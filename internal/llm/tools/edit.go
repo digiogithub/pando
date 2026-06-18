@@ -11,7 +11,6 @@ import (
 	"github.com/digiogithub/pando/internal/diff"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/logging"
-	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/permission"
 )
 
@@ -33,7 +32,7 @@ type EditResponseMetadata struct {
 }
 
 type editTool struct {
-	lspClients  map[string]*lsp.Client
+	lspProvider LSPProvider
 	permissions permission.Service
 	files       history.Service
 }
@@ -89,9 +88,9 @@ When making edits:
 Remember: when making multiple file edits in a row to the same file, you should prefer to send all edits in a single message with multiple calls to this tool, rather than multiple messages with a single call each.`
 )
 
-func NewEditTool(lspClients map[string]*lsp.Client, permissions permission.Service, files history.Service) BaseTool {
+func NewEditTool(lspProvider LSPProvider, permissions permission.Service, files history.Service) BaseTool {
 	return &editTool{
-		lspClients:  lspClients,
+		lspProvider: lspProvider,
 		permissions: permissions,
 		files:       files,
 	}
@@ -160,9 +159,11 @@ func (e *editTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return response, nil
 	}
 
-	waitForLspDiagnostics(ctx, params.FilePath, e.lspClients)
+	e.lspProvider.EnsureForFile(ctx, params.FilePath)
+	clients := e.lspProvider.ClientsForFile(params.FilePath)
+	waitForLspDiagnostics(ctx, params.FilePath, clients)
 	text := fmt.Sprintf("<result>\n%s\n</result>\n", response.Content)
-	text += getDiagnostics(params.FilePath, e.lspClients)
+	text += getDiagnostics(params.FilePath, clients)
 	response.Content = text
 	return response, nil
 }

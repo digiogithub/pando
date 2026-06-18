@@ -156,6 +156,47 @@ debug = false
 autoCompact = true
 ```
 
+### Language Servers (LSP)
+
+Pando activates language servers **on demand**. It ships a built-in catalogue of
+presets (gopls, pyright, typescript-language-server, rust-analyzer, clangd,
+jdtls, and more). When you edit, view, or save a file, Pando looks at its
+extension and starts the matching server from the catalogue **only if its binary
+is found on `PATH`** — exactly like editors such as OpenCode do. This means a
+non-Go project never spins up `gopls`, and each language server starts the first
+time a file of its kind is touched, not at boot.
+
+Activation is triggered from three places: the agent's file tools (edit / write
+/ view / patch), the TUI editor and file-tree, and a lightweight workspace
+watcher that catches edits made by external tools. Servers whose binary is
+missing are remembered and not retried.
+
+You only need `[LSP]` entries to **override, extend, or disable** a catalogue
+server, or to add one Pando doesn't know about:
+
+```toml
+# Turn on-demand activation off entirely (servers then start only if Autostart).
+LSPAutoActivate = true
+
+# Override a preset's command / args, or add your own server.
+[LSP.gopls]
+Command = "gopls"
+Args = []
+Languages = ["go"]
+Disabled = false   # set true to keep this language server from ever starting
+Autostart = false  # set true to eagerly start it at boot instead of on demand
+```
+
+| Setting           | Scope        | Meaning                                                                 |
+| ----------------- | ------------ | ----------------------------------------------------------------------- |
+| `LSPAutoActivate` | global       | When `true` (default), start servers on demand by file type.            |
+| `Disabled`        | per-server   | Never start this server, even on demand.                                |
+| `Autostart`       | per-server   | Eagerly start this server at boot instead of waiting for a matching file. |
+
+The **Settings → LSP** page shows each configured server's command, its
+`installed` / `not installed` status, and an `Autostart` toggle, plus the
+catalogue presets you can add (annotated with their install status).
+
 ## Usage
 
 ```bash

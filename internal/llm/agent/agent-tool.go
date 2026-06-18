@@ -6,7 +6,6 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/tools"
-	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
@@ -15,7 +14,7 @@ import (
 type agentTool struct {
 	sessions     session.Service
 	messages     message.Service
-	lspClients   map[string]*lsp.Client
+	lspProvider  tools.LSPProvider
 	skillManager *skills.SkillManager
 }
 
@@ -60,7 +59,7 @@ func (b *agentTool) Run(ctx context.Context, call tools.ToolCall) (tools.ToolRes
 		return tools.NewTextErrorResponse("session_id and message_id are required"), nil
 	}
 
-	agent, err := NewAgent(config.AgentTask, b.sessions, b.messages, TaskAgentTools(b.lspClients), b.skillManager)
+	agent, err := NewAgent(config.AgentTask, b.sessions, b.messages, TaskAgentTools(b.lspProvider), b.skillManager)
 	if err != nil {
 		return tools.NewTextErrorResponse(fmt.Sprintf("error creating agent: %s", err)), nil
 	}
@@ -105,13 +104,13 @@ func (b *agentTool) Run(ctx context.Context, call tools.ToolCall) (tools.ToolRes
 func NewAgentTool(
 	Sessions session.Service,
 	Messages message.Service,
-	LspClients map[string]*lsp.Client,
+	lspProvider tools.LSPProvider,
 	skillManager *skills.SkillManager,
 ) tools.BaseTool {
 	return &agentTool{
 		sessions:     Sessions,
 		messages:     Messages,
-		lspClients:   LspClients,
+		lspProvider:  lspProvider,
 		skillManager: skillManager,
 	}
 }

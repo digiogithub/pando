@@ -1457,6 +1457,19 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 	}
 }
 
+// lspBinaryStatus reports whether an LSP server command is available on PATH so
+// the settings page can show installed / not-installed status. On-demand
+// activation only starts a server when its binary is found here.
+func lspBinaryStatus(command string) string {
+	if strings.TrimSpace(command) == "" {
+		return "no command"
+	}
+	if _, err := exec.LookPath(command); err != nil {
+		return "not installed"
+	}
+	return "installed"
+}
+
 func buildLSPSection(cfg *config.Config) settings.Section {
 	names := make([]string, 0, len(cfg.LSP))
 	for name := range cfg.LSP {
@@ -1464,7 +1477,21 @@ func buildLSPSection(cfg *config.Config) settings.Section {
 	}
 	sort.Strings(names)
 
-	fields := make([]settings.Field, 0, len(names)*5)
+	fields := make([]settings.Field, 0, len(names)*6)
+
+	// A short note on the on-demand activation mode at the top of the section.
+	activation := "on-demand (servers start when matching files are edited)"
+	if !cfg.LSPAutoActivate {
+		activation = "off (servers start only if marked Autostart)"
+	}
+	fields = append(fields, settings.Field{
+		Label:    "Auto-activation",
+		Key:      "lsp.info.autoactivate",
+		Value:    activation,
+		Type:     settings.FieldText,
+		ReadOnly: true,
+	})
+
 	for _, name := range names {
 		lspCfg := cfg.LSP[name]
 		fields = append(fields,
@@ -1479,6 +1506,13 @@ func buildLSPSection(cfg *config.Config) settings.Section {
 				Key:   fmt.Sprintf("lsp.%s.command", name),
 				Value: lspCfg.Command,
 				Type:  settings.FieldText,
+			},
+			settings.Field{
+				Label:    fmt.Sprintf("%s Status", name),
+				Key:      fmt.Sprintf("lsp.%s.status", name),
+				Value:    lspBinaryStatus(lspCfg.Command),
+				Type:     settings.FieldText,
+				ReadOnly: true,
 			},
 			settings.Field{
 				Label: fmt.Sprintf("%s Args", name),
@@ -1498,10 +1532,17 @@ func buildLSPSection(cfg *config.Config) settings.Section {
 				Value: boolString(!lspCfg.Disabled),
 				Type:  settings.FieldToggle,
 			},
+			settings.Field{
+				Label: fmt.Sprintf("%s Autostart", name),
+				Key:   fmt.Sprintf("lsp.%s.autostart", name),
+				Value: boolString(lspCfg.Autostart),
+				Type:  settings.FieldToggle,
+			},
 		)
 	}
 
-	// Show available presets that are not yet configured.
+	// Show available presets that are not yet configured, annotated with their
+	// install status so the user can see which catalogue servers are ready.
 	presets := config.LSPPresets()
 	for _, preset := range presets {
 		if _, alreadyConfigured := cfg.LSP[preset.Name]; alreadyConfigured {
@@ -1510,7 +1551,7 @@ func buildLSPSection(cfg *config.Config) settings.Section {
 		fields = append(fields, settings.Field{
 			Label: fmt.Sprintf("Add %s", preset.Name),
 			Key:   fmt.Sprintf("action:lsp_preset:%s", preset.Name),
-			Value: preset.Description,
+			Value: fmt.Sprintf("%s [%s]", preset.Description, lspBinaryStatus(preset.Config.Command)),
 			Type:  settings.FieldAction,
 		})
 	}
@@ -3291,6 +3332,15 @@ func saveLSP(field settings.Field) error {
 			return fmt.Errorf("invalid LSP enabled value: %w", err)
 		}
 		lspCfg.Disabled = !enabled
+	case "autostart":
+		autostart, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid LSP autostart value: %w", err)
+		}
+		lspCfg.Autostart = autostart
+	case "status", "info":
+		// Read-only informational fields; nothing to persist.
+		return nil
 	default:
 		return fmt.Errorf("unsupported LSP field %q", parts[2])
 	}

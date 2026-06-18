@@ -16,7 +16,7 @@ type DiagnosticsParams struct {
 	FilePath string `json:"file_path"`
 }
 type diagnosticsTool struct {
-	lspClients map[string]*lsp.Client
+	lspProvider LSPProvider
 }
 
 const (
@@ -44,9 +44,9 @@ TIPS:
 `
 )
 
-func NewDiagnosticsTool(lspClients map[string]*lsp.Client) BaseTool {
+func NewDiagnosticsTool(lspProvider LSPProvider) BaseTool {
 	return &diagnosticsTool{
-		lspClients,
+		lspProvider,
 	}
 }
 
@@ -70,25 +70,27 @@ func (b *diagnosticsTool) Run(ctx context.Context, call ToolCall) (ToolResponse,
 		return NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %s", err)), nil
 	}
 
-	lsps := b.lspClients
+	var lsps map[string]*lsp.Client
 
-	if len(lsps) == 0 {
-		return NewTextErrorResponse("no LSP clients available"), nil
-	}
-
-	// When a specific file is requested, restrict to clients that handle it.
+	// When a specific file is requested, lazily activate its language server and
+	// restrict to clients that handle it; otherwise report across all clients.
 	if params.FilePath != "" {
-		filtered := make(map[string]*lsp.Client, len(lsps))
-		for name, client := range lsps {
-			if client.HandlesFile(params.FilePath) {
-				filtered[name] = client
-			}
+		b.lspProvider.EnsureForFile(ctx, params.FilePath)
+		lsps = b.lspProvider.ClientsForFile(params.FilePath)
+		if len(lsps) == 0 {
+			// No server specifically handles this file; fall back to all clients.
+			lsps = b.lspProvider.Clients()
 		}
-		if len(filtered) > 0 {
-			lsps = filtered
+		if len(lsps) == 0 {
+			return NewTextErrorResponse("no LSP clients available"), nil
 		}
 		notifyLspOpenFile(ctx, params.FilePath, lsps)
 		waitForLspDiagnostics(ctx, params.FilePath, lsps)
+	} else {
+		lsps = b.lspProvider.Clients()
+		if len(lsps) == 0 {
+			return NewTextErrorResponse("no LSP clients available"), nil
+		}
 	}
 
 	output := getDiagnostics(params.FilePath, lsps)

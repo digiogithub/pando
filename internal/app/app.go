@@ -116,6 +116,12 @@ type App struct {
 	openlitShutdown func(context.Context) error
 
 	clientsMutex sync.RWMutex
+	// lspSpawning tracks LSP servers whose lazy startup is in flight, and
+	// lspBroken tracks servers that failed to start or whose binary was not
+	// found on PATH. Both are guarded by clientsMutex and prevent re-attempting
+	// the same server on every file edit. See EnsureLSPForFile.
+	lspSpawning map[string]struct{}
+	lspBroken   map[string]struct{}
 
 	watcherCancelFuncs []context.CancelFunc
 	cancelFuncsMutex   sync.Mutex
@@ -196,6 +202,8 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		DBQuerier:   q,
 		Projects:    projects,
 		LSPClients:  make(map[string]*lsp.Client),
+		lspSpawning: make(map[string]struct{}),
+		lspBroken:   make(map[string]struct{}),
 	}
 
 	// Initialize project manager (Phase 2).
@@ -571,7 +579,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			app.MCPGateway,
 			app.Permissions,
 			app.History,
-			app.LSPClients,
+			app,
 			app.UserInput,
 		),
 		app.SkillManager,

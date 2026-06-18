@@ -161,13 +161,21 @@ UseOAuth = true
 # =============================================================================
 # Language Server Protocol (LSP)
 # =============================================================================
+# Language servers are activated on demand: when you edit a file, Pando starts
+# the matching server from its built-in catalogue (gopls, pyright, typescript-
+# language-server, rust-analyzer, clangd, jdtls, ...) if the binary is on PATH.
+# LSPAutoActivate = false   # set to disable on-demand activation entirely
 [LSP]
 
-[LSP.gopls]
-Disabled  = false
-Command   = 'gopls'
-Args      = []
-Languages = []
+# Override a preset, or add your own server. Set Autostart = true to start a
+# server eagerly at boot instead of waiting for a matching file. Empty fields
+# (Command/Args/Languages) are inherited from the preset of the same name.
+# [LSP.gopls]
+# Disabled  = false
+# Autostart = false
+# Command   = 'gopls'
+# Args      = []
+# Languages = ['.go']
 
 # =============================================================================
 # Agents — configure the model for each role.

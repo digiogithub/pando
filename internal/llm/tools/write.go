@@ -11,7 +11,6 @@ import (
 	"github.com/digiogithub/pando/internal/diff"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/logging"
-	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/mesnada/acp"
 	"github.com/digiogithub/pando/internal/permission"
 )
@@ -27,7 +26,7 @@ type WritePermissionsParams struct {
 }
 
 type writeTool struct {
-	lspClients  map[string]*lsp.Client
+	lspProvider LSPProvider
 	permissions permission.Service
 	files       history.Service
 }
@@ -70,9 +69,9 @@ TIPS:
 - Always include descriptive comments when making changes to existing code`
 )
 
-func NewWriteTool(lspClients map[string]*lsp.Client, permissions permission.Service, files history.Service) BaseTool {
+func NewWriteTool(lspProvider LSPProvider, permissions permission.Service, files history.Service) BaseTool {
 	return &writeTool{
-		lspClients:  lspClients,
+		lspProvider: lspProvider,
 		permissions: permissions,
 		files:       files,
 	}
@@ -216,12 +215,14 @@ func (w *writeTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 
 	recordFileWrite(filePath)
 	recordFileRead(filePath)
-	waitForLspDiagnostics(ctx, filePath, w.lspClients)
+	w.lspProvider.EnsureForFile(ctx, filePath)
+	clients := w.lspProvider.ClientsForFile(filePath)
+	waitForLspDiagnostics(ctx, filePath, clients)
 
 	logging.Debug("write completed", "filePath", filePath, "additions", additions, "removals", removals)
 	result := fmt.Sprintf("File successfully written: %s", filePath)
 	result = fmt.Sprintf("<result>\n%s\n</result>", result)
-	result += getDiagnostics(filePath, w.lspClients)
+	result += getDiagnostics(filePath, clients)
 	return WithResponseMetadata(NewTextResponse(result),
 		WriteResponseMetadata{
 			Diff:      diff,
