@@ -92,6 +92,20 @@ type ChatPageModel struct {
 	goalCancel           context.CancelFunc
 	goalCancelSessionID  string
 	goalObjectivePending string
+	goalEventCh          <-chan agentpkg.AgentEvent
+}
+
+// goalEventChanMsg pumps the goal runner's event channel into the Bubble Tea
+// loop. Per-iteration UI updates already arrive through the agent pubsub
+// stream; the important signal here is the channel CLOSING, which is the only
+// notification that the goal reached a terminal state (completed/blocked/
+// failed/...). finishGoal only writes the new status to the DB and publishes
+// nothing, so without draining this channel the TUI would keep believing the
+// goal is still running (stale input lock and stuck Ctrl+C).
+type goalEventChanMsg struct {
+	sessionID string
+	ch        <-chan agentpkg.AgentEvent
+	ok        bool
 }
 
 type ChatKeyMap struct {
@@ -545,6 +559,27 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		cmds = append(cmds, p.routeMessage(msg)...)
+		return p, tea.Batch(cmds...)
+	case goalEventChanMsg:
+		// Ignore events from a stale channel (e.g. a previous goal).
+		if msg.ch != p.goalEventCh {
+			return p, nil
+		}
+		if msg.ok {
+			// Keep pumping the channel. Live progress arrives via the agent
+			// pubsub stream; we only need to detect the channel closing.
+			return p, p.waitForGoalEvent(msg.sessionID, msg.ch)
+		}
+		// Channel closed: the goal loop finished. Reconcile the terminal
+		// state, which is otherwise never pushed to the TUI, so the input is
+		// re-enabled and HasRunningGoal() reflects reality again.
+		p.goalEventCh = nil
+		p.clearGoalExecution(msg.sessionID)
+		if goalMsg, err := p.loadGoalUpdate(msg.sessionID, false); err != nil {
+			return p, util.ReportError(err)
+		} else {
+			p.routeGoalUpdate(goalMsg, &cmds)
+		}
 		return p, tea.Batch(cmds...)
 	case pubsub.Event[agentpkg.AgentEvent]:
 		if msg.Payload.SessionID == p.session.ID && msg.Payload.Type != agentpkg.AgentEventTypeContentDelta && msg.Payload.Type != agentpkg.AgentEventTypeThinkingDelta && msg.Payload.Type != agentpkg.AgentEventTypeTokenUsage {
@@ -1270,15 +1305,11 @@ func (p *ChatPageModel) startGoal(objective string) tea.Cmd {
 	p.goalCancel = cancel
 	p.goalCancelSessionID = p.session.ID
 	p.goalObjectivePending = objective
+	p.goalEventCh = eventCh
 	p.app.Permissions.RequireExplicitApprovalSession(p.session.ID)
 	if goalAutoApproveEnabled() {
 		p.app.Permissions.AutoApproveSession(p.session.ID)
 	}
-
-	go func() {
-		for range eventCh {
-		}
-	}()
 
 	goalMsg, err := p.loadGoalUpdate(p.session.ID, false)
 	if err != nil {
@@ -1288,8 +1319,19 @@ func (p *ChatPageModel) startGoal(objective string) tea.Cmd {
 	cmds = append(cmds,
 		util.CmdHandler(goalMsg),
 		util.ReportInfo(fmt.Sprintf("Goal started: %s", objective)),
+		p.waitForGoalEvent(p.session.ID, eventCh),
 	)
 	return tea.Batch(cmds...)
+}
+
+// waitForGoalEvent blocks on the goal runner's event channel and turns each
+// event (and the eventual channel close) into a goalEventChanMsg so the Bubble
+// Tea loop can react to the goal finishing.
+func (p *ChatPageModel) waitForGoalEvent(sessionID string, ch <-chan agentpkg.AgentEvent) tea.Cmd {
+	return func() tea.Msg {
+		_, ok := <-ch
+		return goalEventChanMsg{sessionID: sessionID, ch: ch, ok: ok}
+	}
 }
 
 func (p *ChatPageModel) cancelGoal() tea.Cmd {
@@ -1304,6 +1346,13 @@ func (p *ChatPageModel) cancelGoal() tea.Cmd {
 	goal, err := p.cancelPersistedGoal(p.session.ID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			// The goal already reached a terminal state but the local view was
+			// left stale (no completion event was delivered). Clear it so the
+			// input is re-enabled and the next Ctrl+C opens the quit dialog
+			// instead of looping on this warning.
+			p.goalEventCh = nil
+			p.goal = nil
+			p.clearGoalExecution(p.session.ID)
 			return util.ReportWarn("No active goal is running.")
 		}
 		return util.ReportError(err)

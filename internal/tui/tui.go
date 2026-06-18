@@ -1687,6 +1687,12 @@ func (a *appModel) moveToPage(pageID page.PageID) tea.Cmd {
 		// For now we don't move to any page if the agent is busy
 		return util.ReportWarn("Agent is busy, please wait...")
 	}
+	// A goal keeps the agent looping across multiple runs; between iterations
+	// IsBusy() is briefly false, so guard navigation on the goal too. Leaving
+	// the chat page mid-goal abandons the only view that tracks it.
+	if goalPage, ok := a.pages[page.ChatPage].(interface{ HasRunningGoal() bool }); ok && goalPage.HasRunningGoal() {
+		return util.ReportWarn("A goal is running. Press Ctrl+C to cancel it first.")
+	}
 
 	var cmds []tea.Cmd
 	if _, ok := a.loadedPages[pageID]; !ok {

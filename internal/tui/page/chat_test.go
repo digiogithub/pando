@@ -3,6 +3,7 @@ package page
 import (
 	"testing"
 
+	agentpkg "github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui/components/chat"
 )
@@ -47,5 +48,34 @@ func TestApplyGoalUpdateClearsPendingObjectiveOnRunningGoal(t *testing.T) {
 	}
 	if page.goalObjectivePending != "" {
 		t.Fatalf("expected pending objective to clear once goal starts running, got %q", page.goalObjectivePending)
+	}
+}
+
+func TestWaitForGoalEventReportsClosedChannel(t *testing.T) {
+	page := &ChatPageModel{}
+	ch := make(chan agentpkg.AgentEvent, 1)
+	cmd := page.waitForGoalEvent("session-1", ch)
+
+	ch <- agentpkg.AgentEvent{Type: agentpkg.AgentEventTypeResponse, SessionID: "session-1"}
+	msg, ok := cmd().(goalEventChanMsg)
+	if !ok {
+		t.Fatalf("expected goalEventChanMsg, got %T", msg)
+	}
+	if !msg.ok {
+		t.Fatal("expected ok=true while the channel is open and delivering events")
+	}
+	if msg.sessionID != "session-1" {
+		t.Fatalf("expected sessionID to be propagated, got %q", msg.sessionID)
+	}
+
+	// Closing the channel must surface ok=false so the TUI can reconcile the
+	// terminal goal state (otherwise the input lock and Ctrl+C stay stuck).
+	close(ch)
+	closedMsg, ok := page.waitForGoalEvent("session-1", ch)().(goalEventChanMsg)
+	if !ok {
+		t.Fatalf("expected goalEventChanMsg, got %T", closedMsg)
+	}
+	if closedMsg.ok {
+		t.Fatal("expected ok=false once the goal channel is closed")
 	}
 }
