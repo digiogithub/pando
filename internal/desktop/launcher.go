@@ -118,12 +118,69 @@ func macOSBundleExecutablePath(bundleRoot string) (string, error) {
 	return filepath.Join(bundleRoot, "Contents", "MacOS", string(match[1])), nil
 }
 
-// Launch extracts the embedded desktop binary to a temp dir (if needed) and
-// executes it with the given pandoURL. It blocks until the desktop window exits.
+// siblingDesktopBinary returns the path of a pando-desktop wrapper shipped on
+// disk next to the running executable, if present.
 //
-// The embedBin parameter is the raw bytes of the compiled pando-desktop binary
-// produced by `make desktop-embed`. If nil or empty, Launch returns an error.
+// Packaged macOS builds (the signed & notarized Pando.app produced by
+// scripts/build-macos-app) place pando-desktop alongside pando-bin inside
+// Contents/MacOS/. Launching that on-disk wrapper directly avoids extracting an
+// embedded Mach-O to a temp dir — extraction strips the file from its signed,
+// notarized location, so the hardened runtime of the parent process would kill
+// the unsigned/quarantine-checked child. Preferring the sibling keeps the
+// wrapper running from its validly signed final path.
+func siblingDesktopBinary() (string, bool) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", false
+	}
+	if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
+		exe = resolved
+	}
+	candidate := filepath.Join(filepath.Dir(exe), binaryName())
+	if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+		return candidate, true
+	}
+	return "", false
+}
+
+// runDesktop executes the desktop wrapper at binPath and blocks until it exits.
+func runDesktop(binPath, pandoURL string, simpleMode bool) error {
+	args := []string{"--url", pandoURL}
+	if simpleMode {
+		args = append(args, "--simple")
+	}
+
+	cmd := exec.Command(binPath, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 0 {
+			return nil
+		}
+		return fmt.Errorf("desktop process exited: %w", err)
+	}
+	return nil
+}
+
+// Launch starts the desktop wrapper and blocks until the desktop window exits.
+//
+// Resolution order:
+//  1. A pando-desktop wrapper shipped on disk next to the running executable
+//     (packaged .app/.pkg installs) — launched in place, preserving its
+//     signature & notarization.
+//  2. On macOS, an embedded Pando.app bundle extracted to a temp dir.
+//  3. The raw embedBin bytes (the compiled pando-desktop produced by
+//     `make desktop-embed`) extracted to a temp dir.
+//
+// embedBin may be nil/empty when the wrapper is shipped on disk instead of
+// embedded.
 func Launch(embedBin []byte, pandoURL string, simpleMode bool) error {
+	if sibling, ok := siblingDesktopBinary(); ok {
+		return runDesktop(sibling, pandoURL, simpleMode)
+	}
+
 	if runtime.GOOS == "darwin" && hasUsableEmbeddedAppBundle() {
 		return launchAppBundle(pandoURL, simpleMode)
 	}
@@ -146,25 +203,7 @@ func Launch(embedBin []byte, pandoURL string, simpleMode bool) error {
 		return fmt.Errorf("failed to write desktop binary: %w", err)
 	}
 
-	args := []string{"--url", pandoURL}
-	if simpleMode {
-		args = append(args, "--simple")
-	}
-
-	cmd := exec.Command(binPath, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			if exitErr.ExitCode() == 0 {
-				return nil
-			}
-		}
-		return fmt.Errorf("desktop process exited: %w", err)
-	}
-	return nil
+	return runDesktop(binPath, pandoURL, simpleMode)
 }
 
 func launchAppBundle(pandoURL string, simpleMode bool) error {
@@ -183,22 +222,6 @@ func launchAppBundle(pandoURL string, simpleMode bool) error {
 	if err != nil {
 		return err
 	}
-	args := []string{"--url", pandoURL}
-	if simpleMode {
-		args = append(args, "--simple")
-	}
 
-	cmd := exec.Command(binPath, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 0 {
-			return nil
-		}
-		return fmt.Errorf("desktop app process exited: %w", err)
-	}
-
-	return nil
+	return runDesktop(binPath, pandoURL, simpleMode)
 }

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# build-macos-app — Build a universal macOS .app bundle and .pkg installer for Pando.
+# build-macos-app — Build per-architecture macOS .app bundles and .pkg installers for Pando.
 #
-# Extracts the arch-specific binaries from dist/, creates a universal binary
-# with lipo, assembles a Pando.app bundle, and produces a signed .pkg installer.
+# For each architecture (arm64, x64) this assembles a Pando.app that ships the
+# desktop wrapper (pando-desktop) as a REAL signed file inside the bundle,
+# alongside the CLI binary (pando-bin). The wrapper is no longer extracted from
+# a go:embed at runtime, so macOS does not kill it: it runs in place from its
+# signed & notarized location.
 #
 # Usage:
 #   scripts/build-macos-app [VERSION]
@@ -14,7 +17,7 @@
 # Prerequisites (macOS only):
 #   - Xcode Command Line Tools: lipo, iconutil, sips, pkgbuild, productbuild, productsign,
 #     pkgutil, codesign, spctl
-#   - codesign-digio   custom signing tool (optional — steps are skipped when absent)
+#   - wails CLI (to build the per-arch desktop wrapper)
 #   - PKG_SIGN_IDENTITY (recommended) Installer certificate common name for productsign,
 #     e.g. "Developer ID Installer: Example Corp (TEAMID)"
 #
@@ -22,10 +25,10 @@
 #   dist/pando-darwin-x64.zip
 #   dist/pando-darwin-arm64.zip
 #
-# Outputs in dist/:
-#   pando-osx.zip          Universal binary (fat Mach-O), compressed
-#   Pando.app              Signed .app bundle
-#   pando-<VERSION>.pkg    Signed flat-package installer
+# Outputs in dist/ (one set per architecture):
+#   Pando-<arch>.app                       Signed .app bundle (arch = arm64|x64)
+#   pando-<VERSION>-darwin-<arch>.pkg       Signed & notarized flat-package installer
+#   pando-<VERSION>-darwin-<arch>.pkg.zip   Compressed installer
 
 set -euo pipefail
 
@@ -33,6 +36,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$REPO_ROOT/dist"
 ASSETS_DIR="$REPO_ROOT/assets"
+DESKTOP_DIR="$REPO_ROOT/desktop"
 
 # ── Guards ──────────────────────────────────────────────────────────────────
 
@@ -48,17 +52,24 @@ for tool in lipo iconutil sips pkgbuild productbuild productsign pkgutil codesig
     }
 done
 
-# ── Locate codesign-digio ────────────────────────────────────────────────────
-# Check PATH first, then ~/bin/ (SSH sessions often omit the user's PATH).
+# ── Locate wails ──────────────────────────────────────────────────────────────
 
-CODESIGN_DIGIO=""
-if command -v codesign-digio >/dev/null 2>&1; then
-    CODESIGN_DIGIO="$(command -v codesign-digio)"
-elif [[ -x "$HOME/bin/codesign-digio" ]]; then
-    CODESIGN_DIGIO="$HOME/bin/codesign-digio"
+WAILS="${WAILS:-}"
+if [[ -z "$WAILS" ]]; then
+    if command -v wails >/dev/null 2>&1; then
+        WAILS="$(command -v wails)"
+    elif [[ -x "$(go env GOPATH)/bin/wails" ]]; then
+        WAILS="$(go env GOPATH)/bin/wails"
+    fi
 fi
-PKG_SIGN_IDENTITY="961FF87CC1EF61866640E471FB84B73E001281AF"
-SIGNING_IDENTITY="4749EC5719E91D7ADFE5FDB4CB546057A8CFB9AD"
+if [[ -z "$WAILS" || ! -x "$WAILS" ]]; then
+    echo "Error: wails CLI not found. Install it with 'make desktop-deps'." >&2
+    exit 1
+fi
+
+# ── Identities ─────────────────────────────────────────────────────────────────
+PKG_SIGN_IDENTITY="${PKG_SIGN_IDENTITY:-961FF87CC1EF61866640E471FB84B73E001281AF}"
+SIGNING_IDENTITY="${SIGNING_IDENTITY:-4749EC5719E91D7ADFE5FDB4CB546057A8CFB9AD}"
 
 # notarytool keychain profile created with:
 #   xcrun notarytool store-credentials "pando-notary" --apple-id ... --team-id ... --password ...
@@ -216,134 +227,151 @@ done
 # ── Workspace ───────────────────────────────────────────────────────────────
 
 WORK_DIR="$(mktemp -d)"
-
 mkdir -p "$DIST_DIR"
 
-# ── 1. Extract arch binaries ─────────────────────────────────────────────────
-
-echo "Extracting arch binaries..."
-ARCH_DIR="$WORK_DIR/arch"
-mkdir -p "$ARCH_DIR"
-unzip -q "$AMD64_ZIP" -d "$ARCH_DIR"   # → pando-darwin-x64
-unzip -q "$ARM64_ZIP" -d "$ARCH_DIR"   # → pando-darwin-arm64
-chmod +x "$ARCH_DIR/pando-darwin-x64" "$ARCH_DIR/pando-darwin-arm64"
-
-# ── 2. Universal binary ──────────────────────────────────────────────────────
-
-echo "Creating universal binary with lipo..."
-UNIVERSAL="$WORK_DIR/pando-universal"
-lipo -create \
-    "$ARCH_DIR/pando-darwin-x64" \
-    "$ARCH_DIR/pando-darwin-arm64" \
-    -output "$UNIVERSAL"
-chmod +x "$UNIVERSAL"
-
-# ── 3. Sign universal binary ─────────────────────────────────────────────────
-
-echo "Signing universal binary..."
-run_codesign -o runtime "$UNIVERSAL"
-verify_macho_signature "$UNIVERSAL"
-
-# ── 4. Build .app bundle ──────────────────────────────────────────────────────
-
-APP_DIR="$WORK_DIR/Pando.app"
-MACOS_DIR="$APP_DIR/Contents/MacOS"
-RES_DIR="$APP_DIR/Contents/Resources"
-mkdir -p "$MACOS_DIR" "$RES_DIR"
-
-# Actual binary — named pando-bin to avoid case-collision with the wrapper on
-# case-insensitive APFS/HFS+ volumes (pando == Pando on default macOS fs).
-# /usr/local/bin/pando calls this file directly for full CLI access.
-cp "$UNIVERSAL" "$MACOS_DIR/pando-bin"
-chmod +x "$MACOS_DIR/pando-bin"
-
-# CFBundleExecutable wrapper — invoked when the user opens the .app.
-# Calls pando-bin with the 'desktop' subcommand to launch the desktop UI.
-cat > "$MACOS_DIR/pando" <<'WRAPPER'
-#!/bin/bash
-# Launch Pando in desktop mode when opened as a macOS application.
-SELF="$(cd "$(dirname "$0")" && pwd)"
-exec "$SELF/pando-bin" desktop
-WRAPPER
-chmod +x "$MACOS_DIR/pando"
-
-# ── 5. Icon: PNG → ICNS ───────────────────────────────────────────────────────
+# ── Shared icon: PNG → ICNS (built once, reused per arch) ─────────────────────
 
 echo "Converting icon to AppIcon.icns..."
 SRC_ICON="$ASSETS_DIR/pando_icon0_optim.png"
 ICONSET="$WORK_DIR/AppIcon.iconset"
 mkdir -p "$ICONSET"
-
 for size in 16 32 64 128 256 512; do
-    sips -z "$size" "$size" "$SRC_ICON" --out "$ICONSET/icon_${size}x${size}.png"      >/dev/null 2>&1
+    sips -z "$size" "$size" "$SRC_ICON" --out "$ICONSET/icon_${size}x${size}.png"     >/dev/null 2>&1
     dbl=$((size * 2))
-    sips -z "$dbl" "$dbl" "$SRC_ICON" --out "$ICONSET/icon_${size}x${size}@2x.png"   >/dev/null 2>&1
+    sips -z "$dbl" "$dbl" "$SRC_ICON" --out "$ICONSET/icon_${size}x${size}@2x.png"     >/dev/null 2>&1
 done
-iconutil -c icns "$ICONSET" -o "$RES_DIR/AppIcon.icns"
+SHARED_ICNS="$WORK_DIR/AppIcon.icns"
+iconutil -c icns "$ICONSET" -o "$SHARED_ICNS"
 
-# ── 6. Info.plist ─────────────────────────────────────────────────────────────
+# ── Build the desktop wrapper, per architecture, with wails ───────────────────
+# wails build -platform darwin/<goarch> produces a thin Pando.app whose
+# Contents/MacOS/pando-desktop is the arch-specific wrapper executable.
+build_wrapper() {
+    local goarch="$1"          # amd64 | arm64
+    local out_bin="$2"         # destination path for the thin pando-desktop
 
-sed "s/{{VERSION}}/$BUNDLE_VERSION/g" "$SCRIPT_DIR/Info.plist.tpl" \
-    > "$APP_DIR/Contents/Info.plist"
+    echo "Building desktop wrapper (darwin/${goarch}) with wails..."
+    ( cd "$DESKTOP_DIR" && "$WAILS" build -platform "darwin/${goarch}" -clean -o pando-desktop )
 
-# ── 7. Copy .app to dist/ ─────────────────────────────────────────────────────
+    local built="$DESKTOP_DIR/build/bin/Pando.app/Contents/MacOS/pando-desktop"
+    if [[ ! -f "$built" ]]; then
+        # Fallback: some wails versions emit a bare binary instead of a bundle.
+        built="$DESKTOP_DIR/build/bin/pando-desktop"
+    fi
+    [[ -f "$built" ]] || { echo "Error: wails did not produce a pando-desktop for darwin/${goarch}." >&2; exit 1; }
+    cp "$built" "$out_bin"
+    chmod +x "$out_bin"
+}
 
-FINAL_APP="$DIST_DIR/Pando.app"
-rm -rf "$FINAL_APP"
-cp -R "$APP_DIR" "$FINAL_APP"
+# ── Per-arch bundle + pkg assembly ────────────────────────────────────────────
+# args: <arch-label> <goarch> <cli-zip>
+build_arch_package() {
+    local arch_label="$1"      # arm64 | x64   (matches dist artifact naming)
+    local goarch="$2"          # arm64 | amd64 (GOARCH for the wrapper)
+    local cli_zip="$3"
 
-echo "Signing Pando.app bundle..."
-run_codesign --deep -o runtime "$FINAL_APP"
-verify_app_signature "$FINAL_APP"
+    echo ""
+    echo "════════════════════════════════════════════════════════════════"
+    echo "Building package for darwin/${arch_label}"
+    echo "════════════════════════════════════════════════════════════════"
 
-# ── 8. Copy universal binary to dist/pando-osx ───────────────────────────────
+    local arch_work="$WORK_DIR/$arch_label"
+    mkdir -p "$arch_work"
 
-cp "$UNIVERSAL" "$DIST_DIR/pando-osx"
-echo "Universal binary: dist/pando-osx"
+    # 1. Extract the thin CLI binary (pando-bin).
+    echo "Extracting CLI binary..."
+    unzip -q "$cli_zip" -d "$arch_work"
+    local cli_bin
+    cli_bin="$(find "$arch_work" -maxdepth 1 -name 'pando-darwin-*' -type f | head -n1)"
+    [[ -n "$cli_bin" ]] || { echo "Error: CLI binary not found in $cli_zip" >&2; exit 1; }
+    chmod +x "$cli_bin"
 
-# ── 9. Build .pkg installer ───────────────────────────────────────────────────
+    # 2. Build the thin desktop wrapper for this arch.
+    local wrapper_bin="$arch_work/pando-desktop"
+    build_wrapper "$goarch" "$wrapper_bin"
 
-echo "Building .pkg installer..."
-PKG_WORK="$WORK_DIR/pkg"
-APP_STAGE="$PKG_WORK/app-root"
-LAUNCHER_STAGE="$PKG_WORK/launcher-root"
-mkdir -p "$APP_STAGE/Applications" \
-         "$LAUNCHER_STAGE/usr/local/bin"
+    # 3. Assemble Pando.app.
+    local app_dir="$arch_work/Pando.app"
+    local macos_dir="$app_dir/Contents/MacOS"
+    local res_dir="$app_dir/Contents/Resources"
+    mkdir -p "$macos_dir" "$res_dir"
 
-# Signed .app goes under /Applications
-cp -R "$FINAL_APP" "$APP_STAGE/Applications/"
+    # Actual CLI binary — named pando-bin to avoid case-collision with the shell
+    # wrapper on case-insensitive APFS/HFS+ volumes (pando == Pando).
+    cp "$cli_bin" "$macos_dir/pando-bin"
+    chmod +x "$macos_dir/pando-bin"
 
-# /usr/local/bin/pando — calls the real binary inside the .app (not the desktop wrapper)
-cat > "$LAUNCHER_STAGE/usr/local/bin/pando" <<'LAUNCHER'
+    # Desktop wrapper — shipped as a real file. At runtime `pando-bin desktop`
+    # finds and launches this sibling directly (see internal/desktop/launcher.go),
+    # so it runs from its signed/notarized location instead of a temp dir.
+    cp "$wrapper_bin" "$macos_dir/pando-desktop"
+    chmod +x "$macos_dir/pando-desktop"
+
+    # CFBundleExecutable wrapper — invoked when the user opens the .app.
+    cat > "$macos_dir/pando" <<'WRAPPER'
+#!/bin/bash
+# Launch Pando in desktop mode when opened as a macOS application.
+SELF="$(cd "$(dirname "$0")" && pwd)"
+exec "$SELF/pando-bin" desktop
+WRAPPER
+    chmod +x "$macos_dir/pando"
+
+    cp "$SHARED_ICNS" "$res_dir/AppIcon.icns"
+    sed "s/{{VERSION}}/$BUNDLE_VERSION/g" "$SCRIPT_DIR/Info.plist.tpl" \
+        > "$app_dir/Contents/Info.plist"
+
+    # 4. Sign inside-out: nested executables first, then the bundle.
+    echo "Signing bundle executables (inside-out)..."
+    run_codesign -o runtime "$macos_dir/pando-bin"
+    run_codesign -o runtime "$macos_dir/pando-desktop"
+
+    local final_app="$DIST_DIR/Pando-${arch_label}.app"
+    rm -rf "$final_app"
+    cp -R "$app_dir" "$final_app"
+
+    echo "Signing Pando.app bundle..."
+    run_codesign --deep -o runtime "$final_app"
+    verify_app_signature "$final_app"
+
+    # 5. Build the .pkg installer.
+    echo "Building .pkg installer for ${arch_label}..."
+    local pkg_work="$arch_work/pkg"
+    local app_stage="$pkg_work/app-root"
+    local launcher_stage="$pkg_work/launcher-root"
+    mkdir -p "$app_stage/Applications" "$launcher_stage/usr/local/bin"
+
+    # Install the bundle as /Applications/Pando.app (canonical name).
+    cp -R "$final_app" "$app_stage/Applications/Pando.app"
+
+    # /usr/local/bin/pando — calls the real CLI inside the .app.
+    cat > "$launcher_stage/usr/local/bin/pando" <<'LAUNCHER'
 #!/bin/sh
 exec /Applications/Pando.app/Contents/MacOS/pando-bin "$@"
 LAUNCHER
-chmod +x "$LAUNCHER_STAGE/usr/local/bin/pando"
+    chmod +x "$launcher_stage/usr/local/bin/pando"
 
-# Component packages
-APP_PKG="$PKG_WORK/pando-app.pkg"
-LAUNCHER_PKG="$PKG_WORK/pando-launcher.pkg"
+    local app_pkg="$pkg_work/pando-app.pkg"
+    local launcher_pkg="$pkg_work/pando-launcher.pkg"
 
-pkgbuild \
-    --root "$APP_STAGE" \
-    --identifier "es.digio.pando" \
-    --version "$BUNDLE_VERSION" \
-    --install-location "/" \
-    "$APP_PKG"
+    pkgbuild \
+        --root "$app_stage" \
+        --identifier "es.digio.pando" \
+        --version "$BUNDLE_VERSION" \
+        --install-location "/" \
+        "$app_pkg"
 
-pkgbuild \
-    --root "$LAUNCHER_STAGE" \
-    --identifier "es.digio.pando.launcher" \
-    --version "$BUNDLE_VERSION" \
-    --install-location "/" \
-    "$LAUNCHER_PKG"
+    pkgbuild \
+        --root "$launcher_stage" \
+        --identifier "es.digio.pando.launcher" \
+        --version "$BUNDLE_VERSION" \
+        --install-location "/" \
+        "$launcher_pkg"
 
-# Distribution descriptor
-DIST_XML="$PKG_WORK/distribution.xml"
-cat > "$DIST_XML" <<XML
+    local dist_xml="$pkg_work/distribution.xml"
+    cat > "$dist_xml" <<XML
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="1">
-    <title>Pando ${VERSION}</title>
+    <title>Pando ${VERSION} (${arch_label})</title>
     <organization>es.digio</organization>
     <domains enable_localSystem="true"/>
     <options customize="never" require-scripts="false"/>
@@ -362,56 +390,51 @@ cat > "$DIST_XML" <<XML
 </installer-gui-script>
 XML
 
-UNSIGNED_PKG="$PKG_WORK/pando-${VERSION}-unsigned.pkg"
-productbuild \
-    --distribution "$DIST_XML" \
-    --package-path "$PKG_WORK" \
-    "$UNSIGNED_PKG"
+    local unsigned_pkg="$pkg_work/pando-${VERSION}-${arch_label}-unsigned.pkg"
+    productbuild \
+        --distribution "$dist_xml" \
+        --package-path "$pkg_work" \
+        "$unsigned_pkg"
 
-FINAL_PKG="$DIST_DIR/pando-${VERSION}.pkg"
+    local final_pkg="$DIST_DIR/pando-${VERSION}-darwin-${arch_label}.pkg"
+    rm -f "$final_pkg"
 
-if is_pkg_signed "$FINAL_PKG"; then
-    echo ".pkg installer already signed, skipping signing step."
-else
     if [[ -z "$PKG_SIGN_IDENTITY" ]]; then
         echo "PKG_SIGN_IDENTITY not set — leaving installer unsigned." >&2
-        cp "$UNSIGNED_PKG" "$FINAL_PKG"
+        cp "$unsigned_pkg" "$final_pkg"
     else
         echo "Signing .pkg installer with productsign..."
-        if productsign --sign "$PKG_SIGN_IDENTITY" "$UNSIGNED_PKG" "$FINAL_PKG"; then
+        if productsign --sign "$PKG_SIGN_IDENTITY" "$unsigned_pkg" "$final_pkg"; then
             :
         else
             echo "Warning: productsign failed for identity '$PKG_SIGN_IDENTITY' — leaving installer unsigned." >&2
-            cp "$UNSIGNED_PKG" "$FINAL_PKG"
+            cp "$unsigned_pkg" "$final_pkg"
         fi
     fi
-fi
 
-if is_pkg_signed "$FINAL_PKG"; then
-    # Notarize & staple before the spctl assessment: an unnotarized Developer ID
-    # package fails 'spctl --assess --type install', which would abort the script
-    # under 'set -e'.
-    notarize_and_staple "$FINAL_PKG"
-    verify_pkg_signature "$FINAL_PKG"
-else
-    echo "Skipping .pkg notarization & verification because the installer is unsigned."
-fi
+    if is_pkg_signed "$final_pkg"; then
+        # Notarize & staple before the spctl assessment: an unnotarized Developer
+        # ID package fails 'spctl --assess --type install', aborting under set -e.
+        notarize_and_staple "$final_pkg"
+        verify_pkg_signature "$final_pkg"
+    else
+        echo "Skipping .pkg notarization & verification because the installer is unsigned."
+    fi
 
-verify_macho_signature "$DIST_DIR/pando-osx"
+    echo "Compressing dist/$(basename "$final_pkg").zip..."
+    ( cd "$DIST_DIR" && zip -q "$(basename "$final_pkg").zip" "$(basename "$final_pkg")" )
 
-# Compress universal binary (consistent with other release archives)
-echo "Compressing dist/pando-osx.zip..."
-(cd "$DIST_DIR" && zip -qm "pando-osx.zip" "pando-osx")
+    echo "  → $final_pkg"
+}
 
-# Compress .pkg for easy distribution
-echo "Compressing dist/pando-${VERSION}.pkg.zip..."
-(cd "$DIST_DIR" && zip -q "pando-${VERSION}.pkg.zip" "pando-${VERSION}.pkg")
+build_arch_package arm64 arm64 "$ARM64_ZIP"
+build_arch_package x64   amd64 "$AMD64_ZIP"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 
 echo ""
 echo "Done!"
-echo "  Universal binary : dist/pando-osx.zip"
-echo "  macOS .app bundle: dist/Pando.app"
-echo "  macOS .pkg        : dist/pando-${VERSION}.pkg"
-echo "  macOS .pkg (zip)  : dist/pando-${VERSION}.pkg.zip"
+echo "  arm64 .app : dist/Pando-arm64.app"
+echo "  arm64 .pkg : dist/pando-${VERSION}-darwin-arm64.pkg"
+echo "  x64   .app : dist/Pando-x64.app"
+echo "  x64   .pkg : dist/pando-${VERSION}-darwin-x64.pkg"

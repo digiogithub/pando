@@ -53,7 +53,7 @@ Installer in linux
 curl -fsSL https://raw.githubusercontent.com/digiogithub/pando/main/scripts/install-linux.sh | bash
 ```
 
-In OSX best download the [release](https://github.com/digiogithub/pando/releases) of pkg (universal binary) that installs .app and launcher and icons
+In OSX download the [release](https://github.com/digiogithub/pando/releases) `.pkg` for your architecture — `pando-<version>-darwin-arm64.pkg` (Apple Silicon) or `pando-<version>-darwin-x64.pkg` (Intel). The installer places `Pando.app` (with the embedded desktop wrapper, icons and the `/usr/local/bin/pando` launcher) under `/Applications`.
 
 ### Using Go
 
@@ -320,7 +320,12 @@ scp mac-mini-de-digio:~/www/MCP/Pando/pando/dist/*.zip dist/
 echo "Release builds completed in dist/"
 ```
 
-For macOS signing, `codesign-digio` should continue to sign Mach-O artifacts (`dist/pando-darwin-*`, `dist/pando-osx`, `Pando.app`) with the Developer ID Application certificate it already encapsulates. The installer package must be signed separately with `productsign` and a `Developer ID Installer` identity via `PKG_SIGN_IDENTITY`; reusing the application certificate for the `.pkg` makes Gatekeeper report the package as unsigned or invalid. `scripts/build-macos-app` now verifies all three outputs after signing with `codesign`, `spctl`, and `pkgutil --check-signature`.
+For macOS signing the flow is split in two:
+
+- **Embedded wrapper (standalone CLI builds).** `make desktop-embed` now signs the `pando-desktop` wrapper with the Developer ID Application identity (hardened runtime, **no notarization**) *before* it is baked into the CLI via `go:embed`. Signing the wrapper before embedding is what stops macOS from killing it when `pando desktop` extracts and runs it from a temp dir. The Mach-O signature travels inside the embedded bytes and is preserved on extraction.
+- **Packaged `.app`/`.pkg` (per architecture).** `scripts/build-macos-app` builds one bundle per architecture and ships `pando-desktop` as a **real file inside `Pando.app/Contents/MacOS/`** next to `pando-bin` — it is no longer extracted from the embed at runtime. The runtime (`internal/desktop/launcher.go`) prefers that on-disk sibling, so the wrapper runs from its signed & notarized location. Each bundle is signed inside-out (`pando-bin`, then `pando-desktop`, then `Pando.app` with `codesign --deep -o runtime`) and packaged into `pando-<version>-darwin-arm64.pkg` and `pando-<version>-darwin-x64.pkg`.
+
+The installer package must be signed separately with `productsign` and a `Developer ID Installer` identity via `PKG_SIGN_IDENTITY`; reusing the application certificate for the `.pkg` makes Gatekeeper report the package as unsigned or invalid. `scripts/build-macos-app` verifies every bundle and installer after signing with `codesign`, `spctl`, and `pkgutil --check-signature`, and notarizes/staples each `.pkg` via `notarytool` (profile `NOTARY_PROFILE`).
 
 
 ### release-osx
@@ -331,7 +336,7 @@ interactive:true
 Inputs: KEYSTORE_PASS
 
 ```bash
-export PATH=$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && export PKG_SIGN_IDENTITY='Developer ID Installer: Digio Soluciones Digitales SL (TEAMID)' && cd ~/www/MCP/Pando/pando && git pull origin main && git fetch origin --tags && rm -rf dist && mkdir -p dist && xc build && export KEYSTORE_PASS='$KEYSTORE_PASS' && security unlock-keychain -p \"\$KEYSTORE_PASS\" /Users/digio/Library/Keychains/login.keychain-db && make release-darwin-arm64 && make release-darwin-amd64 && bash scripts/build-macos-app
+export PATH=$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && export PKG_SIGN_IDENTITY='Developer ID Installer: Digio Soluciones Digitales SL (TEAMID)' && cd ~/www/MCP/Pando/pando && git pull origin main && git fetch origin --tags && rm -rf dist && mkdir -p dist && export KEYSTORE_PASS='$KEYSTORE_PASS' && security unlock-keychain -p \"\$KEYSTORE_PASS\" /Users/digio/Library/Keychains/login.keychain-db && xc build && make release-darwin-arm64 && make release-darwin-amd64 && bash scripts/build-macos-app
 
 
 echo "Release builds completed in dist/"

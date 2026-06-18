@@ -31,6 +31,12 @@ CC_DARWIN_ARM64 ?= $(ZIG) cc -target aarch64-macos.$(MACOS_MIN_VERSION)
 CXX_DARWIN_ARM64 ?= $(ZIG) c++ -target aarch64-macos.$(MACOS_MIN_VERSION)
 endif
 MACOS_SYSROOT_FLAGS :=
+# Developer ID Application identity used to sign the embedded desktop wrapper
+# before it is baked into the CLI binary. Signing (with hardened runtime) is
+# required so the wrapper is not killed by macOS when `pando desktop` extracts
+# and runs it from a temp dir. Notarization is NOT done here — that happens only
+# for the packaged .app/.pkg produced by scripts/build-macos-app.
+MACOS_SIGN_IDENTITY ?= 4749EC5719E91D7ADFE5FDB4CB546057A8CFB9AD
 
 # ============================================================
 # Desktop App (Wails) targets
@@ -86,6 +92,17 @@ desktop-dev:
 desktop-embed: desktop-build
 	@mkdir -p internal/desktop/bin
 	@rm -rf internal/desktop/bin/Pando.app
+	@if [ "$(shell uname)" = "Darwin" ]; then \
+		if [ -d desktop/build/bin/Pando.app ]; then \
+			echo "Signing embedded desktop wrapper (Pando.app) — hardened runtime, no notarization..."; \
+			codesign --deep --force -o runtime --timestamp --sign "$(MACOS_SIGN_IDENTITY)" desktop/build/bin/Pando.app \
+				|| echo "Warning: codesign of embedded desktop wrapper failed; 'pando desktop' from a standalone binary may be blocked by macOS."; \
+		elif [ -f desktop/build/bin/pando-desktop ]; then \
+			echo "Signing embedded desktop wrapper (pando-desktop) — hardened runtime, no notarization..."; \
+			codesign --force -o runtime --timestamp --sign "$(MACOS_SIGN_IDENTITY)" desktop/build/bin/pando-desktop \
+				|| echo "Warning: codesign of embedded desktop wrapper failed."; \
+		fi; \
+	fi
 	@python3 scripts/embed_desktop_artifact.py desktop/build/bin internal/desktop/bin
 	@echo "Embedded desktop build artifacts into internal/desktop/bin"
 
