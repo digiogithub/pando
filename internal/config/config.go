@@ -1648,6 +1648,21 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 	// 		 	endpoint should be queried to validate if the model is supported.
 	model, modelExists := models.SupportedModels[agent.Model]
 	if !modelExists {
+		// Before discarding the user's selection, try to resolve a non-canonical or
+		// legacy model ID (e.g. a bare "gpt-5.4-mini" saved by an older web-UI) to its
+		// registered canonical form ("copilot.gpt-5.4-mini"). This keeps the configured
+		// model instead of silently reverting it to a provider default on every reload.
+		if resolved, ok := models.ResolveModelID(agent.Model); ok {
+			logging.Info("resolved non-canonical agent model to registered ID",
+				"agent", name,
+				"configured_model", agent.Model,
+				"resolved_model", resolved)
+			agent.Model = resolved
+			cfg.Agents[name] = agent
+			model, modelExists = models.SupportedModels[resolved]
+		}
+	}
+	if !modelExists {
 		logging.Warn("unsupported model configured, reverting to default",
 			"agent", name,
 			"configured_model", agent.Model)

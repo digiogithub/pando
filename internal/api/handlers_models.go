@@ -135,7 +135,12 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 					name = m.ID
 				}
 
-				modelID := models.NormalizeModelID(m.ID)
+				// Build the canonical, provider-prefixed model ID (e.g.
+				// "copilot.gpt-5.4-mini") so the ID exposed to the UI matches the one
+				// registered by the model cache and accepted by validateAgent. Using a
+				// bare ID here makes the web-UI save an unrecognised agent model that
+				// gets reverted to a default on the next config reload.
+				modelID := models.CanonicalAccountModelID(acc.Type, acc.ID, sameTypeCount, m.ID)
 				if _, exists := models.SupportedModels[modelID]; !exists {
 					contextWindow := m.ContextWindow
 					if contextWindow <= 0 {

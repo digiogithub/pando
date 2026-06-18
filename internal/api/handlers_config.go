@@ -191,8 +191,15 @@ func (s *Server) handlePutConfigAgents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, item := range req.Agents {
+		// Resolve the incoming model ID to its registered canonical form so the value
+		// persisted matches what the TUI writes and what validateAgent accepts on the
+		// next reload. Without this a non-canonical ID would be reverted to a default.
+		modelID := item.Model
+		if resolved, ok := models.ResolveModelID(modelID); ok {
+			modelID = resolved
+		}
 		agent := config.Agent{
-			Model:                item.Model,
+			Model:                modelID,
 			MaxTokens:            item.MaxTokens,
 			ReasoningEffort:      item.ReasoningEffort,
 			ThinkingMode:         item.ThinkingMode,

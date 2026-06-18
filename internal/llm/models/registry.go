@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"unicode"
 )
@@ -179,6 +180,49 @@ func dynamicModelPrefix(providerType ModelProvider, accountID string, allAccount
 		return accountID
 	}
 	return string(providerType)
+}
+
+// CanonicalAccountModelID returns the registry model ID for a model fetched from a
+// provider account, matching exactly the IDs produced by
+// RefreshProviderModelsForAccount (i.e. "<prefix>.<apiModelID>"). Callers that list
+// models for selection must use this so the IDs they expose are the same ones the
+// rest of the system (model cache, agent validation, TUI) recognises. Using a bare,
+// non-prefixed ID causes validateAgent to reject the saved agent model on the next
+// config reload and silently revert it to a provider default.
+func CanonicalAccountModelID(providerType ModelProvider, accountID string, allAccountsOfType int, apiModelID string) ModelID {
+	prefix := dynamicModelPrefix(providerType, accountID, allAccountsOfType)
+	return ModelID(fmt.Sprintf("%s.%s", prefix, apiModelID))
+}
+
+// ResolveModelID maps a possibly non-canonical model ID to a registered model ID.
+// It returns (id, true) when the input is already registered, or when exactly one
+// registered model matches it by APIModel or by a "<provider>.<input>" suffix.
+// Otherwise it returns (input, false). This lets callers repair legacy/bare model
+// IDs (e.g. "gpt-5.4-mini") to their canonical form ("copilot.gpt-5.4-mini")
+// instead of discarding the user's selection.
+func ResolveModelID(input ModelID) (ModelID, bool) {
+	if input == "" {
+		return input, false
+	}
+	if _, ok := SupportedModels[input]; ok {
+		return input, true
+	}
+
+	suffix := "." + string(input)
+	var match ModelID
+	count := 0
+	for id, m := range SupportedModels {
+		if m.APIModel == string(input) || strings.HasSuffix(string(id), suffix) {
+			if id != match {
+				count++
+			}
+			match = id
+		}
+	}
+	if count == 1 {
+		return match, true
+	}
+	return input, false
 }
 
 func shouldSkipAccountScopedModel(providerType ModelProvider, modelID ModelID, apiModel string) bool {
