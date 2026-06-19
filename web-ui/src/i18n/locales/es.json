@@ -3,10 +3,6 @@
     "save": "Guardar",
     "saving": "Guardando…",
     "reset": "Restablecer",
-    "cancel": "Cancelar",
-    "loading": "Cargando…",
-    "error": "Error",
-    "noResults": "No se encontraron resultados",
     "connected": "Conectado",
     "disconnected": "Desconectado",
     "messages": "mensajes",
@@ -16,14 +12,15 @@
     "clickToSwitchModel": "Clic para cambiar modelo (Ctrl+O)",
     "connectionLost": "Conexión perdida — servidor no disponible",
     "reload": "Recargar",
-    "reloading": "Recargando…"
+    "reloading": "Recargando…",
+    "estimatedTokens": "Estimado (se actualiza en vivo mientras el agente trabaja)",
+    "toggleAutoApprove": "Alternar auto-aprobación (Shift+Tab)"
   },
   "nav": {
     "chat": "Chat",
     "simpleChat": "Chat Simple",
     "orchestrator": "Orquestador",
     "logs": "Registros",
-    "snapshots": "Snapshots",
     "agentVcs": "Agent VCS",
     "selfImprovement": "Self-Improvement",
     "codeEditor": "Editor de Código",
@@ -42,7 +39,8 @@
   },
   "header": {
     "toggleSidebar": "Mostrar/ocultar barra lateral (Ctrl+B)",
-    "toggleTheme": "Cambiar tema"
+    "toggleTheme": "Cambiar tema",
+    "simpleChat": "Chat simple"
   },
   "settings": {
     "categories": {
@@ -60,7 +58,8 @@
       "mesnada": "Mesnada",
       "remembrances": "Remembrances",
       "snapshots": "Snapshots",
-      "apiServer": "Servidor API"
+      "apiServer": "Servidor API",
+      "containerRuntime": "Entorno de contenedores"
     },
     "general": {
       "title": "Configuración General",
@@ -72,12 +71,6 @@
       "theme": "Tema",
       "themeLight": "Claro",
       "themeDark": "Oscuro",
-      "autoSave": "Autoguardado",
-      "autoSaveDescription": "Guardar automáticamente el progreso de la sesión",
-      "markdownPreview": "Vista previa de Markdown",
-      "markdownPreviewDescription": "Renderizar Markdown en los mensajes del chat",
-      "customInstructions": "Instrucciones personalizadas",
-      "customInstructionsPlaceholder": "Añade instrucciones globales para el asistente de IA…",
       "llmCache": "Caché de prompts LLM",
       "llmCacheDescription": "Habilitar caché de prompts para proveedores LLM (principalmente Anthropic)",
       "toolDiscovery": "Descubrimiento de herramientas",
@@ -87,49 +80,19 @@
       "toolDiscoveryModeAlways": "Siempre",
       "toolDiscoveryModeOff": "Desactivado",
       "toolDiscoveryMaxDirectTools": "Máx. herramientas directas",
-      "toolDiscoveryMaxDirectToolsDescription": "En modo automático, la deferición se activa cuando el número total de herramientas supera este valor",
       "toolDiscoverySearchLimit": "Límite de búsqueda de herramientas",
-      "toolDiscoverySearchLimitDescription": "Número de resultados devueltos por defecto por tool_search"
-    },
-    "agents": {
-      "title": "Agentes",
-      "description": "Configura el modelo y el comportamiento de cada agente integrado. Los cambios se aplican a las nuevas sesiones.",
-      "loadingAgents": "Cargando agentes…",
-      "model": "Modelo",
-      "maxTokens": "Tokens Máximos",
-      "reasoningEffort": "Esfuerzo de Razonamiento",
-      "reasoningDefault": "Predeterminado",
-      "reasoningNone": "Ninguno",
-      "reasoningLow": "Bajo",
-      "reasoningMedium": "Medio",
-      "reasoningHigh": "Alto",
-      "autoCompact": "Compactación automática",
-      "autoCompactDescription": "Comprimir el contexto automáticamente",
-      "showHiddenFiles": "Mostrar ficheros ocultos",
-      "showHiddenFilesDescription": "Mostrar ficheros y directorios ocultos en el árbol de directorios",
-      "compactThreshold": "Umbral de Compactación"
+      "homeDirectory": "Directorio de inicio",
+      "autoCompact": "Auto-compactar",
+      "autoCompactDescription": "Comprime automáticamente el contexto de la conversación cuando crece demasiado",
+      "showHiddenFiles": "Mostrar archivos ocultos",
+      "showHiddenFilesDescription": "Muestra los archivos ocultos y dotfiles en el árbol de archivos",
+      "debug": "Modo de depuración",
+      "debugDescription": "Activa el registro detallado de depuración"
     }
   },
   "chat": {
-    "messagePlaceholder": "Escribe un mensaje…",
-    "sendMessage": "Enviar mensaje",
-    "cancelStreaming": "Cancelar",
-    "streaming": "Pensando…",
-    "emptyChat": "Inicia una conversación",
-    "emptyChatDescription": "Pregunta lo que quieras para comenzar",
-    "copyMessage": "Copiar",
-    "copied": "¡Copiado!",
     "agentDoneTitle": "Agente terminado",
     "agentDoneBody": "Haz clic para volver a la sesión"
-  },
-  "models": {
-    "searchPlaceholder": "Buscar modelos…",
-    "loadingModels": "Cargando modelos…",
-    "noModelsFound": "No se encontraron modelos",
-    "switchModel": "Cambiar Modelo",
-    "navigate": "navegar",
-    "select": "seleccionar",
-    "close": "cerrar"
   },
   "pwa": {
     "installTitle": "Instalar la app Pando",

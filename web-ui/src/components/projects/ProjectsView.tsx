@@ -108,10 +108,6 @@ export default function ProjectsView() {
     setAdding(false)
   }
 
-  const handleActivate = async (id: string) => {
-    await activateProject(id)
-  }
-
   // Toggle a project's instance: a running instance is stopped (or, when it was
   // launched externally, the backend rejects it and the store shows a message);
   // a stopped instance is started/activated.

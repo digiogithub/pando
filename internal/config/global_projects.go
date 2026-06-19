@@ -4,7 +4,35 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// CanonicalProjectPath returns a canonical absolute path for a project
+// directory: it expands a leading "~/", makes the path absolute, and evaluates
+// any symlinks so that the same physical directory always maps to a single
+// path. When symlink evaluation fails (e.g. the path does not exist yet) the
+// absolute path is returned instead. This is the single source of truth for
+// project path normalisation, used both by the local DB service and the global
+// registry so a directory reachable via a symlink is never registered twice.
+func CanonicalProjectPath(p string) string {
+	if p == "" {
+		return ""
+	}
+	if strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = filepath.Join(home, p[2:])
+		}
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return p
+	}
+	real, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return abs
+	}
+	return real
+}
 
 // GlobalConfigDir returns the user-level Pando configuration directory.
 // Follows XDG Base Directory spec: $XDG_CONFIG_HOME/pando or ~/.config/pando.
@@ -86,13 +114,14 @@ func saveGlobalProjects(projects []GlobalProjectEntry) error {
 // are not renamed – user-set names are preserved.
 // No-op when absPath is empty or the registry directory is unavailable.
 func RegisterSelfAsGlobalProject(absPath, name string) error {
+	absPath = CanonicalProjectPath(absPath)
 	if absPath == "" {
 		return nil
 	}
 	projects, _ := LoadGlobalProjects() // ignore read error, start fresh
 
 	for _, p := range projects {
-		if p.Path == absPath {
+		if CanonicalProjectPath(p.Path) == absPath {
 			return nil // already registered
 		}
 	}
@@ -103,12 +132,13 @@ func RegisterSelfAsGlobalProject(absPath, name string) error {
 // UpdateGlobalProjectName updates the display name for a path in the global
 // registry. Silently succeeds if the path is not found.
 func UpdateGlobalProjectName(absPath, newName string) error {
+	absPath = CanonicalProjectPath(absPath)
 	projects, err := LoadGlobalProjects()
 	if err != nil {
 		return err
 	}
 	for i, p := range projects {
-		if p.Path == absPath {
+		if CanonicalProjectPath(p.Path) == absPath {
 			projects[i].Name = newName
 			return saveGlobalProjects(projects)
 		}

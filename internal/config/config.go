@@ -59,6 +59,31 @@ const (
 	AgentContextEnricher AgentName = "context-enricher"
 )
 
+// KnownAgentNames is the canonical, ordered set of built-in agents. It is the
+// single source of truth shared by the TUI settings page, the web-UI config API
+// and config validation: any agent entry whose name is not in this set is pruned
+// on load (e.g. a malformed legacy "cliassist" key alongside "cli-assist"), and
+// both UIs render exactly these agents in this order.
+var KnownAgentNames = []AgentName{
+	AgentCoder,
+	AgentSummarizer,
+	AgentTask,
+	AgentTitle,
+	AgentCLIAssist,
+	AgentPersonaSelector,
+	AgentContextEnricher,
+}
+
+// IsKnownAgent reports whether name is one of the built-in agents.
+func IsKnownAgent(name AgentName) bool {
+	for _, n := range KnownAgentNames {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
 // CLIAssistConfig defines configuration for the CLI assist mode.
 type CLIAssistConfig struct {
 	Model   models.ModelID `toml:"Model"`
@@ -1880,6 +1905,17 @@ func Validate() error {
 
 	if err := validateCronJobs(cfg.CronJobs); err != nil {
 		return err
+	}
+
+	// Drop any stray/legacy agent entries whose name is not a recognized built-in
+	// agent (e.g. a malformed "cliassist" key sitting next to the canonical
+	// "cli-assist"). These would otherwise surface as phantom duplicate agents in
+	// the TUI and web-UI settings.
+	for name := range cfg.Agents {
+		if !IsKnownAgent(name) {
+			logging.Warn("removing unknown agent entry from config", "agent", name)
+			delete(cfg.Agents, name)
+		}
 	}
 
 	// Validate agent models

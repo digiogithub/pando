@@ -14,15 +14,21 @@ import (
 
 // FetchCommand sends a system+user prompt to the cli-assist model and returns the cleaned command string.
 func FetchCommand(ctx context.Context, cfg *config.Config, systemPrompt, userPrompt string) (string, error) {
-	// Determine model ID to use
-	modelID := cfg.CLIAssist.Model
+	// Determine model ID to use. Prefer the model configured for the cli-assist
+	// agent — this is what the TUI / web-UI settings and the `--model` override
+	// write — then the legacy [cliAssist] Model section, and finally fall back to
+	// the coder agent's model.
+	modelID := cfg.Agents[config.AgentCLIAssist].Model
+	if modelID == "" {
+		modelID = cfg.CLIAssist.Model
+	}
 	if modelID == "" {
 		if coderAgent, ok := cfg.Agents[config.AgentCoder]; ok {
 			modelID = coderAgent.Model
 		}
 	}
 	if modelID == "" {
-		return "", fmt.Errorf("no model configured for cli-assist; set CLIAssist.Model in config or configure a coder agent")
+		return "", fmt.Errorf("no model configured for cli-assist; set a model for the cli-assist agent or configure a coder agent")
 	}
 
 	// Resolve model from supported models registry

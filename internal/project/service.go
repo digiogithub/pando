@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/google/uuid"
 )
@@ -54,9 +55,11 @@ type service struct {
 
 // Create registers a new project directory.
 func (s *service) Create(ctx context.Context, name, path string) (*Project, error) {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return nil, err
+	// Canonicalise (abs + resolve symlinks) so the same physical directory
+	// reachable via a symlink is never stored under two different paths.
+	absPath := config.CanonicalProjectPath(path)
+	if absPath == "" {
+		return nil, fmt.Errorf("project: empty path")
 	}
 
 	if name == "" {
@@ -93,10 +96,7 @@ func (s *service) Get(ctx context.Context, id string) (*Project, error) {
 
 // GetByPath retrieves a project by its directory path.
 func (s *service) GetByPath(ctx context.Context, path string) (*Project, error) {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return nil, err
-	}
+	absPath := config.CanonicalProjectPath(path)
 	row, err := s.q.GetProjectByPath(ctx, absPath)
 	if err != nil {
 		return nil, err

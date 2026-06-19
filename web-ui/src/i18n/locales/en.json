@@ -3,10 +3,6 @@
     "save": "Save",
     "saving": "Saving…",
     "reset": "Reset",
-    "cancel": "Cancel",
-    "loading": "Loading…",
-    "error": "Error",
-    "noResults": "No results found",
     "connected": "Connected",
     "disconnected": "Disconnected",
     "messages": "messages",
@@ -16,14 +12,15 @@
     "clickToSwitchModel": "Click to switch model (Ctrl+O)",
     "connectionLost": "Connection lost — server unreachable",
     "reload": "Reload",
-    "reloading": "Reloading…"
+    "reloading": "Reloading…",
+    "estimatedTokens": "Estimated (updates live while the agent runs)",
+    "toggleAutoApprove": "Toggle auto-approve (Shift+Tab)"
   },
   "nav": {
     "chat": "Chat",
     "simpleChat": "Simple Chat",
     "orchestrator": "Orchestrator",
     "logs": "Logs",
-    "snapshots": "Snapshots",
     "agentVcs": "Agent VCS",
     "selfImprovement": "Self-Improvement",
     "codeEditor": "Code Editor",
@@ -42,13 +39,13 @@
   },
   "header": {
     "toggleSidebar": "Toggle sidebar (Ctrl+B)",
-    "toggleTheme": "Toggle theme"
+    "toggleTheme": "Toggle theme",
+    "simpleChat": "Simple Chat"
   },
   "settings": {
     "categories": {
       "general": "General",
       "providers": "Providers",
-      "providerAccounts": "Provider Accounts",
       "agents": "Agents",
       "mcpServers": "MCP Servers",
       "mcpGateway": "MCP Gateway",
@@ -74,12 +71,6 @@
       "theme": "Theme",
       "themeLight": "Light",
       "themeDark": "Dark",
-      "autoSave": "Auto-save",
-      "autoSaveDescription": "Automatically save session progress",
-      "markdownPreview": "Markdown preview",
-      "markdownPreviewDescription": "Render markdown in chat messages",
-      "customInstructions": "Custom instructions",
-      "customInstructionsPlaceholder": "Add any global instructions for the AI assistant…",
       "llmCache": "LLM Prompt Cache",
       "llmCacheDescription": "Enable prompt caching for LLM providers (mainly affects Anthropic)",
       "toolDiscovery": "Tool Discovery",
@@ -89,49 +80,19 @@
       "toolDiscoveryModeAlways": "Always",
       "toolDiscoveryModeOff": "Off",
       "toolDiscoveryMaxDirectTools": "Max Direct Tools",
-      "toolDiscoveryMaxDirectToolsDescription": "In auto mode, deferral activates when the total tool count exceeds this number",
       "toolDiscoverySearchLimit": "Tool Search Limit",
-      "toolDiscoverySearchLimitDescription": "Default number of results returned by tool_search"
-    },
-    "agents": {
-      "title": "Agents",
-      "description": "Configure model and behavior for each built-in agent. Changes apply to new sessions.",
-      "loadingAgents": "Loading agents…",
-      "model": "Model",
-      "maxTokens": "Max Tokens",
-      "reasoningEffort": "Reasoning Effort",
-      "reasoningDefault": "Default",
-      "reasoningNone": "None",
-      "reasoningLow": "Low",
-      "reasoningMedium": "Medium",
-      "reasoningHigh": "High",
+      "homeDirectory": "Home Directory",
       "autoCompact": "Auto-compact",
-      "autoCompactDescription": "Compress context automatically",
-      "showHiddenFiles": "Show hidden files",
-      "showHiddenFilesDescription": "Show hidden files and folders in the file tree",
-      "compactThreshold": "Compact Threshold"
+      "autoCompactDescription": "Automatically compress conversation context when it grows large",
+      "showHiddenFiles": "Show Hidden Files",
+      "showHiddenFilesDescription": "Show dotfiles and hidden files in the file tree",
+      "debug": "Debug Mode",
+      "debugDescription": "Enable verbose debug logging"
     }
   },
   "chat": {
-    "messagePlaceholder": "Type a message…",
-    "sendMessage": "Send message",
-    "cancelStreaming": "Cancel",
-    "streaming": "Thinking…",
-    "emptyChat": "Start a conversation",
-    "emptyChatDescription": "Ask anything to get started",
-    "copyMessage": "Copy",
-    "copied": "Copied!",
     "agentDoneTitle": "Agent finished",
     "agentDoneBody": "Click to return to the session"
-  },
-  "models": {
-    "searchPlaceholder": "Search models…",
-    "loadingModels": "Loading models…",
-    "noModelsFound": "No models found",
-    "switchModel": "Switch Model",
-    "navigate": "navigate",
-    "select": "select",
-    "close": "close"
   },
   "pwa": {
     "installTitle": "Install Pando App",

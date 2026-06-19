@@ -352,12 +352,9 @@ export default function AgentsSettings() {
       }
   )
 
-  // Also include any additional agents from the backend that aren't in our known list
-  agents.forEach((a) => {
-    if (!AGENT_NAMES.includes(a.name.toLowerCase())) {
-      displayAgents.push(a)
-    }
-  })
+  // Only the canonical built-in agents (AGENT_NAMES) are shown. The backend
+  // already restricts its response to these, so any stray/legacy agent key is
+  // never rendered as a phantom duplicate.
 
   return (
     <div style={{ maxWidth: 640 }}>

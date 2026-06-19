@@ -1294,13 +1294,9 @@ func buildSkillsCatalogSection(cfg *config.Config) settings.Section {
 }
 
 func buildAgentsSection(cfg *config.Config) settings.Section {
-	agentOrder := []config.AgentName{
-		config.AgentCoder,
-		config.AgentSummarizer,
-		config.AgentTask,
-		config.AgentTitle,
-		config.AgentPersonaSelector,
-	}
+	// Use the shared canonical agent set so the TUI exposes the same agents as the
+	// web-UI (previously cli-assist and context-enricher were missing here).
+	agentOrder := config.KnownAgentNames
 
 	modelOptions := supportedModelOptions(cfg)
 	fields := make([]settings.Field, 0, len(agentOrder))

@@ -122,16 +122,6 @@ type AgentConfigItem struct {
 	AutoCompactThreshold float64             `json:"autoCompactThreshold"`
 }
 
-var webUIAgentOrder = []config.AgentName{
-	config.AgentCoder,
-	config.AgentSummarizer,
-	config.AgentTask,
-	config.AgentTitle,
-	config.AgentCLIAssist,
-	config.AgentPersonaSelector,
-	config.AgentContextEnricher,
-}
-
 func (s *Server) handleConfigAgents(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -150,9 +140,12 @@ func (s *Server) handleGetConfigAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := make([]AgentConfigItem, 0, len(cfg.Agents)+len(webUIAgentOrder))
-	seen := make(map[config.AgentName]struct{}, len(cfg.Agents))
-	appendAgent := func(name config.AgentName, a config.Agent) {
+	// Only expose the canonical built-in agents (config.KnownAgentNames), in a
+	// stable order. Any stray/unknown agent key is intentionally not surfaced so it
+	// cannot appear as a phantom duplicate in the web-UI.
+	items := make([]AgentConfigItem, 0, len(config.KnownAgentNames))
+	for _, name := range config.KnownAgentNames {
+		a := cfg.Agents[name]
 		model := models.SupportedModels[a.Model]
 		items = append(items, AgentConfigItem{
 			Name:                 string(name),
@@ -164,18 +157,6 @@ func (s *Server) handleGetConfigAgents(w http.ResponseWriter, r *http.Request) {
 			AutoCompact:          a.AutoCompact,
 			AutoCompactThreshold: a.AutoCompactThreshold,
 		})
-		seen[name] = struct{}{}
-	}
-
-	for _, name := range webUIAgentOrder {
-		appendAgent(name, cfg.Agents[name])
-	}
-
-	for name, a := range cfg.Agents {
-		if _, ok := seen[name]; ok {
-			continue
-		}
-		appendAgent(name, a)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"agents": items})

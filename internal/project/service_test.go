@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"path/filepath"
 	"testing"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
@@ -107,6 +108,54 @@ func TestGetByPath(t *testing.T) {
 	}
 	if got.ID != p.ID {
 		t.Fatalf("GetByPath ID mismatch: want %q, got %q", p.ID, got.ID)
+	}
+}
+
+// TestGetByPathResolvesSymlink verifies that a directory reachable both via a
+// symlink and via its resolved target maps to the same project entry, so it is
+// never registered twice.
+func TestGetByPathResolvesSymlink(t *testing.T) {
+	conn := setupDB(t)
+	svc := project.NewService(db.New(conn))
+	ctx := context.Background()
+
+	// Real target directory.
+	target := t.TempDir()
+	// A symlink that points at the target's parent, so the project path is
+	// reachable through the link as well.
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks not supported: %v", err)
+	}
+
+	// Register using the resolved (real) path.
+	p, err := svc.Create(ctx, "viaTarget", target)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Looking it up through the symlink must return the same project.
+	got, err := svc.GetByPath(ctx, link)
+	if err != nil {
+		t.Fatalf("GetByPath via symlink: %v", err)
+	}
+	if got.ID != p.ID {
+		t.Fatalf("symlink path resolved to a different project: want %q, got %q", p.ID, got.ID)
+	}
+
+	// Creating again through the symlink must collide on the unique path
+	// constraint (i.e. it is treated as the same directory), not create a
+	// second row.
+	if _, err := svc.Create(ctx, "viaLink", link); err == nil {
+		t.Fatal("expected duplicate Create via symlink to fail on unique path constraint")
+	}
+
+	projects, err := svc.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(projects) != 1 {
+		t.Fatalf("expected exactly 1 project after symlink+target registration, got %d", len(projects))
 	}
 }
 

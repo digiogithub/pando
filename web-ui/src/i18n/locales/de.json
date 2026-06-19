@@ -3,10 +3,6 @@
     "save": "Speichern",
     "saving": "Wird gespeichert…",
     "reset": "Zurücksetzen",
-    "cancel": "Abbrechen",
-    "loading": "Wird geladen…",
-    "error": "Fehler",
-    "noResults": "Keine Ergebnisse gefunden",
     "connected": "Verbunden",
     "disconnected": "Getrennt",
     "messages": "Nachrichten",
@@ -16,14 +12,15 @@
     "clickToSwitchModel": "Klicken zum Wechseln des Modells (Ctrl+O)",
     "connectionLost": "Verbindung unterbrochen — Server nicht erreichbar",
     "reload": "Neu laden",
-    "reloading": "Lädt…"
+    "reloading": "Lädt…",
+    "estimatedTokens": "Geschätzt (aktualisiert live, während der Agent läuft)",
+    "toggleAutoApprove": "Auto-Genehmigung umschalten (Shift+Tab)"
   },
   "nav": {
     "chat": "Chat",
     "simpleChat": "Einfacher Chat",
     "orchestrator": "Orchestrator",
     "logs": "Protokolle",
-    "snapshots": "Snapshots",
     "agentVcs": "Agent VCS",
     "selfImprovement": "Self-Improvement",
     "codeEditor": "Code-Editor",
@@ -37,11 +34,13 @@
     },
     "newSession": "Neue Sitzung",
     "untitledSession": "Unbenannte Sitzung",
-    "noSessionsYet": "Noch keine Sitzungen"
+    "noSessionsYet": "Noch keine Sitzungen",
+    "instances": "Instanzen"
   },
   "header": {
     "toggleSidebar": "Seitenleiste ein-/ausblenden (Ctrl+B)",
-    "toggleTheme": "Design wechseln"
+    "toggleTheme": "Design wechseln",
+    "simpleChat": "Einfacher Chat"
   },
   "settings": {
     "categories": {
@@ -59,7 +58,8 @@
       "mesnada": "Mesnada",
       "remembrances": "Remembrances",
       "snapshots": "Snapshots",
-      "apiServer": "API-Server"
+      "apiServer": "API-Server",
+      "containerRuntime": "Container-Laufzeit"
     },
     "general": {
       "title": "Allgemeine Einstellungen",
@@ -71,54 +71,28 @@
       "theme": "Design",
       "themeLight": "Hell",
       "themeDark": "Dunkel",
-      "autoSave": "Automatisch speichern",
-      "autoSaveDescription": "Sitzungsfortschritt automatisch speichern",
-      "markdownPreview": "Markdown-Vorschau",
-      "markdownPreviewDescription": "Markdown in Chat-Nachrichten rendern",
-      "customInstructions": "Benutzerdefinierte Anweisungen",
-      "customInstructionsPlaceholder": "Globale Anweisungen für den KI-Assistenten hinzufügen…",
       "llmCache": "LLM-Prompt-Cache",
-      "llmCacheDescription": "Prompt-Caching für LLM-Anbieter aktivieren (hauptsächlich Anthropic)"
-    },
-    "agents": {
-      "title": "Agents",
-      "description": "Modell und Verhalten für jeden integrierten Agent konfigurieren. Änderungen gelten für neue Sitzungen.",
-      "loadingAgents": "Agents werden geladen…",
-      "model": "Modell",
-      "maxTokens": "Maximale Tokens",
-      "reasoningEffort": "Reasoning-Aufwand",
-      "reasoningDefault": "Standard",
-      "reasoningNone": "Keiner",
-      "reasoningLow": "Niedrig",
-      "reasoningMedium": "Mittel",
-      "reasoningHigh": "Hoch",
-      "autoCompact": "Automatisch komprimieren",
-      "autoCompactDescription": "Kontext automatisch komprimieren",
+      "llmCacheDescription": "Prompt-Caching für LLM-Anbieter aktivieren (hauptsächlich Anthropic)",
+      "homeDirectory": "Home-Verzeichnis",
+      "autoCompact": "Auto-Komprimierung",
+      "autoCompactDescription": "Komprimiert den Gesprächskontext automatisch, wenn er zu groß wird",
       "showHiddenFiles": "Versteckte Dateien anzeigen",
-      "showHiddenFilesDescription": "Versteckte Dateien und Ordner im Dateibaum anzeigen",
-      "compactThreshold": "Komprimierungsschwellenwert"
+      "showHiddenFilesDescription": "Versteckte Dateien und Dotfiles im Dateibaum anzeigen",
+      "debug": "Debug-Modus",
+      "debugDescription": "Ausführliche Debug-Protokollierung aktivieren",
+      "toolDiscovery": "Tool-Erkennung",
+      "toolDiscoveryDescription": "Hält Nicht-Kernwerkzeuge aus dem initialen Kontext heraus; das Modell findet sie bei Bedarf über tool_search",
+      "toolDiscoveryMode": "Tool-Erkennungsmodus",
+      "toolDiscoveryModeAuto": "Automatisch (über Schwellenwert)",
+      "toolDiscoveryModeAlways": "Immer",
+      "toolDiscoveryModeOff": "Aus",
+      "toolDiscoveryMaxDirectTools": "Max. direkte Werkzeuge",
+      "toolDiscoverySearchLimit": "Werkzeugsuche-Limit"
     }
   },
   "chat": {
-    "messagePlaceholder": "Nachricht eingeben…",
-    "sendMessage": "Nachricht senden",
-    "cancelStreaming": "Abbrechen",
-    "streaming": "Wird verarbeitet…",
-    "emptyChat": "Gespräch beginnen",
-    "emptyChatDescription": "Stellen Sie eine Frage, um loszulegen",
-    "copyMessage": "Kopieren",
-    "copied": "Kopiert!",
     "agentDoneTitle": "Agent beendet",
     "agentDoneBody": "Klicken, um zur Sitzung zurückzukehren"
-  },
-  "models": {
-    "searchPlaceholder": "Modelle suchen…",
-    "loadingModels": "Modelle werden geladen…",
-    "noModelsFound": "Keine Modelle gefunden",
-    "switchModel": "Modell wechseln",
-    "navigate": "navigieren",
-    "select": "auswählen",
-    "close": "schließen"
   },
   "pwa": {
     "installTitle": "Pando App installieren",

@@ -3,10 +3,6 @@
     "save": "保存",
     "saving": "保存中…",
     "reset": "重置",
-    "cancel": "取消",
-    "loading": "加载中…",
-    "error": "错误",
-    "noResults": "未找到结果",
     "connected": "已连接",
     "disconnected": "已断开",
     "messages": "消息",
@@ -16,14 +12,15 @@
     "clickToSwitchModel": "点击切换模型 (Ctrl+O)",
     "connectionLost": "连接断开 — 服务器不可达",
     "reload": "重新加载",
-    "reloading": "加载中…"
+    "reloading": "加载中…",
+    "estimatedTokens": "估算值（代理运行时实时更新）",
+    "toggleAutoApprove": "切换自动批准（Shift+Tab）"
   },
   "nav": {
     "chat": "聊天",
     "simpleChat": "简单聊天",
     "orchestrator": "编排器",
     "logs": "日志",
-    "snapshots": "快照",
     "agentVcs": "Agent VCS",
     "selfImprovement": "Self-Improvement",
     "codeEditor": "代码编辑器",
@@ -37,11 +34,13 @@
     },
     "newSession": "新建会话",
     "untitledSession": "未命名会话",
-    "noSessionsYet": "暂无会话"
+    "noSessionsYet": "暂无会话",
+    "instances": "实例"
   },
   "header": {
     "toggleSidebar": "切换侧栏 (Ctrl+B)",
-    "toggleTheme": "切换主题"
+    "toggleTheme": "切换主题",
+    "simpleChat": "简易聊天"
   },
   "settings": {
     "categories": {
@@ -59,7 +58,8 @@
       "mesnada": "Mesnada",
       "remembrances": "记忆库",
       "snapshots": "快照",
-      "apiServer": "API 服务器"
+      "apiServer": "API 服务器",
+      "containerRuntime": "容器运行时"
     },
     "general": {
       "title": "常规设置",
@@ -71,54 +71,28 @@
       "theme": "主题",
       "themeLight": "浅色",
       "themeDark": "深色",
-      "autoSave": "自动保存",
-      "autoSaveDescription": "自动保存会话进度",
-      "markdownPreview": "Markdown 预览",
-      "markdownPreviewDescription": "在聊天消息中渲染 Markdown",
-      "customInstructions": "自定义指令",
-      "customInstructionsPlaceholder": "为 AI 助手添加全局指令…",
       "llmCache": "LLM提示缓存",
-      "llmCacheDescription": "启用LLM提供商的提示缓存（主要影响Anthropic）"
-    },
-    "agents": {
-      "title": "代理",
-      "description": "配置每个内置代理的模型和行为，更改将应用于新会话。",
-      "loadingAgents": "加载代理中…",
-      "model": "模型",
-      "maxTokens": "最大 Token 数",
-      "reasoningEffort": "推理强度",
-      "reasoningDefault": "默认",
-      "reasoningNone": "无",
-      "reasoningLow": "低",
-      "reasoningMedium": "中",
-      "reasoningHigh": "高",
+      "llmCacheDescription": "启用LLM提供商的提示缓存（主要影响Anthropic）",
+      "homeDirectory": "主目录",
       "autoCompact": "自动压缩",
-      "autoCompactDescription": "自动压缩上下文",
+      "autoCompactDescription": "当会话上下文变大时自动压缩",
       "showHiddenFiles": "显示隐藏文件",
-      "showHiddenFilesDescription": "在文件树中显示隐藏的文件和文件夹",
-      "compactThreshold": "压缩阈值"
+      "showHiddenFilesDescription": "在文件树中显示隐藏文件和点文件",
+      "debug": "调试模式",
+      "debugDescription": "启用详细的调试日志",
+      "toolDiscovery": "工具发现",
+      "toolDiscoveryDescription": "将非核心工具排除在初始上下文之外；模型可通过 tool_search 按需查找",
+      "toolDiscoveryMode": "工具发现模式",
+      "toolDiscoveryModeAuto": "自动（超过阈值时）",
+      "toolDiscoveryModeAlways": "始终",
+      "toolDiscoveryModeOff": "关闭",
+      "toolDiscoveryMaxDirectTools": "最大直接工具数",
+      "toolDiscoverySearchLimit": "工具搜索上限"
     }
   },
   "chat": {
-    "messagePlaceholder": "输入消息…",
-    "sendMessage": "发送消息",
-    "cancelStreaming": "取消",
-    "streaming": "思考中…",
-    "emptyChat": "开始对话",
-    "emptyChatDescription": "提问以开始使用",
-    "copyMessage": "复制",
-    "copied": "已复制！",
     "agentDoneTitle": "代理已完成",
     "agentDoneBody": "点击返回会话"
-  },
-  "models": {
-    "searchPlaceholder": "搜索模型…",
-    "loadingModels": "加载模型中…",
-    "noModelsFound": "未找到模型",
-    "switchModel": "切换模型",
-    "navigate": "导航",
-    "select": "选择",
-    "close": "关闭"
   },
   "pwa": {
     "installTitle": "安装 Pando 应用",

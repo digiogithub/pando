@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -506,23 +505,9 @@ func (m *Manager) ListSessions(_ context.Context, projectID string) ([]sessionEn
 // resolvePath expands a leading ~ to the user home directory and evaluates
 // any symlinks to return a canonical absolute path.
 func resolvePath(p string) (string, error) {
-	if strings.HasPrefix(p, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return p, err
-		}
-		p = filepath.Join(home, p[2:])
-	}
-	abs, err := filepath.Abs(p)
-	if err != nil {
-		return p, err
-	}
-	real, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		// If symlink eval fails (e.g. path doesn't exist yet), just use abs.
-		return abs, nil
-	}
-	return real, nil
+	// Delegate to the shared canonicaliser so the manager, the local DB
+	// service and the global registry all normalise paths identically.
+	return config.CanonicalProjectPath(p), nil
 }
 
 // checkDirAccessible verifies that dir can be opened (read permission check).

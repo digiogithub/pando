@@ -1,5 +1,6 @@
 WorkingDir = ''
 AgeKeys = ''
+LSPAutoActivate = false
 Debug = false
 LogFile = ''
 DebugLSP = false
@@ -64,7 +65,7 @@ Languages = []
 
 [Agents]
 [Agents.cli-assist]
-Model = 'gpt-5.4-mini'
+Model = 'copilot.gpt-5.4-mini'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -73,7 +74,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.cliassist]
-Model = 'copilot.gpt-4o'
+Model = 'ollama.qwopus:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -91,7 +92,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.context-enricher]
-Model = 'copilot.gpt-4o'
+Model = 'ollama.qwopus:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -148,6 +149,8 @@ DefaultScope = ''
 [TUI]
 Theme = 'gruvbox-nobg'
 ShowHiddenFiles = true
+ChatSidebar = ''
+ChatSidebarMinWidth = 0
 
 [Permissions]
 AutoApproveTools = true
@@ -294,6 +297,7 @@ BrowserHeadless = false
 BrowserTimeout = 30
 BrowserUserDataDir = ''
 BrowserMaxSessions = 3
+AskUserQuestionDisabled = false
 
 [Snapshots]
 Enabled = true

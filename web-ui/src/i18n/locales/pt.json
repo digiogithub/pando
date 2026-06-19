@@ -3,10 +3,6 @@
     "save": "Salvar",
     "saving": "Salvando…",
     "reset": "Redefinir",
-    "cancel": "Cancelar",
-    "loading": "Carregando…",
-    "error": "Erro",
-    "noResults": "Nenhum resultado encontrado",
     "connected": "Conectado",
     "disconnected": "Desconectado",
     "messages": "mensagens",
@@ -16,14 +12,15 @@
     "clickToSwitchModel": "Clique para trocar o modelo (Ctrl+O)",
     "connectionLost": "Conexão perdida — servidor inacessível",
     "reload": "Recarregar",
-    "reloading": "Recarregando…"
+    "reloading": "Recarregando…",
+    "estimatedTokens": "Estimado (atualiza em tempo real enquanto o agente roda)",
+    "toggleAutoApprove": "Alternar auto-aprovação (Shift+Tab)"
   },
   "nav": {
     "chat": "Chat",
     "simpleChat": "Chat Simples",
     "orchestrator": "Orquestrador",
     "logs": "Logs",
-    "snapshots": "Snapshots",
     "agentVcs": "Agent VCS",
     "selfImprovement": "Self-Improvement",
     "codeEditor": "Editor de Código",
@@ -37,11 +34,13 @@
     },
     "newSession": "Nova sessão",
     "untitledSession": "Sessão sem título",
-    "noSessionsYet": "Nenhuma sessão ainda"
+    "noSessionsYet": "Nenhuma sessão ainda",
+    "instances": "Instâncias"
   },
   "header": {
     "toggleSidebar": "Alternar barra lateral (Ctrl+B)",
-    "toggleTheme": "Alternar tema"
+    "toggleTheme": "Alternar tema",
+    "simpleChat": "Chat simples"
   },
   "settings": {
     "categories": {
@@ -59,7 +58,8 @@
       "mesnada": "Mesnada",
       "remembrances": "Remembrances",
       "snapshots": "Snapshots",
-      "apiServer": "Servidor de API"
+      "apiServer": "Servidor de API",
+      "containerRuntime": "Runtime de contêineres"
     },
     "general": {
       "title": "Configurações Gerais",
@@ -71,54 +71,28 @@
       "theme": "Tema",
       "themeLight": "Claro",
       "themeDark": "Escuro",
-      "autoSave": "Salvamento automático",
-      "autoSaveDescription": "Salvar o progresso da sessão automaticamente",
-      "markdownPreview": "Pré-visualização de Markdown",
-      "markdownPreviewDescription": "Renderizar Markdown nas mensagens do chat",
-      "customInstructions": "Instruções personalizadas",
-      "customInstructionsPlaceholder": "Adicione instruções globais para o assistente de IA…",
       "llmCache": "Cache de prompts LLM",
-      "llmCacheDescription": "Habilitar cache de prompts para provedores LLM (principalmente Anthropic)"
-    },
-    "agents": {
-      "title": "Agentes",
-      "description": "Configure o modelo e o comportamento de cada agente integrado. As alterações se aplicam a novas sessões.",
-      "loadingAgents": "Carregando agentes…",
-      "model": "Modelo",
-      "maxTokens": "Máximo de Tokens",
-      "reasoningEffort": "Esforço de Raciocínio",
-      "reasoningDefault": "Padrão",
-      "reasoningNone": "Nenhum",
-      "reasoningLow": "Baixo",
-      "reasoningMedium": "Médio",
-      "reasoningHigh": "Alto",
+      "llmCacheDescription": "Habilitar cache de prompts para provedores LLM (principalmente Anthropic)",
+      "homeDirectory": "Diretório inicial",
       "autoCompact": "Compactação automática",
-      "autoCompactDescription": "Comprimir contexto automaticamente",
+      "autoCompactDescription": "Comprime automaticamente o contexto da conversa quando ele fica grande",
       "showHiddenFiles": "Mostrar arquivos ocultos",
-      "showHiddenFilesDescription": "Mostrar arquivos e pastas ocultos na árvore de arquivos",
-      "compactThreshold": "Limite de Compactação"
+      "showHiddenFilesDescription": "Mostrar arquivos ocultos e dotfiles na árvore de arquivos",
+      "debug": "Modo de depuração",
+      "debugDescription": "Ativar registro detalhado de depuração",
+      "toolDiscovery": "Descoberta de ferramentas",
+      "toolDiscoveryDescription": "Mantém ferramentas não essenciais fora do contexto inicial; o modelo as encontra sob demanda via tool_search",
+      "toolDiscoveryMode": "Modo de descoberta de ferramentas",
+      "toolDiscoveryModeAuto": "Automático (acima do limite)",
+      "toolDiscoveryModeAlways": "Sempre",
+      "toolDiscoveryModeOff": "Desligado",
+      "toolDiscoveryMaxDirectTools": "Máx. de ferramentas diretas",
+      "toolDiscoverySearchLimit": "Limite de busca de ferramentas"
     }
   },
   "chat": {
-    "messagePlaceholder": "Digite uma mensagem…",
-    "sendMessage": "Enviar mensagem",
-    "cancelStreaming": "Cancelar",
-    "streaming": "Pensando…",
-    "emptyChat": "Inicie uma conversa",
-    "emptyChatDescription": "Pergunte qualquer coisa para começar",
-    "copyMessage": "Copiar",
-    "copied": "Copiado!",
     "agentDoneTitle": "Agente concluído",
     "agentDoneBody": "Clique para voltar à sessão"
-  },
-  "models": {
-    "searchPlaceholder": "Buscar modelos…",
-    "loadingModels": "Carregando modelos…",
-    "noModelsFound": "Nenhum modelo encontrado",
-    "switchModel": "Trocar Modelo",
-    "navigate": "navegar",
-    "select": "selecionar",
-    "close": "fechar"
   },
   "pwa": {
     "installTitle": "Instalar o app Pando",
