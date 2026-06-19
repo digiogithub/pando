@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/pubsub"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
@@ -241,9 +242,12 @@ func (m *Manager) spawnChild(proj Project) (*Instance, error) {
 		default:
 		}
 
-		// Update persistent status.
+		// Update persistent status. A non-nil waitErr caused by an intentional
+		// stop (Stop/Unregister/Shutdown cancel procCtx, which SIGKILLs the
+		// child) is a clean stop, not a crash — only a process that exited on
+		// its own with an error is recorded as StatusError.
 		svcCtx := context.Background()
-		if waitErr != nil {
+		if waitErr != nil && procCtx.Err() == nil {
 			_ = m.service.UpdateStatus(svcCtx, proj.ID, StatusError, 0, 0)
 		} else {
 			_ = m.service.UpdateStatus(svcCtx, proj.ID, StatusStopped, 0, 0)
@@ -278,6 +282,116 @@ func (m *Manager) Deactivate(_ context.Context) error {
 		ProjectID: "",
 	})
 	return nil
+}
+
+// Runtime reports the live execution state of a project.
+//
+// running is true when a Pando ACP instance is currently serving the project's
+// directory. external is true when that instance was launched by another
+// application (e.g. an editor's ACP integration) rather than by this manager,
+// and therefore cannot be stopped from here. pid is the OS process id of the
+// serving instance when known.
+//
+// Ownership is determined by the in-memory instance map: an instance this
+// manager spawned is tracked there. Anything else that holds the project's IPC
+// lock on disk with a live PID is considered an external instance.
+func (m *Manager) Runtime(projectID, path string) (running, external bool, pid int) {
+	m.mu.RLock()
+	inst, ours := m.instances[projectID]
+	if ours {
+		if inst.cmd != nil && inst.cmd.Process != nil {
+			pid = inst.cmd.Process.Pid
+		}
+		m.mu.RUnlock()
+		return true, false, pid
+	}
+	m.mu.RUnlock()
+
+	// Not tracked here — inspect the IPC lock the serving instance leaves on disk.
+	resolved, err := resolvePath(path)
+	if err != nil {
+		return false, false, 0
+	}
+	info, err := ipc.ReadLockForPath(resolved)
+	if err != nil || info == nil {
+		return false, false, 0
+	}
+	if !pidIsAlive(info.PID) {
+		return false, false, 0
+	}
+	return true, true, info.PID
+}
+
+// Stop terminates the child ACP instance this manager launched for projectID.
+//
+// It returns ErrExternalInstance when the project is running but its instance
+// was launched by another application, which this manager has no authority to
+// terminate. When nothing is running, Stop is a no-op that ensures the registry
+// reflects a stopped state.
+func (m *Manager) Stop(ctx context.Context, projectID string) error {
+	m.mu.Lock()
+	inst, ours := m.instances[projectID]
+	if ours {
+		inst.cancel()
+		if inst.cmd.Process != nil {
+			_ = inst.cmd.Process.Signal(syscall.SIGTERM)
+		}
+		delete(m.instances, projectID)
+		if m.activeID == projectID {
+			m.activeID = ""
+		}
+	}
+	m.mu.Unlock()
+
+	if ours {
+		// Give the process a moment to exit cleanly, then force-kill.
+		select {
+		case <-inst.errCh:
+		case <-time.After(5 * time.Second):
+			if inst.cmd.Process != nil {
+				_ = inst.cmd.Process.Kill()
+			}
+		}
+		// The spawnChild monitor goroutine updates the persistent status and
+		// publishes EvStatusChanged on exit; additionally announce the active
+		// switch so the UI reflects that the main instance is active again.
+		m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
+			Type:      EvProjectSwitched,
+			ProjectID: "",
+		})
+		return nil
+	}
+
+	// Not launched by us: distinguish "running externally" from "not running".
+	proj, err := m.service.Get(ctx, projectID)
+	if err != nil {
+		return fmt.Errorf("project manager: stop: get project %s: %w", projectID, err)
+	}
+	if running, external, _ := m.Runtime(projectID, proj.Path); running && external {
+		return ErrExternalInstance
+	}
+
+	// Nothing live; make sure the registry reflects a stopped state.
+	_ = m.service.UpdateStatus(ctx, projectID, StatusStopped, 0, 0)
+	m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
+		Type:      EvStatusChanged,
+		ProjectID: projectID,
+		Status:    StatusStopped,
+	})
+	return nil
+}
+
+// pidIsAlive reports whether pid refers to a live process. Signal 0 performs
+// error checking only, so a nil result means the process exists.
+func pidIsAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
 }
 
 // ActiveID returns the currently active project ID.

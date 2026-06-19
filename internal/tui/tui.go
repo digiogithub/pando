@@ -875,6 +875,21 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dialog.ProjectRemoveMsg:
 		return a, a.unregisterProject(msg.ProjectID)
 
+	case dialog.ProjectStopMsg:
+		return a, a.stopProject(msg.ProjectID, msg.Path)
+
+	case refreshProjectsDialogMsg:
+		var cmds []tea.Cmd
+		if msg.info != "" {
+			cmds = append(cmds, util.ReportInfo(msg.info))
+		}
+		if a.showProjectsDialog && a.app.ProjectManager != nil {
+			if projects, err := a.listProjectsEnriched(); err == nil {
+				a.projectsDialog.SetProjects(projects, a.app.ProjectManager.ActiveID())
+			}
+		}
+		return a, tea.Batch(cmds...)
+
 	case dialog.ProjectRenameMsg:
 		return a, a.renameProject(msg.ProjectID, msg.NewName)
 
@@ -1035,7 +1050,11 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a, cmd
 				}
 			}
-			a.showQuit = !a.showQuit
+			if a.showQuit {
+				// Second Ctrl+C confirms the quit dialog without waiting for interaction.
+				return a, tea.Quit
+			}
+			a.showQuit = true
 			if a.showHelp {
 				a.showHelp = false
 			}
@@ -1451,13 +1470,41 @@ func (a *appModel) openProjectsDialog() tea.Cmd {
 	if a.app.ProjectManager == nil {
 		return util.ReportWarn("Project manager not available")
 	}
-	projects, err := a.app.ProjectManager.List(context.Background())
+	projects, err := a.listProjectsEnriched()
 	if err != nil {
 		return util.ReportError(err)
 	}
 	a.projectsDialog.SetProjects(projects, a.app.ProjectManager.ActiveID())
 	a.showProjectsDialog = true
 	return a.projectsDialog.Init()
+}
+
+// listProjectsEnriched lists registered projects and reconciles each one's
+// persisted status with its live runtime state: it flags instances launched by
+// another application as External and corrects a stale "running" status when no
+// live instance is actually serving the path.
+func (a *appModel) listProjectsEnriched() ([]project.Project, error) {
+	projects, err := a.app.ProjectManager.List(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	for i := range projects {
+		running, external, _ := a.app.ProjectManager.Runtime(projects[i].ID, projects[i].Path)
+		projects[i].External = external
+		switch {
+		case running:
+			projects[i].Status = project.StatusRunning
+		case projects[i].Status == project.StatusRunning:
+			projects[i].Status = project.StatusStopped
+		}
+	}
+	return projects, nil
+}
+
+// refreshProjectsDialogMsg re-populates the open projects dialog after a
+// lifecycle action and optionally reports an info message.
+type refreshProjectsDialogMsg struct {
+	info string
 }
 
 func (a *appModel) openCronJobsDialog() tea.Cmd {
@@ -1567,6 +1614,22 @@ func (a *appModel) unregisterProject(projectID string) tea.Cmd {
 			return util.InfoMsg{Type: util.InfoTypeError, Msg: "Failed to remove project: " + err.Error()}
 		}
 		return util.InfoMsg{Type: util.InfoTypeInfo, Msg: "Project removed"}
+	}
+}
+
+func (a *appModel) stopProject(projectID, path string) tea.Cmd {
+	return func() tea.Msg {
+		err := a.app.ProjectManager.Stop(context.Background(), projectID)
+		if errors.Is(err, project.ErrExternalInstance) {
+			return util.InfoMsg{
+				Type: util.InfoTypeWarn,
+				Msg:  "This instance was launched externally (e.g. from an editor in ACP mode) and cannot be stopped here. Close it from the application that started it.",
+			}
+		}
+		if err != nil {
+			return util.InfoMsg{Type: util.InfoTypeError, Msg: "Failed to stop project: " + err.Error()}
+		}
+		return refreshProjectsDialogMsg{info: "Project " + filepath.Base(path) + " stopped"}
 	}
 }
 

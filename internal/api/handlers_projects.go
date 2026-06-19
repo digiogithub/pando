@@ -17,6 +17,7 @@ type projectResponse struct {
 	Path        string `json:"path"`
 	Status      string `json:"status"`
 	Initialized bool   `json:"initialized"`
+	External    bool   `json:"external"` // running but launched by another application
 	ACPPID      int    `json:"acp_pid,omitempty"`
 	LastOpened  *int64 `json:"last_opened,omitempty"` // Unix seconds
 	CreatedAt   int64  `json:"created_at"`
@@ -42,6 +43,24 @@ func toProjectResponse(p project.Project) projectResponse {
 	return resp
 }
 
+// enrichRuntime reconciles the persisted status with the live runtime state.
+// It marks instances launched by another application as external and corrects a
+// stale "running" status when no live instance is actually serving the path.
+func (s *Server) enrichRuntime(resp *projectResponse, p project.Project) {
+	if s.app.ProjectManager == nil {
+		return
+	}
+	running, external, _ := s.app.ProjectManager.Runtime(p.ID, p.Path)
+	resp.External = external
+	switch {
+	case running:
+		resp.Status = project.StatusRunning
+	case resp.Status == project.StatusRunning:
+		// DB says running but nothing live serves the path — correct it.
+		resp.Status = project.StatusStopped
+	}
+}
+
 // handleListProjects handles GET /api/v1/projects.
 // Returns all registered projects as {"projects": [...]}.
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +83,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	resp := make([]projectResponse, len(projects))
 	for i, p := range projects {
 		resp[i] = toProjectResponse(p)
+		s.enrichRuntime(&resp[i], p)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -129,8 +149,10 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := toProjectResponse(*p)
+	s.enrichRuntime(&resp, *p)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"project": toProjectResponse(*p),
+		"project": resp,
 	})
 }
 
@@ -269,8 +291,43 @@ func (s *Server) handleGetActiveProject(w http.ResponseWriter, r *http.Request) 
 	}
 
 	resp := toProjectResponse(*p)
+	s.enrichRuntime(&resp, *p)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"project": resp,
+	})
+}
+
+// handleStopProject handles POST /api/v1/projects/{id}/stop.
+// It terminates the child ACP instance this server launched for the project.
+// Returns 409 Conflict with {"error":"external_instance","project_id":"..."}
+// when the instance was launched by another application and cannot be stopped.
+func (s *Server) handleStopProject(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.app.ProjectManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "project manager not available")
+		return
+	}
+
+	id := r.PathValue("id")
+	if err := s.app.ProjectManager.Stop(r.Context(), id); err != nil {
+		if errors.Is(err, project.ErrExternalInstance) {
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"error":      "external_instance",
+				"project_id": id,
+			})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":     "stopped",
+		"project_id": id,
 	})
 }
 

@@ -14,6 +14,7 @@ interface ProjectStore {
   fetchActive: () => Promise<void>
   addProject: (path: string, name?: string) => Promise<void>
   activateProject: (id: string) => Promise<'ok' | 'needs_init'>
+  stopProject: (id: string) => Promise<void>
   deactivateProject: () => Promise<void>
   initProject: (id: string) => Promise<void>
   removeProject: (id: string) => Promise<void>
@@ -90,6 +91,33 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         useToastStore.getState().addToast(e.message || 'Failed to activate project', 'error')
       }
       return 'ok'
+    }
+  },
+
+  stopProject: async (id: string) => {
+    try {
+      await api.post(`/api/v1/projects/${id}/stop`, {})
+      await Promise.all([get().fetchActive(), get().fetchProjects()])
+      useToastStore.getState().addToast('Project stopped', 'success')
+    } catch (e) {
+      if (e instanceof Error) {
+        // A 409 "external_instance" response body is JSON we can parse.
+        try {
+          const body = JSON.parse(e.message) as { error?: string }
+          if (body.error === 'external_instance') {
+            useToastStore.getState().addToast(
+              'This instance was launched externally (e.g. from an editor in ACP mode) and cannot be stopped here. Close it from the application that started it.',
+              'error',
+            )
+            // Refresh so the UI stays in sync with the still-running instance.
+            void get().fetchProjects()
+            return
+          }
+        } catch {
+          // Not JSON — fall through to generic error handling.
+        }
+        useToastStore.getState().addToast(e.message || 'Failed to stop project', 'error')
+      }
     }
   },
 

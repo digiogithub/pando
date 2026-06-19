@@ -414,6 +414,7 @@ export interface Project {
   path: string
   status: 'running' | 'stopped' | 'error' | 'initializing' | 'missing'
   initialized: boolean
+  external?: boolean // running but launched by another application (e.g. an editor in ACP mode)
   acp_pid?: number
   last_opened?: number
   created_at: number

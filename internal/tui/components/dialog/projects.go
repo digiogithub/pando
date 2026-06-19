@@ -40,6 +40,13 @@ type ProjectRemoveMsg struct {
 	ProjectID string
 }
 
+// ProjectStopMsg is fired when the user wants to stop a running project
+// instance that this manager launched.
+type ProjectStopMsg struct {
+	ProjectID string
+	Path      string
+}
+
 // ProjectRenameMsg is fired when the user confirms a new name for a project.
 type ProjectRenameMsg struct {
 	ProjectID string
@@ -70,6 +77,7 @@ type projectsKeyMap struct {
 	Add    key.Binding
 	Remove key.Binding
 	Rename key.Binding
+	Stop   key.Binding
 	Escape key.Binding
 }
 
@@ -97,6 +105,10 @@ var projectsKeys = projectsKeyMap{
 	Rename: key.NewBinding(
 		key.WithKeys("r"),
 		key.WithHelp("r", "rename project"),
+	),
+	Stop: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "stop project"),
 	),
 	Escape: key.NewBinding(
 		key.WithKeys("esc"),
@@ -216,6 +228,19 @@ func (p *projectsDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			selected := p.projects[p.selectedIdx]
 			return p, util.CmdHandler(ProjectRemoveMsg{ProjectID: selected.ID})
+		case key.Matches(msg, projectsKeys.Stop):
+			if len(p.projects) == 0 {
+				return p, nil
+			}
+			selected := p.projects[p.selectedIdx]
+			// Only running instances can be stopped.
+			if selected.Status != project.StatusRunning {
+				return p, nil
+			}
+			return p, util.CmdHandler(ProjectStopMsg{
+				ProjectID: selected.ID,
+				Path:      selected.Path,
+			})
 		case key.Matches(msg, projectsKeys.Escape):
 			return p, util.CmdHandler(CloseProjectsDialogMsg{})
 		}
@@ -307,7 +332,7 @@ func (p *projectsDialogCmp) viewNormalMode(t theme.Theme, baseStyle lipgloss.Sty
 		Width(dialogWidth).
 		Padding(0, 1).
 		Foreground(t.TextMuted()).
-		Render("[a] Add  [d] Remove  [r] Rename  [↑↓/jk] Nav  [enter] Switch  [esc] Close")
+		Render("[a] Add  [d] Remove  [r] Rename  [s] Stop  [↑↓/jk] Nav  [enter] Switch  [esc] Close")
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -355,6 +380,15 @@ func (p *projectsDialogCmp) renderProjectItem(proj project.Project, selected boo
 				Foreground(t.SelectionForeground())
 		}
 		suffix = " " + activeStyle.Render("[active]")
+	}
+	if proj.External {
+		extStyle := baseStyle.Foreground(t.TextMuted())
+		if selected {
+			extStyle = extStyle.
+				Background(t.SelectionBackground()).
+				Foreground(t.SelectionForeground())
+		}
+		suffix += " " + extStyle.Render("[external]")
 	}
 
 	pathStr := pathStyle.Render(short)

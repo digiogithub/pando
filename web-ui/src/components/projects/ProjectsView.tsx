@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faTimes, faFolderOpen, faSpinner, faFolder } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faTimes, faFolderOpen, faSpinner, faFolder, faStop, faPlay, faLock } from '@fortawesome/free-solid-svg-icons'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/projectStore'
 import type { Project } from '@/types'
@@ -67,6 +67,7 @@ export default function ProjectsView() {
     fetchActive,
     addProject,
     activateProject,
+    stopProject,
     deactivateProject,
     initProject,
     removeProject,
@@ -109,6 +110,17 @@ export default function ProjectsView() {
 
   const handleActivate = async (id: string) => {
     await activateProject(id)
+  }
+
+  // Toggle a project's instance: a running instance is stopped (or, when it was
+  // launched externally, the backend rejects it and the store shows a message);
+  // a stopped instance is started/activated.
+  const handleToggle = async (proj: Project) => {
+    if (proj.status === 'running') {
+      await stopProject(proj.id)
+      return
+    }
+    await activateProject(proj.id)
   }
 
   const handleDelete = async (id: string) => {
@@ -344,10 +356,17 @@ export default function ProjectsView() {
             <tbody>
               {projects.map((proj) => {
                 const isActive = proj.id === activeProjectId
+                const isRunning = proj.status === 'running'
+                const rowTitle = proj.external
+                  ? 'Launched externally — close it from the application that started it'
+                  : isRunning
+                    ? 'Click to stop this instance'
+                    : 'Click to start this instance'
                 return (
                   <tr
                     key={proj.id}
-                    onClick={() => void handleActivate(proj.id)}
+                    title={rowTitle}
+                    onClick={() => void handleToggle(proj)}
                     style={{
                       background: isActive ? 'var(--selected)' : 'transparent',
                       borderBottom: '1px solid var(--border)',
@@ -368,12 +387,61 @@ export default function ProjectsView() {
                       {shortenPath(proj.path)}
                     </td>
                     <td style={{ padding: '0.75rem 1rem' }}>
-                      <StatusBadge status={proj.status} />
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <StatusBadge status={proj.status} />
+                        {proj.external && (
+                          <span
+                            title="Launched externally (e.g. from an editor in ACP mode)"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              fontSize: 10,
+                              color: 'var(--fg-muted)',
+                              border: '1px solid var(--border)',
+                              borderRadius: 'var(--radius-sm)',
+                              padding: '0.15rem 0.4rem',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <FontAwesomeIcon icon={faLock} style={{ fontSize: 9 }} />
+                            external
+                          </span>
+                        )}
+                      </span>
                     </td>
                     <td
-                      style={{ padding: '0.75rem 1rem', textAlign: 'right' }}
+                      style={{ padding: '0.75rem 1rem', textAlign: 'right', whiteSpace: 'nowrap' }}
                       onClick={(e) => e.stopPropagation()}
                     >
+                      <button
+                        title={
+                          proj.external
+                            ? 'Launched externally — cannot be stopped here'
+                            : isRunning
+                              ? 'Stop instance'
+                              : 'Start instance'
+                        }
+                        onClick={() => void handleToggle(proj)}
+                        style={{
+                          background: 'transparent',
+                          border: '1px solid var(--border)',
+                          borderRadius: 'var(--radius-sm)',
+                          color: proj.external
+                            ? 'var(--fg-muted)'
+                            : isRunning
+                              ? '#e55'
+                              : 'var(--primary)',
+                          cursor: 'pointer',
+                          padding: '0.25rem 0.45rem',
+                          fontSize: 11,
+                          lineHeight: 1,
+                          fontFamily: 'inherit',
+                          marginRight: '0.4rem',
+                        }}
+                      >
+                        <FontAwesomeIcon icon={proj.external ? faLock : isRunning ? faStop : faPlay} />
+                      </button>
                       <button
                         title={pendingDelete === proj.id ? 'Click again to confirm' : 'Remove project'}
                         onClick={() => void handleDelete(proj.id)}
