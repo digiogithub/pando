@@ -202,6 +202,16 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err != nil {
 			return p, util.ReportError(err)
 		}
+		// GitHub Copilot authenticates via the OAuth device-code flow rather than
+		// an API key. Launch that login flow automatically so the user sees the
+		// verification code right after adding the account instead of having to
+		// run the Copilot login command manually.
+		if msg.Account.Type == models.ProviderCopilot {
+			return p, tea.Batch(
+				util.ReportInfo("Provider added: "+msg.Account.DisplayName),
+				util.CmdHandler(dialog.StartCopilotLoginMsg{}),
+			)
+		}
 		return p, util.ReportInfo("Provider added: " + msg.Account.DisplayName)
 	case dialog.CloseAddProviderDialogMsg:
 		p.addProviderDialog = nil

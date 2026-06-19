@@ -372,6 +372,11 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, outCmd)
 		return a, tea.Batch(cmds...)
 
+	// A Copilot provider account was just added - auto-start the device-code
+	// login flow so the verification code is shown immediately.
+	case dialog.StartCopilotLoginMsg:
+		return a, copilotLoginCommand()
+
 	// Copilot device code received - show persistent alert and start polling.
 	case copilotDeviceCodeMsg:
 		cmds = append(cmds, util.AlertPersist(bubbleup.WarnKey, msg.instructions))

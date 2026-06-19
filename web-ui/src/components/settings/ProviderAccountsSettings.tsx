@@ -731,6 +731,12 @@ export default function ProviderAccountsSettings() {
       } else {
         await api.post('/api/v1/config/provider-accounts', payload)
         toast.success('Account created')
+        // GitHub Copilot authenticates via the OAuth device-code flow. Launch it
+        // automatically right after the account is created so the user gets the
+        // verification code without having to run the login command manually.
+        if (form.type === 'copilot') {
+          await startCopilotLogin()
+        }
       }
       setModalOpen(false)
       await loadAccounts()
@@ -749,6 +755,26 @@ export default function ProviderAccountsSettings() {
       await loadAccounts()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Delete failed')
+    }
+  }
+
+  async function startCopilotLogin() {
+    try {
+      const result = await api.post<{ verificationUri: string; userCode: string }>(
+        '/api/v1/auth/providers/copilot/login',
+        {}
+      )
+      if (result.verificationUri) {
+        window.open(result.verificationUri, '_blank', 'noopener,noreferrer')
+      }
+      // Persistent toast (ttl=0): the device code must stay visible until the
+      // user finishes authorizing at github.com/login/device.
+      toast.info(
+        `GitHub Copilot — Enter code: ${result.userCode} at ${result.verificationUri}`,
+        0
+      )
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to start Copilot login')
     }
   }
 

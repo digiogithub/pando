@@ -30,6 +30,12 @@ type ProviderAccountCreatedMsg struct {
 // CloseAddProviderDialogMsg is sent when the add-provider dialog is dismissed.
 type CloseAddProviderDialogMsg struct{}
 
+// StartCopilotLoginMsg requests the application to begin the GitHub Copilot
+// device-code login flow. It is emitted right after a Copilot provider account
+// is created so the verification code is shown automatically, without the user
+// having to trigger the login command by hand.
+type StartCopilotLoginMsg struct{}
+
 type addProviderStep int
 
 const (
