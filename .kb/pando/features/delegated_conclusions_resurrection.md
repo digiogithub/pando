@@ -1,6 +1,6 @@
 ---
-created_at: 2026-06-22T07:08:18.769343529Z
-updated_at: 2026-06-22T08:26:39.241837683Z
+created_at: 2026-06-22T11:00:27.608686586Z
+updated_at: 2026-06-22T11:01:09.491773744Z
 tags:
     - feature
     - mesnada
@@ -15,7 +15,8 @@ tags:
 # Feature: Delegated-Task Conclusions + Agent-Loop Resurrection
 
 Status: COMPLETE (Phases 0-6, 2026-06-21) + Phase 7 warm per-project instance
-reuse COMPLETE (7.1-7.5, 2026-06-22) + lifecycle hygiene C1/C2 (2026-06-22).
+reuse COMPLETE (7.1-7.5, 2026-06-22) + lifecycle hygiene C1/C2 (2026-06-22) +
+project targeting B1 (2026-06-22).
 Plans: `pando/plans/delegated_conclusion_resurrection_plan.md`, the Phase 7
 re-plan `pando/plans/delegation_phase7_warm_instance_replan.md`, and the future
 improvements backlog `pando/plans/delegation_future_improvements.md`. **Default-OFF.**
@@ -93,6 +94,19 @@ conclusion, idempotent via CorrelationID).
   default (`WarmInstanceIdleTimeout = "0"`). Change doc:
   `pando/changes/delegation_c1_c2_idle_gc_promote.md`.
 
+## Targeting a specific project from the spawn tool (B1, 2026-06-22)
+The `mesnada_spawn_agent` (in-process) and standalone MCP `spawn_agent` tools take
+an optional `project` argument — a registry **id**, **display name**
+(case-insensitive), or **directory path**. It is resolved against the project
+registry via `orchestrator.ProjectRefResolver` (interface + `Orchestrator`
+accessors `ResolveProjectRef`/`ProjectRefsSupported`/`ListProjectRefs`), backed by
+`app.projectRefResolverAdapter` over `project.Service` (tries id → canonical path →
+exact name). The resolved id is set on `SpawnRequest.ProjectID` (which already
+flowed end-to-end to `WarmDelegate`/`resolveProjectID`), and `work_dir` defaults to
+the project directory. An unknown reference fails fast at the tool boundary with a
+"known projects" list, so a typo never becomes a terminal-failed warm task. Change
+doc: `pando/changes/delegation_b1_project_target_from_spawn.md`.
+
 ## Caps (anti-fork-bomb / cost control)
 MaxResurrections (per session per turn-chain, auto-reset on user Run), MaxDepth
 (delegated-of-delegated, env PANDO_DELEGATION_DEPTH), MaxConcurrent (outstanding
@@ -120,21 +134,28 @@ defended against viper nested-default shadowing by normalizeMesnadaDelegationDef
   EngineWarmACP fields.
 - internal/mesnada/conclusion/ — parse.go, enrich.go, format.go, brief.go.
 - internal/mesnada/orchestrator/orchestrator.go + warm.go — captureConclusion,
-  DelegationConfig, ProjectResolver, WarmTargetResolver/tryStartWarm.
+  DelegationConfig, ProjectResolver, WarmTargetResolver/tryStartWarm,
+  ProjectRefResolver + ResolveProjectRef/ListProjectRefs (B1 targeting).
+- internal/llm/tools/mesnada.go + internal/mesnada/server/tools.go — spawn tool
+  `project` arg → SpawnRequest.ProjectID (B1); knownProjectsHint helpers.
 - internal/project/{delegation.go,delegation_client.go,delegation_gc.go,
   instance.go,manager.go} — Delegate/WarmDelegate/EnsureInstance, capturing ACP
   client, Instance.inflight/lastActiveAt/closing, DelegationInfo/StopReport/
   EvDelegationChanged, StartIdleGC/gcIdleInstances.
-- internal/app/app.go — makeWarmTargetResolver + isWarmColdFallback + StartIdleGC;
-  supervisor.
+- internal/app/app.go — makeWarmTargetResolver + isWarmColdFallback + StartIdleGC +
+  makeProjectRefResolver/projectRefResolverAdapter (B1); supervisor.
 - internal/api/handlers_settings.go, internal/tui/page/settings.go,
   web-ui (GeneralSettings.tsx, settingsStore.ts, types/index.ts, 7 i18n locales).
 
 ## Tests / verification
 - internal/mesnada/orchestrator/{delegation_e2e,warm}_test.go — routing
-  (reuse/autostart/cold/cap/gating), warm success/failure terminal.
+  (reuse/autostart/cold/cap/gating), warm success/failure terminal, ProjectRef
+  accessors.
 - internal/project/{delegation_internal,manager_warm,delegation_gc}_test.go —
   capturing client, reuse, cap, DelegationInfo, event publishing, parallel
   sessions (race), activeID-unchanged, StopReport cancelled count, **idle GC
   stop/skip-protected, close-vs-acquire race guard, promote-on-focus**.
+- B1 targeting: internal/app/project_ref_resolver_test.go (id/path/name/miss),
+  internal/llm/tools/mesnada_project_target_test.go (knownProjectsHint),
+  internal/mesnada/orchestrator/warm_test.go (ProjectRef accessor nil/wired).
 - WebUI tsc clean; go build/vet/gofmt clean. go test -race green.

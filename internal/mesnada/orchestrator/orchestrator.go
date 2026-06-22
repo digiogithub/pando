@@ -41,6 +41,7 @@ type Orchestrator struct {
 	delegation           DelegationConfig
 	projectResolver      conclusion.ProjectResolver
 	warmResolver         WarmTargetResolver
+	projectRefResolver   ProjectRefResolver
 	// awaitIntents records, per parent session id, the active non-blocking await
 	// intent registered by the mesnada_await tool (see await.go). Guarded by
 	// awaitMu; in-memory only (mirrors the supervisor's in-memory batch state).
@@ -110,6 +111,10 @@ type Config struct {
 	// (Phase 7.3). When nil (or Delegation.ReuseWarmInstances is false) every task
 	// takes the cold subprocess path, preserving today's behavior.
 	WarmTargetResolver WarmTargetResolver
+	// ProjectRefResolver resolves a free-form project reference supplied to the
+	// spawn tool (item B1) to a registered project id/path. When nil the spawn
+	// tool's optional "project" argument is rejected as unsupported.
+	ProjectRefResolver ProjectRefResolver
 }
 
 // New creates a new Orchestrator.
@@ -158,6 +163,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		delegation:           cfg.Delegation,
 		projectResolver:      cfg.ProjectResolver,
 		warmResolver:         cfg.WarmTargetResolver,
+		projectRefResolver:   cfg.ProjectRefResolver,
 		ctx:                  ctx,
 		cancel:               cancel,
 	}

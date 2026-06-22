@@ -15,6 +15,9 @@ type LSPProvider interface {
 	// type, if not already running and the binary is installed. It is a no-op
 	// when on-demand activation is disabled.
 	EnsureForFile(ctx context.Context, path string)
+	// WaitForFile blocks briefly while lazy startup settles so callers can use a
+	// freshly spawned LSP client within the same request.
+	WaitForFile(ctx context.Context, path string) map[string]*lsp.Client
 	// ClientsForFile returns a snapshot of running clients that handle the file.
 	ClientsForFile(path string) map[string]*lsp.Client
 	// Clients returns a snapshot of all running clients.
@@ -33,6 +36,10 @@ func NewStaticLSPProvider(clients map[string]*lsp.Client) LSPProvider {
 }
 
 func (s *staticLSPProvider) EnsureForFile(context.Context, string) {}
+
+func (s *staticLSPProvider) WaitForFile(_ context.Context, path string) map[string]*lsp.Client {
+	return s.ClientsForFile(path)
+}
 
 func (s *staticLSPProvider) ClientsForFile(path string) map[string]*lsp.Client {
 	out := make(map[string]*lsp.Client)

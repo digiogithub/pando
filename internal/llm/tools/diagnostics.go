@@ -76,20 +76,20 @@ func (b *diagnosticsTool) Run(ctx context.Context, call ToolCall) (ToolResponse,
 	// restrict to clients that handle it; otherwise report across all clients.
 	if params.FilePath != "" {
 		b.lspProvider.EnsureForFile(ctx, params.FilePath)
-		lsps = b.lspProvider.ClientsForFile(params.FilePath)
+		lsps = b.lspProvider.WaitForFile(ctx, params.FilePath)
 		if len(lsps) == 0 {
 			// No server specifically handles this file; fall back to all clients.
 			lsps = b.lspProvider.Clients()
 		}
 		if len(lsps) == 0 {
-			return NewTextErrorResponse("no LSP clients available"), nil
+			return NewTextErrorResponse("no LSP clients available for this file (the matching server may be missing, still starting, or LSP auto-activation may be disabled)"), nil
 		}
 		notifyLspOpenFile(ctx, params.FilePath, lsps)
 		waitForLspDiagnostics(ctx, params.FilePath, lsps)
 	} else {
 		lsps = b.lspProvider.Clients()
 		if len(lsps) == 0 {
-			return NewTextErrorResponse("no LSP clients available"), nil
+			return NewTextErrorResponse("no LSP clients available (open or reference a file first so Pando can auto-start the matching language server)"), nil
 		}
 	}
 

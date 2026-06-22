@@ -228,6 +228,10 @@ func (s *Server) getToolDefinitions() []Tool {
 						"type":        "string",
 						"description": "Working directory for the agent (absolute path)",
 					},
+					"project": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional: target a registered project by its id, display name, or directory path. The task is routed to that project's warm instance when warm reuse is enabled, and its work_dir defaults to the project's directory. Returns an error listing the known projects if the reference does not match a registered project.",
+					},
 					"engine": map[string]interface{}{
 						"type":        "string",
 						"description": engineDescServer,
@@ -596,11 +600,34 @@ func (s *Server) validPandoTools() []llmtools.BaseTool {
 	return result
 }
 
+// serverKnownProjectsHint formats the registered projects into a short hint for
+// the "unknown project" error returned by spawn_agent's project target (item B1).
+func serverKnownProjectsHint(refs []orchestrator.ProjectRef) string {
+	if len(refs) == 0 {
+		return "No projects are registered; omit 'project' or register one first."
+	}
+	const maxList = 10
+	parts := make([]string, 0, len(refs))
+	for i, r := range refs {
+		if i >= maxList {
+			parts = append(parts, fmt.Sprintf("…and %d more", len(refs)-maxList))
+			break
+		}
+		name := r.Name
+		if name == "" {
+			name = r.Path
+		}
+		parts = append(parts, fmt.Sprintf("%s (%s)", name, r.ID))
+	}
+	return "Known projects: " + strings.Join(parts, ", ") + "."
+}
+
 func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req struct {
 		TaskID           string                 `json:"task_id"`
 		Prompt           string                 `json:"prompt"`
 		WorkDir          string                 `json:"work_dir"`
+		Project          string                 `json:"project"`
 		Engine           string                 `json:"engine"`
 		Model            string                 `json:"model"`
 		Background       *bool                  `json:"background"`
@@ -667,6 +694,24 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		return nil, fmt.Errorf("prompt is required")
 	}
 
+	// Resolve an explicit project target (item B1): route the delegated task to a
+	// registered project named by id/name/path and default its work_dir to the
+	// project's directory. Fail fast with the known-projects list when unknown.
+	var targetProjectID string
+	if strings.TrimSpace(req.Project) != "" {
+		if !s.orchestrator.ProjectRefsSupported() {
+			return nil, fmt.Errorf("the 'project' argument is not supported in this configuration (no project registry available)")
+		}
+		ref, ok := s.orchestrator.ResolveProjectRef(ctx, req.Project)
+		if !ok {
+			return nil, fmt.Errorf("unknown project %q. %s", req.Project, serverKnownProjectsHint(s.orchestrator.ListProjectRefs(ctx)))
+		}
+		targetProjectID = ref.ID
+		if req.WorkDir == "" {
+			req.WorkDir = ref.Path
+		}
+	}
+
 	engineName := req.Engine
 	switch engineName {
 	case "claude-code":
@@ -683,6 +728,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 	task, err := s.orchestrator.Spawn(ctx, models.SpawnRequest{
 		Prompt:           req.Prompt,
 		WorkDir:          req.WorkDir,
+		ProjectID:        targetProjectID,
 		Engine:           engine,
 		Model:            req.Model,
 		Background:       background,

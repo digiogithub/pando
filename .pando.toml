@@ -83,7 +83,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'copilot.gpt-5.4'
+Model = 'copilot.gpt-5.4-mini'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -147,10 +147,11 @@ AutoUpdate = false
 DefaultScope = ''
 
 [TUI]
-Theme = 'gruvbox-nobg'
+Theme = 'pando-nobg'
 ShowHiddenFiles = true
 ChatSidebar = ''
 ChatSidebarMinWidth = 0
+NerdFonts = true
 
 [Permissions]
 AutoApproveTools = true
@@ -198,14 +199,17 @@ Enabled = false
 WebUI = false
 
 [Mesnada.Delegation]
-Enabled = false
-InjectIntoLiveLoop = false
-ResurrectIdleLoop = false
-SynthesizeFallback = false
-MaxResurrections = 0
-MaxDepth = 0
-MaxConcurrent = 0
-ResurrectionTimeout = ''
+Enabled = true
+InjectIntoLiveLoop = true
+ResurrectIdleLoop = true
+SynthesizeFallback = true
+MaxResurrections = 4
+MaxDepth = 3
+MaxConcurrent = 8
+ResurrectionTimeout = '10m'
+ReuseWarmInstances = true
+AutoStartWarmInstance = true
+WarmInstanceIdleTimeout = '0'
 
 [Shell]
 Path = ''
@@ -247,9 +251,9 @@ ContextEnrichmentEventsMaxChars = 0
 ContextEnrichmentTotalMaxChars = 0
 ContextEnrichmentUseAgentPlanner = false
 ContextEnrichmentPlannerFallbackToCoder = false
-MemoryEnabled = false
-MemoryContextEnrichmentEnabled = false
-MemoryContextMaxItems = 0
+MemoryEnabled = true
+MemoryContextEnrichmentEnabled = true
+MemoryContextMaxItems = 3
 MemoryContextMaxChars = 0
 MemoryDefaultTTLDays = 0
 MemoryGCInterval = ''
@@ -385,7 +389,7 @@ Enabled = false
 Jobs = []
 
 [LLMCache]
-Enabled = false
+Enabled = true
 
 [Container]
 runtime = 'host'

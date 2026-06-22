@@ -204,21 +204,24 @@ Enabled = true
 Paths   = ['./agents/skills']
 
 [SkillsCatalog]
-Enabled    = false
+Enabled    = true
 BaseURL    = ''
 AutoUpdate = false
+DefaultScope = 'global'
 
 # =============================================================================
 # TUI
 # =============================================================================
 [TUI]
-Theme = ''
+Theme = 'pando-nobg'
+ShowHiddenFiles = true
+NerdFonts = true
 
 # =============================================================================
 # Permissions
 # =============================================================================
 [Permissions]
-AutoApproveTools = false
+AutoApproveTools = true
 
 # =============================================================================
 # Goal / Autopilot Mode
@@ -284,6 +287,19 @@ RequireAuth    = false
 Enabled = true
 WebUI   = false
 
+[Mesnada.Delegation]
+Enabled = true
+InjectIntoLiveLoop = true
+ResurrectIdleLoop = true
+SynthesizeFallback = true
+MaxResurrections = 4
+MaxDepth = 3
+MaxConcurrent = 8
+ResurrectionTimeout = '10m'
+ReuseWarmInstances = true
+AutoStartWarmInstance = true
+WarmInstanceIdleTimeout = '0'
+
 # =============================================================================
 # Shell & Bash
 # =============================================================================
@@ -303,6 +319,18 @@ Enabled = true
 KBPath  = ''
 KBAutoImport = true
 KBWatch      = true
+ContextEnrichmentEnabled = true
+ContextEnrichmentKBResults = 3
+ContextEnrichmentCodeResults = 5
+ContextEnrichmentCodeProject = ''
+ContextEnrichmentMinScore = 0.45
+MemoryEnabled = true
+MemoryContextEnrichmentEnabled = true
+MemoryContextMaxItems = 10
+MemoryContextMaxChars = 2000
+MemoryDefaultTTLDays = 180
+MemoryGCInterval = '1h'
+MemoryAutoCapture = true
 
 DocumentEmbeddingProvider = 'ollama'
 DocumentEmbeddingModel    = 'nomic-embed-text'
@@ -318,6 +346,50 @@ UseSameModel = false
 ChunkSize    = 800
 ChunkOverlap = 100
 IndexWorkers = 4
+
+# =============================================================================
+# LLM Cache
+# =============================================================================
+[LLMCache]
+Enabled = true
+
+# =============================================================================
+# Tool Discovery
+# =============================================================================
+[ToolDiscovery]
+Enabled = true
+Mode = 'auto'
+MaxDirectTools = 64
+SearchLimit = 8
+
+# =============================================================================
+# Internal Tools
+# =============================================================================
+[InternalTools]
+FetchEnabled = true
+FetchMaxSizeMB = 10
+GoogleSearchEnabled = true
+BraveSearchEnabled = true
+PerplexitySearchEnabled = true
+Context7Enabled = true
+BrowserEnabled = true
+BrowserType = 'chrome'
+BrowserHeadless = true
+BrowserTimeout = 30
+BrowserMaxSessions = 3
+
+# =============================================================================
+# Self-Improvement Evaluator
+# =============================================================================
+[Evaluator]
+Enabled = true
+AlphaWeight = 0.8
+BetaWeight = 0.2
+ExplorationC = 1.41
+MinSessionsForUCB = 5
+MaxTokensBaseline = 50
+MaxSkills = 100
+Async = true
 
 # =============================================================================
 # API Server (Web UI backend)

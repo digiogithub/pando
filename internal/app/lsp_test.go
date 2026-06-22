@@ -5,9 +5,11 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/lsp"
+	"github.com/spf13/viper"
 )
 
 // newLSPTestApp builds a minimal App with just the fields ensureLSPServer needs,
@@ -125,5 +127,57 @@ func TestClientsForFile_SnapshotFiltersByLanguage(t *testing.T) {
 	delete(got, "gopls")
 	if len(app.LSPClients) != 2 {
 		t.Fatalf("snapshot must be a copy; app map changed to %d entries", len(app.LSPClients))
+	}
+}
+
+func TestWaitForFile_WaitsForMatchingClient(t *testing.T) {
+	app := newLSPTestApp()
+	viper.Reset()
+	config.SetForTests(&config.Config{LSPAutoActivate: true, LSP: map[string]config.LSPConfig{}})
+	t.Cleanup(func() {
+		config.SetForTests(nil)
+		viper.Reset()
+	})
+
+	app.clientsMutex.Lock()
+	app.lspSpawning["gopls"] = struct{}{}
+	app.clientsMutex.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		app.clientsMutex.Lock()
+		delete(app.lspSpawning, "gopls")
+		app.LSPClients["gopls"] = &lsp.Client{Languages: []string{".go"}}
+		app.clientsMutex.Unlock()
+	}()
+
+	got := app.WaitForFile(ctx, "main.go")
+	if len(got) != 1 {
+		t.Fatalf("expected one client after waiting, got %d", len(got))
+	}
+	if _, ok := got["gopls"]; !ok {
+		t.Fatalf("expected gopls after wait, got %v", got)
+	}
+}
+
+func TestWaitForFile_ReturnsEmptyWhenStartupSettlesBroken(t *testing.T) {
+	app := newLSPTestApp()
+	viper.Reset()
+	config.SetForTests(&config.Config{LSPAutoActivate: true, LSP: map[string]config.LSPConfig{}})
+	t.Cleanup(func() {
+		config.SetForTests(nil)
+		viper.Reset()
+	})
+
+	app.clientsMutex.Lock()
+	app.lspBroken["gopls"] = struct{}{}
+	app.clientsMutex.Unlock()
+
+	got := app.WaitForFile(context.Background(), "main.go")
+	if len(got) != 0 {
+		t.Fatalf("expected no clients, got %v", got)
 	}
 }

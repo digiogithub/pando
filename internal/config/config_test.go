@@ -92,6 +92,31 @@ func TestDefaultConfigTemplateKeepsBuiltInContextPathsEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigTemplateEnablesPandoPreferredDefaults(t *testing.T) {
+	checks := []string{
+		"Enabled    = true\nBaseURL    = ''\nAutoUpdate = false\nDefaultScope = 'global'",
+		"Theme = 'pando-nobg'",
+		"ShowHiddenFiles = true",
+		"NerdFonts = true",
+		"AutoApproveTools = true",
+		"[Mesnada.Delegation]\nEnabled = true",
+		"ContextEnrichmentEnabled = true",
+		"MemoryEnabled = true",
+		"MemoryAutoCapture = true",
+		"[LLMCache]\nEnabled = true",
+		"[ToolDiscovery]\nEnabled = true",
+		"[InternalTools]\nFetchEnabled = true",
+		"BrowserEnabled = true",
+		"[Evaluator]\nEnabled = true",
+	}
+
+	for _, want := range checks {
+		if !strings.Contains(DefaultConfigTemplate, want) {
+			t.Fatalf("DefaultConfigTemplate should contain %q", want)
+		}
+	}
+}
+
 func TestValidateAllowsOllamaWithoutAPIKey(t *testing.T) {
 	cfg = &Config{
 		Providers: map[models.ModelProvider]Provider{

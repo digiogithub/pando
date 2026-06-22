@@ -1,6 +1,6 @@
 ---
-created_at: 2026-06-22T07:42:15.356456012Z
-updated_at: 2026-06-22T08:25:12.453048506Z
+created_at: 2026-06-22T10:59:06.880139501Z
+updated_at: 2026-06-22T10:59:46.086855172Z
 tags:
     - plan
     - improvements
@@ -21,6 +21,7 @@ the warm per-project instance reuse re-plan shipped COMPLETE (Phases 7.1-7.5).
 Progress:
 - **A1 DONE (2026-06-22)** — `pando/fixes/delegation_a1_viper_nested_default_shadowing.md`.
 - **C1 + C2 DONE (2026-06-22)** — `pando/changes/delegation_c1_c2_idle_gc_promote.md`.
+- **B1 DONE (2026-06-22)** — `pando/changes/delegation_b1_project_target_from_spawn.md`.
 
 ## Related documents (read these first for context)
 - Feature (current state): `pando/features/delegated_conclusions_resurrection.md`
@@ -30,6 +31,7 @@ Progress:
   `pando/changes/delegation_phase7_{1,2,3,4,5}_*.md`
 - A1 fix: `pando/fixes/delegation_a1_viper_nested_default_shadowing.md`
 - C1+C2 change: `pando/changes/delegation_c1_c2_idle_gc_promote.md`
+- B1 change: `pando/changes/delegation_b1_project_target_from_spawn.md`
 - Memory index entry: `plan-delegated-conclusion-resurrection`
 
 Each item below notes its SOURCE (where it was deferred), the GAP it closes, a
@@ -67,13 +69,17 @@ passes. Detail: `pando/fixes/delegation_a1_viper_nested_default_shadowing.md`.
 
 ## B. Routing / targeting
 
-### B1. Target a registered project by id from the spawn tool / UI
-- SOURCE: deferred from 7.4 scope.
-- GAP: warm routing resolves a project only by canonicalising `work_dir`.
-- APPROACH: optional `project_id` arg on `mesnada_spawn`/WebUI → `WarmDelegate`
-  (already accepts an explicit id via `resolveProjectID`). Validate against
-  registry; fall back to path resolution.
-- EFFORT: S-M. RISK: low.
+### B1. Target a registered project by id from the spawn tool / UI — ✅ DONE 2026-06-22
+Resolved: new optional `project` arg on `mesnada_spawn_agent` (in-process) and the
+standalone MCP `spawn_agent`, accepting a registry **id**, **display name**
+(case-insensitive), or **directory path**. Resolved against the registry via a new
+`orchestrator.ProjectRefResolver` (interface + `Orchestrator.ResolveProjectRef`/
+`ProjectRefsSupported`/`ListProjectRefs`), backed by `app.projectRefResolverAdapter`
+over `project.Service` (id → path → name). Sets `SpawnRequest.ProjectID` (already
+flowed to `WarmDelegate`/`resolveProjectID`) and defaults `work_dir` to the project
+path; unknown reference fails fast at the tool boundary listing known projects (so
+it never becomes a terminal-failed warm task). Detail:
+`pando/changes/delegation_b1_project_target_from_spawn.md`.
 
 ### B2. Reconsider external (editor-launched) instances as warm targets
 - SOURCE: re-plan decision 2 ("external → always cold path, for now").
@@ -144,7 +150,7 @@ Verified `Manager.Activate`'s reuse branch already clears `delegationSpawned`
 ---
 
 ## Sequencing suggestion
-1) ~~A1~~ ✅ DONE → 2) ~~C1+C2~~ ✅ DONE → 3) B1 (targeting, cheap UX win) →
+1) ~~A1~~ ✅ DONE → 2) ~~C1+C2~~ ✅ DONE → 3) ~~B1~~ ✅ DONE →
 4) A3 (queue under load) → 5) E1 (metrics to guide further tuning) →
 6) A2 (reconnect) → 7) B3 / B2 (epics, separate plans). D-items are independent,
 pick up opportunistically.

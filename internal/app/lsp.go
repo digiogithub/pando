@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"os/exec"
 	"path/filepath"
@@ -147,6 +148,70 @@ func (app *App) EnsureForFile(ctx context.Context, path string) {
 	app.EnsureLSPForFile(ctx, path)
 }
 
+// WaitForFile waits briefly for a lazily spawned LSP client to become available
+// for the requested file. It returns early when startup settles (running or
+// broken) so tool calls don't race the background activation goroutine.
+func (app *App) WaitForFile(ctx context.Context, path string) map[string]*lsp.Client {
+	if clients := app.ClientsForFile(path); len(clients) > 0 {
+		return clients
+	}
+
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return app.ClientsForFile(path)
+		case <-deadline.C:
+			return app.ClientsForFile(path)
+		case <-ticker.C:
+			if clients := app.ClientsForFile(path); len(clients) > 0 {
+				return clients
+			}
+			if app.lspStartupSettled(path) {
+				return app.ClientsForFile(path)
+			}
+		}
+	}
+}
+
+func (app *App) lspStartupSettled(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == "" {
+		return true
+	}
+	cfg := config.Get()
+	if cfg == nil || !cfg.LSPAutoActivate {
+		return true
+	}
+	candidates := cfg.LSPServersForExt(ext)
+	if len(candidates) == 0 {
+		return true
+	}
+
+	app.clientsMutex.RLock()
+	defer app.clientsMutex.RUnlock()
+	for _, s := range candidates {
+		if s.Disabled || s.Command == "" {
+			continue
+		}
+		if _, ok := app.LSPClients[s.Name]; ok {
+			return true
+		}
+		if _, ok := app.lspSpawning[s.Name]; ok {
+			return false
+		}
+		if _, ok := app.lspBroken[s.Name]; ok {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 // ClientsForFile returns a snapshot of the running LSP clients that handle the
 // given file. The returned map is a copy, safe to iterate without holding the
 // app lock while clients are added or removed concurrently.
@@ -179,7 +244,11 @@ func (app *App) createAndStartLSPClient(ctx context.Context, name string, comman
 	// Create the LSP client
 	lspClient, err := lsp.NewClient(ctx, command, args...)
 	if err != nil {
-		logging.Error("Failed to create LSP client for", name, err)
+		if errors.Is(err, exec.ErrNotFound) {
+			logging.Error("LSP binary not found while starting client", "name", name, "command", command, "error", err)
+		} else {
+			logging.Error("Failed to create LSP client", "name", name, "command", command, "error", err)
+		}
 		return
 	}
 

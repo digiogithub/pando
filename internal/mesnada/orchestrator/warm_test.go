@@ -169,3 +169,52 @@ func TestTryStartWarmNilResolver(t *testing.T) {
 		t.Fatal("tryStartWarm returned true with nil resolver, want false")
 	}
 }
+
+// fakeRefResolver is a programmable ProjectRefResolver for accessor tests.
+type fakeRefResolver struct {
+	ref  ProjectRef
+	ok   bool
+	list []ProjectRef
+}
+
+func (f *fakeRefResolver) ResolveProjectRef(_ context.Context, _ string) (ProjectRef, bool) {
+	return f.ref, f.ok
+}
+func (f *fakeRefResolver) ListProjectRefs(_ context.Context) []ProjectRef { return f.list }
+
+// TestProjectRefAccessorsNil: with no resolver wired, the accessors degrade to
+// "unsupported / empty" rather than panicking. Constructs the struct directly to
+// avoid New()'s background store writers (which race t.TempDir cleanup).
+func TestProjectRefAccessorsNil(t *testing.T) {
+	o := &Orchestrator{}
+	if o.ProjectRefsSupported() {
+		t.Error("ProjectRefsSupported = true, want false with no resolver")
+	}
+	if _, ok := o.ResolveProjectRef(context.Background(), "x"); ok {
+		t.Error("ResolveProjectRef ok = true, want false with no resolver")
+	}
+	if refs := o.ListProjectRefs(context.Background()); refs != nil {
+		t.Errorf("ListProjectRefs = %v, want nil with no resolver", refs)
+	}
+}
+
+// TestProjectRefAccessorsWired: the accessors delegate to the injected resolver.
+func TestProjectRefAccessorsWired(t *testing.T) {
+	rr := &fakeRefResolver{
+		ref:  ProjectRef{ID: "p1", Name: "Alpha", Path: "/a"},
+		ok:   true,
+		list: []ProjectRef{{ID: "p1", Name: "Alpha", Path: "/a"}},
+	}
+	o := &Orchestrator{projectRefResolver: rr}
+
+	if !o.ProjectRefsSupported() {
+		t.Fatal("ProjectRefsSupported = false, want true")
+	}
+	ref, ok := o.ResolveProjectRef(context.Background(), "Alpha")
+	if !ok || ref.ID != "p1" {
+		t.Fatalf("ResolveProjectRef = (%+v, %v), want p1/true", ref, ok)
+	}
+	if refs := o.ListProjectRefs(context.Background()); len(refs) != 1 || refs[0].ID != "p1" {
+		t.Fatalf("ListProjectRefs = %+v, want one p1", refs)
+	}
+}

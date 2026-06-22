@@ -109,6 +109,10 @@ func (t *MesnadaSpawnTool) Info() ToolInfo {
 				"type":        "string",
 				"description": "Working directory for the task.",
 			},
+			"project": map[string]any{
+				"type":        "string",
+				"description": "Optional: target a registered project by its id, display name, or directory path. The task is routed to that project's warm instance when warm reuse is enabled, and its work_dir defaults to the project's directory. Returns an error listing the known projects if the reference does not match a registered project.",
+			},
 			"engine": map[string]any{
 				"type":        "string",
 				"description": engineDesc,
@@ -184,11 +188,36 @@ func spawnCorrelation(ctx context.Context, workDir string) (parentSessionID, cor
 	return parentSessionID, correlationID, projectPath, depth
 }
 
+// knownProjectsHint formats the registered projects into a short, helpful hint
+// for the "unknown project" error returned by the spawn tool's project target
+// (item B1). It lists up to a handful of "name (id)" entries so the model can
+// retry with a valid reference. Returns a generic message when none are known.
+func knownProjectsHint(refs []orchestrator.ProjectRef) string {
+	if len(refs) == 0 {
+		return "No projects are registered; omit 'project' or register one first."
+	}
+	const maxList = 10
+	parts := make([]string, 0, len(refs))
+	for i, r := range refs {
+		if i >= maxList {
+			parts = append(parts, fmt.Sprintf("…and %d more", len(refs)-maxList))
+			break
+		}
+		name := r.Name
+		if name == "" {
+			name = r.Path
+		}
+		parts = append(parts, fmt.Sprintf("%s (%s)", name, r.ID))
+	}
+	return "Known projects: " + strings.Join(parts, ", ") + "."
+}
+
 func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
 	type spawnParams struct {
 		TaskID                string   `json:"task_id"`
 		Prompt                string   `json:"prompt"`
 		WorkDir               string   `json:"work_dir"`
+		Project               string   `json:"project"`
 		Engine                string   `json:"engine"`
 		Model                 string   `json:"model"`
 		Background            *bool    `json:"background"`
@@ -244,6 +273,27 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 
 	if req.Prompt == "" {
 		return NewTextErrorResponse("prompt is required"), nil
+	}
+
+	// Resolve an explicit project target (item B1): when the caller names a
+	// registered project by id/name/path, route the delegated task to that
+	// project (its warm instance when reuse is enabled) and default the work_dir
+	// to the project's directory. Fail fast with a helpful list when unknown so a
+	// typo never silently runs in the wrong place.
+	var targetProjectID string
+	if strings.TrimSpace(req.Project) != "" {
+		if t.orchestrator == nil || !t.orchestrator.ProjectRefsSupported() {
+			return NewTextErrorResponse("the 'project' argument is not supported in this configuration (no project registry available)"), nil
+		}
+		ref, ok := t.orchestrator.ResolveProjectRef(ctx, req.Project)
+		if !ok {
+			return NewTextErrorResponse(fmt.Sprintf(
+				"unknown project %q. %s", req.Project, knownProjectsHint(t.orchestrator.ListProjectRefs(ctx)))), nil
+		}
+		targetProjectID = ref.ID
+		if req.WorkDir == "" {
+			req.WorkDir = ref.Path
+		}
 	}
 
 	// Apply configured defaults for new tasks when engine and/or model are
@@ -319,6 +369,7 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		Tags:                  req.Tags,
 		ParentSessionID:       parentSessionID,
 		CorrelationID:         correlationID,
+		ProjectID:             targetProjectID,
 		ProjectPath:           projectPath,
 		Depth:                 depth,
 	})

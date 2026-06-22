@@ -493,6 +493,10 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		// known is run inside an already-running per-project ACP instance instead of
 		// cold-spawning a CLI. nil when ReuseWarmInstances is off → cold path always.
 		mesnadaCfg.WarmTargetResolver = makeWarmTargetResolver(app.ProjectManager, cfg)
+		// Wire project-reference resolution (item B1): lets the spawn tool target a
+		// registered project by id/name/path so its delegated task is routed to that
+		// project's warm instance. nil when no project service is available.
+		mesnadaCfg.ProjectRefResolver = makeProjectRefResolver(app.Projects)
 		// Idle auto-GC (item C1): stop router-auto-started warm instances that go
 		// idle, so they don't leak. Gated on warm reuse being enabled and a
 		// positive WarmInstanceIdleTimeout; "0"/empty leaves warm instances to
@@ -776,6 +780,65 @@ func makeProjectResolver(ctx context.Context, svc project.Service) conclusion.Pr
 		}
 		return p.ID, p.Name
 	}
+}
+
+// projectRefResolverAdapter implements orchestrator.ProjectRefResolver over the
+// project registry. It resolves a free-form reference (item B1) to a registered
+// project by, in order: exact registry id, canonical directory path, then
+// case-insensitive exact display name. Registry calls use the caller's ctx.
+type projectRefResolverAdapter struct {
+	svc project.Service
+}
+
+func (a projectRefResolverAdapter) ResolveProjectRef(ctx context.Context, ref string) (mesnadaOrch.ProjectRef, bool) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || a.svc == nil {
+		return mesnadaOrch.ProjectRef{}, false
+	}
+	// 1) Exact registry id.
+	if p, err := a.svc.Get(ctx, ref); err == nil && p != nil {
+		return mesnadaOrch.ProjectRef{ID: p.ID, Name: p.Name, Path: p.Path}, true
+	}
+	// 2) Canonical directory path.
+	if canonical := config.CanonicalProjectPath(ref); canonical != "" {
+		if p, err := a.svc.GetByPath(ctx, canonical); err == nil && p != nil {
+			return mesnadaOrch.ProjectRef{ID: p.ID, Name: p.Name, Path: p.Path}, true
+		}
+	}
+	// 3) Case-insensitive exact display name (newest first on ambiguity).
+	if list, err := a.svc.List(ctx); err == nil {
+		for i := range list {
+			if strings.EqualFold(strings.TrimSpace(list[i].Name), ref) {
+				return mesnadaOrch.ProjectRef{ID: list[i].ID, Name: list[i].Name, Path: list[i].Path}, true
+			}
+		}
+	}
+	return mesnadaOrch.ProjectRef{}, false
+}
+
+func (a projectRefResolverAdapter) ListProjectRefs(ctx context.Context) []mesnadaOrch.ProjectRef {
+	if a.svc == nil {
+		return nil
+	}
+	list, err := a.svc.List(ctx)
+	if err != nil {
+		return nil
+	}
+	refs := make([]mesnadaOrch.ProjectRef, 0, len(list))
+	for i := range list {
+		refs = append(refs, mesnadaOrch.ProjectRef{ID: list[i].ID, Name: list[i].Name, Path: list[i].Path})
+	}
+	return refs
+}
+
+// makeProjectRefResolver returns an orchestrator.ProjectRefResolver backed by the
+// project registry (item B1), or nil when no project service is available so the
+// spawn tool's "project" argument is reported as unsupported.
+func makeProjectRefResolver(svc project.Service) mesnadaOrch.ProjectRefResolver {
+	if svc == nil {
+		return nil
+	}
+	return projectRefResolverAdapter{svc: svc}
 }
 
 // warmTargetResolverFunc adapts a plain function to the orchestrator's

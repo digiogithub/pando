@@ -44,6 +44,53 @@ type WarmTargetResolver interface {
 	RunWarm(ctx context.Context, projectID, projectPath, promptText string) (*WarmRunResult, error)
 }
 
+// ProjectRef identifies a registered project, used by the spawn tool to target a
+// specific project by id/name/path (item B1). Path is the project's working
+// directory; Name its display name.
+type ProjectRef struct {
+	ID   string
+	Name string
+	Path string
+}
+
+// ProjectRefResolver resolves a free-form project reference (registry id, display
+// name, or directory path) to a registered project, and lists registered projects
+// for building helpful error messages. It is injected from internal/app over the
+// project registry to avoid an import cycle (same pattern as WarmTargetResolver).
+type ProjectRefResolver interface {
+	// ResolveProjectRef returns the registered project matching ref, or ok=false
+	// when none matches.
+	ResolveProjectRef(ctx context.Context, ref string) (ProjectRef, bool)
+	// ListProjectRefs returns all registered projects (for error messages).
+	ListProjectRefs(ctx context.Context) []ProjectRef
+}
+
+// ResolveProjectRef resolves a free-form project reference (id/name/path) to a
+// registered project via the injected resolver. ok is false when no resolver is
+// wired or no project matches.
+func (o *Orchestrator) ResolveProjectRef(ctx context.Context, ref string) (ProjectRef, bool) {
+	if o.projectRefResolver == nil {
+		return ProjectRef{}, false
+	}
+	return o.projectRefResolver.ResolveProjectRef(ctx, ref)
+}
+
+// ProjectRefsSupported reports whether project-targeting is available (a resolver
+// is wired). When false the spawn tool rejects the "project" argument instead of
+// silently ignoring it.
+func (o *Orchestrator) ProjectRefsSupported() bool {
+	return o.projectRefResolver != nil
+}
+
+// ListProjectRefs returns all registered projects (used to build a helpful error
+// when a project reference does not resolve). Returns nil when no resolver wired.
+func (o *Orchestrator) ListProjectRefs(ctx context.Context) []ProjectRef {
+	if o.projectRefResolver == nil {
+		return nil
+	}
+	return o.projectRefResolver.ListProjectRefs(ctx)
+}
+
 // tryStartWarm attempts to run a delegated task inside a warm per-project
 // instance instead of cold-spawning. It returns true when the task was handled
 // by the warm path (success or warm-run failure — completion is driven here via
