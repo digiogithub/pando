@@ -355,6 +355,9 @@ func (m *Manager) StopReport(ctx context.Context, projectID string) (cancelled i
 	inst, ours := m.instances[projectID]
 	if ours {
 		cancelled = inst.InflightDelegations()
+		// Wake any delegations queued for a slot (A3) so they fall back to the cold
+		// path instead of waiting on an instance that is going away.
+		inst.beginCloseAndWake()
 		inst.cancel()
 		if inst.cmd.Process != nil {
 			_ = inst.cmd.Process.Signal(syscall.SIGTERM)

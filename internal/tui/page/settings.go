@@ -1787,6 +1787,7 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 		{Label: "Delegation Reuse Warm Instances", Key: "mesnada.delegation.reuseWarmInstances", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.ReuseWarmInstances), Hint: "Route a delegated task to an already-running per-project instance instead of cold-spawning"},
 		{Label: "Delegation Auto-Start Warm Instance", Key: "mesnada.delegation.autoStartWarmInstance", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.AutoStartWarmInstance), Hint: "Auto-start a child instance when none is running (off = reuse-only)"},
 		{Label: "Delegation Warm Instance Idle Timeout", Key: "mesnada.delegation.warmInstanceIdleTimeout", Type: settings.FieldText, Value: warmIdleTimeoutString(cfg.Mesnada.Delegation.WarmInstanceIdleTimeout), Hint: "Stop idle router-started warm instances after this long (0 = never; e.g. 10m, 1h)"},
+		{Label: "Delegation Warm Queue Depth", Key: "mesnada.delegation.warmQueueDepth", Type: settings.FieldText, Value: intString(cfg.Mesnada.Delegation.WarmQueueDepth, 0), Hint: "Queue this many delegations for a free warm slot under load (0 = cold-spawn when at the cap)"},
 	}
 
 	if !cfg.Mesnada.Enabled {
@@ -3621,6 +3622,15 @@ func saveMesnadaDelegation(field settings.Field) error {
 			return fmt.Errorf("invalid Delegation warm-instance idle timeout (0 to disable, e.g. 10m, 1h): %w", err)
 		}
 		del.WarmInstanceIdleTimeout = timeout
+	case "mesnada.delegation.warmQueueDepth":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation warm queue depth: %w", err)
+		}
+		if v < 0 {
+			return fmt.Errorf("Delegation warm queue depth must be >= 0")
+		}
+		del.WarmQueueDepth = v
 	default:
 		return fmt.Errorf("unsupported Delegation setting %q", field.Key)
 	}

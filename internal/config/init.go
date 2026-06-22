@@ -299,6 +299,7 @@ ResurrectionTimeout = '10m'
 ReuseWarmInstances = true
 AutoStartWarmInstance = true
 WarmInstanceIdleTimeout = '0'
+WarmQueueDepth = 0
 
 # =============================================================================
 # Shell & Bash

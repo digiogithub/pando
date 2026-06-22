@@ -100,6 +100,7 @@
       "delegationAutoStartWarm": "Warme Instanz automatisch starten",
       "delegationAutoStartWarmDescription": "Startet automatisch eine Kindinstanz für das Projekt, wenn keine läuft (aus = nur wiederverwenden)",
       "delegationWarmIdleTimeout": "Leerlauf-Timeout der Warm-Instanz (0 = nie)",
+      "delegationWarmQueueDepth": "Warm-Warteschlangentiefe (0 = Kaltstart bei Limit)",
       "toolDiscovery": "Tool-Erkennung",
       "toolDiscoveryDescription": "Hält Nicht-Kernwerkzeuge aus dem initialen Kontext heraus; das Modell findet sie bei Bedarf über tool_search",
       "toolDiscoveryMode": "Tool-Erkennungsmodus",

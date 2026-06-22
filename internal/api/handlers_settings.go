@@ -46,6 +46,7 @@ type SettingsResponse struct {
 	DelegationReuseWarmInstances  bool   `json:"delegation_reuse_warm_instances"`
 	DelegationAutoStartWarm       bool   `json:"delegation_auto_start_warm"`
 	DelegationWarmIdleTimeout     string `json:"delegation_warm_idle_timeout"`
+	DelegationWarmQueueDepth      int    `json:"delegation_warm_queue_depth"`
 }
 
 // SettingsUpdateRequest contains the fields that can be updated via PUT /api/v1/settings.
@@ -78,6 +79,7 @@ type SettingsUpdateRequest struct {
 	DelegationReuseWarmInstances  *bool   `json:"delegation_reuse_warm_instances,omitempty"`
 	DelegationAutoStartWarm       *bool   `json:"delegation_auto_start_warm,omitempty"`
 	DelegationWarmIdleTimeout     *string `json:"delegation_warm_idle_timeout,omitempty"`
+	DelegationWarmQueueDepth      *int    `json:"delegation_warm_queue_depth,omitempty"`
 }
 
 // ProviderStatus describes a configured provider and whether it has an API key set.
@@ -146,6 +148,7 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		DelegationReuseWarmInstances:  cfg.Mesnada.Delegation.ReuseWarmInstances,
 		DelegationAutoStartWarm:       cfg.Mesnada.Delegation.AutoStartWarmInstance,
 		DelegationWarmIdleTimeout:     warmIdleTimeoutOrDefault(cfg.Mesnada.Delegation.WarmInstanceIdleTimeout),
+		DelegationWarmQueueDepth:      cfg.Mesnada.Delegation.WarmQueueDepth,
 	}, nil
 }
 
@@ -333,7 +336,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		req.DelegationMaxResurrections != nil || req.DelegationMaxDepth != nil ||
 		req.DelegationMaxConcurrent != nil || req.DelegationResurrectionTimeout != nil ||
 		req.DelegationReuseWarmInstances != nil || req.DelegationAutoStartWarm != nil ||
-		req.DelegationWarmIdleTimeout != nil {
+		req.DelegationWarmIdleTimeout != nil || req.DelegationWarmQueueDepth != nil {
 		del := config.Get().Mesnada.Delegation
 		if req.DelegationEnabled != nil {
 			del.Enabled = *req.DelegationEnabled
@@ -389,6 +392,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			del.WarmInstanceIdleTimeout = *req.DelegationWarmIdleTimeout
+		}
+		if req.DelegationWarmQueueDepth != nil {
+			if *req.DelegationWarmQueueDepth < 0 {
+				writeError(w, http.StatusBadRequest, "delegation_warm_queue_depth must be >= 0")
+				return
+			}
+			del.WarmQueueDepth = *req.DelegationWarmQueueDepth
 		}
 		if err := config.UpdateMesnadaDelegation(del); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update delegation settings")

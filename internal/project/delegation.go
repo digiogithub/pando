@@ -59,13 +59,18 @@ func (m *Manager) Delegate(ctx context.Context, projectID, promptText string) (*
 // projectID may be empty, in which case projectPath is resolved to a registered
 // project. autoStart selects reuse-then-autostart (true) vs reuse-only (false).
 // maxConcurrent (>0) bounds concurrent delegated sessions per instance.
+// queueDepth (>0) bounds a FIFO of delegations that wait for a slot when the cap
+// is reached instead of cold-falling-back immediately (item A3); 0 keeps the
+// cold-fallback-on-cap behaviour. A queued delegation that loses its context
+// (ctx cancelled) or whose instance starts closing still returns ErrWarmCapReached.
 //
 // It returns a sentinel error the caller should treat as "use the cold path":
 // ErrInstanceNotRunning (reuse-only, nothing running), ErrExternalInstance (the
 // project is served by an editor-launched instance), ErrProjectNeedsInit (no
 // config to start a child), ErrProjectNotRegistered (unknown project), or
-// ErrWarmCapReached (cap reached). Any other error is a genuine warm-run failure.
-func (m *Manager) WarmDelegate(ctx context.Context, projectID, projectPath, promptText string, autoStart bool, maxConcurrent int) (*DelegateResult, error) {
+// ErrWarmCapReached (cap reached and queue full/disabled). Any other error is a
+// genuine warm-run failure.
+func (m *Manager) WarmDelegate(ctx context.Context, projectID, projectPath, promptText string, autoStart bool, maxConcurrent, queueDepth int) (*DelegateResult, error) {
 	id, err := m.resolveProjectID(ctx, projectID, projectPath)
 	if err != nil {
 		return nil, err
@@ -76,7 +81,7 @@ func (m *Manager) WarmDelegate(ctx context.Context, projectID, projectPath, prom
 		return nil, err
 	}
 
-	if !inst.acquireDelegationSlot(maxConcurrent) {
+	if !inst.acquireDelegationSlotOrQueue(ctx, maxConcurrent, queueDepth) {
 		return nil, ErrWarmCapReached
 	}
 	m.publishDelegationChanged(id, inst.InflightDelegations())

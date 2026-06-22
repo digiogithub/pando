@@ -259,6 +259,14 @@ export default function GeneralSettings() {
           disabled={!config.delegation_enabled || !config.delegation_reuse_warm_instances}
           onChange={(e) => updateField('delegation_warm_idle_timeout', e.target.value)}
         />
+        <TextInput
+          label={t('settings.general.delegationWarmQueueDepth')}
+          type="number"
+          min={0}
+          value={config.delegation_warm_queue_depth}
+          disabled={!config.delegation_enabled || !config.delegation_reuse_warm_instances}
+          onChange={(e) => updateField('delegation_warm_queue_depth', Number(e.target.value))}
+        />
       </div>
 
       <div style={dividerStyle} />

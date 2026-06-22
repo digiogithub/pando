@@ -34,6 +34,7 @@ const DEFAULTS: SettingsConfig = {
   delegation_reuse_warm_instances: false,
   delegation_auto_start_warm: true,
   delegation_warm_idle_timeout: '0',
+  delegation_warm_queue_depth: 0,
   // UI-only, not persisted via /api/v1/settings
   language: 'en',
 }

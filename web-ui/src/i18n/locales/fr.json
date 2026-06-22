@@ -100,6 +100,7 @@
       "delegationAutoStartWarm": "Démarrer automatiquement l'instance active",
       "delegationAutoStartWarmDescription": "Démarre automatiquement une instance enfant pour le projet quand aucune n'est en cours (désactivé = réutilisation seule)",
       "delegationWarmIdleTimeout": "Délai d'inactivité de l'instance à chaud (0 = jamais)",
+      "delegationWarmQueueDepth": "Profondeur de file d'attente à chaud (0 = démarrage à froid à la limite)",
       "toolDiscovery": "Découverte d’outils",
       "toolDiscoveryDescription": "Garde les outils non essentiels hors du contexte initial ; le modèle les trouve à la demande via tool_search",
       "toolDiscoveryMode": "Mode de découverte d’outils",

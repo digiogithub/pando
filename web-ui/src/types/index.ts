@@ -456,6 +456,7 @@ export interface SettingsConfig {
   delegation_reuse_warm_instances: boolean // route delegated tasks to a warm per-project instance
   delegation_auto_start_warm: boolean      // auto-start a child instance when none is running
   delegation_warm_idle_timeout: string     // stop idle warm instances after this long ("0" = never)
+  delegation_warm_queue_depth: number      // queue this many delegations for a free warm slot (0 = cold-spawn at cap)
   // UI-only fields (not persisted via /api/v1/settings)
   language: string
 }

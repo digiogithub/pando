@@ -862,9 +862,10 @@ func makeWarmTargetResolver(mgr *project.Manager, cfg *config.Config) mesnadaOrc
 	}
 	autoStart := cfg.Mesnada.Delegation.AutoStartWarmInstance
 	maxConcurrent := cfg.Mesnada.Delegation.MaxConcurrent
+	queueDepth := cfg.Mesnada.Delegation.WarmQueueDepth
 
 	return warmTargetResolverFunc(func(ctx context.Context, projectID, projectPath, promptText string) (*mesnadaOrch.WarmRunResult, error) {
-		res, err := mgr.WarmDelegate(ctx, projectID, projectPath, promptText, autoStart, maxConcurrent)
+		res, err := mgr.WarmDelegate(ctx, projectID, projectPath, promptText, autoStart, maxConcurrent, queueDepth)
 		if err != nil {
 			if isWarmColdFallback(err) {
 				return nil, mesnadaOrch.ErrNoWarmTarget

@@ -274,7 +274,7 @@ func TestWarmDelegateReuseCaptures(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	res, err := m.WarmDelegate(ctx, "proj-4", "", "do it", false /*autoStart*/, 4 /*maxConcurrent*/)
+	res, err := m.WarmDelegate(ctx, "proj-4", "", "do it", false /*autoStart*/, 4 /*maxConcurrent*/, 0 /*queueDepth*/)
 	if err != nil {
 		t.Fatalf("WarmDelegate: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestWarmDelegateCapReached(t *testing.T) {
 	started := make(chan struct{})
 	go func() {
 		close(started)
-		_, _ = m.WarmDelegate(runCtx, "proj-5", "", "long", false, 1)
+		_, _ = m.WarmDelegate(runCtx, "proj-5", "", "long", false, 1, 0)
 	}()
 	<-started
 
@@ -319,7 +319,7 @@ func TestWarmDelegateCapReached(t *testing.T) {
 	}
 
 	// A second delegation over the cap must be refused immediately.
-	_, err := m.WarmDelegate(context.Background(), "proj-5", "", "second", false, 1)
+	_, err := m.WarmDelegate(context.Background(), "proj-5", "", "second", false, 1, 0)
 	if err != ErrWarmCapReached {
 		t.Fatalf("err = %v, want ErrWarmCapReached", err)
 	}
@@ -365,7 +365,7 @@ func TestWarmDelegatePublishesDelegationEvents(t *testing.T) {
 	defer cancel()
 	sub := m.broker.Subscribe(ctx)
 
-	if _, err := m.WarmDelegate(ctx, "proj-ev", "", "do it", false, 4); err != nil {
+	if _, err := m.WarmDelegate(ctx, "proj-ev", "", "do it", false, 4, 0); err != nil {
 		t.Fatalf("WarmDelegate: %v", err)
 	}
 
@@ -479,7 +479,7 @@ func TestWarmInstanceServesParallelSessions(t *testing.T) {
 	results := make(chan outcome, 2)
 	for i := 0; i < 2; i++ {
 		go func() {
-			res, err := m.WarmDelegate(ctx, projectID, "", "do it", false, 2)
+			res, err := m.WarmDelegate(ctx, projectID, "", "do it", false, 2, 0)
 			results <- outcome{res, err}
 		}()
 	}
@@ -532,7 +532,7 @@ func TestWarmDelegateDoesNotChangeActiveID(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if _, err := m.WarmDelegate(ctx, "proj-active", "", "go", false, 4); err != nil {
+	if _, err := m.WarmDelegate(ctx, "proj-active", "", "go", false, 4, 0); err != nil {
 		t.Fatalf("WarmDelegate: %v", err)
 	}
 	if m.ActiveID() != "" {

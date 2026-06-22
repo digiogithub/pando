@@ -27,6 +27,14 @@ type Instance struct {
 
 	inflight int // in-flight delegated sessions (warm reuse); guarded by mu
 
+	// cond signals waiters queued for a delegated slot (item A3). Lazily created
+	// under mu on first queueing attempt; broadcast on every slot release so a
+	// freed slot is picked up by a queued delegation. Guarded by mu.
+	cond *sync.Cond
+	// waiters counts delegations currently blocked in the bounded FIFO queue
+	// waiting for a slot. Bounds the queue to WarmQueueDepth. Guarded by mu.
+	waiters int
+
 	// delegationSpawned is true when this instance was auto-started by the
 	// delegation router (warm reuse) rather than activated by the user. Used by
 	// the Projects panel to distinguish user-focused vs delegation-spawned
@@ -64,13 +72,78 @@ func (i *Instance) acquireDelegationSlot(max int) bool {
 	return true
 }
 
-// releaseDelegationSlot returns a slot acquired by acquireDelegationSlot.
+// acquireDelegationSlotOrQueue reserves a delegated-session slot like
+// acquireDelegationSlot, but when the cap is reached it optionally waits in a
+// bounded FIFO queue (item A3) instead of returning false (cold fallback)
+// immediately. It blocks until a slot is released, ctx is cancelled, or the
+// instance begins closing — provided fewer than queueDepth callers are already
+// queued. queueDepth <= 0 disables queueing (today's behaviour: cap reached =>
+// cold fallback). Ordering is best-effort (a released slot wakes all waiters,
+// which re-race) but the queue depth is strictly bounded. Returns false when the
+// caller should fall back to the cold path (cap+queue full or disabled, closing,
+// or ctx cancelled while queued).
+func (i *Instance) acquireDelegationSlotOrQueue(ctx context.Context, max, queueDepth int) bool {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.cond == nil {
+		i.cond = sync.NewCond(&i.mu)
+	}
+
+	// Immediate acquire when under the cap and not closing.
+	if !i.closing && (max <= 0 || i.inflight < max) {
+		i.inflight++
+		i.lastActiveAt = time.Now()
+		return true
+	}
+
+	// Cap reached (or closing). Fall back to the cold path unless queueing is
+	// enabled and the bounded FIFO still has room.
+	if i.closing || queueDepth <= 0 || i.waiters >= queueDepth {
+		return false
+	}
+
+	// Enter the bounded FIFO queue and wait for a freed slot.
+	i.waiters++
+	defer func() { i.waiters-- }()
+
+	// sync.Cond has no ctx-aware Wait; a watcher broadcasts on cancellation so the
+	// wait loop can observe ctx.Err(). It exits as soon as the wait completes.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			i.mu.Lock()
+			i.cond.Broadcast()
+			i.mu.Unlock()
+		case <-done:
+		}
+	}()
+
+	for {
+		if ctx.Err() != nil || i.closing {
+			return false
+		}
+		if max <= 0 || i.inflight < max {
+			i.inflight++
+			i.lastActiveAt = time.Now()
+			return true
+		}
+		i.cond.Wait()
+	}
+}
+
+// releaseDelegationSlot returns a slot acquired by acquireDelegationSlot or
+// acquireDelegationSlotOrQueue and wakes any delegation queued for a slot (A3).
 func (i *Instance) releaseDelegationSlot() {
 	i.mu.Lock()
 	if i.inflight > 0 {
 		i.inflight--
 	}
 	i.lastActiveAt = time.Now()
+	if i.cond != nil {
+		i.cond.Broadcast()
+	}
 	i.mu.Unlock()
 }
 
@@ -87,6 +160,19 @@ func (i *Instance) tryBeginClose() bool {
 	}
 	i.closing = true
 	return true
+}
+
+// beginCloseAndWake marks the instance as closing and wakes any delegations
+// queued for a slot (A3) so they immediately fall back to the cold path. Unlike
+// tryBeginClose it does not require inflight==0 — it is used by an explicit Stop,
+// which cancels the in-flight sessions through the process teardown separately.
+func (i *Instance) beginCloseAndWake() {
+	i.mu.Lock()
+	i.closing = true
+	if i.cond != nil {
+		i.cond.Broadcast()
+	}
+	i.mu.Unlock()
 }
 
 // idleFor reports how long the instance has had no delegated-slot activity as of

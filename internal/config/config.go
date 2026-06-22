@@ -291,6 +291,12 @@ type MesnadaDelegationConfig struct {
 	// (warm instances then persist until stopped from the Projects panel). Only
 	// delegation-spawned, non-active instances are ever GC'd.
 	WarmInstanceIdleTimeout string `json:"warmInstanceIdleTimeout,omitempty"`
+	// WarmQueueDepth bounds a per-instance FIFO of delegated tasks that wait for a
+	// free slot when the warm instance is at MaxConcurrent, instead of cold-spawning
+	// a CLI under load (item A3). 0 (the default) preserves the cold-fallback
+	// behaviour; a positive value lets up to that many delegations queue before the
+	// rest still fall back to the cold path. Only meaningful under ReuseWarmInstances.
+	WarmQueueDepth int `json:"warmQueueDepth,omitempty"`
 }
 
 // Documented defaults for the delegation caps/timeout. They are the single
@@ -1293,6 +1299,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("mesnada.delegation.reuseWarmInstances", false)
 	viper.SetDefault("mesnada.delegation.autoStartWarmInstance", true)
 	viper.SetDefault("mesnada.delegation.warmInstanceIdleTimeout", "0")
+	viper.SetDefault("mesnada.delegation.warmQueueDepth", 0)
 
 	// API Server (WebUI backend) defaults
 	viper.SetDefault("server.enabled", false)
