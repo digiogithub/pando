@@ -47,6 +47,11 @@ type FileStore struct {
 	closeOnce sync.Once
 	dirty     bool
 	closeCh   chan struct{}
+	// wg tracks the background saver goroutine so Close can wait for its final
+	// flush to finish before returning. Without this, the saver's post-close
+	// save() races directory teardown (e.g. t.TempDir cleanup writing the tmp
+	// file as the dir is removed → "directory not empty").
+	wg sync.WaitGroup
 }
 
 // NewFileStore creates a new file-based store.
@@ -71,6 +76,7 @@ func NewFileStore(path string) (*FileStore, error) {
 	}
 
 	// Start background saver
+	fs.wg.Add(1)
 	go fs.backgroundSaver()
 
 	return fs, nil
@@ -123,6 +129,7 @@ func (fs *FileStore) save() error {
 }
 
 func (fs *FileStore) backgroundSaver() {
+	defer fs.wg.Done()
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -285,6 +292,9 @@ func (fs *FileStore) UpdateStatus(id string, status models.TaskStatus) error {
 func (fs *FileStore) Close() error {
 	fs.closeOnce.Do(func() {
 		close(fs.closeCh)
+		// Wait for the background saver's final flush so the on-disk state is
+		// settled before Close returns (no save() racing directory teardown).
+		fs.wg.Wait()
 	})
 	return nil
 }

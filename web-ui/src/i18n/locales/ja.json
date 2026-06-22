@@ -37,6 +37,18 @@
     "noSessionsYet": "セッションがありません",
     "instances": "インスタンス"
   },
+  "orchestrator": {
+    "delegationMetrics": {
+      "title": "委譲メトリクス",
+      "warmHitRate": "ウォームヒット率",
+      "warmHits": "ウォームヒット",
+      "warmFailures": "ウォーム失敗",
+      "coldFallbacks": "コールドフォールバック",
+      "capRejections": "上限による拒否",
+      "resurrections": "復活",
+      "liveInjections": "ライブ注入"
+    }
+  },
   "header": {
     "toggleSidebar": "サイドバーの切り替え (Ctrl+B)",
     "toggleTheme": "テーマの切り替え",

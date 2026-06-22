@@ -228,6 +228,9 @@ func (s *delegationSupervisor) injectLive(task *models.Task, key string) bool {
 	s.mu.Lock()
 	s.seen[key] = struct{}{}
 	s.mu.Unlock()
+	if s.orchConcrete != nil {
+		s.orchConcrete.RecordLiveInjection()
+	}
 	logging.Debug("Delegation: injected conclusion into live parent loop",
 		"task", task.ID, "parentSession", task.ParentSessionID)
 	return true
@@ -488,6 +491,9 @@ func (s *delegationSupervisor) flushWith(parentSession string, build func([]*mod
 					"parentSession", parentSession, "error", injErr)
 				return
 			}
+			if s.orchConcrete != nil {
+				s.orchConcrete.RecordLiveInjection()
+			}
 			logging.Debug("Delegation: resume race, injected into now-live loop instead",
 				"parentSession", parentSession, "tasks", len(tasks))
 			return
@@ -495,6 +501,9 @@ func (s *delegationSupervisor) flushWith(parentSession string, build func([]*mod
 		logging.Warn("Delegation: failed to resurrect idle parent loop",
 			"parentSession", parentSession, "error", err)
 		return
+	}
+	if s.orchConcrete != nil {
+		s.orchConcrete.RecordResurrection()
 	}
 	logging.Debug("Delegation: resurrected idle parent loop",
 		"parentSession", parentSession, "tasks", len(tasks))

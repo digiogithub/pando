@@ -47,9 +47,13 @@ type Orchestrator struct {
 	// awaitMu; in-memory only (mirrors the supervisor's in-memory batch state).
 	awaitIntents map[string]*AwaitIntent
 	awaitMu      sync.Mutex
-	wg           sync.WaitGroup
-	ctx          context.Context
-	cancel       context.CancelFunc
+	// metrics records delegation routing/re-entry counters for the orchestrator's
+	// lifetime (item E1). Always non-nil after New; safe for lock-free concurrent
+	// updates from the warm path and the delegation supervisor.
+	metrics *DelegationMetrics
+	wg      sync.WaitGroup
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 // DelegationConfig mirrors the conclusion-relevant subset of the application's
@@ -164,6 +168,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		projectResolver:      cfg.ProjectResolver,
 		warmResolver:         cfg.WarmTargetResolver,
 		projectRefResolver:   cfg.ProjectRefResolver,
+		metrics:              &DelegationMetrics{},
 		ctx:                  ctx,
 		cancel:               cancel,
 	}
@@ -1146,6 +1151,31 @@ func (o *Orchestrator) GetStats() Stats {
 	}
 
 	return stats
+}
+
+// DelegationMetrics returns a point-in-time snapshot of the delegation routing /
+// re-entry counters (item E1). Safe to call concurrently; never blocks the
+// delegation path. The returned snapshot includes the derived warm-reuse hit rate.
+func (o *Orchestrator) DelegationMetrics() DelegationMetricsSnapshot {
+	return o.metrics.Snapshot()
+}
+
+// RecordResurrection is called by the delegation supervisor when an idle parent
+// loop was successfully resurrected (Case B). It is exported because the
+// supervisor lives in internal/app and only holds the concrete orchestrator.
+func (o *Orchestrator) RecordResurrection() {
+	if o.metrics != nil {
+		o.metrics.recordResurrection()
+	}
+}
+
+// RecordLiveInjection is called by the delegation supervisor when a conclusion
+// was successfully injected into a still-running parent loop (Case A), including
+// the resume-race fallback injection.
+func (o *Orchestrator) RecordLiveInjection() {
+	if o.metrics != nil {
+		o.metrics.recordLiveInjection()
+	}
 }
 
 // TaskProgressInfo holds progress information for a task.

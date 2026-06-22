@@ -11,6 +11,7 @@ import (
 	"log"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +21,26 @@ import (
 	"github.com/digiogithub/pando/internal/message"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
+
+// syncBuffer is a goroutine-safe bytes.Buffer wrapper for tests whose logger is
+// written by an async agent goroutine (e.g. sendAvailableCommandsUpdate) while
+// the test reads it. A bare bytes.Buffer is not safe for concurrent use.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 func TestToDisplayPath(t *testing.T) {
 	tests := []struct {
@@ -1357,8 +1378,10 @@ func TestPandoACPAgent_SetConnection_SynchronizesExistingSessions(t *testing.T) 
 }
 
 func TestPandoACPAgent_SetConnection_BackfillsAvailableCommandsForExistingSessions(t *testing.T) {
-	var logs bytes.Buffer
-	logger := log.New(&logs, "", 0)
+	// logs is read by the test while the async sendAvailableCommandsUpdate
+	// goroutine writes it, so it must be concurrency-safe.
+	logs := &syncBuffer{}
+	logger := log.New(logs, "", 0)
 	mockAgent := &mockAgentService{}
 	sessions := newMockSessionService()
 	permSvc := newMockPermissionService()

@@ -426,7 +426,12 @@ func boolToAskPermissionValue(enabled bool) string {
 
 // sendAvailableCommandsUpdate publishes the ACP slash commands supported by Pando.
 func (a *PandoACPAgent) sendAvailableCommandsUpdate(ctx context.Context, sessionID acpsdk.SessionId) {
-	if a.conn == nil {
+	// Read the connection under sessionsMu (the same lock SetConnection writes it
+	// under) and pin it to a local: this method runs in a goroutine spawned by
+	// NewSession/SetConnection, so an unsynchronized a.conn read would race a
+	// concurrent SetConnection.
+	conn := a.getConn()
+	if conn == nil {
 		return
 	}
 
@@ -441,7 +446,7 @@ func (a *PandoACPAgent) sendAvailableCommandsUpdate(ctx context.Context, session
 				a.logger.Printf("[ACP AGENT] sendAvailableCommandsUpdate: recovered from panic for session %s: %v", sessionID, r)
 			}
 		}()
-		if err := a.conn.SessionUpdate(ctx, update); err != nil {
+		if err := conn.SessionUpdate(ctx, update); err != nil {
 			if isEntityReleasedError(err) || strings.Contains(err.Error(), "unknown session") {
 				a.logger.Printf("[ACP AGENT] sendAvailableCommandsUpdate: skipped session %s after reconnect: %v", sessionID, err)
 				return

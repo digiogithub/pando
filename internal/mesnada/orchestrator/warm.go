@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -16,6 +17,15 @@ import (
 // back to the cold subprocess path when a resolver returns this. Any other error
 // from RunWarm is treated as a genuine warm-run failure (terminal-failed task).
 var ErrNoWarmTarget = errors.New("no warm target available; use cold path")
+
+// ErrWarmCapReached is a more specific flavour of ErrNoWarmTarget: the project
+// HAS a warm instance but it is at its concurrency cap (and the warm queue, if
+// any, is full), so this delegation falls back to the cold path. It wraps
+// ErrNoWarmTarget so existing `errors.Is(err, ErrNoWarmTarget)` cold-path checks
+// keep working; the warm resolver adapter returns it (instead of plain
+// ErrNoWarmTarget) only for cap-driven fallbacks so the orchestrator can count
+// them separately for telemetry (item E1).
+var ErrWarmCapReached = fmt.Errorf("warm instance concurrency cap reached: %w", ErrNoWarmTarget)
 
 // WarmRunResult is the captured outcome of running a delegated prompt inside a
 // warm per-project ACP instance. It mirrors internal/project.DelegateResult but
@@ -108,10 +118,16 @@ func (o *Orchestrator) tryStartWarm(task *models.Task) bool {
 		return false
 	}
 
+	o.metrics.recordWarmAttempt()
 	start := time.Now()
 	res, err := o.warmResolver.RunWarm(o.ctx, task.ProjectID, task.ProjectPath, task.Prompt)
 	if errors.Is(err, ErrNoWarmTarget) {
-		// No warm target — leave the task untouched for the cold path.
+		// No warm target — leave the task untouched for the cold path. Count the
+		// fallback, attributing the cap-driven subset separately for telemetry.
+		o.metrics.recordColdFallback()
+		if errors.Is(err, ErrWarmCapReached) {
+			o.metrics.recordCapRejection()
+		}
 		return false
 	}
 
@@ -125,11 +141,13 @@ func (o *Orchestrator) tryStartWarm(task *models.Task) bool {
 	task.CompletedAt = &now
 
 	if err != nil {
+		o.metrics.recordWarmFailure()
 		task.Status = models.TaskStatusFailed
 		task.Error = err.Error()
 		log.Printf("task_event=warm_failed task_id=%s project_id=%q project_path=%q error=%q",
 			task.ID, task.ProjectID, task.ProjectPath, err.Error())
 	} else {
+		o.metrics.recordWarmHit()
 		task.Status = models.TaskStatusCompleted
 		task.Output = res.Output
 		task.ACPSessionID = res.ChildSessionID

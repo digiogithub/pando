@@ -867,6 +867,12 @@ func makeWarmTargetResolver(mgr *project.Manager, cfg *config.Config) mesnadaOrc
 	return warmTargetResolverFunc(func(ctx context.Context, projectID, projectPath, promptText string) (*mesnadaOrch.WarmRunResult, error) {
 		res, err := mgr.WarmDelegate(ctx, projectID, projectPath, promptText, autoStart, maxConcurrent, queueDepth)
 		if err != nil {
+			// Map the cap-reached sentinel to the orchestrator's cap-specific
+			// fallback error so it is counted separately in delegation metrics (E1);
+			// every other cold-fallback reason maps to the generic ErrNoWarmTarget.
+			if errors.Is(err, project.ErrWarmCapReached) {
+				return nil, mesnadaOrch.ErrWarmCapReached
+			}
 			if isWarmColdFallback(err) {
 				return nil, mesnadaOrch.ErrNoWarmTarget
 			}

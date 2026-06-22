@@ -37,6 +37,18 @@
     "untitledSession": "Untitled session",
     "noSessionsYet": "No sessions yet"
   },
+  "orchestrator": {
+    "delegationMetrics": {
+      "title": "Delegation metrics",
+      "warmHitRate": "Warm hit rate",
+      "warmHits": "Warm hits",
+      "warmFailures": "Warm failures",
+      "coldFallbacks": "Cold fallbacks",
+      "capRejections": "Cap rejections",
+      "resurrections": "Resurrections",
+      "liveInjections": "Live injections"
+    }
+  },
   "header": {
     "toggleSidebar": "Toggle sidebar (Ctrl+B)",
     "toggleTheme": "Toggle theme",

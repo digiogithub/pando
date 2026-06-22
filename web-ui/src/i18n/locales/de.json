@@ -37,6 +37,18 @@
     "noSessionsYet": "Noch keine Sitzungen",
     "instances": "Instanzen"
   },
+  "orchestrator": {
+    "delegationMetrics": {
+      "title": "Delegationsmetriken",
+      "warmHitRate": "Warm-Trefferrate",
+      "warmHits": "Warm-Treffer",
+      "warmFailures": "Warm-Fehler",
+      "coldFallbacks": "Kaltstart-Rückgriffe",
+      "capRejections": "Limit-Ablehnungen",
+      "resurrections": "Wiederbelebungen",
+      "liveInjections": "Live-Injektionen"
+    }
+  },
   "header": {
     "toggleSidebar": "Seitenleiste ein-/ausblenden (Ctrl+B)",
     "toggleTheme": "Design wechseln",

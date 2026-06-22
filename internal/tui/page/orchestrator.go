@@ -364,7 +364,19 @@ func (p *orchestratorPage) View() string {
 		Width(p.width).
 		Render("ID | Status | Engine | Model | Prompt")
 
-	tableHeight, detailHeight := p.paneHeights()
+	// Delegation metrics line (item E1) — only rendered once warm routing or
+	// resurrection has actually happened, so it never clutters the default view.
+	metricsText := p.delegationMetricsText()
+	var metricsLine string
+	if metricsText != "" {
+		metricsLine = lipgloss.NewStyle().
+			Foreground(t.TextMuted()).
+			Background(t.Background()).
+			Width(p.width).
+			Render(metricsText)
+	}
+
+	tableHeight, detailHeight := p.paneHeights(metricsText != "")
 	tablePane := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(t.BorderNormal()).
@@ -385,7 +397,12 @@ func (p *orchestratorPage) View() string {
 		MaxHeight(max(0, detailHeight-2)).
 		Render(styles.ApplyThemeBackground(p.detailViewport.View(), t.Background()))
 
-	content := lipgloss.JoinVertical(lipgloss.Left, header, subtitle, tablePane, detailPane)
+	parts := []string{header, subtitle}
+	if metricsLine != "" {
+		parts = append(parts, metricsLine)
+	}
+	parts = append(parts, tablePane, detailPane)
+	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	view := baseStyle.Width(p.width).Height(p.height).MaxHeight(p.height).Render(content)
 
 	if p.showSpawnDialog {
@@ -402,7 +419,7 @@ func (p *orchestratorPage) SetSize(width, height int) tea.Cmd {
 	p.width = width
 	p.height = height
 
-	tableHeight, detailHeight := p.paneHeights()
+	tableHeight, detailHeight := p.paneHeights(p.delegationMetricsText() != "")
 	contentWidth := max(10, width-4)
 	p.tableHeight = max(3, tableHeight-4)
 	p.table.SetWidth(contentWidth)
@@ -428,11 +445,37 @@ func (p *orchestratorPage) BindingKeys() []key.Binding {
 	return append(layout.KeyMapToSlice(p.table.KeyMap), layout.KeyMapToSlice(orchestratorKeys)...)
 }
 
-func (p *orchestratorPage) paneHeights() (int, int) {
-	available := max(6, p.height-2)
+func (p *orchestratorPage) paneHeights(hasMetricsLine bool) (int, int) {
+	// header + subtitle (+ optional delegation metrics line) consume fixed rows.
+	reserved := 2
+	if hasMetricsLine {
+		reserved = 3
+	}
+	available := max(6, p.height-reserved)
 	tableHeight := max(6, (available*3)/5)
 	detailHeight := max(4, available-tableHeight)
 	return tableHeight, detailHeight
+}
+
+// delegationMetricsText returns a one-line summary of the orchestrator's
+// delegation routing / re-entry counters (item E1), or "" when nothing has been
+// recorded yet (no warm reuse, resurrection, or live injection). Keeping it empty
+// in the common case means the dashboard layout is unchanged for users who never
+// enable delegation warm reuse.
+func (p *orchestratorPage) delegationMetricsText() string {
+	if p.app == nil || p.app.MesnadaOrchestrator == nil {
+		return ""
+	}
+	m := p.app.MesnadaOrchestrator.DelegationMetrics()
+	if m.WarmAttempts == 0 && m.Resurrections == 0 && m.LiveInjections == 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"Delegation: warm %d/%d (%.0f%%) · fail %d · cold %d · cap %d · resurrect %d · inject %d",
+		m.WarmHits, m.WarmAttempts, m.WarmHitRate*100,
+		m.WarmFailures, m.ColdFallbacks, m.CapRejections,
+		m.Resurrections, m.LiveInjections,
+	)
 }
 
 func (p *orchestratorPage) refreshCmd() tea.Cmd {
@@ -821,9 +864,14 @@ func (p *orchestratorPage) statusText(status mesnadaModels.TaskStatus) string {
 // Wheel events scroll the table (upper pane) or the detail viewport (lower
 // pane). Left-click events inside the table data area select the clicked row.
 func (p *orchestratorPage) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	tablePane, _ := p.paneHeights()
-	// Table data rows start after: header(1) + subtitle(1) + border-top(1) + column-headers(1) = Y=4
-	const tableDataStartY = 4
+	hasMetricsLine := p.delegationMetricsText() != ""
+	tablePane, _ := p.paneHeights(hasMetricsLine)
+	// Table data rows start after: header(1) + subtitle(1) + optional metrics(1) +
+	// border-top(1) + column-headers(1) = Y=4 (or Y=5 with the metrics line).
+	tableDataStartY := 4
+	if hasMetricsLine {
+		tableDataStartY = 5
+	}
 	tableDataEndY := tableDataStartY + p.tableHeight
 
 	inTable := msg.Y >= tableDataStartY && msg.Y < tableDataEndY

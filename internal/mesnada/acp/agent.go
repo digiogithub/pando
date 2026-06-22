@@ -1179,6 +1179,14 @@ func (a *PandoACPAgent) handleExtensionOpenClaudeUsage(context.Context, json.Raw
 // clients that restore thread state can repopulate their slash-command UI.
 // Unknown or released sessions are tolerated by sendAvailableCommandsUpdate,
 // which keeps this best-effort replay from reintroducing hard reconnect errors.
+// getConn returns the current AgentSideConnection under sessionsMu, for callers
+// that run concurrently with SetConnection (e.g. async sessionUpdate goroutines).
+func (a *PandoACPAgent) getConn() *acpsdk.AgentSideConnection {
+	a.sessionsMu.RLock()
+	defer a.sessionsMu.RUnlock()
+	return a.conn
+}
+
 func (a *PandoACPAgent) SetConnection(conn *acpsdk.AgentSideConnection) {
 	a.sessionsMu.Lock()
 	a.conn = conn

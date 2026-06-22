@@ -278,6 +278,20 @@ export interface OrchestratorTask {
   tool_calls?: OrchestratorToolCall[]
 }
 
+// DelegationMetrics mirrors orchestrator.DelegationMetricsSnapshot (item E1):
+// process-lifetime counters describing warm-vs-cold routing and parent-loop
+// re-entry for delegated tasks.
+export interface DelegationMetrics {
+  warm_attempts: number
+  warm_hits: number
+  warm_failures: number
+  cold_fallbacks: number
+  cap_rejections: number
+  resurrections: number
+  live_injections: number
+  warm_hit_rate: number // 0..1
+}
+
 // Provider config types (matching backend ProviderConfigItem)
 export interface ProviderConfigItem {
   name: string

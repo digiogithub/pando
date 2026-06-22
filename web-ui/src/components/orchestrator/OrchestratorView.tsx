@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPlus, faNetworkWired, faClock } from '@fortawesome/free-solid-svg-icons'
 import { useOrchestratorStore } from '@/stores/orchestratorStore'
+import type { DelegationMetrics } from '@/types'
 import TaskRow from './TaskRow'
 import TaskDetail from './TaskDetail'
 import CreateTaskDialog from './CreateTaskDialog'
@@ -32,7 +34,9 @@ export default function OrchestratorView() {
     loading,
     selectedTask,
     createDialogOpen,
+    delegationMetrics,
     fetchTasks,
+    fetchDelegationMetrics,
     setSelectedTask,
     setCreateDialogOpen,
   } = useOrchestratorStore()
@@ -43,9 +47,13 @@ export default function OrchestratorView() {
   useEffect(() => {
     if (activeTab !== 'tasks') return
     fetchTasks()
-    const timer = setInterval(fetchTasks, POLL_INTERVAL)
+    fetchDelegationMetrics()
+    const timer = setInterval(() => {
+      fetchTasks()
+      fetchDelegationMetrics()
+    }, POLL_INTERVAL)
     return () => clearInterval(timer)
-  }, [fetchTasks, activeTab])
+  }, [fetchTasks, fetchDelegationMetrics, activeTab])
 
   const hasRunning = tasks.some((t) => t.status === 'running')
 
@@ -150,6 +158,10 @@ export default function OrchestratorView() {
             </button>
           </div>
 
+          {/* Delegation metrics strip (item E1) — shown once there is any
+              warm-routing or resurrection activity. */}
+          <DelegationMetricsBar metrics={delegationMetrics} />
+
           {/* Main area: table + optional detail panel */}
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
             {/* Task table */}
@@ -226,6 +238,66 @@ export default function OrchestratorView() {
 
       {/* CronJobs tab */}
       {activeTab === 'cronjobs' && <CronJobsPanel />}
+    </div>
+  )
+}
+
+function DelegationMetricsBar({ metrics }: { metrics: DelegationMetrics | null }) {
+  const { t } = useTranslation()
+
+  // Only surface once delegation has actually done something, so the strip stays
+  // out of the way for users who never enable warm reuse / resurrection.
+  if (
+    !metrics ||
+    (metrics.warm_attempts === 0 &&
+      metrics.resurrections === 0 &&
+      metrics.live_injections === 0)
+  ) {
+    return null
+  }
+
+  const hitRate = Math.round((metrics.warm_hit_rate ?? 0) * 100)
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: '1.25rem',
+        padding: '0.5rem 1.25rem',
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--surface)',
+        flexShrink: 0,
+        fontSize: 11,
+      }}
+    >
+      <Metric label={t('orchestrator.delegationMetrics.warmHitRate')} value={`${hitRate}%`} accent="var(--success)" />
+      <Metric label={t('orchestrator.delegationMetrics.warmHits')} value={metrics.warm_hits} />
+      <Metric label={t('orchestrator.delegationMetrics.warmFailures')} value={metrics.warm_failures} />
+      <Metric label={t('orchestrator.delegationMetrics.coldFallbacks')} value={metrics.cold_fallbacks} />
+      <Metric label={t('orchestrator.delegationMetrics.capRejections')} value={metrics.cap_rejections} />
+      <Metric label={t('orchestrator.delegationMetrics.resurrections')} value={metrics.resurrections} />
+      <Metric label={t('orchestrator.delegationMetrics.liveInjections')} value={metrics.live_injections} />
+    </div>
+  )
+}
+
+function Metric({
+  label,
+  value,
+  accent,
+}: {
+  label: string
+  value: string | number
+  accent?: string
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.35rem' }}>
+      <span style={{ color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        {label}
+      </span>
+      <span style={{ fontWeight: 700, color: accent ?? 'var(--fg)' }}>{value}</span>
     </div>
   )
 }

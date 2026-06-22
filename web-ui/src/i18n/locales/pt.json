@@ -37,6 +37,18 @@
     "noSessionsYet": "Nenhuma sessão ainda",
     "instances": "Instâncias"
   },
+  "orchestrator": {
+    "delegationMetrics": {
+      "title": "Métricas de delegação",
+      "warmHitRate": "Taxa de acertos a quente",
+      "warmHits": "Acertos a quente",
+      "warmFailures": "Falhas a quente",
+      "coldFallbacks": "Recuos a frio",
+      "capRejections": "Rejeições por limite",
+      "resurrections": "Ressurreições",
+      "liveInjections": "Injeções ao vivo"
+    }
+  },
   "header": {
     "toggleSidebar": "Alternar barra lateral (Ctrl+B)",
     "toggleTheme": "Alternar tema",

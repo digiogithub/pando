@@ -118,6 +118,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/orchestrator/tasks/{id}", s.handleGetTaskByID)
 	mux.HandleFunc("DELETE /api/v1/orchestrator/tasks/{id}", s.handleDeleteTask)
 	mux.HandleFunc("POST /api/v1/orchestrator/tasks/{id}/cancel", s.handleCancelTask)
+	mux.HandleFunc("GET /api/v1/orchestrator/delegation/metrics", s.handleGetDelegationMetrics)
 	// Terminal
 	mux.HandleFunc("POST /api/v1/terminal/exec", s.handleTerminalExec)
 	// Snapshots (backward-compatible, delegating to agent-vcs)

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	mesnadaOrch "github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	mesnadaModels "github.com/digiogithub/pando/pkg/mesnada/models"
 )
 
@@ -93,6 +94,24 @@ func (s *Server) handleGetTasks(w http.ResponseWriter, r *http.Request) {
 		"tasks": responses,
 		"total": len(responses),
 	})
+}
+
+// handleGetDelegationMetrics returns the orchestrator's delegation routing /
+// re-entry counters (item E1): warm-vs-cold hit rate, cap rejections, and
+// resurrection / live-injection counts.
+// GET /api/v1/orchestrator/delegation/metrics
+func (s *Server) handleGetDelegationMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.app.MesnadaOrchestrator == nil {
+		writeJSON(w, http.StatusOK, mesnadaOrch.DelegationMetricsSnapshot{})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, s.app.MesnadaOrchestrator.DelegationMetrics())
 }
 
 // CreateTaskRequest is the body for POST /api/v1/orchestrator/tasks.

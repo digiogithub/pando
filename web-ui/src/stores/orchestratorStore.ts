@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { OrchestratorTask } from '@/types'
+import type { OrchestratorTask, DelegationMetrics } from '@/types'
 import api from '@/services/api'
 
 interface OrchestratorStore {
@@ -7,7 +7,9 @@ interface OrchestratorStore {
   selectedTask: OrchestratorTask | null
   loading: boolean
   createDialogOpen: boolean
+  delegationMetrics: DelegationMetrics | null
   fetchTasks: () => Promise<void>
+  fetchDelegationMetrics: () => Promise<void>
   setSelectedTask: (t: OrchestratorTask | null) => void
   setCreateDialogOpen: (v: boolean) => void
   cancelTask: (id: string) => Promise<void>
@@ -19,6 +21,7 @@ export const useOrchestratorStore = create<OrchestratorStore>((set, get) => ({
   selectedTask: null,
   loading: false,
   createDialogOpen: false,
+  delegationMetrics: null,
 
   fetchTasks: async () => {
     set({ loading: true })
@@ -29,6 +32,15 @@ export const useOrchestratorStore = create<OrchestratorStore>((set, get) => ({
       set({ tasks: [] })
     } finally {
       set({ loading: false })
+    }
+  },
+
+  fetchDelegationMetrics: async () => {
+    try {
+      const data = await api.get<DelegationMetrics>('/api/v1/orchestrator/delegation/metrics')
+      set({ delegationMetrics: data })
+    } catch {
+      set({ delegationMetrics: null })
     }
   },
 

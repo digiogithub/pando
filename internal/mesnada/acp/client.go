@@ -71,13 +71,34 @@ type terminalState struct {
 	command    string
 	args       []string
 	cwd        string
-	outputBuf  bytes.Buffer
+	outputBuf  lockedBuffer
 	exitCh     chan int
 	cancelF    context.CancelFunc
 	mu         sync.Mutex
 	exitCode   *int
 	isRunning  bool
 	isReleased bool
+}
+
+// lockedBuffer is a goroutine-safe bytes.Buffer. The terminal's output is written
+// by os/exec's internal stdout/stderr copier goroutine (via cmd.Stdout) while
+// TerminalOutput reads it; those writes bypass terminalState.mu, so the buffer
+// must guard both sides with its own lock.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // ACPCapabilities defines what an ACP agent is allowed to do.

@@ -37,6 +37,18 @@
     "noSessionsYet": "暂无会话",
     "instances": "实例"
   },
+  "orchestrator": {
+    "delegationMetrics": {
+      "title": "委派指标",
+      "warmHitRate": "热命中率",
+      "warmHits": "热命中",
+      "warmFailures": "热失败",
+      "coldFallbacks": "冷回退",
+      "capRejections": "达到上限拒绝",
+      "resurrections": "复活",
+      "liveInjections": "实时注入"
+    }
+  },
   "header": {
     "toggleSidebar": "切换侧栏 (Ctrl+B)",
     "toggleTheme": "切换主题",
