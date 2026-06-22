@@ -67,7 +67,10 @@ func (s *PandoCLISpawner) Spawn(ctx context.Context, task *models.Task) error {
 	}
 
 	cmd := exec.CommandContext(procCtx, pandoBin, args...)
-	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	// Propagate the delegation depth so a delegated pando subprocess knows its own
+	// depth. The child's spawn tool reads PANDO_DELEGATION_DEPTH and sets its own
+	// children's Depth = parent+1, enabling the MaxDepth anti-fork-bomb cap.
+	cmd.Env = append(os.Environ(), "NO_COLOR=1", fmt.Sprintf("PANDO_DELEGATION_DEPTH=%d", task.Depth))
 
 	logFile, err := openOrCreateLogFile(s.logDir, task)
 	if err != nil {

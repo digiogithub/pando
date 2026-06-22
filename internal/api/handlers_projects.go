@@ -18,10 +18,15 @@ type projectResponse struct {
 	Status      string `json:"status"`
 	Initialized bool   `json:"initialized"`
 	External    bool   `json:"external"` // running but launched by another application
-	ACPPID      int    `json:"acp_pid,omitempty"`
-	LastOpened  *int64 `json:"last_opened,omitempty"` // Unix seconds
-	CreatedAt   int64  `json:"created_at"`
-	UpdatedAt   int64  `json:"updated_at"`
+	// Delegations is the count of delegated agent loops running inside the warm
+	// instance; DelegationSpawned is true when the instance was auto-started by
+	// the delegation router rather than activated by the user.
+	Delegations       int    `json:"delegations,omitempty"`
+	DelegationSpawned bool   `json:"delegation_spawned,omitempty"`
+	ACPPID            int    `json:"acp_pid,omitempty"`
+	LastOpened        *int64 `json:"last_opened,omitempty"` // Unix seconds
+	CreatedAt         int64  `json:"created_at"`
+	UpdatedAt         int64  `json:"updated_at"`
 }
 
 // toProjectResponse converts a domain Project to its JSON wire representation.
@@ -59,6 +64,10 @@ func (s *Server) enrichRuntime(resp *projectResponse, p project.Project) {
 		// DB says running but nothing live serves the path — correct it.
 		resp.Status = project.StatusStopped
 	}
+	// Surface warm-delegation state for manager-owned instances.
+	inflight, spawned, _ := s.app.ProjectManager.DelegationInfo(p.ID)
+	resp.Delegations = inflight
+	resp.DelegationSpawned = spawned
 }
 
 // handleListProjects handles GET /api/v1/projects.
@@ -313,7 +322,8 @@ func (s *Server) handleStopProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := r.PathValue("id")
-	if err := s.app.ProjectManager.Stop(r.Context(), id); err != nil {
+	cancelled, err := s.app.ProjectManager.StopReport(r.Context(), id)
+	if err != nil {
 		if errors.Is(err, project.ErrExternalInstance) {
 			writeJSON(w, http.StatusConflict, map[string]string{
 				"error":      "external_instance",
@@ -325,9 +335,12 @@ func (s *Server) handleStopProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
-		"status":     "stopped",
-		"project_id": id,
+	// cancelled_delegations lets the UI warn the user how many delegated agent
+	// loops were interrupted by the stop (they fall back to the cold path).
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":                "stopped",
+		"project_id":            id,
+		"cancelled_delegations": cancelled,
 	})
 }
 
@@ -418,17 +431,18 @@ func (s *Server) handleProjectEvents(w http.ResponseWriter, r *http.Request) {
 			payload := event.Payload
 
 			// Build a JSON payload.
-			data, err := json.Marshal(map[string]string{
-				"project_id": payload.ProjectID,
-				"status":     payload.Status,
-				"error":      payload.Error,
+			data, err := json.Marshal(map[string]interface{}{
+				"project_id":  payload.ProjectID,
+				"status":      payload.Status,
+				"error":       payload.Error,
+				"delegations": payload.Count,
 			})
 			if err != nil {
 				continue
 			}
 
-			// Map ManagerEventType to SSE event name.
-			// The frontend listens for "switched", "status_changed", and "init_required".
+			// Map ManagerEventType to SSE event name. The frontend listens for
+			// "switched", "status_changed", "init_required" and "delegation_changed".
 			var evtName string
 			switch payload.Type {
 			case project.EvProjectSwitched:
@@ -437,6 +451,8 @@ func (s *Server) handleProjectEvents(w http.ResponseWriter, r *http.Request) {
 				evtName = "status_changed"
 			case project.EvInitRequired:
 				evtName = "init_required"
+			case project.EvDelegationChanged:
+				evtName = "delegation_changed"
 			default:
 				evtName = string(payload.Type)
 			}

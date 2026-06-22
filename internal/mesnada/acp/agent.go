@@ -319,28 +319,11 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 		}
 	}
 
-	// Apply per-session model override if set.
-	if modelID := acpSession.Model(); modelID != "" {
-		if err := a.agentService.SetModelOverride(modelID); err != nil {
-			a.logger.Printf("[ACP AGENT] Warning: could not apply model override %q: %v", modelID, err)
-		} else {
-			a.logger.Printf("[ACP AGENT] Applied model override %q for session %s", modelID, req.SessionId)
-		}
-	}
-
-	// Apply per-session persona override if set.
-	if acpSession.CleanMode() {
-		_ = a.agentService.SetActivePersona("")
-	} else if personaName := acpSession.Persona(); personaName != "" {
-		if err := a.agentService.SetActivePersona(personaName); err != nil {
-			a.logger.Printf("[ACP AGENT] Warning: could not apply persona %q: %v", personaName, err)
-		} else {
-			a.logger.Printf("[ACP AGENT] Applied persona %q for session %s", personaName, req.SessionId)
-		}
-	} else {
-		// Clear any previous persona override so the default behaviour (auto-select or none) applies.
-		_ = a.agentService.SetActivePersona("")
-	}
+	// Per-session model and persona are NOT applied as global agent state here.
+	// They are threaded through SetSessionLLMOverrides at the Run/RunGoal call
+	// sites (processPromptWithAgent / processGoalPrompt) so concurrent sessions
+	// each running a different model/persona never clobber one another. Clean
+	// mode is applied below via the per-session clean flag.
 
 	mode := acpSession.Mode()
 	if mode == "" {

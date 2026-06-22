@@ -23,10 +23,18 @@ type Project struct {
 	// editor in ACP mode) rather than by this manager, so it cannot be stopped
 	// from here. It is populated on demand via Manager.Runtime and is zero in
 	// values returned directly from the database.
-	External   bool
-	ACPPID     int
-	ACPPort    int
-	LastOpened *time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	External bool
+	// Delegations is a computed (non-persisted) count of delegated agent loops
+	// currently running inside this project's warm instance. Populated on demand
+	// via Manager.DelegationInfo; zero for stopped or DB-only values.
+	Delegations int
+	// DelegationSpawned is a computed (non-persisted) flag: true when the running
+	// instance was auto-started by the delegation router (warm reuse) rather than
+	// activated by the user. Populated on demand via Manager.DelegationInfo.
+	DelegationSpawned bool
+	ACPPID            int
+	ACPPort           int
+	LastOpened        *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }

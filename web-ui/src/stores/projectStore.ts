@@ -96,9 +96,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   stopProject: async (id: string) => {
     try {
-      await api.post(`/api/v1/projects/${id}/stop`, {})
+      const resp = await api.post<{ cancelled_delegations?: number }>(`/api/v1/projects/${id}/stop`, {})
       await Promise.all([get().fetchActive(), get().fetchProjects()])
-      useToastStore.getState().addToast('Project stopped', 'success')
+      const cancelled = resp?.cancelled_delegations ?? 0
+      if (cancelled > 0) {
+        useToastStore.getState().addToast(
+          `Project stopped — cancelled ${cancelled} delegated loop${cancelled === 1 ? '' : 's'} (they fall back to the cold path)`,
+          'info',
+        )
+      } else {
+        useToastStore.getState().addToast('Project stopped', 'success')
+      }
     } catch (e) {
       if (e instanceof Error) {
         // A 409 "external_instance" response body is JSON we can parse.
@@ -192,6 +200,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
       es.addEventListener('switched', refresh)
       es.addEventListener('status_changed', refresh)
+      es.addEventListener('delegation_changed', () => {
+        // In-flight delegated-loop count changed — refresh the row badges.
+        void get().fetchProjects()
+      })
       es.addEventListener('init_required', () => {
         void get().fetchProjects()
       })

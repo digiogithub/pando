@@ -157,6 +157,31 @@ type TUIConfig struct {
 	// chat info sidebar becomes visible when ChatSidebar is "auto". When zero
 	// or unset the default of 120 columns is used.
 	ChatSidebarMinWidth int `json:"chatSidebarMinWidth,omitempty"`
+	// NerdFonts controls whether the TUI uses Nerd Font glyphs for icons. These
+	// only render correctly when the user's terminal is configured with a
+	// patched Nerd Font; otherwise the icons appear as tofu (□). When disabled,
+	// the TUI falls back to plain BMP/ASCII symbols that render on any terminal.
+	// A nil pointer (the field being absent from config) means enabled, matching
+	// the historical default. The env var PANDO_NERD_FONTS=0/1 overrides this.
+	NerdFonts *bool `json:"nerdFonts,omitempty"`
+}
+
+// NerdFontsEnabled resolves whether the TUI should use Nerd Font glyphs,
+// honoring the PANDO_NERD_FONTS environment override first, then the
+// TUI.NerdFonts config field, defaulting to true (enabled) when unset.
+func (c *Config) NerdFontsEnabled() bool {
+	if v, ok := os.LookupEnv("PANDO_NERD_FONTS"); ok {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "0", "false", "no", "off":
+			return false
+		case "1", "true", "yes", "on":
+			return true
+		}
+	}
+	if c != nil && c.TUI.NerdFonts != nil {
+		return *c.TUI.NerdFonts
+	}
+	return true
 }
 
 // PermissionsConfig defines runtime permission behavior for local interactive sessions.
@@ -225,7 +250,56 @@ type MesnadaConfig struct {
 	Orchestrator MesnadaOrchestratorConfig `json:"orchestrator,omitempty"`
 	ACP          MesnadaACPConfig          `json:"acp,omitempty"`
 	TUI          MesnadaTUIConfig          `json:"tui,omitempty"`
+	Delegation   MesnadaDelegationConfig   `json:"delegation,omitempty"`
 }
+
+// MesnadaDelegationConfig controls the delegated-task conclusion capture and
+// agent-loop resurrection feature. It is default-OFF: when Enabled is false the
+// orchestrator preserves today's fire-and-forget semantics. No consumer reads
+// these flags yet (Phase 0 only persists/loads them).
+type MesnadaDelegationConfig struct {
+	// Master switch for conclusion capture + re-entry. Off => current behavior.
+	Enabled bool `json:"enabled,omitempty"`
+	// Case A: inject conclusions into a still-running parent loop.
+	InjectIntoLiveLoop bool `json:"injectIntoLiveLoop,omitempty"`
+	// Case B: resurrect an idle parent session when a correlated task completes.
+	ResurrectIdleLoop bool `json:"resurrectIdleLoop,omitempty"`
+	// Synthesize a conclusion when the subagent omits the block.
+	SynthesizeFallback bool `json:"synthesizeFallback,omitempty"`
+	// MaxResurrections caps resurrections per session per turn-chain.
+	MaxResurrections int `json:"maxResurrections,omitempty"`
+	// MaxDepth caps delegated-of-delegated nesting (anti-fork-bomb).
+	MaxDepth int `json:"maxDepth,omitempty"`
+	// MaxConcurrent caps outstanding correlated tasks per parent. It also bounds
+	// the number of concurrent delegated sessions routed to a single warm instance
+	// (Phase 7.3): over the cap a delegated task falls back to the cold path.
+	MaxConcurrent int `json:"maxConcurrent,omitempty"`
+	// ResurrectionTimeout is how long to wait for pending sibling conclusions.
+	ResurrectionTimeout string `json:"resurrectionTimeout,omitempty"`
+	// ReuseWarmInstances routes a delegated task whose project is known to an
+	// already-running ("warm") per-project ACP instance, capturing its conclusion
+	// over the wire instead of cold-spawning a CLI subprocess (Phase 7.3). Master
+	// switch for warm reuse, default OFF. Requires Enabled.
+	ReuseWarmInstances bool `json:"reuseWarmInstances,omitempty"`
+	// AutoStartWarmInstance, when true (the default under ReuseWarmInstances),
+	// auto-starts a child instance for the project if none is running rather than
+	// only reusing an existing one. Set false for reuse-only routing.
+	AutoStartWarmInstance bool `json:"autoStartWarmInstance,omitempty"`
+}
+
+// Documented defaults for the delegation caps/timeout. They are the single
+// source of truth shared by setDefaults (viper layer) and
+// normalizeMesnadaDelegationDefaults (Go-side fallback). The Go-side fallback is
+// required because viper drops nested defaults under mesnada.delegation.* when an
+// unrelated sibling key (e.g. [Mesnada].Enabled) is present in a config file —
+// the well-known viper nested-default shadowing behaviour. See
+// pando/plans/delegation_future_improvements.md item A1.
+const (
+	defaultDelegationMaxResurrections    = 4
+	defaultDelegationMaxDepth            = 3
+	defaultDelegationMaxConcurrent       = 8
+	defaultDelegationResurrectionTimeout = "10m"
+)
 
 // ShellConfig defines the configuration for the shell used by the bash tool.
 type ShellConfig struct {
@@ -683,44 +757,44 @@ type Config struct {
 	ProviderAccounts []ProviderAccount `json:"providerAccounts,omitempty" toml:"providerAccounts,omitempty"`
 	// Providers is the legacy single-account provider map. Kept for backward compatibility.
 	// New code should use ProviderAccounts instead.
-	Providers         map[models.ModelProvider]Provider `json:"providers,omitempty"`
-	LSP               map[string]LSPConfig              `json:"lsp,omitempty"`
+	Providers map[models.ModelProvider]Provider `json:"providers,omitempty"`
+	LSP       map[string]LSPConfig              `json:"lsp,omitempty"`
 	// LSPAutoActivate enables on-demand activation of language servers: when a
 	// file is edited or opened, the matching server from the built-in presets
 	// (or user config) is started automatically if its binary is found on PATH.
 	// Defaults to true. Set to false to only run servers with Autostart=true.
-	LSPAutoActivate   bool                              `json:"lspAutoActivate,omitempty" toml:"LSPAutoActivate"`
-	Agents            map[AgentName]Agent               `json:"agents,omitempty"`
-	Debug             bool                              `json:"debug,omitempty"`
-	LogFile           string                            `json:"logFile,omitempty"`
-	DebugLSP          bool                              `json:"debugLSP,omitempty"`
-	ContextPaths      []string                          `json:"contextPaths,omitempty"`
-	Skills            SkillsConfig                      `json:"skills,omitempty"`
-	SkillsCatalog     SkillsCatalogConfig               `json:"skillsCatalog,omitempty"`
-	TUI               TUIConfig                         `json:"tui"`
-	Permissions       PermissionsConfig                 `json:"permissions,omitempty"`
-	Goal              GoalConfig                        `json:"goal,omitempty" toml:"Goal"`
-	Mesnada           MesnadaConfig                     `json:"mesnada,omitempty"`
-	Shell             ShellConfig                       `json:"shell,omitempty"`
-	Bash              BashConfig                        `json:"bash,omitempty"`
-	AutoCompact       bool                              `json:"autoCompact,omitempty"`
-	Remembrances      RemembrancesConfig                `json:"remembrances,omitempty"`
-	Server            APIServerConfig                   `json:"server,omitempty"`
-	Lua               LuaConfig                         `json:"lua,omitempty"`
-	MCPGateway        MCPGatewayConfig                  `json:"mcpGateway,omitempty"`
-	ToolDiscovery     ToolDiscoveryConfig               `json:"toolDiscovery,omitempty" toml:"ToolDiscovery"`
-	InternalTools     InternalToolsConfig               `json:"internalTools,omitempty"`
-	Snapshots         SnapshotsConfig                   `json:"snapshots,omitempty"`
-	Evaluator         EvaluatorConfig                   `json:"evaluator,omitempty" toml:"evaluator"`
-	CLIAssist         CLIAssistConfig                   `json:"cliAssist,omitempty" toml:"cliAssist"`
-	PersonaAutoSelect PersonaAutoSelectConfig           `json:"personaAutoSelect,omitempty"`
-	ACP               ACPConfig                         `json:"acp,omitempty" toml:"acp"`
-	OpenLit           OpenLitConfig                     `json:"openlit,omitempty" toml:"OpenLit"`
-	Projects          ProjectsConfig                    `json:"projects,omitempty" toml:"Projects"`
-	CronJobs          CronJobsConfig                    `json:"cronJobs,omitempty" toml:"CronJobs"`
-	LLMCache          LLMCacheConfig                    `json:"llmCache,omitempty" toml:"LLMCache"`
-	Container         ContainerConfig                   `json:"container,omitempty" toml:"Container"`
-	MCPServer         MCPServerConfig                   `json:"mcpServer,omitempty" toml:"MCPServer"`
+	LSPAutoActivate   bool                    `json:"lspAutoActivate,omitempty" toml:"LSPAutoActivate"`
+	Agents            map[AgentName]Agent     `json:"agents,omitempty"`
+	Debug             bool                    `json:"debug,omitempty"`
+	LogFile           string                  `json:"logFile,omitempty"`
+	DebugLSP          bool                    `json:"debugLSP,omitempty"`
+	ContextPaths      []string                `json:"contextPaths,omitempty"`
+	Skills            SkillsConfig            `json:"skills,omitempty"`
+	SkillsCatalog     SkillsCatalogConfig     `json:"skillsCatalog,omitempty"`
+	TUI               TUIConfig               `json:"tui"`
+	Permissions       PermissionsConfig       `json:"permissions,omitempty"`
+	Goal              GoalConfig              `json:"goal,omitempty" toml:"Goal"`
+	Mesnada           MesnadaConfig           `json:"mesnada,omitempty"`
+	Shell             ShellConfig             `json:"shell,omitempty"`
+	Bash              BashConfig              `json:"bash,omitempty"`
+	AutoCompact       bool                    `json:"autoCompact,omitempty"`
+	Remembrances      RemembrancesConfig      `json:"remembrances,omitempty"`
+	Server            APIServerConfig         `json:"server,omitempty"`
+	Lua               LuaConfig               `json:"lua,omitempty"`
+	MCPGateway        MCPGatewayConfig        `json:"mcpGateway,omitempty"`
+	ToolDiscovery     ToolDiscoveryConfig     `json:"toolDiscovery,omitempty" toml:"ToolDiscovery"`
+	InternalTools     InternalToolsConfig     `json:"internalTools,omitempty"`
+	Snapshots         SnapshotsConfig         `json:"snapshots,omitempty"`
+	Evaluator         EvaluatorConfig         `json:"evaluator,omitempty" toml:"evaluator"`
+	CLIAssist         CLIAssistConfig         `json:"cliAssist,omitempty" toml:"cliAssist"`
+	PersonaAutoSelect PersonaAutoSelectConfig `json:"personaAutoSelect,omitempty"`
+	ACP               ACPConfig               `json:"acp,omitempty" toml:"acp"`
+	OpenLit           OpenLitConfig           `json:"openlit,omitempty" toml:"OpenLit"`
+	Projects          ProjectsConfig          `json:"projects,omitempty" toml:"Projects"`
+	CronJobs          CronJobsConfig          `json:"cronJobs,omitempty" toml:"CronJobs"`
+	LLMCache          LLMCacheConfig          `json:"llmCache,omitempty" toml:"LLMCache"`
+	Container         ContainerConfig         `json:"container,omitempty" toml:"Container"`
+	MCPServer         MCPServerConfig         `json:"mcpServer,omitempty" toml:"MCPServer"`
 }
 
 // Application constants
@@ -1153,6 +1227,19 @@ func configureViper() {
 	viper.AutomaticEnv()
 }
 
+// parseEnvBool interprets a permissive set of truthy/falsy env values. Unknown
+// values fall back to strconv.ParseBool; on error the result is false.
+func parseEnvBool(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	}
+	b, _ := strconv.ParseBool(strings.TrimSpace(v))
+	return b
+}
+
 // setDefaults configures default values for configuration options.
 func setDefaults(debug bool) {
 	// OpenLit observability defaults
@@ -1185,6 +1272,20 @@ func setDefaults(debug bool) {
 	viper.SetDefault("mesnada.orchestrator.defaultModel", "gpt-5.4")
 	viper.SetDefault("mesnada.tui.enabled", true)
 	viper.SetDefault("mesnada.tui.webui", true)
+
+	// Mesnada delegation (conclusion capture + resurrection) defaults.
+	// Default-OFF to preserve today's fire-and-forget semantics. Caps are set so
+	// that user-provided non-zero values win at unmarshal time.
+	viper.SetDefault("mesnada.delegation.enabled", false)
+	viper.SetDefault("mesnada.delegation.injectIntoLiveLoop", false)
+	viper.SetDefault("mesnada.delegation.resurrectIdleLoop", false)
+	viper.SetDefault("mesnada.delegation.synthesizeFallback", false)
+	viper.SetDefault("mesnada.delegation.maxResurrections", defaultDelegationMaxResurrections)
+	viper.SetDefault("mesnada.delegation.maxDepth", defaultDelegationMaxDepth)
+	viper.SetDefault("mesnada.delegation.maxConcurrent", defaultDelegationMaxConcurrent)
+	viper.SetDefault("mesnada.delegation.resurrectionTimeout", defaultDelegationResurrectionTimeout)
+	viper.SetDefault("mesnada.delegation.reuseWarmInstances", false)
+	viper.SetDefault("mesnada.delegation.autoStartWarmInstance", true)
 
 	// API Server (WebUI backend) defaults
 	viper.SetDefault("server.enabled", false)
@@ -1395,6 +1496,46 @@ func setProviderDefaults() {
 		viper.SetDefault("internalTools.exaApiKey", apiKey)
 	} else if apiKey := os.Getenv("EXA_API_KEY"); apiKey != "" {
 		viper.SetDefault("internalTools.exaApiKey", apiKey)
+	}
+
+	// Mesnada delegation env overrides (PANDO_DELEGATION_*). Nested viper keys are
+	// not auto-bound from env (no key replacer is configured), so map them
+	// explicitly following the established os.Getenv -> SetDefault pattern.
+	if v := os.Getenv("PANDO_DELEGATION_ENABLED"); v != "" {
+		viper.SetDefault("mesnada.delegation.enabled", parseEnvBool(v))
+	}
+	if v := os.Getenv("PANDO_DELEGATION_INJECT_INTO_LIVE_LOOP"); v != "" {
+		viper.SetDefault("mesnada.delegation.injectIntoLiveLoop", parseEnvBool(v))
+	}
+	if v := os.Getenv("PANDO_DELEGATION_RESURRECT_IDLE_LOOP"); v != "" {
+		viper.SetDefault("mesnada.delegation.resurrectIdleLoop", parseEnvBool(v))
+	}
+	if v := os.Getenv("PANDO_DELEGATION_SYNTHESIZE_FALLBACK"); v != "" {
+		viper.SetDefault("mesnada.delegation.synthesizeFallback", parseEnvBool(v))
+	}
+	if v := os.Getenv("PANDO_DELEGATION_MAX_RESURRECTIONS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			viper.SetDefault("mesnada.delegation.maxResurrections", n)
+		}
+	}
+	if v := os.Getenv("PANDO_DELEGATION_MAX_DEPTH"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			viper.SetDefault("mesnada.delegation.maxDepth", n)
+		}
+	}
+	if v := os.Getenv("PANDO_DELEGATION_MAX_CONCURRENT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			viper.SetDefault("mesnada.delegation.maxConcurrent", n)
+		}
+	}
+	if v := os.Getenv("PANDO_DELEGATION_RESURRECTION_TIMEOUT"); v != "" {
+		viper.SetDefault("mesnada.delegation.resurrectionTimeout", v)
+	}
+	if v := os.Getenv("PANDO_DELEGATION_REUSE_WARM_INSTANCES"); v != "" {
+		viper.SetDefault("mesnada.delegation.reuseWarmInstances", parseEnvBool(v))
+	}
+	if v := os.Getenv("PANDO_DELEGATION_AUTO_START_WARM_INSTANCE"); v != "" {
+		viper.SetDefault("mesnada.delegation.autoStartWarmInstance", parseEnvBool(v))
 	}
 
 	// Use this order to set the default models
@@ -1696,6 +1837,7 @@ func applyDefaultValues() {
 	}
 
 	normalizeRemembrancesDefaults()
+	normalizeMesnadaDelegationDefaults()
 	refreshConfiguredDynamicModels()
 	ensureAgentDefaults()
 
@@ -1733,6 +1875,34 @@ func normalizeRemembrancesDefaults() {
 	}
 
 	cfg.Remembrances = rem
+}
+
+// normalizeMesnadaDelegationDefaults restores the documented delegation caps and
+// timeout when viper.Unmarshal returned their zero value. This works around
+// viper's nested-default shadowing: when a config file sets any sibling key under
+// [Mesnada] (e.g. Enabled) without a [Mesnada.Delegation] table, the
+// mesnada.delegation.* defaults are dropped during unmarshal and the int/string
+// caps come back as 0/"". A zero value here therefore means "user did not set
+// it" — if the user had provided a [Mesnada.Delegation] table, unmarshal would
+// have read their explicit values correctly. Documented consequence: an explicit
+// cap of 0 is treated as "use the default" rather than "unlimited"; use a large
+// value for effectively-unlimited. The boolean fields (including the
+// default-true AutoStartWarmInstance) survive unmarshal correctly and are left
+// untouched so a user-set false is preserved.
+func normalizeMesnadaDelegationDefaults() {
+	d := &cfg.Mesnada.Delegation
+	if d.MaxResurrections == 0 {
+		d.MaxResurrections = defaultDelegationMaxResurrections
+	}
+	if d.MaxDepth == 0 {
+		d.MaxDepth = defaultDelegationMaxDepth
+	}
+	if d.MaxConcurrent == 0 {
+		d.MaxConcurrent = defaultDelegationMaxConcurrent
+	}
+	if strings.TrimSpace(d.ResurrectionTimeout) == "" {
+		d.ResurrectionTimeout = defaultDelegationResurrectionTimeout
+	}
 }
 
 // It validates model IDs and providers, ensuring they are supported.
@@ -2804,6 +2974,26 @@ func UpdateShowHiddenFiles(enabled bool) error {
 	return nil
 }
 
+// UpdateNerdFonts updates the TUI Nerd Font icon preference and persists it to
+// the config file. Mirrors the pattern used by UpdateShowHiddenFiles.
+func UpdateNerdFonts(enabled bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldValue := cfg.TUI.NerdFonts
+	cfg.TUI.NerdFonts = &enabled
+
+	if err := updateCfgFile(func(config *Config) {
+		config.TUI.NerdFonts = &enabled
+	}); err != nil {
+		cfg.TUI.NerdFonts = oldValue
+		return err
+	}
+
+	return nil
+}
+
 // defaultChatSidebarMinWidth is the fallback column threshold used by
 // ChatSidebarMinWidth when the config value is unset (0).
 const defaultChatSidebarMinWidth = 120
@@ -3043,6 +3233,26 @@ func UpdateMesnada(mesnadaCfg MesnadaConfig) error {
 		config.Mesnada = mesnadaCfg
 	}); err != nil {
 		cfg.Mesnada = oldMesnada
+		return err
+	}
+
+	return nil
+}
+
+// UpdateMesnadaDelegation updates the Mesnada delegation configuration and
+// persists it to the config file, rolling back the in-memory value on failure.
+func UpdateMesnadaDelegation(delegationCfg MesnadaDelegationConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldDelegation := cfg.Mesnada.Delegation
+	cfg.Mesnada.Delegation = delegationCfg
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Mesnada.Delegation = delegationCfg
+	}); err != nil {
+		cfg.Mesnada.Delegation = oldDelegation
 		return err
 	}
 

@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/pkg/mesnada/models"
+	"github.com/google/uuid"
 )
 
 const (
@@ -92,7 +95,7 @@ func (t *MesnadaSpawnTool) Info() ToolInfo {
 
 	return ToolInfo{
 		Name:        mesnadaSpawnToolName,
-		Description: "Creates and executes a new Mesnada orchestrator task, or relaunches an existing task in-place. When task_id is provided the task is reset and re-executed preserving its ID so dependent tasks are automatically unblocked.\n\nSimplest usage — provide only 'prompt': the task runs with engine=pando using the currently active coder model, in background (fire-and-forget). No need to specify engine, model, or background unless you want to override the defaults.",
+		Description: "Creates and executes a new Mesnada orchestrator task, or relaunches an existing task in-place. When task_id is provided the task is reset and re-executed preserving its ID so dependent tasks are automatically unblocked.\n\nSimplest usage — provide only 'prompt': the task runs with engine=pando using the currently active coder model, in background (fire-and-forget). No need to specify engine, model, or background unless you want to override the defaults.\n\nAfter spawning background work, PREFER calling mesnada_await and ending your turn over polling with mesnada_get_task/mesnada_list_tasks: mesnada_await registers a non-blocking wait and you are automatically resumed with the results when they finish.",
 		Parameters: map[string]any{
 			"task_id": map[string]any{
 				"type":        "string",
@@ -148,6 +151,37 @@ func (t *MesnadaSpawnTool) Info() ToolInfo {
 		},
 		Required: []string{"prompt"},
 	}
+}
+
+// spawnCorrelation derives the delegation correlation metadata for a spawned
+// task without touching the DB: the parent session id from the tool context, a
+// freshly generated idempotency correlation id, and the canonical project path
+// for the effective work dir. ProjectID is intentionally left empty here (the
+// registry lookup is deferred to a later phase). This is a pure helper so it can
+// be unit-tested in isolation.
+func spawnCorrelation(ctx context.Context, workDir string) (parentSessionID, correlationID, projectPath string, depth int) {
+	if v, ok := ctx.Value(SessionIDContextKey).(string); ok {
+		parentSessionID = v
+	}
+	correlationID = uuid.NewString()
+	effectiveWorkDir := workDir
+	if effectiveWorkDir == "" {
+		effectiveWorkDir = "."
+	}
+	projectPath = config.CanonicalProjectPath(effectiveWorkDir)
+	// Depth = parent depth + 1. The parent's depth is propagated to delegated pando
+	// subprocesses via PANDO_DELEGATION_DEPTH (see spawner_pando_cli.go). When unset
+	// or invalid (an interactive top-level pando), the parent depth is 0, so a
+	// top-level spawn is depth 1, its children depth 2, etc. This feeds the MaxDepth
+	// anti-fork-bomb cap enforced by the delegation supervisor.
+	parentDepth := 0
+	if raw := os.Getenv("PANDO_DELEGATION_DEPTH"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n >= 0 {
+			parentDepth = n
+		}
+	}
+	depth = parentDepth + 1
+	return parentSessionID, correlationID, projectPath, depth
 }
 
 func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
@@ -241,6 +275,37 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 
 	logging.Debug("mesnada spawn called", "prompt_length", len(req.Prompt), "engine", req.Engine, "model", req.Model, "background", background)
 
+	// Capture delegation correlation metadata (parent session, idempotency id,
+	// canonical project path) so the created task records its origin. This never
+	// changes runtime behavior; the fields are only consumed by later phases.
+	parentSessionID, correlationID, projectPath, depth := spawnCorrelation(ctx, req.WorkDir)
+
+	// MaxConcurrent soft guard (default-off): when delegation is enabled and a cap
+	// is configured, refuse to spawn a new task while the parent session already has
+	// MaxConcurrent or more non-terminal correlated tasks outstanding. This nudges
+	// the model to wait for in-flight delegated work instead of fork-bombing. Gated
+	// strictly so default behaviour is unchanged.
+	if parentSessionID != "" && t.orchestrator != nil {
+		if dcfg := config.Get(); dcfg != nil {
+			del := dcfg.Mesnada.Delegation
+			if del.Enabled && del.MaxConcurrent > 0 {
+				if siblings, lerr := t.orchestrator.ListByParentSession(parentSessionID); lerr == nil {
+					outstanding := 0
+					for _, st := range siblings {
+						if st != nil && !st.IsTerminal() {
+							outstanding++
+						}
+					}
+					if outstanding >= del.MaxConcurrent {
+						return NewTextErrorResponse(fmt.Sprintf(
+							"delegation concurrency limit reached: %d delegated task(s) are still running for this session (max %d). Wait for existing tasks to finish (e.g. mesnada_wait_task or mesnada_list_tasks) before spawning more.",
+							outstanding, del.MaxConcurrent)), nil
+					}
+				}
+			}
+		}
+	}
+
 	task, err := t.orchestrator.Spawn(ctx, models.SpawnRequest{
 		Prompt:                req.Prompt,
 		WorkDir:               req.WorkDir,
@@ -252,6 +317,10 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		IncludeDependencyLogs: req.IncludeDependencyLogs,
 		DependencyLogLines:    req.DependencyLogLines,
 		Tags:                  req.Tags,
+		ParentSessionID:       parentSessionID,
+		CorrelationID:         correlationID,
+		ProjectPath:           projectPath,
+		Depth:                 depth,
 	})
 	if err != nil {
 		return NewTextErrorResponse(err.Error()), nil

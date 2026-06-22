@@ -1502,6 +1502,10 @@ func (a *appModel) listProjectsEnriched() ([]project.Project, error) {
 		case projects[i].Status == project.StatusRunning:
 			projects[i].Status = project.StatusStopped
 		}
+		// Surface warm-delegation state (in-flight loops, auto-started) per row.
+		inflight, spawned, _ := a.app.ProjectManager.DelegationInfo(projects[i].ID)
+		projects[i].Delegations = inflight
+		projects[i].DelegationSpawned = spawned
 	}
 	return projects, nil
 }
@@ -1624,7 +1628,7 @@ func (a *appModel) unregisterProject(projectID string) tea.Cmd {
 
 func (a *appModel) stopProject(projectID, path string) tea.Cmd {
 	return func() tea.Msg {
-		err := a.app.ProjectManager.Stop(context.Background(), projectID)
+		cancelled, err := a.app.ProjectManager.StopReport(context.Background(), projectID)
 		if errors.Is(err, project.ErrExternalInstance) {
 			return util.InfoMsg{
 				Type: util.InfoTypeWarn,
@@ -1634,7 +1638,15 @@ func (a *appModel) stopProject(projectID, path string) tea.Cmd {
 		if err != nil {
 			return util.InfoMsg{Type: util.InfoTypeError, Msg: "Failed to stop project: " + err.Error()}
 		}
-		return refreshProjectsDialogMsg{info: "Project " + filepath.Base(path) + " stopped"}
+		info := "Project " + filepath.Base(path) + " stopped"
+		if cancelled > 0 {
+			label := "delegated loop"
+			if cancelled != 1 {
+				label = "delegated loops"
+			}
+			info += fmt.Sprintf(" (cancelled %d %s)", cancelled, label)
+		}
+		return refreshProjectsDialogMsg{info: info}
 	}
 }
 

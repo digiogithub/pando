@@ -2527,8 +2527,8 @@ func TestPandoACPAgent_ProcessPromptWithAgent_LogsAppliedThinkingSettings(t *tes
 	}
 
 	logOutput := logs.String()
-	if !strings.Contains(logOutput, `Applying ACP thinking settings for session session-1: stream_mode="full" reasoning_effort="" thinking_mode="high"`) {
-		t.Fatalf("expected ACP thinking settings log, got %s", logOutput)
+	if !strings.Contains(logOutput, `Applying ACP session overrides for session session-1: model="anthropic.claude-sonnet-4-6" stream_mode="full" reasoning_effort="" thinking_mode="high"`) {
+		t.Fatalf("expected ACP session overrides log, got %s", logOutput)
 	}
 }
 

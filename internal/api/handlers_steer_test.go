@@ -39,6 +39,13 @@ func (m *steerMockAgent) Steer(sessionID string, content string, attachments ...
 	return nil
 }
 func (m *steerMockAgent) PendingSteering(sessionID string) int { return m.pending }
+func (m *steerMockAgent) InjectConclusion(sessionID string, content string) error {
+	return nil
+}
+func (m *steerMockAgent) Resume(ctx context.Context, sessionID string, content string) error {
+	return nil
+}
+func (m *steerMockAgent) ResurrectionCount(sessionID string) int { return 0 }
 
 // Remaining agent.Service methods are no-ops for this test.
 func (m *steerMockAgent) Model() models.Model { return models.Model{} }

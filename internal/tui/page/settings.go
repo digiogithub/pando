@@ -25,6 +25,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/components/filetree"
 	"github.com/digiogithub/pando/internal/tui/components/settings"
 	"github.com/digiogithub/pando/internal/tui/layout"
+	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
 )
@@ -892,6 +893,12 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Label: "Show Hidden Files",
 				Key:   "tui.showHiddenFiles",
 				Value: boolString(cfg.TUI.ShowHiddenFiles),
+				Type:  settings.FieldToggle,
+			},
+			{
+				Label: "Nerd Font Icons",
+				Key:   "tui.nerdFonts",
+				Value: boolString(cfg.NerdFontsEnabled()),
 				Type:  settings.FieldToggle,
 			},
 			{
@@ -1769,6 +1776,16 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 		{Label: "ACP Server Max Sessions", Key: "mesnada.acp.server.maxSessions", Type: settings.FieldText, Value: fmt.Sprint(cfg.Mesnada.ACP.Server.MaxSessions)},
 		{Label: "ACP Server Session Timeout", Key: "mesnada.acp.server.sessionTimeout", Type: settings.FieldText, Value: cfg.Mesnada.ACP.Server.SessionTimeout},
 		{Label: "ACP Server Require Auth", Key: "mesnada.acp.server.requireAuth", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.ACP.Server.RequireAuth)},
+		{Label: "Delegation Enabled", Key: "mesnada.delegation.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.Enabled), Hint: "Capture delegated-task conclusions and re-enter the parent agent loop"},
+		{Label: "Delegation Inject Into Live Loop", Key: "mesnada.delegation.injectIntoLiveLoop", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.InjectIntoLiveLoop), Hint: "Case A: inject a conclusion into a still-running parent loop"},
+		{Label: "Delegation Resurrect Idle Loop", Key: "mesnada.delegation.resurrectIdleLoop", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.ResurrectIdleLoop), Hint: "Case B: resurrect an idle parent session when a correlated task completes"},
+		{Label: "Delegation Synthesize Fallback", Key: "mesnada.delegation.synthesizeFallback", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.SynthesizeFallback), Hint: "Synthesize a conclusion when the subagent omits the block"},
+		{Label: "Delegation Max Resurrections", Key: "mesnada.delegation.maxResurrections", Type: settings.FieldText, Value: intString(cfg.Mesnada.Delegation.MaxResurrections, 4), Hint: "Cap resurrections per session per turn-chain"},
+		{Label: "Delegation Max Depth", Key: "mesnada.delegation.maxDepth", Type: settings.FieldText, Value: intString(cfg.Mesnada.Delegation.MaxDepth, 3), Hint: "Cap delegated-of-delegated nesting (anti-fork-bomb)"},
+		{Label: "Delegation Max Concurrent", Key: "mesnada.delegation.maxConcurrent", Type: settings.FieldText, Value: intString(cfg.Mesnada.Delegation.MaxConcurrent, 8), Hint: "Cap outstanding correlated tasks per parent"},
+		{Label: "Delegation Resurrection Timeout", Key: "mesnada.delegation.resurrectionTimeout", Type: settings.FieldText, Value: delegationTimeoutString(cfg.Mesnada.Delegation.ResurrectionTimeout), Hint: "How long to wait for pending sibling conclusions (e.g. 10m, 1h)"},
+		{Label: "Delegation Reuse Warm Instances", Key: "mesnada.delegation.reuseWarmInstances", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.ReuseWarmInstances), Hint: "Route a delegated task to an already-running per-project instance instead of cold-spawning"},
+		{Label: "Delegation Auto-Start Warm Instance", Key: "mesnada.delegation.autoStartWarmInstance", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.AutoStartWarmInstance), Hint: "Auto-start a child instance when none is running (off = reuse-only)"},
 	}
 
 	if !cfg.Mesnada.Enabled {
@@ -2812,6 +2829,14 @@ func toolDiscoveryModeValue(mode string) string {
 	return mode
 }
 
+// delegationTimeoutString normalizes an empty resurrection timeout to "10m".
+func delegationTimeoutString(timeout string) string {
+	if strings.TrimSpace(timeout) == "" {
+		return "10m"
+	}
+	return timeout
+}
+
 // chatSidebarValue normalizes the chat info sidebar mode for display, mapping
 // "off" (case-insensitive) to "off" and everything else (including empty) to
 // "auto".
@@ -2856,6 +2881,17 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 			return fmt.Errorf("invalid Show Hidden Files value: %w", err)
 		}
 		return config.UpdateShowHiddenFiles(value)
+	case field.Key == "tui.nerdFonts":
+		value, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Nerd Font Icons value: %w", err)
+		}
+		if err := config.UpdateNerdFonts(value); err != nil {
+			return err
+		}
+		// Apply immediately so the icon set swaps without a restart.
+		styles.SetNerdFonts(value)
+		return nil
 	case field.Key == "tui.chatSidebar":
 		return config.UpdateChatSidebar(field.Value)
 	case field.Key == "tui.chatSidebarMinWidth":
@@ -3468,11 +3504,108 @@ func saveMesnada(field settings.Field) error {
 			return fmt.Errorf("invalid ACP server require auth value: %w", err)
 		}
 		mesnadaCfg.ACP.Server.RequireAuth = requireAuth
+	case "mesnada.delegation.enabled",
+		"mesnada.delegation.injectIntoLiveLoop",
+		"mesnada.delegation.resurrectIdleLoop",
+		"mesnada.delegation.synthesizeFallback",
+		"mesnada.delegation.maxResurrections",
+		"mesnada.delegation.maxDepth",
+		"mesnada.delegation.maxConcurrent",
+		"mesnada.delegation.resurrectionTimeout",
+		"mesnada.delegation.reuseWarmInstances",
+		"mesnada.delegation.autoStartWarmInstance":
+		return saveMesnadaDelegation(field)
 	default:
 		return fmt.Errorf("unsupported Mesnada setting %q", field.Key)
 	}
 
 	return config.UpdateMesnada(mesnadaCfg)
+}
+
+// saveMesnadaDelegation persists a single delegation field via the dedicated
+// UpdateMesnadaDelegation helper (separate config writer from UpdateMesnada).
+func saveMesnadaDelegation(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	del := cfg.Mesnada.Delegation
+	switch field.Key {
+	case "mesnada.delegation.enabled":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation enabled value: %w", err)
+		}
+		del.Enabled = v
+	case "mesnada.delegation.injectIntoLiveLoop":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation inject-into-live-loop value: %w", err)
+		}
+		del.InjectIntoLiveLoop = v
+	case "mesnada.delegation.resurrectIdleLoop":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation resurrect-idle-loop value: %w", err)
+		}
+		del.ResurrectIdleLoop = v
+	case "mesnada.delegation.synthesizeFallback":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation synthesize-fallback value: %w", err)
+		}
+		del.SynthesizeFallback = v
+	case "mesnada.delegation.maxResurrections":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation max resurrections: %w", err)
+		}
+		if v < 0 {
+			return fmt.Errorf("Delegation max resurrections must be >= 0")
+		}
+		del.MaxResurrections = v
+	case "mesnada.delegation.maxDepth":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation max depth: %w", err)
+		}
+		if v < 0 {
+			return fmt.Errorf("Delegation max depth must be >= 0")
+		}
+		del.MaxDepth = v
+	case "mesnada.delegation.maxConcurrent":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation max concurrent: %w", err)
+		}
+		if v < 0 {
+			return fmt.Errorf("Delegation max concurrent must be >= 0")
+		}
+		del.MaxConcurrent = v
+	case "mesnada.delegation.resurrectionTimeout":
+		timeout := strings.TrimSpace(field.Value)
+		if _, err := time.ParseDuration(timeout); err != nil {
+			return fmt.Errorf("invalid Delegation resurrection timeout (e.g. 10m, 1h): %w", err)
+		}
+		del.ResurrectionTimeout = timeout
+	case "mesnada.delegation.reuseWarmInstances":
+		v, err := strconv.ParseBool(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation reuse-warm-instances value: %w", err)
+		}
+		del.ReuseWarmInstances = v
+	case "mesnada.delegation.autoStartWarmInstance":
+		v, err := strconv.ParseBool(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation auto-start-warm-instance value: %w", err)
+		}
+		del.AutoStartWarmInstance = v
+	default:
+		return fmt.Errorf("unsupported Delegation setting %q", field.Key)
+	}
+
+	return config.UpdateMesnadaDelegation(del)
 }
 
 func saveRemembrances(field settings.Field) error {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faTimes, faFolderOpen, faSpinner, faFolder, faStop, faPlay, faLock } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faTimes, faFolderOpen, faSpinner, faFolder, faStop, faPlay, faLock, faRobot, faCircleNotch } from '@fortawesome/free-solid-svg-icons'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/projectStore'
 import type { Project } from '@/types'
@@ -402,6 +402,44 @@ export default function ProjectsView() {
                           >
                             <FontAwesomeIcon icon={faLock} style={{ fontSize: 9 }} />
                             external
+                          </span>
+                        )}
+                        {proj.delegation_spawned && (
+                          <span
+                            title="Auto-started by the delegation router to run delegated agent loops"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              fontSize: 10,
+                              color: 'var(--fg-muted)',
+                              border: '1px solid var(--border)',
+                              borderRadius: 'var(--radius-sm)',
+                              padding: '0.15rem 0.4rem',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <FontAwesomeIcon icon={faRobot} style={{ fontSize: 9 }} />
+                            auto
+                          </span>
+                        )}
+                        {!!proj.delegations && proj.delegations > 0 && (
+                          <span
+                            title={`${proj.delegations} delegated agent loop${proj.delegations === 1 ? '' : 's'} running inside this instance`}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              fontSize: 10,
+                              color: '#fa0',
+                              border: '1px solid #fa0',
+                              borderRadius: 'var(--radius-sm)',
+                              padding: '0.15rem 0.4rem',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <FontAwesomeIcon icon={faCircleNotch} spin style={{ fontSize: 9 }} />
+                            {proj.delegations} {proj.delegations === 1 ? 'loop' : 'loops'}
                           </span>
                         )}
                       </span>

@@ -47,11 +47,16 @@ const (
 	EngineACPServer Engine = "acp-server"
 	// EnginePando uses Pando itself as an ACP subagent (shorthand for engine=acp + acp_agent=pando).
 	EnginePando Engine = "pando"
+	// EngineWarmACP marks a delegated task that ran inside an already-running
+	// ("warm") per-project Pando ACP instance reused by the orchestrator instead
+	// of cold-spawning a CLI subprocess. The conclusion is captured over the ACP
+	// wire rather than scanned from stdout.
+	EngineWarmACP Engine = "warm-acp"
 )
 
 // ValidEngine checks if an engine is valid.
 func ValidEngine(e Engine) bool {
-	return e == EngineCopilot || e == EngineClaude || e == EngineGemini || e == EngineOpenCode || e == EngineOllamaClaude || e == EngineOllamaOpenCode || e == EngineMistral || e == EngineACP || e == EngineACPClaudeCode || e == EngineACPCodex || e == EngineACPCustom || e == EngineACPServer || e == EnginePando || e == ""
+	return e == EngineCopilot || e == EngineClaude || e == EngineGemini || e == EngineOpenCode || e == EngineOllamaClaude || e == EngineOllamaOpenCode || e == EngineMistral || e == EngineACP || e == EngineACPClaudeCode || e == EngineACPCodex || e == EngineACPCustom || e == EngineACPServer || e == EnginePando || e == EngineWarmACP || e == ""
 }
 
 // DefaultEngine returns the default engine.
@@ -110,6 +115,33 @@ type Task struct {
 	ACPStatus    *ACPStatus  `json:"acp_status,omitempty"`
 	CurrentTool  string      `json:"current_tool,omitempty"`
 	ToolCalls    []*ToolCall `json:"tool_calls,omitempty"`
+	// Delegation correlation fields. These link a delegated task back to the
+	// parent agent session/task that spawned it and to the project it ran in.
+	// They are populated by the spawn tool + orchestrator and are durable so a
+	// task's origin can always be reconstructed.
+	ParentSessionID string      `json:"parent_session_id,omitempty"` // session that spawned this task
+	ParentTaskID    string      `json:"parent_task_id,omitempty"`    // for depth/trace
+	CorrelationID   string      `json:"correlation_id,omitempty"`    // idempotency key
+	ProjectID       string      `json:"project_id,omitempty"`        // resolved from work_dir
+	ProjectPath     string      `json:"project_path,omitempty"`      // CanonicalProjectPath
+	ProjectName     string      `json:"project_name,omitempty"`      // resolved folder/display name
+	Conclusion      *Conclusion `json:"conclusion,omitempty"`        // captured task conclusion
+	Depth           int         `json:"depth,omitempty"`             // anti-fork-bomb cap
+}
+
+// Conclusion is the enriched, durable result of a delegated task. The subagent
+// emits only the model-known fields via a sentinel block; the orchestrator fills
+// in launch metadata it owns. Synthesized is true when no block was emitted and
+// the conclusion was derived from output/error.
+type Conclusion struct {
+	Status      string    `json:"status"` // success|partial|failed|blocked
+	Summary     string    `json:"summary"`
+	Artifacts   []string  `json:"artifacts,omitempty"`
+	MemoryRefs  []string  `json:"memory_refs,omitempty"`
+	FollowUp    string    `json:"follow_up,omitempty"`
+	Confidence  float64   `json:"confidence,omitempty"`
+	Synthesized bool      `json:"synthesized,omitempty"` // true if no block emitted
+	CapturedAt  time.Time `json:"captured_at"`
 }
 
 // ToolCall represents a single tool execution within a task.
@@ -244,6 +276,14 @@ type SpawnRequest struct {
 	ACPAgent         string                 `json:"acp_agent,omitempty"`
 	ACPConfigOptions map[string]interface{} `json:"acp_config_options,omitempty"`
 	ACPMCPServers    []ACPMCPServer         `json:"acp_mcp_servers,omitempty"`
+	// Delegation correlation fields. Flow from the spawn tool into the created
+	// Task so its origin (parent session/task, project, depth) is persisted.
+	ParentSessionID string `json:"parent_session_id,omitempty"`
+	ParentTaskID    string `json:"parent_task_id,omitempty"`
+	CorrelationID   string `json:"correlation_id,omitempty"`
+	ProjectID       string `json:"project_id,omitempty"`
+	ProjectPath     string `json:"project_path,omitempty"`
+	Depth           int    `json:"depth,omitempty"`
 }
 
 // WaitRequest represents a request to wait for task completion.

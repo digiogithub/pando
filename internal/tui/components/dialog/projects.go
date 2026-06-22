@@ -1,6 +1,7 @@
 package dialog
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -389,6 +390,28 @@ func (p *projectsDialogCmp) renderProjectItem(proj project.Project, selected boo
 				Foreground(t.SelectionForeground())
 		}
 		suffix += " " + extStyle.Render("[external]")
+	}
+	if proj.DelegationSpawned {
+		autoStyle := baseStyle.Foreground(t.TextMuted())
+		if selected {
+			autoStyle = autoStyle.
+				Background(t.SelectionBackground()).
+				Foreground(t.SelectionForeground())
+		}
+		suffix += " " + autoStyle.Render("[auto]")
+	}
+	if proj.Delegations > 0 {
+		delStyle := baseStyle.Foreground(t.Warning())
+		if selected {
+			delStyle = delStyle.
+				Background(t.SelectionBackground()).
+				Foreground(t.SelectionForeground())
+		}
+		label := "loop"
+		if proj.Delegations != 1 {
+			label = "loops"
+		}
+		suffix += " " + delStyle.Render(fmt.Sprintf("[%d %s]", proj.Delegations, label))
 	}
 
 	pathStr := pathStyle.Render(short)

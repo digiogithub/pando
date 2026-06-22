@@ -162,6 +162,20 @@ const (
 	// messages have been injected into the conversation and the loop will continue
 	// taking them into account. SystemMessage carries a human-readable note.
 	AgentEventTypeSteeringInjected AgentEventType = "steering_injected"
+	// AgentEventTypeConclusionQueued is emitted when a delegated-task conclusion
+	// is queued (via InjectConclusion) for injection into a still-running parent
+	// loop at the next safe boundary. SystemMessage carries a human-readable note.
+	AgentEventTypeConclusionQueued AgentEventType = "conclusion_queued"
+	// AgentEventTypeConclusionInjected is emitted when one or more queued delegated
+	// conclusions have been injected into the conversation so the parent loop can
+	// react to the subagent's result. SystemMessage carries a human-readable note.
+	AgentEventTypeConclusionInjected AgentEventType = "conclusion_injected"
+	// AgentEventTypeResurrected is emitted at the start of a system-initiated run
+	// that resumes an idle parent session because one or more delegated tasks
+	// finished (Case B of the delegation protocol). It lets the UI frame the turn
+	// as "resuming because a delegated task reported its result" rather than as a
+	// user message. SystemMessage carries a human-readable note.
+	AgentEventTypeResurrected AgentEventType = "resurrected"
 )
 
 // TokenUsageInfo carries a live token-usage snapshot for AgentEventTypeTokenUsage.
@@ -235,6 +249,28 @@ type Service interface {
 	Steer(sessionID string, content string, attachments ...message.Attachment) error
 	// PendingSteering reports how many steering messages are queued for the session.
 	PendingSteering(sessionID string) int
+	// InjectConclusion queues a delegated-task conclusion for injection into a
+	// still-running parent loop at the next safe boundary (Case A of the delegation
+	// protocol). The content must already be the fully formatted text the parent
+	// will see — the agent does not re-frame it. Behaviour mirrors Steer but the
+	// message is typed as a conclusion (distinct UI framing) and it carries no
+	// attachments. Returns ErrSessionNotBusy when the session is idle; the
+	// supervisor uses that signal to fall back to resurrection (a later phase).
+	InjectConclusion(sessionID string, content string) error
+	// Resume starts a NEW system-initiated run for an IDLE session (Case B of the
+	// delegation protocol). The content is the pre-framed resurrection text the
+	// supervisor built. It is distinct from Run (user-initiated) and from
+	// InjectConclusion (live-loop steering): events still reach UIs via the pubsub
+	// broker, but the returned run channel is drained internally so the caller does
+	// not have to. Returns ErrSessionBusy if a run is already active. Each Resume
+	// increments the session's resurrection counter (see ResurrectionCount); a
+	// user-initiated Run resets it.
+	Resume(ctx context.Context, sessionID string, content string) error
+	// ResurrectionCount reports how many times the session has been resurrected via
+	// Resume since the last user-initiated Run. The supervisor reads it to enforce
+	// the MaxResurrections cap; the count auto-resets whenever the user sends a new
+	// manual message (Run) and is cleared on Cancel.
+	ResurrectionCount(sessionID string) int
 	IsSessionBusy(sessionID string) bool
 	IsBusy() bool
 	Update(agentName config.AgentName, modelID models.ModelID) (models.Model, error)
@@ -275,10 +311,34 @@ type agent struct {
 	// next safe boundary of the agent loop (see drainSteeringInto).
 	steeringMu    sync.Mutex
 	steeringQueue map[string][]steeringMessage
+
+	// resurrectMu guards resurrectCount. resurrectCount tracks how many times each
+	// session has been resurrected (Case B) since the last user-initiated Run. The
+	// supervisor reads it via ResurrectionCount to enforce MaxResurrections; Resume
+	// increments it, Run resets it to 0, and Cancel clears the entry.
+	resurrectMu    sync.Mutex
+	resurrectCount map[string]int
 }
 
-// steeringMessage is a queued mid-run feedback message awaiting injection.
+// steeringKind classifies a queued out-of-band message. The same inbox carries
+// both user feedback and delegated-task conclusions so they can be drained at the
+// same safe boundaries; the kind drives the UI framing on injection.
+type steeringKind int
+
+const (
+	// steeringFeedback is a user-submitted mid-run feedback message (the original,
+	// always-on steering path). It is the zero value so existing code is unchanged.
+	steeringFeedback steeringKind = iota
+	// steeringConclusion is a delegated-task conclusion injected into a live parent
+	// loop (Case A of the delegation protocol).
+	steeringConclusion
+)
+
+// steeringMessage is a queued mid-run message awaiting injection. It is either
+// user feedback (kind=steeringFeedback) or a delegated-task conclusion
+// (kind=steeringConclusion).
 type steeringMessage struct {
+	kind        steeringKind
 	content     string
 	attachments []message.Attachment
 }
@@ -341,6 +401,7 @@ func NewAgent(
 		activeRequests:            sync.Map{},
 		runStatusMessages:         make(map[string][]string),
 		steeringQueue:             make(map[string][]steeringMessage),
+		resurrectCount:            make(map[string]int),
 	}
 
 	logging.Debug("Agent created", "name", string(agentName), "model", modelID, "toolCount", len(agentTools))
@@ -366,6 +427,8 @@ func (a *agent) SetLuaManager(fm *luaengine.FilterManager) {
 func (a *agent) Cancel(sessionID string) {
 	// Drop any queued steering messages for this session; the run is being aborted.
 	a.clearSteering(sessionID)
+	// Clear the resurrection budget for this session; a cancelled chain starts fresh.
+	a.clearResurrectionCount(sessionID)
 
 	// Cancel regular requests
 	if cancelFunc, exists := a.activeRequests.LoadAndDelete(sessionID); exists {
@@ -413,6 +476,102 @@ func (a *agent) Steer(sessionID string, content string, attachments ...message.A
 	return nil
 }
 
+// InjectConclusion queues a delegated-task conclusion for injection into a
+// still-running parent loop at the next safe boundary. It mirrors Steer but the
+// queued message is typed as a conclusion and carries no attachments; the content
+// is used verbatim (the supervisor has already formatted it). Returns
+// ErrSessionNotBusy when the session is idle so the caller can decide whether to
+// resurrect it (a later phase).
+func (a *agent) InjectConclusion(sessionID string, content string) error {
+	if strings.TrimSpace(content) == "" {
+		return fmt.Errorf("cannot inject empty conclusion")
+	}
+	if !a.IsSessionBusy(sessionID) {
+		return ErrSessionNotBusy
+	}
+
+	a.steeringMu.Lock()
+	a.steeringQueue[sessionID] = append(a.steeringQueue[sessionID], steeringMessage{
+		kind:    steeringConclusion,
+		content: content,
+	})
+	queued := len(a.steeringQueue[sessionID])
+	a.steeringMu.Unlock()
+
+	logging.Debug("Delegated conclusion queued", "sessionID", sessionID, "queued", queued)
+	ev := AgentEvent{
+		Type:          AgentEventTypeConclusionQueued,
+		SessionID:     sessionID,
+		SystemMessage: "📥 Delegated result queued — it will be injected at the next step.",
+	}
+	a.publishEvent(ev)
+	return nil
+}
+
+// Resume starts a new system-initiated run for an idle session, used by the
+// delegation supervisor to "resurrect" a parent loop when one or more delegated
+// tasks finished while the parent was idle (Case B). It reuses the Run machinery
+// so the run's behaviour for user calls stays unchanged: Resume publishes a
+// distinct AgentEventTypeResurrected system message (so UIs can frame the turn),
+// increments the session's resurrection counter, then calls Run and drains the
+// returned channel in a goroutine. Events still reach UIs via the pubsub broker;
+// draining only prevents the buffered run channel from blocking the run goroutine.
+func (a *agent) Resume(ctx context.Context, sessionID string, content string) error {
+	if strings.TrimSpace(content) == "" {
+		return fmt.Errorf("cannot resume with empty content")
+	}
+	if a.IsSessionBusy(sessionID) {
+		return ErrSessionBusy
+	}
+
+	// Frame the turn for the UI before starting the run. Published on the broker so
+	// every subscribed UI sees why the session woke.
+	a.publishEvent(AgentEvent{
+		Type:          AgentEventTypeResurrected,
+		SessionID:     sessionID,
+		SystemMessage: "🔁 Resuming — a delegated task reported its result.",
+	})
+
+	events, err := a.runInternal(ctx, sessionID, content)
+	if err != nil {
+		// The run failed to start (e.g. ErrSessionBusy from a race, or ErrNoModel);
+		// do not count a resurrection that never started.
+		return err
+	}
+
+	// Count the resurrection now that the run actually started. runInternal does
+	// NOT reset the counter (unlike Run), so it accumulates across resurrections.
+	a.incrementResurrectionCount(sessionID)
+
+	// Nobody reads the returned channel; drain it so the run goroutine never blocks
+	// on the buffered(512) channel filling up.
+	go func() {
+		for range events {
+		}
+	}()
+	return nil
+}
+
+// ResurrectionCount reports how many times the session has been resurrected via
+// Resume since the last user-initiated Run.
+func (a *agent) ResurrectionCount(sessionID string) int {
+	a.resurrectMu.Lock()
+	defer a.resurrectMu.Unlock()
+	return a.resurrectCount[sessionID]
+}
+
+func (a *agent) incrementResurrectionCount(sessionID string) {
+	a.resurrectMu.Lock()
+	a.resurrectCount[sessionID]++
+	a.resurrectMu.Unlock()
+}
+
+func (a *agent) clearResurrectionCount(sessionID string) {
+	a.resurrectMu.Lock()
+	delete(a.resurrectCount, sessionID)
+	a.resurrectMu.Unlock()
+}
+
 // PendingSteering reports how many steering messages are queued for the session.
 func (a *agent) PendingSteering(sessionID string) int {
 	a.steeringMu.Lock()
@@ -451,6 +610,8 @@ func (a *agent) drainSteeringInto(ctx context.Context, sessionID string, msgHist
 	}
 
 	injected := 0
+	feedbackInjected := 0
+	conclusionInjected := 0
 	for _, sm := range queued {
 		var attachmentParts []message.ContentPart
 		for _, attachment := range sm.attachments {
@@ -467,22 +628,46 @@ func (a *agent) drainSteeringInto(ctx context.Context, sessionID string, msgHist
 		}
 		msgHistory = append(msgHistory, userMsg)
 		injected++
+		switch sm.kind {
+		case steeringConclusion:
+			conclusionInjected++
+		default:
+			feedbackInjected++
+		}
 	}
 	if injected == 0 {
 		return msgHistory, false
 	}
 
-	logging.Debug("Steering messages injected", "sessionID", sessionID, "count", injected)
+	logging.Debug("Steering messages injected", "sessionID", sessionID, "count", injected,
+		"feedback", feedbackInjected, "conclusions", conclusionInjected)
 	a.addRunStatusMessage(sessionID, fmt.Sprintf("Injected %d steering message(s)", injected))
-	ev := AgentEvent{
-		Type:          AgentEventTypeSteeringInjected,
-		SessionID:     sessionID,
-		SystemMessage: "💬 Feedback injected — continuing with your input.",
+
+	// Emit one event per kind so the UI can frame user feedback and delegated
+	// conclusions differently. Both are delivered through the run event channel.
+	if feedbackInjected > 0 {
+		ev := AgentEvent{
+			Type:          AgentEventTypeSteeringInjected,
+			SessionID:     sessionID,
+			SystemMessage: "💬 Feedback injected — continuing with your input.",
+		}
+		a.publishEvent(ev)
+		select {
+		case eventCh <- ev:
+		default:
+		}
 	}
-	a.publishEvent(ev)
-	select {
-	case eventCh <- ev:
-	default:
+	if conclusionInjected > 0 {
+		ev := AgentEvent{
+			Type:          AgentEventTypeConclusionInjected,
+			SessionID:     sessionID,
+			SystemMessage: "📥 Delegated result injected — continuing with the subagent's findings.",
+		}
+		a.publishEvent(ev)
+		select {
+		case eventCh <- ev:
+		default:
+		}
 	}
 	return msgHistory, true
 }
@@ -599,6 +784,18 @@ func (a *agent) emitCompactionError(sessionID string, err error, eventCh chan<- 
 var ErrNoModel = fmt.Errorf("no model configured, please select a model")
 
 func (a *agent) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
+	// A user-initiated run resets the resurrection budget for the session so the
+	// next idle-completion chain starts from zero (and MaxResurrections is enforced
+	// per user turn-chain, not for the whole session lifetime).
+	a.clearResurrectionCount(sessionID)
+	return a.runInternal(ctx, sessionID, content, attachments...)
+}
+
+// runInternal is the shared run machinery used by both the user-initiated Run and
+// the system-initiated Resume. It deliberately does NOT touch the resurrection
+// counter (callers manage that) so Run's behaviour for user calls is preserved
+// exactly while Resume can accumulate the count across resurrections.
+func (a *agent) runInternal(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
 	a.clearRunStatusMessages(sessionID)
 	logging.Debug("Agent.Run called", "sessionID", sessionID, "contentLength", len(content), "attachmentCount", len(attachments))
 	if a.provider == nil {
@@ -776,14 +973,19 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		}
 	}
 
+	// Build the request-scoped context carrying the session ID so per-session
+	// overrides (model, persona, inference settings) resolve correctly even for
+	// concurrent sessions sharing this process.
+	promptCtx := context.WithValue(ctx, prompt.SessionIDKey, sessionID)
+
 	// Resolve persona content to inject into the system prompt.
 	// This is done before creating the user message so the content (user query)
 	// can be used for auto-selection without modifying the user message itself.
-	personaContent := getPersonaContent(ctx, content)
+	personaContent := getPersonaContent(promptCtx, content)
 	if isCleanModeContext(ctx) {
 		personaContent = ""
 	}
-	if activePersona := strings.TrimSpace(GetActivePersona()); activePersona != "" {
+	if activePersona := strings.TrimSpace(effectiveActivePersona(promptCtx)); activePersona != "" {
 		a.addRunStatusMessage(sessionID, fmt.Sprintf("Selected persona: %s", activePersona))
 	}
 
@@ -804,7 +1006,6 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	msgHistory := append(msgs, userMsg)
 
 	// Build provider with persona injected into the system prompt.
-	promptCtx := context.WithValue(ctx, prompt.SessionIDKey, sessionID)
 	requestProvider, err := a.prepareProvider(promptCtx, content, personaContent)
 	if err != nil {
 		return a.err(fmt.Errorf("failed to prepare agent provider: %w", err))
@@ -2020,6 +2221,18 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 	if !ok {
 		return nil, fmt.Errorf("agent %s not found", agentName)
 	}
+	// Per-session model override (request-scoped): when this session selected a
+	// specific model, use it instead of the agent's globally configured model.
+	// agentConfig is a copy of the map value, so this never mutates global config
+	// and is safe for concurrent sessions running different models in parallel.
+	sessionOverrides := sessionLLMOverridesForContext(ctx)
+	if sessionOverrides.Model != "" {
+		if _, supported := models.SupportedModels[sessionOverrides.Model]; supported {
+			agentConfig.Model = sessionOverrides.Model
+		} else {
+			logging.Debug("createAgentProvider: ignoring unsupported session model override", "model", sessionOverrides.Model)
+		}
+	}
 	model, ok := models.SupportedModels[agentConfig.Model]
 	if !ok {
 		return nil, fmt.Errorf("model %s not supported", agentConfig.Model)
@@ -2055,8 +2268,8 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 	systemMessage := buildSystemMessage(ctx, agentName, model.Provider, agentTools, skillManager, activeSkillInstructions, pc)
 
 	// For models with special provider options (reasoning effort, thinking mode),
-	// build opts explicitly using resolved account credentials.
-	sessionOverrides := sessionLLMOverridesForContext(ctx)
+	// build opts explicitly using resolved account credentials. sessionOverrides
+	// was resolved above (also carries the per-session model override).
 	needsExtraOpts := (model.Provider == models.ProviderOpenAI && model.CanReason) ||
 		(model.Provider == models.ProviderCopilot && model.CanReason) ||
 		(model.Provider == models.ProviderLocal && model.CanReason) ||

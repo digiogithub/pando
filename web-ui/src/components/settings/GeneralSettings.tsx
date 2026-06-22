@@ -128,6 +128,12 @@ export default function GeneralSettings() {
           onChange={(v) => updateField('show_hidden_files', v)}
         />
         <Toggle
+          label={t('settings.general.nerdFonts')}
+          description={t('settings.general.nerdFontsDescription')}
+          checked={config.nerd_fonts}
+          onChange={(v) => updateField('nerd_fonts', v)}
+        />
+        <Toggle
           label={t('settings.general.debug')}
           description={t('settings.general.debugDescription')}
           checked={config.debug}
@@ -171,6 +177,81 @@ export default function GeneralSettings() {
           value={config.tool_discovery_search_limit}
           disabled={!config.tool_discovery_enabled}
           onChange={(e) => updateField('tool_discovery_search_limit', Number(e.target.value))}
+        />
+      </div>
+
+      <div style={dividerStyle} />
+
+      {/* Delegation (subagent conclusions + agent-loop resurrection) */}
+      <h3 style={{ ...sectionTitle, fontSize: 15, marginBottom: '1rem' }}>
+        {t('settings.general.delegation')}
+      </h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <Toggle
+          label={t('settings.general.delegationEnabled')}
+          description={t('settings.general.delegationEnabledDescription')}
+          checked={config.delegation_enabled}
+          onChange={(v) => updateField('delegation_enabled', v)}
+        />
+        <Toggle
+          label={t('settings.general.delegationInjectIntoLiveLoop')}
+          description={t('settings.general.delegationInjectIntoLiveLoopDescription')}
+          checked={config.delegation_inject_into_live_loop}
+          onChange={(v) => updateField('delegation_inject_into_live_loop', v)}
+        />
+        <Toggle
+          label={t('settings.general.delegationResurrectIdleLoop')}
+          description={t('settings.general.delegationResurrectIdleLoopDescription')}
+          checked={config.delegation_resurrect_idle_loop}
+          onChange={(v) => updateField('delegation_resurrect_idle_loop', v)}
+        />
+        <Toggle
+          label={t('settings.general.delegationSynthesizeFallback')}
+          description={t('settings.general.delegationSynthesizeFallbackDescription')}
+          checked={config.delegation_synthesize_fallback}
+          onChange={(v) => updateField('delegation_synthesize_fallback', v)}
+        />
+        <TextInput
+          label={t('settings.general.delegationMaxResurrections')}
+          type="number"
+          min={0}
+          value={config.delegation_max_resurrections}
+          disabled={!config.delegation_enabled}
+          onChange={(e) => updateField('delegation_max_resurrections', Number(e.target.value))}
+        />
+        <TextInput
+          label={t('settings.general.delegationMaxDepth')}
+          type="number"
+          min={0}
+          value={config.delegation_max_depth}
+          disabled={!config.delegation_enabled}
+          onChange={(e) => updateField('delegation_max_depth', Number(e.target.value))}
+        />
+        <TextInput
+          label={t('settings.general.delegationMaxConcurrent')}
+          type="number"
+          min={0}
+          value={config.delegation_max_concurrent}
+          disabled={!config.delegation_enabled}
+          onChange={(e) => updateField('delegation_max_concurrent', Number(e.target.value))}
+        />
+        <TextInput
+          label={t('settings.general.delegationResurrectionTimeout')}
+          value={config.delegation_resurrection_timeout}
+          disabled={!config.delegation_enabled}
+          onChange={(e) => updateField('delegation_resurrection_timeout', e.target.value)}
+        />
+        <Toggle
+          label={t('settings.general.delegationReuseWarmInstances')}
+          description={t('settings.general.delegationReuseWarmInstancesDescription')}
+          checked={config.delegation_reuse_warm_instances}
+          onChange={(v) => updateField('delegation_reuse_warm_instances', v)}
+        />
+        <Toggle
+          label={t('settings.general.delegationAutoStartWarm')}
+          description={t('settings.general.delegationAutoStartWarmDescription')}
+          checked={config.delegation_auto_start_warm}
+          onChange={(v) => updateField('delegation_auto_start_warm', v)}
         />
       </div>
 

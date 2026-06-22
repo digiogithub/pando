@@ -78,18 +78,42 @@ func SetActivePersona(name string) error {
 	return nil
 }
 
+// personaManager returns the manager to resolve persona content from, preferring
+// the global manager and falling back to the selector's manager.
+func personaManager() *persona.Manager {
+	mgr := globalPersonaManager
+	if mgr == nil && globalPersonaSelector != nil {
+		mgr = globalPersonaSelector.manager
+	}
+	return mgr
+}
+
 // getPersonaContent returns the persona instructions for the given context.
-// Priority: manually set active persona > auto-selector > empty string.
-// The returned content is intended to be injected into the system prompt,
-// not prepended to the user message.
+// Priority: per-session persona override > manually set active persona >
+// auto-selector > empty string. The returned content is intended to be injected
+// into the system prompt, not prepended to the user message.
 func getPersonaContent(ctx context.Context, userPrompt string) string {
+	// Per-session persona override takes top priority so that concurrent ACP /
+	// delegated sessions can each use a different persona without clobbering the
+	// package-global active persona. When a session is PersonaScoped, it manages
+	// persona authoritatively: an explicit name wins, otherwise auto-selection is
+	// used (the global active persona is intentionally ignored for that session).
+	if ov := sessionLLMOverridesForContext(ctx); ov.PersonaScoped {
+		if ov.Persona != "" {
+			if mgr := personaManager(); mgr != nil && mgr.HasPersona(ov.Persona) {
+				logging.Debug("Persona: using per-session persona", "persona", ov.Persona)
+				return mgr.GetPersona(ov.Persona)
+			}
+		}
+		if globalPersonaSelector != nil {
+			return globalPersonaSelector.SelectPersonaContent(ctx, userPrompt)
+		}
+		return ""
+	}
+
 	// Manual persona takes priority over auto-selection.
 	if activePersonaName != "" {
-		mgr := globalPersonaManager
-		if mgr == nil && globalPersonaSelector != nil {
-			mgr = globalPersonaSelector.manager
-		}
-		if mgr != nil {
+		if mgr := personaManager(); mgr != nil {
 			logging.Debug("Persona: using manually set persona", "persona", activePersonaName)
 			return mgr.GetPersona(activePersonaName)
 		}
@@ -101,6 +125,16 @@ func getPersonaContent(ctx context.Context, userPrompt string) string {
 	}
 
 	return ""
+}
+
+// effectiveActivePersona returns the persona name in effect for the given
+// context, honoring a per-session override before the package-global value.
+// Used for status reporting only.
+func effectiveActivePersona(ctx context.Context) string {
+	if ov := sessionLLMOverridesForContext(ctx); ov.PersonaScoped {
+		return ov.Persona
+	}
+	return activePersonaName
 }
 
 // PersonaSelector automatically selects and applies a persona for each user prompt.

@@ -86,8 +86,27 @@
       "autoCompactDescription": "Comprime automáticamente el contexto de la conversación cuando crece demasiado",
       "showHiddenFiles": "Mostrar archivos ocultos",
       "showHiddenFilesDescription": "Muestra los archivos ocultos y dotfiles en el árbol de archivos",
+      "nerdFonts": "Iconos Nerd Font",
+      "nerdFontsDescription": "Usa glifos de Nerd Font para los iconos del TUI. Desactívalo si tu terminal no tiene una Nerd Font instalada y los iconos se muestran como cajas (□)",
       "debug": "Modo de depuración",
-      "debugDescription": "Activa el registro detallado de depuración"
+      "debugDescription": "Activa el registro detallado de depuración",
+      "delegation": "Delegación de subagentes",
+      "delegationEnabled": "Delegación activada",
+      "delegationEnabledDescription": "Captura las conclusiones de tareas delegadas y reingresa al bucle del agente padre",
+      "delegationInjectIntoLiveLoop": "Inyectar en bucle activo",
+      "delegationInjectIntoLiveLoopDescription": "Caso A: inyecta una conclusión en un bucle padre aún en ejecución",
+      "delegationResurrectIdleLoop": "Reactivar bucle inactivo",
+      "delegationResurrectIdleLoopDescription": "Caso B: reactiva una sesión padre inactiva cuando una tarea correlacionada finaliza",
+      "delegationSynthesizeFallback": "Sintetizar alternativa",
+      "delegationSynthesizeFallbackDescription": "Sintetiza una conclusión cuando el subagente omite el bloque",
+      "delegationMaxResurrections": "Máx. reactivaciones",
+      "delegationMaxDepth": "Profundidad máx.",
+      "delegationMaxConcurrent": "Máx. concurrentes",
+      "delegationResurrectionTimeout": "Tiempo de espera de reactivación",
+      "delegationReuseWarmInstances": "Reutilizar instancias activas",
+      "delegationReuseWarmInstancesDescription": "Enruta una tarea delegada a una instancia por proyecto ya en ejecución en lugar de arrancar un subproceso CLI en frío",
+      "delegationAutoStartWarm": "Auto-arrancar instancia activa",
+      "delegationAutoStartWarmDescription": "Arranca automáticamente una instancia hija para el proyecto cuando no hay ninguna en ejecución (desactivado = solo reutilizar)"
     }
   },
   "chat": {

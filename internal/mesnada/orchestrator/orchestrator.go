@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/mesnada/agent"
+	"github.com/digiogithub/pando/internal/mesnada/conclusion"
 	"github.com/digiogithub/pando/internal/mesnada/config"
 	"github.com/digiogithub/pando/internal/mesnada/persona"
 	"github.com/digiogithub/pando/internal/mesnada/store"
@@ -20,26 +21,60 @@ import (
 
 // Orchestrator coordinates the execution of CLI agents.
 type Orchestrator struct {
-	store                store.Store
-	manager              *agent.Manager
-	personaManager       *persona.Manager
-	subscribers          map[string][]chan *models.Task
-	subMu                sync.RWMutex
+	store          store.Store
+	manager        *agent.Manager
+	personaManager *persona.Manager
+	subscribers    map[string][]chan *models.Task
+	subMu          sync.RWMutex
+	// completionSubs are global "any task completed" subscribers (unlike
+	// subscribers, which are keyed by task id and consumed by Wait). They are used
+	// by the delegation supervisor to react to every completion. Guarded by
+	// completionMu.
+	completionSubs       []chan *models.Task
+	completionMu         sync.Mutex
 	maxParallel          int
 	defaultMCPConfig     string
 	defaultEngine        models.Engine
 	pandoMCPServers      []agent.PandoMCPServerEntry
 	gatewayExposeEnabled bool
 	dynamicMCPDir        string // base dir for dynamic MCP config temp files
-	wg                   sync.WaitGroup
-	ctx                  context.Context
-	cancel               context.CancelFunc
+	delegation           DelegationConfig
+	projectResolver      conclusion.ProjectResolver
+	warmResolver         WarmTargetResolver
+	// awaitIntents records, per parent session id, the active non-blocking await
+	// intent registered by the mesnada_await tool (see await.go). Guarded by
+	// awaitMu; in-memory only (mirrors the supervisor's in-memory batch state).
+	awaitIntents map[string]*AwaitIntent
+	awaitMu      sync.Mutex
+	wg           sync.WaitGroup
+	ctx          context.Context
+	cancel       context.CancelFunc
+}
+
+// DelegationConfig mirrors the conclusion-relevant subset of the application's
+// delegation config. It is a plain struct (not an import of internal/config) so
+// the orchestrator stays free of config import cycles, following the same
+// pattern as ModelResolver.
+type DelegationConfig struct {
+	// Enabled gates the whole conclusion protocol. When false the orchestrator
+	// preserves today's behavior byte-for-byte: no brief is appended and the
+	// enricher is not run.
+	Enabled bool
+	// SynthesizeFallback enables deriving a conclusion from output/error when the
+	// subagent did not emit a sentinel block.
+	SynthesizeFallback bool
+	// ReuseWarmInstances routes a delegated task whose project is known to a warm
+	// per-project ACP instance (via WarmTargetResolver) instead of cold-spawning a
+	// CLI. Master switch for warm reuse (default off); requires Enabled and a wired
+	// resolver. The reuse-then-autostart policy and concurrency cap are applied by
+	// the resolver adapter, not here.
+	ReuseWarmInstances bool
 }
 
 // Config holds orchestrator configuration.
 type Config struct {
-	StorePath   string
-	LogDir      string
+	StorePath string
+	LogDir    string
 	// EnginesDir is the directory scanned at startup for *.template.yaml custom
 	// engine files. When empty the manager derives it from LogDir.
 	EnginesDir  string
@@ -64,6 +99,17 @@ type Config struct {
 	// full "provider.model" string expected by the pando CLI's -m flag.
 	// When nil, model IDs are forwarded as-is to the pando CLI spawner.
 	ModelResolver func(string) string
+	// Delegation carries the conclusion-protocol options. When Delegation.Enabled
+	// is false (the default) the orchestrator behaves exactly as before.
+	Delegation DelegationConfig
+	// ProjectResolver maps a canonical project path to its registry id and display
+	// name, used by the conclusion enricher. When nil the enricher derives the
+	// display name from filepath.Base(projectPath).
+	ProjectResolver conclusion.ProjectResolver
+	// WarmTargetResolver routes delegated tasks to warm per-project ACP instances
+	// (Phase 7.3). When nil (or Delegation.ReuseWarmInstances is false) every task
+	// takes the cold subprocess path, preserving today's behavior.
+	WarmTargetResolver WarmTargetResolver
 }
 
 // New creates a new Orchestrator.
@@ -109,6 +155,9 @@ func New(cfg Config) (*Orchestrator, error) {
 		pandoMCPServers:      cfg.MCPServers,
 		gatewayExposeEnabled: cfg.GatewayExposeEnabled,
 		dynamicMCPDir:        dynamicMCPDir,
+		delegation:           cfg.Delegation,
+		projectResolver:      cfg.ProjectResolver,
+		warmResolver:         cfg.WarmTargetResolver,
 		ctx:                  ctx,
 		cancel:               cancel,
 	}
@@ -153,6 +202,17 @@ func (o *Orchestrator) onTaskComplete(task *models.Task) {
 	o.store.Save(task)
 	logTaskFinished(task)
 
+	// Capture + enrich the delegated-task conclusion (default-off). Nothing
+	// consumes it yet (Cases A/B are later phases); this only persists it on the
+	// task. Kept side-effect-light and panic-safe so completion stays robust.
+	o.captureConclusion(task)
+
+	// Broadcast to global completion subscribers (the delegation supervisor). Done
+	// AFTER captureConclusion so the delivered *Task already carries its enriched
+	// Conclusion. Non-blocking send: a slow/full subscriber drops the event rather
+	// than stalling completion handling (mirrors the per-task notify below).
+	o.broadcastCompletion(task)
+
 	// Clean up dynamic MCP config temp dir for this task (if one was generated).
 	if o.dynamicMCPDir != "" {
 		dynDir := o.dynamicMCPDir + "/mcp-dynamic/" + task.ID
@@ -178,6 +238,81 @@ func (o *Orchestrator) onTaskComplete(task *models.Task) {
 
 	// Check for dependent tasks
 	o.processDependentTasks(task)
+}
+
+// SubscribeCompletions registers a global subscriber that receives every task
+// that reaches a terminal state via onTaskComplete (after its conclusion has been
+// captured). It returns a receive-only channel and an unsubscribe function that
+// removes the channel; the unsubscribe function is idempotent. The channel is
+// buffered; deliveries are non-blocking so a slow consumer drops events rather
+// than stalling the orchestrator. This is the hook the delegation supervisor uses
+// for Case A (inject into a live parent loop) and, later, Case B (resurrection).
+func (o *Orchestrator) SubscribeCompletions() (<-chan *models.Task, func()) {
+	ch := make(chan *models.Task, 16)
+
+	o.completionMu.Lock()
+	o.completionSubs = append(o.completionSubs, ch)
+	o.completionMu.Unlock()
+
+	var once sync.Once
+	unsubscribe := func() {
+		once.Do(func() {
+			o.completionMu.Lock()
+			for i, c := range o.completionSubs {
+				if c == ch {
+					o.completionSubs = append(o.completionSubs[:i], o.completionSubs[i+1:]...)
+					break
+				}
+			}
+			o.completionMu.Unlock()
+			close(ch)
+		})
+	}
+	return ch, unsubscribe
+}
+
+// broadcastCompletion delivers a completed task to all global completion
+// subscribers with a non-blocking send (drop if the buffer is full).
+func (o *Orchestrator) broadcastCompletion(task *models.Task) {
+	o.completionMu.Lock()
+	subs := make([]chan *models.Task, len(o.completionSubs))
+	copy(subs, o.completionSubs)
+	o.completionMu.Unlock()
+
+	for _, ch := range subs {
+		select {
+		case ch <- task:
+		default:
+		}
+	}
+}
+
+// captureConclusion runs the conclusion enricher for a completed task when
+// delegation is enabled, stores the result on the task, and persists it again.
+// It never panics: completion handling must stay robust regardless of parser or
+// store failures.
+func (o *Orchestrator) captureConclusion(task *models.Task) {
+	if !o.delegation.Enabled || task == nil {
+		return
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Warning: conclusion capture panicked for task %s: %v", task.ID, r)
+		}
+	}()
+
+	c := conclusion.Enrich(task, conclusion.DelegationOptions{
+		SynthesizeFallback: o.delegation.SynthesizeFallback,
+	}, o.projectResolver)
+	if c == nil {
+		return
+	}
+
+	task.Conclusion = c
+	if err := o.store.Save(task); err != nil {
+		log.Printf("Warning: failed to persist conclusion for task %s: %v", task.ID, err)
+	}
 }
 
 func (o *Orchestrator) processDependentTasks(completed *models.Task) {
@@ -217,6 +352,15 @@ func (o *Orchestrator) canStart(task *models.Task) bool {
 }
 
 func (o *Orchestrator) startTask(task *models.Task) {
+	// Warm-target routing (Phase 7.3): when enabled and the task targets a known
+	// project, try running it inside an already-running ("warm") per-project ACP
+	// instance instead of cold-spawning a CLI. tryStartWarm drives completion
+	// itself when it handles the task; it returns false (task untouched) to fall
+	// back to the cold path.
+	if o.tryStartWarm(task) {
+		return
+	}
+
 	if err := o.manager.Spawn(o.ctx, task); err != nil {
 		task.Status = models.TaskStatusFailed
 		task.Error = err.Error()
@@ -316,6 +460,13 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		prompt = o.personaManager.ApplyPersona(req.Persona, prompt)
 	}
 
+	// When delegation is enabled, append the conclusion brief as the trailing
+	// instruction (after persona) so the subagent closes its run with a
+	// <pando:conclusion> block. Default-off: nothing is appended otherwise.
+	if o.delegation.Enabled {
+		prompt = prompt + conclusion.BriefInstruction()
+	}
+
 	// Prepare the prompt with dependency logs if requested
 	if req.IncludeDependencyLogs && len(req.Dependencies) > 0 {
 		logLines := req.DependencyLogLines
@@ -370,6 +521,15 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		ExtraArgs:    req.ExtraArgs,
 		Persona:      req.Persona,
 		CreatedAt:    time.Now(),
+		// Delegation correlation: persisted so the task's origin (parent
+		// session/task, project, depth) is durable. Populated by the spawn tool;
+		// no consumer reads these yet (default-off feature).
+		ParentSessionID: req.ParentSessionID,
+		ParentTaskID:    req.ParentTaskID,
+		CorrelationID:   req.CorrelationID,
+		ProjectID:       req.ProjectID,
+		ProjectPath:     req.ProjectPath,
+		Depth:           req.Depth,
 	}
 
 	// Inherit log file from previous task (retry scenario).
@@ -404,6 +564,14 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 // GetTask retrieves a task by ID.
 func (o *Orchestrator) GetTask(taskID string) (*models.Task, error) {
 	return o.store.Get(taskID)
+}
+
+// ListByParentSession returns all tasks correlated to the given parent agent
+// session id. The delegation supervisor uses it to decide whether any sibling
+// delegated tasks are still outstanding before resurrecting an idle parent loop
+// (Case B). Thin pass-through to the underlying store.
+func (o *Orchestrator) ListByParentSession(sessionID string) ([]*models.Task, error) {
+	return o.store.ListByParentSession(sessionID)
 }
 
 // ListTasks lists tasks matching the filter.
@@ -641,6 +809,13 @@ func (o *Orchestrator) Resume(ctx context.Context, taskID string, opts ResumeOpt
 		MCPConfig:    prev.MCPConfig,
 		ExtraArgs:    prev.ExtraArgs,
 		Background:   opts.Background,
+		// Preserve the original task's delegation correlation across resume.
+		ParentSessionID: prev.ParentSessionID,
+		ParentTaskID:    prev.ParentTaskID,
+		CorrelationID:   prev.CorrelationID,
+		ProjectID:       prev.ProjectID,
+		ProjectPath:     prev.ProjectPath,
+		Depth:           prev.Depth,
 	})
 }
 
@@ -804,6 +979,14 @@ func (o *Orchestrator) retryFailed(ctx context.Context, prev *models.Task, opts 
 		Persona:      prev.Persona,
 		Background:   opts.Background,
 		LogFile:      prev.LogFile,
+		// Preserve the original task's delegation correlation so a retry stays
+		// attributable to the same parent session/task and project.
+		ParentSessionID: prev.ParentSessionID,
+		ParentTaskID:    prev.ParentTaskID,
+		CorrelationID:   prev.CorrelationID,
+		ProjectID:       prev.ProjectID,
+		ProjectPath:     prev.ProjectPath,
+		Depth:           prev.Depth,
 	})
 }
 

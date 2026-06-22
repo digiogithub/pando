@@ -851,8 +851,11 @@ func (a *acpAgentAdapter) SetModelOverride(modelID string) error {
 
 func (a *acpAgentAdapter) SetSessionLLMOverrides(sessionID string, overrides acpPkg.SessionLLMOverrides) {
 	agent.SetSessionLLMOverrides(sessionID, agent.SessionLLMOverrides{
+		Model:           models.ModelID(overrides.Model),
 		ReasoningEffort: overrides.ReasoningEffort,
 		ThinkingMode:    config.ThinkingMode(overrides.ThinkingMode),
+		Persona:         overrides.Persona,
+		PersonaScoped:   overrides.PersonaScoped,
 	})
 }
 

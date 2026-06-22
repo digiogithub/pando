@@ -25,8 +25,9 @@ func FormatStructuredData(value any) string {
 }
 
 // FormatJSONLikeContent attempts to interpret textual content as JSON and render
-// it as TOML. If parsing or TOML conversion fails, the original content is
-// returned unchanged.
+// it as TOON/TOML. If parsing fails, the original content is returned unchanged.
+// If TOON rendering fails after successful JSON parsing, it falls back to
+// indented JSON instead of returning raw JSON text directly.
 func FormatJSONLikeContent(content string) string {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
@@ -37,11 +38,7 @@ func FormatJSONLikeContent(content string) string {
 	if err := json.Unmarshal([]byte(trimmed), &value); err != nil {
 		return content
 	}
-
-	if tomlText, ok := tryFormatAsTOML(value); ok {
-		return tomlText
-	}
-	return content
+	return FormatStructuredData(value)
 }
 
 func tryFormatAsTOML(value any) (string, bool) {

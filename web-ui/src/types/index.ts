@@ -415,6 +415,8 @@ export interface Project {
   status: 'running' | 'stopped' | 'error' | 'initializing' | 'missing'
   initialized: boolean
   external?: boolean // running but launched by another application (e.g. an editor in ACP mode)
+  delegations?: number // count of delegated agent loops running inside the warm instance
+  delegation_spawned?: boolean // instance auto-started by the delegation router (vs user-activated)
   acp_pid?: number
   last_opened?: number
   created_at: number
@@ -434,6 +436,7 @@ export interface SettingsConfig {
   skills_enabled: boolean
   data_directory: string
   show_hidden_files: boolean
+  nerd_fonts: boolean
   llm_cache_enabled: boolean
   evaluator_enabled: boolean
   judge_model: string
@@ -441,6 +444,17 @@ export interface SettingsConfig {
   tool_discovery_mode: string            // 'auto' | 'always' | 'off'
   tool_discovery_max_direct_tools: number
   tool_discovery_search_limit: number
+  // Delegation (mesnada delegated-task conclusions + agent-loop resurrection)
+  delegation_enabled: boolean
+  delegation_inject_into_live_loop: boolean
+  delegation_resurrect_idle_loop: boolean
+  delegation_synthesize_fallback: boolean
+  delegation_max_resurrections: number
+  delegation_max_depth: number
+  delegation_max_concurrent: number
+  delegation_resurrection_timeout: string  // e.g. "10m", "1h"
+  delegation_reuse_warm_instances: boolean // route delegated tasks to a warm per-project instance
+  delegation_auto_start_warm: boolean      // auto-start a child instance when none is running
   // UI-only fields (not persisted via /api/v1/settings)
   language: string
 }

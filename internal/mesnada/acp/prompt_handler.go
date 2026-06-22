@@ -219,16 +219,16 @@ func (a *PandoACPAgent) processPromptWithAgent(
 			a.logger.Printf("[ACP AGENT] Failed to send user message chunk: %v", err)
 		}
 	}
-	overrides := SessionLLMOverrides{
-		ReasoningEffort: acpSession.ReasoningEffort(),
-		ThinkingMode:    acpSession.ThinkingMode(),
-	}
+	overrides := sessionLLMOverridesFor(acpSession)
 	a.logger.Printf(
-		"[ACP AGENT] Applying ACP thinking settings for session %s: stream_mode=%q reasoning_effort=%q thinking_mode=%q",
+		"[ACP AGENT] Applying ACP session overrides for session %s: model=%q stream_mode=%q reasoning_effort=%q thinking_mode=%q persona=%q clean=%t",
 		acpSession.ID,
+		overrides.Model,
 		acpSession.ThinkingStreamMode(),
 		overrides.ReasoningEffort,
 		overrides.ThinkingMode,
+		overrides.Persona,
+		acpSession.CleanMode(),
 	)
 	a.agentService.SetSessionLLMOverrides(acpSession.PandoSessionID(), overrides)
 	eventChan, err := a.agentService.Run(ctx, acpSession.PandoSessionID(), promptText, attachments...)

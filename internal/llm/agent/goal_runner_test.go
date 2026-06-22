@@ -74,6 +74,16 @@ func (s *stubGoalService) Steer(sessionID string, content string, attachments ..
 
 func (s *stubGoalService) PendingSteering(sessionID string) int { return 0 }
 
+func (s *stubGoalService) InjectConclusion(sessionID string, content string) error {
+	return ErrSessionNotBusy
+}
+
+func (s *stubGoalService) Resume(ctx context.Context, sessionID string, content string) error {
+	return ErrSessionNotBusy
+}
+
+func (s *stubGoalService) ResurrectionCount(sessionID string) int { return 0 }
+
 func (s *stubGoalService) IsSessionBusy(sessionID string) bool { return false }
 
 func (s *stubGoalService) IsBusy() bool { return false }

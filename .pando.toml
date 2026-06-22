@@ -83,7 +83,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'ollama.qwen-coder:latest'
+Model = 'copilot.gpt-5.4-mini'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -196,6 +196,16 @@ RequireAuth = false
 [Mesnada.TUI]
 Enabled = false
 WebUI = false
+
+[Mesnada.Delegation]
+Enabled = false
+InjectIntoLiveLoop = false
+ResurrectIdleLoop = false
+SynthesizeFallback = false
+MaxResurrections = 0
+MaxDepth = 0
+MaxConcurrent = 0
+ResurrectionTimeout = ''
 
 [Shell]
 Path = ''

@@ -29,6 +29,10 @@ const (
 	// EvInitRequired is published when activation fails because the project
 	// path has no Pando configuration file.
 	EvInitRequired ManagerEventType = "init_required"
+	// EvDelegationChanged is published when the count of in-flight delegated
+	// sessions running inside a warm instance changes (start/end). The current
+	// count is carried in ManagerEvent.Count.
+	EvDelegationChanged ManagerEventType = "delegation_changed"
 )
 
 // ManagerEvent is the union event type published by Manager.
@@ -37,6 +41,9 @@ type ManagerEvent struct {
 	ProjectID string
 	Status    string
 	Error     string
+	// Count carries the current in-flight delegated-session count for
+	// EvDelegationChanged events; zero for other event types.
+	Count int
 }
 
 // Manager tracks child Pando ACP processes for registered project directories
@@ -120,6 +127,9 @@ func (m *Manager) Activate(ctx context.Context, projectID string) error {
 		default:
 			// Not ready yet — still acceptable to switch; the caller can wait on inst.ready.
 		}
+		// A user-driven activation claims the instance as user-focused, even if it
+		// was originally auto-started by the delegation router.
+		inst.markDelegationSpawned(false)
 		m.activeID = projectID
 		_ = m.service.TouchLastOpened(ctx, projectID)
 		m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
@@ -216,16 +226,17 @@ func (m *Manager) spawnChild(proj Project) (*Instance, error) {
 		return nil, fmt.Errorf("start: %w", err)
 	}
 
-	client := newProjectACPClient(proj)
+	client := newDelegationClient(proj)
 	conn := acpsdk.NewClientSideConnection(client, stdinPipe, stdoutPipe)
 
 	inst := &Instance{
-		Project: proj,
-		cmd:     cmd,
-		conn:    conn,
-		cancel:  cancel,
-		ready:   make(chan struct{}),
-		errCh:   make(chan error, 1),
+		Project:   proj,
+		cmd:       cmd,
+		conn:      conn,
+		delClient: client,
+		cancel:    cancel,
+		ready:     make(chan struct{}),
+		errCh:     make(chan error, 1),
 	}
 
 	// The stdio ACP server is ready as soon as the process starts.
@@ -328,9 +339,21 @@ func (m *Manager) Runtime(projectID, path string) (running, external bool, pid i
 // terminate. When nothing is running, Stop is a no-op that ensures the registry
 // reflects a stopped state.
 func (m *Manager) Stop(ctx context.Context, projectID string) error {
+	_, err := m.StopReport(ctx, projectID)
+	return err
+}
+
+// StopReport is Stop with bookkeeping: it returns the number of in-flight
+// delegated sessions that were running inside the instance at stop time. Those
+// sessions are cancelled by the process teardown; the orchestrator observes the
+// failed turn and synthesizes a terminal conclusion (cold-path fallback), so the
+// parent loop never hangs. The count lets the UI warn the user how many
+// delegated loops were interrupted.
+func (m *Manager) StopReport(ctx context.Context, projectID string) (cancelled int, err error) {
 	m.mu.Lock()
 	inst, ours := m.instances[projectID]
 	if ours {
+		cancelled = inst.InflightDelegations()
 		inst.cancel()
 		if inst.cmd.Process != nil {
 			_ = inst.cmd.Process.Signal(syscall.SIGTERM)
@@ -358,16 +381,16 @@ func (m *Manager) Stop(ctx context.Context, projectID string) error {
 			Type:      EvProjectSwitched,
 			ProjectID: "",
 		})
-		return nil
+		return cancelled, nil
 	}
 
 	// Not launched by us: distinguish "running externally" from "not running".
-	proj, err := m.service.Get(ctx, projectID)
-	if err != nil {
-		return fmt.Errorf("project manager: stop: get project %s: %w", projectID, err)
+	proj, getErr := m.service.Get(ctx, projectID)
+	if getErr != nil {
+		return 0, fmt.Errorf("project manager: stop: get project %s: %w", projectID, getErr)
 	}
 	if running, external, _ := m.Runtime(projectID, proj.Path); running && external {
-		return ErrExternalInstance
+		return 0, ErrExternalInstance
 	}
 
 	// Nothing live; make sure the registry reflects a stopped state.
@@ -377,7 +400,7 @@ func (m *Manager) Stop(ctx context.Context, projectID string) error {
 		ProjectID: projectID,
 		Status:    StatusStopped,
 	})
-	return nil
+	return 0, nil
 }
 
 // pidIsAlive reports whether pid refers to a live process. Signal 0 performs
@@ -500,6 +523,34 @@ func (m *Manager) ListSessions(_ context.Context, projectID string) ([]sessionEn
 	result := make([]sessionEntry, len(inst.sessions))
 	copy(result, inst.sessions)
 	return result, nil
+}
+
+// DelegationInfo reports the warm-delegation state of a manager-owned instance:
+// the count of in-flight delegated sessions, whether the instance was
+// auto-started by the delegation router (vs user-activated), and whether an
+// instance is running at all. All zero/false when the project has no
+// manager-owned instance (e.g. stopped or external).
+func (m *Manager) DelegationInfo(projectID string) (inflight int, spawned, running bool) {
+	m.mu.RLock()
+	inst, ok := m.instances[projectID]
+	m.mu.RUnlock()
+	if !ok || inst == nil {
+		return 0, false, false
+	}
+	return inst.InflightDelegations(), inst.isDelegationSpawned(), true
+}
+
+// publishDelegationChanged announces a change in the in-flight delegated-session
+// count for a project so the Projects panel (WebUI SSE / TUI) can refresh live.
+func (m *Manager) publishDelegationChanged(projectID string, count int) {
+	if m.broker == nil {
+		return
+	}
+	m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
+		Type:      EvDelegationChanged,
+		ProjectID: projectID,
+		Count:     count,
+	})
 }
 
 // resolvePath expands a leading ~ to the user home directory and evaluates

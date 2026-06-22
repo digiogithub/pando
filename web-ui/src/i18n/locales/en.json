@@ -86,8 +86,27 @@
       "autoCompactDescription": "Automatically compress conversation context when it grows large",
       "showHiddenFiles": "Show Hidden Files",
       "showHiddenFilesDescription": "Show dotfiles and hidden files in the file tree",
+      "nerdFonts": "Nerd Font Icons",
+      "nerdFontsDescription": "Use Nerd Font glyphs for TUI icons. Disable if your terminal lacks a patched Nerd Font and icons render as boxes (□)",
       "debug": "Debug Mode",
-      "debugDescription": "Enable verbose debug logging"
+      "debugDescription": "Enable verbose debug logging",
+      "delegation": "Subagent Delegation",
+      "delegationEnabled": "Delegation Enabled",
+      "delegationEnabledDescription": "Capture delegated-task conclusions and re-enter the parent agent loop",
+      "delegationInjectIntoLiveLoop": "Inject Into Live Loop",
+      "delegationInjectIntoLiveLoopDescription": "Case A: inject a conclusion into a still-running parent loop",
+      "delegationResurrectIdleLoop": "Resurrect Idle Loop",
+      "delegationResurrectIdleLoopDescription": "Case B: resurrect an idle parent session when a correlated task completes",
+      "delegationSynthesizeFallback": "Synthesize Fallback",
+      "delegationSynthesizeFallbackDescription": "Synthesize a conclusion when the subagent omits the block",
+      "delegationMaxResurrections": "Max Resurrections",
+      "delegationMaxDepth": "Max Depth",
+      "delegationMaxConcurrent": "Max Concurrent",
+      "delegationResurrectionTimeout": "Resurrection Timeout",
+      "delegationReuseWarmInstances": "Reuse Warm Instances",
+      "delegationReuseWarmInstancesDescription": "Route a delegated task to an already-running per-project instance instead of cold-spawning a CLI subprocess",
+      "delegationAutoStartWarm": "Auto-Start Warm Instance",
+      "delegationAutoStartWarmDescription": "Auto-start a child instance for the project when none is running (off = reuse only)"
     }
   },
   "chat": {

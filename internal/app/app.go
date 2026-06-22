@@ -41,6 +41,7 @@ import (
 	"github.com/digiogithub/pando/internal/mcpgateway"
 	mesnadaACP "github.com/digiogithub/pando/internal/mesnada/acp"
 	mesnadaAgent "github.com/digiogithub/pando/internal/mesnada/agent"
+	"github.com/digiogithub/pando/internal/mesnada/conclusion"
 	mesnadaConfig "github.com/digiogithub/pando/internal/mesnada/config"
 	mesnadaOrch "github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/internal/mesnada/persona"
@@ -56,6 +57,7 @@ import (
 	ragproxy "github.com/digiogithub/pando/internal/rag/proxy"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
+	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/userinput"
 	"github.com/digiogithub/pando/internal/version"
@@ -84,6 +86,11 @@ type App struct {
 	LuaManager          *luaengine.FilterManager
 	MCPGateway          *mcpgateway.Gateway
 	Evaluator           *evaluator.EvaluatorService
+
+	// delegationSupervisor implements Case A of the delegated-conclusion protocol
+	// (inject a completed subagent's conclusion into a still-running parent loop).
+	// It is nil when delegation is disabled (default-off).
+	delegationSupervisor *delegationSupervisor
 
 	// IPCBus is set on the primary instance after calling SetupIPC.
 	// Secondary instances leave this nil.
@@ -231,6 +238,10 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 
 	// Initialize theme based on configuration
 	app.initTheme()
+
+	// Select the TUI icon set (Nerd Font glyphs vs. plain fallback) based on
+	// configuration and the PANDO_NERD_FONTS environment override.
+	app.initIcons()
 
 	if cfg := config.Get(); cfg != nil && cfg.Skills.Enabled {
 		skillManager, err := newSkillManager(cfg)
@@ -473,6 +484,15 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	cfg = config.Get()
 	if cfg != nil && cfg.Mesnada.Enabled {
 		mesnadaCfg := convertMesnadaConfig(cfg)
+		// Wire the delegation conclusion enricher's project resolver to the live
+		// project registry so a delegated task's project id/name are resolved from
+		// its canonical path. Degrades gracefully to filepath.Base when the path is
+		// not a registered project. Only consulted when delegation is enabled.
+		mesnadaCfg.ProjectResolver = makeProjectResolver(ctx, app.Projects)
+		// Wire warm-target routing (Phase 7.3): a delegated task whose project is
+		// known is run inside an already-running per-project ACP instance instead of
+		// cold-spawning a CLI. nil when ReuseWarmInstances is off → cold path always.
+		mesnadaCfg.WarmTargetResolver = makeWarmTargetResolver(app.ProjectManager, cfg)
 		orch, err := mesnadaOrch.New(mesnadaCfg)
 		if err != nil {
 			logging.Error("Failed to create mesnada orchestrator", "error", err)
@@ -594,6 +614,38 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	}
 	logging.Debug("Coder agent created", "model", app.CoderAgent.Model().ID)
 
+	// Delegation supervisor: re-enters the parent loop when a delegated subagent
+	// completes — Case A (inject into a still-running loop) and/or Case B (resurrect
+	// an idle loop). Default-off — only started when Enabled and at least one
+	// re-entry mode is set, otherwise it never subscribes (no overhead).
+	if app.MesnadaOrchestrator != nil && app.CoderAgent != nil {
+		delCfg := cfg.Mesnada.Delegation
+		if delCfg.Enabled && (delCfg.InjectIntoLiveLoop || delCfg.ResurrectIdleLoop) {
+			resurrectionTimeout := 10 * time.Minute
+			if delCfg.ResurrectionTimeout != "" {
+				if d, perr := time.ParseDuration(delCfg.ResurrectionTimeout); perr == nil && d > 0 {
+					resurrectionTimeout = d
+				} else if perr != nil {
+					logging.Warn("Delegation: invalid resurrectionTimeout, using default 10m",
+						"value", delCfg.ResurrectionTimeout, "error", perr)
+				}
+			}
+			app.delegationSupervisor = newDelegationSupervisor(
+				app.MesnadaOrchestrator,
+				app.CoderAgent,
+				delegationSupervisorOptions{
+					Enabled:             delCfg.Enabled,
+					InjectIntoLiveLoop:  delCfg.InjectIntoLiveLoop,
+					ResurrectIdleLoop:   delCfg.ResurrectIdleLoop,
+					MaxResurrections:    delCfg.MaxResurrections,
+					MaxDepth:            delCfg.MaxDepth,
+					ResurrectionTimeout: resurrectionTimeout,
+				},
+			)
+			app.delegationSupervisor.Start(ctx)
+		}
+	}
+
 	// Initialize the global persona manager with built-in personas, then overlay
 	// any user-defined personas from the configured path. This is always done so
 	// that built-in personas are available even without auto-selection configured.
@@ -658,6 +710,12 @@ func convertMesnadaConfig(cfg *config.Config) mesnadaOrch.Config {
 	if cfg != nil {
 		orchCfg.MCPServers = convertPandoMCPServers(cfg.MCPServers)
 		orchCfg.GatewayExposeEnabled = cfg.MCPGateway.Enabled && cfg.MCPServer.GatewayExpose.Enabled
+		// Delegation conclusion protocol options (default-off).
+		orchCfg.Delegation = mesnadaOrch.DelegationConfig{
+			Enabled:            cfg.Mesnada.Delegation.Enabled,
+			SynthesizeFallback: cfg.Mesnada.Delegation.SynthesizeFallback,
+			ReuseWarmInstances: cfg.Mesnada.Delegation.ReuseWarmInstances,
+		}
 	}
 
 	return orchCfg
@@ -687,6 +745,75 @@ func convertPandoMCPServers(servers map[string]config.MCPServer) []mesnadaAgent.
 		})
 	}
 	return entries
+}
+
+// makeProjectResolver returns a conclusion.ProjectResolver backed by the project
+// registry. Given a canonical project path it looks up the registered project and
+// returns its id + display name. On any miss/error it returns empty strings so the
+// enricher degrades gracefully to filepath.Base. Returns nil when no project
+// service is available.
+func makeProjectResolver(ctx context.Context, svc project.Service) conclusion.ProjectResolver {
+	if svc == nil {
+		return nil
+	}
+	return func(canonicalPath string) (string, string) {
+		if canonicalPath == "" {
+			return "", ""
+		}
+		p, err := svc.GetByPath(ctx, canonicalPath)
+		if err != nil || p == nil {
+			return "", ""
+		}
+		return p.ID, p.Name
+	}
+}
+
+// warmTargetResolverFunc adapts a plain function to the orchestrator's
+// WarmTargetResolver interface.
+type warmTargetResolverFunc func(ctx context.Context, projectID, projectPath, promptText string) (*mesnadaOrch.WarmRunResult, error)
+
+func (f warmTargetResolverFunc) RunWarm(ctx context.Context, projectID, projectPath, promptText string) (*mesnadaOrch.WarmRunResult, error) {
+	return f(ctx, projectID, projectPath, promptText)
+}
+
+// makeWarmTargetResolver bridges the orchestrator's WarmTargetResolver to the
+// project Manager's warm-delegation path (Phase 7.3). It returns nil when warm
+// reuse is disabled or no project manager is available, so the orchestrator keeps
+// cold-spawning every delegated task. Project-level sentinels that mean "this
+// project cannot be served warm" are mapped to orchestrator.ErrNoWarmTarget so
+// the orchestrator falls back to the cold path; any other error is a genuine
+// warm-run failure surfaced to the (terminal) task.
+func makeWarmTargetResolver(mgr *project.Manager, cfg *config.Config) mesnadaOrch.WarmTargetResolver {
+	if mgr == nil || cfg == nil || !cfg.Mesnada.Delegation.ReuseWarmInstances {
+		return nil
+	}
+	autoStart := cfg.Mesnada.Delegation.AutoStartWarmInstance
+	maxConcurrent := cfg.Mesnada.Delegation.MaxConcurrent
+
+	return warmTargetResolverFunc(func(ctx context.Context, projectID, projectPath, promptText string) (*mesnadaOrch.WarmRunResult, error) {
+		res, err := mgr.WarmDelegate(ctx, projectID, projectPath, promptText, autoStart, maxConcurrent)
+		if err != nil {
+			if isWarmColdFallback(err) {
+				return nil, mesnadaOrch.ErrNoWarmTarget
+			}
+			return nil, err
+		}
+		return &mesnadaOrch.WarmRunResult{
+			ChildSessionID: res.ChildSessionID,
+			Output:         res.Output,
+			StopReason:     res.StopReason,
+		}, nil
+	})
+}
+
+// isWarmColdFallback reports whether a WarmDelegate error means "no warm target;
+// take the cold path" rather than a genuine run failure.
+func isWarmColdFallback(err error) bool {
+	return errors.Is(err, project.ErrInstanceNotRunning) ||
+		errors.Is(err, project.ErrExternalInstance) ||
+		errors.Is(err, project.ErrProjectNeedsInit) ||
+		errors.Is(err, project.ErrProjectNotRegistered) ||
+		errors.Is(err, project.ErrWarmCapReached)
 }
 
 // makePandoModelResolver returns a function that converts a model ID (possibly
@@ -988,6 +1115,15 @@ func (app *App) initTheme() {
 	} else {
 		logging.Debug("Set theme from config", "theme", cfg.TUI.Theme)
 	}
+}
+
+// initIcons selects the active TUI icon set. When Nerd Fonts are disabled (via
+// the TUI.NerdFonts config field or the PANDO_NERD_FONTS env override) the TUI
+// falls back to plain BMP/ASCII glyphs that render on any terminal.
+func (app *App) initIcons() {
+	enabled := config.Get().NerdFontsEnabled()
+	styles.SetNerdFonts(enabled)
+	logging.Debug("Set TUI icon set", "nerdFonts", enabled)
 }
 
 type assistantTextStreamer struct {
@@ -1492,11 +1628,15 @@ func nonInteractiveGoalResultFromDB(goal db.SessionGoal, response string) NonInt
 }
 
 func formatNonInteractiveGoalResult(result NonInteractiveGoalResult) (string, error) {
-	data, err := json.MarshalIndent(result, "", "  ")
+	return format.FormatOutput(string(mustGoalResultJSON(result)), format.JSON.String()), nil
+}
+
+func mustGoalResultJSON(result NonInteractiveGoalResult) []byte {
+	data, err := json.Marshal(result)
 	if err != nil {
-		return "", err
+		return []byte("{}")
 	}
-	return string(data), nil
+	return data
 }
 
 func logGoalCompletion(w io.Writer, result NonInteractiveGoalResult) {
@@ -1787,6 +1927,9 @@ func (app *App) Shutdown() {
 	if app.CronService != nil {
 		app.CronService.Stop()
 	}
+	if app.delegationSupervisor != nil {
+		app.delegationSupervisor.Stop()
+	}
 	if app.MesnadaOrchestrator != nil {
 		if err := app.MesnadaOrchestrator.Shutdown(); err != nil {
 			logging.Error("Failed to shutdown Mesnada orchestrator", "error", err)
@@ -1966,8 +2109,11 @@ func (a *appACPAgentAdapter) SetModelOverride(modelID string) error {
 
 func (a *appACPAgentAdapter) SetSessionLLMOverrides(sessionID string, overrides mesnadaACP.SessionLLMOverrides) {
 	agent.SetSessionLLMOverrides(sessionID, agent.SessionLLMOverrides{
+		Model:           models.ModelID(overrides.Model),
 		ReasoningEffort: overrides.ReasoningEffort,
 		ThinkingMode:    config.ThinkingMode(overrides.ThinkingMode),
+		Persona:         overrides.Persona,
+		PersonaScoped:   overrides.PersonaScoped,
 	})
 }
 

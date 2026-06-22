@@ -36,6 +36,26 @@ func normalizedACPThinkingSettingsForSession(svc AgentService, session *ACPServe
 	return normalizeACPThinkingSettings(model, ok, currentACPThinkingSettings(session))
 }
 
+// sessionLLMOverridesFor builds the full set of per-session LLM overrides
+// (model, inference settings and persona) for an ACP session. These are applied
+// per session — never as global agent state — so a single ACP server can run
+// several concurrent sessions with different models/personas without one run
+// clobbering another. Clean mode is handled separately via the clean-mode
+// context flag, so here PersonaScoped is always set and an empty Persona means
+// "no manual persona for this session" (auto-selection).
+func sessionLLMOverridesFor(session *ACPServerSession) SessionLLMOverrides {
+	if session == nil {
+		return SessionLLMOverrides{}
+	}
+	return SessionLLMOverrides{
+		Model:           session.Model(),
+		ReasoningEffort: session.ReasoningEffort(),
+		ThinkingMode:    session.ThinkingMode(),
+		Persona:         session.Persona(),
+		PersonaScoped:   true,
+	}
+}
+
 func reconcileACPThinkingSession(svc AgentService, session *ACPServerSession) acpThinkingSettings {
 	settings := normalizedACPThinkingSettingsForSession(svc, session)
 	applyACPThinkingSettings(session, settings)

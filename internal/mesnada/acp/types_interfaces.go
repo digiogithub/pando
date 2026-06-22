@@ -48,8 +48,17 @@ type ACPModelInfo struct {
 }
 
 type SessionLLMOverrides struct {
+	// Model selects a per-session model (empty = agent default). Applying it via
+	// per-session overrides (instead of a global SetModelOverride) is what lets a
+	// single ACP server run several concurrent sessions with different models.
+	Model           string
 	ReasoningEffort string
 	ThinkingMode    string
+	// Persona / PersonaScoped carry the session's persona authoritatively so
+	// concurrent sessions never clobber a shared global persona. PersonaScoped
+	// must be set for the Persona (or auto-selection) to take effect.
+	Persona       string
+	PersonaScoped bool
 }
 
 // AgentService defines the interface for interacting with Pando's LLM agent.

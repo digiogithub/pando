@@ -18,6 +18,10 @@ type Store interface {
 	Save(task *models.Task) error
 	Get(id string) (*models.Task, error)
 	List(filter ListFilter) ([]*models.Task, error)
+	// ListByParentSession returns tasks correlated to the given parent agent
+	// session id (see Task.ParentSessionID). Used by delegation phases to find
+	// the tasks spawned by a session; no consumer reads it yet.
+	ListByParentSession(sessionID string) ([]*models.Task, error)
 	Delete(id string) error
 	UpdateStatus(id string, status models.TaskStatus) error
 	Close() error
@@ -29,6 +33,9 @@ type ListFilter struct {
 	Tags   []string
 	Limit  int
 	Offset int
+	// ParentSessionID, when non-empty, restricts results to tasks whose
+	// ParentSessionID matches exactly. Used for delegation correlation queries.
+	ParentSessionID string
 }
 
 // FileStore implements Store using a JSON file for persistence.
@@ -197,6 +204,12 @@ func (fs *FileStore) List(filter ListFilter) ([]*models.Task, error) {
 	return result, nil
 }
 
+// ListByParentSession returns all tasks whose ParentSessionID matches the given
+// session id, newest first. It is a thin convenience wrapper over List.
+func (fs *FileStore) ListByParentSession(sessionID string) ([]*models.Task, error) {
+	return fs.List(ListFilter{ParentSessionID: sessionID})
+}
+
 func (fs *FileStore) matchesFilter(task *models.Task, filter ListFilter) bool {
 	// Filter by status
 	if len(filter.Status) > 0 {
@@ -210,6 +223,11 @@ func (fs *FileStore) matchesFilter(task *models.Task, filter ListFilter) bool {
 		if !matched {
 			return false
 		}
+	}
+
+	// Filter by parent session id (delegation correlation)
+	if filter.ParentSessionID != "" && task.ParentSessionID != filter.ParentSessionID {
+		return false
 	}
 
 	// Filter by tags

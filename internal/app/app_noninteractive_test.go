@@ -3,7 +3,7 @@ package app
 import (
 	"bytes"
 	"database/sql"
-	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/digiogithub/pando/internal/db"
@@ -137,18 +137,16 @@ func TestFormatNonInteractiveGoalResult(t *testing.T) {
 		t.Fatalf("formatNonInteractiveGoalResult() error = %v", err)
 	}
 
-	var decoded map[string]any
-	if err := json.Unmarshal([]byte(serialized), &decoded); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v", err)
+	if strings.Contains(serialized, "\"status\"") {
+		t.Fatalf("expected TOON/TOML output instead of raw JSON: %s", serialized)
 	}
-
-	if decoded["status"] != agent.GoalStatusCompleted {
-		t.Fatalf("status = %v, want %q", decoded["status"], agent.GoalStatusCompleted)
+	if !strings.Contains(serialized, "status = 'completed'") {
+		t.Fatalf("expected TOML-formatted status field, got: %s", serialized)
 	}
-	if decoded["response"] != "Done" {
-		t.Fatalf("response = %v, want %q", decoded["response"], "Done")
+	if !strings.Contains(serialized, "response = 'Done'") {
+		t.Fatalf("expected TOML-formatted response field, got: %s", serialized)
 	}
-	if _, ok := decoded["blocked_reason"]; ok {
-		t.Fatalf("blocked_reason should be omitted when empty: %v", decoded)
+	if strings.Contains(serialized, "blocked_reason") {
+		t.Fatalf("blocked_reason should be omitted when empty: %s", serialized)
 	}
 }

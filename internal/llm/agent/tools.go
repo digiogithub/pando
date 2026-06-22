@@ -272,6 +272,17 @@ func CoderAgentToolsWithMesnada(
 			tools.NewMesnadaCancelTaskTool(mesnadaOrchestrator),
 			tools.NewMesnadaGetOutputTool(mesnadaOrchestrator),
 		)
+		// The non-blocking mesnada_await tool relies on idle-loop resurrection to
+		// wake the parent. Only register it when both delegation and the
+		// resurrection mechanism are enabled; otherwise the model could end its
+		// turn with no wake event (deadlock). When unregistered, the model falls
+		// back to the blocking mesnada_wait_task tool.
+		if cfg := config.Get(); cfg != nil {
+			del := cfg.Mesnada.Delegation
+			if del.Enabled && del.ResurrectIdleLoop {
+				baseTools = append(baseTools, tools.NewMesnadaAwaitTool(mesnadaOrchestrator))
+			}
+		}
 	}
 	if remembrances != nil {
 		baseTools = append(baseTools,

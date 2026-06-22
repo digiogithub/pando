@@ -1,9 +1,10 @@
 package format
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
+
+	llmtools "github.com/digiogithub/pando/internal/llm/tools"
 )
 
 // OutputFormat represents the output format type for non-interactive mode
@@ -13,7 +14,8 @@ const (
 	// Text format outputs the AI response as plain text.
 	Text OutputFormat = "text"
 
-	// JSON format outputs the AI response wrapped in a JSON object.
+	// JSON format outputs the AI response as structured TOON/TOML when possible,
+	// falling back to indented JSON when TOON serialization is not possible.
 	JSON OutputFormat = "json"
 )
 
@@ -52,7 +54,7 @@ func IsValid(s string) bool {
 func GetHelpText() string {
 	return fmt.Sprintf(`Supported output formats:
 - %s: Plain text output (default)
-- %s: Output wrapped in a JSON object`,
+- %s: Structured output using TOON/TOML when possible, with JSON fallback`,
 		Text, JSON)
 }
 
@@ -74,26 +76,12 @@ func FormatOutput(content string, formatStr string) string {
 	}
 }
 
-// formatAsJSON wraps the content in a simple JSON object
+// formatAsJSON renders the content as TOON/TOML when it is JSON-like and falls
+// back to a JSON object wrapper otherwise.
 func formatAsJSON(content string) string {
-	// Use the JSON package to properly escape the content
-	response := struct {
-		Response string `json:"response"`
-	}{
-		Response: content,
+	formatted := llmtools.FormatJSONLikeContent(content)
+	if formatted != content {
+		return formatted
 	}
-
-	jsonBytes, err := json.MarshalIndent(response, "", "  ")
-	if err != nil {
-		// In case of an error, return a manually formatted JSON
-		jsonEscaped := strings.Replace(content, "\\", "\\\\", -1)
-		jsonEscaped = strings.Replace(jsonEscaped, "\"", "\\\"", -1)
-		jsonEscaped = strings.Replace(jsonEscaped, "\n", "\\n", -1)
-		jsonEscaped = strings.Replace(jsonEscaped, "\r", "\\r", -1)
-		jsonEscaped = strings.Replace(jsonEscaped, "\t", "\\t", -1)
-
-		return fmt.Sprintf("{\n  \"response\": \"%s\"\n}", jsonEscaped)
-	}
-
-	return string(jsonBytes)
+	return llmtools.FormatStructuredData(map[string]string{"response": content})
 }

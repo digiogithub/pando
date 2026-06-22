@@ -13,9 +13,36 @@ import (
 
 // SessionLLMOverrides holds per-session runtime overrides that should take
 // precedence over agent config when building a request-scoped provider.
+//
+// These overrides are the mechanism that makes a single process safe to run
+// several agent loops in parallel (e.g. an ACP server serving multiple
+// concurrent sessions, or a warm delegation instance): instead of mutating
+// shared/global agent state per prompt, each session threads its model,
+// persona and inference settings through the request context so two
+// concurrent runs never clobber each other.
 type SessionLLMOverrides struct {
+	// Model, when non-empty, replaces the agent's configured model for this
+	// session only (request-scoped; does not touch global config).
+	Model models.ModelID
+	// ReasoningEffort / ThinkingMode override inference settings per session.
 	ReasoningEffort string
 	ThinkingMode    config.ThinkingMode
+	// Persona, when non-empty, selects a specific persona for this session.
+	// It is only honored when PersonaScoped is true.
+	Persona string
+	// PersonaScoped marks the session as managing its own persona
+	// authoritatively: when true, the per-session Persona (or, if empty,
+	// auto-selection) takes precedence over the package-global active persona.
+	// This is what lets concurrent sessions use different personas safely.
+	PersonaScoped bool
+}
+
+func (o SessionLLMOverrides) isEmpty() bool {
+	return o.Model == "" &&
+		o.ReasoningEffort == "" &&
+		o.ThinkingMode == "" &&
+		o.Persona == "" &&
+		!o.PersonaScoped
 }
 
 var sessionLLMOverrides sync.Map
@@ -27,10 +54,13 @@ func SetSessionLLMOverrides(sessionID string, overrides SessionLLMOverrides) {
 	}
 
 	normalized := SessionLLMOverrides{
+		Model:           overrides.Model,
 		ReasoningEffort: normalizeSessionReasoningEffort(overrides.ReasoningEffort),
 		ThinkingMode:    normalizeSessionThinkingMode(overrides.ThinkingMode),
+		Persona:         strings.TrimSpace(overrides.Persona),
+		PersonaScoped:   overrides.PersonaScoped,
 	}
-	if normalized.ReasoningEffort == "" && normalized.ThinkingMode == "" {
+	if normalized.isEmpty() {
 		sessionLLMOverrides.Delete(sessionID)
 		return
 	}

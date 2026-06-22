@@ -110,9 +110,5 @@ func (t *toolSearchTool) Run(_ context.Context, params ToolCall) (ToolResponse, 
 		t.provider.MarkDiscovered(r.CanonicalName)
 	}
 
-	out, err := json.MarshalIndent(results, "", "  ")
-	if err != nil {
-		return NewTextErrorResponse("failed to marshal results"), nil
-	}
-	return NewTextResponse(string(out)), nil
+	return NewStructuredResponse(results), nil
 }

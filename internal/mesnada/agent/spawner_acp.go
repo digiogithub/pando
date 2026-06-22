@@ -106,6 +106,9 @@ func (s *ACPSpawner) Spawn(ctx context.Context, task *models.Task) error {
 		}
 	}
 	cmd.Env = append(cmd.Env, "NO_COLOR=1")
+	// Propagate the delegation depth so a delegated pando-over-ACP child knows its
+	// own depth for the MaxDepth cap (no-op for non-pando ACP agents).
+	cmd.Env = append(cmd.Env, fmt.Sprintf("PANDO_DELEGATION_DEPTH=%d", task.Depth))
 
 	// Create pipes for stdin/stdout
 	stdinPipe, err := cmd.StdinPipe()
