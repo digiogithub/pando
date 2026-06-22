@@ -21,7 +21,7 @@ HOW TO USE:
 - Optionally enable full_page to capture the full scrollable page
 
 RETURNS:
-- Base64-encoded PNG image of the page or element`
+- Base64-encoded image bytes of the page or element`
 )
 
 type BrowserScreenshotParams struct {

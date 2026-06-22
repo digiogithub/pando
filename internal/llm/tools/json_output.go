@@ -6,28 +6,36 @@ import (
 	"strings"
 
 	toml "github.com/pelletier/go-toml/v2"
+	toon "github.com/toon-format/toon-go"
 )
 
 // NewStructuredResponse formats structured data for tool consumers.
-// It prefers TOML output for readability and falls back to pretty JSON when
-// TOML encoding fails or the value cannot be decoded as JSON-compatible data.
+// It prefers TOON output for readability and token efficiency, falls back to
+// TOML when TOON encoding fails, and finally falls back to pretty JSON when the
+// value cannot be rendered in either structured text format.
 func NewStructuredResponse(value any) ToolResponse {
 	return NewTextResponse(FormatStructuredData(value))
 }
 
-// FormatStructuredData renders structured values as TOML when possible and
-// otherwise falls back to indented JSON.
+// FormatStructuredData renders structured values as TOON when possible, then
+// TOML, and otherwise falls back to indented JSON.
 func FormatStructuredData(value any) string {
-	if tomlText, ok := tryFormatAsTOML(value); ok {
+	normalized, ok := normalizeStructuredValue(value)
+	if !ok {
+		return formatAsIndentedJSON(value)
+	}
+	if toonText, ok := tryFormatAsTOON(normalized); ok {
+		return toonText
+	}
+	if tomlText, ok := tryFormatAsTOMLNormalized(normalized); ok {
 		return tomlText
 	}
-	return formatAsIndentedJSON(value)
+	return formatAsIndentedJSON(normalized)
 }
 
 // FormatJSONLikeContent attempts to interpret textual content as JSON and render
-// it as TOON/TOML. If parsing fails, the original content is returned unchanged.
-// If TOON rendering fails after successful JSON parsing, it falls back to
-// indented JSON instead of returning raw JSON text directly.
+// it as TOON. If TOON rendering fails, it falls back to TOML and then indented
+// JSON. If parsing fails, the original content is returned unchanged.
 func FormatJSONLikeContent(content string) string {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
@@ -41,18 +49,29 @@ func FormatJSONLikeContent(content string) string {
 	return FormatStructuredData(value)
 }
 
-func tryFormatAsTOML(value any) (string, bool) {
+func normalizeStructuredValue(value any) (any, bool) {
 	jsonBytes, err := json.Marshal(value)
 	if err != nil {
-		return "", false
+		return nil, false
 	}
 
 	var normalized any
 	if err := json.Unmarshal(jsonBytes, &normalized); err != nil {
+		return nil, false
+	}
+	return normalized, true
+}
+
+func tryFormatAsTOON(value any) (string, bool) {
+	toonBytes, err := toon.Marshal(value)
+	if err != nil {
 		return "", false
 	}
+	return strings.TrimSpace(string(toonBytes)), true
+}
 
-	tomlBytes, err := toml.Marshal(normalized)
+func tryFormatAsTOMLNormalized(value any) (string, bool) {
+	tomlBytes, err := toml.Marshal(value)
 	if err != nil {
 		return "", false
 	}
@@ -80,8 +99,5 @@ func tryFormatRawJSONAsStructured(jsonText []byte) string {
 		return string(jsonText)
 	}
 
-	if tomlText, ok := tryFormatAsTOML(value); ok {
-		return tomlText
-	}
-	return formatAsIndentedJSON(value)
+	return FormatStructuredData(value)
 }

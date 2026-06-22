@@ -61,7 +61,7 @@ FEATURES:
 - Automatically handles HTTP redirects
 - Sets reasonable timeouts to prevent hanging
 - Validates input parameters before making requests
-- Detects JSON responses and formats them as readable code blocks
+- Detects JSON responses and formats them as readable fenced JSON code blocks
 - Auto format selects the best output based on Content-Type and body content
 
 LIMITATIONS:

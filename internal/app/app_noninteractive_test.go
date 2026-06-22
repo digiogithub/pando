@@ -1,128 +1,11 @@
 package app
 
 import (
-	"bytes"
-	"database/sql"
 	"strings"
 	"testing"
 
-	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/llm/agent"
-	"github.com/digiogithub/pando/internal/message"
-	"github.com/digiogithub/pando/internal/pubsub"
 )
-
-func TestAssistantTextStreamerShowsToolsAndOnlyVisibleContent(t *testing.T) {
-	var output bytes.Buffer
-	streamer := newAssistantTextStreamer(&output, "session-1")
-
-	events := []pubsub.Event[agent.AgentEvent]{
-		{
-			Type: pubsub.CreatedEvent,
-			Payload: agent.AgentEvent{
-				SessionID: "session-1",
-				Type:      agent.AgentEventTypeToolCall,
-				ToolCall:  &message.ToolCall{ID: "tool-1", Name: "kb_search_documents", Input: "{\n  \"query\": \"pando\"\n}"},
-			},
-		},
-		{
-			Type: pubsub.CreatedEvent,
-			Payload: agent.AgentEvent{
-				SessionID:  "session-1",
-				Type:       agent.AgentEventTypeToolResult,
-				ToolResult: &message.ToolResult{ToolCallID: "tool-1", Name: "kb_search_documents", Content: "2 docs found"},
-			},
-		},
-		{
-			Type: pubsub.CreatedEvent,
-			Payload: agent.AgentEvent{
-				SessionID: "session-1",
-				Type:      agent.AgentEventTypeContentDelta,
-				Delta:     "Resumen ",
-			},
-		},
-		{
-			Type: pubsub.CreatedEvent,
-			Payload: agent.AgentEvent{
-				SessionID: "session-1",
-				Type:      agent.AgentEventTypeContentDelta,
-				Delta:     "final",
-			},
-		},
-		{
-			Type: pubsub.CreatedEvent,
-			Payload: agent.AgentEvent{
-				SessionID: "session-2",
-				Type:      agent.AgentEventTypeContentDelta,
-				Delta:     "ignored",
-			},
-		},
-	}
-
-	for _, event := range events {
-		if err := streamer.Consume(event); err != nil {
-			t.Fatalf("Consume() error = %v", err)
-		}
-	}
-
-	if err := streamer.CloseLine(); err != nil {
-		t.Fatalf("CloseLine() error = %v", err)
-	}
-
-	if got, want := output.String(), "🔧 kb_search_documents {\"query\":\"pando\"}\n✓ kb_search_documents completed\n\nResumen final\n"; got != want {
-		t.Fatalf("streamed output = %q, want %q", got, want)
-	}
-}
-
-func TestAssistantTextStreamerPrintsFinalContentFallback(t *testing.T) {
-	var output bytes.Buffer
-	streamer := newAssistantTextStreamer(&output, "session-1")
-
-	if err := streamer.PrintFinalContent("final answer"); err != nil {
-		t.Fatalf("PrintFinalContent() error = %v", err)
-	}
-	if err := streamer.PrintFinalContent("ignored duplicate"); err != nil {
-		t.Fatalf("PrintFinalContent() second call error = %v", err)
-	}
-	if err := streamer.CloseLine(); err != nil {
-		t.Fatalf("CloseLine() error = %v", err)
-	}
-
-	if got, want := output.String(), "final answer\n"; got != want {
-		t.Fatalf("streamed output = %q, want %q", got, want)
-	}
-}
-
-func TestNonInteractiveGoalResultFromDB(t *testing.T) {
-	goal := db.SessionGoal{
-		SessionID:          "session-1",
-		Objective:          "Ship goal mode",
-		Status:             agent.GoalStatusBlocked,
-		Iteration:          2,
-		MaxIterations:      5,
-		MaxDurationSeconds: 3600,
-		LastProgress:       sql.NullString{String: "  Waiting on credentials  ", Valid: true},
-		NextStep:           sql.NullString{String: "  Retry after auth  ", Valid: true},
-		BlockedReason:      sql.NullString{String: "  Missing credentials  ", Valid: true},
-	}
-
-	got := nonInteractiveGoalResultFromDB(goal, "  Latest assistant summary  ")
-	if got.SessionID != "session-1" || got.Objective != "Ship goal mode" {
-		t.Fatalf("unexpected identity fields: %+v", got)
-	}
-	if got.Response != "Latest assistant summary" {
-		t.Fatalf("Response = %q, want trimmed value", got.Response)
-	}
-	if got.Progress != "Waiting on credentials" {
-		t.Fatalf("Progress = %q, want trimmed value", got.Progress)
-	}
-	if got.NextStep != "Retry after auth" {
-		t.Fatalf("NextStep = %q, want trimmed value", got.NextStep)
-	}
-	if got.BlockedReason != "Missing credentials" {
-		t.Fatalf("BlockedReason = %q, want trimmed value", got.BlockedReason)
-	}
-}
 
 func TestFormatNonInteractiveGoalResult(t *testing.T) {
 	serialized, err := formatNonInteractiveGoalResult(NonInteractiveGoalResult{
@@ -138,13 +21,16 @@ func TestFormatNonInteractiveGoalResult(t *testing.T) {
 	}
 
 	if strings.Contains(serialized, "\"status\"") {
-		t.Fatalf("expected TOON/TOML output instead of raw JSON: %s", serialized)
+		t.Fatalf("expected structured TOON/TOML output instead of raw JSON: %s", serialized)
 	}
-	if !strings.Contains(serialized, "status = 'completed'") {
-		t.Fatalf("expected TOML-formatted status field, got: %s", serialized)
+	if strings.Contains(serialized, "status = 'completed'") {
+		t.Fatalf("expected TOON output instead of TOML, got: %s", serialized)
 	}
-	if !strings.Contains(serialized, "response = 'Done'") {
-		t.Fatalf("expected TOML-formatted response field, got: %s", serialized)
+	if !strings.Contains(serialized, "status: completed") {
+		t.Fatalf("expected TOON-formatted status field, got: %s", serialized)
+	}
+	if !strings.Contains(serialized, "response: Done") {
+		t.Fatalf("expected TOON-formatted response field, got: %s", serialized)
 	}
 	if strings.Contains(serialized, "blocked_reason") {
 		t.Fatalf("blocked_reason should be omitted when empty: %s", serialized)

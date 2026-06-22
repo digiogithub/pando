@@ -14,8 +14,8 @@ const (
 	// Text format outputs the AI response as plain text.
 	Text OutputFormat = "text"
 
-	// JSON format outputs the AI response as structured TOON/TOML when possible,
-	// falling back to indented JSON when TOON serialization is not possible.
+	// JSON format outputs the AI response as structured TOON when possible,
+	// falling back to TOML and then indented JSON when TOON serialization is not possible.
 	JSON OutputFormat = "json"
 )
 
@@ -54,7 +54,7 @@ func IsValid(s string) bool {
 func GetHelpText() string {
 	return fmt.Sprintf(`Supported output formats:
 - %s: Plain text output (default)
-- %s: Structured output using TOON/TOML when possible, with JSON fallback`,
+- %s: Structured output using TOON when possible, with TOML and JSON fallback`,
 		Text, JSON)
 }
 
@@ -76,8 +76,8 @@ func FormatOutput(content string, formatStr string) string {
 	}
 }
 
-// formatAsJSON renders the content as TOON/TOML when it is JSON-like and falls
-// back to a JSON object wrapper otherwise.
+// formatAsJSON renders the content as TOON when it is JSON-like and falls back
+// to TOML and then a structured JSON object wrapper otherwise.
 func formatAsJSON(content string) string {
 	formatted := llmtools.FormatJSONLikeContent(content)
 	if formatted != content {

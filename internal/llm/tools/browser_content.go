@@ -19,7 +19,7 @@ HOW TO USE:
 - Optionally specify a CSS selector to scope the content (default "body")
 
 RETURNS:
-- Page content in the requested format`
+- Page content in the requested text format (HTML, text, or title)`
 )
 
 type BrowserGetContentParams struct {

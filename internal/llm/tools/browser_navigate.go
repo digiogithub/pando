@@ -20,7 +20,7 @@ HOW TO USE:
 - Optionally override the default timeout in seconds
 
 RETURNS:
-- JSON object with url, title, and status fields`
+- Structured response with url, title, and status fields (serialized as TOON when possible, with TOML/JSON fallback)`
 )
 
 type BrowserNavigateParams struct {

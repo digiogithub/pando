@@ -8,7 +8,7 @@ import (
 
 const (
 	BrowserEvaluateToolName        = "browser_evaluate"
-	browserEvaluateToolDescription = `Execute JavaScript in the browser and return the result as JSON.
+	browserEvaluateToolDescription = `Execute JavaScript in the browser and return the result as a structured response.
 
 WHEN TO USE THIS TOOL:
 - Use to run arbitrary JavaScript expressions in the current page context
@@ -16,10 +16,10 @@ WHEN TO USE THIS TOOL:
 
 HOW TO USE:
 - Provide a JavaScript expression to evaluate
-- The result is serialized as JSON
+- The result is serialized through Pando's structured formatter
 
 RETURNS:
-- JSON-encoded result of the JavaScript expression`
+- Structured result of the JavaScript expression (serialized as TOON when possible, with TOML/JSON fallback)`
 )
 
 type BrowserEvaluateParams struct {
