@@ -57,8 +57,9 @@ func TestDelegationE2E_CaseA_LiveInjection(t *testing.T) {
 	if inj.count() != 1 {
 		t.Fatalf("expected exactly 1 injection, got %d", inj.count())
 	}
-	// The injected content is the production FormatForParent rendering of the task.
-	want := conclusion.FormatForParent(task)
+	// The injected content is the production FormatForParent rendering of the task
+	// (using the same resolver the supervisor uses).
+	want := conclusion.FormatForParent(task, supervisorResolveOptions(task))
 	if len(inj.injectArgs) != 1 || inj.injectArgs[0] != want {
 		t.Fatalf("injected content mismatch.\n got: %q\nwant: %q", inj.injectArgs, want)
 	}

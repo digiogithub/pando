@@ -22,15 +22,15 @@ End your run with a SINGLE conclusion block in this exact form (the software
 fills in all other metadata; do not restate task id, engine, model, or paths):
 
 <pando:conclusion>
-status: success        # one of: success | partial | failed | blocked
-summary: |             # 2-4 sentences describing what you accomplished
+status: success        # REQUIRED — exactly one of: success | partial | failed | blocked
+summary: |             # REQUIRED — 2-4 sentences describing what you accomplished
   <concise summary of the outcome>
-artifacts:             # files or kb doc-ids you produced (optional)
+artifacts:             # files or kb doc-ids you produced (optional, omit if none)
   - path/to/file
-memory_refs:           # kb doc-ids / memory keys you wrote (optional)
+memory_refs:           # kb doc-ids / memory keys you wrote (optional, omit if none)
   - <id>
 follow_up: <what remains, or leave empty>
-confidence: 0.0        # your confidence in the result, 0.0 to 1.0
+confidence: 0.9        # REQUIRED — a decimal in [0.0, 1.0]; do not exceed 1.0
 </pando:conclusion>
 
 Emit the block exactly once, as the very last thing in your output.`

@@ -9,6 +9,7 @@
 package conclusion
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/digiogithub/pando/pkg/mesnada/models"
@@ -40,6 +41,10 @@ type rawConclusion struct {
 // present sentinel still returns a Conclusion whose Summary is the salvaged raw
 // inner text.
 //
+// Soft-schema validation accumulates human-readable warnings in Conclusion.Warnings
+// describing what was malformed/missing/out-of-range. Data is never discarded due
+// to warnings — the principle is warn, don't discard.
+//
 // It returns (conclusion, true) when a block was found, (nil, false) otherwise.
 func Parse(raw string) (*models.Conclusion, bool) {
 	inner, ok := lastBlock(raw)
@@ -48,30 +53,77 @@ func Parse(raw string) (*models.Conclusion, bool) {
 	}
 
 	c := &models.Conclusion{}
+	var warns []string
 
 	var body rawConclusion
 	if err := yaml.Unmarshal([]byte(inner), &body); err != nil {
 		// Tolerant fallback: the block exists but the body is not valid YAML.
 		// Salvage the raw inner text as the summary so the conclusion is not lost.
 		c.Summary = strings.TrimSpace(inner)
+		warns = append(warns, "conclusion body was not valid YAML; salvaged raw text")
+		c.Warnings = warns
 		return c, true
 	}
 
-	c.Status = normalizeStatus(body.Status)
-	c.Summary = strings.TrimSpace(body.Summary)
-	c.Artifacts = body.Artifacts
-	c.MemoryRefs = body.MemoryRefs
-	c.FollowUp = strings.TrimSpace(body.FollowUp)
+	// Validate and assign status.
+	rawStatus := strings.TrimSpace(body.Status)
+	c.Status = normalizeStatus(rawStatus)
+	if rawStatus != "" && c.Status == "" {
+		warns = append(warns, fmt.Sprintf("unknown status %q; left for software default", rawStatus))
+	}
+
+	// Validate and assign confidence.
+	if body.Confidence < 0 || body.Confidence > 1 {
+		warns = append(warns, fmt.Sprintf("confidence %v out of range [0,1]; clamped", body.Confidence))
+	}
 	c.Confidence = clampConfidence(body.Confidence)
+
+	c.Summary = strings.TrimSpace(body.Summary)
+	c.FollowUp = strings.TrimSpace(body.FollowUp)
+
+	// Filter blank entries from Artifacts and MemoryRefs.
+	c.Artifacts, warns = filterBlanks(body.Artifacts, "artifacts", warns)
+	c.MemoryRefs, warns = filterBlanks(body.MemoryRefs, "memory_refs", warns)
 
 	// If YAML parsed but produced no usable content, salvage the raw inner text
 	// (e.g. the body was a bare string, not a mapping).
 	if c.Summary == "" && c.Status == "" && len(c.Artifacts) == 0 &&
 		len(c.MemoryRefs) == 0 && c.FollowUp == "" {
 		c.Summary = strings.TrimSpace(inner)
+		warns = append(warns, "conclusion body was not a YAML mapping; salvaged raw text")
+	} else if c.Summary == "" {
+		// Structured body was parsed but summary is missing.
+		warns = append(warns, "missing summary")
 	}
 
+	if len(warns) > 0 {
+		c.Warnings = warns
+	}
 	return c, true
+}
+
+// filterBlanks removes whitespace-only entries from entries and appends a
+// warning to warns when any entries were dropped. It returns the filtered slice
+// and the (possibly extended) warns slice.
+func filterBlanks(entries []string, field string, warns []string) ([]string, []string) {
+	if len(entries) == 0 {
+		return entries, warns
+	}
+	var kept []string
+	for _, e := range entries {
+		if strings.TrimSpace(e) != "" {
+			kept = append(kept, e)
+		}
+	}
+	dropped := len(entries) - len(kept)
+	if dropped > 0 {
+		noun := "entry"
+		if dropped != 1 {
+			noun = "entries"
+		}
+		warns = append(warns, fmt.Sprintf("dropped %d blank %s %s", dropped, field, noun))
+	}
+	return kept, warns
 }
 
 // lastBlock returns the inner body of the LAST sentinel block in raw.

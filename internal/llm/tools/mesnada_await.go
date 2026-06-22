@@ -231,11 +231,25 @@ func awaitAlreadySatisfiedResponse(policy orchestrator.AwaitPolicy, awaited []*m
 			continue
 		}
 		b.WriteString("\n")
-		b.WriteString(conclusion.FormatForParent(st))
+		b.WriteString(conclusion.FormatForParent(st, taskResolveOptions(st)))
 		b.WriteString("\n")
 	}
 	b.WriteString("\nContinue with your work — there is nothing left to wait for.")
 	return NewTextResponse(b.String())
+}
+
+// taskResolveOptions builds a *conclusion.ResolveOptions for a task, wiring a
+// filesystem artifact resolver from the task's ProjectPath (falling back to
+// WorkDir). Memory resolver is nil for now.
+// TODO(D2-followup): wire memory_ref resolver from kb store.
+func taskResolveOptions(task *models.Task) *conclusion.ResolveOptions {
+	baseDir := task.ProjectPath
+	if baseDir == "" {
+		baseDir = task.WorkDir
+	}
+	return &conclusion.ResolveOptions{
+		Artifacts: conclusion.NewFilesystemArtifactResolver(baseDir),
+	}
 }
 
 // awaitRegisteredMessage builds the unambiguous "end your turn" instruction

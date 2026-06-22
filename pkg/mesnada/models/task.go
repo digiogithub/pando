@@ -142,6 +142,11 @@ type Conclusion struct {
 	Confidence  float64   `json:"confidence,omitempty"`
 	Synthesized bool      `json:"synthesized,omitempty"` // true if no block emitted
 	CapturedAt  time.Time `json:"captured_at"`
+	// Warnings accumulates human-readable soft-validation messages produced
+	// during parsing (unknown status, out-of-range confidence, missing summary,
+	// blank entries, malformed body, etc.). The conclusion is never discarded
+	// due to warnings — data is always preserved.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // ToolCall represents a single tool execution within a task.

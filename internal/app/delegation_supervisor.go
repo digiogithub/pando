@@ -211,7 +211,7 @@ func (s *delegationSupervisor) injectLive(task *models.Task, key string) bool {
 			"task", task.ID, "parentSession", task.ParentSessionID)
 		return false
 	}
-	content := conclusion.FormatForParent(task)
+	content := conclusion.FormatForParent(task, supervisorResolveOptions(task))
 	if err := s.agent.InjectConclusion(task.ParentSessionID, content); err != nil {
 		if errors.Is(err, agent.ErrSessionNotBusy) {
 			// Race: the session ended between the busy check and injection. Leave the
@@ -526,7 +526,7 @@ func buildResurrectionContent(tasks []*models.Task) string {
 	b.WriteString("Continue, spawn more work, or finish.\n")
 	for _, t := range tasks {
 		b.WriteString("\n")
-		b.WriteString(conclusion.FormatForParent(t))
+		b.WriteString(conclusion.FormatForParent(t, supervisorResolveOptions(t)))
 		b.WriteString("\n")
 	}
 	return b.String()
@@ -545,8 +545,25 @@ func buildAwaitResurrectionContent(tasks []*models.Task, satisfied bool) string 
 	b.WriteString("The delegated task results so far:\n")
 	for _, t := range tasks {
 		b.WriteString("\n")
-		b.WriteString(conclusion.FormatForParent(t))
+		b.WriteString(conclusion.FormatForParent(t, supervisorResolveOptions(t)))
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// supervisorResolveOptions builds a *conclusion.ResolveOptions for a task,
+// wiring a filesystem artifact resolver from the task's ProjectPath (falling
+// back to WorkDir). Memory resolver is nil for now.
+// TODO(D2-followup): wire memory_ref resolver from kb store.
+func supervisorResolveOptions(task *models.Task) *conclusion.ResolveOptions {
+	if task == nil {
+		return nil
+	}
+	baseDir := task.ProjectPath
+	if baseDir == "" {
+		baseDir = task.WorkDir
+	}
+	return &conclusion.ResolveOptions{
+		Artifacts: conclusion.NewFilesystemArtifactResolver(baseDir),
+	}
 }
