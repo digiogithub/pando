@@ -12,7 +12,8 @@
 #
 #   VERSION  Optional. Defaults to the latest git describe output (git describe --tags).
 #
-# The login keychain password is read from $KEYSTORE_PASS when code signing is enabled.
+# Non-interactive signing uses a temporary keychain via $MACOS_SIGN_KEYCHAIN_PATH.
+# Create it with scripts/setup-macos-signing-keychain before running this script.
 #
 # Prerequisites (macOS only):
 #   - Xcode Command Line Tools: lipo, iconutil, sips, pkgbuild, productbuild, productsign,
@@ -71,10 +72,22 @@ fi
 PKG_SIGN_IDENTITY="${PKG_SIGN_IDENTITY:-961FF87CC1EF61866640E471FB84B73E001281AF}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-4749EC5719E91D7ADFE5FDB4CB546057A8CFB9AD}"
 
-# notarytool keychain profile created with:
-#   xcrun notarytool store-credentials "pando-notary" --apple-id ... --team-id ... --password ...
+# notarytool profile should be stored in the temporary signing keychain with:
+#   xcrun notarytool store-credentials "pando-notary" --apple-id ... --team-id ... --password ... --keychain <temp-keychain>
 # Leave empty (or unset NOTARY_PROFILE) to skip notarization & stapling.
 NOTARY_PROFILE="${NOTARY_PROFILE:-pando-notary}"
+MACOS_SIGN_KEYCHAIN_PATH="${MACOS_SIGN_KEYCHAIN_PATH:-}"
+MACOS_SIGN_KEYCHAIN_PASSWORD="${MACOS_SIGN_KEYCHAIN_PASSWORD:-${KEYSTORE_PASS:-}}"
+
+if [[ -z "$MACOS_SIGN_KEYCHAIN_PATH" ]]; then
+    echo "Error: MACOS_SIGN_KEYCHAIN_PATH is required. Run scripts/setup-macos-signing-keychain first." >&2
+    exit 1
+fi
+
+if [[ -z "$MACOS_SIGN_KEYCHAIN_PASSWORD" ]]; then
+    echo "Error: MACOS_SIGN_KEYCHAIN_PASSWORD or KEYSTORE_PASS is required for the temporary signing keychain." >&2
+    exit 1
+fi
 
 run_codesign() {
     local target="${@: -1}"
@@ -90,7 +103,7 @@ run_codesign() {
 
     # --timestamp is mandatory for notarization (the notary service rejects
     # signatures without a secure timestamp).
-    codesign "${args[@]}" --timestamp --sign "$SIGNING_IDENTITY" --force "$target"
+    codesign "${args[@]}" --timestamp --keychain "$MACOS_SIGN_KEYCHAIN_PATH" --sign "$SIGNING_IDENTITY" --force "$target"
 }
 
 verify_macho_signature() {
@@ -151,6 +164,7 @@ notarize_and_staple() {
     echo "Submitting to Apple notary service (profile: $NOTARY_PROFILE): $target"
     if ! xcrun notarytool submit "$target" \
             --keychain-profile "$NOTARY_PROFILE" \
+            --keychain "$MACOS_SIGN_KEYCHAIN_PATH" \
             --wait; then
         echo "Error: notarization failed for $target." >&2
         echo "  Inspect the log with:" >&2
@@ -163,46 +177,16 @@ notarize_and_staple() {
     xcrun stapler validate "$target"
 }
 
-# ── Keychain unlock ──────────────────────────────────────────────────────────
-# codesign accesses the login keychain which may be locked in headless sessions.
-# Only try an explicit unlock when KEYSTORE_PASS is provided.
-
-KEYCHAIN_DB="$HOME/Library/Keychains/login.keychain-db"
-KEYCHAIN_UNLOCKED=false
-KEYCHAIN_PASSWORD="${KEYSTORE_PASS:-}"
-
 echo "Using signing identity: $SIGNING_IDENTITY"
-if [[ -z "$KEYCHAIN_PASSWORD" ]]; then
-    echo "KEYSTORE_PASS not set — using the current keychain session as-is."
-    echo "  Note: in headless/SSH sessions productsign may fail with"
-    echo "  'errSecInteractionNotAllowed' unless the signing keys' partition list"
-    echo "  already allows non-interactive access. Set KEYSTORE_PASS to fix it."
-else
-    echo "Unlocking login keychain..."
-    security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_DB"
-    KEYCHAIN_UNLOCKED=true
+echo "Using installer identity: $PKG_SIGN_IDENTITY"
+echo "Using signing keychain: $MACOS_SIGN_KEYCHAIN_PATH"
 
-    # Allow Apple signing tools (codesign, productsign, …) to use the private
-    # keys without a GUI confirmation prompt. Without this, productsign fails in
-    # headless/SSH sessions with errSecInteractionNotAllowed (-25308) even though
-    # the keychain is unlocked, because the key's ACL still demands interaction.
-    echo "Authorizing signing tools on keychain keys (set-key-partition-list)..."
-    if ! security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
-            -s -k "$KEYCHAIN_PASSWORD" \
-            "$KEYCHAIN_DB" >/dev/null 2>&1; then
-        echo "Warning: set-key-partition-list failed — productsign may still" >&2
-        echo "  prompt for interaction and fail in this session." >&2
-    fi
-fi
+security unlock-keychain -p "$MACOS_SIGN_KEYCHAIN_PASSWORD" "$MACOS_SIGN_KEYCHAIN_PATH" >/dev/null 2>&1 || true
 
-relock_keychain() {
-    if [[ "$KEYCHAIN_UNLOCKED" == "true" ]]; then
-        echo "Re-locking keychain."
-        security lock-keychain "$KEYCHAIN_DB" 2>/dev/null || true
-    fi
+cleanup() {
+    rm -rf "$WORK_DIR"
 }
-trap 'relock_keychain; rm -rf "$WORK_DIR"' EXIT
+trap cleanup EXIT
 
 # ── Version ─────────────────────────────────────────────────────────────────
 
@@ -404,7 +388,7 @@ XML
         cp "$unsigned_pkg" "$final_pkg"
     else
         echo "Signing .pkg installer with productsign..."
-        if productsign --sign "$PKG_SIGN_IDENTITY" "$unsigned_pkg" "$final_pkg"; then
+        if productsign --keychain "$MACOS_SIGN_KEYCHAIN_PATH" --sign "$PKG_SIGN_IDENTITY" "$unsigned_pkg" "$final_pkg"; then
             :
         else
             echo "Warning: productsign failed for identity '$PKG_SIGN_IDENTITY' — leaving installer unsigned." >&2

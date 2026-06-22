@@ -37,6 +37,8 @@ MACOS_SYSROOT_FLAGS :=
 # and runs it from a temp dir. Notarization is NOT done here — that happens only
 # for the packaged .app/.pkg produced by scripts/build-macos-app.
 MACOS_SIGN_IDENTITY ?= 4749EC5719E91D7ADFE5FDB4CB546057A8CFB9AD
+MACOS_SIGN_KEYCHAIN_PATH ?=
+MACOS_CODESIGN_WRAPPER ?= $(CURDIR)/scripts/codesign-macos
 
 # ============================================================
 # Desktop App (Wails) targets
@@ -130,7 +132,7 @@ define build_release
 		$(UPX) --best --lzma $(DIST_DIR)/pando-$(3)$(4); \
 	else echo "Skipping UPX for $(3)"; fi
 	if [ "$(1)" = "darwin" ]; then \
-		_cs=$$(command -v codesign-digio 2>/dev/null || echo "$$HOME/bin/codesign-digio"); \
+		_cs="$(MACOS_CODESIGN_WRAPPER)"; \
 		if [ -x "$$_cs" ]; then \
 			echo "Signing $(DIST_DIR)/pando-$(3)$(4) with $$_cs..."; \
 			"$$_cs" "$(DIST_DIR)/pando-$(3)$(4)"; \

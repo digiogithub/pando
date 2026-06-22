@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <mach-o-binary>" >&2
+    exit 1
+fi
+
+TARGET="$1"
+SIGNING_IDENTITY="${SIGNING_IDENTITY:-${MACOS_SIGN_IDENTITY:-}}"
+KEYCHAIN_PATH="${MACOS_SIGN_KEYCHAIN_PATH:-}"
+KEYCHAIN_PASSWORD="${MACOS_SIGN_KEYCHAIN_PASSWORD:-${KEYSTORE_PASS:-}}"
+
+if [[ -z "$SIGNING_IDENTITY" ]]; then
+    echo "Error: SIGNING_IDENTITY or MACOS_SIGN_IDENTITY must be set." >&2
+    exit 1
+fi
+
+if [[ -z "$KEYCHAIN_PATH" ]]; then
+    echo "Error: MACOS_SIGN_KEYCHAIN_PATH must be set." >&2
+    exit 1
+fi
+
+if [[ -n "$KEYCHAIN_PASSWORD" ]]; then
+    security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
+fi
+
+codesign --force -o runtime --timestamp --keychain "$KEYCHAIN_PATH" --sign "$SIGNING_IDENTITY" "$TARGET"

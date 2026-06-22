@@ -83,7 +83,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'copilot.gpt-5.4-mini'
+Model = 'copilot.gpt-5.4'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -210,6 +210,7 @@ ResurrectionTimeout = '10m'
 ReuseWarmInstances = true
 AutoStartWarmInstance = true
 WarmInstanceIdleTimeout = '0'
+WarmQueueDepth = 0
 
 [Shell]
 Path = ''
