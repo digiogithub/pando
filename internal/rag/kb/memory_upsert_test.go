@@ -102,3 +102,52 @@ func TestUpsertMemoryByKey(t *testing.T) {
 		t.Errorf("row count = %d, want 1", count)
 	}
 }
+
+func TestUpsertMemoryByKeyDefaultsSource(t *testing.T) {
+	db := openTestKBDB(t)
+	store := NewKBStore(db, nil, 0, 0)
+	ctx := context.Background()
+
+	created, err := store.UpsertMemory(ctx, MemoryUpsertOptions{
+		FilePath:       "memory/user/default-source.md",
+		Content:        "memory without explicit source",
+		Key:            "pando.test.default-source",
+		Scope:          "user/",
+		Importance:     0.5,
+		DefaultTTLDays: 180,
+	})
+	if err != nil {
+		t.Fatalf("UpsertMemory without source error = %v", err)
+	}
+	if !created {
+		t.Fatalf("UpsertMemory without source: expected created=true")
+	}
+
+	doc, err := store.GetMemoryByKey(ctx, "pando.test.default-source")
+	if err != nil {
+		t.Fatalf("GetMemoryByKey error = %v", err)
+	}
+	if doc == nil {
+		t.Fatalf("GetMemoryByKey returned nil")
+	}
+	if doc.Source != "memory" {
+		t.Fatalf("source = %q, want %q", doc.Source, "memory")
+	}
+	if doc.Content != "memory without explicit source" {
+		t.Fatalf("content = %q, want %q", doc.Content, "memory without explicit source")
+	}
+	if doc.MemoryScope != "user/" {
+		t.Fatalf("scope = %q, want %q", doc.MemoryScope, "user/")
+	}
+	if doc.MemoryKey != "pando.test.default-source" {
+		t.Fatalf("key = %q, want %q", doc.MemoryKey, "pando.test.default-source")
+	}
+
+	var source string
+	if err := db.QueryRow(`SELECT source FROM kb_documents WHERE memory_key = ?`, "pando.test.default-source").Scan(&source); err != nil {
+		t.Fatalf("source query error = %v", err)
+	}
+	if source != "memory" {
+		t.Fatalf("stored source = %q, want %q", source, "memory")
+	}
+}

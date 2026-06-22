@@ -95,10 +95,7 @@ func RefreshProviderModels(ctx context.Context, provider ModelProvider, apiKey s
 			name = fm.ID
 		}
 
-		contextWindow := fm.ContextWindow
-		if contextWindow <= 0 {
-			contextWindow = 128_000 // reasonable default
-		}
+		contextWindow := fetchedModelContextWindow(fm.ContextWindow)
 		maxTokens := int64(4096) // reasonable default
 		if contextWindow < maxTokens {
 			maxTokens = contextWindow / 2

@@ -99,6 +99,7 @@
       "delegationReuseWarmInstancesDescription": "将委派任务路由到已运行的按项目实例，而不是冷启动一个 CLI 子进程",
       "delegationAutoStartWarm": "自动启动热实例",
       "delegationAutoStartWarmDescription": "当没有实例运行时，自动为项目启动一个子实例（关闭 = 仅复用）",
+      "delegationWarmIdleTimeout": "热实例空闲超时（0 = 永不）",
       "toolDiscovery": "工具发现",
       "toolDiscoveryDescription": "将非核心工具排除在初始上下文之外；模型可通过 tool_search 按需查找",
       "toolDiscoveryMode": "工具发现模式",

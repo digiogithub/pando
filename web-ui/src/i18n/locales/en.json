@@ -106,7 +106,8 @@
       "delegationReuseWarmInstances": "Reuse Warm Instances",
       "delegationReuseWarmInstancesDescription": "Route a delegated task to an already-running per-project instance instead of cold-spawning a CLI subprocess",
       "delegationAutoStartWarm": "Auto-Start Warm Instance",
-      "delegationAutoStartWarmDescription": "Auto-start a child instance for the project when none is running (off = reuse only)"
+      "delegationAutoStartWarmDescription": "Auto-start a child instance for the project when none is running (off = reuse only)",
+      "delegationWarmIdleTimeout": "Warm Instance Idle Timeout (0 = never)"
     }
   },
   "chat": {

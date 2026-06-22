@@ -253,6 +253,12 @@ export default function GeneralSettings() {
           checked={config.delegation_auto_start_warm}
           onChange={(v) => updateField('delegation_auto_start_warm', v)}
         />
+        <TextInput
+          label={t('settings.general.delegationWarmIdleTimeout')}
+          value={config.delegation_warm_idle_timeout}
+          disabled={!config.delegation_enabled || !config.delegation_reuse_warm_instances}
+          onChange={(e) => updateField('delegation_warm_idle_timeout', e.target.value)}
+        />
       </div>
 
       <div style={dividerStyle} />

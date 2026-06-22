@@ -230,13 +230,14 @@ func (m *Manager) spawnChild(proj Project) (*Instance, error) {
 	conn := acpsdk.NewClientSideConnection(client, stdinPipe, stdoutPipe)
 
 	inst := &Instance{
-		Project:   proj,
-		cmd:       cmd,
-		conn:      conn,
-		delClient: client,
-		cancel:    cancel,
-		ready:     make(chan struct{}),
-		errCh:     make(chan error, 1),
+		Project:      proj,
+		cmd:          cmd,
+		conn:         conn,
+		delClient:    client,
+		cancel:       cancel,
+		ready:        make(chan struct{}),
+		errCh:        make(chan error, 1),
+		lastActiveAt: time.Now(),
 	}
 
 	// The stdio ACP server is ready as soon as the process starts.

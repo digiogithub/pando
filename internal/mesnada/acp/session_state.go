@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/digiogithub/pando/internal/commands"
 	llmmodels "github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/message"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
@@ -352,6 +351,14 @@ func selectedACPModel(svc AgentService, currentModel string) (llmmodels.Model, b
 		return llmmodels.Model{}, false
 	}
 	model, ok := llmmodels.SupportedModels[llmmodels.ModelID(modelID)]
+	if ok {
+		return model, true
+	}
+	resolvedID, resolved := llmmodels.ResolveModelID(llmmodels.ModelID(modelID))
+	if !resolved {
+		return llmmodels.Model{}, false
+	}
+	model, ok = llmmodels.SupportedModels[resolvedID]
 	return model, ok
 }
 
@@ -415,18 +422,6 @@ func boolToAskPermissionValue(enabled bool) string {
 		return askPermissionYesValue
 	}
 	return askPermissionNoValue
-}
-
-func availableCommands() []acpsdk.AvailableCommand {
-	builtins := commands.BuiltinCommands()
-	result := make([]acpsdk.AvailableCommand, 0, len(builtins))
-	for _, cmd := range builtins {
-		result = append(result, acpsdk.AvailableCommand{
-			Name:        cmd.Name,
-			Description: cmd.Description,
-		})
-	}
-	return result
 }
 
 // sendAvailableCommandsUpdate publishes the ACP slash commands supported by Pando.

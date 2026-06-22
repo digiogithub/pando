@@ -45,6 +45,7 @@ type SettingsResponse struct {
 	DelegationResurrectionTimeout string `json:"delegation_resurrection_timeout"`
 	DelegationReuseWarmInstances  bool   `json:"delegation_reuse_warm_instances"`
 	DelegationAutoStartWarm       bool   `json:"delegation_auto_start_warm"`
+	DelegationWarmIdleTimeout     string `json:"delegation_warm_idle_timeout"`
 }
 
 // SettingsUpdateRequest contains the fields that can be updated via PUT /api/v1/settings.
@@ -76,6 +77,7 @@ type SettingsUpdateRequest struct {
 	DelegationResurrectionTimeout *string `json:"delegation_resurrection_timeout,omitempty"`
 	DelegationReuseWarmInstances  *bool   `json:"delegation_reuse_warm_instances,omitempty"`
 	DelegationAutoStartWarm       *bool   `json:"delegation_auto_start_warm,omitempty"`
+	DelegationWarmIdleTimeout     *string `json:"delegation_warm_idle_timeout,omitempty"`
 }
 
 // ProviderStatus describes a configured provider and whether it has an API key set.
@@ -143,6 +145,7 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		DelegationResurrectionTimeout: delegationTimeoutOrDefault(cfg.Mesnada.Delegation.ResurrectionTimeout),
 		DelegationReuseWarmInstances:  cfg.Mesnada.Delegation.ReuseWarmInstances,
 		DelegationAutoStartWarm:       cfg.Mesnada.Delegation.AutoStartWarmInstance,
+		DelegationWarmIdleTimeout:     warmIdleTimeoutOrDefault(cfg.Mesnada.Delegation.WarmInstanceIdleTimeout),
 	}, nil
 }
 
@@ -150,6 +153,15 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 func delegationTimeoutOrDefault(timeout string) string {
 	if timeout == "" {
 		return "10m"
+	}
+	return timeout
+}
+
+// warmIdleTimeoutOrDefault normalizes an empty warm-instance idle timeout to "0"
+// (idle auto-GC disabled), so GET responses round-trip a stable, parseable value.
+func warmIdleTimeoutOrDefault(timeout string) string {
+	if timeout == "" {
+		return "0"
 	}
 	return timeout
 }
@@ -320,7 +332,8 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		req.DelegationResurrectIdleLoop != nil || req.DelegationSynthesizeFallback != nil ||
 		req.DelegationMaxResurrections != nil || req.DelegationMaxDepth != nil ||
 		req.DelegationMaxConcurrent != nil || req.DelegationResurrectionTimeout != nil ||
-		req.DelegationReuseWarmInstances != nil || req.DelegationAutoStartWarm != nil {
+		req.DelegationReuseWarmInstances != nil || req.DelegationAutoStartWarm != nil ||
+		req.DelegationWarmIdleTimeout != nil {
 		del := config.Get().Mesnada.Delegation
 		if req.DelegationEnabled != nil {
 			del.Enabled = *req.DelegationEnabled
@@ -367,6 +380,15 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.DelegationAutoStartWarm != nil {
 			del.AutoStartWarmInstance = *req.DelegationAutoStartWarm
+		}
+		if req.DelegationWarmIdleTimeout != nil {
+			// "0"/empty disables the idle auto-GC; any other value must be a valid
+			// Go duration (e.g. 10m, 1h).
+			if _, err := time.ParseDuration(*req.DelegationWarmIdleTimeout); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid delegation_warm_idle_timeout (0 to disable, e.g. 10m, 1h)")
+				return
+			}
+			del.WarmInstanceIdleTimeout = *req.DelegationWarmIdleTimeout
 		}
 		if err := config.UpdateMesnadaDelegation(del); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update delegation settings")

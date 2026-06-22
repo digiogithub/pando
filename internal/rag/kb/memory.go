@@ -42,6 +42,9 @@ func (s *KBStore) UpsertMemory(ctx context.Context, opts MemoryUpsertOptions) (c
 	if opts.DefaultTTLDays <= 0 {
 		opts.DefaultTTLDays = 180
 	}
+	if strings.TrimSpace(opts.Source) == "" {
+		opts.Source = "memory"
+	}
 
 	// Ensure "memory" tag is always present.
 	hasMemory := false

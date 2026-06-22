@@ -33,6 +33,7 @@ const DEFAULTS: SettingsConfig = {
   delegation_resurrection_timeout: '10m',
   delegation_reuse_warm_instances: false,
   delegation_auto_start_warm: true,
+  delegation_warm_idle_timeout: '0',
   // UI-only, not persisted via /api/v1/settings
   language: 'en',
 }

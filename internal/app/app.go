@@ -493,6 +493,16 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		// known is run inside an already-running per-project ACP instance instead of
 		// cold-spawning a CLI. nil when ReuseWarmInstances is off → cold path always.
 		mesnadaCfg.WarmTargetResolver = makeWarmTargetResolver(app.ProjectManager, cfg)
+		// Idle auto-GC (item C1): stop router-auto-started warm instances that go
+		// idle, so they don't leak. Gated on warm reuse being enabled and a
+		// positive WarmInstanceIdleTimeout; "0"/empty leaves warm instances to
+		// persist until stopped from the Projects panel.
+		if app.ProjectManager != nil && cfg.Mesnada.Delegation.ReuseWarmInstances {
+			if idle, derr := time.ParseDuration(cfg.Mesnada.Delegation.WarmInstanceIdleTimeout); derr == nil && idle > 0 {
+				app.ProjectManager.StartIdleGC(idle)
+				logging.Info("delegation warm-instance idle auto-GC enabled", "idle_timeout", idle.String())
+			}
+		}
 		orch, err := mesnadaOrch.New(mesnadaCfg)
 		if err != nil {
 			logging.Error("Failed to create mesnada orchestrator", "error", err)

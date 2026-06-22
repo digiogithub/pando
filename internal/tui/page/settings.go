@@ -1786,6 +1786,7 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 		{Label: "Delegation Resurrection Timeout", Key: "mesnada.delegation.resurrectionTimeout", Type: settings.FieldText, Value: delegationTimeoutString(cfg.Mesnada.Delegation.ResurrectionTimeout), Hint: "How long to wait for pending sibling conclusions (e.g. 10m, 1h)"},
 		{Label: "Delegation Reuse Warm Instances", Key: "mesnada.delegation.reuseWarmInstances", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.ReuseWarmInstances), Hint: "Route a delegated task to an already-running per-project instance instead of cold-spawning"},
 		{Label: "Delegation Auto-Start Warm Instance", Key: "mesnada.delegation.autoStartWarmInstance", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.AutoStartWarmInstance), Hint: "Auto-start a child instance when none is running (off = reuse-only)"},
+		{Label: "Delegation Warm Instance Idle Timeout", Key: "mesnada.delegation.warmInstanceIdleTimeout", Type: settings.FieldText, Value: warmIdleTimeoutString(cfg.Mesnada.Delegation.WarmInstanceIdleTimeout), Hint: "Stop idle router-started warm instances after this long (0 = never; e.g. 10m, 1h)"},
 	}
 
 	if !cfg.Mesnada.Enabled {
@@ -2837,6 +2838,15 @@ func delegationTimeoutString(timeout string) string {
 	return timeout
 }
 
+// warmIdleTimeoutString normalizes a warm-instance idle timeout for display,
+// mapping empty to "0" (idle auto-GC disabled).
+func warmIdleTimeoutString(timeout string) string {
+	if strings.TrimSpace(timeout) == "" {
+		return "0"
+	}
+	return timeout
+}
+
 // chatSidebarValue normalizes the chat info sidebar mode for display, mapping
 // "off" (case-insensitive) to "off" and everything else (including empty) to
 // "auto".
@@ -3513,7 +3523,8 @@ func saveMesnada(field settings.Field) error {
 		"mesnada.delegation.maxConcurrent",
 		"mesnada.delegation.resurrectionTimeout",
 		"mesnada.delegation.reuseWarmInstances",
-		"mesnada.delegation.autoStartWarmInstance":
+		"mesnada.delegation.autoStartWarmInstance",
+		"mesnada.delegation.warmInstanceIdleTimeout":
 		return saveMesnadaDelegation(field)
 	default:
 		return fmt.Errorf("unsupported Mesnada setting %q", field.Key)
@@ -3601,6 +3612,15 @@ func saveMesnadaDelegation(field settings.Field) error {
 			return fmt.Errorf("invalid Delegation auto-start-warm-instance value: %w", err)
 		}
 		del.AutoStartWarmInstance = v
+	case "mesnada.delegation.warmInstanceIdleTimeout":
+		timeout := strings.TrimSpace(field.Value)
+		if timeout == "" {
+			timeout = "0"
+		}
+		if _, err := time.ParseDuration(timeout); err != nil {
+			return fmt.Errorf("invalid Delegation warm-instance idle timeout (0 to disable, e.g. 10m, 1h): %w", err)
+		}
+		del.WarmInstanceIdleTimeout = timeout
 	default:
 		return fmt.Errorf("unsupported Delegation setting %q", field.Key)
 	}

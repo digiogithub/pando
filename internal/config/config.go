@@ -285,6 +285,12 @@ type MesnadaDelegationConfig struct {
 	// auto-starts a child instance for the project if none is running rather than
 	// only reusing an existing one. Set false for reuse-only routing.
 	AutoStartWarmInstance bool `json:"autoStartWarmInstance,omitempty"`
+	// WarmInstanceIdleTimeout is how long a router-auto-started ("warm") instance
+	// may sit with no in-flight delegated sessions before the idle auto-GC stops
+	// it (item C1). A Go duration string ("10m"); "0" or empty disables the GC
+	// (warm instances then persist until stopped from the Projects panel). Only
+	// delegation-spawned, non-active instances are ever GC'd.
+	WarmInstanceIdleTimeout string `json:"warmInstanceIdleTimeout,omitempty"`
 }
 
 // Documented defaults for the delegation caps/timeout. They are the single
@@ -1286,6 +1292,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("mesnada.delegation.resurrectionTimeout", defaultDelegationResurrectionTimeout)
 	viper.SetDefault("mesnada.delegation.reuseWarmInstances", false)
 	viper.SetDefault("mesnada.delegation.autoStartWarmInstance", true)
+	viper.SetDefault("mesnada.delegation.warmInstanceIdleTimeout", "0")
 
 	// API Server (WebUI backend) defaults
 	viper.SetDefault("server.enabled", false)
@@ -1536,6 +1543,9 @@ func setProviderDefaults() {
 	}
 	if v := os.Getenv("PANDO_DELEGATION_AUTO_START_WARM_INSTANCE"); v != "" {
 		viper.SetDefault("mesnada.delegation.autoStartWarmInstance", parseEnvBool(v))
+	}
+	if v := os.Getenv("PANDO_DELEGATION_WARM_INSTANCE_IDLE_TIMEOUT"); v != "" {
+		viper.SetDefault("mesnada.delegation.warmInstanceIdleTimeout", v)
 	}
 
 	// Use this order to set the default models
@@ -1902,6 +1912,12 @@ func normalizeMesnadaDelegationDefaults() {
 	}
 	if strings.TrimSpace(d.ResurrectionTimeout) == "" {
 		d.ResurrectionTimeout = defaultDelegationResurrectionTimeout
+	}
+	// WarmInstanceIdleTimeout has no "documented non-zero default" — its default
+	// is disabled. Normalize a blank (e.g. dropped by viper shadowing) to the
+	// explicit "0" so GET responses round-trip a stable, parseable value.
+	if strings.TrimSpace(d.WarmInstanceIdleTimeout) == "" {
+		d.WarmInstanceIdleTimeout = "0"
 	}
 }
 

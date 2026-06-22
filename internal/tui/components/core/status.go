@@ -233,8 +233,7 @@ func formatTokens(tokens, contextWindow int64, estimated bool) string {
 	if contextWindow > 0 {
 		percentage := (float64(tokens) / float64(contextWindow)) * 100
 		if percentage > 80 {
-			// add the warning icon and percentage
-			formattedTokens = fmt.Sprintf("%s(%d%%)", styles.WarningIcon, int(percentage))
+			formattedTokens = fmt.Sprintf("%s %s (%d%%)", styles.WarningIcon, formattedTokens, int(percentage))
 		}
 	}
 

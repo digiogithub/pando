@@ -17,7 +17,7 @@ func (a *PandoACPAgent) handleSlashCommand(
 	switch command.Kind {
 	case slashCommandGoal:
 		if strings.TrimSpace(command.Objective) == "" {
-			if err := a.sendAgentText(acpSession, "Usage: /goal <objective>\nAlias: /autopilot <objective>"); err != nil {
+			if err := a.sendAgentText(acpSession, slashCommandUsage(slashCommandGoal)); err != nil {
 				return "", err
 			}
 			return acpsdk.StopReasonEndTurn, nil

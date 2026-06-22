@@ -99,6 +99,7 @@
       "delegationReuseWarmInstancesDescription": "Encaminha uma tarefa delegada para uma instância por projeto já em execução em vez de iniciar a frio um subprocesso CLI",
       "delegationAutoStartWarm": "Iniciar instância ativa automaticamente",
       "delegationAutoStartWarmDescription": "Inicia automaticamente uma instância filha para o projeto quando nenhuma está em execução (desligado = apenas reutilizar)",
+      "delegationWarmIdleTimeout": "Tempo de inatividade da instância quente (0 = nunca)",
       "toolDiscovery": "Descoberta de ferramentas",
       "toolDiscoveryDescription": "Mantém ferramentas não essenciais fora do contexto inicial; o modelo as encontra sob demanda via tool_search",
       "toolDiscoveryMode": "Modo de descoberta de ferramentas",

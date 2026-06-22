@@ -99,6 +99,7 @@
       "delegationReuseWarmInstancesDescription": "委任タスクをCLIサブプロセスをコールド起動する代わりに、すでに実行中のプロジェクト別インスタンスにルーティングします",
       "delegationAutoStartWarm": "ウォームインスタンスを自動起動",
       "delegationAutoStartWarmDescription": "実行中のインスタンスがない場合、プロジェクト用の子インスタンスを自動起動します（オフ = 再利用のみ）",
+      "delegationWarmIdleTimeout": "ウォームインスタンスのアイドルタイムアウト（0 = 無効）",
       "toolDiscovery": "ツール検出",
       "toolDiscoveryDescription": "コア以外のツールを初期コンテキストから除外し、モデルが tool_search で必要に応じて見つけます",
       "toolDiscoveryMode": "ツール検出モード",

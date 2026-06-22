@@ -374,14 +374,9 @@ func (a *PandoACPAgent) finishPrompt(ctx context.Context, sessionID acpsdk.Sessi
 
 	var sessionInfo ACPSessionInfo
 	// Send usage_update and session_info_update after the prompt completes.
-	// Fetch the latest session state so we have accurate token counts and title.
-	if used, size, ok := a.currentUsageSnapshot(ctx, acpSession); ok {
-		if used > 0 {
-			if sendErr := acpSession.SendUpdate(acpsdk.UpdateUsage(used, size)); sendErr != nil {
-				a.logger.Printf("[ACP AGENT] Failed to send usage_update: %v", sendErr)
-			}
-		}
-	}
+	// Fetch the latest session state so we have accurate token counts and the
+	// effective max context window for the currently selected provider model.
+	a.sendUsageUpdate(ctx, sessionID, acpSession)
 	if title := a.currentSessionTitle(ctx, acpSession); title != "" && title != "ACP Session" {
 		savedInfo, saveErr := a.sessionService.SaveSessionTitle(ctx, acpSession.PandoSessionID(), title)
 		if saveErr != nil {
@@ -630,11 +625,14 @@ func (a *PandoACPAgent) setSessionModel(ctx context.Context, sessionID acpsdk.Se
 	}
 
 	a.setSessionModelValue(acpSession, modelID)
+	reconcileACPThinkingSession(a.agentService, acpSession)
+	a.agentService.SetSessionLLMOverrides(acpSession.PandoSessionID(), sessionLLMOverridesFor(acpSession))
 	a.logger.Printf("[ACP AGENT] SetSessionModel: model set to %s for session %s", modelID, sessionID)
 	if err := a.persistACPState(ctx, acpSession); err != nil {
 		return acpsdk.SetSessionModelResponse{}, err
 	}
 	a.sendSessionConfigOptionsUpdate(ctx, sessionID)
+	a.sendUsageUpdate(ctx, sessionID, acpSession)
 	return acpsdk.SetSessionModelResponse{}, nil
 }
 
@@ -876,11 +874,39 @@ func (a *PandoACPAgent) currentUsageSnapshot(ctx context.Context, acpSession *AC
 		return 0, 0, false
 	}
 	used = int(sessionInfo.PromptTokens + sessionInfo.CompletionTokens)
-	size = int(sessionInfo.ContextWindow)
-	if size == 0 {
-		size = 200000 // safe default for modern frontier models
-	}
+	size = a.maxContextWindowForSession(acpSession, sessionInfo)
 	return used, size, true
+}
+
+func (a *PandoACPAgent) maxContextWindowForSession(acpSession *ACPServerSession, sessionInfo ACPSessionInfo) int {
+	if acpSession != nil {
+		if model, ok := selectedACPModel(a.agentService, acpSession.Model()); ok && model.ContextWindow > 0 {
+			return int(model.ContextWindow)
+		}
+	}
+	if sessionInfo.ContextWindow > 0 {
+		return int(sessionInfo.ContextWindow)
+	}
+	if model, ok := selectedACPModel(a.agentService, ""); ok && model.ContextWindow > 0 {
+		return int(model.ContextWindow)
+	}
+	return 0
+}
+
+func (a *PandoACPAgent) sendUsageUpdate(ctx context.Context, sessionID acpsdk.SessionId, acpSession *ACPServerSession) {
+	if acpSession == nil {
+		return
+	}
+	used, size, ok := a.currentUsageSnapshot(ctx, acpSession)
+	if !ok {
+		return
+	}
+	if used < 0 {
+		used = 0
+	}
+	if err := a.safeSessionUpdate(acpSession, sessionID, acpsdk.UpdateUsage(used, size)); err != nil {
+		a.logger.Printf("[ACP AGENT] Failed to send usage_update for session %s: %v", sessionID, err)
+	}
 }
 
 func (a *PandoACPAgent) currentSessionTitle(ctx context.Context, acpSession *ACPServerSession) string {

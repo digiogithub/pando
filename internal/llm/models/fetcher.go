@@ -13,6 +13,11 @@ import (
 	"github.com/digiogithub/pando/internal/version"
 )
 
+var (
+	geminiModelsURL     = "https://generativelanguage.googleapis.com/v1beta/models"
+	openRouterModelsURL = "https://openrouter.ai/api/v1/models"
+)
+
 // FetchedModel represents a model returned by a provider's API
 type FetchedModel struct {
 	ID            string `json:"id"`
@@ -311,7 +316,7 @@ func fetchGeminiModels(ctx context.Context, apiKey string) ([]FetchedModel, erro
 		return nil, fmt.Errorf("API key required for Gemini")
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s", apiKey)
+	url := fmt.Sprintf("%s?key=%s", geminiModelsURL, apiKey)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
@@ -320,9 +325,10 @@ func fetchGeminiModels(ctx context.Context, apiKey string) ([]FetchedModel, erro
 	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
 		var response struct {
 			Models []struct {
-				Name        string `json:"name"`
-				DisplayName string `json:"displayName"`
-				Description string `json:"description"`
+				Name            string `json:"name"`
+				DisplayName     string `json:"displayName"`
+				Description     string `json:"description"`
+				InputTokenLimit int64  `json:"inputTokenLimit"`
 			} `json:"models"`
 		}
 		if err := json.Unmarshal(body, &response); err != nil {
@@ -333,9 +339,10 @@ func fetchGeminiModels(ctx context.Context, apiKey string) ([]FetchedModel, erro
 			// Gemini returns names like "models/gemini-2.5-pro", strip the prefix
 			id := strings.TrimPrefix(m.Name, "models/")
 			result = append(result, FetchedModel{
-				ID:          id,
-				Name:        m.DisplayName,
-				Description: m.Description,
+				ID:            id,
+				Name:          m.DisplayName,
+				Description:   m.Description,
+				ContextWindow: m.InputTokenLimit,
 			})
 		}
 		return result, nil
@@ -382,7 +389,7 @@ func fetchOpenRouterModels(ctx context.Context, apiKey string) ([]FetchedModel, 
 		return nil, fmt.Errorf("API key required for OpenRouter")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://openrouter.ai/api/v1/models", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, openRouterModelsURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -391,10 +398,14 @@ func fetchOpenRouterModels(ctx context.Context, apiKey string) ([]FetchedModel, 
 	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
 		var response struct {
 			Data []struct {
-				ID          string `json:"id"`
-				Name        string `json:"name"`
-				Description string `json:"description"`
-				Created     int64  `json:"created"`
+				ID            string `json:"id"`
+				Name          string `json:"name"`
+				Description   string `json:"description"`
+				Created       int64  `json:"created"`
+				ContextLength int64  `json:"context_length"`
+				TopProvider   *struct {
+					ContextLength int64 `json:"context_length"`
+				} `json:"top_provider,omitempty"`
 			} `json:"data"`
 		}
 		if err := json.Unmarshal(body, &response); err != nil {
@@ -402,11 +413,16 @@ func fetchOpenRouterModels(ctx context.Context, apiKey string) ([]FetchedModel, 
 		}
 		result := make([]FetchedModel, 0, len(response.Data))
 		for _, m := range response.Data {
+			contextWindow := m.ContextLength
+			if m.TopProvider != nil && m.TopProvider.ContextLength > 0 {
+				contextWindow = m.TopProvider.ContextLength
+			}
 			result = append(result, FetchedModel{
-				ID:          m.ID,
-				Name:        m.Name,
-				Description: m.Description,
-				Created:     m.Created,
+				ID:            m.ID,
+				Name:          m.Name,
+				Description:   m.Description,
+				Created:       m.Created,
+				ContextWindow: contextWindow,
 			})
 		}
 		return result, nil

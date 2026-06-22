@@ -3,6 +3,8 @@ package acp
 import (
 	"fmt"
 	"strings"
+
+	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
 type slashCommandKind string
@@ -19,25 +21,127 @@ type slashCommand struct {
 	Objective string
 }
 
+type slashCommandSpec struct {
+	Token       string
+	Kind        slashCommandKind
+	Description string
+	InputHint   string
+	Aliases     []string
+	Usage       string
+}
+
+func slashCommandSpecs() []slashCommandSpec {
+	return []slashCommandSpec{
+		{
+			Token:       goalCommandToken,
+			Kind:        slashCommandGoal,
+			Description: "Start goal mode with a persistent objective",
+			InputHint:   "objective to pursue",
+			Aliases:     []string{autopilotCommandToken},
+			Usage:       "Usage: /goal <objective>\nAlias: /autopilot <objective>",
+		},
+		{
+			Token:       goalStatusCommandToken,
+			Kind:        slashCommandGoalStatus,
+			Description: "Show the status of the current goal",
+		},
+		{
+			Token:       goalCancelCommandToken,
+			Kind:        slashCommandGoalCancel,
+			Description: "Cancel the current goal execution",
+		},
+		{
+			Token:       compactCommandToken,
+			Kind:        slashCommandSummarize,
+			Description: "Create a manual compact summary for the current session",
+			Aliases:     []string{summarizeCommandToken},
+		},
+	}
+}
+
+func availableCommands() []acpsdk.AvailableCommand {
+	specs := slashCommandSpecs()
+	commands := make([]acpsdk.AvailableCommand, 0, len(specs)+2)
+	for _, spec := range specs {
+		commands = append(commands, spec.toAvailableCommand(spec.Token))
+		for _, alias := range spec.Aliases {
+			commands = append(commands, spec.toAvailableCommand(alias))
+		}
+	}
+	return commands
+}
+
+func (s slashCommandSpec) toAvailableCommand(name string) acpsdk.AvailableCommand {
+	command := acpsdk.AvailableCommand{
+		Name:        name,
+		Description: s.descriptionFor(name),
+	}
+	if strings.TrimSpace(s.InputHint) != "" {
+		command.Input = &acpsdk.AvailableCommandInput{
+			Unstructured: &acpsdk.UnstructuredCommandInput{Hint: s.InputHint},
+		}
+	}
+	return command
+}
+
+func (s slashCommandSpec) descriptionFor(name string) string {
+	if name == s.Token {
+		return s.Description
+	}
+	return fmt.Sprintf("Alias for /%s", s.Token)
+}
+
 func parseSlashCommand(input string) (slashCommand, bool) {
 	line := strings.TrimSpace(input)
-
-	switch {
-	case line == "/goal":
-		return slashCommand{Kind: slashCommandGoalStatus}, true
-	case strings.HasPrefix(line, "/goal "):
-		return slashCommand{Kind: slashCommandGoal, Objective: strings.TrimSpace(strings.TrimPrefix(line, "/goal "))}, true
-	case strings.HasPrefix(line, "/autopilot "):
-		return slashCommand{Kind: slashCommandGoal, Objective: strings.TrimSpace(strings.TrimPrefix(line, "/autopilot "))}, true
-	case line == "/goal-status":
-		return slashCommand{Kind: slashCommandGoalStatus}, true
-	case line == "/goal-cancel":
-		return slashCommand{Kind: slashCommandGoalCancel}, true
-	case line == "/compact", line == "/summarize":
-		return slashCommand{Kind: slashCommandSummarize}, true
-	default:
+	if !strings.HasPrefix(line, "/") {
 		return slashCommand{}, false
 	}
+
+	commandText := strings.TrimPrefix(line, "/")
+	parts := strings.SplitN(commandText, " ", 2)
+	name := strings.TrimSpace(parts[0])
+	args := ""
+	if len(parts) > 1 {
+		args = strings.TrimSpace(parts[1])
+	}
+
+	for _, spec := range slashCommandSpecs() {
+		if command, ok := spec.parse(name, args); ok {
+			return command, true
+		}
+	}
+	return slashCommand{}, false
+}
+
+func (s slashCommandSpec) parse(name, args string) (slashCommand, bool) {
+	if !s.matches(name) {
+		return slashCommand{}, false
+	}
+	if strings.TrimSpace(s.InputHint) != "" {
+		return slashCommand{Kind: s.Kind, Objective: args}, true
+	}
+	return slashCommand{Kind: s.Kind}, true
+}
+
+func (s slashCommandSpec) matches(name string) bool {
+	if name == s.Token {
+		return true
+	}
+	for _, alias := range s.Aliases {
+		if name == alias {
+			return true
+		}
+	}
+	return false
+}
+
+func slashCommandUsage(kind slashCommandKind) string {
+	for _, spec := range slashCommandSpecs() {
+		if spec.Kind == kind {
+			return spec.Usage
+		}
+	}
+	return ""
 }
 
 func formatGoalStatus(goal *GoalStateUpdate) string {

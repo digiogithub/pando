@@ -455,6 +455,7 @@ export interface SettingsConfig {
   delegation_resurrection_timeout: string  // e.g. "10m", "1h"
   delegation_reuse_warm_instances: boolean // route delegated tasks to a warm per-project instance
   delegation_auto_start_warm: boolean      // auto-start a child instance when none is running
+  delegation_warm_idle_timeout: string     // stop idle warm instances after this long ("0" = never)
   // UI-only fields (not persisted via /api/v1/settings)
   language: string
 }

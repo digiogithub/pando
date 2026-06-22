@@ -106,7 +106,8 @@
       "delegationReuseWarmInstances": "Reutilizar instancias activas",
       "delegationReuseWarmInstancesDescription": "Enruta una tarea delegada a una instancia por proyecto ya en ejecución en lugar de arrancar un subproceso CLI en frío",
       "delegationAutoStartWarm": "Auto-arrancar instancia activa",
-      "delegationAutoStartWarmDescription": "Arranca automáticamente una instancia hija para el proyecto cuando no hay ninguna en ejecución (desactivado = solo reutilizar)"
+      "delegationAutoStartWarmDescription": "Arranca automáticamente una instancia hija para el proyecto cuando no hay ninguna en ejecución (desactivado = solo reutilizar)",
+      "delegationWarmIdleTimeout": "Tiempo de inactividad de instancia activa (0 = nunca)"
     }
   },
   "chat": {

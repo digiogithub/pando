@@ -2625,10 +2625,20 @@ func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 		}
 	}
 
-	for _, cmd := range commands {
-		if cmd.Input != nil {
-			t.Fatalf("expected available command %q to omit input metadata for maximum ACP client compatibility", cmd.Name)
+	for _, name := range []string{goalCommandToken, autopilotCommandToken} {
+		cmd := got[name]
+		if cmd.Input == nil || cmd.Input.Unstructured == nil || strings.TrimSpace(cmd.Input.Unstructured.Hint) == "" {
+			t.Fatalf("expected available command %q to include an unstructured input hint, got %#v", name, cmd.Input)
 		}
+	}
+
+	for _, name := range []string{goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken} {
+		if got[name].Input != nil {
+			t.Fatalf("expected available command %q to omit input metadata, got %#v", name, got[name].Input)
+		}
+	}
+
+	for _, cmd := range commands {
 		payload, err := json.Marshal(cmd)
 		if err != nil {
 			t.Fatalf("marshal available command %q: %v", cmd.Name, err)
@@ -2636,6 +2646,35 @@ func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 		if strings.Contains(string(payload), "\"input\":{}") {
 			t.Fatalf("expected available command %q to avoid empty input payloads, got %s", cmd.Name, payload)
 		}
+	}
+}
+
+func TestParseSlashCommand_UsesRegistry(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		want   slashCommand
+		wantOK bool
+	}{
+		{name: "goal with objective", input: "/goal ship it", want: slashCommand{Kind: slashCommandGoal, Objective: "ship it"}, wantOK: true},
+		{name: "goal without objective", input: "/goal", want: slashCommand{Kind: slashCommandGoal, Objective: ""}, wantOK: true},
+		{name: "autopilot alias", input: "/autopilot investigate", want: slashCommand{Kind: slashCommandGoal, Objective: "investigate"}, wantOK: true},
+		{name: "goal status", input: "/goal-status", want: slashCommand{Kind: slashCommandGoalStatus}, wantOK: true},
+		{name: "compact", input: "/compact", want: slashCommand{Kind: slashCommandSummarize}, wantOK: true},
+		{name: "summarize alias", input: "/summarize", want: slashCommand{Kind: slashCommandSummarize}, wantOK: true},
+		{name: "unknown", input: "/unknown", want: slashCommand{}, wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := parseSlashCommand(tt.input)
+			if ok != tt.wantOK {
+				t.Fatalf("parseSlashCommand(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
+			}
+			if got != tt.want {
+				t.Fatalf("parseSlashCommand(%q) = %#v, want %#v", tt.input, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -2765,7 +2804,10 @@ func TestPandoACPAgent_ResumeSession_RestoresPersistedACPThinkingPreferences(t *
 
 // TestPandoACPAgent_SetSessionModel verifies model updates.
 func TestPandoACPAgent_SetSessionModel(t *testing.T) {
-	agent := newTestPandoAgent()
+	agent := newTestPandoAgentWithModels(string(llmmodels.Claude46Sonnet),
+		ACPModelInfo{ID: string(llmmodels.Claude46Sonnet), Name: "Claude Sonnet 4.6"},
+		ACPModelInfo{ID: string(llmmodels.Claude3Haiku), Name: "Claude 3 Haiku"},
+	)
 	ctx := context.Background()
 
 	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
@@ -2775,7 +2817,7 @@ func TestPandoACPAgent_SetSessionModel(t *testing.T) {
 
 	_, err = agent.UnstableSetSessionModel(ctx, acpsdk.UnstableSetSessionModelRequest{
 		SessionId: resp.SessionId,
-		ModelId:   "claude-sonnet-4-6",
+		ModelId:   acpsdk.UnstableModelId(llmmodels.Claude46Sonnet),
 	})
 	if err != nil {
 		t.Fatalf("UnstableSetSessionModel failed: %v", err)
@@ -2785,8 +2827,81 @@ func TestPandoACPAgent_SetSessionModel(t *testing.T) {
 	acpSess := agent.sessions[resp.SessionId]
 	agent.sessionsMu.RUnlock()
 
-	if acpSess.Model() != "claude-sonnet-4-6" {
-		t.Errorf("Expected model 'claude-sonnet-4-6', got %q", acpSess.Model())
+	if acpSess.Model() != string(llmmodels.Claude46Sonnet) {
+		t.Errorf("Expected model %q, got %q", llmmodels.Claude46Sonnet, acpSess.Model())
+	}
+
+	mockSvc := agent.agentService.(*mockAgentService)
+	overrides, ok := mockSvc.sessionOverrides[acpSess.PandoSessionID()]
+	if !ok {
+		t.Fatal("expected session overrides to be updated after model change")
+	}
+	if overrides.Model != string(llmmodels.Claude46Sonnet) {
+		t.Fatalf("override model = %q, want %q", overrides.Model, llmmodels.Claude46Sonnet)
+	}
+}
+
+func TestPandoACPAgent_CurrentUsageSnapshotPrefersSelectedModelContextWindow(t *testing.T) {
+	agent := newTestPandoAgentWithModels(string(llmmodels.Claude3Haiku),
+		ACPModelInfo{ID: string(llmmodels.Claude46Sonnet), Name: "Claude Sonnet 4.6"},
+		ACPModelInfo{ID: string(llmmodels.Claude3Haiku), Name: "Claude 3 Haiku"},
+	)
+	ctx := context.Background()
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	agent.sessionsMu.RLock()
+	acpSess := agent.sessions[resp.SessionId]
+	agent.sessionsMu.RUnlock()
+	acpSess.SetModel(string(llmmodels.Claude46Sonnet))
+
+	svc := agent.sessionService.(*mockSessionService)
+	sess := svc.sessions[acpSess.PandoSessionID()]
+	sess.PromptTokens = 1200
+	sess.CompletionTokens = 300
+	sess.ContextWindow = 1024
+	svc.sessions[acpSess.PandoSessionID()] = sess
+
+	used, size, ok := agent.currentUsageSnapshot(ctx, acpSess)
+	if !ok {
+		t.Fatal("expected currentUsageSnapshot to succeed")
+	}
+	if used != 1500 {
+		t.Fatalf("used = %d, want %d", used, 1500)
+	}
+	if size != int(llmmodels.SupportedModels[llmmodels.Claude46Sonnet].ContextWindow) {
+		t.Fatalf("size = %d, want model context window %d", size, llmmodels.SupportedModels[llmmodels.Claude46Sonnet].ContextWindow)
+	}
+}
+
+func TestPandoACPAgent_CurrentUsageSnapshotFallsBackToSessionContextWindow(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	agent.sessionsMu.RLock()
+	acpSess := agent.sessions[resp.SessionId]
+	agent.sessionsMu.RUnlock()
+	acpSess.SetModel("unknown-provider-model")
+
+	svc := agent.sessionService.(*mockSessionService)
+	sess := svc.sessions[acpSess.PandoSessionID()]
+	sess.PromptTokens = 10
+	sess.CompletionTokens = 5
+	sess.ContextWindow = 4096
+	svc.sessions[acpSess.PandoSessionID()] = sess
+
+	_, size, ok := agent.currentUsageSnapshot(ctx, acpSess)
+	if !ok {
+		t.Fatal("expected currentUsageSnapshot to succeed")
+	}
+	if size != 4096 {
+		t.Fatalf("size = %d, want %d", size, 4096)
 	}
 }
 
