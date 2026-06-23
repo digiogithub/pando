@@ -274,6 +274,9 @@ function DelegationMetricsBar({ metrics }: { metrics: DelegationMetrics | null }
     >
       <Metric label={t('orchestrator.delegationMetrics.warmHitRate')} value={`${hitRate}%`} accent="var(--success)" />
       <Metric label={t('orchestrator.delegationMetrics.warmHits')} value={metrics.warm_hits} />
+      {metrics.external_hits > 0 && (
+        <Metric label={t('orchestrator.delegationMetrics.externalHits')} value={metrics.external_hits} />
+      )}
       <Metric label={t('orchestrator.delegationMetrics.warmFailures')} value={metrics.warm_failures} />
       <Metric label={t('orchestrator.delegationMetrics.coldFallbacks')} value={metrics.cold_fallbacks} />
       <Metric label={t('orchestrator.delegationMetrics.capRejections')} value={metrics.cap_rejections} />

@@ -26,7 +26,6 @@ done
 SIGNING_KEYS_DIR="${SIGNING_KEYS_DIR:-$HOME/DIGIO_Software_Signing_Keys}"
 KEYCHAIN_NAME="${MACOS_SIGN_KEYCHAIN_NAME:-pando-build.keychain-db}"
 KEYCHAIN_PASSWORD="${MACOS_SIGN_KEYCHAIN_PASSWORD:-${KEYSTORE_PASS:-}}"
-KEYCHAIN_PATH="${MACOS_SIGN_KEYCHAIN_PATH:-$HOME/Library/Keychains/$KEYCHAIN_NAME}"
 KEYCHAIN_TIMEOUT_SECONDS="${MACOS_SIGN_KEYCHAIN_TIMEOUT_SECONDS:-21600}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-pando-notary}"
 NOTARYTOOL_STORE_CREDENTIALS="${NOTARYTOOL_STORE_CREDENTIALS:-0}"
@@ -50,7 +49,8 @@ normalize_name() {
 }
 
 KEYCHAIN_BASE_NAME="$(normalize_name "$KEYCHAIN_NAME")"
-KEYCHAIN_PATH_NO_EXT="${KEYCHAIN_PATH%.keychain-db}"
+KEYCHAIN_PATH="${MACOS_SIGN_KEYCHAIN_PATH:-$HOME/Library/Keychains/${KEYCHAIN_BASE_NAME}-db}"
+KEYCHAIN_PATH_NO_EXT="${KEYCHAIN_PATH%-db}"
 KEYCHAIN_PATH_LEGACY="${KEYCHAIN_PATH_NO_EXT}.keychain"
 
 find_first_match() {
@@ -95,16 +95,9 @@ fi
 APP_CERT_PASSWORD="${MACOS_APP_CERT_PASSWORD:-${SIGNING_CERT_PASSWORD:-${CERT_PASSWORD:-}}}"
 INSTALLER_CERT_PASSWORD="${MACOS_INSTALLER_CERT_PASSWORD:-${SIGNING_CERT_PASSWORD:-${CERT_PASSWORD:-$APP_CERT_PASSWORD}}}"
 
-if [[ -z "$APP_CERT_PASSWORD" ]]; then
-    echo "Error: missing password for Developer ID Application certificate." >&2
-    echo "Set MACOS_APP_CERT_PASSWORD, SIGNING_CERT_PASSWORD, or CERT_PASSWORD." >&2
-    exit 1
-fi
-if [[ -z "$INSTALLER_CERT_PASSWORD" ]]; then
-    echo "Error: missing password for Developer ID Installer certificate." >&2
-    echo "Set MACOS_INSTALLER_CERT_PASSWORD, SIGNING_CERT_PASSWORD, or CERT_PASSWORD." >&2
-    exit 1
-fi
+# Empty passwords are valid for some exported .p12 files. Keep supporting
+# explicit overrides, but do not require passwords when the PKCS#12 bundles are
+# unencrypted.
 
 extract_identity_sha1() {
     local p12_path="$1"
@@ -145,10 +138,13 @@ fi
 if security show-keychain-info "$KEYCHAIN_PATH_LEGACY" >/dev/null 2>&1; then
     security delete-keychain "$KEYCHAIN_PATH_LEGACY" >/dev/null 2>&1 || true
 fi
+if security show-keychain-info "$KEYCHAIN_BASE_NAME" >/dev/null 2>&1; then
+    security delete-keychain "$KEYCHAIN_BASE_NAME" >/dev/null 2>&1 || true
+fi
 
 security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_BASE_NAME"
-security set-keychain-settings -lut "$KEYCHAIN_TIMEOUT_SECONDS" "$KEYCHAIN_PATH"
-security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+security set-keychain-settings -lut "$KEYCHAIN_TIMEOUT_SECONDS" "$KEYCHAIN_BASE_NAME"
+security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_BASE_NAME"
 
 CURRENT_KEYCHAINS="$(security list-keychains -d user | tr -d '"')"
 security list-keychains -d user -s "$KEYCHAIN_PATH" $CURRENT_KEYCHAINS

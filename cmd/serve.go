@@ -155,7 +155,7 @@ This is the backend for the Pando Desktop/Web UI.`,
 			servePub := changepub.NewBusPublisher(serveBus.Publish, instanceID, cwd)
 			serveCoord.SetPublisher(servePub)
 			dbproxy.RegisterHandlersWithCoordinator(serveBus, serveCoord)
-			bridge.RegisterHandlers(serveBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+			registerBridgeHandlers(serveBus, instanceID, pandoApp)
 			if busErr := serveBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
 				logging.Warn("IPC: serve mode failed to start bus", "error", busErr)
 			} else {

@@ -470,9 +470,13 @@ func (p *orchestratorPage) delegationMetricsText() string {
 	if m.WarmAttempts == 0 && m.Resurrections == 0 && m.LiveInjections == 0 {
 		return ""
 	}
+	extPart := ""
+	if m.ExternalHits > 0 {
+		extPart = fmt.Sprintf(" · ext=%d", m.ExternalHits)
+	}
 	return fmt.Sprintf(
-		"Delegation: warm %d/%d (%.0f%%) · fail %d · cold %d · cap %d · resurrect %d · inject %d",
-		m.WarmHits, m.WarmAttempts, m.WarmHitRate*100,
+		"Delegation: warm %d/%d (%.0f%%)%s · fail %d · cold %d · cap %d · resurrect %d · inject %d",
+		m.WarmHits, m.WarmAttempts, m.WarmHitRate*100, extPart,
 		m.WarmFailures, m.ColdFallbacks, m.CapRejections,
 		m.Resurrections, m.LiveInjections,
 	)

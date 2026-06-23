@@ -267,6 +267,18 @@ export default function GeneralSettings() {
           disabled={!config.delegation_enabled || !config.delegation_reuse_warm_instances}
           onChange={(e) => updateField('delegation_warm_queue_depth', Number(e.target.value))}
         />
+        <Toggle
+          label={t('settings.general.delegationAllowExternalWarmTargets')}
+          description={t('settings.general.delegationAllowExternalWarmTargetsDescription')}
+          checked={config.delegation_allow_external_warm_targets}
+          onChange={(v) => updateField('delegation_allow_external_warm_targets', v)}
+        />
+        <Toggle
+          label={t('settings.general.delegationAcceptDelegations')}
+          description={t('settings.general.delegationAcceptDelegationsDescription')}
+          checked={config.delegation_accept_delegations}
+          onChange={(v) => updateField('delegation_accept_delegations', v)}
+        />
       </div>
 
       <div style={dividerStyle} />

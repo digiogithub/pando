@@ -300,6 +300,8 @@ ReuseWarmInstances = true
 AutoStartWarmInstance = true
 WarmInstanceIdleTimeout = '0'
 WarmQueueDepth = 0
+AllowExternalWarmTargets = false
+AcceptDelegations = false
 
 # =============================================================================
 # Shell & Bash

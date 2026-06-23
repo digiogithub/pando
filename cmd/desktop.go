@@ -160,7 +160,7 @@ func runDesktopMode(cmd *cobra.Command) error {
 		desktopPub := changepub.NewBusPublisher(desktopBus.Publish, instanceID, cwd)
 		desktopCoord.SetPublisher(desktopPub)
 		dbproxy.RegisterHandlersWithCoordinator(desktopBus, desktopCoord)
-		bridge.RegisterHandlers(desktopBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+		registerBridgeHandlers(desktopBus, instanceID, pandoApp)
 		if busErr := desktopBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
 			logging.Warn("IPC: desktop mode failed to start bus", "error", busErr)
 		} else {

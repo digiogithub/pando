@@ -863,9 +863,13 @@ func makeWarmTargetResolver(mgr *project.Manager, cfg *config.Config) mesnadaOrc
 	autoStart := cfg.Mesnada.Delegation.AutoStartWarmInstance
 	maxConcurrent := cfg.Mesnada.Delegation.MaxConcurrent
 	queueDepth := cfg.Mesnada.Delegation.WarmQueueDepth
+	// AllowExternalWarmTargets opts the caller into routing a delegated task whose
+	// project is served by an external (editor-launched) instance to that peer over
+	// the IPC bus (B3) instead of cold-spawning a CLI. Default OFF.
+	allowExternal := cfg.Mesnada.Delegation.AllowExternalWarmTargets
 
 	return warmTargetResolverFunc(func(ctx context.Context, projectID, projectPath, promptText string) (*mesnadaOrch.WarmRunResult, error) {
-		res, err := mgr.WarmDelegate(ctx, projectID, projectPath, promptText, autoStart, maxConcurrent, queueDepth)
+		res, err := mgr.WarmDelegate(ctx, projectID, projectPath, promptText, autoStart, maxConcurrent, queueDepth, allowExternal)
 		if err != nil {
 			// Map the cap-reached sentinel to the orchestrator's cap-specific
 			// fallback error so it is counted separately in delegation metrics (E1);
@@ -882,6 +886,7 @@ func makeWarmTargetResolver(mgr *project.Manager, cfg *config.Config) mesnadaOrc
 			ChildSessionID: res.ChildSessionID,
 			Output:         res.Output,
 			StopReason:     res.StopReason,
+			External:       res.External,
 		}, nil
 	})
 }
@@ -893,7 +898,11 @@ func isWarmColdFallback(err error) bool {
 		errors.Is(err, project.ErrExternalInstance) ||
 		errors.Is(err, project.ErrProjectNeedsInit) ||
 		errors.Is(err, project.ErrProjectNotRegistered) ||
-		errors.Is(err, project.ErrWarmCapReached)
+		errors.Is(err, project.ErrWarmCapReached) ||
+		// External (editor-launched) peer that is unreachable or has not opted in
+		// to accept delegations: take the cold path rather than fail the task (B3).
+		errors.Is(err, project.ErrExternalUnreachable) ||
+		errors.Is(err, project.ErrExternalDelegationRefused)
 }
 
 // makePandoModelResolver returns a function that converts a model ID (possibly

@@ -297,6 +297,20 @@ type MesnadaDelegationConfig struct {
 	// behaviour; a positive value lets up to that many delegations queue before the
 	// rest still fall back to the cold path. Only meaningful under ReuseWarmInstances.
 	WarmQueueDepth int `json:"warmQueueDepth,omitempty"`
+	// AllowExternalWarmTargets lets the orchestrator route a delegated task whose
+	// project is served by an EXTERNAL (editor-launched) instance to that peer over
+	// the IPC bus (hot-peer delegation, B3), instead of refusing it with
+	// ErrExternalInstance and cold-spawning a CLI. Caller-side opt-in, default OFF.
+	// The chosen peer must itself have AcceptDelegations enabled, else the caller
+	// cold-falls-back. Requires Enabled. We never stop/SIGTERM an external instance;
+	// on cancel we best-effort interrupt only the delegated session.
+	AllowExternalWarmTargets bool `json:"allowExternalWarmTargets,omitempty"`
+	// AcceptDelegations lets THIS instance accept incoming `delegation.run` IPC
+	// requests from peer instances and run them in a fresh ephemeral session
+	// (hot-peer delegation, B3). Target-side opt-in, default OFF: when false no
+	// `delegation.run` handler is active and the instance advertises
+	// AcceptsDelegations=false over instance.info, so peers will not route to it.
+	AcceptDelegations bool `json:"acceptDelegations,omitempty"`
 }
 
 // Documented defaults for the delegation caps/timeout. They are the single
@@ -1300,6 +1314,8 @@ func setDefaults(debug bool) {
 	viper.SetDefault("mesnada.delegation.autoStartWarmInstance", true)
 	viper.SetDefault("mesnada.delegation.warmInstanceIdleTimeout", "0")
 	viper.SetDefault("mesnada.delegation.warmQueueDepth", 0)
+	viper.SetDefault("mesnada.delegation.allowExternalWarmTargets", false)
+	viper.SetDefault("mesnada.delegation.acceptDelegations", false)
 
 	// API Server (WebUI backend) defaults
 	viper.SetDefault("server.enabled", false)
@@ -1553,6 +1569,12 @@ func setProviderDefaults() {
 	}
 	if v := os.Getenv("PANDO_DELEGATION_WARM_INSTANCE_IDLE_TIMEOUT"); v != "" {
 		viper.SetDefault("mesnada.delegation.warmInstanceIdleTimeout", v)
+	}
+	if v := os.Getenv("PANDO_DELEGATION_ALLOW_EXTERNAL_WARM_TARGETS"); v != "" {
+		viper.SetDefault("mesnada.delegation.allowExternalWarmTargets", parseEnvBool(v))
+	}
+	if v := os.Getenv("PANDO_DELEGATION_ACCEPT_DELEGATIONS"); v != "" {
+		viper.SetDefault("mesnada.delegation.acceptDelegations", parseEnvBool(v))
 	}
 
 	// Use this order to set the default models

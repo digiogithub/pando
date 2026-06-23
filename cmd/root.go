@@ -254,7 +254,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			pub := changepub.NewBusPublisher(bus.Publish, instanceID, cwd)
 			coord.SetPublisher(pub)
 			dbproxy.RegisterHandlersWithCoordinator(bus, coord)
-			bridge.RegisterHandlers(bus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+			registerBridgeHandlers(bus, instanceID, pandoApp)
 			pandoApp.SetupIPC(bus)
 			if busErr := bus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
 				logging.Warn("IPC: failed to start bus, continuing without IPC", "error", busErr)
@@ -279,7 +279,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 				pub := changepub.NewBusPublisher(newBus.Publish, instanceID, cwd)
 				coord.SetPublisher(pub)
 				dbproxy.RegisterHandlersWithCoordinator(newBus, coord)
-				bridge.RegisterHandlers(newBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+				registerBridgeHandlers(newBus, instanceID, pandoApp)
 				br := bridge.New(newBus, pandoApp.Sessions, pandoApp.CoderAgent)
 				br.Start(busCtx)
 				return nil
@@ -658,7 +658,7 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 		acpPub := changepub.NewBusPublisher(acpBus.Publish, acpInstanceID, cwd)
 		acpCoord.SetPublisher(acpPub)
 		dbproxy.RegisterHandlersWithCoordinator(acpBus, acpCoord)
-		bridge.RegisterHandlers(acpBus, acpInstanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+		registerBridgeHandlers(acpBus, acpInstanceID, pandoApp)
 		pandoApp.SetupIPC(acpBus)
 		if busErr := acpBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
 			logger.Printf("IPC: ACP bus failed to start (instances browser will not see this instance): %v", busErr)
@@ -673,7 +673,7 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 			pub := changepub.NewBusPublisher(newBus.Publish, acpInstanceID, cwd)
 			coord.SetPublisher(pub)
 			dbproxy.RegisterHandlersWithCoordinator(newBus, coord)
-			bridge.RegisterHandlers(newBus, acpInstanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+			registerBridgeHandlers(newBus, acpInstanceID, pandoApp)
 			br := bridge.New(newBus, pandoApp.Sessions, pandoApp.CoderAgent)
 			br.Start(busCtx)
 			return nil

@@ -284,6 +284,7 @@ export interface OrchestratorTask {
 export interface DelegationMetrics {
   warm_attempts: number
   warm_hits: number
+  external_hits: number  // subset of warm_hits served by external (editor-launched) peers (B3)
   warm_failures: number
   cold_fallbacks: number
   cap_rejections: number
@@ -467,10 +468,12 @@ export interface SettingsConfig {
   delegation_max_depth: number
   delegation_max_concurrent: number
   delegation_resurrection_timeout: string  // e.g. "10m", "1h"
-  delegation_reuse_warm_instances: boolean // route delegated tasks to a warm per-project instance
-  delegation_auto_start_warm: boolean      // auto-start a child instance when none is running
-  delegation_warm_idle_timeout: string     // stop idle warm instances after this long ("0" = never)
-  delegation_warm_queue_depth: number      // queue this many delegations for a free warm slot (0 = cold-spawn at cap)
+  delegation_reuse_warm_instances: boolean            // route delegated tasks to a warm per-project instance
+  delegation_auto_start_warm: boolean                 // auto-start a child instance when none is running
+  delegation_warm_idle_timeout: string                // stop idle warm instances after this long ("0" = never)
+  delegation_warm_queue_depth: number                 // queue this many delegations for a free warm slot (0 = cold-spawn at cap)
+  delegation_allow_external_warm_targets: boolean     // caller opt-in: route delegated tasks to external (editor-launched) peers over IPC
+  delegation_accept_delegations: boolean              // target opt-in: accept incoming delegation requests from peers over IPC
   // UI-only fields (not persisted via /api/v1/settings)
   language: string
 }

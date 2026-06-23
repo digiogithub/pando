@@ -163,7 +163,7 @@ func runAppMode(cmd *cobra.Command) error {
 		appCoord := writecoordinator.New(ctx, rt.Querier, 256)
 		defer appCoord.Shutdown()
 		dbproxy.RegisterHandlersWithCoordinator(appBus, appCoord)
-		bridge.RegisterHandlers(appBus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now())
+		registerBridgeHandlers(appBus, instanceID, pandoApp)
 		if busErr := appBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
 			logging.Warn("IPC: app mode failed to start bus", "error", busErr)
 		} else {

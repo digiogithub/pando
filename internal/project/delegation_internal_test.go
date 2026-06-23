@@ -2,9 +2,12 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -274,7 +277,7 @@ func TestWarmDelegateReuseCaptures(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	res, err := m.WarmDelegate(ctx, "proj-4", "", "do it", false /*autoStart*/, 4 /*maxConcurrent*/, 0 /*queueDepth*/)
+	res, err := m.WarmDelegate(ctx, "proj-4", "", "do it", false /*autoStart*/, 4 /*maxConcurrent*/, 0 /*queueDepth*/, false /*allowExternal*/)
 	if err != nil {
 		t.Fatalf("WarmDelegate: %v", err)
 	}
@@ -305,7 +308,7 @@ func TestWarmDelegateCapReached(t *testing.T) {
 	started := make(chan struct{})
 	go func() {
 		close(started)
-		_, _ = m.WarmDelegate(runCtx, "proj-5", "", "long", false, 1, 0)
+		_, _ = m.WarmDelegate(runCtx, "proj-5", "", "long", false, 1, 0, false)
 	}()
 	<-started
 
@@ -319,7 +322,7 @@ func TestWarmDelegateCapReached(t *testing.T) {
 	}
 
 	// A second delegation over the cap must be refused immediately.
-	_, err := m.WarmDelegate(context.Background(), "proj-5", "", "second", false, 1, 0)
+	_, err := m.WarmDelegate(context.Background(), "proj-5", "", "second", false, 1, 0, false)
 	if err != ErrWarmCapReached {
 		t.Fatalf("err = %v, want ErrWarmCapReached", err)
 	}
@@ -365,7 +368,7 @@ func TestWarmDelegatePublishesDelegationEvents(t *testing.T) {
 	defer cancel()
 	sub := m.broker.Subscribe(ctx)
 
-	if _, err := m.WarmDelegate(ctx, "proj-ev", "", "do it", false, 4, 0); err != nil {
+	if _, err := m.WarmDelegate(ctx, "proj-ev", "", "do it", false, 4, 0, false); err != nil {
 		t.Fatalf("WarmDelegate: %v", err)
 	}
 
@@ -479,7 +482,7 @@ func TestWarmInstanceServesParallelSessions(t *testing.T) {
 	results := make(chan outcome, 2)
 	for i := 0; i < 2; i++ {
 		go func() {
-			res, err := m.WarmDelegate(ctx, projectID, "", "do it", false, 2, 0)
+			res, err := m.WarmDelegate(ctx, projectID, "", "do it", false, 2, 0, false)
 			results <- outcome{res, err}
 		}()
 	}
@@ -532,7 +535,7 @@ func TestWarmDelegateDoesNotChangeActiveID(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if _, err := m.WarmDelegate(ctx, "proj-active", "", "go", false, 4, 0); err != nil {
+	if _, err := m.WarmDelegate(ctx, "proj-active", "", "go", false, 4, 0, false); err != nil {
 		t.Fatalf("WarmDelegate: %v", err)
 	}
 	if m.ActiveID() != "" {
@@ -581,3 +584,130 @@ func TestStopReportCancelsInflightDelegations(t *testing.T) {
 		t.Error("instance still present after StopReport, want removed")
 	}
 }
+
+// --- B3 hot-peer IPC delegation -------------------------------------------
+
+// TestExternalDelegationSentinelsDistinct verifies the two new error sentinels
+// are defined, non-nil, and distinct from each other and from existing errors.
+func TestExternalDelegationSentinelsDistinct(t *testing.T) {
+	if ErrExternalDelegationRefused == nil {
+		t.Fatal("ErrExternalDelegationRefused is nil")
+	}
+	if ErrExternalUnreachable == nil {
+		t.Fatal("ErrExternalUnreachable is nil")
+	}
+	if ErrExternalDelegationRefused == ErrExternalUnreachable {
+		t.Fatal("sentinels must be distinct")
+	}
+	if ErrExternalDelegationRefused == ErrExternalInstance {
+		t.Fatal("ErrExternalDelegationRefused must differ from ErrExternalInstance")
+	}
+	if ErrExternalUnreachable == ErrExternalInstance {
+		t.Fatal("ErrExternalUnreachable must differ from ErrExternalInstance")
+	}
+}
+
+// writeFakeLockFile creates a minimal .pando/ipc.lock in dir with the given pid
+// and rpcPort so that ReadLockForPath / Runtime detect an "external" instance.
+func writeFakeLockFile(t *testing.T, dir string, pid, rpcPort int) {
+	t.Helper()
+	pandoDir := filepath.Join(dir, ".pando")
+	if err := os.MkdirAll(pandoDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	info := map[string]interface{}{
+		"instance_id": "fake-external",
+		"pid":         pid,
+		"pub_port":    0,
+		"rpc_port":    rpcPort,
+		"started_at":  time.Now(),
+	}
+	data, err := json.Marshal(info)
+	if err != nil {
+		t.Fatalf("marshal lock info: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pandoDir, "ipc.lock"), data, 0o644); err != nil {
+		t.Fatalf("write lock file: %v", err)
+	}
+}
+
+// TestDelegateExternalNoLockFile verifies that DelegateExternal returns
+// ErrExternalUnreachable when no IPC lock file exists for the project path.
+func TestDelegateExternalNoLockFile(t *testing.T) {
+	m := &Manager{instances: map[string]*Instance{}}
+	dir := t.TempDir() // empty — no .pando/ipc.lock
+
+	_, err := m.DelegateExternal(context.Background(), "proj-x", dir, "hello", "corr-1")
+	if err != ErrExternalUnreachable {
+		t.Fatalf("err = %v, want ErrExternalUnreachable", err)
+	}
+}
+
+// TestDelegateExternalDeadPid verifies that DelegateExternal returns
+// ErrExternalUnreachable when the lock file exists but the PID is not alive.
+func TestDelegateExternalDeadPid(t *testing.T) {
+	dir := t.TempDir()
+	// PID 0 is never a live user process.
+	writeFakeLockFile(t, dir, 0, 9999)
+
+	m := &Manager{instances: map[string]*Instance{}}
+
+	_, err := m.DelegateExternal(context.Background(), "proj-x", dir, "hello", "corr-2")
+	if err != ErrExternalUnreachable {
+		t.Fatalf("err = %v, want ErrExternalUnreachable", err)
+	}
+}
+
+// TestWarmDelegateExternalFalsePassthrough verifies that with allowExternal=false
+// and an external instance present, WarmDelegate still returns ErrExternalInstance
+// (unchanged legacy behaviour — no IPC call is made).
+func TestWarmDelegateExternalFalsePassthrough(t *testing.T) {
+	dir := t.TempDir()
+	// Write a lock file with the current process PID so pidIsAlive returns true,
+	// making Runtime see a live external instance.
+	writeFakeLockFile(t, dir, os.Getpid(), 19999)
+
+	// Build a service that knows about this project.
+	svc := &fakeExtService{proj: Project{ID: "proj-ext", Path: dir}}
+	m := &Manager{
+		service:   svc,
+		instances: map[string]*Instance{},
+	}
+
+	_, err := m.WarmDelegate(context.Background(), "proj-ext", dir, "prompt", false, 4, 0, false)
+	if err != ErrExternalInstance {
+		t.Fatalf("err = %v, want ErrExternalInstance (allowExternal=false must not route over IPC)", err)
+	}
+}
+
+// fakeExtService is a minimal Service implementation used by external delegation
+// tests. Only Get and GetByPath need to work.
+type fakeExtService struct {
+	proj Project
+}
+
+func (f *fakeExtService) Create(_ context.Context, _, _ string) (*Project, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (f *fakeExtService) Get(_ context.Context, id string) (*Project, error) {
+	if id == f.proj.ID {
+		p := f.proj
+		return &p, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+func (f *fakeExtService) GetByPath(_ context.Context, path string) (*Project, error) {
+	if path == f.proj.Path {
+		p := f.proj
+		return &p, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+func (f *fakeExtService) List(_ context.Context) ([]Project, error)   { return []Project{f.proj}, nil }
+func (f *fakeExtService) Delete(_ context.Context, _ string) error    { return nil }
+func (f *fakeExtService) Rename(_ context.Context, _, _ string) error { return nil }
+func (f *fakeExtService) UpdateStatus(_ context.Context, _, _ string, _, _ int) error {
+	return nil
+}
+func (f *fakeExtService) MarkInitialized(_ context.Context, _ string) error { return nil }
+func (f *fakeExtService) TouchLastOpened(_ context.Context, _ string) error { return nil }

@@ -42,6 +42,7 @@
       "title": "Métricas de delegación",
       "warmHitRate": "Tasa de aciertos en caliente",
       "warmHits": "Aciertos en caliente",
+      "externalHits": "Aciertos externos",
       "warmFailures": "Fallos en caliente",
       "coldFallbacks": "Recursos a arranque en frío",
       "capRejections": "Rechazos por límite",
@@ -120,7 +121,11 @@
       "delegationAutoStartWarm": "Auto-arrancar instancia activa",
       "delegationAutoStartWarmDescription": "Arranca automáticamente una instancia hija para el proyecto cuando no hay ninguna en ejecución (desactivado = solo reutilizar)",
       "delegationWarmIdleTimeout": "Tiempo de inactividad de instancia activa (0 = nunca)",
-      "delegationWarmQueueDepth": "Profundidad de cola activa (0 = arranque en frío al límite)"
+      "delegationWarmQueueDepth": "Profundidad de cola activa (0 = arranque en frío al límite)",
+      "delegationAllowExternalWarmTargets": "Permitir destinos externos activos",
+      "delegationAllowExternalWarmTargetsDescription": "Enruta una tarea delegada a un par externo (lanzado por el editor) mediante IPC en lugar de arrancar un CLI en frío (el par debe aceptar delegaciones)",
+      "delegationAcceptDelegations": "Aceptar delegaciones",
+      "delegationAcceptDelegationsDescription": "Permite que esta instancia acepte solicitudes de delegación entrantes de otras instancias mediante IPC"
     }
   },
   "chat": {

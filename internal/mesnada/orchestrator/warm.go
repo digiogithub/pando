@@ -38,6 +38,10 @@ type WarmRunResult struct {
 	Output string
 	// StopReason is the ACP stop reason reported by the child (e.g. end_turn).
 	StopReason string
+	// External is true when the run was served by an external (editor-launched)
+	// peer over the IPC bus (hot-peer delegation, B3) rather than a manager-spawned
+	// warm child. Used only for metrics attribution (externalHits).
+	External bool
 }
 
 // WarmTargetResolver routes a delegated task to a warm per-project ACP instance,
@@ -148,6 +152,9 @@ func (o *Orchestrator) tryStartWarm(task *models.Task) bool {
 			task.ID, task.ProjectID, task.ProjectPath, err.Error())
 	} else {
 		o.metrics.recordWarmHit()
+		if res.External {
+			o.metrics.recordExternalHit()
+		}
 		task.Status = models.TaskStatusCompleted
 		task.Output = res.Output
 		task.ACPSessionID = res.ChildSessionID

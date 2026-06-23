@@ -1788,6 +1788,8 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 		{Label: "Delegation Auto-Start Warm Instance", Key: "mesnada.delegation.autoStartWarmInstance", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.AutoStartWarmInstance), Hint: "Auto-start a child instance when none is running (off = reuse-only)"},
 		{Label: "Delegation Warm Instance Idle Timeout", Key: "mesnada.delegation.warmInstanceIdleTimeout", Type: settings.FieldText, Value: warmIdleTimeoutString(cfg.Mesnada.Delegation.WarmInstanceIdleTimeout), Hint: "Stop idle router-started warm instances after this long (0 = never; e.g. 10m, 1h)"},
 		{Label: "Delegation Warm Queue Depth", Key: "mesnada.delegation.warmQueueDepth", Type: settings.FieldText, Value: intString(cfg.Mesnada.Delegation.WarmQueueDepth, 0), Hint: "Queue this many delegations for a free warm slot under load (0 = cold-spawn when at the cap)"},
+		{Label: "Delegation Allow External Warm Targets", Key: "mesnada.delegation.allowExternalWarmTargets", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.AllowExternalWarmTargets), Hint: "Route a delegated task to an external (editor-launched) peer over IPC instead of cold-spawning (peer must accept delegations)"},
+		{Label: "Delegation Accept Delegations", Key: "mesnada.delegation.acceptDelegations", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.AcceptDelegations), Hint: "Let this instance accept incoming delegation requests from peer instances over IPC"},
 	}
 
 	if !cfg.Mesnada.Enabled {
@@ -3631,6 +3633,18 @@ func saveMesnadaDelegation(field settings.Field) error {
 			return fmt.Errorf("Delegation warm queue depth must be >= 0")
 		}
 		del.WarmQueueDepth = v
+	case "mesnada.delegation.allowExternalWarmTargets":
+		v, err := strconv.ParseBool(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation allow-external-warm-targets value: %w", err)
+		}
+		del.AllowExternalWarmTargets = v
+	case "mesnada.delegation.acceptDelegations":
+		v, err := strconv.ParseBool(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation accept-delegations value: %w", err)
+		}
+		del.AcceptDelegations = v
 	default:
 		return fmt.Errorf("unsupported Delegation setting %q", field.Key)
 	}

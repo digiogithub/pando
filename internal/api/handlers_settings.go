@@ -35,18 +35,20 @@ type SettingsResponse struct {
 	ToolDiscoverySearchLimit    int    `json:"tool_discovery_search_limit"`
 
 	// Delegation (mesnada delegated-task conclusions + agent-loop resurrection).
-	DelegationEnabled             bool   `json:"delegation_enabled"`
-	DelegationInjectIntoLiveLoop  bool   `json:"delegation_inject_into_live_loop"`
-	DelegationResurrectIdleLoop   bool   `json:"delegation_resurrect_idle_loop"`
-	DelegationSynthesizeFallback  bool   `json:"delegation_synthesize_fallback"`
-	DelegationMaxResurrections    int    `json:"delegation_max_resurrections"`
-	DelegationMaxDepth            int    `json:"delegation_max_depth"`
-	DelegationMaxConcurrent       int    `json:"delegation_max_concurrent"`
-	DelegationResurrectionTimeout string `json:"delegation_resurrection_timeout"`
-	DelegationReuseWarmInstances  bool   `json:"delegation_reuse_warm_instances"`
-	DelegationAutoStartWarm       bool   `json:"delegation_auto_start_warm"`
-	DelegationWarmIdleTimeout     string `json:"delegation_warm_idle_timeout"`
-	DelegationWarmQueueDepth      int    `json:"delegation_warm_queue_depth"`
+	DelegationEnabled                  bool   `json:"delegation_enabled"`
+	DelegationInjectIntoLiveLoop       bool   `json:"delegation_inject_into_live_loop"`
+	DelegationResurrectIdleLoop        bool   `json:"delegation_resurrect_idle_loop"`
+	DelegationSynthesizeFallback       bool   `json:"delegation_synthesize_fallback"`
+	DelegationMaxResurrections         int    `json:"delegation_max_resurrections"`
+	DelegationMaxDepth                 int    `json:"delegation_max_depth"`
+	DelegationMaxConcurrent            int    `json:"delegation_max_concurrent"`
+	DelegationResurrectionTimeout      string `json:"delegation_resurrection_timeout"`
+	DelegationReuseWarmInstances       bool   `json:"delegation_reuse_warm_instances"`
+	DelegationAutoStartWarm            bool   `json:"delegation_auto_start_warm"`
+	DelegationWarmIdleTimeout          string `json:"delegation_warm_idle_timeout"`
+	DelegationWarmQueueDepth           int    `json:"delegation_warm_queue_depth"`
+	DelegationAllowExternalWarmTargets bool   `json:"delegation_allow_external_warm_targets"`
+	DelegationAcceptDelegations        bool   `json:"delegation_accept_delegations"`
 }
 
 // SettingsUpdateRequest contains the fields that can be updated via PUT /api/v1/settings.
@@ -68,18 +70,20 @@ type SettingsUpdateRequest struct {
 	ToolDiscoveryMaxDirectTools *int    `json:"tool_discovery_max_direct_tools,omitempty"`
 	ToolDiscoverySearchLimit    *int    `json:"tool_discovery_search_limit,omitempty"`
 
-	DelegationEnabled             *bool   `json:"delegation_enabled,omitempty"`
-	DelegationInjectIntoLiveLoop  *bool   `json:"delegation_inject_into_live_loop,omitempty"`
-	DelegationResurrectIdleLoop   *bool   `json:"delegation_resurrect_idle_loop,omitempty"`
-	DelegationSynthesizeFallback  *bool   `json:"delegation_synthesize_fallback,omitempty"`
-	DelegationMaxResurrections    *int    `json:"delegation_max_resurrections,omitempty"`
-	DelegationMaxDepth            *int    `json:"delegation_max_depth,omitempty"`
-	DelegationMaxConcurrent       *int    `json:"delegation_max_concurrent,omitempty"`
-	DelegationResurrectionTimeout *string `json:"delegation_resurrection_timeout,omitempty"`
-	DelegationReuseWarmInstances  *bool   `json:"delegation_reuse_warm_instances,omitempty"`
-	DelegationAutoStartWarm       *bool   `json:"delegation_auto_start_warm,omitempty"`
-	DelegationWarmIdleTimeout     *string `json:"delegation_warm_idle_timeout,omitempty"`
-	DelegationWarmQueueDepth      *int    `json:"delegation_warm_queue_depth,omitempty"`
+	DelegationEnabled                  *bool   `json:"delegation_enabled,omitempty"`
+	DelegationInjectIntoLiveLoop       *bool   `json:"delegation_inject_into_live_loop,omitempty"`
+	DelegationResurrectIdleLoop        *bool   `json:"delegation_resurrect_idle_loop,omitempty"`
+	DelegationSynthesizeFallback       *bool   `json:"delegation_synthesize_fallback,omitempty"`
+	DelegationMaxResurrections         *int    `json:"delegation_max_resurrections,omitempty"`
+	DelegationMaxDepth                 *int    `json:"delegation_max_depth,omitempty"`
+	DelegationMaxConcurrent            *int    `json:"delegation_max_concurrent,omitempty"`
+	DelegationResurrectionTimeout      *string `json:"delegation_resurrection_timeout,omitempty"`
+	DelegationReuseWarmInstances       *bool   `json:"delegation_reuse_warm_instances,omitempty"`
+	DelegationAutoStartWarm            *bool   `json:"delegation_auto_start_warm,omitempty"`
+	DelegationWarmIdleTimeout          *string `json:"delegation_warm_idle_timeout,omitempty"`
+	DelegationWarmQueueDepth           *int    `json:"delegation_warm_queue_depth,omitempty"`
+	DelegationAllowExternalWarmTargets *bool   `json:"delegation_allow_external_warm_targets,omitempty"`
+	DelegationAcceptDelegations        *bool   `json:"delegation_accept_delegations,omitempty"`
 }
 
 // ProviderStatus describes a configured provider and whether it has an API key set.
@@ -137,18 +141,20 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		ToolDiscoveryMaxDirectTools: intOrDefault(cfg.ToolDiscovery.MaxDirectTools, 64),
 		ToolDiscoverySearchLimit:    intOrDefault(cfg.ToolDiscovery.SearchLimit, 8),
 
-		DelegationEnabled:             cfg.Mesnada.Delegation.Enabled,
-		DelegationInjectIntoLiveLoop:  cfg.Mesnada.Delegation.InjectIntoLiveLoop,
-		DelegationResurrectIdleLoop:   cfg.Mesnada.Delegation.ResurrectIdleLoop,
-		DelegationSynthesizeFallback:  cfg.Mesnada.Delegation.SynthesizeFallback,
-		DelegationMaxResurrections:    intOrDefault(cfg.Mesnada.Delegation.MaxResurrections, 4),
-		DelegationMaxDepth:            intOrDefault(cfg.Mesnada.Delegation.MaxDepth, 3),
-		DelegationMaxConcurrent:       intOrDefault(cfg.Mesnada.Delegation.MaxConcurrent, 8),
-		DelegationResurrectionTimeout: delegationTimeoutOrDefault(cfg.Mesnada.Delegation.ResurrectionTimeout),
-		DelegationReuseWarmInstances:  cfg.Mesnada.Delegation.ReuseWarmInstances,
-		DelegationAutoStartWarm:       cfg.Mesnada.Delegation.AutoStartWarmInstance,
-		DelegationWarmIdleTimeout:     warmIdleTimeoutOrDefault(cfg.Mesnada.Delegation.WarmInstanceIdleTimeout),
-		DelegationWarmQueueDepth:      cfg.Mesnada.Delegation.WarmQueueDepth,
+		DelegationEnabled:                  cfg.Mesnada.Delegation.Enabled,
+		DelegationInjectIntoLiveLoop:       cfg.Mesnada.Delegation.InjectIntoLiveLoop,
+		DelegationResurrectIdleLoop:        cfg.Mesnada.Delegation.ResurrectIdleLoop,
+		DelegationSynthesizeFallback:       cfg.Mesnada.Delegation.SynthesizeFallback,
+		DelegationMaxResurrections:         intOrDefault(cfg.Mesnada.Delegation.MaxResurrections, 4),
+		DelegationMaxDepth:                 intOrDefault(cfg.Mesnada.Delegation.MaxDepth, 3),
+		DelegationMaxConcurrent:            intOrDefault(cfg.Mesnada.Delegation.MaxConcurrent, 8),
+		DelegationResurrectionTimeout:      delegationTimeoutOrDefault(cfg.Mesnada.Delegation.ResurrectionTimeout),
+		DelegationReuseWarmInstances:       cfg.Mesnada.Delegation.ReuseWarmInstances,
+		DelegationAutoStartWarm:            cfg.Mesnada.Delegation.AutoStartWarmInstance,
+		DelegationWarmIdleTimeout:          warmIdleTimeoutOrDefault(cfg.Mesnada.Delegation.WarmInstanceIdleTimeout),
+		DelegationWarmQueueDepth:           cfg.Mesnada.Delegation.WarmQueueDepth,
+		DelegationAllowExternalWarmTargets: cfg.Mesnada.Delegation.AllowExternalWarmTargets,
+		DelegationAcceptDelegations:        cfg.Mesnada.Delegation.AcceptDelegations,
 	}, nil
 }
 
@@ -336,7 +342,8 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		req.DelegationMaxResurrections != nil || req.DelegationMaxDepth != nil ||
 		req.DelegationMaxConcurrent != nil || req.DelegationResurrectionTimeout != nil ||
 		req.DelegationReuseWarmInstances != nil || req.DelegationAutoStartWarm != nil ||
-		req.DelegationWarmIdleTimeout != nil || req.DelegationWarmQueueDepth != nil {
+		req.DelegationWarmIdleTimeout != nil || req.DelegationWarmQueueDepth != nil ||
+		req.DelegationAllowExternalWarmTargets != nil || req.DelegationAcceptDelegations != nil {
 		del := config.Get().Mesnada.Delegation
 		if req.DelegationEnabled != nil {
 			del.Enabled = *req.DelegationEnabled
@@ -399,6 +406,12 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			del.WarmQueueDepth = *req.DelegationWarmQueueDepth
+		}
+		if req.DelegationAllowExternalWarmTargets != nil {
+			del.AllowExternalWarmTargets = *req.DelegationAllowExternalWarmTargets
+		}
+		if req.DelegationAcceptDelegations != nil {
+			del.AcceptDelegations = *req.DelegationAcceptDelegations
 		}
 		if err := config.UpdateMesnadaDelegation(del); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update delegation settings")

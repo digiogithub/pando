@@ -38,6 +38,16 @@ type SessionInterrupter interface {
 	Cancel(sessionID string)
 }
 
+// DelegationRunner runs a delegated prompt in a fresh ephemeral session on the
+// local agent and returns the captured assistant output synchronously. Local
+// interface to avoid an import cycle with the agent package.
+type DelegationRunner interface {
+	RunDelegation(ctx context.Context, params protocol.DelegationRunParams) (protocol.DelegationRunResult, error)
+	// CancelDelegation best-effort cancels an in-flight delegated run by the
+	// caller-supplied correlation id. No-op if unknown.
+	CancelDelegation(correlationID string)
+}
+
 // RegisterHandlers registers all JSON-RPC handlers on the Bus.
 // instanceID is the local instance identifier (bus.instanceID is unexported).
 // svc is the local session service; startedAt is when this instance started.
@@ -49,12 +59,28 @@ func RegisterHandlers(bus BusRegistrar, instanceID string, svc session.Service, 
 
 // RegisterHandlersWithAgent registers all JSON-RPC handlers including the agent-backed
 // message.send and session.interrupt methods.
+// Delegation is disabled; the ping handler advertises AcceptsDelegations=false.
 func RegisterHandlersWithAgent(bus BusRegistrar, instanceID string, svc session.Service, msgSvc message.Service, startedAt time.Time, runner MessageRunner, interrupter SessionInterrupter) {
+	RegisterHandlersWithDelegation(bus, instanceID, svc, msgSvc, startedAt, runner, interrupter, nil, false)
+}
+
+// RegisterHandlersWithDelegation registers all JSON-RPC handlers, with optional
+// hot-peer delegation support. When acceptDelegations is true AND delRunner is
+// non-nil the ping handler advertises AcceptsDelegations=true / DelegationProtocol=1
+// and the delegation.run / delegation.cancel handlers are active.
+func RegisterHandlersWithDelegation(bus BusRegistrar, instanceID string, svc session.Service, msgSvc message.Service, startedAt time.Time, runner MessageRunner, interrupter SessionInterrupter, delRunner DelegationRunner, acceptDelegations bool) {
+	// Effective capability: only true when both flag and runner are present.
+	accepts := acceptDelegations && delRunner != nil
+
 	bus.RegisterMethod(protocol.MethodInstancePing, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 		result := protocol.PingResult{
 			Status:     "ok",
 			InstanceID: instanceID,
 			Uptime:     time.Since(startedAt).Round(time.Second).String(),
+		}
+		if accepts {
+			result.AcceptsDelegations = true
+			result.DelegationProtocol = protocol.DelegationProtocolVersion
 		}
 		return marshalResult(result)
 	})
@@ -157,6 +183,37 @@ func RegisterHandlersWithAgent(bus BusRegistrar, instanceID string, svc session.
 			payloads = append(payloads, messageToPayload(msg))
 		}
 		return marshalResult(payloads)
+	})
+
+	// delegation.run — runs a delegated prompt synchronously and returns the result.
+	bus.RegisterMethod(protocol.MethodDelegationRun, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+		if !accepts {
+			return nil, fmt.Errorf("delegation.run: this instance does not accept delegations")
+		}
+		var p protocol.DelegationRunParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("delegation.run: invalid params: %w", err)
+		}
+		if p.Prompt == "" {
+			return nil, fmt.Errorf("delegation.run: prompt is required")
+		}
+		result, err := delRunner.RunDelegation(ctx, p)
+		if err != nil {
+			return nil, fmt.Errorf("delegation.run: %w", err)
+		}
+		return marshalResult(result)
+	})
+
+	// delegation.cancel — best-effort cancels an in-flight delegated session by correlation id.
+	bus.RegisterMethod(protocol.MethodDelegationCancel, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+		var p protocol.DelegationCancelParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("delegation.cancel: invalid params: %w", err)
+		}
+		if accepts && delRunner != nil {
+			delRunner.CancelDelegation(p.CorrelationID)
+		}
+		return marshalResult(protocol.OKResult{OK: true})
 	})
 }
 

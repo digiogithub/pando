@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
@@ -28,6 +29,10 @@ type DelegateResult struct {
 	Output string
 	// StopReason is the ACP stop reason reported by the child (e.g. end_turn).
 	StopReason string
+	// External is true when this result came from an external (editor-launched)
+	// peer reached over the IPC bus (DelegateExternal, B3) rather than a
+	// manager-spawned warm child. Used by the orchestrator for metrics attribution.
+	External bool
 }
 
 // Delegate runs promptText inside the already-running ("warm") child ACP
@@ -63,14 +68,17 @@ func (m *Manager) Delegate(ctx context.Context, projectID, promptText string) (*
 // is reached instead of cold-falling-back immediately (item A3); 0 keeps the
 // cold-fallback-on-cap behaviour. A queued delegation that loses its context
 // (ctx cancelled) or whose instance starts closing still returns ErrWarmCapReached.
+// allowExternal (B3), when true, routes to an external (editor-launched) peer over
+// the IPC ZeroMQ bus instead of returning ErrExternalInstance; the external peer
+// manages its own concurrency so no manager slot is acquired on this path.
 //
 // It returns a sentinel error the caller should treat as "use the cold path":
 // ErrInstanceNotRunning (reuse-only, nothing running), ErrExternalInstance (the
-// project is served by an editor-launched instance), ErrProjectNeedsInit (no
-// config to start a child), ErrProjectNotRegistered (unknown project), or
-// ErrWarmCapReached (cap reached and queue full/disabled). Any other error is a
-// genuine warm-run failure.
-func (m *Manager) WarmDelegate(ctx context.Context, projectID, projectPath, promptText string, autoStart bool, maxConcurrent, queueDepth int) (*DelegateResult, error) {
+// project is served by an editor-launched instance and allowExternal is false),
+// ErrProjectNeedsInit (no config to start a child), ErrProjectNotRegistered
+// (unknown project), or ErrWarmCapReached (cap reached and queue full/disabled).
+// Any other error is a genuine warm-run failure.
+func (m *Manager) WarmDelegate(ctx context.Context, projectID, projectPath, promptText string, autoStart bool, maxConcurrent, queueDepth int, allowExternal bool) (*DelegateResult, error) {
 	id, err := m.resolveProjectID(ctx, projectID, projectPath)
 	if err != nil {
 		return nil, err
@@ -78,6 +86,13 @@ func (m *Manager) WarmDelegate(ctx context.Context, projectID, projectPath, prom
 
 	inst, err := m.EnsureInstance(ctx, id, autoStart)
 	if err != nil {
+		// B3: if the project is served by an external peer and the caller opted
+		// in, route directly over IPC — no manager slot is acquired.
+		if err == ErrExternalInstance && allowExternal {
+			// TODO(B3): thread the orchestrator CorrelationID through for true idempotency.
+			correlationID := fmt.Sprintf("ext-%s-%d", id, time.Now().UnixNano())
+			return m.DelegateExternal(ctx, id, projectPath, promptText, correlationID)
+		}
 		return nil, err
 	}
 

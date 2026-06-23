@@ -49,7 +49,7 @@ func TestWarmDelegateUnregisteredProject(t *testing.T) {
 	mgr, _ := newManager(t)
 	ctx := context.Background()
 
-	_, err := mgr.WarmDelegate(ctx, "", t.TempDir(), "prompt", true, 4, 0)
+	_, err := mgr.WarmDelegate(ctx, "", t.TempDir(), "prompt", true, 4, 0, false)
 	if !errors.Is(err, project.ErrProjectNotRegistered) {
 		t.Fatalf("err = %v, want ErrProjectNotRegistered", err)
 	}

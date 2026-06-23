@@ -42,6 +42,7 @@
       "title": "Delegation metrics",
       "warmHitRate": "Warm hit rate",
       "warmHits": "Warm hits",
+      "externalHits": "External hits",
       "warmFailures": "Warm failures",
       "coldFallbacks": "Cold fallbacks",
       "capRejections": "Cap rejections",
@@ -120,7 +121,11 @@
       "delegationAutoStartWarm": "Auto-Start Warm Instance",
       "delegationAutoStartWarmDescription": "Auto-start a child instance for the project when none is running (off = reuse only)",
       "delegationWarmIdleTimeout": "Warm Instance Idle Timeout (0 = never)",
-      "delegationWarmQueueDepth": "Warm Queue Depth (0 = cold-spawn at cap)"
+      "delegationWarmQueueDepth": "Warm Queue Depth (0 = cold-spawn at cap)",
+      "delegationAllowExternalWarmTargets": "Allow External Warm Targets",
+      "delegationAllowExternalWarmTargetsDescription": "Route a delegated task to an external (editor-launched) peer over IPC instead of cold-spawning a CLI (the peer must accept delegations)",
+      "delegationAcceptDelegations": "Accept Delegations",
+      "delegationAcceptDelegationsDescription": "Let this instance accept incoming delegation requests from peer instances over IPC"
     }
   },
   "chat": {

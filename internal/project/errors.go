@@ -28,3 +28,13 @@ var ErrWarmCapReached = errors.New("warm instance concurrency cap reached")
 // nor a resolvable project path maps to a registered project, so no warm target
 // can be selected. The caller should take the cold path.
 var ErrProjectNotRegistered = errors.New("project is not registered")
+
+// ErrExternalDelegationRefused is returned by DelegateExternal when the
+// external instance is reachable over IPC but has opted out of accepting
+// delegations (AcceptsDelegations=false or DelegationProtocol too old).
+var ErrExternalDelegationRefused = errors.New("external instance does not accept delegations")
+
+// ErrExternalUnreachable is returned by DelegateExternal when the external
+// instance cannot be contacted over IPC: the lock file is absent, the PID is
+// dead, or the ZeroMQ call fails.
+var ErrExternalUnreachable = errors.New("external instance is unreachable over IPC")
