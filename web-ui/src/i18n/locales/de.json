@@ -47,7 +47,9 @@
       "coldFallbacks": "Kaltstart-Rückgriffe",
       "capRejections": "Limit-Ablehnungen",
       "resurrections": "Wiederbelebungen",
-      "liveInjections": "Live-Injektionen"
+      "liveInjections": "Live-Injektionen",
+      "reattachRecovered": "Wiederverbindung wiederhergestellt",
+      "reattachFailed": "Wiederverbindung fehlgeschlagen"
     }
   },
   "header": {

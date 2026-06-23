@@ -269,6 +269,8 @@ export interface OrchestratorTask {
   name: string
   agent: string
   model: string
+  /** persona in effect for this delegated/persona-scoped run; empty when unset */
+  persona?: string
   status: 'running' | 'completed' | 'error' | 'pending'
   progress: number
   tokens: number
@@ -290,6 +292,8 @@ export interface DelegationMetrics {
   cap_rejections: number
   resurrections: number
   live_injections: number
+  external_reattach_recovered: number // interrupted external delegations recovered on restart (A2)
+  external_reattach_failed: number    // interrupted external delegations that could not be recovered (A2)
   warm_hit_rate: number // 0..1
 }
 

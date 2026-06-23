@@ -42,6 +42,11 @@ type Orchestrator struct {
 	projectResolver      conclusion.ProjectResolver
 	warmResolver         WarmTargetResolver
 	projectRefResolver   ProjectRefResolver
+	// externalRecoverer recovers interrupted external delegations after a parent
+	// restart (A2). When non-nil, warm attempts persist an in-flight breadcrumb and
+	// recoverStaleTasks tries to recover external peers' results instead of bluntly
+	// failing. nil (the default) preserves today's mark-failed behavior exactly.
+	externalRecoverer ExternalDelegationRecoverer
 	// awaitIntents records, per parent session id, the active non-blocking await
 	// intent registered by the mesnada_await tool (see await.go). Guarded by
 	// awaitMu; in-memory only (mirrors the supervisor's in-memory batch state).
@@ -119,6 +124,11 @@ type Config struct {
 	// spawn tool (item B1) to a registered project id/path. When nil the spawn
 	// tool's optional "project" argument is rejected as unsupported.
 	ProjectRefResolver ProjectRefResolver
+	// ExternalDelegationRecoverer recovers interrupted external delegations after a
+	// parent restart (A2). Wired only when the caller opted into external warm
+	// targets (AllowExternalWarmTargets); nil (the default) keeps recoverStaleTasks
+	// marking interrupted tasks failed exactly as before.
+	ExternalDelegationRecoverer ExternalDelegationRecoverer
 }
 
 // New creates a new Orchestrator.
@@ -168,6 +178,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		projectResolver:      cfg.ProjectResolver,
 		warmResolver:         cfg.WarmTargetResolver,
 		projectRefResolver:   cfg.ProjectRefResolver,
+		externalRecoverer:    cfg.ExternalDelegationRecoverer,
 		metrics:              &DelegationMetrics{},
 		ctx:                  ctx,
 		cancel:               cancel,
@@ -181,8 +192,21 @@ func New(cfg Config) (*Orchestrator, error) {
 	return o, nil
 }
 
-// recoverStaleTasks marks any tasks that are still in "running" state as failed.
-// This happens when pando is restarted after a crash or ungraceful shutdown.
+// Bounds for polling an external peer whose recovered delegation is still running
+// when recovery starts (A2). Kept local (the orchestrator's DelegationConfig does
+// not carry the supervisor's ResurrectionTimeout) and short, since recovery runs
+// right after a restart.
+const (
+	externalReattachPollTimeout  = 2 * time.Minute
+	externalReattachPollInterval = 5 * time.Second
+)
+
+// recoverStaleTasks reconciles tasks left in "running" state by a crash or
+// ungraceful shutdown. By default each is marked failed (the process that was
+// running it is gone). When external-delegation recovery is enabled (A2) and a
+// stale task looks like an interrupted external delegation, recovery is attempted
+// in the background against the surviving peer instead — the task is only failed
+// if the peer cannot produce a result.
 func (o *Orchestrator) recoverStaleTasks() {
 	tasks, err := o.store.List(store.ListFilter{
 		Status: []models.TaskStatus{models.TaskStatusRunning},
@@ -192,20 +216,130 @@ func (o *Orchestrator) recoverStaleTasks() {
 		return
 	}
 
+	var failed, reattaching int
 	for _, task := range tasks {
-		log.Printf("task_event=recovering_stale task_id=%s - marking as failed (process interrupted)", task.ID)
-		task.Status = models.TaskStatusFailed
-		task.Error = "task was interrupted (process died or pando was restarted)"
-		now := time.Now()
-		task.CompletedAt = &now
-		if err := o.store.Save(task); err != nil {
-			log.Printf("Warning: failed to save recovered task %s: %v", task.ID, err)
+		if o.externalRecoverer != nil && isRecoverableExternalDelegation(task) {
+			reattaching++
+			o.wg.Add(1)
+			go func(t *models.Task) {
+				defer o.wg.Done()
+				o.recoverExternalDelegation(t)
+			}(task)
+			continue
+		}
+		o.markStaleTaskFailed(task)
+		failed++
+	}
+
+	if failed > 0 {
+		log.Printf("task_recovery: marked %d stale running task(s) as failed", failed)
+	}
+	if reattaching > 0 {
+		log.Printf("task_recovery: attempting external re-attach for %d interrupted delegation(s)", reattaching)
+	}
+}
+
+// isRecoverableExternalDelegation reports whether a stale running task is an
+// interrupted warm/external delegation that recovery should try against a peer:
+// it carries the warm-acp engine breadcrumb plus the correlation id and project
+// reference needed to locate and query the peer. Cold tasks (their own engine)
+// never match, so they keep the mark-failed path.
+func isRecoverableExternalDelegation(task *models.Task) bool {
+	return task != nil &&
+		task.Engine == models.EngineWarmACP &&
+		task.CorrelationID != "" &&
+		(task.ProjectPath != "" || task.ProjectID != "")
+}
+
+// markStaleTaskFailed marks one interrupted task failed (the pre-A2 behaviour).
+func (o *Orchestrator) markStaleTaskFailed(task *models.Task) {
+	log.Printf("task_event=recovering_stale task_id=%s - marking as failed (process interrupted)", task.ID)
+	task.Status = models.TaskStatusFailed
+	task.Error = "task was interrupted (process died or pando was restarted)"
+	now := time.Now()
+	task.CompletedAt = &now
+	if err := o.store.Save(task); err != nil {
+		log.Printf("Warning: failed to save recovered task %s: %v", task.ID, err)
+	}
+}
+
+// recoverExternalDelegation tries to recover one interrupted external delegation
+// from its surviving peer (A2). On success it drives the normal completion path so
+// the conclusion pipeline / supervisor re-enters the parent loop exactly as for an
+// in-process run; otherwise it falls back to marking the task failed.
+func (o *Orchestrator) recoverExternalDelegation(task *models.Task) {
+	res, state, err := o.externalRecoverer.RecoverExternalDelegation(o.ctx, task.ProjectID, task.ProjectPath, task.CorrelationID)
+
+	if err == nil && state == RecoveryRunning {
+		// The peer is still running the delegation: poll briefly for completion.
+		if r, ok := o.pollExternalRecovery(task); ok {
+			res, state, err = r, RecoveryCompleted, nil
 		}
 	}
 
-	if len(tasks) > 0 {
-		log.Printf("task_recovery: marked %d stale running task(s) as failed", len(tasks))
+	if err == nil && state == RecoveryCompleted && res != nil {
+		o.completeRecoveredDelegation(task, res)
+		return
 	}
+
+	// Unreachable / unknown / declined / poll-exhausted: mark failed as before.
+	o.markStaleTaskFailed(task)
+	o.metrics.recordExternalReattachFailed()
+	log.Printf("task_event=external_reattach_failed task_id=%s project_path=%q", task.ID, task.ProjectPath)
+}
+
+// pollExternalRecovery re-queries the peer up to externalReattachPollTimeout for a
+// delegation that was still running when recovery began. It returns the recovered
+// result and ok=true once the peer reports completion, or ok=false on timeout /
+// ctx cancellation / the peer becoming unreachable.
+func (o *Orchestrator) pollExternalRecovery(task *models.Task) (*WarmRunResult, bool) {
+	deadline := time.Now().Add(externalReattachPollTimeout)
+	ticker := time.NewTicker(externalReattachPollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-o.ctx.Done():
+			return nil, false
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return nil, false
+			}
+			res, state, err := o.externalRecoverer.RecoverExternalDelegation(o.ctx, task.ProjectID, task.ProjectPath, task.CorrelationID)
+			if err != nil {
+				return nil, false
+			}
+			switch state {
+			case RecoveryCompleted:
+				if res != nil {
+					return res, true
+				}
+				return nil, false
+			case RecoveryRunning:
+				continue
+			default: // RecoveryUnknown
+				return nil, false
+			}
+		}
+	}
+}
+
+// completeRecoveredDelegation writes the recovered result onto the task and drives
+// the standard completion path (captureConclusion + broadcast via onTaskComplete),
+// so a recovered external delegation re-enters the parent loop identically to an
+// in-process warm completion.
+func (o *Orchestrator) completeRecoveredDelegation(task *models.Task, res *WarmRunResult) {
+	now := time.Now()
+	task.Engine = models.EngineWarmACP
+	task.Status = models.TaskStatusCompleted
+	task.Output = res.Output
+	task.ACPSessionID = res.ChildSessionID
+	task.CompletedAt = &now
+	exit := 0
+	task.ExitCode = &exit
+	o.metrics.recordExternalReattachRecovered()
+	log.Printf("task_event=external_reattach_recovered task_id=%s child_session=%q output_len=%d",
+		task.ID, res.ChildSessionID, len(res.Output))
+	o.onTaskComplete(task)
 }
 
 func (o *Orchestrator) onTaskComplete(task *models.Task) {

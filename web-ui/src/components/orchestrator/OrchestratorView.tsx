@@ -282,6 +282,12 @@ function DelegationMetricsBar({ metrics }: { metrics: DelegationMetrics | null }
       <Metric label={t('orchestrator.delegationMetrics.capRejections')} value={metrics.cap_rejections} />
       <Metric label={t('orchestrator.delegationMetrics.resurrections')} value={metrics.resurrections} />
       <Metric label={t('orchestrator.delegationMetrics.liveInjections')} value={metrics.live_injections} />
+      {metrics.external_reattach_recovered > 0 && (
+        <Metric label={t('orchestrator.delegationMetrics.reattachRecovered')} value={metrics.external_reattach_recovered} />
+      )}
+      {metrics.external_reattach_failed > 0 && (
+        <Metric label={t('orchestrator.delegationMetrics.reattachFailed')} value={metrics.external_reattach_failed} />
+      )}
     </div>
   )
 }

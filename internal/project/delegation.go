@@ -71,6 +71,9 @@ func (m *Manager) Delegate(ctx context.Context, projectID, promptText string) (*
 // allowExternal (B3), when true, routes to an external (editor-launched) peer over
 // the IPC ZeroMQ bus instead of returning ErrExternalInstance; the external peer
 // manages its own concurrency so no manager slot is acquired on this path.
+// correlationID is the orchestrator's idempotency key for the delegated task; it
+// is threaded to DelegateExternal on the external path so a cancel can target the
+// right remote run. An empty correlationID is synthesized for the external path.
 //
 // It returns a sentinel error the caller should treat as "use the cold path":
 // ErrInstanceNotRunning (reuse-only, nothing running), ErrExternalInstance (the
@@ -78,7 +81,7 @@ func (m *Manager) Delegate(ctx context.Context, projectID, promptText string) (*
 // ErrProjectNeedsInit (no config to start a child), ErrProjectNotRegistered
 // (unknown project), or ErrWarmCapReached (cap reached and queue full/disabled).
 // Any other error is a genuine warm-run failure.
-func (m *Manager) WarmDelegate(ctx context.Context, projectID, projectPath, promptText string, autoStart bool, maxConcurrent, queueDepth int, allowExternal bool) (*DelegateResult, error) {
+func (m *Manager) WarmDelegate(ctx context.Context, projectID, projectPath, promptText string, autoStart bool, maxConcurrent, queueDepth int, allowExternal bool, correlationID string) (*DelegateResult, error) {
 	id, err := m.resolveProjectID(ctx, projectID, projectPath)
 	if err != nil {
 		return nil, err
@@ -89,9 +92,14 @@ func (m *Manager) WarmDelegate(ctx context.Context, projectID, projectPath, prom
 		// B3: if the project is served by an external peer and the caller opted
 		// in, route directly over IPC — no manager slot is acquired.
 		if err == ErrExternalInstance && allowExternal {
-			// TODO(B3): thread the orchestrator CorrelationID through for true idempotency.
-			correlationID := fmt.Sprintf("ext-%s-%d", id, time.Now().UnixNano())
-			return m.DelegateExternal(ctx, id, projectPath, promptText, correlationID)
+			// Prefer the orchestrator-provided CorrelationID for idempotent
+			// external delegation; synthesize one only when the caller did not
+			// supply a key (e.g. a direct WarmDelegate call without a task).
+			cid := correlationID
+			if cid == "" {
+				cid = fmt.Sprintf("ext-%s-%d", id, time.Now().UnixNano())
+			}
+			return m.DelegateExternal(ctx, id, projectPath, promptText, cid)
 		}
 		return nil, err
 	}

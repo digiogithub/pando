@@ -47,7 +47,9 @@
       "coldFallbacks": "Cold fallbacks",
       "capRejections": "Cap rejections",
       "resurrections": "Resurrections",
-      "liveInjections": "Live injections"
+      "liveInjections": "Live injections",
+      "reattachRecovered": "Re-attach recovered",
+      "reattachFailed": "Re-attach failed"
     }
   },
   "header": {

@@ -119,3 +119,96 @@ func (m *Manager) DelegateExternal(ctx context.Context, projectID, projectPath, 
 		External:       true,
 	}, nil
 }
+
+// RecoverExternalDelegation queries an external (editor-launched) peer for the
+// state — and, if finished, the cached result — of a delegation that was issued
+// before this process restarted (external re-attach, A2). It is the recovery
+// counterpart of DelegateExternal: a read-only delegation.status RPC that never
+// re-runs the delegation.
+//
+// It returns one of the protocol.DelegationState* strings:
+//   - "completed": the returned *DelegateResult carries the recovered output (the
+//     caller feeds it through the normal conclusion pipeline);
+//   - "running": the delegation is still executing on the peer (result is nil);
+//   - "unknown": the peer has no record of this correlation id (result is nil).
+//
+// It returns ErrExternalUnreachable when the peer cannot be contacted and
+// ErrExternalDelegationRefused when the peer is alive but does not support
+// recovery (opted out, or speaks a delegation protocol older than the status RPC).
+// Those error cases mean "cannot recover" — the caller marks the task failed, the
+// same outcome as before this feature.
+func (m *Manager) RecoverExternalDelegation(ctx context.Context, projectID, projectPath, correlationID string) (*DelegateResult, string, error) {
+	if correlationID == "" {
+		return nil, "", ErrExternalUnreachable
+	}
+
+	// 1. Resolve path.
+	path := projectPath
+	if path == "" {
+		proj, err := m.service.Get(ctx, projectID)
+		if err != nil {
+			return nil, "", ErrExternalUnreachable
+		}
+		path = proj.Path
+	}
+	resolved, err := resolvePath(path)
+	if err != nil {
+		return nil, "", ErrExternalUnreachable
+	}
+
+	// 2. Read the on-disk IPC lock file.
+	info, err := ipc.ReadLockForPath(resolved)
+	if err != nil || info == nil || !pidIsAlive(info.PID) {
+		return nil, "", ErrExternalUnreachable
+	}
+
+	endpoint := fmt.Sprintf("tcp://127.0.0.1:%d", info.RPCPort)
+
+	client, err := ipc.NewClient(ctx)
+	if err != nil {
+		return nil, "", ErrExternalUnreachable
+	}
+	defer client.Close() //nolint:errcheck
+
+	// 3. Capability check: the peer must accept delegations and speak a protocol
+	//    version that includes delegation.status.
+	raw, err := client.Call(ctx, endpoint, protocol.MethodInstancePing, nil)
+	if err != nil {
+		return nil, "", ErrExternalUnreachable
+	}
+	var pr protocol.PingResult
+	if err := json.Unmarshal(raw, &pr); err != nil {
+		return nil, "", ErrExternalUnreachable
+	}
+	if !pr.AcceptsDelegations || pr.DelegationProtocol < protocol.DelegationProtocolVersion {
+		return nil, "", ErrExternalDelegationRefused
+	}
+
+	// 4. Query the delegation status by correlation id.
+	raw, err = client.Call(ctx, endpoint, protocol.MethodDelegationStatus,
+		protocol.DelegationStatusParams{CorrelationID: correlationID})
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, "", ctx.Err()
+		}
+		return nil, "", fmt.Errorf("external delegation status failed: %w", err)
+	}
+	var st protocol.DelegationStatusResult
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return nil, "", fmt.Errorf("external delegation status: unmarshal result: %w", err)
+	}
+
+	switch st.State {
+	case protocol.DelegationStateCompleted:
+		return &DelegateResult{
+			ChildSessionID: st.SessionID,
+			Output:         st.Output,
+			StopReason:     st.StopReason,
+			External:       true,
+		}, protocol.DelegationStateCompleted, nil
+	case protocol.DelegationStateRunning:
+		return nil, protocol.DelegationStateRunning, nil
+	default:
+		return nil, protocol.DelegationStateUnknown, nil
+	}
+}

@@ -47,7 +47,9 @@
       "coldFallbacks": "冷回退",
       "capRejections": "达到上限拒绝",
       "resurrections": "复活",
-      "liveInjections": "实时注入"
+      "liveInjections": "实时注入",
+      "reattachRecovered": "重新连接已恢复",
+      "reattachFailed": "重新连接失败"
     }
   },
   "header": {

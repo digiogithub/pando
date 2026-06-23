@@ -46,6 +46,10 @@ type DelegationRunner interface {
 	// CancelDelegation best-effort cancels an in-flight delegated run by the
 	// caller-supplied correlation id. No-op if unknown.
 	CancelDelegation(correlationID string)
+	// DelegationStatus reports the state of a delegation by correlation id and, when
+	// completed, its cached result. Backs delegation.status for cross-restart
+	// re-attach (A2). Read-only; never re-runs the delegation.
+	DelegationStatus(correlationID string) protocol.DelegationStatusResult
 }
 
 // RegisterHandlers registers all JSON-RPC handlers on the Bus.
@@ -66,8 +70,9 @@ func RegisterHandlersWithAgent(bus BusRegistrar, instanceID string, svc session.
 
 // RegisterHandlersWithDelegation registers all JSON-RPC handlers, with optional
 // hot-peer delegation support. When acceptDelegations is true AND delRunner is
-// non-nil the ping handler advertises AcceptsDelegations=true / DelegationProtocol=1
-// and the delegation.run / delegation.cancel handlers are active.
+// non-nil the ping handler advertises AcceptsDelegations=true /
+// DelegationProtocol=DelegationProtocolVersion and the delegation.run /
+// delegation.cancel / delegation.status handlers are active.
 func RegisterHandlersWithDelegation(bus BusRegistrar, instanceID string, svc session.Service, msgSvc message.Service, startedAt time.Time, runner MessageRunner, interrupter SessionInterrupter, delRunner DelegationRunner, acceptDelegations bool) {
 	// Effective capability: only true when both flag and runner are present.
 	accepts := acceptDelegations && delRunner != nil
@@ -214,6 +219,22 @@ func RegisterHandlersWithDelegation(bus BusRegistrar, instanceID string, svc ses
 			delRunner.CancelDelegation(p.CorrelationID)
 		}
 		return marshalResult(protocol.OKResult{OK: true})
+	})
+
+	// delegation.status — reports the state (and, if finished, the cached result) of
+	// a delegation by correlation id, so a caller that restarted can recover it
+	// (external re-attach, A2). Consent-gated like delegation.run; opted-out / older
+	// peers do not register it, so a caller's status call errors and is treated as
+	// "unknown" → mark the task failed (today's behaviour).
+	bus.RegisterMethod(protocol.MethodDelegationStatus, func(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+		if !accepts {
+			return nil, fmt.Errorf("delegation.status: this instance does not accept delegations")
+		}
+		var p protocol.DelegationStatusParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("delegation.status: invalid params: %w", err)
+		}
+		return marshalResult(delRunner.DelegationStatus(p.CorrelationID))
 	})
 }
 

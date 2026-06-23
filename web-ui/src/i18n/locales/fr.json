@@ -47,7 +47,9 @@
       "coldFallbacks": "Replis à froid",
       "capRejections": "Rejets de limite",
       "resurrections": "Résurrections",
-      "liveInjections": "Injections en direct"
+      "liveInjections": "Injections en direct",
+      "reattachRecovered": "Récupérées après reconnexion",
+      "reattachFailed": "Échecs de reconnexion"
     }
   },
   "header": {

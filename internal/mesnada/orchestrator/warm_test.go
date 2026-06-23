@@ -15,13 +15,14 @@ type fakeWarmResolver struct {
 	gotID   string
 	gotPath string
 	gotText string
+	gotCorr string
 	result  *WarmRunResult
 	err     error
 }
 
-func (f *fakeWarmResolver) RunWarm(_ context.Context, projectID, projectPath, promptText string) (*WarmRunResult, error) {
+func (f *fakeWarmResolver) RunWarm(_ context.Context, projectID, projectPath, promptText, correlationID string) (*WarmRunResult, error) {
 	f.called++
-	f.gotID, f.gotPath, f.gotText = projectID, projectPath, promptText
+	f.gotID, f.gotPath, f.gotText, f.gotCorr = projectID, projectPath, promptText, correlationID
 	return f.result, f.err
 }
 
@@ -91,6 +92,30 @@ func TestTryStartWarmSuccess(t *testing.T) {
 	}
 	if stored.Status != models.TaskStatusCompleted {
 		t.Errorf("stored status = %q, want completed", stored.Status)
+	}
+}
+
+// TestTryStartWarmThreadsCorrelationID: the task's idempotency key reaches the
+// resolver so external (IPC) delegation can target a cancel at the right run.
+func TestTryStartWarmThreadsCorrelationID(t *testing.T) {
+	resolver := &fakeWarmResolver{result: &WarmRunResult{
+		ChildSessionID: "child-1",
+		Output:         "ok",
+		StopReason:     "end_turn",
+	}}
+	o := newWarmOrch(t, DelegationConfig{Enabled: true, ReuseWarmInstances: true}, resolver)
+
+	task := warmTask()
+	task.CorrelationID = "corr-abc-123"
+	if err := o.store.Save(task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if handled := o.tryStartWarm(task); !handled {
+		t.Fatal("tryStartWarm returned false, want true (warm handled)")
+	}
+	if resolver.gotCorr != "corr-abc-123" {
+		t.Errorf("resolver got correlation id %q, want %q", resolver.gotCorr, "corr-abc-123")
 	}
 }
 

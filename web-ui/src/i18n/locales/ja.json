@@ -47,7 +47,9 @@
       "coldFallbacks": "コールドフォールバック",
       "capRejections": "上限による拒否",
       "resurrections": "復活",
-      "liveInjections": "ライブ注入"
+      "liveInjections": "ライブ注入",
+      "reattachRecovered": "再アタッチ回復",
+      "reattachFailed": "再アタッチ失敗"
     }
   },
   "header": {

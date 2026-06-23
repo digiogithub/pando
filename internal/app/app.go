@@ -493,6 +493,13 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		// known is run inside an already-running per-project ACP instance instead of
 		// cold-spawning a CLI. nil when ReuseWarmInstances is off → cold path always.
 		mesnadaCfg.WarmTargetResolver = makeWarmTargetResolver(app.ProjectManager, cfg)
+		// Wire external-delegation re-attach recovery (item A2): after a parent
+		// restart, recover the result of an interrupted external (editor-launched)
+		// peer delegation instead of failing it. Gated on the same caller opt-in as
+		// routing external warm targets; nil otherwise → today's mark-failed path.
+		if app.ProjectManager != nil && cfg.Mesnada.Delegation.AllowExternalWarmTargets {
+			mesnadaCfg.ExternalDelegationRecoverer = makeExternalDelegationRecoverer(app.ProjectManager)
+		}
 		// Wire project-reference resolution (item B1): lets the spawn tool target a
 		// registered project by id/name/path so its delegated task is routed to that
 		// project's warm instance. nil when no project service is available.
@@ -843,10 +850,10 @@ func makeProjectRefResolver(svc project.Service) mesnadaOrch.ProjectRefResolver 
 
 // warmTargetResolverFunc adapts a plain function to the orchestrator's
 // WarmTargetResolver interface.
-type warmTargetResolverFunc func(ctx context.Context, projectID, projectPath, promptText string) (*mesnadaOrch.WarmRunResult, error)
+type warmTargetResolverFunc func(ctx context.Context, projectID, projectPath, promptText, correlationID string) (*mesnadaOrch.WarmRunResult, error)
 
-func (f warmTargetResolverFunc) RunWarm(ctx context.Context, projectID, projectPath, promptText string) (*mesnadaOrch.WarmRunResult, error) {
-	return f(ctx, projectID, projectPath, promptText)
+func (f warmTargetResolverFunc) RunWarm(ctx context.Context, projectID, projectPath, promptText, correlationID string) (*mesnadaOrch.WarmRunResult, error) {
+	return f(ctx, projectID, projectPath, promptText, correlationID)
 }
 
 // makeWarmTargetResolver bridges the orchestrator's WarmTargetResolver to the
@@ -868,8 +875,8 @@ func makeWarmTargetResolver(mgr *project.Manager, cfg *config.Config) mesnadaOrc
 	// the IPC bus (B3) instead of cold-spawning a CLI. Default OFF.
 	allowExternal := cfg.Mesnada.Delegation.AllowExternalWarmTargets
 
-	return warmTargetResolverFunc(func(ctx context.Context, projectID, projectPath, promptText string) (*mesnadaOrch.WarmRunResult, error) {
-		res, err := mgr.WarmDelegate(ctx, projectID, projectPath, promptText, autoStart, maxConcurrent, queueDepth, allowExternal)
+	return warmTargetResolverFunc(func(ctx context.Context, projectID, projectPath, promptText, correlationID string) (*mesnadaOrch.WarmRunResult, error) {
+		res, err := mgr.WarmDelegate(ctx, projectID, projectPath, promptText, autoStart, maxConcurrent, queueDepth, allowExternal, correlationID)
 		if err != nil {
 			// Map the cap-reached sentinel to the orchestrator's cap-specific
 			// fallback error so it is counted separately in delegation metrics (E1);
@@ -888,6 +895,50 @@ func makeWarmTargetResolver(mgr *project.Manager, cfg *config.Config) mesnadaOrc
 			StopReason:     res.StopReason,
 			External:       res.External,
 		}, nil
+	})
+}
+
+// externalDelegationRecovererFunc adapts a plain function to the orchestrator's
+// ExternalDelegationRecoverer interface.
+type externalDelegationRecovererFunc func(ctx context.Context, projectID, projectPath, correlationID string) (*mesnadaOrch.WarmRunResult, mesnadaOrch.ExternalRecoveryState, error)
+
+func (f externalDelegationRecovererFunc) RecoverExternalDelegation(ctx context.Context, projectID, projectPath, correlationID string) (*mesnadaOrch.WarmRunResult, mesnadaOrch.ExternalRecoveryState, error) {
+	return f(ctx, projectID, projectPath, correlationID)
+}
+
+// makeExternalDelegationRecoverer bridges the orchestrator's recovery interface to
+// the project Manager's external re-attach query (A2). It maps the project layer's
+// protocol-string state onto the orchestrator's ExternalRecoveryState enum and a
+// project.DelegateResult onto a WarmRunResult, so the orchestrator stays free of an
+// internal/project import (same pattern as makeWarmTargetResolver). A non-nil error
+// (unreachable / declined peer) maps to RecoveryUnknown so the task is marked failed
+// — the pre-A2 outcome.
+func makeExternalDelegationRecoverer(mgr *project.Manager) mesnadaOrch.ExternalDelegationRecoverer {
+	if mgr == nil {
+		return nil
+	}
+	return externalDelegationRecovererFunc(func(ctx context.Context, projectID, projectPath, correlationID string) (*mesnadaOrch.WarmRunResult, mesnadaOrch.ExternalRecoveryState, error) {
+		res, state, err := mgr.RecoverExternalDelegation(ctx, projectID, projectPath, correlationID)
+		if err != nil {
+			return nil, mesnadaOrch.RecoveryUnknown, err
+		}
+		switch state {
+		case protocol.DelegationStateCompleted:
+			var wr *mesnadaOrch.WarmRunResult
+			if res != nil {
+				wr = &mesnadaOrch.WarmRunResult{
+					ChildSessionID: res.ChildSessionID,
+					Output:         res.Output,
+					StopReason:     res.StopReason,
+					External:       true,
+				}
+			}
+			return wr, mesnadaOrch.RecoveryCompleted, nil
+		case protocol.DelegationStateRunning:
+			return nil, mesnadaOrch.RecoveryRunning, nil
+		default:
+			return nil, mesnadaOrch.RecoveryUnknown, nil
+		}
 	})
 }
 

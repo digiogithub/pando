@@ -277,7 +277,7 @@ func TestWarmDelegateReuseCaptures(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	res, err := m.WarmDelegate(ctx, "proj-4", "", "do it", false /*autoStart*/, 4 /*maxConcurrent*/, 0 /*queueDepth*/, false /*allowExternal*/)
+	res, err := m.WarmDelegate(ctx, "proj-4", "", "do it", false /*autoStart*/, 4 /*maxConcurrent*/, 0 /*queueDepth*/, false /*allowExternal*/, "" /*correlationID*/)
 	if err != nil {
 		t.Fatalf("WarmDelegate: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestWarmDelegateCapReached(t *testing.T) {
 	started := make(chan struct{})
 	go func() {
 		close(started)
-		_, _ = m.WarmDelegate(runCtx, "proj-5", "", "long", false, 1, 0, false)
+		_, _ = m.WarmDelegate(runCtx, "proj-5", "", "long", false, 1, 0, false, "")
 	}()
 	<-started
 
@@ -322,7 +322,7 @@ func TestWarmDelegateCapReached(t *testing.T) {
 	}
 
 	// A second delegation over the cap must be refused immediately.
-	_, err := m.WarmDelegate(context.Background(), "proj-5", "", "second", false, 1, 0, false)
+	_, err := m.WarmDelegate(context.Background(), "proj-5", "", "second", false, 1, 0, false, "")
 	if err != ErrWarmCapReached {
 		t.Fatalf("err = %v, want ErrWarmCapReached", err)
 	}
@@ -368,7 +368,7 @@ func TestWarmDelegatePublishesDelegationEvents(t *testing.T) {
 	defer cancel()
 	sub := m.broker.Subscribe(ctx)
 
-	if _, err := m.WarmDelegate(ctx, "proj-ev", "", "do it", false, 4, 0, false); err != nil {
+	if _, err := m.WarmDelegate(ctx, "proj-ev", "", "do it", false, 4, 0, false, ""); err != nil {
 		t.Fatalf("WarmDelegate: %v", err)
 	}
 
@@ -482,7 +482,7 @@ func TestWarmInstanceServesParallelSessions(t *testing.T) {
 	results := make(chan outcome, 2)
 	for i := 0; i < 2; i++ {
 		go func() {
-			res, err := m.WarmDelegate(ctx, projectID, "", "do it", false, 2, 0, false)
+			res, err := m.WarmDelegate(ctx, projectID, "", "do it", false, 2, 0, false, "")
 			results <- outcome{res, err}
 		}()
 	}
@@ -535,7 +535,7 @@ func TestWarmDelegateDoesNotChangeActiveID(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if _, err := m.WarmDelegate(ctx, "proj-active", "", "go", false, 4, 0, false); err != nil {
+	if _, err := m.WarmDelegate(ctx, "proj-active", "", "go", false, 4, 0, false, ""); err != nil {
 		t.Fatalf("WarmDelegate: %v", err)
 	}
 	if m.ActiveID() != "" {
@@ -658,6 +658,45 @@ func TestDelegateExternalDeadPid(t *testing.T) {
 	}
 }
 
+// TestRecoverExternalDelegationBlankCorrelation verifies recovery refuses a blank
+// correlation id (nothing to look up) with ErrExternalUnreachable.
+func TestRecoverExternalDelegationBlankCorrelation(t *testing.T) {
+	m := &Manager{instances: map[string]*Instance{}}
+	_, state, err := m.RecoverExternalDelegation(context.Background(), "proj-x", t.TempDir(), "")
+	if err != ErrExternalUnreachable {
+		t.Fatalf("err = %v, want ErrExternalUnreachable", err)
+	}
+	if state != "" {
+		t.Errorf("state = %q, want empty", state)
+	}
+}
+
+// TestRecoverExternalDelegationNoLockFile verifies recovery returns
+// ErrExternalUnreachable when no IPC lock exists for the project path (e.g. the
+// external peer is gone), so the caller marks the task failed as before.
+func TestRecoverExternalDelegationNoLockFile(t *testing.T) {
+	m := &Manager{instances: map[string]*Instance{}}
+	dir := t.TempDir() // empty — no .pando/ipc.lock
+
+	_, _, err := m.RecoverExternalDelegation(context.Background(), "proj-x", dir, "corr-1")
+	if err != ErrExternalUnreachable {
+		t.Fatalf("err = %v, want ErrExternalUnreachable", err)
+	}
+}
+
+// TestRecoverExternalDelegationDeadPid verifies recovery returns
+// ErrExternalUnreachable when the lock exists but the peer PID is dead.
+func TestRecoverExternalDelegationDeadPid(t *testing.T) {
+	dir := t.TempDir()
+	writeFakeLockFile(t, dir, 0, 9999) // PID 0 is never a live user process
+
+	m := &Manager{instances: map[string]*Instance{}}
+	_, _, err := m.RecoverExternalDelegation(context.Background(), "proj-x", dir, "corr-2")
+	if err != ErrExternalUnreachable {
+		t.Fatalf("err = %v, want ErrExternalUnreachable", err)
+	}
+}
+
 // TestWarmDelegateExternalFalsePassthrough verifies that with allowExternal=false
 // and an external instance present, WarmDelegate still returns ErrExternalInstance
 // (unchanged legacy behaviour — no IPC call is made).
@@ -674,7 +713,7 @@ func TestWarmDelegateExternalFalsePassthrough(t *testing.T) {
 		instances: map[string]*Instance{},
 	}
 
-	_, err := m.WarmDelegate(context.Background(), "proj-ext", dir, "prompt", false, 4, 0, false)
+	_, err := m.WarmDelegate(context.Background(), "proj-ext", dir, "prompt", false, 4, 0, false, "")
 	if err != ErrExternalInstance {
 		t.Fatalf("err = %v, want ErrExternalInstance (allowExternal=false must not route over IPC)", err)
 	}

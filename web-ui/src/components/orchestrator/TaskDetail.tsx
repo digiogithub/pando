@@ -1,5 +1,5 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faTimes, faRobot, faMicrochip, faClock } from '@fortawesome/free-solid-svg-icons'
+import { faTimes, faRobot, faMicrochip, faClock, faUserTie } from '@fortawesome/free-solid-svg-icons'
 import type { OrchestratorTask, OrchestratorToolCall } from '@/types'
 import StatusBadge from '@/components/shared/StatusBadge'
 import ProgressBar from '@/components/shared/ProgressBar'
@@ -152,6 +152,12 @@ export default function TaskDetail({
             <FontAwesomeIcon icon={faMicrochip} style={{ width: 12 }} />
             <span>Model: <span style={{ color: 'var(--fg)', fontWeight: 500, fontFamily: 'monospace' }}>{task.model}</span></span>
           </div>
+          {task.persona && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: 12, color: 'var(--fg-muted)' }}>
+              <FontAwesomeIcon icon={faUserTie} style={{ width: 12 }} />
+              <span>Persona: <span style={{ color: 'var(--fg)', fontWeight: 500 }}>{task.persona}</span></span>
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: 12, color: 'var(--fg-muted)' }}>
             <FontAwesomeIcon icon={faClock} style={{ width: 12 }} />
             <span>Created: <span style={{ color: 'var(--fg)' }}>{formatDate(task.created_at)}</span></span>

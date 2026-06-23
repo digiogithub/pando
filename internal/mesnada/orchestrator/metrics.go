@@ -39,6 +39,14 @@ type DelegationMetrics struct {
 	// liveInjections counts conclusions injected into a still-running parent loop
 	// (Case A), including resume-race fallback injections.
 	liveInjections atomic.Int64
+	// externalReattachRecovered counts interrupted external delegations whose result
+	// was recovered from the surviving peer after a parent restart (A2) instead of
+	// being marked failed.
+	externalReattachRecovered atomic.Int64
+	// externalReattachFailed counts interrupted external delegations that could NOT
+	// be recovered on restart (peer gone / no record / still running past the
+	// recovery window) and were therefore marked failed.
+	externalReattachFailed atomic.Int64
 }
 
 // DelegationMetricsSnapshot is an immutable, JSON-friendly view of
@@ -52,6 +60,10 @@ type DelegationMetricsSnapshot struct {
 	CapRejections  int64 `json:"cap_rejections"`
 	Resurrections  int64 `json:"resurrections"`
 	LiveInjections int64 `json:"live_injections"`
+	// ExternalReattachRecovered / ExternalReattachFailed count cross-restart
+	// external delegation recovery outcomes (A2).
+	ExternalReattachRecovered int64 `json:"external_reattach_recovered"`
+	ExternalReattachFailed    int64 `json:"external_reattach_failed"`
 	// WarmHitRate is warmHits / warmAttempts in [0,1]; 0 when there were no
 	// attempts. It is the headline "is warm reuse paying off" number.
 	WarmHitRate float64 `json:"warm_hit_rate"`
@@ -66,6 +78,9 @@ func (m *DelegationMetrics) recordCapRejection()  { m.capRejections.Add(1) }
 func (m *DelegationMetrics) recordResurrection()  { m.resurrections.Add(1) }
 func (m *DelegationMetrics) recordLiveInjection() { m.liveInjections.Add(1) }
 
+func (m *DelegationMetrics) recordExternalReattachRecovered() { m.externalReattachRecovered.Add(1) }
+func (m *DelegationMetrics) recordExternalReattachFailed()    { m.externalReattachFailed.Add(1) }
+
 // Snapshot returns a consistent-enough point-in-time copy of the counters with
 // the derived hit rate. Counters are read independently (no global lock), so a
 // snapshot taken during concurrent updates may mix values from adjacent instants;
@@ -77,14 +92,16 @@ func (m *DelegationMetrics) Snapshot() DelegationMetricsSnapshot {
 	attempts := m.warmAttempts.Load()
 	hits := m.warmHits.Load()
 	snap := DelegationMetricsSnapshot{
-		WarmAttempts:   attempts,
-		WarmHits:       hits,
-		ExternalHits:   m.externalHits.Load(),
-		WarmFailures:   m.warmFailures.Load(),
-		ColdFallbacks:  m.coldFallbacks.Load(),
-		CapRejections:  m.capRejections.Load(),
-		Resurrections:  m.resurrections.Load(),
-		LiveInjections: m.liveInjections.Load(),
+		WarmAttempts:              attempts,
+		WarmHits:                  hits,
+		ExternalHits:              m.externalHits.Load(),
+		WarmFailures:              m.warmFailures.Load(),
+		ColdFallbacks:             m.coldFallbacks.Load(),
+		CapRejections:             m.capRejections.Load(),
+		Resurrections:             m.resurrections.Load(),
+		LiveInjections:            m.liveInjections.Load(),
+		ExternalReattachRecovered: m.externalReattachRecovered.Load(),
+		ExternalReattachFailed:    m.externalReattachFailed.Load(),
 	}
 	if attempts > 0 {
 		snap.WarmHitRate = float64(hits) / float64(attempts)

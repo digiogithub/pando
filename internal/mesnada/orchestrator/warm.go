@@ -53,9 +53,41 @@ type WarmTargetResolver interface {
 	// RunWarm runs promptText inside a warm instance for the given project,
 	// applying the reuse-then-autostart policy and the per-instance concurrency
 	// cap. projectID may be empty, in which case projectPath is resolved to a
-	// registered project. It returns ErrNoWarmTarget when the project cannot be
-	// served by a warm instance so the caller takes the cold path.
-	RunWarm(ctx context.Context, projectID, projectPath, promptText string) (*WarmRunResult, error)
+	// registered project. correlationID is the task's idempotency key, threaded
+	// through for external (IPC) delegation so a cancel targets the right run; it
+	// may be empty. It returns ErrNoWarmTarget when the project cannot be served by
+	// a warm instance so the caller takes the cold path.
+	RunWarm(ctx context.Context, projectID, projectPath, promptText, correlationID string) (*WarmRunResult, error)
+}
+
+// ExternalRecoveryState is the outcome of querying an external peer for a past
+// delegation's status during cross-restart recovery (A2). It is an orchestrator-
+// local enum so the orchestrator stays free of an internal/ipc/protocol import; the
+// app adapter maps the protocol's "completed"/"running"/"unknown" strings onto it.
+type ExternalRecoveryState int
+
+const (
+	// RecoveryUnknown: the peer has no record of the delegation, or it could not be
+	// contacted — treat like today's behaviour and mark the task failed.
+	RecoveryUnknown ExternalRecoveryState = iota
+	// RecoveryCompleted: the peer returned the finished delegation's result.
+	RecoveryCompleted
+	// RecoveryRunning: the delegation is still executing on the peer.
+	RecoveryRunning
+)
+
+// ExternalDelegationRecoverer recovers the result of an external (editor-launched)
+// peer delegation that was interrupted by a parent restart (A2). It is injected
+// from internal/app over the project registry to avoid an import cycle (same
+// pattern as WarmTargetResolver). It is read-only — it never re-runs a delegation.
+type ExternalDelegationRecoverer interface {
+	// RecoverExternalDelegation queries the peer serving the given project for the
+	// state — and, when finished, the result — of the delegation identified by
+	// correlationID. On RecoveryCompleted the returned *WarmRunResult carries the
+	// recovered output; for RecoveryRunning/RecoveryUnknown it is nil. A non-nil
+	// error means the peer was unreachable or declined (also handled as "cannot
+	// recover" → mark failed).
+	RecoverExternalDelegation(ctx context.Context, projectID, projectPath, correlationID string) (*WarmRunResult, ExternalRecoveryState, error)
 }
 
 // ProjectRef identifies a registered project, used by the spawn tool to target a
@@ -124,10 +156,33 @@ func (o *Orchestrator) tryStartWarm(task *models.Task) bool {
 
 	o.metrics.recordWarmAttempt()
 	start := time.Now()
-	res, err := o.warmResolver.RunWarm(o.ctx, task.ProjectID, task.ProjectPath, task.Prompt)
+
+	// In-flight breadcrumb (A2): when external recovery is enabled, persist the task
+	// as a running warm-acp delegation BEFORE the blocking warm run so that, if this
+	// process restarts mid-run, recoverStaleTasks can try to recover the result from
+	// a surviving external peer instead of failing it. Reverted on a cold fallback so
+	// the cold path is unchanged. Skipped entirely when recovery is off (default).
+	var origEngine models.Engine
+	var origStatus models.TaskStatus
+	var origStartedAt *time.Time
+	breadcrumb := o.externalRecoverer != nil
+	if breadcrumb {
+		origEngine, origStatus, origStartedAt = task.Engine, task.Status, task.StartedAt
+		task.Engine = models.EngineWarmACP
+		task.Status = models.TaskStatusRunning
+		task.StartedAt = &start
+		o.store.Save(task)
+	}
+
+	res, err := o.warmResolver.RunWarm(o.ctx, task.ProjectID, task.ProjectPath, task.Prompt, task.CorrelationID)
 	if errors.Is(err, ErrNoWarmTarget) {
-		// No warm target — leave the task untouched for the cold path. Count the
+		// No warm target — leave the task untouched for the cold path. Revert the
+		// breadcrumb first so the cold path sees the original task state. Count the
 		// fallback, attributing the cap-driven subset separately for telemetry.
+		if breadcrumb {
+			task.Engine, task.Status, task.StartedAt = origEngine, origStatus, origStartedAt
+			o.store.Save(task)
+		}
 		o.metrics.recordColdFallback()
 		if errors.Is(err, ErrWarmCapReached) {
 			o.metrics.recordCapRejection()

@@ -386,14 +386,15 @@ export PATH=$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && cd ~/
 echo "Release builds completed in dist/"
 ```
 
-Quick remote smoke test before the full release:
-
-```bash
-export KEYSTORE_PASS='$KEYSTORE_PASS'
-export SIGNING_CERT_PASSWORD='$SIGNING_CERT_PASSWORD'
-bash scripts/setup-macos-signing-keychain
-security find-identity -v -p codesigning "$HOME/Library/Keychains/pando-build.keychain-db"
-```
+>
+> Quick remote smoke test before the full release:
+>
+> ```bash
+> export KEYSTORE_PASS='$KEYSTORE_PASS'
+> export SIGNING_CERT_PASSWORD='$SIGNING_CERT_PASSWORD'
+> bash scripts/setup-macos-signing-keychain
+> security find-identity -v -p codesigning "$HOME/Library/Keychains/pando-build.keychain-db"
+> ```
 
 ## ACP Support
 

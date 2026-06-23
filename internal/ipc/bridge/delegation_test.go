@@ -22,6 +22,8 @@ type fakeDelegationRunner struct {
 	err          error
 	cancelledIDs []string
 	calledParams []protocol.DelegationRunParams
+	statusResult protocol.DelegationStatusResult
+	statusIDs    []string
 }
 
 func (f *fakeDelegationRunner) RunDelegation(_ context.Context, params protocol.DelegationRunParams) (protocol.DelegationRunResult, error) {
@@ -31,6 +33,11 @@ func (f *fakeDelegationRunner) RunDelegation(_ context.Context, params protocol.
 
 func (f *fakeDelegationRunner) CancelDelegation(correlationID string) {
 	f.cancelledIDs = append(f.cancelledIDs, correlationID)
+}
+
+func (f *fakeDelegationRunner) DelegationStatus(correlationID string) protocol.DelegationStatusResult {
+	f.statusIDs = append(f.statusIDs, correlationID)
+	return f.statusResult
 }
 
 // --- helpers to call a registered handler ---
@@ -254,6 +261,51 @@ func TestDelegationCancel_CallsRunner(t *testing.T) {
 	}
 	if len(runner.cancelledIDs) != 1 || runner.cancelledIDs[0] != "corr-42" {
 		t.Errorf("expected runner.CancelDelegation(corr-42), got %v", runner.cancelledIDs)
+	}
+}
+
+func TestDelegationStatus_CallsRunnerWhenAccepting(t *testing.T) {
+	svc := newMockSessionService(nil)
+	captured := make(map[string]ipc.HandlerFunc)
+	bus := newCapturingBus(captured)
+	runner := &fakeDelegationRunner{
+		statusResult: protocol.DelegationStatusResult{
+			State:     protocol.DelegationStateCompleted,
+			SessionID: "s-1",
+			Output:    "recovered output",
+		},
+	}
+
+	bridge.RegisterHandlersWithDelegation(bus, "inst-st", svc, nil, time.Now(), nil, nil, runner, true)
+
+	params := protocol.DelegationStatusParams{CorrelationID: "corr-st"}
+	raw, err := invokeHandler(t, captured, protocol.MethodDelegationStatus, params)
+	if err != nil {
+		t.Fatalf("delegation.status: %v", err)
+	}
+	var res protocol.DelegationStatusResult
+	if err := json.Unmarshal(raw, &res); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if res.State != protocol.DelegationStateCompleted || res.Output != "recovered output" {
+		t.Errorf("status result = %+v, want completed/recovered output", res)
+	}
+	if len(runner.statusIDs) != 1 || runner.statusIDs[0] != "corr-st" {
+		t.Errorf("expected runner.DelegationStatus(corr-st), got %v", runner.statusIDs)
+	}
+}
+
+func TestDelegationStatus_RefusedWhenNotAccepting(t *testing.T) {
+	svc := newMockSessionService(nil)
+	captured := make(map[string]ipc.HandlerFunc)
+	bus := newCapturingBus(captured)
+
+	// acceptDelegations=false → handler registered but refuses.
+	bridge.RegisterHandlersWithDelegation(bus, "inst-st2", svc, nil, time.Now(), nil, nil, nil, false)
+
+	if _, err := invokeHandler(t, captured, protocol.MethodDelegationStatus,
+		protocol.DelegationStatusParams{CorrelationID: "x"}); err == nil {
+		t.Fatal("expected delegation.status to refuse when not accepting")
 	}
 }
 

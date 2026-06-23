@@ -474,11 +474,18 @@ func (p *orchestratorPage) delegationMetricsText() string {
 	if m.ExternalHits > 0 {
 		extPart = fmt.Sprintf(" · ext=%d", m.ExternalHits)
 	}
+	// Re-attach recovery (A2): only shown once it has happened, keeping the common
+	// line unchanged.
+	reattachPart := ""
+	if m.ExternalReattachRecovered > 0 || m.ExternalReattachFailed > 0 {
+		reattachPart = fmt.Sprintf(" · reattach %d/%d",
+			m.ExternalReattachRecovered, m.ExternalReattachRecovered+m.ExternalReattachFailed)
+	}
 	return fmt.Sprintf(
-		"Delegation: warm %d/%d (%.0f%%)%s · fail %d · cold %d · cap %d · resurrect %d · inject %d",
+		"Delegation: warm %d/%d (%.0f%%)%s · fail %d · cold %d · cap %d · resurrect %d · inject %d%s",
 		m.WarmHits, m.WarmAttempts, m.WarmHitRate*100, extPart,
 		m.WarmFailures, m.ColdFallbacks, m.CapRejections,
-		m.Resurrections, m.LiveInjections,
+		m.Resurrections, m.LiveInjections, reattachPart,
 	)
 }
 
@@ -680,12 +687,18 @@ func (p *orchestratorPage) buildDetailContent() string {
 	}
 
 	statusLabel := p.statusCell(task.Status)
+	engineModel := fmt.Sprintf("Engine: %s  Model: %s",
+		fallbackString(string(task.Engine), "-"),
+		fallbackString(task.Model, "-"),
+	)
+	// Persona is only set for delegated/persona-scoped runs, so surface it inline
+	// next to the model only when present rather than as a mostly-empty field.
+	if persona := strings.TrimSpace(task.Persona); persona != "" {
+		engineModel += "  Persona: " + persona
+	}
 	lines := []string{
 		fmt.Sprintf("Task: %s  %s", task.ID, statusLabel),
-		fmt.Sprintf("Engine: %s  Model: %s",
-			fallbackString(string(task.Engine), "-"),
-			fallbackString(task.Model, "-"),
-		),
+		engineModel,
 		fmt.Sprintf("Progress: %s", taskProgressLabel(task)),
 	}
 
