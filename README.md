@@ -380,8 +380,29 @@ interactive:true
 Inputs: KEYSTORE_PASS, SIGNING_CERT_PASSWORD, NOTARY_APPLE_ID, NOTARY_TEAM_ID, NOTARY_APP_PASSWORD
 
 ```bash
-export PATH=$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && cd ~/www/MCP/Pando/pando && git pull origin main && git fetch origin --tags && rm -rf dist && mkdir -p dist && export KEYSTORE_PASS='$KEYSTORE_PASS' && export SIGNING_CERT_PASSWORD='$SIGNING_CERT_PASSWORD' && export NOTARY_APPLE_ID='$NOTARY_APPLE_ID' && export NOTARY_TEAM_ID='$NOTARY_TEAM_ID' && export NOTARY_APP_PASSWORD='$NOTARY_APP_PASSWORD' && NOTARYTOOL_STORE_CREDENTIALS=1 bash scripts/setup-macos-signing-keychain && export MACOS_SIGN_KEYCHAIN_PATH="$HOME/Library/Keychains/pando-build.keychain-db" && export MACOS_SIGN_KEYCHAIN_PASSWORD="$KEYSTORE_PASS" && xc build && make release-darwin-arm64 && make release-darwin-amd64 && bash scripts/build-macos-app
+export PATH=$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin
+cd ~/www/MCP/Pando/pando
 
+git pull origin main
+git fetch origin --tags
+rm -rf dist
+mkdir -p dist
+
+eval "$(cat ~/DIGIO_Software_Signing_Keys/kvagerc)"
+export SIGNING_KEYS_DIR="$HOME/DIGIO_Software_Signing_Keys"
+export MACOS_APP_CERT_PATH="$SIGNING_KEYS_DIR/developerID_application.p12"
+export MACOS_INSTALLER_CERT_PATH="$SIGNING_KEYS_DIR/certificado.p12"
+export MACOS_SIGN_KEYCHAIN_PATH="$HOME/Library/Keychains/pando-build-db"
+export MACOS_SIGN_KEYCHAIN_PASSWORD="$KEYSTORE_PASS"
+export MACOS_APP_CERT_PASSWORD=""
+export MACOS_INSTALLER_CERT_PASSWORD=""
+
+NOTARYTOOL_STORE_CREDENTIALS=1 bash scripts/setup-macos-signing-keychain
+
+xc build
+make release-darwin-arm64
+make release-darwin-amd64
+bash scripts/build-macos-app
 
 echo "Release builds completed in dist/"
 ```
@@ -390,10 +411,16 @@ echo "Release builds completed in dist/"
 > Quick remote smoke test before the full release:
 >
 > ```bash
-> export KEYSTORE_PASS='$KEYSTORE_PASS'
-> export SIGNING_CERT_PASSWORD='$SIGNING_CERT_PASSWORD'
+> eval "$(cat ~/DIGIO_Software_Signing_Keys/kvagerc)"
+> export SIGNING_KEYS_DIR="$HOME/DIGIO_Software_Signing_Keys"
+> export MACOS_APP_CERT_PATH="$SIGNING_KEYS_DIR/developerID_application.p12"
+> export MACOS_INSTALLER_CERT_PATH="$SIGNING_KEYS_DIR/certificado.p12"
+> export MACOS_SIGN_KEYCHAIN_PATH="$HOME/Library/Keychains/pando-build-db"
+> export MACOS_SIGN_KEYCHAIN_PASSWORD="$KEYSTORE_PASS"
+> export MACOS_APP_CERT_PASSWORD=""
+> export MACOS_INSTALLER_CERT_PASSWORD=""
 > bash scripts/setup-macos-signing-keychain
-> security find-identity -v -p codesigning "$HOME/Library/Keychains/pando-build.keychain-db"
+> security find-identity -v -p codesigning "$HOME/Library/Keychains/pando-build-db"
 > ```
 
 ## ACP Support

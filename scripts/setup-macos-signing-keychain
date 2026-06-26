@@ -102,7 +102,7 @@ INSTALLER_CERT_PASSWORD="${MACOS_INSTALLER_CERT_PASSWORD:-${SIGNING_CERT_PASSWOR
 extract_identity_sha1() {
     local p12_path="$1"
     local p12_password="$2"
-    openssl pkcs12 -in "$p12_path" -nokeys -clcerts -passin "pass:$p12_password" 2>/dev/null \
+    openssl pkcs12 -legacy -in "$p12_path" -nokeys -clcerts -passin "pass:$p12_password" 2>/dev/null \
         | openssl x509 -noout -fingerprint -sha1 \
         | awk -F= '{gsub(":", "", $2); print $2}'
 }
@@ -110,7 +110,7 @@ extract_identity_sha1() {
 extract_identity_name() {
     local p12_path="$1"
     local p12_password="$2"
-    openssl pkcs12 -in "$p12_path" -nokeys -clcerts -passin "pass:$p12_password" 2>/dev/null \
+    openssl pkcs12 -legacy -in "$p12_path" -nokeys -clcerts -passin "pass:$p12_password" 2>/dev/null \
         | openssl x509 -noout -subject -nameopt RFC2253 \
         | sed -n 's/^subject=//p' \
         | awk -F',' '{for (i=1; i<=NF; i++) if ($i ~ /^CN=/) {sub(/^CN=/, "", $i); print $i; exit}}'
