@@ -352,24 +352,19 @@ make release-darwin-arm64
 # macOS x64
 make release-darwin-amd64
 
-echo "Run in osx terminal the command:"
-echo "    export KEYSTORE_PASS=<temp_keychain_password> SIGNING_CERT_PASSWORD=<p12_password> NOTARY_APPLE_ID=<apple_id> NOTARY_TEAM_ID=<team_id> NOTARY_APP_PASSWORD=<app_specific_password> && xc release-osx"
-echo
-bash -c 'read -n 1 -s -r -p "When the command finish, press any key to continue..."'
-echo
+# echo "Run in osx terminal the command:"
+# echo "    export KEYSTORE_PASS=<temp_keychain_password> SIGNING_CERT_PASSWORD=<p12_password> NOTARY_APPLE_ID=<apple_id> NOTARY_TEAM_ID=<team_id> NOTARY_APP_PASSWORD=<app_specific_password> && xc release-osx"
+# echo
+# bash -c 'read -n 1 -s -r -p "When the command finish, press any key to continue..."'
+# echo
 
+# ssh -tt mac-mini-de-digio "export PATH=\$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && cd ~/www/MCP/Pando/pando && git pull origin main && git fetch origin --tags && rm -rf dist && mkdir -p dist && zsh && eval \"\$(cat ~/DIGIO_Software_Signing_Keys/kvagerc)\" && xc build && xc release-osx"
+ssh -tt mac-mini-de-digio 'zsh -lc '"'"'export PATH=$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && cd ~/www/MCP/Pando/pando && eval "$(cat ~/DIGIO_Software_Signing_Keys/kvagerc)" && xc release-osx'"'"''
 
 scp mac-mini-de-digio:~/www/MCP/Pando/pando/dist/*.zip dist/
 
 echo "Release builds completed in dist/"
 ```
-
-For macOS signing the flow is split in two:
-
-- **Embedded wrapper (standalone CLI builds).** `make desktop-embed` now signs the `pando-desktop` wrapper with the Developer ID Application identity (hardened runtime, **no notarization**) *before* it is baked into the CLI via `go:embed`. Signing the wrapper before embedding is what stops macOS from killing it when `pando desktop` extracts and runs it from a temp dir. The Mach-O signature travels inside the embedded bytes and is preserved on extraction.
-- **Packaged `.app`/`.pkg` (per architecture).** `scripts/build-macos-app` builds one bundle per architecture and ships `pando-desktop` as a **real file inside `Pando.app/Contents/MacOS/`** next to `pando-bin` — it is no longer extracted from the embed at runtime. The runtime (`internal/desktop/launcher.go`) prefers that on-disk sibling, so the wrapper runs from its signed & notarized location. Each bundle is signed inside-out (`pando-bin`, then `pando-desktop`, then `Pando.app` with `codesign --deep -o runtime`) and packaged into `pando-<version>-darwin-arm64.pkg` and `pando-<version>-darwin-x64.pkg`.
-
-The installer package must be signed separately with `productsign` and a `Developer ID Installer` identity via `PKG_SIGN_IDENTITY`; reusing the application certificate for the `.pkg` makes Gatekeeper report the package as unsigned or invalid. `scripts/build-macos-app` verifies every bundle and installer after signing with `codesign`, `spctl`, and `pkgutil --check-signature`, and notarizes/staples each `.pkg` via `notarytool` (profile `NOTARY_PROFILE`). For unattended SSH / CI runs, create a temporary signing keychain from `~/DIGIO_Software_Signing_Keys` with `scripts/setup-macos-signing-keychain` and export `MACOS_SIGN_KEYCHAIN_PATH`, `MACOS_SIGN_KEYCHAIN_PASSWORD`, `SIGNING_IDENTITY`, and `PKG_SIGN_IDENTITY` before running the release steps.
 
 
 ### release-osx

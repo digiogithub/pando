@@ -126,23 +126,19 @@ if [[ -z "$APP_IDENTITY_SHA1" || -z "$PKG_IDENTITY_SHA1" ]]; then
     exit 1
 fi
 
-if security list-keychains -d user | tr -d '"' | grep -Fq "$KEYCHAIN_PATH"; then
-    :
+KEYCHAIN_EXISTS=0
+if security show-keychain-info "$KEYCHAIN_PATH" >/dev/null 2>&1 || \
+   security show-keychain-info "$KEYCHAIN_PATH_LEGACY" >/dev/null 2>&1 || \
+   security show-keychain-info "$KEYCHAIN_BASE_NAME" >/dev/null 2>&1; then
+    KEYCHAIN_EXISTS=1
+fi
+
+if [[ "$KEYCHAIN_EXISTS" == "1" ]]; then
+    echo "Reusing existing keychain: $KEYCHAIN_PATH"
 else
-    EXISTING_KEYCHAINS_RAW="$(security list-keychains -d user | tr -d '"')"
+    security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_BASE_NAME"
 fi
 
-if security show-keychain-info "$KEYCHAIN_PATH" >/dev/null 2>&1; then
-    security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
-fi
-if security show-keychain-info "$KEYCHAIN_PATH_LEGACY" >/dev/null 2>&1; then
-    security delete-keychain "$KEYCHAIN_PATH_LEGACY" >/dev/null 2>&1 || true
-fi
-if security show-keychain-info "$KEYCHAIN_BASE_NAME" >/dev/null 2>&1; then
-    security delete-keychain "$KEYCHAIN_BASE_NAME" >/dev/null 2>&1 || true
-fi
-
-security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_BASE_NAME"
 security set-keychain-settings -lut "$KEYCHAIN_TIMEOUT_SECONDS" "$KEYCHAIN_BASE_NAME"
 security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_BASE_NAME"
 
