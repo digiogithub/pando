@@ -28,6 +28,9 @@ type SettingsResponse struct {
 	LLMCacheEnabled  bool   `json:"llm_cache_enabled"`
 	EvaluatorEnabled bool   `json:"evaluator_enabled"`
 	JudgeModel       string `json:"judge_model"`
+	// OutputFilterEnabled is the inverse of Bash.OutputFilterDisabled: RTK-style
+	// command-output compression. True means compression is on (the default).
+	OutputFilterEnabled bool `json:"output_filter_enabled"`
 
 	ToolDiscoveryEnabled        bool   `json:"tool_discovery_enabled"`
 	ToolDiscoveryMode           string `json:"tool_discovery_mode"`
@@ -61,9 +64,10 @@ type SettingsUpdateRequest struct {
 	SkillsEnabled    *bool   `json:"skills_enabled,omitempty"`
 	ShowHiddenFiles  *bool   `json:"show_hidden_files,omitempty"`
 	NerdFonts        *bool   `json:"nerd_fonts,omitempty"`
-	LLMCacheEnabled  *bool   `json:"llm_cache_enabled,omitempty"`
-	EvaluatorEnabled *bool   `json:"evaluator_enabled,omitempty"`
-	JudgeModel       *string `json:"judge_model,omitempty"`
+	LLMCacheEnabled     *bool   `json:"llm_cache_enabled,omitempty"`
+	EvaluatorEnabled    *bool   `json:"evaluator_enabled,omitempty"`
+	JudgeModel          *string `json:"judge_model,omitempty"`
+	OutputFilterEnabled *bool   `json:"output_filter_enabled,omitempty"`
 
 	ToolDiscoveryEnabled        *bool   `json:"tool_discovery_enabled,omitempty"`
 	ToolDiscoveryMode           *string `json:"tool_discovery_mode,omitempty"`
@@ -132,9 +136,10 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		DataDirectory:    cfg.Data.Directory,
 		ShowHiddenFiles:  cfg.TUI.ShowHiddenFiles,
 		NerdFonts:        cfg.NerdFontsEnabled(),
-		LLMCacheEnabled:  cfg.LLMCache.Enabled,
-		EvaluatorEnabled: cfg.Evaluator.Enabled,
-		JudgeModel:       string(cfg.Evaluator.Model),
+		LLMCacheEnabled:     cfg.LLMCache.Enabled,
+		EvaluatorEnabled:    cfg.Evaluator.Enabled,
+		JudgeModel:          string(cfg.Evaluator.Model),
+		OutputFilterEnabled: !cfg.Bash.OutputFilterDisabled,
 
 		ToolDiscoveryEnabled:        cfg.ToolDiscovery.Enabled,
 		ToolDiscoveryMode:           toolDiscoveryModeOrDefault(cfg.ToolDiscovery.Mode),
@@ -284,6 +289,16 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if req.LLMCacheEnabled != nil {
 		if err := config.UpdateLLMCache(*req.LLMCacheEnabled); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update llm cache setting")
+			return
+		}
+	}
+
+	if req.OutputFilterEnabled != nil {
+		bashCfg := config.Get().Bash
+		// The UI exposes "enabled"; the config stores the inverse "disabled" flag.
+		bashCfg.OutputFilterDisabled = !*req.OutputFilterEnabled
+		if err := config.UpdateBash(bashCfg); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update output filter setting")
 			return
 		}
 	}

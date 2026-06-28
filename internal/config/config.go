@@ -340,6 +340,14 @@ type BashConfig struct {
 	BannedCommands []string `json:"bannedCommands,omitempty"`
 	// AllowedCommands, when non-empty, removes specific commands from the default banned list.
 	AllowedCommands []string `json:"allowedCommands,omitempty"`
+	// OutputFilterDisabled turns off RTK-style output compression of command
+	// results. The filter is fail-safe and on by default; set this to true to
+	// always return raw command output to the model.
+	OutputFilterDisabled bool `json:"outputFilterDisabled,omitempty"`
+	// OutputFilterPaths lists extra TOML filter files (user-global or project
+	// overrides) layered on top of the embedded built-in filters. Earlier paths
+	// take precedence; all paths override the built-ins.
+	OutputFilterPaths []string `json:"outputFilterPaths,omitempty"`
 }
 
 // SkillsConfig defines configuration for skill discovery and prompt injection.

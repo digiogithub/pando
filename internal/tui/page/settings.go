@@ -2543,6 +2543,12 @@ func buildBashSection(cfg *config.Config) settings.Section {
 		Title: "Bash",
 		Fields: []settings.Field{
 			{
+				Label: "Output Filter",
+				Key:   "bash.outputFilter",
+				Type:  settings.FieldToggle,
+				Value: boolString(!bash.OutputFilterDisabled),
+			},
+			{
 				Label: "Banned Commands",
 				Key:   "bash.bannedCommands",
 				Type:  settings.FieldText,
@@ -4688,6 +4694,13 @@ func saveBash(field settings.Field) error {
 	}
 
 	switch field.Key {
+	case "bash.outputFilter":
+		// Toggle shows "enabled"; config stores the inverse "disabled" flag.
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Output Filter value: %w", err)
+		}
+		bashCfg.OutputFilterDisabled = !enabled
 	case "bash.bannedCommands":
 		bashCfg.BannedCommands = splitCommands(field.Value)
 	case "bash.allowedCommands":

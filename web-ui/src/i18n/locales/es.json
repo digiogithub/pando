@@ -88,6 +88,8 @@
       "themeDark": "Oscuro",
       "llmCache": "Caché de prompts LLM",
       "llmCacheDescription": "Habilitar caché de prompts para proveedores LLM (principalmente Anthropic)",
+      "outputFilter": "Filtro de salida de comandos",
+      "outputFilterDescription": "Comprime la salida ruidosa de los comandos (tests, compilaciones, instaladores) antes de enviarla al modelo para ahorrar tokens. A prueba de fallos y activado por defecto; nunca descarta errores",
       "toolDiscovery": "Descubrimiento de herramientas",
       "toolDiscoveryDescription": "Mantener fuera del contexto inicial las herramientas no esenciales; el modelo las encuentra bajo demanda con tool_search",
       "toolDiscoveryMode": "Modo de descubrimiento",

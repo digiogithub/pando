@@ -88,6 +88,8 @@
       "themeDark": "Dark",
       "llmCache": "LLM Prompt Cache",
       "llmCacheDescription": "Enable prompt caching for LLM providers (mainly affects Anthropic)",
+      "outputFilter": "Command Output Filter",
+      "outputFilterDescription": "Compress noisy command output (test runners, builds, installers) before it reaches the model to save tokens. Fail-safe and on by default; errors are never dropped",
       "toolDiscovery": "Tool Discovery",
       "toolDiscoveryDescription": "Keep non-core tools out of the initial context; the model finds them on demand via tool_search",
       "toolDiscoveryMode": "Tool Discovery Mode",

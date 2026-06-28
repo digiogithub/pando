@@ -43,6 +43,13 @@ type BashResponseMetadata struct {
 	EndTime    int64 `json:"end_time"`
 	TotalLines int   `json:"total_lines"`
 	Truncated  bool  `json:"truncated"`
+	// OutputFilter is the name of the RTK-style filter or native parser that
+	// compressed the command output, empty when no compression was applied.
+	OutputFilter string `json:"output_filter,omitempty"`
+	// OutputFilterCharsBefore / OutputFilterCharsAfter record the byte sizes
+	// before and after compression so the UI can show the token/char savings.
+	OutputFilterCharsBefore int `json:"output_filter_chars_before,omitempty"`
+	OutputFilterCharsAfter  int `json:"output_filter_chars_after,omitempty"`
 }
 type bashTool struct {
 	permissions permission.Service
@@ -373,6 +380,12 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		return ToolResponse{}, fmt.Errorf("error executing command: %w", err)
 	}
 
+	// RTK-style output compression: map the command to a declarative filter
+	// and strip noise before truncation/caching. Fail-safe (returns raw on any
+	// issue) and never touches the exit code or stderr handling below.
+	filterResult := applyOutputFilter(params.Command, stdout)
+	stdout = filterResult.Output
+
 	stdout = truncateOutput(stdout)
 	stderr = truncateOutput(stderr)
 
@@ -419,10 +432,13 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	}
 
 	metadata := BashResponseMetadata{
-		StartTime:  startTime.UnixMilli(),
-		EndTime:    time.Now().UnixMilli(),
-		TotalLines: totalLines,
-		Truncated:  truncated,
+		StartTime:               startTime.UnixMilli(),
+		EndTime:                 time.Now().UnixMilli(),
+		TotalLines:              totalLines,
+		Truncated:               truncated,
+		OutputFilter:            filterResult.Name,
+		OutputFilterCharsBefore: filterResult.Before,
+		OutputFilterCharsAfter:  filterResult.After,
 	}
 	if stdout == "" {
 		return WithResponseMetadata(NewTextResponse("no output"), metadata), nil
@@ -586,6 +602,10 @@ func (b *bashTool) runWithACP(ctx context.Context, params BashParams, acpConnInt
 		return NewTextErrorResponse(fmt.Sprintf("Failed to get terminal output: %s", err)), nil
 	}
 
+	// RTK-style output compression (see Run): fail-safe, applied before truncation.
+	filterResult := applyOutputFilter(params.Command, output)
+	output = filterResult.Output
+
 	// Truncate if needed
 	output = truncateOutput(output)
 
@@ -617,10 +637,13 @@ func (b *bashTool) runWithACP(ctx context.Context, params BashParams, acpConnInt
 	logging.Debug("bash ACP completed", "command", params.Command, "exitCode", exitCode, "outputLen", len(output))
 
 	metadata := BashResponseMetadata{
-		StartTime:  startTime.UnixMilli(),
-		EndTime:    time.Now().UnixMilli(),
-		TotalLines: acpTotalLines,
-		Truncated:  acpTruncated,
+		StartTime:               startTime.UnixMilli(),
+		EndTime:                 time.Now().UnixMilli(),
+		TotalLines:              acpTotalLines,
+		Truncated:               acpTruncated,
+		OutputFilter:            filterResult.Name,
+		OutputFilterCharsBefore: filterResult.Before,
+		OutputFilterCharsAfter:  filterResult.After,
 	}
 
 	if output == "" {

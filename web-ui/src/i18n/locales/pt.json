@@ -88,6 +88,8 @@
       "themeDark": "Escuro",
       "llmCache": "Cache de prompts LLM",
       "llmCacheDescription": "Habilitar cache de prompts para provedores LLM (principalmente Anthropic)",
+      "outputFilter": "Filtro de saída de comandos",
+      "outputFilterDescription": "Comprime a saída verbosa dos comandos (testes, compilações, instaladores) antes de chegar ao modelo para economizar tokens. À prova de falhas e ativado por padrão; erros nunca são descartados",
       "homeDirectory": "Diretório inicial",
       "autoCompact": "Compactação automática",
       "autoCompactDescription": "Comprime automaticamente o contexto da conversa quando ele fica grande",

@@ -88,6 +88,8 @@
       "themeDark": "Dunkel",
       "llmCache": "LLM-Prompt-Cache",
       "llmCacheDescription": "Prompt-Caching für LLM-Anbieter aktivieren (hauptsächlich Anthropic)",
+      "outputFilter": "Befehlsausgabe-Filter",
+      "outputFilterDescription": "Komprimiert ausführliche Befehlsausgaben (Testrunner, Builds, Installer), bevor sie das Modell erreichen, um Tokens zu sparen. Ausfallsicher und standardmäßig aktiviert; Fehler werden nie verworfen",
       "homeDirectory": "Home-Verzeichnis",
       "autoCompact": "Auto-Komprimierung",
       "autoCompactDescription": "Komprimiert den Gesprächskontext automatisch, wenn er zu groß wird",

@@ -19,6 +19,7 @@ Pando is a Go-based CLI application that brings AI assistance to your terminal. 
 - **Multiple AI Providers**: Support for Github copilot, OpenAI, Anthropic Claude, Google Gemini, AWS Bedrock, Groq, Azure OpenAI, Ollama, Llama.cpp, and OpenRouter. Also any OpenAI compatible provider, including self-hosted models with the `local` provider.
 - **Session Management**: Save and manage multiple conversation sessions
 - **Tool Integration**: AI can execute commands, search files, and modify code
+- **Output Compression (token reduction)**: RTK-style filtering of verbose command output (test runners, builds, installers, linters) before it reaches the model — typically 60-90% fewer tokens. Declarative, hot-reloadable TOML filters plus native structured parsers (`go test -json`, `golangci-lint`, `tsc`). Fail-safe and on by default; never drops errors. Add project-local filters in `.pando/filters.toml` and validate them with `pando filter test`. See [docs/output-filters.md](docs/output-filters.md).
 - **Vim-like Editor**: Integrated editor with text input capabilities
 - **Persistent Storage**: SQLite database for storing conversations and sessions
 - **LSP Integration**: Language Server Protocol support for code intelligence
@@ -259,6 +260,40 @@ Configure it under `[Remembrances]`:
 KBConvertDocuments = true            # default; convert documents in the KB folder
 # KBConvertExtensions = ["docx", "pdf", "xlsx"]   # optional: override the curated set
 ```
+
+### Output compression filters (token reduction)
+
+Pando compresses verbose command output before it reaches the model, cutting token
+usage on noisy tools (test runners, builds, installers, linters) by roughly 60-90%.
+It is **fail-safe** (any error returns the raw output), **exit-code preserving**, and
+**on by default**.
+
+Two complementary mechanisms run at the `bash` tool boundary:
+
+- **Native structured parsers** (first tier) for `go test -json`, `golangci-lint` and
+  `tsc`, with RTK-style 3-tier degradation (structured summary → regex grep → raw).
+- **Declarative TOML filters** (second tier) — an 8-stage line pipeline matched to a
+  command by regex. 15 built-ins ship embedded (git, docker, cargo, go, gradle/maven,
+  npm/pnpm/yarn, bun, deno, swift, pip, pytest).
+
+Disable it (always return raw output) from the TUI/WebUI settings (`Bash → Output
+Filter`) or in config:
+
+```toml
+[Bash]
+OutputFilterDisabled = false                 # default; set true to turn compression off
+# OutputFilterPaths = ["~/.pando/filters.toml"]   # extra user-global filter files
+```
+
+Add project-local filters in `.pando/filters.toml` (highest precedence) and validate
+their inline `[[tests]]` before relying on them:
+
+```bash
+pando filter test .pando/filters.toml   # validate your authoring file
+pando filter test                       # validate the built-in defaults
+```
+
+The full filter schema and authoring guide is in [docs/output-filters.md](docs/output-filters.md).
 
 ## Custom Commands
 

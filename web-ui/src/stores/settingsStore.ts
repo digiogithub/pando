@@ -17,6 +17,7 @@ const DEFAULTS: SettingsConfig = {
   show_hidden_files: false,
   nerd_fonts: true,
   llm_cache_enabled: true,
+  output_filter_enabled: true,
   evaluator_enabled: false,
   judge_model: '',
   tool_discovery_enabled: true,

@@ -116,6 +116,12 @@ export default function GeneralSettings() {
           onChange={(v) => updateField('llm_cache_enabled', v)}
         />
         <Toggle
+          label={t('settings.general.outputFilter')}
+          description={t('settings.general.outputFilterDescription')}
+          checked={config.output_filter_enabled}
+          onChange={(v) => updateField('output_filter_enabled', v)}
+        />
+        <Toggle
           label={t('settings.general.autoCompact')}
           description={t('settings.general.autoCompactDescription')}
           checked={config.auto_compact}

@@ -1,0 +1,420 @@
+# Built-in RTK-style output filters for Pando's bash tool.
+#
+# Each [filters.<name>] maps a command (match_command regex) to an 8-stage
+# line-oriented compression pipeline. Filters are conservative: they strip
+# guidance/noise and summarise success states, but never drop error or failure
+# lines. Project- or user-supplied filters (Bash.OutputFilterPaths,
+# .pando/filters.toml) override these by matching first.
+#
+# Pattern fields use TOML literal strings ('...') so regex backslashes need no
+# escaping. Inline [[filters.<name>.tests]] are executed by the package tests.
+
+# --- git status -------------------------------------------------------------
+[filters.git-status]
+description = "Compact git status: collapse a clean tree to one line, drop (use ...) hints and blank lines."
+match_command = '(^|\s)git\s+status(\s|$)'
+strip_ansi = true
+match_output = [
+  { pattern = 'nothing to commit, working tree clean', message = "git status: clean (working tree clean, nothing to commit)" },
+]
+strip_lines_matching = [
+  '^\s*\(use "git ',
+  '^\s*$',
+]
+
+[[filters.git-status.tests]]
+name = "clean tree collapses to one line"
+input = """
+On branch main
+Your branch is up to date with 'origin/main'.
+
+nothing to commit, working tree clean
+"""
+expected = "git status: clean (working tree clean, nothing to commit)"
+
+[[filters.git-status.tests]]
+name = "dirty tree keeps changes, drops hints and blanks"
+input = """
+On branch main
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+\tmodified:   foo.go
+
+no changes added to commit (use "git add" and/or "git commit -a")
+"""
+expected = "On branch main\nChanges not staged for commit:\n\tmodified:   foo.go\nno changes added to commit (use \"git add\" and/or \"git commit -a\")"
+
+# --- go test ----------------------------------------------------------------
+[filters.go-test]
+description = "Failure-focused go test: drop passing-package (ok) and [no test files] lines; summarise an all-pass run."
+match_command = '(^|\s)go\s+test(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  '^ok\s',
+  '^\?\s+\S+\s+\[no test files\]',
+]
+on_empty = "✓ go test: all packages passed (no failures)"
+
+[[filters.go-test.tests]]
+name = "all-pass run collapses to summary"
+input = """
+ok  \tgithub.com/x/a\t0.012s
+?   \tgithub.com/x/b\t[no test files]
+ok  \tgithub.com/x/c\t0.103s
+"""
+expected = "✓ go test: all packages passed (no failures)"
+
+[[filters.go-test.tests]]
+name = "failures are preserved, passing packages dropped"
+input = """
+--- FAIL: TestFoo (0.00s)
+    foo_test.go:10: expected 1 got 2
+FAIL
+ok  \tgithub.com/x/a\t0.012s
+FAIL\tgithub.com/x/b\t0.030s
+"""
+expected = "--- FAIL: TestFoo (0.00s)\n    foo_test.go:10: expected 1 got 2\nFAIL\nFAIL\tgithub.com/x/b\t0.030s"
+
+# --- go mod download / tidy -------------------------------------------------
+[filters.go-mod-download]
+description = "Drop per-module 'go: downloading' progress; keep added/removed and errors."
+match_command = '(^|\s)go\s+mod\s+(download|tidy)(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  '^go: downloading\s',
+]
+
+[[filters.go-mod-download.tests]]
+name = "downloading lines dropped"
+input = """
+go: downloading github.com/foo/bar v1.2.3
+go: downloading github.com/baz/qux v0.1.0
+go: added github.com/foo/bar v1.2.3
+"""
+expected = "go: added github.com/foo/bar v1.2.3"
+
+# --- docker pull ------------------------------------------------------------
+[filters.docker-pull]
+description = "Drop per-layer pull progress; keep digest, status and the resolved image."
+match_command = '(^|\s)docker\s+(image\s+)?pull(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  '^[0-9a-f]+: (Pulling fs layer|Waiting|Downloading|Verifying Checksum|Download complete|Extracting|Pull complete|Already exists)',
+]
+
+[[filters.docker-pull.tests]]
+name = "layer progress dropped, status kept"
+input = """
+Using default tag: latest
+latest: Pulling from library/alpine
+a1b2c3d4e5f6: Pulling fs layer
+a1b2c3d4e5f6: Downloading [==>   ]  1.2MB/3.4MB
+a1b2c3d4e5f6: Download complete
+a1b2c3d4e5f6: Extracting [====>]  3.4MB/3.4MB
+a1b2c3d4e5f6: Pull complete
+Digest: sha256:abc123
+Status: Downloaded newer image for alpine:latest
+docker.io/library/alpine:latest
+"""
+expected = "Using default tag: latest\nlatest: Pulling from library/alpine\nDigest: sha256:abc123\nStatus: Downloaded newer image for alpine:latest\ndocker.io/library/alpine:latest"
+
+# --- cargo build / check ----------------------------------------------------
+[filters.cargo-build]
+description = "Drop Compiling/Downloading/Updating noise; keep warnings, errors and Finished."
+match_command = '(^|\s)cargo\s+(build|check|b|c)(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  '^\s*Compiling\s',
+  '^\s*Downloading\s',
+  '^\s*Downloaded\s',
+  '^\s*Updating\s+crates\.io',
+  '^\s*Blocking\s',
+]
+
+[[filters.cargo-build.tests]]
+name = "compile/download noise dropped, diagnostics kept"
+input = """
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded foo v1.0.0
+   Compiling foo v1.0.0
+   Compiling bar v2.0.0
+warning: unused variable
+    Finished dev [unoptimized + debuginfo] target(s) in 3.4s
+"""
+expected = "warning: unused variable\n    Finished dev [unoptimized + debuginfo] target(s) in 3.4s"
+
+# --- cargo test -------------------------------------------------------------
+[filters.cargo-test]
+description = "Failure-focused cargo test: drop passing tests, headers and blanks; keep failures and result."
+match_command = '(^|\s)cargo\s+test(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  '^test\s+\S+\s+\.\.\.\s+ok$',
+  '^\s*Compiling\s',
+  '^\s*Finished\s',
+  '^\s*Running\s',
+  '^running \d+ tests?$',
+  '^\s*$',
+]
+
+[[filters.cargo-test.tests]]
+name = "passing tests dropped, failure preserved"
+input = """
+   Compiling mycrate v0.1.0
+    Finished test [unoptimized] target(s) in 2.0s
+     Running unittests src/lib.rs
+
+running 3 tests
+test tests::foo ... ok
+test tests::bar ... FAILED
+test tests::baz ... ok
+
+failures:
+
+---- tests::bar stdout ----
+thread 'tests::bar' panicked at 'assertion failed'
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored
+"""
+expected = "test tests::bar ... FAILED\nfailures:\n---- tests::bar stdout ----\nthread 'tests::bar' panicked at 'assertion failed'\ntest result: FAILED. 2 passed; 1 failed; 0 ignored"
+
+# --- gradle (kotlin / java) -------------------------------------------------
+[filters.gradle]
+description = "Drop UP-TO-DATE/SKIPPED tasks, download lines and blanks; keep executed/failed tasks and BUILD result."
+match_command = '(^|\s)(\./)?gradlew?(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  '^> Task :.*(UP-TO-DATE|SKIPPED|NO-SOURCE|FROM-CACHE)$',
+  '^Download\s+https?://',
+  '^Downloading\s',
+  '^\s*$',
+]
+
+[[filters.gradle.tests]]
+name = "uptodate tasks dropped, failure kept"
+input = """
+> Task :compileJava UP-TO-DATE
+> Task :processResources NO-SOURCE
+> Task :classes
+> Task :test FAILED
+
+FAILURE: Build failed with an exception.
+
+BUILD FAILED in 3s
+"""
+expected = "> Task :classes\n> Task :test FAILED\nFAILURE: Build failed with an exception.\nBUILD FAILED in 3s"
+
+# --- maven (kotlin / java) --------------------------------------------------
+[filters.maven]
+description = "Drop Maven download/separator/blank INFO noise; keep build phases, warnings, errors and BUILD result."
+match_command = '(^|\s)mvn(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  '^\[INFO\] Download(ing|ed)\s',
+  '^\[INFO\] -+\s*$',
+  '^\[INFO\]\s*$',
+  '^\s*$',
+]
+
+[[filters.maven.tests]]
+name = "download and separator noise dropped"
+input = """
+[INFO] Downloading from central: https://repo/foo.jar
+[INFO] Downloaded from central: https://repo/foo.jar (10 kB)
+[INFO] ------------------------------------------------------------------------
+[INFO] Building myapp 1.0
+[INFO] ------------------------------------------------------------------------
+[INFO]
+[ERROR] Failed to compile
+[INFO] BUILD FAILURE
+"""
+expected = "[INFO] Building myapp 1.0\n[ERROR] Failed to compile\n[INFO] BUILD FAILURE"
+
+# --- npm / pnpm / yarn install (node.js) ------------------------------------
+[filters.npm-install]
+description = "Drop npm deprecation/notice/funding noise and blanks; keep package counts, audit and errors."
+match_command = '(^|\s)(npm|pnpm|yarn)\s+(install|i|ci|add)(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  '^npm warn deprecated',
+  '^npm WARN deprecated',
+  '^npm notice',
+  'packages are looking for funding',
+  'run .npm fund. for details',
+  '^\s*$',
+]
+
+[[filters.npm-install.tests]]
+name = "deprecation and funding noise dropped"
+input = """
+npm warn deprecated foo@1.0.0: use bar instead
+npm notice New version available
+
+added 250 packages, and audited 251 packages in 5s
+
+40 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+"""
+expected = "added 250 packages, and audited 251 packages in 5s\nfound 0 vulnerabilities"
+
+# --- bun install ------------------------------------------------------------
+[filters.bun-install]
+description = "Drop bun install banner and per-package + lines; keep the install summary and errors."
+match_command = '(^|\s)bun\s+(install|add|i)(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  '^bun (install|add) v',
+  '^\s*\+ \S+@',
+  '^\s*$',
+]
+
+[[filters.bun-install.tests]]
+name = "banner and package lines dropped"
+input = """
+bun install v1.1.0
+
++ react@18.2.0
++ typescript@5.3.0
+
+15 packages installed [42.00ms]
+"""
+expected = "15 packages installed [42.00ms]"
+
+# --- deno test --------------------------------------------------------------
+[filters.deno-test]
+description = "Failure-focused deno test: drop passing tests, Check and running headers; keep failures and result."
+match_command = '(^|\s)deno\s+test(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  '\.\.\. ok \(',
+  '^Check file://',
+  '^running \d+ tests? from ',
+  '^\s*$',
+]
+
+[[filters.deno-test.tests]]
+name = "passing tests dropped, failures preserved"
+input = """
+Check file:///app/foo_test.ts
+running 2 tests from ./foo_test.ts
+test addition ... ok (3ms)
+test failure ... FAILED (1ms)
+
+ ERRORS
+
+failure => ./foo_test.ts:10:6
+error: AssertionError
+
+ok | 1 passed | 1 failed (5ms)
+"""
+expected = "test failure ... FAILED (1ms)\n ERRORS\nfailure => ./foo_test.ts:10:6\nerror: AssertionError\nok | 1 passed | 1 failed (5ms)"
+
+# --- swift build ------------------------------------------------------------
+[filters.swift-build]
+description = "Drop Compiling/Emitting/Building progress; keep diagnostics and Build complete."
+match_command = '(^|\s)swift\s+build(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  '^\[\d+/\d+\] (Compiling|Emitting)',
+  '^Building for ',
+  '^Compiling\s',
+  '^\s*$',
+]
+
+[[filters.swift-build.tests]]
+name = "compile progress dropped"
+input = """
+Building for debugging...
+[1/4] Compiling FooModule file.swift
+[2/4] Emitting module FooModule
+[3/4] Compiling BarModule bar.swift
+Build complete! (3.21s)
+"""
+expected = "Build complete! (3.21s)"
+
+# --- swift test -------------------------------------------------------------
+[filters.swift-test]
+description = "Failure-focused swift test: drop passing cases and start banners; keep failed cases and summary."
+match_command = '(^|\s)swift\s+test(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  'passed \(\d',
+  '^\[\d+/\d+\] (Compiling|Emitting)',
+  '^Building for ',
+  '^Test Suite .* started',
+  '^\s*$',
+]
+
+[[filters.swift-test.tests]]
+name = "passing cases dropped, failures kept"
+input = """
+Test Suite 'All tests' started at 2026-06-29
+Test Case '-[FooTests testA]' passed (0.001 seconds).
+Test Case '-[FooTests testB]' failed (0.002 seconds).
+Test Suite 'All tests' failed at 2026-06-29
+\t Executed 2 tests, with 1 failure
+"""
+expected = "Test Case '-[FooTests testB]' failed (0.002 seconds).\nTest Suite 'All tests' failed at 2026-06-29\n\t Executed 2 tests, with 1 failure"
+
+# --- pytest (python) --------------------------------------------------------
+[filters.pytest]
+description = "Failure-focused pytest: drop PASSED lines and session headers; keep failures and summary."
+match_command = '(^|\s)(pytest|py\.test)(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  ' PASSED',
+  '^platform ',
+  '^rootdir:',
+  '^plugins:',
+  '^cachedir:',
+  '^collected \d',
+  '^\s*$',
+]
+
+[[filters.pytest.tests]]
+name = "passed lines and headers dropped"
+input = """
+platform linux -- Python 3.11
+rootdir: /app
+plugins: anyio-3.0
+collected 3 items
+
+test_foo.py::test_a PASSED
+test_foo.py::test_b FAILED
+test_foo.py::test_c PASSED
+
+=================== FAILURES ===================
+E   assert 1 == 2
+=========== 1 failed, 2 passed in 0.12s ===========
+"""
+expected = "test_foo.py::test_b FAILED\n=================== FAILURES ===================\nE   assert 1 == 2\n=========== 1 failed, 2 passed in 0.12s ==========="
+
+# --- pip install (python) ---------------------------------------------------
+[filters.pip-install]
+description = "Drop 'already satisfied'/Collecting/Downloading noise; keep installs and errors."
+match_command = '(^|\s)pip3?\s+install(\s|$)'
+strip_ansi = true
+strip_lines_matching = [
+  '^Requirement already satisfied:',
+  '^\s*Downloading\s',
+  '^\s*Using cached\s',
+  '^Collecting\s',
+  '^\s*$',
+]
+
+[[filters.pip-install.tests]]
+name = "satisfied and download noise dropped"
+input = """
+Requirement already satisfied: numpy in /usr/lib (1.24.0)
+Requirement already satisfied: six in /usr/lib (1.16.0)
+Collecting requests
+  Downloading requests-2.31.0-py3-none-any.whl (62 kB)
+  Using cached urllib3-2.0.0.whl (123 kB)
+Installing collected packages: requests
+Successfully installed requests-2.31.0
+"""
+expected = "Installing collected packages: requests\nSuccessfully installed requests-2.31.0"
