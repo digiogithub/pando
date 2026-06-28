@@ -367,13 +367,21 @@ type OpenLitConfig struct {
 
 // RemembrancesConfig defines configuration for the remembrances system.
 type RemembrancesConfig struct {
-	Enabled                   bool   `json:"enabled" toml:"Enabled"`
-	KBPath                    string `json:"kb_path" toml:"KBPath"`
-	KBWatch                   bool   `json:"kb_watch" toml:"KBWatch"`
-	KBAutoImport              bool   `json:"kb_auto_import" toml:"KBAutoImport"`
-	AutoIndexSessions         bool   `json:"auto_index_sessions" toml:"AutoIndexSessions"`
-	DocumentEmbeddingProvider string `json:"document_embedding_provider" toml:"DocumentEmbeddingProvider"`
-	DocumentEmbeddingModel    string `json:"document_embedding_model" toml:"DocumentEmbeddingModel"`
+	Enabled      bool   `json:"enabled" toml:"Enabled"`
+	KBPath       string `json:"kb_path" toml:"KBPath"`
+	KBWatch      bool   `json:"kb_watch" toml:"KBWatch"`
+	KBAutoImport bool   `json:"kb_auto_import" toml:"KBAutoImport"`
+	// KBConvertDocuments enables on-the-fly conversion of rich document formats
+	// (docx, pdf, xlsx, pptx, …) found in the KB directory to Markdown before
+	// indexing. The indexed document references the original file. Default true.
+	KBConvertDocuments bool `json:"kb_convert_documents" toml:"KBConvertDocuments"`
+	// KBConvertExtensions optionally overrides the curated set of document
+	// extensions (with or without leading dot) that are auto-converted. Empty
+	// uses the built-in default set.
+	KBConvertExtensions       []string `json:"kb_convert_extensions,omitempty" toml:"KBConvertExtensions"`
+	AutoIndexSessions         bool     `json:"auto_index_sessions" toml:"AutoIndexSessions"`
+	DocumentEmbeddingProvider string   `json:"document_embedding_provider" toml:"DocumentEmbeddingProvider"`
+	DocumentEmbeddingModel    string   `json:"document_embedding_model" toml:"DocumentEmbeddingModel"`
 	// DocumentEmbeddingBaseURL and DocumentEmbeddingAPIKey are used when DocumentEmbeddingProvider is "openai-compatible".
 	DocumentEmbeddingBaseURL string `json:"document_embedding_base_url" toml:"DocumentEmbeddingBaseURL"`
 	DocumentEmbeddingAPIKey  string `json:"document_embedding_api_key" toml:"DocumentEmbeddingAPIKey"`
@@ -1401,6 +1409,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("remembrances.enabled", false)
 	viper.SetDefault("remembrances.kb_watch", true)
 	viper.SetDefault("remembrances.kb_auto_import", true)
+	viper.SetDefault("remembrances.kb_convert_documents", true)
 	viper.SetDefault("remembrances.auto_index_sessions", true)
 	viper.SetDefault("remembrances.document_embedding_provider", "ollama")
 	viper.SetDefault("remembrances.document_embedding_model", "nomic-embed-text")

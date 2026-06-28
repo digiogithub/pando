@@ -21,9 +21,11 @@ type syncJob struct {
 }
 
 type syncResult struct {
-	job     syncJob
-	content string
-	err     error
+	job       syncJob
+	content   string
+	format    string
+	converted bool
+	err       error
 }
 
 type walkSummary struct {
@@ -60,6 +62,8 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		return stats, fmt.Errorf("kb: sync path is not a directory: %s", baseDir)
 	}
 
+	conv := s.documentConverter()
+
 	seen := make(map[string]struct{})
 	offset := 0
 	existingByPath := make(map[string]documentMetadata)
@@ -95,12 +99,12 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 				if ctxSync.Err() != nil {
 					return
 				}
-				contentBytes, readErr := os.ReadFile(job.absPath)
-				res := syncResult{job: job}
-				if readErr != nil {
-					res.err = fmt.Errorf("kb: read file %s: %w", job.absPath, readErr)
+				content, format, converted, loadErr := loadDocumentBody(job.absPath, conv)
+				res := syncResult{job: job, format: format, converted: converted}
+				if loadErr != nil {
+					res.err = fmt.Errorf("kb: load file %s: %w", job.absPath, loadErr)
 				} else {
-					res.content = string(contentBytes)
+					res.content = content
 				}
 				select {
 				case results <- res:
@@ -122,7 +126,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			if d.IsDir() {
 				return nil
 			}
-			if !isMarkdownFile(path) {
+			if !isIndexableFile(path, conv) {
 				return nil
 			}
 
@@ -191,20 +195,30 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			continue
 		}
 
-		// Parse YAML front matter from file content to extract tags.
-		// Store only the body (without front matter) in the database.
-		fm, bodyContent, _ := ParseFrontMatter(res.content)
-		if strings.TrimSpace(bodyContent) == "" {
-			bodyContent = res.content // Fallback if parse strips everything.
-		}
-
 		meta := map[string]interface{}{
 			"source_path":       res.job.absPath,
 			"source_mtime_unix": res.job.mtimeUnix,
+			"source_format":     res.format,
 		}
-		// Inject tags from front matter into metadata.
-		if len(fm.Tags) > 0 {
-			meta = InjectTagsIntoMetadata(meta, fm.Tags)
+
+		var bodyContent string
+		if res.converted {
+			// Converted documents carry no front matter; index the markdown
+			// produced by the converter and flag the original source format.
+			bodyContent = res.content
+			meta["converted"] = true
+		} else {
+			// Parse YAML front matter from file content to extract tags.
+			// Store only the body (without front matter) in the database.
+			fm, body, _ := ParseFrontMatter(res.content)
+			if strings.TrimSpace(body) == "" {
+				body = res.content // Fallback if parse strips everything.
+			}
+			bodyContent = body
+			// Inject tags from front matter into metadata.
+			if len(fm.Tags) > 0 {
+				meta = InjectTagsIntoMetadata(meta, fm.Tags)
+			}
 		}
 
 		processingCtx, cancel := context.WithTimeout(ctxSync, kbSyncPerFileTimeout)
@@ -358,6 +372,40 @@ func logSyncProgress(processed, queued int, stats SyncStats, errorCount int) {
 
 func isMarkdownFile(path string) bool {
 	return strings.HasSuffix(strings.ToLower(path), ".md")
+}
+
+// isIndexableFile reports whether a file should be picked up by KB sync/watch:
+// markdown always, plus convertible documents when a converter is installed.
+func isIndexableFile(path string, conv DocumentConverter) bool {
+	if isMarkdownFile(path) {
+		return true
+	}
+	return conv != nil && conv.IsConvertibleDocument(path)
+}
+
+// loadDocumentBody returns the markdown body to index for absPath. Markdown
+// files are read verbatim; convertible documents are converted via conv. It
+// also reports the source format (extension without the dot) and whether the
+// content was produced by conversion.
+func loadDocumentBody(absPath string, conv DocumentConverter) (content, format string, converted bool, err error) {
+	format = fileFormat(absPath)
+	if conv != nil && !isMarkdownFile(absPath) && conv.IsConvertibleDocument(absPath) {
+		md, cErr := conv.ConvertFile(absPath)
+		if cErr != nil {
+			return "", format, false, cErr
+		}
+		return md, format, true, nil
+	}
+	b, rErr := os.ReadFile(absPath)
+	if rErr != nil {
+		return "", format, false, rErr
+	}
+	return string(b), format, false, nil
+}
+
+// fileFormat returns the lower-cased file extension without the leading dot.
+func fileFormat(path string) string {
+	return strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
 }
 
 func normalizeDocPath(p string) string {

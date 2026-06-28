@@ -2001,6 +2001,12 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 			Value: boolString(rem.KBAutoImport),
 		},
 		settings.Field{
+			Label: "KB Convert Documents",
+			Key:   "remembrances.kb_convert_documents",
+			Type:  settings.FieldToggle,
+			Value: boolString(rem.KBConvertDocuments),
+		},
+		settings.Field{
 			Label: "Auto Index Sessions",
 			Key:   "remembrances.auto_index_sessions",
 			Type:  settings.FieldToggle,
@@ -3708,6 +3714,12 @@ func saveRemembrances(field settings.Field) error {
 			return fmt.Errorf("invalid KB auto import value: %w", err)
 		}
 		remCfg.KBAutoImport = autoImport
+	case "remembrances.kb_convert_documents":
+		convertDocs, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid KB convert documents value: %w", err)
+		}
+		remCfg.KBConvertDocuments = convertDocs
 	case "remembrances.auto_index_sessions":
 		autoIndex, err := parseBoolValue(field.Value)
 		if err != nil {

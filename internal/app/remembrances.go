@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/convert"
 	"github.com/digiogithub/pando/internal/logging"
 	rag "github.com/digiogithub/pando/internal/rag"
 )
@@ -50,6 +51,14 @@ func (app *App) initRemembrancesKBSync(ctx context.Context, svc *rag.Remembrance
 	if err := svc.KB.ConfigureFilesystemMirror(kbPath); err != nil {
 		logging.Error("remembrances kb: configure filesystem mirror failed", "path", kbPath, "error", err)
 		return
+	}
+
+	// Install the document converter so docx/pdf/xlsx/… dropped in the KB
+	// directory are converted to Markdown on the fly and indexed, referencing
+	// the original file.
+	if cfg.KBConvertDocuments {
+		svc.KB.SetDocumentConverter(convert.NewWithConvertibleExtensions(cfg.KBConvertExtensions))
+		logging.Info("remembrances kb: document conversion enabled", "path", kbPath)
 	}
 
 	if cfg.KBAutoImport {

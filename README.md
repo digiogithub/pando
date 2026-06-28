@@ -230,10 +230,35 @@ pando update
 # Disable one MCP transport if needed
 pando mcp-server --no-stdio
 pando mcp-server --no-http
+
+# Convert a document (docx, pdf, xlsx, pptx, html, csv, epub, …) to Markdown
+pando convert report.docx              # prints Markdown to stdout
+pando convert data.xlsx -o data.md     # writes to a file
+pando convert https://example.com/page # converts a web page
+pando convert --list-formats           # list supported input formats
 ```
 
 When Pando starts from a released semantic-version build, it also performs a short background
 update check and prints a notice if a newer compatible release is available.
+
+### Document conversion in the Knowledge Base
+
+Pando converts rich documents to Markdown using the pure-Go
+[`conductor-oss/markitdown`](https://github.com/conductor-oss/markitdown) library (no CGO; PDF
+via PDFium compiled to WebAssembly). Beyond the `pando convert` command, any supported document
+dropped inside the Knowledge Base directory (`[Remembrances] KBPath`) is **converted on the fly
+and indexed** with its Markdown chunks, while the indexed document keeps referencing the
+**original file** (its `source_path`, `source_format` and a `converted` flag are stored in
+metadata). Supported KB document formats: `.pdf .docx .pptx .xlsx .xls .epub .ipynb .csv .html
+.htm .rss .atom`. Plain `.md` files are still indexed verbatim.
+
+Configure it under `[Remembrances]`:
+
+```toml
+[Remembrances]
+KBConvertDocuments = true            # default; convert documents in the KB folder
+# KBConvertExtensions = ["docx", "pdf", "xlsx"]   # optional: override the curated set
+```
 
 ## Custom Commands
 

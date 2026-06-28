@@ -182,6 +182,12 @@ export default function RemembrancesSettings() {
           checked={rem.kb_auto_import}
           onChange={(v) => updateRemembrances('kb_auto_import', v)}
         />
+        <Toggle
+          label="Convert Documents"
+          description="Convert docx/pdf/xlsx and other rich documents to Markdown on the fly and index them, referencing the original file"
+          checked={rem.kb_convert_documents}
+          onChange={(v) => updateRemembrances('kb_convert_documents', v)}
+        />
       </div>
 
       <div style={dividerStyle} />

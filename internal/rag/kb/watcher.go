@@ -91,7 +91,7 @@ func (s *KBStore) WatchDirectory(ctx context.Context, dirPath string) error {
 				}
 			}
 
-			if !isMarkdownFile(event.Name) {
+			if !isIndexableFile(event.Name, s.documentConverter()) {
 				continue
 			}
 
@@ -159,22 +159,25 @@ func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fs
 		}
 	}
 
-	contentBytes, err := os.ReadFile(absPath)
+	content, format, converted, err := loadDocumentBody(absPath, s.documentConverter())
 	if err != nil {
 		if shouldIgnoreKBWatchPathError(err) {
 			logKBWatchPermissionWarning(absPath, err)
 			return
 		}
-		logging.Warn("kb watcher: read failed", "path", absPath, "error", err)
+		logging.Warn("kb watcher: load failed", "path", absPath, "error", err)
 		return
 	}
 
 	metadata := map[string]interface{}{
 		"source_path":       absPath,
 		"source_mtime_unix": mtimeUnix,
+		"source_format":     format,
+	}
+	if converted {
+		metadata["converted"] = true
 	}
 
-	content := string(contentBytes)
 	if existingMeta == nil {
 		if err := s.AddDocument(ctx, docPath, content, metadata); err != nil {
 			logging.Warn("kb watcher: add document failed", "doc_path", docPath, "error", err)

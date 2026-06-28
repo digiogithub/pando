@@ -31,6 +31,37 @@ type KBStore struct {
 	syncWorkers  int
 	fsMirrorPath string
 	fsMu         sync.RWMutex
+	converter    DocumentConverter
+}
+
+// DocumentConverter converts rich document formats (docx, pdf, xlsx, …) to
+// Markdown for on-the-fly KB ingestion. It is implemented by
+// internal/convert.Converter and injected via SetDocumentConverter to avoid a
+// hard dependency from the kb package on the conversion library.
+type DocumentConverter interface {
+	// ConvertFile converts the file at path to Markdown text.
+	ConvertFile(path string) (string, error)
+	// IsConvertibleDocument reports whether path is a document format that
+	// should be auto-converted during ingestion (curated subset, excludes
+	// plain markdown/text which is indexed verbatim).
+	IsConvertibleDocument(path string) bool
+}
+
+// SetDocumentConverter installs a converter so that supported document files
+// found in the KB source directory are converted to Markdown and indexed,
+// referencing the original file. Passing nil disables conversion (the default),
+// in which case only .md files are indexed.
+func (s *KBStore) SetDocumentConverter(c DocumentConverter) {
+	s.fsMu.Lock()
+	s.converter = c
+	s.fsMu.Unlock()
+}
+
+// documentConverter returns the installed converter (may be nil).
+func (s *KBStore) documentConverter() DocumentConverter {
+	s.fsMu.RLock()
+	defer s.fsMu.RUnlock()
+	return s.converter
 }
 
 type documentMetadata struct {

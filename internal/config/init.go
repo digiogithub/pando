@@ -322,6 +322,9 @@ Enabled = true
 KBPath  = ''
 KBAutoImport = true
 KBWatch      = true
+# Convert docx/pdf/xlsx/pptx/… dropped in the KB folder to Markdown on the fly,
+# indexing chunks that reference the original file.
+KBConvertDocuments = true
 ContextEnrichmentEnabled = true
 ContextEnrichmentKBResults = 3
 ContextEnrichmentCodeResults = 5
