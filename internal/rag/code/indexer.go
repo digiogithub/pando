@@ -50,7 +50,7 @@ var (
 )
 
 const codeSymbolSelectColumns = `id, project_id, file_path, language, symbol_type, name, name_path,
-	start_line, end_line, start_byte, end_byte, source_code, signature, doc_string, parent_id, metadata, created_at, updated_at`
+	start_line, end_line, start_byte, end_byte, signature, doc_string, parent_id, metadata, created_at, updated_at`
 
 var codeSearchStopwords = map[string]struct{}{
 	"a": {}, "an": {}, "and": {}, "are": {}, "as": {}, "at": {}, "be": {}, "but": {}, "by": {},
@@ -446,20 +446,23 @@ func (c *CodeIndexer) indexFile(ctx context.Context, projectID, rootPath, filePa
 			}
 		}
 
-		_, err := tx.ExecContext(ctx, `
+		res, err := tx.ExecContext(ctx, `
 			INSERT INTO code_symbols
 				(id, project_id, file_id, file_path, language, symbol_type, name, name_path,
 				 start_line, end_line, start_byte, end_byte,
-				 source_code, signature, doc_string, parent_id, metadata, created_at, updated_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				 signature, doc_string, parent_id, metadata, created_at, updated_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			sym.ID, sym.ProjectID, fileID, sym.FilePath, string(sym.Language),
 			string(sym.SymbolType), sym.Name, sym.NamePath,
 			sym.StartLine, sym.EndLine, sym.StartByte, sym.EndByte,
-			sym.SourceCode, sym.Signature, sym.DocString, sym.ParentID,
+			sym.Signature, sym.DocString, sym.ParentID,
 			metaJSON, now, now,
 		)
 		if err != nil {
 			return fmt.Errorf("code: insert symbol %s: %w", sym.Name, err)
+		}
+		if err := insertSymbolFTS(ctx, tx, res, sym); err != nil {
+			return fmt.Errorf("code: index symbol fts %s: %w", sym.Name, err)
 		}
 	}
 
@@ -803,9 +806,12 @@ func (c *CodeIndexer) GetProjectStats(ctx context.Context, projectID string) (ma
 
 func selectCodeSymbolColumns(alias string) string {
 	prefix := alias + "."
+	// NOTE: source_code is intentionally NOT selected — it is no longer stored
+	// in the database. Symbol bodies are hydrated on demand from disk via the
+	// stored file_path + byte/line offsets (see hydrate.go).
 	return prefix + "id, " + prefix + "project_id, " + prefix + "file_path, " + prefix + "language, " + prefix + "symbol_type, " +
 		prefix + "name, " + prefix + "name_path, " + prefix + "start_line, " + prefix + "end_line, " +
-		prefix + "start_byte, " + prefix + "end_byte, " + prefix + "source_code, " + prefix + "signature, " +
+		prefix + "start_byte, " + prefix + "end_byte, " + prefix + "signature, " +
 		prefix + "doc_string, " + prefix + "parent_id, " + prefix + "metadata, " + prefix + "created_at, " + prefix + "updated_at"
 }
 
@@ -817,7 +823,7 @@ func scanCodeSymbolRow(rows *sql.Rows, sym *CodeSymbol) error {
 	if err := rows.Scan(
 		&sym.ID, &sym.ProjectID, &sym.FilePath, &sym.Language, &sym.SymbolType,
 		&sym.Name, &sym.NamePath, &sym.StartLine, &sym.EndLine,
-		&sym.StartByte, &sym.EndByte, &sym.SourceCode, &sym.Signature, &sym.DocString,
+		&sym.StartByte, &sym.EndByte, &sym.Signature, &sym.DocString,
 		&parentID, &metadataJSON, &createdAt, &updatedAt,
 	); err != nil {
 		return err
@@ -847,7 +853,7 @@ func scanCodeSymbolRowWithEmbedding(rows *sql.Rows, sym *CodeSymbol, blob *[]byt
 	if err := rows.Scan(
 		&sym.ID, &sym.ProjectID, &sym.FilePath, &sym.Language, &sym.SymbolType,
 		&sym.Name, &sym.NamePath, &sym.StartLine, &sym.EndLine,
-		&sym.StartByte, &sym.EndByte, &sym.SourceCode, &sym.Signature, &sym.DocString,
+		&sym.StartByte, &sym.EndByte, &sym.Signature, &sym.DocString,
 		&parentID, &metadataJSON, &createdAt, &updatedAt, blob,
 	); err != nil {
 		return err
@@ -877,7 +883,7 @@ func scanCodeSymbolRowWithScore(rows *sql.Rows, sym *CodeSymbol, score *float64)
 	if err := rows.Scan(
 		&sym.ID, &sym.ProjectID, &sym.FilePath, &sym.Language, &sym.SymbolType,
 		&sym.Name, &sym.NamePath, &sym.StartLine, &sym.EndLine,
-		&sym.StartByte, &sym.EndByte, &sym.SourceCode, &sym.Signature, &sym.DocString,
+		&sym.StartByte, &sym.EndByte, &sym.Signature, &sym.DocString,
 		&parentID, &metadataJSON, &createdAt, &updatedAt, score,
 	); err != nil {
 		return err
@@ -985,7 +991,6 @@ func lexicalBoost(symbol *CodeSymbol, terms []string) float64 {
 		{text: strings.ToLower(symbol.FilePath), boost: 0.2},
 		{text: strings.ToLower(symbol.DocString), boost: 0.1},
 		{text: strings.ToLower(symbol.Signature), boost: 0.15},
-		{text: strings.ToLower(symbol.SourceCode), boost: 0.18},
 	}
 
 	score := 0.0
@@ -1000,7 +1005,6 @@ func lexicalBoost(symbol *CodeSymbol, terms []string) float64 {
 	nameMatches := countCodeTermMatches(symbol.Name, terms)
 	namePathMatches := countCodeTermMatches(symbol.NamePath, terms)
 	signatureMatches := countCodeTermMatches(symbol.Signature, terms)
-	sourceMatches := countCodeTermMatches(symbol.SourceCode, terms)
 
 	if nameMatches > 0 {
 		score += 0.18 * float64(nameMatches)
@@ -1011,15 +1015,9 @@ func lexicalBoost(symbol *CodeSymbol, terms []string) float64 {
 	if signatureMatches > 0 {
 		score += 0.08 * float64(signatureMatches)
 	}
-	if sourceMatches >= 2 {
-		score += 0.06 * float64(sourceMatches-1)
-	}
 
 	if nameMatches+namePathMatches+signatureMatches >= 2 {
 		score += 0.25
-	}
-	if nameMatches == 0 && namePathMatches == 0 && signatureMatches == 0 && sourceMatches > 0 {
-		score -= 0.12
 	}
 	if strings.HasSuffix(strings.ToLower(symbol.FilePath), ".md") {
 		score -= 0.2
@@ -1127,23 +1125,26 @@ func (c *CodeIndexer) FindSymbol(ctx context.Context, query SymbolQuery) ([]*Cod
 		if err := scanCodeSymbolRow(rows, sym); err != nil {
 			return nil, fmt.Errorf("code: scan symbol: %w", err)
 		}
-		if query.IncludeBody {
-			_ = c.db.QueryRowContext(ctx, `SELECT source_code FROM code_symbols WHERE id=?`, sym.ID).Scan(&sym.SourceCode)
-		}
 		symbols = append(symbols, sym)
 	}
 
 	if query.Depth > 0 {
 		for _, sym := range symbols {
-			sym.Children = c.loadChildren(ctx, sym.ID, query.Depth-1, query.IncludeBody)
+			sym.Children = c.loadChildren(ctx, sym.ID, query.Depth-1)
 		}
+	}
+
+	// Source bodies are not stored in the DB; hydrate them from disk on demand.
+	if query.IncludeBody {
+		c.hydrateSymbols(ctx, symbols)
 	}
 
 	return symbols, rows.Err()
 }
 
-// loadChildren recursively loads child symbols.
-func (c *CodeIndexer) loadChildren(ctx context.Context, parentID string, depth int, includeBody bool) []*CodeSymbol {
+// loadChildren recursively loads child symbols. Source bodies are hydrated by
+// the caller (FindSymbol) after the full tree is built.
+func (c *CodeIndexer) loadChildren(ctx context.Context, parentID string, depth int) []*CodeSymbol {
 	rows, err := c.db.QueryContext(ctx, `
 		SELECT `+selectCodeSymbolColumns("code_symbols")+`
 		FROM code_symbols WHERE parent_id = ? ORDER BY start_line`, parentID)
@@ -1158,11 +1159,8 @@ func (c *CodeIndexer) loadChildren(ctx context.Context, parentID string, depth i
 		if err := scanCodeSymbolRow(rows, sym); err != nil {
 			continue
 		}
-		if includeBody {
-			_ = c.db.QueryRowContext(ctx, `SELECT source_code FROM code_symbols WHERE id=?`, sym.ID).Scan(&sym.SourceCode)
-		}
 		if depth > 0 {
-			sym.Children = c.loadChildren(ctx, sym.ID, depth-1, includeBody)
+			sym.Children = c.loadChildren(ctx, sym.ID, depth-1)
 		}
 		children = append(children, sym)
 	}
@@ -1203,7 +1201,11 @@ func (c *CodeIndexer) GetSymbolsOverview(ctx context.Context, projectID, filePat
 		}
 		symbols = append(symbols, sym)
 	}
-	return symbols, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	c.hydrateSymbols(ctx, symbols)
+	return symbols, nil
 }
 
 // HybridSearch performs hybrid vector + FTS search over code symbols.
@@ -1253,6 +1255,17 @@ func (c *CodeIndexer) HybridSearch(ctx context.Context, projectID, query string,
 	if len(fused) > limit {
 		fused = fused[:limit]
 	}
+
+	// Hydrate source bodies for the final, bounded result set so callers that
+	// render snippets/bodies keep working (text is not stored in the DB).
+	syms := make([]*CodeSymbol, 0, len(fused))
+	for i := range fused {
+		if fused[i].Symbol != nil {
+			syms = append(syms, fused[i].Symbol)
+		}
+	}
+	c.hydrateSymbols(ctx, syms)
+
 	return fused, nil
 }
 
@@ -1437,31 +1450,65 @@ func (c *CodeIndexer) FindReferences(ctx context.Context, projectID, symbolID, s
 		return nil, fmt.Errorf("code: symbol name or ID required")
 	}
 
-	rows, err := c.db.QueryContext(ctx, `
-		SELECT `+selectCodeSymbolColumns("code_symbols")+`
-		FROM code_symbols
-		WHERE project_id = ? AND id != ? AND (
-			source_code LIKE ? OR name LIKE ? OR name_path LIKE ? OR doc_string LIKE ? OR signature LIKE ? OR file_path LIKE ?
-		)
-		ORDER BY file_path, start_line
-		LIMIT ?`,
-		projectID, symbolID,
-		"%"+symbolName+"%", "%"+symbolName+"%", "%"+symbolName+"%", "%"+symbolName+"%", "%"+symbolName+"%", "%"+symbolName+"%",
-		limit)
-	if err != nil {
-		return nil, fmt.Errorf("code: find references: %w", err)
-	}
-	defer rows.Close()
-
+	seen := make(map[string]bool)
 	var symbols []*CodeSymbol
-	for rows.Next() {
-		sym := &CodeSymbol{}
-		if err := scanCodeSymbolRow(rows, sym); err != nil {
-			continue
+	collect := func(rows *sql.Rows) error {
+		defer rows.Close()
+		for rows.Next() {
+			if len(symbols) >= limit {
+				return nil
+			}
+			sym := &CodeSymbol{}
+			if err := scanCodeSymbolRow(rows, sym); err != nil {
+				continue
+			}
+			if seen[sym.ID] {
+				continue
+			}
+			seen[sym.ID] = true
+			symbols = append(symbols, sym)
 		}
-		symbols = append(symbols, sym)
+		return rows.Err()
 	}
-	return symbols, rows.Err()
+
+	// Reference call sites live in OTHER symbols' source text, which is no longer
+	// stored in the DB. Use the FTS index (which tokenizes source) to find them.
+	like := "%" + symbolName + "%"
+	ftsRows, err := c.db.QueryContext(ctx, `
+		SELECT `+selectCodeSymbolColumns("s")+`
+		FROM code_symbols_fts
+		JOIN code_symbols s ON s.rowid = code_symbols_fts.rowid
+		WHERE code_symbols_fts MATCH ? AND s.project_id = ? AND s.id != ?
+		ORDER BY s.file_path, s.start_line
+		LIMIT ?`,
+		sanitizeFTSQuery(symbolName), projectID, symbolID, limit)
+	if err == nil {
+		if err := collect(ftsRows); err != nil {
+			return nil, fmt.Errorf("code: find references (fts): %w", err)
+		}
+	}
+
+	// Also match metadata columns kept in the base table (name/path/doc/sig/file).
+	if len(symbols) < limit {
+		baseRows, err := c.db.QueryContext(ctx, `
+			SELECT `+selectCodeSymbolColumns("code_symbols")+`
+			FROM code_symbols
+			WHERE project_id = ? AND id != ? AND (
+				name LIKE ? OR name_path LIKE ? OR doc_string LIKE ? OR signature LIKE ? OR file_path LIKE ?
+			)
+			ORDER BY file_path, start_line
+			LIMIT ?`,
+			projectID, symbolID, like, like, like, like, like, limit)
+		if err != nil {
+			return nil, fmt.Errorf("code: find references: %w", err)
+		}
+		if err := collect(baseRows); err != nil {
+			return nil, err
+		}
+	}
+
+	c.hydrateSymbols(ctx, symbols)
+	return symbols, nil
 }
 
 // SearchPattern searches for text patterns in code symbols.
@@ -1489,77 +1536,138 @@ func (c *CodeIndexer) SearchPattern(ctx context.Context, projectID, pattern stri
 		}
 	}
 
-	sqlStr := `SELECT ` + selectCodeSymbolColumns("code_symbols") + `
-		FROM code_symbols WHERE ` + strings.Join(filters, " AND ") + ` ORDER BY file_path, start_line`
-
-	rows, err := c.db.QueryContext(ctx, sqlStr, args...)
-	if err != nil {
-		return nil, fmt.Errorf("code: pattern search: %w", err)
-	}
-	defer rows.Close()
-
 	var matcher *regexp.Regexp
 	if isRegex {
 		expr := pattern
 		if !caseSensitive && !strings.HasPrefix(expr, "(?i)") {
 			expr = "(?i)" + expr
 		}
-		matcher, err = regexp.Compile(expr)
-		if err != nil {
-			return nil, fmt.Errorf("code: compile regex: %w", err)
+		var cErr error
+		matcher, cErr = regexp.Compile(expr)
+		if cErr != nil {
+			return nil, fmt.Errorf("code: compile regex: %w", cErr)
 		}
 	}
 
+	// matchSym tests a symbol against the pattern. includeSource controls whether
+	// the (hydrated) body participates, so the base pass can match metadata
+	// without disk reads and the source pass can match the body after hydration.
+	matchSym := func(sym *CodeSymbol, includeSource bool) bool {
+		fields := []string{sym.FilePath, sym.Name, sym.NamePath, sym.Signature, sym.DocString}
+		if includeSource {
+			fields = append(fields, sym.SourceCode)
+		}
+		if len(sym.Metadata) > 0 {
+			if b, err := json.Marshal(sym.Metadata); err == nil {
+				fields = append(fields, string(b))
+			}
+		}
+		if isRegex {
+			return matcher.MatchString(strings.Join(fields, "\n"))
+		}
+		needle := pattern
+		if !caseSensitive {
+			needle = strings.ToLower(needle)
+		}
+		for _, field := range fields {
+			if field == "" {
+				continue
+			}
+			if !caseSensitive {
+				field = strings.ToLower(field)
+			}
+			if strings.Contains(field, needle) {
+				return true
+			}
+		}
+		return false
+	}
+
+	cache := newSourceCache()
+	seen := make(map[string]bool)
 	var symbols []*CodeSymbol
+
+	// Pass 1: match against base-table columns (no source) across the project.
+	baseSQL := `SELECT ` + selectCodeSymbolColumns("code_symbols") + `
+		FROM code_symbols WHERE ` + strings.Join(filters, " AND ") + ` ORDER BY file_path, start_line`
+	rows, err := c.db.QueryContext(ctx, baseSQL, args...)
+	if err != nil {
+		return nil, fmt.Errorf("code: pattern search: %w", err)
+	}
 	for rows.Next() {
 		sym := &CodeSymbol{}
 		if err := scanCodeSymbolRow(rows, sym); err != nil {
 			continue
 		}
-		matched := false
-		if isRegex {
-			haystack := strings.Join([]string{
-				sym.FilePath, sym.Name, sym.NamePath, sym.Signature, sym.DocString, sym.SourceCode,
-			}, "\n")
-			if len(sym.Metadata) > 0 {
-				if b, err := json.Marshal(sym.Metadata); err == nil {
-					haystack += "\n" + string(b)
-				}
-			}
-			matched = matcher.MatchString(haystack)
-		} else {
-			needle := pattern
-			if !caseSensitive {
-				needle = strings.ToLower(needle)
-			}
-			fields := []string{sym.FilePath, sym.Name, sym.NamePath, sym.Signature, sym.DocString, sym.SourceCode}
-			if len(sym.Metadata) > 0 {
-				if b, err := json.Marshal(sym.Metadata); err == nil {
-					fields = append(fields, string(b))
-				}
-			}
-			for _, field := range fields {
-				if field == "" {
-					continue
-				}
-				if !caseSensitive {
-					field = strings.ToLower(field)
-				}
-				if strings.Contains(field, needle) {
-					matched = true
-					break
-				}
-			}
-		}
-		if !matched {
+		if !matchSym(sym, false) {
 			continue
 		}
+		c.hydrateSource(ctx, sym, cache) // for snippet rendering
+		seen[sym.ID] = true
 		symbols = append(symbols, sym)
-		if len(symbols) >= limit {
-			break
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Pass 2: match against source bodies via the FTS index. The source text is
+	// not stored, so candidates are pre-filtered by FTS, hydrated, then confirmed
+	// against the exact pattern. Patterns that don't reduce to FTS tokens (e.g.
+	// arbitrary regex/substring) may be missed here — use the Grep tool for those.
+	if ftsQuery := buildCodeFTSQuery(pattern); ftsQuery != "" {
+		ftsArgs := []interface{}{ftsQuery, projectID}
+		ftsFilters := ""
+		if len(langs) > 0 {
+			ph := strings.Repeat("?,", len(langs))
+			ftsFilters += " AND s.language IN (" + strings.TrimSuffix(ph, ",") + ")"
+			for _, l := range langs {
+				ftsArgs = append(ftsArgs, string(l))
+			}
+		}
+		if len(symbolTypes) > 0 {
+			ph := strings.Repeat("?,", len(symbolTypes))
+			ftsFilters += " AND s.symbol_type IN (" + strings.TrimSuffix(ph, ",") + ")"
+			for _, t := range symbolTypes {
+				ftsArgs = append(ftsArgs, string(t))
+			}
+		}
+		ftsArgs = append(ftsArgs, limit*5)
+		ftsSQL := `SELECT ` + selectCodeSymbolColumns("s") + `
+			FROM code_symbols_fts
+			JOIN code_symbols s ON s.rowid = code_symbols_fts.rowid
+			WHERE code_symbols_fts MATCH ? AND s.project_id = ?` + ftsFilters + `
+			ORDER BY s.file_path, s.start_line LIMIT ?`
+		if frows, ferr := c.db.QueryContext(ctx, ftsSQL, ftsArgs...); ferr == nil {
+			for frows.Next() {
+				sym := &CodeSymbol{}
+				if err := scanCodeSymbolRow(frows, sym); err != nil {
+					continue
+				}
+				if seen[sym.ID] {
+					continue
+				}
+				c.hydrateSource(ctx, sym, cache)
+				if !matchSym(sym, true) {
+					continue
+				}
+				seen[sym.ID] = true
+				symbols = append(symbols, sym)
+			}
+			frows.Close()
 		}
 	}
-	return symbols, rows.Err()
+
+	sort.Slice(symbols, func(i, j int) bool {
+		if symbols[i].FilePath != symbols[j].FilePath {
+			return symbols[i].FilePath < symbols[j].FilePath
+		}
+		return symbols[i].StartLine < symbols[j].StartLine
+	})
+	if len(symbols) > limit {
+		symbols = symbols[:limit]
+	}
+	return symbols, nil
 }
 
 // updateLanguageStats recomputes and stores language statistics for a project.
@@ -1783,19 +1891,23 @@ func (c *CodeIndexer) IndexFileDirect(ctx context.Context, projectID, filePath, 
 			}
 		}
 
-		if _, err := tx.ExecContext(ctx, `
+		res, err := tx.ExecContext(ctx, `
 			INSERT INTO code_symbols
 				(id, project_id, file_id, file_path, language, symbol_type, name, name_path,
 				 start_line, end_line, start_byte, end_byte,
-				 source_code, signature, doc_string, parent_id, metadata, created_at, updated_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				 signature, doc_string, parent_id, metadata, created_at, updated_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			sym.ID, sym.ProjectID, fileID, sym.FilePath, string(sym.Language),
 			string(sym.SymbolType), sym.Name, sym.NamePath,
 			sym.StartLine, sym.EndLine, sym.StartByte, sym.EndByte,
-			sym.SourceCode, sym.Signature, sym.DocString, sym.ParentID,
+			sym.Signature, sym.DocString, sym.ParentID,
 			metaJSON, now, now,
-		); err != nil {
+		)
+		if err != nil {
 			return fmt.Errorf("code: insert symbol direct %s: %w", sym.Name, err)
+		}
+		if err := insertSymbolFTS(ctx, tx, res, sym); err != nil {
+			return fmt.Errorf("code: index symbol fts direct %s: %w", sym.Name, err)
 		}
 	}
 

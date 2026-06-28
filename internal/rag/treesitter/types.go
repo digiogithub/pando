@@ -106,6 +106,11 @@ type CodeSymbol struct {
 
 	// Children symbols (populated when fetching with depth)
 	Children []*CodeSymbol `json:"children,omitempty"`
+
+	// Stale is set when SourceCode was hydrated from a file that no longer
+	// matches the indexed hash, so the returned text may not align with the
+	// stored byte/line offsets (best-effort line extraction was used).
+	Stale bool `json:"stale,omitempty"`
 }
 
 // CodeFile represents an indexed source file

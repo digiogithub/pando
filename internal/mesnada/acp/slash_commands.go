@@ -14,6 +14,7 @@ const (
 	slashCommandGoalStatus slashCommandKind = "goal-status"
 	slashCommandGoalCancel slashCommandKind = "goal-cancel"
 	slashCommandSummarize  slashCommandKind = "summarize"
+	slashCommandDBCompact  slashCommandKind = "db-compact"
 )
 
 type slashCommand struct {
@@ -55,6 +56,11 @@ func slashCommandSpecs() []slashCommandSpec {
 			Kind:        slashCommandSummarize,
 			Description: "Create a manual compact summary for the current session",
 			Aliases:     []string{summarizeCommandToken},
+		},
+		{
+			Token:       dbCompactCommandToken,
+			Kind:        slashCommandDBCompact,
+			Description: "Compact the database (VACUUM) and reclaim free space",
 		},
 	}
 }

@@ -778,6 +778,25 @@ func (s *Server) seedAutoApprove(sessionID string) {
 	}
 }
 
+// humanizeBytes renders a byte count in human-readable units (e.g. "12.3 MB").
+func humanizeBytes(n int64) string {
+	neg := ""
+	if n < 0 {
+		neg = "-"
+		n = -n
+	}
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%s%d B", neg, n)
+	}
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%s%.1f %cB", neg, float64(n)/float64(div), "KMGTPE"[exp])
+}
+
 // handleSlashCommandStream processes a slash command and writes results as SSE events.
 func (s *Server) handleSlashCommandStream(w http.ResponseWriter, flusher http.Flusher, ctx context.Context, sessionID, cmdName, cmdArgs string) {
 	switch cmdName {
@@ -787,6 +806,16 @@ func (s *Server) handleSlashCommandStream(w http.ResponseWriter, flusher http.Fl
 			writeSSEEvent(w, flusher, "error", map[string]string{"error": "compaction failed: " + err.Error()})
 		} else {
 			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "\nSession compacted successfully."})
+		}
+	case "db-compact":
+		writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Compacting database (VACUUM)..."})
+		res, err := s.app.CompactDatabase(ctx, false, true)
+		if err != nil {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": "database compaction failed: " + err.Error()})
+		} else {
+			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": fmt.Sprintf(
+				"\nDatabase compacted (%s). Freed %s (%s → %s).",
+				res.Mode, humanizeBytes(res.Freed), humanizeBytes(res.SizeBefore), humanizeBytes(res.SizeAfter))})
 		}
 	case "goal", "autopilot":
 		if strings.TrimSpace(cmdArgs) == "" {

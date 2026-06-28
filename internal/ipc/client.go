@@ -143,8 +143,17 @@ func (c *Client) SubscribeTo(pubEndpoint string, topics ...string) (<-chan Envel
 
 // Call sends a JSON-RPC request to a ROUTER endpoint and waits for the response.
 // A persistent DEALER socket is reused per endpoint to avoid the overhead of
-// creating/closing zmq4 goroutines on every call.
+// creating/closing zmq4 goroutines on every call. It uses the client's default
+// CallTimeout; use CallWithTimeout for long-running RPCs (e.g. db.compact).
 func (c *Client) Call(ctx context.Context, routerEndpoint, method string, params any) (json.RawMessage, error) {
+	return c.CallWithTimeout(ctx, routerEndpoint, method, params, c.opts.CallTimeout)
+}
+
+// CallWithTimeout is like Call but overrides the per-call response timeout. It is
+// used for RPCs that may legitimately run far longer than the default CallTimeout,
+// such as db.compact (a full VACUUM on a large database). The effective deadline
+// is min(ctx, timeout).
+func (c *Client) CallWithTimeout(ctx context.Context, routerEndpoint, method string, params any, timeout time.Duration) (json.RawMessage, error) {
 	dc, err := c.getOrCreateDealer(routerEndpoint)
 	if err != nil {
 		return nil, err
@@ -181,7 +190,10 @@ func (c *Client) Call(ctx context.Context, routerEndpoint, method string, params
 	}
 
 	// Wait for response with timeout.
-	callCtx, cancel := context.WithTimeout(ctx, c.opts.CallTimeout)
+	if timeout <= 0 {
+		timeout = c.opts.CallTimeout
+	}
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	type result struct {

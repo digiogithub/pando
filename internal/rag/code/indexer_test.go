@@ -636,13 +636,11 @@ func TestHybridSearchBoostsSourceMatchesWhenStructureIsSparse(t *testing.T) {
 		nil, now,
 	)
 
-	idx := NewCodeIndexer(db, fixedVectorEmbedder{query: []float32{1, 0}}, 1)
-	if _, err := db.Exec(`UPDATE code_symbols SET embedding = ? WHERE id = ?`, serializeFloat32([]float32{0.95, 0.05}), "sym-shallow"); err != nil {
-		t.Fatalf("seed shallow embedding: %v", err)
-	}
-	if _, err := db.Exec(`UPDATE code_symbols SET embedding = ? WHERE id = ?`, serializeFloat32([]float32{0.82, 0.18}), "sym-source"); err != nil {
-		t.Fatalf("seed source embedding: %v", err)
-	}
+	// Source text is no longer stored in the DB, so the in-memory lexical boost
+	// no longer considers source. Source-term matches are now surfaced through the
+	// FTS/BM25 branch instead. With no embedder, ranking is driven purely by FTS,
+	// so the symbol whose source contains the query terms must rank first.
+	idx := NewCodeIndexer(db, nil, 1)
 
 	results, err := idx.HybridSearch(context.Background(), "proj1", "lexicalBoost buildCodeSearchTerms boostHybridResults", 5, nil, nil)
 	if err != nil {
@@ -652,7 +650,7 @@ func TestHybridSearchBoostsSourceMatchesWhenStructureIsSparse(t *testing.T) {
 		t.Fatal("expected hybrid search results")
 	}
 	if results[0].Symbol.ID != "sym-source" {
-		t.Fatalf("expected source-heavy symbol first, got %s (all results: %+v)", results[0].Symbol.ID, results)
+		t.Fatalf("expected source-heavy symbol first via FTS, got %s (all results: %+v)", results[0].Symbol.ID, results)
 	}
 }
 

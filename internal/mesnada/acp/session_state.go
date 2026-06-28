@@ -44,6 +44,7 @@ const (
 	goalCancelCommandToken            = "goal-cancel"
 	compactCommandToken               = "compact"
 	summarizeCommandToken             = "summarize"
+	dbCompactCommandToken             = "db-compact"
 )
 
 const (
@@ -53,6 +54,7 @@ const (
 	goalCancelCommandName = "/" + goalCancelCommandToken
 	compactCommandName    = "/" + compactCommandToken
 	summarizeCommandName  = "/" + summarizeCommandToken
+	dbCompactCommandName  = "/" + dbCompactCommandToken
 )
 
 func availableModes(_ AgentService) []acpsdk.SessionMode {

@@ -2,6 +2,7 @@ package acp
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -60,6 +61,8 @@ func (a *PandoACPAgent) handleSlashCommand(
 		return acpsdk.StopReasonCancelled, nil
 	case slashCommandSummarize:
 		return a.processSummarizeCommand(ctx, acpSession)
+	case slashCommandDBCompact:
+		return a.processDBCompactCommand(ctx, acpSession)
 	default:
 		return acpsdk.StopReasonEndTurn, nil
 	}
@@ -161,6 +164,56 @@ func (a *PandoACPAgent) processSummarizeCommand(ctx context.Context, acpSession 
 		}
 	}
 	return stopReason, nil
+}
+
+// processDBCompactCommand runs a database VACUUM in response to /db-compact and
+// reports the reclaimed space. It is a synchronous maintenance action (no agent
+// turn), so it ends the turn after sending the result text.
+func (a *PandoACPAgent) processDBCompactCommand(ctx context.Context, acpSession *ACPServerSession) (acpsdk.StopReason, error) {
+	if a.dbCompactor == nil {
+		if err := a.sendAgentText(acpSession, "Database compaction is not available in this mode."); err != nil {
+			return "", err
+		}
+		return acpsdk.StopReasonEndTurn, nil
+	}
+
+	if err := a.sendAgentText(acpSession, "Compacting database (VACUUM)..."); err != nil {
+		return "", err
+	}
+
+	res, err := a.dbCompactor.CompactDatabase(ctx, false, true)
+	if err != nil {
+		if sendErr := a.sendAgentText(acpSession, "Database compaction failed: "+err.Error()); sendErr != nil {
+			return "", sendErr
+		}
+		return acpsdk.StopReasonEndTurn, nil
+	}
+
+	msg := fmt.Sprintf("Database compacted (%s). Freed %s (%s → %s).",
+		res.Mode, formatACPBytes(res.Freed), formatACPBytes(res.SizeBefore), formatACPBytes(res.SizeAfter))
+	if err := a.sendAgentText(acpSession, msg); err != nil {
+		return "", err
+	}
+	return acpsdk.StopReasonEndTurn, nil
+}
+
+// formatACPBytes renders a byte count in human-readable units for slash-command output.
+func formatACPBytes(n int64) string {
+	neg := ""
+	if n < 0 {
+		neg = "-"
+		n = -n
+	}
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%s%d B", neg, n)
+	}
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%s%.1f %cB", neg, float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 func (a *PandoACPAgent) startManualSummary(ctx context.Context, sessionID string) (<-chan AgentEvent, error) {

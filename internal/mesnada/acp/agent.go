@@ -74,6 +74,31 @@ type PandoACPAgent struct {
 	startedToolCalls map[string]bool
 
 	extensionHandlers map[string]func(ctx context.Context, params json.RawMessage) (any, error)
+
+	// dbCompactor performs database compaction (VACUUM) for the /db-compact slash
+	// command. Optional: nil disables the command (the handler reports it is
+	// unavailable). Injected via SetDBCompactor by the entrypoint that owns the App.
+	dbCompactor DBCompactor
+}
+
+// DBCompactResult reports the outcome of a database compaction. Sizes are in bytes.
+type DBCompactResult struct {
+	Mode       string
+	SizeBefore int64
+	SizeAfter  int64
+	Freed      int64
+}
+
+// DBCompactor compacts the database (VACUUM) and reports the reclaimed space.
+// Implemented by the App; kept as a local interface to avoid an import cycle
+// between the ACP package and internal/app.
+type DBCompactor interface {
+	CompactDatabase(ctx context.Context, incremental, enableAutoVacuum bool) (DBCompactResult, error)
+}
+
+// SetDBCompactor injects the database compactor used by the /db-compact command.
+func (a *PandoACPAgent) SetDBCompactor(c DBCompactor) {
+	a.dbCompactor = c
 }
 
 const askModeInstruction = "You are in Ask mode. Prefer direct answers and avoid tool use unless the user explicitly requests tool-driven work or a tool is required to answer accurately."

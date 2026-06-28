@@ -840,6 +840,9 @@ func (p *ChatPageModel) sendMessage(text string, attachments []message.Attachmen
 	if cmd, ok := p.handleCompactCommand(text); ok {
 		return cmd
 	}
+	if cmd, ok := p.handleDBCompactCommand(text); ok {
+		return cmd
+	}
 
 	// If a run is already active for this session, route the message as steering
 	// feedback: it is queued and injected into the agent loop at the next safe
@@ -1275,6 +1278,48 @@ func (p *ChatPageModel) handleCompactCommand(input string) (tea.Cmd, bool) {
 		return util.CmdHandler(chat.CompactSessionMsg{}), true
 	}
 	return nil, false
+}
+
+// handleDBCompactCommand runs a database VACUUM in response to /db-compact. The
+// work happens off the UI thread (a VACUUM can take a while) and the outcome is
+// reported as an info/error toast.
+func (p *ChatPageModel) handleDBCompactCommand(input string) (tea.Cmd, bool) {
+	if strings.TrimSpace(input) != "/db-compact" {
+		return nil, false
+	}
+	app := p.app
+	report := util.ReportInfo("Compacting database (VACUUM)...")
+	work := func() tea.Msg {
+		res, err := app.CompactDatabase(context.Background(), false, true)
+		if err != nil {
+			return util.InfoMsg{Type: util.InfoTypeError, Msg: "Database compaction failed: " + err.Error()}
+		}
+		return util.InfoMsg{
+			Type: util.InfoTypeInfo,
+			Msg: fmt.Sprintf("Database compacted (%s). Freed %s (%s → %s).",
+				res.Mode, formatChatBytes(res.Freed), formatChatBytes(res.SizeBefore), formatChatBytes(res.SizeAfter)),
+		}
+	}
+	return tea.Batch(report, work), true
+}
+
+// formatChatBytes renders a byte count in human-readable units.
+func formatChatBytes(n int64) string {
+	neg := ""
+	if n < 0 {
+		neg = "-"
+		n = -n
+	}
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%s%d B", neg, n)
+	}
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%s%.1f %cB", neg, float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 func (p *ChatPageModel) startGoal(objective string) tea.Cmd {

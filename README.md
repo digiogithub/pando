@@ -352,14 +352,12 @@ make release-darwin-arm64
 # macOS x64
 make release-darwin-amd64
 
-# echo "Run in osx terminal the command:"
-# echo "    export KEYSTORE_PASS=<temp_keychain_password> SIGNING_CERT_PASSWORD=<p12_password> NOTARY_APPLE_ID=<apple_id> NOTARY_TEAM_ID=<team_id> NOTARY_APP_PASSWORD=<app_specific_password> && xc release-osx"
-# echo
-# bash -c 'read -n 1 -s -r -p "When the command finish, press any key to continue..."'
-# echo
+echo "Run in osx terminal the command:"
+echo "    cd ~/www/MCP/Pando/pando && xc release-osx"
+echo
+bash -c 'read -n 1 -s -r -p "When the command finish, press any key to continue..."'
+echo
 
-# ssh -tt mac-mini-de-digio "export PATH=\$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && cd ~/www/MCP/Pando/pando && git pull origin main && git fetch origin --tags && rm -rf dist && mkdir -p dist && zsh && eval \"\$(cat ~/DIGIO_Software_Signing_Keys/kvagerc)\" && xc build && xc release-osx"
-ssh -tt mac-mini-de-digio 'zsh -lc '"'"'export PATH=$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin && cd ~/www/MCP/Pando/pando && eval "$(cat ~/DIGIO_Software_Signing_Keys/kvagerc)" && xc release-osx'"'"''
 
 scp mac-mini-de-digio:~/www/MCP/Pando/pando/dist/*.zip dist/
 
@@ -374,7 +372,7 @@ Compiles the binaries for the different platforms (Linux x64, Windows x64, macOS
 interactive:true
 
 
-```bash
+```zsh
 export PATH=$PATH:/usr/local/bin:~/.bun/bin:/opt/homebrew/bin/:~/go/bin
 cd ~/www/MCP/Pando/pando
 

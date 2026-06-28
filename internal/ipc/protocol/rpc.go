@@ -38,6 +38,12 @@ const (
 	// read-only query: it never re-runs the delegation. Requires DelegationProtocol
 	// >= 2 on the target; older peers do not register it.
 	MethodDelegationStatus = "delegation.status"
+	// MethodDBCompact runs a VACUUM / incremental_vacuum on the primary's writer
+	// connection and reports the reclaimed space. Only the primary owns DB writes,
+	// so secondaries (and the `pando db compact` CLI when a primary is running)
+	// route the request here instead of opening a second writer. VACUUM can take a
+	// long time on a large database, so callers must use a generous call timeout.
+	MethodDBCompact = "db.compact"
 )
 
 // DelegationProtocolVersion is the wire version of the delegation.run contract.
@@ -155,6 +161,25 @@ type MessageListParams struct {
 // OKResult is a generic success response.
 type OKResult struct {
 	OK bool `json:"ok"`
+}
+
+// DBCompactParams is the parameter struct for db.compact. Incremental runs only
+// PRAGMA incremental_vacuum (cheap, no full rewrite); EnableAutoVacuum switches
+// the database to auto_vacuum=INCREMENTAL before a full VACUUM so future space can
+// be reclaimed cheaply.
+type DBCompactParams struct {
+	Incremental      bool `json:"incremental,omitempty"`
+	EnableAutoVacuum bool `json:"enable_auto_vacuum,omitempty"`
+}
+
+// DBCompactResult is the response for db.compact. Sizes are in bytes; Mode is
+// "full" or "incremental"; Freed is SizeBefore-SizeAfter (may be negative if the
+// database grew between measurements).
+type DBCompactResult struct {
+	Mode       string `json:"mode"`
+	SizeBefore int64  `json:"size_before"`
+	SizeAfter  int64  `json:"size_after"`
+	Freed      int64  `json:"freed"`
 }
 
 // PingResult is the response for instance.ping. It doubles as the delegation

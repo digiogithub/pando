@@ -718,6 +718,7 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 		sessionAdapter,
 		permAdapter,
 	)
+	pandoAgent.SetDBCompactor(pandoApp.ACPDBCompactor())
 
 	// Fan out global notify.Bus events to all active ACP sessions.
 	go pandoAgent.StartNotificationBroadcast(ctx)

@@ -71,6 +71,13 @@ type App struct {
 	UserInput   userinput.Service
 	DBQuerier   db.Querier
 
+	// rwConn is the read-write SQLite connection on the primary instance (the one
+	// db.Connect() opened, or the one acquired on failover promotion). It is used
+	// for whole-database maintenance that bypasses the query layer, notably
+	// CompactDatabase (VACUUM). On a secondary it holds the local RO/RW-secondary
+	// connection and is not used directly — compaction is routed to the primary.
+	rwConn *sql.DB
+
 	CoderAgent agent.Service
 
 	Projects            project.Service
@@ -207,6 +214,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		Permissions: permission.NewPermissionService(),
 		UserInput:   userinput.NewService(),
 		DBQuerier:   q,
+		rwConn:      conn,
 		Projects:    projects,
 		LSPClients:  make(map[string]*lsp.Client),
 		lspSpawning: make(map[string]struct{}),
@@ -545,6 +553,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 					sessionAdapter,
 					permAdapter,
 				)
+				acpAgent.SetDBCompactor(app.ACPDBCompactor())
 
 				// Parse session timeout
 				sessionTimeout := 30 * time.Minute
@@ -1984,6 +1993,78 @@ func (app *App) EnsurePrimary(ctx context.Context) {
 	}
 }
 
+// dbCompactCallTimeout bounds how long a secondary waits for the primary to finish
+// a forwarded db.compact RPC. A full VACUUM on a large database can take minutes,
+// so this is far longer than the default IPC call timeout.
+const dbCompactCallTimeout = 30 * time.Minute
+
+// CompactDatabase reclaims unused space in the SQLite database (VACUUM). Because
+// only the primary owns DB writes, this is a single funnel used by every UI
+// (/db-compact in TUI/WebUI/ACP) and the IPC db.compact handler:
+//
+//   - On the primary (or when IPC is not active) it runs db.Compact directly on
+//     the read-write connection.
+//   - On a secondary it forwards the request to the primary over IPC and returns
+//     the primary's result, so two writers never contend for the database.
+//
+// incremental runs only PRAGMA incremental_vacuum; enableAutoVacuum switches the
+// database to auto_vacuum=INCREMENTAL before the full VACUUM.
+func (app *App) CompactDatabase(ctx context.Context, incremental, enableAutoVacuum bool) (protocol.DBCompactResult, error) {
+	// Secondary: forward to the primary's writer connection over IPC.
+	if !app.IPCIsPrimary && app.ipcClient != nil {
+		rpcAddr := fmt.Sprintf("tcp://127.0.0.1:%d", app.ipcRPCPort)
+		params := protocol.DBCompactParams{Incremental: incremental, EnableAutoVacuum: enableAutoVacuum}
+		raw, err := app.ipcClient.CallWithTimeout(ctx, rpcAddr, protocol.MethodDBCompact, params, dbCompactCallTimeout)
+		if err != nil {
+			return protocol.DBCompactResult{}, fmt.Errorf("compact via primary: %w", err)
+		}
+		var res protocol.DBCompactResult
+		if err := json.Unmarshal(raw, &res); err != nil {
+			return protocol.DBCompactResult{}, fmt.Errorf("compact: decode primary result: %w", err)
+		}
+		return res, nil
+	}
+
+	// Primary (or standalone): run the VACUUM locally on the writer connection.
+	if app.rwConn == nil {
+		return protocol.DBCompactResult{}, fmt.Errorf("compact: no writable database connection")
+	}
+	r, err := db.Compact(ctx, app.rwConn, db.CompactOptions{
+		Incremental:      incremental,
+		EnableAutoVacuum: enableAutoVacuum,
+	})
+	if err != nil {
+		return protocol.DBCompactResult{}, err
+	}
+	return protocol.DBCompactResult{
+		Mode:       r.Mode,
+		SizeBefore: r.SizeBefore,
+		SizeAfter:  r.SizeAfter,
+		Freed:      r.Freed,
+	}, nil
+}
+
+// acpDBCompactorAdapter adapts App.CompactDatabase to the ACP package's
+// DBCompactor interface (translating the protocol result to the acp result type),
+// so the /db-compact slash command works over ACP without an import cycle.
+type acpDBCompactorAdapter struct{ app *App }
+
+func (a acpDBCompactorAdapter) CompactDatabase(ctx context.Context, incremental, enableAutoVacuum bool) (mesnadaACP.DBCompactResult, error) {
+	r, err := a.app.CompactDatabase(ctx, incremental, enableAutoVacuum)
+	if err != nil {
+		return mesnadaACP.DBCompactResult{}, err
+	}
+	return mesnadaACP.DBCompactResult{
+		Mode:       r.Mode,
+		SizeBefore: r.SizeBefore,
+		SizeAfter:  r.SizeAfter,
+		Freed:      r.Freed,
+	}, nil
+}
+
+// ACPDBCompactor returns an ACP DBCompactor backed by this app's CompactDatabase.
+func (app *App) ACPDBCompactor() mesnadaACP.DBCompactor { return acpDBCompactorAdapter{app: app} }
+
 // PromoteToPrimary is the failover.PromoteFunc implementation.
 // It is called by the Watcher when this secondary wins the lock race.
 // lockFile is the open flock file that must be kept open for the duration of
@@ -2032,6 +2113,7 @@ func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
 
 	// 4. Update app state.
 	app.DBQuerier = db.New(rwConn)
+	app.rwConn = rwConn
 	app.SetupIPC(bus)
 
 	// 5. Publish instance.promoted so other secondaries reset their heartbeat timers

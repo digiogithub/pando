@@ -2630,8 +2630,8 @@ func thoughtUpdateTexts(t *testing.T, raw string) []string {
 
 func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 	commands := availableCommands()
-	if len(commands) != 6 {
-		t.Fatalf("expected 6 available commands, got %d", len(commands))
+	if len(commands) != 7 {
+		t.Fatalf("expected 7 available commands, got %d", len(commands))
 	}
 
 	got := map[string]acpsdk.AvailableCommand{}
@@ -2642,7 +2642,7 @@ func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken} {
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken} {
 		if _, ok := got[name]; !ok {
 			t.Fatalf("expected available command %q to be exposed", name)
 		}
@@ -2655,7 +2655,7 @@ func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken} {
+	for _, name := range []string{goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken} {
 		if got[name].Input != nil {
 			t.Fatalf("expected available command %q to omit input metadata, got %#v", name, got[name].Input)
 		}
@@ -2685,6 +2685,7 @@ func TestParseSlashCommand_UsesRegistry(t *testing.T) {
 		{name: "goal status", input: "/goal-status", want: slashCommand{Kind: slashCommandGoalStatus}, wantOK: true},
 		{name: "compact", input: "/compact", want: slashCommand{Kind: slashCommandSummarize}, wantOK: true},
 		{name: "summarize alias", input: "/summarize", want: slashCommand{Kind: slashCommandSummarize}, wantOK: true},
+		{name: "db-compact", input: "/db-compact", want: slashCommand{Kind: slashCommandDBCompact}, wantOK: true},
 		{name: "unknown", input: "/unknown", want: slashCommand{}, wantOK: false},
 	}
 
