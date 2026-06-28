@@ -45,6 +45,7 @@ const (
 	compactCommandToken               = "compact"
 	summarizeCommandToken             = "summarize"
 	dbCompactCommandToken             = "db-compact"
+	ponytailCommandToken              = "ponytail"
 )
 
 const (
@@ -55,6 +56,7 @@ const (
 	compactCommandName    = "/" + compactCommandToken
 	summarizeCommandName  = "/" + summarizeCommandToken
 	dbCompactCommandName  = "/" + dbCompactCommandToken
+	ponytailCommandName   = "/" + ponytailCommandToken
 )
 
 func availableModes(_ AgentService) []acpsdk.SessionMode {

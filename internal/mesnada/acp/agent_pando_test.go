@@ -395,6 +395,7 @@ type mockAgentService struct {
 	currentModel       string
 	availableModels    []ACPModelInfo
 	sessionOverrides   map[string]SessionLLMOverrides
+	ponytailModes      map[string]string
 	busy               bool
 	steerErr           error
 	steerCalls         []string
@@ -476,6 +477,23 @@ func (m *mockAgentService) SetSessionLLMOverrides(sessionID string, overrides Se
 		return
 	}
 	m.sessionOverrides[sessionID] = overrides
+}
+
+func (m *mockAgentService) SetPonytailMode(sessionID string, mode string) (string, bool) {
+	if m.ponytailModes == nil {
+		m.ponytailModes = make(map[string]string)
+	}
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "lite", "full", "ultra":
+		norm := strings.ToLower(strings.TrimSpace(mode))
+		m.ponytailModes[sessionID] = norm
+		return norm, true
+	case "off", "stop", "normal", "none", "disable", "disabled":
+		delete(m.ponytailModes, sessionID)
+		return "off", true
+	default:
+		return "", false
+	}
 }
 
 func (m *mockAgentService) ListPersonas() []string {
@@ -2077,6 +2095,57 @@ func TestPandoACPAgent_HandleSlashSummarizeStartsManualSummary(t *testing.T) {
 	}
 }
 
+func TestPandoACPAgent_HandleSlashPonytailSetsAndClearsMode(t *testing.T) {
+	agent := newTestPandoAgent()
+	ctx := context.Background()
+
+	resp, err := agent.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+	acpSession, err := agent.getSession(resp.SessionId)
+	if err != nil {
+		t.Fatalf("getSession failed: %v", err)
+	}
+	mockAgent := agent.agentService.(*mockAgentService)
+
+	// /ponytail ultra → sets ultra.
+	stop, err := agent.handleSlashCommand(ctx, resp.SessionId, acpSession, slashCommand{Kind: slashCommandPonytail, Objective: "ultra"})
+	if err != nil {
+		t.Fatalf("handleSlashCommand(ultra) failed: %v", err)
+	}
+	if stop != acpsdk.StopReasonEndTurn {
+		t.Fatalf("expected end turn, got %q", stop)
+	}
+	if got := mockAgent.ponytailModes[acpSession.PandoSessionID()]; got != "ultra" {
+		t.Fatalf("expected ultra mode stored, got %q", got)
+	}
+
+	// /ponytail with no arg → defaults to full.
+	if _, err := agent.handleSlashCommand(ctx, resp.SessionId, acpSession, slashCommand{Kind: slashCommandPonytail}); err != nil {
+		t.Fatalf("handleSlashCommand(default) failed: %v", err)
+	}
+	if got := mockAgent.ponytailModes[acpSession.PandoSessionID()]; got != "full" {
+		t.Fatalf("expected full mode default, got %q", got)
+	}
+
+	// /ponytail off → clears.
+	if _, err := agent.handleSlashCommand(ctx, resp.SessionId, acpSession, slashCommand{Kind: slashCommandPonytail, Objective: "off"}); err != nil {
+		t.Fatalf("handleSlashCommand(off) failed: %v", err)
+	}
+	if _, ok := mockAgent.ponytailModes[acpSession.PandoSessionID()]; ok {
+		t.Fatal("expected ponytail mode cleared after off")
+	}
+
+	// Unknown mode → not applied, no error.
+	if _, err := agent.handleSlashCommand(ctx, resp.SessionId, acpSession, slashCommand{Kind: slashCommandPonytail, Objective: "bogus"}); err != nil {
+		t.Fatalf("handleSlashCommand(bogus) failed: %v", err)
+	}
+	if _, ok := mockAgent.ponytailModes[acpSession.PandoSessionID()]; ok {
+		t.Fatal("expected no mode stored for unknown input")
+	}
+}
+
 func TestPandoACPAgent_SetSessionConfigOption_SplitsModePermissionAndAgent(t *testing.T) {
 	agent := newTestPandoAgent()
 	ctx := context.Background()
@@ -2630,8 +2699,8 @@ func thoughtUpdateTexts(t *testing.T, raw string) []string {
 
 func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 	commands := availableCommands()
-	if len(commands) != 7 {
-		t.Fatalf("expected 7 available commands, got %d", len(commands))
+	if len(commands) != 8 {
+		t.Fatalf("expected 8 available commands, got %d", len(commands))
 	}
 
 	got := map[string]acpsdk.AvailableCommand{}
@@ -2642,13 +2711,13 @@ func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken} {
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, ponytailCommandToken} {
 		if _, ok := got[name]; !ok {
 			t.Fatalf("expected available command %q to be exposed", name)
 		}
 	}
 
-	for _, name := range []string{goalCommandToken, autopilotCommandToken} {
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, ponytailCommandToken} {
 		cmd := got[name]
 		if cmd.Input == nil || cmd.Input.Unstructured == nil || strings.TrimSpace(cmd.Input.Unstructured.Hint) == "" {
 			t.Fatalf("expected available command %q to include an unstructured input hint, got %#v", name, cmd.Input)

@@ -829,6 +829,38 @@ type Config struct {
 	LLMCache          LLMCacheConfig          `json:"llmCache,omitempty" toml:"LLMCache"`
 	Container         ContainerConfig         `json:"container,omitempty" toml:"Container"`
 	MCPServer         MCPServerConfig         `json:"mcpServer,omitempty" toml:"MCPServer"`
+	Ponytail          PonytailConfig          `json:"ponytail,omitempty" toml:"Ponytail"`
+}
+
+// PonytailConfig configures the "lazy senior developer" ponytail mode.
+type PonytailConfig struct {
+	// DefaultMode is the ponytail intensity applied to new sessions that have not
+	// explicitly chosen one via /ponytail. Valid values: "lite", "full", "ultra",
+	// or "off"/empty (disabled, the default). The env var
+	// PANDO_PONYTAIL_DEFAULT_MODE overrides this.
+	DefaultMode string `json:"defaultMode,omitempty" toml:"DefaultMode"`
+}
+
+// PonytailDefaultMode resolves the configured default ponytail intensity,
+// honoring the PANDO_PONYTAIL_DEFAULT_MODE env override first, then the
+// Ponytail.DefaultMode config field. Returns "" (off) when unset/invalid.
+func (c *Config) PonytailDefaultMode() string {
+	raw := ""
+	if v, ok := os.LookupEnv("PANDO_PONYTAIL_DEFAULT_MODE"); ok && strings.TrimSpace(v) != "" {
+		raw = v
+	} else if c != nil {
+		raw = c.Ponytail.DefaultMode
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "lite":
+		return "lite"
+	case "full":
+		return "full"
+	case "ultra":
+		return "ultra"
+	default:
+		return ""
+	}
 }
 
 // Application constants

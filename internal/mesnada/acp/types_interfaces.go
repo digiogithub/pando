@@ -88,6 +88,10 @@ type AgentService interface {
 	SetModelOverride(modelID string) error
 	// SetSessionLLMOverrides applies request-scoped inference overrides for the session.
 	SetSessionLLMOverrides(sessionID string, overrides SessionLLMOverrides)
+	// SetPonytailMode sets the per-session ponytail ("lazy senior dev") intensity.
+	// mode is one of "lite", "full", "ultra" (or "off"/empty to disable). It
+	// returns the normalized mode label applied and whether the input was valid.
+	SetPonytailMode(sessionID string, mode string) (applied string, ok bool)
 	// ListPersonas returns the names of all available personas.
 	ListPersonas() []string
 	// GetActivePersona returns the currently active persona name (empty = none).

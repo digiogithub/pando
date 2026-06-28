@@ -25,6 +25,7 @@ func BuiltinCommands() []SlashCommand {
 		{Name: "compact", Description: "Create a manual compact summary for the current session", AcceptsArgs: false},
 		{Name: "summarize", Description: "Alias for /compact", AcceptsArgs: false},
 		{Name: "db-compact", Description: "Compact the database (VACUUM) and reclaim free space", AcceptsArgs: false},
+		{Name: "ponytail", Description: "Toggle lazy-senior-dev (ponytail) mode: lite|full|ultra|off", AcceptsArgs: true},
 	}
 }
 

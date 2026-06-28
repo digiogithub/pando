@@ -15,6 +15,7 @@ const (
 	slashCommandGoalCancel slashCommandKind = "goal-cancel"
 	slashCommandSummarize  slashCommandKind = "summarize"
 	slashCommandDBCompact  slashCommandKind = "db-compact"
+	slashCommandPonytail   slashCommandKind = "ponytail"
 )
 
 type slashCommand struct {
@@ -61,6 +62,13 @@ func slashCommandSpecs() []slashCommandSpec {
 			Token:       dbCompactCommandToken,
 			Kind:        slashCommandDBCompact,
 			Description: "Compact the database (VACUUM) and reclaim free space",
+		},
+		{
+			Token:       ponytailCommandToken,
+			Kind:        slashCommandPonytail,
+			Description: "Toggle lazy-senior-dev (ponytail) mode at a chosen intensity",
+			InputHint:   "lite | full | ultra | off",
+			Usage:       "Usage: /ponytail [lite|full|ultra|off]\nNo argument defaults to full. Use /ponytail off to disable.",
 		},
 	}
 }

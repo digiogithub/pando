@@ -22,6 +22,7 @@ import (
 	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
+	"github.com/digiogithub/pando/internal/ponytail"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/session"
@@ -2193,8 +2194,10 @@ func (a *agent) prepareProvider(ctx context.Context, userPrompt string, personaC
 		return createAgentProvider(ctx, a.agentName, []tools.BaseTool{cleanModeCatalogTool{}}, nil, nil, "")
 	}
 
-	// When there is no skill manager and no persona, use the pre-built provider as-is.
-	if a.skillManager == nil && personaContent == "" {
+	// When there is no skill manager, no persona and no active ponytail mode, use
+	// the pre-built provider as-is. Ponytail must still be honored here because it
+	// injects per-turn even without a skill manager.
+	if a.skillManager == nil && personaContent == "" && !ponytailModeForContext(ctx).IsActive() {
 		return a.provider, nil
 	}
 
@@ -2208,6 +2211,14 @@ func (a *agent) prepareProvider(ctx context.Context, userPrompt string, personaC
 			if injected := prompt.InjectSkillInstructions(skillName, instructions); injected != "" {
 				activeSkillInstructions = append(activeSkillInstructions, injected)
 			}
+		}
+	}
+
+	// Ponytail mode (per-session, ctx-threaded): when active, inject the
+	// "lazy senior developer" ruleset before each turn just like any other skill.
+	if mode := ponytailModeForContext(ctx); mode.IsActive() {
+		if injected := prompt.InjectSkillInstructions("ponytail ("+mode.String()+")", ponytail.Instructions(mode)); injected != "" {
+			activeSkillInstructions = append(activeSkillInstructions, injected)
 		}
 	}
 

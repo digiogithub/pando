@@ -50,6 +50,7 @@ import (
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/observability"
 	"github.com/digiogithub/pando/internal/permission"
+	"github.com/digiogithub/pando/internal/ponytail"
 	"github.com/digiogithub/pando/internal/project"
 	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
@@ -2337,6 +2338,15 @@ func (a *appACPAgentAdapter) SetSessionLLMOverrides(sessionID string, overrides 
 		Persona:         overrides.Persona,
 		PersonaScoped:   overrides.PersonaScoped,
 	})
+}
+
+func (a *appACPAgentAdapter) SetPonytailMode(sessionID string, mode string) (string, bool) {
+	m, ok := ponytail.ParseMode(mode)
+	if !ok {
+		return "", false
+	}
+	agent.SetPonytailMode(sessionID, m)
+	return m.String(), true
 }
 
 func (a *appACPAgentAdapter) ListPersonas() []string             { return agent.ListAvailablePersonas() }

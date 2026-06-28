@@ -17,6 +17,7 @@ import (
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
+	"github.com/digiogithub/pando/internal/ponytail"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/toolmeta"
 	"github.com/digiogithub/pando/internal/userinput"
@@ -816,6 +817,22 @@ func (s *Server) handleSlashCommandStream(w http.ResponseWriter, flusher http.Fl
 			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": fmt.Sprintf(
 				"\nDatabase compacted (%s). Freed %s (%s → %s).",
 				res.Mode, humanizeBytes(res.Freed), humanizeBytes(res.SizeBefore), humanizeBytes(res.SizeAfter))})
+		}
+	case "ponytail":
+		arg := strings.TrimSpace(cmdArgs)
+		if arg == "" {
+			arg = "full"
+		}
+		mode, ok := ponytail.ParseMode(arg)
+		if !ok {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": "unknown ponytail mode: " + arg})
+		} else {
+			agent.SetPonytailMode(sessionID, mode)
+			if mode.IsActive() {
+				writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Ponytail mode: " + mode.String() + ".\n" + ponytail.Description(mode)})
+			} else {
+				writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Ponytail mode disabled. Back to normal."})
+			}
 		}
 	case "goal", "autopilot":
 		if strings.TrimSpace(cmdArgs) == "" {

@@ -63,6 +63,8 @@ func (a *PandoACPAgent) handleSlashCommand(
 		return a.processSummarizeCommand(ctx, acpSession)
 	case slashCommandDBCompact:
 		return a.processDBCompactCommand(ctx, acpSession)
+	case slashCommandPonytail:
+		return a.processPonytailCommand(acpSession, command.Objective)
 	default:
 		return acpsdk.StopReasonEndTurn, nil
 	}

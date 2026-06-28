@@ -18,6 +18,7 @@ import (
 	"github.com/digiogithub/pando/internal/history"
 	agentpkg "github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/ponytail"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui/components/chat"
@@ -843,6 +844,9 @@ func (p *ChatPageModel) sendMessage(text string, attachments []message.Attachmen
 	if cmd, ok := p.handleDBCompactCommand(text); ok {
 		return cmd
 	}
+	if cmd, ok := p.handlePonytailCommand(text); ok {
+		return cmd
+	}
 
 	// If a run is already active for this session, route the message as steering
 	// feedback: it is queued and injected into the agent loop at the next safe
@@ -1270,6 +1274,33 @@ func (p *ChatPageModel) handleGoalCommand(input string) (tea.Cmd, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// handlePonytailCommand toggles the per-session ponytail ("lazy senior dev")
+// mode in response to /ponytail [lite|full|ultra|off]. No argument defaults to
+// full. The mode is applied to the agent's per-session registry and reported as
+// a toast; it takes effect on the next turn via prompt injection.
+func (p *ChatPageModel) handlePonytailCommand(input string) (tea.Cmd, bool) {
+	line := strings.TrimSpace(input)
+	if line != "/ponytail" && !strings.HasPrefix(line, "/ponytail ") {
+		return nil, false
+	}
+	arg := strings.TrimSpace(strings.TrimPrefix(line, "/ponytail"))
+	if arg == "" {
+		arg = "full"
+	}
+	mode, ok := ponytail.ParseMode(arg)
+	if !ok {
+		return util.ReportWarn("Unknown ponytail mode: " + arg + ". Use lite|full|ultra|off."), true
+	}
+	if p.session.ID == "" {
+		return util.ReportWarn("Open or start a session first."), true
+	}
+	agentpkg.SetPonytailMode(p.session.ID, mode)
+	if mode.IsActive() {
+		return util.ReportInfo("Ponytail mode: " + mode.String() + ". " + ponytail.Description(mode)), true
+	}
+	return util.ReportInfo("Ponytail mode disabled. Back to normal."), true
 }
 
 func (p *ChatPageModel) handleCompactCommand(input string) (tea.Cmd, bool) {

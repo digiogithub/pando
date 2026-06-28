@@ -35,6 +35,7 @@ import (
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/notify"
 	"github.com/digiogithub/pando/internal/permission"
+	"github.com/digiogithub/pando/internal/ponytail"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui"
@@ -858,6 +859,17 @@ func (a *acpAgentAdapter) SetSessionLLMOverrides(sessionID string, overrides acp
 		Persona:         overrides.Persona,
 		PersonaScoped:   overrides.PersonaScoped,
 	})
+}
+
+// SetPonytailMode sets the per-session ponytail intensity. Returns the
+// normalized mode label and whether the input was a recognized mode.
+func (a *acpAgentAdapter) SetPonytailMode(sessionID string, mode string) (string, bool) {
+	m, ok := ponytail.ParseMode(mode)
+	if !ok {
+		return "", false
+	}
+	agent.SetPonytailMode(sessionID, m)
+	return m.String(), true
 }
 
 // ListPersonas returns all available persona names.
