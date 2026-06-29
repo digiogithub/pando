@@ -126,9 +126,24 @@ if [[ -z "$APP_IDENTITY_SHA1" || -z "$PKG_IDENTITY_SHA1" ]]; then
     exit 1
 fi
 
+# `security create-keychain <name>` materializes a file named "<name>-db" under
+# ~/Library/Keychains. Detection must cover every spelling that may already be on
+# disk, because `show-keychain-info` only succeeds for keychains that are in the
+# current search list (a freshly created, never-added keychain would be missed).
 KEYCHAIN_EXISTS=0
-if security show-keychain-info "$KEYCHAIN_PATH" >/dev/null 2>&1 || \
-   security show-keychain-info "$KEYCHAIN_PATH_LEGACY" >/dev/null 2>&1 || \
+keychain_dir="$HOME/Library/Keychains"
+for candidate in \
+    "$KEYCHAIN_PATH" \
+    "$KEYCHAIN_PATH_LEGACY" \
+    "$keychain_dir/${KEYCHAIN_BASE_NAME}-db" \
+    "$keychain_dir/${KEYCHAIN_BASE_NAME}.keychain-db" \
+    "$keychain_dir/${KEYCHAIN_BASE_NAME}.keychain"; do
+    if [[ -f "$candidate" ]] || security show-keychain-info "$candidate" >/dev/null 2>&1; then
+        KEYCHAIN_EXISTS=1
+        break
+    fi
+done
+if [[ "$KEYCHAIN_EXISTS" == "0" ]] && \
    security show-keychain-info "$KEYCHAIN_BASE_NAME" >/dev/null 2>&1; then
     KEYCHAIN_EXISTS=1
 fi
@@ -136,7 +151,20 @@ fi
 if [[ "$KEYCHAIN_EXISTS" == "1" ]]; then
     echo "Reusing existing keychain: $KEYCHAIN_PATH"
 else
-    security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_BASE_NAME"
+    # Even with the checks above there is a race / naming corner case where the
+    # keychain exists but was not detected. Treat the "already exists" error as a
+    # reuse instead of aborting the whole release build.
+    create_output=""
+    create_status=0
+    create_output="$(security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_BASE_NAME" 2>&1)" || create_status=$?
+    if [[ "$create_status" -ne 0 ]]; then
+        if printf '%s' "$create_output" | grep -qi "already exists"; then
+            echo "Keychain already exists, reusing: $KEYCHAIN_PATH"
+        else
+            printf '%s\n' "$create_output" >&2
+            exit "$create_status"
+        fi
+    fi
 fi
 
 security set-keychain-settings -lut "$KEYCHAIN_TIMEOUT_SECONDS" "$KEYCHAIN_BASE_NAME"
