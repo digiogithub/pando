@@ -239,6 +239,17 @@ func (s *Server) serveStaticAsset(w http.ResponseWriter, r *http.Request) bool {
 		w.Header().Set("Content-Type", contentType)
 	}
 
+	// Vite emits content-hashed bundles under assets/ — their filename changes
+	// whenever their content does, so they are safe to cache forever. Everything
+	// else (service worker scripts, manifest, icons) must stay revalidated so a
+	// freshly updated binary is never shadowed by a stale WebView HTTP cache,
+	// which would prevent the service worker from picking up the new version.
+	if strings.HasPrefix(cleanPath, "assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+
 	http.ServeContent(w, r, cleanPath, time.Time{}, bytes.NewReader(content))
 	return true
 }
@@ -264,6 +275,10 @@ func (s *Server) serveIndexHTML(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Vary", "Accept-Encoding")
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// index.html is the SPA/PWA entry point and references the current hashed
+	// bundles; it must always be revalidated so an updated binary is picked up
+	// immediately instead of serving a cached document that points at old assets.
+	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(content))
 }
 
