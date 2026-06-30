@@ -674,6 +674,61 @@ func (s *Server) handleConfigBash(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// --- Token Optimization ---
+
+// TokenOptimizationConfigResponse is the DTO for the Token Optimization settings
+// section. It carries the dedicated TokenOptimization config plus the existing
+// RTK shell-output filter knobs from Bash, which the section *surfaces* (the
+// fields are not moved out of BashConfig). OutputFilterEnabled is the inverse of
+// Bash.OutputFilterDisabled, presented as a friendly "enable compression" toggle.
+type TokenOptimizationConfigResponse struct {
+	config.TokenOptimizationConfig
+	OutputFilterEnabled bool     `json:"outputFilterEnabled"`
+	OutputFilterPaths   []string `json:"outputFilterPaths,omitempty"`
+}
+
+func (s *Server) handleConfigTokenOptimization(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		cfg := config.Get()
+		if cfg == nil {
+			writeError(w, http.StatusInternalServerError, "configuration not loaded")
+			return
+		}
+		writeJSON(w, http.StatusOK, TokenOptimizationConfigResponse{
+			TokenOptimizationConfig: cfg.TokenOptimization,
+			OutputFilterEnabled:     !cfg.Bash.OutputFilterDisabled,
+			OutputFilterPaths:       cfg.Bash.OutputFilterPaths,
+		})
+	case http.MethodPut:
+		var req TokenOptimizationConfigResponse
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if err := config.UpdateTokenOptimization(req.TokenOptimizationConfig); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update token optimization config: "+err.Error())
+			return
+		}
+		// Surface the RTK toggle: write the inverted enable flag + paths back into Bash.
+		bashCfg := config.Get().Bash
+		bashCfg.OutputFilterDisabled = !req.OutputFilterEnabled
+		bashCfg.OutputFilterPaths = req.OutputFilterPaths
+		if err := config.UpdateBash(bashCfg); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update output filter config: "+err.Error())
+			return
+		}
+		cfg := config.Get()
+		writeJSON(w, http.StatusOK, TokenOptimizationConfigResponse{
+			TokenOptimizationConfig: cfg.TokenOptimization,
+			OutputFilterEnabled:     !cfg.Bash.OutputFilterDisabled,
+			OutputFilterPaths:       cfg.Bash.OutputFilterPaths,
+		})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
 // --- Extensions ---
 
 // ExtensionsConfigResponse groups Skills, SkillsCatalog, and Lua engine configuration.

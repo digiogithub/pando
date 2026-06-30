@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
@@ -45,7 +47,44 @@ type CacheStats struct {
 	TotalBytes int64 `json:"total_bytes"`
 	MaxBytes   int64 `json:"max_bytes"`
 	Evictions  int   `json:"evictions"`
+	// DedupHits counts unchanged-re-read collapses (Phase 2 F-references).
+	DedupHits int `json:"dedup_hits"`
 }
+
+// ReadDedupStatus classifies a `view` re-read against what was already delivered
+// for the same (path, window) this session.
+type ReadDedupStatus string
+
+const (
+	// ReadDedupNew means this window has not been delivered before.
+	ReadDedupNew ReadDedupStatus = "new"
+	// ReadDedupUnchanged means an identical window was already delivered.
+	ReadDedupUnchanged ReadDedupStatus = "unchanged"
+	// ReadDedupChanged means the same window was delivered before but its content changed.
+	ReadDedupChanged ReadDedupStatus = "changed"
+)
+
+// ReadDedupResult is returned by RecordRead.
+type ReadDedupResult struct {
+	// Status is new / unchanged / changed.
+	Status ReadDedupStatus
+	// Label is the stable F-reference label for this window (e.g. "F1").
+	Label string
+	// PrevContent holds the previously-delivered window content; populated only
+	// when Status is ReadDedupChanged so the caller can render a diff.
+	PrevContent string
+}
+
+// readWindowRecord tracks the last content delivered for one (path, window) key.
+type readWindowRecord struct {
+	label   string
+	hash    string
+	content string
+}
+
+// maxDedupContentBytes caps how much window content is retained per record for
+// later diffing, bounding the dedup map's memory footprint.
+const maxDedupContentBytes = 256 * 1024
 
 // SessionCache is a thread-safe, LRU in-memory cache scoped to a single session.
 type SessionCache struct {
@@ -56,15 +95,21 @@ type SessionCache struct {
 	maxBytes    int64
 	currentSize int64
 	evictions   int
+
+	// readWindows tracks delivered (path, window) reads for Phase 2 dedup.
+	readWindows map[string]*readWindowRecord
+	readLabels  int
+	dedupHits   int
 }
 
 // NewSessionCache creates a new session-scoped cache.
 func NewSessionCache(sessionID string) *SessionCache {
 	return &SessionCache{
-		entries:   make(map[string]*CacheEntry),
-		order:     make([]string, 0),
-		sessionID: sessionID,
-		maxBytes:  DefaultCacheMaxBytes,
+		entries:     make(map[string]*CacheEntry),
+		order:       make([]string, 0),
+		sessionID:   sessionID,
+		maxBytes:    DefaultCacheMaxBytes,
+		readWindows: make(map[string]*readWindowRecord),
 	}
 }
 
@@ -224,6 +269,60 @@ func (c *SessionCache) SearchInCache(cacheID, pattern string, contextLines, limi
 	return content, meta, nil
 }
 
+// RecordRead classifies and records a `view` read of a (path, window). It returns
+// whether the window is new, unchanged (identical content already delivered) or
+// changed since the last delivery, plus the stable F-reference label for the
+// window. For an unchanged read the stored record is preserved (and DedupHits is
+// incremented); for a changed read the previous content is returned for diffing
+// and the record is updated; for a new window a fresh label is assigned.
+func (c *SessionCache) RecordRead(path string, startLine, endLine int, content string) ReadDedupResult {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.readWindows == nil {
+		c.readWindows = make(map[string]*readWindowRecord)
+	}
+
+	key := fmt.Sprintf("%s\x00%d-%d", path, startLine, endLine)
+	hash := hashContent(content)
+
+	rec, ok := c.readWindows[key]
+	if !ok {
+		c.readLabels++
+		label := fmt.Sprintf("F%d", c.readLabels)
+		c.readWindows[key] = &readWindowRecord{
+			label:   label,
+			hash:    hash,
+			content: capContent(content),
+		}
+		return ReadDedupResult{Status: ReadDedupNew, Label: label}
+	}
+
+	if rec.hash == hash {
+		c.dedupHits++
+		return ReadDedupResult{Status: ReadDedupUnchanged, Label: rec.label}
+	}
+
+	prev := rec.content
+	rec.hash = hash
+	rec.content = capContent(content)
+	return ReadDedupResult{Status: ReadDedupChanged, Label: rec.label, PrevContent: prev}
+}
+
+// hashContent returns a hex SHA-256 of the content.
+func hashContent(content string) string {
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:])
+}
+
+// capContent bounds retained window content for diffing.
+func capContent(content string) string {
+	if len(content) > maxDedupContentBytes {
+		return content[:maxDedupContentBytes]
+	}
+	return content
+}
+
 // Delete removes a single entry from the cache.
 func (c *SessionCache) Delete(cacheID string) {
 	c.mu.Lock()
@@ -244,6 +343,9 @@ func (c *SessionCache) Clear() {
 	c.entries = make(map[string]*CacheEntry)
 	c.order = make([]string, 0)
 	c.currentSize = 0
+	c.readWindows = make(map[string]*readWindowRecord)
+	c.readLabels = 0
+	c.dedupHits = 0
 }
 
 // Stats returns current cache statistics.
@@ -256,6 +358,7 @@ func (c *SessionCache) Stats() CacheStats {
 		TotalBytes: c.currentSize,
 		MaxBytes:   c.maxBytes,
 		Evictions:  c.evictions,
+		DedupHits:  c.dedupHits,
 	}
 }
 

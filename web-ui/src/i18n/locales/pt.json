@@ -74,7 +74,8 @@
       "remembrances": "Remembrances",
       "snapshots": "Snapshots",
       "apiServer": "Servidor de API",
-      "containerRuntime": "Runtime de contêineres"
+      "containerRuntime": "Runtime de contêineres",
+      "tokenOptimization": "Otimização de tokens"
     },
     "general": {
       "title": "Configurações Gerais",
@@ -130,6 +131,36 @@
       "toolDiscoveryModeOff": "Desligado",
       "toolDiscoveryMaxDirectTools": "Máx. de ferramentas diretas",
       "toolDiscoverySearchLimit": "Limite de busca de ferramentas"
+    },
+    "tokenOptimization": {
+      "loading": "A carregar a configuração de otimização de tokens…",
+      "title": "Otimização de tokens",
+      "description": "Reduz o uso de contexto/tokens na saída da shell, nas leituras de ficheiros e no índice de código. Estes ajustes são aditivos e à prova de falhas: uma leitura comprimida nunca custa mais do que a leitura bruta e os valores padrão preservam o comportamento atual.",
+      "fileReadsSection": "Leituras de ficheiros",
+      "readModeDefault": "Modo de leitura padrão",
+      "readModeDefaultDescription": "Fidelidade usada pela ferramenta view quando uma chamada não solicita um modo. 'full' devolve a janela bruta (padrão), 'signatures'/'map' devolvem uma projeção estrutural compacta com números de linha e 'auto' escolhe conforme o tamanho e o tipo do ficheiro.",
+      "readModeFull": "Completo (janela bruta — padrão)",
+      "readModeAuto": "Auto (escolher por tamanho/tipo)",
+      "readModeSignatures": "Assinaturas (assinaturas de todos os símbolos)",
+      "readModeMap": "Mapa (imports + nível superior)",
+      "readDedup": "Deduplicar releituras sem alterações",
+      "readDedupDescription": "Ao reler uma janela sem alterações na mesma sessão, devolve uma referência curta em vez de reenviar o conteúdo.",
+      "readModeLearning": "Aprendizagem do modo auto",
+      "readModeLearningDescription": "Permite que o resolvedor auto aprenda quando a compressão é contraproducente e aumente a fidelidade dos ficheiros afetados. Desligado mantém as leituras deterministas.",
+      "shellOutputSection": "Saída da shell (RTK)",
+      "outputFilter": "Ativar compressão de saída",
+      "outputFilterDescription": "Aplica o pipeline de filtros estilo RTK à saída de comandos da shell (git/build/test/lint), reduzindo ruído e preservando os códigos de saída.",
+      "outputFilterPaths": "Ficheiros de filtro adicionais",
+      "outputFilterPathsDescription": "Definições de filtro TOML adicionais (caminhos globais ou do projeto) sobrepostas aos filtros integrados.",
+      "outputFilterPathsPlaceholder": "Adicione o caminho de um ficheiro de filtro TOML…",
+      "codeGraphSection": "Grafo de código",
+      "buildCodeGraph": "Construir grafo de propriedades do código",
+      "buildCodeGraphDescription": "Extrai arestas de import/chamada/referência durante a indexação para análise de impacto e sugestões de ficheiros relacionados. (Os controlos do índice estão em KB e Índice de código.)",
+      "relatedFilesHint": "Sugestão de ficheiros relacionados",
+      "relatedFilesHintDescription": "Acrescenta uma lista limitada em tokens de ficheiros relacionados às leituras e resultados de pesquisa.",
+      "savingsSection": "Poupança",
+      "savingsLedger": "Registar o livro de poupança de tokens",
+      "savingsLedgerDescription": "Mede quantos tokens o filtro, os modos de leitura e a deduplicação pouparam, para o relatório de poupança."
     }
   },
   "chat": {

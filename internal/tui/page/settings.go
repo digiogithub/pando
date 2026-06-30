@@ -861,6 +861,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		withGroup(buildContainerRuntimeSection(cfg), "Tools"),
 		withGroup(buildInternalToolsSection(cfg), "Tools"),
 		withGroup(buildBashSection(cfg), "Tools"),
+		withGroup(buildTokenOptimizationSection(cfg), "Tools"),
 
 		// ── Services ──
 		withGroup(buildMesnadaSection(cfg), "Services"),
@@ -2571,6 +2572,69 @@ func buildBashSection(cfg *config.Config) settings.Section {
 	}
 }
 
+func buildTokenOptimizationSection(cfg *config.Config) settings.Section {
+	to := cfg.TokenOptimization
+	readMode := to.ReadModeDefault
+	if strings.TrimSpace(readMode) == "" {
+		readMode = "full"
+	}
+	return settings.Section{
+		Title: "Token Optimization",
+		Fields: []settings.Field{
+			{
+				Label:   "Default Read Mode",
+				Key:     "tokenOptimization.readModeDefault",
+				Type:    settings.FieldSelect,
+				Options: []string{"full", "auto", "signatures", "map"},
+				Value:   readMode,
+			},
+			{
+				Label: "Deduplicate Unchanged Re-reads",
+				Key:   "tokenOptimization.readDedup",
+				Type:  settings.FieldToggle,
+				Value: boolString(!to.ReadDedupDisabled),
+			},
+			{
+				Label: "Adaptive Auto-Mode Learning",
+				Key:   "tokenOptimization.readModeLearning",
+				Type:  settings.FieldToggle,
+				Value: boolString(to.ReadModeLearning),
+			},
+			{
+				// Surfaces the RTK shell-output filter (stored on Bash, not moved).
+				Label: "Shell Output Compression (RTK)",
+				Key:   "tokenOptimization.outputFilter",
+				Type:  settings.FieldToggle,
+				Value: boolString(!cfg.Bash.OutputFilterDisabled),
+			},
+			{
+				Label: "Extra Output Filter Files",
+				Key:   "tokenOptimization.outputFilterPaths",
+				Type:  settings.FieldText,
+				Value: strings.Join(cfg.Bash.OutputFilterPaths, ","),
+			},
+			{
+				Label: "Build Code Property Graph",
+				Key:   "tokenOptimization.buildCodeGraph",
+				Type:  settings.FieldToggle,
+				Value: boolString(to.BuildCodeGraph),
+			},
+			{
+				Label: "Related-Files Hint",
+				Key:   "tokenOptimization.relatedFilesHint",
+				Type:  settings.FieldToggle,
+				Value: boolString(to.RelatedFilesHint),
+			},
+			{
+				Label: "Record Token-Savings Ledger",
+				Key:   "tokenOptimization.savingsLedger",
+				Type:  settings.FieldToggle,
+				Value: boolString(!to.SavingsLedgerDisabled),
+			},
+		},
+	}
+}
+
 func buildPersonaAutoSelectSection(cfg *config.Config) settings.Section {
 	pas := cfg.PersonaAutoSelect
 	return settings.Section{
@@ -2987,6 +3051,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveSnapshots(field)
 	case strings.HasPrefix(field.Key, "bash."):
 		return saveBash(field)
+	case strings.HasPrefix(field.Key, "tokenOptimization."):
+		return saveTokenOptimization(field)
 	case strings.HasPrefix(field.Key, "evaluator."):
 		return saveEvaluator(field)
 	case strings.HasPrefix(field.Key, "skillsCatalog."):
@@ -2997,6 +3063,78 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveProviderAccountField(field)
 	default:
 		return fmt.Errorf("unsupported setting %q", field.Key)
+	}
+}
+
+func saveTokenOptimization(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	to := cfg.TokenOptimization
+
+	switch field.Key {
+	case "tokenOptimization.readModeDefault":
+		to.ReadModeDefault = strings.TrimSpace(field.Value)
+		return config.UpdateTokenOptimization(to)
+	case "tokenOptimization.readDedup":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid dedup value: %w", err)
+		}
+		to.ReadDedupDisabled = !enabled
+		return config.UpdateTokenOptimization(to)
+	case "tokenOptimization.readModeLearning":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid learning value: %w", err)
+		}
+		to.ReadModeLearning = enabled
+		return config.UpdateTokenOptimization(to)
+	case "tokenOptimization.buildCodeGraph":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid code graph value: %w", err)
+		}
+		to.BuildCodeGraph = enabled
+		return config.UpdateTokenOptimization(to)
+	case "tokenOptimization.relatedFilesHint":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid related-files hint value: %w", err)
+		}
+		to.RelatedFilesHint = enabled
+		return config.UpdateTokenOptimization(to)
+	case "tokenOptimization.savingsLedger":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid savings ledger value: %w", err)
+		}
+		to.SavingsLedgerDisabled = !enabled
+		return config.UpdateTokenOptimization(to)
+	case "tokenOptimization.outputFilter":
+		// Surfaced RTK toggle — persist to Bash (not moved out of BashConfig).
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Output Filter value: %w", err)
+		}
+		bashCfg := cfg.Bash
+		bashCfg.OutputFilterDisabled = !enabled
+		return config.UpdateBash(bashCfg)
+	case "tokenOptimization.outputFilterPaths":
+		bashCfg := cfg.Bash
+		parts := strings.Split(field.Value, ",")
+		paths := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				paths = append(paths, trimmed)
+			}
+		}
+		bashCfg.OutputFilterPaths = paths
+		return config.UpdateBash(bashCfg)
+	default:
+		return fmt.Errorf("unsupported token optimization setting %q", field.Key)
 	}
 }
 

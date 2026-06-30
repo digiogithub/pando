@@ -68,6 +68,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/config/browsers", s.handleConfigBrowsers)
 	mux.HandleFunc("/api/v1/config/openlit", s.handleConfigOpenLit)
 	mux.HandleFunc("/api/v1/config/bash", s.handleConfigBash)
+	mux.HandleFunc("/api/v1/config/token-optimization", s.handleConfigTokenOptimization)
 	mux.HandleFunc("/api/v1/config/extensions", s.handleConfigExtensions)
 	mux.HandleFunc("/api/v1/config/services", s.handleConfigServices)
 	mux.HandleFunc("/api/v1/config/evaluator", s.handleConfigEvaluator)

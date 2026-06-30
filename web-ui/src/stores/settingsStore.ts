@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import api from '@/services/api'
-import type { SettingsConfig, ProviderConfigItem, AgentConfigItem, ToolsConfig, BashConfig } from '@/types'
+import type { SettingsConfig, ProviderConfigItem, AgentConfigItem, ToolsConfig, BashConfig, TokenOptimizationConfig } from '@/types'
 import { useToastStore } from './toastStore'
 
 const DEFAULTS: SettingsConfig = {
@@ -427,5 +427,79 @@ export const useBashStore = create<BashStore>((set, get) => ({
   },
 
   resetBash: () =>
+    set((s) => ({ config: { ...s.original }, dirty: false })),
+}))
+
+// ---- Token Optimization Store ----
+
+const TOKEN_OPT_DEFAULTS: TokenOptimizationConfig = {
+  readModeDefault: 'full',
+  readDedupDisabled: false,
+  readModeLearning: false,
+  buildCodeGraph: true,
+  relatedFilesHint: false,
+  savingsLedgerDisabled: false,
+  outputFilterEnabled: true,
+  outputFilterPaths: [],
+}
+
+interface TokenOptimizationStore {
+  config: TokenOptimizationConfig
+  original: TokenOptimizationConfig
+  dirty: boolean
+  loading: boolean
+  saving: boolean
+  error: string | null
+  fetchTokenOptimization: () => Promise<void>
+  updateField: <K extends keyof TokenOptimizationConfig>(key: K, value: TokenOptimizationConfig[K]) => void
+  saveTokenOptimization: () => Promise<void>
+  resetTokenOptimization: () => void
+}
+
+export const useTokenOptimizationStore = create<TokenOptimizationStore>((set, get) => ({
+  config: { ...TOKEN_OPT_DEFAULTS },
+  original: { ...TOKEN_OPT_DEFAULTS },
+  dirty: false,
+  loading: false,
+  saving: false,
+  error: null,
+
+  fetchTokenOptimization: async () => {
+    set({ loading: true, error: null })
+    try {
+      const data = await api.get<TokenOptimizationConfig>('/api/v1/config/token-optimization')
+      const merged = { ...TOKEN_OPT_DEFAULTS, ...data }
+      set({ config: merged, original: { ...merged }, dirty: false })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to load token optimization config'
+      set({ error: msg })
+    } finally {
+      set({ loading: false })
+    }
+  },
+
+  updateField: (key, value) =>
+    set((s) => {
+      const config = { ...s.config, [key]: value }
+      return { config, dirty: JSON.stringify(config) !== JSON.stringify(s.original) }
+    }),
+
+  saveTokenOptimization: async () => {
+    set({ saving: true, error: null })
+    try {
+      const data = await api.put<TokenOptimizationConfig>('/api/v1/config/token-optimization', get().config)
+      const updated = { ...TOKEN_OPT_DEFAULTS, ...data }
+      set({ config: updated, original: { ...updated }, dirty: false })
+      useToastStore.getState().addToast('Token optimization settings saved', 'success')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Save failed'
+      set({ error: msg })
+      useToastStore.getState().addToast(msg, 'error')
+    } finally {
+      set({ saving: false })
+    }
+  },
+
+  resetTokenOptimization: () =>
     set((s) => ({ config: { ...s.original }, dirty: false })),
 }))

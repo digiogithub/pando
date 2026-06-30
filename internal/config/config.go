@@ -838,6 +838,68 @@ type Config struct {
 	Container         ContainerConfig         `json:"container,omitempty" toml:"Container"`
 	MCPServer         MCPServerConfig         `json:"mcpServer,omitempty" toml:"MCPServer"`
 	Ponytail          PonytailConfig          `json:"ponytail,omitempty" toml:"Ponytail"`
+	TokenOptimization TokenOptimizationConfig `json:"tokenOptimization,omitempty" toml:"TokenOptimization"`
+}
+
+// TokenOptimizationConfig groups the context/token-reduction knobs that span the
+// file-read tools, the code index and the savings analytics (see the lean-ctx
+// context-intelligence plan). The existing RTK shell-output toggle stays on
+// Bash.OutputFilterDisabled and is only *surfaced* (not moved) by the Token
+// Optimization settings section. Only ReadModeDefault and ReadDedupDisabled are
+// wired today (Phases 1 & 2); the remaining fields back later phases.
+type TokenOptimizationConfig struct {
+	// ReadModeDefault is the default `view` read fidelity applied when a tool call
+	// does not specify a `mode`. One of: "full" (default — byte-identical to the
+	// legacy behavior), "auto", "signatures", "map". The env var
+	// PANDO_READ_MODE_DEFAULT overrides this.
+	ReadModeDefault string `json:"readModeDefault,omitempty" toml:"ReadModeDefault"`
+	// ReadDedupDisabled turns off content-hash F-references for unchanged re-reads.
+	// Default false (dedup ON — additive and safe).
+	ReadDedupDisabled bool `json:"readDedupDisabled,omitempty" toml:"ReadDedupDisabled"`
+	// ReadModeLearning enables the adaptive auto-mode bounce tracker (Phase 3).
+	// Default false (deterministic).
+	ReadModeLearning bool `json:"readModeLearning,omitempty" toml:"ReadModeLearning"`
+	// BuildCodeGraph enables code property-graph edge extraction during indexing
+	// (Phase 4). Default true.
+	BuildCodeGraph bool `json:"buildCodeGraph,omitempty" toml:"BuildCodeGraph"`
+	// RelatedFilesHint appends a token-bounded [related: …] footer to reads/search
+	// results (Phase 4). Default false.
+	RelatedFilesHint bool `json:"relatedFilesHint,omitempty" toml:"RelatedFilesHint"`
+	// SavingsLedgerDisabled turns off the append-only token-savings ledger
+	// (Phase 5). Default false (ledger ON).
+	SavingsLedgerDisabled bool `json:"savingsLedgerDisabled,omitempty" toml:"SavingsLedgerDisabled"`
+}
+
+// ResolveReadModeDefault returns the effective default `view` read mode, honoring
+// the PANDO_READ_MODE_DEFAULT env override first, then
+// TokenOptimization.ReadModeDefault. Unknown/empty values resolve to "full" so the
+// tool stays byte-identical to its legacy behavior unless explicitly opted in.
+func (c *Config) ResolveReadModeDefault() string {
+	raw := ""
+	if v, ok := os.LookupEnv("PANDO_READ_MODE_DEFAULT"); ok && strings.TrimSpace(v) != "" {
+		raw = v
+	} else if c != nil {
+		raw = c.TokenOptimization.ReadModeDefault
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "auto":
+		return "auto"
+	case "signatures":
+		return "signatures"
+	case "map":
+		return "map"
+	default:
+		return "full"
+	}
+}
+
+// ReadDedupEnabled reports whether unchanged-re-read deduplication (Phase 2) is
+// active. It is on by default and disabled only by explicit config.
+func (c *Config) ReadDedupEnabled() bool {
+	if c == nil {
+		return true
+	}
+	return !c.TokenOptimization.ReadDedupDisabled
 }
 
 // PonytailConfig configures the "lazy senior developer" ponytail mode.
@@ -1364,6 +1426,16 @@ func setDefaults(debug bool) {
 	viper.SetDefault("mesnada.delegation.warmQueueDepth", 0)
 	viper.SetDefault("mesnada.delegation.allowExternalWarmTargets", false)
 	viper.SetDefault("mesnada.delegation.acceptDelegations", false)
+
+	// Token Optimization (lean-ctx context-intelligence) defaults.
+	// ReadModeDefault stays "full" so `view` is byte-identical to its legacy
+	// behavior unless the user opts into compressed reads. Dedup is on (additive).
+	viper.SetDefault("tokenOptimization.readModeDefault", "full")
+	viper.SetDefault("tokenOptimization.readDedupDisabled", false)
+	viper.SetDefault("tokenOptimization.readModeLearning", false)
+	viper.SetDefault("tokenOptimization.buildCodeGraph", true)
+	viper.SetDefault("tokenOptimization.relatedFilesHint", false)
+	viper.SetDefault("tokenOptimization.savingsLedgerDisabled", false)
 
 	// API Server (WebUI backend) defaults
 	viper.SetDefault("server.enabled", false)
@@ -4147,6 +4219,26 @@ func UpdateBash(bash BashConfig) error {
 		config.Bash = bash
 	}); err != nil {
 		cfg.Bash = oldBash
+		return err
+	}
+
+	return nil
+}
+
+// UpdateTokenOptimization updates the Token Optimization configuration and
+// persists it to the config file.
+func UpdateTokenOptimization(to TokenOptimizationConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	old := cfg.TokenOptimization
+	cfg.TokenOptimization = to
+
+	if err := updateCfgFile(func(config *Config) {
+		config.TokenOptimization = to
+	}); err != nil {
+		cfg.TokenOptimization = old
 		return err
 	}
 

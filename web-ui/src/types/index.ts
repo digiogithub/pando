@@ -528,6 +528,20 @@ export interface BashConfig {
   allowedCommands: string[]
 }
 
+// Token Optimization config (matching TokenOptimizationConfig in config.go, plus
+// the surfaced RTK shell-output filter knobs from BashConfig).
+export interface TokenOptimizationConfig {
+  readModeDefault: string            // "full" | "auto" | "signatures" | "map"
+  readDedupDisabled: boolean
+  readModeLearning: boolean
+  buildCodeGraph: boolean
+  relatedFilesHint: boolean
+  savingsLedgerDisabled: boolean
+  // Surfaced from Bash (not moved): RTK shell-output compression toggle + extra paths.
+  outputFilterEnabled: boolean       // inverse of Bash.OutputFilterDisabled
+  outputFilterPaths?: string[]
+}
+
 export interface ContainerConfig {
   runtime: string
   image: string

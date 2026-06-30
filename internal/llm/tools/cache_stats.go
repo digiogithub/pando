@@ -89,7 +89,8 @@ func (c *cacheStatsTool) Run(ctx context.Context, call ToolCall) (ToolResponse, 
 	sb.WriteString(fmt.Sprintf("- Entries: %d\n", stats.EntryCount))
 	sb.WriteString(fmt.Sprintf("- Memory used: %s / %s\n",
 		formatBytes(stats.TotalBytes), formatBytes(stats.MaxBytes)))
-	sb.WriteString(fmt.Sprintf("- Evictions: %d\n\n", stats.Evictions))
+	sb.WriteString(fmt.Sprintf("- Evictions: %d\n", stats.Evictions))
+	sb.WriteString(fmt.Sprintf("- Unchanged re-read dedup hits: %d\n\n", stats.DedupHits))
 
 	if len(entries) == 0 {
 		sb.WriteString("No cached entries.\n")

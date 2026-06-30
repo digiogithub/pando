@@ -74,7 +74,8 @@
       "mesnada": "Mesnada",
       "remembrances": "Remembrances",
       "snapshots": "Snapshots",
-      "apiServer": "API Server"
+      "apiServer": "API Server",
+      "tokenOptimization": "Token Optimization"
     },
     "general": {
       "title": "General Settings",
@@ -130,6 +131,36 @@
       "delegationAllowExternalWarmTargetsDescription": "Route a delegated task to an external (editor-launched) peer over IPC instead of cold-spawning a CLI (the peer must accept delegations)",
       "delegationAcceptDelegations": "Accept Delegations",
       "delegationAcceptDelegationsDescription": "Let this instance accept incoming delegation requests from peer instances over IPC"
+    },
+    "tokenOptimization": {
+      "loading": "Loading token optimization configuration…",
+      "title": "Token Optimization",
+      "description": "Reduce context/token usage across shell output, file reads and the code index. These knobs are additive and fail-safe: compressed reads never cost more than the raw read, and the defaults preserve today's behavior.",
+      "fileReadsSection": "File reads",
+      "readModeDefault": "Default read mode",
+      "readModeDefaultDescription": "Fidelity used by the view tool when a call does not request a mode. 'full' returns the raw window (default), 'signatures'/'map' return a compact structural projection with line numbers, and 'auto' picks one by file size and type.",
+      "readModeFull": "Full (raw window — default)",
+      "readModeAuto": "Auto (pick by size/type)",
+      "readModeSignatures": "Signatures (all symbol signatures)",
+      "readModeMap": "Map (imports + top-level)",
+      "readDedup": "Deduplicate unchanged re-reads",
+      "readDedupDescription": "When re-reading an unchanged window in the same session, return a short reference instead of re-sending the content.",
+      "readModeLearning": "Adaptive auto-mode learning",
+      "readModeLearningDescription": "Let the auto resolver learn when compression backfires and upgrade fidelity for affected files. Off keeps reads deterministic.",
+      "shellOutputSection": "Shell output (RTK)",
+      "outputFilter": "Enable output compression",
+      "outputFilterDescription": "Apply the RTK-style filter pipeline to shell command output (git/build/test/lint), trimming noise while preserving exit codes.",
+      "outputFilterPaths": "Extra filter files",
+      "outputFilterPathsDescription": "Additional TOML filter definitions (user-global or project paths) layered on top of the built-in filters.",
+      "outputFilterPathsPlaceholder": "Add a path to a TOML filter file…",
+      "codeGraphSection": "Code graph",
+      "buildCodeGraph": "Build code property graph",
+      "buildCodeGraphDescription": "Extract import/call/reference edges during indexing to power impact analysis and related-file hints. (Index controls live in KB & Code Index.)",
+      "relatedFilesHint": "Related-files hint",
+      "relatedFilesHintDescription": "Append a token-bounded list of related files to reads and search results.",
+      "savingsSection": "Savings",
+      "savingsLedger": "Record token-savings ledger",
+      "savingsLedgerDescription": "Track how many tokens the filter, read modes and dedup saved, for the savings report."
     }
   },
   "chat": {

@@ -20,6 +20,12 @@ type ViewParams struct {
 	Offset   int    `json:"offset"`
 	Limit    int    `json:"limit"`
 	EndLine  int    `json:"end_line"`
+	// Mode selects the read fidelity (lean-ctx Phase 1). One of "full" (default —
+	// raw line-numbered window), "signatures" (every symbol's signature),
+	// "map" (imports + top-level signatures) or "auto" (picked by file size/type).
+	// Absent or "full" reproduces the legacy output exactly. Compressed modes
+	// preserve line numbers so you can follow up with offset/limit to read bodies.
+	Mode string `json:"mode,omitempty"`
 }
 
 type viewTool struct {
@@ -100,6 +106,11 @@ func (v *viewTool) Info() ToolInfo {
 			"end_line": map[string]any{
 				"type":        "integer",
 				"description": "The line number to stop reading at (exclusive, 0-based). If set, it overrides limit.",
+			},
+			"mode": map[string]any{
+				"type":        "string",
+				"enum":        []string{"full", "signatures", "map", "auto"},
+				"description": "Read fidelity. 'full' (default) returns the raw line-numbered window. 'signatures' returns every symbol's signature, 'map' returns imports + top-level signatures, 'auto' picks by file size/type. Compressed modes keep line numbers so you can re-read a body with offset/limit. Use 'full' when you need exact source text.",
 			},
 		},
 		Required: []string{"file_path"},
@@ -189,9 +200,37 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	}
 
 	logging.Debug("view file read", "filePath", filePath, "lineCount", lineCount)
+
+	windowEnd := params.Offset + len(strings.Split(content, "\n"))
+
+	// Phase 2: collapse an unchanged (or diff a changed) re-read of the same window.
+	if resp, handled := dedupViewRead(ctx, filePath, content, params.Offset, windowEnd); handled {
+		recordFileRead(filePath)
+		return resp, nil
+	}
+
 	v.lspProvider.EnsureForFile(ctx, filePath)
 	clients := v.lspProvider.ClientsForFile(filePath)
 	notifyLspOpenFile(ctx, filePath, clients)
+	diagnostics := getDiagnostics(filePath, clients)
+
+	// Phase 1: optional compressed read modes (signatures / map / auto). Falls
+	// back to the raw full window on parse error or when not actually smaller.
+	if body, mode, ok := renderViewMode(ctx, filePath, content, params.Offset, int(fileInfo.Size()), params.Mode, strings.TrimSpace(diagnostics) != ""); ok {
+		output := fmt.Sprintf("<file path=%s mode=%s lines=%d-%d>\n", displayPath(filePath), mode, params.Offset+1, windowEnd)
+		output += body
+		output += "\n</file>\n"
+		output += diagnostics
+		recordFileRead(filePath)
+		return WithResponseMetadata(
+			NewTextResponse(output),
+			ViewResponseMetadata{
+				FilePath: filePath,
+				Content:  content,
+			},
+		), nil
+	}
+
 	output := "<file>\n"
 	// Format the output with line numbers
 	output += addLineNumbers(content, params.Offset+1)
@@ -202,7 +241,7 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 			params.Offset+len(strings.Split(content, "\n")))
 	}
 	output += "\n</file>\n"
-	output += getDiagnostics(filePath, clients)
+	output += diagnostics
 	recordFileRead(filePath)
 	return WithResponseMetadata(
 		NewTextResponse(output),
@@ -491,6 +530,24 @@ func (v *viewTool) runWithACP(ctx context.Context, params ViewParams, acpConnInt
 	}
 
 	processedContent := strings.Join(selectedLines, "\n")
+
+	// Phase 2: collapse an unchanged (or diff a changed) re-read of the same window.
+	if resp, handled := dedupViewRead(ctx, params.FilePath, processedContent, params.Offset, endLine); handled {
+		recordFileRead(params.FilePath)
+		return resp, nil
+	}
+
+	// Phase 1: optional compressed read modes. ACP reads have no diagnostics.
+	if body, mode, ok := renderViewMode(ctx, params.FilePath, processedContent, params.Offset, len(content), params.Mode, false); ok {
+		out := fmt.Sprintf("<file path=%s mode=%s lines=%d-%d>\n", displayPath(params.FilePath), mode, params.Offset+1, endLine)
+		out += body
+		out += "\n</file>\n"
+		recordFileRead(params.FilePath)
+		return WithResponseMetadata(
+			NewTextResponse(out),
+			ViewResponseMetadata{FilePath: params.FilePath, Content: processedContent},
+		), nil
+	}
 
 	// Format output with line numbers
 	output := "<file>\n"

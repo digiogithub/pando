@@ -74,7 +74,8 @@
       "remembrances": "Remembrances",
       "snapshots": "Snapshots",
       "apiServer": "API-Server",
-      "containerRuntime": "Container-Laufzeit"
+      "containerRuntime": "Container-Laufzeit",
+      "tokenOptimization": "Token-Optimierung"
     },
     "general": {
       "title": "Allgemeine Einstellungen",
@@ -130,6 +131,36 @@
       "toolDiscoveryModeOff": "Aus",
       "toolDiscoveryMaxDirectTools": "Max. direkte Werkzeuge",
       "toolDiscoverySearchLimit": "Werkzeugsuche-Limit"
+    },
+    "tokenOptimization": {
+      "loading": "Token-Optimierungskonfiguration wird geladen…",
+      "title": "Token-Optimierung",
+      "description": "Reduziert die Kontext-/Token-Nutzung bei Shell-Ausgabe, Dateilesungen und dem Code-Index. Diese Einstellungen sind additiv und ausfallsicher: Eine komprimierte Lesung kostet nie mehr als die Rohlesung und die Standardwerte bewahren das heutige Verhalten.",
+      "fileReadsSection": "Dateilesungen",
+      "readModeDefault": "Standard-Lesemodus",
+      "readModeDefaultDescription": "Genauigkeit, die das view-Tool verwendet, wenn ein Aufruf keinen Modus anfordert. 'full' liefert das Roh-Fenster (Standard), 'signatures'/'map' liefern eine kompakte strukturelle Projektion mit Zeilennummern und 'auto' wählt nach Dateigröße und -typ.",
+      "readModeFull": "Voll (Roh-Fenster — Standard)",
+      "readModeAuto": "Auto (nach Größe/Typ wählen)",
+      "readModeSignatures": "Signaturen (alle Symbol-Signaturen)",
+      "readModeMap": "Karte (Imports + oberste Ebene)",
+      "readDedup": "Unveränderte Wiederholungslesungen deduplizieren",
+      "readDedupDescription": "Beim erneuten Lesen eines unveränderten Fensters in derselben Sitzung wird statt des Inhalts eine kurze Referenz zurückgegeben.",
+      "readModeLearning": "Adaptives Auto-Modus-Lernen",
+      "readModeLearningDescription": "Lässt den Auto-Resolver lernen, wann Kompression schadet, und erhöht die Genauigkeit betroffener Dateien. Aus hält die Lesungen deterministisch.",
+      "shellOutputSection": "Shell-Ausgabe (RTK)",
+      "outputFilter": "Ausgabekomprimierung aktivieren",
+      "outputFilterDescription": "Wendet die RTK-artige Filter-Pipeline auf die Ausgabe von Shell-Befehlen (git/build/test/lint) an, reduziert Rauschen und bewahrt Exit-Codes.",
+      "outputFilterPaths": "Zusätzliche Filterdateien",
+      "outputFilterPathsDescription": "Zusätzliche TOML-Filterdefinitionen (globale oder Projektpfade), die über die integrierten Filter gelegt werden.",
+      "outputFilterPathsPlaceholder": "Pfad zu einer TOML-Filterdatei hinzufügen…",
+      "codeGraphSection": "Code-Graph",
+      "buildCodeGraph": "Code-Eigenschaftsgraph erstellen",
+      "buildCodeGraphDescription": "Extrahiert Import-/Aufruf-/Referenzkanten während der Indexierung für Impact-Analyse und Hinweise auf verwandte Dateien. (Index-Steuerung unter KB & Code-Index.)",
+      "relatedFilesHint": "Hinweis auf verwandte Dateien",
+      "relatedFilesHintDescription": "Hängt eine tokenbegrenzte Liste verwandter Dateien an Lesungen und Suchergebnisse an.",
+      "savingsSection": "Einsparungen",
+      "savingsLedger": "Token-Einsparungsjournal aufzeichnen",
+      "savingsLedgerDescription": "Erfasst, wie viele Tokens Filter, Lesemodi und Deduplizierung eingespart haben, für den Einsparungsbericht."
     }
   },
   "chat": {

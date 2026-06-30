@@ -74,7 +74,8 @@
       "remembrances": "Remembrances",
       "snapshots": "スナップショット",
       "apiServer": "API サーバー",
-      "containerRuntime": "コンテナランタイム"
+      "containerRuntime": "コンテナランタイム",
+      "tokenOptimization": "トークン最適化"
     },
     "general": {
       "title": "一般設定",
@@ -130,6 +131,36 @@
       "toolDiscoveryModeOff": "オフ",
       "toolDiscoveryMaxDirectTools": "直接ツールの最大数",
       "toolDiscoverySearchLimit": "ツール検索の上限"
+    },
+    "tokenOptimization": {
+      "loading": "トークン最適化の設定を読み込んでいます…",
+      "title": "トークン最適化",
+      "description": "シェル出力、ファイル読み取り、コードインデックス全体でコンテキスト/トークンの使用量を削減します。これらの設定は加算的でフェイルセーフです。圧縮読み取りが生の読み取りより多くを消費することはなく、既定値は現在の動作を維持します。",
+      "fileReadsSection": "ファイル読み取り",
+      "readModeDefault": "既定の読み取りモード",
+      "readModeDefaultDescription": "呼び出しがモードを指定しない場合に view ツールが使う忠実度です。'full' は生のウィンドウを返し（既定）、'signatures'/'map' は行番号付きのコンパクトな構造投影を返し、'auto' はファイルのサイズと種類で選びます。",
+      "readModeFull": "フル（生のウィンドウ — 既定）",
+      "readModeAuto": "自動（サイズ/種類で選択）",
+      "readModeSignatures": "シグネチャ（全シンボルのシグネチャ）",
+      "readModeMap": "マップ（インポート + トップレベル）",
+      "readDedup": "変更のない再読み取りを重複排除",
+      "readDedupDescription": "同じセッションで変更のないウィンドウを再読み取りする際、内容を再送信せず短い参照を返します。",
+      "readModeLearning": "自動モードの適応学習",
+      "readModeLearningDescription": "圧縮が逆効果になる場合を自動リゾルバが学習し、該当ファイルの忠実度を上げます。オフにすると読み取りは決定論的になります。",
+      "shellOutputSection": "シェル出力 (RTK)",
+      "outputFilter": "出力圧縮を有効化",
+      "outputFilterDescription": "RTK 形式のフィルタパイプラインをシェルコマンド出力（git/build/test/lint）に適用し、終了コードを保持しつつノイズを削減します。",
+      "outputFilterPaths": "追加のフィルタファイル",
+      "outputFilterPathsDescription": "組み込みフィルタの上に重ねる追加の TOML フィルタ定義（ユーザーグローバルまたはプロジェクトのパス）。",
+      "outputFilterPathsPlaceholder": "TOML フィルタファイルのパスを追加…",
+      "codeGraphSection": "コードグラフ",
+      "buildCodeGraph": "コードプロパティグラフを構築",
+      "buildCodeGraphDescription": "インデックス作成時にインポート/呼び出し/参照のエッジを抽出し、影響分析や関連ファイルのヒントに使います。（インデックス制御は「KB とコードインデックス」にあります。）",
+      "relatedFilesHint": "関連ファイルのヒント",
+      "relatedFilesHintDescription": "読み取りや検索結果に、トークン上限付きの関連ファイル一覧を付加します。",
+      "savingsSection": "節約",
+      "savingsLedger": "トークン節約台帳を記録",
+      "savingsLedgerDescription": "フィルタ、読み取りモード、重複排除が節約したトークン数を節約レポート用に記録します。"
     }
   },
   "chat": {

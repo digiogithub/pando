@@ -74,7 +74,8 @@
       "remembrances": "Remembrances",
       "snapshots": "Snapshots",
       "apiServer": "Servidor API",
-      "containerRuntime": "Entorno de contenedores"
+      "containerRuntime": "Entorno de contenedores",
+      "tokenOptimization": "Optimización de tokens"
     },
     "general": {
       "title": "Configuración General",
@@ -130,6 +131,36 @@
       "delegationAllowExternalWarmTargetsDescription": "Enruta una tarea delegada a un par externo (lanzado por el editor) mediante IPC en lugar de arrancar un CLI en frío (el par debe aceptar delegaciones)",
       "delegationAcceptDelegations": "Aceptar delegaciones",
       "delegationAcceptDelegationsDescription": "Permite que esta instancia acepte solicitudes de delegación entrantes de otras instancias mediante IPC"
+    },
+    "tokenOptimization": {
+      "loading": "Cargando configuración de optimización de tokens…",
+      "title": "Optimización de tokens",
+      "description": "Reduce el uso de contexto/tokens en la salida de shell, las lecturas de ficheros y el índice de código. Estos ajustes son aditivos y a prueba de fallos: una lectura comprimida nunca cuesta más que la lectura cruda y los valores por defecto preservan el comportamiento actual.",
+      "fileReadsSection": "Lecturas de ficheros",
+      "readModeDefault": "Modo de lectura por defecto",
+      "readModeDefaultDescription": "Fidelidad que usa la herramienta view cuando una llamada no solicita un modo. 'full' devuelve la ventana cruda (por defecto), 'signatures'/'map' devuelven una proyección estructural compacta con números de línea y 'auto' elige uno según el tamaño y el tipo del fichero.",
+      "readModeFull": "Completo (ventana cruda — por defecto)",
+      "readModeAuto": "Auto (elegir por tamaño/tipo)",
+      "readModeSignatures": "Firmas (firmas de todos los símbolos)",
+      "readModeMap": "Mapa (imports + nivel superior)",
+      "readDedup": "Deduplicar relecturas sin cambios",
+      "readDedupDescription": "Al volver a leer una ventana sin cambios en la misma sesión, devuelve una referencia corta en lugar de reenviar el contenido.",
+      "readModeLearning": "Aprendizaje del modo auto",
+      "readModeLearningDescription": "Permite que el resolutor auto aprenda cuándo la compresión es contraproducente y aumente la fidelidad de los ficheros afectados. Desactivado mantiene las lecturas deterministas.",
+      "shellOutputSection": "Salida de shell (RTK)",
+      "outputFilter": "Activar compresión de salida",
+      "outputFilterDescription": "Aplica el pipeline de filtros estilo RTK a la salida de comandos de shell (git/build/test/lint), recortando ruido y preservando los códigos de salida.",
+      "outputFilterPaths": "Ficheros de filtro adicionales",
+      "outputFilterPathsDescription": "Definiciones de filtro TOML adicionales (rutas globales o del proyecto) que se añaden sobre los filtros integrados.",
+      "outputFilterPathsPlaceholder": "Añade la ruta a un fichero de filtro TOML…",
+      "codeGraphSection": "Grafo de código",
+      "buildCodeGraph": "Construir grafo de propiedades del código",
+      "buildCodeGraphDescription": "Extrae aristas de import/llamada/referencia durante la indexación para el análisis de impacto y las sugerencias de ficheros relacionados. (Los controles del índice están en KB e índice de código.)",
+      "relatedFilesHint": "Sugerencia de ficheros relacionados",
+      "relatedFilesHintDescription": "Añade una lista acotada en tokens de ficheros relacionados a las lecturas y resultados de búsqueda.",
+      "savingsSection": "Ahorro",
+      "savingsLedger": "Registrar el libro de ahorro de tokens",
+      "savingsLedgerDescription": "Mide cuántos tokens ahorraron el filtro, los modos de lectura y la deduplicación, para el informe de ahorro."
     }
   },
   "chat": {

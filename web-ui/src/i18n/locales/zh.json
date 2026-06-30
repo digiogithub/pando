@@ -74,7 +74,8 @@
       "remembrances": "记忆库",
       "snapshots": "快照",
       "apiServer": "API 服务器",
-      "containerRuntime": "容器运行时"
+      "containerRuntime": "容器运行时",
+      "tokenOptimization": "Token 优化"
     },
     "general": {
       "title": "常规设置",
@@ -130,6 +131,36 @@
       "toolDiscoveryModeOff": "关闭",
       "toolDiscoveryMaxDirectTools": "最大直接工具数",
       "toolDiscoverySearchLimit": "工具搜索上限"
+    },
+    "tokenOptimization": {
+      "loading": "正在加载 Token 优化配置…",
+      "title": "Token 优化",
+      "description": "在 shell 输出、文件读取和代码索引中减少上下文/token 的使用。这些选项是累加且故障安全的：压缩读取的开销绝不会超过原始读取，且默认值保持当前行为。",
+      "fileReadsSection": "文件读取",
+      "readModeDefault": "默认读取模式",
+      "readModeDefaultDescription": "当调用未请求模式时 view 工具使用的精度。'full' 返回原始窗口（默认），'signatures'/'map' 返回带行号的紧凑结构投影，'auto' 按文件大小和类型选择。",
+      "readModeFull": "完整（原始窗口 — 默认）",
+      "readModeAuto": "自动（按大小/类型选择）",
+      "readModeSignatures": "签名（所有符号签名）",
+      "readModeMap": "概览（导入 + 顶层）",
+      "readDedup": "对未更改的重复读取去重",
+      "readDedupDescription": "在同一会话中重新读取未更改的窗口时，返回简短引用而非重新发送内容。",
+      "readModeLearning": "自适应自动模式学习",
+      "readModeLearningDescription": "让自动解析器学习压缩何时适得其反，并为受影响的文件提高精度。关闭时读取保持确定性。",
+      "shellOutputSection": "Shell 输出 (RTK)",
+      "outputFilter": "启用输出压缩",
+      "outputFilterDescription": "对 shell 命令输出（git/build/test/lint）应用 RTK 风格的过滤管道，在保留退出码的同时削减噪声。",
+      "outputFilterPaths": "额外的过滤文件",
+      "outputFilterPathsDescription": "在内置过滤器之上叠加的额外 TOML 过滤定义（用户全局或项目路径）。",
+      "outputFilterPathsPlaceholder": "添加 TOML 过滤文件的路径…",
+      "codeGraphSection": "代码图谱",
+      "buildCodeGraph": "构建代码属性图",
+      "buildCodeGraphDescription": "在索引时提取导入/调用/引用边，用于影响分析和相关文件提示。（索引控制位于“KB 与代码索引”。）",
+      "relatedFilesHint": "相关文件提示",
+      "relatedFilesHintDescription": "在读取和搜索结果中附加受 token 限制的相关文件列表。",
+      "savingsSection": "节省",
+      "savingsLedger": "记录 token 节省台账",
+      "savingsLedgerDescription": "统计过滤器、读取模式和去重节省的 token 数量，用于节省报告。"
     }
   },
   "chat": {

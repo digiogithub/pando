@@ -74,7 +74,8 @@
       "remembrances": "Remembrances",
       "snapshots": "Instantanés",
       "apiServer": "Serveur API",
-      "containerRuntime": "Environnement de conteneurs"
+      "containerRuntime": "Environnement de conteneurs",
+      "tokenOptimization": "Optimisation des tokens"
     },
     "general": {
       "title": "Paramètres généraux",
@@ -130,6 +131,36 @@
       "toolDiscoveryModeOff": "Désactivé",
       "toolDiscoveryMaxDirectTools": "Outils directs max.",
       "toolDiscoverySearchLimit": "Limite de recherche d’outils"
+    },
+    "tokenOptimization": {
+      "loading": "Chargement de la configuration d'optimisation des tokens…",
+      "title": "Optimisation des tokens",
+      "description": "Réduit l'utilisation du contexte/des tokens pour la sortie shell, les lectures de fichiers et l'index de code. Ces réglages sont additifs et sûrs : une lecture compressée ne coûte jamais plus que la lecture brute et les valeurs par défaut préservent le comportement actuel.",
+      "fileReadsSection": "Lectures de fichiers",
+      "readModeDefault": "Mode de lecture par défaut",
+      "readModeDefaultDescription": "Fidélité utilisée par l'outil view lorsqu'un appel ne demande pas de mode. 'full' renvoie la fenêtre brute (par défaut), 'signatures'/'map' renvoient une projection structurelle compacte avec numéros de ligne, et 'auto' choisit selon la taille et le type du fichier.",
+      "readModeFull": "Complet (fenêtre brute — par défaut)",
+      "readModeAuto": "Auto (choix par taille/type)",
+      "readModeSignatures": "Signatures (toutes les signatures de symboles)",
+      "readModeMap": "Carte (imports + niveau supérieur)",
+      "readDedup": "Dédupliquer les relectures inchangées",
+      "readDedupDescription": "Lors d'une relecture d'une fenêtre inchangée dans la même session, renvoie une référence courte au lieu de renvoyer le contenu.",
+      "readModeLearning": "Apprentissage du mode auto",
+      "readModeLearningDescription": "Permet au résolveur auto d'apprendre quand la compression est contre-productive et d'augmenter la fidélité des fichiers concernés. Désactivé, les lectures restent déterministes.",
+      "shellOutputSection": "Sortie shell (RTK)",
+      "outputFilter": "Activer la compression de sortie",
+      "outputFilterDescription": "Applique le pipeline de filtres de style RTK à la sortie des commandes shell (git/build/test/lint), en réduisant le bruit tout en préservant les codes de sortie.",
+      "outputFilterPaths": "Fichiers de filtre supplémentaires",
+      "outputFilterPathsDescription": "Définitions de filtres TOML supplémentaires (chemins globaux ou de projet) ajoutées par-dessus les filtres intégrés.",
+      "outputFilterPathsPlaceholder": "Ajoutez le chemin d'un fichier de filtre TOML…",
+      "codeGraphSection": "Graphe de code",
+      "buildCodeGraph": "Construire le graphe de propriétés du code",
+      "buildCodeGraphDescription": "Extrait les arêtes import/appel/référence pendant l'indexation pour l'analyse d'impact et les suggestions de fichiers liés. (Les contrôles d'index sont dans KB & Index de code.)",
+      "relatedFilesHint": "Suggestion de fichiers liés",
+      "relatedFilesHintDescription": "Ajoute une liste bornée en tokens de fichiers liés aux lectures et aux résultats de recherche.",
+      "savingsSection": "Économies",
+      "savingsLedger": "Enregistrer le journal d'économies de tokens",
+      "savingsLedgerDescription": "Suit le nombre de tokens économisés par le filtre, les modes de lecture et la déduplication, pour le rapport d'économies."
     }
   },
   "chat": {

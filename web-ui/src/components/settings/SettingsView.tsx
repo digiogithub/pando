@@ -7,6 +7,7 @@ import MCPGatewaySettings from './MCPGatewaySettings'
 import LSPSettings from './LSPSettings'
 import InternalToolsSettings from './InternalToolsSettings'
 import BashSettings from './BashSettings'
+import TokenOptimizationSettings from './TokenOptimizationSettings'
 import SkillsSettings from './SkillsSettings'
 import LuaSettings from './LuaSettings'
 import EvaluatorSettings from './EvaluatorSettings'
@@ -27,6 +28,7 @@ type SettingsCategory =
   | 'lsp'
   | 'tools'
   | 'bash'
+  | 'token-optimization'
   | 'skills'
   | 'lua'
   | 'self-improvement'
@@ -46,6 +48,7 @@ const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string }[
   { id: 'tools', labelKey: 'settings.categories.tools' },
   { id: 'container-runtime', labelKey: 'settings.categories.containerRuntime' },
   { id: 'bash', labelKey: 'settings.categories.bash' },
+  { id: 'token-optimization', labelKey: 'settings.categories.tokenOptimization' },
   { id: 'skills', labelKey: 'settings.categories.skills' },
   { id: 'lua', labelKey: 'settings.categories.lua' },
   { id: 'self-improvement', labelKey: 'settings.categories.selfImprovement' },
@@ -197,6 +200,7 @@ export default function SettingsView() {
         {activeCategory === 'tools' && <InternalToolsSettings />}
         {activeCategory === 'container-runtime' && <ContainerRuntimeSettings />}
         {activeCategory === 'bash' && <BashSettings />}
+        {activeCategory === 'token-optimization' && <TokenOptimizationSettings />}
         {activeCategory === 'skills' && <SkillsSettings />}
         {activeCategory === 'lua' && <LuaSettings />}
         {activeCategory === 'self-improvement' && <EvaluatorSettings />}
