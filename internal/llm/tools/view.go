@@ -13,6 +13,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mesnada/acp"
+	"github.com/digiogithub/pando/internal/savings"
 )
 
 type ViewParams struct {
@@ -203,24 +204,33 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 
 	windowEnd := params.Offset + len(strings.Split(content, "\n"))
 
-	// Phase 2: collapse an unchanged (or diff a changed) re-read of the same window.
-	if resp, handled := dedupViewRead(ctx, filePath, content, params.Offset, windowEnd); handled {
-		recordFileRead(filePath)
-		return resp, nil
-	}
-
+	// LSP diagnostics are computed up front so the auto resolver can keep
+	// diagnostic-active files at full fidelity and the dedup pass can key on the
+	// fidelity actually about to be delivered (Phase 3 fidelity-aware dedup).
 	v.lspProvider.EnsureForFile(ctx, filePath)
 	clients := v.lspProvider.ClientsForFile(filePath)
 	notifyLspOpenFile(ctx, filePath, clients)
 	diagnostics := getDiagnostics(filePath, clients)
 
+	// Resolve the concrete read fidelity (Phase 1 modes + Phase 3 bounce escalation).
+	concrete := resolveViewMode(ctx, filePath, int(fileInfo.Size()), params.Mode, strings.TrimSpace(diagnostics) != "")
+
+	// Phase 2: collapse an unchanged (or diff a changed) re-read of the same window,
+	// fidelity-aware so a full read after an earlier compressed read is not masked.
+	if resp, handled := dedupViewRead(ctx, filePath, content, params.Offset, windowEnd, concrete); handled {
+		recordFileRead(filePath)
+		return resp, nil
+	}
+
 	// Phase 1: optional compressed read modes (signatures / map / auto). Falls
 	// back to the raw full window on parse error or when not actually smaller.
-	if body, mode, ok := renderViewMode(ctx, filePath, content, params.Offset, int(fileInfo.Size()), params.Mode, strings.TrimSpace(diagnostics) != ""); ok {
-		output := fmt.Sprintf("<file path=%s mode=%s lines=%d-%d>\n", displayPath(filePath), mode, params.Offset+1, windowEnd)
+	if body, ok := renderViewMode(ctx, filePath, content, params.Offset, concrete); ok {
+		output := fmt.Sprintf("<file path=%s mode=%s lines=%d-%d>\n", displayPath(filePath), concrete, params.Offset+1, windowEnd)
 		output += body
 		output += "\n</file>\n"
 		output += diagnostics
+		recordCompressedRead(ctx, filePath, concrete, len(body))
+		recordSaving(savings.SourceView, displayPath(filePath), string(concrete), len(content), len(body))
 		recordFileRead(filePath)
 		return WithResponseMetadata(
 			NewTextResponse(output),
@@ -242,6 +252,7 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	}
 	output += "\n</file>\n"
 	output += diagnostics
+	recordFullRead(ctx, filePath)
 	recordFileRead(filePath)
 	return WithResponseMetadata(
 		NewTextResponse(output),
@@ -531,17 +542,22 @@ func (v *viewTool) runWithACP(ctx context.Context, params ViewParams, acpConnInt
 
 	processedContent := strings.Join(selectedLines, "\n")
 
-	// Phase 2: collapse an unchanged (or diff a changed) re-read of the same window.
-	if resp, handled := dedupViewRead(ctx, params.FilePath, processedContent, params.Offset, endLine); handled {
+	// Resolve the concrete read fidelity. ACP reads have no diagnostics.
+	concrete := resolveViewMode(ctx, params.FilePath, len(content), params.Mode, false)
+
+	// Phase 2: fidelity-aware unchanged-re-read deduplication.
+	if resp, handled := dedupViewRead(ctx, params.FilePath, processedContent, params.Offset, endLine, concrete); handled {
 		recordFileRead(params.FilePath)
 		return resp, nil
 	}
 
-	// Phase 1: optional compressed read modes. ACP reads have no diagnostics.
-	if body, mode, ok := renderViewMode(ctx, params.FilePath, processedContent, params.Offset, len(content), params.Mode, false); ok {
-		out := fmt.Sprintf("<file path=%s mode=%s lines=%d-%d>\n", displayPath(params.FilePath), mode, params.Offset+1, endLine)
+	// Phase 1: optional compressed read modes (signatures / map / auto).
+	if body, ok := renderViewMode(ctx, params.FilePath, processedContent, params.Offset, concrete); ok {
+		out := fmt.Sprintf("<file path=%s mode=%s lines=%d-%d>\n", displayPath(params.FilePath), concrete, params.Offset+1, endLine)
 		out += body
 		out += "\n</file>\n"
+		recordCompressedRead(ctx, params.FilePath, concrete, len(body))
+		recordSaving(savings.SourceView, displayPath(params.FilePath), string(concrete), len(processedContent), len(body))
 		recordFileRead(params.FilePath)
 		return WithResponseMetadata(
 			NewTextResponse(out),
@@ -558,6 +574,7 @@ func (v *viewTool) runWithACP(ctx context.Context, params ViewParams, acpConnInt
 		output += fmt.Sprintf("\n\n(File has more lines. Use 'offset' parameter to read beyond line %d)", endLine)
 	}
 	output += "\n</file>\n"
+	recordFullRead(ctx, params.FilePath)
 
 	logging.Debug("view ACP completed", "filePath", params.FilePath, "linesRead", len(selectedLines))
 

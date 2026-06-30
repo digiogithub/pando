@@ -13,6 +13,7 @@ import (
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/safety"
+	"github.com/digiogithub/pando/internal/savings"
 )
 
 // getRuntimeResolver extracts a RuntimeResolver from the context if one was
@@ -385,6 +386,9 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	// issue) and never touches the exit code or stderr handling below.
 	filterResult := applyOutputFilter(params.Command, stdout)
 	stdout = filterResult.Output
+	if filterResult.Name != "" {
+		recordSaving(savings.SourceBash, bashSavingDetail(params.Command), filterResult.Name, filterResult.Before, filterResult.After)
+	}
 
 	stdout = truncateOutput(stdout)
 	stderr = truncateOutput(stderr)
@@ -605,6 +609,9 @@ func (b *bashTool) runWithACP(ctx context.Context, params BashParams, acpConnInt
 	// RTK-style output compression (see Run): fail-safe, applied before truncation.
 	filterResult := applyOutputFilter(params.Command, output)
 	output = filterResult.Output
+	if filterResult.Name != "" {
+		recordSaving(savings.SourceBash, bashSavingDetail(params.Command), filterResult.Name, filterResult.Before, filterResult.After)
+	}
 
 	// Truncate if needed
 	output = truncateOutput(output)

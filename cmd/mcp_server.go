@@ -308,6 +308,7 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 	tools := []llmtools.BaseTool{
 		llmtools.NewCacheReadTool(),
 		llmtools.NewCacheStatsTool(),
+		llmtools.NewSavingsStatsTool(),
 	}
 
 	// Only expose internal tools that are enabled and properly configured (API keys present).

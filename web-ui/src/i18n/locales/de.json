@@ -14,7 +14,8 @@
     "reload": "Neu laden",
     "reloading": "Lädt…",
     "estimatedTokens": "Geschätzt (aktualisiert live, während der Agent läuft)",
-    "toggleAutoApprove": "Auto-Genehmigung umschalten (Shift+Tab)"
+    "toggleAutoApprove": "Auto-Genehmigung umschalten (Shift+Tab)",
+    "refresh": "Aktualisieren"
   },
   "nav": {
     "chat": "Chat",
@@ -160,7 +161,10 @@
       "relatedFilesHintDescription": "Hängt eine tokenbegrenzte Liste verwandter Dateien an Lesungen und Suchergebnisse an.",
       "savingsSection": "Einsparungen",
       "savingsLedger": "Token-Einsparungsjournal aufzeichnen",
-      "savingsLedgerDescription": "Erfasst, wie viele Tokens Filter, Lesemodi und Deduplizierung eingespart haben, für den Einsparungsbericht."
+      "savingsLedgerDescription": "Erfasst, wie viele Tokens Filter, Lesemodi und Deduplizierung eingespart haben, für den Einsparungsbericht.",
+      "savingsWidgetTitle": "Erfasste Einsparungen",
+      "savingsWidgetEmpty": "Noch keine Einsparungen erfasst. Lesevorgänge und Shell-Befehle füllen das Protokoll während der Arbeit.",
+      "savingsWidgetSaved": "Token eingespart ({{pct}} % Reduktion)"
     }
   },
   "chat": {

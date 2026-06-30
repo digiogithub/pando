@@ -856,8 +856,10 @@ type TokenOptimizationConfig struct {
 	// ReadDedupDisabled turns off content-hash F-references for unchanged re-reads.
 	// Default false (dedup ON — additive and safe).
 	ReadDedupDisabled bool `json:"readDedupDisabled,omitempty" toml:"ReadDedupDisabled"`
-	// ReadModeLearning enables the adaptive auto-mode bounce tracker (Phase 3).
-	// Default false (deterministic).
+	// ReadModeLearning enables the optional adaptive (Beta-posterior) escalation
+	// layer of the Phase-3 auto-mode bounce tracker. The bounce tracker itself is
+	// always active for `auto` reads (deterministic); this only turns on the extra
+	// learning escalation. Default false (deterministic).
 	ReadModeLearning bool `json:"readModeLearning,omitempty" toml:"ReadModeLearning"`
 	// BuildCodeGraph enables code property-graph edge extraction during indexing
 	// (Phase 4). Default true.
@@ -900,6 +902,26 @@ func (c *Config) ReadDedupEnabled() bool {
 		return true
 	}
 	return !c.TokenOptimization.ReadDedupDisabled
+}
+
+// SavingsLedgerEnabled reports whether the Phase-5 token-savings ledger is active.
+// It is on by default and disabled only by explicit config.
+func (c *Config) SavingsLedgerEnabled() bool {
+	if c == nil {
+		return true
+	}
+	return !c.TokenOptimization.SavingsLedgerDisabled
+}
+
+// ReadModeLearningEnabled reports whether the optional adaptive (Beta-posterior)
+// escalation of the Phase-3 auto-mode bounce tracker is enabled. The bounce
+// tracker itself is always active for `auto` reads (deterministic); this flag
+// only turns on the extra learning escalation. Off by default.
+func (c *Config) ReadModeLearningEnabled() bool {
+	if c == nil {
+		return false
+	}
+	return c.TokenOptimization.ReadModeLearning
 }
 
 // PonytailConfig configures the "lazy senior developer" ponytail mode.

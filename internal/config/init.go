@@ -372,17 +372,27 @@ SearchLimit = 8
 # Internal Tools
 # =============================================================================
 [InternalTools]
-FetchEnabled = true
-FetchMaxSizeMB = 10
-GoogleSearchEnabled = true
-BraveSearchEnabled = true
+FetchEnabled            = true
+FetchMaxSizeMB          = 10
+GoogleSearchEnabled     = true
+GoogleAPIKey            = ''
+GoogleSearchEngineID    = ''
+BraveSearchEnabled      = true
+BraveAPIKey             = ''
 PerplexitySearchEnabled = true
-Context7Enabled = true
-BrowserEnabled = true
-BrowserType = 'chrome'
-BrowserHeadless = true
-BrowserTimeout = 30
-BrowserMaxSessions = 3
+PerplexityAPIKey        = ''
+ExaSearchEnabled        = false
+ExaAPIKey               = ''
+SourcegraphEnabled      = false
+SourcegraphToken        = ''
+Context7Enabled         = true
+BrowserEnabled          = true
+BrowserType             = 'chrome'
+BrowserExecutable       = ''
+BrowserHeadless         = true
+BrowserTimeout          = 30
+BrowserUserDataDir      = ''
+BrowserMaxSessions      = 3
 
 # =============================================================================
 # Self-Improvement Evaluator
@@ -449,32 +459,6 @@ FavoriteThreshold  = 3
 MaxFavorites       = 10
 FavoriteWindowDays = 7
 DecayDays          = 30
-
-# =============================================================================
-# Internal Tools
-# =============================================================================
-[InternalTools]
-FetchEnabled            = true
-FetchMaxSizeMB          = 0
-GoogleSearchEnabled     = false
-GoogleAPIKey            = ''
-GoogleSearchEngineID    = ''
-BraveSearchEnabled      = false
-BraveAPIKey             = ''
-PerplexitySearchEnabled = false
-PerplexityAPIKey        = ''
-ExaSearchEnabled        = false
-ExaAPIKey               = ''
-SourcegraphEnabled      = false
-SourcegraphToken        = ''
-Context7Enabled         = false
-BrowserEnabled          = false
-BrowserType             = 'chrome'
-BrowserExecutable       = ''
-BrowserHeadless         = false
-BrowserTimeout          = 30
-BrowserUserDataDir      = ''
-BrowserMaxSessions      = 3
 
 # =============================================================================
 # Snapshots

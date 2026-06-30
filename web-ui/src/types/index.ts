@@ -542,6 +542,25 @@ export interface TokenOptimizationConfig {
   outputFilterPaths?: string[]
 }
 
+// Aggregated token-savings ledger (Phase 5), matching savings.Report in Go.
+export interface SavingsSourceTotal {
+  source: string
+  events: number
+  baseline_tokens: number
+  actual_tokens: number
+  saved_tokens: number
+}
+
+export interface SavingsReport {
+  events: number
+  baseline_tokens: number
+  actual_tokens: number
+  saved_tokens: number
+  reduction_pct: number
+  by_source: SavingsSourceTotal[] | null
+  ledgerEnabled: boolean
+}
+
 export interface ContainerConfig {
   runtime: string
   image: string

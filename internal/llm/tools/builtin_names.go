@@ -12,19 +12,20 @@ import "strings"
 // excluded: the gateway handles them explicitly.
 var builtinToolNames = map[string]struct{}{
 	// Core file / edit / search / shell / todo / cache / diagnostics.
-	BashToolName:        {},
-	EditToolName:        {},
-	GlobToolName:        {},
-	GrepToolName:        {},
-	LSToolName:          {},
-	ViewToolName:        {},
-	WriteToolName:       {},
-	PatchToolName:       {},
-	TodoWriteToolName:   {},
-	CacheReadToolName:   {},
-	CacheStatsToolName:  {},
-	DiagnosticsToolName: {},
-	"tool_search":       {},
+	BashToolName:         {},
+	EditToolName:         {},
+	GlobToolName:         {},
+	GrepToolName:         {},
+	LSToolName:           {},
+	ViewToolName:         {},
+	WriteToolName:        {},
+	PatchToolName:        {},
+	TodoWriteToolName:    {},
+	CacheReadToolName:    {},
+	CacheStatsToolName:   {},
+	SavingsStatsToolName: {},
+	DiagnosticsToolName:  {},
+	"tool_search":        {},
 
 	// Memory tools.
 	rememberToolName: {},

@@ -14,7 +14,8 @@
     "reload": "再読み込み",
     "reloading": "読み込み中…",
     "estimatedTokens": "推定（エージェントの実行中にリアルタイムで更新）",
-    "toggleAutoApprove": "自動承認の切り替え（Shift+Tab）"
+    "toggleAutoApprove": "自動承認の切り替え（Shift+Tab）",
+    "refresh": "更新"
   },
   "nav": {
     "chat": "チャット",
@@ -160,7 +161,10 @@
       "relatedFilesHintDescription": "読み取りや検索結果に、トークン上限付きの関連ファイル一覧を付加します。",
       "savingsSection": "節約",
       "savingsLedger": "トークン節約台帳を記録",
-      "savingsLedgerDescription": "フィルタ、読み取りモード、重複排除が節約したトークン数を節約レポート用に記録します。"
+      "savingsLedgerDescription": "フィルタ、読み取りモード、重複排除が節約したトークン数を節約レポート用に記録します。",
+      "savingsWidgetTitle": "記録された削減量",
+      "savingsWidgetEmpty": "まだ削減は記録されていません。作業に応じてファイル読み取りやシェルコマンドが台帳に記録されます。",
+      "savingsWidgetSaved": "トークン削減（{{pct}}% 削減）"
     }
   },
   "chat": {

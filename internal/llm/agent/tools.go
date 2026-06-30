@@ -165,6 +165,7 @@ func CoderAgentTools(
 		tools.NewViewTool(lspProvider),
 		tools.NewCacheReadTool(),
 		tools.NewCacheStatsTool(),
+		tools.NewSavingsStatsTool(),
 		tools.NewPatchTool(lspProvider, permissions, history),
 		tools.NewWriteTool(lspProvider, permissions, history),
 		tools.NewTodoWriteTool(),

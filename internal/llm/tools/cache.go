@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/llm/tools/readmode"
 	"github.com/google/uuid"
 )
 
@@ -49,6 +50,10 @@ type CacheStats struct {
 	Evictions  int   `json:"evictions"`
 	// DedupHits counts unchanged-re-read collapses (Phase 2 F-references).
 	DedupHits int `json:"dedup_hits"`
+	// Bounces counts compressed→full read bounces observed by the Phase 3 tracker.
+	Bounces int `json:"bounces"`
+	// BounceWastedBytes is the rendered size of compressed reads that later bounced.
+	BounceWastedBytes int64 `json:"bounce_wasted_bytes"`
 }
 
 // ReadDedupStatus classifies a `view` re-read against what was already delivered
@@ -62,6 +67,10 @@ const (
 	ReadDedupUnchanged ReadDedupStatus = "unchanged"
 	// ReadDedupChanged means the same window was delivered before but its content changed.
 	ReadDedupChanged ReadDedupStatus = "changed"
+	// ReadDedupUpgraded means the content is unchanged but the caller now wants a
+	// higher fidelity than was previously delivered (e.g. a full read after an
+	// earlier signatures read); the read must proceed for real rather than collapse.
+	ReadDedupUpgraded ReadDedupStatus = "upgraded"
 )
 
 // ReadDedupResult is returned by RecordRead.
@@ -80,6 +89,10 @@ type readWindowRecord struct {
 	label   string
 	hash    string
 	content string
+	// mode is the fidelity actually delivered for this window ("full", "signatures"
+	// or "map"). A re-read only collapses to an "unchanged" stub when the delivered
+	// fidelity already covers what the caller now wants (see canCollapseFidelity).
+	mode string
 }
 
 // maxDedupContentBytes caps how much window content is retained per record for
@@ -100,6 +113,9 @@ type SessionCache struct {
 	readWindows map[string]*readWindowRecord
 	readLabels  int
 	dedupHits   int
+
+	// bounce is the Phase 3 adaptive auto-mode safety tracker.
+	bounce *readmode.BounceTracker
 }
 
 // NewSessionCache creates a new session-scoped cache.
@@ -110,7 +126,13 @@ func NewSessionCache(sessionID string) *SessionCache {
 		sessionID:   sessionID,
 		maxBytes:    DefaultCacheMaxBytes,
 		readWindows: make(map[string]*readWindowRecord),
+		bounce:      readmode.NewBounceTracker(),
 	}
+}
+
+// BounceTracker returns the session's Phase 3 auto-mode bounce tracker.
+func (c *SessionCache) BounceTracker() *readmode.BounceTracker {
+	return c.bounce
 }
 
 // Store saves content in the cache and returns a unique cacheID.
@@ -269,13 +291,19 @@ func (c *SessionCache) SearchInCache(cacheID, pattern string, contextLines, limi
 	return content, meta, nil
 }
 
-// RecordRead classifies and records a `view` read of a (path, window). It returns
-// whether the window is new, unchanged (identical content already delivered) or
-// changed since the last delivery, plus the stable F-reference label for the
-// window. For an unchanged read the stored record is preserved (and DedupHits is
-// incremented); for a changed read the previous content is returned for diffing
-// and the record is updated; for a new window a fresh label is assigned.
-func (c *SessionCache) RecordRead(path string, startLine, endLine int, content string) ReadDedupResult {
+// RecordRead classifies and records a `view` read of a (path, window) at a given
+// delivered fidelity (deliveredMode: "full", "signatures" or "map"). It returns
+// whether the window is new, unchanged, changed, or upgraded since the last
+// delivery, plus the stable F-reference label for the window:
+//   - new: never delivered before — a fresh label is assigned.
+//   - unchanged: identical content AND the prior fidelity already covers what is
+//     now wanted — the caller may collapse to a stub (DedupHits incremented).
+//   - upgraded: identical content but the caller now wants higher fidelity than
+//     was delivered (e.g. full after signatures) — the read must proceed; the
+//     recorded fidelity is bumped and no stub is emitted.
+//   - changed: same window but the content differs — previous content is returned
+//     for diffing and the record is updated.
+func (c *SessionCache) RecordRead(path string, startLine, endLine int, content, deliveredMode string) ReadDedupResult {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -285,6 +313,7 @@ func (c *SessionCache) RecordRead(path string, startLine, endLine int, content s
 
 	key := fmt.Sprintf("%s\x00%d-%d", path, startLine, endLine)
 	hash := hashContent(content)
+	mode := normalizeDeliveredMode(deliveredMode)
 
 	rec, ok := c.readWindows[key]
 	if !ok {
@@ -294,19 +323,51 @@ func (c *SessionCache) RecordRead(path string, startLine, endLine int, content s
 			label:   label,
 			hash:    hash,
 			content: capContent(content),
+			mode:    mode,
 		}
 		return ReadDedupResult{Status: ReadDedupNew, Label: label}
 	}
 
-	if rec.hash == hash {
+	if rec.hash != hash {
+		prev := rec.content
+		rec.hash = hash
+		rec.content = capContent(content)
+		rec.mode = mode
+		return ReadDedupResult{Status: ReadDedupChanged, Label: rec.label, PrevContent: prev}
+	}
+
+	// Identical content. Only collapse to a stub when the previously delivered
+	// fidelity already covers what the caller now wants; otherwise the read must
+	// proceed at the higher fidelity.
+	if canCollapseFidelity(rec.mode, mode) {
 		c.dedupHits++
 		return ReadDedupResult{Status: ReadDedupUnchanged, Label: rec.label}
 	}
+	rec.mode = mode
+	return ReadDedupResult{Status: ReadDedupUpgraded, Label: rec.label}
+}
 
-	prev := rec.content
-	rec.hash = hash
-	rec.content = capContent(content)
-	return ReadDedupResult{Status: ReadDedupChanged, Label: rec.label, PrevContent: prev}
+// normalizeDeliveredMode maps an arbitrary mode string to the fidelity tiers the
+// dedup tracker reasons about, defaulting to full.
+func normalizeDeliveredMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "signatures":
+		return "signatures"
+	case "map":
+		return "map"
+	default:
+		return "full"
+	}
+}
+
+// canCollapseFidelity reports whether a window previously delivered at `prev`
+// fidelity can satisfy a re-read now wanting `now` fidelity. A full prior delivery
+// covers everything; otherwise only an identical projection collapses.
+func canCollapseFidelity(prev, now string) bool {
+	if prev == "full" {
+		return true
+	}
+	return prev == now
 }
 
 // hashContent returns a hex SHA-256 of the content.
@@ -346,6 +407,7 @@ func (c *SessionCache) Clear() {
 	c.readWindows = make(map[string]*readWindowRecord)
 	c.readLabels = 0
 	c.dedupHits = 0
+	c.bounce.Reset()
 }
 
 // Stats returns current cache statistics.
@@ -353,12 +415,15 @@ func (c *SessionCache) Stats() CacheStats {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	bs := c.bounce.Stats()
 	return CacheStats{
-		EntryCount: len(c.entries),
-		TotalBytes: c.currentSize,
-		MaxBytes:   c.maxBytes,
-		Evictions:  c.evictions,
-		DedupHits:  c.dedupHits,
+		EntryCount:        len(c.entries),
+		TotalBytes:        c.currentSize,
+		MaxBytes:          c.maxBytes,
+		Evictions:         c.evictions,
+		DedupHits:         c.dedupHits,
+		Bounces:           bs.Bounces,
+		BounceWastedBytes: bs.WastedBytes,
 	}
 }
 

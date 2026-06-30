@@ -56,6 +56,7 @@ import (
 	rag "github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/rag/kb"
 	ragproxy "github.com/digiogithub/pando/internal/rag/proxy"
+	"github.com/digiogithub/pando/internal/savings"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
 	"github.com/digiogithub/pando/internal/tui/styles"
@@ -2170,6 +2171,9 @@ func (app *App) Shutdown() {
 			cancel()
 		}
 	}
+
+	// Flush the token-savings ledger background writer.
+	savings.Close()
 
 	// Close all browser sessions
 	tools.CloseAllBrowserSessions()

@@ -1,8 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useTokenOptimizationStore } from '@/stores/settingsStore'
 import { SelectInput, Toggle } from '@/components/shared/FormInput'
 import TagListEditor from '@/components/shared/TagListEditor'
+import api from '@/services/api'
+import type { SavingsReport } from '@/types'
 
 const sectionTitle: React.CSSProperties = {
   fontSize: 18,
@@ -164,6 +166,7 @@ export default function TokenOptimizationSettings() {
           onChange={(v) => updateField('savingsLedgerDisabled', !v)}
         />
       </div>
+      <SavingsWidget />
 
       <div style={dividerStyle} />
 
@@ -220,6 +223,98 @@ export default function TokenOptimizationSettings() {
           {t('common.reset')}
         </button>
       </div>
+    </div>
+  )
+}
+
+// SavingsWidget shows a compact, read-only summary of the token-savings ledger
+// (Phase 5) — total tokens saved, % reduction and a per-source breakdown.
+function SavingsWidget() {
+  const { t } = useTranslation()
+  const [report, setReport] = useState<SavingsReport | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const load = () => {
+    setLoading(true)
+    api
+      .get<SavingsReport>('/api/v1/savings')
+      .then((r) => setReport(r))
+      .catch(() => setReport(null))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  const numberFmt = (n: number) => n.toLocaleString()
+
+  return (
+    <div
+      style={{
+        marginTop: '0.75rem',
+        padding: '0.875rem 1rem',
+        background: 'var(--sidebar-bg)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-sm)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--fg)' }}>
+          {t('settings.tokenOptimization.savingsWidgetTitle')}
+        </span>
+        <button
+          onClick={load}
+          disabled={loading}
+          style={{
+            padding: '0.25rem 0.75rem',
+            background: 'transparent',
+            color: 'var(--fg-muted)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 12,
+            cursor: loading ? 'not-allowed' : 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          {t('common.refresh')}
+        </button>
+      </div>
+
+      {loading && (
+        <p style={{ fontSize: 13, color: 'var(--fg-muted)', margin: 0 }}>
+          {t('settings.tokenOptimization.loading')}
+        </p>
+      )}
+
+      {!loading && (!report || report.events === 0) && (
+        <p style={{ fontSize: 13, color: 'var(--fg-muted)', margin: 0 }}>
+          {t('settings.tokenOptimization.savingsWidgetEmpty')}
+        </p>
+      )}
+
+      {!loading && report && report.events > 0 && (
+        <div>
+          <p style={{ fontSize: 13, color: 'var(--fg)', margin: '0 0 0.5rem' }}>
+            <strong>{numberFmt(report.saved_tokens)}</strong>{' '}
+            {t('settings.tokenOptimization.savingsWidgetSaved', {
+              pct: report.reduction_pct.toFixed(1),
+            })}
+          </p>
+          <table style={{ width: '100%', fontSize: 12, color: 'var(--fg-muted)', borderCollapse: 'collapse' }}>
+            <tbody>
+              {(report.by_source ?? []).map((s) => (
+                <tr key={s.source}>
+                  <td style={{ padding: '0.15rem 0', textTransform: 'capitalize' }}>{s.source}</td>
+                  <td style={{ padding: '0.15rem 0', textAlign: 'right' }}>
+                    {numberFmt(s.saved_tokens)} ({s.events})
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

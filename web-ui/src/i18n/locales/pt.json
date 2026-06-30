@@ -14,7 +14,8 @@
     "reload": "Recarregar",
     "reloading": "Recarregando…",
     "estimatedTokens": "Estimado (atualiza em tempo real enquanto o agente roda)",
-    "toggleAutoApprove": "Alternar auto-aprovação (Shift+Tab)"
+    "toggleAutoApprove": "Alternar auto-aprovação (Shift+Tab)",
+    "refresh": "Atualizar"
   },
   "nav": {
     "chat": "Chat",
@@ -160,7 +161,10 @@
       "relatedFilesHintDescription": "Acrescenta uma lista limitada em tokens de ficheiros relacionados às leituras e resultados de pesquisa.",
       "savingsSection": "Poupança",
       "savingsLedger": "Registar o livro de poupança de tokens",
-      "savingsLedgerDescription": "Mede quantos tokens o filtro, os modos de leitura e a deduplicação pouparam, para o relatório de poupança."
+      "savingsLedgerDescription": "Mede quantos tokens o filtro, os modos de leitura e a deduplicação pouparam, para o relatório de poupança.",
+      "savingsWidgetTitle": "Economias registradas",
+      "savingsWidgetEmpty": "Nenhuma economia registrada ainda. Leituras e comandos de shell preenchem o registro conforme você trabalha.",
+      "savingsWidgetSaved": "tokens economizados ({{pct}}% de redução)"
     }
   },
   "chat": {

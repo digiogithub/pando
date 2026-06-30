@@ -14,7 +14,8 @@
     "reload": "Recharger",
     "reloading": "Rechargement…",
     "estimatedTokens": "Estimé (mis à jour en direct pendant l’exécution de l’agent)",
-    "toggleAutoApprove": "Basculer l’auto-approbation (Shift+Tab)"
+    "toggleAutoApprove": "Basculer l’auto-approbation (Shift+Tab)",
+    "refresh": "Actualiser"
   },
   "nav": {
     "chat": "Chat",
@@ -160,7 +161,10 @@
       "relatedFilesHintDescription": "Ajoute une liste bornée en tokens de fichiers liés aux lectures et aux résultats de recherche.",
       "savingsSection": "Économies",
       "savingsLedger": "Enregistrer le journal d'économies de tokens",
-      "savingsLedgerDescription": "Suit le nombre de tokens économisés par le filtre, les modes de lecture et la déduplication, pour le rapport d'économies."
+      "savingsLedgerDescription": "Suit le nombre de tokens économisés par le filtre, les modes de lecture et la déduplication, pour le rapport d'économies.",
+      "savingsWidgetTitle": "Économies enregistrées",
+      "savingsWidgetEmpty": "Aucune économie enregistrée pour l'instant. Les lectures et les commandes shell alimentent le journal au fil du travail.",
+      "savingsWidgetSaved": "tokens économisés ({{pct}} % de réduction)"
     }
   },
   "chat": {

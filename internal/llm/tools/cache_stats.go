@@ -90,7 +90,9 @@ func (c *cacheStatsTool) Run(ctx context.Context, call ToolCall) (ToolResponse, 
 	sb.WriteString(fmt.Sprintf("- Memory used: %s / %s\n",
 		formatBytes(stats.TotalBytes), formatBytes(stats.MaxBytes)))
 	sb.WriteString(fmt.Sprintf("- Evictions: %d\n", stats.Evictions))
-	sb.WriteString(fmt.Sprintf("- Unchanged re-read dedup hits: %d\n\n", stats.DedupHits))
+	sb.WriteString(fmt.Sprintf("- Unchanged re-read dedup hits: %d\n", stats.DedupHits))
+	sb.WriteString(fmt.Sprintf("- Auto-mode bounces (compressed→full): %d (wasted %s)\n\n",
+		stats.Bounces, formatBytes(stats.BounceWastedBytes)))
 
 	if len(entries) == 0 {
 		sb.WriteString("No cached entries.\n")

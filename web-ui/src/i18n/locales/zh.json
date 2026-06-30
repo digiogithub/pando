@@ -14,7 +14,8 @@
     "reload": "重新加载",
     "reloading": "加载中…",
     "estimatedTokens": "估算值（代理运行时实时更新）",
-    "toggleAutoApprove": "切换自动批准（Shift+Tab）"
+    "toggleAutoApprove": "切换自动批准（Shift+Tab）",
+    "refresh": "刷新"
   },
   "nav": {
     "chat": "聊天",
@@ -160,7 +161,10 @@
       "relatedFilesHintDescription": "在读取和搜索结果中附加受 token 限制的相关文件列表。",
       "savingsSection": "节省",
       "savingsLedger": "记录 token 节省台账",
-      "savingsLedgerDescription": "统计过滤器、读取模式和去重节省的 token 数量，用于节省报告。"
+      "savingsLedgerDescription": "统计过滤器、读取模式和去重节省的 token 数量，用于节省报告。",
+      "savingsWidgetTitle": "已记录的节省",
+      "savingsWidgetEmpty": "尚未记录任何节省。随着你的操作，文件读取和 shell 命令会填充该账本。",
+      "savingsWidgetSaved": "个令牌已节省（减少 {{pct}}%）"
     }
   },
   "chat": {

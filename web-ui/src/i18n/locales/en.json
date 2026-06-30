@@ -14,7 +14,8 @@
     "reload": "Reload",
     "reloading": "Reloading…",
     "estimatedTokens": "Estimated (updates live while the agent runs)",
-    "toggleAutoApprove": "Toggle auto-approve (Shift+Tab)"
+    "toggleAutoApprove": "Toggle auto-approve (Shift+Tab)",
+    "refresh": "Refresh"
   },
   "nav": {
     "chat": "Chat",
@@ -160,7 +161,10 @@
       "relatedFilesHintDescription": "Append a token-bounded list of related files to reads and search results.",
       "savingsSection": "Savings",
       "savingsLedger": "Record token-savings ledger",
-      "savingsLedgerDescription": "Track how many tokens the filter, read modes and dedup saved, for the savings report."
+      "savingsLedgerDescription": "Track how many tokens the filter, read modes and dedup saved, for the savings report.",
+      "savingsWidgetTitle": "Recorded savings",
+      "savingsWidgetEmpty": "No savings recorded yet. Reads and shell commands populate the ledger as you work.",
+      "savingsWidgetSaved": "tokens saved ({{pct}}% reduction)"
     }
   },
   "chat": {

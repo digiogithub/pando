@@ -3,10 +3,13 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/savings"
 )
 
 // maskAPIKey returns a masked version of the API key showing only the last 4 characters.
@@ -727,6 +730,35 @@ func (s *Server) handleConfigTokenOptimization(w http.ResponseWriter, r *http.Re
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+// handleSavings reports the aggregated token-savings ledger (Phase 5). Read-only.
+// Optional ?days=N restricts the window to the last N days.
+func (s *Server) handleSavings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	cfg := config.Get()
+	if cfg == nil || cfg.Data.Directory == "" {
+		writeError(w, http.StatusInternalServerError, "configuration not loaded")
+		return
+	}
+	opts := savings.SummaryOptions{}
+	if d := strings.TrimSpace(r.URL.Query().Get("days")); d != "" {
+		if n, err := strconv.Atoi(d); err == nil && n > 0 {
+			opts.Since = time.Now().AddDate(0, 0, -n)
+		}
+	}
+	rep, err := savings.Summarize(cfg.Data.Directory, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read savings ledger: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		savings.Report
+		LedgerEnabled bool `json:"ledgerEnabled"`
+	}{Report: rep, LedgerEnabled: cfg.SavingsLedgerEnabled()})
 }
 
 // --- Extensions ---
