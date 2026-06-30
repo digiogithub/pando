@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/digiogithub/pando/internal/agentsmd"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
@@ -65,6 +66,8 @@ func (a *PandoACPAgent) handleSlashCommand(
 		return a.processDBCompactCommand(ctx, acpSession)
 	case slashCommandPonytail:
 		return a.processPonytailCommand(acpSession, command.Objective)
+	case slashCommandImproveAgentsMd:
+		return a.processImproveAgentsMdCommand(ctx, acpSession, command.Objective)
 	default:
 		return acpsdk.StopReasonEndTurn, nil
 	}
@@ -144,6 +147,17 @@ func (a *PandoACPAgent) processGoalPrompt(
 		}
 	}
 	return stopReason, nil
+}
+
+// processImproveAgentsMdCommand runs a normal agent turn whose task is to create
+// or reinforce the project's AGENTS.md with the canonical MANDATORY operating
+// rules. It expands the slash command into a full instruction prompt and streams
+// the resulting agent turn back to the client.
+func (a *PandoACPAgent) processImproveAgentsMdCommand(ctx context.Context, acpSession *ACPServerSession, extra string) (acpsdk.StopReason, error) {
+	if err := a.sendAgentText(acpSession, "Improving AGENTS.md..."); err != nil {
+		return "", err
+	}
+	return a.processPromptWithAgent(ctx, acpSession, agentsmd.Prompt(extra))
 }
 
 func (a *PandoACPAgent) processSummarizeCommand(ctx context.Context, acpSession *ACPServerSession) (acpsdk.StopReason, error) {

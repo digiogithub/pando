@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/digiogithub/pando/internal/agentsmd"
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/completions"
 	"github.com/digiogithub/pando/internal/config"
@@ -847,6 +848,12 @@ func (p *ChatPageModel) sendMessage(text string, attachments []message.Attachmen
 	if cmd, ok := p.handlePonytailCommand(text); ok {
 		return cmd
 	}
+	// /improve-agents-md expands into a full instruction prompt that is then run
+	// as a normal agent turn (so it streams, steers, and persists like any other
+	// message). Replace the text and fall through to the normal Run/Steer flow.
+	if expanded, ok := expandImproveAgentsMdCommand(text); ok {
+		text = expanded
+	}
 
 	// If a run is already active for this session, route the message as steering
 	// feedback: it is queued and injected into the agent loop at the next safe
@@ -1301,6 +1308,19 @@ func (p *ChatPageModel) handlePonytailCommand(input string) (tea.Cmd, bool) {
 		return util.ReportInfo("Ponytail mode: " + mode.String() + ". " + ponytail.Description(mode)), true
 	}
 	return util.ReportInfo("Ponytail mode disabled. Back to normal."), true
+}
+
+// expandImproveAgentsMdCommand recognizes the /improve-agents-md slash command
+// and returns the full instruction prompt the agent should run. The boolean is
+// true when the input was the command (with or without extra guidance), in which
+// case the caller substitutes the returned prompt for the raw command text.
+func expandImproveAgentsMdCommand(input string) (string, bool) {
+	line := strings.TrimSpace(input)
+	if line != "/improve-agents-md" && !strings.HasPrefix(line, "/improve-agents-md ") {
+		return "", false
+	}
+	extra := strings.TrimSpace(strings.TrimPrefix(line, "/improve-agents-md"))
+	return agentsmd.Prompt(extra), true
 }
 
 func (p *ChatPageModel) handleCompactCommand(input string) (tea.Cmd, bool) {

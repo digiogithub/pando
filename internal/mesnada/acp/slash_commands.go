@@ -10,12 +10,13 @@ import (
 type slashCommandKind string
 
 const (
-	slashCommandGoal       slashCommandKind = "goal"
-	slashCommandGoalStatus slashCommandKind = "goal-status"
-	slashCommandGoalCancel slashCommandKind = "goal-cancel"
-	slashCommandSummarize  slashCommandKind = "summarize"
-	slashCommandDBCompact  slashCommandKind = "db-compact"
-	slashCommandPonytail   slashCommandKind = "ponytail"
+	slashCommandGoal            slashCommandKind = "goal"
+	slashCommandGoalStatus      slashCommandKind = "goal-status"
+	slashCommandGoalCancel      slashCommandKind = "goal-cancel"
+	slashCommandSummarize       slashCommandKind = "summarize"
+	slashCommandDBCompact       slashCommandKind = "db-compact"
+	slashCommandPonytail        slashCommandKind = "ponytail"
+	slashCommandImproveAgentsMd slashCommandKind = "improve-agents-md"
 )
 
 type slashCommand struct {
@@ -69,6 +70,12 @@ func slashCommandSpecs() []slashCommandSpec {
 			Description: "Toggle lazy-senior-dev (ponytail) mode at a chosen intensity",
 			InputHint:   "lite | full | ultra | off",
 			Usage:       "Usage: /ponytail [lite|full|ultra|off]\nNo argument defaults to full. Use /ponytail off to disable.",
+		},
+		{
+			Token:       improveAgentsMdCommandToken,
+			Kind:        slashCommandImproveAgentsMd,
+			Description: "Create or reinforce AGENTS.md with the mandatory AI-agent operating rules",
+			InputHint:   "optional extra guidance",
 		},
 	}
 }

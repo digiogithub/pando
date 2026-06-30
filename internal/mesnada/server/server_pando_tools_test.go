@@ -113,6 +113,35 @@ func TestHandleToolsCallSupportsCacheReadAcrossSession(t *testing.T) {
 	require.Contains(t, page, "201|")
 }
 
+func TestHandleRequestNotificationsGetNoResponse(t *testing.T) {
+	srv := New(Config{UseStdio: true})
+	session := srv.getOrCreateSession("notif-sess")
+
+	// A notification carries no "id" and must never receive a response, even
+	// for the (previously mismatched) initialized notification. Strict MCP
+	// clients abort the handshake if the server replies to it.
+	for _, method := range []string{"notifications/initialized", "notifications/cancelled", "notifications/unknown"} {
+		req := &JSONRPCRequest{JSONRPC: "2.0", Method: method}
+		resp := srv.handleRequest(context.Background(), session, req)
+		require.Nil(t, resp, "notification %q must not produce a response", method)
+	}
+
+	// A request (with an id) for an unknown method still gets a Method-not-found error.
+	req := &JSONRPCRequest{JSONRPC: "2.0", ID: 7, Method: "does/not/exist"}
+	resp := srv.handleRequest(context.Background(), session, req)
+	require.NotNil(t, resp)
+	require.NotNil(t, resp.Error)
+	require.Equal(t, -32601, resp.Error.Code)
+}
+
+func TestNegotiateProtocolVersion(t *testing.T) {
+	require.Equal(t, "2025-06-18", negotiateProtocolVersion(mustJSON(t, map[string]any{"protocolVersion": "2025-06-18"})))
+	require.Equal(t, "2025-03-26", negotiateProtocolVersion(mustJSON(t, map[string]any{"protocolVersion": "2025-03-26"})))
+	// Unknown/blank requested versions fall back to the server default.
+	require.Equal(t, mcpVersion, negotiateProtocolVersion(mustJSON(t, map[string]any{"protocolVersion": "1999-01-01"})))
+	require.Equal(t, mcpVersion, negotiateProtocolVersion(nil))
+}
+
 func mustJSON(t *testing.T, value any) json.RawMessage {
 	t.Helper()
 	data, err := json.Marshal(value)

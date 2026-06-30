@@ -214,6 +214,10 @@ func (s *Server) runStdio() error {
 		}
 
 		response := s.handleRequest(context.Background(), session, &req)
+		if response == nil {
+			// Notification: JSON-RPC mandates no reply on the wire.
+			continue
+		}
 		if err := encoder.Encode(response); err != nil {
 			log.Printf("Error encoding response: %v", err)
 			return err
@@ -306,9 +310,16 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Mcp-Session-Id", sessionID)
-	w.Header().Set("Content-Type", "application/json")
 
 	response := s.handleRequest(r.Context(), session, &req)
+	if response == nil {
+		// Notification (e.g. notifications/initialized): acknowledge with a
+		// bare 202 and no JSON-RPC body, as the Streamable HTTP spec requires.
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(response)
 }
 
@@ -353,11 +364,20 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRequest(ctx context.Context, session *Session, req *JSONRPCRequest) *JSONRPCResponse {
+	// JSON-RPC 2.0 notifications carry no "id" and MUST never receive a
+	// response. MCP clients send e.g. "notifications/initialized" right after
+	// the initialize handshake; replying to it (even with an error) is a
+	// protocol violation that strict clients treat as a fatal handshake
+	// failure. Handle them as side-effect-only and return nil so callers emit
+	// nothing (stdio) or a bare 202 Accepted (HTTP).
+	if req.ID == nil {
+		s.handleNotification(req)
+		return nil
+	}
+
 	switch req.Method {
 	case "initialize":
 		return s.handleInitialize(req)
-	case "initialized":
-		return s.handleInitialized(req)
 	case "tools/list":
 		return s.handleToolsList(req)
 	case "tools/call":
@@ -376,6 +396,22 @@ func (s *Server) handleRequest(ctx context.Context, session *Session, req *JSONR
 	}
 }
 
+// handleNotification processes a JSON-RPC notification (a request without an
+// "id"). Notifications never produce a response; unknown ones are ignored
+// silently as required by the MCP/JSON-RPC specs.
+func (s *Server) handleNotification(req *JSONRPCRequest) {
+	switch req.Method {
+	case "notifications/initialized", "initialized":
+		// Client finished initialization. Nothing to do for the stateless
+		// tool server, but the notification must be accepted without a reply.
+	case "notifications/cancelled":
+		// Best-effort cancellation signal; the tool server has no long-lived
+		// in-flight request bookkeeping to act on, so this is a no-op.
+	default:
+		// Ignore any other notification silently.
+	}
+}
+
 func (s *Server) handleInitialize(req *JSONRPCRequest) *JSONRPCResponse {
 	version := s.version
 	if version == "" {
@@ -386,7 +422,7 @@ func (s *Server) handleInitialize(req *JSONRPCRequest) *JSONRPCResponse {
 		JSONRPC: jsonRPCVersion,
 		ID:      req.ID,
 		Result: map[string]interface{}{
-			"protocolVersion": mcpVersion,
+			"protocolVersion": negotiateProtocolVersion(req.Params),
 			"serverInfo": map[string]string{
 				"name":    "pando",
 				"version": version,
@@ -398,12 +434,30 @@ func (s *Server) handleInitialize(req *JSONRPCRequest) *JSONRPCResponse {
 	}
 }
 
-func (s *Server) handleInitialized(req *JSONRPCRequest) *JSONRPCResponse {
-	return &JSONRPCResponse{
-		JSONRPC: jsonRPCVersion,
-		ID:      req.ID,
-		Result:  map[string]interface{}{},
+// supportedProtocolVersions lists the MCP protocol revisions this server can
+// speak. Per the MCP spec the server must echo the client's requested version
+// when it supports it, otherwise fall back to a version it does support.
+var supportedProtocolVersions = map[string]bool{
+	"2024-11-05": true,
+	"2025-03-26": true,
+	"2025-06-18": true,
+}
+
+// negotiateProtocolVersion echoes the client's requested protocolVersion when
+// supported, falling back to the server default (mcpVersion) otherwise. Strict
+// clients (e.g. Antigravity) reject a handshake whose negotiated version does
+// not match a version they support, so blindly returning a fixed version can
+// break newer clients.
+func negotiateProtocolVersion(raw json.RawMessage) string {
+	if len(raw) > 0 {
+		var p struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		if err := json.Unmarshal(raw, &p); err == nil && supportedProtocolVersions[p.ProtocolVersion] {
+			return p.ProtocolVersion
+		}
 	}
+	return mcpVersion
 }
 
 func (s *Server) handlePing(req *JSONRPCRequest) *JSONRPCResponse {

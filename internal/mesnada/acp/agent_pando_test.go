@@ -2699,8 +2699,8 @@ func thoughtUpdateTexts(t *testing.T, raw string) []string {
 
 func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 	commands := availableCommands()
-	if len(commands) != 8 {
-		t.Fatalf("expected 8 available commands, got %d", len(commands))
+	if len(commands) != 9 {
+		t.Fatalf("expected 9 available commands, got %d", len(commands))
 	}
 
 	got := map[string]acpsdk.AvailableCommand{}
@@ -2711,13 +2711,13 @@ func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, ponytailCommandToken} {
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, ponytailCommandToken, improveAgentsMdCommandToken} {
 		if _, ok := got[name]; !ok {
 			t.Fatalf("expected available command %q to be exposed", name)
 		}
 	}
 
-	for _, name := range []string{goalCommandToken, autopilotCommandToken, ponytailCommandToken} {
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, ponytailCommandToken, improveAgentsMdCommandToken} {
 		cmd := got[name]
 		if cmd.Input == nil || cmd.Input.Unstructured == nil || strings.TrimSpace(cmd.Input.Unstructured.Hint) == "" {
 			t.Fatalf("expected available command %q to include an unstructured input hint, got %#v", name, cmd.Input)

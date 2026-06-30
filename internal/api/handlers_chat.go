@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/agentsmd"
 	"github.com/digiogithub/pando/internal/commands"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
@@ -834,6 +835,19 @@ func (s *Server) handleSlashCommandStream(w http.ResponseWriter, flusher http.Fl
 				writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Ponytail mode disabled. Back to normal."})
 			}
 		}
+	case "improve-agents-md":
+		writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Improving AGENTS.md..."})
+		agentSvc := s.app.CoderAgent
+		submitErr := s.bgRunner.Submit(sessionID, func(bgCtx context.Context) (<-chan agent.AgentEvent, error) {
+			return agentSvc.Run(bgCtx, sessionID, agentsmd.Prompt(cmdArgs))
+		})
+		if submitErr != nil {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": submitErr.Error()})
+			return
+		}
+		eventChan, unsubFn, _ := s.bgRunner.Subscribe(sessionID)
+		s.streamSessionEvents(w, flusher, ctx, sessionID, unsubFn, eventChan)
+		return
 	case "goal", "autopilot":
 		if strings.TrimSpace(cmdArgs) == "" {
 			// No objective: show status
