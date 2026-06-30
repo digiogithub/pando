@@ -19,15 +19,30 @@ func TestCanonicalTemplateEmbedded(t *testing.T) {
 	}
 }
 
-func TestPromptIncludesCanonicalBlockAndSteps(t *testing.T) {
+func TestPromptDescribesEvaluativeMerge(t *testing.T) {
 	p := Prompt("")
-	if !strings.Contains(p, BeginMarker) || !strings.Contains(p, EndMarker) {
-		t.Error("Prompt should embed the canonical block with its markers")
-	}
-	for _, want := range []string{"CONTEXT FIRST", "create vs reinforce", "DOCUMENT", "kb_search_documents"} {
+	// The prompt must instruct an evaluative, clause-by-clause merge rather than a
+	// verbatim paste, and must carry the canonical clauses as a reference.
+	for _, want := range []string{
+		"CONTEXT FIRST", "EVALUATE CLAUSE BY CLAUSE", "MERGE, DON'T REPLACE",
+		"do NOT paste", "MANDATORY", "kb_search_documents", "kb_add_document",
+	} {
 		if !strings.Contains(p, want) {
 			t.Errorf("Prompt missing expected guidance %q", want)
 		}
+	}
+}
+
+func TestPromptStripsSentinelMarkers(t *testing.T) {
+	p := Prompt("")
+	// The canonical clauses are shown as a checklist; the raw sentinel markers must
+	// not leak into the prompt so the agent never copies them into a target file.
+	if strings.Contains(p, BeginMarker) || strings.Contains(p, EndMarker) {
+		t.Error("Prompt must not contain the raw sentinel markers")
+	}
+	// But the substantive clause content must be present.
+	if !strings.Contains(p, "gather context BEFORE starting any task") {
+		t.Error("Prompt should include the canonical clause content")
 	}
 }
 
