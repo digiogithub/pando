@@ -108,6 +108,24 @@ func setupIndexerTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("create code_symbols_fts: %v", err)
 	}
 
+	if _, err := db.Exec(`
+		CREATE TABLE code_edges (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id TEXT NOT NULL REFERENCES code_projects(project_id) ON DELETE CASCADE,
+			file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE,
+			edge_type TEXT NOT NULL,
+			src_file TEXT NOT NULL DEFAULT '',
+			src_symbol TEXT NOT NULL DEFAULT '',
+			dst_name TEXT NOT NULL DEFAULT '',
+			dst_path TEXT NOT NULL DEFAULT '',
+			start_line INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME
+		);
+	`); err != nil {
+		db.Close()
+		t.Fatalf("create code_edges: %v", err)
+	}
+
 	return db
 }
 

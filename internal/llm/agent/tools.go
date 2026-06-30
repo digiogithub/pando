@@ -306,6 +306,8 @@ func CoderAgentToolsWithMesnada(
 			tools.NewCodeReindexFileTool(remembrances.Code),
 			tools.NewCodeListProjectsTool(remembrances.Code),
 			tools.NewCodeSearchPatternTool(remembrances.Code),
+			tools.NewCodeImpactAnalysisTool(remembrances.Code),
+			tools.NewCodeRelatedFilesTool(remembrances.Code),
 		)
 		if cfg := config.Get(); cfg != nil && cfg.Remembrances.MemoryEnabled {
 			baseTools = append(baseTools,

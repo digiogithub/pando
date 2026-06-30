@@ -73,6 +73,10 @@ type CodeIndexer struct {
 	walker   *treesitter.ASTWalker
 	workers  int
 
+	// graphEnabled toggles code property-graph edge extraction (lean-ctx Phase 4).
+	// Defaults to true; the app sets it from TokenOptimization.BuildCodeGraph.
+	graphEnabled bool
+
 	// Active indexing jobs
 	jobsMu sync.RWMutex
 	jobs   map[string]*IndexingJob
@@ -85,13 +89,26 @@ func NewCodeIndexer(db *sql.DB, embedder embeddings.Embedder, workers int) *Code
 		workers = defaultWorkers
 	}
 	return &CodeIndexer{
-		db:       db,
-		embedder: embedder,
-		parser:   treesitter.NewParser(),
-		walker:   treesitter.NewASTWalker(treesitter.DefaultWalkerConfig()),
-		workers:  workers,
-		jobs:     make(map[string]*IndexingJob),
+		db:           db,
+		embedder:     embedder,
+		parser:       treesitter.NewParser(),
+		walker:       treesitter.NewASTWalker(treesitter.DefaultWalkerConfig()),
+		workers:      workers,
+		graphEnabled: true,
+		jobs:         make(map[string]*IndexingJob),
 	}
+}
+
+// SetGraphEnabled toggles code property-graph edge extraction during indexing
+// (lean-ctx Phase 4). When false, no `code_edges` rows are written, leaving the
+// impact/related tools to operate on whatever edges already exist.
+func (c *CodeIndexer) SetGraphEnabled(enabled bool) {
+	c.graphEnabled = enabled
+}
+
+// GraphEnabled reports whether property-graph edge extraction is active.
+func (c *CodeIndexer) GraphEnabled() bool {
+	return c.graphEnabled
 }
 
 // SetWriteProxy configures a DB proxy for mutating operations.
@@ -392,6 +409,15 @@ func (c *CodeIndexer) indexFile(ctx context.Context, projectID, rootPath, filePa
 		return fmt.Errorf("code: extract symbols %s: %w", relPath, err)
 	}
 
+	// Extract code property-graph edges (Phase 4). Best-effort: a failure here
+	// never blocks symbol indexing.
+	var edges []*treesitter.CodeEdge
+	if c.graphEnabled {
+		if ex, eerr := c.walker.ExtractEdges(tree, content, lang, relPath, projectID, symbols); eerr == nil {
+			edges = ex
+		}
+	}
+
 	if c.proxy != nil {
 		return c.proxy.WriteWithRetry(ctx, "CodeIndexFile", codeIndexFileRequest{
 			ProjectID: projectID,
@@ -400,6 +426,7 @@ func (c *CodeIndexer) indexFile(ctx context.Context, projectID, rootPath, filePa
 			Language:  string(lang),
 			FileHash:  hash,
 			Symbols:   symbols,
+			Edges:     edges,
 		}, dbproxy.DefaultWriteTimeouts.Long)
 	}
 
@@ -413,9 +440,12 @@ func (c *CodeIndexer) indexFile(ctx context.Context, projectID, rootPath, filePa
 	now := time.Now().UTC()
 
 	if fileID > 0 {
-		// Update existing file — delete old symbols first
+		// Update existing file — delete old symbols and edges first
 		if _, err = tx.ExecContext(ctx, `DELETE FROM code_symbols WHERE file_id = ?`, fileID); err != nil {
 			return fmt.Errorf("code: delete old symbols: %w", err)
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM code_edges WHERE file_id = ?`, fileID); err != nil {
+			return fmt.Errorf("code: delete old edges: %w", err)
 		}
 		if _, err = tx.ExecContext(ctx, `UPDATE code_files SET file_hash=?, language=?, symbols_count=?, indexed_at=? WHERE id=?`,
 			hash, string(lang), len(symbols), now, fileID); err != nil {
@@ -464,6 +494,11 @@ func (c *CodeIndexer) indexFile(ctx context.Context, projectID, rootPath, filePa
 		if err := insertSymbolFTS(ctx, tx, res, sym); err != nil {
 			return fmt.Errorf("code: index symbol fts %s: %w", sym.Name, err)
 		}
+	}
+
+	// Insert property-graph edges (Phase 4).
+	if err := insertEdges(ctx, tx, projectID, fileID, edges); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -724,12 +759,13 @@ type codeSetProjectStatusRequest struct {
 }
 
 type codeIndexFileRequest struct {
-	ProjectID string                    `json:"project_id"`
-	RootPath  string                    `json:"root_path"`
-	FilePath  string                    `json:"file_path"`
-	Language  string                    `json:"language"`
-	FileHash  string                    `json:"file_hash"`
-	Symbols   []*treesitter.CodeSymbol  `json:"symbols"`
+	ProjectID string                   `json:"project_id"`
+	RootPath  string                   `json:"root_path"`
+	FilePath  string                   `json:"file_path"`
+	Language  string                   `json:"language"`
+	FileHash  string                   `json:"file_hash"`
+	Symbols   []*treesitter.CodeSymbol `json:"symbols"`
+	Edges     []*treesitter.CodeEdge   `json:"edges,omitempty"`
 }
 
 // GetJob returns the current status of an indexing job.
@@ -1830,11 +1866,17 @@ func (c *CodeIndexer) SetProjectStatusDirect(ctx context.Context, projectID, sta
 // Called by the primary IPC dispatcher when a secondary forwards a CodeIndexFile write.
 // symbolsJSON is the JSON-encoded []*treesitter.CodeSymbol payload from the RPC request.
 // Symbol embeddings are generated on the primary using its configured embedder.
-func (c *CodeIndexer) IndexFileDirect(ctx context.Context, projectID, filePath, language, fileHash string, symbolsJSON json.RawMessage) error {
+func (c *CodeIndexer) IndexFileDirect(ctx context.Context, projectID, filePath, language, fileHash string, symbolsJSON, edgesJSON json.RawMessage) error {
 	var symbols []*treesitter.CodeSymbol
 	if len(symbolsJSON) > 0 && string(symbolsJSON) != "null" {
 		if err := json.Unmarshal(symbolsJSON, &symbols); err != nil {
 			return fmt.Errorf("code: unmarshal symbols direct: %w", err)
+		}
+	}
+	var edges []*treesitter.CodeEdge
+	if len(edgesJSON) > 0 && string(edgesJSON) != "null" {
+		if err := json.Unmarshal(edgesJSON, &edges); err != nil {
+			return fmt.Errorf("code: unmarshal edges direct: %w", err)
 		}
 	}
 
@@ -1861,6 +1903,9 @@ func (c *CodeIndexer) IndexFileDirect(ctx context.Context, projectID, filePath, 
 	if fileID > 0 {
 		if _, err = tx.ExecContext(ctx, `DELETE FROM code_symbols WHERE file_id = ?`, fileID); err != nil {
 			return fmt.Errorf("code: delete old symbols direct: %w", err)
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM code_edges WHERE file_id = ?`, fileID); err != nil {
+			return fmt.Errorf("code: delete old edges direct: %w", err)
 		}
 		if _, err = tx.ExecContext(ctx,
 			`UPDATE code_files SET file_hash=?, language=?, symbols_count=?, indexed_at=? WHERE id=?`,
@@ -1909,6 +1954,11 @@ func (c *CodeIndexer) IndexFileDirect(ctx context.Context, projectID, filePath, 
 		if err := insertSymbolFTS(ctx, tx, res, sym); err != nil {
 			return fmt.Errorf("code: index symbol fts direct %s: %w", sym.Name, err)
 		}
+	}
+
+	// Insert property-graph edges (Phase 4).
+	if err := insertEdges(ctx, tx, projectID, fileID, edges); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {

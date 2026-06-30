@@ -68,6 +68,7 @@ type codeIndexFileReq struct {
 	Language  string          `json:"language"`
 	FileHash  string          `json:"file_hash"`
 	Symbols   json.RawMessage `json:"symbols"`
+	Edges     json.RawMessage `json:"edges,omitempty"`
 }
 
 // codeDeleteFileReq carries the project ID and file path for a file deletion.
@@ -198,7 +199,7 @@ func (d *RemembrancesWriteDispatcher) DispatchRemembrancesWrite(ctx context.Cont
 			return nil, fmt.Errorf("rag dispatcher: CodeIndexFile unmarshal: %w", err)
 		}
 		err := d.svc.Code.IndexFileDirect(ctx,
-			req.ProjectID, req.FilePath, req.Language, req.FileHash, req.Symbols,
+			req.ProjectID, req.FilePath, req.Language, req.FileHash, req.Symbols, req.Edges,
 		)
 		return nil, err
 

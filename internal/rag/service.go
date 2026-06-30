@@ -84,6 +84,10 @@ func NewRemembrancesServiceWithProxy(db *sql.DB, cfg *config.RemembrancesConfig,
 	kbStore.SetSyncWorkers(workers)
 	eventStore := events.NewEventStore(db, docEmbedder)
 	codeIndexer := code.NewCodeIndexer(db, codeEmbedder, workers)
+	// Honor the TokenOptimization.BuildCodeGraph toggle (lean-ctx Phase 4). The
+	// flag lives on the top-level config, not RemembrancesConfig; config.Get()
+	// is nil-safe and defaults to graph-on.
+	codeIndexer.SetGraphEnabled(config.Get().BuildCodeGraphEnabled())
 	if proxy != nil {
 		kbStore.SetWriteProxy(proxy)
 		eventStore.SetWriteProxy(proxy)

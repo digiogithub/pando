@@ -97,7 +97,7 @@ func TestHydrationAndFTSRoundTrip(t *testing.T) {
 		SourceCode: src, // fed to FTS only; never stored in the DB
 	}}
 	symsJSON, _ := json.Marshal(syms)
-	if err := idx.IndexFileDirect(ctx, "proj", relPath, "go", hash, symsJSON); err != nil {
+	if err := idx.IndexFileDirect(ctx, "proj", relPath, "go", hash, symsJSON, nil); err != nil {
 		t.Fatalf("index file: %v", err)
 	}
 
@@ -160,7 +160,7 @@ func TestReindexDeleteTriggerRemovesFTS(t *testing.T) {
 		Name: "Alpha", NamePath: "Alpha", StartLine: 2, EndLine: 2, StartByte: 10, EndByte: len(src), SourceCode: src,
 	}}
 	symsJSON, _ := json.Marshal(syms)
-	if err := idx.IndexFileDirect(ctx, "p2", "a.go", "go", hash, symsJSON); err != nil {
+	if err := idx.IndexFileDirect(ctx, "p2", "a.go", "go", hash, symsJSON, nil); err != nil {
 		t.Fatalf("index: %v", err)
 	}
 
@@ -174,7 +174,7 @@ func TestReindexDeleteTriggerRemovesFTS(t *testing.T) {
 
 	// Reindex the same file with a new hash and no symbols: the delete trigger
 	// must purge the stale FTS entry (contentless delete by rowid).
-	if err := idx.IndexFileDirect(ctx, "p2", "a.go", "go", hash+"x", json.RawMessage("[]")); err != nil {
+	if err := idx.IndexFileDirect(ctx, "p2", "a.go", "go", hash+"x", json.RawMessage("[]"), nil); err != nil {
 		t.Fatalf("reindex empty: %v", err)
 	}
 	if err := conn.QueryRow(`SELECT count(*) FROM code_symbols_fts WHERE code_symbols_fts MATCH 'Alpha'`).Scan(&cnt); err != nil {

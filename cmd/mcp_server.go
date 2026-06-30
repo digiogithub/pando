@@ -384,6 +384,8 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 			llmtools.NewCodeReindexFileTool(appSvc.Remembrances.Code),
 			llmtools.NewCodeListProjectsTool(appSvc.Remembrances.Code),
 			llmtools.NewCodeSearchPatternTool(appSvc.Remembrances.Code),
+			llmtools.NewCodeImpactAnalysisTool(appSvc.Remembrances.Code),
+			llmtools.NewCodeRelatedFilesTool(appSvc.Remembrances.Code),
 		)
 
 		// KB-backed persistent memory tools (remember/recall/forget). Gated by

@@ -924,6 +924,25 @@ func (c *Config) ReadModeLearningEnabled() bool {
 	return c.TokenOptimization.ReadModeLearning
 }
 
+// BuildCodeGraphEnabled reports whether code property-graph edge extraction
+// (Phase 4) runs during indexing. On by default; disabled only by explicit
+// config so impact/related tools have data unless the user opts out.
+func (c *Config) BuildCodeGraphEnabled() bool {
+	if c == nil {
+		return true
+	}
+	return c.TokenOptimization.BuildCodeGraph
+}
+
+// RelatedFilesHintEnabled reports whether a token-bounded [related: …] footer is
+// appended to reads/search results (Phase 4). Off by default.
+func (c *Config) RelatedFilesHintEnabled() bool {
+	if c == nil {
+		return false
+	}
+	return c.TokenOptimization.RelatedFilesHint
+}
+
 // PonytailConfig configures the "lazy senior developer" ponytail mode.
 type PonytailConfig struct {
 	// DefaultMode is the ponytail intensity applied to new sessions that have not

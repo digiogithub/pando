@@ -70,6 +70,8 @@ var builtinToolNames = map[string]struct{}{
 	codeReindexFileToolName:          {},
 	codeListProjectsToolName:         {},
 	codeSearchPatternToolName:        {},
+	codeImpactAnalysisToolName:       {},
+	codeRelatedFilesToolName:         {},
 }
 
 // IsBuiltinTool reports whether name is an agent-native tool that is always
