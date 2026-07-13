@@ -210,6 +210,11 @@ func (s *KBStore) AddDocument(ctx context.Context, filePath, content string, met
 		return fmt.Errorf("kb: last insert id: %w", err)
 	}
 
+	// Index the [[wiki links]] found in the body, in the same transaction.
+	if _, err := replaceDocumentLinks(ctx, tx, docID, filePath, content); err != nil {
+		return err
+	}
+
 	// Chunk the content
 	chunks := embeddings.ChunkText(content, s.chunkSize, s.chunkOverlap)
 	if len(chunks) == 0 {
@@ -440,6 +445,11 @@ func (s *KBStore) DeleteDocument(ctx context.Context, filePath string) error {
 		return fmt.Errorf("kb: delete chunks: %w", err)
 	}
 
+	// Same for the document's wiki links.
+	if _, err = tx.ExecContext(ctx, `DELETE FROM kb_links WHERE source_document_id = ?`, docID); err != nil {
+		return fmt.Errorf("kb: delete links: %w", err)
+	}
+
 	// Delete document
 	if _, err = tx.ExecContext(ctx, `DELETE FROM kb_documents WHERE id = ?`, docID); err != nil {
 		return fmt.Errorf("kb: delete document: %w", err)
@@ -529,6 +539,12 @@ func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, conte
 	docID, err := res.LastInsertId()
 	if err != nil {
 		return fmt.Errorf("kb: last insert id: %w", err)
+	}
+
+	// Links are extracted on the primary from the forwarded content: the IPC
+	// request carries no link payload, so no protocol change is needed.
+	if _, err := replaceDocumentLinks(ctx, tx, docID, filePath, content); err != nil {
+		return err
 	}
 
 	if len(chunks) == 0 {

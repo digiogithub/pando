@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,43 @@ func sanitizeRemembrancesProjectID(s string) string {
 	}
 
 	return strings.Trim(strings.TrimSpace(string(result)), "_")
+}
+
+// initKBLinkBackfill indexes the [[wiki links]] of documents stored before the
+// link graph existed, so a database upgraded from an older Pando gets a complete
+// graph instead of one that only covers documents written from now on. It runs
+// in the background because it is pure local work (no embeddings) and must not
+// delay startup. Databases with nothing to backfill exit on the first query.
+func (app *App) initKBLinkBackfill(ctx context.Context, svc *rag.RemembrancesService) {
+	if svc == nil || svc.KB == nil {
+		return
+	}
+
+	backfillCtx, cancel := context.WithCancel(ctx)
+	app.cancelFuncsMutex.Lock()
+	app.watcherCancelFuncs = append(app.watcherCancelFuncs, cancel)
+	app.cancelFuncsMutex.Unlock()
+
+	app.watcherWG.Add(1)
+	go func() {
+		defer app.watcherWG.Done()
+		stats, err := svc.KB.BackfillLinks(backfillCtx)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+			logging.Error("remembrances kb: wiki link backfill failed", "error", err)
+			return
+		}
+		if stats.Links == 0 {
+			return
+		}
+		logging.Info("remembrances kb: wiki link backfill completed",
+			"documents", stats.Documents,
+			"links", stats.Links,
+			"scanned", stats.Scanned,
+		)
+	}()
 }
 
 func (app *App) initRemembrancesKBSync(ctx context.Context, svc *rag.RemembrancesService, cfg *config.RemembrancesConfig) {

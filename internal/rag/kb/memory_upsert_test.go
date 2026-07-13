@@ -9,9 +9,10 @@ import (
 	_ "github.com/ncruces/go-sqlite3/embed"
 )
 
-// openTestKBDB creates an in-memory SQLite DB with the kb_documents schema and
-// the partial unique index on memory_key, mirroring the production migrations
-// (20260311000001_add_kb.sql + 20260611000001_add_kb_memory.sql).
+// openTestKBDB creates an in-memory SQLite DB with the KB schema, mirroring the
+// production migrations (20260311000001_add_kb.sql + 20260611000001_add_kb_memory.sql
+// + 20260713000001_add_kb_links.sql). Foreign keys are enabled as in production
+// (internal/db/connect.go) so ON DELETE CASCADE behaves the same.
 func openTestKBDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:")
@@ -21,6 +22,8 @@ func openTestKBDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() { _ = db.Close() })
 
 	schema := `
+	PRAGMA foreign_keys = ON;
+
 	CREATE TABLE kb_documents (
 	    id         INTEGER PRIMARY KEY AUTOINCREMENT,
 	    file_path  TEXT    NOT NULL UNIQUE,
@@ -37,6 +40,35 @@ func openTestKBDB(t *testing.T) *sql.DB {
 	    source       TEXT    NOT NULL DEFAULT ''
 	);
 	CREATE UNIQUE INDEX idx_kb_documents_memory_key ON kb_documents(memory_key) WHERE memory_key != '';
+
+	CREATE TABLE kb_chunks (
+	    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	    document_id INTEGER NOT NULL REFERENCES kb_documents(id) ON DELETE CASCADE,
+	    chunk_index INTEGER NOT NULL DEFAULT 0,
+	    content     TEXT    NOT NULL,
+	    embedding   BLOB,
+	    created_at  DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+	);
+
+	CREATE VIRTUAL TABLE kb_fts USING fts5(
+	    content,
+	    content       = 'kb_chunks',
+	    content_rowid = 'id',
+	    tokenize      = 'porter unicode61'
+	);
+
+	CREATE TABLE kb_links (
+	    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+	    source_document_id INTEGER NOT NULL REFERENCES kb_documents(id) ON DELETE CASCADE,
+	    source_path        TEXT    NOT NULL DEFAULT '',
+	    target_slug        TEXT    NOT NULL,
+	    target_raw         TEXT    NOT NULL DEFAULT '',
+	    label              TEXT    NOT NULL DEFAULT '',
+	    position           INTEGER NOT NULL DEFAULT 0,
+	    created_at         DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+	);
+	CREATE INDEX idx_kb_links_source ON kb_links(source_document_id);
+	CREATE INDEX idx_kb_links_target ON kb_links(target_slug);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatalf("schema setup error = %v", err)

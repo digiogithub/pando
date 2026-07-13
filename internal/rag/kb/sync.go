@@ -219,6 +219,10 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			if len(fm.Tags) > 0 {
 				meta = InjectTagsIntoMetadata(meta, fm.Tags)
 			}
+			// Aliases feed [[wiki link]] resolution, which reads them from metadata.
+			if len(fm.Aliases) > 0 {
+				meta = InjectAliasesIntoMetadata(meta, fm.Aliases)
+			}
 		}
 
 		processingCtx, cancel := context.WithTimeout(ctxSync, kbSyncPerFileTimeout)

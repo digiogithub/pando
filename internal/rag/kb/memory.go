@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/digiogithub/pando/internal/logging"
 )
 
 // MemoryUpsertOptions configures a memory document upsert operation.
@@ -211,8 +213,8 @@ func (s *KBStore) upsertMemoryByKey(ctx context.Context, opts MemoryUpsertOption
 		    outdated   = 0
 		WHERE memory_key IS NOT NULL`,
 		opts.FilePath, bodyContent, metaJSON, opts.Key,
-		nullableString(opts.Scope), opts.Importance,
-		nullableString(opts.Source), now, now,
+		opts.Scope, opts.Importance,
+		opts.Source, now, now,
 	)
 	if err != nil {
 		return false, fmt.Errorf("kb: upsert memory key db: %w", err)
@@ -225,6 +227,13 @@ func (s *KBStore) upsertMemoryByKey(ctx context.Context, opts MemoryUpsertOption
 	if err != nil || doc == nil {
 		// Non-fatal: mirror might be skipped but DB is consistent.
 		return wasCreated, nil
+	}
+
+	// This path writes kb_documents directly (INSERT ... ON CONFLICT) instead of
+	// going through AddDocument, so links must be refreshed explicitly. A failure
+	// here costs the document its graph edges, not its content — don't fail the upsert.
+	if _, linkErr := replaceDocumentLinks(ctx, s.db, doc.ID, doc.FilePath, bodyContent); linkErr != nil {
+		logging.Warn("kb: memory upsert link indexing failed", "file_path", doc.FilePath, "error", linkErr)
 	}
 
 	fm := NewFrontMatter(opts.Tags, &MemoryOptions{
@@ -503,10 +512,7 @@ func (s *KBStore) GetMemoriesForInjection(ctx context.Context, query string, lim
 	return merged, nil
 }
 
-// nullableString returns a sql.NullString so empty strings become NULL in the DB.
-func nullableString(s string) sql.NullString {
-	if s == "" {
-		return sql.NullString{}
-	}
-	return sql.NullString{String: s, Valid: true}
-}
+// memory_scope and source are NOT NULL DEFAULT '' (20260611000001_add_kb_memory.sql),
+// so empty values are written as '' — binding NULL made a scope-less keyed upsert
+// (kb_add_document with tag "memory" and a key, but no scope) fail the NOT NULL
+// constraint.

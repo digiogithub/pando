@@ -14,9 +14,12 @@ const (
 
 // FrontMatter holds the YAML front matter fields for KB documents.
 type FrontMatter struct {
-	CreatedAt time.Time  `yaml:"created_at,omitempty"`
-	UpdatedAt time.Time  `yaml:"updated_at,omitempty"`
-	Tags      []string   `yaml:"tags,omitempty"`
+	CreatedAt time.Time `yaml:"created_at,omitempty"`
+	UpdatedAt time.Time `yaml:"updated_at,omitempty"`
+	Tags      []string  `yaml:"tags,omitempty"`
+	// Aliases are extra names a document can be addressed by from a [[wiki link]],
+	// on top of its path and basename.
+	Aliases []string `yaml:"aliases,omitempty"`
 	// Memory fields — only serialized when non-zero/non-empty
 	Key        string     `yaml:"key,omitempty"`
 	Scope      string     `yaml:"scope,omitempty"`
@@ -128,6 +131,13 @@ func MergeFrontMatter(existing, incoming FrontMatter) FrontMatter {
 		merged.Tags = existing.Tags
 	}
 
+	// Same rule for aliases.
+	if len(incoming.Aliases) > 0 {
+		merged.Aliases = incoming.Aliases
+	} else {
+		merged.Aliases = existing.Aliases
+	}
+
 	// Preserve identity fields from existing when caller doesn't supply them.
 	if incoming.Key != "" {
 		merged.Key = incoming.Key
@@ -205,10 +215,34 @@ func StripFrontMatter(raw string) string {
 // ExtractTagsFromMetadata reads the "tags" key from a metadata map and returns
 // them as a string slice. Returns nil if no tags are present.
 func ExtractTagsFromMetadata(meta map[string]interface{}) []string {
+	return stringSliceFromMetadata(meta, "tags")
+}
+
+// InjectTagsIntoMetadata ensures tags are stored in the metadata map under "tags".
+// If tags is nil/empty and no existing tags, the key is left absent.
+func InjectTagsIntoMetadata(meta map[string]interface{}, tags []string) map[string]interface{} {
+	return injectStringSliceIntoMetadata(meta, "tags", tags)
+}
+
+// ExtractAliasesFromMetadata reads the "aliases" key from a metadata map.
+// Aliases are the extra slugs a document can be reached by from a [[wiki link]].
+func ExtractAliasesFromMetadata(meta map[string]interface{}) []string {
+	return stringSliceFromMetadata(meta, "aliases")
+}
+
+// InjectAliasesIntoMetadata stores aliases in the metadata map under "aliases"
+// so link resolution can read them without re-parsing the document body.
+func InjectAliasesIntoMetadata(meta map[string]interface{}, aliases []string) map[string]interface{} {
+	return injectStringSliceIntoMetadata(meta, "aliases", aliases)
+}
+
+// stringSliceFromMetadata reads a string list stored under key. Metadata round-trips
+// through JSON, so the value may come back as []interface{} instead of []string.
+func stringSliceFromMetadata(meta map[string]interface{}, key string) []string {
 	if meta == nil {
 		return nil
 	}
-	raw, ok := meta["tags"]
+	raw, ok := meta[key]
 	if !ok || raw == nil {
 		return nil
 	}
@@ -216,28 +250,26 @@ func ExtractTagsFromMetadata(meta map[string]interface{}) []string {
 	case []string:
 		return v
 	case []interface{}:
-		tags := make([]string, 0, len(v))
+		items := make([]string, 0, len(v))
 		for _, item := range v {
 			if s, ok := item.(string); ok && s != "" {
-				tags = append(tags, s)
+				items = append(items, s)
 			}
 		}
-		if len(tags) == 0 {
+		if len(items) == 0 {
 			return nil
 		}
-		return tags
+		return items
 	}
 	return nil
 }
 
-// InjectTagsIntoMetadata ensures tags are stored in the metadata map under "tags".
-// If tags is nil/empty and no existing tags, the key is left absent.
-func InjectTagsIntoMetadata(meta map[string]interface{}, tags []string) map[string]interface{} {
+func injectStringSliceIntoMetadata(meta map[string]interface{}, key string, values []string) map[string]interface{} {
 	if meta == nil {
 		meta = make(map[string]interface{})
 	}
-	if len(tags) > 0 {
-		meta["tags"] = tags
+	if len(values) > 0 {
+		meta[key] = values
 	}
 	return meta
 }
