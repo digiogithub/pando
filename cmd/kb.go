@@ -39,6 +39,9 @@ link, which is what you want after an upgrade that changed how links are parsed.
 		if _, err := config.Load(cwd, false, ""); err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
+		if !config.Get().KBWikiLinksEnabled() {
+			return fmt.Errorf("wiki links are disabled: set Remembrances.KBWikiLinks = true to build the link graph")
+		}
 
 		conn, err := db.Connect()
 		if err != nil {

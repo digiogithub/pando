@@ -42,6 +42,13 @@ type testEnv struct {
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 	dir := t.TempDir()
+	// Give the workdir the same data directory a real initialized project gets
+	// from the shipped config template, so the spawned instances write their
+	// SQLite artifacts to the current path instead of the obsolete .pando one.
+	configPath := filepath.Join(dir, ".pando.toml")
+	if err := os.WriteFile(configPath, []byte("[Data]\nDirectory = './.pando/data'\n"), 0o644); err != nil {
+		t.Fatalf("newTestEnv: write %s: %v", configPath, err)
+	}
 	return &testEnv{Workdir: dir, t: t}
 }
 
@@ -74,7 +81,6 @@ func startInstance(t *testing.T, workdir string, args ...string) *instance {
 	cmd := exec.Command(binary, args...)
 	cmd.Dir = workdir
 	cmd.Env = append(os.Environ(),
-		"PANDO_DATA_DIR="+filepath.Join(workdir, ".pando"),
 		"NO_COLOR=1",
 		// Disable browser open in desktop mode.
 		"DO_NOT_OPEN_BROWSER=1",
@@ -196,9 +202,11 @@ func waitForLockFile(t *testing.T, workdir string, timeout time.Duration) *lockI
 }
 
 // waitForDB polls until the SQLite DB file appears in workdir or timeout elapses.
+// The database lives in the configured data directory (.pando/data), not at the
+// obsolete .pando/pando.db path that startup now migrates away.
 func waitForDB(t *testing.T, workdir string, timeout time.Duration) string {
 	t.Helper()
-	dbPath := filepath.Join(workdir, ".pando", "pando.db")
+	dbPath := filepath.Join(workdir, ".pando", "data", "pando.db")
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(dbPath); err == nil {

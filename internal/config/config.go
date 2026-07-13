@@ -386,7 +386,14 @@ type RemembrancesConfig struct {
 	// KBConvertExtensions optionally overrides the curated set of document
 	// extensions (with or without leading dot) that are auto-converted. Empty
 	// uses the built-in default set.
-	KBConvertExtensions       []string `json:"kb_convert_extensions,omitempty" toml:"KBConvertExtensions"`
+	KBConvertExtensions []string `json:"kb_convert_extensions,omitempty" toml:"KBConvertExtensions"`
+	// KBWikiLinks enables the [[wiki link]] document graph: links written in KB
+	// documents are indexed, and the KB tools report outgoing links, backlinks,
+	// related documents and undocumented ("wanted") concepts. Default true; when
+	// false nothing is indexed and the tools answer as they did before the graph
+	// existed. Already-indexed links survive a disable and light up again on
+	// re-enable.
+	KBWikiLinks               bool     `json:"kb_wiki_links" toml:"KBWikiLinks"`
 	AutoIndexSessions         bool     `json:"auto_index_sessions" toml:"AutoIndexSessions"`
 	DocumentEmbeddingProvider string   `json:"document_embedding_provider" toml:"DocumentEmbeddingProvider"`
 	DocumentEmbeddingModel    string   `json:"document_embedding_model" toml:"DocumentEmbeddingModel"`
@@ -934,6 +941,16 @@ func (c *Config) BuildCodeGraphEnabled() bool {
 	return c.TokenOptimization.BuildCodeGraph
 }
 
+// KBWikiLinksEnabled reports whether the KB [[wiki link]] graph is active. On by
+// default: indexing links is cheap and purely additive, and a knowledge base that
+// never writes the syntax simply has an empty graph.
+func (c *Config) KBWikiLinksEnabled() bool {
+	if c == nil {
+		return true
+	}
+	return c.Remembrances.KBWikiLinks
+}
+
 // RelatedFilesHintEnabled reports whether a token-bounded [related: …] footer is
 // appended to reads/search results (Phase 4). Off by default.
 func (c *Config) RelatedFilesHintEnabled() bool {
@@ -1195,6 +1212,14 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 
 	applyDefaultValues()
 
+	// Move (or drop) the obsolete <workdir>/.pando/pando.db database before any
+	// SQLite connection is opened, so db.Connect never initializes an empty
+	// database next to a legacy one.
+	legacyDatabase, err := MigrateLegacyProjectDatabase(cfg.WorkingDir, cfg.Data.Directory)
+	if err != nil {
+		return cfg, fmt.Errorf("failed to migrate legacy project database: %w", err)
+	}
+
 	// Apply logFile from CLI argument if provided
 	if len(logFile) > 0 && logFile[0] != "" {
 		cfg.LogFile = logFile[0]
@@ -1268,6 +1293,19 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 			Level: defaultLevel,
 		}))
 		slog.SetDefault(logger)
+	}
+
+	switch {
+	case legacyDatabase.Migrated:
+		logging.Info("Migrated legacy project database",
+			"from", filepath.Join(cfg.WorkingDir, pandoDirName, databaseFileName),
+			"to", filepath.Join(cfg.Data.Directory, databaseFileName),
+		)
+	case legacyDatabase.Cleaned:
+		logging.Info("Removed obsolete project database",
+			"path", filepath.Join(cfg.WorkingDir, pandoDirName, databaseFileName),
+			"current", filepath.Join(cfg.Data.Directory, databaseFileName),
+		)
 	}
 
 	// Validate configuration
@@ -1563,6 +1601,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("remembrances.kb_watch", true)
 	viper.SetDefault("remembrances.kb_auto_import", true)
 	viper.SetDefault("remembrances.kb_convert_documents", true)
+	viper.SetDefault("remembrances.kb_wiki_links", true)
 	viper.SetDefault("remembrances.auto_index_sessions", true)
 	viper.SetDefault("remembrances.document_embedding_provider", "ollama")
 	viper.SetDefault("remembrances.document_embedding_model", "nomic-embed-text")
@@ -2087,11 +2126,18 @@ func normalizeRemembrancesDefaults() {
 // it" — if the user had provided a [Mesnada.Delegation] table, unmarshal would
 // have read their explicit values correctly. Documented consequence: an explicit
 // cap of 0 is treated as "use the default" rather than "unlimited"; use a large
-// value for effectively-unlimited. The boolean fields (including the
-// default-true AutoStartWarmInstance) survive unmarshal correctly and are left
-// untouched so a user-set false is preserved.
+// value for effectively-unlimited. The default-OFF booleans need no fallback:
+// shadowing yields false, which is already their default. AutoStartWarmInstance
+// is the exception and is restored below.
 func normalizeMesnadaDelegationDefaults() {
 	d := &cfg.Mesnada.Delegation
+	// AutoStartWarmInstance is the only delegation boolean whose documented
+	// default is true, so the shadowing above silently turns "the user said
+	// nothing" into an explicit false, and warm routing degrades to reuse-only
+	// (delegations cold-spawn a CLI instead of starting the project's instance).
+	// viper's key lookup does not suffer the shadowing that Unmarshal does: it
+	// consults the config file first and the registered default second, so an
+	// explicit false in a [Mesnada.Delegation] table still wins here.
 	if d.MaxResurrections == 0 {
 		d.MaxResurrections = defaultDelegationMaxResurrections
 	}

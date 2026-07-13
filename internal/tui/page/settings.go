@@ -2008,6 +2008,12 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 			Value: boolString(rem.KBConvertDocuments),
 		},
 		settings.Field{
+			Label: "KB Wiki Links",
+			Key:   "remembrances.kb_wiki_links",
+			Type:  settings.FieldToggle,
+			Value: boolString(rem.KBWikiLinks),
+		},
+		settings.Field{
 			Label: "Auto Index Sessions",
 			Key:   "remembrances.auto_index_sessions",
 			Type:  settings.FieldToggle,
@@ -3864,6 +3870,12 @@ func saveRemembrances(field settings.Field) error {
 			return fmt.Errorf("invalid KB convert documents value: %w", err)
 		}
 		remCfg.KBConvertDocuments = convertDocs
+	case "remembrances.kb_wiki_links":
+		wikiLinks, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid KB wiki links value: %w", err)
+		}
+		remCfg.KBWikiLinks = wikiLinks
 	case "remembrances.auto_index_sessions":
 		autoIndex, err := parseBoolValue(field.Value)
 		if err != nil {

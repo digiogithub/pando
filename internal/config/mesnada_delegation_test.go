@@ -13,6 +13,7 @@ import (
 // global config and viper, restoring them on cleanup.
 func loadTempConfig(t *testing.T, body string) string {
 	t.Helper()
+	isolateGlobalConfig(t)
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, ".pando.toml")
 	if err := os.WriteFile(configPath, []byte(body), 0o644); err != nil {

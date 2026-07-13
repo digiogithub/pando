@@ -4,12 +4,24 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/spf13/viper"
 )
+
+// isolateGlobalConfig points the global-config search at an empty home directory.
+// Load() looks for a global config in $HOME and $XDG_CONFIG_HOME (see the
+// viper.AddConfigPath calls in setDefaults), so a test that does not do this reads
+// the config of whoever runs it: the developer's own ~/.pando.toml wins over the
+// defaults under test, and the suite passes or fails depending on the machine.
+func isolateGlobalConfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+}
 
 func TestMesnadaDefaults(t *testing.T) {
 	cfg = nil
@@ -92,27 +104,53 @@ func TestDefaultConfigTemplateKeepsBuiltInContextPathsEnabled(t *testing.T) {
 	}
 }
 
+// templateSection returns the body of a [Section] of DefaultConfigTemplate, up to
+// the next section header. Assertions are scoped to a section because keys like
+// "Enabled" appear in many of them.
+func templateSection(t *testing.T, name string) string {
+	t.Helper()
+
+	header := "[" + name + "]\n"
+	start := strings.Index(DefaultConfigTemplate, header)
+	if start < 0 {
+		t.Fatalf("DefaultConfigTemplate has no [%s] section", name)
+	}
+	body := DefaultConfigTemplate[start+len(header):]
+	if end := strings.Index(body, "\n["); end >= 0 {
+		body = body[:end]
+	}
+	return body
+}
+
 func TestDefaultConfigTemplateEnablesPandoPreferredDefaults(t *testing.T) {
-	checks := []string{
-		"Enabled    = true\nBaseURL    = ''\nAutoUpdate = false\nDefaultScope = 'global'",
-		"Theme = 'pando-nobg'",
-		"ShowHiddenFiles = true",
-		"NerdFonts = true",
-		"AutoApproveTools = true",
-		"[Mesnada.Delegation]\nEnabled = true",
-		"ContextEnrichmentEnabled = true",
-		"MemoryEnabled = true",
-		"MemoryAutoCapture = true",
-		"[LLMCache]\nEnabled = true",
-		"[ToolDiscovery]\nEnabled = true",
-		"[InternalTools]\nFetchEnabled = true",
-		"BrowserEnabled = true",
-		"[Evaluator]\nEnabled = true",
+	checks := []struct{ section, key, want string }{
+		{"SkillsCatalog", "Enabled", "true"},
+		{"SkillsCatalog", "BaseURL", "''"},
+		{"SkillsCatalog", "AutoUpdate", "false"},
+		{"SkillsCatalog", "DefaultScope", "'global'"},
+		{"TUI", "Theme", "'pando-nobg'"},
+		{"TUI", "ShowHiddenFiles", "true"},
+		{"TUI", "NerdFonts", "true"},
+		{"Permissions", "AutoApproveTools", "true"},
+		{"Mesnada.Delegation", "Enabled", "true"},
+		{"Remembrances", "ContextEnrichmentEnabled", "true"},
+		{"Remembrances", "MemoryEnabled", "true"},
+		{"Remembrances", "MemoryAutoCapture", "true"},
+		{"Remembrances", "KBWikiLinks", "true"},
+		{"LLMCache", "Enabled", "true"},
+		{"ToolDiscovery", "Enabled", "true"},
+		{"InternalTools", "FetchEnabled", "true"},
+		{"InternalTools", "BrowserEnabled", "true"},
+		{"Evaluator", "Enabled", "true"},
 	}
 
-	for _, want := range checks {
-		if !strings.Contains(DefaultConfigTemplate, want) {
-			t.Fatalf("DefaultConfigTemplate should contain %q", want)
+	for _, c := range checks {
+		// Some sections align their '=' into a column, so match the assignment
+		// rather than an exact substring: what matters is the value, not the
+		// whitespace someone used to line the section up.
+		assignment := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(c.key) + `\s*=\s*` + regexp.QuoteMeta(c.want) + `\s*$`)
+		if !assignment.MatchString(templateSection(t, c.section)) {
+			t.Errorf("DefaultConfigTemplate: [%s] should set %s = %s", c.section, c.key, c.want)
 		}
 	}
 }

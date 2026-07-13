@@ -65,6 +65,10 @@ func (s *KBStore) RelinkAll(ctx context.Context) (BackfillStats, error) {
 // true every document that could hold a link is a candidate and its existing
 // rows are replaced; otherwise only documents with no rows at all are visited.
 func (s *KBStore) backfillLinks(ctx context.Context, force bool) (BackfillStats, error) {
+	if !s.WikiLinksEnabled() {
+		return BackfillStats{}, nil
+	}
+
 	ids, err := s.linkBackfillCandidates(ctx, force)
 	if err != nil {
 		return BackfillStats{}, err

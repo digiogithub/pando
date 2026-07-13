@@ -32,6 +32,10 @@ type KBStore struct {
 	fsMirrorPath string
 	fsMu         sync.RWMutex
 	converter    DocumentConverter
+
+	// wikiLinks toggles [[wiki link]] extraction and the graph queries built on
+	// it. Defaults to true; the app sets it from Remembrances.KBWikiLinks.
+	wikiLinks bool
 }
 
 // DocumentConverter converts rich document formats (docx, pdf, xlsx, …) to
@@ -93,7 +97,29 @@ func NewKBStore(db *sql.DB, embedder embeddings.Embedder, chunkSize, chunkOverla
 		chunkSize:    chunkSize,
 		chunkOverlap: chunkOverlap,
 		syncWorkers:  defaultSyncWorkers(),
+		wikiLinks:    true,
 	}
+}
+
+// SetWikiLinksEnabled toggles the [[wiki link]] graph. When false no link rows
+// are written and every graph query answers empty, so the KB tools present the
+// output they presented before the graph existed.
+//
+// Turning it off does not wipe the graph: the rows already indexed stay in the
+// database, invisible, and light up again if it is turned back on — no reindex
+// needed. Only a document rewritten while it is off loses its rows, like any
+// update does.
+func (s *KBStore) SetWikiLinksEnabled(enabled bool) {
+	s.fsMu.Lock()
+	s.wikiLinks = enabled
+	s.fsMu.Unlock()
+}
+
+// WikiLinksEnabled reports whether the wiki link graph is active.
+func (s *KBStore) WikiLinksEnabled() bool {
+	s.fsMu.RLock()
+	defer s.fsMu.RUnlock()
+	return s.wikiLinks
 }
 
 // SetWriteProxy configures a DB proxy for mutating operations.
@@ -211,7 +237,7 @@ func (s *KBStore) AddDocument(ctx context.Context, filePath, content string, met
 	}
 
 	// Index the [[wiki links]] found in the body, in the same transaction.
-	if _, err := replaceDocumentLinks(ctx, tx, docID, filePath, content); err != nil {
+	if _, err := s.indexDocumentLinks(ctx, tx, docID, filePath, content); err != nil {
 		return err
 	}
 
@@ -543,7 +569,7 @@ func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, conte
 
 	// Links are extracted on the primary from the forwarded content: the IPC
 	// request carries no link payload, so no protocol change is needed.
-	if _, err := replaceDocumentLinks(ctx, tx, docID, filePath, content); err != nil {
+	if _, err := s.indexDocumentLinks(ctx, tx, docID, filePath, content); err != nil {
 		return err
 	}
 

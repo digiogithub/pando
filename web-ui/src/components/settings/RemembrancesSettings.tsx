@@ -188,6 +188,12 @@ export default function RemembrancesSettings() {
           checked={rem.kb_convert_documents}
           onChange={(v) => updateRemembrances('kb_convert_documents', v)}
         />
+        <Toggle
+          label="Wiki Links"
+          description="Index [[wiki links]] written in KB documents as a navigable graph: backlinks, related documents and concepts still undocumented"
+          checked={rem.kb_wiki_links}
+          onChange={(v) => updateRemembrances('kb_wiki_links', v)}
+        />
       </div>
 
       <div style={dividerStyle} />

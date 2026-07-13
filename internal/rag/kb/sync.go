@@ -246,6 +246,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			}
 			cancel()
 			stats.Added++
+			stats.LinksIndexed += s.countIndexedLinks(bodyContent)
 			existingByPath[res.job.docPath] = documentMetadata{FilePath: res.job.docPath, Metadata: meta}
 			if processed%10 == 0 {
 				logSyncProgress(processed, -1, stats, errorCount)
@@ -271,6 +272,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		}
 		cancel()
 		stats.Updated++
+		stats.LinksIndexed += s.countIndexedLinks(bodyContent)
 		existingByPath[res.job.docPath] = documentMetadata{FilePath: res.job.docPath, Metadata: meta}
 
 		if processed%10 == 0 {
@@ -340,6 +342,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		"updated", stats.Updated,
 		"unchanged", stats.Unchanged,
 		"deleted", stats.Deleted,
+		"links_indexed", stats.LinksIndexed,
 		"errors", errorCount,
 	)
 	logSyncMemStats("kb sync: completed mem", processed, jobCount)

@@ -184,6 +184,10 @@ func baseSlug(filePath string) string {
 // answers false, so the tools can skip the resolver entirely and present exactly
 // the output they presented before the graph was added.
 func (s *KBStore) HasLinks(ctx context.Context) (bool, error) {
+	if !s.WikiLinksEnabled() {
+		return false, nil
+	}
+
 	var found int
 	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM kb_links)`).Scan(&found); err != nil {
 		return false, fmt.Errorf("kb: check for links: %w", err)
@@ -261,6 +265,10 @@ func (s *KBStore) LinkCountsFor(ctx context.Context, filePaths []string) (map[st
 // and no error, which is the normal state of a knowledge base that does not use
 // the syntax.
 func (s *KBStore) OutgoingLinks(ctx context.Context, filePath string) ([]LinkTarget, error) {
+	if !s.WikiLinksEnabled() {
+		return nil, nil
+	}
+
 	links, err := s.LinksFrom(ctx, filePath)
 	if err != nil {
 		return nil, err
@@ -292,6 +300,10 @@ func (s *KBStore) OutgoingLinks(ctx context.Context, filePath string) ([]LinkTar
 // basename, and the shorter form belongs to whichever one the resolver awards it
 // to, so a link to "[[foo]]" is not a backlink of every document named foo.md.
 func (s *KBStore) Backlinks(ctx context.Context, filePath string) ([]Backlink, error) {
+	if !s.WikiLinksEnabled() {
+		return nil, nil
+	}
+
 	resolver, err := s.newLinkResolver(ctx)
 	if err != nil {
 		return nil, err
@@ -349,6 +361,9 @@ func (s *KBStore) backlinksOf(ctx context.Context, resolver *linkResolver, self 
 // how strongly they are connected: documents it links to, documents that link to
 // it, and — weakly — documents sharing tags with it. limit <= 0 uses a default.
 func (s *KBStore) RelatedDocuments(ctx context.Context, filePath string, limit int) ([]RelatedDocument, error) {
+	if !s.WikiLinksEnabled() {
+		return nil, nil
+	}
 	if limit <= 0 {
 		limit = defaultRelatedLimit
 	}
@@ -459,6 +474,10 @@ func sharedTags(a, b []string) []string {
 // first: the concepts the knowledge base refers to but never explains. limit <= 0
 // returns them all.
 func (s *KBStore) WantedConcepts(ctx context.Context, limit int) ([]WantedConcept, error) {
+	if !s.WikiLinksEnabled() {
+		return nil, nil
+	}
+
 	resolver, err := s.newLinkResolver(ctx)
 	if err != nil {
 		return nil, err

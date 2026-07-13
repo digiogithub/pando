@@ -25,13 +25,21 @@ slate when prior knowledge exists. In order:
    query, so it is the primary entry point for recovering prior decisions, plans,
    and past fixes. Search **without** a `tags` filter for broad context recovery;
    only add `tags` when you deliberately want to narrow to one document type.
-2. **Then the code index.** Use the code-remembrance tools to understand
+2. **Follow the graph, do not only search.** KB documents link each other with
+   `[[wiki links]]`. `kb_search_documents` reports how connected each hit is and
+   lists the neighbours of the best one, and `kb_get_document` returns the
+   document's outgoing links and its backlinks. Hop through those with
+   `kb_related_documents` instead of firing another search: a document's own links
+   are what its author considered relevant, which beats a second guess at the
+   query. Calling `kb_related_documents` with no `file_path` lists the concepts the
+   KB refers to but never documented.
+3. **Then the code index.** Use the code-remembrance tools to understand
    structure and prior decisions in the codebase before editing:
    `code_get_symbols_overview` (file/package shape), `code_find_symbol` (locate a
    specific function/type), `code_hybrid_search` (semantic search across the
    codebase and related indexed projects), and `code_search_pattern` (literal or
    regex matches). Prefer these over blind file reads when locating code.
-3. **Recall only when you know the key.** Use `recall` only when you already know
+4. **Recall only when you know the key.** Use `recall` only when you already know
    roughly which short fact/key you are after. Do not use it as a substitute for
    the KB search above.
 
@@ -98,6 +106,14 @@ The summary **MUST** capture at least:
 Store it under a clear `file_path`: `<project>/changes/<slug>.md`, or the matching
 `<project>/fixes/<slug>.md` / `<project>/features/<slug>.md`. If a related
 document already exists, **update it** instead of creating a duplicate.
+
+**Link what the document builds on.** Write `[[concept]]` (or `[[concept|label]]`)
+in the body to point at the plan, feature or fix the change continues — a full
+path (`[[pando/plans/foo.md]]`) or a bare name (`[[foo]]`) both work. The links
+are indexed as a navigable graph, which is what keeps the knowledge base connected
+instead of a pile of loose files. Linking a document that does not exist yet is
+**correct and useful**: it records a concept worth documenting later, and
+`kb_related_documents` lists those pending concepts.
 
 > Plan-mode note: while a harness "plan mode" is active you may only edit the
 > plan file, so defer the `kb_add_document` write until the plan is approved and

@@ -39,6 +39,7 @@ const DEFAULT_REMEMBRANCES: RemembrancesConfig = {
   kb_watch: true,
   kb_auto_import: true,
   kb_convert_documents: true,
+  kb_wiki_links: true,
   document_embedding_provider: '',
   document_embedding_model: '',
   document_embedding_base_url: '',

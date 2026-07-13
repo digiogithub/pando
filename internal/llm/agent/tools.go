@@ -292,7 +292,6 @@ func CoderAgentToolsWithMesnada(
 			tools.NewKBSearchDocumentsTool(remembrances.KB),
 			tools.NewKBGetDocumentTool(remembrances.KB),
 			tools.NewKBDeleteDocumentTool(remembrances.KB),
-			tools.NewKBRelatedDocumentsTool(remembrances.KB),
 			tools.NewSaveEventTool(remembrances.Events),
 			tools.NewSearchEventsTool(remembrances.Events),
 			tools.NewHybridSearchRemembrancesTool(remembrances),
@@ -310,6 +309,11 @@ func CoderAgentToolsWithMesnada(
 			tools.NewCodeImpactAnalysisTool(remembrances.Code),
 			tools.NewCodeRelatedFilesTool(remembrances.Code),
 		)
+		// The wiki graph navigator only exists when the graph does: with
+		// KBWikiLinks off it would answer empty on every call.
+		if remembrances.KB != nil && remembrances.KB.WikiLinksEnabled() {
+			baseTools = append(baseTools, tools.NewKBRelatedDocumentsTool(remembrances.KB))
+		}
 		if cfg := config.Get(); cfg != nil && cfg.Remembrances.MemoryEnabled {
 			baseTools = append(baseTools,
 				tools.NewRememberTool(remembrances.KB, cfg.Remembrances.MemoryDefaultTTLDays),

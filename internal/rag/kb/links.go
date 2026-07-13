@@ -215,6 +215,27 @@ type sqlExecer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
+// indexDocumentLinks refreshes the kb_links rows of a document unless the wiki
+// link graph is disabled, in which case it writes nothing. Every write path goes
+// through it, so the toggle is enforced in one place.
+func (s *KBStore) indexDocumentLinks(ctx context.Context, ex sqlExecer, docID int64, filePath, body string) (int, error) {
+	if !s.WikiLinksEnabled() {
+		return 0, nil
+	}
+	return replaceDocumentLinks(ctx, ex, docID, filePath, body)
+}
+
+// countIndexedLinks reports how many links a body contributes to the graph,
+// which is zero when the graph is off. The sync uses it to report LinksIndexed
+// without threading a count back out of the store's write methods; the re-scan is
+// cheap (it bails out immediately on a body with no "[[").
+func (s *KBStore) countIndexedLinks(body string) int {
+	if !s.WikiLinksEnabled() {
+		return 0
+	}
+	return len(ExtractWikiLinks(body))
+}
+
 // replaceDocumentLinks refreshes the kb_links rows of a document, returning how
 // many links were indexed. Callers pass the transaction that inserted the
 // document so links land atomically with it.

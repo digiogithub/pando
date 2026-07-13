@@ -325,6 +325,9 @@ KBWatch      = true
 # Convert docx/pdf/xlsx/pptx/… dropped in the KB folder to Markdown on the fly,
 # indexing chunks that reference the original file.
 KBConvertDocuments = true
+# Index [[wiki links]] written in KB documents as a navigable document graph
+# (outgoing links, backlinks, related documents, undocumented concepts).
+KBWikiLinks = true
 ContextEnrichmentEnabled = true
 ContextEnrichmentKBResults = 3
 ContextEnrichmentCodeResults = 5

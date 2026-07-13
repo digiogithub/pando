@@ -41,7 +41,7 @@ func sanitizeRemembrancesProjectID(s string) string {
 // in the background because it is pure local work (no embeddings) and must not
 // delay startup. Databases with nothing to backfill exit on the first query.
 func (app *App) initKBLinkBackfill(ctx context.Context, svc *rag.RemembrancesService) {
-	if svc == nil || svc.KB == nil {
+	if svc == nil || svc.KB == nil || !svc.KB.WikiLinksEnabled() {
 		return
 	}
 
@@ -115,13 +115,19 @@ func (app *App) initRemembrancesKBSync(ctx context.Context, svc *rag.Remembrance
 				logging.Error("remembrances kb: initial import failed", "path", kbPath, "error", err)
 				return
 			}
-			logging.WarnPersist(fmt.Sprintf("KB import/index completed (%d scanned, %d added, %d updated, %d unchanged, %d deleted)",
+			summary := fmt.Sprintf("KB import/index completed (%d scanned, %d added, %d updated, %d unchanged, %d deleted)",
 				stats.Scanned,
 				stats.Added,
 				stats.Updated,
 				stats.Unchanged,
 				stats.Deleted,
-			), "path", kbPath)
+			)
+			// Mentioned only when the imported documents use the syntax, so a KB
+			// without wiki links logs exactly the line it logged before.
+			if stats.LinksIndexed > 0 {
+				summary = fmt.Sprintf("%s — %d wiki links indexed", summary, stats.LinksIndexed)
+			}
+			logging.WarnPersist(summary, "path", kbPath)
 			logging.Info("remembrances kb: initial import completed",
 				"path", kbPath,
 				"scanned", stats.Scanned,
@@ -129,6 +135,7 @@ func (app *App) initRemembrancesKBSync(ctx context.Context, svc *rag.Remembrance
 				"updated", stats.Updated,
 				"unchanged", stats.Unchanged,
 				"deleted", stats.Deleted,
+				"links_indexed", stats.LinksIndexed,
 			)
 		}()
 	}

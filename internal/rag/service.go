@@ -82,6 +82,9 @@ func NewRemembrancesServiceWithProxy(db *sql.DB, cfg *config.RemembrancesConfig,
 	workers := cfg.IndexWorkers
 	kbStore := kb.NewKBStore(db, docEmbedder, cfg.ChunkSize, cfg.ChunkOverlap)
 	kbStore.SetSyncWorkers(workers)
+	// Honor Remembrances.KBWikiLinks: when off, no [[wiki link]] is indexed and
+	// the graph queries answer empty. config.Get() is nil-safe and defaults to on.
+	kbStore.SetWikiLinksEnabled(config.Get().KBWikiLinksEnabled())
 	eventStore := events.NewEventStore(db, docEmbedder)
 	codeIndexer := code.NewCodeIndexer(db, codeEmbedder, workers)
 	// Honor the TokenOptimization.BuildCodeGraph toggle (lean-ctx Phase 4). The

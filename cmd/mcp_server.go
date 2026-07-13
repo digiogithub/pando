@@ -371,7 +371,6 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 			llmtools.NewKBSearchDocumentsTool(appSvc.Remembrances.KB),
 			llmtools.NewKBGetDocumentTool(appSvc.Remembrances.KB),
 			llmtools.NewKBDeleteDocumentTool(appSvc.Remembrances.KB),
-			llmtools.NewKBRelatedDocumentsTool(appSvc.Remembrances.KB),
 			llmtools.NewSaveEventTool(appSvc.Remembrances.Events),
 			llmtools.NewSearchEventsTool(appSvc.Remembrances.Events),
 			llmtools.NewHybridSearchRemembrancesTool(appSvc.Remembrances),
@@ -388,6 +387,12 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 			llmtools.NewCodeImpactAnalysisTool(appSvc.Remembrances.Code),
 			llmtools.NewCodeRelatedFilesTool(appSvc.Remembrances.Code),
 		)
+
+		// The wiki graph navigator only exists when the graph does: with
+		// KBWikiLinks off it would answer empty on every call.
+		if appSvc.Remembrances.KB != nil && appSvc.Remembrances.KB.WikiLinksEnabled() {
+			tools = append(tools, llmtools.NewKBRelatedDocumentsTool(appSvc.Remembrances.KB))
+		}
 
 		// KB-backed persistent memory tools (remember/recall/forget). Gated by
 		// MemoryEnabled, which enableMCPServerFeatures turns on in server mode.

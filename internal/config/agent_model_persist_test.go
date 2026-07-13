@@ -27,10 +27,16 @@ func TestAgentModelSurvivesReloadAfterResolve(t *testing.T) {
 	})
 	t.Cleanup(func() { delete(models.SupportedModels, canonical) })
 
+	isolateGlobalConfig(t)
+
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, ".pando.toml")
-	// Config holds the bare ID, as written by the buggy web-UI path.
-	original := "[Agents]\n[Agents.coder]\nModel = 'gpt-5.4-mini'\n"
+	// Config holds the bare ID, as written by the buggy web-UI path. The provider
+	// is declared here rather than inherited from whoever runs the test: an agent
+	// whose provider is not configured is reverted to a default model, which would
+	// make this assert something other than what it means to.
+	original := "[Providers]\n[Providers.copilot]\nAPIKey = 'test-copilot-key'\n" +
+		"[Agents]\n[Agents.coder]\nModel = 'gpt-5.4-mini'\n"
 	if err := os.WriteFile(configPath, []byte(original), 0o644); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}

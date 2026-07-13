@@ -213,7 +213,8 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 func (t *KBImportPathTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        kbImportPathToolName,
-		Description: "Imports and synchronizes all .md files from a directory (including subdirectories) into the knowledge base. Can optionally delete KB docs that no longer exist on disk.",
+		Description: "Imports and synchronizes all .md files from a directory (including subdirectories) into the knowledge base. Can optionally delete KB docs that no longer exist on disk. " +
+			"Any [[wiki links]] written in the imported documents are indexed into the document graph and counted as 'links_indexed'.",
 		Parameters: map[string]any{
 			"path": map[string]any{
 				"type":        "string",
@@ -250,7 +251,7 @@ func (t *KBImportPathTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		return NewTextErrorResponse(fmt.Sprintf("kb import error: %v", err)), nil
 	}
 
-	return NewStructuredResponse(map[string]any{
+	out := map[string]any{
 		"path":           req.Path,
 		"delete_missing": deleteMissing,
 		"scanned":        stats.Scanned,
@@ -258,7 +259,14 @@ func (t *KBImportPathTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		"updated":        stats.Updated,
 		"unchanged":      stats.Unchanged,
 		"deleted":        stats.Deleted,
-	}), nil
+	}
+	// Reported only when the imported documents actually use the syntax, so an
+	// import into a knowledge base without wiki links reads as it always did.
+	if stats.LinksIndexed > 0 {
+		out["links_indexed"] = stats.LinksIndexed
+	}
+
+	return NewStructuredResponse(out), nil
 }
 
 // ---- KBSearchDocumentsTool ----

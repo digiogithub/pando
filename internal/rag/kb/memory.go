@@ -232,7 +232,7 @@ func (s *KBStore) upsertMemoryByKey(ctx context.Context, opts MemoryUpsertOption
 	// This path writes kb_documents directly (INSERT ... ON CONFLICT) instead of
 	// going through AddDocument, so links must be refreshed explicitly. A failure
 	// here costs the document its graph edges, not its content — don't fail the upsert.
-	if _, linkErr := replaceDocumentLinks(ctx, s.db, doc.ID, doc.FilePath, bodyContent); linkErr != nil {
+	if _, linkErr := s.indexDocumentLinks(ctx, s.db, doc.ID, doc.FilePath, bodyContent); linkErr != nil {
 		logging.Warn("kb: memory upsert link indexing failed", "file_path", doc.FilePath, "error", linkErr)
 	}
 

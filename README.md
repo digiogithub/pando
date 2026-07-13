@@ -113,7 +113,7 @@ You can configure Pando using environment variables (prefixed with `PANDO_` for 
 ```json
 {
   "data": {
-    "directory": ".pando"
+    "directory": ".pando/data"
   },
   "providers": {
     "anthropic": {
@@ -142,7 +142,7 @@ You can configure Pando using environment variables (prefixed with `PANDO_` for 
 
 ```toml
 [data]
-directory = ".pando"
+directory = ".pando/data"
 
 [providers.anthropic]
 apiKey = "your-api-key"
@@ -159,6 +159,28 @@ args = ["-l"]
 debug = false
 autoCompact = true
 ```
+
+### Data Directory and Legacy Database Migration
+
+Pando keeps its SQLite database at `<Data.Directory>/pando.db`, which for a project
+initialized by Pando is `.pando/data/pando.db`. Older versions stored it directly at
+`.pando/pando.db`; that path is obsolete.
+
+On every startup — before any database connection is opened — Pando reconciles the two
+paths:
+
+- If only the obsolete `.pando/pando.db` exists, it is **moved** to the configured data
+  directory together with its SQLite sidecars (`-wal`, `-shm`, `-journal`), so no
+  committed WAL transaction is lost.
+- If the current database already exists, it is **authoritative**: it is never modified,
+  and the obsolete files are deleted.
+- If migration or cleanup fails, startup fails instead of silently creating a fresh,
+  empty database. Nothing is overwritten in any case.
+
+The migration is idempotent and a no-op for configurations that still set
+`Data.Directory` to `.pando` (there the obsolete and current paths are the same file) and
+for projects that never used the old path. Don't start a second Pando instance while the
+first migration is running.
 
 ### Language Servers (LSP)
 
@@ -260,6 +282,43 @@ Configure it under `[Remembrances]`:
 KBConvertDocuments = true            # default; convert documents in the KB folder
 # KBConvertExtensions = ["docx", "pdf", "xlsx"]   # optional: override the curated set
 ```
+
+### Wiki links in the Knowledge Base
+
+KB documents link each other with `[[wiki links]]`, turning the knowledge base into a
+navigable graph instead of a pile of loose files. Write `[[concept]]` or
+`[[concept|display label]]` anywhere in a document's body; the target may be a full path
+(`[[pando/plans/foo.md]]`), a bare name (`[[foo]]`) or an alias declared in the document's
+front matter (`aliases: [...]`). Occurrences inside code fences and inline code are ignored,
+so documentation that merely *shows* the syntax does not pollute the graph.
+
+Links are resolved when they are read, not when they are written, so a link to a document
+that does not exist yet is **valid on purpose**: it records a concept worth documenting
+later (a "wanted concept"), and it starts resolving by itself the day that document is
+created. The KB tools expose the graph:
+
+- `kb_get_document` returns the document's outgoing links and its **backlinks**.
+- `kb_search_documents` reports how connected each hit is and lists the neighbours of the
+  best match, so the agent can hop instead of searching again.
+- `kb_related_documents` navigates the graph — with a `file_path` it returns links,
+  backlinks and scored related documents; with no arguments it lists the **wanted
+  concepts**, i.e. what the knowledge base refers to but never explains.
+- `kb_add_document` reports how many links it indexed and which targets are still
+  undocumented.
+
+Documents stored before the graph existed are backfilled in the background at startup;
+`pando kb relink [--force]` rebuilds it on demand (it costs no embeddings and never rewrites
+your markdown). Toggle the feature from the TUI/WebUI settings (`Remembrances → Wiki Links`)
+or in config:
+
+```toml
+[Remembrances]
+KBWikiLinks = true                   # default; index [[wiki links]] as a document graph
+```
+
+Turning it off is safe and reversible: nothing new is indexed and the tools answer exactly as
+they did before the graph existed, but the links already stored survive and light up again
+when you turn it back on.
 
 ### Output compression filters (token reduction)
 

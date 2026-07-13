@@ -667,6 +667,7 @@ export interface RemembrancesConfig {
   kb_watch: boolean
   kb_auto_import: boolean
   kb_convert_documents: boolean
+  kb_wiki_links: boolean
   document_embedding_provider: string
   document_embedding_model: string
   document_embedding_base_url: string
