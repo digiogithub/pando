@@ -56,6 +56,7 @@ var builtinToolNames = map[string]struct{}{
 	kbSearchDocumentsToolName:        {},
 	kbGetDocumentToolName:            {},
 	kbDeleteDocumentToolName:         {},
+	kbRelatedDocumentsToolName:       {},
 	saveEventToolName:                {},
 	searchEventsToolName:             {},
 	hybridSearchRemembrancesToolName: {},

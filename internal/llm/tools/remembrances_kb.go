@@ -73,8 +73,9 @@ func NewKBDeleteDocumentTool(store *kb.KBStore) BaseTool {
 
 func (t *KBAddDocumentTool) Info() ToolInfo {
 	return ToolInfo{
-		Name:        kbAddDocumentToolName,
-		Description: "Adds or updates a document in the knowledge base with automatic chunking and embedding. Use this to store important documentation, notes, plans, or any text content for future retrieval. Documents are automatically timestamped (created_at on first add, updated_at on every update). Tags are stored and can be used to filter search results. When tag 'memory' and key are provided, performs a key-based upsert via the memory subsystem.",
+		Name: kbAddDocumentToolName,
+		Description: "Adds or updates a document in the knowledge base with automatic chunking and embedding. Use this to store important documentation, notes, plans, or any text content for future retrieval. Documents are automatically timestamped (created_at on first add, updated_at on every update). Tags are stored and can be used to filter search results. When tag 'memory' and key are provided, performs a key-based upsert via the memory subsystem.\n\n" +
+			kbWikiLinkSyntax + " Link the document to the plans, features and fixes it builds on: the links are indexed as a navigable graph (see kb_related_documents), so writing them is what keeps the knowledge base connected instead of a pile of loose files.",
 		Parameters: map[string]any{
 			"file_path": map[string]any{
 				"type":        "string",
@@ -158,7 +159,8 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 		if created {
 			action = "added"
 		}
-		return NewTextResponse(fmt.Sprintf("Memory %s: %s (key: %s)", action, req.FilePath, req.Key)), nil
+		return NewTextResponse(fmt.Sprintf("Memory %s: %s (key: %s)%s",
+			action, req.FilePath, req.Key, linkFeedback(ctx, t.store, req.FilePath))), nil
 	}
 
 	// Inject tags into metadata.
@@ -187,7 +189,8 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 		if err := t.store.WriteDocumentToFilesystem(req.FilePath, mirrorContent); err != nil {
 			return NewTextErrorResponse(fmt.Sprintf("kb filesystem mirror error: %v", err)), nil
 		}
-		return NewTextResponse(fmt.Sprintf("Document updated: %s (tags: %v)", req.FilePath, mergedFM.Tags)), nil
+		return NewTextResponse(fmt.Sprintf("Document updated: %s (tags: %v)%s",
+			req.FilePath, mergedFM.Tags, linkFeedback(ctx, t.store, req.FilePath))), nil
 	}
 
 	// New document: create front matter with current time.
@@ -201,7 +204,8 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 		return NewTextErrorResponse(fmt.Sprintf("kb filesystem mirror error: %v", err)), nil
 	}
 
-	return NewTextResponse(fmt.Sprintf("Document added: %s (tags: %v)", req.FilePath, newFM.Tags)), nil
+	return NewTextResponse(fmt.Sprintf("Document added: %s (tags: %v)%s",
+		req.FilePath, newFM.Tags, linkFeedback(ctx, t.store, req.FilePath))), nil
 }
 
 // ---- KBImportPathTool ----
@@ -261,8 +265,9 @@ func (t *KBImportPathTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 
 func (t *KBSearchDocumentsTool) Info() ToolInfo {
 	return ToolInfo{
-		Name:        kbSearchDocumentsToolName,
-		Description: "Searches the knowledge base for documents semantically similar to the query. Combines vector similarity and full-text search for best results. Use this to retrieve stored documentation, notes, or plans. Results include tags and timestamps, and can optionally be filtered by tags or sorted chronologically.",
+		Name: kbSearchDocumentsToolName,
+		Description: "Searches the knowledge base for documents semantically similar to the query. Combines vector similarity and full-text search for best results. Use this to retrieve stored documentation, notes, or plans. Results include tags and timestamps, and can optionally be filtered by tags or sorted chronologically. " +
+			"Results that take part in the wiki graph also report how many [[wiki links]] they declare and receive, and the neighbours of the best match are listed under 'related_to_top_result': follow them with kb_get_document or kb_related_documents instead of running another search.",
 		Parameters: map[string]any{
 			"query": map[string]any{
 				"type":        "string",
@@ -346,9 +351,14 @@ func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolR
 		CreatedAt    string                 `json:"created_at"`
 		UpdatedAt    string                 `json:"updated_at"`
 		Metadata     map[string]interface{} `json:"metadata,omitempty"`
+		// Links and Backlinks are omitted for documents outside the wiki graph, so
+		// a knowledge base that does not use the syntax reads exactly as before.
+		Links     int `json:"links,omitempty"`
+		Backlinks int `json:"backlinks,omitempty"`
 	}
 
 	items := make([]resultItem, len(results))
+	paths := make([]string, len(results))
 	for i, r := range results {
 		items[i] = resultItem{
 			FilePath:     r.Document.FilePath,
@@ -360,20 +370,47 @@ func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolR
 			UpdatedAt:    r.Document.UpdatedAt.UTC().Format(timeLayoutRFC3339),
 			Metadata:     r.Document.Metadata,
 		}
+		paths[i] = r.Document.FilePath
 	}
 
-	return NewStructuredResponse(map[string]any{
+	counts, err := t.store.LinkCountsFor(ctx, paths)
+	if err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("kb link counts error: %v", err)), nil
+	}
+	for i := range items {
+		if c, ok := counts[items[i].FilePath]; ok {
+			items[i].Links, items[i].Backlinks = c.Outgoing, c.Backlinks
+		}
+	}
+
+	out := map[string]any{
 		"count":   len(items),
 		"results": items,
-	}), nil
+	}
+
+	// The best match is the one that will actually be read, so hand over its
+	// neighbours: following a link beats running a second search. Only worth doing
+	// when that document is part of the graph at all.
+	if _, connected := counts[items[0].FilePath]; connected {
+		related, err := t.store.RelatedDocuments(ctx, items[0].FilePath, 3)
+		if err != nil {
+			return NewTextErrorResponse(fmt.Sprintf("kb related error: %v", err)), nil
+		}
+		if v := kbRelatedViews(related); v != nil {
+			out["related_to_top_result"] = v
+		}
+	}
+
+	return NewStructuredResponse(out), nil
 }
 
 // ---- KBGetDocumentTool ----
 
 func (t *KBGetDocumentTool) Info() ToolInfo {
 	return ToolInfo{
-		Name:        kbGetDocumentToolName,
-		Description: "Retrieves a specific document from the knowledge base by its file path.",
+		Name: kbGetDocumentToolName,
+		Description: "Retrieves a specific document from the knowledge base by its file path. " +
+			"When the document takes part in the wiki graph, the response also carries the [[wiki links]] it declares (resolved to their documents, or flagged unresolved) and the documents that link back to it; use kb_related_documents to explore further.",
 		Parameters: map[string]any{
 			"file_path": map[string]any{
 				"type":        "string",
@@ -403,14 +440,19 @@ func (t *KBGetDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 		return NewTextResponse(fmt.Sprintf("Document not found: %s", req.FilePath)), nil
 	}
 
-	return NewStructuredResponse(map[string]any{
+	out := map[string]any{
 		"file_path":  doc.FilePath,
 		"content":    doc.Content,
 		"tags":       doc.Tags,
 		"metadata":   doc.Metadata,
 		"created_at": doc.CreatedAt.UTC().Format(timeLayoutRFC3339),
 		"updated_at": doc.UpdatedAt.UTC().Format(timeLayoutRFC3339),
-	}), nil
+	}
+	if err := attachDocumentLinks(ctx, t.store, out, doc.FilePath); err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("kb links error: %v", err)), nil
+	}
+
+	return NewStructuredResponse(out), nil
 }
 
 // ---- KBDeleteDocumentTool ----

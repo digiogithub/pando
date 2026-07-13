@@ -371,6 +371,7 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 			llmtools.NewKBSearchDocumentsTool(appSvc.Remembrances.KB),
 			llmtools.NewKBGetDocumentTool(appSvc.Remembrances.KB),
 			llmtools.NewKBDeleteDocumentTool(appSvc.Remembrances.KB),
+			llmtools.NewKBRelatedDocumentsTool(appSvc.Remembrances.KB),
 			llmtools.NewSaveEventTool(appSvc.Remembrances.Events),
 			llmtools.NewSearchEventsTool(appSvc.Remembrances.Events),
 			llmtools.NewHybridSearchRemembrancesTool(appSvc.Remembrances),

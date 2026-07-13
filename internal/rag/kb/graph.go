@@ -177,6 +177,85 @@ func baseSlug(filePath string) string {
 	return slug
 }
 
+// HasLinks reports whether the knowledge base holds any wiki link at all.
+//
+// It is the guard the tools use before doing any graph work: a knowledge base
+// written before wiki links existed (or one that simply never uses the syntax)
+// answers false, so the tools can skip the resolver entirely and present exactly
+// the output they presented before the graph was added.
+func (s *KBStore) HasLinks(ctx context.Context) (bool, error) {
+	var found int
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM kb_links)`).Scan(&found); err != nil {
+		return false, fmt.Errorf("kb: check for links: %w", err)
+	}
+	return found != 0, nil
+}
+
+// LinkCounts is how connected a document is: the links it declares and the links
+// it receives.
+type LinkCounts struct {
+	Outgoing  int
+	Backlinks int
+}
+
+// LinkCountsFor returns the link counts of the given documents in a single pass
+// over the graph, for callers (search results) that want to hint at connections
+// without fetching them. Documents with no links in either direction are absent
+// from the map, and a link-less knowledge base returns an empty map.
+func (s *KBStore) LinkCountsFor(ctx context.Context, filePaths []string) (map[string]LinkCounts, error) {
+	if len(filePaths) == 0 {
+		return nil, nil
+	}
+	has, err := s.HasLinks(ctx)
+	if err != nil || !has {
+		return nil, err
+	}
+
+	resolver, err := s.newLinkResolver(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	wanted := make(map[string]struct{}, len(filePaths))
+	for _, p := range filePaths {
+		wanted[p] = struct{}{}
+	}
+
+	rows, err := s.db.QueryContext(ctx, `SELECT source_document_id, source_path, target_slug FROM kb_links`)
+	if err != nil {
+		return nil, fmt.Errorf("kb: list links for counts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]LinkCounts)
+	for rows.Next() {
+		var (
+			sourceID   int64
+			sourcePath string
+			slug       string
+		)
+		if err := rows.Scan(&sourceID, &sourcePath, &slug); err != nil {
+			return nil, fmt.Errorf("kb: scan link for counts: %w", err)
+		}
+
+		if _, ok := wanted[sourcePath]; ok {
+			c := counts[sourcePath]
+			c.Outgoing++
+			counts[sourcePath] = c
+		}
+		// Only links that actually resolve here count as backlinks, and a
+		// document linking to itself is not its own neighbour.
+		if e, ok := resolver.resolve(slug); ok && e.id != sourceID {
+			if _, ok := wanted[e.filePath]; ok {
+				c := counts[e.filePath]
+				c.Backlinks++
+				counts[e.filePath] = c
+			}
+		}
+	}
+	return counts, rows.Err()
+}
+
 // OutgoingLinks returns the wiki links a document declares, each resolved
 // against the current documents. A document with no links yields an empty slice
 // and no error, which is the normal state of a knowledge base that does not use

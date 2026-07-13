@@ -190,6 +190,59 @@ func TestRelatedDocumentsAccumulatesSignals(t *testing.T) {
 	}
 }
 
+// TestLinkCountsFor covers what the search tool shows next to each hit.
+func TestLinkCountsFor(t *testing.T) {
+	store := NewKBStore(openTestKBDB(t), fakeEmbedder{}, 0, 0)
+	ctx := context.Background()
+
+	addDoc(t, store, "hub.md", "Hub points at [[target]] and at [[nowhere]].", nil)
+	addDoc(t, store, "target.md", "The target.", nil)
+	addDoc(t, store, "citer.md", "Also points at [[target]].", nil)
+	addDoc(t, store, "lonely.md", "No links at all.", nil)
+
+	counts, err := store.LinkCountsFor(ctx, []string{"hub.md", "target.md", "lonely.md"})
+	if err != nil {
+		t.Fatalf("LinkCountsFor() error = %v", err)
+	}
+
+	// Unresolved links still count as declared links.
+	if got := counts["hub.md"]; got != (LinkCounts{Outgoing: 2}) {
+		t.Errorf("counts[hub.md] = %+v, want 2 outgoing", got)
+	}
+	// Both citers count, even the one that was not asked about.
+	if got := counts["target.md"]; got != (LinkCounts{Backlinks: 2}) {
+		t.Errorf("counts[target.md] = %+v, want 2 backlinks", got)
+	}
+	// A document outside the graph is absent, so the tools can stay silent about it.
+	if _, ok := counts["lonely.md"]; ok {
+		t.Errorf("counts[lonely.md] = %+v, want absent", counts["lonely.md"])
+	}
+}
+
+// TestHasLinksAndCountsOnLinklessKB is the other half of the compatibility
+// guarantee: on a knowledge base that never used the syntax the tools must find
+// nothing to report, so their output is unchanged.
+func TestHasLinksAndCountsOnLinklessKB(t *testing.T) {
+	store := NewKBStore(openTestKBDB(t), fakeEmbedder{}, 0, 0)
+	ctx := context.Background()
+
+	addDoc(t, store, "legacy/one.md", "Plain prose.", nil)
+
+	has, err := store.HasLinks(ctx)
+	if err != nil || has {
+		t.Fatalf("HasLinks() = %v, %v; want false, nil", has, err)
+	}
+	counts, err := store.LinkCountsFor(ctx, []string{"legacy/one.md"})
+	if err != nil || len(counts) != 0 {
+		t.Fatalf("LinkCountsFor() = %v, %v; want empty, nil", counts, err)
+	}
+
+	addDoc(t, store, "legacy/two.md", "Now with a [[link]].", nil)
+	if has, err = store.HasLinks(ctx); err != nil || !has {
+		t.Fatalf("HasLinks() = %v, %v; want true, nil once a link exists", has, err)
+	}
+}
+
 func TestWantedConcepts(t *testing.T) {
 	store := NewKBStore(openTestKBDB(t), fakeEmbedder{}, 0, 0)
 	ctx := context.Background()
