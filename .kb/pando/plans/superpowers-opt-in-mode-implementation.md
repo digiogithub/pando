@@ -1,14 +1,33 @@
 ---
-created_at: 2026-07-13T07:05:01.528353977Z
-updated_at: 2026-07-13T07:05:01.528353977Z
+created_at: 2026-07-13T07:05:01.898807806Z
+updated_at: 2026-07-13T21:44:51.211167466Z
 tags:
     - plan
     - superpowers
     - slash-commands
     - skills
     - architecture
+    - complete
 ---
 # Superpowers Opt-in Session Mode Implementation Plan
+
+## STATUS: COMPLETE (Phases 0-4, 2026-07-13)
+Shipped. Feature reference: `pando/features/superpowers_mode.md`. Per-phase records:
+`pando/changes/superpowers-phase1-core-session-mode.md`, `…-phase2-prompt-composition.md`,
+`…-phase3-slash-commands.md`.
+
+**One deviation from this plan, deliberate:** Phase 1 specified `EnabledForContext(ctx)` inside
+`internal/superpowers`, resolving the session ID with `prompt.SessionIDKey` / the tools context key.
+That creates an import cycle as soon as ACP imports the package for the slash commands
+(`superpowers → llm/tools → mesnada → acp → superpowers`). The core package is therefore
+dependency-free (`strings` + `sync` only) and the context resolution lives in
+`internal/llm/agent/superpowers_session.go:superpowersEnabledForContext`, reusing the agent's
+existing `sessionIDFromContext`. The plan's "no dependency cycle" exit criterion is met; its exact
+API shape is not. Keep the core package import-free.
+
+**Additions beyond the plan:** `RunSuperpowersFinish` in the agent package centralizes the
+success-only clearing rule so ACP, Web UI and TUI cannot diverge; the TUI (not listed in Phase 3)
+was also wired, since it would otherwise send `/superpowers` to the model as literal text.
 
 ## Objective
 Add an internal, opt-in Pando workflow mode enabled by `/superpowers` and disabled by `/superpowers-finish`. It must make a disciplined development lifecycle available without changing normal Pando behavior or importing/executing the upstream Superpowers plugin.
@@ -43,57 +62,34 @@ Add an internal, opt-in Pando workflow mode enabled by `/superpowers` and disabl
 
 ## Phases
 
-### Phase 0: Architecture and acceptance specification
-1. Add a focused design note under project documentation covering the behavioral contract above, precedence with AGENTS.md/direct instructions, and the non-goals.
-2. Define testable acceptance cases for activation, idempotence, active prompt injection, finish success, finish cancellation/error, concurrent sessions, and clean mode.
-3. Confirm that no user-authored files conflict with the names `superpowers` and `superpowers-finish`; reserve these names as built-ins.
+### Phase 0: Architecture and acceptance specification — DONE
+Covered by this document (behavioral contract + acceptance cases + reserved built-in names).
 
-Exit criteria: reviewed behavior matrix and a clear no-destructive-automation guarantee.
+### Phase 1: Core session mode and policy — DONE
+`internal/superpowers/superpowers.go` + tests. See the deviation note above regarding
+`EnabledForContext`. Session cleanup deferred (no cheap session-close hook): entries are
+process-bounded, one small struct per opted-in session.
 
-### Phase 1: Core session mode and policy
-1. Create `internal/superpowers/` with a small mode API:
-   - `type State struct { Enabled bool }`
-   - `SetEnabled(sessionID string, enabled bool)`
-   - `Enabled(sessionID string) bool`
-   - `EnabledForContext(ctx context.Context) bool`
-   - `Instructions() string`
-2. Use a `sync.Map` keyed by normalized session ID and the same `prompt.SessionIDKey` / tool context resolution convention as `internal/llm/agent/session_overrides.go`.
-3. Encode the Pando-owned lifecycle policy in one concise instruction source. Keep it prescriptive about gates and verification, not a long copy of upstream prose.
-4. Add unit tests in `internal/superpowers/` for normalization, enable/disable, context lookup, isolation, and parallel safety.
-5. Decide whether closed/deleted session cleanup can be added cheaply. If no lifecycle hook is available without broad refactoring, document that map entries are process-bounded and defer cleanup.
+### Phase 2: Prompt composition — DONE
+`prepareProvider` fast path gated by `sessionPolicyActive(ctx)`; `sessionPolicyInstructions(ctx)`
+injects automatic skills → Superpowers → Ponytail. Clean mode still short-circuits first and injects
+nothing.
 
-Exit criteria: isolated core package with race-safe unit coverage and no dependency cycle.
+### Phase 3: Slash command wiring on every surface — DONE
+Shared registry, ACP (specs/parser/handler/`AgentService` + both adapters), Web UI SSE handler, TUI.
+Success-only clearing centralized in `agent.RunSuperpowersFinish`.
 
-### Phase 2: Prompt composition
-1. Update `internal/llm/agent/agent.go:prepareProvider` so the fast path also considers Superpowers mode.
-2. When enabled, append `prompt.InjectSkillInstructions("superpowers", superpowers.Instructions())` for every eligible agent turn, alongside automatically activated skills and Ponytail.
-3. Preserve clean-mode behavior: clean mode remains authoritative and must not inject the policy.
-4. Define ordering intentionally: user/project active skills first, Superpowers lifecycle policy next, Ponytail last; document why direct user/AGENTS instructions still take precedence.
-5. Add agent-level tests proving injection occurs only for the enabled session, composes with Ponytail and ordinary skills, is absent when disabled, and cannot leak across concurrent contexts.
+### Phase 4: Verification, documentation, and release safety — DONE
+Tests: `internal/commands/registry_test.go` (new), `internal/mesnada/acp/superpowers_commands_test.go`
+(new), `RunSuperpowersFinish` cases in `internal/llm/agent/superpowers_session_test.go`, advertised-command
+count 9→11 in `agent_pando_test.go`. Docs: README gained a **Built-in Slash Commands** section (none
+existed) plus a Superpowers subsection with the opt-in / precedence / no-git-side-effects / ephemeral
+caveats, and a Features bullet.
 
-Exit criteria: every normal agent turn for the enabled session receives the policy, with existing modes unchanged.
-
-### Phase 3: Slash command wiring on every surface
-1. Register both commands in `internal/commands/registry.go`:
-   - `superpowers`: “Enable the opt-in disciplined development workflow”
-   - `superpowers-finish`: “Verify and close the active Superpowers workflow”
-2. Add equivalent ACP kinds/specs to `internal/mesnada/acp/slash_commands.go`, including availability metadata and parser coverage.
-3. Extend the ACP agent-service interface and its concrete adapter with a minimal `SetSuperpowersMode(sessionID, enabled)` operation, following `SetPonytailMode`.
-4. Add a small ACP command handler analogous to `ponytail_commands.go`. Activation is synchronous; finish routes a dedicated final prompt through the existing agent execution path and clears state only after success.
-5. Extend `internal/api/handlers_chat.go:handleSlashCommandStream`: activation is synchronous SSE feedback; finish submits the final agent prompt through the existing background runner and applies the same success-only clearing rule.
-6. Ensure unknown/custom command fallback behavior remains unchanged and command completion/API lists include both built-ins.
-
-Exit criteria: Web UI, TUI completion/API registry, and ACP show and execute the same commands.
-
-### Phase 4: Verification, documentation, and release safety
-1. Add unit tests for shared command registry parsing/listing; add SSE/API handler tests as appropriate to the existing test seams.
-2. Extend `internal/mesnada/acp/agent_pando_test.go` for advertised commands, parser cases, activation, idempotence, finish success, and finish failure/cancellation retention.
-3. Run `go test ./internal/llm/agent ./internal/api`, targeted `go test ./internal/mesnada/acp ./internal/commands ./internal/superpowers`, then `go test ./...` if the repository baseline permits.
-4. Run `go test -race` on the mode package and the agent tests that exercise session isolation.
-5. Update README command documentation and skill documentation to explain that the feature is opt-in, ephemeral in v1, and intentionally excludes automatic git side effects.
-6. Record the completed implementation and verification in the Pando KB as required by AGENTS.md.
-
-Exit criteria: all targeted tests pass, commands are documented, and defaults remain behaviorally identical for users who never invoke `/superpowers`.
+Verified: `go build ./...`, `go vet` clean, targeted tests pass, `-race` clean on the new code.
+`go test ./...` shows only pre-existing failures (`internal/mcpgateway` TOML tests; 2 data races in
+`internal/llm/agent` from `goal_runner_test.go` and `session_overrides_concurrency_test.go`/`persona_selector.go`),
+all reproduced at HEAD in a clean worktree without any Superpowers change.
 
 ## Risks and mitigations
 - Prompt bloat: keep policy compact and inject only for enabled sessions.
@@ -107,3 +103,5 @@ Exit criteria: all targeted tests pass, commands are documented, and defaults re
 - Fine-grained workflow states (design-approved, plan-approved, implementing) enforced by structured session data.
 - Optional project-configurable policy templates and organization-specific gates.
 - Unified slash-command specification shared by native and ACP command surfaces.
+- Pre-existing debt surfaced during this work (not caused by it): the two `internal/llm/agent` data
+  races and the `internal/mcpgateway` TOML test failures.

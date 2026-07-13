@@ -872,6 +872,26 @@ func (a *acpAgentAdapter) SetPonytailMode(sessionID string, mode string) (string
 	return m.String(), true
 }
 
+// SetSuperpowersMode enables or disables the per-session Superpowers workflow policy.
+func (a *acpAgentAdapter) SetSuperpowersMode(sessionID string, enabled bool) {
+	agent.SetSuperpowersMode(sessionID, enabled)
+}
+
+// SuperpowersMode reports whether the Superpowers policy is active for the session.
+func (a *acpAgentAdapter) SuperpowersMode(sessionID string) bool {
+	return agent.SuperpowersMode(sessionID)
+}
+
+// SuperpowersFinish runs the Superpowers closing turn; the mode is cleared only
+// when that turn succeeds (see agent.RunSuperpowersFinish).
+func (a *acpAgentAdapter) SuperpowersFinish(ctx context.Context, sessionID string) (<-chan acpPkg.AgentEvent, error) {
+	realCh, err := agent.RunSuperpowersFinish(ctx, a.svc, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.forwardEvents(ctx, realCh), nil
+}
+
 // ListPersonas returns all available persona names.
 func (a *acpAgentAdapter) ListPersonas() []string {
 	return agent.ListAvailablePersonas()

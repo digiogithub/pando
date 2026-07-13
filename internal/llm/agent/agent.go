@@ -27,6 +27,7 @@ import (
 	"github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
+	"github.com/digiogithub/pando/internal/superpowers"
 )
 
 type cleanModeContextKey struct{}
@@ -2194,10 +2195,10 @@ func (a *agent) prepareProvider(ctx context.Context, userPrompt string, personaC
 		return createAgentProvider(ctx, a.agentName, []tools.BaseTool{cleanModeCatalogTool{}}, nil, nil, "")
 	}
 
-	// When there is no skill manager, no persona and no active ponytail mode, use
-	// the pre-built provider as-is. Ponytail must still be honored here because it
-	// injects per-turn even without a skill manager.
-	if a.skillManager == nil && personaContent == "" && !ponytailModeForContext(ctx).IsActive() {
+	// When there is no skill manager, no persona and no active session policy, use
+	// the pre-built provider as-is. Ponytail and Superpowers must still be honored
+	// here because they inject per-turn even without a skill manager.
+	if a.skillManager == nil && personaContent == "" && !sessionPolicyActive(ctx) {
 		return a.provider, nil
 	}
 
@@ -2214,15 +2215,43 @@ func (a *agent) prepareProvider(ctx context.Context, userPrompt string, personaC
 		}
 	}
 
-	// Ponytail mode (per-session, ctx-threaded): when active, inject the
-	// "lazy senior developer" ruleset before each turn just like any other skill.
-	if mode := ponytailModeForContext(ctx); mode.IsActive() {
-		if injected := prompt.InjectSkillInstructions("ponytail ("+mode.String()+")", ponytail.Instructions(mode)); injected != "" {
-			activeSkillInstructions = append(activeSkillInstructions, injected)
+	activeSkillInstructions = append(activeSkillInstructions, sessionPolicyInstructions(ctx)...)
+
+	return createAgentProvider(ctx, a.agentName, a.tools, a.skillManager, activeSkillInstructions, personaContent)
+}
+
+// sessionPolicyActive reports whether any per-session prompt policy (Ponytail,
+// Superpowers) is active for the request context. It gates the prepareProvider
+// fast path that would otherwise reuse the pre-built provider.
+func sessionPolicyActive(ctx context.Context) bool {
+	return ponytailModeForContext(ctx).IsActive() || superpowersEnabledForContext(ctx)
+}
+
+// sessionPolicyInstructions returns the per-session policy rulesets to inject
+// after any automatically activated skill, in a deliberate order: the
+// Superpowers development lifecycle first (it governs how work is approached),
+// then Ponytail (it governs how much gets built). Both remain subordinate to
+// direct user instructions and AGENTS.md, which the rulesets state explicitly.
+func sessionPolicyInstructions(ctx context.Context) []string {
+	var injected []string
+
+	// Superpowers mode (per-session, ctx-threaded): the opt-in disciplined
+	// development workflow, injected before each turn like any other skill.
+	if superpowersEnabledForContext(ctx) {
+		if text := prompt.InjectSkillInstructions("superpowers", superpowers.Instructions()); text != "" {
+			injected = append(injected, text)
 		}
 	}
 
-	return createAgentProvider(ctx, a.agentName, a.tools, a.skillManager, activeSkillInstructions, personaContent)
+	// Ponytail mode (per-session, ctx-threaded): when active, inject the
+	// "lazy senior developer" ruleset before each turn just like any other skill.
+	if mode := ponytailModeForContext(ctx); mode.IsActive() {
+		if text := prompt.InjectSkillInstructions("ponytail ("+mode.String()+")", ponytail.Instructions(mode)); text != "" {
+			injected = append(injected, text)
+		}
+	}
+
+	return injected
 }
 
 func createAgentProvider(ctx context.Context, agentName config.AgentName, agentTools []tools.BaseTool, skillManager *skills.SkillManager, activeSkillInstructions []string, personaContent ...string) (provider.Provider, error) {

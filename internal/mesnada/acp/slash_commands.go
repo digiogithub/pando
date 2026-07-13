@@ -17,6 +17,9 @@ const (
 	slashCommandDBCompact       slashCommandKind = "db-compact"
 	slashCommandPonytail        slashCommandKind = "ponytail"
 	slashCommandImproveAgentsMd slashCommandKind = "improve-agents-md"
+	slashCommandSuperpowers     slashCommandKind = "superpowers"
+
+	slashCommandSuperpowersFinish slashCommandKind = "superpowers-finish"
 )
 
 type slashCommand struct {
@@ -70,6 +73,19 @@ func slashCommandSpecs() []slashCommandSpec {
 			Description: "Toggle lazy-senior-dev (ponytail) mode at a chosen intensity",
 			InputHint:   "lite | full | ultra | off",
 			Usage:       "Usage: /ponytail [lite|full|ultra|off]\nNo argument defaults to full. Use /ponytail off to disable.",
+		},
+		{
+			Token:       superpowersCommandToken,
+			Kind:        slashCommandSuperpowers,
+			Description: "Enable the opt-in disciplined development workflow (plan-first, verify-always)",
+			InputHint:   "optional objective",
+			Usage:       "Usage: /superpowers [objective]\nRun /superpowers-finish to verify, report and return to normal mode.",
+		},
+		{
+			Token:       superpowersFinishCommandToken,
+			Kind:        slashCommandSuperpowersFinish,
+			Description: "Verify and close the active Superpowers workflow, then return to normal mode",
+			Usage:       "Usage: /superpowers-finish",
 		},
 		{
 			Token:       improveAgentsMdCommandToken,

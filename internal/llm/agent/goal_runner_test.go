@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -407,16 +408,30 @@ func TestGoalRunnerRunTimesOutWithConfiguredDuration(t *testing.T) {
 
 	runner := NewGoalRunner(service, store)
 	start := time.Unix(700, 0)
+
+	// The runner reads the clock from its own goroutine while the test advances it,
+	// so the fake clock must be synchronized (otherwise the two race).
+	var clockMu sync.Mutex
 	current := start
+	setNow := func(t time.Time) {
+		clockMu.Lock()
+		defer clockMu.Unlock()
+		current = t
+	}
+
 	runner.newGoalID = func() string { return "goal-7" }
-	runner.now = func() time.Time { return current }
+	runner.now = func() time.Time {
+		clockMu.Lock()
+		defer clockMu.Unlock()
+		return current
+	}
 
 	events, err := runner.Run(context.Background(), "session-1", "Finish phase six", GoalOptions{MaxIterations: 2, MaxDuration: time.Second})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
-	current = start.Add(2 * time.Second)
+	setNow(start.Add(2 * time.Second))
 	for range events {
 	}
 

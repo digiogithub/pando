@@ -66,6 +66,10 @@ func (a *PandoACPAgent) handleSlashCommand(
 		return a.processDBCompactCommand(ctx, acpSession)
 	case slashCommandPonytail:
 		return a.processPonytailCommand(acpSession, command.Objective)
+	case slashCommandSuperpowers:
+		return a.processSuperpowersCommand(acpSession, command.Objective)
+	case slashCommandSuperpowersFinish:
+		return a.processSuperpowersFinishCommand(ctx, acpSession)
 	case slashCommandImproveAgentsMd:
 		return a.processImproveAgentsMdCommand(ctx, acpSession, command.Objective)
 	default:

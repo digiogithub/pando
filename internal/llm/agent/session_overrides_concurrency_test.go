@@ -33,16 +33,18 @@ func TestSessionOverridesConcurrentIsolation(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	// Save and restore mutated package globals.
-	prevMgr := globalPersonaManager
-	prevActive := activePersonaName
+	// Save and restore mutated package globals. They are written through the
+	// setters (not assigned directly) so the writes are synchronized against the
+	// agent goroutines that read them.
+	prevMgr := GetPersonaManager()
+	prevActive := GetActivePersona()
 	t.Cleanup(func() {
-		globalPersonaManager = prevMgr
-		activePersonaName = prevActive
+		SetPersonaManager(prevMgr)
+		setActivePersonaForTest(prevActive)
 	})
 	SetPersonaManager(mgr)
 	// A global active persona that must NOT leak into PersonaScoped sessions.
-	activePersonaName = "persona-b"
+	setActivePersonaForTest("persona-b")
 
 	const (
 		sessA   = "session-alpha"

@@ -92,6 +92,15 @@ type AgentService interface {
 	// mode is one of "lite", "full", "ultra" (or "off"/empty to disable). It
 	// returns the normalized mode label applied and whether the input was valid.
 	SetPonytailMode(sessionID string, mode string) (applied string, ok bool)
+	// SetSuperpowersMode enables or disables the per-session Superpowers workflow
+	// policy (the opt-in plan-first, verify-always development lifecycle).
+	SetSuperpowersMode(sessionID string, enabled bool)
+	// SuperpowersMode reports whether the Superpowers policy is active for the session.
+	SuperpowersMode(sessionID string) bool
+	// SuperpowersFinish runs the Superpowers closing turn (verify, report, list what
+	// is left) as a normal agent turn. The mode is disabled only if that turn
+	// succeeds, so a cancelled or failed close keeps the workflow active.
+	SuperpowersFinish(ctx context.Context, sessionID string) (<-chan AgentEvent, error)
 	// ListPersonas returns the names of all available personas.
 	ListPersonas() []string
 	// GetActivePersona returns the currently active persona name (empty = none).

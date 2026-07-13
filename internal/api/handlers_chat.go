@@ -19,6 +19,7 @@ import (
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/ponytail"
+	"github.com/digiogithub/pando/internal/superpowers"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/toolmeta"
 	"github.com/digiogithub/pando/internal/userinput"
@@ -835,6 +836,30 @@ func (s *Server) handleSlashCommandStream(w http.ResponseWriter, flusher http.Fl
 				writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Ponytail mode disabled. Back to normal."})
 			}
 		}
+	case "superpowers":
+		if agent.SuperpowersMode(sessionID) {
+			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": superpowers.AlreadyActiveMessage})
+		} else {
+			agent.SetSuperpowersMode(sessionID, true)
+			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": superpowers.ActivationMessage(cmdArgs)})
+		}
+	case "superpowers-finish":
+		if !agent.SuperpowersMode(sessionID) {
+			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": superpowers.NotActiveMessage})
+			return
+		}
+		writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Closing the Superpowers workflow: verifying and reporting..."})
+		finishSvc := s.app.CoderAgent
+		submitErr := s.bgRunner.Submit(sessionID, func(bgCtx context.Context) (<-chan agent.AgentEvent, error) {
+			return agent.RunSuperpowersFinish(bgCtx, finishSvc, sessionID)
+		})
+		if submitErr != nil {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": submitErr.Error()})
+			return
+		}
+		eventChan, unsubFn, _ := s.bgRunner.Subscribe(sessionID)
+		s.streamSessionEvents(w, flusher, ctx, sessionID, unsubFn, eventChan)
+		return
 	case "improve-agents-md":
 		writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Improving AGENTS.md..."})
 		agentSvc := s.app.CoderAgent

@@ -20,6 +20,7 @@ import (
 	agentpkg "github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/ponytail"
+	"github.com/digiogithub/pando/internal/superpowers"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui/components/chat"
@@ -848,6 +849,9 @@ func (p *ChatPageModel) sendMessage(text string, attachments []message.Attachmen
 	if cmd, ok := p.handlePonytailCommand(text); ok {
 		return cmd
 	}
+	if cmd, ok := p.handleSuperpowersCommand(text); ok {
+		return cmd
+	}
 	// /improve-agents-md expands into a full instruction prompt that is then run
 	// as a normal agent turn (so it streams, steers, and persists like any other
 	// message). Replace the text and fall through to the normal Run/Steer flow.
@@ -1308,6 +1312,50 @@ func (p *ChatPageModel) handlePonytailCommand(input string) (tea.Cmd, bool) {
 		return util.ReportInfo("Ponytail mode: " + mode.String() + ". " + ponytail.Description(mode)), true
 	}
 	return util.ReportInfo("Ponytail mode disabled. Back to normal."), true
+}
+
+// handleSuperpowersCommand handles /superpowers [objective] and
+// /superpowers-finish. Activation is synchronous (a toast, no agent turn); the
+// finish runs a real closing turn through the agent, which streams into the chat
+// like any other message. The mode is cleared inside RunSuperpowersFinish only if
+// that turn succeeds, so a cancelled or failed close keeps the workflow on.
+func (p *ChatPageModel) handleSuperpowersCommand(input string) (tea.Cmd, bool) {
+	line := strings.TrimSpace(input)
+	isFinish := line == "/superpowers-finish"
+	isActivate := line == "/superpowers" || strings.HasPrefix(line, "/superpowers ")
+	if !isFinish && !isActivate {
+		return nil, false
+	}
+	if p.session.ID == "" {
+		return util.ReportWarn("Open or start a session first."), true
+	}
+
+	if isActivate {
+		if agentpkg.SuperpowersMode(p.session.ID) {
+			return util.ReportInfo(superpowers.AlreadyActiveMessage), true
+		}
+		agentpkg.SetSuperpowersMode(p.session.ID, true)
+		objective := strings.TrimSpace(strings.TrimPrefix(line, "/superpowers"))
+		if objective != "" {
+			return util.ReportInfo("Superpowers mode enabled. Objective: " + objective), true
+		}
+		return util.ReportInfo("Superpowers mode enabled. Plan first, verify always. /superpowers-finish to close."), true
+	}
+
+	events, err := agentpkg.RunSuperpowersFinish(context.Background(), p.app.CoderAgent, p.session.ID)
+	if err != nil {
+		if errors.Is(err, agentpkg.ErrSuperpowersNotActive) {
+			return util.ReportInfo(superpowers.NotActiveMessage), true
+		}
+		return util.ReportError(err), true
+	}
+	// The chat renders the turn from the pubsub stream, so the returned channel is
+	// drained only to let RunSuperpowersFinish observe the terminal event.
+	go func() {
+		for range events {
+		}
+	}()
+	return util.ReportInfo("Closing the Superpowers workflow: verifying and reporting..."), true
 }
 
 // expandImproveAgentsMdCommand recognizes the /improve-agents-md slash command

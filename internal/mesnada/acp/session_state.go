@@ -47,6 +47,8 @@ const (
 	dbCompactCommandToken             = "db-compact"
 	ponytailCommandToken              = "ponytail"
 	improveAgentsMdCommandToken       = "improve-agents-md"
+	superpowersCommandToken           = "superpowers"
+	superpowersFinishCommandToken     = "superpowers-finish"
 )
 
 const (

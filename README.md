@@ -20,6 +20,7 @@ Pando is a Go-based CLI application that brings AI assistance to your terminal. 
 - **Session Management**: Save and manage multiple conversation sessions
 - **Tool Integration**: AI can execute commands, search files, and modify code
 - **Output Compression (token reduction)**: RTK-style filtering of verbose command output (test runners, builds, installers, linters) before it reaches the model — typically 60-90% fewer tokens. Declarative, hot-reloadable TOML filters plus native structured parsers (`go test -json`, `golangci-lint`, `tsc`). Fail-safe and on by default; never drops errors. Add project-local filters in `.pando/filters.toml` and validate them with `pando filter test`. See [docs/output-filters.md](docs/output-filters.md).
+- **Superpowers Mode (opt-in workflow discipline)**: `/superpowers` routes long or risky work through explicit gates — understand, design and get approval, write a risk-ordered plan, implement test-first, verify with real command output — and `/superpowers-finish` closes it with a verified report. Per-session and off by default; it never performs a git operation on its own. See [Built-in Slash Commands](#built-in-slash-commands).
 - **Vim-like Editor**: Integrated editor with text input capabilities
 - **Persistent Storage**: SQLite database for storing conversations and sessions
 - **LSP Integration**: Language Server Protocol support for code intelligence
@@ -353,6 +354,48 @@ pando filter test                       # validate the built-in defaults
 ```
 
 The full filter schema and authoring guide is in [docs/output-filters.md](docs/output-filters.md).
+
+## Built-in Slash Commands
+
+Available in the TUI, the Web UI and over ACP (editors like Zed or VS Code):
+
+| Command | What it does |
+| --- | --- |
+| `/goal <objective>` (alias `/autopilot`) | Start goal mode with a persistent objective; `/goal-status`, `/goal-cancel` |
+| `/compact` (alias `/summarize`) | Summarize and compact the current session |
+| `/db-compact` | VACUUM the database and reclaim free space |
+| `/ponytail [lite\|full\|ultra\|off]` | Toggle "lazy senior developer" mode (build less, keep the diff short) |
+| `/superpowers [objective]` | Enable the disciplined development workflow (see below) |
+| `/superpowers-finish` | Verify, report, and return to normal mode |
+| `/improve-agents-md` | Create or reinforce AGENTS.md with the mandatory AI-agent operating rules |
+
+### Superpowers mode (opt-in)
+
+`/superpowers` turns on a workflow policy for the current session. Long or risky work is then
+routed through explicit gates instead of jumping straight to code: understand the context, present
+a design and get approval, write a prioritized plan for anything multi-file (phases ordered by
+risk and dependency, each with its exit criteria and verification command), implement test-first in
+small increments, reproduce bugs before fixing them, and verify with real command output rather
+than claims.
+
+`/superpowers-finish` runs a closing turn that verifies the work, summarizes what changed, states
+what is *not* done, and then returns the session to normal mode.
+
+Worth knowing:
+
+- **Opt-in and inert by default.** A session that never runs `/superpowers` behaves exactly as
+  before — nothing is injected into the prompt.
+- **Your instructions win.** The policy explicitly yields to direct user instructions, AGENTS.md,
+  and the permission system, and it does not apply its gates to trivial or read-only requests.
+- **No automatic git side effects.** Neither the mode nor the finish command will ever commit,
+  merge, push, open a pull request, touch branches or worktrees, or discard work. Git stays
+  user-directed.
+- **Ephemeral (v1).** The mode is per-session and in-memory: it is cleared by `/superpowers-finish`
+  and does not survive a restart.
+
+It is inspired by the workflow principles of the [Superpowers](https://github.com/obra/superpowers)
+plugin by Jesse Vincent (MIT), reimplemented natively in Pando — no plugin runtime, no telemetry,
+no forced subagents.
 
 ## Custom Commands
 

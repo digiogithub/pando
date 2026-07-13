@@ -2354,6 +2354,22 @@ func (a *appACPAgentAdapter) SetPonytailMode(sessionID string, mode string) (str
 	return m.String(), true
 }
 
+func (a *appACPAgentAdapter) SetSuperpowersMode(sessionID string, enabled bool) {
+	agent.SetSuperpowersMode(sessionID, enabled)
+}
+
+func (a *appACPAgentAdapter) SuperpowersMode(sessionID string) bool {
+	return agent.SuperpowersMode(sessionID)
+}
+
+func (a *appACPAgentAdapter) SuperpowersFinish(ctx context.Context, sessionID string) (<-chan mesnadaACP.AgentEvent, error) {
+	realCh, err := agent.RunSuperpowersFinish(ctx, a.svc, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.forwardEvents(ctx, realCh), nil
+}
+
 func (a *appACPAgentAdapter) ListPersonas() []string             { return agent.ListAvailablePersonas() }
 func (a *appACPAgentAdapter) GetActivePersona() string           { return agent.GetActivePersona() }
 func (a *appACPAgentAdapter) SetActivePersona(name string) error { return agent.SetActivePersona(name) }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/provider"
@@ -13,41 +14,51 @@ import (
 	"github.com/digiogithub/pando/internal/message"
 )
 
+// personaMu guards the package-level persona state below. The setters are driven
+// by the UI (TUI/Web/ACP) while the readers run inside live agent goroutines, so
+// the state is genuinely accessed concurrently and must be synchronized.
+var personaMu sync.RWMutex
+
 // globalPersonaSelector is the package-level persona selector for the main session.
+// Guarded by personaMu.
 var globalPersonaSelector *PersonaSelector
 
 // globalPersonaManager is the persona manager that holds all available personas
 // (built-ins + user-defined). It is always initialised when personas are available,
-// independently of whether auto-selection is configured.
+// independently of whether auto-selection is configured. Guarded by personaMu.
 var globalPersonaManager *persona.Manager
 
 // activePersonaName stores the currently active persona name (empty = none).
+// Guarded by personaMu.
 var activePersonaName string
 
 // SetPersonaSelector sets the global persona selector used in the main conversation agent.
 func SetPersonaSelector(ps *PersonaSelector) {
+	personaMu.Lock()
+	defer personaMu.Unlock()
 	globalPersonaSelector = ps
 }
 
 // SetPersonaManager sets the global persona manager used for persona listing and
 // manual persona selection. This should be called during app initialisation.
 func SetPersonaManager(mgr *persona.Manager) {
+	personaMu.Lock()
+	defer personaMu.Unlock()
 	globalPersonaManager = mgr
 }
 
 // GetPersonaManager returns the global persona manager, or nil if not initialised.
 func GetPersonaManager() *persona.Manager {
+	personaMu.RLock()
+	defer personaMu.RUnlock()
 	return globalPersonaManager
 }
 
 // ListAvailablePersonas returns the names of all loaded personas.
 // Uses the global persona manager when available; falls back to the selector's manager.
 func ListAvailablePersonas() []string {
-	if globalPersonaManager != nil {
-		return globalPersonaManager.ListPersonas()
-	}
-	if globalPersonaSelector != nil {
-		return globalPersonaSelector.manager.ListPersonas()
+	if mgr := personaManager(); mgr != nil {
+		return mgr.ListPersonas()
 	}
 	return []string{}
 }
@@ -55,6 +66,8 @@ func ListAvailablePersonas() []string {
 // GetActivePersona returns the currently active persona name.
 // An empty string means no persona is active (auto-select or none).
 func GetActivePersona() string {
+	personaMu.RLock()
+	defer personaMu.RUnlock()
 	return activePersonaName
 }
 
@@ -63,29 +76,49 @@ func GetActivePersona() string {
 // Returns an error if the named persona does not exist (and name is non-empty).
 func SetActivePersona(name string) error {
 	if name == "" {
+		personaMu.Lock()
 		activePersonaName = ""
+		personaMu.Unlock()
 		return nil
 	}
 	// Validate persona exists in manager or selector
-	mgr := globalPersonaManager
-	if mgr == nil && globalPersonaSelector != nil {
-		mgr = globalPersonaSelector.manager
-	}
+	mgr := personaManager()
 	if mgr == nil || !mgr.HasPersona(name) {
 		return fmt.Errorf("persona %q not found", name)
 	}
+	personaMu.Lock()
 	activePersonaName = name
+	personaMu.Unlock()
 	return nil
+}
+
+// setActivePersonaForTest sets the active persona without validating it, so tests
+// can install a global persona through the same lock the agent goroutines use.
+func setActivePersonaForTest(name string) {
+	personaMu.Lock()
+	defer personaMu.Unlock()
+	activePersonaName = name
 }
 
 // personaManager returns the manager to resolve persona content from, preferring
 // the global manager and falling back to the selector's manager.
 func personaManager() *persona.Manager {
-	mgr := globalPersonaManager
-	if mgr == nil && globalPersonaSelector != nil {
-		mgr = globalPersonaSelector.manager
+	personaMu.RLock()
+	defer personaMu.RUnlock()
+	if globalPersonaManager != nil {
+		return globalPersonaManager
 	}
-	return mgr
+	if globalPersonaSelector != nil {
+		return globalPersonaSelector.manager
+	}
+	return nil
+}
+
+// personaSelector returns the global auto-selector, or nil when none is configured.
+func personaSelector() *PersonaSelector {
+	personaMu.RLock()
+	defer personaMu.RUnlock()
+	return globalPersonaSelector
 }
 
 // getPersonaContent returns the persona instructions for the given context.
@@ -105,23 +138,23 @@ func getPersonaContent(ctx context.Context, userPrompt string) string {
 				return mgr.GetPersona(ov.Persona)
 			}
 		}
-		if globalPersonaSelector != nil {
-			return globalPersonaSelector.SelectPersonaContent(ctx, userPrompt)
+		if selector := personaSelector(); selector != nil {
+			return selector.SelectPersonaContent(ctx, userPrompt)
 		}
 		return ""
 	}
 
 	// Manual persona takes priority over auto-selection.
-	if activePersonaName != "" {
+	if active := GetActivePersona(); active != "" {
 		if mgr := personaManager(); mgr != nil {
-			logging.Debug("Persona: using manually set persona", "persona", activePersonaName)
-			return mgr.GetPersona(activePersonaName)
+			logging.Debug("Persona: using manually set persona", "persona", active)
+			return mgr.GetPersona(active)
 		}
 	}
 
 	// Fall back to automatic persona selection.
-	if globalPersonaSelector != nil {
-		return globalPersonaSelector.SelectPersonaContent(ctx, userPrompt)
+	if selector := personaSelector(); selector != nil {
+		return selector.SelectPersonaContent(ctx, userPrompt)
 	}
 
 	return ""
@@ -134,7 +167,7 @@ func effectiveActivePersona(ctx context.Context) string {
 	if ov := sessionLLMOverridesForContext(ctx); ov.PersonaScoped {
 		return ov.Persona
 	}
-	return activePersonaName
+	return GetActivePersona()
 }
 
 // PersonaSelector automatically selects and applies a persona for each user prompt.
