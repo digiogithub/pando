@@ -25,6 +25,54 @@ func TestBuiltinCommandsIncludeSuperpowers(t *testing.T) {
 	}
 }
 
+func TestBuiltinCommandsIncludeCaveman(t *testing.T) {
+	byName := map[string]SlashCommand{}
+	for _, cmd := range BuiltinCommands() {
+		byName[cmd.Name] = cmd
+	}
+
+	cm, ok := byName["caveman"]
+	if !ok {
+		t.Fatal("expected /caveman to be a built-in command")
+	}
+	if !cm.AcceptsArgs {
+		t.Error("expected /caveman to accept a level argument")
+	}
+
+	finish, ok := byName["caveman-finish"]
+	if !ok {
+		t.Fatal("expected /caveman-finish to be a built-in command")
+	}
+	if finish.AcceptsArgs {
+		t.Error("expected /caveman-finish to take no arguments")
+	}
+}
+
+func TestParseCavemanCommands(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantName string
+		wantArgs string
+	}{
+		{input: "/caveman", wantName: "caveman"},
+		{input: "/caveman ultra", wantName: "caveman", wantArgs: "ultra"},
+		{input: "/caveman-finish", wantName: "caveman-finish"},
+	}
+
+	for _, tt := range tests {
+		name, args, ok := Parse(tt.input)
+		if !ok {
+			t.Fatalf("expected %q to parse as a slash command", tt.input)
+		}
+		if name != tt.wantName {
+			t.Errorf("Parse(%q) name = %q, want %q", tt.input, name, tt.wantName)
+		}
+		if args != tt.wantArgs {
+			t.Errorf("Parse(%q) args = %q, want %q", tt.input, args, tt.wantArgs)
+		}
+	}
+}
+
 func TestParseSuperpowersCommands(t *testing.T) {
 	tests := []struct {
 		input    string

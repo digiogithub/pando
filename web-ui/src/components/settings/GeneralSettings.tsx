@@ -19,6 +19,13 @@ const sectionTitle: React.CSSProperties = {
   marginBottom: '1.25rem',
 }
 
+const helpText: React.CSSProperties = {
+  fontSize: 13,
+  color: 'var(--fg-muted)',
+  margin: '0.375rem 0 0',
+  lineHeight: 1.6,
+}
+
 const fieldLabel: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 600,
@@ -55,6 +62,15 @@ export default function GeneralSettings() {
   }
 
   const languageOptions = SUPPORTED_LANGUAGES.map((l) => ({ value: l.value, label: l.label }))
+
+  // The level names double as the /caveman arguments, so they stay untranslated.
+  const cavemanOptions = [
+    { value: 'off', label: t('settings.general.cavemanOff') },
+    { value: 'lite', label: 'Lite' },
+    { value: 'full', label: 'Full' },
+    { value: 'ultra', label: 'Ultra' },
+    { value: 'wenyan', label: 'Wenyan (文言文)' },
+  ]
 
   return (
     <div style={{ maxWidth: 640 }}>
@@ -145,6 +161,20 @@ export default function GeneralSettings() {
           checked={config.debug}
           onChange={(v) => updateField('debug', v)}
         />
+      </div>
+
+      {/* Caveman output brevity: global default only. Sessions that ran
+          /caveman or /caveman-finish keep their own level. */}
+      <div style={{ marginTop: '1.25rem' }}>
+        <SelectInput
+          label={t('settings.general.caveman')}
+          options={cavemanOptions}
+          value={config.caveman_default_mode || 'off'}
+          onChange={(e) =>
+            updateField('caveman_default_mode', e.target.value === 'off' ? '' : e.target.value)
+          }
+        />
+        <p style={helpText}>{t('settings.general.cavemanDescription')}</p>
       </div>
 
       <div style={dividerStyle} />

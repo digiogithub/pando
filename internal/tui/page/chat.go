@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/digiogithub/pando/internal/agentsmd"
 	"github.com/digiogithub/pando/internal/app"
+	"github.com/digiogithub/pando/internal/caveman"
 	"github.com/digiogithub/pando/internal/completions"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
@@ -20,9 +21,9 @@ import (
 	agentpkg "github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/ponytail"
-	"github.com/digiogithub/pando/internal/superpowers"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"
+	"github.com/digiogithub/pando/internal/superpowers"
 	"github.com/digiogithub/pando/internal/tui/components/chat"
 	"github.com/digiogithub/pando/internal/tui/components/dialog"
 	"github.com/digiogithub/pando/internal/tui/components/editor"
@@ -849,6 +850,9 @@ func (p *ChatPageModel) sendMessage(text string, attachments []message.Attachmen
 	if cmd, ok := p.handlePonytailCommand(text); ok {
 		return cmd
 	}
+	if cmd, ok := p.handleCavemanCommand(text); ok {
+		return cmd
+	}
 	if cmd, ok := p.handleSuperpowersCommand(text); ok {
 		return cmd
 	}
@@ -1312,6 +1316,41 @@ func (p *ChatPageModel) handlePonytailCommand(input string) (tea.Cmd, bool) {
 		return util.ReportInfo("Ponytail mode: " + mode.String() + ". " + ponytail.Description(mode)), true
 	}
 	return util.ReportInfo("Ponytail mode disabled. Back to normal."), true
+}
+
+// handleCavemanCommand handles /caveman [lite|full|ultra|wenyan] and
+// /caveman-finish. No argument defaults to full. Both are synchronous (a toast,
+// no agent turn); the level takes effect on the next turn via prompt injection.
+func (p *ChatPageModel) handleCavemanCommand(input string) (tea.Cmd, bool) {
+	line := strings.TrimSpace(input)
+	isFinish := line == "/caveman-finish" || strings.HasPrefix(line, "/caveman-finish ")
+	isActivate := line == "/caveman" || strings.HasPrefix(line, "/caveman ")
+	if !isFinish && !isActivate {
+		return nil, false
+	}
+	if p.session.ID == "" {
+		return util.ReportWarn("Open or start a session first."), true
+	}
+
+	if isFinish {
+		// The command takes no level: a stray argument is reported, not ignored.
+		if strings.TrimSpace(strings.TrimPrefix(line, "/caveman-finish")) != "" {
+			return util.ReportWarn(caveman.FinishUsage), true
+		}
+		agentpkg.SetCavemanMode(p.session.ID, caveman.ModeOff)
+		return util.ReportInfo(caveman.DisabledMessage), true
+	}
+
+	arg := strings.TrimSpace(strings.TrimPrefix(line, "/caveman"))
+	if arg == "" {
+		arg = "full"
+	}
+	mode, ok := caveman.ParseMode(arg)
+	if !ok {
+		return util.ReportWarn("Unknown caveman level: " + arg + ". Use lite|full|ultra|wenyan."), true
+	}
+	agentpkg.SetCavemanMode(p.session.ID, mode)
+	return util.ReportInfo(caveman.ActivationMessage(mode)), true
 }
 
 // handleSuperpowersCommand handles /superpowers [objective] and

@@ -845,6 +845,7 @@ type Config struct {
 	Container         ContainerConfig         `json:"container,omitempty" toml:"Container"`
 	MCPServer         MCPServerConfig         `json:"mcpServer,omitempty" toml:"MCPServer"`
 	Ponytail          PonytailConfig          `json:"ponytail,omitempty" toml:"Ponytail"`
+	Caveman           CavemanConfig           `json:"caveman,omitempty" toml:"Caveman"`
 	TokenOptimization TokenOptimizationConfig `json:"tokenOptimization,omitempty" toml:"TokenOptimization"`
 }
 
@@ -986,6 +987,34 @@ func (c *Config) PonytailDefaultMode() string {
 		return "full"
 	case "ultra":
 		return "ultra"
+	default:
+		return ""
+	}
+}
+
+// CavemanConfig configures the caveman output-brevity mode.
+type CavemanConfig struct {
+	// DefaultMode is the output-brevity level applied to new sessions that have
+	// not explicitly chosen one via /caveman. Valid values: "lite", "full",
+	// "ultra", "wenyan", or "off"/empty (disabled, the default).
+	DefaultMode string `json:"defaultMode,omitempty" toml:"DefaultMode"`
+}
+
+// CavemanDefaultMode resolves the configured default output-brevity level from
+// the Caveman.DefaultMode config field. Returns "" (off) when unset or invalid.
+func (c *Config) CavemanDefaultMode() string {
+	if c == nil {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Caveman.DefaultMode)) {
+	case "lite":
+		return "lite"
+	case "full":
+		return "full"
+	case "ultra":
+		return "ultra"
+	case "wenyan":
+		return "wenyan"
 	default:
 		return ""
 	}
@@ -4326,6 +4355,38 @@ func UpdateTokenOptimization(to TokenOptimizationConfig) error {
 		config.TokenOptimization = to
 	}); err != nil {
 		cfg.TokenOptimization = old
+		return err
+	}
+
+	return nil
+}
+
+// UpdateCaveman updates the caveman output-brevity configuration and persists it
+// to the config file. The default mode is normalized before saving; an
+// unsupported level is rejected so a typo can never silently disable the feature
+// (or enable an unknown one). Session overrides set via /caveman are unaffected.
+func UpdateCaveman(cm CavemanConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	raw := strings.ToLower(strings.TrimSpace(cm.DefaultMode))
+	switch raw {
+	case "", "off":
+		cm.DefaultMode = ""
+	case "lite", "full", "ultra", "wenyan":
+		cm.DefaultMode = raw
+	default:
+		return fmt.Errorf("invalid caveman default mode %q: must be one of off, lite, full, ultra, wenyan", cm.DefaultMode)
+	}
+
+	old := cfg.Caveman
+	cfg.Caveman = cm
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Caveman = cm
+	}); err != nil {
+		cfg.Caveman = old
 		return err
 	}
 

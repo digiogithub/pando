@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/caveman"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
@@ -20,6 +21,9 @@ const (
 	slashCommandSuperpowers     slashCommandKind = "superpowers"
 
 	slashCommandSuperpowersFinish slashCommandKind = "superpowers-finish"
+
+	slashCommandCaveman       slashCommandKind = "caveman"
+	slashCommandCavemanFinish slashCommandKind = "caveman-finish"
 )
 
 type slashCommand struct {
@@ -88,6 +92,19 @@ func slashCommandSpecs() []slashCommandSpec {
 			Usage:       "Usage: /superpowers-finish",
 		},
 		{
+			Token:       cavemanCommandToken,
+			Kind:        slashCommandCaveman,
+			Description: "Shorter answers to cut output tokens (code, commands and verification stay intact)",
+			InputHint:   "lite | full | ultra | wenyan",
+			Usage:       caveman.Usage,
+		},
+		{
+			Token:       cavemanFinishCommandToken,
+			Kind:        slashCommandCavemanFinish,
+			Description: "Disable caveman output brevity and return to normal output",
+			Usage:       caveman.FinishUsage,
+		},
+		{
 			Token:       improveAgentsMdCommandToken,
 			Kind:        slashCommandImproveAgentsMd,
 			Description: "Create or reinforce AGENTS.md with the mandatory AI-agent operating rules",
@@ -150,14 +167,15 @@ func parseSlashCommand(input string) (slashCommand, bool) {
 	return slashCommand{}, false
 }
 
+// parse builds the command, always carrying whatever the user typed after the
+// token. Argument-free commands keep it too: most ignore it, but a command like
+// /caveman-finish needs to see a stray argument to reject it with its usage
+// instead of silently swallowing it.
 func (s slashCommandSpec) parse(name, args string) (slashCommand, bool) {
 	if !s.matches(name) {
 		return slashCommand{}, false
 	}
-	if strings.TrimSpace(s.InputHint) != "" {
-		return slashCommand{Kind: s.Kind, Objective: args}, true
-	}
-	return slashCommand{Kind: s.Kind}, true
+	return slashCommand{Kind: s.Kind, Objective: args}, true
 }
 
 func (s slashCommandSpec) matches(name string) bool {

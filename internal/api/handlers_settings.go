@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/digiogithub/pando/internal/caveman"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/tui/styles"
@@ -31,6 +33,9 @@ type SettingsResponse struct {
 	// OutputFilterEnabled is the inverse of Bash.OutputFilterDisabled: RTK-style
 	// command-output compression. True means compression is on (the default).
 	OutputFilterEnabled bool `json:"output_filter_enabled"`
+	// CavemanDefaultMode is the global output-brevity default ("" = off, or
+	// lite|full|ultra|wenyan). Sessions that ran /caveman keep their own choice.
+	CavemanDefaultMode string `json:"caveman_default_mode"`
 
 	ToolDiscoveryEnabled        bool   `json:"tool_discovery_enabled"`
 	ToolDiscoveryMode           string `json:"tool_discovery_mode"`
@@ -68,6 +73,7 @@ type SettingsUpdateRequest struct {
 	EvaluatorEnabled    *bool   `json:"evaluator_enabled,omitempty"`
 	JudgeModel          *string `json:"judge_model,omitempty"`
 	OutputFilterEnabled *bool   `json:"output_filter_enabled,omitempty"`
+	CavemanDefaultMode  *string `json:"caveman_default_mode,omitempty"`
 
 	ToolDiscoveryEnabled        *bool   `json:"tool_discovery_enabled,omitempty"`
 	ToolDiscoveryMode           *string `json:"tool_discovery_mode,omitempty"`
@@ -140,6 +146,7 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		EvaluatorEnabled:    cfg.Evaluator.Enabled,
 		JudgeModel:          string(cfg.Evaluator.Model),
 		OutputFilterEnabled: !cfg.Bash.OutputFilterDisabled,
+		CavemanDefaultMode:  cfg.CavemanDefaultMode(),
 
 		ToolDiscoveryEnabled:        cfg.ToolDiscovery.Enabled,
 		ToolDiscoveryMode:           toolDiscoveryModeOrDefault(cfg.ToolDiscovery.Mode),
@@ -299,6 +306,26 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		bashCfg.OutputFilterDisabled = !*req.OutputFilterEnabled
 		if err := config.UpdateBash(bashCfg); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update output filter setting")
+			return
+		}
+	}
+
+	if req.CavemanDefaultMode != nil {
+		// An empty string is how "no default" is stored, so it is accepted here
+		// even though ParseMode rejects it (a bare /caveman means full, not off).
+		mode := caveman.ModeOff
+		if raw := strings.TrimSpace(*req.CavemanDefaultMode); raw != "" {
+			parsed, ok := caveman.ParseMode(raw)
+			if !ok {
+				writeError(w, http.StatusBadRequest, "invalid caveman_default_mode (expected off, lite, full, ultra or wenyan)")
+				return
+			}
+			mode = parsed
+		}
+		cavemanCfg := config.Get().Caveman
+		cavemanCfg.DefaultMode = string(mode)
+		if err := config.UpdateCaveman(cavemanCfg); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update caveman setting: "+err.Error())
 			return
 		}
 	}

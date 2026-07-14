@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/agentsmd"
+	"github.com/digiogithub/pando/internal/caveman"
 	"github.com/digiogithub/pando/internal/commands"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
@@ -19,8 +20,8 @@ import (
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/ponytail"
-	"github.com/digiogithub/pando/internal/superpowers"
 	"github.com/digiogithub/pando/internal/session"
+	"github.com/digiogithub/pando/internal/superpowers"
 	"github.com/digiogithub/pando/internal/toolmeta"
 	"github.com/digiogithub/pando/internal/userinput"
 )
@@ -836,6 +837,27 @@ func (s *Server) handleSlashCommandStream(w http.ResponseWriter, flusher http.Fl
 				writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Ponytail mode disabled. Back to normal."})
 			}
 		}
+	case "caveman":
+		arg := strings.TrimSpace(cmdArgs)
+		if arg == "" {
+			arg = "full"
+		}
+		mode, ok := caveman.ParseMode(arg)
+		if !ok {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": "unknown caveman level: " + arg + "\n" + caveman.Usage})
+		} else {
+			agent.SetCavemanMode(sessionID, mode)
+			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": caveman.ActivationMessage(mode)})
+		}
+	case "caveman-finish":
+		// The command takes no level: report a stray argument instead of letting
+		// "/caveman-finish ultra" look like it switched levels.
+		if strings.TrimSpace(cmdArgs) != "" {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": caveman.FinishUsage})
+			return
+		}
+		agent.SetCavemanMode(sessionID, caveman.ModeOff)
+		writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": caveman.DisabledMessage})
 	case "superpowers":
 		if agent.SuperpowersMode(sessionID) {
 			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": superpowers.AlreadyActiveMessage})

@@ -21,6 +21,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/agentvcs"
 	"github.com/digiogithub/pando/internal/auth"
+	"github.com/digiogithub/pando/internal/caveman"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/cronjob"
 	"github.com/digiogithub/pando/internal/db"
@@ -2351,6 +2352,15 @@ func (a *appACPAgentAdapter) SetPonytailMode(sessionID string, mode string) (str
 		return "", false
 	}
 	agent.SetPonytailMode(sessionID, m)
+	return m.String(), true
+}
+
+func (a *appACPAgentAdapter) SetCavemanMode(sessionID string, mode string) (string, bool) {
+	m, ok := caveman.ParseMode(mode)
+	if !ok {
+		return "", false
+	}
+	agent.SetCavemanMode(sessionID, m)
 	return m.String(), true
 }
 

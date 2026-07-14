@@ -18,6 +18,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/auth"
+	"github.com/digiogithub/pando/internal/caveman"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/format"
@@ -869,6 +870,17 @@ func (a *acpAgentAdapter) SetPonytailMode(sessionID string, mode string) (string
 		return "", false
 	}
 	agent.SetPonytailMode(sessionID, m)
+	return m.String(), true
+}
+
+// SetCavemanMode sets the per-session caveman output-brevity level. Returns the
+// normalized level label and whether the input was a recognized level.
+func (a *acpAgentAdapter) SetCavemanMode(sessionID string, mode string) (string, bool) {
+	m, ok := caveman.ParseMode(mode)
+	if !ok {
+		return "", false
+	}
+	agent.SetCavemanMode(sessionID, m)
 	return m.String(), true
 }
 

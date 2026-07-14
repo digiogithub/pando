@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/caveman"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/prompt"
@@ -2221,17 +2222,20 @@ func (a *agent) prepareProvider(ctx context.Context, userPrompt string, personaC
 }
 
 // sessionPolicyActive reports whether any per-session prompt policy (Ponytail,
-// Superpowers) is active for the request context. It gates the prepareProvider
-// fast path that would otherwise reuse the pre-built provider.
+// Superpowers, Caveman) is active for the request context. It gates the
+// prepareProvider fast path that would otherwise reuse the pre-built provider.
 func sessionPolicyActive(ctx context.Context) bool {
-	return ponytailModeForContext(ctx).IsActive() || superpowersEnabledForContext(ctx)
+	return ponytailModeForContext(ctx).IsActive() ||
+		superpowersEnabledForContext(ctx) ||
+		cavemanModeForContext(ctx).IsActive()
 }
 
 // sessionPolicyInstructions returns the per-session policy rulesets to inject
 // after any automatically activated skill, in a deliberate order: the
 // Superpowers development lifecycle first (it governs how work is approached),
-// then Ponytail (it governs how much gets built). Both remain subordinate to
-// direct user instructions and AGENTS.md, which the rulesets state explicitly.
+// then Caveman (it governs how the result is written up), then Ponytail (it
+// governs how much gets built). All remain subordinate to direct user
+// instructions and AGENTS.md, which the rulesets state explicitly.
 func sessionPolicyInstructions(ctx context.Context) []string {
 	var injected []string
 
@@ -2239,6 +2243,14 @@ func sessionPolicyInstructions(ctx context.Context) []string {
 	// development workflow, injected before each turn like any other skill.
 	if superpowersEnabledForContext(ctx) {
 		if text := prompt.InjectSkillInstructions("superpowers", superpowers.Instructions()); text != "" {
+			injected = append(injected, text)
+		}
+	}
+
+	// Caveman mode (per-session, ctx-threaded, or from Caveman.DefaultMode): the
+	// output-brevity policy. It constrains prose only, never the work itself.
+	if mode := cavemanModeForContext(ctx); mode.IsActive() {
+		if text := prompt.InjectSkillInstructions("caveman ("+mode.String()+")", caveman.Instructions(mode)); text != "" {
 			injected = append(injected, text)
 		}
 	}

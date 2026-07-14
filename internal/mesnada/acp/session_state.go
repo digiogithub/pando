@@ -49,6 +49,8 @@ const (
 	improveAgentsMdCommandToken       = "improve-agents-md"
 	superpowersCommandToken           = "superpowers"
 	superpowersFinishCommandToken     = "superpowers-finish"
+	cavemanCommandToken               = "caveman"
+	cavemanFinishCommandToken         = "caveman-finish"
 )
 
 const (

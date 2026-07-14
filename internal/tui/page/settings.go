@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	pandoapp "github.com/digiogithub/pando/internal/app"
+	"github.com/digiogithub/pando/internal/caveman"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
@@ -2588,6 +2589,16 @@ func buildTokenOptimizationSection(cfg *config.Config) settings.Section {
 		Title: "Token Optimization",
 		Fields: []settings.Field{
 			{
+				// Global default only: sessions that ran /caveman or
+				// /caveman-finish keep their own choice.
+				Label:   "Caveman Output Brevity",
+				Key:     "caveman.defaultMode",
+				Type:    settings.FieldSelect,
+				Options: caveman.SettingOptions(),
+				Value:   caveman.Mode(cfg.CavemanDefaultMode()).String(),
+				Hint:    caveman.SettingDescription,
+			},
+			{
 				Label:   "Default Read Mode",
 				Key:     "tokenOptimization.readModeDefault",
 				Type:    settings.FieldSelect,
@@ -3059,6 +3070,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveBash(field)
 	case strings.HasPrefix(field.Key, "tokenOptimization."):
 		return saveTokenOptimization(field)
+	case strings.HasPrefix(field.Key, "caveman."):
+		return saveCaveman(field)
 	case strings.HasPrefix(field.Key, "evaluator."):
 		return saveEvaluator(field)
 	case strings.HasPrefix(field.Key, "skillsCatalog."):
@@ -3069,6 +3082,27 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveProviderAccountField(field)
 	default:
 		return fmt.Errorf("unsupported setting %q", field.Key)
+	}
+}
+
+func saveCaveman(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	switch field.Key {
+	case "caveman.defaultMode":
+		mode, ok := caveman.ParseMode(field.Value)
+		if !ok {
+			return fmt.Errorf("invalid caveman mode %q: must be one of off, lite, full, ultra, wenyan", field.Value)
+		}
+		cavemanCfg := cfg.Caveman
+		// ModeOff is the empty string, which is how "no default" is stored.
+		cavemanCfg.DefaultMode = string(mode)
+		return config.UpdateCaveman(cavemanCfg)
+	default:
+		return fmt.Errorf("unsupported caveman setting %q", field.Key)
 	}
 }
 

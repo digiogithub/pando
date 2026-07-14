@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/digiogithub/pando/internal/caveman"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	llmmodels "github.com/digiogithub/pando/internal/llm/models"
@@ -396,6 +397,7 @@ type mockAgentService struct {
 	availableModels    []ACPModelInfo
 	sessionOverrides   map[string]SessionLLMOverrides
 	ponytailModes      map[string]string
+	cavemanModes       map[string]string
 	busy               bool
 	steerErr           error
 	steerCalls         []string
@@ -501,6 +503,22 @@ func (m *mockAgentService) SetPonytailMode(sessionID string, mode string) (strin
 	default:
 		return "", false
 	}
+}
+
+func (m *mockAgentService) SetCavemanMode(sessionID string, mode string) (string, bool) {
+	if m.cavemanModes == nil {
+		m.cavemanModes = make(map[string]string)
+	}
+	parsed, ok := caveman.ParseMode(mode)
+	if !ok {
+		return "", false
+	}
+	if parsed.IsActive() {
+		m.cavemanModes[sessionID] = parsed.String()
+	} else {
+		delete(m.cavemanModes, sessionID)
+	}
+	return parsed.String(), true
 }
 
 func (m *mockAgentService) SetSuperpowersMode(sessionID string, enabled bool) {
@@ -2734,8 +2752,8 @@ func thoughtUpdateTexts(t *testing.T, raw string) []string {
 
 func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 	commands := availableCommands()
-	if len(commands) != 11 {
-		t.Fatalf("expected 11 available commands, got %d", len(commands))
+	if len(commands) != 13 {
+		t.Fatalf("expected 13 available commands, got %d", len(commands))
 	}
 
 	got := map[string]acpsdk.AvailableCommand{}
@@ -2746,20 +2764,20 @@ func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, superpowersFinishCommandToken} {
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, superpowersFinishCommandToken, cavemanCommandToken, cavemanFinishCommandToken} {
 		if _, ok := got[name]; !ok {
 			t.Fatalf("expected available command %q to be exposed", name)
 		}
 	}
 
-	for _, name := range []string{goalCommandToken, autopilotCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken} {
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, cavemanCommandToken} {
 		cmd := got[name]
 		if cmd.Input == nil || cmd.Input.Unstructured == nil || strings.TrimSpace(cmd.Input.Unstructured.Hint) == "" {
 			t.Fatalf("expected available command %q to include an unstructured input hint, got %#v", name, cmd.Input)
 		}
 	}
 
-	for _, name := range []string{goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, superpowersFinishCommandToken} {
+	for _, name := range []string{goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, superpowersFinishCommandToken, cavemanFinishCommandToken} {
 		if got[name].Input != nil {
 			t.Fatalf("expected available command %q to omit input metadata, got %#v", name, got[name].Input)
 		}

@@ -18,6 +18,7 @@ const DEFAULTS: SettingsConfig = {
   nerd_fonts: true,
   llm_cache_enabled: true,
   output_filter_enabled: true,
+  caveman_default_mode: '',
   evaluator_enabled: false,
   judge_model: '',
   tool_discovery_enabled: true,

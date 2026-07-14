@@ -92,6 +92,10 @@ type AgentService interface {
 	// mode is one of "lite", "full", "ultra" (or "off"/empty to disable). It
 	// returns the normalized mode label applied and whether the input was valid.
 	SetPonytailMode(sessionID string, mode string) (applied string, ok bool)
+	// SetCavemanMode sets the per-session caveman output-brevity level. mode is
+	// one of "lite", "full", "ultra", "wenyan" (or "off"/empty to disable). It
+	// returns the normalized level applied and whether the input was valid.
+	SetCavemanMode(sessionID string, mode string) (applied string, ok bool)
 	// SetSuperpowersMode enables or disables the per-session Superpowers workflow
 	// policy (the opt-in plan-first, verify-always development lifecycle).
 	SetSuperpowersMode(sessionID string, enabled bool)

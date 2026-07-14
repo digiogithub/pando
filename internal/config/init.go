@@ -315,6 +315,17 @@ BannedCommands  = []
 AllowedCommands = []
 
 # =============================================================================
+# Caveman — Output brevity
+# =============================================================================
+# Reduces output-token usage by giving shorter explanations and removing filler.
+# It keeps code, commands, errors, reasoning quality, tool use and verification
+# intact. Savings apply to output tokens only; input and reasoning tokens are
+# not reduced. Applies to sessions that have not chosen a level with /caveman.
+# Valid: '' (off), 'lite', 'full', 'ultra', 'wenyan'.
+[Caveman]
+DefaultMode = ''
+
+# =============================================================================
 # Remembrances — Semantic memory and knowledge base
 # =============================================================================
 [Remembrances]
