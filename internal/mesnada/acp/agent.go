@@ -289,7 +289,10 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 	a.logger.Printf("[ACP AGENT] NewSession created: SessionID=%s, PandoSessionID=%s, WorkDir=%s",
 		sessionID, pandoSessionID, workDir)
 
-	go a.sendAvailableCommandsUpdate(context.Background(), sessionID)
+	// Deferred so the notification lands after the session/new response; a bare
+	// goroutine here races the response onto the wire and Zed drops commands for
+	// an unregistered session. See scheduleAvailableCommandsUpdate.
+	a.scheduleAvailableCommandsUpdate(sessionID)
 
 	return acpsdk.NewSessionResponse{
 		SessionId:     sessionID,
@@ -508,11 +511,16 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 		}
 	}
 
-	go a.sendAvailableCommandsUpdate(context.Background(), req.SessionId)
-
 	// Stream the full conversation history back to the client as required by the ACP protocol:
-	// "Stream the entire conversation history back to the client via notifications"
-	go a.streamSessionHistory(context.Background(), req.SessionId, string(req.SessionId))
+	// "Stream the entire conversation history back to the client via notifications".
+	// The available_commands_update is sent after replay (and after the load
+	// response is flushed) so it does not interleave with history and is not
+	// dropped for a session Zed has not registered yet. See
+	// scheduleAvailableCommandsUpdate.
+	go func() {
+		a.streamSessionHistory(context.Background(), req.SessionId, string(req.SessionId))
+		a.scheduleAvailableCommandsUpdate(req.SessionId)
+	}()
 
 	return acpsdk.LoadSessionResponse{
 		ConfigOptions: buildSessionConfigOptions(a.agentService, acpSession),

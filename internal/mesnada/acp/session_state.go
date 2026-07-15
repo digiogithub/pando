@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	llmmodels "github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/message"
@@ -433,6 +434,34 @@ func boolToAskPermissionValue(enabled bool) string {
 		return askPermissionYesValue
 	}
 	return askPermissionNoValue
+}
+
+// availableCommandsPostResponseDelay defers the available_commands_update
+// notification until after the enclosing request's JSON-RPC response has been
+// written to the wire.
+//
+// The notification and the session/new (or session/load) response both compete
+// for the SDK connection's single writeMu. If the notification wins the race it
+// is delivered before the response, so the client (Zed) receives commands for a
+// session it has not registered yet and silently drops them ("Available
+// commands: none"). Modern Zed requires the session response first. The
+// canonical claude-agent-acp wrapper handles this by scheduling the send on the
+// next event-loop tick (setTimeout(0), "Needs to happen after we return the
+// session"); this delay is the Go equivalent — the response is written
+// synchronously right after the handler returns, so a short pause reliably lets
+// it acquire writeMu first.
+const availableCommandsPostResponseDelay = 50 * time.Millisecond
+
+// scheduleAvailableCommandsUpdate sends the available_commands_update
+// notification after the current request handler has returned and its response
+// has been flushed. Callers running inside a request handler (NewSession,
+// LoadSession) MUST use this instead of a bare `go sendAvailableCommandsUpdate`
+// to avoid racing the response onto the wire (see delay constant above).
+func (a *PandoACPAgent) scheduleAvailableCommandsUpdate(sessionID acpsdk.SessionId) {
+	go func() {
+		time.Sleep(availableCommandsPostResponseDelay)
+		a.sendAvailableCommandsUpdate(context.Background(), sessionID)
+	}()
 }
 
 // sendAvailableCommandsUpdate publishes the ACP slash commands supported by Pando.
