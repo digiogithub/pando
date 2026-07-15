@@ -432,8 +432,24 @@ LAUNCHER
     local app_pkg="$pkg_work/pando-app.pkg"
     local launcher_pkg="$pkg_work/pando-launcher.pkg"
 
+    # Disable bundle relocation. By default macOS Installer tracks the app's
+    # bundle identifier and, if it finds an existing Pando.app anywhere (e.g. the
+    # dist/ build output, or an old copy), RELOCATES the payload onto that path
+    # instead of installing to /Applications — leaving /Applications/Pando.app
+    # absent while still writing the receipt. A component-plist with
+    # BundleIsRelocatable=false pins the install to /Applications.
+    local comp_plist="$pkg_work/app-component.plist"
+    pkgbuild --analyze --root "$app_stage" "$comp_plist"
+    # The component plist is an array of bundle dicts; force each non-relocatable.
+    local idx=0
+    while /usr/libexec/PlistBuddy -c "Print :${idx}:BundleIsRelocatable" "$comp_plist" >/dev/null 2>&1; do
+        /usr/libexec/PlistBuddy -c "Set :${idx}:BundleIsRelocatable false" "$comp_plist" >/dev/null 2>&1 || true
+        idx=$((idx + 1))
+    done
+
     pkgbuild \
         --root "$app_stage" \
+        --component-plist "$comp_plist" \
         --identifier "es.digio.pando" \
         --version "$BUNDLE_VERSION" \
         --install-location "/" \
