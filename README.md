@@ -616,7 +616,13 @@ echo "Release builds completed in dist/"
 
 ### release-osx
 
-Compiles the binaries for the different platforms (Linux x64, Windows x64, macOS aarch64) and zip them into `dist/`.
+Builds and **notarizes** the macOS artifacts: the embedded desktop wrapper (so
+`pando desktop` from a standalone binary is not killed by Gatekeeper), the loose
+CLI zips (`pando-darwin-<arch>.zip`, submit-only), the `Pando-<arch>.app` bundles
+(notarized + stapled) and the `.pkg` installers (notarized + stapled).
+
+Notarization submits several artifacts to Apple with `--wait`, so this task can
+take 10–30 min. Requires network access and the `pando-notary` keychain profile.
 
 interactive:true
 
@@ -630,13 +636,32 @@ git fetch origin --tags
 rm -rf dist
 mkdir -p dist
 
+# Signing identities, keychain path/password and NOTARY_PROFILE.
 eval "$(cat ~/DIGIO_Software_Signing_Keys/kvagerc)"
 NOTARYTOOL_STORE_CREDENTIALS=1 bash scripts/setup-macos-signing-keychain
 
+# Ensure notarization env is exported BEFORE `xc build` so `make desktop-embed`
+# notarizes the embedded wails wrapper. Defaults match the signing scripts.
+export NOTARY_PROFILE="${NOTARY_PROFILE:-pando-notary}"
+export MACOS_SIGN_KEYCHAIN_PATH="${MACOS_SIGN_KEYCHAIN_PATH:-$HOME/Library/Keychains/pando-build-db}"
+
+# xc build -> build-desktop -> make desktop-embed: signs AND notarizes the
+# embedded desktop wrapper (skipped non-fatally if the notary env is missing).
 xc build
+
+# Signs the loose CLI binaries with the hardened runtime (codesign-macos).
 make release-darwin-arm64
 make release-darwin-amd64
+
+# Notarizes the CLI zips (submit-only) and builds + notarizes + staples the
+# .app bundles and .pkg installers.
 bash scripts/build-macos-app
+
+# Verify notarization stapling on the distributable bundles/installers.
+echo "== Verifying notarization staples =="
+for f in dist/Pando-arm64.app dist/Pando-x64.app dist/*.pkg; do
+    [ -e "$f" ] && { echo "-- $f"; xcrun stapler validate "$f" || echo "  NOT stapled: $f"; }
+done
 
 echo "Release builds completed in dist/"
 ```

@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# notarize-desktop-wrapper — notarize the wails desktop wrapper before it is
+# baked into the CLI binary via go:embed (make desktop-embed).
+#
+# Why: `pando desktop` launched from a standalone CLI binary extracts the
+# embedded wrapper to a temp dir and execs it. A wrapper that is signed but NOT
+# notarized is killed by macOS with "SIGKILL (Code Signature Invalid)" (namespace
+# CODESIGNING) on modern releases. Notarizing registers the wrapper's CDHash with
+# Apple so the extracted copy passes Gatekeeper's online check.
+#
+# Target may be either:
+#   - a Pando.app bundle  → notarized AND stapled. The ticket file lives inside
+#     the bundle, survives go:embed byte-for-byte, and gives OFFLINE validation
+#     of the extracted app.
+#   - a bare pando-desktop Mach-O → notarized submit-only. A bare Mach-O cannot
+#     carry a stapled ticket, so only the online Gatekeeper check applies.
+#
+# Skipped (non-fatal) when not on macOS, xcrun/ditto are missing, or the required
+# env vars are unset — so credential-less dev embed builds are unaffected.
+#
+# Env:
+#   NOTARY_PROFILE                 notarytool keychain profile (required to run)
+#   MACOS_SIGN_KEYCHAIN_PATH       keychain holding the profile (required to run)
+#   MACOS_SIGN_KEYCHAIN_PASSWORD / KEYSTORE_PASS   optional, to unlock it
+
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <Pando.app|pando-desktop>" >&2
+    exit 1
+fi
+
+TARGET="$1"
+NOTARY_PROFILE="${NOTARY_PROFILE:-}"
+KEYCHAIN_PATH="${MACOS_SIGN_KEYCHAIN_PATH:-}"
+KEYCHAIN_PASSWORD="${MACOS_SIGN_KEYCHAIN_PASSWORD:-${KEYSTORE_PASS:-}}"
+
+skip() { echo "Skipping desktop-wrapper notarization: $1" >&2; exit 0; }
+
+[[ "$(uname)" == "Darwin" ]]            || skip "not macOS"
+[[ -e "$TARGET" ]]                      || skip "target '$TARGET' not found"
+[[ -n "$NOTARY_PROFILE" ]]             || skip "NOTARY_PROFILE not set"
+[[ -n "$KEYCHAIN_PATH" ]]              || skip "MACOS_SIGN_KEYCHAIN_PATH not set"
+command -v xcrun >/dev/null 2>&1        || skip "xcrun not found"
+command -v ditto >/dev/null 2>&1        || skip "ditto not found"
+
+if [[ -n "$KEYCHAIN_PASSWORD" ]]; then
+    security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
+fi
+
+submit() {
+    local artifact="$1"
+    echo "Submitting desktop wrapper to Apple notary service (profile: $NOTARY_PROFILE): $artifact"
+    xcrun notarytool submit "$artifact" \
+        --keychain-profile "$NOTARY_PROFILE" \
+        --keychain "$KEYCHAIN_PATH" \
+        --wait
+}
+
+ZIP="$(mktemp -d)/wrapper-notarize.zip"
+trap 'rm -f "$ZIP"' EXIT
+
+if [[ -d "$TARGET" && "$TARGET" == *.app ]]; then
+    # .app bundle: zip for submission, then staple the bundle in place.
+    ditto -c -k --keepParent "$TARGET" "$ZIP"
+    submit "$ZIP"
+    echo "Stapling notarization ticket into $TARGET"
+    xcrun stapler staple "$TARGET"
+    xcrun stapler validate "$TARGET"
+else
+    # Bare Mach-O: zip for submission; a bare binary cannot be stapled.
+    ditto -c -k "$TARGET" "$ZIP"
+    submit "$ZIP"
+    echo "Notarized (submit-only, no staple possible for a bare Mach-O): $TARGET"
+    echo "  Extracted copies pass Gatekeeper's online check on networked machines."
+fi

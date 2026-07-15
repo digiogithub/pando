@@ -23,10 +23,15 @@
 #     e.g. "Developer ID Installer: Example Corp (TEAMID)"
 #
 # Required dist/ artifacts (produced by 'make release-darwin-amd64 release-darwin-arm64'):
-#   dist/pando-darwin-x64.zip
-#   dist/pando-darwin-arm64.zip
+#   dist/pando-darwin-x64.zip     (signed, hardened runtime — notarized here)
+#   dist/pando-darwin-arm64.zip   (signed, hardened runtime — notarized here)
+#
+# These CLI zips are notarized in place (submit-only): a bare Mach-O cannot carry
+# a stapled ticket, so a quarantined copy passes only Gatekeeper's ONLINE check.
+# For offline first-run, distribute the stapled .pkg below.
 #
 # Outputs in dist/ (one set per architecture):
+#   pando-darwin-<arch>.zip                 Signed & notarized CLI binary (submit-only)
 #   Pando-<arch>.app                       Signed .app bundle (arch = arm64|x64)
 #   pando-<VERSION>-darwin-<arch>.pkg       Signed & notarized flat-package installer
 #   pando-<VERSION>-darwin-<arch>.pkg.zip   Compressed installer
@@ -46,7 +51,7 @@ if [[ "$(uname)" != "Darwin" ]]; then
     exit 1
 fi
 
-for tool in lipo iconutil sips pkgbuild productbuild productsign pkgutil codesign spctl; do
+for tool in lipo iconutil sips pkgbuild productbuild productsign pkgutil codesign spctl ditto; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "Error: required tool '$tool' not found. Install Xcode Command Line Tools." >&2
         exit 1
@@ -145,20 +150,22 @@ is_pkg_signed() {
     pkgutil --check-signature "$target" >/dev/null 2>&1
 }
 
-# Submit an artifact to Apple's notary service and staple the resulting ticket.
-# Without notarization, Gatekeeper rejects Developer ID packages with
-# "rejected (source=Unnotarized Developer ID)". Skipped when NOTARY_PROFILE is
-# empty or xcrun/notarytool are unavailable.
-notarize_and_staple() {
+# Submit an artifact to Apple's notary service and wait for the verdict.
+# Accepts anything notarytool understands (.pkg, .dmg, .app, or a .zip wrapping
+# Mach-O binaries). On success Apple registers the CDHash of every contained
+# Mach-O, so Gatekeeper accepts them even without a stapled ticket (via its
+# online check). Skipped when NOTARY_PROFILE is empty or xcrun is unavailable;
+# returns 2 in that "skipped" case so callers can avoid a follow-up staple.
+notarize_submit() {
     local target="$1"
 
     if [[ -z "$NOTARY_PROFILE" ]]; then
         echo "NOTARY_PROFILE not set — skipping notarization for $target." >&2
-        return 0
+        return 2
     fi
     if ! command -v xcrun >/dev/null 2>&1; then
         echo "Warning: xcrun not found — skipping notarization for $target." >&2
-        return 0
+        return 2
     fi
 
     echo "Submitting to Apple notary service (profile: $NOTARY_PROFILE): $target"
@@ -171,10 +178,56 @@ notarize_and_staple() {
         echo "  xcrun notarytool log <submission-id> --keychain-profile \"$NOTARY_PROFILE\"" >&2
         return 1
     fi
+}
+
+# Notarize an artifact and staple the resulting ticket into it. Only bundle-like
+# containers (.app, .pkg, .dmg) can carry a stapled ticket. Without notarization,
+# Gatekeeper rejects Developer ID packages with
+# "rejected (source=Unnotarized Developer ID)".
+notarize_and_staple() {
+    local target="$1"
+    local rc=0
+    notarize_submit "$target" || rc=$?
+    [[ $rc -eq 2 ]] && return 0   # skipped (no profile / no xcrun)
+    [[ $rc -ne 0 ]] && return $rc
 
     echo "Stapling notarization ticket: $target"
     xcrun stapler staple "$target"
     xcrun stapler validate "$target"
+}
+
+# Notarize a .app bundle and staple the ticket into it. notarytool cannot ingest
+# a bare .app directory, so it is zipped (ditto --keepParent) for submission;
+# stapling then targets the .app itself (bundles CAN carry a stapled ticket).
+notarize_and_staple_app() {
+    local app="$1"
+    local zip="${app%.app}.notarize.zip"
+    rm -f "$zip"
+    ditto -c -k --keepParent "$app" "$zip"
+    local rc=0
+    notarize_submit "$zip" || rc=$?
+    rm -f "$zip"
+    [[ $rc -eq 2 ]] && return 0   # skipped (no profile / no xcrun)
+    [[ $rc -ne 0 ]] && return $rc
+
+    echo "Stapling notarization ticket: $app"
+    xcrun stapler staple "$app"
+    xcrun stapler validate "$app"
+}
+
+# Notarize a release .zip that wraps a bare CLI Mach-O. A ticket CANNOT be
+# stapled to a bare Mach-O or to a .zip — only online Gatekeeper validation
+# applies. After this succeeds, any quarantined copy of the contained binary
+# passes on machines WITH network access. For offline first-run guarantees,
+# distribute the stapled .pkg instead.
+notarize_cli_zip() {
+    local zip="$1"
+    local rc=0
+    notarize_submit "$zip" || rc=$?
+    [[ $rc -eq 2 ]] && return 0   # skipped (no profile / no xcrun)
+    [[ $rc -ne 0 ]] && return $rc
+    echo "Notarized (submit-only, no staple possible for a bare Mach-O): $zip"
+    echo "  Quarantined copies pass Gatekeeper's online check; offline first-run needs the .pkg."
 }
 
 echo "Using signing identity: $SIGNING_IDENTITY"
@@ -208,10 +261,40 @@ for f in "$AMD64_ZIP" "$ARM64_ZIP"; do
     }
 done
 
+# ── Notarize the loose CLI release zips ───────────────────────────────────────
+# The zips are produced signed (hardened runtime + timestamp) by
+# 'make release-darwin-*' via scripts/codesign-macos, but not notarized, so a
+# distributed copy is killed by Gatekeeper once it carries com.apple.quarantine.
+# Notarize each zip here (submit-only — a bare Mach-O cannot be stapled).
+verify_zip_binary_signed() {
+    local zip="$1"
+    local probe="$WORK_DIR/zipcheck"
+    rm -rf "$probe"; mkdir -p "$probe"
+    unzip -q "$zip" -d "$probe"
+    local bin
+    bin="$(find "$probe" -maxdepth 1 -name 'pando-darwin-*' -type f | head -n1)"
+    [[ -n "$bin" ]] || { echo "Error: no CLI binary inside $zip" >&2; return 1; }
+    # notarytool rejects binaries without a hardened-runtime signature + timestamp.
+    if ! codesign -dv --verbose=2 "$bin" 2>&1 | grep -q 'flags=.*runtime'; then
+        echo "Error: $(basename "$zip") binary is not signed with the hardened runtime." >&2
+        echo "  Re-run 'make release-darwin-*' with SIGNING_IDENTITY + MACOS_CODESIGN_WRAPPER set." >&2
+        return 1
+    fi
+    rm -rf "$probe"
+}
+
 # ── Workspace ───────────────────────────────────────────────────────────────
 
 WORK_DIR="$(mktemp -d)"
 mkdir -p "$DIST_DIR"
+
+# Notarize the loose CLI zips now that WORK_DIR exists (probe extracts into it).
+echo ""
+echo "Notarizing loose CLI release zips..."
+for zip in "$ARM64_ZIP" "$AMD64_ZIP"; do
+    verify_zip_binary_signed "$zip"
+    notarize_cli_zip "$zip"
+done
 
 # ── Shared icon: PNG → ICNS (built once, reused per arch) ─────────────────────
 
@@ -315,6 +398,13 @@ WRAPPER
 
     echo "Signing Pando.app bundle..."
     run_codesign --deep -o runtime "$final_app"
+
+    # Notarize & staple the .app BEFORE it goes into the .pkg. Stapling works on a
+    # bundle (unlike a bare Mach-O), so the installed app is offline-safe and the
+    # nested pando-desktop wrapper — launched in place from Contents/MacOS by
+    # internal/desktop/launcher.go — is covered by the same notarization.
+    # pkgbuild then copies the already-stapled .app into the installer.
+    notarize_and_staple_app "$final_app"
     verify_app_signature "$final_app"
 
     # 5. Build the .pkg installer.

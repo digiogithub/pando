@@ -34,11 +34,16 @@ MACOS_SYSROOT_FLAGS :=
 # Developer ID Application identity used to sign the embedded desktop wrapper
 # before it is baked into the CLI binary. Signing (with hardened runtime) is
 # required so the wrapper is not killed by macOS when `pando desktop` extracts
-# and runs it from a temp dir. Notarization is NOT done here — that happens only
-# for the packaged .app/.pkg produced by scripts/build-macos-app.
+# and runs it from a temp dir. It is ALSO notarized here (when NOTARY_PROFILE +
+# MACOS_SIGN_KEYCHAIN_PATH are set) so the extracted copy passes Gatekeeper's
+# online check; otherwise notarization is skipped (non-fatal) for dev builds.
 MACOS_SIGN_IDENTITY ?= 4749EC5719E91D7ADFE5FDB4CB546057A8CFB9AD
 MACOS_SIGN_KEYCHAIN_PATH ?=
 MACOS_CODESIGN_WRAPPER ?= $(CURDIR)/scripts/codesign-macos
+# notarytool keychain profile for notarizing the embedded desktop wrapper.
+# Leave empty to skip wrapper notarization (dev builds).
+NOTARY_PROFILE ?=
+MACOS_NOTARIZE_WRAPPER ?= $(CURDIR)/scripts/notarize-desktop-wrapper
 
 # ============================================================
 # Desktop App (Wails) targets
@@ -96,13 +101,17 @@ desktop-embed: desktop-build
 	@rm -rf internal/desktop/bin/Pando.app
 	@if [ "$(shell uname)" = "Darwin" ]; then \
 		if [ -d desktop/build/bin/Pando.app ]; then \
-			echo "Signing embedded desktop wrapper (Pando.app) — hardened runtime, no notarization..."; \
+			echo "Signing embedded desktop wrapper (Pando.app) — hardened runtime..."; \
 			codesign --deep --force -o runtime --timestamp --sign "$(MACOS_SIGN_IDENTITY)" desktop/build/bin/Pando.app \
 				|| echo "Warning: codesign of embedded desktop wrapper failed; 'pando desktop' from a standalone binary may be blocked by macOS."; \
+			NOTARY_PROFILE="$(NOTARY_PROFILE)" MACOS_SIGN_KEYCHAIN_PATH="$(MACOS_SIGN_KEYCHAIN_PATH)" "$(MACOS_NOTARIZE_WRAPPER)" desktop/build/bin/Pando.app \
+				|| echo "Warning: notarization of embedded desktop wrapper failed; 'pando desktop' from a standalone binary may be killed by Gatekeeper."; \
 		elif [ -f desktop/build/bin/pando-desktop ]; then \
-			echo "Signing embedded desktop wrapper (pando-desktop) — hardened runtime, no notarization..."; \
+			echo "Signing embedded desktop wrapper (pando-desktop) — hardened runtime..."; \
 			codesign --force -o runtime --timestamp --sign "$(MACOS_SIGN_IDENTITY)" desktop/build/bin/pando-desktop \
 				|| echo "Warning: codesign of embedded desktop wrapper failed."; \
+			NOTARY_PROFILE="$(NOTARY_PROFILE)" MACOS_SIGN_KEYCHAIN_PATH="$(MACOS_SIGN_KEYCHAIN_PATH)" "$(MACOS_NOTARIZE_WRAPPER)" desktop/build/bin/pando-desktop \
+				|| echo "Warning: notarization of embedded desktop wrapper failed; 'pando desktop' from a standalone binary may be killed by Gatekeeper."; \
 		fi; \
 	fi
 	@python3 scripts/embed_desktop_artifact.py desktop/build/bin internal/desktop/bin
