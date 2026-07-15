@@ -275,7 +275,12 @@ verify_zip_binary_signed() {
     bin="$(find "$probe" -maxdepth 1 -name 'pando-darwin-*' -type f | head -n1)"
     [[ -n "$bin" ]] || { echo "Error: no CLI binary inside $zip" >&2; return 1; }
     # notarytool rejects binaries without a hardened-runtime signature + timestamp.
-    if ! codesign -dv --verbose=2 "$bin" 2>&1 | grep -q 'flags=.*runtime'; then
+    # Capture to a variable and match with a bash glob (no pipe): `codesign | grep
+    # -q` would let grep close the pipe on first match, giving codesign a SIGPIPE
+    # whose non-zero status `set -o pipefail` propagates as a false "unsigned".
+    local cs_out
+    cs_out="$(codesign -dv --verbose=2 "$bin" 2>&1 || true)"
+    if [[ "$cs_out" != *"(runtime)"* ]]; then
         echo "Error: $(basename "$zip") binary is not signed with the hardened runtime." >&2
         echo "  Re-run 'make release-darwin-*' with SIGNING_IDENTITY + MACOS_CODESIGN_WRAPPER set." >&2
         return 1
