@@ -7,6 +7,11 @@ if [[ $# -ne 1 ]]; then
 fi
 
 TARGET="$1"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Hardened-runtime entitlements (JIT / executable memory) required by the
+# embedded wazero WASM runtime; without them macOS SIGKILLs the process the
+# moment any WASM module is instantiated. See scripts/pando.entitlements.
+ENTITLEMENTS="${MACOS_ENTITLEMENTS:-$SCRIPT_DIR/pando.entitlements}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-${MACOS_SIGN_IDENTITY:-}}"
 KEYCHAIN_PATH="${MACOS_SIGN_KEYCHAIN_PATH:-}"
 KEYCHAIN_PASSWORD="${MACOS_SIGN_KEYCHAIN_PASSWORD:-${KEYSTORE_PASS:-}}"
@@ -25,4 +30,11 @@ if [[ -n "$KEYCHAIN_PASSWORD" ]]; then
     security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
 fi
 
-codesign --force -o runtime --timestamp --keychain "$KEYCHAIN_PATH" --sign "$SIGNING_IDENTITY" "$TARGET"
+ENT_ARGS=()
+if [[ -f "$ENTITLEMENTS" ]]; then
+    ENT_ARGS=(--entitlements "$ENTITLEMENTS")
+else
+    echo "Warning: entitlements file not found at $ENTITLEMENTS; signing without JIT entitlements (WASM will be killed at runtime)." >&2
+fi
+
+codesign --force -o runtime "${ENT_ARGS[@]}" --timestamp --keychain "$KEYCHAIN_PATH" --sign "$SIGNING_IDENTITY" "$TARGET"

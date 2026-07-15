@@ -39,6 +39,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Hardened-runtime entitlements (JIT / executable memory) required by the
+# embedded wazero WASM runtime. Without them macOS AMFI SIGKILLs pando the
+# instant any WASM module (PDFium / markitdown) is instantiated — `pando -v`
+# survives but `pando`, `pando serve`, `pando desktop`, `pando convert <pdf>`
+# are "Killed: 9". See scripts/pando.entitlements.
+ENTITLEMENTS="${MACOS_ENTITLEMENTS:-$SCRIPT_DIR/pando.entitlements}"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$REPO_ROOT/dist"
 ASSETS_DIR="$REPO_ROOT/assets"
@@ -394,15 +400,17 @@ WRAPPER
 
     # 4. Sign inside-out: nested executables first, then the bundle.
     echo "Signing bundle executables (inside-out)..."
-    run_codesign -o runtime "$macos_dir/pando-bin"
-    run_codesign -o runtime "$macos_dir/pando-desktop"
+    run_codesign -o runtime --entitlements "$ENTITLEMENTS" "$macos_dir/pando-bin"
+    run_codesign -o runtime --entitlements "$ENTITLEMENTS" "$macos_dir/pando-desktop"
 
     local final_app="$DIST_DIR/Pando-${arch_label}.app"
     rm -rf "$final_app"
     cp -R "$app_dir" "$final_app"
 
+    # --deep re-signs the nested pando-bin / pando-desktop too, so the
+    # entitlements must be repeated here or the JIT grant is stripped from them.
     echo "Signing Pando.app bundle..."
-    run_codesign --deep -o runtime "$final_app"
+    run_codesign --deep -o runtime --entitlements "$ENTITLEMENTS" "$final_app"
 
     # Notarize & staple the .app BEFORE it goes into the .pkg. Stapling works on a
     # bundle (unlike a bare Mach-O), so the installed app is offline-safe and the

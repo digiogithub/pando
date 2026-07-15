@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for every Mach-O we sign (pando-bin, the loose
+  CLI binary, pando-desktop, and the .app bundle).
+
+  Pando embeds the wazero WebAssembly runtime (wazevo compiler backend) to run
+  PDFium / markitdown WASM for KB document conversion. The compiler writes
+  native code into memory and maps it executable (MAP_JIT / mprotect RW->RX).
+  Under the hardened runtime (`codesign -o runtime`) that mapping is blocked by
+  AMFI and the process is SIGKILL'd ("Killed: 9") the instant any WASM module is
+  instantiated. `pando -v` survives because it never touches WASM; `pando`,
+  `pando serve`, `pando desktop` and `pando convert <pdf>` die on startup.
+
+  These two entitlements re-allow JIT / self-signed executable memory. They are
+  permitted for Developer ID + notarization, so signing with them still notarizes.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>

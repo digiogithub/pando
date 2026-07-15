@@ -40,6 +40,9 @@ MACOS_SYSROOT_FLAGS :=
 MACOS_SIGN_IDENTITY ?= 4749EC5719E91D7ADFE5FDB4CB546057A8CFB9AD
 MACOS_SIGN_KEYCHAIN_PATH ?=
 MACOS_CODESIGN_WRAPPER ?= $(CURDIR)/scripts/codesign-macos
+# Hardened-runtime entitlements (JIT / executable memory) needed by the embedded
+# wazero WASM runtime; without them macOS SIGKILLs pando when WASM is used.
+MACOS_ENTITLEMENTS ?= $(CURDIR)/scripts/pando.entitlements
 # notarytool keychain profile for notarizing the embedded desktop wrapper.
 # Leave empty to skip wrapper notarization (dev builds).
 NOTARY_PROFILE ?=
@@ -102,13 +105,13 @@ desktop-embed: desktop-build
 	@if [ "$(shell uname)" = "Darwin" ]; then \
 		if [ -d desktop/build/bin/Pando.app ]; then \
 			echo "Signing embedded desktop wrapper (Pando.app) — hardened runtime..."; \
-			codesign --deep --force -o runtime --timestamp --sign "$(MACOS_SIGN_IDENTITY)" desktop/build/bin/Pando.app \
+			codesign --deep --force -o runtime --entitlements "$(MACOS_ENTITLEMENTS)" --timestamp --sign "$(MACOS_SIGN_IDENTITY)" desktop/build/bin/Pando.app \
 				|| echo "Warning: codesign of embedded desktop wrapper failed; 'pando desktop' from a standalone binary may be blocked by macOS."; \
 			NOTARY_PROFILE="$(NOTARY_PROFILE)" MACOS_SIGN_KEYCHAIN_PATH="$(MACOS_SIGN_KEYCHAIN_PATH)" "$(MACOS_NOTARIZE_WRAPPER)" desktop/build/bin/Pando.app \
 				|| echo "Warning: notarization of embedded desktop wrapper failed; 'pando desktop' from a standalone binary may be killed by Gatekeeper."; \
 		elif [ -f desktop/build/bin/pando-desktop ]; then \
 			echo "Signing embedded desktop wrapper (pando-desktop) — hardened runtime..."; \
-			codesign --force -o runtime --timestamp --sign "$(MACOS_SIGN_IDENTITY)" desktop/build/bin/pando-desktop \
+			codesign --force -o runtime --entitlements "$(MACOS_ENTITLEMENTS)" --timestamp --sign "$(MACOS_SIGN_IDENTITY)" desktop/build/bin/pando-desktop \
 				|| echo "Warning: codesign of embedded desktop wrapper failed."; \
 			NOTARY_PROFILE="$(NOTARY_PROFILE)" MACOS_SIGN_KEYCHAIN_PATH="$(MACOS_SIGN_KEYCHAIN_PATH)" "$(MACOS_NOTARIZE_WRAPPER)" desktop/build/bin/pando-desktop \
 				|| echo "Warning: notarization of embedded desktop wrapper failed; 'pando desktop' from a standalone binary may be killed by Gatekeeper."; \
