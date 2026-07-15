@@ -16,15 +16,17 @@ import (
 var (
 	geminiModelsURL     = "https://generativelanguage.googleapis.com/v1beta/models"
 	openRouterModelsURL = "https://openrouter.ai/api/v1/models"
+	copilotModelsURL    = "https://api.githubcopilot.com/models"
 )
 
 // FetchedModel represents a model returned by a provider's API
 type FetchedModel struct {
-	ID            string `json:"id"`
-	Name          string `json:"name,omitempty"`
-	Description   string `json:"description,omitempty"`
-	Created       int64  `json:"created,omitempty"`
-	ContextWindow int64  `json:"context_window,omitempty"`
+	ID              string `json:"id"`
+	Name            string `json:"name,omitempty"`
+	Description     string `json:"description,omitempty"`
+	Created         int64  `json:"created,omitempty"`
+	ContextWindow   int64  `json:"context_window,omitempty"`
+	MaxOutputTokens int64  `json:"max_output_tokens,omitempty"`
 }
 
 // ProviderSupportsModelListing reports whether a provider exposes a model-listing
@@ -236,7 +238,7 @@ func fetchCopilotModels(ctx context.Context, bearerToken string) ([]FetchedModel
 		return nil, fmt.Errorf("bearer token required for copilot")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.githubcopilot.com/models", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, copilotModelsURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -254,6 +256,13 @@ func fetchCopilotModels(ctx context.Context, bearerToken string) ([]FetchedModel
 				Policy             *struct {
 					State string `json:"state,omitempty"`
 				} `json:"policy,omitempty"`
+				Capabilities struct {
+					Limits struct {
+						MaxContextWindowTokens int64 `json:"max_context_window_tokens,omitempty"`
+						MaxOutputTokens        int64 `json:"max_output_tokens,omitempty"`
+						MaxPromptTokens        int64 `json:"max_prompt_tokens,omitempty"`
+					} `json:"limits"`
+				} `json:"capabilities"`
 			} `json:"data"`
 		}
 		if err := json.Unmarshal(body, &response); err != nil {
@@ -269,9 +278,17 @@ func fetchCopilotModels(ctx context.Context, bearerToken string) ([]FetchedModel
 			if m.Policy != nil && m.Policy.State == "disabled" {
 				continue
 			}
+			// Prefer the explicit context window; fall back to max prompt tokens,
+			// matching opencode's github-copilot plugin (models.ts).
+			contextWindow := m.Capabilities.Limits.MaxContextWindowTokens
+			if contextWindow == 0 {
+				contextWindow = m.Capabilities.Limits.MaxPromptTokens
+			}
 			result = append(result, FetchedModel{
-				ID:   m.ID,
-				Name: m.Name,
+				ID:              m.ID,
+				Name:            m.Name,
+				ContextWindow:   contextWindow,
+				MaxOutputTokens: m.Capabilities.Limits.MaxOutputTokens,
 			})
 		}
 		return result, nil

@@ -59,6 +59,52 @@ func TestFetchOpenRouterModelsIncludesContextLength(t *testing.T) {
 	}
 }
 
+func TestFetchCopilotModelsIncludesCapabilitiesLimitsAsContextWindow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"gpt-5.4","name":"GPT-5.4","version":"gpt-5.4-2026-01-01","model_picker_enabled":true,"capabilities":{"limits":{"max_context_window_tokens":400000,"max_output_tokens":128000,"max_prompt_tokens":272000}}}]}`))
+	}))
+	defer server.Close()
+
+	oldURL := copilotModelsURL
+	copilotModelsURL = server.URL
+	t.Cleanup(func() { copilotModelsURL = oldURL })
+
+	models, err := fetchCopilotModels(context.Background(), "test-token")
+	if err != nil {
+		t.Fatalf("fetchCopilotModels() error = %v", err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(models))
+	}
+	if models[0].ContextWindow != 400_000 {
+		t.Fatalf("ContextWindow = %d, want %d", models[0].ContextWindow, 400_000)
+	}
+	if models[0].MaxOutputTokens != 128_000 {
+		t.Fatalf("MaxOutputTokens = %d, want %d", models[0].MaxOutputTokens, 128_000)
+	}
+}
+
+func TestFetchCopilotModelsFallsBackToMaxPromptTokens(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"gpt-5.4-mini","name":"GPT-5.4 mini","version":"gpt-5.4-mini-2026-01-01","model_picker_enabled":true,"capabilities":{"limits":{"max_output_tokens":64000,"max_prompt_tokens":200000}}}]}`))
+	}))
+	defer server.Close()
+
+	oldURL := copilotModelsURL
+	copilotModelsURL = server.URL
+	t.Cleanup(func() { copilotModelsURL = oldURL })
+
+	models, err := fetchCopilotModels(context.Background(), "test-token")
+	if err != nil {
+		t.Fatalf("fetchCopilotModels() error = %v", err)
+	}
+	if models[0].ContextWindow != 200_000 {
+		t.Fatalf("ContextWindow = %d, want %d", models[0].ContextWindow, 200_000)
+	}
+}
+
 func TestFetchOpenRouterModelsPrefersTopProviderContextLength(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

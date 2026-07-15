@@ -96,10 +96,7 @@ func RefreshProviderModels(ctx context.Context, provider ModelProvider, apiKey s
 		}
 
 		contextWindow := fetchedModelContextWindow(fm.ContextWindow)
-		maxTokens := int64(4096) // reasonable default
-		if contextWindow < maxTokens {
-			maxTokens = contextWindow / 2
-		}
+		maxTokens := fetchedModelMaxOutputTokens(fm.MaxOutputTokens, contextWindow)
 
 		model := Model{
 			ID:               modelID,
@@ -211,11 +208,7 @@ func modelFromFetchedAccountModel(params AccountModelRefreshParams, fetched Fetc
 
 	name := fetchedModelName(fetched)
 	contextWindow := fetchedModelContextWindow(fetched.ContextWindow)
-
-	maxTokens := int64(4096)
-	if contextWindow < maxTokens {
-		maxTokens = contextWindow / 2
-	}
+	maxTokens := fetchedModelMaxOutputTokens(fetched.MaxOutputTokens, contextWindow)
 
 	return Model{
 		ID:               modelID,
@@ -355,6 +348,20 @@ func fetchedModelContextWindow(contextWindow int64) int64 {
 		return contextWindow
 	}
 	return 128_000
+}
+
+// fetchedModelMaxOutputTokens returns the provider-reported output token limit
+// when available, falling back to a guessed default (half the context window,
+// capped at 4096) for providers whose listing API doesn't expose it.
+func fetchedModelMaxOutputTokens(maxOutputTokens, contextWindow int64) int64 {
+	if maxOutputTokens > 0 {
+		return maxOutputTokens
+	}
+	maxTokens := int64(4096)
+	if contextWindow < maxTokens {
+		maxTokens = contextWindow / 2
+	}
+	return maxTokens
 }
 
 // GetAllModels returns both static and dynamic models

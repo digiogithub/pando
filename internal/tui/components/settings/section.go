@@ -114,6 +114,18 @@ func (s *Section) View(width int, active bool) string {
 			Render("No settings in this section.")
 	}
 
+	return lipgloss.JoinVertical(lipgloss.Left, s.renderFields(width, active)...)
+}
+
+// renderFields renders each field into its own bordered box. It is the single
+// source of truth for both View and the geometry helpers (FieldHeights /
+// FieldAtLine / FieldLineOffset), so click hit-testing and auto-scroll agree
+// with what is actually drawn even when field heights vary (fields with a Hint
+// are taller than fields without one).
+func (s *Section) renderFields(width int, active bool) []string {
+	t := theme.CurrentTheme()
+	base := styles.BaseStyle()
+
 	fieldViews := make([]string, len(s.Fields))
 	for i, field := range s.Fields {
 		isActiveField := active && i == s.activeFieldIdx
@@ -171,7 +183,57 @@ func (s *Section) View(width int, active bool) string {
 			Render(fieldContent)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, fieldViews...)
+	return fieldViews
+}
+
+// FieldHeights returns the rendered line height of every field at the given
+// width, matching exactly what View draws. Callers use the cumulative sums to
+// map content lines to fields and back.
+func (s *Section) FieldHeights(width int) []int {
+	fieldViews := s.renderFields(width, true)
+	heights := make([]int, len(fieldViews))
+	for i, fv := range fieldViews {
+		heights[i] = lipgloss.Height(fv)
+	}
+	return heights
+}
+
+// FieldLineOffset returns the first content line (0-indexed) of field idx.
+func (s *Section) FieldLineOffset(width, idx int) int {
+	heights := s.FieldHeights(width)
+	offset := 0
+	for i := 0; i < idx && i < len(heights); i++ {
+		offset += heights[i]
+	}
+	return offset
+}
+
+// FieldAtLine maps a content line to the field index that occupies it, or -1.
+func (s *Section) FieldAtLine(width, line int) int {
+	if line < 0 {
+		return -1
+	}
+	offset := 0
+	for i, h := range s.FieldHeights(width) {
+		if line < offset+h {
+			return i
+		}
+		offset += h
+	}
+	return -1
+}
+
+// ActiveFieldIdx returns the index of the currently active field.
+func (s *Section) ActiveFieldIdx() int {
+	return s.activeFieldIdx
+}
+
+// SetActiveFieldIdx sets the active field, clamped to the valid range.
+func (s *Section) SetActiveFieldIdx(idx int) {
+	if len(s.Fields) == 0 {
+		return
+	}
+	s.activeFieldIdx = min(max(idx, 0), len(s.Fields)-1)
 }
 
 func (s *Section) startEditing() tea.Cmd {

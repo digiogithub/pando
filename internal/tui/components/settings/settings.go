@@ -1,8 +1,6 @@
 package settings
 
 import (
-	"strings"
-
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -97,11 +95,12 @@ func (m SettingsCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				relY := mouseMsg.Y - viewportStartY
 				if relY >= 0 && relY < m.viewport.Height {
 					contentY := relY + m.viewport.YOffset
-					// Each field is 3 lines: top border + content + bottom border
-					fieldIdx := contentY / 3
+					// Field heights vary (fields with a Hint are taller), so map
+					// the clicked line through the section's real geometry.
 					if activeSection := m.activeSection(); activeSection != nil {
-						if fieldIdx >= 0 && fieldIdx < len(activeSection.Fields) {
-							activeSection.activeFieldIdx = fieldIdx
+						fieldIdx := activeSection.FieldAtLine(max(1, m.viewport.Width), contentY)
+						if fieldIdx >= 0 {
+							activeSection.SetActiveFieldIdx(fieldIdx)
 							m.syncViewport()
 							m.autoScrollToActiveField()
 						}
@@ -320,29 +319,38 @@ func (m *SettingsCmp) autoScrollToActiveField() {
 		return
 	}
 
-	activeField := activeSection.ActiveField()
-	if activeField == nil {
+	if len(activeSection.Fields) == 0 {
 		m.viewport.SetYOffset(0)
 		return
 	}
 
-	content := activeSection.View(max(1, m.viewport.Width), true)
-	lines := strings.Split(content, "\n")
-	targetLine := 0
-	for idx, line := range lines {
-		if strings.Contains(line, activeField.Label) {
-			targetLine = idx
-			break
-		}
+	width := max(1, m.viewport.Width)
+	heights := activeSection.FieldHeights(width)
+	idx := activeSection.ActiveFieldIdx()
+	if idx < 0 || idx >= len(heights) {
+		m.viewport.SetYOffset(0)
+		return
 	}
 
+	targetLine := 0
+	for i := 0; i < idx; i++ {
+		targetLine += heights[i]
+	}
+	fieldHeight := heights[idx]
+	totalLines := 0
+	for _, h := range heights {
+		totalLines += h
+	}
+
+	// Only move the viewport when the active field is not fully visible, so a
+	// selection change scrolls the minimum needed instead of jumping to the top.
 	yOffset := m.viewport.YOffset
 	if targetLine < yOffset {
 		yOffset = targetLine
-	} else if targetLine >= yOffset+m.viewport.Height {
-		yOffset = targetLine - m.viewport.Height + 1
+	} else if targetLine+fieldHeight > yOffset+m.viewport.Height {
+		yOffset = targetLine + fieldHeight - m.viewport.Height
 	}
-	maxOffset := max(0, len(lines)-m.viewport.Height)
+	maxOffset := max(0, totalLines-m.viewport.Height)
 	m.viewport.SetYOffset(min(max(yOffset, 0), maxOffset))
 }
 
