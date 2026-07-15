@@ -30,6 +30,8 @@ func BuiltinCommands() []SlashCommand {
 		{Name: "caveman-finish", Description: "Disable caveman output brevity and return to normal output", AcceptsArgs: false},
 		{Name: "superpowers", Description: "Enable the opt-in disciplined development workflow (plan-first, verify-always)", AcceptsArgs: true},
 		{Name: "superpowers-finish", Description: "Verify and close the active Superpowers workflow, then return to normal mode", AcceptsArgs: false},
+		{Name: "learning", Description: "Enable learner mode: read the KB more, document discoveries, ask questions, keep docs current", AcceptsArgs: true},
+		{Name: "learning-finish", Description: "Consolidate what was learned into KB/memory and return to normal mode", AcceptsArgs: false},
 		{Name: "improve-agents-md", Description: "Create or reinforce AGENTS.md with the mandatory AI-agent operating rules", AcceptsArgs: true},
 	}
 }

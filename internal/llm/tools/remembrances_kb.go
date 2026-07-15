@@ -17,6 +17,7 @@ const (
 	kbSearchDocumentsToolName = "kb_search_documents"
 	kbGetDocumentToolName     = "kb_get_document"
 	kbDeleteDocumentToolName  = "kb_delete_document"
+	kbMarkOutdatedToolName    = "kb_mark_outdated"
 )
 
 // KBAddDocumentTool adds a document to the knowledge base.
@@ -67,6 +68,16 @@ func NewKBGetDocumentTool(store *kb.KBStore) BaseTool {
 // NewKBDeleteDocumentTool creates a new KBDeleteDocumentTool.
 func NewKBDeleteDocumentTool(store *kb.KBStore) BaseTool {
 	return &KBDeleteDocumentTool{store: store}
+}
+
+// KBMarkOutdatedTool flags a knowledge-base document as superseded/outdated.
+type KBMarkOutdatedTool struct {
+	store *kb.KBStore
+}
+
+// NewKBMarkOutdatedTool creates a new KBMarkOutdatedTool.
+func NewKBMarkOutdatedTool(store *kb.KBStore) BaseTool {
+	return &KBMarkOutdatedTool{store: store}
 }
 
 // ---- KBAddDocumentTool ----
@@ -498,4 +509,51 @@ func (t *KBDeleteDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRe
 	}
 
 	return NewTextResponse(fmt.Sprintf("Document deleted: %s", req.FilePath)), nil
+}
+
+// ---- KBMarkOutdatedTool ----
+
+func (t *KBMarkOutdatedTool) Info() ToolInfo {
+	return ToolInfo{
+		Name: kbMarkOutdatedToolName,
+		Description: "Marks a knowledge-base document as outdated (superseded) without deleting it. " +
+			"Outdated documents are excluded from kb_search_documents by default (they still surface when exclude_outdated is set to false), and the outdated flag is mirrored into the document's front matter. " +
+			"Use this when a plan, feature note, or fix write-up has been replaced by newer work: prefer marking the stale document outdated (and adding the up-to-date one) over silently leaving contradictory documents in the knowledge base. Idempotent — re-marking an already outdated document is a no-op.",
+		Parameters: map[string]any{
+			"file_path": map[string]any{
+				"type":        "string",
+				"description": "The document path/identifier to mark as outdated.",
+			},
+		},
+		Required: []string{"file_path"},
+	}
+}
+
+func (t *KBMarkOutdatedTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
+	var req struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := DecodeToolInput(params.Input, &req); err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
+	}
+	if req.FilePath == "" {
+		return NewTextErrorResponse("file_path is required"), nil
+	}
+
+	// MarkDocumentOutdated silently no-ops on a missing document (the UPDATE
+	// touches zero rows), so verify existence first to give the caller a clear
+	// signal instead of a false confirmation.
+	doc, err := t.store.GetDocument(ctx, req.FilePath)
+	if err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("kb error: %v", err)), nil
+	}
+	if doc == nil {
+		return NewTextResponse(fmt.Sprintf("Document not found: %s", req.FilePath)), nil
+	}
+
+	if err := t.store.MarkDocumentOutdated(ctx, req.FilePath); err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("kb mark outdated error: %v", err)), nil
+	}
+
+	return NewTextResponse(fmt.Sprintf("Document marked outdated: %s (excluded from default searches; still retrievable with exclude_outdated=false)", req.FilePath)), nil
 }

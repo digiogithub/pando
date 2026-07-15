@@ -904,6 +904,26 @@ func (a *acpAgentAdapter) SuperpowersFinish(ctx context.Context, sessionID strin
 	return a.forwardEvents(ctx, realCh), nil
 }
 
+// SetLearningMode enables or disables the per-session Learning policy.
+func (a *acpAgentAdapter) SetLearningMode(sessionID string, enabled bool) {
+	agent.SetLearningMode(sessionID, enabled)
+}
+
+// LearningMode reports whether the Learning policy is active for the session.
+func (a *acpAgentAdapter) LearningMode(sessionID string) bool {
+	return agent.LearningMode(sessionID)
+}
+
+// LearningFinish runs the Learning closing turn; the mode is cleared only when
+// that turn succeeds (see agent.RunLearningFinish).
+func (a *acpAgentAdapter) LearningFinish(ctx context.Context, sessionID string) (<-chan acpPkg.AgentEvent, error) {
+	realCh, err := agent.RunLearningFinish(ctx, a.svc, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.forwardEvents(ctx, realCh), nil
+}
+
 // ListPersonas returns all available persona names.
 func (a *acpAgentAdapter) ListPersonas() []string {
 	return agent.ListAvailablePersonas()

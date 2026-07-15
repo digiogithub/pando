@@ -409,6 +409,11 @@ type mockAgentService struct {
 	// superpowersFinishSucceeds mirrors the real adapter contract: the mode is
 	// cleared only when the closing turn reaches a successful terminal response.
 	superpowersFinishSucceeds bool
+
+	learningModes          map[string]bool
+	learningFinishCalled   bool
+	learningFinishErr      error
+	learningFinishSucceeds bool
 }
 
 func (m *mockAgentService) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
@@ -543,6 +548,34 @@ func (m *mockAgentService) SuperpowersFinish(ctx context.Context, sessionID stri
 	}
 	if m.superpowersFinishSucceeds {
 		m.SetSuperpowersMode(sessionID, false)
+	}
+	ch := make(chan AgentEvent)
+	close(ch)
+	return ch, nil
+}
+
+func (m *mockAgentService) SetLearningMode(sessionID string, enabled bool) {
+	if m.learningModes == nil {
+		m.learningModes = make(map[string]bool)
+	}
+	if enabled {
+		m.learningModes[sessionID] = true
+		return
+	}
+	delete(m.learningModes, sessionID)
+}
+
+func (m *mockAgentService) LearningMode(sessionID string) bool {
+	return m.learningModes[sessionID]
+}
+
+func (m *mockAgentService) LearningFinish(ctx context.Context, sessionID string) (<-chan AgentEvent, error) {
+	m.learningFinishCalled = true
+	if m.learningFinishErr != nil {
+		return nil, m.learningFinishErr
+	}
+	if m.learningFinishSucceeds {
+		m.SetLearningMode(sessionID, false)
 	}
 	ch := make(chan AgentEvent)
 	close(ch)
@@ -2752,8 +2785,8 @@ func thoughtUpdateTexts(t *testing.T, raw string) []string {
 
 func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 	commands := availableCommands()
-	if len(commands) != 13 {
-		t.Fatalf("expected 13 available commands, got %d", len(commands))
+	if len(commands) != 15 {
+		t.Fatalf("expected 15 available commands, got %d", len(commands))
 	}
 
 	got := map[string]acpsdk.AvailableCommand{}
@@ -2764,20 +2797,20 @@ func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, superpowersFinishCommandToken, cavemanCommandToken, cavemanFinishCommandToken} {
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, superpowersFinishCommandToken, cavemanCommandToken, cavemanFinishCommandToken, learningCommandToken, learningFinishCommandToken} {
 		if _, ok := got[name]; !ok {
 			t.Fatalf("expected available command %q to be exposed", name)
 		}
 	}
 
-	for _, name := range []string{goalCommandToken, autopilotCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, cavemanCommandToken} {
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, cavemanCommandToken, learningCommandToken} {
 		cmd := got[name]
 		if cmd.Input == nil || cmd.Input.Unstructured == nil || strings.TrimSpace(cmd.Input.Unstructured.Hint) == "" {
 			t.Fatalf("expected available command %q to include an unstructured input hint, got %#v", name, cmd.Input)
 		}
 	}
 
-	for _, name := range []string{goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, superpowersFinishCommandToken, cavemanFinishCommandToken} {
+	for _, name := range []string{goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, superpowersFinishCommandToken, cavemanFinishCommandToken, learningFinishCommandToken} {
 		if got[name].Input != nil {
 			t.Fatalf("expected available command %q to omit input metadata, got %#v", name, got[name].Input)
 		}

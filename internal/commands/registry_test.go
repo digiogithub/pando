@@ -25,6 +25,29 @@ func TestBuiltinCommandsIncludeSuperpowers(t *testing.T) {
 	}
 }
 
+func TestBuiltinCommandsIncludeLearning(t *testing.T) {
+	byName := map[string]SlashCommand{}
+	for _, cmd := range BuiltinCommands() {
+		byName[cmd.Name] = cmd
+	}
+
+	learning, ok := byName["learning"]
+	if !ok {
+		t.Fatal("expected /learning to be a built-in command")
+	}
+	if !learning.AcceptsArgs {
+		t.Error("expected /learning to accept an optional focus")
+	}
+
+	finish, ok := byName["learning-finish"]
+	if !ok {
+		t.Fatal("expected /learning-finish to be a built-in command")
+	}
+	if finish.AcceptsArgs {
+		t.Error("expected /learning-finish to take no arguments")
+	}
+}
+
 func TestBuiltinCommandsIncludeCaveman(t *testing.T) {
 	byName := map[string]SlashCommand{}
 	for _, cmd := range BuiltinCommands() {
@@ -82,6 +105,9 @@ func TestParseSuperpowersCommands(t *testing.T) {
 		{input: "/superpowers", wantName: "superpowers"},
 		{input: "/superpowers port the indexer", wantName: "superpowers", wantArgs: "port the indexer"},
 		{input: "/superpowers-finish", wantName: "superpowers-finish"},
+		{input: "/learning", wantName: "learning"},
+		{input: "/learning understand the KB graph", wantName: "learning", wantArgs: "understand the KB graph"},
+		{input: "/learning-finish", wantName: "learning-finish"},
 	}
 
 	for _, tt := range tests {

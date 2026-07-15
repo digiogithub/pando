@@ -105,6 +105,16 @@ type AgentService interface {
 	// is left) as a normal agent turn. The mode is disabled only if that turn
 	// succeeds, so a cancelled or failed close keeps the workflow active.
 	SuperpowersFinish(ctx context.Context, sessionID string) (<-chan AgentEvent, error)
+	// SetLearningMode enables or disables the per-session Learning policy (the
+	// opt-in learner/documentarian mode: read the KB more, document discoveries,
+	// ask questions, keep docs current).
+	SetLearningMode(sessionID string, enabled bool)
+	// LearningMode reports whether the Learning policy is active for the session.
+	LearningMode(sessionID string) bool
+	// LearningFinish runs the Learning closing turn (consolidate learnings into
+	// KB/memory, mark stale docs, report) as a normal agent turn. The mode is
+	// disabled only if that turn succeeds, so a cancelled or failed close keeps it active.
+	LearningFinish(ctx context.Context, sessionID string) (<-chan AgentEvent, error)
 	// ListPersonas returns the names of all available personas.
 	ListPersonas() []string
 	// GetActivePersona returns the currently active persona name (empty = none).

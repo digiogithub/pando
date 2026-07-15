@@ -100,6 +100,7 @@ func buildRemembrancesLLMTools(svc *rag.RemembrancesService) []llmtools.BaseTool
 		llmtools.NewKBSearchDocumentsTool(svc.KB),
 		llmtools.NewKBGetDocumentTool(svc.KB),
 		llmtools.NewKBDeleteDocumentTool(svc.KB),
+		llmtools.NewKBMarkOutdatedTool(svc.KB),
 		llmtools.NewSaveEventTool(svc.Events),
 		llmtools.NewSearchEventsTool(svc.Events),
 		llmtools.NewHybridSearchRemembrancesTool(svc),

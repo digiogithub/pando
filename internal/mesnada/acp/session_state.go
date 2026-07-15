@@ -51,6 +51,8 @@ const (
 	superpowersFinishCommandToken     = "superpowers-finish"
 	cavemanCommandToken               = "caveman"
 	cavemanFinishCommandToken         = "caveman-finish"
+	learningCommandToken              = "learning"
+	learningFinishCommandToken        = "learning-finish"
 )
 
 const (

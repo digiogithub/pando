@@ -2380,6 +2380,22 @@ func (a *appACPAgentAdapter) SuperpowersFinish(ctx context.Context, sessionID st
 	return a.forwardEvents(ctx, realCh), nil
 }
 
+func (a *appACPAgentAdapter) SetLearningMode(sessionID string, enabled bool) {
+	agent.SetLearningMode(sessionID, enabled)
+}
+
+func (a *appACPAgentAdapter) LearningMode(sessionID string) bool {
+	return agent.LearningMode(sessionID)
+}
+
+func (a *appACPAgentAdapter) LearningFinish(ctx context.Context, sessionID string) (<-chan mesnadaACP.AgentEvent, error) {
+	realCh, err := agent.RunLearningFinish(ctx, a.svc, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.forwardEvents(ctx, realCh), nil
+}
+
 func (a *appACPAgentAdapter) ListPersonas() []string             { return agent.ListAvailablePersonas() }
 func (a *appACPAgentAdapter) GetActivePersona() string           { return agent.GetActivePersona() }
 func (a *appACPAgentAdapter) SetActivePersona(name string) error { return agent.SetActivePersona(name) }

@@ -22,6 +22,7 @@ Pando is a Go-based CLI application that brings AI assistance to your terminal. 
 - **Output Compression (token reduction)**: RTK-style filtering of verbose command output (test runners, builds, installers, linters) before it reaches the model — typically 60-90% fewer tokens. Declarative, hot-reloadable TOML filters plus native structured parsers (`go test -json`, `golangci-lint`, `tsc`). Fail-safe and on by default; never drops errors. Add project-local filters in `.pando/filters.toml` and validate them with `pando filter test`. See [docs/output-filters.md](docs/output-filters.md).
 - **Caveman Output Brevity (opt-in output-token reduction)**: `/caveman [lite|full|ultra|wenyan]` makes Pando answer with fewer words — no filler, no restatement, no redundant summaries — while code, commands, errors, test output, reasoning quality, tool use and verification stay intact. `/caveman-finish` ends it for the session, and `[Caveman] DefaultMode` sets a global default. Off by default; it reduces output tokens only. See [Caveman output brevity](#caveman-output-brevity-opt-in).
 - **Superpowers Mode (opt-in workflow discipline)**: `/superpowers` routes long or risky work through explicit gates — understand, design and get approval, write a risk-ordered plan, implement test-first, verify with real command output — and `/superpowers-finish` closes it with a verified report. Per-session and off by default; it never performs a git operation on its own. See [Built-in Slash Commands](#built-in-slash-commands).
+- **Learning Mode (opt-in knowledge capture)**: `/learning` makes Pando lean on its knowledge base and memory — recover prior context before acting, ask you the questions that matter, document what it discovers, and mark superseded docs outdated instead of leaving stale ones behind. `/learning-finish` consolidates what was learned back into the KB. Per-session, off by default, and never a git side effect. See [Built-in Slash Commands](#built-in-slash-commands).
 - **Vim-like Editor**: Integrated editor with text input capabilities
 - **Persistent Storage**: SQLite database for storing conversations and sessions
 - **LSP Integration**: Language Server Protocol support for code intelligence
@@ -370,6 +371,8 @@ Available in the TUI, the Web UI and over ACP (editors like Zed or VS Code):
 | `/caveman-finish` | Return the session to normal output length |
 | `/superpowers [objective]` | Enable the disciplined development workflow (see below) |
 | `/superpowers-finish` | Verify, report, and return to normal mode |
+| `/learning [focus]` | Enable learner mode: read the KB more, document discoveries, ask questions, keep docs current (see below) |
+| `/learning-finish` | Consolidate what was learned into the KB/memory and return to normal mode |
 | `/improve-agents-md` | Create or reinforce AGENTS.md with the mandatory AI-agent operating rules |
 
 ### Caveman output brevity (opt-in)
@@ -447,6 +450,39 @@ Worth knowing:
 It is inspired by the workflow principles of the [Superpowers](https://github.com/obra/superpowers)
 plugin by Jesse Vincent (MIT), reimplemented natively in Pando — no plugin runtime, no telemetry,
 no forced subagents.
+
+### Learning mode (opt-in)
+
+`/learning` turns on a knowledge-capture policy for the current session. With it active, Pando
+treats the knowledge base and memory as a first-class part of the work rather than an afterthought:
+
+- **Recover context first.** Before building on prior work it searches the KB (`kb_search_documents`,
+  `hybrid_search_remembrances`) and reads relevant memories, instead of re-deriving what was already
+  decided.
+- **Ask what matters.** When a decision is genuinely yours to make, it asks — through the
+  `AskUserQuestion` tool — rather than guessing.
+- **Document discoveries.** Non-obvious findings are written back with `kb_add_document` (plans,
+  analyses, design notes) and short durable facts with `remember`, so the next session starts ahead.
+- **Keep docs honest.** When a plan, feature note, or fix write-up has been superseded, it marks the
+  stale document outdated with `kb_mark_outdated` (excluded from default searches, still retrievable)
+  and adds the up-to-date one, instead of leaving contradictory docs behind.
+
+`/learning [focus]` takes an optional focus to steer what to learn; `/learning-finish` runs a closing
+turn that consolidates what was learned into the KB/memory and returns the session to normal mode.
+
+Worth knowing:
+
+- **Opt-in and inert by default.** A session that never runs `/learning` behaves exactly as before —
+  nothing is injected into the prompt.
+- **Depth, not verbosity.** Learning governs how much Pando *documents and asks*, which is
+  independent from output brevity: it composes cleanly with `/caveman`, which only shortens chat
+  prose. You can run both at once.
+- **Your instructions win.** The policy yields to direct user instructions, AGENTS.md, and the
+  permission system.
+- **No automatic git side effects.** Neither the mode nor the finish command commits, pushes, or
+  otherwise touches git.
+- **Ephemeral.** The mode is per-session and in-memory: it is cleared by `/learning-finish` and does
+  not survive a restart.
 
 ## Custom Commands
 

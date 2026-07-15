@@ -16,6 +16,7 @@ import (
 	"github.com/digiogithub/pando/internal/commands"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/learning"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
@@ -874,6 +875,30 @@ func (s *Server) handleSlashCommandStream(w http.ResponseWriter, flusher http.Fl
 		finishSvc := s.app.CoderAgent
 		submitErr := s.bgRunner.Submit(sessionID, func(bgCtx context.Context) (<-chan agent.AgentEvent, error) {
 			return agent.RunSuperpowersFinish(bgCtx, finishSvc, sessionID)
+		})
+		if submitErr != nil {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": submitErr.Error()})
+			return
+		}
+		eventChan, unsubFn, _ := s.bgRunner.Subscribe(sessionID)
+		s.streamSessionEvents(w, flusher, ctx, sessionID, unsubFn, eventChan)
+		return
+	case "learning":
+		if agent.LearningMode(sessionID) {
+			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": learning.AlreadyActiveMessage})
+		} else {
+			agent.SetLearningMode(sessionID, true)
+			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": learning.ActivationMessage(cmdArgs)})
+		}
+	case "learning-finish":
+		if !agent.LearningMode(sessionID) {
+			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": learning.NotActiveMessage})
+			return
+		}
+		writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Closing Learning mode: consolidating what was learned..."})
+		learningSvc := s.app.CoderAgent
+		submitErr := s.bgRunner.Submit(sessionID, func(bgCtx context.Context) (<-chan agent.AgentEvent, error) {
+			return agent.RunLearningFinish(bgCtx, learningSvc, sessionID)
 		})
 		if submitErr != nil {
 			writeSSEEvent(w, flusher, "error", map[string]string{"error": submitErr.Error()})

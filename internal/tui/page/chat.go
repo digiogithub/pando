@@ -18,6 +18,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/history"
+	"github.com/digiogithub/pando/internal/learning"
 	agentpkg "github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/ponytail"
@@ -856,6 +857,9 @@ func (p *ChatPageModel) sendMessage(text string, attachments []message.Attachmen
 	if cmd, ok := p.handleSuperpowersCommand(text); ok {
 		return cmd
 	}
+	if cmd, ok := p.handleLearningCommand(text); ok {
+		return cmd
+	}
 	// /improve-agents-md expands into a full instruction prompt that is then run
 	// as a normal agent turn (so it streams, steers, and persists like any other
 	// message). Replace the text and fall through to the normal Run/Steer flow.
@@ -1395,6 +1399,50 @@ func (p *ChatPageModel) handleSuperpowersCommand(input string) (tea.Cmd, bool) {
 		}
 	}()
 	return util.ReportInfo("Closing the Superpowers workflow: verifying and reporting..."), true
+}
+
+// handleLearningCommand handles /learning [focus] and /learning-finish.
+// Activation is synchronous (a toast, no agent turn); the finish runs a real
+// closing turn through the agent, which streams into the chat like any other
+// message. The mode is cleared inside RunLearningFinish only if that turn
+// succeeds, so a cancelled or failed close keeps learning on.
+func (p *ChatPageModel) handleLearningCommand(input string) (tea.Cmd, bool) {
+	line := strings.TrimSpace(input)
+	isFinish := line == "/learning-finish"
+	isActivate := line == "/learning" || strings.HasPrefix(line, "/learning ")
+	if !isFinish && !isActivate {
+		return nil, false
+	}
+	if p.session.ID == "" {
+		return util.ReportWarn("Open or start a session first."), true
+	}
+
+	if isActivate {
+		if agentpkg.LearningMode(p.session.ID) {
+			return util.ReportInfo(learning.AlreadyActiveMessage), true
+		}
+		agentpkg.SetLearningMode(p.session.ID, true)
+		focus := strings.TrimSpace(strings.TrimPrefix(line, "/learning"))
+		if focus != "" {
+			return util.ReportInfo("Learning mode enabled. Focus: " + focus), true
+		}
+		return util.ReportInfo("Learning mode enabled. Read the KB, document discoveries, ask questions. /learning-finish to close."), true
+	}
+
+	events, err := agentpkg.RunLearningFinish(context.Background(), p.app.CoderAgent, p.session.ID)
+	if err != nil {
+		if errors.Is(err, agentpkg.ErrLearningNotActive) {
+			return util.ReportInfo(learning.NotActiveMessage), true
+		}
+		return util.ReportError(err), true
+	}
+	// The chat renders the turn from the pubsub stream, so the returned channel is
+	// drained only to let RunLearningFinish observe the terminal event.
+	go func() {
+		for range events {
+		}
+	}()
+	return util.ReportInfo("Closing Learning mode: consolidating what was learned..."), true
 }
 
 // expandImproveAgentsMdCommand recognizes the /improve-agents-md slash command

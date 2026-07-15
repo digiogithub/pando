@@ -24,6 +24,9 @@ const (
 
 	slashCommandCaveman       slashCommandKind = "caveman"
 	slashCommandCavemanFinish slashCommandKind = "caveman-finish"
+
+	slashCommandLearning       slashCommandKind = "learning"
+	slashCommandLearningFinish slashCommandKind = "learning-finish"
 )
 
 type slashCommand struct {
@@ -103,6 +106,19 @@ func slashCommandSpecs() []slashCommandSpec {
 			Kind:        slashCommandCavemanFinish,
 			Description: "Disable caveman output brevity and return to normal output",
 			Usage:       caveman.FinishUsage,
+		},
+		{
+			Token:       learningCommandToken,
+			Kind:        slashCommandLearning,
+			Description: "Enable learner mode: read the KB more, document discoveries, ask questions, keep docs current",
+			InputHint:   "optional focus",
+			Usage:       "Usage: /learning [focus]\nRun /learning-finish to consolidate what was learned and return to normal mode.",
+		},
+		{
+			Token:       learningFinishCommandToken,
+			Kind:        slashCommandLearningFinish,
+			Description: "Consolidate what was learned into KB/memory and return to normal mode",
+			Usage:       "Usage: /learning-finish",
 		},
 		{
 			Token:       improveAgentsMdCommandToken,

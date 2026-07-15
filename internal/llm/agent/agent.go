@@ -15,6 +15,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/caveman"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/learning"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/prompt"
 	"github.com/digiogithub/pando/internal/llm/provider"
@@ -2227,14 +2228,15 @@ func (a *agent) prepareProvider(ctx context.Context, userPrompt string, personaC
 func sessionPolicyActive(ctx context.Context) bool {
 	return ponytailModeForContext(ctx).IsActive() ||
 		superpowersEnabledForContext(ctx) ||
+		learningEnabledForContext(ctx) ||
 		cavemanModeForContext(ctx).IsActive()
 }
 
 // sessionPolicyInstructions returns the per-session policy rulesets to inject
 // after any automatically activated skill, in a deliberate order: the
-// Superpowers development lifecycle first (it governs how work is approached),
-// then Caveman (it governs how the result is written up), then Ponytail (it
-// governs how much gets built). All remain subordinate to direct user
+// Superpowers development lifecycle first, then Learning (both govern how work is
+// approached), then Caveman (it governs how the result is written up), then
+// Ponytail (it governs how much gets built). All remain subordinate to direct user
 // instructions and AGENTS.md, which the rulesets state explicitly.
 func sessionPolicyInstructions(ctx context.Context) []string {
 	var injected []string
@@ -2243,6 +2245,15 @@ func sessionPolicyInstructions(ctx context.Context) []string {
 	// development workflow, injected before each turn like any other skill.
 	if superpowersEnabledForContext(ctx) {
 		if text := prompt.InjectSkillInstructions("superpowers", superpowers.Instructions()); text != "" {
+			injected = append(injected, text)
+		}
+	}
+
+	// Learning mode (per-session, ctx-threaded): the opt-in learner/documentarian
+	// policy. Injected after superpowers (both govern how work is approached) and
+	// before caveman/ponytail (which govern how the output is written up).
+	if learningEnabledForContext(ctx) {
+		if text := prompt.InjectSkillInstructions("learning", learning.Instructions()); text != "" {
 			injected = append(injected, text)
 		}
 	}
