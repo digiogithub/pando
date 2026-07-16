@@ -48,7 +48,7 @@ func (c *copilotClient) isAnthropicModel() bool {
 }
 
 func (c *copilotClient) isResponsesAPIModel() bool {
-	return models.IsCopilotResponsesAPIModel(c.providerOptions.model.APIModel)
+	return models.CopilotModelUsesResponsesAPI(c.providerOptions.model)
 }
 
 func loadCopilotCredentials(savedToken, configuredToken, configuredBaseURL string) (string, string, error) {

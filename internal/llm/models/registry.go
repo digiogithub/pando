@@ -99,12 +99,16 @@ func RefreshProviderModels(ctx context.Context, provider ModelProvider, apiKey s
 		maxTokens := fetchedModelMaxOutputTokens(fm.MaxOutputTokens, contextWindow)
 
 		model := Model{
-			ID:               modelID,
-			Name:             fmt.Sprintf("%s: %s", capitalizeProvider(string(provider)), name),
-			Provider:         provider,
-			APIModel:         fm.ID,
-			ContextWindow:    contextWindow,
-			DefaultMaxTokens: maxTokens,
+			ID:                      modelID,
+			Name:                    fmt.Sprintf("%s: %s", capitalizeProvider(string(provider)), name),
+			Provider:                provider,
+			APIModel:                fm.ID,
+			ContextWindow:           contextWindow,
+			DefaultMaxTokens:        maxTokens,
+			CanReason:               fm.CanReason,
+			SupportsReasoningEffort: fm.SupportsReasoningEffort,
+			SupportsAttachments:     fm.SupportsAttachments,
+			SupportedEndpoints:      fm.SupportedEndpoints,
 		}
 
 		RegisterDynamicModel(model)
@@ -203,6 +207,9 @@ func modelFromFetchedAccountModel(params AccountModelRefreshParams, fetched Fetc
 		static.Provider = params.ProviderType
 		static.APIModel = fetched.ID
 		static.AccountID = params.AccountID
+		// Endpoint routing always comes from the live API: the static catalogue
+		// never carries it, and it is what keeps new model families working.
+		static.SupportedEndpoints = fetched.SupportedEndpoints
 		return static
 	}
 
@@ -211,13 +218,17 @@ func modelFromFetchedAccountModel(params AccountModelRefreshParams, fetched Fetc
 	maxTokens := fetchedModelMaxOutputTokens(fetched.MaxOutputTokens, contextWindow)
 
 	return Model{
-		ID:               modelID,
-		Name:             fmt.Sprintf("%s: %s", capitalizeProvider(string(params.ProviderType)), name),
-		Provider:         params.ProviderType,
-		APIModel:         fetched.ID,
-		ContextWindow:    contextWindow,
-		DefaultMaxTokens: maxTokens,
-		AccountID:        params.AccountID,
+		ID:                      modelID,
+		Name:                    fmt.Sprintf("%s: %s", capitalizeProvider(string(params.ProviderType)), name),
+		Provider:                params.ProviderType,
+		APIModel:                fetched.ID,
+		ContextWindow:           contextWindow,
+		DefaultMaxTokens:        maxTokens,
+		AccountID:               params.AccountID,
+		CanReason:               fetched.CanReason,
+		SupportsReasoningEffort: fetched.SupportsReasoningEffort,
+		SupportsAttachments:     fetched.SupportsAttachments,
+		SupportedEndpoints:      fetched.SupportedEndpoints,
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,6 +28,14 @@ type FetchedModel struct {
 	Created         int64  `json:"created,omitempty"`
 	ContextWindow   int64  `json:"context_window,omitempty"`
 	MaxOutputTokens int64  `json:"max_output_tokens,omitempty"`
+	// SupportedEndpoints lists the API routes the provider accepts for this
+	// model (e.g. "/responses", "/chat/completions"). Empty when the provider's
+	// listing API does not report it, in which case callers fall back to
+	// name-based heuristics.
+	SupportedEndpoints      []string `json:"supported_endpoints,omitempty"`
+	CanReason               bool     `json:"can_reason,omitempty"`
+	SupportsReasoningEffort bool     `json:"supports_reasoning_effort,omitempty"`
+	SupportsAttachments     bool     `json:"supports_attachments,omitempty"`
 }
 
 // ProviderSupportsModelListing reports whether a provider exposes a model-listing
@@ -249,19 +258,26 @@ func fetchCopilotModels(ctx context.Context, bearerToken string) ([]FetchedModel
 	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
 		var response struct {
 			Data []struct {
-				ID                 string `json:"id"`
-				Name               string `json:"name"`
-				Version            string `json:"version"`
-				ModelPickerEnabled bool   `json:"model_picker_enabled"`
+				ID                 string   `json:"id"`
+				Name               string   `json:"name"`
+				Version            string   `json:"version"`
+				ModelPickerEnabled bool     `json:"model_picker_enabled"`
+				SupportedEndpoints []string `json:"supported_endpoints,omitempty"`
 				Policy             *struct {
 					State string `json:"state,omitempty"`
 				} `json:"policy,omitempty"`
 				Capabilities struct {
+					Type   string `json:"type,omitempty"`
 					Limits struct {
 						MaxContextWindowTokens int64 `json:"max_context_window_tokens,omitempty"`
 						MaxOutputTokens        int64 `json:"max_output_tokens,omitempty"`
 						MaxPromptTokens        int64 `json:"max_prompt_tokens,omitempty"`
 					} `json:"limits"`
+					Supports struct {
+						ReasoningEffort []string `json:"reasoning_effort,omitempty"`
+						Vision          bool     `json:"vision,omitempty"`
+						ToolCalls       bool     `json:"tool_calls,omitempty"`
+					} `json:"supports"`
 				} `json:"capabilities"`
 			} `json:"data"`
 		}
@@ -278,17 +294,28 @@ func fetchCopilotModels(ctx context.Context, bearerToken string) ([]FetchedModel
 			if m.Policy != nil && m.Policy.State == "disabled" {
 				continue
 			}
+			// Non-chat models (embeddings, ...) cannot back a chat agent.
+			if m.Capabilities.Type != "" && m.Capabilities.Type != "chat" {
+				continue
+			}
 			// Prefer the explicit context window; fall back to max prompt tokens,
 			// matching opencode's github-copilot plugin (models.ts).
 			contextWindow := m.Capabilities.Limits.MaxContextWindowTokens
 			if contextWindow == 0 {
 				contextWindow = m.Capabilities.Limits.MaxPromptTokens
 			}
+			// The API is authoritative about reasoning and image support; relying
+			// on model-name heuristics breaks every time a new family lands.
+			supportsReasoningEffort := len(m.Capabilities.Supports.ReasoningEffort) > 0
 			result = append(result, FetchedModel{
-				ID:              m.ID,
-				Name:            m.Name,
-				ContextWindow:   contextWindow,
-				MaxOutputTokens: m.Capabilities.Limits.MaxOutputTokens,
+				ID:                      m.ID,
+				Name:                    m.Name,
+				ContextWindow:           contextWindow,
+				MaxOutputTokens:         m.Capabilities.Limits.MaxOutputTokens,
+				SupportedEndpoints:      m.SupportedEndpoints,
+				CanReason:               supportsReasoningEffort,
+				SupportsReasoningEffort: supportsReasoningEffort,
+				SupportsAttachments:     m.Capabilities.Supports.Vision,
 			})
 		}
 		return result, nil
@@ -421,8 +448,13 @@ func fetchOpenRouterModels(ctx context.Context, apiKey string) ([]FetchedModel, 
 				Created       int64  `json:"created"`
 				ContextLength int64  `json:"context_length"`
 				TopProvider   *struct {
-					ContextLength int64 `json:"context_length"`
+					ContextLength       int64 `json:"context_length"`
+					MaxCompletionTokens int64 `json:"max_completion_tokens,omitempty"`
 				} `json:"top_provider,omitempty"`
+				Architecture *struct {
+					InputModalities []string `json:"input_modalities,omitempty"`
+				} `json:"architecture,omitempty"`
+				SupportedParameters []string `json:"supported_parameters,omitempty"`
 			} `json:"data"`
 		}
 		if err := json.Unmarshal(body, &response); err != nil {
@@ -431,15 +463,29 @@ func fetchOpenRouterModels(ctx context.Context, apiKey string) ([]FetchedModel, 
 		result := make([]FetchedModel, 0, len(response.Data))
 		for _, m := range response.Data {
 			contextWindow := m.ContextLength
-			if m.TopProvider != nil && m.TopProvider.ContextLength > 0 {
-				contextWindow = m.TopProvider.ContextLength
+			var maxOutputTokens int64
+			if m.TopProvider != nil {
+				if m.TopProvider.ContextLength > 0 {
+					contextWindow = m.TopProvider.ContextLength
+				}
+				maxOutputTokens = m.TopProvider.MaxCompletionTokens
 			}
+			// OpenRouter reports capabilities per model: "reasoning"/"include_reasoning"
+			// in supported_parameters, "image" among the input modalities.
+			canReason := slices.Contains(m.SupportedParameters, "reasoning") ||
+				slices.Contains(m.SupportedParameters, "include_reasoning")
+			supportsAttachments := m.Architecture != nil &&
+				slices.Contains(m.Architecture.InputModalities, "image")
 			result = append(result, FetchedModel{
-				ID:            m.ID,
-				Name:          m.Name,
-				Description:   m.Description,
-				Created:       m.Created,
-				ContextWindow: contextWindow,
+				ID:                      m.ID,
+				Name:                    m.Name,
+				Description:             m.Description,
+				Created:                 m.Created,
+				ContextWindow:           contextWindow,
+				MaxOutputTokens:         maxOutputTokens,
+				CanReason:               canReason,
+				SupportsReasoningEffort: slices.Contains(m.SupportedParameters, "reasoning"),
+				SupportsAttachments:     supportsAttachments,
 			})
 		}
 		return result, nil

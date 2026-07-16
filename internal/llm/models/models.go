@@ -21,6 +21,11 @@ type Model struct {
 	CanReason               bool          `json:"can_reason"`
 	SupportsReasoningEffort bool          `json:"supports_reasoning_effort"`
 	SupportsAttachments     bool          `json:"supports_attachments"`
+	// SupportedEndpoints lists the API routes the provider accepts for this
+	// model, as reported by its model-listing API (e.g. "/responses",
+	// "/chat/completions"). Empty for statically-defined models and for
+	// providers that do not report it.
+	SupportedEndpoints []string `json:"supported_endpoints,omitempty"`
 	// AccountID is the ProviderAccount.ID that this model belongs to.
 	// Empty means the model comes from the legacy single-account system.
 	AccountID string `json:"account_id,omitempty"`

@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -35,11 +36,47 @@ func IsCopilotAnthropicModel(apiModel string) bool {
 	return strings.Contains(strings.ToLower(apiModel), "claude")
 }
 
+// Endpoint identifiers as reported by the Copilot /models API in
+// "supported_endpoints".
+const (
+	CopilotEndpointChatCompletions = "/chat/completions"
+	CopilotEndpointResponses       = "/responses"
+	CopilotEndpointMessages        = "/v1/messages"
+)
+
+// CopilotModelUsesResponsesAPI reports whether a model must be driven through the
+// OpenAI Responses API (/responses) instead of Chat Completions.
+//
+// The Copilot /models API advertises the routes each model accepts, and that
+// metadata is authoritative: models such as "mai-code-1-flash-picker" or
+// "gpt-5.6-luna" only accept /responses while carrying names that no
+// gpt-version heuristic can classify. This mirrors how the official VS Code
+// extension routes requests (see chatEndpoint.ts, useResponsesApi).
+//
+// When a model advertises both routes we keep the historical name-based
+// decision, so models like gpt-5-mini keep working over Chat Completions.
+// Models with no advertised endpoints (static catalogue entries, older API
+// responses) fall back to the name heuristic entirely.
+func CopilotModelUsesResponsesAPI(m Model) bool {
+	if len(m.SupportedEndpoints) == 0 {
+		return IsCopilotResponsesAPIModel(m.APIModel)
+	}
+	if !slices.Contains(m.SupportedEndpoints, CopilotEndpointResponses) {
+		return false
+	}
+	if !slices.Contains(m.SupportedEndpoints, CopilotEndpointChatCompletions) {
+		return true
+	}
+	return IsCopilotResponsesAPIModel(m.APIModel)
+}
+
 // responsesAPIModelRE matches models like "gpt-5", "gpt-5.4"; compiled once at package level.
 var responsesAPIModelRE = regexp.MustCompile(`(?i)^gpt-(\d+)`)
 
-// IsCopilotResponsesAPIModel returns true if the model must use the OpenAI Responses API
-// (/v1/responses) instead of Chat Completions (/v1/chat/completions).
+// IsCopilotResponsesAPIModel reports whether a model requires the Responses API
+// based on its name alone. It is the fallback used by CopilotModelUsesResponsesAPI
+// when the provider does not advertise the model's supported endpoints; prefer
+// that function whenever a full Model is available.
 // GPT-5+ models (except gpt-5-mini variants) require the Responses API.
 func IsCopilotResponsesAPIModel(apiModel string) bool {
 	m := responsesAPIModelRE.FindStringSubmatch(apiModel)
