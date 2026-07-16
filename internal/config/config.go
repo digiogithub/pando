@@ -2109,6 +2109,7 @@ func applyDefaultValues() {
 	normalizeMesnadaDelegationDefaults()
 	refreshConfiguredDynamicModels()
 	ensureAgentDefaults()
+	ensureEvaluatorDefaultModel()
 
 	// Set CLIAssist defaults
 	if cfg.CLIAssist.Timeout == 0 {
@@ -3789,6 +3790,40 @@ func ensureAgentDefaults() {
 			continue
 		}
 		_ = setDefaultModelForAgent(agentName)
+	}
+}
+
+// ensureEvaluatorDefaultModel seeds evaluator.model from the coder agent's
+// model the first time no evaluator model has ever been selected, and
+// persists that choice to the config file so it survives reloads. Once a
+// model is present (this default or a later explicit user selection), it is
+// left untouched — a later user selection always wins over the coder model.
+func ensureEvaluatorDefaultModel() {
+	if cfg == nil {
+		return
+	}
+	if strings.TrimSpace(string(cfg.Evaluator.Model)) != "" {
+		return
+	}
+
+	coderModel := cfg.Agents[AgentCoder].Model
+	if strings.TrimSpace(string(coderModel)) == "" {
+		return
+	}
+
+	model, ok := models.SupportedModels[coderModel]
+	if !ok {
+		return
+	}
+
+	cfg.Evaluator.Model = coderModel
+	cfg.Evaluator.Provider = string(model.Provider)
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Evaluator.Model = coderModel
+		config.Evaluator.Provider = string(model.Provider)
+	}); err != nil {
+		logging.Warn("failed to persist default evaluator model", "error", err)
 	}
 }
 
