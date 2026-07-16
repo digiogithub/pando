@@ -101,7 +101,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.persona-selector]
-Model = 'ollama.qwopus:latest'
+Model = 'copilot.mai-code-1-flash-picker'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -221,12 +221,17 @@ Args = []
 [Bash]
 BannedCommands = []
 AllowedCommands = ['curl']
+OutputFilterDisabled = false
+OutputFilterPaths = []
 
 [Remembrances]
 Enabled = true
 KBPath = './.kb'
 KBWatch = true
 KBAutoImport = true
+KBConvertDocuments = false
+KBConvertExtensions = []
+KBWikiLinks = false
 AutoIndexSessions = true
 DocumentEmbeddingProvider = 'ollama'
 DocumentEmbeddingModel = 'nomic-embed-text'
@@ -434,3 +439,17 @@ Enabled = false
 
 [MCPServer.SelfImprovement]
 Enabled = false
+
+[Ponytail]
+DefaultMode = ''
+
+[Caveman]
+DefaultMode = 'lite'
+
+[TokenOptimization]
+ReadModeDefault = ''
+ReadDedupDisabled = false
+ReadModeLearning = false
+BuildCodeGraph = true
+RelatedFilesHint = false
+SavingsLedgerDisabled = false

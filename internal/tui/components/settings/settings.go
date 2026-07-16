@@ -67,9 +67,11 @@ func (m SettingsCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "pgdown", "ctrl+f":
 			m.viewport.ViewDown()
+			m.syncActiveFieldToScroll()
 			return m, nil
 		case "pgup", "ctrl+b":
 			m.viewport.ViewUp()
+			m.syncActiveFieldToScroll()
 			return m, nil
 		}
 	}
@@ -77,6 +79,7 @@ func (m SettingsCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if mouseMsg, ok := msg.(tea.MouseMsg); ok {
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(mouseMsg)
+		m.syncActiveFieldToScroll()
 
 		// Handle left-click for navigation
 		if mouseMsg.Action == tea.MouseActionPress && mouseMsg.Button == tea.MouseButtonLeft {
@@ -142,9 +145,46 @@ func (m SettingsCmp) View() string {
 	return containerStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, sidebar, content))
 }
 
+// SetSections replaces the sections, preserving the active section, the active
+// field of every section and the scroll position across the rebuild.
+//
+// Callers pass freshly built sections whose activeFieldIdx is always 0, so
+// without this remapping any rebuild not followed by an explicit
+// SetActiveField would snap focus and the viewport back to the top. That is
+// what happened after saving a field: persisting writes the config file, the
+// config watcher picks the write up and publishes a change event, and the
+// resulting rebuild reset focus to the first field of the section.
 func (m *SettingsCmp) SetSections(sections []Section) {
+	activeTitle := ""
+	if active := m.activeSection(); active != nil {
+		activeTitle = active.Title
+	}
+
+	activeKeys := make(map[string]string, len(m.sections))
+	for i := range m.sections {
+		if field := m.sections[i].ActiveField(); field != nil {
+			activeKeys[m.sections[i].Title] = field.Key
+		}
+	}
+
 	m.sections = cloneSections(sections)
 	m.activeSectionIdx = min(max(m.activeSectionIdx, 0), max(len(m.sections)-1, 0))
+	for i := range m.sections {
+		if activeTitle != "" && m.sections[i].Title == activeTitle {
+			m.activeSectionIdx = i
+		}
+		key, ok := activeKeys[m.sections[i].Title]
+		if !ok {
+			continue
+		}
+		for fieldIdx := range m.sections[i].Fields {
+			if m.sections[i].Fields[fieldIdx].Key == key {
+				m.sections[i].activeFieldIdx = fieldIdx
+				break
+			}
+		}
+	}
+
 	m.syncSectionWidths()
 	m.syncViewport()
 	m.autoScrollToActiveField()
@@ -352,6 +392,44 @@ func (m *SettingsCmp) autoScrollToActiveField() {
 	}
 	maxOffset := max(0, totalLines-m.viewport.Height)
 	m.viewport.SetYOffset(min(max(yOffset, 0), maxOffset))
+}
+
+// syncActiveFieldToScroll keeps the active field in sync with manual scrolling
+// (mouse wheel, pgup/pgdown) that moves the viewport without going through
+// up/down field navigation. Without this, the active field stays wherever it
+// was left, and the next edit triggers autoScrollToActiveField, which snaps
+// the view back to that stale (often off-screen) position instead of staying
+// where the user scrolled to.
+func (m *SettingsCmp) syncActiveFieldToScroll() {
+	activeSection := m.activeSection()
+	if activeSection == nil || len(activeSection.Fields) == 0 || m.viewport.Height <= 0 {
+		return
+	}
+
+	width := max(1, m.viewport.Width)
+	heights := activeSection.FieldHeights(width)
+	idx := activeSection.ActiveFieldIdx()
+	if idx < 0 || idx >= len(heights) {
+		return
+	}
+
+	start := 0
+	for i := 0; i < idx; i++ {
+		start += heights[i]
+	}
+	end := start + heights[idx]
+	top := m.viewport.YOffset
+	bottom := top + m.viewport.Height
+	if end > top && start < bottom {
+		// Active field is still (at least partially) visible; leave it alone.
+		return
+	}
+
+	newIdx := activeSection.FieldAtLine(width, top)
+	if newIdx < 0 {
+		newIdx = len(activeSection.Fields) - 1
+	}
+	activeSection.SetActiveFieldIdx(newIdx)
 }
 
 func (m *SettingsCmp) activeSection() *Section {
