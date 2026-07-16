@@ -80,16 +80,19 @@ func SetSnapshotCreator(sc SnapshotCreator) {
 }
 
 type Session struct {
-	ID               string
-	ParentSessionID  string
-	Title            string
-	MessageCount     int64
-	PromptTokens     int64
-	CompletionTokens int64
-	SummaryMessageID string
-	Cost             float64
-	CreatedAt        int64
-	UpdatedAt        int64
+	ID                  string
+	ParentSessionID     string
+	Title               string
+	MessageCount        int64
+	PromptTokens        int64
+	CompletionTokens    int64
+	CacheReadTokens     int64
+	CacheCreationTokens int64
+	ReasoningTokens     int64
+	SummaryMessageID    string
+	Cost                float64
+	CreatedAt           int64
+	UpdatedAt           int64
 }
 
 type Service interface {
@@ -229,10 +232,13 @@ func (s *service) GetACPSessionState(ctx context.Context, sessionID string) (str
 
 func (s *service) Save(ctx context.Context, session Session) (Session, error) {
 	dbSession, err := s.q.UpdateSession(ctx, db.UpdateSessionParams{
-		ID:               session.ID,
-		Title:            session.Title,
-		PromptTokens:     session.PromptTokens,
-		CompletionTokens: session.CompletionTokens,
+		ID:                  session.ID,
+		Title:               session.Title,
+		PromptTokens:        session.PromptTokens,
+		CompletionTokens:    session.CompletionTokens,
+		CacheReadTokens:     session.CacheReadTokens,
+		CacheCreationTokens: session.CacheCreationTokens,
+		ReasoningTokens:     session.ReasoningTokens,
 		SummaryMessageID: sql.NullString{
 			String: session.SummaryMessageID,
 			Valid:  session.SummaryMessageID != "",
@@ -274,16 +280,19 @@ func (s *service) List(ctx context.Context) ([]Session, error) {
 
 func (s service) fromDBItem(item db.Session) Session {
 	return Session{
-		ID:               item.ID,
-		ParentSessionID:  item.ParentSessionID.String,
-		Title:            item.Title,
-		MessageCount:     item.MessageCount,
-		PromptTokens:     item.PromptTokens,
-		CompletionTokens: item.CompletionTokens,
-		SummaryMessageID: item.SummaryMessageID.String,
-		Cost:             item.Cost,
-		CreatedAt:        item.CreatedAt,
-		UpdatedAt:        item.UpdatedAt,
+		ID:                  item.ID,
+		ParentSessionID:     item.ParentSessionID.String,
+		Title:               item.Title,
+		MessageCount:        item.MessageCount,
+		PromptTokens:        item.PromptTokens,
+		CompletionTokens:    item.CompletionTokens,
+		CacheReadTokens:     item.CacheReadTokens,
+		CacheCreationTokens: item.CacheCreationTokens,
+		ReasoningTokens:     item.ReasoningTokens,
+		SummaryMessageID:    item.SummaryMessageID.String,
+		Cost:                item.Cost,
+		CreatedAt:           item.CreatedAt,
+		UpdatedAt:           item.UpdatedAt,
 	}
 }
 

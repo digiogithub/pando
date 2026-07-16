@@ -9,6 +9,9 @@ interface RawSession {
   MessageCount: number
   PromptTokens: number
   CompletionTokens: number
+  CacheReadTokens?: number
+  CacheCreationTokens?: number
+  ReasoningTokens?: number
   Cost: number
   CreatedAt: number
   UpdatedAt: number
@@ -74,6 +77,9 @@ export function mapSession(raw: RawSession): Session {
     message_count: raw.MessageCount,
     prompt_tokens: raw.PromptTokens,
     completion_tokens: raw.CompletionTokens,
+    cache_read_tokens: raw.CacheReadTokens ?? 0,
+    cache_creation_tokens: raw.CacheCreationTokens ?? 0,
+    reasoning_tokens: raw.ReasoningTokens ?? 0,
     cost: raw.Cost,
     created_at: unixToISO(raw.CreatedAt),
     updated_at: unixToISO(raw.UpdatedAt),

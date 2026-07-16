@@ -67,6 +67,28 @@ export default function StatusBar() {
                 </span>
               </>
             )}
+            {activeSession.cost > 0 && (
+              <>
+                <span>·</span>
+                <span
+                  title={
+                    activeSession.cache_read_tokens || activeSession.reasoning_tokens
+                      ? t(
+                          'common.usageBreakdown',
+                          'Cache read: {{cacheRead}} · Cache write: {{cacheWrite}} · Reasoning: {{reasoning}}',
+                          {
+                            cacheRead: (activeSession.cache_read_tokens ?? 0).toLocaleString(),
+                            cacheWrite: (activeSession.cache_creation_tokens ?? 0).toLocaleString(),
+                            reasoning: (activeSession.reasoning_tokens ?? 0).toLocaleString(),
+                          },
+                        )
+                      : undefined
+                  }
+                >
+                  ${activeSession.cost.toFixed(4)}
+                </span>
+              </>
+            )}
           </>
         )}
         {!activeSession && <span>{t('common.noActiveSession')}</span>}

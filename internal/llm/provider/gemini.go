@@ -542,6 +542,7 @@ func (g *geminiClient) usage(resp *genai.GenerateContentResponse) TokenUsage {
 		OutputTokens:        int64(resp.UsageMetadata.CandidatesTokenCount),
 		CacheCreationTokens: 0, // Not directly provided by Gemini
 		CacheReadTokens:     int64(resp.UsageMetadata.CachedContentTokenCount),
+		ReasoningTokens:     int64(resp.UsageMetadata.ThoughtsTokenCount),
 	}
 }
 

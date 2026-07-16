@@ -40,6 +40,9 @@ type TokenUsage struct {
 	OutputTokens        int64
 	CacheCreationTokens int64
 	CacheReadTokens     int64
+	// ReasoningTokens is populated only by providers whose SDK response
+	// exposes a distinct reasoning/thinking token count; zero otherwise.
+	ReasoningTokens int64
 }
 
 type ProviderResponse struct {

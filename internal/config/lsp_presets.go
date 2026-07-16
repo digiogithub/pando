@@ -96,27 +96,27 @@ func LSPPresets() []LSPPreset {
 		},
 		{
 			Name:        "json-language-server",
-			Description: "JSON language server (vscode-json-languageserver)",
+			Description: "JSON language server (npm: vscode-langservers-extracted)",
 			Config: LSPConfig{
-				Command:   "vscode-json-languageserver",
+				Command:   "vscode-json-language-server",
 				Args:      []string{"--stdio"},
 				Languages: []string{".json", ".jsonc"},
 			},
 		},
 		{
 			Name:        "html-language-server",
-			Description: "HTML language server (vscode-html-languageserver)",
+			Description: "HTML language server (npm: vscode-langservers-extracted)",
 			Config: LSPConfig{
-				Command:   "vscode-html-languageserver",
+				Command:   "vscode-html-language-server",
 				Args:      []string{"--stdio"},
 				Languages: []string{".html", ".htm"},
 			},
 		},
 		{
 			Name:        "css-language-server",
-			Description: "CSS/SCSS/Less language server (vscode-css-languageserver)",
+			Description: "CSS/SCSS/Less language server (npm: vscode-langservers-extracted)",
 			Config: LSPConfig{
-				Command:   "vscode-css-languageserver",
+				Command:   "vscode-css-language-server",
 				Args:      []string{"--stdio"},
 				Languages: []string{".css", ".scss", ".sass", ".less"},
 			},
@@ -194,6 +194,10 @@ func LSPPresets() []LSPPreset {
 			},
 		},
 		{
+			// Mason/asdf installs expose an "elixir-ls" shim on PATH; a
+			// manual upstream release ships the launcher as
+			// "language_server.sh" instead, in which case users should
+			// override Command in their [LSP.elixir-ls] config.
 			Name:        "elixir-ls",
 			Description: "Elixir language server (ElixirLS)",
 			Config: LSPConfig{

@@ -191,6 +191,14 @@ type TokenUsageInfo struct {
 	CompletionTokens int64
 	ContextWindow    int64
 	Estimated        bool
+
+	// CacheReadTokens, CacheCreationTokens, ReasoningTokens and Cost are only
+	// populated on confirmed updates (Estimated == false); estimated updates
+	// during tool execution have no breakdown/cost data available.
+	CacheReadTokens     int64
+	CacheCreationTokens int64
+	ReasoningTokens     int64
+	Cost                float64
 }
 
 type AgentEvent struct {
@@ -1636,10 +1644,14 @@ func (a *agent) processEvent(
 		// reconcile any provisional estimates shown during tool execution.
 		if sess, err := a.sessions.Get(ctx, sessionID); err == nil {
 			a.publishTokenUsage(sessionID, eventCh, TokenUsageInfo{
-				PromptTokens:     sess.PromptTokens,
-				CompletionTokens: sess.CompletionTokens,
-				ContextWindow:    effectiveContextWindow(a.agentName, requestProvider.Model()),
-				Estimated:        false,
+				PromptTokens:        sess.PromptTokens,
+				CompletionTokens:    sess.CompletionTokens,
+				ContextWindow:       effectiveContextWindow(a.agentName, requestProvider.Model()),
+				Estimated:           false,
+				CacheReadTokens:     sess.CacheReadTokens,
+				CacheCreationTokens: sess.CacheCreationTokens,
+				ReasoningTokens:     sess.ReasoningTokens,
+				Cost:                sess.Cost,
 			})
 		}
 		return nil
@@ -1712,6 +1724,9 @@ func (a *agent) TrackUsage(ctx context.Context, sessionID string, model models.M
 	sess.Cost += cost
 	sess.CompletionTokens = usage.OutputTokens + usage.CacheReadTokens
 	sess.PromptTokens = usage.InputTokens + usage.CacheCreationTokens
+	sess.CacheReadTokens = usage.CacheReadTokens
+	sess.CacheCreationTokens = usage.CacheCreationTokens
+	sess.ReasoningTokens = usage.ReasoningTokens
 
 	_, err = a.sessions.Save(ctx, sess)
 	if err != nil {

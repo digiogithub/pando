@@ -1080,9 +1080,26 @@ func (p *ChatPageModel) routeInfoSidebar(msg tea.Msg) tea.Cmd {
 	if p.infoSidebar == nil {
 		return nil
 	}
-	switch msg.(type) {
+	switch m := msg.(type) {
 	case chat.SessionSelectedMsg, chat.TodosUpdatedMsg, chat.GoalUpdatedMsg,
 		pubsub.Event[session.Session], pubsub.Event[history.File]:
+		model, cmd := p.infoSidebar.Update(msg)
+		p.infoSidebar = model.(chat.ChatInfoSidebar)
+		return cmd
+	case tea.MouseMsg:
+		// Only forward wheel scroll events, and only when the sidebar is visible
+		// and the pointer is over its column, so scrolling the chat or file tree
+		// never bleeds into the sidebar's own viewport.
+		if !p.chatSidebarVisible() {
+			return nil
+		}
+		if m.Button != tea.MouseButtonWheelUp && m.Button != tea.MouseButtonWheelDown {
+			return nil
+		}
+		sidebarStartX := int(float64(p.width) * p.chatSidebarRatio())
+		if m.X < sidebarStartX {
+			return nil
+		}
 		model, cmd := p.infoSidebar.Update(msg)
 		p.infoSidebar = model.(chat.ChatInfoSidebar)
 		return cmd
@@ -1860,6 +1877,7 @@ func NewChatPage(app *app.App) *ChatPageModel {
 	editorPanel := layout.NewContainer(editorWorkspace)
 
 	infoSidebar := chat.NewChatInfoSidebar(session.Session{}, app.History)
+	infoSidebar.SetOrchestrator(app.MesnadaOrchestrator)
 	infoSidebarContainer := layout.NewContainer(
 		infoSidebar,
 		layout.WithBorder(false, false, false, true),

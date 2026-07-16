@@ -651,11 +651,15 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// counter reflects consumption as the agent loop runs (tools, file output).
 		if payload.Type == agent.AgentEventTypeTokenUsage && payload.TokenUsage != nil {
 			tokenMsg := core.TokenUsageMsg{
-				SessionID:        payload.SessionID,
-				PromptTokens:     payload.TokenUsage.PromptTokens,
-				CompletionTokens: payload.TokenUsage.CompletionTokens,
-				ContextWindow:    payload.TokenUsage.ContextWindow,
-				Estimated:        payload.TokenUsage.Estimated,
+				SessionID:           payload.SessionID,
+				PromptTokens:        payload.TokenUsage.PromptTokens,
+				CompletionTokens:    payload.TokenUsage.CompletionTokens,
+				ContextWindow:       payload.TokenUsage.ContextWindow,
+				Estimated:           payload.TokenUsage.Estimated,
+				CacheReadTokens:     payload.TokenUsage.CacheReadTokens,
+				CacheCreationTokens: payload.TokenUsage.CacheCreationTokens,
+				ReasoningTokens:     payload.TokenUsage.ReasoningTokens,
+				Cost:                payload.TokenUsage.Cost,
 			}
 			s, sCmd := a.status.Update(tokenMsg)
 			a.status = s.(core.StatusCmp)

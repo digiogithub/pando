@@ -112,6 +112,12 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
             tu.completion_tokens,
             tu.context_window,
             tu.estimated,
+            {
+              cacheReadTokens: tu.cache_read_tokens,
+              cacheCreationTokens: tu.cache_creation_tokens,
+              reasoningTokens: tu.reasoning_tokens,
+              cost: tu.cost,
+            },
           )
         }
       }

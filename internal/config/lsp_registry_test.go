@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func serverByName(servers []ResolvedLSPServer, name string) (ResolvedLSPServer, bool) {
 	for _, s := range servers {
@@ -111,5 +114,42 @@ func TestLSPRegistry_UserOnlyServerAndExtNormalization(t *testing.T) {
 	}
 	if got := c.LSPServersForExt(".nope"); extHandledBy(got, "myls") {
 		t.Fatalf(".nope should not match myls, got %+v", got)
+	}
+}
+
+// Every built-in preset must have a unique name, a plausible single-token
+// binary name (no spaces, not a path), and at least one normalized file
+// extension it claims to handle. This catches malformed/invented entries like
+// a command string that was never a real installable binary.
+func TestLSPPresets_Sane(t *testing.T) {
+	seen := make(map[string]bool)
+	for _, p := range LSPPresets() {
+		if p.Name == "" {
+			t.Fatalf("preset with empty name: %+v", p)
+		}
+		if seen[p.Name] {
+			t.Fatalf("duplicate preset name %q", p.Name)
+		}
+		seen[p.Name] = true
+
+		cmd := p.Config.Command
+		if cmd == "" {
+			t.Fatalf("preset %q has empty Command", p.Name)
+		}
+		if strings.ContainsAny(cmd, " \t/\\") {
+			t.Fatalf("preset %q Command %q looks like a path or has whitespace, expected a bare binary name", p.Name, cmd)
+		}
+
+		if len(p.Config.Languages) == 0 {
+			t.Fatalf("preset %q declares no Languages", p.Name)
+		}
+		for _, ext := range p.Config.Languages {
+			if !strings.HasPrefix(ext, ".") {
+				t.Fatalf("preset %q language %q must start with '.'", p.Name, ext)
+			}
+			if ext != strings.ToLower(ext) {
+				t.Fatalf("preset %q language %q must be lowercase", p.Name, ext)
+			}
+		}
 	}
 }

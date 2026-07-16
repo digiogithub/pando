@@ -226,6 +226,38 @@ The **Settings → LSP** page shows each configured server's command, its
 `installed` / `not installed` status, and an `Autostart` toggle, plus the
 catalogue presets you can add (annotated with their install status).
 
+#### Built-in preset catalogue
+
+| Preset name                  | Command                       | Languages                                              |
+| ----------------------------- | ------------------------------ | ------------------------------------------------------- |
+| `gopls`                       | `gopls`                        | `.go`                                                   |
+| `rust-analyzer`               | `rust-analyzer`                | `.rs`                                                   |
+| `typescript-language-server`  | `typescript-language-server`   | `.ts` `.tsx` `.js` `.jsx` `.mjs` `.cjs`                  |
+| `pyright`                     | `pyright-langserver`           | `.py` `.pyi`                                            |
+| `pylsp`                       | `pylsp`                        | `.py` `.pyi`                                            |
+| `clangd`                      | `clangd`                       | `.c` `.cc` `.cpp` `.cxx` `.c++` `.h` `.hh` `.hpp` `.m` `.mm` |
+| `lua-language-server`         | `lua-language-server`          | `.lua`                                                  |
+| `bash-language-server`        | `bash-language-server`         | `.sh` `.bash` `.zsh` `.ksh`                              |
+| `yaml-language-server`        | `yaml-language-server`         | `.yaml` `.yml`                                          |
+| `json-language-server`        | `vscode-json-language-server`  | `.json` `.jsonc`                                        |
+| `html-language-server`        | `vscode-html-language-server`  | `.html` `.htm`                                          |
+| `css-language-server`         | `vscode-css-language-server`   | `.css` `.scss` `.sass` `.less`                           |
+| `marksman`                    | `marksman`                     | `.md` `.markdown`                                       |
+| `jdtls`                       | `jdtls`                        | `.java`                                                 |
+| `solargraph`                  | `solargraph`                   | `.rb` `.rake`                                           |
+| `zls`                         | `zls`                          | `.zig`                                                  |
+| `kotlin-language-server`      | `kotlin-language-server`       | `.kt` `.kts`                                            |
+| `intelephense`                | `intelephense`                 | `.php`                                                  |
+| `omnisharp`                   | `omnisharp`                    | `.cs`                                                   |
+| `dartls`                      | `dart`                         | `.dart`                                                 |
+| `elixir-ls`                   | `elixir-ls`                    | `.ex` `.exs`                                            |
+
+`json-language-server`, `html-language-server`, and `css-language-server` come
+from the npm package `vscode-langservers-extracted`. `elixir-ls` matches the
+shim name installed by Mason/asdf; a manual upstream ElixirLS release instead
+ships `language_server.sh`, so override `Command` under `[LSP.elixir-ls]` if
+you installed it that way.
+
 ## Usage
 
 ```bash

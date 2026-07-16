@@ -30,6 +30,12 @@ interface SessionStore {
     completionTokens: number,
     contextWindow: number,
     estimated: boolean,
+    detail?: {
+      cacheReadTokens?: number
+      cacheCreationTokens?: number
+      reasoningTokens?: number
+      cost?: number
+    },
   ) => void
   // Permission / auto-mode handling
   addPermissionRequest: (req: PermissionRequest) => void
@@ -133,7 +139,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       isStreaming: s.activeSessionId === id ? running : s.isStreaming,
     })),
 
-  updateSessionTokens: (id, promptTokens, completionTokens, contextWindow, estimated) =>
+  updateSessionTokens: (id, promptTokens, completionTokens, contextWindow, estimated, detail) =>
     set((s) => ({
       sessions: s.sessions.map((sess) =>
         sess.id === id
@@ -143,6 +149,10 @@ export const useSessionStore = create<SessionStore>((set) => ({
               completion_tokens: completionTokens,
               context_window: contextWindow > 0 ? contextWindow : sess.context_window,
               tokens_estimated: estimated,
+              cache_read_tokens: detail?.cacheReadTokens ?? sess.cache_read_tokens,
+              cache_creation_tokens: detail?.cacheCreationTokens ?? sess.cache_creation_tokens,
+              reasoning_tokens: detail?.reasoningTokens ?? sess.reasoning_tokens,
+              cost: detail?.cost ?? sess.cost,
             }
           : sess
       ),

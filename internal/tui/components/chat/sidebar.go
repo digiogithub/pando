@@ -7,13 +7,16 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/diff"
 	"github.com/digiogithub/pando/internal/history"
+	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui/styles"
@@ -33,6 +36,10 @@ type ChatInfoSidebar interface {
 	// SetSession switches the sidebar to a different session, reloading its plan
 	// and modified-files state.
 	SetSession(s session.Session)
+	// SetOrchestrator wires the Mesnada orchestrator so the sidebar can show live
+	// subagent (delegated task) running/pending counts. Pass nil when Mesnada is
+	// disabled to hide the section.
+	SetOrchestrator(o *orchestrator.Orchestrator)
 }
 
 type sidebarCmp struct {
@@ -49,6 +56,12 @@ type sidebarCmp struct {
 	// filesCh is the single history subscription used to keep the modified-files
 	// list live. It is created once in Init and re-read after each event.
 	filesCh <-chan pubsub.Event[history.File]
+	// orchestrator is the Mesnada orchestrator, used to read live subagent
+	// (delegated task) counts. Nil when Mesnada is disabled.
+	orchestrator *orchestrator.Orchestrator
+	// viewport makes the sidebar content scrollable (mouse wheel) once it
+	// overflows the available height.
+	viewport viewport.Model
 }
 
 func (m *sidebarCmp) Init() tea.Cmd {
@@ -123,6 +136,10 @@ func (m *sidebarCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.SessionID == m.session.ID {
 			m.goal = msg.Goal
 		}
+	case tea.MouseMsg:
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -135,8 +152,14 @@ func (m *sidebarCmp) View() string {
 		" ",
 		m.sessionSection(),
 		" ",
-		lspsConfigured(m.width),
+		m.usageSection(),
 	}
+
+	if subagentsView := m.subagentsSection(); subagentsView != "" {
+		sections = append(sections, " ", subagentsView)
+	}
+
+	sections = append(sections, " ", lspsConfigured(m.width))
 
 	if todosView := m.todosSection(); todosView != "" {
 		sections = append(sections, " ", todosView)
@@ -144,12 +167,51 @@ func (m *sidebarCmp) View() string {
 
 	sections = append(sections, " ", m.modifiedFiles())
 
+	innerWidth := m.width - 2 // account for the left/right padding below
+	if innerWidth < 0 {
+		innerWidth = 0
+	}
+	innerHeight := m.height - 1
+	if innerHeight < 0 {
+		innerHeight = 0
+	}
+	m.viewport.Width = innerWidth
+	m.viewport.Height = innerHeight
+	m.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Top, sections...))
+
 	return baseStyle.
 		Width(m.width).
 		PaddingLeft(1).
 		PaddingRight(1).
 		Height(m.height - 1).
-		Render(lipgloss.JoinVertical(lipgloss.Top, sections...))
+		Render(m.viewport.View())
+}
+
+// subagentsSection renders the live Mesnada subagent (delegated task) counts
+// as "running/unfinished", e.g. "2/5" meaning 2 tasks currently running out
+// of 5 not yet completed/failed/cancelled. Returns "" when Mesnada is
+// disabled (no orchestrator wired).
+func (m *sidebarCmp) subagentsSection() string {
+	if m.orchestrator == nil {
+		return ""
+	}
+
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+
+	stats := m.orchestrator.GetStats()
+	unfinished := stats.Pending + stats.Running + stats.Paused
+	if unfinished == 0 {
+		return ""
+	}
+
+	key := baseStyle.Foreground(t.Primary()).Bold(true).Render("Subagents")
+	val := baseStyle.
+		Foreground(t.Text()).
+		Width(m.width - lipgloss.Width(key)).
+		Render(fmt.Sprintf(": %d/%d", stats.Running, unfinished))
+
+	return lipgloss.JoinHorizontal(lipgloss.Left, key, val)
 }
 
 func (m *sidebarCmp) todosSection() string {
@@ -211,6 +273,77 @@ func (m *sidebarCmp) sessionSection() string {
 		sessionKey,
 		sessionValue,
 	)
+}
+
+// usageSection renders the token-usage/cost breakdown for the active session:
+// context-window usage, input/output tokens, cache read/write, reasoning
+// tokens and accumulated cost. It reflects the last confirmed usage update
+// (session.Session, refreshed via the pubsub.Event[session.Session]
+// subscription in Update), not live in-flight estimates — those are only
+// shown in the compact status bar (core.TokenUsageMsg).
+func (m *sidebarCmp) usageSection() string {
+	if m.session.ID == "" {
+		return ""
+	}
+
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+
+	title := baseStyle.
+		Foreground(t.Primary()).
+		Bold(true).
+		Render("Usage")
+
+	modelID := config.Get().Agents[config.AgentCoder].Model
+	contextWindow := models.SupportedModels[modelID].ContextWindow
+	totalTokens := m.session.PromptTokens + m.session.CompletionTokens
+
+	row := func(label, value string) string {
+		key := baseStyle.Foreground(t.TextMuted()).Render(label + ":")
+		val := baseStyle.
+			Foreground(t.Text()).
+			Width(m.width - lipgloss.Width(key)).
+			Render(" " + value)
+		return lipgloss.JoinHorizontal(lipgloss.Left, key, val)
+	}
+
+	rows := []string{title}
+
+	if contextWindow > 0 {
+		percentage := float64(totalTokens) / float64(contextWindow) * 100
+		rows = append(rows, row("Context", fmt.Sprintf("%s / %s (%.0f%%)",
+			formatCount(totalTokens), formatCount(contextWindow), percentage)))
+	} else {
+		rows = append(rows, row("Total tokens", formatCount(totalTokens)))
+	}
+
+	rows = append(rows, row("Input / Output", fmt.Sprintf("%s / %s",
+		formatCount(m.session.PromptTokens), formatCount(m.session.CompletionTokens))))
+
+	if m.session.CacheReadTokens > 0 || m.session.CacheCreationTokens > 0 {
+		rows = append(rows, row("Cache read/write", fmt.Sprintf("%s / %s",
+			formatCount(m.session.CacheReadTokens), formatCount(m.session.CacheCreationTokens))))
+	}
+
+	if m.session.ReasoningTokens > 0 {
+		rows = append(rows, row("Reasoning", formatCount(m.session.ReasoningTokens)))
+	}
+
+	rows = append(rows, row("Cost", fmt.Sprintf("$%.4f", m.session.Cost)))
+
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+}
+
+// formatCount renders a token count with K/M suffixes for compact display.
+func formatCount(n int64) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	case n >= 1_000:
+		return fmt.Sprintf("%.1fK", float64(n)/1_000)
+	default:
+		return fmt.Sprintf("%d", n)
+	}
 }
 
 func (m *sidebarCmp) modifiedFile(filePath string, additions, removals int) string {
@@ -325,19 +458,30 @@ func (m *sidebarCmp) GetSize() (int, int) {
 }
 
 func NewSidebarCmp(session session.Session, history history.Service) tea.Model {
+	vp := viewport.New(0, 0)
+	vp.MouseWheelEnabled = true
 	return &sidebarCmp{
-		session: session,
-		history: history,
+		session:  session,
+		history:  history,
+		viewport: vp,
 	}
 }
 
 // NewChatInfoSidebar builds the embeddable chat info sidebar bound to the given
 // session and history service.
 func NewChatInfoSidebar(s session.Session, history history.Service) ChatInfoSidebar {
+	vp := viewport.New(0, 0)
+	vp.MouseWheelEnabled = true
 	return &sidebarCmp{
-		session: s,
-		history: history,
+		session:  s,
+		history:  history,
+		viewport: vp,
 	}
+}
+
+// SetOrchestrator implements ChatInfoSidebar.
+func (m *sidebarCmp) SetOrchestrator(o *orchestrator.Orchestrator) {
+	m.orchestrator = o
 }
 
 // SetSession switches the sidebar to a different session, reloading its plan

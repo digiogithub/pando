@@ -68,11 +68,15 @@ type StatusCmp interface {
 // When Estimated is true the value is provisional (e.g. estimated while tools run)
 // and is rendered with a "~" prefix and a dimmed style until confirmed.
 type TokenUsageMsg struct {
-	SessionID        string
-	PromptTokens     int64
-	CompletionTokens int64
-	ContextWindow    int64
-	Estimated        bool
+	SessionID           string
+	PromptTokens        int64
+	CompletionTokens    int64
+	ContextWindow       int64
+	Estimated           bool
+	CacheReadTokens     int64
+	CacheCreationTokens int64
+	ReasoningTokens     int64
+	Cost                float64
 }
 
 // AutoApproveMsg toggles the "auto mode" indicator in the status bar for a session.

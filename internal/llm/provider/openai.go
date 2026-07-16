@@ -552,6 +552,7 @@ func (o *openaiClient) usage(completion openai.ChatCompletion) TokenUsage {
 		OutputTokens:        completion.Usage.CompletionTokens,
 		CacheCreationTokens: 0, // OpenAI doesn't provide this directly
 		CacheReadTokens:     cachedTokens,
+		ReasoningTokens:     completion.Usage.CompletionTokensDetails.ReasoningTokens,
 	}
 }
 

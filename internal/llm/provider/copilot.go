@@ -796,6 +796,7 @@ func (c *copilotClient) sendWithResponsesAPI(ctx context.Context, msgs []message
 				InputTokens:     resp.Usage.InputTokens - resp.Usage.InputTokensDetails.CachedTokens,
 				OutputTokens:    resp.Usage.OutputTokens,
 				CacheReadTokens: resp.Usage.InputTokensDetails.CachedTokens,
+				ReasoningTokens: resp.Usage.OutputTokensDetails.ReasoningTokens,
 			},
 			FinishReason: finishReason,
 		}, nil
@@ -870,6 +871,7 @@ func (c *copilotClient) streamWithResponsesAPI(ctx context.Context, msgs []messa
 					InputTokens:     completedResp.Usage.InputTokens - completedResp.Usage.InputTokensDetails.CachedTokens,
 					OutputTokens:    completedResp.Usage.OutputTokens,
 					CacheReadTokens: completedResp.Usage.InputTokensDetails.CachedTokens,
+					ReasoningTokens: completedResp.Usage.OutputTokensDetails.ReasoningTokens,
 				}
 				if cfg.Debug {
 					logging.Debug("Copilot Responses API stream completed", "model", c.providerOptions.model.APIModel, "finishReason", finishReason, "toolCallCount", len(toolCalls))
@@ -1000,6 +1002,7 @@ func (c *copilotClient) usage(completion openai.ChatCompletion) TokenUsage {
 		OutputTokens:        completion.Usage.CompletionTokens,
 		CacheCreationTokens: 0, // GitHub Copilot doesn't provide this directly
 		CacheReadTokens:     cachedTokens,
+		ReasoningTokens:     completion.Usage.CompletionTokensDetails.ReasoningTokens,
 	}
 }
 

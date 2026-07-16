@@ -6,6 +6,9 @@ export interface Session {
   message_count: number
   prompt_tokens: number
   completion_tokens: number
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
+  reasoning_tokens?: number
   cost: number
   created_at: string
   updated_at: string
@@ -202,6 +205,10 @@ export interface SSETokenUsage {
   completion_tokens: number
   context_window: number
   estimated: boolean
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
+  reasoning_tokens?: number
+  cost?: number
 }
 
 // Log types
