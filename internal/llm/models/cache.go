@@ -8,6 +8,26 @@ import (
 
 const cacheFileName = ".pando_models.json"
 
+// cacheSchemaVersion guards the on-disk model cache against entries written by a
+// build that did not persist a field the current code depends on. A cache whose
+// version does not match is discarded instead of loaded: serving metadata that
+// silently lacks, say, SupportedEndpoints is worse than having no cache at all,
+// because the missing field is indistinguishable from a legitimately empty one
+// and sends models down the wrong API route until the next refresh lands.
+//
+// Bump this whenever a newly persisted Model field changes behaviour.
+//
+//	1: added SupportedEndpoints (Copilot /responses vs /chat/completions routing)
+const cacheSchemaVersion = 1
+
+// modelCacheFile is the on-disk cache layout. Pre-versioning caches were a bare
+// map[ModelID]Model, which decodes here with Version == 0 and no Models, and is
+// therefore dropped.
+type modelCacheFile struct {
+	Version int               `json:"version"`
+	Models  map[ModelID]Model `json:"models"`
+}
+
 func cacheFilePath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -36,7 +56,7 @@ func SaveModelCache() error {
 		return nil
 	}
 
-	data, err := json.MarshalIndent(toCache, "", "  ")
+	data, err := json.MarshalIndent(modelCacheFile{Version: cacheSchemaVersion, Models: toCache}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -60,12 +80,18 @@ func LoadModelCache() error {
 		return err
 	}
 
-	var cached map[ModelID]Model
+	var cached modelCacheFile
 	if err := json.Unmarshal(data, &cached); err != nil {
-		return err
+		// A pre-versioning cache is a JSON object of models, so it decodes
+		// cleanly into the struct; anything else is corrupt and equally
+		// disposable — the next refresh rewrites it.
+		return nil
+	}
+	if cached.Version != cacheSchemaVersion {
+		return nil
 	}
 
-	for id, model := range cached {
+	for id, model := range cached.Models {
 		if _, exists := SupportedModels[id]; !exists {
 			SupportedModels[id] = model
 			dynamicModels.Store(id, model)

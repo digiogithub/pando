@@ -18,6 +18,18 @@ func RegisterDynamicModel(model Model) {
 	SupportedModels[model.ID] = model
 }
 
+// isStaticModel reports whether a registered model ID comes from the curated
+// static catalogue rather than from a provider fetch or the on-disk model cache.
+// Cached models are restored into both SupportedModels and dynamicModels, so
+// presence in SupportedModels alone says nothing about their origin.
+func isStaticModel(id ModelID) bool {
+	if _, ok := SupportedModels[id]; !ok {
+		return false
+	}
+	_, dynamic := dynamicModels.Load(id)
+	return !dynamic
+}
+
 // pruneDynamicModelsForProvider removes dynamic models whose provider matches
 // but whose ID is not in keepIDs. Call this after a successful provider fetch
 // so that deleted models (e.g. removed from Ollama) disappear from the registry.
@@ -78,14 +90,17 @@ func RefreshProviderModels(ctx context.Context, provider ModelProvider, apiKey s
 	for _, fm := range fetched {
 		modelID := ModelID(fmt.Sprintf("%s.%s", provider, fm.ID))
 
-		// Don't overwrite statically defined models
-		if _, exists := SupportedModels[modelID]; exists {
+		// Don't overwrite statically defined models. Previously fetched or
+		// cached models are re-registered: the live API is authoritative for
+		// their metadata (endpoint routing, capabilities), and a cache written
+		// by an older build would otherwise never be corrected.
+		if isStaticModel(modelID) {
 			keepIDs[modelID] = struct{}{}
 			continue
 		}
 
 		// Don't add duplicates by APIModel (handles cases where static model ID differs from dynamic)
-		if modelExistsByAPIModel(provider, fm.ID) {
+		if staticModelExistsByAPIModel(provider, fm.ID) {
 			keepIDs[modelID] = struct{}{}
 			continue
 		}
@@ -119,10 +134,23 @@ func RefreshProviderModels(ctx context.Context, provider ModelProvider, apiKey s
 	return nil
 }
 
-// modelExistsByAPIModel checks if a static model already exists for a given provider+apiModel combination
+// modelExistsByAPIModel checks if any registered model exists for a given provider+apiModel combination
 func modelExistsByAPIModel(provider ModelProvider, apiModel string) bool {
 	for _, m := range SupportedModels {
 		if m.Provider == provider && m.APIModel == apiModel {
+			return true
+		}
+	}
+	return false
+}
+
+// staticModelExistsByAPIModel reports whether a *statically* defined model covers
+// a provider+apiModel combination. Unlike modelExistsByAPIModel it ignores
+// dynamic and cached entries, so a refresh can re-register (and thereby update)
+// models it discovered on a previous run.
+func staticModelExistsByAPIModel(provider ModelProvider, apiModel string) bool {
+	for id, m := range SupportedModels {
+		if m.Provider == provider && m.APIModel == apiModel && isStaticModel(id) {
 			return true
 		}
 	}
@@ -237,8 +265,8 @@ func modelFromFetchedAccountModel(params AccountModelRefreshParams, fetched Fetc
 // considered (dynamic ones carry an AccountID), so this is a stable source of
 // curated metadata regardless of refresh ordering.
 func staticModelByAPIModel(provider ModelProvider, apiModel string) (Model, bool) {
-	for _, m := range SupportedModels {
-		if m.AccountID == "" && m.Provider == provider && m.APIModel == apiModel {
+	for id, m := range SupportedModels {
+		if m.AccountID == "" && m.Provider == provider && m.APIModel == apiModel && isStaticModel(id) {
 			return m, true
 		}
 	}
@@ -249,8 +277,8 @@ func staticModelByAPIModel(provider ModelProvider, apiModel string) (Model, bool
 // model for a provider type (exported for listing handlers).
 func StaticModelsForProvider(provider ModelProvider) []Model {
 	var out []Model
-	for _, m := range SupportedModels {
-		if m.AccountID == "" && m.Provider == provider {
+	for id, m := range SupportedModels {
+		if m.AccountID == "" && m.Provider == provider && isStaticModel(id) {
 			out = append(out, m)
 		}
 	}
@@ -338,11 +366,13 @@ func ResolveModelID(input ModelID) (ModelID, bool) {
 }
 
 func shouldSkipAccountScopedModel(providerType ModelProvider, modelID ModelID, apiModel string) bool {
-	if _, exists := SupportedModels[modelID]; exists {
+	// Only a static entry blocks registration: re-registering a model this
+	// account fetched before is exactly how stale cached metadata gets fixed.
+	if isStaticModel(modelID) {
 		return true
 	}
 	if providerType == ProviderAntigravity {
-		return modelExistsByAPIModel(providerType, apiModel)
+		return staticModelExistsByAPIModel(providerType, apiModel)
 	}
 	return false
 }
