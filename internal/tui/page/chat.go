@@ -443,6 +443,7 @@ func (p *ChatPageModel) Init() tea.Cmd {
 		p.sidebar.Init(),
 		p.editorWorkspace.Init(),
 		p.completionDialog.Init(),
+		logoTickCmd(),
 	}
 	if p.infoSidebar != nil {
 		// Starts the modified-files preload + history subscription loop that
@@ -466,6 +467,11 @@ func (p *ChatPageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case logoTickMsg:
+		// The logo cycles through the growth glyphs while a run (or one of its
+		// subagent runs) is in flight, and rests on the Pando tree icon otherwise.
+		p.tabHeader.AdvanceLogo(p.app.CoderAgent != nil && p.app.CoderAgent.IsBusy())
+		return p, logoTickCmd()
 	case tea.WindowSizeMsg:
 		p.width = msg.Width
 		p.height = msg.Height

@@ -10,6 +10,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import { useLayoutStore } from '@/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
+import { useAnimatedLogo } from '@/hooks/useAnimatedLogo'
 import PersonaSelector from '@/components/shared/PersonaSelector'
 
 export default function Header() {
@@ -18,6 +19,7 @@ export default function Header() {
   const { toggleSidebar, sidebarOpen, setChatMode } = useLayoutStore()
   const { themeMode: theme, toggleMode: toggleTheme } = useTheme()
   const [version, setVersion] = useState<string>('')
+  const logoGlyph = useAnimatedLogo()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const mobileMenuRef = useRef<HTMLElement>(null)
 
@@ -111,9 +113,10 @@ export default function Header() {
             fontFamily: 'serif',
             flexShrink: 0,
             userSelect: 'none',
+            transition: 'opacity 200ms ease-in-out',
           }}
         >
-          木
+          {logoGlyph}
         </span>
         <span
           className="header-logo-text"

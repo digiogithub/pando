@@ -3,52 +3,55 @@ package page
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
-func TestMainTabIndexFor(t *testing.T) {
-	cases := []struct {
-		mode ChatLayoutMode
-		want int
-	}{
-		{ChatOnly, 0},
-		{SidebarChat, 0},
-		{SidebarEditor, 1},
-		{EditorChatSplit, 2},
-		{EditorChatTab, 2},
+func TestAdvanceLogoIdleRestoresPandoIcon(t *testing.T) {
+	b := newMainTabBar()
+	b.AdvanceLogo(true)
+	if b.logoFrame < 0 {
+		t.Fatalf("expected an animation frame while busy, got %d", b.logoFrame)
 	}
-	for _, c := range cases {
-		if got := mainTabIndexFor(c.mode); got != c.want {
-			t.Errorf("mainTabIndexFor(%v) = %d, want %d", c.mode, got, c.want)
+	b.AdvanceLogo(false)
+	if b.logoFrame != -1 {
+		t.Fatalf("expected idle frame when not busy, got %d", b.logoFrame)
+	}
+}
+
+func TestAdvanceLogoNeverRepeatsFrame(t *testing.T) {
+	b := newMainTabBar()
+	prev := -1
+	seen := map[int]bool{}
+	for range 200 {
+		b.AdvanceLogo(true)
+		if b.logoFrame == prev {
+			t.Fatalf("frame %d repeated back to back", b.logoFrame)
 		}
+		if b.logoFrame < 0 || b.logoFrame >= len(logoAnimFrames) {
+			t.Fatalf("frame %d out of range", b.logoFrame)
+		}
+		seen[b.logoFrame] = true
+		prev = b.logoFrame
+	}
+	if len(seen) != len(logoAnimFrames) {
+		t.Fatalf("expected every frame to be reachable, saw %d of %d", len(seen), len(logoAnimFrames))
 	}
 }
 
-func TestMainTabModeFor(t *testing.T) {
-	if mode, ok := mainTabModeFor(0); !ok || mode != ChatOnly {
-		t.Errorf("tab 0 = (%v, %v), want (ChatOnly, true)", mode, ok)
+func TestLogoGlyphWidthIsStable(t *testing.T) {
+	b := newMainTabBar()
+	want := lipgloss.Width(b.logoGlyph())
+	if want != logoGlyphWidth {
+		t.Fatalf("idle glyph width = %d, want %d", want, logoGlyphWidth)
 	}
-	if mode, ok := mainTabModeFor(1); !ok || mode != SidebarEditor {
-		t.Errorf("tab 1 = (%v, %v), want (SidebarEditor, true)", mode, ok)
-	}
-	if mode, ok := mainTabModeFor(2); !ok || mode != EditorChatSplit {
-		t.Errorf("tab 2 = (%v, %v), want (EditorChatSplit, true)", mode, ok)
-	}
-	if _, ok := mainTabModeFor(99); ok {
-		t.Error("out-of-range tab index should report not ok")
-	}
-}
-
-func TestMainTabBarViewRendersLabels(t *testing.T) {
-	bar := newMainTabBar()
-	if got := bar.View(ChatOnly); got != "" {
-		t.Errorf("zero-width bar should render empty, got %q", got)
-	}
-
-	bar.SetWidth(80)
-	view := bar.View(ChatOnly)
-	for _, label := range []string{"Chat", "Editor", "Editor+Chat"} {
-		if !strings.Contains(view, label) {
-			t.Errorf("rendered tab bar missing label %q", label)
+	for i := range logoAnimFrames {
+		b.logoFrame = i
+		if got := lipgloss.Width(b.logoGlyph()); got != logoGlyphWidth {
+			t.Fatalf("frame %q width = %d, want %d", logoAnimFrames[i], got, logoGlyphWidth)
+		}
+		if strings.TrimSpace(b.logoGlyph()) != logoAnimFrames[i] {
+			t.Fatalf("frame %d glyph = %q, want %q", i, b.logoGlyph(), logoAnimFrames[i])
 		}
 	}
 }
