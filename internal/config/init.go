@@ -430,6 +430,18 @@ Host        = 'localhost'
 Port        = 9999
 RequireAuth = false
 
+# WebUI Access — username/password protection for the HTTP API.
+# Only enforced once the server is exposed, i.e. started on a non-loopback Host
+# (e.g. --host 0.0.0.0). Bound to localhost it stays inert. Where the request
+# comes from makes no difference: on an exposed server the local browser signs in
+# too. Manage users from the Web UI (Settings -> Services -> WebUI Access);
+# passwords are stored age-encrypted, like provider API keys.
+[Server.BasicAuth]
+Enabled = false
+# [[Server.BasicAuth.Users]]
+# Username = 'admin'
+# Password = 'age1:...'
+
 # =============================================================================
 # Container Runtime
 # =============================================================================

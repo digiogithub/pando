@@ -76,6 +76,7 @@
       "remembrances": "Remembrances",
       "snapshots": "Snapshots",
       "apiServer": "API Server",
+      "webuiAccess": "WebUI Access",
       "tokenOptimization": "Token Optimization"
     },
     "general": {
@@ -168,6 +169,29 @@
       "savingsWidgetTitle": "Recorded savings",
       "savingsWidgetEmpty": "No savings recorded yet. Reads and shell commands populate the ledger as you work.",
       "savingsWidgetSaved": "tokens saved ({{pct}}% reduction)"
+    },
+    "webuiAccess": {
+      "title": "WebUI Access",
+      "enabled": "Require username and password",
+      "enabledDescription": "Ask for credentials before letting anyone reach the API. Only takes effect while Pando runs on a non-localhost host.",
+      "enforced": "Active: Pando is running on {{host}}, so it is reachable from the network and every client — including this browser — must sign in.",
+      "notEnforced": "Inactive: Pando is running on {{host}} and is only reachable from this machine. Credentials are demanded once you start it with a non-localhost host, e.g. pando app --host 0.0.0.0.",
+      "users": "Users",
+      "noUsers": "No users configured. Add one before enabling access control.",
+      "username": "Username",
+      "password": "Password",
+      "addUser": "Add user",
+      "reveal": "Reveal",
+      "hide": "Hide",
+      "delete": "Delete",
+      "deleteTitle": "Delete user",
+      "deleteMessage": "Remove \"{{username}}\"? They will lose access immediately. Deleting the last user also turns access control off.",
+      "userSaved": "User saved",
+      "storageNote": "Passwords are stored age-encrypted in your config file, the same way provider API keys are.",
+      "loadFailed": "Failed to load access settings",
+      "saveFailed": "Failed to save access settings",
+      "deleteFailed": "Failed to delete user",
+      "revealFailed": "Failed to reveal password"
     }
   },
   "chat": {
@@ -202,5 +226,14 @@
     "installButton": "Install",
     "dismissButton": "Not now",
     "installing": "Installing…"
+  },
+  "login": {
+    "title": "Sign in",
+    "description": "This Pando server is reachable from the network and requires credentials.",
+    "username": "Username",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "invalid": "Wrong username or password"
   }
 }

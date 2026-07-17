@@ -454,10 +454,26 @@ type RemembrancesConfig struct {
 
 // APIServerConfig holds configuration for the HTTP API server (WebUI backend).
 type APIServerConfig struct {
-	Enabled     bool   `json:"enabled,omitempty"`
-	Host        string `json:"host,omitempty"`
-	Port        int    `json:"port,omitempty"`
-	RequireAuth bool   `json:"requireAuth,omitempty"`
+	Enabled     bool            `json:"enabled,omitempty"`
+	Host        string          `json:"host,omitempty"`
+	Port        int             `json:"port,omitempty"`
+	RequireAuth bool            `json:"requireAuth,omitempty"`
+	BasicAuth   BasicAuthConfig `json:"basicAuth,omitempty" toml:"BasicAuth"`
+}
+
+// BasicAuthConfig guards the HTTP API with username/password credentials when the
+// server is reachable from outside the machine. Requests arriving from loopback,
+// and servers bound to a loopback address, are never challenged.
+type BasicAuthConfig struct {
+	Enabled bool            `json:"enabled" toml:"Enabled"`
+	Users   []BasicAuthUser `json:"users,omitempty" toml:"Users"`
+}
+
+// BasicAuthUser is a single credential pair. Password is plaintext in memory and
+// stored age-encrypted (age1: prefix) in the config file.
+type BasicAuthUser struct {
+	Username string `json:"username" toml:"Username"`
+	Password string `json:"password" toml:"Password"`
 }
 
 // MCPServerConfig controls which tool groups are exposed when Pando runs as an MCP server.

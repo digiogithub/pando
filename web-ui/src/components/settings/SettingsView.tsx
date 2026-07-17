@@ -15,6 +15,7 @@ import MesnadaSettings from './MesnadaSettings'
 import RemembrancesSettings from './RemembrancesSettings'
 import SnapshotsSettings from './SnapshotsSettings'
 import APIServerSettings from './APIServerSettings'
+import WebUIAccessSettings from './WebUIAccessSettings'
 import ProviderAccountsSettings from './ProviderAccountsSettings'
 import ContainerRuntimeSettings from './ContainerRuntimeSettings'
 import { useConfigEventsStore } from '@/stores/configEventsStore'
@@ -36,6 +37,7 @@ type SettingsCategory =
   | 'remembrances'
   | 'snapshots'
   | 'api-server'
+  | 'webui-access'
   | 'container-runtime'
 
 const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string }[] = [
@@ -56,6 +58,7 @@ const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string }[
   { id: 'remembrances', labelKey: 'settings.categories.remembrances', group: 'services' },
   { id: 'snapshots', labelKey: 'settings.categories.snapshots', group: 'services' },
   { id: 'api-server', labelKey: 'settings.categories.apiServer', group: 'services' },
+  { id: 'webui-access', labelKey: 'settings.categories.webuiAccess', group: 'services' },
 ]
 
 export default function SettingsView() {
@@ -208,6 +211,7 @@ export default function SettingsView() {
         {activeCategory === 'remembrances' && <RemembrancesSettings />}
         {activeCategory === 'snapshots' && <SnapshotsSettings />}
         {activeCategory === 'api-server' && <APIServerSettings />}
+        {activeCategory === 'webui-access' && <WebUIAccessSettings />}
       </div>
     </div>
   )

@@ -274,6 +274,13 @@ Host = 'localhost'
 Port = 9999
 RequireAuth = false
 
+[Server.BasicAuth]
+Enabled = true
+
+[[Server.BasicAuth.Users]]
+Username = 'admin'
+Password = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA4ZEZGNklwVnJWWGg1dFJyalJ5eFNPMGdmYjdMKzlUTnlkTUE0M21GdWhnClVyOWNCVGRucmFENXV3MEJaT1lzQkRyTW8rUXlPVUJJNXg3bFRzWDh5NU0KLS0tIDBpZGdRQTlnR1l3NjFZQ0tZS0VScFF4b0tyUDh4ODFjd0poUUJNSE9NVU0K3DTXCXrbMonfDrNmBzu4S0Ya1FFNjxa/yVmo1RmVVkHMUSrkfQ=='
+
 [Lua]
 Enabled = false
 ScriptPath = ''

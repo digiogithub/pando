@@ -728,6 +728,12 @@ export interface APIServerConfig {
   host: string
   port: number
   requireAuth: boolean
+  basicAuth?: BasicAuthConfig
+}
+
+export interface BasicAuthConfig {
+  enabled: boolean
+  users?: { username: string; password: string }[]
 }
 
 export interface ServicesConfig {

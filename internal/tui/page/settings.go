@@ -2384,12 +2384,41 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 	}
 }
 
+// basicAuthUsersSummary renders the configured WebUI Access usernames. Passwords
+// are never shown here; the TUI has no list editor, so users are managed from the
+// Web UI panel.
+func basicAuthUsersSummary(cfg *config.Config) string {
+	if len(cfg.Server.BasicAuth.Users) == 0 {
+		return "No users configured."
+	}
+	names := make([]string, 0, len(cfg.Server.BasicAuth.Users))
+	for _, user := range cfg.Server.BasicAuth.Users {
+		names = append(names, user.Username)
+	}
+	return strings.Join(names, ", ")
+}
+
 func buildServerSection(cfg *config.Config) settings.Section {
 	fields := []settings.Field{
 		{Label: "Enabled", Key: "server.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Server.Enabled)},
 		{Label: "Host", Key: "server.host", Type: settings.FieldText, Value: cfg.Server.Host},
 		{Label: "Port", Key: "server.port", Type: settings.FieldText, Value: fmt.Sprint(cfg.Server.Port)},
 		{Label: "Require Auth", Key: "server.requireAuth", Type: settings.FieldToggle, Value: boolString(cfg.Server.RequireAuth)},
+		{
+			Label: "WebUI Access (Basic Auth)",
+			Key:   "server.basicAuth.enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(cfg.Server.BasicAuth.Enabled),
+			Hint:  "Ask for a username and password before reaching the API. Only applies while running on a non-localhost host.",
+		},
+		{
+			Label:    "WebUI Access Users",
+			Key:      "server.basicAuth.users",
+			Type:     settings.FieldText,
+			Value:    basicAuthUsersSummary(cfg),
+			ReadOnly: true,
+			Hint:     "Manage users from the Web UI: Settings → Services → WebUI Access.",
+		},
 	}
 
 	if !cfg.Server.Enabled {
@@ -4308,8 +4337,17 @@ func saveServer(field settings.Field) error {
 			return fmt.Errorf("invalid server require auth value: %w", err)
 		}
 		serverCfg.RequireAuth = requireAuth
-	case "server.info.disabled":
-		// read-only informational field, nothing to save
+	case "server.basicAuth.enabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid webui access value: %w", err)
+		}
+		if enabled && len(serverCfg.BasicAuth.Users) == 0 {
+			return fmt.Errorf("add at least one user from the Web UI before enabling WebUI Access")
+		}
+		serverCfg.BasicAuth.Enabled = enabled
+	case "server.basicAuth.users", "server.info.disabled":
+		// read-only informational fields, nothing to save
 		return nil
 	default:
 		return fmt.Errorf("unsupported server setting %q", field.Key)

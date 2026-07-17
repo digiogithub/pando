@@ -3,7 +3,10 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"mime"
@@ -67,10 +70,15 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 	// (see getOrCreateSession); we no longer auto-approve globally so the Web UI
 	// can prompt for permission just like the TUI.
 
+	token, err := generateToken()
+	if err != nil {
+		return nil, err
+	}
+
 	s := &Server{
 		app:      application,
 		config:   cfg,
-		token:    generateToken(),
+		token:    token,
 		staticFS: cfg.StaticFS,
 		bgRunner: NewBackgroundSessionManager(),
 	}
@@ -82,9 +90,9 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 
-	handler := s.corsMiddleware(s.authMiddleware(mux))
+	handler := s.corsMiddleware(s.basicAuthMiddleware(s.authMiddleware(mux)))
 	if s.staticHandler != nil {
-		handler = s.corsMiddleware(s.uiHandler(s.authMiddleware(mux)))
+		handler = s.corsMiddleware(s.uiHandler(s.basicAuthMiddleware(s.authMiddleware(mux))))
 	}
 
 	s.httpServer = &http.Server{
@@ -139,20 +147,19 @@ func (s *Server) GetToken() string {
 	return s.token
 }
 
-func generateToken() string {
-	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+func generateToken() (string, error) {
 	b := make([]byte, 32)
-	for i := range b {
-		b[i] = chars[i%len(chars)]
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate api token: %w", err)
 	}
-	return string(b)
+	return hex.EncodeToString(b), nil
 }
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Pando-Token")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Pando-Token, X-Pando-Client, Authorization")
 		w.Header().Set("Access-Control-Expose-Headers", "X-Pando-Token")
 
 		if r.Method == "OPTIONS" {
@@ -164,6 +171,17 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// hasValidToken reports whether the request carries this server's API token,
+// either in the X-Pando-Token header or as a ?token= query parameter (the only
+// option for EventSource streams).
+func (s *Server) hasValidToken(r *http.Request) bool {
+	token := r.Header.Get("X-Pando-Token")
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) == 1
+}
+
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" || !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/v1/token" {
@@ -171,12 +189,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		token := r.Header.Get("X-Pando-Token")
-		if token == "" {
-			token = r.URL.Query().Get("token")
-		}
-
-		if token != s.token {
+		if !s.hasValidToken(r) {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}

@@ -300,6 +300,50 @@ pando convert --list-formats           # list supported input formats
 When Pando starts from a released semantic-version build, it also performs a short background
 update check and prints a notice if a newer compatible release is available.
 
+### WebUI Access (protecting a remotely exposed server)
+
+`pando serve` and `pando app` expose the agent over HTTP — including the bash tool, the
+terminal and file writes — so a server bound to anything other than localhost must be
+protected. **WebUI Access** adds HTTP Basic Auth in front of the API:
+
+```bash
+pando app --host 0.0.0.0   # reachable from the network: credentials are required
+pando app                  # bound to localhost: credentials are never asked for
+```
+
+Manage it from **Settings → Services → WebUI Access** in the Web UI: switch it on and add
+one or more username/password pairs. The rules are:
+
+- Only the `/api/` surface is guarded; static assets stay public so the PWA service worker
+  can precache them.
+- Credentials are only demanded once the server is exposed, i.e. started on a non-loopback
+  host. Bound to localhost the setting stays inert and local development is unaffected.
+- Where the request comes from makes no difference: on a `0.0.0.0` bind the browser on your
+  own machine is asked to sign in too, because the port is open to the network either way.
+- Passwords are stored **age-encrypted** in your config file (`age1:` prefix), exactly like
+  provider API keys, using the key set in `~/.config/pando/keys/`.
+- Access control cannot be enabled without at least one user, and deleting the last user
+  turns it off, so the server can never demand credentials that do not exist.
+- The Web UI shows its own login dialog; CLI clients get a standard challenge:
+
+```bash
+curl -u admin:secret http://my-host:9999/api/v1/token
+```
+
+```toml
+[Server]
+Enabled     = true
+Host        = '0.0.0.0'
+Port        = 9999
+
+[Server.BasicAuth]
+Enabled = true
+
+[[Server.BasicAuth.Users]]
+Username = 'admin'
+Password = 'age1:...'   # written by the panel, never by hand
+```
+
 ### Document conversion in the Knowledge Base
 
 Pando converts rich documents to Markdown using the pure-Go

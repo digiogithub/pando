@@ -96,6 +96,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/config/provider-accounts/antigravity/refresh", s.handleAntigravityOAuthRefresh)
 	mux.HandleFunc("POST /api/v1/config/provider-accounts/antigravity/verify", s.handleAntigravityOAuthVerify)
 	mux.HandleFunc("POST /api/v1/config/api-server/regenerate-token", s.handleRegenerateAPIToken)
+	// WebUI Access (basic auth)
+	mux.HandleFunc("/api/v1/config/api-server/basic-auth", s.handleConfigBasicAuth)
+	mux.HandleFunc("POST /api/v1/config/api-server/basic-auth/users", s.handleCreateBasicAuthUser)
+	mux.HandleFunc("DELETE /api/v1/config/api-server/basic-auth/users/{username}", s.handleDeleteBasicAuthUser)
+	mux.HandleFunc("POST /api/v1/config/api-server/basic-auth/users/{username}/reveal", s.handleRevealBasicAuthUser)
 	// First-run / config generation
 	mux.HandleFunc("GET /api/v1/config/init-status", s.handleConfigInitStatus)
 	mux.HandleFunc("POST /api/v1/config/generate", s.handleConfigGenerate)

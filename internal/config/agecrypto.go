@@ -321,6 +321,17 @@ func encryptSensitiveConfigFields(in *Config) (*Config, error) {
 			}
 		}
 	}
+	// Encrypt basic-auth passwords
+	if len(in.Server.BasicAuth.Users) > 0 {
+		out.Server.BasicAuth.Users = make([]BasicAuthUser, len(in.Server.BasicAuth.Users))
+		copy(out.Server.BasicAuth.Users, in.Server.BasicAuth.Users)
+		for i, user := range in.Server.BasicAuth.Users {
+			out.Server.BasicAuth.Users[i].Password, err = encryptSecretString(user.Password)
+			if err != nil {
+				return nil, fmt.Errorf("encrypt basic auth password for %s: %w", user.Username, err)
+			}
+		}
+	}
 	// Encrypt remembrances embedding API keys
 	out.Remembrances.DocumentEmbeddingAPIKey, err = encryptSecretString(in.Remembrances.DocumentEmbeddingAPIKey)
 	if err != nil {
@@ -388,6 +399,14 @@ func decryptSensitiveConfigFields(in *Config) error {
 			return fmt.Errorf("decrypt providerAccount %s OAuthAccessToken: %w", acc.ID, err)
 		}
 		in.ProviderAccounts[i].OAuthAccessToken = decrypted
+	}
+	// Decrypt basic-auth passwords
+	for i, user := range in.Server.BasicAuth.Users {
+		decrypted, err := decryptSecretString(user.Password)
+		if err != nil {
+			return fmt.Errorf("decrypt basic auth password for %s: %w", user.Username, err)
+		}
+		in.Server.BasicAuth.Users[i].Password = decrypted
 	}
 	// Decrypt remembrances embedding API keys
 	in.Remembrances.DocumentEmbeddingAPIKey, err = decryptSecretString(in.Remembrances.DocumentEmbeddingAPIKey)

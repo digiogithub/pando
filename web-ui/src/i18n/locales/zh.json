@@ -75,6 +75,7 @@
       "remembrances": "记忆库",
       "snapshots": "快照",
       "apiServer": "API 服务器",
+      "webuiAccess": "WebUI 访问",
       "containerRuntime": "容器运行时",
       "tokenOptimization": "Token 优化"
     },
@@ -168,6 +169,29 @@
       "savingsWidgetTitle": "已记录的节省",
       "savingsWidgetEmpty": "尚未记录任何节省。随着你的操作，文件读取和 shell 命令会填充该账本。",
       "savingsWidgetSaved": "个令牌已节省（减少 {{pct}}%）"
+    },
+    "webuiAccess": {
+      "title": "WebUI 访问",
+      "enabled": "要求用户名和密码",
+      "enabledDescription": "在任何人访问 API 之前要求提供凭据。仅在 Pando 运行于非 localhost 主机时生效。",
+      "enforced": "已生效：Pando 运行在 {{host}}，可从网络访问，所有客户端（包括当前浏览器）都必须登录。",
+      "notEnforced": "未生效：Pando 运行在 {{host}}，仅本机可访问。当你以非 localhost 的主机启动时（例如 pando app --host 0.0.0.0）才会要求凭据。",
+      "users": "用户",
+      "noUsers": "尚未配置用户。启用访问控制前请先添加一个。",
+      "username": "用户名",
+      "password": "密码",
+      "addUser": "添加用户",
+      "reveal": "显示",
+      "hide": "隐藏",
+      "delete": "删除",
+      "deleteTitle": "删除用户",
+      "deleteMessage": "要删除“{{username}}”吗？该用户将立即失去访问权限。删除最后一个用户也会关闭访问控制。",
+      "userSaved": "用户已保存",
+      "storageNote": "密码与服务商 API 密钥一样，以 age 加密形式保存在配置文件中。",
+      "loadFailed": "加载访问设置失败",
+      "saveFailed": "保存访问设置失败",
+      "deleteFailed": "删除用户失败",
+      "revealFailed": "显示密码失败"
     }
   },
   "chat": {
@@ -199,5 +223,14 @@
     "installButton": "安装",
     "dismissButton": "暂不",
     "installing": "安装中…"
+  },
+  "login": {
+    "title": "登录",
+    "description": "此 Pando 服务器可从网络访问，需要提供凭据。",
+    "username": "用户名",
+    "password": "密码",
+    "signIn": "登录",
+    "signingIn": "正在登录…",
+    "invalid": "用户名或密码错误"
   }
 }

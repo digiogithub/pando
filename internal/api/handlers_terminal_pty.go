@@ -68,15 +68,6 @@ func checkPtyOrigin(r *http.Request) bool {
 	return isLoopbackHost(parsed.Hostname())
 }
 
-func isLoopbackHost(hostname string) bool {
-	switch strings.ToLower(hostname) {
-	case "localhost", "127.0.0.1", "::1":
-		return true
-	default:
-		return false
-	}
-}
-
 func atoiDefault(value string, fallback int) int {
 	parsed, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil {

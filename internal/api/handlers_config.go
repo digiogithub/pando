@@ -837,7 +837,7 @@ func (s *Server) handleConfigServices(w http.ResponseWriter, r *http.Request) {
 			Mesnada:      cfg.Mesnada,
 			Remembrances: cfg.Remembrances,
 			Snapshots:    cfg.Snapshots,
-			Server:       cfg.Server,
+			Server:       maskBasicAuthPasswords(cfg.Server),
 		}
 		writeJSON(w, http.StatusOK, resp)
 	case http.MethodPut:
@@ -870,7 +870,7 @@ func (s *Server) handleConfigServices(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "failed to update Snapshots config: "+err.Error())
 			return
 		}
-		if err := config.UpdateServer(req.Server); err != nil {
+		if err := config.UpdateServer(preserveBasicAuth(req.Server, cfg.Server)); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update Server config: "+err.Error())
 			return
 		}
@@ -880,7 +880,7 @@ func (s *Server) handleConfigServices(w http.ResponseWriter, r *http.Request) {
 			Mesnada:      updated.Mesnada,
 			Remembrances: updated.Remembrances,
 			Snapshots:    updated.Snapshots,
-			Server:       updated.Server,
+			Server:       maskBasicAuthPasswords(updated.Server),
 		})
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")

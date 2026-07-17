@@ -75,6 +75,7 @@
       "remembrances": "Remembrances",
       "snapshots": "Snapshots",
       "apiServer": "API-Server",
+      "webuiAccess": "WebUI-Zugriff",
       "containerRuntime": "Container-Laufzeit",
       "tokenOptimization": "Token-Optimierung"
     },
@@ -168,6 +169,29 @@
       "savingsWidgetTitle": "Erfasste Einsparungen",
       "savingsWidgetEmpty": "Noch keine Einsparungen erfasst. Lesevorgänge und Shell-Befehle füllen das Protokoll während der Arbeit.",
       "savingsWidgetSaved": "Token eingespart ({{pct}} % Reduktion)"
+    },
+    "webuiAccess": {
+      "title": "WebUI-Zugriff",
+      "enabled": "Benutzername und Passwort verlangen",
+      "enabledDescription": "Fordert Zugangsdaten an, bevor jemand die API erreicht. Gilt nur, solange Pando auf einem anderen Host als localhost läuft.",
+      "enforced": "Aktiv: Pando läuft auf {{host}}, ist also aus dem Netzwerk erreichbar — jeder Client, auch dieser Browser, muss sich anmelden.",
+      "notEnforced": "Inaktiv: Pando läuft auf {{host}} und ist nur von diesem Rechner erreichbar. Zugangsdaten werden verlangt, sobald Sie es mit einem anderen Host als localhost starten, z. B. pando app --host 0.0.0.0.",
+      "users": "Benutzer",
+      "noUsers": "Keine Benutzer konfiguriert. Legen Sie einen an, bevor Sie die Zugriffskontrolle aktivieren.",
+      "username": "Benutzername",
+      "password": "Passwort",
+      "addUser": "Benutzer hinzufügen",
+      "reveal": "Anzeigen",
+      "hide": "Verbergen",
+      "delete": "Löschen",
+      "deleteTitle": "Benutzer löschen",
+      "deleteMessage": "\"{{username}}\" entfernen? Der Zugriff endet sofort. Wird der letzte Benutzer gelöscht, schaltet sich die Zugriffskontrolle ebenfalls ab.",
+      "userSaved": "Benutzer gespeichert",
+      "storageNote": "Passwörter werden age-verschlüsselt in der Konfigurationsdatei gespeichert, genau wie die API-Schlüssel der Anbieter.",
+      "loadFailed": "Zugriffseinstellungen konnten nicht geladen werden",
+      "saveFailed": "Zugriffseinstellungen konnten nicht gespeichert werden",
+      "deleteFailed": "Benutzer konnte nicht gelöscht werden",
+      "revealFailed": "Passwort konnte nicht angezeigt werden"
     }
   },
   "chat": {
@@ -202,5 +226,14 @@
     "installButton": "Installieren",
     "dismissButton": "Nicht jetzt",
     "installing": "Wird installiert…"
+  },
+  "login": {
+    "title": "Anmelden",
+    "description": "Dieser Pando-Server ist aus dem Netzwerk erreichbar und verlangt Zugangsdaten.",
+    "username": "Benutzername",
+    "password": "Passwort",
+    "signIn": "Anmelden",
+    "signingIn": "Anmeldung…",
+    "invalid": "Benutzername oder Passwort falsch"
   }
 }

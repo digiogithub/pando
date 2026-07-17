@@ -75,6 +75,7 @@
       "remembrances": "Remembrances",
       "snapshots": "Snapshots",
       "apiServer": "Servidor API",
+      "webuiAccess": "Acceso WebUI",
       "containerRuntime": "Entorno de contenedores",
       "tokenOptimization": "Optimización de tokens"
     },
@@ -168,6 +169,29 @@
       "savingsWidgetTitle": "Ahorros registrados",
       "savingsWidgetEmpty": "Aún no hay ahorros registrados. Las lecturas y los comandos de shell rellenan el registro a medida que trabajas.",
       "savingsWidgetSaved": "tokens ahorrados ({{pct}}% de reducción)"
+    },
+    "webuiAccess": {
+      "title": "Acceso WebUI",
+      "enabled": "Exigir usuario y contraseña",
+      "enabledDescription": "Pide credenciales antes de dejar que nadie llegue a la API. Solo se aplica mientras Pando corra en un host distinto de localhost.",
+      "enforced": "Activo: Pando corre en {{host}}, así que es accesible desde la red y todos los clientes —este navegador incluido— deben autenticarse.",
+      "notEnforced": "Inactivo: Pando corre en {{host}} y solo es accesible desde esta máquina. Las credenciales se exigirán cuando lo arranques con un host distinto de localhost, p. ej. pando app --host 0.0.0.0.",
+      "users": "Usuarios",
+      "noUsers": "No hay usuarios configurados. Añade uno antes de activar el control de acceso.",
+      "username": "Usuario",
+      "password": "Contraseña",
+      "addUser": "Añadir usuario",
+      "reveal": "Mostrar",
+      "hide": "Ocultar",
+      "delete": "Eliminar",
+      "deleteTitle": "Eliminar usuario",
+      "deleteMessage": "¿Eliminar \"{{username}}\"? Perderá el acceso de inmediato. Si es el último usuario, el control de acceso también se desactivará.",
+      "userSaved": "Usuario guardado",
+      "storageNote": "Las contraseñas se guardan cifradas con age en el fichero de configuración, igual que las API keys de los proveedores.",
+      "loadFailed": "No se pudo cargar la configuración de acceso",
+      "saveFailed": "No se pudo guardar la configuración de acceso",
+      "deleteFailed": "No se pudo eliminar el usuario",
+      "revealFailed": "No se pudo mostrar la contraseña"
     }
   },
   "chat": {
@@ -202,5 +226,14 @@
     "installButton": "Instalar",
     "dismissButton": "Ahora no",
     "installing": "Instalando…"
+  },
+  "login": {
+    "title": "Iniciar sesión",
+    "description": "Este servidor de Pando es accesible desde la red y requiere credenciales.",
+    "username": "Usuario",
+    "password": "Contraseña",
+    "signIn": "Entrar",
+    "signingIn": "Entrando…",
+    "invalid": "Usuario o contraseña incorrectos"
   }
 }

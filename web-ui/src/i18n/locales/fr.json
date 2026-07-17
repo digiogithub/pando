@@ -75,6 +75,7 @@
       "remembrances": "Remembrances",
       "snapshots": "Instantanés",
       "apiServer": "Serveur API",
+      "webuiAccess": "Accès WebUI",
       "containerRuntime": "Environnement de conteneurs",
       "tokenOptimization": "Optimisation des tokens"
     },
@@ -168,6 +169,29 @@
       "savingsWidgetTitle": "Économies enregistrées",
       "savingsWidgetEmpty": "Aucune économie enregistrée pour l'instant. Les lectures et les commandes shell alimentent le journal au fil du travail.",
       "savingsWidgetSaved": "tokens économisés ({{pct}} % de réduction)"
+    },
+    "webuiAccess": {
+      "title": "Accès WebUI",
+      "enabled": "Exiger un identifiant et un mot de passe",
+      "enabledDescription": "Demande des identifiants avant de laisser quiconque atteindre l'API. Ne s'applique que si Pando tourne sur un hôte autre que localhost.",
+      "enforced": "Actif : Pando tourne sur {{host}}, il est donc joignable depuis le réseau et tous les clients — y compris ce navigateur — doivent se connecter.",
+      "notEnforced": "Inactif : Pando tourne sur {{host}} et n'est joignable que depuis cette machine. Les identifiants seront exigés si vous le démarrez sur un hôte autre que localhost, p. ex. pando app --host 0.0.0.0.",
+      "users": "Utilisateurs",
+      "noUsers": "Aucun utilisateur configuré. Ajoutez-en un avant d'activer le contrôle d'accès.",
+      "username": "Identifiant",
+      "password": "Mot de passe",
+      "addUser": "Ajouter un utilisateur",
+      "reveal": "Afficher",
+      "hide": "Masquer",
+      "delete": "Supprimer",
+      "deleteTitle": "Supprimer l'utilisateur",
+      "deleteMessage": "Supprimer « {{username}} » ? Son accès est révoqué immédiatement. Supprimer le dernier utilisateur désactive aussi le contrôle d'accès.",
+      "userSaved": "Utilisateur enregistré",
+      "storageNote": "Les mots de passe sont chiffrés avec age dans le fichier de configuration, comme les clés API des fournisseurs.",
+      "loadFailed": "Échec du chargement des paramètres d'accès",
+      "saveFailed": "Échec de l'enregistrement des paramètres d'accès",
+      "deleteFailed": "Échec de la suppression de l'utilisateur",
+      "revealFailed": "Échec de l'affichage du mot de passe"
     }
   },
   "chat": {
@@ -199,5 +223,14 @@
     "installButton": "Installer",
     "dismissButton": "Pas maintenant",
     "installing": "Installation…"
+  },
+  "login": {
+    "title": "Connexion",
+    "description": "Ce serveur Pando est accessible depuis le réseau et exige des identifiants.",
+    "username": "Identifiant",
+    "password": "Mot de passe",
+    "signIn": "Se connecter",
+    "signingIn": "Connexion…",
+    "invalid": "Identifiant ou mot de passe incorrect"
   }
 }

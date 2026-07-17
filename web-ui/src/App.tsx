@@ -17,9 +17,10 @@ import SelfImprovementView from '@/components/evaluator/SelfImprovementView'
 import CodeEditorView from '@/components/editor/CodeEditorView'
 import ProjectsView from '@/components/projects/ProjectsView'
 import InstancesPanel from '@/components/instances/InstancesPanel'
+import LoginDialog from '@/components/auth/LoginDialog'
 import { authenticate, checkHealth } from '@/services/auth'
 import { isDesktop, getDesktopConfig } from '@/services/desktop'
-import { initDesktopMode } from '@/services/api'
+import { initDesktopMode, BasicAuthRequiredError } from '@/services/api'
 import { useLanguageSync } from '@/hooks/useLanguageSync'
 import PWAInstallPrompt from '@/components/shared/PWAInstallPrompt'
 import { useNotificationsStore } from '@/stores/notificationsStore'
@@ -40,6 +41,7 @@ function App() {
   useLanguageSync()
   const [splashStatus, setSplashStatus] = useState<SplashStatus>('connecting')
   const [showSplash, setShowSplash] = useState(true)
+  const [needsLogin, setNeedsLogin] = useState(false)
   const connectNotifications = useNotificationsStore((s) => s.connect)
   const disconnectNotifications = useNotificationsStore((s) => s.disconnect)
 
@@ -58,8 +60,16 @@ function App() {
       }
       setSplashStatus('authenticating')
       await authenticate()
+      setNeedsLogin(false)
       setSplashStatus('ready')
-    } catch {
+    } catch (err) {
+      if (err instanceof BasicAuthRequiredError) {
+        // The server is exposed off-localhost and requires credentials: hand over
+        // to the login dialog instead of falling through to the error splash.
+        setNeedsLogin(true)
+        setShowSplash(false)
+        return
+      }
       setSplashStatus('error')
       // After 3 seconds on error, let the app through anyway (backend may be optional)
       setTimeout(() => setShowSplash(false), 3000)
@@ -84,7 +94,16 @@ function App() {
         <SplashScreen status={splashStatus} onDone={() => setShowSplash(false)} />
       )}
 
-      {!showSplash && <BrowserRouter>
+      {needsLogin && (
+        <LoginDialog
+          onSuccess={() => {
+            setShowSplash(true)
+            void initApp()
+          }}
+        />
+      )}
+
+      {!showSplash && !needsLogin && <BrowserRouter>
         <Suspense
           fallback={
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>

@@ -56,10 +56,24 @@ interface FetchOptions extends RequestInit {
   skipAuth?: boolean
 }
 
+// Raised when the server is exposed off-localhost and demands basic-auth
+// credentials. Callers show the login dialog instead of wiping the token, which
+// would only trigger a reload loop since no token can be obtained without
+// credentials in the first place.
+export class BasicAuthRequiredError extends Error {
+  constructor() {
+    super('basic_auth_required')
+    this.name = 'BasicAuthRequiredError'
+  }
+}
+
 async function fetchApi<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const { skipAuth, ...init } = options
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    // Marks the caller as the SPA so the server skips the WWW-Authenticate
+    // challenge and the browser's native credential prompt never appears.
+    'X-Pando-Client': 'web',
     ...(init.headers as Record<string, string>),
   }
 
@@ -80,6 +94,9 @@ async function fetchApi<T>(path: string, options: FetchOptions = {}): Promise<T>
   }
 
   if (response.status === 401) {
+    if ((await response.clone().text()).includes('basic_auth_required')) {
+      throw new BasicAuthRequiredError()
+    }
     const hadToken = !!getToken()
     removeToken()
     // Only reload if the user had a token that expired — avoid infinite loop on initial load
@@ -104,8 +121,8 @@ async function fetchApi<T>(path: string, options: FetchOptions = {}): Promise<T>
 
 export const api = {
   get: <T>(path: string) => fetchApi<T>(path),
-  post: <T>(path: string, body: unknown) =>
-    fetchApi<T>(path, { method: 'POST', body: JSON.stringify(body) }),
+  post: <T>(path: string, body: unknown, options: FetchOptions = {}) =>
+    fetchApi<T>(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
   put: <T>(path: string, body: unknown) =>
     fetchApi<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
   delete: <T>(path: string) => fetchApi<T>(path, { method: 'DELETE' }),

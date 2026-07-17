@@ -75,6 +75,7 @@
       "remembrances": "Remembrances",
       "snapshots": "スナップショット",
       "apiServer": "API サーバー",
+      "webuiAccess": "WebUI アクセス",
       "containerRuntime": "コンテナランタイム",
       "tokenOptimization": "トークン最適化"
     },
@@ -168,6 +169,29 @@
       "savingsWidgetTitle": "記録された削減量",
       "savingsWidgetEmpty": "まだ削減は記録されていません。作業に応じてファイル読み取りやシェルコマンドが台帳に記録されます。",
       "savingsWidgetSaved": "トークン削減（{{pct}}% 削減）"
+    },
+    "webuiAccess": {
+      "title": "WebUI アクセス",
+      "enabled": "ユーザー名とパスワードを要求",
+      "enabledDescription": "API に到達する前に認証情報を要求します。Pando が localhost 以外のホストで動作している間のみ有効です。",
+      "enforced": "有効: Pando は {{host}} で動作しており、ネットワークから到達可能です。このブラウザーを含むすべてのクライアントがサインインする必要があります。",
+      "notEnforced": "無効: Pando は {{host}} で動作しており、このマシンからのみ到達できます。localhost 以外のホストで起動すると（例: pando app --host 0.0.0.0）認証情報が要求されます。",
+      "users": "ユーザー",
+      "noUsers": "ユーザーが未設定です。アクセス制御を有効にする前に追加してください。",
+      "username": "ユーザー名",
+      "password": "パスワード",
+      "addUser": "ユーザーを追加",
+      "reveal": "表示",
+      "hide": "非表示",
+      "delete": "削除",
+      "deleteTitle": "ユーザーの削除",
+      "deleteMessage": "「{{username}}」を削除しますか？ 直ちにアクセスできなくなります。最後のユーザーを削除するとアクセス制御も無効になります。",
+      "userSaved": "ユーザーを保存しました",
+      "storageNote": "パスワードはプロバイダーの API キーと同じく、設定ファイル内に age で暗号化して保存されます。",
+      "loadFailed": "アクセス設定の読み込みに失敗しました",
+      "saveFailed": "アクセス設定の保存に失敗しました",
+      "deleteFailed": "ユーザーの削除に失敗しました",
+      "revealFailed": "パスワードの表示に失敗しました"
     }
   },
   "chat": {
@@ -199,5 +223,14 @@
     "installButton": "インストール",
     "dismissButton": "後で",
     "installing": "インストール中…"
+  },
+  "login": {
+    "title": "サインイン",
+    "description": "この Pando サーバーはネットワークから到達可能で、認証情報が必要です。",
+    "username": "ユーザー名",
+    "password": "パスワード",
+    "signIn": "サインイン",
+    "signingIn": "サインイン中…",
+    "invalid": "ユーザー名またはパスワードが違います"
   }
 }
