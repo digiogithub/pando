@@ -193,6 +193,9 @@
       "noModifiedFiles": "Keine geänderten Dateien"
     }
   },
+  "terminal": {
+    "ptyUnavailable": "Interaktives Terminal nicht verfügbar ({{reason}}). Es wird der Einzelbefehlsmodus verwendet."
+  },
   "pwa": {
     "installTitle": "Pando App installieren",
     "installDescription": "Füge Pando zu deinem Startbildschirm hinzu — schneller, app-ähnlich und auch offline verfügbar.",

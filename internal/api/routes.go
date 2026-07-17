@@ -123,6 +123,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/orchestrator/delegation/metrics", s.handleGetDelegationMetrics)
 	// Terminal
 	mux.HandleFunc("POST /api/v1/terminal/exec", s.handleTerminalExec)
+	// Interactive terminal: shell in a real PTY over a websocket (xterm.js client).
+	mux.HandleFunc("GET /api/v1/terminal/pty", s.handleTerminalPTY)
 	// Snapshots (backward-compatible, delegating to agent-vcs)
 	mux.HandleFunc("GET /api/v1/snapshots/count", s.handleSnapshotsCount)
 	mux.HandleFunc("GET /api/v1/snapshots", s.handleGetSnapshots)

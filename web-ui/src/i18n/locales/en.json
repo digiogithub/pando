@@ -193,6 +193,9 @@
       "noModifiedFiles": "No modified files"
     }
   },
+  "terminal": {
+    "ptyUnavailable": "Interactive terminal unavailable ({{reason}}). Falling back to single-command mode."
+  },
   "pwa": {
     "installTitle": "Install Pando App",
     "installDescription": "Add Pando to your home screen for a faster, app-like experience — works offline too.",

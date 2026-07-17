@@ -193,6 +193,9 @@
       "noModifiedFiles": "Nenhum ficheiro modificado"
     }
   },
+  "terminal": {
+    "ptyUnavailable": "Terminal interativo indisponível ({{reason}}). A usar o modo de comando único."
+  },
   "pwa": {
     "installTitle": "Instalar o app Pando",
     "installDescription": "Adicione o Pando à sua tela inicial para uma experiência mais rápida — funciona offline também.",
