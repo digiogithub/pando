@@ -172,7 +172,26 @@
   },
   "chat": {
     "agentDoneTitle": "代理已完成",
-    "agentDoneBody": "点击返回会话"
+    "agentDoneBody": "点击返回会话",
+    "info": {
+      "show": "显示信息面板",
+      "hide": "隐藏信息面板",
+      "session": "会话",
+      "noSession": "无活动会话",
+      "usage": "用量",
+      "context": "上下文",
+      "totalTokens": "总令牌数",
+      "inputOutput": "输入 / 输出",
+      "cache": "缓存 读取/写入",
+      "reasoning": "推理",
+      "cost": "费用",
+      "subagents": "子代理",
+      "runningPending": "运行中 / 未完成",
+      "plan": "计划",
+      "lsps": "LSP",
+      "modifiedFiles": "已修改文件",
+      "noModifiedFiles": "没有已修改的文件"
+    }
   },
   "pwa": {
     "installTitle": "安装 Pando 应用",

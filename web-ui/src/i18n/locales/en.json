@@ -172,7 +172,26 @@
   },
   "chat": {
     "agentDoneTitle": "Agent finished",
-    "agentDoneBody": "Click to return to the session"
+    "agentDoneBody": "Click to return to the session",
+    "info": {
+      "show": "Show info panel",
+      "hide": "Hide info panel",
+      "session": "Session",
+      "noSession": "No active session",
+      "usage": "Usage",
+      "context": "Context",
+      "totalTokens": "Total tokens",
+      "inputOutput": "Input / Output",
+      "cache": "Cache read/write",
+      "reasoning": "Reasoning",
+      "cost": "Cost",
+      "subagents": "Subagents",
+      "runningPending": "Running / unfinished",
+      "plan": "Plan",
+      "lsps": "LSPs",
+      "modifiedFiles": "Modified files",
+      "noModifiedFiles": "No modified files"
+    }
   },
   "pwa": {
     "installTitle": "Install Pando App",

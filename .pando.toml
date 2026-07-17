@@ -83,7 +83,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'copilot.gpt-5.6-luna'
+Model = 'ollama.qwopus:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''

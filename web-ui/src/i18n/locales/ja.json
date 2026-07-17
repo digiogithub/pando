@@ -172,7 +172,26 @@
   },
   "chat": {
     "agentDoneTitle": "エージェント完了",
-    "agentDoneBody": "クリックしてセッションに戻る"
+    "agentDoneBody": "クリックしてセッションに戻る",
+    "info": {
+      "show": "情報パネルを表示",
+      "hide": "情報パネルを隠す",
+      "session": "セッション",
+      "noSession": "アクティブなセッションなし",
+      "usage": "使用状況",
+      "context": "コンテキスト",
+      "totalTokens": "合計トークン",
+      "inputOutput": "入力 / 出力",
+      "cache": "キャッシュ 読取/書込",
+      "reasoning": "推論",
+      "cost": "コスト",
+      "subagents": "サブエージェント",
+      "runningPending": "実行中 / 未完了",
+      "plan": "プラン",
+      "lsps": "LSP",
+      "modifiedFiles": "変更されたファイル",
+      "noModifiedFiles": "変更されたファイルなし"
+    }
   },
   "pwa": {
     "installTitle": "Pandoアプリをインストール",

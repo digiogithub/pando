@@ -13,6 +13,7 @@ import ChatInput from './ChatInput'
 import FileChangesBar from './FileChangesBar'
 import GoalStatus from './GoalStatus'
 import PlanView from './PlanView'
+import ChatInfoSidebar from './ChatInfoSidebar'
 
 export default function ChatView() {
   const { t } = useTranslation()
@@ -84,7 +85,8 @@ export default function ChatView() {
   }, [fetchSessions])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
       {/* New session FAB — visible only when sidebar is collapsed */}
       {!sidebarOpen && (
         <button
@@ -145,6 +147,9 @@ export default function ChatView() {
 
       <FileChangesBar />
       <ChatInput onSend={sendMessage} streaming={streaming} onCancel={() => void cancelStreaming()} goalActive={(goal ?? streamingState.goal)?.status === 'running'} />
+      </div>
+
+      <ChatInfoSidebar plan={activePlan} />
     </div>
   )
 }

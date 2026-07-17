@@ -329,7 +329,9 @@ func (m *sidebarCmp) usageSection() string {
 		rows = append(rows, row("Reasoning", formatCount(m.session.ReasoningTokens)))
 	}
 
-	rows = append(rows, row("Cost", fmt.Sprintf("$%.4f", m.session.Cost)))
+	if m.session.Cost > 0 {
+		rows = append(rows, row("Cost", fmt.Sprintf("$%.4f", m.session.Cost)))
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
