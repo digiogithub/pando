@@ -19,6 +19,9 @@ import api from '@/services/api'
 
 interface FileExplorerProps {
   files: FileNode[]
+  /** Bumped by the parent on every tree refresh; expanded directories re-read
+   *  their children whenever it changes. */
+  treeVersion?: number
   onRefresh: () => void
   onClose?: () => void
 }
@@ -72,24 +75,28 @@ interface TreeNodeProps {
   node: FileNode
   depth: number
   filter: string
+  treeVersion: number
   onContextMenu: (e: React.MouseEvent, node: FileNode) => void
 }
 
-function TreeNode({ node, depth, filter, onContextMenu }: TreeNodeProps) {
+function TreeNode({ node, depth, filter, treeVersion, onContextMenu }: TreeNodeProps) {
   const { fileTreeExpanded, toggleTreeNode, openFile, openBinaryFile, setActiveFile } = useEditorStore()
   const isOpen = fileTreeExpanded[node.path] ?? false
   const { icon, color } = getFileIcon(node.name, node.is_dir, isOpen)
   const [children, setChildren] = useState<FileNode[]>([])
   const [childrenLoaded, setChildrenLoaded] = useState(false)
 
-  // Load children when directory is first expanded
+  // Load children when the directory is expanded, and re-read them on every
+  // tree refresh so files created or deleted outside the UI appear here too.
   useEffect(() => {
-    if (!node.is_dir || !isOpen || childrenLoaded) return
+    if (!node.is_dir || !isOpen) return
+    let cancelled = false
     api
       .get<{ path: string; files: Array<{ name: string; path: string; isDir: boolean; size: number }> }>(
         `/api/v1/files?path=${encodeURIComponent(node.path)}`
       )
       .then((data) => {
+        if (cancelled) return
         const kids: FileNode[] = (data.files ?? []).map((f) => ({
           name: f.name,
           path: f.path,
@@ -100,8 +107,13 @@ function TreeNode({ node, depth, filter, onContextMenu }: TreeNodeProps) {
         setChildren(kids)
         setChildrenLoaded(true)
       })
-      .catch((err) => console.error('Failed to load children:', err))
-  }, [node.is_dir, node.path, isOpen, childrenLoaded])
+      .catch((err) => {
+        if (!cancelled) console.error('Failed to load children:', err)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [node.is_dir, node.path, isOpen, treeVersion])
 
   const matchesFilter =
     filter === '' || node.name.toLowerCase().includes(filter.toLowerCase())
@@ -187,6 +199,7 @@ function TreeNode({ node, depth, filter, onContextMenu }: TreeNodeProps) {
               node={child}
               depth={depth + 1}
               filter={filter}
+              treeVersion={treeVersion}
               onContextMenu={onContextMenu}
             />
           ))}
@@ -210,7 +223,7 @@ function TreeNode({ node, depth, filter, onContextMenu }: TreeNodeProps) {
   )
 }
 
-export default function FileExplorer({ files, onRefresh, onClose }: FileExplorerProps) {
+export default function FileExplorer({ files, treeVersion = 0, onRefresh, onClose }: FileExplorerProps) {
   const [filter, setFilter] = useState('')
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
@@ -414,6 +427,7 @@ export default function FileExplorer({ files, onRefresh, onClose }: FileExplorer
             node={node}
             depth={0}
             filter={filter}
+            treeVersion={treeVersion}
             onContextMenu={handleContextMenu}
           />
         ))}

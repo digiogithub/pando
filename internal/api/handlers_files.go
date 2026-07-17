@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/fileutil"
 )
 
 // isSafePath checks that the resolved path is within the working directory.
@@ -86,7 +87,7 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 
 		files = append(files, map[string]interface{}{
 			"name":  name,
-			"isDir": entry.IsDir(),
+			"isDir": fileutil.IsDirEntry(fullPath, entry),
 			"size":  info.Size(),
 			"path":  filepath.Join(relativePath, name),
 		})

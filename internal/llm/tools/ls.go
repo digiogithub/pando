@@ -3,10 +3,12 @@ package tools
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/fileutil"
 )
 
 type LSParams struct {
@@ -133,14 +135,14 @@ func listDirectory(initialPath string, ignorePatterns []string, limit int) ([]st
 	rootBase := filepath.Base(initialPath)
 	skipHidden := rootBase == "." || !strings.HasPrefix(rootBase, ".")
 
-	err := filepath.Walk(initialPath, func(path string, info os.FileInfo, err error) error {
+	err := fileutil.WalkFollowSymlinks(initialPath, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // Skip files we don't have permission to access
 		}
 
 		// Skip hidden entries only when the root itself is not hidden.
 		if skipHidden && path != initialPath && shouldSkip(path, ignorePatterns) {
-			if info.IsDir() {
+			if entry.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
@@ -151,7 +153,7 @@ func listDirectory(initialPath string, ignorePatterns []string, limit int) ([]st
 			if relErr != nil {
 				return nil
 			}
-			if info.IsDir() {
+			if entry.IsDir() {
 				relPath = relPath + string(filepath.Separator)
 			}
 			results = append(results, relPath)

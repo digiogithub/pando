@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
+
+	"github.com/digiogithub/pando/internal/fileutil"
 )
 
 // FileMatch is a file that matched a search query.
@@ -59,7 +61,7 @@ func SearchFiles(ctx context.Context, opts WalkOptions) ([]FileMatch, bool, erro
 	// Producer: walk the directory tree
 	go func() {
 		defer close(pathCh)
-		_ = filepath.WalkDir(opts.RootPath, func(path string, d fs.DirEntry, err error) error {
+		_ = fileutil.WalkFollowSymlinks(opts.RootPath, func(path string, d fs.DirEntry, err error) error {
 			if err != nil || ctx.Err() != nil {
 				return nil
 			}

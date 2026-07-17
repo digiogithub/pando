@@ -2,8 +2,8 @@ package filetree
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -44,8 +44,13 @@ type FilterResultsMsg struct {
 }
 
 type loadCandidate struct {
-	path  string
+	path string
+	// isDir is true for real directories and for symlinks resolving to one.
 	isDir bool
+	// isSymlink marks entries git cannot be asked about with a trailing slash:
+	// "git check-ignore" fails with "pathspec is beyond a symbolic link" and
+	// aborts the whole batch.
+	isSymlink bool
 }
 
 func LoadFileTree(projectPath string, opts LoadOptions) tea.Cmd {
@@ -61,6 +66,47 @@ func LoadFileTree(projectPath string, opts LoadOptions) tea.Cmd {
 	}
 }
 
+// LoadFileTreeExpanded reloads the tree from disk re-reading the children of
+// every directory the user had expanded, so a refresh (manual or automatic)
+// does not collapse the view back to the root level.
+func LoadFileTreeExpanded(projectPath string, opts LoadOptions, expanded map[string]bool, statuses map[string]GitFileStatus) tea.Cmd {
+	expandedCopy := cloneExpanded(expanded)
+	statusesCopy := cloneStatuses(statuses)
+	return func() tea.Msg {
+		root := NewRootNode(projectPath)
+		children, err := readDirectoryExpanded(projectPath, ".", 1, opts, expandedCopy, statusesCopy)
+		if err != nil {
+			return FileTreeRefreshMsg{Err: err}
+		}
+		root.Children = children
+		root.Loaded = true
+		return FileTreeRefreshMsg{Root: root}
+	}
+}
+
+func readDirectoryExpanded(projectPath, parentPath string, depth int, opts LoadOptions, expanded map[string]bool, statuses map[string]GitFileStatus) ([]*FileNode, error) {
+	nodes, err := readDirectory(projectPath, parentPath, depth, opts, statuses)
+	if err != nil {
+		return nil, err
+	}
+	for _, node := range nodes {
+		if !node.IsDir || !expanded[node.Path] {
+			continue
+		}
+		children, err := readDirectoryExpanded(projectPath, node.Path, depth+1, opts, expanded, statuses)
+		if err != nil {
+			// A directory that disappeared or became unreadable between the
+			// listing and the recursion is left collapsed rather than failing
+			// the whole refresh.
+			continue
+		}
+		node.Children = children
+		node.Loaded = true
+		node.SetExpanded(true)
+	}
+	return nodes, nil
+}
+
 func LoadChildren(projectPath, parentPath string, depth int, opts LoadOptions, statuses map[string]GitFileStatus) tea.Cmd {
 	statusesCopy := cloneStatuses(statuses)
 	return func() tea.Msg {
@@ -71,8 +117,7 @@ func LoadChildren(projectPath, parentPath string, depth int, opts LoadOptions, s
 
 func LoadGitStatus(projectPath string) tea.Cmd {
 	return func() tea.Msg {
-		statuses, err := loadGitStatuses(projectPath)
-		return GitStatusUpdateMsg{Statuses: statuses, Err: err}
+		return GitStatusUpdateMsg{Statuses: loadGitStatuses(projectPath)}
 	}
 }
 
@@ -102,13 +147,14 @@ func readDirectory(projectPath, parentPath string, depth int, opts LoadOptions, 
 		if !opts.ShowHidden && fileutil.SkipHidden(relPath) {
 			continue
 		}
-		candidates = append(candidates, loadCandidate{path: relPath, isDir: entry.IsDir()})
+		candidates = append(candidates, loadCandidate{
+			path:      relPath,
+			isDir:     fileutil.IsDirEntry(absDir, entry),
+			isSymlink: entry.Type()&fs.ModeSymlink != 0,
+		})
 	}
 
-	ignored, err := ignoredPaths(projectPath, candidates)
-	if err != nil {
-		return nil, err
-	}
+	ignored := ignoredPaths(projectPath, candidates)
 
 	nodes := make([]*FileNode, 0, len(candidates))
 	for _, entry := range entries {
@@ -120,8 +166,9 @@ func readDirectory(projectPath, parentPath string, depth int, opts LoadOptions, 
 			continue
 		}
 
-		node := NewFileNode(entry.Name(), relPath, entry.IsDir(), depth, statuses[relPath])
-		if entry.IsDir() {
+		isDir := fileutil.IsDirEntry(absDir, entry)
+		node := NewFileNode(entry.Name(), relPath, isDir, depth, statuses[relPath])
+		if isDir {
 			node.SetExpanded(false)
 		}
 		nodes = append(nodes, node)
@@ -201,19 +248,14 @@ func findChildByName(parent *FileNode, name, path string) *FileNode {
 	return nil
 }
 
-func loadGitStatuses(projectPath string) (map[string]GitFileStatus, error) {
+// loadGitStatuses reads the working-tree status. Like ignoredPaths it never
+// fails: git status is decoration, so a directory that is not a repository, a
+// missing git binary or any other git failure just means no status colors.
+func loadGitStatuses(projectPath string) map[string]GitFileStatus {
 	cmd := exec.Command("git", "-C", projectPath, "status", "--porcelain=v1", "--untracked-files=all")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			// Exit code 128 is git's fatal error code (includes "not a git repository").
-			// Also check the output string for resilience against locale differences.
-			if exitErr.ExitCode() == 128 || strings.Contains(strings.TrimSpace(string(output)), "not a git repository") {
-				return map[string]GitFileStatus{}, nil
-			}
-		}
-		return nil, fmt.Errorf("git status: %w", err)
+		return map[string]GitFileStatus{}
 	}
 
 	statuses := make(map[string]GitFileStatus)
@@ -232,7 +274,7 @@ func loadGitStatuses(projectPath string) (map[string]GitFileStatus, error) {
 		statuses[pathPart] = MergeGitStatus(statuses[pathPart], status)
 		propagateStatusToParents(statuses, pathPart, status)
 	}
-	return statuses, nil
+	return statuses
 }
 
 func parseGitStatus(code string) GitFileStatus {
@@ -262,10 +304,13 @@ func propagateStatusToParents(statuses map[string]GitFileStatus, relPath string,
 	statuses["."] = MergeGitStatus(statuses["."], status)
 }
 
-func ignoredPaths(projectPath string, candidates []loadCandidate) (map[string]bool, error) {
+// ignoredPaths asks git which of the candidates are .gitignore'd. It never
+// fails: when git cannot answer (not a repository, no git binary) nothing is
+// reported as ignored and the tree lists everything.
+func ignoredPaths(projectPath string, candidates []loadCandidate) map[string]bool {
 	ignored := make(map[string]bool)
 	if len(candidates) == 0 {
-		return ignored, nil
+		return ignored
 	}
 
 	input := make([]string, 0, len(candidates))
@@ -273,7 +318,11 @@ func ignoredPaths(projectPath string, candidates []loadCandidate) (map[string]bo
 	for _, candidate := range candidates {
 		lookup[candidate.path] = candidate.path
 		input = append(input, candidate.path)
-		if candidate.isDir {
+		// The trailing-slash form is what matches directory-only patterns such
+		// as "reports/", but git refuses it for a symlink ("pathspec is beyond a
+		// symbolic link") and that fatal aborts the whole batch, leaving every
+		// later candidate unchecked.
+		if candidate.isDir && !candidate.isSymlink {
 			withSlash := candidate.path + "/"
 			lookup[withSlash] = candidate.path
 			input = append(input, withSlash)
@@ -283,20 +332,18 @@ func ignoredPaths(projectPath string, candidates []loadCandidate) (map[string]bo
 	cmd := exec.Command("git", "-C", projectPath, "check-ignore", "--stdin")
 	cmd.Stdin = strings.NewReader(strings.Join(input, "\n") + "\n")
 	var stdout bytes.Buffer
-	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stderr = io.Discard
 	if err := cmd.Run(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			trimmed := strings.TrimSpace(stderr.String())
-			// Exit code 1: no files ignored (normal). Exit code 128: fatal git error
-			// (e.g. not a git repository). Both are non-error cases for the file tree.
-			if exitErr.ExitCode() == 1 || exitErr.ExitCode() == 128 || strings.Contains(trimmed, "not a git repository") {
-				return ignored, nil
-			}
-		}
-		return nil, fmt.Errorf("git check-ignore: %w", err)
+		// Only a clean exit is trustworthy. Exit 1 means nothing matched, exit
+		// 128 means this is not a repository or git hit a fatal, and a missing
+		// binary is not an error either — in every case the tree lists
+		// everything rather than applying .gitignore.
+		//
+		// Partial output must NOT be honored: a fatal aborts the batch midway,
+		// so the paths printed before it would be hidden while the ones after it
+		// stayed visible, making the tree depend on listing order.
+		return ignored
 	}
 
 	for _, line := range strings.Split(strings.TrimSpace(stdout.String()), "\n") {
@@ -308,7 +355,7 @@ func ignoredPaths(projectPath string, candidates []loadCandidate) (map[string]bo
 			ignored[original] = true
 		}
 	}
-	return ignored, nil
+	return ignored
 }
 
 func listSearchableFiles(projectPath string, opts LoadOptions) ([]string, error) {
@@ -347,7 +394,7 @@ func gitTrackedAndUntrackedFiles(projectPath string, opts LoadOptions) ([]string
 
 func walkFiles(projectPath string, opts LoadOptions) ([]string, error) {
 	files := make([]string, 0)
-	err := filepath.WalkDir(projectPath, func(path string, d fs.DirEntry, err error) error {
+	err := fileutil.WalkFollowSymlinks(projectPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -376,6 +423,17 @@ func walkFiles(projectPath string, opts LoadOptions) ([]string, error) {
 	}
 	sort.Strings(files)
 	return files, nil
+}
+
+func cloneExpanded(expanded map[string]bool) map[string]bool {
+	if len(expanded) == 0 {
+		return nil
+	}
+	cloned := make(map[string]bool, len(expanded))
+	for path, value := range expanded {
+		cloned[path] = value
+	}
+	return cloned
 }
 
 func cloneStatuses(statuses map[string]GitFileStatus) map[string]GitFileStatus {

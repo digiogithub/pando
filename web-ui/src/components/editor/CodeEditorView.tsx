@@ -44,10 +44,16 @@ async function buildFileTree(dirPath: string): Promise<FileNode[]> {
   return nodes
 }
 
+// How often the explorer re-reads the working directory so files the agent
+// creates or deletes show up without a manual refresh. Polling pauses while the
+// tab is hidden.
+const TREE_REFRESH_INTERVAL_MS = 3000
+
 export default function CodeEditorView() {
   const navigate = useNavigate()
   const { openFiles, activeFilePath, markFileSaved } = useEditorStore()
   const [files, setFiles] = useState<FileNode[]>([])
+  const [treeVersion, setTreeVersion] = useState(0)
   const [gitBranch, setGitBranch] = useState('main')
   const [explorerOpen, setExplorerOpen] = useState(() => window.innerWidth >= 768)
   const [saving, setSaving] = useState(false)
@@ -58,10 +64,32 @@ export default function CodeEditorView() {
     try {
       const tree = await buildFileTree('.')
       setFiles(tree)
+      // Bumping the version makes every expanded directory re-read its children.
+      setTreeVersion((v) => v + 1)
     } catch (err) {
       console.error('Failed to fetch file tree:', err)
     }
   }, [])
+
+  // Poll the tree while the explorer is open and the tab is visible, and refresh
+  // immediately when the tab regains focus after being hidden.
+  useEffect(() => {
+    if (!explorerOpen) return
+
+    const refreshIfVisible = () => {
+      if (document.hidden) return
+      fetchFiles()
+    }
+
+    const interval = window.setInterval(refreshIfVisible, TREE_REFRESH_INTERVAL_MS)
+    document.addEventListener('visibilitychange', refreshIfVisible)
+    window.addEventListener('focus', refreshIfVisible)
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', refreshIfVisible)
+      window.removeEventListener('focus', refreshIfVisible)
+    }
+  }, [explorerOpen, fetchFiles])
 
   useEffect(() => {
     fetchFiles()
@@ -254,6 +282,7 @@ export default function CodeEditorView() {
             <div className="editor-explorer-panel">
               <FileExplorer
                 files={files}
+                treeVersion={treeVersion}
                 onRefresh={fetchFiles}
                 onClose={() => setExplorerOpen(false)}
               />

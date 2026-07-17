@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -34,6 +35,18 @@ type Component interface {
 type FileSelectedMsg struct {
 	Path         string
 	RelativePath string
+}
+
+// autoRefreshInterval is how often the tree re-reads the working directory so
+// files created or removed outside the TUI (e.g. by the agent) show up without
+// a manual refresh.
+const autoRefreshInterval = 3 * time.Second
+
+// autoRefreshTickMsg drives the periodic re-read of the tree. seq identifies the
+// tick chain that produced it: only the newest one is honored, so a tick that
+// somehow gets delivered twice cannot fork into two self-perpetuating chains.
+type autoRefreshTickMsg struct {
+	seq int
 }
 
 // SetShowHiddenMsg requests the file tree to update its hidden-files visibility
@@ -75,6 +88,12 @@ type FileTree struct {
 	keyMap       KeyMap
 	loading      map[string]bool
 	lastErr      error
+	// rendered reports whether View was called since the last auto-refresh tick.
+	// It gates the periodic reload so a hidden tree (chat-only layout, another
+	// page) does not keep hitting the filesystem and git.
+	rendered bool
+	// tickSeq is the id of the live auto-refresh tick chain.
+	tickSeq int
 	// New file creation state
 	creatingFile   bool
 	newFileInput   textinput.Model
@@ -119,7 +138,17 @@ func (t *FileTree) Init() tea.Cmd {
 	return tea.Batch(
 		LoadFileTree(t.projectPath, LoadOptions{ShowHidden: t.showHidden}),
 		LoadGitStatus(t.projectPath),
+		t.scheduleAutoRefresh(),
 	)
+}
+
+// scheduleAutoRefresh starts a new tick chain and invalidates any previous one.
+func (t *FileTree) scheduleAutoRefresh() tea.Cmd {
+	t.tickSeq++
+	seq := t.tickSeq
+	return tea.Tick(autoRefreshInterval, func(time.Time) tea.Msg {
+		return autoRefreshTickMsg{seq: seq}
+	})
 }
 
 // ShowHidden reports whether hidden files/directories are currently shown.
@@ -142,11 +171,12 @@ func (t *FileTree) ToggleHidden() tea.Cmd {
 	return t.SetShowHidden(!t.showHidden)
 }
 
-// reload re-reads the tree from disk honoring the current showHidden flag and
-// re-applies the active fuzzy filter, if any.
+// reload re-reads the tree from disk honoring the current showHidden flag,
+// keeping the directories the user had expanded, and re-applies the active
+// fuzzy filter, if any.
 func (t *FileTree) reload() tea.Cmd {
 	cmds := []tea.Cmd{
-		LoadFileTree(t.projectPath, LoadOptions{ShowHidden: t.showHidden}),
+		LoadFileTreeExpanded(t.projectPath, LoadOptions{ShowHidden: t.showHidden}, t.expandedPaths(), t.gitStatuses),
 		LoadGitStatus(t.projectPath),
 	}
 	if t.filterQuery != "" {
@@ -155,21 +185,59 @@ func (t *FileTree) reload() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// expandedPaths collects the relative paths of every expanded directory so a
+// reload can restore the same open subtrees.
+func (t *FileTree) expandedPaths() map[string]bool {
+	expanded := make(map[string]bool)
+	var walk func(node *FileNode)
+	walk = func(node *FileNode) {
+		if node == nil {
+			return
+		}
+		if node.IsDir && node.IsExpanded && node.Path != "." {
+			expanded[node.Path] = true
+		}
+		for _, child := range node.Children {
+			walk(child)
+		}
+	}
+	walk(t.root)
+	return expanded
+}
+
 func (t *FileTree) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		return t, t.SetSize(msg.Width, msg.Height)
 	case SetShowHiddenMsg:
 		return t, t.SetShowHidden(msg.ShowHidden)
+	case autoRefreshTickMsg:
+		if msg.seq != t.tickSeq {
+			// Stale chain (a reschedule already happened): drop it.
+			return t, nil
+		}
+		// Only re-read when the tree is on screen and the user is not typing in
+		// the filter/new-file prompts, where a reload would fight the input.
+		reload := t.rendered && !t.filterMode && !t.creatingFile
+		if reload {
+			t.rendered = false
+		}
+		cmds := []tea.Cmd{t.scheduleAutoRefresh()}
+		if reload {
+			cmds = append(cmds, t.reload())
+		}
+		return t, tea.Batch(cmds...)
 	case FileTreeRefreshMsg:
 		if msg.Err != nil {
 			t.lastErr = msg.Err
 			return t, nil
 		}
 		if msg.Root != nil {
+			selectedPath := t.currentNodePath()
 			t.root = msg.Root
 			t.applyStatuses(t.root)
 			t.rebuildFlatList()
+			t.restoreCursor(selectedPath)
 		}
 		return t, nil
 	case LoadChildrenMsg:
@@ -194,7 +262,7 @@ func (t *FileTree) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		relPath = filepath.ToSlash(relPath)
 		t.selectedFile = msg.Path
 		return t, tea.Batch(
-			LoadFileTree(t.projectPath, LoadOptions{ShowHidden: t.showHidden}),
+			LoadFileTreeExpanded(t.projectPath, LoadOptions{ShowHidden: t.showHidden}, t.expandedPaths(), t.gitStatuses),
 			util.CmdHandler(FileSelectedMsg{Path: msg.Path, RelativePath: relPath}),
 		)
 	case GitStatusUpdateMsg:
@@ -266,10 +334,7 @@ func (t *FileTree) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		t.filterInput.SetValue(t.filterQuery)
 		return t, nil
 	case key.Matches(msg, t.keyMap.Refresh):
-		return t, tea.Batch(
-			LoadFileTree(t.projectPath, LoadOptions{ShowHidden: t.showHidden}),
-			LoadGitStatus(t.projectPath),
-		)
+		return t, t.reload()
 	case key.Matches(msg, t.keyMap.Up):
 		if t.cursor > 0 {
 			t.cursor--
@@ -375,6 +440,9 @@ func (t *FileTree) selectFile(node *FileNode) tea.Cmd {
 }
 
 func (t *FileTree) View() string {
+	// Mark the tree as on screen so the auto-refresh tick knows it is worth
+	// re-reading the working directory.
+	t.rendered = true
 	baseStyle := styles.BaseStyle().Width(max(0, t.width)).Height(max(0, t.height))
 	if t.width == 0 || t.height == 0 {
 		return ""
@@ -583,6 +651,31 @@ func (t *FileTree) currentNode() *FileNode {
 		return nil
 	}
 	return t.flatList[t.cursor]
+}
+
+// currentNodePath returns the path under the cursor, or "" when nothing is
+// selected.
+func (t *FileTree) currentNodePath() string {
+	if node := t.currentNode(); node != nil {
+		return node.Path
+	}
+	return ""
+}
+
+// restoreCursor puts the cursor back on path after the flat list was rebuilt,
+// so a refresh does not move the user's selection. When the path is gone the
+// cursor keeps its (clamped) position.
+func (t *FileTree) restoreCursor(path string) {
+	if path == "" {
+		return
+	}
+	for idx, node := range t.flatList {
+		if node.Path == path {
+			t.cursor = idx
+			t.ensureCursorVisible()
+			return
+		}
+	}
 }
 
 func (t *FileTree) currentRoot() *FileNode {
