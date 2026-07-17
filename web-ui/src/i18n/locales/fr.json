@@ -192,7 +192,8 @@
       "saveFailed": "Échec de l'enregistrement des paramètres d'accès",
       "deleteFailed": "Échec de la suppression de l'utilisateur",
       "revealFailed": "Échec de l'affichage du mot de passe"
-    }
+    },
+    "backToCategories": "Catégories"
   },
   "chat": {
     "agentDoneTitle": "Agent terminé",

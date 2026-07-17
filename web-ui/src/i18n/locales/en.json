@@ -192,7 +192,8 @@
       "saveFailed": "Failed to save access settings",
       "deleteFailed": "Failed to delete user",
       "revealFailed": "Failed to reveal password"
-    }
+    },
+    "backToCategories": "Categories"
   },
   "chat": {
     "agentDoneTitle": "Agent finished",

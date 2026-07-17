@@ -85,7 +85,7 @@ export default function ChatView() {
   }, [fetchSessions])
 
   return (
-    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden', position: 'relative' }}>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
       {/* New session FAB — visible only when sidebar is collapsed */}
       {!sidebarOpen && (

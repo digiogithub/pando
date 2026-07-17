@@ -21,7 +21,7 @@ import { useLSPStore } from '@/stores/lspStore'
 import { useOrchestratorStore } from '@/stores/orchestratorStore'
 import { useLayoutStore } from '@/stores/layoutStore'
 
-/** Width of the expanded panel; the collapsed state shrinks to a thin rail. */
+/** Width of the expanded panel, and of the floating tab left behind when collapsed. */
 const PANEL_WIDTH = 264
 const RAIL_WIDTH = 34
 
@@ -37,8 +37,10 @@ interface ChatInfoSidebarProps {
  * ChatInfoSidebar is the web-UI counterpart of the TUI chat info sidebar
  * (internal/tui/components/chat/sidebar.go): it shows the session title, token
  * usage and cost, live subagent counts, configured LSPs, the current plan and
- * the files modified during the session. It is collapsible and is rendered to
- * the right of both the advanced and the simple chat views.
+ * the files modified during the session. It is rendered to the right of both the
+ * advanced and the simple chat views: expanded it takes its own width on desktop
+ * and overlays the chat on mobile, collapsed it costs no width at all and leaves
+ * only a floating tab over the chat's top-right corner.
  */
 export default function ChatInfoSidebar({ plan = [] }: ChatInfoSidebarProps) {
   const { t } = useTranslation()
@@ -83,16 +85,14 @@ export default function ChatInfoSidebar({ plan = [] }: ChatInfoSidebarProps) {
 
   if (!infoSidebarOpen) {
     return (
-      <aside style={{ ...railStyle, width: RAIL_WIDTH }}>
-        <button
-          onClick={toggleInfoSidebar}
-          title={t('chat.info.show')}
-          aria-label={t('chat.info.show')}
-          style={toggleButtonStyle}
-        >
-          <FontAwesomeIcon icon={faAngleDoubleLeft} style={{ fontSize: 12 }} />
-        </button>
-      </aside>
+      <button
+        onClick={toggleInfoSidebar}
+        title={t('chat.info.show')}
+        aria-label={t('chat.info.show')}
+        style={railTabStyle}
+      >
+        <FontAwesomeIcon icon={faAngleDoubleLeft} style={{ fontSize: 12 }} />
+      </button>
     )
   }
 
@@ -107,7 +107,14 @@ export default function ChatInfoSidebar({ plan = [] }: ChatInfoSidebarProps) {
   const pct = contextWindow > 0 ? Math.min((totalTokens / contextWindow) * 100, 100) : 0
 
   return (
-    <aside style={{ ...panelStyle, width: PANEL_WIDTH }}>
+    <>
+      {/* Mobile backdrop — the panel turns into an overlay drawer below 768px. */}
+      <div
+        className="chat-info-backdrop"
+        onClick={toggleInfoSidebar}
+        style={{ display: 'none', position: 'absolute', inset: 0, zIndex: 99, background: 'rgba(0,0,0,0.4)' }}
+      />
+      <aside className="chat-info-panel" style={{ ...panelStyle, width: PANEL_WIDTH }}>
       {/* Header — session title + collapse control */}
       <div style={headerStyle}>
         <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -227,7 +234,35 @@ export default function ChatInfoSidebar({ plan = [] }: ChatInfoSidebarProps) {
           )}
         </Section>
       </div>
-    </aside>
+
+      <style>{`
+        @media (max-width: 768px) {
+          .chat-info-backdrop {
+            display: block !important;
+          }
+          /* Overlay the chat body instead of stealing width from it. Both chat
+             views mark the flex row that holds this panel as positioned. It
+             stops short of the bottom so the message input stays reachable. */
+          .chat-info-panel {
+            position: absolute !important;
+            top: 0 !important;
+            right: 0 !important;
+            bottom: auto !important;
+            max-height: 65% !important;
+            z-index: 100 !important;
+            width: min(280px, 85vw) !important;
+            border-bottom: 1px solid var(--border);
+            border-bottom-left-radius: var(--radius-sm, 4px);
+          }
+          /* The backdrop must not swallow taps on the input either. */
+          .chat-info-backdrop {
+            bottom: auto !important;
+            height: 65% !important;
+          }
+        }
+      `}</style>
+      </aside>
+    </>
   )
 }
 
@@ -297,13 +332,29 @@ const panelStyle: CSSProperties = {
   overflow: 'hidden',
 }
 
-const railStyle: CSSProperties = {
-  flexShrink: 0,
+/**
+ * Collapsed state: a small tab floating over the top-right corner of the chat
+ * instead of a rail in the flex flow, so the panel costs no chat width at all
+ * while it is hidden.
+ */
+const railTabStyle: CSSProperties = {
+  position: 'absolute',
+  top: '0.5rem',
+  right: 0,
+  zIndex: 10,
   display: 'flex',
+  alignItems: 'center',
   justifyContent: 'center',
-  paddingTop: '0.5rem',
-  background: 'var(--sidebar-bg, var(--bg-secondary))',
-  borderLeft: '1px solid var(--border)',
+  width: RAIL_WIDTH,
+  height: 26,
+  padding: 0,
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRight: 'none',
+  borderRadius: 'var(--radius-sm) 0 0 var(--radius-sm)',
+  boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+  cursor: 'pointer',
+  color: 'var(--fg-muted)',
 }
 
 const headerStyle: CSSProperties = {

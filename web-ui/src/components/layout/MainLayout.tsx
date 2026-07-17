@@ -152,7 +152,9 @@ export default function MainLayout() {
             z-index: 100 !important;
             width: min(280px, 85vw) !important;
           }
-          aside {
+          /* Only the nav drawer stretches; other asides (e.g. the chat info
+             panel) keep their own responsive rules. */
+          .sidebar-container aside {
             width: 100% !important;
           }
         }

@@ -192,7 +192,8 @@
       "saveFailed": "No se pudo guardar la configuración de acceso",
       "deleteFailed": "No se pudo eliminar el usuario",
       "revealFailed": "No se pudo mostrar la contraseña"
-    }
+    },
+    "backToCategories": "Categorías"
   },
   "chat": {
     "agentDoneTitle": "Agente terminado",

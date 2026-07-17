@@ -192,7 +192,8 @@
       "saveFailed": "Falha ao guardar as definições de acesso",
       "deleteFailed": "Falha ao eliminar o utilizador",
       "revealFailed": "Falha ao mostrar a palavra-passe"
-    }
+    },
+    "backToCategories": "Categorias"
   },
   "chat": {
     "agentDoneTitle": "Agente concluído",

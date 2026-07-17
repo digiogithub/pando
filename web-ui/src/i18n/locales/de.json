@@ -192,7 +192,8 @@
       "saveFailed": "Zugriffseinstellungen konnten nicht gespeichert werden",
       "deleteFailed": "Benutzer konnte nicht gelöscht werden",
       "revealFailed": "Passwort konnte nicht angezeigt werden"
-    }
+    },
+    "backToCategories": "Kategorien"
   },
   "chat": {
     "agentDoneTitle": "Agent beendet",

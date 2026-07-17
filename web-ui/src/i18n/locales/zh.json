@@ -192,7 +192,8 @@
       "saveFailed": "保存访问设置失败",
       "deleteFailed": "删除用户失败",
       "revealFailed": "显示密码失败"
-    }
+    },
+    "backToCategories": "分类"
   },
   "chat": {
     "agentDoneTitle": "代理已完成",

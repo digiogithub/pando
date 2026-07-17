@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faBars } from '@fortawesome/free-solid-svg-icons'
 import GeneralSettings from './GeneralSettings'
 import AgentsSettings from './AgentsSettings'
 import MCPServersSettings from './MCPServersSettings'
@@ -61,10 +64,34 @@ const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string }[
   { id: 'webui-access', labelKey: 'settings.categories.webuiAccess', group: 'services' },
 ]
 
+/** Below this width the view switches to a master/detail flow. */
+const MOBILE_QUERY = '(max-width: 768px)'
+
 export default function SettingsView() {
   const { t } = useTranslation()
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>('general')
   const { connect, disconnect } = useConfigEventsStore()
+
+  // Track the mobile breakpoint so the category list and the section can take
+  // turns owning the full width instead of splitting it.
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia(MOBILE_QUERY).matches)
+  useEffect(() => {
+    const mql = window.matchMedia(MOBILE_QUERY)
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [])
+
+  // Mobile only: the category list is the landing screen; picking a category
+  // swaps it for the section, which offers a control to bring the list back.
+  const [menuOpen, setMenuOpen] = useState(true)
+  const showMenu = !isMobile || menuOpen
+  const showContent = !isMobile || !menuOpen
+
+  const selectCategory = (id: SettingsCategory) => {
+    setActiveCategory(id)
+    setMenuOpen(false)
+  }
 
   // Connect to the config hot-reload SSE stream while this view is mounted.
   useEffect(() => {
@@ -74,13 +101,14 @@ export default function SettingsView() {
 
   return (
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-      {/* Mini sidebar */}
+      {/* Category list — mini sidebar on desktop, full-width menu on mobile */}
+      {showMenu && (
       <nav
         style={{
-          width: 180,
+          width: isMobile ? '100%' : 180,
           flexShrink: 0,
           background: 'var(--sidebar-bg)',
-          borderRight: '1px solid var(--border)',
+          borderRight: isMobile ? 'none' : '1px solid var(--border)',
           display: 'flex',
           flexDirection: 'column',
           padding: '1rem 0',
@@ -92,7 +120,7 @@ export default function SettingsView() {
           return (
             <button
               key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
+              onClick={() => selectCategory(cat.id)}
               style={{
                 display: 'block',
                 width: '100%',
@@ -148,7 +176,7 @@ export default function SettingsView() {
           return (
             <button
               key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
+              onClick={() => selectCategory(cat.id)}
               style={{
                 display: 'block',
                 width: '100%',
@@ -184,16 +212,25 @@ export default function SettingsView() {
           )
         })}
       </nav>
+      )}
 
       {/* Content area */}
+      {showContent && (
       <div
         style={{
           flex: 1,
+          minWidth: 0,
           overflowY: 'auto',
-          padding: '2rem',
+          padding: isMobile ? '1rem' : '2rem',
           background: 'var(--bg)',
         }}
       >
+        {isMobile && (
+          <button onClick={() => setMenuOpen(true)} style={backButtonStyle}>
+            <FontAwesomeIcon icon={faBars} style={{ fontSize: 12 }} />
+            {t('settings.backToCategories')}
+          </button>
+        )}
         {activeCategory === 'general' && <GeneralSettings />}
         {activeCategory === 'providers' && <ProviderAccountsSettings />}
         {activeCategory === 'agents' && <AgentsSettings />}
@@ -213,6 +250,22 @@ export default function SettingsView() {
         {activeCategory === 'api-server' && <APIServerSettings />}
         {activeCategory === 'webui-access' && <WebUIAccessSettings />}
       </div>
+      )}
     </div>
   )
+}
+
+const backButtonStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.5rem',
+  marginBottom: '1rem',
+  padding: '0.4rem 0.7rem',
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-sm)',
+  color: 'var(--fg-muted)',
+  fontSize: 13,
+  fontFamily: 'inherit',
+  cursor: 'pointer',
 }

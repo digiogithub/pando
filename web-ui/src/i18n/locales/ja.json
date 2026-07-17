@@ -192,7 +192,8 @@
       "saveFailed": "アクセス設定の保存に失敗しました",
       "deleteFailed": "ユーザーの削除に失敗しました",
       "revealFailed": "パスワードの表示に失敗しました"
-    }
+    },
+    "backToCategories": "カテゴリ"
   },
   "chat": {
     "agentDoneTitle": "エージェント完了",
