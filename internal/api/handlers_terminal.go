@@ -115,12 +115,32 @@ func resolveShellFromConfig() (string, []string) {
 		if shell := strings.TrimSpace(cfg.Shell.Path); shell != "" {
 			args := append([]string(nil), cfg.Shell.Args...)
 			if len(args) == 0 {
-				args = []string{"-i", "-c"}
+				args = defaultShellExecArgs()
 			}
 			return shell, args
 		}
 	}
 	return "", nil
+}
+
+// defaultShellExecArgs returns the flags used to run a one-shot command.
+// The web terminal runs the shell without a PTY, so it must not be interactive:
+// an interactive shell without a controlling terminal tries to grab job control
+// and gets stopped by SIGTTOU (notably zsh on macOS). "-l" still sources the
+// user's login profile so PATH matches what they see in a real terminal.
+func defaultShellExecArgs() []string {
+	return []string{"-l", "-c"}
+}
+
+// ensureCommandFlag guarantees the shell receives the command through "-c",
+// even when the configured Shell.Args only carry profile flags such as "-l".
+func ensureCommandFlag(args []string) []string {
+	for _, arg := range args {
+		if arg == "-c" {
+			return args
+		}
+	}
+	return append(args, "-c")
 }
 
 func choosePreferredShell() string {
@@ -148,9 +168,9 @@ func choosePreferredShell() string {
 
 func shellCommandForExec() (string, []string) {
 	if shell, args := resolveShellFromConfig(); shell != "" {
-		return shell, args
+		return shell, ensureCommandFlag(args)
 	}
-	return choosePreferredShell(), []string{"-i", "-c"}
+	return choosePreferredShell(), defaultShellExecArgs()
 }
 
 func buildShellEnv(base []string) []string {
