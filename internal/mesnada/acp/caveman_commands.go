@@ -8,7 +8,7 @@ import (
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
-// processCavemanCommand handles `/caveman [lite|full|ultra|wenyan]`. With no
+// processCavemanCommand handles `/caveman [lite|full|ultra]`. With no
 // argument it defaults to full. It is a synchronous control command (no agent
 // turn): it sets the per-session output-brevity level and reports the result.
 func (a *PandoACPAgent) processCavemanCommand(acpSession *ACPServerSession, arg string) (acpsdk.StopReason, error) {

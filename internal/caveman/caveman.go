@@ -1,6 +1,6 @@
 // Package caveman implements an output-brevity policy that can be injected into
-// the agent's system prompt before each turn, at four levels (lite/full/ultra/
-// wenyan) plus an off switch.
+// the agent's system prompt before each turn, at three levels (lite/full/ultra)
+// plus an off switch.
 //
 // It is a Pando-owned re-implementation of the idea behind the caveman skill by
 // Julius Brussee (https://github.com/juliusbrussee/caveman, MIT licensed): the
@@ -28,8 +28,6 @@ const (
 	ModeFull Mode = "full"
 	// ModeUltra is maximally terse: answer only, near-telegraphic.
 	ModeUltra Mode = "ultra"
-	// ModeWenyan renders natural-language prose in Classical Chinese.
-	ModeWenyan Mode = "wenyan"
 )
 
 // IsActive reports whether the mode injects anything.
@@ -54,8 +52,6 @@ func ParseMode(input string) (Mode, bool) {
 		return ModeFull, true
 	case "ultra":
 		return ModeUltra, true
-	case "wenyan":
-		return ModeWenyan, true
 	case "off", "stop", "normal", "none", "disable", "disabled":
 		return ModeOff, true
 	default:
@@ -72,8 +68,6 @@ func Description(m Mode) string {
 		return "Terse by default. Conclusions and fragments, no unrequested explanation."
 	case ModeUltra:
 		return "Maximum brevity. The answer and nothing around it."
-	case ModeWenyan:
-		return "Prose in Classical Chinese (文言文). Code, commands, paths and errors stay verbatim."
 	default:
 		return "Disabled."
 	}
@@ -89,15 +83,15 @@ const SettingDescription = "Reduces output-token usage by giving shorter explana
 // SettingOptions lists the selectable values for the global default, in the
 // order the settings surfaces present them.
 func SettingOptions() []string {
-	return []string{ModeOff.String(), string(ModeLite), string(ModeFull), string(ModeUltra), string(ModeWenyan)}
+	return []string{ModeOff.String(), string(ModeLite), string(ModeFull), string(ModeUltra)}
 }
 
 // Usage is the one-liner shown when /caveman gets an unsupported level.
-const Usage = "Usage: /caveman [lite|full|ultra|wenyan]\nNo argument defaults to full. Use /caveman-finish to disable."
+const Usage = "Usage: /caveman [lite|full|ultra]\nNo argument defaults to full. Use /caveman-finish to disable."
 
 // FinishUsage is shown when /caveman-finish is given an argument: the command
 // takes no level, and silently ignoring one would hide the user's mistake.
-const FinishUsage = "Usage: /caveman-finish\nIt takes no level. To change level, use /caveman [lite|full|ultra|wenyan]."
+const FinishUsage = "Usage: /caveman-finish\nIt takes no level. To change level, use /caveman [lite|full|ultra]."
 
 // DisabledMessage confirms /caveman-finish.
 const DisabledMessage = "Caveman output brevity disabled. Back to normal output."
@@ -120,7 +114,7 @@ Write less. Say the same thing. This constrains how you WRITE, never how you
 think, search, plan, use tools, test or verify. Do the full job; report it short.
 
 ACTIVE EVERY RESPONSE, including follow-ups. Off only with ` + "`/caveman-finish`" + `.
-Switch level: ` + "`/caveman lite|full|ultra|wenyan`" + `.
+Switch level: ` + "`/caveman lite|full|ultra`" + `.
 
 ## Cut
 - Greetings, sign-offs, self-narration ("I'll now...", "Let me...", "Great question").
@@ -162,11 +156,6 @@ The answer and nothing else. Telegraphic. Drop articles and connectives where th
 meaning survives. No context unless the user cannot act without it.
 
 Example: "Fixed: nil deref parseConfig:42. Tests pass."`,
-	ModeWenyan: `## Level: wenyan
-Render natural-language prose in Classical Chinese (文言文), terse and formal.
-This applies ONLY to prose. Code, commands, file paths, URLs, configuration,
-error text and test output stay verbatim in their original form. If the user asks
-for another language explicitly, that request wins.`,
 }
 
 // Instructions returns the full caveman policy to inject for the given mode, or

@@ -465,7 +465,7 @@ export interface SettingsConfig {
   nerd_fonts: boolean
   llm_cache_enabled: boolean
   output_filter_enabled: boolean        // RTK-style command-output compression (inverse of Bash.OutputFilterDisabled)
-  caveman_default_mode: string          // output brevity default: '' (off) | 'lite' | 'full' | 'ultra' | 'wenyan'
+  caveman_default_mode: string          // output brevity default: '' (off) | 'lite' | 'full' | 'ultra'
   evaluator_enabled: boolean
   judge_model: string
   tool_discovery_enabled: boolean

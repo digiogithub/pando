@@ -57,7 +57,7 @@ func TestBuildTokenOptimizationSectionExposesCaveman(t *testing.T) {
 	if field.Value != "ultra" {
 		t.Errorf("field value = %q, want %q", field.Value, "ultra")
 	}
-	if want := []string{"off", "lite", "full", "ultra", "wenyan"}; strings.Join(field.Options, ",") != strings.Join(want, ",") {
+	if want := []string{"off", "lite", "full", "ultra"}; strings.Join(field.Options, ",") != strings.Join(want, ",") {
 		t.Errorf("options = %v, want %v", field.Options, want)
 	}
 	// The output-only caveat must be visible; brevity never buys speed at the
@@ -128,10 +128,10 @@ func TestPersistSettingRoutesCavemanKey(t *testing.T) {
 
 	// The caveman branch dispatches on the key alone; the app is only needed by
 	// other setting groups.
-	if err := persistSetting(nil, settings.Field{Key: "caveman.defaultMode", Value: "wenyan"}); err != nil {
+	if err := persistSetting(nil, settings.Field{Key: "caveman.defaultMode", Value: "ultra"}); err != nil {
 		t.Fatalf("persistSetting: %v", err)
 	}
-	if got := config.Get().CavemanDefaultMode(); got != "wenyan" {
-		t.Errorf("default = %q, want %q", got, "wenyan")
+	if got := config.Get().CavemanDefaultMode(); got != "ultra" {
+		t.Errorf("default = %q, want %q", got, "ultra")
 	}
 }

@@ -69,7 +69,6 @@ export default function GeneralSettings() {
     { value: 'lite', label: 'Lite' },
     { value: 'full', label: 'Full' },
     { value: 'ultra', label: 'Ultra' },
-    { value: 'wenyan', label: 'Wenyan (文言文)' },
   ]
 
   return (

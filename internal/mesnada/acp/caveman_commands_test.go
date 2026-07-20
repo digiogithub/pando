@@ -31,7 +31,7 @@ func TestParseCavemanSlashCommands(t *testing.T) {
 	}{
 		{input: "/caveman", wantKind: slashCommandCaveman},
 		{input: "/caveman ultra", wantKind: slashCommandCaveman, wantLevel: "ultra"},
-		{input: "/caveman wenyan", wantKind: slashCommandCaveman, wantLevel: "wenyan"},
+		{input: "/caveman lite", wantKind: slashCommandCaveman, wantLevel: "lite"},
 		{input: "/caveman-finish", wantKind: slashCommandCavemanFinish},
 		// A stray argument must survive parsing so the handler can reject it
 		// instead of silently disabling the mode.
@@ -102,12 +102,12 @@ func TestPandoACPAgent_HandleSlashCavemanSetsAndClearsLevel(t *testing.T) {
 		t.Fatalf("expected full by default, got %q", got)
 	}
 
-	// /caveman wenyan → the explicit opt-in level is accepted.
-	if _, err := agent.handleSlashCommand(ctx, sessionID, acpSession, slashCommand{Kind: slashCommandCaveman, Objective: "wenyan"}); err != nil {
-		t.Fatalf("handleSlashCommand(wenyan) failed: %v", err)
+	// /caveman ultra → the explicit level is accepted.
+	if _, err := agent.handleSlashCommand(ctx, sessionID, acpSession, slashCommand{Kind: slashCommandCaveman, Objective: "ultra"}); err != nil {
+		t.Fatalf("handleSlashCommand(ultra) failed: %v", err)
 	}
-	if got := mockAgent.cavemanModes[sid]; got != "wenyan" {
-		t.Fatalf("expected wenyan stored, got %q", got)
+	if got := mockAgent.cavemanModes[sid]; got != "ultra" {
+		t.Fatalf("expected ultra stored, got %q", got)
 	}
 
 	// /caveman-finish → clears.
@@ -133,7 +133,7 @@ func TestPandoACPAgent_HandleSlashCavemanRejectsUnknownLevel(t *testing.T) {
 	if _, ok := mockAgent.cavemanModes[acpSession.PandoSessionID()]; ok {
 		t.Fatal("an unknown level must not change the session state")
 	}
-	if usage := slashCommandUsage(slashCommandCaveman); !strings.Contains(usage, "/caveman [lite|full|ultra|wenyan]") {
+	if usage := slashCommandUsage(slashCommandCaveman); !strings.Contains(usage, "/caveman [lite|full|ultra]") {
 		t.Errorf("expected /caveman to expose its usage, got %q", usage)
 	}
 }

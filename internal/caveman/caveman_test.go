@@ -13,7 +13,7 @@ func TestParseMode(t *testing.T) {
 		"lite":     {ModeLite, true},
 		"FULL":     {ModeFull, true},
 		" ultra ":  {ModeUltra, true},
-		"Wenyan":   {ModeWenyan, true},
+		"wenyan":   {ModeOff, false},
 		"off":      {ModeOff, true},
 		"stop":     {ModeOff, true},
 		"normal":   {ModeOff, true},
@@ -36,7 +36,7 @@ func TestIsActiveAndString(t *testing.T) {
 	if got := ModeOff.String(); got != "off" {
 		t.Errorf("ModeOff.String() = %q, want \"off\"", got)
 	}
-	for _, m := range []Mode{ModeLite, ModeFull, ModeUltra, ModeWenyan} {
+	for _, m := range []Mode{ModeLite, ModeFull, ModeUltra} {
 		if !m.IsActive() {
 			t.Errorf("%v must be active", m)
 		}
@@ -50,7 +50,7 @@ func TestDescription(t *testing.T) {
 	if got := Description(ModeOff); got != "Disabled." {
 		t.Errorf("Description(off) = %q", got)
 	}
-	for _, m := range []Mode{ModeLite, ModeFull, ModeUltra, ModeWenyan} {
+	for _, m := range []Mode{ModeLite, ModeFull, ModeUltra} {
 		if strings.TrimSpace(Description(m)) == "" {
 			t.Errorf("Description(%v) is empty", m)
 		}
@@ -64,7 +64,7 @@ func TestInstructionsOffIsEmpty(t *testing.T) {
 }
 
 func TestInstructionsIncludesCommonAndLevel(t *testing.T) {
-	for _, m := range []Mode{ModeLite, ModeFull, ModeUltra, ModeWenyan} {
+	for _, m := range []Mode{ModeLite, ModeFull, ModeUltra} {
 		got := Instructions(m)
 		if !strings.Contains(got, "Output brevity mode") {
 			t.Errorf("Instructions(%v) missing common policy", m)
@@ -89,15 +89,5 @@ func TestInstructionsPreserveSafetyGuarantees(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("Instructions(ultra) missing guarantee %q", want)
 		}
-	}
-}
-
-func TestWenyanKeepsCodeVerbatim(t *testing.T) {
-	got := Instructions(ModeWenyan)
-	if !strings.Contains(got, "Classical Chinese") {
-		t.Error("wenyan level must name Classical Chinese")
-	}
-	if !strings.Contains(got, "stay verbatim") {
-		t.Error("wenyan level must keep code/commands verbatim")
 	}
 }

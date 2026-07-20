@@ -131,13 +131,13 @@ func TestPutSettingsRejectsUnknownCavemanMode(t *testing.T) {
 // A settings save that carries no caveman field must leave the level alone:
 // the Web UI PUTs the whole settings object for unrelated changes too.
 func TestPutSettingsWithoutCavemanFieldKeepsDefault(t *testing.T) {
-	server, _ := withCavemanSettings(t, "wenyan")
+	server, _ := withCavemanSettings(t, "ultra")
 
 	rec := putSettings(t, server, `{"debug":true}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if got := config.Get().CavemanDefaultMode(); got != "wenyan" {
-		t.Errorf("default = %q, want %q", got, "wenyan")
+	if got := config.Get().CavemanDefaultMode(); got != "ultra" {
+		t.Errorf("default = %q, want %q", got, "ultra")
 	}
 }

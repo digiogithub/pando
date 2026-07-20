@@ -19,7 +19,7 @@ func TestCavemanDefaultMode(t *testing.T) {
 		{"lite", "lite"},
 		{"FULL", "full"},
 		{" ultra ", "ultra"},
-		{"wenyan", "wenyan"},
+		{"wenyan", ""},
 		{"bogus", ""},
 	}
 	for _, tc := range cases {

@@ -3124,7 +3124,7 @@ func saveCaveman(field settings.Field) error {
 	case "caveman.defaultMode":
 		mode, ok := caveman.ParseMode(field.Value)
 		if !ok {
-			return fmt.Errorf("invalid caveman mode %q: must be one of off, lite, full, ultra, wenyan", field.Value)
+			return fmt.Errorf("invalid caveman mode %q: must be one of off, lite, full, ultra", field.Value)
 		}
 		cavemanCfg := cfg.Caveman
 		// ModeOff is the empty string, which is how "no default" is stored.

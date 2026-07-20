@@ -1012,7 +1012,7 @@ func (c *Config) PonytailDefaultMode() string {
 type CavemanConfig struct {
 	// DefaultMode is the output-brevity level applied to new sessions that have
 	// not explicitly chosen one via /caveman. Valid values: "lite", "full",
-	// "ultra", "wenyan", or "off"/empty (disabled, the default).
+	// "ultra", or "off"/empty (disabled, the default).
 	DefaultMode string `json:"defaultMode,omitempty" toml:"DefaultMode"`
 }
 
@@ -1029,8 +1029,6 @@ func (c *Config) CavemanDefaultMode() string {
 		return "full"
 	case "ultra":
 		return "ultra"
-	case "wenyan":
-		return "wenyan"
 	default:
 		return ""
 	}
@@ -4425,10 +4423,10 @@ func UpdateCaveman(cm CavemanConfig) error {
 	switch raw {
 	case "", "off":
 		cm.DefaultMode = ""
-	case "lite", "full", "ultra", "wenyan":
+	case "lite", "full", "ultra":
 		cm.DefaultMode = raw
 	default:
-		return fmt.Errorf("invalid caveman default mode %q: must be one of off, lite, full, ultra, wenyan", cm.DefaultMode)
+		return fmt.Errorf("invalid caveman default mode %q: must be one of off, lite, full, ultra", cm.DefaultMode)
 	}
 
 	old := cfg.Caveman

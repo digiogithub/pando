@@ -20,7 +20,7 @@ Pando is a Go-based CLI application that brings AI assistance to your terminal. 
 - **Session Management**: Save and manage multiple conversation sessions
 - **Tool Integration**: AI can execute commands, search files, and modify code
 - **Output Compression (token reduction)**: RTK-style filtering of verbose command output (test runners, builds, installers, linters) before it reaches the model — typically 60-90% fewer tokens. Declarative, hot-reloadable TOML filters plus native structured parsers (`go test -json`, `golangci-lint`, `tsc`). Fail-safe and on by default; never drops errors. Add project-local filters in `.pando/filters.toml` and validate them with `pando filter test`. See [docs/output-filters.md](docs/output-filters.md).
-- **Caveman Output Brevity (opt-in output-token reduction)**: `/caveman [lite|full|ultra|wenyan]` makes Pando answer with fewer words — no filler, no restatement, no redundant summaries — while code, commands, errors, test output, reasoning quality, tool use and verification stay intact. `/caveman-finish` ends it for the session, and `[Caveman] DefaultMode` sets a global default. Off by default; it reduces output tokens only. See [Caveman output brevity](#caveman-output-brevity-opt-in).
+- **Caveman Output Brevity (opt-in output-token reduction)**: `/caveman [lite|full|ultra]` makes Pando answer with fewer words — no filler, no restatement, no redundant summaries — while code, commands, errors, test output, reasoning quality, tool use and verification stay intact. `/caveman-finish` ends it for the session, and `[Caveman] DefaultMode` sets a global default. Off by default; it reduces output tokens only. See [Caveman output brevity](#caveman-output-brevity-opt-in).
 - **Superpowers Mode (opt-in workflow discipline)**: `/superpowers` routes long or risky work through explicit gates — understand, design and get approval, write a risk-ordered plan, implement test-first, verify with real command output — and `/superpowers-finish` closes it with a verified report. Per-session and off by default; it never performs a git operation on its own. See [Built-in Slash Commands](#built-in-slash-commands).
 - **Learning Mode (opt-in knowledge capture)**: `/learning` makes Pando lean on its knowledge base and memory — recover prior context before acting, ask you the questions that matter, document what it discovers, and mark superseded docs outdated instead of leaving stale ones behind. `/learning-finish` consolidates what was learned back into the KB. Per-session, off by default, and never a git side effect. See [Built-in Slash Commands](#built-in-slash-commands).
 - **Vim-like Editor**: Integrated editor with text input capabilities
@@ -444,7 +444,7 @@ Available in the TUI, the Web UI and over ACP (editors like Zed or VS Code):
 | `/compact` (alias `/summarize`) | Summarize and compact the current session |
 | `/db-compact` | VACUUM the database and reclaim free space |
 | `/ponytail [lite\|full\|ultra\|off]` | Toggle "lazy senior developer" mode (build less, keep the diff short) |
-| `/caveman [lite\|full\|ultra\|wenyan]` | Answer with fewer words to spend fewer output tokens (see below) |
+| `/caveman [lite\|full\|ultra]` | Answer with fewer words to spend fewer output tokens (see below) |
 | `/caveman-finish` | Return the session to normal output length |
 | `/superpowers [objective]` | Enable the disciplined development workflow (see below) |
 | `/superpowers-finish` | Verify, report, and return to normal mode |
@@ -465,23 +465,22 @@ root-cause evidence, test commands and their results, or safety caveats in order
 shorter, and it does not reduce reasoning, tool use or verification. If you ask for a detailed
 explanation, you get one: a direct request always beats the brevity preference.
 
-Four levels, from mild to extreme:
+Three levels, from mild to extreme:
 
 | Level | What it does |
 | --- | --- |
 | `lite` | Normal sentences, fewer of them: filler and restatement removed |
 | `full` | Fragments over sentences: the answer, then a few lines of what matters (a bare `/caveman` picks this) |
 | `ultra` | Telegraphic: the answer and nothing around it |
-| `wenyan` | Renders natural-language prose in Classical Chinese (文言文); code, commands, paths and errors stay verbatim |
 
-Replies stay in your language, except under `wenyan`, which is an explicit opt-in.
+Replies stay in your language.
 
 Set a global default for sessions that have not chosen a level, from the TUI/Web UI settings
 (`Token Optimization → Caveman Output Brevity`) or in config:
 
 ```toml
 [Caveman]
-DefaultMode = ''   # default (off); or 'lite', 'full', 'ultra', 'wenyan'
+DefaultMode = ''   # default (off); or 'lite', 'full', 'ultra'
 ```
 
 Scope and precedence, from strongest to weakest: **your direct instructions and project rules**

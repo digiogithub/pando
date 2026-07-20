@@ -98,7 +98,7 @@ func slashCommandSpecs() []slashCommandSpec {
 			Token:       cavemanCommandToken,
 			Kind:        slashCommandCaveman,
 			Description: "Shorter answers to cut output tokens (code, commands and verification stay intact)",
-			InputHint:   "lite | full | ultra | wenyan",
+			InputHint:   "lite | full | ultra",
 			Usage:       caveman.Usage,
 		},
 		{

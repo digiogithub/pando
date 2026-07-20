@@ -34,7 +34,7 @@ type SettingsResponse struct {
 	// command-output compression. True means compression is on (the default).
 	OutputFilterEnabled bool `json:"output_filter_enabled"`
 	// CavemanDefaultMode is the global output-brevity default ("" = off, or
-	// lite|full|ultra|wenyan). Sessions that ran /caveman keep their own choice.
+	// lite|full|ultra). Sessions that ran /caveman keep their own choice.
 	CavemanDefaultMode string `json:"caveman_default_mode"`
 
 	ToolDiscoveryEnabled        bool   `json:"tool_discovery_enabled"`
@@ -317,7 +317,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		if raw := strings.TrimSpace(*req.CavemanDefaultMode); raw != "" {
 			parsed, ok := caveman.ParseMode(raw)
 			if !ok {
-				writeError(w, http.StatusBadRequest, "invalid caveman_default_mode (expected off, lite, full, ultra or wenyan)")
+				writeError(w, http.StatusBadRequest, "invalid caveman_default_mode (expected off, lite, full or ultra)")
 				return
 			}
 			mode = parsed

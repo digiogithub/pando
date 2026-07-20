@@ -212,7 +212,7 @@ func TestCavemanComposesBetweenSuperpowersAndPonytail(t *testing.T) {
 
 func TestCavemanConcurrentSessionsAreIsolated(t *testing.T) {
 	var wg sync.WaitGroup
-	modes := []caveman.Mode{caveman.ModeLite, caveman.ModeFull, caveman.ModeUltra, caveman.ModeWenyan}
+	modes := []caveman.Mode{caveman.ModeLite, caveman.ModeFull, caveman.ModeUltra}
 	for i, m := range modes {
 		sid := fmt.Sprintf("sess-caveman-conc-%d", i)
 		t.Cleanup(func() { cavemanModes.Delete(sid) })

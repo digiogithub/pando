@@ -1345,7 +1345,7 @@ func (p *ChatPageModel) handlePonytailCommand(input string) (tea.Cmd, bool) {
 	return util.ReportInfo("Ponytail mode disabled. Back to normal."), true
 }
 
-// handleCavemanCommand handles /caveman [lite|full|ultra|wenyan] and
+// handleCavemanCommand handles /caveman [lite|full|ultra] and
 // /caveman-finish. No argument defaults to full. Both are synchronous (a toast,
 // no agent turn); the level takes effect on the next turn via prompt injection.
 func (p *ChatPageModel) handleCavemanCommand(input string) (tea.Cmd, bool) {
@@ -1374,7 +1374,7 @@ func (p *ChatPageModel) handleCavemanCommand(input string) (tea.Cmd, bool) {
 	}
 	mode, ok := caveman.ParseMode(arg)
 	if !ok {
-		return util.ReportWarn("Unknown caveman level: " + arg + ". Use lite|full|ultra|wenyan."), true
+		return util.ReportWarn("Unknown caveman level: " + arg + ". Use lite|full|ultra."), true
 	}
 	agentpkg.SetCavemanMode(p.session.ID, mode)
 	return util.ReportInfo(caveman.ActivationMessage(mode)), true
