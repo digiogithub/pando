@@ -33,6 +33,9 @@ func BuiltinCommands() []SlashCommand {
 		{Name: "learning", Description: "Enable learner mode: read the KB more, document discoveries, ask questions, keep docs current", AcceptsArgs: true},
 		{Name: "learning-finish", Description: "Consolidate what was learned into KB/memory and return to normal mode", AcceptsArgs: false},
 		{Name: "improve-agents-md", Description: "Create or reinforce AGENTS.md with the mandatory AI-agent operating rules", AcceptsArgs: true},
+		{Name: "vulnhunt", Description: "Adversarial security audit: trace attacker input to sinks and report exploitable vulnerabilities", AcceptsArgs: true},
+		{Name: "vulnhunter-fix", Description: "Test-driven remediation of confirmed vulnerabilities (exploit -> failing test -> fix -> verify)", AcceptsArgs: true},
+		{Name: "vulnhunt-fix-verify", Description: "Read-only independent verification of claimed security fixes, per-finding verdict", AcceptsArgs: true},
 	}
 }
 

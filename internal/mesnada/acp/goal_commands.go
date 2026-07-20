@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/agentsmd"
+	"github.com/digiogithub/pando/internal/vulnhunter"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
@@ -80,6 +81,12 @@ func (a *PandoACPAgent) handleSlashCommand(
 		return a.processLearningFinishCommand(ctx, acpSession)
 	case slashCommandImproveAgentsMd:
 		return a.processImproveAgentsMdCommand(ctx, acpSession, command.Objective)
+	case slashCommandVulnhunt:
+		return a.processVulnhunterCommand(ctx, acpSession, "Starting security audit (vulnhunt)...", vulnhunter.HuntPrompt(command.Objective))
+	case slashCommandVulnhunterFix:
+		return a.processVulnhunterCommand(ctx, acpSession, "Starting test-driven remediation (vulnhunter-fix)...", vulnhunter.FixPrompt(command.Objective))
+	case slashCommandVulnhuntFixVerify:
+		return a.processVulnhunterCommand(ctx, acpSession, "Verifying claimed security fixes (vulnhunt-fix-verify)...", vulnhunter.VerifyPrompt(command.Objective))
 	default:
 		return acpsdk.StopReasonEndTurn, nil
 	}
@@ -170,6 +177,18 @@ func (a *PandoACPAgent) processImproveAgentsMdCommand(ctx context.Context, acpSe
 		return "", err
 	}
 	return a.processPromptWithAgent(ctx, acpSession, agentsmd.Prompt(extra))
+}
+
+// processVulnhunterCommand runs a normal agent turn whose task is one of the
+// security-audit workflows (/vulnhunt, /vulnhunter-fix, /vulnhunt-fix-verify).
+// The slash command has already been expanded into the full workflow prompt; this
+// sends a short intro line and streams the resulting agent turn back to the
+// client, exactly like /improve-agents-md.
+func (a *PandoACPAgent) processVulnhunterCommand(ctx context.Context, acpSession *ACPServerSession, intro, prompt string) (acpsdk.StopReason, error) {
+	if err := a.sendAgentText(acpSession, intro); err != nil {
+		return "", err
+	}
+	return a.processPromptWithAgent(ctx, acpSession, prompt)
 }
 
 func (a *PandoACPAgent) processSummarizeCommand(ctx context.Context, acpSession *ACPServerSession) (acpsdk.StopReason, error) {

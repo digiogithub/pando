@@ -54,6 +54,9 @@ const (
 	cavemanFinishCommandToken         = "caveman-finish"
 	learningCommandToken              = "learning"
 	learningFinishCommandToken        = "learning-finish"
+	vulnhuntCommandToken              = "vulnhunt"
+	vulnhunterFixCommandToken         = "vulnhunter-fix"
+	vulnhuntFixVerifyCommandToken     = "vulnhunt-fix-verify"
 )
 
 const (

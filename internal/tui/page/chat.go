@@ -31,6 +31,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/components/filetree"
 	"github.com/digiogithub/pando/internal/tui/layout"
 	"github.com/digiogithub/pando/internal/tui/util"
+	"github.com/digiogithub/pando/internal/vulnhunter"
 )
 
 type ChatLayoutMode int
@@ -872,6 +873,12 @@ func (p *ChatPageModel) sendMessage(text string, attachments []message.Attachmen
 	if expanded, ok := expandImproveAgentsMdCommand(text); ok {
 		text = expanded
 	}
+	// The security-audit slash commands (/vulnhunt, /vulnhunter-fix,
+	// /vulnhunt-fix-verify) likewise expand into a full workflow prompt run as a
+	// normal agent turn.
+	if expanded, ok := expandVulnhunterCommand(text); ok {
+		text = expanded
+	}
 
 	// If a run is already active for this session, route the message as steering
 	// feedback: it is queued and injected into the agent loop at the next safe
@@ -1479,6 +1486,30 @@ func expandImproveAgentsMdCommand(input string) (string, bool) {
 	}
 	extra := strings.TrimSpace(strings.TrimPrefix(line, "/improve-agents-md"))
 	return agentsmd.Prompt(extra), true
+}
+
+// expandVulnhunterCommand recognizes the /vulnhunt, /vulnhunter-fix and
+// /vulnhunt-fix-verify slash commands and returns the full workflow prompt the
+// agent should run. The boolean is true when the input was one of these commands
+// (with or without extra guidance), in which case the caller substitutes the
+// returned prompt for the raw command text. /vulnhunter-fix is matched before
+// /vulnhunt so the shared prefix does not misroute it.
+func expandVulnhunterCommand(input string) (string, bool) {
+	line := strings.TrimSpace(input)
+	for _, c := range []struct {
+		token  string
+		prompt func(string) string
+	}{
+		{"/vulnhunter-fix", vulnhunter.FixPrompt},
+		{"/vulnhunt-fix-verify", vulnhunter.VerifyPrompt},
+		{"/vulnhunt", vulnhunter.HuntPrompt},
+	} {
+		if line == c.token || strings.HasPrefix(line, c.token+" ") {
+			extra := strings.TrimSpace(strings.TrimPrefix(line, c.token))
+			return c.prompt(extra), true
+		}
+	}
+	return "", false
 }
 
 func (p *ChatPageModel) handleCompactCommand(input string) (tea.Cmd, bool) {

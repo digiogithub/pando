@@ -25,6 +25,7 @@ import (
 	"github.com/digiogithub/pando/internal/superpowers"
 	"github.com/digiogithub/pando/internal/toolmeta"
 	"github.com/digiogithub/pando/internal/userinput"
+	"github.com/digiogithub/pando/internal/vulnhunter"
 )
 
 type ChatRequest struct {
@@ -916,6 +917,28 @@ func (s *Server) handleSlashCommandStream(w http.ResponseWriter, flusher http.Fl
 		agentSvc := s.app.CoderAgent
 		submitErr := s.bgRunner.Submit(sessionID, func(bgCtx context.Context) (<-chan agent.AgentEvent, error) {
 			return agentSvc.Run(bgCtx, sessionID, agentsmd.Prompt(cmdArgs))
+		})
+		if submitErr != nil {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": submitErr.Error()})
+			return
+		}
+		eventChan, unsubFn, _ := s.bgRunner.Subscribe(sessionID)
+		s.streamSessionEvents(w, flusher, ctx, sessionID, unsubFn, eventChan)
+		return
+	case "vulnhunt", "vulnhunter-fix", "vulnhunt-fix-verify":
+		var prompt, intro string
+		switch cmdName {
+		case "vulnhunt":
+			prompt, intro = vulnhunter.HuntPrompt(cmdArgs), "Starting security audit (vulnhunt)..."
+		case "vulnhunter-fix":
+			prompt, intro = vulnhunter.FixPrompt(cmdArgs), "Starting test-driven remediation (vulnhunter-fix)..."
+		case "vulnhunt-fix-verify":
+			prompt, intro = vulnhunter.VerifyPrompt(cmdArgs), "Verifying claimed security fixes (vulnhunt-fix-verify)..."
+		}
+		writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": intro})
+		vhSvc := s.app.CoderAgent
+		submitErr := s.bgRunner.Submit(sessionID, func(bgCtx context.Context) (<-chan agent.AgentEvent, error) {
+			return vhSvc.Run(bgCtx, sessionID, prompt)
 		})
 		if submitErr != nil {
 			writeSSEEvent(w, flusher, "error", map[string]string{"error": submitErr.Error()})

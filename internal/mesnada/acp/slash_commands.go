@@ -27,6 +27,10 @@ const (
 
 	slashCommandLearning       slashCommandKind = "learning"
 	slashCommandLearningFinish slashCommandKind = "learning-finish"
+
+	slashCommandVulnhunt          slashCommandKind = "vulnhunt"
+	slashCommandVulnhunterFix     slashCommandKind = "vulnhunter-fix"
+	slashCommandVulnhuntFixVerify slashCommandKind = "vulnhunt-fix-verify"
 )
 
 type slashCommand struct {
@@ -125,6 +129,24 @@ func slashCommandSpecs() []slashCommandSpec {
 			Kind:        slashCommandImproveAgentsMd,
 			Description: "Create or reinforce AGENTS.md with the mandatory AI-agent operating rules",
 			InputHint:   "optional extra guidance",
+		},
+		{
+			Token:       vulnhuntCommandToken,
+			Kind:        slashCommandVulnhunt,
+			Description: "Adversarial security audit: trace attacker input to sinks and report exploitable vulnerabilities",
+			InputHint:   "optional target scope (subdir/package/emphasis)",
+		},
+		{
+			Token:       vulnhunterFixCommandToken,
+			Kind:        slashCommandVulnhunterFix,
+			Description: "Test-driven remediation of confirmed vulnerabilities (exploit -> failing test -> fix -> verify)",
+			InputHint:   "optional finding/cluster to remediate",
+		},
+		{
+			Token:       vulnhuntFixVerifyCommandToken,
+			Kind:        slashCommandVulnhuntFixVerify,
+			Description: "Read-only independent verification of claimed security fixes, per-finding verdict",
+			InputHint:   "optional findings/fixes to verify",
 		},
 	}
 }

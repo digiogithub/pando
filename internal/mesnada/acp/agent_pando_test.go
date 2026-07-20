@@ -2785,8 +2785,8 @@ func thoughtUpdateTexts(t *testing.T, raw string) []string {
 
 func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 	commands := availableCommands()
-	if len(commands) != 15 {
-		t.Fatalf("expected 15 available commands, got %d", len(commands))
+	if len(commands) != 18 {
+		t.Fatalf("expected 18 available commands, got %d", len(commands))
 	}
 
 	got := map[string]acpsdk.AvailableCommand{}
@@ -2797,13 +2797,13 @@ func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, superpowersFinishCommandToken, cavemanCommandToken, cavemanFinishCommandToken, learningCommandToken, learningFinishCommandToken} {
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, superpowersFinishCommandToken, cavemanCommandToken, cavemanFinishCommandToken, learningCommandToken, learningFinishCommandToken, vulnhuntCommandToken, vulnhunterFixCommandToken, vulnhuntFixVerifyCommandToken} {
 		if _, ok := got[name]; !ok {
 			t.Fatalf("expected available command %q to be exposed", name)
 		}
 	}
 
-	for _, name := range []string{goalCommandToken, autopilotCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, cavemanCommandToken, learningCommandToken} {
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, cavemanCommandToken, learningCommandToken, vulnhuntCommandToken, vulnhunterFixCommandToken, vulnhuntFixVerifyCommandToken} {
 		cmd := got[name]
 		if cmd.Input == nil || cmd.Input.Unstructured == nil || strings.TrimSpace(cmd.Input.Unstructured.Hint) == "" {
 			t.Fatalf("expected available command %q to include an unstructured input hint, got %#v", name, cmd.Input)
