@@ -159,6 +159,17 @@ UseOAuth = true
 # Disabled = false
 
 # =============================================================================
+# Model metadata catalog (models.dev)
+# =============================================================================
+# Most providers do not report pricing or real context limits in their model
+# listing API, so Pando completes that metadata from https://models.dev. The
+# catalog is downloaded once per instance and cached in ~/.pando_modelsdev.json
+# for 24 h; if it cannot be reached, models simply keep whatever their provider
+# reported (no cost shown), exactly as before.
+# [ModelsDev]
+# Enabled = false   # never contact models.dev
+
+# =============================================================================
 # Language Server Protocol (LSP)
 # =============================================================================
 # Language servers are activated on demand: when you edit a file, Pando starts

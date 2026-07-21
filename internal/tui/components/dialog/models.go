@@ -3,6 +3,7 @@ package dialog
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -151,6 +152,58 @@ func (m *modelDialogCmp) accountLabel(model models.Model, sameTypeCount int) str
 		name = dn
 	}
 	return name + ": " + model.Name
+}
+
+// selectedModelDetails renders the metadata line for the highlighted model:
+// context window, per-million-token prices and capabilities. Prices come from
+// the provider when it reports them and from the models.dev catalog otherwise;
+// when neither knows the model the price is simply omitted rather than shown as
+// free.
+func (m *modelDialogCmp) selectedModelDetails() string {
+	if m.selectedIdx < 0 || m.selectedIdx >= len(m.filteredModels) {
+		return ""
+	}
+	model := m.filteredModels[m.selectedIdx]
+
+	parts := make([]string, 0, 4)
+	if model.ContextWindow > 0 {
+		parts = append(parts, formatTokenCount(model.ContextWindow)+" ctx")
+	}
+	if model.CostPer1MIn > 0 || model.CostPer1MOut > 0 {
+		parts = append(parts, fmt.Sprintf("$%s/$%s per 1M",
+			strconv.FormatFloat(model.CostPer1MIn, 'f', -1, 64),
+			strconv.FormatFloat(model.CostPer1MOut, 'f', -1, 64)))
+	}
+	var caps []string
+	if model.CanReason {
+		caps = append(caps, "reasoning")
+	}
+	if model.SupportsAttachments {
+		caps = append(caps, "images")
+	}
+	if len(caps) > 0 {
+		parts = append(parts, strings.Join(caps, "+"))
+	}
+	if model.Knowledge != "" {
+		parts = append(parts, "cutoff "+model.Knowledge)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// formatTokenCount renders a token limit compactly: 200000 -> "200K", 1000000 -> "1M".
+func formatTokenCount(tokens int64) string {
+	switch {
+	case tokens >= 1_000_000:
+		value := float64(tokens) / 1_000_000
+		if value == float64(int64(value)) {
+			return fmt.Sprintf("%dM", int64(value))
+		}
+		return fmt.Sprintf("%.1fM", value)
+	case tokens >= 1_000:
+		return fmt.Sprintf("%dK", tokens/1_000)
+	default:
+		return fmt.Sprintf("%d", tokens)
+	}
 }
 
 // loadAccountDisplayNames refreshes the account ID → Display Name map from config.
@@ -434,6 +487,12 @@ func (m *modelDialogCmp) View() string {
 		modelList = tuizone.MarkModelList(modelListZoneID, modelList)
 	}
 
+	// Per-model metadata (context window, price, capabilities) goes in a footer
+	// line for the highlighted entry instead of on every row: the dialog is only
+	// 44 columns wide and the model names already fill it.
+	details := baseStyle.Width(maxDialogWidth).Padding(0, 1).Foreground(t.TextMuted()).
+		Render(m.selectedModelDetails())
+
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		title,
@@ -441,6 +500,7 @@ func (m *modelDialogCmp) View() string {
 		baseStyle.Width(maxDialogWidth).Render(""),
 		modelList,
 		scrollIndicator,
+		details,
 	)
 
 	return baseStyle.Padding(1, 2).

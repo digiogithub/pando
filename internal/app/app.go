@@ -1847,6 +1847,11 @@ func RefreshDynamicModels(ctx context.Context) {
 	accounts := config.GetProviderAccounts()
 	logging.Debug("Refreshing dynamic models", "accountCount", len(accounts))
 
+	// Fill pricing/limits the curated static catalogues omit (Antigravity,
+	// Bedrock, Vertex AI, …) from models.dev. Best-effort: a failure here leaves
+	// every model exactly as it was.
+	models.EnrichRegisteredModels(ctx)
+
 	// Count non-disabled accounts per provider type (needed for model ID prefix logic)
 	typeCount := make(map[models.ModelProvider]int)
 	for _, acc := range accounts {

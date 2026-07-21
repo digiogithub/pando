@@ -22,6 +22,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/llm/models/modelsdev"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/spf13/viper"
 )
@@ -393,10 +394,10 @@ type RemembrancesConfig struct {
 	// false nothing is indexed and the tools answer as they did before the graph
 	// existed. Already-indexed links survive a disable and light up again on
 	// re-enable.
-	KBWikiLinks               bool     `json:"kb_wiki_links" toml:"KBWikiLinks"`
-	AutoIndexSessions         bool     `json:"auto_index_sessions" toml:"AutoIndexSessions"`
-	DocumentEmbeddingProvider string   `json:"document_embedding_provider" toml:"DocumentEmbeddingProvider"`
-	DocumentEmbeddingModel    string   `json:"document_embedding_model" toml:"DocumentEmbeddingModel"`
+	KBWikiLinks               bool   `json:"kb_wiki_links" toml:"KBWikiLinks"`
+	AutoIndexSessions         bool   `json:"auto_index_sessions" toml:"AutoIndexSessions"`
+	DocumentEmbeddingProvider string `json:"document_embedding_provider" toml:"DocumentEmbeddingProvider"`
+	DocumentEmbeddingModel    string `json:"document_embedding_model" toml:"DocumentEmbeddingModel"`
 	// DocumentEmbeddingBaseURL and DocumentEmbeddingAPIKey are used when DocumentEmbeddingProvider is "openai-compatible".
 	DocumentEmbeddingBaseURL string `json:"document_embedding_base_url" toml:"DocumentEmbeddingBaseURL"`
 	DocumentEmbeddingAPIKey  string `json:"document_embedding_api_key" toml:"DocumentEmbeddingAPIKey"`
@@ -863,6 +864,17 @@ type Config struct {
 	Ponytail          PonytailConfig          `json:"ponytail,omitempty" toml:"Ponytail"`
 	Caveman           CavemanConfig           `json:"caveman,omitempty" toml:"Caveman"`
 	TokenOptimization TokenOptimizationConfig `json:"tokenOptimization,omitempty" toml:"TokenOptimization"`
+	ModelsDev         ModelsDevConfig         `json:"modelsDev,omitempty" toml:"ModelsDev"`
+}
+
+// ModelsDevConfig controls the models.dev metadata catalog
+// (https://models.dev), which supplies per-token pricing, context limits and
+// capability flags for models whose provider does not report them. The catalog
+// is downloaded once per instance and cached on disk; when it is unavailable
+// Pando keeps its previous behaviour (no cost shown for those models).
+type ModelsDevConfig struct {
+	// Enabled defaults to true. Set to false to never contact models.dev.
+	Enabled bool `json:"enabled" toml:"Enabled"`
 }
 
 // TokenOptimizationConfig groups the context/token-reduction knobs that span the
@@ -1360,6 +1372,10 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 		cfg.Agents = make(map[AgentName]Agent)
 	}
 
+	// The catalog is consulted from the model registry, which cannot import
+	// this package; push the switch down instead.
+	modelsdev.SetDisabled(!cfg.ModelsDev.Enabled)
+
 	return cfg, nil
 }
 
@@ -1510,8 +1526,9 @@ func setDefaults(debug bool) {
 	viper.SetDefault("contextPaths", defaultContextPaths)
 	viper.SetDefault("skills.enabled", true)
 	viper.SetDefault("skillsCatalog.enabled", true)
-	viper.SetDefault("llmCache.enabled", true) // LLM prompt caching enabled by default
-	viper.SetDefault("lspAutoActivate", true)  // lazily start language servers on demand
+	viper.SetDefault("llmCache.enabled", true)  // LLM prompt caching enabled by default
+	viper.SetDefault("lspAutoActivate", true)   // lazily start language servers on demand
+	viper.SetDefault("modelsDev.enabled", true) // model pricing/capability catalog from models.dev
 	viper.SetDefault("skillsCatalog.baseUrl", "https://skills.sh")
 	viper.SetDefault("skillsCatalog.autoUpdate", false)
 	viper.SetDefault("skillsCatalog.defaultScope", "global")
@@ -3424,6 +3441,28 @@ func UpdateLLMCache(enabled bool) error {
 		return err
 	}
 
+	return nil
+}
+
+// UpdateModelsDev toggles the models.dev metadata catalog and applies it to the
+// running process. Turning it back on only affects models registered after the
+// change, since the catalog is loaded once per instance.
+func UpdateModelsDev(enabled bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldValue := cfg.ModelsDev.Enabled
+	cfg.ModelsDev.Enabled = enabled
+
+	if err := updateCfgFile(func(config *Config) {
+		config.ModelsDev.Enabled = enabled
+	}); err != nil {
+		cfg.ModelsDev.Enabled = oldValue
+		return err
+	}
+
+	modelsdev.SetDisabled(!enabled)
 	return nil
 }
 

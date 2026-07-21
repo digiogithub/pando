@@ -110,21 +110,25 @@ func RefreshProviderModels(ctx context.Context, provider ModelProvider, apiKey s
 			name = fm.ID
 		}
 
-		contextWindow := fetchedModelContextWindow(fm.ContextWindow)
-		maxTokens := fetchedModelMaxOutputTokens(fm.MaxOutputTokens, contextWindow)
-
 		model := Model{
 			ID:                      modelID,
 			Name:                    fmt.Sprintf("%s: %s", capitalizeProvider(string(provider)), name),
 			Provider:                provider,
 			APIModel:                fm.ID,
-			ContextWindow:           contextWindow,
-			DefaultMaxTokens:        maxTokens,
+			ContextWindow:           fm.ContextWindow,
+			DefaultMaxTokens:        fm.MaxOutputTokens,
 			CanReason:               fm.CanReason,
 			SupportsReasoningEffort: fm.SupportsReasoningEffort,
 			SupportsAttachments:     fm.SupportsAttachments,
 			SupportedEndpoints:      fm.SupportedEndpoints,
+			Description:             fm.Description,
 		}
+
+		// Enrich before the guessed defaults are applied: the catalog knows the
+		// real window and output cap, which are better than 128K/half-window.
+		EnrichModelFromModelsDev(ctx, &model)
+		model.ContextWindow = fetchedModelContextWindow(model.ContextWindow)
+		model.DefaultMaxTokens = fetchedModelMaxOutputTokens(model.DefaultMaxTokens, model.ContextWindow)
 
 		RegisterDynamicModel(model)
 		keepIDs[modelID] = struct{}{}
@@ -206,7 +210,7 @@ func RefreshProviderModelsForAccount(ctx context.Context, params AccountModelRef
 
 	keepIDs := make(map[ModelID]struct{}, len(fetched))
 	for _, fm := range fetched {
-		model := modelFromFetchedAccountModel(params, fm)
+		model := modelFromFetchedAccountModel(ctx, params, fm)
 		keepIDs[model.ID] = struct{}{}
 		if shouldSkipAccountScopedModel(params.ProviderType, model.ID, model.APIModel) {
 			continue
@@ -220,7 +224,7 @@ func RefreshProviderModelsForAccount(ctx context.Context, params AccountModelRef
 	return nil
 }
 
-func modelFromFetchedAccountModel(params AccountModelRefreshParams, fetched FetchedModel) Model {
+func modelFromFetchedAccountModel(ctx context.Context, params AccountModelRefreshParams, fetched FetchedModel) Model {
 	prefix := dynamicModelPrefix(params.ProviderType, params.AccountID, params.AllAccountsOfType)
 	modelID := ModelID(fmt.Sprintf("%s.%s", prefix, fetched.ID))
 
@@ -238,26 +242,36 @@ func modelFromFetchedAccountModel(params AccountModelRefreshParams, fetched Fetc
 		// Endpoint routing always comes from the live API: the static catalogue
 		// never carries it, and it is what keeps new model families working.
 		static.SupportedEndpoints = fetched.SupportedEndpoints
+		// Curated entries can still be missing pieces (typically the cache
+		// prices); the catalog only fills what is absent.
+		EnrichModelFromModelsDev(ctx, &static)
 		return static
 	}
 
 	name := fetchedModelName(fetched)
-	contextWindow := fetchedModelContextWindow(fetched.ContextWindow)
-	maxTokens := fetchedModelMaxOutputTokens(fetched.MaxOutputTokens, contextWindow)
 
-	return Model{
+	model := Model{
 		ID:                      modelID,
 		Name:                    fmt.Sprintf("%s: %s", capitalizeProvider(string(params.ProviderType)), name),
 		Provider:                params.ProviderType,
 		APIModel:                fetched.ID,
-		ContextWindow:           contextWindow,
-		DefaultMaxTokens:        maxTokens,
+		ContextWindow:           fetched.ContextWindow,
+		DefaultMaxTokens:        fetched.MaxOutputTokens,
 		AccountID:               params.AccountID,
 		CanReason:               fetched.CanReason,
 		SupportsReasoningEffort: fetched.SupportsReasoningEffort,
 		SupportsAttachments:     fetched.SupportsAttachments,
 		SupportedEndpoints:      fetched.SupportedEndpoints,
+		Description:             fetched.Description,
 	}
+
+	// Enrich before the guessed defaults are applied, so a catalog-provided
+	// window wins over the 128K fallback.
+	EnrichModelFromModelsDev(ctx, &model)
+	model.ContextWindow = fetchedModelContextWindow(model.ContextWindow)
+	model.DefaultMaxTokens = fetchedModelMaxOutputTokens(model.DefaultMaxTokens, model.ContextWindow)
+
+	return model
 }
 
 // staticModelByAPIModel returns a copy of the statically-defined model for the

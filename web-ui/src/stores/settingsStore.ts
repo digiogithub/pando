@@ -17,6 +17,7 @@ const DEFAULTS: SettingsConfig = {
   show_hidden_files: false,
   nerd_fonts: true,
   llm_cache_enabled: true,
+  models_dev_enabled: true,
   output_filter_enabled: true,
   caveman_default_mode: '',
   evaluator_enabled: false,

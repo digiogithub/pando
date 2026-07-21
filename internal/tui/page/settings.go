@@ -929,6 +929,12 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Type:  settings.FieldToggle,
 			},
 			{
+				Label: "Model Catalog (models.dev)",
+				Key:   "modelsDev.enabled",
+				Value: boolString(cfg.ModelsDev.Enabled),
+				Type:  settings.FieldToggle,
+			},
+			{
 				Label: "Auto-Approve Tool Changes",
 				Key:   "permissions.autoApproveTools",
 				Value: boolString(cfg.Permissions.AutoApproveTools),
@@ -3047,6 +3053,12 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 			return fmt.Errorf("invalid LLM Cache value: %w", err)
 		}
 		return config.UpdateLLMCache(value)
+	case field.Key == "modelsDev.enabled":
+		value, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Model Catalog value: %w", err)
+		}
+		return config.UpdateModelsDev(value)
 	case field.Key == "debug":
 		value, err := parseBoolValue(field.Value)
 		if err != nil {

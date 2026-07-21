@@ -91,6 +91,8 @@
       "themeDark": "深色",
       "llmCache": "LLM提示缓存",
       "llmCacheDescription": "启用LLM提供商的提示缓存（主要影响Anthropic）",
+      "modelsDev": "模型目录 (models.dev)",
+      "modelsDevDescription": "当提供商未报告时，从 models.dev 目录补全模型的价格、上下文限制与能力。每个实例下载一次并缓存 24 小时；若不可用，模型保留提供商的元数据且不显示成本",
       "outputFilter": "命令输出过滤器",
       "outputFilterDescription": "在冗长的命令输出（测试运行器、构建、安装程序）到达模型之前进行压缩以节省 token。故障安全且默认启用；绝不会丢弃错误信息",
       "caveman": "输出简洁模式 (Caveman)",

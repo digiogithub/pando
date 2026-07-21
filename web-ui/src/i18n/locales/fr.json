@@ -91,6 +91,8 @@
       "themeDark": "Sombre",
       "llmCache": "Cache de prompts LLM",
       "llmCacheDescription": "Activer le cache de prompts pour les fournisseurs LLM (principalement Anthropic)",
+      "modelsDev": "Catalogue de modèles (models.dev)",
+      "modelsDevDescription": "Complète le coût, les limites de contexte et les capacités des modèles depuis le catalogue models.dev quand le fournisseur ne les renseigne pas. Téléchargé une fois par instance et mis en cache 24 h ; s'il est indisponible, les modèles conservent les données du fournisseur et aucun coût n'est affiché",
       "outputFilter": "Filtre de sortie des commandes",
       "outputFilterDescription": "Compresse la sortie verbeuse des commandes (tests, compilations, installateurs) avant qu'elle n'atteigne le modèle afin d'économiser des tokens. Sans risque et activé par défaut ; les erreurs ne sont jamais supprimées",
       "caveman": "Concision de sortie (Caveman)",

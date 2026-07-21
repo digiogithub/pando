@@ -14,7 +14,10 @@ import (
 	"github.com/digiogithub/pando/internal/llm/models"
 )
 
-// ModelInfo describes a model available for selection.
+// ModelInfo describes a model available for selection. The pricing and limit
+// fields are populated from the provider's listing API when it reports them and
+// from the models.dev catalog otherwise; both are absent (zero) when neither
+// source knows the model, and the UI must render that as "unknown", not free.
 type ModelInfo struct {
 	ID                      string   `json:"id"`
 	Name                    string   `json:"name"`
@@ -24,9 +27,65 @@ type ModelInfo struct {
 	Badges                  []string `json:"badges"`
 	CanReason               bool     `json:"canReason"`
 	SupportsReasoningEffort bool     `json:"supportsReasoningEffort"`
+	SupportsAttachments     bool     `json:"supportsAttachments"`
+	ContextWindow           int64    `json:"contextWindow,omitempty"`
+	MaxOutputTokens         int64    `json:"maxOutputTokens,omitempty"`
+	CostPer1MIn             float64  `json:"costPer1MIn,omitempty"`
+	CostPer1MOut            float64  `json:"costPer1MOut,omitempty"`
+	Knowledge               string   `json:"knowledge,omitempty"`
+	ReleaseDate             string   `json:"releaseDate,omitempty"`
 }
 
-// badgesForModel returns heuristic badges based on model ID.
+// modelInfoMetadata copies the selector-visible metadata of a registered model
+// onto a ModelInfo, including the badges. Cost-derived badges are preferred over
+// the name heuristic: real prices beat guessing from substrings.
+func modelInfoMetadata(info *ModelInfo, m models.Model) {
+	info.CanReason = m.CanReason
+	info.SupportsReasoningEffort = m.SupportsReasoningEffort
+	info.SupportsAttachments = m.SupportsAttachments
+	info.ContextWindow = m.ContextWindow
+	info.MaxOutputTokens = m.DefaultMaxTokens
+	info.CostPer1MIn = m.CostPer1MIn
+	info.CostPer1MOut = m.CostPer1MOut
+	info.Knowledge = m.Knowledge
+	info.ReleaseDate = m.ReleaseDate
+	if info.Description == "" {
+		info.Description = m.Description
+	}
+	info.Badges = badgesForKnownModel(m)
+}
+
+// badgesForKnownModel derives badges from the model's real pricing when it is
+// known, falling back to the ID heuristic for models no catalog covers.
+func badgesForKnownModel(m models.Model) []string {
+	if m.CostPer1MIn <= 0 && m.CostPer1MOut <= 0 {
+		badges := badgesForModel(m.APIModel)
+		if m.CanReason {
+			badges = append(badges, "reasoning")
+		}
+		return badges
+	}
+
+	// Blended price of a 1:1 input/output million-token mix, which orders models
+	// the same way users perceive them as cheap or expensive.
+	blended := (m.CostPer1MIn + m.CostPer1MOut) / 2
+	var badges []string
+	switch {
+	case blended <= 2:
+		badges = []string{"fast", "cost"}
+	case blended <= 12:
+		badges = []string{"fast"}
+	default:
+		badges = []string{"capable"}
+	}
+	if m.CanReason {
+		badges = append(badges, "reasoning")
+	}
+	return badges
+}
+
+// badgesForModel returns heuristic badges based on model ID. Used only when the
+// model's price is unknown (see badgesForKnownModel).
 func badgesForModel(id string) []string {
 	id = strings.ToLower(id)
 	switch {
@@ -167,23 +226,32 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 				// gets reverted to a default on the next config reload.
 				modelID := models.CanonicalAccountModelID(acc.Type, acc.ID, sameTypeCount, m.ID)
 				if _, exists := models.SupportedModels[modelID]; !exists {
-					contextWindow := m.ContextWindow
-					if contextWindow <= 0 {
-						contextWindow = 128_000
+					registered := models.Model{
+						ID:                  modelID,
+						Name:                name,
+						Provider:            acc.Type,
+						APIModel:            m.ID,
+						ContextWindow:       m.ContextWindow,
+						DefaultMaxTokens:    m.MaxOutputTokens,
+						AccountID:           acc.ID,
+						Description:         m.Description,
+						CanReason:           m.CanReason,
+						SupportsAttachments: m.SupportsAttachments,
 					}
-					maxTokens := int64(4096)
-					if contextWindow < maxTokens {
-						maxTokens = contextWindow / 2
+					// Pull pricing/limits from models.dev before falling back to
+					// guessed defaults, so the selector and the cost panel see the
+					// real numbers for providers that report neither.
+					models.EnrichModelFromModelsDev(ctx, &registered)
+					if registered.ContextWindow <= 0 {
+						registered.ContextWindow = 128_000
 					}
-					models.RegisterDynamicModel(models.Model{
-						ID:               modelID,
-						Name:             name,
-						Provider:         acc.Type,
-						APIModel:         m.ID,
-						ContextWindow:    contextWindow,
-						DefaultMaxTokens: maxTokens,
-						AccountID:        acc.ID,
-					})
+					if registered.DefaultMaxTokens <= 0 {
+						registered.DefaultMaxTokens = 4096
+						if registered.ContextWindow < registered.DefaultMaxTokens {
+							registered.DefaultMaxTokens = registered.ContextWindow / 2
+						}
+					}
+					models.RegisterDynamicModel(registered)
 				}
 
 				// Disambiguate display name when multiple accounts share the same provider type.
@@ -197,16 +265,18 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 					displayName = accLabel + ": " + name
 				}
 				knownModel := models.SupportedModels[modelID]
-				items = append(items, ModelInfo{
-					ID:                      string(modelID),
-					Name:                    displayName,
-					Provider:                string(acc.Type),
-					AccountID:               acc.ID,
-					Description:             m.Description,
-					Badges:                  badgesForModel(m.ID),
-					CanReason:               knownModel.CanReason,
-					SupportsReasoningEffort: knownModel.SupportsReasoningEffort,
-				})
+				if knownModel.APIModel == "" {
+					knownModel.APIModel = m.ID
+				}
+				info := ModelInfo{
+					ID:          string(modelID),
+					Name:        displayName,
+					Provider:    string(acc.Type),
+					AccountID:   acc.ID,
+					Description: m.Description,
+				}
+				modelInfoMetadata(&info, knownModel)
+				items = append(items, info)
 			}
 			resultCh <- accountResult{accountID: acc.ID, provider: acc.Type, items: items}
 		}()
@@ -256,12 +326,13 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 				if name == "" {
 					name = string(m.ID)
 				}
-				allModels = append(allModels, ModelInfo{
+				info := ModelInfo{
 					ID:       string(m.ID),
 					Name:     name,
 					Provider: string(m.Provider),
-					Badges:   badgesForModel(string(m.ID)),
-				})
+				}
+				modelInfoMetadata(&info, m)
+				allModels = append(allModels, info)
 			}
 		}
 	}
@@ -308,15 +379,14 @@ func staticModelInfosForAccount(acc config.ProviderAccount, sameTypeCount int) [
 		if prefixed {
 			displayName = accLabel + ": " + name
 		}
-		items = append(items, ModelInfo{
-			ID:                      string(m.ID),
-			Name:                    displayName,
-			Provider:                string(acc.Type),
-			AccountID:               acc.ID,
-			Badges:                  badgesForModel(m.APIModel),
-			CanReason:               m.CanReason,
-			SupportsReasoningEffort: m.SupportsReasoningEffort,
-		})
+		info := ModelInfo{
+			ID:        string(m.ID),
+			Name:      displayName,
+			Provider:  string(acc.Type),
+			AccountID: acc.ID,
+		}
+		modelInfoMetadata(&info, m)
+		items = append(items, info)
 	}
 	return items
 }
@@ -342,15 +412,14 @@ func logicalAntigravityModelInfos(accounts []config.ProviderAccount) []ModelInfo
 	items := make([]ModelInfo, 0, len(ids))
 	for _, id := range ids {
 		model := models.AntigravityModels[id]
-		items = append(items, ModelInfo{
-			ID:                      string(model.ID),
-			Name:                    model.Name,
-			Provider:                string(model.Provider),
-			Description:             model.APIModel,
-			Badges:                  badgesForModel(string(model.ID)),
-			CanReason:               model.CanReason,
-			SupportsReasoningEffort: model.SupportsReasoningEffort,
-		})
+		info := ModelInfo{
+			ID:          string(model.ID),
+			Name:        model.Name,
+			Provider:    string(model.Provider),
+			Description: model.APIModel,
+		}
+		modelInfoMetadata(&info, model)
+		items = append(items, info)
 	}
 	return items
 }

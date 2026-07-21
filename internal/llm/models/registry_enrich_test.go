@@ -1,6 +1,9 @@
 package models
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 // TestModelFromFetchedAccountModelInheritsStaticMetadata verifies that a
 // per-account model whose APIModel matches a curated static model inherits that
@@ -28,7 +31,7 @@ func TestModelFromFetchedAccountModelInheritsStaticMetadata(t *testing.T) {
 		ProviderType:      ProviderAnthropic,
 		AllAccountsOfType: 2, // forces an account-prefixed ID
 	}
-	got := modelFromFetchedAccountModel(params, FetchedModel{ID: staticAPIModel, Name: "ignored remote name"})
+	got := modelFromFetchedAccountModel(context.Background(), params, FetchedModel{ID: staticAPIModel, Name: "ignored remote name"})
 
 	if got.ID != ModelID("anthropic-project."+staticAPIModel) {
 		t.Fatalf("ID = %q, want account-prefixed id", got.ID)
@@ -61,7 +64,7 @@ func TestModelFromFetchedAccountModelFallsBackWithoutStatic(t *testing.T) {
 		ProviderType:      ProviderOpenAICompatible,
 		AllAccountsOfType: 1,
 	}
-	got := modelFromFetchedAccountModel(params, FetchedModel{ID: "totally-unknown-model"})
+	got := modelFromFetchedAccountModel(context.Background(), params, FetchedModel{ID: "totally-unknown-model"})
 
 	if got.AccountID != "acct" {
 		t.Fatalf("AccountID = %q, want acct", got.AccountID)

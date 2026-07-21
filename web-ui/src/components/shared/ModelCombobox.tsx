@@ -7,12 +7,48 @@ interface ModelInfo {
   name: string
   provider: string
   badges: string[]
+  /** Pricing and limits, from the provider or the models.dev catalog. Absent (0) when unknown. */
+  contextWindow?: number
+  costPer1MIn?: number
+  costPer1MOut?: number
+  knowledge?: string
 }
 
 const BADGE_COLORS: Record<string, string> = {
   fast: 'var(--success)',
   cost: '#F59E0B',
   capable: 'var(--info)',
+  reasoning: 'var(--primary)',
+}
+
+/** 200000 -> "200K", 1000000 -> "1M". */
+export function formatTokenLimit(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    const value = tokens / 1_000_000
+    return `${Number.isInteger(value) ? value : value.toFixed(1)}M`
+  }
+  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`
+  return `${tokens}`
+}
+
+/**
+ * Metadata line for a model: context window, per-million-token prices and
+ * training cutoff. Each piece is omitted when unknown — a missing price must
+ * never read as "free".
+ */
+export function modelMetaLine(model: {
+  contextWindow?: number
+  costPer1MIn?: number
+  costPer1MOut?: number
+  knowledge?: string
+}): string {
+  const parts: string[] = []
+  if (model.contextWindow) parts.push(`${formatTokenLimit(model.contextWindow)} ctx`)
+  if (model.costPer1MIn || model.costPer1MOut) {
+    parts.push(`$${model.costPer1MIn ?? 0}/$${model.costPer1MOut ?? 0} per 1M`)
+  }
+  if (model.knowledge) parts.push(`cutoff ${model.knowledge}`)
+  return parts.join(' · ')
 }
 
 const inputStyle: React.CSSProperties = {
@@ -319,8 +355,31 @@ export default function ModelCombobox({
                             fontWeight: isActive ? 600 : 400,
                           }}
                         >
-                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {model.id}
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            <span
+                              style={{
+                                display: 'block',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {model.id}
+                            </span>
+                            {modelMetaLine(model) && (
+                              <span
+                                style={{
+                                  display: 'block',
+                                  fontSize: 10,
+                                  color: 'var(--fg-dim)',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {modelMetaLine(model)}
+                              </span>
+                            )}
                           </span>
                           <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
                             {model.badges.map((badge) => (

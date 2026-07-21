@@ -91,6 +91,8 @@
       "themeDark": "Dunkel",
       "llmCache": "LLM-Prompt-Cache",
       "llmCacheDescription": "Prompt-Caching für LLM-Anbieter aktivieren (hauptsächlich Anthropic)",
+      "modelsDev": "Modellkatalog (models.dev)",
+      "modelsDevDescription": "Ergänzt Preise, Kontextgrenzen und Fähigkeiten der Modelle aus dem models.dev-Katalog, wenn der Anbieter sie nicht meldet. Einmal pro Instanz geladen und 24 h zwischengespeichert; ist er nicht erreichbar, behalten die Modelle die Anbieterdaten und es werden keine Kosten angezeigt",
       "outputFilter": "Befehlsausgabe-Filter",
       "outputFilterDescription": "Komprimiert ausführliche Befehlsausgaben (Testrunner, Builds, Installer), bevor sie das Modell erreichen, um Tokens zu sparen. Ausfallsicher und standardmäßig aktiviert; Fehler werden nie verworfen",
       "caveman": "Caveman-Ausgabekürze",

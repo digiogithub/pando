@@ -18,7 +18,10 @@ const cacheFileName = ".pando_models.json"
 // Bump this whenever a newly persisted Model field changes behaviour.
 //
 //	1: added SupportedEndpoints (Copilot /responses vs /chat/completions routing)
-const cacheSchemaVersion = 1
+//	2: added models.dev enrichment (costs, real context/output limits,
+//	   Description/Knowledge/ReleaseDate) — a v1 cache carries zero costs and
+//	   would keep the session cost panel empty until the next refresh
+const cacheSchemaVersion = 2
 
 // modelCacheFile is the on-disk cache layout. Pre-versioning caches were a bare
 // map[ModelID]Model, which decodes here with Version == 0 and no Models, and is

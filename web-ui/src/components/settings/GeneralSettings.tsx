@@ -131,6 +131,12 @@ export default function GeneralSettings() {
           onChange={(v) => updateField('llm_cache_enabled', v)}
         />
         <Toggle
+          label={t('settings.general.modelsDev')}
+          description={t('settings.general.modelsDevDescription')}
+          checked={config.models_dev_enabled}
+          onChange={(v) => updateField('models_dev_enabled', v)}
+        />
+        <Toggle
           label={t('settings.general.outputFilter')}
           description={t('settings.general.outputFilterDescription')}
           checked={config.output_filter_enabled}

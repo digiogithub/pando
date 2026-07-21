@@ -28,6 +28,9 @@ type SettingsResponse struct {
 	ShowHiddenFiles  bool   `json:"show_hidden_files"`
 	NerdFonts        bool   `json:"nerd_fonts"`
 	LLMCacheEnabled  bool   `json:"llm_cache_enabled"`
+	// ModelsDevEnabled controls the models.dev catalog that completes model
+	// pricing/limits the providers do not report.
+	ModelsDevEnabled bool   `json:"models_dev_enabled"`
 	EvaluatorEnabled bool   `json:"evaluator_enabled"`
 	JudgeModel       string `json:"judge_model"`
 	// OutputFilterEnabled is the inverse of Bash.OutputFilterDisabled: RTK-style
@@ -61,15 +64,16 @@ type SettingsResponse struct {
 
 // SettingsUpdateRequest contains the fields that can be updated via PUT /api/v1/settings.
 type SettingsUpdateRequest struct {
-	DefaultModel     *string `json:"default_model,omitempty"`
-	DefaultProvider  *string `json:"default_provider,omitempty"`
-	Theme            *string `json:"theme,omitempty"`
-	Debug            *bool   `json:"debug,omitempty"`
-	AutoCompact      *bool   `json:"auto_compact,omitempty"`
-	SkillsEnabled    *bool   `json:"skills_enabled,omitempty"`
-	ShowHiddenFiles  *bool   `json:"show_hidden_files,omitempty"`
-	NerdFonts        *bool   `json:"nerd_fonts,omitempty"`
+	DefaultModel        *string `json:"default_model,omitempty"`
+	DefaultProvider     *string `json:"default_provider,omitempty"`
+	Theme               *string `json:"theme,omitempty"`
+	Debug               *bool   `json:"debug,omitempty"`
+	AutoCompact         *bool   `json:"auto_compact,omitempty"`
+	SkillsEnabled       *bool   `json:"skills_enabled,omitempty"`
+	ShowHiddenFiles     *bool   `json:"show_hidden_files,omitempty"`
+	NerdFonts           *bool   `json:"nerd_fonts,omitempty"`
 	LLMCacheEnabled     *bool   `json:"llm_cache_enabled,omitempty"`
+	ModelsDevEnabled    *bool   `json:"models_dev_enabled,omitempty"`
 	EvaluatorEnabled    *bool   `json:"evaluator_enabled,omitempty"`
 	JudgeModel          *string `json:"judge_model,omitempty"`
 	OutputFilterEnabled *bool   `json:"output_filter_enabled,omitempty"`
@@ -130,19 +134,20 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 	}
 
 	return &SettingsResponse{
-		HomeDirectory:    homeDir,
-		WorkingDirectory: cfg.WorkingDir,
-		DefaultModel:     defaultModel,
-		DefaultProvider:  defaultProvider,
-		Theme:            cfg.TUI.Theme,
-		Debug:            cfg.Debug,
-		LogFile:          cfg.LogFile,
-		AutoCompact:      cfg.AutoCompact,
-		SkillsEnabled:    cfg.Skills.Enabled,
-		DataDirectory:    cfg.Data.Directory,
-		ShowHiddenFiles:  cfg.TUI.ShowHiddenFiles,
-		NerdFonts:        cfg.NerdFontsEnabled(),
+		HomeDirectory:       homeDir,
+		WorkingDirectory:    cfg.WorkingDir,
+		DefaultModel:        defaultModel,
+		DefaultProvider:     defaultProvider,
+		Theme:               cfg.TUI.Theme,
+		Debug:               cfg.Debug,
+		LogFile:             cfg.LogFile,
+		AutoCompact:         cfg.AutoCompact,
+		SkillsEnabled:       cfg.Skills.Enabled,
+		DataDirectory:       cfg.Data.Directory,
+		ShowHiddenFiles:     cfg.TUI.ShowHiddenFiles,
+		NerdFonts:           cfg.NerdFontsEnabled(),
 		LLMCacheEnabled:     cfg.LLMCache.Enabled,
+		ModelsDevEnabled:    cfg.ModelsDev.Enabled,
 		EvaluatorEnabled:    cfg.Evaluator.Enabled,
 		JudgeModel:          string(cfg.Evaluator.Model),
 		OutputFilterEnabled: !cfg.Bash.OutputFilterDisabled,
@@ -296,6 +301,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if req.LLMCacheEnabled != nil {
 		if err := config.UpdateLLMCache(*req.LLMCacheEnabled); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update llm cache setting")
+			return
+		}
+	}
+
+	if req.ModelsDevEnabled != nil {
+		if err := config.UpdateModelsDev(*req.ModelsDevEnabled); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update models.dev setting")
 			return
 		}
 	}

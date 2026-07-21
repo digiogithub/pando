@@ -1,6 +1,9 @@
 package models
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestGeminiStaticModelsAreRegistered(t *testing.T) {
 	for _, id := range []ModelID{
@@ -91,7 +94,7 @@ func TestModelFromFetchedAccountModelUsesLogicalAntigravityIDs(t *testing.T) {
 	}
 	fetched := FetchedModel{ID: "gemini-3-pro-preview", Name: "Gemini 3 Pro", ContextWindow: 1_000_000}
 
-	model := modelFromFetchedAccountModel(params, fetched)
+	model := modelFromFetchedAccountModel(context.Background(), params, fetched)
 	if model.ID != ModelID("antigravity.gemini-3-pro-preview") {
 		t.Fatalf("model ID = %q, want %q", model.ID, "antigravity.gemini-3-pro-preview")
 	}

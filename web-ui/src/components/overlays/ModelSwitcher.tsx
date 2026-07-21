@@ -10,6 +10,7 @@ import { useLayoutStore } from '@/stores/layoutStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import api from '@/services/api'
 import { useToastStore } from '@/stores/toastStore'
+import { modelMetaLine } from '@/components/shared/ModelCombobox'
 
 interface ModelInfo {
   id: string
@@ -19,6 +20,11 @@ interface ModelInfo {
   badges: string[]
   canReason: boolean
   supportsReasoningEffort: boolean
+  /** Pricing and limits, from the provider or the models.dev catalog. Absent (0) when unknown. */
+  contextWindow?: number
+  costPer1MIn?: number
+  costPer1MOut?: number
+  knowledge?: string
 }
 
 interface ModelsResponse {
@@ -30,6 +36,7 @@ const BADGE_COLORS: Record<string, string> = {
   cost: '#F59E0B',
   capable: 'var(--info)',
   vision: 'var(--accent)',
+  reasoning: 'var(--primary)',
   thinking: '#A855F7',
 }
 
@@ -299,6 +306,11 @@ export default function ModelSwitcher() {
                           {model.description && (
                             <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
                               {model.description}
+                            </div>
+                          )}
+                          {modelMetaLine(model) && (
+                            <div style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
+                              {modelMetaLine(model)}
                             </div>
                           )}
                         </div>

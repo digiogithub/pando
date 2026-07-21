@@ -91,6 +91,8 @@
       "themeDark": "ダーク",
       "llmCache": "LLMプロンプトキャッシュ",
       "llmCacheDescription": "LLMプロバイダーのプロンプトキャッシュを有効化（主にAnthropic）",
+      "modelsDev": "モデルカタログ (models.dev)",
+      "modelsDevDescription": "プロバイダーが報告しない場合に、models.devカタログからモデルの料金・コンテキスト上限・機能を補完します。インスタンスごとに1回ダウンロードし24時間キャッシュします。利用できない場合はプロバイダーの情報のまま、コストは表示されません",
       "outputFilter": "コマンド出力フィルター",
       "outputFilterDescription": "冗長なコマンド出力（テストランナー、ビルド、インストーラー）をモデルに渡す前に圧縮してトークンを節約します。フェイルセーフでデフォルトで有効。エラーが破棄されることはありません",
       "caveman": "出力簡潔モード (Caveman)",

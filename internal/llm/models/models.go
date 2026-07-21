@@ -29,6 +29,12 @@ type Model struct {
 	// AccountID is the ProviderAccount.ID that this model belongs to.
 	// Empty means the model comes from the legacy single-account system.
 	AccountID string `json:"account_id,omitempty"`
+	// Description, Knowledge (training cutoff, e.g. "2026-01") and ReleaseDate
+	// are descriptive fields shown in the model selectors. They are usually
+	// absent from provider listing APIs and come from the models.dev catalog.
+	Description string `json:"description,omitempty"`
+	Knowledge   string `json:"knowledge,omitempty"`
+	ReleaseDate string `json:"release_date,omitempty"`
 }
 
 // DisplayLabel returns the display label for a model.

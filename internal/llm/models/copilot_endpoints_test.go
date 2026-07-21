@@ -174,7 +174,7 @@ func TestModelFromFetchedAccountModelCarriesCapabilities(t *testing.T) {
 		SupportsReasoningEffort: true,
 	}
 
-	model := modelFromFetchedAccountModel(params, fetched)
+	model := modelFromFetchedAccountModel(context.Background(), params, fetched)
 
 	if !model.CanReason || !model.SupportsReasoningEffort {
 		t.Fatalf("CanReason = %v, SupportsReasoningEffort = %v, want both true", model.CanReason, model.SupportsReasoningEffort)

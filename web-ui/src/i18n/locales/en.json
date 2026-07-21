@@ -91,6 +91,8 @@
       "themeDark": "Dark",
       "llmCache": "LLM Prompt Cache",
       "llmCacheDescription": "Enable prompt caching for LLM providers (mainly affects Anthropic)",
+      "modelsDev": "Model Catalog (models.dev)",
+      "modelsDevDescription": "Complete model pricing, context limits and capabilities from the models.dev catalog when the provider does not report them. Downloaded once per instance and cached for 24 h; if unavailable, models keep their provider metadata and no cost is shown",
       "outputFilter": "Command Output Filter",
       "outputFilterDescription": "Compress noisy command output (test runners, builds, installers) before it reaches the model to save tokens. Fail-safe and on by default; errors are never dropped",
       "caveman": "Caveman Output Brevity",

@@ -464,6 +464,8 @@ export interface SettingsConfig {
   show_hidden_files: boolean
   nerd_fonts: boolean
   llm_cache_enabled: boolean
+  /** Complete model pricing/limits from the models.dev catalog. Default true. */
+  models_dev_enabled: boolean
   output_filter_enabled: boolean        // RTK-style command-output compression (inverse of Bash.OutputFilterDisabled)
   caveman_default_mode: string          // output brevity default: '' (off) | 'lite' | 'full' | 'ultra'
   evaluator_enabled: boolean
