@@ -635,6 +635,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			app.History,
 			app,
 			app.UserInput,
+			app.Sessions,
 		),
 		app.SkillManager,
 	)

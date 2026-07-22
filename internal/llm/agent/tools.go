@@ -12,6 +12,7 @@ import (
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/rag"
+	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/userinput"
 )
 
@@ -53,6 +54,10 @@ var alwaysIncludedTools = map[string]bool{
 	// AskUserQuestion lets the agent ask the user for input; it must never be
 	// trimmed away, otherwise the agent loses the ability to clarify mid-task.
 	tools.AskUserQuestionToolName: true,
+	// pando_setup is how the agent inspects its own configuration, models and
+	// session. Trimming it on the first message would hide that for the whole
+	// session, since the need for it usually appears mid-task.
+	tools.PandoSetupToolName: true,
 }
 
 // askUserQuestionEnabled reports whether the AskUserQuestion tool should be
@@ -111,6 +116,7 @@ func CoderAgentTools(
 	history history.Service,
 	lspProvider tools.LSPProvider,
 	userInput userinput.Service,
+	sessions session.Service,
 ) []tools.BaseTool {
 	ctx := context.Background()
 	otherTools := GetMcpTools(ctx, permissions)
@@ -166,6 +172,7 @@ func CoderAgentTools(
 		tools.NewCacheReadTool(),
 		tools.NewCacheStatsTool(),
 		tools.NewSavingsStatsTool(),
+		tools.NewPandoSetupTool(NewSetupBridge(sessions)),
 		tools.NewPatchTool(lspProvider, permissions, history),
 		tools.NewWriteTool(lspProvider, permissions, history),
 		tools.NewTodoWriteTool(),
@@ -184,6 +191,7 @@ func CoderAgentToolsWithMesnada(
 	history history.Service,
 	lspProvider tools.LSPProvider,
 	userInput userinput.Service,
+	sessions session.Service,
 ) []tools.BaseTool {
 	ctx := context.Background()
 
@@ -201,6 +209,7 @@ func CoderAgentToolsWithMesnada(
 				tools.NewViewTool(lspProvider),
 				tools.NewCacheReadTool(),
 				tools.NewCacheStatsTool(),
+				tools.NewPandoSetupTool(NewSetupBridge(sessions)),
 				tools.NewPatchTool(lspProvider, permissions, history),
 				tools.NewWriteTool(lspProvider, permissions, history),
 				tools.NewTodoWriteTool(),
@@ -219,6 +228,7 @@ func CoderAgentToolsWithMesnada(
 			history,
 			lspProvider,
 			userInput,
+			sessions,
 		)
 	}
 	// Only add internal tools when using the gateway path; CoderAgentTools already

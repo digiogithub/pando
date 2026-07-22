@@ -44,31 +44,8 @@ func BuiltinCommands() []SlashCommand {
 func AllCommands(dataDir string) []SlashCommand {
 	cmds := BuiltinCommands()
 
-	// Load project commands from <dataDir>/commands/
-	if dataDir != "" {
-		projectDir := filepath.Join(dataDir, "commands")
-		custom := loadCustomFromDir(projectDir, "project:")
-		cmds = append(cmds, custom...)
-	}
-
-	// Load user commands from XDG_CONFIG_HOME/pando/commands or ~/.pando/commands
-	xdgConfigHome := os.Getenv("XDG_CONFIG_HOME")
-	if xdgConfigHome == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			xdgConfigHome = filepath.Join(home, ".config")
-		}
-	}
-	if xdgConfigHome != "" {
-		userDir := filepath.Join(xdgConfigHome, "pando", "commands")
-		custom := loadCustomFromDir(userDir, "user:")
-		cmds = append(cmds, custom...)
-	}
-
-	// Also check ~/.pando/commands
-	if home, err := os.UserHomeDir(); err == nil {
-		homeDir := filepath.Join(home, ".pando", "commands")
-		custom := loadCustomFromDir(homeDir, "user:")
-		cmds = append(cmds, custom...)
+	for _, dir := range customCommandDirs(dataDir) {
+		cmds = append(cmds, loadCustomFromDir(dir.Dir, dir.Prefix)...)
 	}
 
 	return cmds

@@ -24,6 +24,7 @@ var builtinToolNames = map[string]struct{}{
 	CacheReadToolName:    {},
 	CacheStatsToolName:   {},
 	SavingsStatsToolName: {},
+	PandoSetupToolName:   {},
 	DiagnosticsToolName:  {},
 	"tool_search":        {},
 
