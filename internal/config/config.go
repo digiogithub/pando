@@ -3245,12 +3245,21 @@ func setAgentModel(agentName AgentName, modelID models.ModelID, persist bool) er
 		return nil
 	}
 
-	return updateCfgFile(func(config *Config) {
+	err := updateCfgFile(func(config *Config) {
 		if config.Agents == nil {
 			config.Agents = make(map[AgentName]Agent)
 		}
 		config.Agents[agentName] = newAgentCfg
 	})
+	if err != nil {
+		return err
+	}
+
+	if agentName == AgentCoder {
+		ensureEvaluatorDefaultModel()
+	}
+
+	return nil
 }
 
 // UpdateTheme updates the theme in the configuration and writes it to the config file.

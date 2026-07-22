@@ -1,18 +1,30 @@
 ---
-created_at: 2026-07-16T22:55:12.316339959Z
-updated_at: 2026-07-16T22:55:12.316339959Z
+created_at: 2026-07-16T22:55:12.617574502Z
+updated_at: 2026-07-22T09:28:58.017702804Z
+tags:
+    - fix
+    - evaluator
+    - config
 ---
-# Fix: evaluator.model auto-seeded from coder agent model
+# Fix: evaluator.model not persisted when Coder model changed at runtime
 
-## What changed
-- `internal/config/config.go`: new `ensureEvaluatorDefaultModel()`, called from `applyDefaultValues()` right after `ensureAgentDefaults()`.
-- Logic: if `cfg.Evaluator.Model` is empty, copy `cfg.Agents[AgentCoder].Model` (and its matching provider) into `cfg.Evaluator.Model`/`cfg.Evaluator.Provider`, then persist via `updateCfgFile` so the choice survives reload.
-- If evaluator.model is already set (default-seeded previously, or user picked another model explicitly via `UpdateEvaluator`/config edit), the function is a no-op — a later user selection always wins over the coder-derived default.
+## Problem (2026-07-22)
+`ensureEvaluatorDefaultModel()` (seeds `evaluator.model`/`evaluator.provider` from the
+coder agent's model when evaluator.model is empty) was only invoked from
+`applyDefaultValues()`, i.e. once at `config.Load()` (app startup). Selecting a Coder
+model afterwards in TUI/WebUI/API settings goes through `UpdateAgentModel` ->
+`setAgentModel(..., persist=true)`, which never called that seed function, so any
+evaluator-model auto-fill only ever reflected whatever coder model existed at boot and
+never updated/persisted to the `.toml` file when the user picked a new Coder model
+later in the running session.
 
-## Why
-User request: on startup with a fresh/template config, if no evaluator model has been chosen yet, default it to whatever model is configured for the coder agent and persist that to config, so the self-improvement judge has a usable model without manual setup. Once the user selects a different evaluator model, that choice must stick.
+## Fix
+`internal/config/config.go`: `setAgentModel` now calls `ensureEvaluatorDefaultModel()`
+right after successfully persisting an agent-model change, but only when
+`agentName == AgentCoder`. `ensureEvaluatorDefaultModel` itself is unchanged — it is
+still a no-op whenever `cfg.Evaluator.Model` is already set, so an explicit evaluator
+model choice still always wins over the coder-derived default.
 
 ## Verification
 - `go build ./...` clean.
-- `go test ./internal/config/...` passes (no existing test broken).
-- No new tests added (behavior is a startup-only default seed guarded by "already set" check; existing config test suite covers `applyDefaultValues`/`ensureAgentDefaults` wiring).
+- `go test ./internal/config/...` passes.
