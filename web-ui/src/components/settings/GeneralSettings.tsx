@@ -332,6 +332,76 @@ export default function GeneralSettings() {
           checked={config.delegation_accept_delegations}
           onChange={(v) => updateField('delegation_accept_delegations', v)}
         />
+        <Toggle
+          label={t('settings.general.delegationConclusionGate')}
+          description={t('settings.general.delegationConclusionGateDescription')}
+          checked={config.delegation_conclusion_gate}
+          onChange={(v) => updateField('delegation_conclusion_gate', v)}
+        />
+        <Toggle
+          label={t('settings.general.delegationBreaker')}
+          description={t('settings.general.delegationBreakerDescription')}
+          checked={config.delegation_breaker}
+          onChange={(v) => updateField('delegation_breaker', v)}
+        />
+        <TextInput
+          label={t('settings.general.delegationMaxTaskRetries')}
+          type="number"
+          min={0}
+          value={config.delegation_max_task_retries}
+          disabled={!config.delegation_breaker}
+          onChange={(e) => updateField('delegation_max_task_retries', Number(e.target.value))}
+        />
+        <TextInput
+          label={t('settings.general.delegationRateLimitCooldown')}
+          value={config.delegation_rate_limit_cooldown}
+          disabled={!config.delegation_breaker}
+          onChange={(e) => updateField('delegation_rate_limit_cooldown', e.target.value)}
+        />
+        <TextInput
+          label={t('settings.general.delegationRecentSuccessWindow')}
+          value={config.delegation_recent_success_window}
+          disabled={!config.delegation_breaker}
+          onChange={(e) => updateField('delegation_recent_success_window', e.target.value)}
+        />
+        <Toggle
+          label={t('settings.general.delegationEventLog')}
+          description={t('settings.general.delegationEventLogDescription')}
+          checked={config.delegation_event_log}
+          onChange={(v) => updateField('delegation_event_log', v)}
+        />
+        <TextInput
+          label={t('settings.general.delegationEventLogMaxEntries')}
+          type="number"
+          min={0}
+          value={config.delegation_event_log_max_entries}
+          disabled={!config.delegation_event_log}
+          onChange={(e) => updateField('delegation_event_log_max_entries', Number(e.target.value))}
+        />
+        <TextInput
+          label={t('settings.general.orchestratorMaxParallel')}
+          type="number"
+          min={1}
+          value={config.orchestrator_max_parallel}
+          onChange={(e) => updateField('orchestrator_max_parallel', Number(e.target.value))}
+        />
+        <TextInput
+          label={t('settings.general.orchestratorMaxPerEngine')}
+          type="number"
+          min={0}
+          value={config.orchestrator_max_per_engine}
+          onChange={(e) => updateField('orchestrator_max_per_engine', Number(e.target.value))}
+        />
+        <TextInput
+          label={t('settings.general.orchestratorClaimTtl')}
+          value={config.orchestrator_claim_ttl}
+          onChange={(e) => updateField('orchestrator_claim_ttl', e.target.value)}
+        />
+        <TextInput
+          label={t('settings.general.orchestratorDispatchInterval')}
+          value={config.orchestrator_dispatch_interval}
+          onChange={(e) => updateField('orchestrator_dispatch_interval', e.target.value)}
+        />
       </div>
 
       <div style={dividerStyle} />

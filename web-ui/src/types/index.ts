@@ -495,6 +495,17 @@ export interface SettingsConfig {
   delegation_warm_queue_depth: number                 // queue this many delegations for a free warm slot (0 = cold-spawn at cap)
   delegation_allow_external_warm_targets: boolean     // caller opt-in: route delegated tasks to external (editor-launched) peers over IPC
   delegation_accept_delegations: boolean              // target opt-in: accept incoming delegation requests from peers over IPC
+  delegation_conclusion_gate: boolean                 // downgrade a "success" conclusion citing artifacts/memory refs that do not exist
+  delegation_breaker: boolean                         // refuse a relaunch/retry after repeated failures, an auth blocker or inside a rate-limit cooldown
+  delegation_max_task_retries: number                 // consecutive failures tolerated before the breaker trips
+  delegation_rate_limit_cooldown: string              // defer a respawn this long after a quota wall (e.g. "5m")
+  delegation_recent_success_window: string            // treat a re-run within this window of a success as redundant (e.g. "2m")
+  delegation_event_log: boolean                       // record terminal outcomes on disk and deliver them through an acked cursor
+  delegation_event_log_max_entries: number            // events retained before the log is compacted
+  orchestrator_max_parallel: number                   // tasks in flight at once; over the cap a ready task queues
+  orchestrator_max_per_engine: number                 // per-engine in-flight cap (0 = no per-engine limit)
+  orchestrator_claim_ttl: string                      // how long a dispatch reservation is held (e.g. "2m")
+  orchestrator_dispatch_interval: string              // how often stranded claims are reclaimed and deferred tasks started (e.g. "10s")
   // UI-only fields (not persisted via /api/v1/settings)
   language: string
 }

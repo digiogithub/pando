@@ -42,6 +42,17 @@ const DEFAULTS: SettingsConfig = {
   delegation_warm_queue_depth: 0,
   delegation_allow_external_warm_targets: false,
   delegation_accept_delegations: false,
+  delegation_conclusion_gate: true,
+  delegation_breaker: true,
+  delegation_max_task_retries: 3,
+  delegation_rate_limit_cooldown: '5m',
+  delegation_recent_success_window: '2m',
+  delegation_event_log: true,
+  delegation_event_log_max_entries: 5000,
+  orchestrator_max_parallel: 5,
+  orchestrator_max_per_engine: 0,
+  orchestrator_claim_ttl: '2m',
+  orchestrator_dispatch_interval: '10s',
   // UI-only, not persisted via /api/v1/settings
   language: 'en',
 }

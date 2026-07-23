@@ -211,8 +211,24 @@ type MesnadaOrchestratorConfig struct {
 	LogDir    string `json:"logDir,omitempty"`
 	// EnginesDir is the directory scanned for *.template.yaml custom engine files.
 	// Defaults to <dirname(LogDir)>/engines when empty.
-	EnginesDir       string `json:"enginesDir,omitempty"`
-	MaxParallel      int    `json:"maxParallel,omitempty"`
+	EnginesDir string `json:"enginesDir,omitempty"`
+	// MaxParallel caps how many tasks the orchestrator keeps in flight at once
+	// (0 = unlimited). Tasks over the cap stay pending and start as slots free
+	// up, so a wide fan-out queues instead of spawning without bound.
+	MaxParallel int `json:"maxParallel,omitempty"`
+	// MaxPerEngine caps in-flight tasks per engine (0 = unlimited), so one
+	// engine's fan-out cannot consume every slot — and every one of that
+	// provider's rate-limit tokens — while the other engines idle.
+	MaxPerEngine int `json:"maxPerEngine,omitempty"`
+	// ClaimTTL bounds a dispatch claim: the reservation a dispatcher takes on a
+	// ready task so two concurrent readiness evaluations cannot start it twice.
+	// A claim that expires without the task starting is reclaimed. Go duration
+	// string ("2m").
+	ClaimTTL string `json:"claimTtl,omitempty"`
+	// DispatchInterval is how often the dispatch tick reclaims stranded claims
+	// and starts tasks that a concurrency cap had deferred. Go duration string
+	// ("10s").
+	DispatchInterval string `json:"dispatchInterval,omitempty"`
 	DefaultEngine    string `json:"defaultEngine,omitempty"`
 	DefaultModel     string `json:"defaultModel,omitempty"`
 	DefaultMCPConfig string `json:"defaultMcpConfig,omitempty"`
@@ -312,6 +328,48 @@ type MesnadaDelegationConfig struct {
 	// `delegation.run` handler is active and the instance advertises
 	// AcceptsDelegations=false over instance.info, so peers will not route to it.
 	AcceptDelegations bool `json:"acceptDelegations,omitempty"`
+	// ConclusionGateDisabled turns OFF the anti-hallucination conclusion gate.
+	// The gate downgrades a delegated task's "success" conclusion to "partial"
+	// (adding a warning, never discarding data) when the artifacts or memory refs
+	// it cites cannot be found. Default false = gate ACTIVE whenever Enabled.
+	// Inverted so the zero value is the safe behaviour and viper's nested-default
+	// shadowing cannot silently disable it.
+	ConclusionGateDisabled bool `json:"conclusionGateDisabled,omitempty"`
+	// BreakerDisabled turns OFF the delegated-task circuit breaker and respawn
+	// guard, which refuse a Relaunch/Retry that reached the consecutive-failure
+	// limit, failed on authentication, or is inside a rate-limit cooldown.
+	// Default false = breaker ACTIVE. Unlike the flags above the breaker does not
+	// require Enabled: it guards the plain task respawn paths too.
+	BreakerDisabled bool `json:"breakerDisabled,omitempty"`
+	// MaxTaskRetries is how many consecutive failures a task may accumulate
+	// before the breaker trips. The count accumulates across retry chains and is
+	// reset by any success.
+	MaxTaskRetries int `json:"maxTaskRetries,omitempty"`
+	// RateLimitCooldown is how long a respawn is deferred after a run failed on a
+	// rate limit / quota wall. A Go duration string ("5m").
+	RateLimitCooldown string `json:"rateLimitCooldown,omitempty"`
+	// RecentSuccessWindow is how long after a success re-running the same task is
+	// treated as redundant and refused. A Go duration string ("2m").
+	RecentSuccessWindow string `json:"recentSuccessWindow,omitempty"`
+	// EventLogDisabled turns OFF the durable delegation event log. With the log
+	// on (the default) every terminal task outcome is appended to disk before it
+	// is broadcast, and the delegation supervisor consumes it through an acked
+	// cursor — so a signal dropped by the non-blocking in-memory bus, or produced
+	// while pando was down, is still delivered instead of vanishing. Inverted for
+	// the same reason as the flags above. Does not require Enabled.
+	EventLogDisabled bool `json:"eventLogDisabled,omitempty"`
+	// EventLogMaxEntries bounds how many events are retained; past twice this
+	// many the log is compacted to the newest EventLogMaxEntries.
+	EventLogMaxEntries int `json:"eventLogMaxEntries,omitempty"`
+	// BlackboardMaxEntriesPerSwarm bounds one swarm's shared-blackboard append
+	// log. Past it the log is compacted to the newest entries while every key's
+	// winning value is kept, so GC never loses a fact the merged view still shows.
+	// 0 falls back to the documented default (garbage collection stays on).
+	BlackboardMaxEntriesPerSwarm int `json:"blackboardMaxEntriesPerSwarm,omitempty"`
+	// BlackboardTTL purges a swarm's blackboard once its newest entry is older
+	// than this Go duration string ("168h") — a finished swarm ages out without
+	// the board tracking task lifecycle. 0 falls back to the documented default.
+	BlackboardTTL string `json:"blackboardTtl,omitempty"`
 }
 
 // Documented defaults for the delegation caps/timeout. They are the single
@@ -322,10 +380,25 @@ type MesnadaDelegationConfig struct {
 // the well-known viper nested-default shadowing behaviour. See
 // pando/plans/delegation_future_improvements.md item A1.
 const (
-	defaultDelegationMaxResurrections    = 4
-	defaultDelegationMaxDepth            = 3
-	defaultDelegationMaxConcurrent       = 8
-	defaultDelegationResurrectionTimeout = "10m"
+	defaultDelegationMaxResurrections     = 4
+	defaultDelegationMaxDepth             = 3
+	defaultDelegationMaxConcurrent        = 8
+	defaultDelegationResurrectionTimeout  = "10m"
+	defaultDelegationMaxTaskRetries       = 3
+	defaultDelegationRateLimitCooldown    = "5m"
+	defaultDelegationRecentSuccessWindow  = "2m"
+	defaultDelegationEventLogMaxEntries   = 5000
+	defaultDelegationBlackboardMaxEntries = 200
+	defaultDelegationBlackboardTTL        = "168h"
+)
+
+// Documented defaults for the claim-lease dispatcher. They share the same
+// shadowing workaround as the delegation defaults above (see
+// normalizeMesnadaOrchestratorDefaults).
+const (
+	defaultOrchestratorMaxParallel      = 5
+	defaultOrchestratorClaimTTL         = "2m"
+	defaultOrchestratorDispatchInterval = "10s"
 )
 
 // ShellConfig defines the configuration for the shell used by the bash tool.
@@ -1573,7 +1646,10 @@ func setDefaults(debug bool) {
 	viper.SetDefault("mesnada.enabled", false)
 	viper.SetDefault("mesnada.server.host", "127.0.0.1")
 	viper.SetDefault("mesnada.server.port", 9767)
-	viper.SetDefault("mesnada.orchestrator.maxParallel", 5)
+	viper.SetDefault("mesnada.orchestrator.maxParallel", defaultOrchestratorMaxParallel)
+	viper.SetDefault("mesnada.orchestrator.maxPerEngine", 0)
+	viper.SetDefault("mesnada.orchestrator.claimTtl", defaultOrchestratorClaimTTL)
+	viper.SetDefault("mesnada.orchestrator.dispatchInterval", defaultOrchestratorDispatchInterval)
 	viper.SetDefault("mesnada.orchestrator.defaultEngine", "pando")
 	viper.SetDefault("mesnada.orchestrator.defaultModel", "gpt-5.4")
 	viper.SetDefault("mesnada.tui.enabled", true)
@@ -1596,6 +1672,19 @@ func setDefaults(debug bool) {
 	viper.SetDefault("mesnada.delegation.warmQueueDepth", 0)
 	viper.SetDefault("mesnada.delegation.allowExternalWarmTargets", false)
 	viper.SetDefault("mesnada.delegation.acceptDelegations", false)
+	// Integrity gate + anti-thrash breaker. Both are ON by default via inverted
+	// "…Disabled" booleans, whose zero value is the safe behaviour.
+	viper.SetDefault("mesnada.delegation.conclusionGateDisabled", false)
+	viper.SetDefault("mesnada.delegation.breakerDisabled", false)
+	viper.SetDefault("mesnada.delegation.maxTaskRetries", defaultDelegationMaxTaskRetries)
+	viper.SetDefault("mesnada.delegation.rateLimitCooldown", defaultDelegationRateLimitCooldown)
+	viper.SetDefault("mesnada.delegation.recentSuccessWindow", defaultDelegationRecentSuccessWindow)
+	// Durable delegation event log: ON by default, same inverted-boolean rule.
+	viper.SetDefault("mesnada.delegation.eventLogDisabled", false)
+	viper.SetDefault("mesnada.delegation.eventLogMaxEntries", defaultDelegationEventLogMaxEntries)
+	// Blackboard GC bounds: on by default with the documented limits.
+	viper.SetDefault("mesnada.delegation.blackboardMaxEntriesPerSwarm", defaultDelegationBlackboardMaxEntries)
+	viper.SetDefault("mesnada.delegation.blackboardTtl", defaultDelegationBlackboardTTL)
 
 	// Token Optimization (lean-ctx context-intelligence) defaults.
 	// ReadModeDefault stays "full" so `view` is byte-identical to its legacy
@@ -2169,6 +2258,7 @@ func applyDefaultValues() {
 
 	normalizeRemembrancesDefaults()
 	normalizeMesnadaDelegationDefaults()
+	normalizeMesnadaOrchestratorDefaults()
 	refreshConfiguredDynamicModels()
 	ensureAgentDefaults()
 	ensureEvaluatorDefaultModel()
@@ -2248,6 +2338,54 @@ func normalizeMesnadaDelegationDefaults() {
 	if strings.TrimSpace(d.WarmInstanceIdleTimeout) == "" {
 		d.WarmInstanceIdleTimeout = "0"
 	}
+	// Breaker knobs follow the same "zero means the user said nothing" rule as
+	// the caps above. Their boolean switches are inverted (…Disabled) precisely so
+	// shadowing yields false = ACTIVE and needs no fallback here.
+	if d.MaxTaskRetries == 0 {
+		d.MaxTaskRetries = defaultDelegationMaxTaskRetries
+	}
+	if strings.TrimSpace(d.RateLimitCooldown) == "" {
+		d.RateLimitCooldown = defaultDelegationRateLimitCooldown
+	}
+	if strings.TrimSpace(d.RecentSuccessWindow) == "" {
+		d.RecentSuccessWindow = defaultDelegationRecentSuccessWindow
+	}
+	// The event log follows the caps rule for its retention bound; its switch is
+	// inverted so shadowing yields false = log ACTIVE.
+	if d.EventLogMaxEntries == 0 {
+		d.EventLogMaxEntries = defaultDelegationEventLogMaxEntries
+	}
+	// Blackboard GC bounds follow the same "zero means unset" rule so a shadowed
+	// 0 restores the default instead of silently disabling garbage collection.
+	if d.BlackboardMaxEntriesPerSwarm == 0 {
+		d.BlackboardMaxEntriesPerSwarm = defaultDelegationBlackboardMaxEntries
+	}
+	if strings.TrimSpace(d.BlackboardTTL) == "" {
+		d.BlackboardTTL = defaultDelegationBlackboardTTL
+	}
+}
+
+// normalizeMesnadaOrchestratorDefaults restores the documented dispatcher
+// defaults dropped by the same viper nested-default shadowing described above:
+// a config file with any [Mesnada] key but no [Mesnada.Orchestrator] table makes
+// MaxParallel unmarshal as 0. That mattered little while MaxParallel was
+// advertised but never enforced; now that it is a real concurrency cap, a
+// shadowed 0 would silently mean "unlimited" and the setting the UI shows would
+// be a lie. As with the delegation caps, an explicit 0 is therefore read as "use
+// the default" — configure a large value for effectively unlimited.
+func normalizeMesnadaOrchestratorDefaults() {
+	o := &cfg.Mesnada.Orchestrator
+	if o.MaxParallel == 0 {
+		o.MaxParallel = defaultOrchestratorMaxParallel
+	}
+	if strings.TrimSpace(o.ClaimTTL) == "" {
+		o.ClaimTTL = defaultOrchestratorClaimTTL
+	}
+	if strings.TrimSpace(o.DispatchInterval) == "" {
+		o.DispatchInterval = defaultOrchestratorDispatchInterval
+	}
+	// MaxPerEngine has no documented non-zero default: 0 genuinely means "no
+	// per-engine cap", so it is left alone.
 }
 
 // It validates model IDs and providers, ensuring they are supported.
@@ -3679,6 +3817,27 @@ func UpdateMesnadaDelegation(delegationCfg MesnadaDelegationConfig) error {
 		config.Mesnada.Delegation = delegationCfg
 	}); err != nil {
 		cfg.Mesnada.Delegation = oldDelegation
+		return err
+	}
+
+	return nil
+}
+
+// UpdateMesnadaOrchestrator updates the orchestrator (dispatcher) configuration
+// and persists it to the config file. The new caps take effect for orchestrators
+// created afterwards; a running orchestrator keeps the values it started with.
+func UpdateMesnadaOrchestrator(orchestratorCfg MesnadaOrchestratorConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldOrchestrator := cfg.Mesnada.Orchestrator
+	cfg.Mesnada.Orchestrator = orchestratorCfg
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Mesnada.Orchestrator = orchestratorCfg
+	}); err != nil {
+		cfg.Mesnada.Orchestrator = oldOrchestrator
 		return err
 	}
 

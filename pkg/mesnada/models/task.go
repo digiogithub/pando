@@ -108,13 +108,13 @@ type Task struct {
 	// start. Used by the swarm verifier→synthesizer topology: the synthesizer
 	// gates on the verifier's conclusion. Empty (the default) preserves the plain
 	// "all dependencies completed" semantics exactly.
-	GateDeps []string `json:"gate_deps,omitempty"`
-	Tags         []string      `json:"tags,omitempty"`
-	Priority     int           `json:"priority,omitempty"`
-	Timeout      Duration      `json:"timeout,omitempty"`
-	MCPConfig    string        `json:"mcp_config,omitempty"`
-	ExtraArgs    []string      `json:"extra_args,omitempty"`
-	Persona      string        `json:"persona,omitempty"`
+	GateDeps  []string `json:"gate_deps,omitempty"`
+	Tags      []string `json:"tags,omitempty"`
+	Priority  int      `json:"priority,omitempty"`
+	Timeout   Duration `json:"timeout,omitempty"`
+	MCPConfig string   `json:"mcp_config,omitempty"`
+	ExtraArgs []string `json:"extra_args,omitempty"`
+	Persona   string   `json:"persona,omitempty"`
 	// ACP-specific fields
 	ACPSessionID string      `json:"acp_session_id,omitempty"`
 	ACPMode      string      `json:"acp_mode,omitempty"`
@@ -133,6 +133,50 @@ type Task struct {
 	ProjectName     string      `json:"project_name,omitempty"`      // resolved folder/display name
 	Conclusion      *Conclusion `json:"conclusion,omitempty"`        // captured task conclusion
 	Depth           int         `json:"depth,omitempty"`             // anti-fork-bomb cap
+	// Circuit-breaker / respawn-guard state. ConsecutiveFailures counts failed
+	// executions since the last success and accumulates across retry chains (a
+	// Retry carries it into the new task) so an unfixable task trips the breaker
+	// instead of being respawned forever. MaxRetries overrides the configured
+	// limit for this task (0 = use the configured default). LastFailureKind
+	// classifies the last failure ("rate_limit", "auth", "other") so the respawn
+	// guard can defer a quota-walled or auth-blocked task rather than thrash.
+	ConsecutiveFailures int        `json:"consecutive_failures,omitempty"`
+	MaxRetries          int        `json:"max_retries,omitempty"`
+	LastFailureKind     string     `json:"last_failure_kind,omitempty"`
+	LastFailureAt       *time.Time `json:"last_failure_at,omitempty"`
+	LastSuccessAt       *time.Time `json:"last_success_at,omitempty"`
+	// Claim-lease dispatch state. ClaimLock holds the id of the dispatcher that
+	// reserved this task for execution; a task is only ever started by the
+	// dispatcher that won its claim, which makes concurrent readiness
+	// evaluations idempotent. ClaimExpires bounds the reservation: a dispatcher
+	// that dies between claiming and spawning cannot strand the task, because
+	// the lease expires and the task returns to the dispatchable pool.
+	ClaimLock    string     `json:"claim_lock,omitempty"`
+	ClaimedAt    *time.Time `json:"claimed_at,omitempty"`
+	ClaimExpires *time.Time `json:"claim_expires,omitempty"`
+}
+
+// ClaimActive reports whether the task currently holds a dispatch claim that has
+// not expired at the given instant.
+func (t *Task) ClaimActive(now time.Time) bool {
+	if t == nil || t.ClaimLock == "" {
+		return false
+	}
+	if t.ClaimExpires == nil {
+		return true // a lease without an expiry never lapses on its own
+	}
+	return now.Before(*t.ClaimExpires)
+}
+
+// ClearClaim drops the dispatch claim, returning the task to the dispatchable
+// pool.
+func (t *Task) ClearClaim() {
+	if t == nil {
+		return
+	}
+	t.ClaimLock = ""
+	t.ClaimedAt = nil
+	t.ClaimExpires = nil
 }
 
 // Conclusion is the enriched, durable result of a delegated task. The subagent
@@ -267,11 +311,11 @@ type ACPMCPServer struct {
 
 // SpawnRequest represents a request to spawn a new agent.
 type SpawnRequest struct {
-	Prompt                string   `json:"prompt"`
-	WorkDir               string   `json:"work_dir,omitempty"`
-	Model                 string   `json:"model,omitempty"`
-	Engine                Engine   `json:"engine,omitempty"`
-	Dependencies          []string `json:"dependencies,omitempty"`
+	Prompt       string   `json:"prompt"`
+	WorkDir      string   `json:"work_dir,omitempty"`
+	Model        string   `json:"model,omitempty"`
+	Engine       Engine   `json:"engine,omitempty"`
+	Dependencies []string `json:"dependencies,omitempty"`
 	// GateDeps (subset of Dependencies) must pass a conclusion gate, not just
 	// complete, before the task starts. See Task.GateDeps.
 	GateDeps              []string `json:"gate_deps,omitempty"`
@@ -298,6 +342,13 @@ type SpawnRequest struct {
 	ProjectID       string `json:"project_id,omitempty"`
 	ProjectPath     string `json:"project_path,omitempty"`
 	Depth           int    `json:"depth,omitempty"`
+	// MaxRetries overrides the configured circuit-breaker limit for this task
+	// (0 = use the configured default). See Task.MaxRetries.
+	MaxRetries int `json:"max_retries,omitempty"`
+	// ConsecutiveFailures seeds the new task's breaker counter so a retry chain
+	// accumulates failures instead of resetting the breaker on every retry.
+	// Populated by Retry; leave zero for a fresh task.
+	ConsecutiveFailures int `json:"consecutive_failures,omitempty"`
 }
 
 // WaitRequest represents a request to wait for task completion.

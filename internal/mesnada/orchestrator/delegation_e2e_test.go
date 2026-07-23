@@ -1,6 +1,8 @@
 package orchestrator
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +26,7 @@ func newDelegationOrch(t *testing.T, synthesize bool, resolver func(string) (str
 		subscribers:     make(map[string][]chan *models.Task),
 		delegation:      DelegationConfig{Enabled: true, SynthesizeFallback: synthesize},
 		projectResolver: resolver,
+		metrics:         &DelegationMetrics{},
 	}
 }
 
@@ -41,12 +44,23 @@ func TestDelegationE2E_ConclusionBlockCapturedAndBroadcast(t *testing.T) {
 	ch, unsubscribe := o.SubscribeCompletions()
 	defer unsubscribe()
 
+	// Real work dir holding the artifact the block cites, so the conclusion is
+	// honest and the anti-hallucination gate leaves status=success alone.
+	workDir := t.TempDir()
+	artifact := filepath.Join(workDir, "internal", "foo", "bar.go")
+	if err := os.MkdirAll(filepath.Dir(artifact), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(artifact, []byte("package foo"), 0o644); err != nil {
+		t.Fatalf("write artifact: %v", err)
+	}
+
 	exit := 0
 	task := &models.Task{
 		ID:              "t-e2e-1",
 		Engine:          models.EnginePando,
 		Model:           "claude-sonnet-4-6",
-		WorkDir:         "/tmp/work",
+		WorkDir:         workDir,
 		ProjectPath:     "/tmp/work",
 		ParentSessionID: "sess-parent",
 		CorrelationID:   "corr-e2e-1",

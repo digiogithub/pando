@@ -24,6 +24,14 @@ type Store interface {
 	ListByParentSession(sessionID string) ([]*models.Task, error)
 	Delete(id string) error
 	UpdateStatus(id string, status models.TaskStatus) error
+	// ClaimForDispatch atomically reserves a pending task for execution by owner
+	// and returns whether the claim was won. It is the compare-and-set that makes
+	// dispatch safe when several readiness evaluations race for the same task
+	// (two dependencies completing at once used to start it twice).
+	ClaimForDispatch(id, owner string, expires time.Time) (bool, error)
+	// ReleaseClaim drops a task's dispatch claim. Safe to call on a task that
+	// holds none.
+	ReleaseClaim(id string) error
 	Close() error
 }
 
@@ -282,6 +290,64 @@ func (fs *FileStore) UpdateStatus(id string, status models.TaskStatus) error {
 	}
 
 	task.Status = status
+	fs.dirty = true
+
+	return nil
+}
+
+// ClaimForDispatch atomically reserves a pending task for owner. The claim is
+// won only when the task exists, is still pending, and is not already held by a
+// live (unexpired) lease — an expired lease is stolen, which is how a task
+// stranded by a dispatcher crash becomes dispatchable again. The whole check and
+// write happen under the store lock so two concurrent dispatchers can never both
+// win.
+func (fs *FileStore) ClaimForDispatch(id, owner string, expires time.Time) (bool, error) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	task, exists := fs.tasks[id]
+	if !exists {
+		return false, fmt.Errorf("task not found: %s", id)
+	}
+	if task.Status != models.TaskStatusPending {
+		return false, nil
+	}
+	now := time.Now()
+	// A live claim blocks everyone, including the same owner: the racing
+	// dispatchers in a single process share one owner id, so an owner-scoped
+	// check would let both through and start the task twice.
+	if task.ClaimActive(now) {
+		return false, nil
+	}
+
+	task.ClaimLock = owner
+	task.ClaimedAt = &now
+	if !expires.IsZero() {
+		exp := expires
+		task.ClaimExpires = &exp
+	} else {
+		task.ClaimExpires = nil
+	}
+	fs.dirty = true
+
+	return true, nil
+}
+
+// ReleaseClaim drops a task's dispatch claim. A missing task is not an error:
+// releasing is cleanup, and cleanup must not fail because the thing being
+// cleaned up is already gone.
+func (fs *FileStore) ReleaseClaim(id string) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	task, exists := fs.tasks[id]
+	if !exists {
+		return nil
+	}
+	if task.ClaimLock == "" && task.ClaimExpires == nil {
+		return nil
+	}
+	task.ClearClaim()
 	fs.dirty = true
 
 	return nil

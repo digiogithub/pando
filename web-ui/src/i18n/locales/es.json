@@ -137,7 +137,21 @@
       "delegationAllowExternalWarmTargets": "Permitir destinos externos activos",
       "delegationAllowExternalWarmTargetsDescription": "Enruta una tarea delegada a un par externo (lanzado por el editor) mediante IPC en lugar de arrancar un CLI en frío (el par debe aceptar delegaciones)",
       "delegationAcceptDelegations": "Aceptar delegaciones",
-      "delegationAcceptDelegationsDescription": "Permite que esta instancia acepte solicitudes de delegación entrantes de otras instancias mediante IPC"
+      "delegationAcceptDelegationsDescription": "Permite que esta instancia acepte solicitudes de delegación entrantes de otras instancias mediante IPC",
+      "delegationConclusionGate": "Verificación de conclusiones",
+      "delegationConclusionGateDescription": "Degrada el \"success\" de una tarea delegada a \"partial\" cuando los ficheros o referencias de memoria que cita no existen",
+      "delegationBreaker": "Cortacircuitos",
+      "delegationBreakerDescription": "Rechaza relanzar o reintentar una tarea que alcanzó el límite de fallos, falló por autenticación o está en periodo de espera por límite de cuota",
+      "delegationMaxTaskRetries": "Fallos consecutivos máximos",
+      "delegationRateLimitCooldown": "Espera tras límite de cuota",
+      "delegationRecentSuccessWindow": "Ventana de éxito reciente",
+      "delegationEventLog": "Registro de eventos durable",
+      "delegationEventLogDescription": "Guarda en disco cada resultado terminal de tarea y lo entrega mediante un cursor confirmado, de modo que una señal descartada por el bus en memoria o perdida en un reinicio se reproduce en vez de desaparecer",
+      "delegationEventLogMaxEntries": "Máximo de eventos guardados",
+      "orchestratorMaxParallel": "Tareas en paralelo máximas",
+      "orchestratorMaxPerEngine": "Tareas máximas por motor (0 = sin límite)",
+      "orchestratorClaimTtl": "TTL de la reserva de despacho",
+      "orchestratorDispatchInterval": "Intervalo de despacho"
     },
     "tokenOptimization": {
       "loading": "Cargando configuración de optimización de tokens…",

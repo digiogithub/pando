@@ -166,6 +166,53 @@ func TestMesnadaDelegationAutoStartFalseWins(t *testing.T) {
 	}
 }
 
+// TestMesnadaBreakerAndGateDefaultsUnderShadowing guards the integrity gate and
+// anti-thrash breaker against viper's nested-default shadowing. Their switches
+// are inverted (…Disabled) precisely so the shadowed zero value is the ACTIVE
+// behaviour, and the numeric/duration knobs must still fall back to their
+// documented defaults.
+func TestMesnadaBreakerAndGateDefaultsUnderShadowing(t *testing.T) {
+	loadTempConfig(t, "[Mesnada]\nEnabled = true\n")
+
+	d := cfg.Mesnada.Delegation
+	if d.ConclusionGateDisabled {
+		t.Error("ConclusionGateDisabled = true, want false (gate active by default)")
+	}
+	if d.BreakerDisabled {
+		t.Error("BreakerDisabled = true, want false (breaker active by default)")
+	}
+	if d.MaxTaskRetries != defaultDelegationMaxTaskRetries {
+		t.Errorf("MaxTaskRetries = %d, want %d", d.MaxTaskRetries, defaultDelegationMaxTaskRetries)
+	}
+	if d.RateLimitCooldown != defaultDelegationRateLimitCooldown {
+		t.Errorf("RateLimitCooldown = %q, want %q", d.RateLimitCooldown, defaultDelegationRateLimitCooldown)
+	}
+	if d.RecentSuccessWindow != defaultDelegationRecentSuccessWindow {
+		t.Errorf("RecentSuccessWindow = %q, want %q", d.RecentSuccessWindow, defaultDelegationRecentSuccessWindow)
+	}
+}
+
+// TestMesnadaBreakerUserValuesWin verifies explicit opt-outs and overrides are
+// preserved by the normalize fallback.
+func TestMesnadaBreakerUserValuesWin(t *testing.T) {
+	loadTempConfig(t, "[Mesnada.Delegation]\nBreakerDisabled = true\nConclusionGateDisabled = true\nMaxTaskRetries = 9\nRateLimitCooldown = '90s'\n")
+
+	d := cfg.Mesnada.Delegation
+	if !d.BreakerDisabled || !d.ConclusionGateDisabled {
+		t.Error("explicit disable flags were lost")
+	}
+	if d.MaxTaskRetries != 9 {
+		t.Errorf("MaxTaskRetries = %d, want user value 9", d.MaxTaskRetries)
+	}
+	if d.RateLimitCooldown != "90s" {
+		t.Errorf("RateLimitCooldown = %q, want user value 90s", d.RateLimitCooldown)
+	}
+	// A knob the user did not list still falls back to its documented default.
+	if d.RecentSuccessWindow != defaultDelegationRecentSuccessWindow {
+		t.Errorf("RecentSuccessWindow = %q, want default", d.RecentSuccessWindow)
+	}
+}
+
 // TestParseEnvBool covers the permissive boolean parser used for env overrides.
 func TestParseEnvBool(t *testing.T) {
 	cases := map[string]bool{
@@ -176,5 +223,57 @@ func TestParseEnvBool(t *testing.T) {
 		if got := parseEnvBool(in); got != want {
 			t.Errorf("parseEnvBool(%q) = %v, want %v", in, got, want)
 		}
+	}
+}
+
+// TestMesnadaEventLogAndDispatcherDefaultsUnderShadowing verifies the durable
+// event log and the claim-lease dispatcher survive viper's nested-default
+// shadowing: a config file with a sibling [Mesnada] key and no
+// [Mesnada.Delegation] / [Mesnada.Orchestrator] table must still yield the
+// documented defaults, not zero values.
+func TestMesnadaEventLogAndDispatcherDefaultsUnderShadowing(t *testing.T) {
+	loadTempConfig(t, "[Mesnada]\nEnabled = true\n")
+
+	if cfg.Mesnada.Delegation.EventLogDisabled {
+		t.Error("EventLogDisabled must default to false (log ACTIVE)")
+	}
+	if got := cfg.Mesnada.Delegation.EventLogMaxEntries; got != defaultDelegationEventLogMaxEntries {
+		t.Errorf("EventLogMaxEntries = %d, want %d", got, defaultDelegationEventLogMaxEntries)
+	}
+	// Blackboard GC bounds must survive shadowing so a 0 does not disable GC.
+	if got := cfg.Mesnada.Delegation.BlackboardMaxEntriesPerSwarm; got != defaultDelegationBlackboardMaxEntries {
+		t.Errorf("BlackboardMaxEntriesPerSwarm = %d, want %d", got, defaultDelegationBlackboardMaxEntries)
+	}
+	if got := cfg.Mesnada.Delegation.BlackboardTTL; got != defaultDelegationBlackboardTTL {
+		t.Errorf("BlackboardTTL = %q, want %q", got, defaultDelegationBlackboardTTL)
+	}
+
+	o := cfg.Mesnada.Orchestrator
+	if o.MaxParallel != defaultOrchestratorMaxParallel {
+		t.Errorf("MaxParallel = %d, want %d — a shadowed 0 would silently mean unlimited", o.MaxParallel, defaultOrchestratorMaxParallel)
+	}
+	if o.ClaimTTL != defaultOrchestratorClaimTTL {
+		t.Errorf("ClaimTTL = %q, want %q", o.ClaimTTL, defaultOrchestratorClaimTTL)
+	}
+	if o.DispatchInterval != defaultOrchestratorDispatchInterval {
+		t.Errorf("DispatchInterval = %q, want %q", o.DispatchInterval, defaultOrchestratorDispatchInterval)
+	}
+	// MaxPerEngine genuinely means "no cap" at 0, so it is not normalized.
+	if o.MaxPerEngine != 0 {
+		t.Errorf("MaxPerEngine = %d, want 0 (uncapped)", o.MaxPerEngine)
+	}
+}
+
+// TestMesnadaDispatcherUserValuesWin verifies explicit dispatcher settings are
+// preserved by the normalize fallback.
+func TestMesnadaDispatcherUserValuesWin(t *testing.T) {
+	loadTempConfig(t, "[Mesnada.Orchestrator]\nMaxParallel = 12\nMaxPerEngine = 3\nClaimTTL = '30s'\n")
+
+	o := cfg.Mesnada.Orchestrator
+	if o.MaxParallel != 12 || o.MaxPerEngine != 3 || o.ClaimTTL != "30s" {
+		t.Fatalf("user dispatcher values were lost: %+v", o)
+	}
+	if o.DispatchInterval != defaultOrchestratorDispatchInterval {
+		t.Errorf("DispatchInterval = %q, want default", o.DispatchInterval)
 	}
 }

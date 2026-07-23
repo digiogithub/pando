@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/digiogithub/pando/internal/mesnada/events"
 	"github.com/digiogithub/pando/internal/mesnada/store"
 	"github.com/digiogithub/pando/pkg/mesnada/models"
 )
@@ -22,7 +23,17 @@ func newTestOrchestrator(t *testing.T) *Orchestrator {
 	if err != nil {
 		t.Fatalf("blackboard: %v", err)
 	}
-	return &Orchestrator{store: st, blackboard: bb}
+	evLog, err := events.Open(filepath.Join(dir, "events.jsonl"), 0)
+	if err != nil {
+		t.Fatalf("event log: %v", err)
+	}
+	return &Orchestrator{
+		store:      st,
+		blackboard: bb,
+		eventLog:   evLog,
+		instanceID: "orch-test",
+		metrics:    &DelegationMetrics{},
+	}
 }
 
 func TestGetDependencyConclusionsForwardsStructuredResult(t *testing.T) {

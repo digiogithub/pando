@@ -1746,7 +1746,10 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 		{Label: "Enabled", Key: "mesnada.enabled", Type: settings.FieldToggle, Value: fmt.Sprint(cfg.Mesnada.Enabled)},
 		{Label: "Server Host", Key: "mesnada.server.host", Type: settings.FieldText, Value: cfg.Mesnada.Server.Host},
 		{Label: "Server Port", Key: "mesnada.server.port", Type: settings.FieldText, Value: fmt.Sprint(cfg.Mesnada.Server.Port)},
-		{Label: "Max Parallel", Key: "mesnada.orchestrator.maxParallel", Type: settings.FieldText, Value: fmt.Sprint(cfg.Mesnada.Orchestrator.MaxParallel)},
+		{Label: "Max Parallel", Key: "mesnada.orchestrator.maxParallel", Type: settings.FieldText, Value: fmt.Sprint(cfg.Mesnada.Orchestrator.MaxParallel), Hint: "Tasks running at once; a ready task over the cap queues and starts when a slot frees"},
+		{Label: "Max Per Engine", Key: "mesnada.orchestrator.maxPerEngine", Type: settings.FieldText, Value: intString(cfg.Mesnada.Orchestrator.MaxPerEngine, 0), Hint: "Per-engine in-flight cap so one engine's fan-out cannot take every slot (0 = no per-engine limit)"},
+		{Label: "Claim TTL", Key: "mesnada.orchestrator.claimTtl", Type: settings.FieldText, Value: durationString(cfg.Mesnada.Orchestrator.ClaimTTL, "2m"), Hint: "How long a dispatch reservation is held before a stranded task is reclaimed (e.g. 2m)"},
+		{Label: "Dispatch Interval", Key: "mesnada.orchestrator.dispatchInterval", Type: settings.FieldText, Value: durationString(cfg.Mesnada.Orchestrator.DispatchInterval, "10s"), Hint: "How often stranded claims are reclaimed and cap-deferred tasks are started (e.g. 10s)"},
 		{
 			Label:   "Default Engine",
 			Key:     "mesnada.orchestrator.defaultEngine",
@@ -1798,6 +1801,13 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 		{Label: "Delegation Warm Queue Depth", Key: "mesnada.delegation.warmQueueDepth", Type: settings.FieldText, Value: intString(cfg.Mesnada.Delegation.WarmQueueDepth, 0), Hint: "Queue this many delegations for a free warm slot under load (0 = cold-spawn when at the cap)"},
 		{Label: "Delegation Allow External Warm Targets", Key: "mesnada.delegation.allowExternalWarmTargets", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.AllowExternalWarmTargets), Hint: "Route a delegated task to an external (editor-launched) peer over IPC instead of cold-spawning (peer must accept delegations)"},
 		{Label: "Delegation Accept Delegations", Key: "mesnada.delegation.acceptDelegations", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.AcceptDelegations), Hint: "Let this instance accept incoming delegation requests from peer instances over IPC"},
+		{Label: "Delegation Conclusion Gate", Key: "mesnada.delegation.conclusionGate", Type: settings.FieldToggle, Value: boolString(!cfg.Mesnada.Delegation.ConclusionGateDisabled), Hint: "Downgrade a delegated task's \"success\" to \"partial\" when the files or memory refs it cites do not exist"},
+		{Label: "Delegation Circuit Breaker", Key: "mesnada.delegation.breaker", Type: settings.FieldToggle, Value: boolString(!cfg.Mesnada.Delegation.BreakerDisabled), Hint: "Refuse to relaunch/retry a task that hit the failure limit, failed on authentication, or is inside a rate-limit cooldown"},
+		{Label: "Delegation Max Task Retries", Key: "mesnada.delegation.maxTaskRetries", Type: settings.FieldText, Value: intString(cfg.Mesnada.Delegation.MaxTaskRetries, 3), Hint: "Consecutive failures tolerated before the circuit breaker trips (0 disables the breaker)"},
+		{Label: "Delegation Rate Limit Cooldown", Key: "mesnada.delegation.rateLimitCooldown", Type: settings.FieldText, Value: cfg.Mesnada.Delegation.RateLimitCooldown, Hint: "Defer a respawn this long after a run hit a quota wall (e.g. 5m)"},
+		{Label: "Delegation Recent Success Window", Key: "mesnada.delegation.recentSuccessWindow", Type: settings.FieldText, Value: cfg.Mesnada.Delegation.RecentSuccessWindow, Hint: "Treat a re-run within this window of a success as redundant (e.g. 2m)"},
+		{Label: "Delegation Event Log", Key: "mesnada.delegation.eventLog", Type: settings.FieldToggle, Value: boolString(!cfg.Mesnada.Delegation.EventLogDisabled), Hint: "Record every terminal task outcome on disk and deliver it through an acked cursor, so a dropped or restart-lost signal is replayed"},
+		{Label: "Delegation Event Log Max Entries", Key: "mesnada.delegation.eventLogMaxEntries", Type: settings.FieldText, Value: intString(cfg.Mesnada.Delegation.EventLogMaxEntries, 5000), Hint: "How many events to retain before the log is compacted"},
 	}
 
 	if !cfg.Mesnada.Enabled {
@@ -2978,6 +2988,15 @@ func warmIdleTimeoutString(timeout string) string {
 	return timeout
 }
 
+// durationString normalizes a duration setting for display, showing the
+// documented default when the config carries no value.
+func durationString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
 // chatSidebarValue normalizes the chat info sidebar mode for display, mapping
 // "off" (case-insensitive) to "off" and everything else (including empty) to
 // "auto".
@@ -3672,6 +3691,27 @@ func saveMesnada(field settings.Field) error {
 			return fmt.Errorf("Mesnada max parallel must be greater than zero")
 		}
 		mesnadaCfg.Orchestrator.MaxParallel = maxParallel
+	case "mesnada.orchestrator.maxPerEngine":
+		maxPerEngine, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Mesnada max per engine value: %w", err)
+		}
+		if maxPerEngine < 0 {
+			return fmt.Errorf("Mesnada max per engine must be >= 0")
+		}
+		mesnadaCfg.Orchestrator.MaxPerEngine = maxPerEngine
+	case "mesnada.orchestrator.claimTtl":
+		ttl := strings.TrimSpace(field.Value)
+		if _, err := time.ParseDuration(ttl); err != nil {
+			return fmt.Errorf("invalid Mesnada claim TTL (e.g. 2m, 30s): %w", err)
+		}
+		mesnadaCfg.Orchestrator.ClaimTTL = ttl
+	case "mesnada.orchestrator.dispatchInterval":
+		interval := strings.TrimSpace(field.Value)
+		if _, err := time.ParseDuration(interval); err != nil {
+			return fmt.Errorf("invalid Mesnada dispatch interval (e.g. 10s, 1m): %w", err)
+		}
+		mesnadaCfg.Orchestrator.DispatchInterval = interval
 	case "mesnada.orchestrator.defaultEngine":
 		engine := strings.TrimSpace(field.Value)
 		if engine == "" {
@@ -3876,6 +3916,56 @@ func saveMesnadaDelegation(field settings.Field) error {
 			return fmt.Errorf("invalid Delegation accept-delegations value: %w", err)
 		}
 		del.AcceptDelegations = v
+	// The two switches below are shown as positive toggles but stored inverted,
+	// so their zero value keeps the safe (active) behaviour.
+	case "mesnada.delegation.conclusionGate":
+		v, err := strconv.ParseBool(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation conclusion-gate value: %w", err)
+		}
+		del.ConclusionGateDisabled = !v
+	case "mesnada.delegation.breaker":
+		v, err := strconv.ParseBool(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation circuit-breaker value: %w", err)
+		}
+		del.BreakerDisabled = !v
+	case "mesnada.delegation.maxTaskRetries":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation max task retries: %w", err)
+		}
+		if v < 0 {
+			return fmt.Errorf("Delegation max task retries must be >= 0")
+		}
+		del.MaxTaskRetries = v
+	case "mesnada.delegation.rateLimitCooldown":
+		cooldown := strings.TrimSpace(field.Value)
+		if _, err := time.ParseDuration(cooldown); err != nil {
+			return fmt.Errorf("invalid Delegation rate-limit cooldown (e.g. 5m, 30s): %w", err)
+		}
+		del.RateLimitCooldown = cooldown
+	case "mesnada.delegation.recentSuccessWindow":
+		window := strings.TrimSpace(field.Value)
+		if _, err := time.ParseDuration(window); err != nil {
+			return fmt.Errorf("invalid Delegation recent-success window (e.g. 2m, 30s): %w", err)
+		}
+		del.RecentSuccessWindow = window
+	case "mesnada.delegation.eventLog":
+		v, err := strconv.ParseBool(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation event-log value: %w", err)
+		}
+		del.EventLogDisabled = !v
+	case "mesnada.delegation.eventLogMaxEntries":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation event-log max entries: %w", err)
+		}
+		if v < 0 {
+			return fmt.Errorf("Delegation event-log max entries must be >= 0")
+		}
+		del.EventLogMaxEntries = v
 	default:
 		return fmt.Errorf("unsupported Delegation setting %q", field.Key)
 	}

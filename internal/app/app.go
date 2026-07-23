@@ -501,6 +501,13 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		// its canonical path. Degrades gracefully to filepath.Base when the path is
 		// not a registered project. Only consulted when delegation is enabled.
 		mesnadaCfg.ProjectResolver = makeProjectResolver(ctx, app.Projects)
+		// Wire the anti-hallucination conclusion gate's memory-ref validator to the
+		// live KB, so a subagent claiming success while citing a memory key or KB
+		// document that was never written is downgraded to "partial". nil when no
+		// KB is available → the gate then verifies filesystem artifacts only.
+		if app.Remembrances != nil {
+			mesnadaCfg.MemoryRefValidator = makeMemoryRefValidator(ctx, app.Remembrances.KB)
+		}
 		// Wire warm-target routing (Phase 7.3): a delegated task whose project is
 		// known is run inside an already-running per-project ACP instance instead of
 		// cold-spawning a CLI. nil when ReuseWarmInstances is off → cold path always.
@@ -750,10 +757,72 @@ func convertMesnadaConfig(cfg *config.Config) mesnadaOrch.Config {
 			Enabled:            cfg.Mesnada.Delegation.Enabled,
 			SynthesizeFallback: cfg.Mesnada.Delegation.SynthesizeFallback,
 			ReuseWarmInstances: cfg.Mesnada.Delegation.ReuseWarmInstances,
+			// Integrity gate + anti-thrash breaker (both ON unless disabled).
+			ConclusionGateDisabled: cfg.Mesnada.Delegation.ConclusionGateDisabled,
+			BreakerDisabled:        cfg.Mesnada.Delegation.BreakerDisabled,
+			MaxTaskRetries:         cfg.Mesnada.Delegation.MaxTaskRetries,
+			RateLimitCooldown:      parseDelegationDuration(cfg.Mesnada.Delegation.RateLimitCooldown, "rateLimitCooldown"),
+			RecentSuccessWindow:    parseDelegationDuration(cfg.Mesnada.Delegation.RecentSuccessWindow, "recentSuccessWindow"),
+			// Durable event log (ON unless disabled).
+			EventLogDisabled:   cfg.Mesnada.Delegation.EventLogDisabled,
+			EventLogMaxEntries: cfg.Mesnada.Delegation.EventLogMaxEntries,
+			// Blackboard GC bounds (ON with documented defaults).
+			BlackboardMaxEntriesPerSwarm: cfg.Mesnada.Delegation.BlackboardMaxEntriesPerSwarm,
+			BlackboardTTL:                parseDelegationDuration(cfg.Mesnada.Delegation.BlackboardTTL, "blackboardTtl"),
 		}
+		// Claim-lease dispatcher: concurrency caps plus the reclaim/drain tick.
+		orchCfg.MaxPerEngine = cfg.Mesnada.Orchestrator.MaxPerEngine
+		orchCfg.ClaimTTL = parseDelegationDuration(cfg.Mesnada.Orchestrator.ClaimTTL, "claimTtl")
+		orchCfg.DispatchInterval = parseDelegationDuration(cfg.Mesnada.Orchestrator.DispatchInterval, "dispatchInterval")
 	}
 
 	return orchCfg
+}
+
+// makeMemoryRefValidator returns a validator that resolves a conclusion's
+// memory_ref against the knowledge base, trying it first as a memory key and
+// then as a KB document path. It is deliberately fail-OPEN: any store error (or
+// a nil store) reports the ref as present, so the conclusion gate only ever
+// downgrades on evidence it positively disproved.
+func makeMemoryRefValidator(ctx context.Context, store *kb.KBStore) conclusion.MemoryRefValidator {
+	if store == nil {
+		return nil
+	}
+	return func(ref string) bool {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			return true
+		}
+		doc, err := store.GetMemoryByKey(ctx, ref)
+		if err != nil {
+			return true
+		}
+		if doc != nil {
+			return true
+		}
+		doc, err = store.GetDocument(ctx, ref)
+		if err != nil {
+			return true
+		}
+		return doc != nil
+	}
+}
+
+// parseDelegationDuration parses a delegation duration string, returning 0 (the
+// orchestrator's "use the package default" value) for a blank or malformed
+// value. A bad duration is logged once rather than failing startup: the breaker
+// falls back to its documented default instead of taking the app down.
+func parseDelegationDuration(value, field string) time.Duration {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	dur, err := time.ParseDuration(value)
+	if err != nil {
+		logging.Warn("invalid mesnada delegation duration, using default", "field", field, "value", value, "error", err)
+		return 0
+	}
+	return dur
 }
 
 // convertPandoMCPServers converts the pando MCPServers map into a slice of

@@ -3,9 +3,24 @@ package orchestrator
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/digiogithub/pando/pkg/mesnada/models"
 )
+
+// blockDispatch saturates the orchestrator's concurrency cap so newly created
+// tasks are deferred instead of started. The swarm tests below assert on the
+// created topology, not on execution: without this they would dispatch workers
+// into goroutines that keep mutating the very tasks the assertions read.
+func blockDispatch(t *testing.T, o *Orchestrator) {
+	t.Helper()
+	o.maxParallel = 1
+	if err := o.store.Save(&models.Task{
+		ID: "occupies-the-only-slot", Status: models.TaskStatusRunning, CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("save blocker task: %v", err)
+	}
+}
 
 func TestConclusionPassesGate(t *testing.T) {
 	cases := []struct {
@@ -87,13 +102,8 @@ func TestGateBlocks(t *testing.T) {
 
 func TestCreateSwarmWiring(t *testing.T) {
 	o := newTestOrchestrator(t)
-	// Prevent real spawning: workers have no deps and would auto-start. Use a
-	// non-existent engine path? Simpler: the store-backed orchestrator's manager is
-	// nil, so startTask would panic in a goroutine. Guard by NOT auto-starting:
-	// CreateSwarm sets Background=true and workers have no deps → Spawn calls
-	// startTask. To keep this a pure wiring test we assert on the created graph via
-	// the store immediately; the goroutine may fail spawning but the rows exist.
 	o.manager = nil
+	blockDispatch(t, o)
 
 	created, err := o.CreateSwarm(context.Background(), SwarmSpec{
 		Goal:            "build a parser",
@@ -137,6 +147,7 @@ func TestCreateSwarmWiring(t *testing.T) {
 func TestCreateSwarmValidation(t *testing.T) {
 	o := newTestOrchestrator(t)
 	o.manager = nil
+	blockDispatch(t, o)
 	cases := []SwarmSpec{
 		{Goal: "", ParentSessionID: "s", Workers: []SwarmWorkerSpec{{Prompt: "x"}}},
 		{Goal: "g", ParentSessionID: "s"}, // no workers
@@ -153,6 +164,7 @@ func TestCreateSwarmValidation(t *testing.T) {
 func TestCreateSwarmIdempotent(t *testing.T) {
 	o := newTestOrchestrator(t)
 	o.manager = nil
+	blockDispatch(t, o)
 	spec := SwarmSpec{
 		Goal:            "goal",
 		ParentSessionID: "sessX",

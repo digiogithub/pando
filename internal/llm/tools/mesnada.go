@@ -190,6 +190,10 @@ func (t *MesnadaSpawnTool) Info() ToolInfo {
 				},
 			},
 			"persona": personaParam,
+			"force": map[string]any{
+				"type":        "boolean",
+				"description": "Relaunch only (requires task_id): bypass the circuit breaker / respawn guard that refuses a task which already hit the consecutive-failure limit, failed on authentication, or is inside a rate-limit cooldown. Only set it after actually changing something (prompt, engine or model) — an identical re-run of a tripped task will fail the same way.",
+			},
 		},
 		Required: []string{"prompt"},
 	}
@@ -265,6 +269,7 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		DependencyLogLines    int      `json:"dependency_log_lines"`
 		Tags                  []string `json:"tags"`
 		Persona               string   `json:"persona"`
+		Force                 bool     `json:"force"`
 	}
 
 	var req spawnParams
@@ -287,6 +292,7 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 			Model:      req.Model,
 			Timeout:    req.Timeout,
 			Background: background,
+			Force:      req.Force,
 		})
 		if err != nil {
 			return NewTextErrorResponse(err.Error()), nil

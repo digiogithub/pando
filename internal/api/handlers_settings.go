@@ -30,7 +30,7 @@ type SettingsResponse struct {
 	LLMCacheEnabled  bool   `json:"llm_cache_enabled"`
 	// ModelsDevEnabled controls the models.dev catalog that completes model
 	// pricing/limits the providers do not report.
-	ModelsDevEnabled bool   `json:"models_dev_enabled"`
+	ModelsDevEnabled bool `json:"models_dev_enabled"`
 	// ImageAutoResize toggles the image resize/recompress pipeline before send.
 	ImageAutoResize bool `json:"image_auto_resize"`
 	// ImageUseFilesAPI opts into the Anthropic beta Messages API + Files API
@@ -65,6 +65,21 @@ type SettingsResponse struct {
 	DelegationWarmQueueDepth           int    `json:"delegation_warm_queue_depth"`
 	DelegationAllowExternalWarmTargets bool   `json:"delegation_allow_external_warm_targets"`
 	DelegationAcceptDelegations        bool   `json:"delegation_accept_delegations"`
+	// Integrity gate + anti-thrash breaker. Exposed as positive "enabled" flags
+	// for the UI even though the config stores them inverted (…Disabled).
+	DelegationConclusionGate      bool   `json:"delegation_conclusion_gate"`
+	DelegationBreaker             bool   `json:"delegation_breaker"`
+	DelegationMaxTaskRetries      int    `json:"delegation_max_task_retries"`
+	DelegationRateLimitCooldown   string `json:"delegation_rate_limit_cooldown"`
+	DelegationRecentSuccessWindow string `json:"delegation_recent_success_window"`
+	// Durable delegation event log, also exposed as a positive flag.
+	DelegationEventLog           bool `json:"delegation_event_log"`
+	DelegationEventLogMaxEntries int  `json:"delegation_event_log_max_entries"`
+	// Claim-lease dispatcher (orchestrator scheduling).
+	OrchestratorMaxParallel      int    `json:"orchestrator_max_parallel"`
+	OrchestratorMaxPerEngine     int    `json:"orchestrator_max_per_engine"`
+	OrchestratorClaimTTL         string `json:"orchestrator_claim_ttl"`
+	OrchestratorDispatchInterval string `json:"orchestrator_dispatch_interval"`
 }
 
 // SettingsUpdateRequest contains the fields that can be updated via PUT /api/v1/settings.
@@ -105,6 +120,18 @@ type SettingsUpdateRequest struct {
 	DelegationWarmQueueDepth           *int    `json:"delegation_warm_queue_depth,omitempty"`
 	DelegationAllowExternalWarmTargets *bool   `json:"delegation_allow_external_warm_targets,omitempty"`
 	DelegationAcceptDelegations        *bool   `json:"delegation_accept_delegations,omitempty"`
+	DelegationConclusionGate           *bool   `json:"delegation_conclusion_gate,omitempty"`
+	DelegationBreaker                  *bool   `json:"delegation_breaker,omitempty"`
+	DelegationMaxTaskRetries           *int    `json:"delegation_max_task_retries,omitempty"`
+	DelegationRateLimitCooldown        *string `json:"delegation_rate_limit_cooldown,omitempty"`
+	DelegationRecentSuccessWindow      *string `json:"delegation_recent_success_window,omitempty"`
+	DelegationEventLog                 *bool   `json:"delegation_event_log,omitempty"`
+	DelegationEventLogMaxEntries       *int    `json:"delegation_event_log_max_entries,omitempty"`
+
+	OrchestratorMaxParallel      *int    `json:"orchestrator_max_parallel,omitempty"`
+	OrchestratorMaxPerEngine     *int    `json:"orchestrator_max_per_engine,omitempty"`
+	OrchestratorClaimTTL         *string `json:"orchestrator_claim_ttl,omitempty"`
+	OrchestratorDispatchInterval *string `json:"orchestrator_dispatch_interval,omitempty"`
 }
 
 // ProviderStatus describes a configured provider and whether it has an API key set.
@@ -181,7 +208,30 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		DelegationWarmQueueDepth:           cfg.Mesnada.Delegation.WarmQueueDepth,
 		DelegationAllowExternalWarmTargets: cfg.Mesnada.Delegation.AllowExternalWarmTargets,
 		DelegationAcceptDelegations:        cfg.Mesnada.Delegation.AcceptDelegations,
+		// Inverted on the wire: the config stores an opt-OUT, the UI shows an
+		// opt-IN toggle that is on by default.
+		DelegationConclusionGate:      !cfg.Mesnada.Delegation.ConclusionGateDisabled,
+		DelegationBreaker:             !cfg.Mesnada.Delegation.BreakerDisabled,
+		DelegationMaxTaskRetries:      cfg.Mesnada.Delegation.MaxTaskRetries,
+		DelegationRateLimitCooldown:   cfg.Mesnada.Delegation.RateLimitCooldown,
+		DelegationRecentSuccessWindow: cfg.Mesnada.Delegation.RecentSuccessWindow,
+		DelegationEventLog:            !cfg.Mesnada.Delegation.EventLogDisabled,
+		DelegationEventLogMaxEntries:  intOrDefault(cfg.Mesnada.Delegation.EventLogMaxEntries, 5000),
+
+		OrchestratorMaxParallel:      intOrDefault(cfg.Mesnada.Orchestrator.MaxParallel, 5),
+		OrchestratorMaxPerEngine:     cfg.Mesnada.Orchestrator.MaxPerEngine,
+		OrchestratorClaimTTL:         durationOrDefault(cfg.Mesnada.Orchestrator.ClaimTTL, "2m"),
+		OrchestratorDispatchInterval: durationOrDefault(cfg.Mesnada.Orchestrator.DispatchInterval, "10s"),
 	}, nil
+}
+
+// durationOrDefault normalizes a blank duration string to fallback so GET
+// responses always round-trip a parseable value.
+func durationOrDefault(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 // delegationTimeoutOrDefault normalizes an empty resurrection timeout to "10m".
@@ -420,7 +470,11 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		req.DelegationMaxConcurrent != nil || req.DelegationResurrectionTimeout != nil ||
 		req.DelegationReuseWarmInstances != nil || req.DelegationAutoStartWarm != nil ||
 		req.DelegationWarmIdleTimeout != nil || req.DelegationWarmQueueDepth != nil ||
-		req.DelegationAllowExternalWarmTargets != nil || req.DelegationAcceptDelegations != nil {
+		req.DelegationAllowExternalWarmTargets != nil || req.DelegationAcceptDelegations != nil ||
+		req.DelegationConclusionGate != nil || req.DelegationBreaker != nil ||
+		req.DelegationMaxTaskRetries != nil || req.DelegationRateLimitCooldown != nil ||
+		req.DelegationRecentSuccessWindow != nil ||
+		req.DelegationEventLog != nil || req.DelegationEventLogMaxEntries != nil {
 		del := config.Get().Mesnada.Delegation
 		if req.DelegationEnabled != nil {
 			del.Enabled = *req.DelegationEnabled
@@ -490,8 +544,83 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		if req.DelegationAcceptDelegations != nil {
 			del.AcceptDelegations = *req.DelegationAcceptDelegations
 		}
+		// The UI sends positive "enabled" flags; the config stores the opt-out.
+		if req.DelegationConclusionGate != nil {
+			del.ConclusionGateDisabled = !*req.DelegationConclusionGate
+		}
+		if req.DelegationBreaker != nil {
+			del.BreakerDisabled = !*req.DelegationBreaker
+		}
+		if req.DelegationMaxTaskRetries != nil {
+			if *req.DelegationMaxTaskRetries < 0 {
+				writeError(w, http.StatusBadRequest, "delegation_max_task_retries must be >= 0")
+				return
+			}
+			del.MaxTaskRetries = *req.DelegationMaxTaskRetries
+		}
+		if req.DelegationRateLimitCooldown != nil {
+			if _, err := time.ParseDuration(*req.DelegationRateLimitCooldown); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid delegation_rate_limit_cooldown (e.g. 5m, 30s)")
+				return
+			}
+			del.RateLimitCooldown = *req.DelegationRateLimitCooldown
+		}
+		if req.DelegationRecentSuccessWindow != nil {
+			if _, err := time.ParseDuration(*req.DelegationRecentSuccessWindow); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid delegation_recent_success_window (e.g. 2m, 30s)")
+				return
+			}
+			del.RecentSuccessWindow = *req.DelegationRecentSuccessWindow
+		}
+		if req.DelegationEventLog != nil {
+			del.EventLogDisabled = !*req.DelegationEventLog
+		}
+		if req.DelegationEventLogMaxEntries != nil {
+			if *req.DelegationEventLogMaxEntries < 0 {
+				writeError(w, http.StatusBadRequest, "delegation_event_log_max_entries must be >= 0")
+				return
+			}
+			del.EventLogMaxEntries = *req.DelegationEventLogMaxEntries
+		}
 		if err := config.UpdateMesnadaDelegation(del); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update delegation settings")
+			return
+		}
+	}
+
+	if req.OrchestratorMaxParallel != nil || req.OrchestratorMaxPerEngine != nil ||
+		req.OrchestratorClaimTTL != nil || req.OrchestratorDispatchInterval != nil {
+		orch := config.Get().Mesnada.Orchestrator
+		if req.OrchestratorMaxParallel != nil {
+			if *req.OrchestratorMaxParallel < 1 {
+				writeError(w, http.StatusBadRequest, "orchestrator_max_parallel must be >= 1")
+				return
+			}
+			orch.MaxParallel = *req.OrchestratorMaxParallel
+		}
+		if req.OrchestratorMaxPerEngine != nil {
+			if *req.OrchestratorMaxPerEngine < 0 {
+				writeError(w, http.StatusBadRequest, "orchestrator_max_per_engine must be >= 0")
+				return
+			}
+			orch.MaxPerEngine = *req.OrchestratorMaxPerEngine
+		}
+		if req.OrchestratorClaimTTL != nil {
+			if _, err := time.ParseDuration(*req.OrchestratorClaimTTL); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid orchestrator_claim_ttl (e.g. 2m, 30s)")
+				return
+			}
+			orch.ClaimTTL = *req.OrchestratorClaimTTL
+		}
+		if req.OrchestratorDispatchInterval != nil {
+			if _, err := time.ParseDuration(*req.OrchestratorDispatchInterval); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid orchestrator_dispatch_interval (e.g. 10s, 1m)")
+				return
+			}
+			orch.DispatchInterval = *req.OrchestratorDispatchInterval
+		}
+		if err := config.UpdateMesnadaOrchestrator(orch); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update orchestrator settings")
 			return
 		}
 	}

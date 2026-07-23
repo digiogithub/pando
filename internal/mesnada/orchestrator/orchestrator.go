@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/mesnada/agent"
+	"github.com/digiogithub/pando/internal/mesnada/breaker"
 	"github.com/digiogithub/pando/internal/mesnada/conclusion"
 	"github.com/digiogithub/pando/internal/mesnada/config"
+	"github.com/digiogithub/pando/internal/mesnada/events"
 	"github.com/digiogithub/pando/internal/mesnada/persona"
 	"github.com/digiogithub/pando/internal/mesnada/store"
 	"github.com/digiogithub/pando/pkg/mesnada/models"
@@ -42,6 +44,7 @@ type Orchestrator struct {
 	dynamicMCPDir        string // base dir for dynamic MCP config temp files
 	delegation           DelegationConfig
 	projectResolver      conclusion.ProjectResolver
+	memoryRefValidator   conclusion.MemoryRefValidator
 	warmResolver         WarmTargetResolver
 	projectRefResolver   ProjectRefResolver
 	// externalRecoverer recovers interrupted external delegations after a parent
@@ -62,9 +65,23 @@ type Orchestrator struct {
 	// Sibling delegated tasks post structured facts here (via the mesnada_note
 	// tool) and read them back — the shared-state primitive Pando's DAG lacked.
 	blackboard *Blackboard
-	wg         sync.WaitGroup
-	ctx     context.Context
-	cancel  context.CancelFunc
+	// eventLog is the durable delegation signal log (P5). nil when disabled or
+	// when it could not be opened; every call site is nil-safe, so a missing log
+	// degrades to the in-memory-only completion bus rather than failing.
+	eventLog *events.Log
+	// instanceID identifies this orchestrator as a dispatch claim owner.
+	instanceID string
+	// maxPerEngine caps concurrently in-flight tasks per engine (0 = unlimited),
+	// so one wide fan-out cannot exhaust a single provider's quota while other
+	// engines idle. maxParallel is the equivalent orchestrator-wide cap.
+	maxPerEngine int
+	// claimTTL bounds a dispatch claim; dispatchInterval paces the reclaim/drain
+	// tick. Both fall back to the package defaults when unset.
+	claimTTL         time.Duration
+	dispatchInterval time.Duration
+	wg               sync.WaitGroup
+	ctx              context.Context
+	cancel           context.CancelFunc
 }
 
 // DelegationConfig mirrors the conclusion-relevant subset of the application's
@@ -85,6 +102,43 @@ type DelegationConfig struct {
 	// resolver. The reuse-then-autostart policy and concurrency cap are applied by
 	// the resolver adapter, not here.
 	ReuseWarmInstances bool
+	// ConclusionGateDisabled turns off the anti-hallucination conclusion gate,
+	// which downgrades a "success" conclusion to "partial" when the artifacts or
+	// memory refs it cites cannot be found. Default (false) = gate active
+	// whenever Enabled is true.
+	ConclusionGateDisabled bool
+	// BreakerDisabled turns off the circuit breaker and respawn guard, which
+	// refuse a Relaunch/Retry that has hit the consecutive-failure limit, is
+	// auth-blocked, or is inside a rate-limit cooldown. Unlike the rest of this
+	// struct the breaker does not require Enabled: it guards the plain task
+	// respawn paths too. Default (false) = breaker active.
+	BreakerDisabled bool
+	// MaxTaskRetries is the consecutive-failure limit before the breaker trips.
+	// 0 falls back to breaker.DefaultMaxRetries.
+	MaxTaskRetries int
+	// RateLimitCooldown defers a respawn after a quota wall. 0 falls back to
+	// breaker.DefaultRateLimitCooldown.
+	RateLimitCooldown time.Duration
+	// RecentSuccessWindow suppresses a redundant re-run of a task that just
+	// succeeded. 0 falls back to breaker.DefaultRecentSuccessWindow.
+	RecentSuccessWindow time.Duration
+	// EventLogDisabled turns off the durable delegation event log. When it is on
+	// (the default), every terminal outcome is appended to disk before being
+	// broadcast, so a signal dropped by the non-blocking in-memory bus — or lost
+	// to a restart — is still delivered from the log. Unlike the rest of this
+	// struct the log does not require Enabled: it records the lifecycle of every
+	// task, not just delegated ones.
+	EventLogDisabled bool
+	// EventLogMaxEntries bounds the retained log; 0 falls back to
+	// events.DefaultMaxEntries.
+	EventLogMaxEntries int
+	// BlackboardMaxEntriesPerSwarm bounds one swarm's blackboard append log; 0
+	// falls back to DefaultBlackboardMaxEntriesPerSwarm. Winning (last-write-wins)
+	// entries are always retained, so GC only sheds superseded history.
+	BlackboardMaxEntriesPerSwarm int
+	// BlackboardTTL purges a swarm's board once its newest entry is older than
+	// this; 0 falls back to DefaultBlackboardTTL.
+	BlackboardTTL time.Duration
 }
 
 // Config holds orchestrator configuration.
@@ -93,8 +147,18 @@ type Config struct {
 	LogDir    string
 	// EnginesDir is the directory scanned at startup for *.template.yaml custom
 	// engine files. When empty the manager derives it from LogDir.
-	EnginesDir  string
+	EnginesDir string
+	// MaxParallel caps how many tasks the orchestrator keeps in flight at once
+	// (0 = unlimited). Tasks over the cap stay pending and are dispatched by the
+	// dispatch tick as slots free up.
 	MaxParallel int
+	// MaxPerEngine caps in-flight tasks per engine (0 = unlimited), so a wide
+	// fan-out onto one provider cannot starve the others.
+	MaxPerEngine int
+	// ClaimTTL bounds a dispatch claim; DispatchInterval paces the reclaim/drain
+	// tick. Both fall back to the package defaults when zero.
+	ClaimTTL         time.Duration
+	DispatchInterval time.Duration
 	// DefaultMCPConfig is an optional explicit override for the MCP config file
 	// passed to subagents. When empty (the default), pando builds a dynamic
 	// config at spawn time that includes pando itself as an MCP server plus all
@@ -122,6 +186,10 @@ type Config struct {
 	// name, used by the conclusion enricher. When nil the enricher derives the
 	// display name from filepath.Base(projectPath).
 	ProjectResolver conclusion.ProjectResolver
+	// MemoryRefValidator resolves a conclusion's memory_refs for the
+	// anti-hallucination gate. When nil (the default) the gate verifies only
+	// filesystem artifacts and never downgrades on a memory ref.
+	MemoryRefValidator conclusion.MemoryRefValidator
 	// WarmTargetResolver routes delegated tasks to warm per-project ACP instances
 	// (Phase 7.3). When nil (or Delegation.ReuseWarmInstances is false) every task
 	// takes the cold subprocess path, preserving today's behavior.
@@ -177,16 +245,34 @@ func New(cfg Config) (*Orchestrator, error) {
 	if info, statErr := os.Stat(cfg.StorePath); statErr != nil || !info.IsDir() {
 		blackboardDir = filepath.Dir(cfg.StorePath)
 	}
-	blackboard, err := NewBlackboard(filepath.Join(blackboardDir, "blackboard.json"))
+	blackboardLimits := WithBlackboardLimits(cfg.Delegation.BlackboardMaxEntriesPerSwarm, cfg.Delegation.BlackboardTTL)
+	blackboard, err := NewBlackboard(filepath.Join(blackboardDir, "blackboard.json"), blackboardLimits)
 	if err != nil {
 		log.Printf("Warning: failed to open swarm blackboard: %v", err)
-		blackboard, _ = NewBlackboard("") // in-memory fallback
+		blackboard, _ = NewBlackboard("", blackboardLimits) // in-memory fallback
+	}
+
+	// Durable delegation event log (P5), alongside the store and blackboard. A
+	// failure to open leaves eventLog nil, which every call site tolerates: the
+	// completion bus keeps working, it just loses its crash-safe backing.
+	var eventLog *events.Log
+	if !cfg.Delegation.EventLogDisabled {
+		eventLog, err = events.Open(filepath.Join(blackboardDir, "events.jsonl"), cfg.Delegation.EventLogMaxEntries)
+		if err != nil {
+			log.Printf("Warning: failed to open delegation event log: %v", err)
+			eventLog = nil
+		}
 	}
 
 	o := &Orchestrator{
 		store:                fileStore,
 		personaManager:       personaManager,
 		blackboard:           blackboard,
+		eventLog:             eventLog,
+		instanceID:           fmt.Sprintf("orch-%s", uuid.New().String()[:8]),
+		maxPerEngine:         cfg.MaxPerEngine,
+		claimTTL:             cfg.ClaimTTL,
+		dispatchInterval:     cfg.DispatchInterval,
 		subscribers:          make(map[string][]chan *models.Task),
 		maxParallel:          cfg.MaxParallel,
 		defaultMCPConfig:     cfg.DefaultMCPConfig,
@@ -196,6 +282,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		dynamicMCPDir:        dynamicMCPDir,
 		delegation:           cfg.Delegation,
 		projectResolver:      cfg.ProjectResolver,
+		memoryRefValidator:   cfg.MemoryRefValidator,
 		warmResolver:         cfg.WarmTargetResolver,
 		projectRefResolver:   cfg.ProjectRefResolver,
 		externalRecoverer:    cfg.ExternalDelegationRecoverer,
@@ -209,7 +296,96 @@ func New(cfg Config) (*Orchestrator, error) {
 	// Recover any tasks that were left in running state from a previous run.
 	o.recoverStaleTasks()
 
+	// Dispatch tick: reclaims stranded claims and drains tasks deferred by a
+	// concurrency cap. Started last so it never observes a half-built instance.
+	o.wg.Add(1)
+	go o.dispatchLoop()
+
 	return o, nil
+}
+
+// appendEvent records a delegation signal in the durable log. It is nil-safe and
+// never fails the caller: an event log that cannot be written is a telemetry
+// problem, not a reason to derail task handling.
+func (o *Orchestrator) appendEvent(e events.Event) {
+	if o == nil || o.eventLog == nil {
+		return
+	}
+	if _, err := o.eventLog.Append(e); err != nil {
+		log.Printf("Warning: failed to append %s event for task %s: %v", e.Kind, e.TaskID, err)
+	}
+}
+
+// UnseenEvents returns the durable events a subscription has not acked yet.
+// Consumers (the delegation supervisor) drain this in order and Ack each event
+// once handled, which is what makes signal delivery survive a restart.
+func (o *Orchestrator) UnseenEvents(subID string) []events.Event {
+	if o == nil {
+		return nil
+	}
+	return o.eventLog.Unseen(subID)
+}
+
+// AckEvent advances a subscription's durable cursor past seq.
+func (o *Orchestrator) AckEvent(subID string, seq int64) error {
+	if o == nil {
+		return nil
+	}
+	return o.eventLog.Ack(subID, seq)
+}
+
+// RecentEvents returns up to limit of the most recent durable events, oldest
+// first. For inspection surfaces only.
+func (o *Orchestrator) RecentEvents(limit int) []events.Event {
+	if o == nil {
+		return nil
+	}
+	return o.eventLog.Recent(limit)
+}
+
+// EventLogEnabled reports whether a durable event log is backing this
+// orchestrator, so consumers can choose the log-driven path over the
+// best-effort in-memory bus.
+func (o *Orchestrator) EventLogEnabled() bool {
+	return o != nil && o.eventLog != nil
+}
+
+// terminalEventKind maps a terminal task status to its event kind, reporting
+// false for a non-terminal status.
+func terminalEventKind(status models.TaskStatus) (events.Kind, bool) {
+	switch status {
+	case models.TaskStatusCompleted:
+		return events.KindCompleted, true
+	case models.TaskStatusFailed:
+		return events.KindFailed, true
+	case models.TaskStatusCancelled:
+		return events.KindCancelled, true
+	}
+	return "", false
+}
+
+// recordTerminalEvent appends the durable signal for a task that just reached a
+// terminal state. It runs after the conclusion is captured so the event carries
+// the final summary.
+func (o *Orchestrator) recordTerminalEvent(task *models.Task) {
+	if task == nil {
+		return
+	}
+	kind, ok := terminalEventKind(task.Status)
+	if !ok {
+		return
+	}
+	detail := task.Error
+	if task.Conclusion != nil && task.Conclusion.Summary != "" {
+		detail = task.Conclusion.Summary
+	}
+	o.appendEvent(events.Event{
+		Kind:            kind,
+		TaskID:          task.ID,
+		ParentSessionID: task.ParentSessionID,
+		CorrelationID:   task.CorrelationID,
+		Detail:          truncateForLog(detail, 500),
+	})
 }
 
 // Bounds for polling an external peer whose recovered delegation is still running
@@ -372,6 +548,22 @@ func (o *Orchestrator) onTaskComplete(task *models.Task) {
 	// task. Kept side-effect-light and panic-safe so completion stays robust.
 	o.captureConclusion(task)
 
+	// Update the circuit-breaker state from this terminal outcome (a success
+	// resets the counter, a failure increments and classifies it). Runs after the
+	// conclusion is captured so the classifier can read it, and before the
+	// broadcast so subscribers observe the up-to-date counters.
+	o.recordBreakerOutcome(task)
+
+	// The task no longer occupies a dispatch slot: drop its claim so the caps see
+	// the freed capacity and the next drain can use it.
+	o.releaseClaim(task.ID)
+
+	// Durable signal (P5) BEFORE the in-memory broadcast: the log is the record
+	// of what happened, the broadcast is only a best-effort wakeup. Appending
+	// first means a subscriber that misses the (non-blocking, droppable) send
+	// still finds the event waiting for it.
+	o.recordTerminalEvent(task)
+
 	// Broadcast to global completion subscribers (the delegation supervisor). Done
 	// AFTER captureConclusion so the delivered *Task already carries its enriched
 	// Conclusion. Non-blocking send: a slow/full subscriber drops the event rather
@@ -474,10 +666,112 @@ func (o *Orchestrator) captureConclusion(task *models.Task) {
 		return
 	}
 
+	// Anti-hallucination gate: a subagent may not claim full success while citing
+	// artifacts or memory refs that do not exist. Verify downgrades the status to
+	// "partial" and records a warning; it never discards data. This also protects
+	// the swarm verifier gate, which passes only on status "success".
+	if res := conclusion.Verify(c, conclusion.VerifyOptions{
+		Disabled: o.delegation.ConclusionGateDisabled,
+		BaseDir:  task.WorkDir,
+		Memory:   o.memoryRefValidator,
+	}); res.Downgraded {
+		o.metrics.recordConclusionGateDowngrade()
+		logConclusionGateDowngraded(task, res)
+	}
+
 	task.Conclusion = c
 	if err := o.store.Save(task); err != nil {
 		log.Printf("Warning: failed to persist conclusion for task %s: %v", task.ID, err)
 	}
+}
+
+// breakerOptions builds the guard options from the delegation config, applying
+// the package defaults for unset values.
+func (o *Orchestrator) breakerOptions() breaker.Options {
+	opts := breaker.Options{
+		Disabled:            o.delegation.BreakerDisabled,
+		MaxRetries:          o.delegation.MaxTaskRetries,
+		RateLimitCooldown:   o.delegation.RateLimitCooldown,
+		RecentSuccessWindow: o.delegation.RecentSuccessWindow,
+	}
+	if opts.MaxRetries == 0 {
+		opts.MaxRetries = breaker.DefaultMaxRetries
+	}
+	if opts.RateLimitCooldown == 0 {
+		opts.RateLimitCooldown = breaker.DefaultRateLimitCooldown
+	}
+	if opts.RecentSuccessWindow == 0 {
+		opts.RecentSuccessWindow = breaker.DefaultRecentSuccessWindow
+	}
+	return opts
+}
+
+// recordBreakerOutcome folds a terminal execution into the task's breaker state
+// and persists it. Panic-safe like captureConclusion: completion handling must
+// never be derailed by bookkeeping.
+func (o *Orchestrator) recordBreakerOutcome(task *models.Task) {
+	if task == nil || o.delegation.BreakerDisabled {
+		return
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Warning: breaker bookkeeping panicked for task %s: %v", task.ID, r)
+		}
+	}()
+
+	opts := o.breakerOptions()
+	tripped := breaker.RecordOutcome(task, opts, time.Now())
+	if tripped {
+		o.metrics.recordBreakerTripped()
+		logBreakerTripped(task, opts.MaxRetries)
+		o.appendEvent(events.Event{
+			Kind:            events.KindBreakerTripped,
+			TaskID:          task.ID,
+			ParentSessionID: task.ParentSessionID,
+			CorrelationID:   task.CorrelationID,
+			Detail: fmt.Sprintf("consecutive_failures=%d limit=%d kind=%s",
+				task.ConsecutiveFailures, opts.MaxRetries, task.LastFailureKind),
+		})
+	}
+	if err := o.store.Save(task); err != nil {
+		log.Printf("Warning: failed to persist breaker state for task %s: %v", task.ID, err)
+	}
+}
+
+// RespawnDecision reports whether a task may currently be re-executed, without
+// re-executing it. Surfaces the circuit breaker and respawn guard to callers
+// (tools, UI) so they can explain a refusal before attempting a Relaunch/Retry.
+func (o *Orchestrator) RespawnDecision(taskID string) (breaker.Decision, error) {
+	task, err := o.store.Get(taskID)
+	if err != nil {
+		return breaker.Decision{}, err
+	}
+	return breaker.Guard(task, o.breakerOptions(), time.Now()), nil
+}
+
+// guardRespawn applies the circuit breaker / respawn guard to a re-execution
+// attempt, returning an error when it is refused. force bypasses the guard (an
+// explicit human/agent override), which is always logged.
+func (o *Orchestrator) guardRespawn(task *models.Task, op string, force bool) error {
+	decision := breaker.Guard(task, o.breakerOptions(), time.Now())
+	if decision.Allow {
+		return nil
+	}
+	if force {
+		logRespawnForced(task, op, decision)
+		return nil
+	}
+	o.metrics.recordRespawnRefused()
+	logRespawnRefused(task, op, decision)
+	o.appendEvent(events.Event{
+		Kind:            events.KindRespawnRefused,
+		TaskID:          task.ID,
+		ParentSessionID: task.ParentSessionID,
+		CorrelationID:   task.CorrelationID,
+		Detail:          fmt.Sprintf("%s refused: %s", op, decision.Reason),
+	})
+	return fmt.Errorf("%s refused for task %s: %s", op, task.ID, decision.Error())
 }
 
 func (o *Orchestrator) processDependentTasks(completed *models.Task) {
@@ -493,7 +787,10 @@ func (o *Orchestrator) processDependentTasks(completed *models.Task) {
 	for _, task := range tasks {
 		if o.canStart(task) {
 			logTaskStartable(task, fmt.Sprintf("dependency_completed=%s", completed.ID))
-			go o.startTask(task)
+			// Admission control + claim: two dependencies completing at the same
+			// instant both reach this point for the same dependent, and only the
+			// dispatcher that wins the claim starts it.
+			o.tryDispatch(task)
 			continue
 		}
 		// A dependent held pending purely by a failed gate (the verifier completed
@@ -507,6 +804,13 @@ func (o *Orchestrator) processDependentTasks(completed *models.Task) {
 				summary = completed.Conclusion.Summary
 			}
 			logTaskGateFailed(task, completed.ID, summary)
+			o.appendEvent(events.Event{
+				Kind:            events.KindGateFailed,
+				TaskID:          task.ID,
+				ParentSessionID: task.ParentSessionID,
+				CorrelationID:   task.CorrelationID,
+				Detail:          fmt.Sprintf("gate dependency %s did not pass: %s", completed.ID, truncateForLog(summary, 300)),
+			})
 		}
 	}
 }
@@ -577,7 +881,10 @@ func (o *Orchestrator) startTask(task *models.Task) {
 		task.Error = "orchestrator has no spawn manager"
 		now := time.Now()
 		task.CompletedAt = &now
+		// Terminal like any other failure, so it signals like any other failure —
+		// otherwise the task dies silently, still holding its dispatch claim.
 		o.store.Save(task)
+		o.onTaskComplete(task)
 		return
 	}
 
@@ -606,8 +913,13 @@ func (o *Orchestrator) startTask(task *models.Task) {
 		task.Error = err.Error()
 		now := time.Now()
 		task.CompletedAt = &now
-		// When spawning fails, we still consider the task finished.
-		logTaskFinished(task)
+		// A spawn failure is a terminal outcome like any other, so it goes through
+		// the normal completion path: without it the task would end failed while
+		// emitting no signal at all — no durable event, no broadcast — and a parent
+		// waiting on it would never learn that it is never coming back.
+		o.store.Save(task)
+		o.onTaskComplete(task)
+		return
 	}
 	o.store.Save(task)
 }
@@ -883,6 +1195,11 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		ProjectID:       req.ProjectID,
 		ProjectPath:     req.ProjectPath,
 		Depth:           req.Depth,
+		// Circuit-breaker state. ConsecutiveFailures is normally zero; a Retry
+		// seeds it from the previous task so the breaker accumulates across the
+		// whole retry chain instead of resetting on every new replica.
+		MaxRetries:          req.MaxRetries,
+		ConsecutiveFailures: req.ConsecutiveFailures,
 	}
 
 	// Inherit log file from previous task (retry scenario).
@@ -905,9 +1222,12 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		}
 		logTaskStartable(task, reason)
 		if req.Background {
-			go o.startTask(task)
+			// Background spawns are the automatic fan-out path, so they go through
+			// admission control: over the cap the task stays pending and the
+			// dispatch tick starts it when a slot frees.
+			o.tryDispatch(task)
 		} else {
-			o.startTask(task)
+			o.dispatchNow(task, false)
 		}
 	}
 
@@ -1070,6 +1390,11 @@ func (o *Orchestrator) Cancel(taskID string) error {
 		return err
 	}
 	logTaskFinished(task)
+	o.releaseClaim(task.ID)
+	// Record the cancellation durably. It is deliberately not broadcast: a
+	// cancelled task carries no conclusion, so there is nothing for a parent loop
+	// to act on — the event exists so the history of the task is complete.
+	o.recordTerminalEvent(task)
 	return nil
 }
 
@@ -1184,6 +1509,10 @@ type RelaunchOptions struct {
 	Timeout string
 	// Background controls whether the relaunch runs in the background.
 	Background bool
+	// Force bypasses the circuit breaker / respawn guard. Use it when the caller
+	// has actually changed something (a new prompt, engine or model) or when a
+	// human explicitly insists on re-running a guarded task.
+	Force bool
 }
 
 // Relaunch resets an existing task (of any status) back to pending and re-runs it.
@@ -1196,6 +1525,14 @@ type RelaunchOptions struct {
 func (o *Orchestrator) Relaunch(ctx context.Context, taskID string, opts RelaunchOptions) (*models.Task, error) {
 	task, err := o.store.Get(taskID)
 	if err != nil {
+		return nil, err
+	}
+
+	// Anti-thrash: refuse a re-run that the circuit breaker or respawn guard has
+	// ruled out (limit reached, auth blocker, rate-limit cooldown, just
+	// succeeded). Changing the prompt/engine/model does NOT implicitly override
+	// it — pass Force so the bypass is always deliberate and logged.
+	if err := o.guardRespawn(task, "relaunch", opts.Force); err != nil {
 		return nil, err
 	}
 
@@ -1269,11 +1606,9 @@ func (o *Orchestrator) Relaunch(ctx context.Context, taskID string, opts Relaunc
 			reason = "relaunch_no_dependencies"
 		}
 		logTaskStartable(task, reason)
-		if opts.Background {
-			go o.startTask(task)
-		} else {
-			o.startTask(task)
-		}
+		// A relaunch is an explicit action: it takes the claim (so no automatic
+		// dispatch races it) but is not held back by the concurrency caps.
+		o.dispatchNow(task, opts.Background)
 	}
 
 	return task, nil
@@ -1282,6 +1617,8 @@ func (o *Orchestrator) Relaunch(ctx context.Context, taskID string, opts Relaunc
 // RetryOptions controls how a failed or pending task is retried.
 type RetryOptions struct {
 	Background bool
+	// Force bypasses the circuit breaker / respawn guard (see RelaunchOptions).
+	Force bool
 }
 
 // Retry relaunches a failed task or reactivates a pending task.
@@ -1296,6 +1633,11 @@ func (o *Orchestrator) Retry(ctx context.Context, taskID string, opts RetryOptio
 
 	switch prev.Status {
 	case models.TaskStatusFailed:
+		// Anti-thrash: the retry chain accumulates failures, so a task that keeps
+		// failing trips the breaker instead of spawning replica after replica.
+		if err := o.guardRespawn(prev, "retry", opts.Force); err != nil {
+			return nil, err
+		}
 		return o.retryFailed(ctx, prev, opts)
 	case models.TaskStatusPending:
 		return o.replayPending(prev)
@@ -1340,13 +1682,20 @@ func (o *Orchestrator) retryFailed(ctx context.Context, prev *models.Task, opts 
 		ProjectID:       prev.ProjectID,
 		ProjectPath:     prev.ProjectPath,
 		Depth:           prev.Depth,
+		// Carry the breaker state so the retry chain keeps counting: N failed
+		// replicas of the same task must trip the breaker exactly like N failed
+		// relaunches of a single task.
+		MaxRetries:          prev.MaxRetries,
+		ConsecutiveFailures: prev.ConsecutiveFailures,
 	})
 }
 
 func (o *Orchestrator) replayPending(prev *models.Task) (*models.Task, error) {
 	if o.canStart(prev) {
 		logTaskStartable(prev, "replay_dependencies_satisfied")
-		go o.startTask(prev)
+		// Explicit retry of a pending task: claim it, but do not queue it behind
+		// the concurrency caps.
+		o.dispatchNow(prev, true)
 	}
 	return prev, nil
 }
@@ -1543,7 +1892,12 @@ type Stats struct {
 // Shutdown gracefully shuts down the orchestrator.
 func (o *Orchestrator) Shutdown() error {
 	o.cancel()
-	o.manager.Shutdown()
+	// Wait for the dispatch loop before closing the store: a tick that outlived
+	// Close would write to a store that is already flushed and shut down.
+	o.wg.Wait()
+	if o.manager != nil {
+		o.manager.Shutdown()
+	}
 	return o.store.Close()
 }
 
@@ -1597,6 +1951,51 @@ func logTaskGateFailed(task *models.Task, gateID, summary string) {
 		gateID,
 		task.Status,
 		summary,
+	)
+}
+
+// logConclusionGateDowngraded reports an anti-hallucination downgrade with the
+// evidence that could not be found.
+func logConclusionGateDowngraded(task *models.Task, res conclusion.VerifyResult) {
+	log.Printf(
+		"task_event=conclusion_gate_downgraded task_id=%s missing_artifacts=%v missing_memory_refs=%v",
+		task.ID,
+		res.MissingArtifacts,
+		res.MissingMemoryRefs,
+	)
+}
+
+// logBreakerTripped reports a task whose failure reached the retry limit.
+func logBreakerTripped(task *models.Task, limit int) {
+	log.Printf(
+		"task_event=breaker_tripped task_id=%s consecutive_failures=%d limit=%d last_failure_kind=%q error=%q",
+		task.ID,
+		task.ConsecutiveFailures,
+		limit,
+		task.LastFailureKind,
+		truncateForLog(strings.TrimSpace(task.Error), 160),
+	)
+}
+
+// logRespawnRefused reports a re-execution denied by the respawn guard.
+func logRespawnRefused(task *models.Task, op string, d breaker.Decision) {
+	log.Printf(
+		"task_event=respawn_refused task_id=%s op=%s reason=%s retry_after=%q detail=%q",
+		task.ID,
+		op,
+		d.Reason,
+		d.RetryAfter.Round(time.Second).String(),
+		d.Detail,
+	)
+}
+
+// logRespawnForced reports a guard denial that was explicitly overridden.
+func logRespawnForced(task *models.Task, op string, d breaker.Decision) {
+	log.Printf(
+		"task_event=respawn_forced task_id=%s op=%s overridden_reason=%s",
+		task.ID,
+		op,
+		d.Reason,
 	)
 }
 

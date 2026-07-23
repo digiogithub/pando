@@ -642,6 +642,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		ACPAgent         string                 `json:"acp_agent"`
 		ACPConfigOptions map[string]interface{} `json:"acp_config_options"`
 		ACPMCPServers    []models.ACPMCPServer  `json:"acp_mcp_servers"`
+		Force            bool                   `json:"force"`
 	}
 
 	if err := llmtools.DecodeToolInput(string(params), &req); err != nil {
@@ -669,6 +670,7 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 			Model:      req.Model,
 			Timeout:    req.Timeout,
 			Background: background,
+			Force:      req.Force,
 		})
 		if err != nil {
 			return nil, err

@@ -218,6 +218,8 @@ func (s *Server) handleAPITaskRetry(c *gin.Context) {
 	id := c.Param("id")
 	var req struct {
 		Background *bool `json:"background"`
+		// Force bypasses the circuit breaker / respawn guard.
+		Force bool `json:"force"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -231,6 +233,7 @@ func (s *Server) handleAPITaskRetry(c *gin.Context) {
 
 	task, err := s.orchestrator.Retry(c.Request.Context(), id, orchestrator.RetryOptions{
 		Background: background,
+		Force:      req.Force,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {

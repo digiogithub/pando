@@ -137,7 +137,21 @@
       "delegationAllowExternalWarmTargets": "Allow External Warm Targets",
       "delegationAllowExternalWarmTargetsDescription": "Route a delegated task to an external (editor-launched) peer over IPC instead of cold-spawning a CLI (the peer must accept delegations)",
       "delegationAcceptDelegations": "Accept Delegations",
-      "delegationAcceptDelegationsDescription": "Let this instance accept incoming delegation requests from peer instances over IPC"
+      "delegationAcceptDelegationsDescription": "Let this instance accept incoming delegation requests from peer instances over IPC",
+      "delegationConclusionGate": "Conclusion integrity gate",
+      "delegationConclusionGateDescription": "Downgrade a delegated task's \"success\" to \"partial\" when the files or memory refs it cites do not exist",
+      "delegationBreaker": "Circuit breaker",
+      "delegationBreakerDescription": "Refuse to relaunch or retry a task that hit the failure limit, failed on authentication, or is inside a rate-limit cooldown",
+      "delegationMaxTaskRetries": "Max consecutive failures",
+      "delegationRateLimitCooldown": "Rate-limit cooldown",
+      "delegationRecentSuccessWindow": "Recent-success window",
+      "delegationEventLog": "Durable event log",
+      "delegationEventLogDescription": "Record every terminal task outcome on disk and deliver it through an acked cursor, so a signal dropped by the in-memory bus or lost to a restart is replayed instead of vanishing",
+      "delegationEventLogMaxEntries": "Event log max entries",
+      "orchestratorMaxParallel": "Max parallel tasks",
+      "orchestratorMaxPerEngine": "Max tasks per engine (0 = no limit)",
+      "orchestratorClaimTtl": "Dispatch claim TTL",
+      "orchestratorDispatchInterval": "Dispatch interval"
     },
     "tokenOptimization": {
       "loading": "Loading token optimization configuration…",

@@ -47,6 +47,28 @@ type DelegationMetrics struct {
 	// be recovered on restart (peer gone / no record / still running past the
 	// recovery window) and were therefore marked failed.
 	externalReattachFailed atomic.Int64
+	// conclusionGateDowngrades counts conclusions whose "success" status was
+	// downgraded to "partial" by the anti-hallucination gate because they cited
+	// artifacts or memory refs that do not exist.
+	conclusionGateDowngrades atomic.Int64
+	// breakerTrips counts tasks whose failure reached the consecutive-failure
+	// limit and tripped the circuit breaker (further respawns need a fix or an
+	// explicit force).
+	breakerTrips atomic.Int64
+	// respawnsRefused counts Relaunch/Retry attempts denied by the respawn guard
+	// (breaker tripped, auth blocker, rate-limit cooldown, recent success).
+	respawnsRefused atomic.Int64
+	// dispatchesDeferred counts ready tasks held back by a concurrency cap
+	// (orchestrator-wide or per-engine). A persistently high value means the caps,
+	// not the dependencies, are what paces the fan-out.
+	dispatchesDeferred atomic.Int64
+	// claimsRejected counts dispatch attempts that lost the claim compare-and-set
+	// because another dispatcher had already taken the task — the double-start
+	// races the claim lease exists to absorb.
+	claimsRejected atomic.Int64
+	// claimsReclaimed counts claims whose lease expired without the task ever
+	// starting, returning it to the dispatchable pool.
+	claimsReclaimed atomic.Int64
 }
 
 // DelegationMetricsSnapshot is an immutable, JSON-friendly view of
@@ -64,6 +86,17 @@ type DelegationMetricsSnapshot struct {
 	// external delegation recovery outcomes (A2).
 	ExternalReattachRecovered int64 `json:"external_reattach_recovered"`
 	ExternalReattachFailed    int64 `json:"external_reattach_failed"`
+	// ConclusionGateDowngrades / BreakerTrips / RespawnsRefused count the
+	// integrity gate and anti-thrash outcomes.
+	ConclusionGateDowngrades int64 `json:"conclusion_gate_downgrades"`
+	BreakerTrips             int64 `json:"breaker_trips"`
+	RespawnsRefused          int64 `json:"respawns_refused"`
+	// DispatchesDeferred / ClaimsRejected / ClaimsReclaimed describe the
+	// claim-lease dispatcher: how often the caps queued a ready task, how often
+	// two dispatchers raced for one task, and how often a claim was stranded.
+	DispatchesDeferred int64 `json:"dispatches_deferred"`
+	ClaimsRejected     int64 `json:"claims_rejected"`
+	ClaimsReclaimed    int64 `json:"claims_reclaimed"`
 	// WarmHitRate is warmHits / warmAttempts in [0,1]; 0 when there were no
 	// attempts. It is the headline "is warm reuse paying off" number.
 	WarmHitRate float64 `json:"warm_hit_rate"`
@@ -80,6 +113,49 @@ func (m *DelegationMetrics) recordLiveInjection() { m.liveInjections.Add(1) }
 
 func (m *DelegationMetrics) recordExternalReattachRecovered() { m.externalReattachRecovered.Add(1) }
 func (m *DelegationMetrics) recordExternalReattachFailed()    { m.externalReattachFailed.Add(1) }
+
+// The integrity/anti-thrash recorders are nil-safe: they are called from
+// panic-recovered bookkeeping paths (captureConclusion, recordBreakerOutcome)
+// where a nil-metrics panic would be silently swallowed and take the real work
+// with it.
+func (m *DelegationMetrics) recordConclusionGateDowngrade() {
+	if m != nil {
+		m.conclusionGateDowngrades.Add(1)
+	}
+}
+
+func (m *DelegationMetrics) recordBreakerTripped() {
+	if m != nil {
+		m.breakerTrips.Add(1)
+	}
+}
+
+func (m *DelegationMetrics) recordRespawnRefused() {
+	if m != nil {
+		m.respawnsRefused.Add(1)
+	}
+}
+
+// The dispatcher recorders are nil-safe for the same reason: they are called
+// from the dispatch tick, which runs against orchestrators that tests build by
+// hand.
+func (m *DelegationMetrics) recordDispatchDeferred() {
+	if m != nil {
+		m.dispatchesDeferred.Add(1)
+	}
+}
+
+func (m *DelegationMetrics) recordClaimRejected() {
+	if m != nil {
+		m.claimsRejected.Add(1)
+	}
+}
+
+func (m *DelegationMetrics) recordClaimReclaimed() {
+	if m != nil {
+		m.claimsReclaimed.Add(1)
+	}
+}
 
 // Snapshot returns a consistent-enough point-in-time copy of the counters with
 // the derived hit rate. Counters are read independently (no global lock), so a
@@ -102,6 +178,12 @@ func (m *DelegationMetrics) Snapshot() DelegationMetricsSnapshot {
 		LiveInjections:            m.liveInjections.Load(),
 		ExternalReattachRecovered: m.externalReattachRecovered.Load(),
 		ExternalReattachFailed:    m.externalReattachFailed.Load(),
+		ConclusionGateDowngrades:  m.conclusionGateDowngrades.Load(),
+		BreakerTrips:              m.breakerTrips.Load(),
+		RespawnsRefused:           m.respawnsRefused.Load(),
+		DispatchesDeferred:        m.dispatchesDeferred.Load(),
+		ClaimsRejected:            m.claimsRejected.Load(),
+		ClaimsReclaimed:           m.claimsReclaimed.Load(),
 	}
 	if attempts > 0 {
 		snap.WarmHitRate = float64(hits) / float64(attempts)

@@ -271,7 +271,17 @@ Port = 5005
 [Mesnada.Orchestrator]
 StorePath        = './.pando/mesnada/tasks.json'
 LogDir           = './.pando/mesnada/logs'
+# MaxParallel caps how many tasks run at once; over the cap a ready task queues
+# and starts as soon as a slot frees. MaxPerEngine adds a per-engine cap (0 = no
+# per-engine limit) so one engine's fan-out cannot take every slot.
 MaxParallel      = 5
+MaxPerEngine     = 0
+# ClaimTTL bounds the reservation a dispatcher takes on a ready task so two
+# concurrent readiness checks cannot start it twice; a claim that expires without
+# the task starting is reclaimed by the dispatch tick, which runs every
+# DispatchInterval and also starts tasks the caps had deferred.
+ClaimTTL         = '2m'
+DispatchInterval = '10s'
 DefaultEngine    = 'pando'
 DefaultModel     = 'sonnet'
 # DefaultMCPConfig is optional. When unset, pando generates a dynamic MCP config
@@ -313,6 +323,26 @@ WarmInstanceIdleTimeout = '0'
 WarmQueueDepth = 0
 AllowExternalWarmTargets = false
 AcceptDelegations = false
+# Anti-hallucination gate: downgrade a delegated task's "success" conclusion to
+# "partial" when the artifacts / memory refs it cites do not exist.
+ConclusionGateDisabled = false
+# Circuit breaker + respawn guard: refuse a relaunch/retry of a task that hit the
+# consecutive-failure limit, failed on auth, or is inside a rate-limit cooldown.
+BreakerDisabled = false
+MaxTaskRetries = 3
+RateLimitCooldown = '5m'
+RecentSuccessWindow = '2m'
+# Durable event log: every terminal task outcome is appended to disk before it is
+# broadcast, and consumed through an acked cursor — so a signal dropped by the
+# in-memory bus, or produced while pando was down, is delivered instead of lost.
+EventLogDisabled = false
+EventLogMaxEntries = 5000
+# Swarm blackboard garbage collection. Past MaxEntriesPerSwarm a swarm's shared
+# log is compacted to its newest entries while every key's winning value is kept,
+# so no fact the merged view still shows is ever lost. A swarm's board is purged
+# once its newest entry is older than BlackboardTtl (a finished swarm ages out).
+BlackboardMaxEntriesPerSwarm = 200
+BlackboardTtl = '168h'
 
 # =============================================================================
 # Shell & Bash

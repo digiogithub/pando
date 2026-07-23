@@ -10,6 +10,7 @@ import (
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mesnada/conclusion"
+	"github.com/digiogithub/pando/internal/mesnada/events"
 	mesnadaOrch "github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/pkg/mesnada/models"
 )
@@ -31,6 +32,36 @@ type delegationAgent interface {
 type parentLister interface {
 	ListByParentSession(sessionID string) ([]*models.Task, error)
 }
+
+// eventSource is the slice of the orchestrator the supervisor needs to consume
+// the durable delegation event log (P5): read the events it has not acked,
+// re-read the task each one points at, and advance its cursor. *Orchestrator
+// satisfies it; tests stub it. When it is nil, or reports the log disabled, the
+// supervisor falls back to the best-effort in-memory completion bus.
+type eventSource interface {
+	EventLogEnabled() bool
+	UnseenEvents(subID string) []events.Event
+	AckEvent(subID string, seq int64) error
+	GetTask(taskID string) (*models.Task, error)
+}
+
+// supervisorSubscriptionID identifies the supervisor's cursor in the durable
+// event log. It is stable across restarts — that is what makes an unacked event
+// replayable.
+const supervisorSubscriptionID = "delegation-supervisor"
+
+// Durable-log consumption bounds.
+const (
+	// eventDrainInterval is the safety net for a completion broadcast that was
+	// dropped by the non-blocking in-memory bus with no later completion to
+	// follow it. The drain is normally driven by the broadcast itself.
+	eventDrainInterval = 30 * time.Second
+	// eventReplayMaxAge bounds how old a replayed event may be before the
+	// supervisor acks it without acting. Re-entering a parent loop is only
+	// meaningful while that work is still relevant; resurrecting a session over a
+	// day-old conclusion after a long downtime would be noise, not recovery.
+	eventReplayMaxAge = time.Hour
+)
 
 // awaitReader is the slice of the orchestrator the supervisor needs to consult and
 // clear a session's non-blocking await intent (registered by the mesnada_await
@@ -80,6 +111,7 @@ type delegationSupervisor struct {
 	orchConcrete *mesnadaOrch.Orchestrator
 	orch         parentLister
 	awaits       awaitReader // optional; nil => no await-aware behavior
+	events       eventSource // optional; nil => in-memory bus only
 	agent        delegationAgent
 	opts         delegationSupervisorOptions
 	ctx          context.Context
@@ -107,6 +139,7 @@ func newDelegationSupervisor(orch *mesnadaOrch.Orchestrator, ag delegationAgent,
 		s.orchConcrete = orch
 		s.orch = orch
 		s.awaits = orch
+		s.events = orch
 	}
 	return s
 }
@@ -127,23 +160,101 @@ func (s *delegationSupervisor) Start(ctx context.Context) {
 	completions, unsubscribe := s.orchConcrete.SubscribeCompletions()
 	s.unsubscribe = unsubscribe
 
+	durable := s.durableEvents()
+
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+
+		// Replay first: any terminal signal left unacked by a previous run (a
+		// crash mid-handling, or a shutdown with a pending batch) is delivered
+		// before live traffic, in order.
+		if durable {
+			s.drainEvents()
+		}
+
+		ticker := time.NewTicker(eventDrainInterval)
+		defer ticker.Stop()
+
 		for {
 			select {
 			case <-ctx.Done():
 				return
+			case <-ticker.C:
+				// Safety net: recover a broadcast the non-blocking bus dropped with
+				// no later completion to carry the drain.
+				if durable {
+					s.drainEvents()
+				}
 			case task, ok := <-completions:
 				if !ok {
 					return
+				}
+				if durable {
+					// The broadcast is only a wakeup; the log is the record. Draining
+					// it (rather than handling the delivered task directly) is what
+					// makes a dropped or duplicated send harmless.
+					s.drainEvents()
+					continue
 				}
 				s.handleCompletion(task)
 			}
 		}
 	}()
 	logging.Debug("Delegation supervisor started",
-		"liveInjection", s.opts.InjectIntoLiveLoop, "resurrectIdle", s.opts.ResurrectIdleLoop)
+		"liveInjection", s.opts.InjectIntoLiveLoop, "resurrectIdle", s.opts.ResurrectIdleLoop,
+		"durableEvents", durable)
+}
+
+// durableEvents reports whether the supervisor should consume the durable event
+// log instead of the in-memory completion bus.
+func (s *delegationSupervisor) durableEvents() bool {
+	return s.events != nil && s.events.EventLogEnabled()
+}
+
+// drainEvents handles every event the supervisor has not acked yet, in sequence
+// order, acking each one as it goes.
+//
+// Acking means "the supervisor has taken responsibility for this signal", not
+// "the parent loop has consumed it": a batched resurrection still lives in
+// memory until it flushes. What the log guarantees is that a signal the
+// supervisor never saw — dropped by the non-blocking broadcast, or produced
+// while the process was down — is delivered instead of vanishing.
+func (s *delegationSupervisor) drainEvents() {
+	if s.events == nil {
+		return
+	}
+	for _, e := range s.events.UnseenEvents(supervisorSubscriptionID) {
+		s.handleEvent(e)
+		if err := s.events.AckEvent(supervisorSubscriptionID, e.Seq); err != nil {
+			logging.Warn("Delegation: failed to ack event",
+				"seq", e.Seq, "task", e.TaskID, "error", err)
+			return // stop here so the unacked tail is retried, not skipped
+		}
+	}
+}
+
+// handleEvent turns one durable event into a re-entry decision. Non-terminal
+// signals (gate failures, breaker trips) are recorded for operators, not acted
+// on by the supervisor, so they are acked untouched.
+func (s *delegationSupervisor) handleEvent(e events.Event) {
+	if !e.Kind.IsTerminal() {
+		return
+	}
+	if !e.CreatedAt.IsZero() && time.Since(e.CreatedAt) > eventReplayMaxAge {
+		logging.Debug("Delegation: skipping stale replayed event",
+			"task", e.TaskID, "age", time.Since(e.CreatedAt))
+		return
+	}
+	// Re-read the task rather than trusting a snapshot in the event: a replayed
+	// event must act on what the task is now, not on what it was when it landed.
+	task, err := s.events.GetTask(e.TaskID)
+	if err != nil {
+		logging.Debug("Delegation: event references an unknown task, skipping",
+			"task", e.TaskID, "error", err)
+		return
+	}
+	s.handleCompletion(task)
 }
 
 // Stop unsubscribes from the orchestrator, stops any pending batch timers, and
