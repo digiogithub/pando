@@ -2302,7 +2302,14 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 		if setDefaultModelForAgent(name) {
 			logging.Info("set default model for agent", "agent", name, "model", cfg.Agents[name].Model)
 		} else {
-			return fmt.Errorf("no valid provider available for agent %s", name)
+			// No usable provider is configured yet (fresh install / initial state
+			// before the user sets up any provider). Don't abort config load: warn
+			// and leave the agent without a model — the model is selected later from
+			// the TUI/Web UI setup, exactly like the provider-missing branch above.
+			// Returning an error here would make Pando fail to start with no
+			// providers configured.
+			logging.Warn("no valid provider available for agent, model selection required",
+				"agent", name)
 		}
 	}
 
@@ -2455,9 +2462,19 @@ func Validate() error {
 		}
 	}
 
-	// Validate evaluator configuration
-	if cfg.Evaluator.Enabled && cfg.Evaluator.Model == "" {
-		return fmt.Errorf("evaluator.model is required when evaluator is enabled")
+	// Validate evaluator configuration.
+	//
+	// On a fresh install with no provider configured yet, no coder model can be
+	// resolved, so ensureEvaluatorDefaultModel cannot seed an evaluator model.
+	// The generated default config enables the evaluator, so aborting here would
+	// make Pando fail to start in that initial state. Instead, degrade gracefully:
+	// disable the evaluator in memory (the config file keeps Enabled = true). Once
+	// a provider and coder model are configured, ensureEvaluatorDefaultModel seeds
+	// and persists the evaluator model, and it becomes active again on the next
+	// load.
+	if cfg.Evaluator.Enabled && strings.TrimSpace(string(cfg.Evaluator.Model)) == "" {
+		logging.Warn("evaluator enabled but no model available; disabling evaluator until a model is configured")
+		cfg.Evaluator.Enabled = false
 	}
 
 	if cfg.Goal.MaxIterations <= 0 {

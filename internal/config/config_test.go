@@ -731,3 +731,60 @@ func TestChatSidebarMinWidthExplicit(t *testing.T) {
 		t.Fatalf("ChatSidebarMinWidth() = %d, want 160", got)
 	}
 }
+
+// TestValidateDisablesEvaluatorWithoutModel is the regression guard for the
+// "pando init generates a config that fails to start" report. The generated
+// default template enables the evaluator, and on a fresh install with no provider
+// configured no coder model can be resolved to seed the evaluator model. Validate
+// must NOT abort in that state (which made Pando fail to start): it degrades by
+// disabling the evaluator in memory until a model becomes available.
+func TestValidateDisablesEvaluatorWithoutModel(t *testing.T) {
+	cfg = &Config{
+		Providers: make(map[models.ModelProvider]Provider),
+		Agents:    make(map[AgentName]Agent),
+		LSP:       make(map[string]LSPConfig),
+		Evaluator: EvaluatorConfig{Enabled: true},
+	}
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	if err := Validate(); err != nil {
+		t.Fatalf("Validate() must not error when evaluator has no model, got: %v", err)
+	}
+	if cfg.Evaluator.Enabled {
+		t.Fatal("evaluator should be disabled at runtime when no model is available")
+	}
+}
+
+// TestValidateAgentWithoutProviderDoesNotError guards the sibling hard-error path:
+// an agent whose model resolves to a provider that is present but unusable (no key,
+// no credentials) and with no fallback provider available must not abort Validate.
+func TestValidateAgentWithoutProviderDoesNotError(t *testing.T) {
+	isolateGlobalConfig(t)
+	for _, k := range []string{
+		"ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY",
+		"GROQ_API_KEY", "OPENROUTER_API_KEY", "XAI_API_KEY",
+	} {
+		t.Setenv(k, "")
+	}
+
+	cfg = &Config{
+		Providers: map[models.ModelProvider]Provider{
+			models.ProviderAnthropic: {APIKey: "", Disabled: true},
+		},
+		Agents: map[AgentName]Agent{
+			AgentCoder: {Model: models.Claude4Sonnet},
+		},
+		LSP: make(map[string]LSPConfig),
+	}
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	if err := Validate(); err != nil {
+		t.Fatalf("Validate() must not error when an agent has no usable provider, got: %v", err)
+	}
+}
