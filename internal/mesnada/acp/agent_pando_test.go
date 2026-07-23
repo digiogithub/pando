@@ -248,7 +248,10 @@ func TestSendAgentTextUsesStableSlashCommandMessageID(t *testing.T) {
 	}
 }
 
-func TestStartManualSummaryDoesNotEmitSyntheticSummarizeMessages(t *testing.T) {
+// TestStartManualSummaryStreamsUntilDone verifies that /compact blocks on the real
+// (asynchronous) summary completion instead of returning immediately: the channel
+// stays open, forwards summarize progress, and only closes once the summary is done.
+func TestStartManualSummaryStreamsUntilDone(t *testing.T) {
 	agent := newTestPandoAgent()
 	mockAgent := agent.agentService.(*mockAgentService)
 
@@ -260,10 +263,14 @@ func TestStartManualSummaryDoesNotEmitSyntheticSummarizeMessages(t *testing.T) {
 		t.Fatal("expected summarize to be invoked")
 	}
 
+	var progressEvents int
 	for event := range events {
-		if event.Type == AgentEventTypeSummarize || event.Progress != "" || event.Delta != "" {
-			t.Fatalf("expected no synthetic summarize feedback events, got %#v", event)
+		if event.Type == AgentEventTypeSummarize && event.Progress != "" {
+			progressEvents++
 		}
+	}
+	if progressEvents == 0 {
+		t.Fatal("expected summarize progress events streamed until completion, got none")
 	}
 }
 
@@ -649,10 +656,17 @@ func TestPromptCleanModeClearsPersonaOverride(t *testing.T) {
 	}
 }
 
-func (m *mockAgentService) Summarize(ctx context.Context, sessionID string) error {
+func (m *mockAgentService) Summarize(ctx context.Context, sessionID string) (<-chan AgentEvent, error) {
 	m.summarizeCalled = true
 	m.summarizeSessionID = sessionID
-	return m.summarizeErr
+	if m.summarizeErr != nil {
+		return nil, m.summarizeErr
+	}
+	ch := make(chan AgentEvent, 2)
+	ch <- AgentEvent{Type: AgentEventTypeSummarize, Progress: "Starting summarization..."}
+	ch <- AgentEvent{Type: AgentEventTypeSummarize, Progress: "Summary complete"}
+	close(ch)
+	return ch, nil
 }
 
 func (m *mockAgentService) OpenCopilotUsage() error {

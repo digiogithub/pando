@@ -122,7 +122,10 @@ type AgentService interface {
 	// SetActivePersona sets the active persona by name. Pass empty string to clear.
 	SetActivePersona(name string) error
 	// Summarize performs a manual conversation summary/compaction for the session.
-	Summarize(ctx context.Context, sessionID string) error
+	// It returns a channel of progress events that is closed once the summary is
+	// persisted or has failed, so the caller can report real completion instead of
+	// returning before the (asynchronous) summary model has finished.
+	Summarize(ctx context.Context, sessionID string) (<-chan AgentEvent, error)
 	// OpenCopilotUsage opens the Copilot usage/features page when Copilot auth is available.
 	OpenCopilotUsage() error
 	// OpenClaudeUsage opens the Claude usage page when Claude OAuth auth is available.

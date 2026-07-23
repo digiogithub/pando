@@ -819,11 +819,30 @@ func humanizeBytes(n int64) string {
 func (s *Server) handleSlashCommandStream(w http.ResponseWriter, flusher http.Flusher, ctx context.Context, sessionID, cmdName, cmdArgs string) {
 	switch cmdName {
 	case "compact", "summarize":
-		writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Starting session compaction..."})
-		if err := s.app.CoderAgent.Summarize(ctx, sessionID); err != nil {
+		// SummarizeStream returns a channel that stays open until the (asynchronous)
+		// summary actually finishes. Draining it lets us stream real progress and only
+		// report success once the summary model has completed — the plain Summarize
+		// returns immediately and would falsely report instant completion.
+		events, err := s.app.CoderAgent.SummarizeStream(ctx, sessionID)
+		if err != nil {
 			writeSSEEvent(w, flusher, "error", map[string]string{"error": "compaction failed: " + err.Error()})
+			break
+		}
+		var summarizeErr error
+		for ev := range events {
+			switch ev.Type {
+			case agent.AgentEventTypeError:
+				summarizeErr = ev.Error
+			case agent.AgentEventTypeSummarize:
+				if ev.Progress != "" {
+					writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": ev.Progress + "\n"})
+				}
+			}
+		}
+		if summarizeErr != nil {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": "compaction failed: " + summarizeErr.Error()})
 		} else {
-			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "\nSession compacted successfully."})
+			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Session compacted successfully."})
 		}
 	case "db-compact":
 		writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Compacting database (VACUUM)..."})

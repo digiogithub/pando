@@ -2405,8 +2405,12 @@ func (a *appACPAgentAdapter) LearningFinish(ctx context.Context, sessionID strin
 func (a *appACPAgentAdapter) ListPersonas() []string             { return agent.ListAvailablePersonas() }
 func (a *appACPAgentAdapter) GetActivePersona() string           { return agent.GetActivePersona() }
 func (a *appACPAgentAdapter) SetActivePersona(name string) error { return agent.SetActivePersona(name) }
-func (a *appACPAgentAdapter) Summarize(ctx context.Context, sessionID string) error {
-	return a.svc.Summarize(ctx, sessionID)
+func (a *appACPAgentAdapter) Summarize(ctx context.Context, sessionID string) (<-chan mesnadaACP.AgentEvent, error) {
+	realCh, err := a.svc.SummarizeStream(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.forwardEvents(ctx, realCh), nil
 }
 
 func (a *appACPAgentAdapter) OpenCopilotUsage() error {

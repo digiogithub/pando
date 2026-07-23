@@ -60,8 +60,13 @@ func (m *steerMockAgent) Update(agentName config.AgentName, modelID models.Model
 	return models.Model{}, nil
 }
 func (m *steerMockAgent) Summarize(ctx context.Context, sessionID string) error { return nil }
-func (m *steerMockAgent) SetLuaManager(fm *luaengine.FilterManager)             {}
-func (m *steerMockAgent) GetTools() []tools.BaseTool                            { return nil }
+func (m *steerMockAgent) SummarizeStream(ctx context.Context, sessionID string) (<-chan agent.AgentEvent, error) {
+	ch := make(chan agent.AgentEvent)
+	close(ch)
+	return ch, nil
+}
+func (m *steerMockAgent) SetLuaManager(fm *luaengine.FilterManager) {}
+func (m *steerMockAgent) GetTools() []tools.BaseTool                { return nil }
 
 func newSteerTestServer(ag agent.Service) *Server {
 	return &Server{app: &app.App{CoderAgent: ag}}

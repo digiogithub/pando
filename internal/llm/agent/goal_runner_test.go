@@ -95,6 +95,12 @@ func (s *stubGoalService) Update(agentName config.AgentName, modelID llmmodels.M
 
 func (s *stubGoalService) Summarize(ctx context.Context, sessionID string) error { return nil }
 
+func (s *stubGoalService) SummarizeStream(ctx context.Context, sessionID string) (<-chan AgentEvent, error) {
+	ch := make(chan AgentEvent)
+	close(ch)
+	return ch, nil
+}
+
 func (s *stubGoalService) SetLuaManager(fm *luaengine.FilterManager) {}
 
 func (s *stubGoalService) GetTools() []llmtools.BaseTool { return nil }

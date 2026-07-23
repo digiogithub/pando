@@ -264,21 +264,10 @@ func formatACPBytes(n int64) string {
 }
 
 func (a *PandoACPAgent) startManualSummary(ctx context.Context, sessionID string) (<-chan AgentEvent, error) {
-	if err := a.agentService.Summarize(ctx, sessionID); err != nil {
-		return nil, err
-	}
-
-	events := make(chan AgentEvent, 16)
-	go func() {
-		defer close(events)
-		select {
-		case <-ctx.Done():
-			events <- AgentEvent{Type: AgentEventTypeError, Error: ctx.Err()}
-			return
-		default:
-		}
-	}()
-	return events, nil
+	// Summarize returns a channel that stays open until the (asynchronous) summary
+	// actually finishes, so processAgentEventStream blocks on real completion
+	// instead of ending the turn immediately.
+	return a.agentService.Summarize(ctx, sessionID)
 }
 
 func (a *PandoACPAgent) sendAgentText(acpSession *ACPServerSession, text string) error {

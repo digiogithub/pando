@@ -773,6 +773,7 @@ func (a *acpAgentAdapter) forwardEvents(ctx context.Context, realCh <-chan agent
 				acpEv.Message = ev.Message
 			case agent.AgentEventTypeSummarize:
 				acpEv.Type = acpPkg.AgentEventTypeSummarize
+				acpEv.Progress = ev.Progress
 			case agent.AgentEventTypeContentDelta:
 				acpEv.Type = acpPkg.AgentEventTypeContentDelta
 				acpEv.Delta = ev.Delta
@@ -939,8 +940,12 @@ func (a *acpAgentAdapter) SetActivePersona(name string) error {
 	return agent.SetActivePersona(name)
 }
 
-func (a *acpAgentAdapter) Summarize(ctx context.Context, sessionID string) error {
-	return a.svc.Summarize(ctx, sessionID)
+func (a *acpAgentAdapter) Summarize(ctx context.Context, sessionID string) (<-chan acpPkg.AgentEvent, error) {
+	realCh, err := a.svc.SummarizeStream(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return a.forwardEvents(ctx, realCh), nil
 }
 
 func (a *acpAgentAdapter) OpenCopilotUsage() error {

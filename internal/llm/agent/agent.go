@@ -289,6 +289,11 @@ type Service interface {
 	IsBusy() bool
 	Update(agentName config.AgentName, modelID models.ModelID) (models.Model, error)
 	Summarize(ctx context.Context, sessionID string) error
+	// SummarizeStream performs a manual summary and returns a channel of progress
+	// events that is closed when the summary finishes (or fails). Callers that need
+	// to know when the (asynchronous) summary is actually done must use this instead
+	// of Summarize, which returns immediately and only broadcasts via pubsub.
+	SummarizeStream(ctx context.Context, sessionID string) (<-chan AgentEvent, error)
 	SetLuaManager(fm *luaengine.FilterManager)
 	// GetTools returns the tools available to this agent instance.
 	GetTools() []tools.BaseTool
@@ -1847,10 +1852,29 @@ func (a *agent) Update(agentName config.AgentName, modelID models.ModelID) (mode
 }
 
 func (a *agent) Summarize(ctx context.Context, sessionID string) error {
+	// Fire-and-forget: kick off the streaming summary and drain the returned
+	// channel in the background so callers relying only on pubsub keep working.
+	ch, err := a.SummarizeStream(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	go func() {
+		for range ch {
+		}
+	}()
+	return nil
+}
+
+// SummarizeStream runs the manual summary asynchronously and returns a channel of
+// progress events. Every event is also broadcast on the pubsub broker (so the TUI's
+// global subscription keeps rendering progress); the channel is closed once the
+// summary is persisted or has failed, letting synchronous callers (ACP, Web UI)
+// wait for real completion instead of returning immediately.
+func (a *agent) SummarizeStream(ctx context.Context, sessionID string) (<-chan AgentEvent, error) {
 	logging.Debug("Summarize started", "sessionID", sessionID)
 	// Check if session is busy
 	if a.IsSessionBusy(sessionID) {
-		return ErrSessionBusy
+		return nil, ErrSessionBusy
 	}
 
 	// Create a new context with cancellation
@@ -1859,70 +1883,49 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 	// Store the cancel function in activeRequests to allow cancellation
 	a.activeRequests.Store(sessionID+"-summarize", cancel)
 
+	events := make(chan AgentEvent, 16)
 	go func() {
+		defer close(events)
 		defer a.activeRequests.Delete(sessionID + "-summarize")
 		defer cancel()
-		event := AgentEvent{
-			Type:     AgentEventTypeSummarize,
-			Progress: "Starting summarization...",
+
+		// emit broadcasts on pubsub and forwards on the dedicated channel. The
+		// forward never blocks the summary: if nobody drains and the buffer fills,
+		// it is dropped once the context is done.
+		emit := func(event AgentEvent) {
+			a.Publish(pubsub.CreatedEvent, event)
+			select {
+			case events <- event:
+			case <-summarizeCtx.Done():
+			}
 		}
 
-		a.Publish(pubsub.CreatedEvent, event)
-		event = AgentEvent{
-			Type:     AgentEventTypeSummarize,
-			Progress: "Analyzing conversation...",
-		}
-		a.Publish(pubsub.CreatedEvent, event)
-
-		event = AgentEvent{
-			Type:     AgentEventTypeSummarize,
-			Progress: "Generating summary...",
-		}
-
-		a.Publish(pubsub.CreatedEvent, event)
+		emit(AgentEvent{Type: AgentEventTypeSummarize, Progress: "Starting summarization..."})
+		emit(AgentEvent{Type: AgentEventTypeSummarize, Progress: "Analyzing conversation..."})
+		emit(AgentEvent{Type: AgentEventTypeSummarize, Progress: "Generating summary..."})
 
 		result, err := a.generateAndPersistSummary(summarizeCtx, sessionID, summaryModeManual)
 		if err != nil {
-			event = AgentEvent{
-				Type:  AgentEventTypeError,
-				Error: err,
-				Done:  true,
-			}
-			a.Publish(pubsub.CreatedEvent, event)
+			emit(AgentEvent{Type: AgentEventTypeError, Error: err, Done: true})
 			return
 		}
-		event = AgentEvent{
-			Type:     AgentEventTypeSummarize,
-			Progress: "Persisting summary...",
-		}
 
-		a.Publish(pubsub.CreatedEvent, event)
+		emit(AgentEvent{Type: AgentEventTypeSummarize, Progress: "Persisting summary..."})
 
 		persistedMsg := "Summary persisted. Continue explicitly from the summary if more work is needed."
 		if result.usedFallback {
 			persistedMsg = "Summary persisted using coder fallback. Continue explicitly from the summary if more work is needed."
 		}
-		event = AgentEvent{
-			Type:      AgentEventTypeSummarize,
-			SessionID: result.message.SessionID,
-			Progress:  persistedMsg,
-		}
-		a.Publish(pubsub.CreatedEvent, event)
+		emit(AgentEvent{Type: AgentEventTypeSummarize, SessionID: result.message.SessionID, Progress: persistedMsg})
 
 		completeMsg := "Summary complete"
 		if result.usedFallback {
 			completeMsg = "Summary complete using coder fallback"
 		}
-		event = AgentEvent{
-			Type:      AgentEventTypeSummarize,
-			SessionID: result.message.SessionID,
-			Progress:  completeMsg,
-			Done:      true,
-		}
-		a.Publish(pubsub.CreatedEvent, event)
+		emit(AgentEvent{Type: AgentEventTypeSummarize, SessionID: result.message.SessionID, Progress: completeMsg, Done: true})
 	}()
 
-	return nil
+	return events, nil
 }
 
 // shouldCompact returns true if the active session is close to exhausting the
