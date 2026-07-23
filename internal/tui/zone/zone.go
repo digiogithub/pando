@@ -34,6 +34,8 @@ const (
 	TerminalTabPrefix      = "terminal-tab-"
 	MainTabPrefix          = "main-tab-"
 	SidebarRepo            = "sidebar-repo"
+	ChatCopyPrefix         = "chat-copy-"
+	ChatScrollBottom       = "chat-scroll-bottom"
 )
 
 var Manager = bubblezone.New()
@@ -120,6 +122,24 @@ func MarkChatViewport(content string) string {
 
 func MarkChatEditorViewport(content string) string {
 	return Manager.Mark(ChatEditorViewport, content)
+}
+
+// ChatCopyID is the per-assistant-message zone id for its "copy" button.
+func ChatCopyID(id string) string {
+	return ChatCopyPrefix + hash(id)
+}
+
+// MarkChatCopy marks the clickable "copy" button rendered under an assistant
+// response block, keyed by the message ID so a click can be routed back to the
+// right message.
+func MarkChatCopy(id, content string) string {
+	return Manager.Mark(ChatCopyID(id), content)
+}
+
+// MarkChatScrollBottom marks the floating "jump to bottom" affordance shown over
+// the chat viewport while it is scrolled up.
+func MarkChatScrollBottom(content string) string {
+	return Manager.Mark(ChatScrollBottom, content)
 }
 
 func MarkStatusHelp(content string) string {

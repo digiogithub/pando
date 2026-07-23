@@ -3,9 +3,11 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -56,7 +58,11 @@ type Orchestrator struct {
 	// lifetime (item E1). Always non-nil after New; safe for lock-free concurrent
 	// updates from the warm path and the delegation supervisor.
 	metrics *DelegationMetrics
-	wg      sync.WaitGroup
+	// blackboard is the sibling-coordination store (P1). Always non-nil after New.
+	// Sibling delegated tasks post structured facts here (via the mesnada_note
+	// tool) and read them back — the shared-state primitive Pando's DAG lacked.
+	blackboard *Blackboard
+	wg         sync.WaitGroup
 	ctx     context.Context
 	cancel  context.CancelFunc
 }
@@ -164,9 +170,23 @@ func New(cfg Config) (*Orchestrator, error) {
 		dynamicMCPDir = home + "/.mesnada/logs"
 	}
 
+	// Blackboard lives beside the task store so it shares the store's lifecycle
+	// and directory. A load failure is non-fatal: coordination degrades to none
+	// rather than blocking the orchestrator from starting.
+	blackboardDir := cfg.StorePath
+	if info, statErr := os.Stat(cfg.StorePath); statErr != nil || !info.IsDir() {
+		blackboardDir = filepath.Dir(cfg.StorePath)
+	}
+	blackboard, err := NewBlackboard(filepath.Join(blackboardDir, "blackboard.json"))
+	if err != nil {
+		log.Printf("Warning: failed to open swarm blackboard: %v", err)
+		blackboard, _ = NewBlackboard("") // in-memory fallback
+	}
+
 	o := &Orchestrator{
 		store:                fileStore,
 		personaManager:       personaManager,
+		blackboard:           blackboard,
 		subscribers:          make(map[string][]chan *models.Task),
 		maxParallel:          cfg.MaxParallel,
 		defaultMCPConfig:     cfg.DefaultMCPConfig,
@@ -474,6 +494,19 @@ func (o *Orchestrator) processDependentTasks(completed *models.Task) {
 		if o.canStart(task) {
 			logTaskStartable(task, fmt.Sprintf("dependency_completed=%s", completed.ID))
 			go o.startTask(task)
+			continue
+		}
+		// A dependent held pending purely by a failed gate (the verifier completed
+		// without passing): leave it pending and emit a gate_failed signal. The
+		// verifier's own conclusion (status=blocked/failed) propagates up the
+		// completion bus so the parent agent can adjust and Relaunch the verifier;
+		// its next completion re-runs this evaluation and re-opens the gate.
+		if gateBlocks(task, completed) {
+			summary := ""
+			if completed.Conclusion != nil {
+				summary = completed.Conclusion.Summary
+			}
+			logTaskGateFailed(task, completed.ID, summary)
 		}
 	}
 }
@@ -483,6 +516,7 @@ func (o *Orchestrator) canStart(task *models.Task) bool {
 		return true
 	}
 
+	gate := gateSet(task.GateDeps)
 	for _, depID := range task.Dependencies {
 		dep, err := o.store.Get(depID)
 		if err != nil {
@@ -491,12 +525,73 @@ func (o *Orchestrator) canStart(task *models.Task) bool {
 		if dep.Status != models.TaskStatusCompleted {
 			return false
 		}
+		// A gate dependency must not only be completed but also PASS its
+		// conclusion gate. A completed-but-not-passing gate dep keeps this task
+		// pending (fail-closed) — gate-fail is surfaced separately via a signal.
+		if _, isGate := gate[depID]; isGate && !conclusionPasses(dep) {
+			return false
+		}
 	}
 
 	return true
 }
 
+// gateSet builds a lookup set of gated dependency ids.
+func gateSet(gateDeps []string) map[string]struct{} {
+	if len(gateDeps) == 0 {
+		return nil
+	}
+	m := make(map[string]struct{}, len(gateDeps))
+	for _, id := range gateDeps {
+		m[id] = struct{}{}
+	}
+	return m
+}
+
+// conclusionPasses reports whether a completed dependency passed its verifier
+// gate. Fail-closed: a missing conclusion never passes. Only status "success"
+// passes; "partial"/"failed"/"blocked" do not (verifiers signal a pass by closing
+// with status=success, matching the swarm verifier brief).
+func conclusionPasses(dep *models.Task) bool {
+	return dep != nil && dep.Conclusion != nil && dep.Conclusion.Status == "success"
+}
+
+// gateBlocks reports whether completed is a gate dependency of task that did NOT
+// pass — i.e. task is being held pending purely by a failed gate.
+func gateBlocks(task *models.Task, completed *models.Task) bool {
+	for _, id := range task.GateDeps {
+		if id == completed.ID {
+			return !conclusionPasses(completed)
+		}
+	}
+	return false
+}
+
 func (o *Orchestrator) startTask(task *models.Task) {
+	// Defensive: an orchestrator without a manager can never spawn. Mark the task
+	// failed rather than dereferencing a nil manager. This never happens in
+	// production (New always wires a manager) but keeps the goroutine safe when a
+	// test constructs the orchestrator directly.
+	if o.manager == nil {
+		task.Status = models.TaskStatusFailed
+		task.Error = "orchestrator has no spawn manager"
+		now := time.Now()
+		task.CompletedAt = &now
+		o.store.Save(task)
+		return
+	}
+
+	// Inject swarm coordination context (P1 blackboard pointer + shared facts, P2
+	// dependency conclusions) right before spawning — deps are guaranteed complete
+	// at start time, unlike Spawn. Gated on delegation (Conclusions are only
+	// captured then) and guarded by a marker so retries never double-append.
+	if o.delegation.Enabled && !strings.Contains(task.Prompt, swarmContextMarker) {
+		if block := o.buildSwarmContext(task); block != "" {
+			task.Prompt = task.Prompt + "\n\n" + block
+			o.store.Save(task)
+		}
+	}
+
 	// Warm-target routing (Phase 7.3): when enabled and the task targets a known
 	// project, try running it inside an already-running ("warm") per-project ACP
 	// instance instead of cold-spawning a CLI. tryStartWarm drives completion
@@ -558,6 +653,118 @@ func (o *Orchestrator) getDependencyLogs(dependencies []string, numLines int) (s
 	}
 
 	return logsBuilder.String(), nil
+}
+
+// swarmContextMarker delimits the injected swarm-coordination block so startTask
+// never double-appends it (retry / relaunch reuse the same *Task).
+const swarmContextMarker = "===SWARM CONTEXT==="
+
+// swarmKeyForTask resolves the shared coordination id for a task's swarm. Sibling
+// tasks spawned by the same parent agent session share ParentSessionID, so that is
+// the primary key; ParentTaskID (nested delegations) and CorrelationID are
+// fallbacks. Returns "" when the task has no correlation and therefore no swarm.
+func (o *Orchestrator) swarmKeyForTask(task *models.Task) string {
+	switch {
+	case task.ParentSessionID != "":
+		return task.ParentSessionID
+	case task.ParentTaskID != "":
+		return task.ParentTaskID
+	case task.CorrelationID != "":
+		return task.CorrelationID
+	default:
+		return ""
+	}
+}
+
+// PostNote records a structured fact on a swarm's shared blackboard (P1). Thin
+// pass-through used by the mesnada_note tool.
+func (o *Orchestrator) PostNote(swarmID, key string, value json.RawMessage, author, taskID string) error {
+	if o.blackboard == nil {
+		return fmt.Errorf("blackboard unavailable")
+	}
+	return o.blackboard.Post(swarmID, BlackboardEntry{
+		Key:    key,
+		Value:  value,
+		Author: author,
+		TaskID: taskID,
+	})
+}
+
+// ListNotes returns the merged (last-write-wins) blackboard for a swarm (P1).
+func (o *Orchestrator) ListNotes(swarmID string) []BlackboardEntry {
+	if o.blackboard == nil {
+		return nil
+	}
+	return o.blackboard.Latest(swarmID)
+}
+
+// getDependencyConclusions renders the structured Conclusion of each completed
+// dependency (P2). Unlike getDependencyLogs (raw log tail captured at spawn), this
+// forwards the enriched, model-emitted result — summary, artifacts, follow-up —
+// which Pando already captures but never fed to dependents.
+func (o *Orchestrator) getDependencyConclusions(dependencies []string) string {
+	if len(dependencies) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for _, depID := range dependencies {
+		dep, err := o.store.Get(depID)
+		if err != nil {
+			continue
+		}
+		c := dep.Conclusion
+		if c == nil {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("--- Dependency %s (status: %s) ---\n", depID, c.Status))
+		if c.Summary != "" {
+			sb.WriteString(c.Summary + "\n")
+		}
+		if len(c.Artifacts) > 0 {
+			sb.WriteString("Artifacts: " + strings.Join(c.Artifacts, ", ") + "\n")
+		}
+		if len(c.MemoryRefs) > 0 {
+			sb.WriteString("Memory refs: " + strings.Join(c.MemoryRefs, ", ") + "\n")
+		}
+		if c.FollowUp != "" {
+			sb.WriteString("Follow-up: " + c.FollowUp + "\n")
+		}
+		sb.WriteString("\n")
+	}
+	if sb.Len() == 0 {
+		return ""
+	}
+	return "===DEPENDENCY CONCLUSIONS===\n\n" + sb.String()
+}
+
+// buildSwarmContext assembles the coordination block injected into a task's prompt
+// at start time (deps are guaranteed complete then, unlike Spawn): P2 dependency
+// conclusions plus a P1 blackboard pointer + current shared facts. Returns "" when
+// there is nothing to inject.
+func (o *Orchestrator) buildSwarmContext(task *models.Task) string {
+	var sb strings.Builder
+
+	if concl := o.getDependencyConclusions(task.Dependencies); concl != "" {
+		sb.WriteString(concl)
+	}
+
+	swarmID := o.swarmKeyForTask(task)
+	if swarmID != "" {
+		sb.WriteString("===SWARM BLACKBOARD===\n")
+		sb.WriteString(fmt.Sprintf("Swarm id: %s\n", swarmID))
+		sb.WriteString("Coordinate with sibling agents through the shared blackboard.\n")
+		sb.WriteString(fmt.Sprintf("- Post a fact:  mesnada_note(action=\"post\", swarm_id=%q, key=..., value=...)\n", swarmID))
+		sb.WriteString(fmt.Sprintf("- Read facts:   mesnada_note(action=\"list\", swarm_id=%q)\n", swarmID))
+		if latest := o.blackboard.Latest(swarmID); len(latest) > 0 {
+			sb.WriteString("\n" + renderLatest(swarmID, latest))
+		}
+		sb.WriteString("\n")
+	}
+
+	if sb.Len() == 0 {
+		return ""
+	}
+	return swarmContextMarker + "\n\n" + sb.String()
 }
 
 // Spawn creates and optionally starts a new agent task.
@@ -659,6 +866,7 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		Engine:       engine,
 		Model:        model,
 		Dependencies: req.Dependencies,
+		GateDeps:     req.GateDeps,
 		Tags:         req.Tags,
 		Priority:     req.Priority,
 		Timeout:      timeout,
@@ -1379,6 +1587,16 @@ func logTaskStartable(task *models.Task, reason string) {
 		task.Status,
 		reason,
 		task.Dependencies,
+	)
+}
+
+func logTaskGateFailed(task *models.Task, gateID, summary string) {
+	log.Printf(
+		"task_event=gate_failed task_id=%s gate_task_id=%s status=%s summary=%q",
+		task.ID,
+		gateID,
+		task.Status,
+		summary,
 	)
 }
 

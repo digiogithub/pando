@@ -283,6 +283,7 @@ func CoderAgentToolsWithMesnada(
 			tools.NewMesnadaWaitTaskTool(mesnadaOrchestrator),
 			tools.NewMesnadaCancelTaskTool(mesnadaOrchestrator),
 			tools.NewMesnadaGetOutputTool(mesnadaOrchestrator),
+			tools.NewMesnadaNoteTool(mesnadaOrchestrator),
 		)
 		// The non-blocking mesnada_await tool relies on idle-loop resurrection to
 		// wake the parent. Only register it when both delegation and the
@@ -293,6 +294,11 @@ func CoderAgentToolsWithMesnada(
 			del := cfg.Mesnada.Delegation
 			if del.Enabled && del.ResurrectIdleLoop {
 				baseTools = append(baseTools, tools.NewMesnadaAwaitTool(mesnadaOrchestrator))
+			}
+			// The swarm helper builds a verify-gated fan-out/merge workgraph; the
+			// gate + conclusion forwarding only work when delegation is enabled.
+			if del.Enabled {
+				baseTools = append(baseTools, tools.NewMesnadaSwarmTool(mesnadaOrchestrator))
 			}
 		}
 	}

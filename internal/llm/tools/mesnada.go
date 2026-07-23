@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -22,6 +23,8 @@ const (
 	mesnadaWaitTaskToolName  = "mesnada_wait_task"
 	mesnadaCancelToolName    = "mesnada_cancel_task"
 	mesnadaOutputToolName    = "mesnada_get_task_output"
+	mesnadaNoteToolName      = "mesnada_note"
+	mesnadaSwarmToolName     = "mesnada_swarm"
 )
 
 type mesnadaTool struct {
@@ -58,6 +61,17 @@ type MesnadaGetOutputTool struct {
 	mesnadaTool
 }
 
+// MesnadaNoteTool posts and reads structured facts on a swarm's shared blackboard,
+// letting sibling delegated agents coordinate (P1).
+type MesnadaNoteTool struct {
+	mesnadaTool
+}
+
+// MesnadaSwarmTool creates a fan-out → verify(gate) → synthesize workgraph (P3).
+type MesnadaSwarmTool struct {
+	mesnadaTool
+}
+
 func NewMesnadaSpawnTool(orch *orchestrator.Orchestrator) BaseTool {
 	return &MesnadaSpawnTool{mesnadaTool: mesnadaTool{orchestrator: orch}}
 }
@@ -80,6 +94,14 @@ func NewMesnadaCancelTaskTool(orch *orchestrator.Orchestrator) BaseTool {
 
 func NewMesnadaGetOutputTool(orch *orchestrator.Orchestrator) BaseTool {
 	return &MesnadaGetOutputTool{mesnadaTool: mesnadaTool{orchestrator: orch}}
+}
+
+func NewMesnadaNoteTool(orch *orchestrator.Orchestrator) BaseTool {
+	return &MesnadaNoteTool{mesnadaTool: mesnadaTool{orchestrator: orch}}
+}
+
+func NewMesnadaSwarmTool(orch *orchestrator.Orchestrator) BaseTool {
+	return &MesnadaSwarmTool{mesnadaTool: mesnadaTool{orchestrator: orch}}
 }
 
 func (t *MesnadaSpawnTool) Info() ToolInfo {
@@ -671,6 +693,222 @@ func (t *MesnadaGetOutputTool) Run(ctx context.Context, params ToolCall) (ToolRe
 	}
 
 	return encodeMesnadaResult(result)
+}
+
+func (t *MesnadaNoteTool) Info() ToolInfo {
+	return ToolInfo{
+		Name: mesnadaNoteToolName,
+		Description: "Post or read structured facts on a swarm's shared blackboard so sibling delegated agents can coordinate.\n\n" +
+			"Your prompt's ===SWARM BLACKBOARD=== block tells you the swarm_id to use. Post machine-readable decisions the other agents need (chosen interfaces, file ownership, shared constants) with action=\"post\"; read what siblings posted with action=\"list\". Later posts to the same key win (last-write-wins).",
+		Parameters: map[string]any{
+			"action": map[string]any{
+				"type":        "string",
+				"description": "\"post\" to write a fact, \"list\" to read the merged blackboard.",
+				"enum":        []string{"post", "list"},
+			},
+			"swarm_id": map[string]any{
+				"type":        "string",
+				"description": "The swarm id from your ===SWARM BLACKBOARD=== context block.",
+			},
+			"key": map[string]any{
+				"type":        "string",
+				"description": "Fact key (required for post). Reusing a key overwrites the previous value in the merged view.",
+			},
+			"value": map[string]any{
+				"description": "Fact value for post — any JSON (string, number, object, array).",
+			},
+			"author": map[string]any{
+				"type":        "string",
+				"description": "Optional author label for traceability (e.g. your role/persona).",
+			},
+		},
+		Required: []string{"action", "swarm_id"},
+	}
+}
+
+func (t *MesnadaNoteTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
+	var req struct {
+		Action  string          `json:"action"`
+		SwarmID string          `json:"swarm_id"`
+		Key     string          `json:"key"`
+		Value   json.RawMessage `json:"value"`
+		Author  string          `json:"author"`
+		TaskID  string          `json:"task_id"`
+	}
+	if err := decodeMesnadaInput(params.Input, &req); err != nil {
+		return NewTextErrorResponse(err.Error()), nil
+	}
+	if req.SwarmID == "" {
+		return NewTextErrorResponse("swarm_id is required"), nil
+	}
+
+	switch req.Action {
+	case "post":
+		if req.Key == "" {
+			return NewTextErrorResponse("key is required for action=post"), nil
+		}
+		author := req.Author
+		if author == "" {
+			author = "subagent"
+		}
+		if err := t.orchestrator.PostNote(req.SwarmID, req.Key, req.Value, author, req.TaskID); err != nil {
+			return NewTextErrorResponse(err.Error()), nil
+		}
+		return encodeMesnadaResult(map[string]any{
+			"posted":   true,
+			"swarm_id": req.SwarmID,
+			"key":      req.Key,
+		})
+	case "list", "":
+		entries := t.orchestrator.ListNotes(req.SwarmID)
+		notes := make([]map[string]any, 0, len(entries))
+		for _, e := range entries {
+			notes = append(notes, map[string]any{
+				"key":        e.Key,
+				"value":      e.Value,
+				"author":     e.Author,
+				"created_at": e.CreatedAt,
+			})
+		}
+		return encodeMesnadaResult(map[string]any{
+			"swarm_id": req.SwarmID,
+			"count":    len(notes),
+			"notes":    notes,
+		})
+	default:
+		return NewTextErrorResponse(fmt.Sprintf("unknown action %q (want post|list)", req.Action)), nil
+	}
+}
+
+func (t *MesnadaSwarmTool) Info() ToolInfo {
+	return ToolInfo{
+		Name: mesnadaSwarmToolName,
+		Description: "Create a coordinated multi-agent swarm for one goal: parallel worker agents, then a VERIFIER that gates the result, then a SYNTHESIZER that merges the verified outputs.\n\n" +
+			"The workers run in parallel and share a blackboard (see mesnada_note). The verifier reviews their handoffs and passes the gate only when the evidence satisfies the goal (else it reports the missing work). The synthesizer starts only after the verifier passes, and combines the results into the final deliverable.\n\n" +
+			"Use this instead of hand-wiring several mesnada_spawn_agent calls when a task benefits from fan-out + verification + merge. After creating the swarm, PREFER mesnada_await on the synthesizer id and end your turn.",
+		Parameters: map[string]any{
+			"goal": map[string]any{
+				"type":        "string",
+				"description": "The overall objective the swarm must achieve.",
+			},
+			"workers": map[string]any{
+				"type":        "array",
+				"description": "The parallel worker agents (at least one).",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"prompt":  map[string]any{"type": "string", "description": "This worker's task instructions."},
+						"engine":  map[string]any{"type": "string", "description": "Optional engine override (default: pando)."},
+						"model":   map[string]any{"type": "string", "description": "Optional model override."},
+						"persona": map[string]any{"type": "string", "description": "Optional persona."},
+					},
+					"required": []string{"prompt"},
+				},
+			},
+			"verifier": map[string]any{
+				"type":        "object",
+				"description": "Optional overrides for the verifier role (engine, model, persona, extra instructions).",
+				"properties": map[string]any{
+					"engine":  map[string]any{"type": "string"},
+					"model":   map[string]any{"type": "string"},
+					"persona": map[string]any{"type": "string"},
+					"extra":   map[string]any{"type": "string", "description": "Extra instructions appended to the built-in verifier brief."},
+				},
+			},
+			"synthesizer": map[string]any{
+				"type":        "object",
+				"description": "Optional overrides for the synthesizer role (engine, model, persona, extra instructions).",
+				"properties": map[string]any{
+					"engine":  map[string]any{"type": "string"},
+					"model":   map[string]any{"type": "string"},
+					"persona": map[string]any{"type": "string"},
+					"extra":   map[string]any{"type": "string"},
+				},
+			},
+			"work_dir": map[string]any{
+				"type":        "string",
+				"description": "Working directory for the swarm tasks. Defaults to the current directory.",
+			},
+			"idempotency_key": map[string]any{
+				"type":        "string",
+				"description": "Optional key; a repeated call with the same key returns the existing swarm instead of creating a duplicate.",
+			},
+		},
+		Required: []string{"goal", "workers"},
+	}
+}
+
+func (t *MesnadaSwarmTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
+	var req struct {
+		Goal    string `json:"goal"`
+		Workers []struct {
+			Prompt  string `json:"prompt"`
+			Engine  string `json:"engine"`
+			Model   string `json:"model"`
+			Persona string `json:"persona"`
+		} `json:"workers"`
+		Verifier struct {
+			Engine  string `json:"engine"`
+			Model   string `json:"model"`
+			Persona string `json:"persona"`
+			Extra   string `json:"extra"`
+		} `json:"verifier"`
+		Synthesizer struct {
+			Engine  string `json:"engine"`
+			Model   string `json:"model"`
+			Persona string `json:"persona"`
+			Extra   string `json:"extra"`
+		} `json:"synthesizer"`
+		WorkDir        string `json:"work_dir"`
+		IdempotencyKey string `json:"idempotency_key"`
+	}
+	if err := decodeMesnadaInput(params.Input, &req); err != nil {
+		return NewTextErrorResponse(err.Error()), nil
+	}
+	if req.Goal == "" {
+		return NewTextErrorResponse("goal is required"), nil
+	}
+	if len(req.Workers) == 0 {
+		return NewTextErrorResponse("at least one worker is required"), nil
+	}
+
+	parentSessionID, _, projectPath, depth := spawnCorrelation(ctx, req.WorkDir)
+	if parentSessionID == "" {
+		return NewTextErrorResponse("mesnada_swarm requires a parent agent session (swarm coordination id); none was resolved from the context"), nil
+	}
+
+	workers := make([]orchestrator.SwarmWorkerSpec, 0, len(req.Workers))
+	for _, w := range req.Workers {
+		workers = append(workers, orchestrator.SwarmWorkerSpec{
+			Prompt:  w.Prompt,
+			Engine:  w.Engine,
+			Model:   w.Model,
+			Persona: w.Persona,
+		})
+	}
+
+	created, err := t.orchestrator.CreateSwarm(ctx, orchestrator.SwarmSpec{
+		Goal:            req.Goal,
+		Workers:         workers,
+		Verifier:        orchestrator.SwarmRoleSpec{Engine: req.Verifier.Engine, Model: req.Verifier.Model, Persona: req.Verifier.Persona, Extra: req.Verifier.Extra},
+		Synthesizer:     orchestrator.SwarmRoleSpec{Engine: req.Synthesizer.Engine, Model: req.Synthesizer.Model, Persona: req.Synthesizer.Persona, Extra: req.Synthesizer.Extra},
+		WorkDir:         req.WorkDir,
+		ParentSessionID: parentSessionID,
+		ProjectPath:     projectPath,
+		Depth:           depth,
+		IdempotencyKey:  req.IdempotencyKey,
+	})
+	if err != nil {
+		return NewTextErrorResponse(err.Error()), nil
+	}
+
+	return encodeMesnadaResult(map[string]any{
+		"swarm_id":       parentSessionID,
+		"worker_ids":     created.WorkerIDs,
+		"verifier_id":    created.VerifierID,
+		"synthesizer_id": created.SynthesizerID,
+		"hint":           "Workers are running; the synthesizer starts after the verifier passes. Call mesnada_await on synthesizer_id and end your turn.",
+	})
 }
 
 func decodeMesnadaInput(input string, target any) error {

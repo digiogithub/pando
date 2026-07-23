@@ -50,6 +50,8 @@ var builtinToolNames = map[string]struct{}{
 	mesnadaWaitTaskToolName:  {},
 	mesnadaCancelToolName:    {},
 	mesnadaOutputToolName:    {},
+	mesnadaNoteToolName:      {},
+	mesnadaSwarmToolName:     {},
 
 	// Remembrances / KB / code-intelligence (RAG) tools.
 	kbAddDocumentToolName:            {},

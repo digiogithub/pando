@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"time"
 
+	osc52 "github.com/aymanbagabas/go-osc52/v2"
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -20,6 +22,7 @@ import (
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/tui/components/dialog"
+	"github.com/digiogithub/pando/internal/tui/layout"
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
@@ -34,6 +37,38 @@ type cacheItem struct {
 }
 
 type copiedMsg struct{}
+
+// copyToClipboard places text on the clipboard. It makes a best-effort call to
+// the OS clipboard helper (xclip/xsel/wl-copy/pbcopy) AND always emits an OSC 52
+// escape sequence to the terminal. OSC 52 needs no helper binary and works over
+// SSH and on Wayland sessions where those helpers are frequently absent
+// (WezTerm, COSMIC Terminal, ...), which is why the OS-helper path alone failed
+// silently. Returns false only for empty input.
+func copyToClipboard(text string) bool {
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+	// Best-effort; commonly errors on headless/Wayland with no helper installed.
+	_ = clipboard.WriteAll(text)
+	seq := osc52.New(text)
+	if os.Getenv("TMUX") != "" {
+		seq = seq.Tmux()
+	}
+	_, _ = seq.WriteTo(os.Stdout)
+	return true
+}
+
+// copyAndFeedback copies text and, on success, flips the "copied" indicator and
+// returns the tick command that clears it after a short delay.
+func (m *messagesCmp) copyAndFeedback(text string) tea.Cmd {
+	if !copyToClipboard(text) {
+		return nil
+	}
+	m.copyFeedback = true
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+		return copiedMsg{}
+	})
+}
 
 type messagesCmp struct {
 	app           *app.App
@@ -124,6 +159,49 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.copyFeedback = false
 
 	case tea.MouseMsg:
+		// The floating "jump to bottom" affordance and the per-message "copy"
+		// buttons are UI controls, not selectable text. Resolve them on BOTH press
+		// and release (terminals are inconsistent about which event a click
+		// delivers) and return immediately so a click on a control never starts or
+		// finalizes a text selection. The copy button copies the block's stored
+		// response text (message.Content), never rendered/visible characters.
+		if msg.Button == tea.MouseButtonLeft &&
+			(msg.Action == tea.MouseActionPress || msg.Action == tea.MouseActionRelease) {
+			if z := tuizone.Manager.Get(tuizone.ChatScrollBottom); z != nil && z.InBounds(msg) {
+				if msg.Action == tea.MouseActionRelease {
+					m.viewport.GotoBottom()
+				}
+				m.mouseDown = false
+				return m, nil
+			}
+			for _, mm := range m.messages {
+				z := tuizone.Manager.Get(tuizone.ChatCopyID(mm.ID))
+				if z == nil || !z.InBounds(msg) {
+					continue
+				}
+				// Copy only on release, so a single click yields exactly one copy.
+				if msg.Action == tea.MouseActionRelease {
+					if text := strings.TrimSpace(mm.Content().String()); text != "" {
+						if cmd := m.copyAndFeedback(text); cmd != nil {
+							cmds = append(cmds, cmd)
+						}
+					}
+				}
+				// A click on the button is not the start of a selection.
+				m.mouseDown = false
+				m.selectionActive = false
+				return m, tea.Batch(cmds...)
+			}
+		}
+		// Right-click copies the current selection (explicit, like Ctrl+Shift+C).
+		if msg.Button == tea.MouseButtonRight && msg.Action == tea.MouseActionPress && m.selectionActive {
+			if text := m.selectedText(); text != "" {
+				if cmd := m.copyAndFeedback(text); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
+			return m, tea.Batch(cmds...)
+		}
 		if msg.Button == tea.MouseButtonLeft {
 			zone := tuizone.Manager.Get(tuizone.ChatViewport)
 			if zone != nil && zone.InBounds(msg) {
@@ -146,20 +224,28 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 				case tea.MouseActionRelease:
-					m.mouseDown = false
-					m.selectionEndY = contentLine
-					m.selectionEndX = relX
-					if m.selectionStartY != m.selectionEndY || m.selectionStartX != m.selectionEndX {
-						m.selectionActive = true
-						if text := m.selectedText(); text != "" {
-							if err := clipboard.WriteAll(text); err == nil {
-								m.copyFeedback = true
-								cmds = append(cmds, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-									return copiedMsg{}
-								}))
+					// Finalize the selection on the end of a genuine drag and copy
+					// it. Only a real drag (mouseDown, with movement) copies, so a
+					// plain click — or a release after a button press — never
+					// overwrites the clipboard, and only the column-sliced selection
+					// (never the whole rendered chat) is copied. Ctrl+Shift+C is
+					// unreliable here (WezTerm/COSMIC reserve it for their own native
+					// copy), so copy-on-release is the dependable path.
+					if m.mouseDown {
+						m.selectionEndY = contentLine
+						m.selectionEndX = relX
+						if m.selectionStartY != m.selectionEndY || m.selectionStartX != m.selectionEndX {
+							m.selectionActive = true
+							if text := m.selectedText(); text != "" {
+								if cmd := m.copyAndFeedback(text); cmd != nil {
+									cmds = append(cmds, cmd)
+								}
 							}
+						} else {
+							m.selectionActive = false
 						}
 					}
+					m.mouseDown = false
 				}
 			} else if msg.Action == tea.MouseActionRelease {
 				m.mouseDown = false
@@ -170,25 +256,18 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" && m.selectionActive {
-			start := m.selectionStartY
-			end := m.selectionEndY
-			if start > end {
-				start, end = end, start
-			}
-			if start < 0 {
-				start = 0
-			}
-			if end >= len(m.contentLines) {
-				end = len(m.contentLines) - 1
-			}
-			if start <= end && len(m.contentLines) > 0 {
-				text := strings.TrimSpace(strings.Join(m.contentLines[start:end+1], "\n"))
-				if err := clipboard.WriteAll(text); err == nil {
-					m.copyFeedback = true
-					cmds = append(cmds, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-						return copiedMsg{}
-					}))
+		if msg.String() == "ctrl+end" {
+			m.viewport.GotoBottom()
+			return m, nil
+		}
+		// ctrl+c is reserved for the app-level quit dialog. Ctrl+Shift+C copies the
+		// selection where the terminal delivers it (WezTerm/COSMIC reserve it for
+		// their own native copy, so copy-on-release and right-click are the
+		// dependable paths). Use the same column-precise selectedText as those.
+		if msg.String() == "ctrl+shift+c" && m.selectionActive {
+			if text := m.selectedText(); text != "" {
+				if cmd := m.copyAndFeedback(text); cmd != nil {
+					cmds = append(cmds, cmd)
 				}
 			}
 			m.selectionActive = false
@@ -489,7 +568,10 @@ func (m *messagesCmp) selectedText() string {
 		if lineStart > lineEnd {
 			lineStart, lineEnd = lineEnd, lineStart
 		}
-		selected = append(selected, string(line[lineStart:lineEnd]))
+		// contentLines are padded to the viewport width, so a selection that
+		// reaches a line's end drags in trailing spaces; trim them so the copied
+		// text matches the visible characters, not the padding.
+		selected = append(selected, strings.TrimRight(string(line[lineStart:lineEnd]), " "))
 	}
 
 	return strings.TrimRight(strings.Join(selected, "\n"), "\n")
@@ -548,11 +630,117 @@ func (m *messagesCmp) View() string {
 		Render(
 			lipgloss.JoinVertical(
 				lipgloss.Top,
-				m.viewport.View(),
+				m.chatViewportView(),
 				m.working(),
 				m.help(),
 			),
 		)
+}
+
+// chatViewportView renders the messages viewport, marks it as the chat-viewport
+// zone (so mouse selection and clicks resolve to content coordinates), and
+// overlays a centered "jump to bottom" affordance whenever the view is scrolled
+// up. The zone mark is applied last so it always wraps the final composed string.
+func (m *messagesCmp) chatViewportView() string {
+	composed := m.viewport.View()
+	composed = m.applySelectionHighlight(composed)
+
+	if !m.viewport.AtBottom() {
+		t := theme.CurrentTheme()
+		label := "▼ jump to bottom (ctrl+end)"
+		if m.copyFeedback {
+			label = "✓ copied"
+		}
+		btn := tuizone.MarkChatScrollBottom(
+			styles.BaseStyle().
+				Background(t.Primary()).
+				Foreground(t.Background()).
+				Padding(0, 1).
+				Render(label),
+		)
+		btnWidth := lipgloss.Width(btn)
+		x := (m.width - btnWidth) / 2
+		if x < 0 {
+			x = 0
+		}
+		y := m.viewport.Height - 2
+		if y < 0 {
+			y = 0
+		}
+		composed = layout.PlaceOverlay(x, y, btn, composed, false)
+	} else if m.copyFeedback {
+		// At the bottom there is no floating button to reuse, so surface the copy
+		// confirmation as a small centered badge on the last row.
+		t := theme.CurrentTheme()
+		badge := styles.BaseStyle().
+			Background(t.Primary()).
+			Foreground(t.Background()).
+			Padding(0, 1).
+			Render("✓ copied")
+		x := (m.width - lipgloss.Width(badge)) / 2
+		if x < 0 {
+			x = 0
+		}
+		y := m.viewport.Height - 2
+		if y < 0 {
+			y = 0
+		}
+		composed = layout.PlaceOverlay(x, y, badge, composed, false)
+	}
+
+	return tuizone.MarkChatViewport(composed)
+}
+
+// applySelectionHighlight paints the currently selected character range with the
+// theme's selection colors by overlaying plain highlighted segments over the
+// styled viewport lines. It runs while dragging (mouseDown) and after a
+// selection is finalized, giving the user visual feedback of exactly what will
+// be copied with Ctrl+Shift+C / right-click.
+func (m *messagesCmp) applySelectionHighlight(composed string) string {
+	if !(m.selectionActive || m.mouseDown) || len(m.contentLines) == 0 {
+		return composed
+	}
+
+	startY, endY := m.selectionStartY, m.selectionEndY
+	startX, endX := m.selectionStartX, m.selectionEndX
+	if startY > endY || (startY == endY && startX > endX) {
+		startY, endY = endY, startY
+		startX, endX = endX, startX
+	}
+
+	t := theme.CurrentTheme()
+	hl := lipgloss.NewStyle().
+		Background(t.SelectionBackground()).
+		Foreground(t.SelectionForeground())
+
+	top := m.viewport.YOffset
+	bottom := top + m.viewport.Height
+	for idx := startY; idx <= endY; idx++ {
+		if idx < 0 || idx >= len(m.contentLines) || idx < top || idx >= bottom {
+			continue
+		}
+		line := []rune(m.contentLines[idx])
+		x0, x1 := 0, len(line)
+		switch {
+		case startY == endY:
+			x0 = clampSelectionColumn(startX, len(line))
+			x1 = clampSelectionColumn(endX, len(line))
+		case idx == startY:
+			x0 = clampSelectionColumn(startX, len(line))
+		case idx == endY:
+			x1 = clampSelectionColumn(endX, len(line))
+		}
+		if x0 > x1 {
+			x0, x1 = x1, x0
+		}
+		if x0 >= x1 {
+			continue
+		}
+		seg := string(line[x0:x1])
+		screenY := idx - top
+		composed = layout.PlaceOverlay(x0, screenY, hl.Render(seg), composed, false)
+	}
+	return composed
 }
 
 func hasToolsWithoutResponse(messages []message.Message) bool {

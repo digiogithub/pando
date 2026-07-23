@@ -103,6 +103,12 @@ type Task struct {
 	StartedAt    *time.Time    `json:"started_at,omitempty"`
 	CompletedAt  *time.Time    `json:"completed_at,omitempty"`
 	Dependencies []string      `json:"dependencies,omitempty"`
+	// GateDeps is a subset of Dependencies that must additionally PASS a
+	// conclusion gate (not merely reach status=completed) before this task can
+	// start. Used by the swarm verifier→synthesizer topology: the synthesizer
+	// gates on the verifier's conclusion. Empty (the default) preserves the plain
+	// "all dependencies completed" semantics exactly.
+	GateDeps []string `json:"gate_deps,omitempty"`
 	Tags         []string      `json:"tags,omitempty"`
 	Priority     int           `json:"priority,omitempty"`
 	Timeout      Duration      `json:"timeout,omitempty"`
@@ -266,6 +272,9 @@ type SpawnRequest struct {
 	Model                 string   `json:"model,omitempty"`
 	Engine                Engine   `json:"engine,omitempty"`
 	Dependencies          []string `json:"dependencies,omitempty"`
+	// GateDeps (subset of Dependencies) must pass a conclusion gate, not just
+	// complete, before the task starts. See Task.GateDeps.
+	GateDeps              []string `json:"gate_deps,omitempty"`
 	Tags                  []string `json:"tags,omitempty"`
 	Priority              int      `json:"priority,omitempty"`
 	Timeout               string   `json:"timeout,omitempty"`

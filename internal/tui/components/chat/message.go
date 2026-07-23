@@ -22,6 +22,7 @@ import (
 	tuiimage "github.com/digiogithub/pando/internal/tui/image"
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
+	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 )
 
 type uiMessageType int
@@ -227,6 +228,23 @@ func renderAssistantMessage(
 			content:     content,
 		})
 		position += messages[contentIdx].height
+		position++ // for the space
+
+		// Clickable "copy" affordance directly under the answer block. The zone is
+		// keyed by the message ID so a click is routed back to this message and its
+		// raw text is placed on the clipboard (see messagesCmp.Update).
+		copyBtn := tuizone.MarkChatCopy(
+			msg.ID,
+			baseStyle.Foreground(t.TextMuted()).Render(fmt.Sprintf(" %s copy", styles.DocumentIcon)),
+		)
+		messages = append(messages, uiMessage{
+			ID:          msg.ID,
+			messageType: assistantMessageType,
+			position:    position,
+			height:      1,
+			content:     copyBtn,
+		})
+		position++ // the button row
 		position++ // for the space
 	}
 
