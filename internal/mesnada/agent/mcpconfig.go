@@ -92,8 +92,10 @@ func ConvertMCPConfigForCopilot(mcpConfigPath, taskID, baseDir, workDir string) 
 	if err != nil {
 		return "", err
 	}
+	// Copilot CLI expects the canonical mcpServers schema (same as --additional-mcp-config),
+	// not the VS Code "servers" schema. This matches RenderByFormat's "copilot" case.
 	tempDir := filepath.Join(baseDir, "copilot-mcp", taskID)
-	return mcpconv.WriteJSONFile(tempDir, "copilot-mcp-config.json", mcpconv.RenderVSCode(cfg))
+	return WriteCanonicalConfigToFile(cfg, tempDir, "copilot-mcp-config.json")
 }
 
 // CleanupCopilotMCPConfig removes the temporary Copilot MCP config for a task.
