@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,6 +46,11 @@ type anthropicClient struct {
 	providerOptions providerClientOptions
 	options         anthropicOptions
 	client          anthropic.Client
+
+	// fileIDCache memoizes Files API uploads by image content hash so the same
+	// image is uploaded once and referenced by file_id across turns (beta path).
+	fileIDMu    sync.Mutex
+	fileIDCache map[string]string
 }
 
 type AnthropicClient ProviderClient
@@ -257,6 +263,29 @@ func (a *anthropicClient) convertMessages(messages []message.Message) (anthropic
 		case message.Tool:
 			results := make([]anthropic.ContentBlockParamUnion, len(msg.ToolResults()))
 			for i, toolResult := range msg.ToolResults() {
+				if a.providerOptions.model.SupportsAttachments && len(toolResult.Images) > 0 {
+					content := []anthropic.ToolResultBlockParamContentUnion{
+						{OfText: &anthropic.TextBlockParam{Text: toolResult.Content}},
+					}
+					for _, img := range toolResult.Images {
+						content = append(content, anthropic.ToolResultBlockParamContentUnion{
+							OfImage: &anthropic.ImageBlockParam{
+								Source: anthropic.ImageBlockParamSourceUnion{
+									OfBase64: &anthropic.Base64ImageSourceParam{
+										Data:      base64.StdEncoding.EncodeToString(img.Data),
+										MediaType: anthropic.Base64ImageSourceMediaType(img.MIMEType),
+									},
+								},
+							},
+						})
+					}
+					results[i] = anthropic.ContentBlockParamUnion{OfToolResult: &anthropic.ToolResultBlockParam{
+						ToolUseID: toolResult.ToolCallID,
+						IsError:   anthropic.Bool(toolResult.IsError),
+						Content:   content,
+					}}
+					continue
+				}
 				results[i] = anthropic.NewToolResultBlock(toolResult.ToolCallID, toolResult.Content, toolResult.IsError)
 			}
 			anthropicMessages = append(anthropicMessages, anthropic.NewUserMessage(results...))
@@ -335,6 +364,9 @@ func (a *anthropicClient) preparedMessages(messages []anthropic.MessageParam, to
 }
 
 func (a *anthropicClient) send(ctx context.Context, messages []message.Message, tools []toolsPkg.BaseTool) (resposne *ProviderResponse, err error) {
+	if a.useBetaAPI() {
+		return a.sendBeta(ctx, messages, tools)
+	}
 	preparedMessages := a.preparedMessages(a.convertMessages(messages), a.convertTools(tools))
 	requestOptions := a.thinkingRequestOptions()
 	cfg := config.Get()
@@ -404,6 +436,9 @@ func (a *anthropicClient) send(ctx context.Context, messages []message.Message, 
 }
 
 func (a *anthropicClient) stream(ctx context.Context, messages []message.Message, tools []toolsPkg.BaseTool) <-chan ProviderEvent {
+	if a.useBetaAPI() {
+		return a.streamBeta(ctx, messages, tools)
+	}
 	preparedMessages := a.preparedMessages(a.convertMessages(messages), a.convertTools(tools))
 	requestOptions := a.thinkingRequestOptions()
 	cfg := config.Get()

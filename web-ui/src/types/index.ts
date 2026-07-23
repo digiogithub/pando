@@ -105,6 +105,8 @@ export interface SSEToolResult {
   title?: string
   status?: ToolCallStatus
   locations?: ToolCallLocation[]
+  /** Data URIs of image(s) returned by an image-type tool (e.g. screenshots). */
+  images?: string[]
   raw_output?: Record<string, unknown>
   terminal?: {
     terminal_id: string
@@ -466,6 +468,10 @@ export interface SettingsConfig {
   llm_cache_enabled: boolean
   /** Complete model pricing/limits from the models.dev catalog. Default true. */
   models_dev_enabled: boolean
+  /** Resize/recompress images to the model's vision tier before sending. Default true. */
+  image_auto_resize: boolean
+  /** Opt-in Anthropic beta Messages API + Files API (file_id image refs). Default false. */
+  image_use_files_api: boolean
   output_filter_enabled: boolean        // RTK-style command-output compression (inverse of Bash.OutputFilterDisabled)
   caveman_default_mode: string          // output brevity default: '' (off) | 'lite' | 'full' | 'ultra'
   evaluator_enabled: boolean

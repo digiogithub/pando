@@ -31,6 +31,11 @@ type SettingsResponse struct {
 	// ModelsDevEnabled controls the models.dev catalog that completes model
 	// pricing/limits the providers do not report.
 	ModelsDevEnabled bool   `json:"models_dev_enabled"`
+	// ImageAutoResize toggles the image resize/recompress pipeline before send.
+	ImageAutoResize bool `json:"image_auto_resize"`
+	// ImageUseFilesAPI opts into the Anthropic beta Messages API + Files API
+	// (uploads images once, references by file_id across turns).
+	ImageUseFilesAPI bool   `json:"image_use_files_api"`
 	EvaluatorEnabled bool   `json:"evaluator_enabled"`
 	JudgeModel       string `json:"judge_model"`
 	// OutputFilterEnabled is the inverse of Bash.OutputFilterDisabled: RTK-style
@@ -74,6 +79,8 @@ type SettingsUpdateRequest struct {
 	NerdFonts           *bool   `json:"nerd_fonts,omitempty"`
 	LLMCacheEnabled     *bool   `json:"llm_cache_enabled,omitempty"`
 	ModelsDevEnabled    *bool   `json:"models_dev_enabled,omitempty"`
+	ImageAutoResize     *bool   `json:"image_auto_resize,omitempty"`
+	ImageUseFilesAPI    *bool   `json:"image_use_files_api,omitempty"`
 	EvaluatorEnabled    *bool   `json:"evaluator_enabled,omitempty"`
 	JudgeModel          *string `json:"judge_model,omitempty"`
 	OutputFilterEnabled *bool   `json:"output_filter_enabled,omitempty"`
@@ -148,6 +155,8 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		NerdFonts:           cfg.NerdFontsEnabled(),
 		LLMCacheEnabled:     cfg.LLMCache.Enabled,
 		ModelsDevEnabled:    cfg.ModelsDev.Enabled,
+		ImageAutoResize:     cfg.Image.AutoResize,
+		ImageUseFilesAPI:    cfg.Image.UseFilesAPI,
 		EvaluatorEnabled:    cfg.Evaluator.Enabled,
 		JudgeModel:          string(cfg.Evaluator.Model),
 		OutputFilterEnabled: !cfg.Bash.OutputFilterDisabled,
@@ -308,6 +317,20 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if req.ModelsDevEnabled != nil {
 		if err := config.UpdateModelsDev(*req.ModelsDevEnabled); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update models.dev setting")
+			return
+		}
+	}
+
+	if req.ImageAutoResize != nil {
+		if err := config.UpdateImageAutoResize(*req.ImageAutoResize); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update image auto-resize setting")
+			return
+		}
+	}
+
+	if req.ImageUseFilesAPI != nil {
+		if err := config.UpdateImageUseFilesAPI(*req.ImageUseFilesAPI); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update image files API setting")
 			return
 		}
 	}

@@ -137,6 +137,18 @@ export default function GeneralSettings() {
           onChange={(v) => updateField('models_dev_enabled', v)}
         />
         <Toggle
+          label="Optimize images"
+          description="Resize and recompress images to the model's vision resolution before sending. Saves bandwidth and latency."
+          checked={config.image_auto_resize}
+          onChange={(v) => updateField('image_auto_resize', v)}
+        />
+        <Toggle
+          label="Anthropic Files API (beta)"
+          description="Opt in to the Anthropic beta Messages API and upload images to the Files API once, referencing them by file_id across turns. Off = classic base64 path."
+          checked={config.image_use_files_api}
+          onChange={(v) => updateField('image_use_files_api', v)}
+        />
+        <Toggle
           label={t('settings.general.outputFilter')}
           description={t('settings.general.outputFilterDescription')}
           checked={config.output_filter_enabled}

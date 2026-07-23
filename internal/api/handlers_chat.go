@@ -16,6 +16,7 @@ import (
 	"github.com/digiogithub/pando/internal/commands"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/imageopt"
 	"github.com/digiogithub/pando/internal/learning"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/message"
@@ -554,6 +555,13 @@ func (s *Server) dispatchSSEEvent(
 		}
 		if diffMeta != nil {
 			resultPayload["diff"] = diffMeta
+		}
+		if len(tr.Images) > 0 {
+			images := make([]string, 0, len(tr.Images))
+			for _, img := range tr.Images {
+				images = append(images, imageopt.ToDataURI(img.Data, img.MIMEType))
+			}
+			resultPayload["images"] = images
 		}
 		writeSSEEvent(w, flusher, "tool_result", resultPayload)
 

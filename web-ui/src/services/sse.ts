@@ -190,6 +190,7 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
           title: typeof raw.title === 'string' ? raw.title : undefined,
           status: isToolCallStatus(raw.status) ? raw.status : undefined,
           locations: Array.isArray(raw.locations) ? raw.locations : undefined,
+          images: Array.isArray(raw.images) ? raw.images.filter((i): i is string => typeof i === 'string') : undefined,
           raw_output: typeof raw.raw_output === 'object' && raw.raw_output !== null
             ? raw.raw_output as Record<string, unknown> : undefined,
           terminal: isToolResultTerminal(raw.terminal) ? raw.terminal : undefined,

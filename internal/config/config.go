@@ -865,6 +865,28 @@ type Config struct {
 	Caveman           CavemanConfig           `json:"caveman,omitempty" toml:"Caveman"`
 	TokenOptimization TokenOptimizationConfig `json:"tokenOptimization,omitempty" toml:"TokenOptimization"`
 	ModelsDev         ModelsDevConfig         `json:"modelsDev,omitempty" toml:"ModelsDev"`
+	Image             ImageConfig             `json:"image,omitempty" toml:"Image"`
+}
+
+// ImageConfig controls the image normalization pipeline applied before images
+// (user attachments and tool-result images such as screenshots) are sent to LLM
+// providers. Resizing to the model's vision long-side limit and recompressing
+// saves upload bandwidth and latency without losing detail the model could use.
+type ImageConfig struct {
+	// AutoResize enables the resize/recompress pipeline. Default: true.
+	AutoResize bool `json:"autoResize" toml:"AutoResize"`
+	// MaxWidth / MaxHeight are optional pixel caps applied in addition to the
+	// model's own long-side limit. Defaults: 2000 x 2000.
+	MaxWidth  int `json:"maxWidth,omitempty" toml:"MaxWidth"`
+	MaxHeight int `json:"maxHeight,omitempty" toml:"MaxHeight"`
+	// MaxBase64Bytes caps the base64-encoded payload size per image. Default: 5 MB.
+	MaxBase64Bytes int `json:"maxBase64Bytes,omitempty" toml:"MaxBase64Bytes"`
+	// Quality is the JPEG quality used when recompressing (1-100). Default: 85.
+	Quality int `json:"quality,omitempty" toml:"Quality"`
+	// UseFilesAPI uploads images once and references them by file_id in
+	// subsequent turns (Anthropic/OpenAI Files API), avoiding re-sending base64
+	// in multi-turn conversations. Default: false.
+	UseFilesAPI bool `json:"useFilesAPI,omitempty" toml:"UseFilesAPI"`
 }
 
 // ModelsDevConfig controls the models.dev metadata catalog
@@ -1529,6 +1551,15 @@ func setDefaults(debug bool) {
 	viper.SetDefault("llmCache.enabled", true)  // LLM prompt caching enabled by default
 	viper.SetDefault("lspAutoActivate", true)   // lazily start language servers on demand
 	viper.SetDefault("modelsDev.enabled", true) // model pricing/capability catalog from models.dev
+
+	// Image normalization defaults (OpenCode-style). Resize/recompress on by
+	// default so oversized attachments and screenshots don't bloat the payload.
+	viper.SetDefault("image.autoResize", true)
+	viper.SetDefault("image.maxWidth", 2000)
+	viper.SetDefault("image.maxHeight", 2000)
+	viper.SetDefault("image.maxBase64Bytes", 5242880) // 5 MB base64 payload
+	viper.SetDefault("image.quality", 85)
+	viper.SetDefault("image.useFilesAPI", false)
 	viper.SetDefault("skillsCatalog.baseUrl", "https://skills.sh")
 	viper.SetDefault("skillsCatalog.autoUpdate", false)
 	viper.SetDefault("skillsCatalog.defaultScope", "global")
@@ -3489,6 +3520,39 @@ func UpdateModelsDev(enabled bool) error {
 	}
 
 	modelsdev.SetDisabled(!enabled)
+	return nil
+}
+
+// UpdateImageAutoResize toggles the image resize/recompress pipeline.
+func UpdateImageAutoResize(enabled bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	oldValue := cfg.Image.AutoResize
+	cfg.Image.AutoResize = enabled
+	if err := updateCfgFile(func(config *Config) {
+		config.Image.AutoResize = enabled
+	}); err != nil {
+		cfg.Image.AutoResize = oldValue
+		return err
+	}
+	return nil
+}
+
+// UpdateImageUseFilesAPI toggles the opt-in Anthropic beta Messages API + Files
+// API path (uploads images once, references them by file_id across turns).
+func UpdateImageUseFilesAPI(enabled bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	oldValue := cfg.Image.UseFilesAPI
+	cfg.Image.UseFilesAPI = enabled
+	if err := updateCfgFile(func(config *Config) {
+		config.Image.UseFilesAPI = enabled
+	}); err != nil {
+		cfg.Image.UseFilesAPI = oldValue
+		return err
+	}
 	return nil
 }
 

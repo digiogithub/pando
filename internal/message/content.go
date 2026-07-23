@@ -3,7 +3,6 @@ package message
 import (
 	"encoding/base64"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/llm/models"
@@ -99,6 +98,11 @@ type ToolResult struct {
 	Content    string `json:"content"`
 	Metadata   string `json:"metadata"`
 	IsError    bool   `json:"is_error"`
+	// Images carries binary image(s) produced by an image-type tool response
+	// (e.g. browser_screenshot). They are sent to vision-capable models as real
+	// image blocks; Content holds a short textual placeholder in that case. The
+	// raw base64 never lives in Content, so it is not dumped in the TUI/WebUI.
+	Images []BinaryContent `json:"images,omitempty"`
 	// Input holds the original tool call input JSON. It is NOT persisted to the
 	// database (json:"-") and is populated in-flight by the agent so that the
 	// ACP layer can include rawInput in tool_call_update messages even when the
@@ -108,16 +112,10 @@ type ToolResult struct {
 
 func (ToolResult) isPart() {}
 
-func (tr ToolResult) ShouldOmitFromPrompt() bool {
-	return strings.EqualFold(tr.Name, "browser_screenshot")
-}
-
+// SanitizedForPrompt returns the tool result as it should be sent to the model.
+// Image data now lives in the Images field (Content is only a placeholder), so
+// no special blanking is required.
 func (tr ToolResult) SanitizedForPrompt() ToolResult {
-	if !tr.ShouldOmitFromPrompt() {
-		return tr
-	}
-	tr.Content = ""
-	tr.Metadata = ""
 	return tr
 }
 

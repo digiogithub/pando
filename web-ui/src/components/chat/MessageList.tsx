@@ -88,6 +88,7 @@ function LoadingBubble({ streamingState }: { streamingState: StreamingState }) {
           locations={tc.locations}
           diff={tc.diff}
           terminal={tc.terminal}
+          images={tc.result?.images}
         />
       ))}
     </div>

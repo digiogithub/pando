@@ -270,3 +270,42 @@ func TestConvertToolsPassesRequiredFields(t *testing.T) {
 		t.Fatalf("convertTools()[0].OfTool.InputSchema.Required = %v, want %v", converted[0].OfTool.InputSchema.Required, required)
 	}
 }
+
+func TestUseBetaAPIGating(t *testing.T) {
+	// Bedrock never uses the beta Files path.
+	bedrock := &anthropicClient{options: anthropicOptions{useBedrock: true}}
+	if bedrock.useBetaAPI() {
+		t.Fatal("useBetaAPI() = true on bedrock, want false")
+	}
+	// Default (no/unset config) is the classic path.
+	direct := &anthropicClient{}
+	if direct.useBetaAPI() {
+		t.Fatal("useBetaAPI() = true by default, want false")
+	}
+}
+
+func TestPreparedMessagesBetaHasSystemAndThinking(t *testing.T) {
+	c := &anthropicClient{
+		providerOptions: providerClientOptions{
+			model:         models.Model{APIModel: "claude-3-7-sonnet-20250219"},
+			maxTokens:     1000,
+			systemMessage: "sys",
+		},
+		options: anthropicOptions{reasoningEffort: "medium"},
+	}
+	params := c.preparedMessagesBeta(nil, nil)
+	raw, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal beta params: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal beta params: %v", err)
+	}
+	if _, ok := body["system"]; !ok {
+		t.Fatal("beta params missing system")
+	}
+	if _, ok := body["thinking"]; !ok {
+		t.Fatal("beta params missing thinking")
+	}
+}

@@ -273,10 +273,26 @@ func (c *copilotClient) convertMessages(messages []message.Message) (copilotMess
 			})
 
 		case message.Tool:
+			var toolImages []openai.ChatCompletionContentPartUnionParam
 			for _, result := range msg.ToolResults() {
 				copilotMessages = append(copilotMessages,
 					openai.ToolMessage(result.Content, result.ToolCallID),
 				)
+				if c.providerOptions.model.SupportsAttachments {
+					for _, img := range result.Images {
+						imageURL := openai.ChatCompletionContentPartImageImageURLParam{URL: img.String(models.ProviderCopilot)}
+						toolImages = append(toolImages, openai.ChatCompletionContentPartUnionParam{
+							OfImageURL: &openai.ChatCompletionContentPartImageParam{ImageURL: imageURL},
+						})
+					}
+				}
+			}
+			if len(toolImages) > 0 {
+				content := []openai.ChatCompletionContentPartUnionParam{
+					{OfText: &openai.ChatCompletionContentPartTextParam{Text: "Image(s) returned by the previous tool call:"}},
+				}
+				content = append(content, toolImages...)
+				copilotMessages = append(copilotMessages, openai.UserMessage(content))
 			}
 		}
 	}
@@ -679,6 +695,22 @@ func (c *copilotClient) convertMessagesToResponsesInput(msgs []message.Message) 
 				}
 				item := responses.ResponseInputItemParamOfFunctionCallOutput(callID, result.Content)
 				input = append(input, item)
+
+				// Function call outputs cannot carry images; inject them as a
+				// separate user message so vision models can see them.
+				if c.providerOptions.model.SupportsAttachments && len(result.Images) > 0 {
+					var contentList responses.ResponseInputMessageContentListParam
+					contentList = append(contentList, responses.ResponseInputContentParamOfInputText("Image(s) returned by the previous tool call:"))
+					for _, img := range result.Images {
+						contentList = append(contentList, responses.ResponseInputContentUnionParam{
+							OfInputImage: &responses.ResponseInputImageParam{
+								ImageURL: openai.String(img.String(models.ProviderCopilot)),
+								Detail:   responses.ResponseInputImageDetailAuto,
+							},
+						})
+					}
+					input = append(input, responses.ResponseInputItemParamOfMessage(contentList, responses.EasyInputMessageRoleUser))
+				}
 			}
 		}
 	}

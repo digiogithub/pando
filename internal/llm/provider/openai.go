@@ -159,10 +159,29 @@ func (o *openaiClient) convertMessages(messages []message.Message) (openaiMessag
 			})
 
 		case message.Tool:
+			// OpenAI Chat does not support media inside tool results. Collect any
+			// tool-result images and inject them as a synthetic user message right
+			// after, so vision models still see them (pattern used by OpenCode).
+			var toolImages []openai.ChatCompletionContentPartUnionParam
 			for _, result := range msg.ToolResults() {
 				openaiMessages = append(openaiMessages,
 					openai.ToolMessage(result.Content, result.ToolCallID),
 				)
+				if o.providerOptions.model.SupportsAttachments {
+					for _, img := range result.Images {
+						imageURL := openai.ChatCompletionContentPartImageImageURLParam{URL: img.String(models.ProviderOpenAI)}
+						toolImages = append(toolImages, openai.ChatCompletionContentPartUnionParam{
+							OfImageURL: &openai.ChatCompletionContentPartImageParam{ImageURL: imageURL},
+						})
+					}
+				}
+			}
+			if len(toolImages) > 0 {
+				content := []openai.ChatCompletionContentPartUnionParam{
+					{OfText: &openai.ChatCompletionContentPartTextParam{Text: "Image(s) returned by the previous tool call:"}},
+				}
+				content = append(content, toolImages...)
+				openaiMessages = append(openaiMessages, openai.UserMessage(content))
 			}
 		}
 	}

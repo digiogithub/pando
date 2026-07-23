@@ -150,6 +150,7 @@ function ToolContent({
   isError,
   diff,
   terminal,
+  images,
 }: {
   name: string
   input?: Record<string, unknown> | null
@@ -157,8 +158,28 @@ function ToolContent({
   isError?: boolean
   diff?: { file_path: string; old_string?: string; new_string?: string; new_content?: string }
   terminal?: { terminal_id: string; exit_code: number }
+  images?: string[]
 }) {
   const n = name.toLowerCase()
+
+  // ── Image tool results (e.g. screenshots): render thumbnails, never base64 text.
+  if (images && images.length > 0) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        {result && <div style={{ fontSize: 11, color: 'var(--fg-dim)', fontFamily: 'monospace' }}>{result}</div>}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+          {images.map((src, i) => (
+            <img
+              key={i}
+              src={src}
+              alt={`tool image ${i + 1}`}
+              style={{ maxWidth: '100%', maxHeight: 320, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}
+            />
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   // ── Bash
   if (n === 'bash' || n === 'execute_bash' || n === 'run_command') {
@@ -397,11 +418,12 @@ export interface EventRowProps {
   locations?: ToolCallLocation[]
   diff?: { file_path: string; old_string?: string; new_string?: string; new_content?: string }
   terminal?: { terminal_id: string; exit_code: number }
+  images?: string[]
 }
 
 export function EventRow({
   kind, thinking, toolName, toolInput, toolResult, isError, isLive,
-  backendTitle, backendKind, toolStatus, locations, diff, terminal,
+  backendTitle, backendKind, toolStatus, locations, diff, terminal, images,
 }: EventRowProps) {
   const [expanded, setExpanded] = useState(false)
 
@@ -516,6 +538,7 @@ export function EventRow({
               isError={isError}
               diff={diff}
               terminal={terminal}
+              images={images}
             />
           )}
         </div>

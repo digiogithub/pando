@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/caveman"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/imageopt"
 	"github.com/digiogithub/pando/internal/learning"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/prompt"
@@ -627,11 +629,7 @@ func (a *agent) drainSteeringInto(ctx context.Context, sessionID string, msgHist
 	for _, sm := range queued {
 		var attachmentParts []message.ContentPart
 		for _, attachment := range sm.attachments {
-			attachmentParts = append(attachmentParts, message.BinaryContent{
-				Path:     attachment.FilePath,
-				MIMEType: attachment.MimeType,
-				Data:     attachment.Content,
-			})
+			attachmentParts = append(attachmentParts, optimizeAttachment(a.provider.Model(), attachment))
 		}
 		userMsg, err := a.createUserMessage(ctx, sessionID, sm.content, attachmentParts)
 		if err != nil {
@@ -830,8 +828,9 @@ func (a *agent) runInternal(ctx context.Context, sessionID string, content strin
 			events <- a.err(fmt.Errorf("panic while running the agent"))
 		})
 		var attachmentParts []message.ContentPart
+		model := a.provider.Model()
 		for _, attachment := range attachments {
-			attachmentParts = append(attachmentParts, message.BinaryContent{Path: attachment.FilePath, MIMEType: attachment.MimeType, Data: attachment.Content})
+			attachmentParts = append(attachmentParts, optimizeAttachment(model, attachment))
 		}
 		result := a.processGeneration(genCtx, sessionID, content, attachmentParts, events)
 		if result.Error != nil && !errors.Is(result.Error, ErrRequestCancelled) && !errors.Is(result.Error, context.Canceled) {
@@ -1196,6 +1195,88 @@ func applySummaryBoundary(msgs []message.Message, summaryMessageID string) []mes
 	return sanitizeMessagesForPrompt(msgs)
 }
 
+// imageOptionsForModel builds the imageopt.Options for the given model from the
+// [Image] config section, clamping the long side to the model's vision limit.
+func imageOptionsForModel(model models.Model) imageopt.Options {
+	cfg := config.Get()
+	ic := config.ImageConfig{AutoResize: true, MaxWidth: 2000, MaxHeight: 2000, MaxBase64Bytes: 5242880, Quality: 85}
+	if cfg != nil {
+		ic = cfg.Image
+	}
+	longSide := model.ImageLongSideLimit()
+	if ic.MaxWidth > 0 && ic.MaxWidth < longSide {
+		longSide = ic.MaxWidth
+	}
+	if ic.MaxHeight > 0 && ic.MaxHeight < longSide {
+		longSide = ic.MaxHeight
+	}
+	return imageopt.Options{
+		AutoResize:     ic.AutoResize,
+		MaxLongSidePx:  longSide,
+		MaxWidth:       ic.MaxWidth,
+		MaxHeight:      ic.MaxHeight,
+		MaxBase64Bytes: ic.MaxBase64Bytes,
+		Quality:        ic.Quality,
+	}
+}
+
+// buildImageToolResult converts an image-type tool response (base64 image in
+// Content) into a ToolResult whose image lives in Images (optimized to the
+// model's vision tier) and whose Content is a short textual placeholder. This
+// keeps raw base64 out of the prompt text and the TUI, and lets vision models
+// actually see the image. Falls back to the raw text result if decoding fails.
+func buildImageToolResult(model models.Model, toolCall message.ToolCall, resp tools.ToolResponse) message.ToolResult {
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(resp.Content))
+	if err != nil || len(raw) == 0 {
+		return message.ToolResult{
+			ToolCallID: toolCall.ID, Name: toolCall.Name,
+			Content: resp.Content, Metadata: resp.Metadata, IsError: resp.IsError, Input: toolCall.Input,
+		}
+	}
+	mime := imageopt.DetectMIME(raw)
+	if mime == "" {
+		mime = imageopt.MIMEPNG
+	}
+	data := raw
+	meta := imageopt.Meta{MIMEType: mime, Bytes: len(raw)}
+	if out, outMIME, m, nErr := imageopt.Normalize(raw, mime, imageOptionsForModel(model)); nErr == nil {
+		data, mime, meta = out, outMIME, m
+	}
+	placeholder := fmt.Sprintf("[image %dx%d %s]", meta.Width, meta.Height, mimeShort(mime))
+	return message.ToolResult{
+		ToolCallID: toolCall.ID,
+		Name:       toolCall.Name,
+		Content:    placeholder,
+		Metadata:   resp.Metadata,
+		IsError:    resp.IsError,
+		Images:     []message.BinaryContent{{MIMEType: mime, Data: data}},
+		Input:      toolCall.Input,
+	}
+}
+
+func mimeShort(mime string) string {
+	if i := strings.LastIndex(mime, "/"); i >= 0 {
+		return mime[i+1:]
+	}
+	return mime
+}
+
+// optimizeAttachment normalizes an image attachment (resize/recompress to the
+// model's vision tier) before it becomes a BinaryContent part. Non-image or
+// undecodable attachments pass through untouched.
+func optimizeAttachment(model models.Model, att message.Attachment) message.BinaryContent {
+	data, mime := att.Content, att.MimeType
+	if imageopt.DetectMIME(data) != "" {
+		if out, outMIME, meta, err := imageopt.Normalize(data, mime, imageOptionsForModel(model)); err == nil {
+			data, mime = out, outMIME
+			if meta.Resized {
+				logging.Debug("Optimized image attachment", "file", att.FileName, "w", meta.Width, "h", meta.Height, "bytes", meta.Bytes)
+			}
+		}
+	}
+	return message.BinaryContent{Path: att.FilePath, MIMEType: mime, Data: data}
+}
+
 func sanitizeMessagesForPrompt(msgs []message.Message) []message.Message {
 	sanitized := make([]message.Message, 0, len(msgs))
 	for _, msg := range msgs {
@@ -1428,19 +1509,26 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 				}
 				continue
 			}
-			// Auto-cache large responses to reduce context token usage
-			if toolErr == nil {
-				if cache := tools.GetSessionCache(ctx); cache != nil {
-					toolResult = tools.InterceptToolResponse(cache, toolCall.ID, toolCall.Name, toolResult)
+			if toolResult.Type == tools.ToolResponseTypeImage {
+				// Image tool responses (e.g. screenshots) are routed as real image
+				// blocks to the model; the base64 never enters the prompt text or
+				// the session cache.
+				toolResults[i] = buildImageToolResult(a.provider.Model(), toolCall, toolResult)
+			} else {
+				// Auto-cache large responses to reduce context token usage
+				if toolErr == nil {
+					if cache := tools.GetSessionCache(ctx); cache != nil {
+						toolResult = tools.InterceptToolResponse(cache, toolCall.ID, toolCall.Name, toolResult)
+					}
 				}
-			}
-			toolResults[i] = message.ToolResult{
-				ToolCallID: toolCall.ID,
-				Name:       toolCall.Name,
-				Content:    toolResult.Content,
-				Metadata:   toolResult.Metadata,
-				IsError:    toolResult.IsError,
-				Input:      toolCall.Input,
+				toolResults[i] = message.ToolResult{
+					ToolCallID: toolCall.ID,
+					Name:       toolCall.Name,
+					Content:    toolResult.Content,
+					Metadata:   toolResult.Metadata,
+					IsError:    toolResult.IsError,
+					Input:      toolCall.Input,
+				}
 			}
 			a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]})
 			select {

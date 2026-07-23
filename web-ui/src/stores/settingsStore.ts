@@ -18,6 +18,8 @@ const DEFAULTS: SettingsConfig = {
   nerd_fonts: true,
   llm_cache_enabled: true,
   models_dev_enabled: true,
+  image_auto_resize: true,
+  image_use_files_api: false,
   output_filter_enabled: true,
   caveman_default_mode: '',
   evaluator_enabled: false,

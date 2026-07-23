@@ -169,6 +169,7 @@ func CoderAgentTools(
 		tools.NewGrepTool(),
 		tools.NewLsTool(),
 		tools.NewViewTool(lspProvider),
+		tools.NewImageCropTool(),
 		tools.NewCacheReadTool(),
 		tools.NewCacheStatsTool(),
 		tools.NewSavingsStatsTool(),

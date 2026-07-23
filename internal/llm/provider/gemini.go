@@ -140,6 +140,19 @@ func (g *geminiClient) convertMessages(messages []message.Message) []*genai.Cont
 					},
 					Role: "user",
 				})
+
+				// FunctionResponse cannot carry images; inject them as a separate
+				// user content so vision models can see tool-result images.
+				if g.providerOptions.model.SupportsAttachments && len(result.Images) > 0 {
+					imgParts := []*genai.Part{{Text: "Image(s) returned by the previous tool call:"}}
+					for _, img := range result.Images {
+						imgParts = append(imgParts, &genai.Part{InlineData: &genai.Blob{
+							MIMEType: img.MIMEType,
+							Data:     img.Data,
+						}})
+					}
+					history = append(history, &genai.Content{Parts: imgParts, Role: "user"})
+				}
 			}
 		}
 	}

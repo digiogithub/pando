@@ -1,9 +1,11 @@
 package chat
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
 	"math"
 	"path/filepath"
 	"strings"
@@ -17,6 +19,7 @@ import (
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/message"
+	tuiimage "github.com/digiogithub/pando/internal/tui/image"
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 )
@@ -486,6 +489,30 @@ func truncateHeight(content string, height int) string {
 	return content
 }
 
+// renderToolResultImages renders a short label plus a small terminal preview of
+// each tool-result image. The raw base64 is never shown.
+func renderToolResultImages(response message.ToolResult, width int) string {
+	t := theme.CurrentTheme()
+	label := response.Content
+	if label == "" {
+		label = fmt.Sprintf("%d image(s)", len(response.Images))
+	}
+	parts := []string{styles.BaseStyle().Foreground(t.TextMuted()).Render(label)}
+
+	previewWidth := min(width, 48)
+	if previewWidth < 8 {
+		previewWidth = 8
+	}
+	for _, img := range response.Images {
+		decoded, _, err := image.Decode(bytes.NewReader(img.Data))
+		if err != nil {
+			continue
+		}
+		parts = append(parts, tuiimage.ToString(previewWidth, decoded))
+	}
+	return styles.BaseStyle().Width(width).Render(strings.Join(parts, "\n"))
+}
+
 func renderToolResponse(toolCall message.ToolCall, response message.ToolResult, width int) string {
 	t := theme.CurrentTheme()
 	baseStyle := styles.BaseStyle()
@@ -497,6 +524,12 @@ func renderToolResponse(toolCall message.ToolCall, response message.ToolResult, 
 			Width(width).
 			Foreground(t.Error()).
 			Render(errContent)
+	}
+
+	// Image tool results carry the image in Images (Content is a placeholder).
+	// Render a compact terminal preview instead of dumping base64.
+	if len(response.Images) > 0 {
+		return renderToolResultImages(response, width)
 	}
 
 	resultContent := truncateHeight(response.Content, maxResultHeight)

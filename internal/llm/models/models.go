@@ -1,6 +1,9 @@
 package models
 
-import "maps"
+import (
+	"maps"
+	"regexp"
+)
 
 type (
 	ModelID       string
@@ -35,6 +38,28 @@ type Model struct {
 	Description string `json:"description,omitempty"`
 	Knowledge   string `json:"knowledge,omitempty"`
 	ReleaseDate string `json:"release_date,omitempty"`
+	// ImageMaxLongSidePx is the model's vision long-side pixel limit. Images
+	// larger than this are rescaled by the provider before encoding, so Pando
+	// resizes to this value locally to save bandwidth. 0 means "unknown": use
+	// ImageLongSideLimit() which falls back to a per-family default.
+	ImageMaxLongSidePx int `json:"image_max_long_side_px,omitempty"`
+}
+
+// highTierVisionRE matches the newest, highest-resolution vision models
+// (Opus 4.8, Sonnet 5, Fable 5, Mythos 5), which accept a larger long side.
+var highTierVisionRE = regexp.MustCompile(`(?i)(opus-4\.8|opus-4-8|sonnet-5|fable-5|mythos-5)`)
+
+// ImageLongSideLimit returns the long-side pixel cap to resize images to before
+// sending them to this model. Prefers the explicit ImageMaxLongSidePx (e.g. from
+// the models.dev catalog), otherwise infers a per-family default.
+func (m Model) ImageLongSideLimit() int {
+	if m.ImageMaxLongSidePx > 0 {
+		return m.ImageMaxLongSidePx
+	}
+	if highTierVisionRE.MatchString(string(m.ID)) || highTierVisionRE.MatchString(m.APIModel) {
+		return 2576
+	}
+	return 1568
 }
 
 // DisplayLabel returns the display label for a model.
