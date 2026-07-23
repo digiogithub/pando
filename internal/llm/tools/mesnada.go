@@ -93,6 +93,21 @@ func (t *MesnadaSpawnTool) Info() ToolInfo {
 		engineDesc += " Custom template engines: " + strings.Join(customEngines, ", ") + "."
 	}
 
+	// Advertise the configured personas so the model can pick a role for the
+	// spawned sub-agent. When personas are available their names are listed in
+	// the description and constrained via an enum; otherwise the parameter is
+	// still accepted (free-form) but no catalogue is shown.
+	personaParam := map[string]any{
+		"type":        "string",
+		"description": "Optional persona/role to apply to the spawned agent. Prepends the persona's instructions to the prompt. Personas are loaded from the configured persona_path.",
+	}
+	if personas := t.orchestrator.ListPersonas(); len(personas) > 0 {
+		personaParam["description"] = fmt.Sprintf(
+			"Optional persona/role to apply to the spawned agent. Prepends the persona's instructions to the prompt. Available personas: %s.",
+			strings.Join(personas, ", "))
+		personaParam["enum"] = personas
+	}
+
 	return ToolInfo{
 		Name:        mesnadaSpawnToolName,
 		Description: "Creates and executes a new Mesnada orchestrator task, or relaunches an existing task in-place. When task_id is provided the task is reset and re-executed preserving its ID so dependent tasks are automatically unblocked.\n\nSimplest usage — provide only 'prompt': the task runs with engine=pando using the currently active coder model, in background (fire-and-forget). No need to specify engine, model, or background unless you want to override the defaults.\n\nAfter spawning background work, PREFER calling mesnada_await and ending your turn over polling with mesnada_get_task/mesnada_list_tasks: mesnada_await registers a non-blocking wait and you are automatically resumed with the results when they finish.",
@@ -152,6 +167,7 @@ func (t *MesnadaSpawnTool) Info() ToolInfo {
 					"type": "string",
 				},
 			},
+			"persona": personaParam,
 		},
 		Required: []string{"prompt"},
 	}
@@ -226,6 +242,7 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		IncludeDependencyLogs bool     `json:"include_dependency_logs"`
 		DependencyLogLines    int      `json:"dependency_log_lines"`
 		Tags                  []string `json:"tags"`
+		Persona               string   `json:"persona"`
 	}
 
 	var req spawnParams
@@ -367,6 +384,7 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 		IncludeDependencyLogs: req.IncludeDependencyLogs,
 		DependencyLogLines:    req.DependencyLogLines,
 		Tags:                  req.Tags,
+		Persona:               req.Persona,
 		ParentSessionID:       parentSessionID,
 		CorrelationID:         correlationID,
 		ProjectID:             targetProjectID,
