@@ -136,6 +136,10 @@ type LSPConfig struct {
 	// this server handles. Used to filter which LSP clients are queried for a
 	// given file. If empty, the server is queried for all files.
 	Languages []string `json:"languages,omitempty"`
+	// Filenames are base names this server handles regardless of extension
+	// (e.g. "Dockerfile"). They complement Languages for file types whose
+	// suffix carries no information.
+	Filenames []string `json:"filenames,omitempty" toml:"Filenames,omitempty"`
 	// Autostart, when true, eagerly starts this server at application boot
 	// instead of waiting for a file of its language to be edited. Defaults to
 	// false: servers are activated lazily on demand (see LSPAutoActivate).
@@ -902,7 +906,36 @@ type Config struct {
 	// file is edited or opened, the matching server from the built-in presets
 	// (or user config) is started automatically if its binary is found on PATH.
 	// Defaults to true. Set to false to only run servers with Autostart=true.
-	LSPAutoActivate   bool                    `json:"lspAutoActivate,omitempty" toml:"LSPAutoActivate"`
+	LSPAutoActivate bool `json:"lspAutoActivate,omitempty" toml:"LSPAutoActivate"`
+	// LSPActivateOn narrows which events may trigger that activation:
+	//   "edits"     (default) only files Pando edits with the edit/write/patch
+	//               tools, plus an explicit diagnostics call for a file;
+	//   "reads"     also files read or opened (view tool, TUI file tree);
+	//   "workspace" additionally watches the whole workspace for external edits;
+	//   "off"       nothing is activated on demand.
+	// The default keeps a session that never edits a file from starting any
+	// language server.
+	LSPActivateOn string `json:"lspActivateOn,omitempty" toml:"LSPActivateOn"`
+	// LSPAutoInstall lets Pando install a missing npm-distributed language
+	// server with bun or npm into its own staging directory. Defaults to true.
+	// Servers that ship through a language toolchain (gopls, rust-analyzer,
+	// clangd, ...) are never installed automatically.
+	LSPAutoInstall bool `json:"lspAutoInstall,omitempty" toml:"LSPAutoInstall"`
+	// LSPRunner selects the JavaScript package manager used to install and run
+	// npm-distributed language servers:
+	//   "auto" (default) bun when present, otherwise npm/npx;
+	//   "bun"            only bun, never npm;
+	//   "npm"            only npm/npx, even when bun is installed;
+	//   "off"            never use bun or npm, so npm-distributed servers are
+	//                    only used when their binary is already on PATH.
+	LSPRunner string `json:"lspRunner,omitempty" toml:"LSPRunner"`
+	// LSPStartupTimeout is how long a tool waits for a lazily started language
+	// server to become ready. Duration string, defaults to "20s".
+	LSPStartupTimeout string `json:"lspStartupTimeout,omitempty" toml:"LSPStartupTimeout"`
+	// LSPInstallTimeout replaces LSPStartupTimeout while a server is being
+	// installed, since a cold install is far slower than a cold start.
+	// Duration string, defaults to "120s".
+	LSPInstallTimeout string                  `json:"lspInstallTimeout,omitempty" toml:"LSPInstallTimeout"`
 	Agents            map[AgentName]Agent     `json:"agents,omitempty"`
 	Debug             bool                    `json:"debug,omitempty"`
 	LogFile           string                  `json:"logFile,omitempty"`
@@ -1621,8 +1654,13 @@ func setDefaults(debug bool) {
 	viper.SetDefault("contextPaths", defaultContextPaths)
 	viper.SetDefault("skills.enabled", true)
 	viper.SetDefault("skillsCatalog.enabled", true)
-	viper.SetDefault("llmCache.enabled", true)  // LLM prompt caching enabled by default
-	viper.SetDefault("lspAutoActivate", true)   // lazily start language servers on demand
+	viper.SetDefault("llmCache.enabled", true) // LLM prompt caching enabled by default
+	viper.SetDefault("lspAutoActivate", true)  // lazily start language servers on demand
+	viper.SetDefault("lspActivateOn", LSPActivateEdits)
+	viper.SetDefault("lspAutoInstall", true)
+	viper.SetDefault("lspRunner", LSPRunnerAuto)
+	viper.SetDefault("lspStartupTimeout", defaultLSPStartupTimeout)
+	viper.SetDefault("lspInstallTimeout", defaultLSPInstallTimeout)
 	viper.SetDefault("modelsDev.enabled", true) // model pricing/capability catalog from models.dev
 
 	// Image normalization defaults (OpenCode-style). Resize/recompress on by

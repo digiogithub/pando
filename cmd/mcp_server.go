@@ -223,44 +223,30 @@ func runMCPServerMode(cmd *cobra.Command) error {
 	}
 }
 
-// enableMCPServerFeatures turns on subsystems required for the standard MCP
-// server tool set (mesnada, remembrances, and internal tools that are properly configured).
-// Search tools are only enabled when their API keys are present.
+// enableMCPServerFeatures derives subsystem activation from the explicit
+// [MCPServer] exposure toggles. It deliberately does NOT force-enable any tool
+// group: the MCP server mirrors the user's global configuration, so a subsystem
+// left disabled (Mesnada/subagents, Remembrances KB+code, memory, browser,
+// fetch, search engines, …) stays unexposed. app.New builds each subsystem only
+// when its config flag is on, and buildMCPServerTools additionally gates
+// API-key tools on a present key — nothing here overrides those decisions.
+//
+// The only subsystems turned on here are the ones a dedicated [MCPServer]
+// feature proxies: gateway re-export and self-improvement. Those toggles are
+// themselves opt-in, and without their backing subsystem the requested
+// exposure would be empty.
 func enableMCPServerFeatures() {
 	cfg := config.Get()
 	if cfg == nil {
 		return
 	}
 
-	cfg.Mesnada.Enabled = true
-	cfg.Remembrances.Enabled = true
-	// Enable the KB-backed memory system so the remember/recall/forget tools are
-	// exposed and the lightweight TTL garbage collector runs in server mode.
-	cfg.Remembrances.MemoryEnabled = true
-	cfg.InternalTools.FetchEnabled = true
-	cfg.InternalTools.BrowserEnabled = true
-
-	// Only enable search tools if their API keys are configured.
-	it := cfg.InternalTools
-	if strings.TrimSpace(it.GoogleAPIKey) != "" {
-		cfg.InternalTools.GoogleSearchEnabled = true
-	}
-	if strings.TrimSpace(it.BraveAPIKey) != "" {
-		cfg.InternalTools.BraveSearchEnabled = true
-	}
-	if strings.TrimSpace(it.PerplexityAPIKey) != "" {
-		cfg.InternalTools.PerplexitySearchEnabled = true
-	}
-	if strings.TrimSpace(it.ExaAPIKey) != "" {
-		cfg.InternalTools.ExaSearchEnabled = true
-	}
-
-	// Enable MCPGateway if gateway-expose is configured.
+	// Enable MCPGateway when gateway re-export is explicitly requested.
 	if cfg.MCPServer.GatewayExpose.Enabled {
 		cfg.MCPGateway.Enabled = true
 	}
 
-	// Enable Evaluator if self-improvement exposure is configured.
+	// Enable the Evaluator when self-improvement exposure is explicitly requested.
 	if cfg.MCPServer.SelfImprovement.Enabled {
 		cfg.Evaluator.Enabled = true
 	}

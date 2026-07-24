@@ -14,19 +14,33 @@ import (
 type ResolvedLSPServer struct {
 	// Name is the registry key (e.g. "gopls", "pyright").
 	Name string
+	// Description is the preset's one-line description, empty for user-only
+	// servers.
+	Description string
+	// OptIn reports that the preset only activates once the user declares it
+	// under [LSP.<name>]. Surfaces use it to tell "off until you ask for it"
+	// apart from "disabled by the user".
+	OptIn bool
 	// Command is the executable to run.
 	Command string
 	// Args are the arguments passed to Command.
 	Args []string
 	// Languages is the list of normalized file extensions this server handles
-	// (lowercase, leading dot). Empty means it handles all files.
+	// (lowercase, leading dot). Empty (with Filenames also empty) means it
+	// handles all files.
 	Languages []string
+	// Filenames are base names this server claims regardless of extension
+	// (e.g. "Dockerfile"), for languages whose files carry no useful suffix.
+	Filenames []string
 	// Disabled excludes this server from activation.
 	Disabled bool
 	// Autostart eagerly starts the server at boot instead of on demand.
 	Autostart bool
 	// Source records provenance: "preset", "user", or "user+preset".
 	Source string
+	// Install describes how to provision Command when it is not on PATH. It is
+	// empty for user-defined commands, which Pando never tries to install.
+	Install LSPInstall
 }
 
 // HandlesExt reports whether this server handles the given file extension.
@@ -39,6 +53,62 @@ func (s ResolvedLSPServer) HandlesExt(ext string) bool {
 	ext = strings.ToLower(ext)
 	for _, l := range s.Languages {
 		if l == ext {
+			return true
+		}
+	}
+	return false
+}
+
+// HandlesFile reports whether this server claims the file at path, by base name
+// first and by extension otherwise.
+func (s ResolvedLSPServer) HandlesFile(path string) bool {
+	return LSPHandlesFile(s.Languages, s.Filenames, path)
+}
+
+// LSPHandlesFile reports whether a server declaring the given file extensions
+// and base names claims the file at path. It is shared by the registry and by
+// the running LSP clients so both answer identically.
+//
+// A server declaring neither extensions nor names is a catch-all and claims
+// every file. Otherwise a file is claimed when its base name matches one of
+// filenames, or when its extension matches one of languages; a file without an
+// extension is claimed by name only.
+func LSPHandlesFile(languages, filenames []string, path string) bool {
+	if len(languages) == 0 && len(filenames) == 0 {
+		return true
+	}
+	if matchesLSPFilename(filenames, filepath.Base(path)) {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == "" || len(languages) == 0 {
+		return false
+	}
+	for _, l := range languages {
+		if strings.ToLower(l) == ext {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesLSPFilename matches a base name case-insensitively, either in full or
+// up to its first dot, so a "Dockerfile" entry also claims "Dockerfile.dev".
+func matchesLSPFilename(filenames []string, base string) bool {
+	if len(filenames) == 0 || base == "" {
+		return false
+	}
+	base = strings.ToLower(base)
+	stem := base
+	if i := strings.Index(stem, "."); i > 0 {
+		stem = stem[:i]
+	}
+	for _, name := range filenames {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" {
+			continue
+		}
+		if name == base || name == stem {
 			return true
 		}
 	}
@@ -72,22 +142,37 @@ func resolveLSPServer(name string, preset LSPPreset, hasUser bool, uc LSPConfig)
 	hasPreset := preset.Name != ""
 
 	rs := ResolvedLSPServer{
-		Name:      name,
-		Command:   preset.Config.Command,
-		Args:      preset.Config.Args,
-		Languages: normalizeLSPExts(preset.Config.Languages),
-		Source:    "preset",
+		Name:        name,
+		Description: preset.Description,
+		OptIn:       preset.OptIn,
+		Command:     preset.Config.Command,
+		Args:        preset.Config.Args,
+		Languages:   normalizeLSPExts(preset.Config.Languages),
+		Filenames:   preset.Config.Filenames,
+		Source:      "preset",
+		Install:     preset.Install,
+		// An opt-in preset stays out of automatic activation until the user
+		// declares it under [LSP.<name>].
+		Disabled: preset.OptIn && !hasUser,
 	}
 
 	if hasUser {
 		if uc.Command != "" {
 			rs.Command = uc.Command
+			if uc.Command != preset.Config.Command {
+				// The user pointed at their own binary; the preset's install
+				// recipe would provision a different executable.
+				rs.Install = LSPInstall{}
+			}
 		}
 		if len(uc.Args) > 0 {
 			rs.Args = uc.Args
 		}
 		if len(uc.Languages) > 0 {
 			rs.Languages = normalizeLSPExts(uc.Languages)
+		}
+		if len(uc.Filenames) > 0 {
+			rs.Filenames = uc.Filenames
 		}
 		rs.Disabled = uc.Disabled
 		rs.Autostart = uc.Autostart
@@ -154,10 +239,22 @@ func (c *Config) LSPServersForExt(ext string) []ResolvedLSPServer {
 	return out
 }
 
-// LSPServersForFile is a convenience wrapper around LSPServersForExt that
-// derives the extension from a file path.
+// LSPServersForFile returns the enabled servers that handle the given file,
+// matching by base name (e.g. "Dockerfile") as well as by extension.
 func (c *Config) LSPServersForFile(path string) []ResolvedLSPServer {
-	return c.LSPServersForExt(filepath.Ext(path))
+	if path == "" {
+		return nil
+	}
+	var out []ResolvedLSPServer
+	for _, s := range c.LSPRegistry() {
+		if s.Disabled || s.Command == "" {
+			continue
+		}
+		if s.HandlesFile(path) {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // LSPAutostartServers returns the servers that should be eagerly started at

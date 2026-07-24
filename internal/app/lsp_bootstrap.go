@@ -33,9 +33,11 @@ var bootstrapExcludedDirs = map[string]struct{}{
 // TUI editor/file-tree. Those cover files Pando itself touches, but a developer
 // may edit files with an external editor, or a build step may regenerate them.
 // This watcher closes that gap: when any file is written or created it calls
-// EnsureLSPForFile, which is idempotent and cheap (servers already running,
-// spawning, or known-broken are skipped before any PATH lookup). It is only
-// started when LSPAutoActivate is enabled.
+// EnsureLSPForFileTrigger, which is idempotent and cheap (servers already
+// running, spawning, or known-broken are skipped before any PATH lookup).
+//
+// It is opt-in: only LSPActivateOn="workspace" starts it, because it can spawn
+// servers for languages Pando itself never touches during the session.
 func (app *App) startLSPBootstrapWatcher(ctx context.Context) {
 	root := config.WorkingDirectory()
 	if !fileutil.IsSafeWorkingDirectory(root) {
@@ -124,7 +126,7 @@ func (app *App) handleBootstrapEvent(ctx context.Context, fsWatcher *fsnotify.Wa
 	if filepath.Ext(event.Name) == "" {
 		return
 	}
-	app.EnsureLSPForFile(ctx, event.Name)
+	app.EnsureLSPForFileTrigger(ctx, event.Name, config.LSPTriggerWorkspace)
 }
 
 // bootstrapShouldExcludeDir reports whether the bootstrap watcher should skip a

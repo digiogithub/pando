@@ -30,6 +30,8 @@ const (
 	PermissionAllow        = "permission-allow"
 	PermissionSession      = "permission-session"
 	PermissionDeny         = "permission-deny"
+	QuitYes                = "quit-yes"
+	QuitNo                 = "quit-no"
 	TerminalPanel          = "terminal-panel"
 	TerminalTabPrefix      = "terminal-tab-"
 	MainTabPrefix          = "main-tab-"

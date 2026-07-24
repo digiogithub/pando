@@ -654,7 +654,7 @@ func (m *messagesCmp) chatViewportView() string {
 		btn := tuizone.MarkChatScrollBottom(
 			styles.BaseStyle().
 				Background(t.Primary()).
-				Foreground(t.Background()).
+				Foreground(t.BadgeText()).
 				Padding(0, 1).
 				Render(label),
 		)
@@ -674,7 +674,7 @@ func (m *messagesCmp) chatViewportView() string {
 		t := theme.CurrentTheme()
 		badge := styles.BaseStyle().
 			Background(t.Primary()).
-			Foreground(t.Background()).
+			Foreground(t.BadgeText()).
 			Padding(0, 1).
 			Render("✓ copied")
 		x := (m.width - lipgloss.Width(badge)) / 2

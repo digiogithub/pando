@@ -808,7 +808,9 @@ func (p *ChatPageModel) ensureLSPCmd(path string) tea.Cmd {
 	}
 	app := p.app
 	return func() tea.Msg {
-		app.EnsureLSPForFile(context.Background(), path)
+		// Opening a file in the editor or file tree is a read, not an edit: it
+		// only starts a server when LSPActivateOn is "reads" or looser.
+		app.EnsureLSPForFileTrigger(context.Background(), path, config.LSPTriggerRead)
 		return nil
 	}
 }

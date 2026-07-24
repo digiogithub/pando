@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -411,6 +412,9 @@ type LSPConfigItem struct {
 	Command   string   `json:"command"`
 	Args      []string `json:"args"`
 	Languages []string `json:"languages"`
+	// Filenames are base names handled regardless of extension (Dockerfile).
+	Filenames []string `json:"filenames,omitempty"`
+	Autostart bool     `json:"autostart"`
 }
 
 func (s *Server) handleConfigLSP(w http.ResponseWriter, r *http.Request) {
@@ -439,10 +443,53 @@ func (s *Server) handleGetConfigLSP(w http.ResponseWriter, r *http.Request) {
 			Command:   lsp.Command,
 			Args:      lsp.Args,
 			Languages: lsp.Languages,
+			Filenames: lsp.Filenames,
+			Autostart: lsp.Autostart,
 		})
 	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Language < items[j].Language })
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"lsp": items})
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"lsp":        items,
+		"activation": cfg.LSPActivationSettings(),
+	})
+}
+
+// handleConfigLSPCatalog handles GET /api/v1/config/lsp/catalog: the full
+// registry (built-in presets plus user servers) with, for each server, whether
+// its binary is installed, installable by Pando, or needs a manual install.
+func (s *Server) handleConfigLSPCatalog(w http.ResponseWriter, r *http.Request) {
+	if s.app == nil {
+		writeError(w, http.StatusServiceUnavailable, "application not available")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"servers":    s.app.LSPServerStatuses(),
+		"activation": config.Get().LSPActivationSettings(),
+	})
+}
+
+// handleConfigLSPActivation handles GET/PUT /api/v1/config/lsp/activation, the
+// global on-demand knobs (LSPAutoActivate, LSPActivateOn, LSPAutoInstall and
+// the two timeouts).
+func (s *Server) handleConfigLSPActivation(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, config.Get().LSPActivationSettings())
+	case http.MethodPut:
+		var req config.LSPActivationSettings
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if err := config.UpdateLSPActivation(req); err != nil {
+			writeError(w, http.StatusBadRequest, "failed to update LSP activation: "+err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, config.Get().LSPActivationSettings())
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
 }
 
 func (s *Server) handlePutConfigLSP(w http.ResponseWriter, r *http.Request) {
@@ -461,6 +508,8 @@ func (s *Server) handlePutConfigLSP(w http.ResponseWriter, r *http.Request) {
 		Command:   req.Command,
 		Args:      req.Args,
 		Languages: req.Languages,
+		Filenames: req.Filenames,
+		Autostart: req.Autostart,
 	}
 	if err := config.UpdateLSP(req.Language, lsp); err != nil {
 		writeError(w, http.StatusBadRequest, "failed to update LSP config: "+err.Error())

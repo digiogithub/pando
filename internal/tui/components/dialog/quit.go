@@ -10,6 +10,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
+	tuizone "github.com/digiogithub/pando/internal/tui/zone"
 )
 
 const question = "Are you sure you want to quit?"
@@ -77,6 +78,22 @@ func (q *quitDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, helpKeys.No):
 			return q, util.CmdHandler(CloseQuitMsg{})
 		}
+	case tea.MouseMsg:
+		// Only press/drag motion is reported (the app enables cell motion, not
+		// all motion), so pointing at a button also moves the selection and a
+		// left click confirms it directly.
+		switch {
+		case tuizone.InBounds(tuizone.DialogButtonID(tuizone.QuitYes), msg):
+			q.selectedNo = false
+			if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+				return q, tea.Quit
+			}
+		case tuizone.InBounds(tuizone.DialogButtonID(tuizone.QuitNo), msg):
+			q.selectedNo = true
+			if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+				return q, util.CmdHandler(CloseQuitMsg{})
+			}
+		}
 	}
 	return q, nil
 }
@@ -97,8 +114,8 @@ func (q *quitDialogCmp) View() string {
 		noStyle = noStyle.Background(t.Background()).Foreground(t.Primary())
 	}
 
-	yesButton := yesStyle.Padding(0, 1).Render("Yes")
-	noButton := noStyle.Padding(0, 1).Render("No")
+	yesButton := tuizone.MarkDialogButton(tuizone.QuitYes, yesStyle.Padding(0, 1).Render("Yes"))
+	noButton := tuizone.MarkDialogButton(tuizone.QuitNo, noStyle.Padding(0, 1).Render("No"))
 
 	buttons := lipgloss.JoinHorizontal(lipgloss.Left, yesButton, spacerStyle.Render("  "), noButton)
 

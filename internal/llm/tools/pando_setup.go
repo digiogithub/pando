@@ -90,13 +90,15 @@ type SetupBridge interface {
 
 type pandoSetupTool struct {
 	bridge SetupBridge
+	lsp    LSPProvider
 }
 
 // NewPandoSetupTool returns the always-on tool that lets the agent inspect and
-// steer its own Pando instance. The bridge may be nil: the configuration and
-// model commands still work, session and command commands report unavailable.
-func NewPandoSetupTool(bridge SetupBridge) BaseTool {
-	return &pandoSetupTool{bridge: bridge}
+// steer its own Pando instance. Both dependencies may be nil: the configuration
+// and model commands still work, while the session, command and lsp commands
+// report unavailable.
+func NewPandoSetupTool(bridge SetupBridge, lspProvider LSPProvider) BaseTool {
+	return &pandoSetupTool{bridge: bridge, lsp: lspProvider}
 }
 
 func (t *pandoSetupTool) Info() ToolInfo {
@@ -200,6 +202,19 @@ Prints the model ids accepted anywhere a model must be chosen, subagents include
   --detail    Add cost per 1M tokens, context window, capabilities and description.
   --limit     Maximum rows to print (default 60, 0 = no limit).`,
 			Run: runSetupModels,
+		},
+		{
+			Name:    "lsp",
+			Summary: "List the language servers: installed, installable by Pando, or manual",
+			Usage: `Usage: lsp [name] [--all] [--missing]
+Without arguments it lists the servers that are configured, running or already
+installed, plus the global on-demand activation settings.
+  name        Show one server in detail (files handled, install command, state).
+  --all       List the whole built-in catalogue, including opt-in servers.
+  --missing   List only the servers that need a manual install.
+Servers marked "installable" are installed by Pando with bun or npm the first
+time a matching file is touched; "not installed" ones print the command to run.`,
+			Run: runSetupLSP,
 		},
 		{
 			Name:    "session",
@@ -742,6 +757,142 @@ func formatSetupTokens(n int64) string {
 
 func collapseSetupWhitespace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// ---------------------------------------------------------------------------
+// lsp
+// ---------------------------------------------------------------------------
+
+func runSetupLSP(_ context.Context, t *pandoSetupTool, args setupArgs) (string, error) {
+	catalog, ok := t.lsp.(SetupLSPCatalog)
+	if t.lsp == nil || !ok {
+		return "", fmt.Errorf("language server state is unavailable in this runtime")
+	}
+	servers := catalog.LSPCatalog()
+	if len(servers) == 0 {
+		return "", fmt.Errorf("no language server is known to this instance")
+	}
+
+	if name := strings.TrimSpace(args.Positional(0)); name != "" {
+		for _, s := range servers {
+			if strings.EqualFold(s.Name, name) {
+				return renderSetupLSPDetail(s), nil
+			}
+		}
+		return "", fmt.Errorf("unknown language server %q. Run \"lsp --all\" to list the catalogue", name)
+	}
+
+	all := args.Bool("all")
+	missingOnly := args.Bool("missing")
+
+	var sb strings.Builder
+	sb.WriteString("## Language servers\n\n")
+	sb.WriteString(renderSetupLSPActivation())
+	sb.WriteString("\n")
+
+	shown := 0
+	hidden := 0
+	for _, s := range servers {
+		if missingOnly && s.Availability != "manual" {
+			continue
+		}
+		// The default view is what matters right now: servers the user
+		// configured, servers already running, and servers ready to start.
+		interesting := s.Configured || s.RunState != "stopped" || s.Availability == "installed"
+		if !all && !missingOnly && !interesting {
+			hidden++
+			continue
+		}
+		sb.WriteString(renderSetupLSPLine(s))
+		shown++
+	}
+
+	if shown == 0 {
+		sb.WriteString("No language server matches the filters.\n")
+	}
+	if hidden > 0 {
+		sb.WriteString(fmt.Sprintf("\n… %d more in the catalogue (run \"lsp --all\").\n", hidden))
+	}
+	return sb.String(), nil
+}
+
+// renderSetupLSPActivation summarizes the global on-demand knobs.
+func renderSetupLSPActivation() string {
+	a := config.Get().LSPActivationSettings()
+	state := "on-demand activation: " + a.ActivateOn
+	if !a.AutoActivate {
+		state = "on-demand activation: off (LSPAutoActivate = false)"
+	}
+	install := "auto-install: on"
+	if !a.AutoInstall {
+		install = "auto-install: off"
+	}
+	return fmt.Sprintf("%s · %s · runner: %s · startup wait %s · install wait %s\n",
+		state, install, a.Runner, a.StartupTimeout, a.InstallTimeout)
+}
+
+func renderSetupLSPLine(s LSPCatalogEntry) string {
+	labels := []string{s.AvailabilityLabel}
+	if s.Installing {
+		labels = append(labels, "installing")
+	} else if s.RunState != "stopped" {
+		labels = append(labels, s.RunState)
+	}
+	if s.Configured {
+		labels = append(labels, "configured")
+	}
+	if s.OptIn {
+		labels = append(labels, "opt-in")
+	}
+	if s.Disabled {
+		labels = append(labels, "disabled")
+	}
+
+	line := fmt.Sprintf("- %s [%s]", s.Name, strings.Join(labels, ", "))
+	if files := setupLSPFiles(s); files != "" {
+		line += " — " + files
+	}
+	if s.Availability == "manual" && s.Hint != "" {
+		line += fmt.Sprintf("\n    install: %s", s.Hint)
+	}
+	return line + "\n"
+}
+
+func renderSetupLSPDetail(s LSPCatalogEntry) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("## %s\n\n", s.Name))
+	if s.Description != "" {
+		sb.WriteString(s.Description + "\n\n")
+	}
+	sb.WriteString(fmt.Sprintf("- command: %s\n", s.Command))
+	if files := setupLSPFiles(s); files != "" {
+		sb.WriteString(fmt.Sprintf("- handles: %s\n", files))
+	}
+	sb.WriteString(fmt.Sprintf("- availability: %s\n", s.AvailabilityLabel))
+	sb.WriteString(fmt.Sprintf("- state: %s\n", s.RunState))
+	if s.Installing {
+		sb.WriteString("- an install is in flight\n")
+	}
+	sb.WriteString(fmt.Sprintf("- configured explicitly: %t\n", s.Configured))
+	if s.OptIn {
+		sb.WriteString("- opt-in: add it under [LSP." + s.Name + "] to enable it\n")
+	}
+	if s.Disabled {
+		sb.WriteString("- disabled in the configuration\n")
+	}
+	if s.Reason != "" {
+		sb.WriteString(fmt.Sprintf("- %s\n", s.Reason))
+	}
+	if s.Hint != "" {
+		sb.WriteString(fmt.Sprintf("- manual install: %s\n", s.Hint))
+	}
+	return sb.String()
+}
+
+func setupLSPFiles(s LSPCatalogEntry) string {
+	parts := append([]string{}, s.Languages...)
+	parts = append(parts, s.Filenames...)
+	return strings.Join(parts, " ")
 }
 
 // ---------------------------------------------------------------------------

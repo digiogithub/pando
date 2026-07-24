@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mesnada/acp"
 	"github.com/digiogithub/pando/internal/savings"
@@ -207,7 +208,7 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	// LSP diagnostics are computed up front so the auto resolver can keep
 	// diagnostic-active files at full fidelity and the dedup pass can key on the
 	// fidelity actually about to be delivered (Phase 3 fidelity-aware dedup).
-	v.lspProvider.EnsureForFile(ctx, filePath)
+	v.lspProvider.EnsureForFileTrigger(ctx, filePath, config.LSPTriggerRead)
 	clients := v.lspProvider.ClientsForFile(filePath)
 	notifyLspOpenFile(ctx, filePath, clients)
 	diagnostics := getDiagnostics(filePath, clients)

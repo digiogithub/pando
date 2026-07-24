@@ -55,7 +55,7 @@ func sessionCtx(sessionID string) context.Context {
 }
 
 func TestPandoSetupInfoIsSelfDescribing(t *testing.T) {
-	info := NewPandoSetupTool(nil).Info()
+	info := NewPandoSetupTool(nil, nil).Info()
 
 	if info.Name != PandoSetupToolName {
 		t.Fatalf("name = %q, want %q", info.Name, PandoSetupToolName)
@@ -84,7 +84,7 @@ func TestPandoSetupInfoIsSelfDescribing(t *testing.T) {
 }
 
 func TestPandoSetupHelp(t *testing.T) {
-	tool := NewPandoSetupTool(nil)
+	tool := NewPandoSetupTool(nil, nil)
 
 	resp := runSetupTool(t, tool, context.Background(), "help", "")
 	if resp.IsError {
@@ -108,7 +108,7 @@ func TestPandoSetupHelp(t *testing.T) {
 }
 
 func TestPandoSetupEmptyCommandFallsBackToHelp(t *testing.T) {
-	resp := runSetupTool(t, NewPandoSetupTool(nil), context.Background(), "  ", "")
+	resp := runSetupTool(t, NewPandoSetupTool(nil, nil), context.Background(), "  ", "")
 	if resp.IsError {
 		t.Fatalf("empty command errored: %s", resp.Content)
 	}
@@ -118,7 +118,7 @@ func TestPandoSetupEmptyCommandFallsBackToHelp(t *testing.T) {
 }
 
 func TestPandoSetupUnknownCommand(t *testing.T) {
-	resp := runSetupTool(t, NewPandoSetupTool(nil), context.Background(), "nope", "")
+	resp := runSetupTool(t, NewPandoSetupTool(nil, nil), context.Background(), "nope", "")
 	if !resp.IsError {
 		t.Fatalf("unknown command should be an error, got: %s", resp.Content)
 	}
@@ -299,7 +299,7 @@ func TestPandoSetupModels(t *testing.T) {
 	})
 	t.Cleanup(func() { delete(models.SupportedModels, id) })
 
-	tool := NewPandoSetupTool(nil)
+	tool := NewPandoSetupTool(nil, nil)
 
 	resp := runSetupTool(t, tool, context.Background(), "models", "--provider pandosetuptest")
 	if resp.IsError {
@@ -339,7 +339,7 @@ func TestPandoSetupModelsLimitTruncates(t *testing.T) {
 		t.Cleanup(func() { delete(models.SupportedModels, id) })
 	}
 
-	resp := runSetupTool(t, NewPandoSetupTool(nil), context.Background(), "models", "--provider pandosetuplimit --limit 2")
+	resp := runSetupTool(t, NewPandoSetupTool(nil, nil), context.Background(), "models", "--provider pandosetuplimit --limit 2")
 	if !strings.Contains(resp.Content, "1 more hidden") {
 		t.Fatalf("truncation not reported:\n%s", resp.Content)
 	}
@@ -355,7 +355,7 @@ func TestPandoSetupSession(t *testing.T) {
 		},
 		modes: []SetupMode{{Name: "caveman", State: "full"}, {Name: "ponytail", State: "off"}},
 	}
-	tool := NewPandoSetupTool(bridge)
+	tool := NewPandoSetupTool(bridge, nil)
 
 	resp := runSetupTool(t, tool, sessionCtx("sess-1"), "session", "")
 	if resp.IsError {
@@ -375,7 +375,7 @@ func TestPandoSetupSession(t *testing.T) {
 }
 
 func TestPandoSetupWithoutBridge(t *testing.T) {
-	tool := NewPandoSetupTool(nil)
+	tool := NewPandoSetupTool(nil, nil)
 	for _, command := range []string{"session", "commands", "run"} {
 		resp := runSetupTool(t, tool, sessionCtx("sess-1"), command, "caveman")
 		if !resp.IsError {
@@ -392,7 +392,7 @@ func TestPandoSetupCommands(t *testing.T) {
 			{Name: "project:review", Summary: "Custom command"},
 		},
 	}
-	tool := NewPandoSetupTool(bridge)
+	tool := NewPandoSetupTool(bridge, nil)
 
 	resp := runSetupTool(t, tool, sessionCtx("sess-1"), "commands", "")
 	if !strings.Contains(resp.Content, "caveman [lite|full|ultra]") {
@@ -413,7 +413,7 @@ func TestPandoSetupCommands(t *testing.T) {
 
 func TestPandoSetupRun(t *testing.T) {
 	bridge := &fakeSetupBridge{runOut: "Caveman mode enabled."}
-	tool := NewPandoSetupTool(bridge)
+	tool := NewPandoSetupTool(bridge, nil)
 
 	resp := runSetupTool(t, tool, sessionCtx("sess-1"), "run", "/caveman ultra now")
 	if resp.IsError {
@@ -437,7 +437,7 @@ func TestPandoSetupRun(t *testing.T) {
 
 func TestPandoSetupRunPropagatesBridgeError(t *testing.T) {
 	bridge := &fakeSetupBridge{runErr: fmt.Errorf("unknown slash command \"nope\"")}
-	resp := runSetupTool(t, NewPandoSetupTool(bridge), sessionCtx("sess-1"), "run", "nope")
+	resp := runSetupTool(t, NewPandoSetupTool(bridge, nil), sessionCtx("sess-1"), "run", "nope")
 	if !resp.IsError {
 		t.Fatalf("bridge error should surface as a tool error, got: %s", resp.Content)
 	}

@@ -45,9 +45,11 @@ export function TextInput({
         style={inputStyle}
         onFocus={(e) => {
           e.target.style.borderColor = 'var(--border-focus)'
+          props.onFocus?.(e)
         }}
         onBlur={(e) => {
           e.target.style.borderColor = 'var(--border)'
+          props.onBlur?.(e)
         }}
       />
     </Field>

@@ -369,6 +369,46 @@ export interface LSPConfig {
   command: string
   args: string[]
   languages: string[]
+  /** Base names handled regardless of extension (Dockerfile, CMakeLists.txt). */
+  filenames?: string[]
+  autostart?: boolean
+}
+
+/** Global on-demand activation knobs. */
+export interface LSPActivation {
+  autoActivate: boolean
+  /** "off" | "edits" | "reads" | "workspace" */
+  activateOn: string
+  autoInstall: boolean
+  /** "auto" | "bun" | "npm" | "off" — package manager used for npm servers */
+  runner: string
+  startupTimeout: string
+  installTimeout: string
+}
+
+/** One entry of the language-server catalogue with its live status. */
+export interface LSPServerStatus {
+  name: string
+  description?: string
+  command: string
+  /** Executable Pando would actually spawn (absolute path). */
+  resolvedCommand?: string
+  args?: string[]
+  languages?: string[]
+  filenames?: string[]
+  configured: boolean
+  optIn: boolean
+  disabled: boolean
+  autostart: boolean
+  /** "installed" | "installable" | "manual" */
+  availability: string
+  availabilityLabel: string
+  reason?: string
+  hint?: string
+  url?: string
+  /** "stopped" | "starting" | "ready" | "error" */
+  runState: string
+  installing: boolean
 }
 
 // Extensions config types

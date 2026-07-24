@@ -176,17 +176,48 @@ UseOAuth = true
 # the matching server from its built-in catalogue (gopls, pyright, typescript-
 # language-server, rust-analyzer, clangd, jdtls, ...) if the binary is on PATH.
 # LSPAutoActivate = false   # set to disable on-demand activation entirely
+#
+# LSPActivateOn selects which events may start a server:
+#   "edits"     (default) files Pando edits, plus an explicit diagnostics call
+#   "reads"     also files read or opened in the viewer/file tree
+#   "workspace" also files changed outside Pando (watches the whole workspace)
+#   "off"       nothing starts on demand
+# LSPActivateOn = "edits"
+#
+# Servers distributed as npm packages (pyright, typescript-language-server,
+# yaml/json/html/css, bash, intelephense, ...) are installed automatically with
+# bun or npm into ~/.config/pando/lsp when they are missing. Servers that ship
+# with a toolchain (gopls, rust-analyzer, clangd, ...) are never installed:
+# Pando reports the command you should run instead.
+# LSPAutoInstall    = true
+#
+# LSPRunner picks the package manager used for those installs:
+#   "auto" (default) bun when it is installed, npm/npx otherwise
+#   "bun"            only bun
+#   "npm"            only npm/npx, even when bun is installed
+#   "off"            neither, so npm servers are only used if already on PATH
+# LSPRunner         = "auto"
+# LSPStartupTimeout = "20s"    # how long a tool waits for a server to be ready
+# LSPInstallTimeout = "120s"   # extended wait while a server is being installed
+#
+# A few presets are opt-in and stay off until you declare them here, because
+# they need project configuration or compete with a general-purpose server:
+# eslint-language-server, biome, sql-language-server and deno. Declaring the
+# section is enough to enable them, e.g. an empty [LSP.biome].
 [LSP]
 
 # Override a preset, or add your own server. Set Autostart = true to start a
 # server eagerly at boot instead of waiting for a matching file. Empty fields
-# (Command/Args/Languages) are inherited from the preset of the same name.
+# (Command/Args/Languages/Filenames) are inherited from the preset of the same
+# name. Filenames match by base name, for files whose extension says nothing
+# (Dockerfile, CMakeLists.txt, Gemfile).
 # [LSP.gopls]
 # Disabled  = false
 # Autostart = false
 # Command   = 'gopls'
 # Args      = []
 # Languages = ['.go']
+# Filenames = []
 
 # =============================================================================
 # Agents — configure the model for each role.

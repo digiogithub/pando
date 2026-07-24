@@ -169,6 +169,9 @@ StorePath = './.pando/mesnada'
 LogDir = './.pando/mesnada/logs'
 EnginesDir = ''
 MaxParallel = 5
+MaxPerEngine = 0
+ClaimTTL = ''
+DispatchInterval = ''
 DefaultEngine = 'pando'
 DefaultModel = ''
 DefaultMCPConfig = '.github/mcp-config.json'
@@ -207,6 +210,15 @@ WarmInstanceIdleTimeout = '0'
 WarmQueueDepth = 0
 AllowExternalWarmTargets = true
 AcceptDelegations = true
+ConclusionGateDisabled = false
+BreakerDisabled = false
+MaxTaskRetries = 0
+RateLimitCooldown = ''
+RecentSuccessWindow = ''
+EventLogDisabled = false
+EventLogMaxEntries = 0
+BlackboardMaxEntriesPerSwarm = 0
+BlackboardTTL = ''
 
 [Shell]
 Path = ''

@@ -856,7 +856,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		// ── Integrations ──
 		withGroup(buildMCPServersSection(cfg), "Integrations"),
 		withGroup(buildMCPGatewaySection(cfg), "Integrations"),
-		withGroup(buildLSPSection(cfg), "Integrations"),
+		withGroup(buildLSPSection(app, cfg), "Integrations"),
 
 		// ── Tools ──
 		withGroup(buildContainerRuntimeSection(cfg), "Tools"),
@@ -1478,42 +1478,88 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 	}
 }
 
-// lspBinaryStatus reports whether an LSP server command is available on PATH so
-// the settings page can show installed / not-installed status. On-demand
-// activation only starts a server when its binary is found here.
-func lspBinaryStatus(command string) string {
-	if strings.TrimSpace(command) == "" {
-		return "no command"
+// lspServerStatusLine summarizes a server for the settings page: whether its
+// binary is available and, when it is not, what the user can do about it.
+func lspServerStatusLine(st pandoapp.LSPServerStatus) string {
+	label := st.AvailabilityLabel
+	switch {
+	case st.Installing:
+		label += " · installing"
+	case st.RunState == "ready":
+		label += " · running"
+	case st.RunState == "starting":
+		label += " · starting"
+	case st.RunState == "error":
+		label += " · failed to start"
 	}
-	if _, err := exec.LookPath(command); err != nil {
-		return "not installed"
+	if st.Availability != "installed" {
+		if st.Hint != "" {
+			label += " · run: " + st.Hint
+		} else if st.Reason != "" {
+			label += " · " + st.Reason
+		}
 	}
-	return "installed"
+	return label
 }
 
-func buildLSPSection(cfg *config.Config) settings.Section {
-	names := make([]string, 0, len(cfg.LSP))
-	for name := range cfg.LSP {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+func buildLSPSection(app *pandoapp.App, cfg *config.Config) settings.Section {
+	statuses := app.LSPServerStatuses()
+	activation := cfg.LSPActivationSettings()
 
-	fields := make([]settings.Field, 0, len(names)*6)
+	fields := make([]settings.Field, 0, len(statuses)*3+6)
 
-	// A short note on the on-demand activation mode at the top of the section.
-	activation := "on-demand (servers start when matching files are edited)"
-	if !cfg.LSPAutoActivate {
-		activation = "off (servers start only if marked Autostart)"
-	}
-	fields = append(fields, settings.Field{
-		Label:    "Auto-activation",
-		Key:      "lsp.info.autoactivate",
-		Value:    activation,
-		Type:     settings.FieldText,
-		ReadOnly: true,
-	})
+	fields = append(fields,
+		settings.Field{
+			Label: "On-demand activation",
+			Key:   "lsp.settings.autoactivate",
+			Value: boolString(activation.AutoActivate),
+			Type:  settings.FieldToggle,
+			Hint:  "start language servers when Pando touches a matching file",
+		},
+		settings.Field{
+			Label:   "Activate on",
+			Key:     "lsp.settings.activateon",
+			Value:   activation.ActivateOn,
+			Type:    settings.FieldSelect,
+			Options: []string{config.LSPActivateEdits, config.LSPActivateReads, config.LSPActivateWorkspace, config.LSPActivateOff},
+			Hint:    "edits: files Pando edits · reads: also files it opens · workspace: also external changes",
+		},
+		settings.Field{
+			Label: "Auto-install servers",
+			Key:   "lsp.settings.autoinstall",
+			Value: boolString(activation.AutoInstall),
+			Type:  settings.FieldToggle,
+			Hint:  "install npm-distributed servers with bun or npm when they are missing",
+		},
+		settings.Field{
+			Label:   "Package manager",
+			Key:     "lsp.settings.runner",
+			Value:   activation.Runner,
+			Type:    settings.FieldSelect,
+			Options: []string{config.LSPRunnerAuto, config.LSPRunnerBun, config.LSPRunnerNpm, config.LSPRunnerOff},
+			Hint:    "which runtime installs and runs npm servers · off: only binaries already on PATH",
+		},
+		settings.Field{
+			Label: "Startup timeout",
+			Key:   "lsp.settings.startuptimeout",
+			Value: activation.StartupTimeout,
+			Type:  settings.FieldText,
+			Hint:  "how long the diagnostics tool waits for a server to become ready",
+		},
+		settings.Field{
+			Label: "Install timeout",
+			Key:   "lsp.settings.installtimeout",
+			Value: activation.InstallTimeout,
+			Type:  settings.FieldText,
+			Hint:  "extended wait while a server is being installed",
+		},
+	)
 
-	for _, name := range names {
+	for _, st := range statuses {
+		if !st.Configured {
+			continue
+		}
+		name := st.Name
 		lspCfg := cfg.LSP[name]
 		fields = append(fields,
 			settings.Field{
@@ -1531,7 +1577,7 @@ func buildLSPSection(cfg *config.Config) settings.Section {
 			settings.Field{
 				Label:    fmt.Sprintf("%s Status", name),
 				Key:      fmt.Sprintf("lsp.%s.status", name),
-				Value:    lspBinaryStatus(lspCfg.Command),
+				Value:    lspServerStatusLine(st),
 				Type:     settings.FieldText,
 				ReadOnly: true,
 			},
@@ -1548,6 +1594,13 @@ func buildLSPSection(cfg *config.Config) settings.Section {
 				Type:  settings.FieldText,
 			},
 			settings.Field{
+				Label: fmt.Sprintf("%s Filenames", name),
+				Key:   fmt.Sprintf("lsp.%s.filenames", name),
+				Value: strings.Join(lspCfg.Filenames, " "),
+				Type:  settings.FieldText,
+				Hint:  "base names handled regardless of extension (Dockerfile, CMakeLists.txt)",
+			},
+			settings.Field{
 				Label: fmt.Sprintf("%s Enabled", name),
 				Key:   fmt.Sprintf("lsp.%s.enabled", name),
 				Value: boolString(!lspCfg.Disabled),
@@ -1562,17 +1615,21 @@ func buildLSPSection(cfg *config.Config) settings.Section {
 		)
 	}
 
-	// Show available presets that are not yet configured, annotated with their
-	// install status so the user can see which catalogue servers are ready.
-	presets := config.LSPPresets()
-	for _, preset := range presets {
-		if _, alreadyConfigured := cfg.LSP[preset.Name]; alreadyConfigured {
+	// Catalogue servers the user has not configured, annotated with their
+	// availability so it is obvious which ones are ready, which ones Pando can
+	// install itself, and which ones need a manual install.
+	for _, st := range statuses {
+		if st.Configured {
 			continue
 		}
+		value := fmt.Sprintf("%s [%s]", st.Description, lspServerStatusLine(st))
+		if st.OptIn {
+			value += " · opt-in: add it to enable"
+		}
 		fields = append(fields, settings.Field{
-			Label: fmt.Sprintf("Add %s", preset.Name),
-			Key:   fmt.Sprintf("action:lsp_preset:%s", preset.Name),
-			Value: fmt.Sprintf("%s [%s]", preset.Description, lspBinaryStatus(preset.Config.Command)),
+			Label: fmt.Sprintf("Add %s", st.Name),
+			Key:   fmt.Sprintf("action:lsp_preset:%s", st.Name),
+			Value: value,
 			Type:  settings.FieldAction,
 		})
 	}
@@ -3600,6 +3657,10 @@ func saveLSP(field settings.Field) error {
 		return fmt.Errorf("invalid LSP setting key %q", field.Key)
 	}
 
+	if parts[1] == "settings" {
+		return saveLSPActivation(parts[2], field.Value)
+	}
+
 	language := parts[1]
 	lspCfg, ok := config.Get().LSP[language]
 	if !ok {
@@ -3631,6 +3692,8 @@ func saveLSP(field settings.Field) error {
 		lspCfg.Args = strings.Fields(field.Value)
 	case "languages":
 		lspCfg.Languages = strings.Fields(field.Value)
+	case "filenames":
+		lspCfg.Filenames = strings.Fields(field.Value)
 	case "enabled":
 		enabled, err := parseBoolValue(field.Value)
 		if err != nil {
@@ -3651,6 +3714,43 @@ func saveLSP(field settings.Field) error {
 	}
 
 	return config.UpdateLSP(language, lspCfg)
+}
+
+// saveLSPActivation persists one of the global on-demand knobs, leaving the
+// others as they are.
+func saveLSPActivation(key, value string) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	settingsValue := cfg.LSPActivationSettings()
+
+	switch key {
+	case "autoactivate":
+		enabled, err := parseBoolValue(value)
+		if err != nil {
+			return fmt.Errorf("invalid on-demand activation value: %w", err)
+		}
+		settingsValue.AutoActivate = enabled
+	case "activateon":
+		settingsValue.ActivateOn = strings.TrimSpace(value)
+	case "autoinstall":
+		enabled, err := parseBoolValue(value)
+		if err != nil {
+			return fmt.Errorf("invalid auto-install value: %w", err)
+		}
+		settingsValue.AutoInstall = enabled
+	case "runner":
+		settingsValue.Runner = strings.TrimSpace(value)
+	case "startuptimeout":
+		settingsValue.StartupTimeout = strings.TrimSpace(value)
+	case "installtimeout":
+		settingsValue.InstallTimeout = strings.TrimSpace(value)
+	default:
+		return fmt.Errorf("unsupported LSP setting %q", key)
+	}
+
+	return config.UpdateLSPActivation(settingsValue)
 }
 
 func saveMesnada(field settings.Field) error {

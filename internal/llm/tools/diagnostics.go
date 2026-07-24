@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/lsp/protocol"
 )
@@ -73,23 +74,25 @@ func (b *diagnosticsTool) Run(ctx context.Context, call ToolCall) (ToolResponse,
 	var lsps map[string]*lsp.Client
 
 	// When a specific file is requested, lazily activate its language server and
-	// restrict to clients that handle it; otherwise report across all clients.
+	// wait until it is ready, then restrict the report to clients that handle
+	// the file. Reporting through unrelated servers would answer a question the
+	// caller did not ask.
 	if params.FilePath != "" {
-		b.lspProvider.EnsureForFile(ctx, params.FilePath)
+		b.lspProvider.EnsureForFileTrigger(ctx, params.FilePath, config.LSPTriggerExplicit)
 		lsps = b.lspProvider.WaitForFile(ctx, params.FilePath)
 		if len(lsps) == 0 {
-			// No server specifically handles this file; fall back to all clients.
-			lsps = b.lspProvider.Clients()
-		}
-		if len(lsps) == 0 {
-			return NewTextErrorResponse("no LSP clients available for this file (the matching server may be missing, still starting, or LSP auto-activation may be disabled)"), nil
+			reason := b.lspProvider.UnavailableReason(params.FilePath)
+			if reason == "" {
+				reason = "no language server is available for this file"
+			}
+			return NewTextErrorResponse(reason), nil
 		}
 		notifyLspOpenFile(ctx, params.FilePath, lsps)
 		waitForLspDiagnostics(ctx, params.FilePath, lsps)
 	} else {
 		lsps = b.lspProvider.Clients()
 		if len(lsps) == 0 {
-			return NewTextErrorResponse("no LSP clients available (open or reference a file first so Pando can auto-start the matching language server)"), nil
+			return NewTextErrorResponse("no language server is running; pass file_path so Pando can start the server that handles that file"), nil
 		}
 	}
 

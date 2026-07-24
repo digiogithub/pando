@@ -133,12 +133,14 @@ type App struct {
 	openlitShutdown func(context.Context) error
 
 	clientsMutex sync.RWMutex
-	// lspSpawning tracks LSP servers whose lazy startup is in flight, and
-	// lspBroken tracks servers that failed to start or whose binary was not
-	// found on PATH. Both are guarded by clientsMutex and prevent re-attempting
-	// the same server on every file edit. See EnsureLSPForFile.
-	lspSpawning map[string]struct{}
-	lspBroken   map[string]struct{}
+	// lspSpawning tracks LSP servers whose lazy startup is in flight,
+	// lspInstalling those whose binary is being downloaded, and lspUnavailable
+	// those that cannot run, with the reason why. All three are guarded by
+	// clientsMutex and prevent re-attempting the same server on every file
+	// edit. See EnsureLSPForFileTrigger.
+	lspSpawning    map[string]struct{}
+	lspInstalling  map[string]struct{}
+	lspUnavailable map[string]lspUnavailableEntry
 
 	watcherCancelFuncs []context.CancelFunc
 	cancelFuncsMutex   sync.Mutex
@@ -211,17 +213,18 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	projects := project.NewService(rawQ)
 
 	app := &App{
-		Sessions:    sessions,
-		Messages:    messages,
-		History:     files,
-		Permissions: permission.NewPermissionService(),
-		UserInput:   userinput.NewService(),
-		DBQuerier:   q,
-		rwConn:      conn,
-		Projects:    projects,
-		LSPClients:  make(map[string]*lsp.Client),
-		lspSpawning: make(map[string]struct{}),
-		lspBroken:   make(map[string]struct{}),
+		Sessions:       sessions,
+		Messages:       messages,
+		History:        files,
+		Permissions:    permission.NewPermissionService(),
+		UserInput:      userinput.NewService(),
+		DBQuerier:      q,
+		rwConn:         conn,
+		Projects:       projects,
+		LSPClients:     make(map[string]*lsp.Client),
+		lspSpawning:    make(map[string]struct{}),
+		lspInstalling:  make(map[string]struct{}),
+		lspUnavailable: make(map[string]lspUnavailableEntry),
 	}
 
 	// Initialize project manager (Phase 2).

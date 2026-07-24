@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"os/exec"
 	"path/filepath"
@@ -36,36 +37,45 @@ func (app *App) initLSPClients(ctx context.Context) {
 	}
 
 	if cfg.LSPAutoActivate {
-		logging.Info("LSP on-demand activation enabled; servers start when matching files are edited")
+		logging.Info("LSP on-demand activation enabled", "activateOn", cfg.LSPActivationMode())
+	}
+	if cfg.LSPWorkspaceWatchEnabled() {
 		// A workspace-wide bootstrap watcher catches edits made outside Pando
 		// (external editors, build steps) and lazily activates their servers.
+		// Opt-in: it can start servers for files Pando never touches.
 		app.startLSPBootstrapWatcher(ctx)
 	}
 	logging.Info("LSP clients initialization started in background")
 }
 
-// EnsureLSPForFile lazily activates the language server(s) that handle the given
-// file's extension. It is safe to call frequently (e.g. on every edit/open):
-// servers already running, currently spawning, or known-broken are skipped, and
-// a server whose binary is not on PATH is recorded so it is not retried. When
-// several preset servers handle the same extension only the first installed one
-// is started, while servers the user configured explicitly are always honored.
+// EnsureLSPForFile lazily activates the language server(s) for a file Pando is
+// about to modify. It is shorthand for EnsureLSPForFileTrigger with the edit
+// trigger.
 func (app *App) EnsureLSPForFile(ctx context.Context, path string) {
+	app.EnsureLSPForFileTrigger(ctx, path, config.LSPTriggerEdit)
+}
+
+// EnsureLSPForFileTrigger lazily activates the language server(s) that handle
+// the given file's extension, provided the configuration allows the trigger to
+// start a server (see Config.LSPActivateOn).
+//
+// It is safe to call frequently (e.g. on every edit): servers already running,
+// currently spawning, or known-broken are skipped, and a server whose binary is
+// not on PATH is recorded so it is not retried. When several preset servers
+// handle the same extension only the first installed one is started, while
+// servers the user configured explicitly are always honored.
+func (app *App) EnsureLSPForFileTrigger(ctx context.Context, path string, trigger config.LSPTrigger) {
 	cfg := config.Get()
-	if cfg == nil || !cfg.LSPAutoActivate {
+	if !cfg.LSPActivationAllows(trigger) {
 		return
 	}
-	ext := strings.ToLower(filepath.Ext(path))
-	if ext == "" {
-		return
-	}
-	candidates := cfg.LSPServersForExt(ext)
+	candidates := cfg.LSPServersForFile(path)
 	if len(candidates) == 0 {
 		return
 	}
 
-	// Treat the extension as already served if a running client handles it.
-	presetSatisfied := app.hasRunningClientForExt(ext)
+	// Treat the file type as already served if a running client handles it.
+	presetSatisfied := app.hasRunningClientForFile(path)
 	for _, s := range candidates {
 		isUserConfigured := s.Source != "preset"
 		if !isUserConfigured && presetSatisfied {
@@ -79,9 +89,14 @@ func (app *App) EnsureLSPForFile(ctx context.Context, path string) {
 }
 
 // ensureLSPServer starts the given server unless it is already running,
-// currently spawning, or known-broken. It returns true when the server is now
-// running or being started (i.e. it satisfies its language), and false when the
-// binary is missing or the server is marked broken.
+// currently spawning, or known to be unavailable. It returns true when the
+// server is now running or being started (i.e. it satisfies its language), and
+// false when the binary is missing and Pando cannot provision it.
+//
+// When the binary is missing but the server ships as an npm package, the
+// install runs in the background and the server starts as soon as it finishes;
+// the server counts as satisfied in the meantime so no second preset is started
+// for the same language.
 func (app *App) ensureLSPServer(ctx context.Context, s config.ResolvedLSPServer) bool {
 	if s.Disabled || s.Command == "" {
 		return false
@@ -96,46 +111,85 @@ func (app *App) ensureLSPServer(ctx context.Context, s config.ResolvedLSPServer)
 		app.clientsMutex.Unlock()
 		return true
 	}
-	if _, ok := app.lspBroken[s.Name]; ok {
+	if _, ok := app.lspUnavailable[s.Name]; ok {
 		app.clientsMutex.Unlock()
 		return false
 	}
-	// Only commit to a spawn if the binary is actually available.
-	if _, err := lspLookPath(s.Command); err != nil {
-		app.lspBroken[s.Name] = struct{}{}
-		app.clientsMutex.Unlock()
-		logging.Debug("LSP server binary not found on PATH; skipping", "name", s.Name, "command", s.Command)
+	app.clientsMutex.Unlock()
+
+	// Resolving is cheap (a PATH lookup plus two stat calls) and must not run
+	// under the lock: the install it may schedule can take minutes.
+	res := app.resolveLSPCommand(s)
+	if res.Availability == LSPManual {
+		app.markLSPUnavailable(s.Name, res)
+		logging.Debug("LSP server unavailable; skipping", "name", s.Name, "reason", res.Reason)
 		return false
+	}
+
+	app.clientsMutex.Lock()
+	// Another goroutine may have won the race while we were resolving.
+	if _, ok := app.lspSpawning[s.Name]; ok {
+		app.clientsMutex.Unlock()
+		return true
+	}
+	if _, ok := app.LSPClients[s.Name]; ok {
+		app.clientsMutex.Unlock()
+		return true
 	}
 	app.lspSpawning[s.Name] = struct{}{}
 	app.clientsMutex.Unlock()
 
-	logging.Info("Activating LSP server on demand", "name", s.Name, "command", s.Command)
+	logging.Info("Activating LSP server on demand",
+		"name", s.Name, "command", s.Command, "installing", res.Availability == LSPInstallable)
 
 	go func() {
-		app.createAndStartLSPClient(ctx, s.Name, s.Command, s.Args...)
+		start := res
+		if res.Availability == LSPInstallable {
+			installed, err := app.installLSPServer(ctx, s)
+			if err != nil {
+				app.clientsMutex.Lock()
+				delete(app.lspSpawning, s.Name)
+				app.clientsMutex.Unlock()
+				app.markLSPUnavailable(s.Name, installed)
+				return
+			}
+			start = installed
+		}
+
+		app.createAndStartLSPClient(ctx, s.Name, start.Command, start.Args...)
 
 		app.clientsMutex.Lock()
 		delete(app.lspSpawning, s.Name)
 		// createAndStartLSPClient only registers the client on success; if it is
-		// absent here the start failed, so mark it broken to avoid retrying it on
-		// every keystroke.
-		if _, ok := app.LSPClients[s.Name]; !ok {
-			app.lspBroken[s.Name] = struct{}{}
-		}
+		// absent here the start failed, so record it to avoid retrying on every
+		// keystroke.
+		_, started := app.LSPClients[s.Name]
 		app.clientsMutex.Unlock()
+		if !started {
+			app.markLSPUnavailable(s.Name, LSPResolution{
+				Availability: LSPManual,
+				Reason:       fmt.Sprintf("%s failed to start (see the Pando log for the server's output)", s.Name),
+			})
+		}
 	}()
 	return true
 }
 
-// hasRunningClientForExt reports whether a running LSP client already handles
-// the given file extension.
-func (app *App) hasRunningClientForExt(ext string) bool {
-	probe := "probe" + ext
+// markLSPUnavailable records why a server cannot be used, so the diagnostics
+// tool can tell the user instead of reporting a bare absence.
+func (app *App) markLSPUnavailable(name string, res LSPResolution) {
+	app.clientsMutex.Lock()
+	defer app.clientsMutex.Unlock()
+	app.lspUnavailable[name] = lspUnavailableEntry{Availability: res.Availability, Reason: res.Reason}
+}
+
+// hasRunningClientForFile reports whether a running LSP client already handles
+// the given file.
+func (app *App) hasRunningClientForFile(path string) bool {
 	app.clientsMutex.RLock()
 	defer app.clientsMutex.RUnlock()
 	for _, c := range app.LSPClients {
-		if c.HandlesFile(probe) {
+		if c.HandlesFile(path) {
 			return true
 		}
 	}
@@ -148,34 +202,70 @@ func (app *App) EnsureForFile(ctx context.Context, path string) {
 	app.EnsureLSPForFile(ctx, path)
 }
 
-// WaitForFile waits briefly for a lazily spawned LSP client to become available
-// for the requested file. It returns early when startup settles (running or
-// broken) so tool calls don't race the background activation goroutine.
+// EnsureForFileTrigger implements the trigger-aware half of the LSP provider,
+// letting each tool declare why it wants a language server.
+func (app *App) EnsureForFileTrigger(ctx context.Context, path string, trigger config.LSPTrigger) {
+	app.EnsureLSPForFileTrigger(ctx, path, trigger)
+}
+
+// WaitForFile waits for a lazily spawned LSP client to become *ready* for the
+// requested file, so a tool call never queries a server that is still starting
+// up. It returns early when startup settles (ready or unavailable).
+//
+// The wait is bounded by LSPStartupTimeout, extended once to LSPInstallTimeout
+// when the matching server is still being downloaded — a first-run install is
+// an order of magnitude slower than a cold start.
 func (app *App) WaitForFile(ctx context.Context, path string) map[string]*lsp.Client {
-	if clients := app.ClientsForFile(path); len(clients) > 0 {
+	if clients := app.readyClientsForFile(path); len(clients) > 0 {
 		return clients
 	}
 
-	deadline := time.NewTimer(3 * time.Second)
+	cfg := config.Get()
+	budget := cfg.LSPStartupWait()
+	start := time.Now()
+
+	deadline := time.NewTimer(budget)
 	defer deadline.Stop()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 
+	extended := false
 	for {
 		select {
 		case <-ctx.Done():
-			return app.ClientsForFile(path)
+			return app.readyClientsForFile(path)
 		case <-deadline.C:
-			return app.ClientsForFile(path)
+			return app.readyClientsForFile(path)
 		case <-ticker.C:
-			if clients := app.ClientsForFile(path); len(clients) > 0 {
+			if clients := app.readyClientsForFile(path); len(clients) > 0 {
 				return clients
 			}
+			if !extended && app.lspInstallInProgress(path) {
+				extended = true
+				if remaining := cfg.LSPInstallWait() - time.Since(start); remaining > 0 {
+					deadline.Reset(remaining)
+				}
+			}
 			if app.lspStartupSettled(path) {
-				return app.ClientsForFile(path)
+				return app.readyClientsForFile(path)
 			}
 		}
 	}
+}
+
+// readyClientsForFile returns the clients that handle the file and have
+// completed initialization. A server that failed to initialize is excluded: it
+// answers no requests, and reporting its absence lets the caller explain why.
+func (app *App) readyClientsForFile(path string) map[string]*lsp.Client {
+	app.clientsMutex.RLock()
+	defer app.clientsMutex.RUnlock()
+	out := make(map[string]*lsp.Client)
+	for name, c := range app.LSPClients {
+		if c.HandlesFile(path) && c.GetServerState() == lsp.StateReady {
+			out[name] = c
+		}
+	}
+	return out
 }
 
 func (app *App) lspStartupSettled(path string) bool {
@@ -184,7 +274,9 @@ func (app *App) lspStartupSettled(path string) bool {
 		return true
 	}
 	cfg := config.Get()
-	if cfg == nil || !cfg.LSPAutoActivate {
+	// A caller waiting for a file always did so through an explicit request, so
+	// only a fully disabled activation makes the wait pointless.
+	if !cfg.LSPActivationAllows(config.LSPTriggerExplicit) {
 		return true
 	}
 	candidates := cfg.LSPServersForExt(ext)
@@ -204,7 +296,7 @@ func (app *App) lspStartupSettled(path string) bool {
 		if _, ok := app.lspSpawning[s.Name]; ok {
 			return false
 		}
-		if _, ok := app.lspBroken[s.Name]; ok {
+		if _, ok := app.lspUnavailable[s.Name]; ok {
 			continue
 		}
 		return false
@@ -257,6 +349,7 @@ func (app *App) createAndStartLSPClient(ctx context.Context, name string, comman
 	for _, rs := range config.Get().LSPRegistry() {
 		if rs.Name == name {
 			lspClient.Languages = rs.Languages
+			lspClient.Filenames = rs.Filenames
 			break
 		}
 	}
@@ -341,6 +434,15 @@ func (app *App) restartLSPClient(ctx context.Context, name string) {
 		return
 	}
 
+	// Resolve the executable again: a server Pando installed itself lives in the
+	// staging directory, not on PATH, so the raw configured command would fail.
+	res := app.resolveLSPCommand(server)
+	if res.Availability != LSPAvailable {
+		logging.Error("Cannot restart client, its binary is no longer available", "client", name, "reason", res.Reason)
+		app.markLSPUnavailable(name, res)
+		return
+	}
+
 	// Clean up the old client if it exists
 	app.clientsMutex.Lock()
 	oldClient, exists := app.LSPClients[name]
@@ -357,6 +459,6 @@ func (app *App) restartLSPClient(ctx context.Context, name string) {
 	}
 
 	// Create a new client using the shared function
-	app.createAndStartLSPClient(ctx, name, server.Command, server.Args...)
+	app.createAndStartLSPClient(ctx, name, res.Command, res.Args...)
 	logging.Info("Successfully restarted LSP client", "client", name)
 }
