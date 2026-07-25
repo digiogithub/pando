@@ -90,6 +90,11 @@ type appModel struct {
 	status              core.StatusCmp
 	app                 *app.App
 	selectedSession     session.Session
+	// autoApproveOverride remembers a user-driven auto-approve ("auto mode")
+	// choice made before a session exists (sessions are created lazily on the
+	// first message). nil = no override, fall back to the config default. When
+	// the session is finally created it is seeded from this value.
+	autoApproveOverride *bool
 	originalWindowTitle string
 	chatPage            *page.ChatPageModel
 	fileTree            filetree.Component
@@ -200,6 +205,10 @@ func (a appModel) Init() tea.Cmd {
 	cmds = append(cmds, cmd)
 	cmd = a.status.Init()
 	cmds = append(cmds, cmd)
+	// Seed the status-bar auto-approve chip from the config default so "auto
+	// mode" is visible before any session exists (sessions are created lazily on
+	// the first message).
+	cmds = append(cmds, util.CmdHandler(core.AutoApproveMsg{Enabled: a.autoApproveDesired()}))
 	cmd = a.alert.Init()
 	cmds = append(cmds, cmd)
 	cmd = a.quit.Init()
@@ -1046,7 +1055,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 
 		case key.Matches(msg, a.keys.Global.ToggleAutoApprove):
-			if a.currentPage == page.ChatPage && a.selectedSession.ID != "" &&
+			if a.currentPage == page.ChatPage &&
 				!a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog &&
 				!(a.tabBar != nil && a.tabBar.IsActiveEditable()) {
 				return a, a.toggleAutoApprove()
@@ -1549,19 +1558,27 @@ func (a *appModel) viewCronJobTasks(name string) tea.Cmd {
 	}
 }
 
-// toggleAutoApprove flips the per-session "auto mode" for the selected session,
-// updating the permission service and the status-bar indicator.
+// toggleAutoApprove flips the "auto mode" for the selected session, updating the
+// permission service and the status-bar indicator. Sessions are created lazily on
+// the first message, so when none exists yet the choice is remembered in
+// autoApproveOverride and applied by applyDefaultAutoApprove once the session is
+// created — the status chip and feedback still update immediately.
 func (a *appModel) toggleAutoApprove() tea.Cmd {
 	sessionID := a.selectedSession.ID
-	if sessionID == "" {
-		return nil
-	}
-	enabled := !a.app.Permissions.IsAutoApproveSession(sessionID)
-	if enabled {
-		a.app.Permissions.AutoApproveSession(sessionID)
+	var enabled bool
+	if sessionID != "" {
+		enabled = !a.app.Permissions.IsAutoApproveSession(sessionID)
+		if enabled {
+			a.app.Permissions.AutoApproveSession(sessionID)
+		} else {
+			a.app.Permissions.RemoveAutoApproveSession(sessionID)
+		}
 	} else {
-		a.app.Permissions.RemoveAutoApproveSession(sessionID)
+		enabled = !a.autoApproveDesired()
 	}
+	// Remember the intent so it carries into freshly created sessions this run.
+	a.autoApproveOverride = &enabled
+
 	status := "off"
 	if enabled {
 		status = "on"
@@ -1572,18 +1589,30 @@ func (a *appModel) toggleAutoApprove() tea.Cmd {
 	)
 }
 
-// applyDefaultAutoApprove seeds a session's auto-approve state from the
-// Permissions.AutoApproveTools config default and syncs the status-bar indicator.
+// autoApproveDesired reports the auto-approve state that should apply, preferring
+// a user override (set via toggleAutoApprove) over the config default.
+func (a *appModel) autoApproveDesired() bool {
+	if a.autoApproveOverride != nil {
+		return *a.autoApproveOverride
+	}
+	if cfg := config.Get(); cfg != nil {
+		return cfg.Permissions.AutoApproveTools
+	}
+	return false
+}
+
+// applyDefaultAutoApprove seeds a session's auto-approve state from the user
+// override (if any) or the Permissions.AutoApproveTools config default, and syncs
+// the status-bar indicator.
 func (a *appModel) applyDefaultAutoApprove(sessionID string) tea.Cmd {
 	if sessionID == "" {
 		return nil
 	}
-	enabled := a.app.Permissions.IsAutoApproveSession(sessionID)
-	if !enabled {
-		if cfg := config.Get(); cfg != nil && cfg.Permissions.AutoApproveTools {
-			a.app.Permissions.AutoApproveSession(sessionID)
-			enabled = true
-		}
+	enabled := a.autoApproveDesired()
+	if enabled {
+		a.app.Permissions.AutoApproveSession(sessionID)
+	} else {
+		a.app.Permissions.RemoveAutoApproveSession(sessionID)
 	}
 	return util.CmdHandler(core.AutoApproveMsg{SessionID: sessionID, Enabled: enabled})
 }

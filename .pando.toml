@@ -1,6 +1,11 @@
 WorkingDir = ''
 AgeKeys = ''
-LSPAutoActivate = false
+LSPAutoActivate = true
+LSPActivateOn = 'edits'
+LSPAutoInstall = true
+LSPRunner = 'auto'
+LSPStartupTimeout = '20s'
+LSPInstallTimeout = '2m0s'
 Debug = false
 LogFile = ''
 DebugLSP = false
