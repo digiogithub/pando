@@ -343,6 +343,42 @@ export interface MCPToolInfo {
   description: string
 }
 
+export type MCPAuthType = 'none' | 'bearer' | 'basic' | 'header' | 'oauth'
+
+export interface MCPServerOAuthConfig {
+  clientID?: string
+  // clientSecret is write-only: send a new value to set/replace it, omit or
+  // leave empty to keep the one already stored. Never populated on reads.
+  clientSecret?: string
+  hasClientSecret: boolean
+  scopes?: string[]
+  redirectURI?: string
+  callbackPort?: number
+  authServerMetadataURL?: string
+}
+
+export interface MCPServerAuthConfig {
+  type: MCPAuthType
+  // token/password are write-only: send a new value to set/replace it, omit
+  // or leave empty to keep the one already stored. Never populated on reads.
+  token?: string
+  hasToken: boolean
+  username?: string
+  password?: string
+  hasPassword: boolean
+  headerName?: string
+  oauth?: MCPServerOAuthConfig
+}
+
+export interface MCPServerAuthStatus {
+  type: string
+  hasTokens: boolean
+  expired: boolean
+  expiresAt?: string
+  clientID?: string
+  dynamicallyRegistered: boolean
+}
+
 export interface MCPServerConfig {
   name: string
   command: string
@@ -353,6 +389,8 @@ export interface MCPServerConfig {
   headers: Record<string, string>
   running?: boolean
   tools?: MCPToolInfo[]
+  auth?: MCPServerAuthConfig
+  authStatus?: MCPServerAuthStatus
 }
 
 export interface MCPGatewayConfig {

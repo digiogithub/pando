@@ -1,17 +1,28 @@
 import { create } from 'zustand'
 import api from '@/services/api'
-import type { MCPServerConfig } from '@/types'
+import type { MCPServerAuthStatus, MCPServerConfig } from '@/types'
 import { useToastStore } from './toastStore'
+
+interface MCPLoginStartResponse {
+  authorizationUrl: string
+  message: string
+}
 
 interface MCPServersStore {
   servers: MCPServerConfig[]
   loading: boolean
   saving: boolean
   error: string | null
+  // authBusy tracks which server currently has a login/logout request in
+  // flight, so the UI can disable just that row's buttons.
+  authBusy: string | null
   fetchServers: () => Promise<void>
   saveServer: (server: MCPServerConfig) => Promise<void>
   deleteServer: (name: string) => Promise<void>
   reloadServer: (name: string) => Promise<void>
+  loginServer: (name: string) => Promise<void>
+  logoutServer: (name: string) => Promise<void>
+  fetchAuthStatus: (name: string) => Promise<MCPServerAuthStatus | null>
 }
 
 export const useMCPServersStore = create<MCPServersStore>((set, get) => ({
@@ -19,6 +30,7 @@ export const useMCPServersStore = create<MCPServersStore>((set, get) => ({
   loading: false,
   saving: false,
   error: null,
+  authBusy: null,
 
   fetchServers: async () => {
     set({ loading: true, error: null })
@@ -64,5 +76,51 @@ export const useMCPServersStore = create<MCPServersStore>((set, get) => ({
 
   reloadServer: async (name: string) => {
     await api.post(`/api/v1/config/mcp-servers/${encodeURIComponent(name)}/reload`, {})
+  },
+
+  loginServer: async (name: string) => {
+    set({ authBusy: name, error: null })
+    try {
+      const data = await api.post<MCPLoginStartResponse>(`/api/v1/mcp/${encodeURIComponent(name)}/login`, {})
+      if (data.authorizationUrl) {
+        window.open(data.authorizationUrl, '_blank', 'noopener,noreferrer')
+      }
+      useToastStore.getState().addToast(data.message || `Authorization started for "${name}" — complete it in the opened tab.`, 'info')
+      // The OAuth flow completes in the background once the user finishes
+      // the browser round trip; give it a moment before polling status so
+      // the first refresh isn't a guaranteed "still pending".
+      window.setTimeout(() => {
+        get().fetchServers()
+      }, 5000)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to start MCP login'
+      set({ error: msg })
+      useToastStore.getState().addToast(msg, 'error')
+    } finally {
+      set({ authBusy: null })
+    }
+  },
+
+  logoutServer: async (name: string) => {
+    set({ authBusy: name, error: null })
+    try {
+      await api.post(`/api/v1/mcp/${encodeURIComponent(name)}/logout`, {})
+      useToastStore.getState().addToast(`Logged out of MCP server "${name}"`, 'success')
+      await get().fetchServers()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to log out of MCP server'
+      set({ error: msg })
+      useToastStore.getState().addToast(msg, 'error')
+    } finally {
+      set({ authBusy: null })
+    }
+  },
+
+  fetchAuthStatus: async (name: string) => {
+    try {
+      return await api.get<MCPServerAuthStatus>(`/api/v1/mcp/${encodeURIComponent(name)}/status`)
+    } catch {
+      return null
+    }
   },
 }))

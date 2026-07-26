@@ -10,6 +10,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/mcpauth"
 	"github.com/digiogithub/pando/internal/savings"
 )
 
@@ -219,6 +220,148 @@ type MCPServerConfigItem struct {
 	Headers map[string]string `json:"headers"`
 	Running bool              `json:"running"`
 	Tools   []MCPToolInfo     `json:"tools"`
+	// Auth describes the authentication mechanism configured for this server.
+	// Secret fields (Token, Password, OAuth.ClientSecret) are write-only: GET
+	// responses never populate them, only the corresponding HasXxx booleans.
+	Auth *MCPServerAuthItem `json:"auth,omitempty"`
+	// AuthStatus is a computed, read-only snapshot of the current OAuth state
+	// (populated only for Auth.Type == "oauth"); nil for other auth types.
+	AuthStatus *MCPServerAuthStatusItem `json:"authStatus,omitempty"`
+}
+
+// MCPServerOAuthItem is the JSON representation of config.MCPOAuthConfig.
+// ClientSecret is write-only (accepted on PUT, never returned on GET); the
+// GET path instead reports HasClientSecret.
+type MCPServerOAuthItem struct {
+	ClientID              string   `json:"clientID,omitempty"`
+	ClientSecret          string   `json:"clientSecret,omitempty"` // write-only; empty means "keep existing"
+	HasClientSecret       bool     `json:"hasClientSecret"`
+	Scopes                []string `json:"scopes,omitempty"`
+	RedirectURI           string   `json:"redirectURI,omitempty"`
+	CallbackPort          int      `json:"callbackPort,omitempty"`
+	AuthServerMetadataURL string   `json:"authServerMetadataURL,omitempty"`
+}
+
+// MCPServerAuthItem is the JSON representation of config.MCPAuth. Token and
+// Password are write-only (accepted on PUT, never returned on GET); the GET
+// path instead reports HasToken/HasPassword. An empty Token/Password/
+// OAuth.ClientSecret on a PUT request means "leave the stored secret
+// unchanged", so the WebUI never needs to round-trip a decrypted value.
+type MCPServerAuthItem struct {
+	Type        string              `json:"type,omitempty"`
+	Token       string              `json:"token,omitempty"` // write-only
+	HasToken    bool                `json:"hasToken"`
+	Username    string              `json:"username,omitempty"`
+	Password    string              `json:"password,omitempty"` // write-only
+	HasPassword bool                `json:"hasPassword"`
+	HeaderName  string              `json:"headerName,omitempty"`
+	OAuth       *MCPServerOAuthItem `json:"oauth,omitempty"`
+}
+
+// MCPServerAuthStatusItem is the JSON representation of mcpauth.StatusInfo,
+// computed live from the on-disk credential store — never from the config
+// file — so it always reflects the current login state.
+type MCPServerAuthStatusItem struct {
+	Type                  string     `json:"type"`
+	HasTokens             bool       `json:"hasTokens"`
+	Expired               bool       `json:"expired"`
+	ExpiresAt             *time.Time `json:"expiresAt,omitempty"`
+	ClientID              string     `json:"clientID,omitempty"`
+	DynamicallyRegistered bool       `json:"dynamicallyRegistered"`
+}
+
+// buildMCPServerAuthItem converts server's (in-memory, plaintext) Auth block
+// into its API-safe DTO: secret values are reduced to booleans, everything
+// else passes through unchanged.
+func buildMCPServerAuthItem(server config.MCPServer) *MCPServerAuthItem {
+	if server.Auth == nil {
+		return nil
+	}
+	auth := server.Auth
+	item := &MCPServerAuthItem{
+		Type:        string(auth.Type),
+		HasToken:    strings.TrimSpace(auth.Token) != "",
+		Username:    auth.Username,
+		HasPassword: strings.TrimSpace(auth.Password) != "",
+		HeaderName:  auth.HeaderName,
+	}
+	if auth.OAuth != nil {
+		item.OAuth = &MCPServerOAuthItem{
+			ClientID:              auth.OAuth.ClientID,
+			HasClientSecret:       strings.TrimSpace(auth.OAuth.ClientSecret) != "",
+			Scopes:                auth.OAuth.Scopes,
+			RedirectURI:           auth.OAuth.RedirectURI,
+			CallbackPort:          auth.OAuth.CallbackPort,
+			AuthServerMetadataURL: auth.OAuth.AuthServerMetadataURL,
+		}
+	}
+	return item
+}
+
+// buildMCPServerAuthStatusItem converts mcpauth's StatusInfo into its API
+// DTO. Returns nil for non-OAuth servers, since there is nothing dynamic to
+// report (the static Auth block above is the complete picture).
+func buildMCPServerAuthStatusItem(info mcpauth.StatusInfo) *MCPServerAuthStatusItem {
+	if info.AuthType != string(config.MCPAuthOAuth) {
+		return nil
+	}
+	item := &MCPServerAuthStatusItem{
+		Type:                  info.AuthType,
+		HasTokens:             info.HasTokens,
+		Expired:               info.Expired,
+		ClientID:              info.ClientID,
+		DynamicallyRegistered: info.DynamicallyRegistered,
+	}
+	if !info.ExpiresAt.IsZero() {
+		expiresAt := info.ExpiresAt
+		item.ExpiresAt = &expiresAt
+	}
+	return item
+}
+
+// mergeMCPAuthRequest builds the config.MCPAuth to persist from an incoming
+// request DTO, folding in the previously-stored auth block (existing, which
+// may be nil) so that an empty Token/Password/OAuth.ClientSecret in the
+// request keeps the previously stored (possibly AGE-encrypted) value instead
+// of wiping it. A nil req clears the Auth block entirely (explicit removal).
+func mergeMCPAuthRequest(existing *config.MCPAuth, req *MCPServerAuthItem) *config.MCPAuth {
+	if req == nil {
+		return nil
+	}
+	auth := &config.MCPAuth{
+		Type:       config.MCPAuthType(req.Type),
+		Username:   req.Username,
+		HeaderName: req.HeaderName,
+	}
+	auth.Token = req.Token
+	if strings.TrimSpace(auth.Token) == "" && existing != nil {
+		auth.Token = existing.Token
+	}
+	auth.Password = req.Password
+	if strings.TrimSpace(auth.Password) == "" && existing != nil {
+		auth.Password = existing.Password
+	}
+	if req.OAuth != nil {
+		oauth := &config.MCPOAuthConfig{
+			ClientID:              req.OAuth.ClientID,
+			Scopes:                req.OAuth.Scopes,
+			RedirectURI:           req.OAuth.RedirectURI,
+			CallbackPort:          req.OAuth.CallbackPort,
+			AuthServerMetadataURL: req.OAuth.AuthServerMetadataURL,
+		}
+		oauth.ClientSecret = req.OAuth.ClientSecret
+		if strings.TrimSpace(oauth.ClientSecret) == "" && existing != nil && existing.OAuth != nil {
+			oauth.ClientSecret = existing.OAuth.ClientSecret
+		}
+		auth.OAuth = oauth
+	} else if existing != nil && existing.OAuth != nil && auth.Type == config.MCPAuthOAuth {
+		// Preserve the previously stored OAuth block when the request omits
+		// it but keeps the type as oauth (e.g. a partial update that only
+		// touches Token/Username).
+		oauth := *existing.OAuth
+		auth.OAuth = &oauth
+	}
+	return auth
 }
 
 func (s *Server) handleConfigMCPServers(w http.ResponseWriter, r *http.Request) {
@@ -268,16 +411,23 @@ func (s *Server) handleGetConfigMCPServers(w http.ResponseWriter, r *http.Reques
 		if s.app != nil && s.app.MCPGateway != nil {
 			running = s.app.MCPGateway.HasClient(name)
 		}
+		var authStatus *MCPServerAuthStatusItem
+		if srv.Auth.IsOAuth() {
+			authStatus = buildMCPServerAuthStatusItem(mcpauth.Default().Status(name, srv))
+		}
+
 		items = append(items, MCPServerConfigItem{
-			Name:    name,
-			Command: srv.Command,
-			Args:    srv.Args,
-			Env:     srv.Env,
-			Type:    srv.Type,
-			URL:     srv.URL,
-			Headers: srv.Headers,
-			Running: running,
-			Tools:   tools,
+			Name:       name,
+			Command:    srv.Command,
+			Args:       srv.Args,
+			Env:        srv.Env,
+			Type:       srv.Type,
+			URL:        srv.URL,
+			Headers:    srv.Headers,
+			Running:    running,
+			Tools:      tools,
+			Auth:       buildMCPServerAuthItem(srv),
+			AuthStatus: authStatus,
 		})
 	}
 
@@ -295,6 +445,13 @@ func (s *Server) handlePutConfigMCPServer(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	var existingAuth *config.MCPAuth
+	if cfg := config.Get(); cfg != nil {
+		if existing, ok := cfg.MCPServers[req.Name]; ok {
+			existingAuth = existing.Auth
+		}
+	}
+
 	server := config.MCPServer{
 		Command: req.Command,
 		Args:    req.Args,
@@ -302,6 +459,11 @@ func (s *Server) handlePutConfigMCPServer(w http.ResponseWriter, r *http.Request
 		Type:    req.Type,
 		URL:     req.URL,
 		Headers: req.Headers,
+		Auth:    mergeMCPAuthRequest(existingAuth, req.Auth),
+	}
+	if err := server.Auth.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid MCP auth configuration: "+err.Error())
+		return
 	}
 	if err := config.UpdateMCPServer(req.Name, server); err != nil {
 		writeError(w, http.StatusBadRequest, "failed to update MCP server: "+err.Error())

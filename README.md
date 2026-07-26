@@ -188,6 +188,32 @@ The migration is idempotent and a no-op for configurations that still set
 for projects that never used the old path. Don't start a second Pando instance while the
 first migration is running.
 
+### MCP Server Authentication
+
+`sse` and `streamable-http` MCP servers can require credentials: static bearer/basic/custom
+header, mutual TLS, or the full OAuth 2.1 flow (interactive authorization-code + PKCE with
+auto-discovery and dynamic client registration, or the non-interactive `client_credentials`
+grant for headless/CI). Stdio servers are unaffected — their credentials go in `Env`.
+
+```toml
+[MCPServers.example]
+Type = "streamable-http"
+URL  = "https://mcp.example.com/mcp"
+
+[MCPServers.example.Auth]
+Type = "oauth"   # or "bearer" | "basic" | "header" | "oauth_client_credentials"
+```
+
+```
+pando mcp list                 # every configured server: type, auth type, and status
+pando mcp login <name>         # start (or complete) authorization for one server
+pando mcp status [name]        # detailed OAuth status
+pando mcp logout <name>        # remove stored credentials for one server
+```
+
+Full reference, every auth mode with copy-pasteable examples, encryption-at-rest details,
+and troubleshooting: see [docs/mcp-authentication.md](docs/mcp-authentication.md).
+
 ### Language Servers (LSP)
 
 Pando activates language servers **on demand**: nothing starts at boot. When it

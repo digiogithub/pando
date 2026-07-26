@@ -37,6 +37,15 @@ func TestEncryptDecryptSensitiveConfigFields(t *testing.T) {
 			"demo": {
 				Env:     []string{"TOKEN=plain-token", "DEBUG=true"},
 				Headers: map[string]string{"Authorization": "Bearer abc123"},
+				Auth: &MCPAuth{
+					Type:     MCPAuthBasic,
+					Username: "alice",
+					Password: "auth-secret",
+					OAuth: &MCPOAuthConfig{
+						ClientID:     "client-id-plain",
+						ClientSecret: "oauth-client-secret",
+					},
+				},
 			},
 		},
 		InternalTools: InternalToolsConfig{
@@ -72,6 +81,25 @@ func TestEncryptDecryptSensitiveConfigFields(t *testing.T) {
 	if !strings.HasPrefix(encrypted.MCPServers["demo"].Headers["Authorization"], encryptedValuePrefix) {
 		t.Fatal("MCP header was not encrypted")
 	}
+	demoAuth := encrypted.MCPServers["demo"].Auth
+	if demoAuth == nil {
+		t.Fatal("MCP auth block was dropped by encryption")
+	}
+	if !strings.HasPrefix(demoAuth.Password, encryptedValuePrefix) {
+		t.Fatal("MCP auth password was not encrypted")
+	}
+	if demoAuth.Username != "alice" {
+		t.Fatal("MCP auth username should remain in clear")
+	}
+	if demoAuth.OAuth == nil {
+		t.Fatal("MCP auth OAuth block was dropped by encryption")
+	}
+	if !strings.HasPrefix(demoAuth.OAuth.ClientSecret, encryptedValuePrefix) {
+		t.Fatal("MCP auth OAuth client secret was not encrypted")
+	}
+	if demoAuth.OAuth.ClientID != "client-id-plain" {
+		t.Fatal("MCP auth OAuth client ID should remain in clear")
+	}
 	if !strings.HasPrefix(encrypted.Providers[models.ProviderAnthropic].APIKey, encryptedValuePrefix) {
 		t.Fatal("anthropic provider API key was not encrypted")
 	}
@@ -105,6 +133,22 @@ func TestEncryptDecryptSensitiveConfigFields(t *testing.T) {
 	}
 	if encrypted.MCPServers["demo"].Headers["Authorization"] != "Bearer abc123" {
 		t.Fatal("MCP header was not restored after decryption")
+	}
+	restoredAuth := encrypted.MCPServers["demo"].Auth
+	if restoredAuth == nil {
+		t.Fatal("MCP auth block was dropped by decryption")
+	}
+	if restoredAuth.Password != "auth-secret" {
+		t.Fatalf("MCP auth password was not restored: %q", restoredAuth.Password)
+	}
+	if restoredAuth.Username != "alice" {
+		t.Fatalf("MCP auth username changed unexpectedly: %q", restoredAuth.Username)
+	}
+	if restoredAuth.OAuth == nil || restoredAuth.OAuth.ClientSecret != "oauth-client-secret" {
+		t.Fatal("MCP auth OAuth client secret was not restored")
+	}
+	if restoredAuth.OAuth.ClientID != "client-id-plain" {
+		t.Fatalf("MCP auth OAuth client ID changed unexpectedly: %q", restoredAuth.OAuth.ClientID)
 	}
 	if encrypted.Providers[models.ProviderAnthropic].APIKey != "anthropic-secret" {
 		t.Fatal("anthropic provider API key was not restored after decryption")
@@ -235,6 +279,56 @@ func TestResolveMCPServerSecrets(t *testing.T) {
 	}
 	if server.Headers["Authorization"] != "Bearer abc123" {
 		t.Fatalf("unexpected headers: %#v", server.Headers)
+	}
+}
+
+func TestResolveMCPServerSecretsWithAuth(t *testing.T) {
+	resetAgeKeyTestState()
+	t.Cleanup(resetAgeKeyTestState)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	encryptedToken, err := encryptSecretString("secret-token")
+	if err != nil {
+		t.Fatalf("encryptSecretString(token) error = %v", err)
+	}
+	encryptedClientSecret, err := encryptSecretString("secret-oauth")
+	if err != nil {
+		t.Fatalf("encryptSecretString(oauth secret) error = %v", err)
+	}
+
+	original := MCPServer{
+		Auth: &MCPAuth{
+			Type:  MCPAuthBearer,
+			Token: encryptedToken,
+			OAuth: &MCPOAuthConfig{
+				ClientID:     "plain-client-id",
+				ClientSecret: encryptedClientSecret,
+			},
+		},
+	}
+
+	resolved, err := ResolveMCPServerSecrets(original)
+	if err != nil {
+		t.Fatalf("ResolveMCPServerSecrets() error = %v", err)
+	}
+	if resolved.Auth.Token != "secret-token" {
+		t.Fatalf("unexpected resolved auth token: %q", resolved.Auth.Token)
+	}
+	if resolved.Auth.OAuth.ClientSecret != "secret-oauth" {
+		t.Fatalf("unexpected resolved oauth client secret: %q", resolved.Auth.OAuth.ClientSecret)
+	}
+	if resolved.Auth.OAuth.ClientID != "plain-client-id" {
+		t.Fatalf("unexpected resolved oauth client id: %q", resolved.Auth.OAuth.ClientID)
+	}
+
+	// The original server's nested Auth/OAuth pointers must never be mutated.
+	if original.Auth.Token != encryptedToken {
+		t.Fatal("ResolveMCPServerSecrets mutated the original Auth.Token in place")
+	}
+	if original.Auth.OAuth.ClientSecret != encryptedClientSecret {
+		t.Fatal("ResolveMCPServerSecrets mutated the original Auth.OAuth.ClientSecret in place")
 	}
 }
 

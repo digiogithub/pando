@@ -18,6 +18,8 @@ import (
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	llmtools "github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/mcpauth"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 	pandoruntime "github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/skills/catalog"
@@ -135,6 +137,14 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if strings.HasPrefix(msg.Field.Key, "action:delete_mcp_server:") {
 			serverName := strings.TrimPrefix(msg.Field.Key, "action:delete_mcp_server:")
 			return p, p.deleteMCPServer(serverName)
+		}
+		if strings.HasPrefix(msg.Field.Key, "action:mcp_login:") {
+			serverName := strings.TrimPrefix(msg.Field.Key, "action:mcp_login:")
+			return p, p.loginMCPServer(serverName)
+		}
+		if strings.HasPrefix(msg.Field.Key, "action:mcp_logout:") {
+			serverName := strings.TrimPrefix(msg.Field.Key, "action:mcp_logout:")
+			return p, p.logoutMCPServer(serverName)
 		}
 		if strings.HasPrefix(msg.Field.Key, "action:delete_provider_account:") {
 			id := strings.TrimPrefix(msg.Field.Key, "action:delete_provider_account:")
@@ -513,6 +523,73 @@ func (p *settingsPage) deleteMCPServer(name string) tea.Cmd {
 	p.settings.SetSections(buildSections(p.app))
 	p.settings.SetSize(p.width, p.height)
 	return util.ReportInfo("MCP server deleted: " + name)
+}
+
+// loginMCPServer starts the interactive OAuth 2.1 authorization flow for an
+// MCP server configured with Auth.Type == "oauth". It mirrors
+// antigravityLoginCommand's shape: an immediate "opening browser" message via
+// tea.Batch so the user gets feedback before the (blocking) flow completes,
+// reusing mcpauth.Login for the whole authorization-code + PKCE + local
+// callback dance rather than reimplementing it here. The result is reported
+// through providerAccountActionMsg, which already knows to rebuild sections
+// (refreshing the auth status line) regardless of which settings sub-area
+// triggered it.
+func (p *settingsPage) loginMCPServer(name string) tea.Cmd {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return func() tea.Msg {
+			return providerAccountActionMsg{err: fmt.Errorf("MCP server name cannot be empty")}
+		}
+	}
+	srv, ok := config.Get().MCPServers[name]
+	if !ok {
+		return func() tea.Msg {
+			return providerAccountActionMsg{err: fmt.Errorf("MCP server %q not found", name)}
+		}
+	}
+	if !srv.Auth.IsOAuth() {
+		return func() tea.Msg {
+			return providerAccountActionMsg{err: fmt.Errorf("MCP server %q auth type is not oauth; nothing to log in to", name)}
+		}
+	}
+
+	return tea.Batch(
+		func() tea.Msg {
+			return providerAccountActionMsg{info: fmt.Sprintf("Opening browser to authorize MCP server %q... check the logs if it does not open automatically.", name)}
+		},
+		func() tea.Msg {
+			prompt := mcpauth.LoginPrompt{
+				OnAuthorizationURL: func(u string) {
+					logging.Info("MCP OAuth authorization URL", "server", name, "url", u)
+				},
+				OpenBrowser: true,
+				OnBrowserError: func(err error) {
+					logging.Warn("MCP OAuth: failed to open browser automatically", "server", name, "error", err)
+				},
+			}
+			if err := mcpauth.Default().Login(context.Background(), name, srv, prompt); err != nil {
+				return providerAccountActionMsg{err: fmt.Errorf("MCP login for %q failed: %w", name, err)}
+			}
+			return providerAccountActionMsg{info: fmt.Sprintf("Successfully authorized MCP server %q.", name)}
+		},
+	)
+}
+
+// logoutMCPServer removes stored OAuth tokens and client registration for an
+// MCP server.
+func (p *settingsPage) logoutMCPServer(name string) tea.Cmd {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return func() tea.Msg {
+			return providerAccountActionMsg{err: fmt.Errorf("MCP server name cannot be empty")}
+		}
+	}
+	return func() tea.Msg {
+		if err := mcpauth.Default().Logout(name); err != nil {
+			return providerAccountActionMsg{err: fmt.Errorf("MCP logout for %q failed: %w", name, err)}
+		}
+		return providerAccountActionMsg{info: fmt.Sprintf("Logged out of MCP server %q.", name)}
+	}
 }
 
 func (p *settingsPage) deleteProviderAccount(id string) tea.Cmd {
@@ -1470,11 +1547,172 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 				Disabled: server.Type == config.MCPStdio,
 			},
 		)
+
+		fields = append(fields, buildMCPServerAuthFields(name, server)...)
 	}
 
 	return settings.Section{
 		Title:  "MCP Servers",
 		Fields: fields,
+	}
+}
+
+// buildMCPServerAuthFields returns the auth-related settings fields for one
+// MCP server: the auth type selector, its type-specific credential fields,
+// and — for oauth servers — a read-only status line plus actionable
+// login/logout entries so a "needs login" server can be authorized without
+// leaving the TUI.
+func buildMCPServerAuthFields(name string, server config.MCPServer) []settings.Field {
+	authType := string(server.Auth.ResolvedType())
+	auth := server.Auth // may be nil; field values below guard against that
+
+	var oauth config.MCPOAuthConfig
+	if auth != nil && auth.OAuth != nil {
+		oauth = *auth.OAuth
+	}
+
+	fields := []settings.Field{
+		{
+			Label:   fmt.Sprintf("%s Auth Type", name),
+			Key:     fmt.Sprintf("mcpServers.%s.authType", name),
+			Value:   authType,
+			Type:    settings.FieldSelect,
+			Options: ensureOption([]string{string(config.MCPAuthNone), string(config.MCPAuthBearer), string(config.MCPAuthBasic), string(config.MCPAuthHeader), string(config.MCPAuthOAuth)}, authType),
+			Hint:    "none · bearer (token) · basic (user/pass) · header (custom header) · oauth (2.1 authorization code)",
+		},
+		{
+			Label:    fmt.Sprintf("%s Auth Token", name),
+			Key:      fmt.Sprintf("mcpServers.%s.authToken", name),
+			Value:    maskedSecretPlaceholder(auth != nil && auth.Token != ""),
+			Type:     settings.FieldText,
+			Disabled: authType != string(config.MCPAuthBearer) && authType != string(config.MCPAuthHeader),
+			Hint:     "bearer token / header value; leave unchanged to keep the stored secret",
+		},
+		{
+			Label:    fmt.Sprintf("%s Auth Username", name),
+			Key:      fmt.Sprintf("mcpServers.%s.authUsername", name),
+			Value:    authOrEmpty(auth, func(a config.MCPAuth) string { return a.Username }),
+			Type:     settings.FieldText,
+			Disabled: authType != string(config.MCPAuthBasic),
+		},
+		{
+			Label:    fmt.Sprintf("%s Auth Password", name),
+			Key:      fmt.Sprintf("mcpServers.%s.authPassword", name),
+			Value:    maskedSecretPlaceholder(auth != nil && auth.Password != ""),
+			Type:     settings.FieldText,
+			Disabled: authType != string(config.MCPAuthBasic),
+			Hint:     "leave unchanged to keep the stored secret",
+		},
+		{
+			Label:    fmt.Sprintf("%s Auth Header Name", name),
+			Key:      fmt.Sprintf("mcpServers.%s.authHeaderName", name),
+			Value:    authOrEmpty(auth, func(a config.MCPAuth) string { return a.HeaderName }),
+			Type:     settings.FieldText,
+			Disabled: authType != string(config.MCPAuthHeader),
+			Hint:     "defaults to Authorization when empty",
+		},
+		{
+			Label:    fmt.Sprintf("%s OAuth Client ID", name),
+			Key:      fmt.Sprintf("mcpServers.%s.authOAuthClientID", name),
+			Value:    oauth.ClientID,
+			Type:     settings.FieldText,
+			Disabled: authType != string(config.MCPAuthOAuth),
+			Hint:     "leave empty to rely on dynamic client registration (RFC 7591)",
+		},
+		{
+			Label:    fmt.Sprintf("%s OAuth Client Secret", name),
+			Key:      fmt.Sprintf("mcpServers.%s.authOAuthClientSecret", name),
+			Value:    maskedSecretPlaceholder(oauth.ClientSecret != ""),
+			Type:     settings.FieldText,
+			Disabled: authType != string(config.MCPAuthOAuth),
+			Hint:     "leave unchanged to keep the stored secret; only for confidential clients",
+		},
+		{
+			Label:    fmt.Sprintf("%s OAuth Scopes", name),
+			Key:      fmt.Sprintf("mcpServers.%s.authOAuthScopes", name),
+			Value:    strings.Join(oauth.Scopes, " "),
+			Type:     settings.FieldText,
+			Disabled: authType != string(config.MCPAuthOAuth),
+			Hint:     "space-separated OAuth scopes to request",
+		},
+		{
+			Label:    fmt.Sprintf("%s OAuth Callback Port", name),
+			Key:      fmt.Sprintf("mcpServers.%s.authOAuthCallbackPort", name),
+			Value:    strconv.Itoa(oauth.CallbackPort),
+			Type:     settings.FieldText,
+			Disabled: authType != string(config.MCPAuthOAuth),
+			Hint:     "local port for the OAuth redirect callback; 0 picks the default (19876)",
+		},
+	}
+
+	if authType != string(config.MCPAuthOAuth) {
+		return fields
+	}
+
+	info := mcpauth.Default().Status(name, server)
+	fields = append(fields, settings.Field{
+		Label:    fmt.Sprintf("%s Auth Status", name),
+		Key:      fmt.Sprintf("mcpServers.%s.authStatusInfo", name),
+		Value:    mcpAuthStatusLabel(info),
+		Type:     settings.FieldText,
+		ReadOnly: true,
+	})
+
+	loginLabel := "Authorize this MCP server (opens your browser)"
+	if info.HasTokens {
+		loginLabel = "Re-authorize this MCP server"
+	}
+	fields = append(fields, settings.Field{
+		Label:    fmt.Sprintf("%s Login", name),
+		Key:      fmt.Sprintf("action:mcp_login:%s", name),
+		Value:    loginLabel,
+		Type:     settings.FieldAction,
+		ReadOnly: true,
+	})
+
+	if info.HasTokens {
+		fields = append(fields, settings.Field{
+			Label:    fmt.Sprintf("%s Logout", name),
+			Key:      fmt.Sprintf("action:mcp_logout:%s", name),
+			Value:    "Remove stored OAuth credentials",
+			Type:     settings.FieldAction,
+			ReadOnly: true,
+		})
+	}
+
+	return fields
+}
+
+// maskedSecretPlaceholder returns a display value for a secret-backed field:
+// a masked placeholder when a value is already stored (so the settings row
+// never shows or requires re-typing the actual secret), or empty when none
+// is set yet.
+func maskedSecretPlaceholder(hasValue bool) string {
+	if hasValue {
+		return "••••••••"
+	}
+	return ""
+}
+
+// authOrEmpty reads a non-secret field off auth via get, tolerating a nil
+// receiver so callers don't need a separate nil check.
+func authOrEmpty(auth *config.MCPAuth, get func(config.MCPAuth) string) string {
+	if auth == nil {
+		return ""
+	}
+	return get(*auth)
+}
+
+// mcpAuthStatusLabel summarizes one server's OAuth status for the settings
+// page, mirroring authStatusLabel in cmd/mcp.go.
+func mcpAuthStatusLabel(info mcpauth.StatusInfo) string {
+	switch {
+	case !info.HasTokens:
+		return "needs login"
+	case info.Expired:
+		return "expired (auto-refreshes on use)"
+	default:
+		return "ok"
 	}
 }
 
@@ -3632,8 +3870,55 @@ func saveMCPServer(field settings.Field) error {
 			return fmt.Errorf("invalid headers format: %w", err)
 		}
 		server.Headers = headers
+	case "authType":
+		authType := config.MCPAuthType(strings.TrimSpace(field.Value))
+		auth := ensureMCPAuth(&server)
+		auth.Type = authType
+	case "authToken":
+		auth := ensureMCPAuth(&server)
+		if value := secretFieldValue(field.Value); value != "" {
+			auth.Token = value
+		}
+	case "authUsername":
+		auth := ensureMCPAuth(&server)
+		auth.Username = strings.TrimSpace(field.Value)
+	case "authPassword":
+		auth := ensureMCPAuth(&server)
+		if value := secretFieldValue(field.Value); value != "" {
+			auth.Password = value
+		}
+	case "authHeaderName":
+		auth := ensureMCPAuth(&server)
+		auth.HeaderName = strings.TrimSpace(field.Value)
+	case "authOAuthClientID":
+		auth := ensureMCPAuth(&server)
+		oauth := ensureMCPOAuth(auth)
+		oauth.ClientID = strings.TrimSpace(field.Value)
+	case "authOAuthClientSecret":
+		auth := ensureMCPAuth(&server)
+		oauth := ensureMCPOAuth(auth)
+		if value := secretFieldValue(field.Value); value != "" {
+			oauth.ClientSecret = value
+		}
+	case "authOAuthScopes":
+		auth := ensureMCPAuth(&server)
+		oauth := ensureMCPOAuth(auth)
+		oauth.Scopes = strings.Fields(field.Value)
+	case "authOAuthCallbackPort":
+		auth := ensureMCPAuth(&server)
+		oauth := ensureMCPOAuth(auth)
+		port, err := strconv.Atoi(strings.TrimSpace(field.Value))
+		if err != nil {
+			return fmt.Errorf("invalid OAuth callback port %q: %w", field.Value, err)
+		}
+		oauth.CallbackPort = port
 	default:
 		return fmt.Errorf("unsupported MCP server field %q", parts[2])
+	}
+	if server.Auth != nil {
+		if err := server.Auth.Validate(); err != nil {
+			return fmt.Errorf("invalid MCP auth configuration: %w", err)
+		}
 	}
 
 	if server.Type == "" {
@@ -3649,6 +3934,39 @@ func saveMCPServer(field settings.Field) error {
 	}
 
 	return config.UpdateMCPServer(serverName, server)
+}
+
+// ensureMCPAuth returns server.Auth, allocating a zero-value *config.MCPAuth
+// on first use so field-by-field edits (authType, authToken, ...) always
+// have somewhere to write regardless of which field the user touches first.
+func ensureMCPAuth(server *config.MCPServer) *config.MCPAuth {
+	if server.Auth == nil {
+		server.Auth = &config.MCPAuth{}
+	}
+	return server.Auth
+}
+
+// ensureMCPOAuth returns auth.OAuth, allocating a zero-value
+// *config.MCPOAuthConfig on first use, mirroring ensureMCPAuth.
+func ensureMCPOAuth(auth *config.MCPAuth) *config.MCPOAuthConfig {
+	if auth.OAuth == nil {
+		auth.OAuth = &config.MCPOAuthConfig{}
+	}
+	return auth.OAuth
+}
+
+// secretFieldValue interprets a raw settings-field value for a secret input:
+// empty means "unchanged", and the masked placeholder shown by
+// buildMCPServerAuthFields (maskedSecretPlaceholder) also means "unchanged"
+// so the user never has to retype a secret just to leave it untouched. Any
+// other value is the new secret to store in plaintext (encrypted at rest by
+// config.UpdateMCPServer's persistence path).
+func secretFieldValue(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || strings.HasPrefix(trimmed, "••••") {
+		return ""
+	}
+	return trimmed
 }
 
 func saveLSP(field settings.Field) error {

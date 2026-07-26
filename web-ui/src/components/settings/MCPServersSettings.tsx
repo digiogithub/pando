@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useMCPServersStore } from '@/stores/mcpServersStore'
-import type { MCPServerConfig, MCPToolInfo, MCPType } from '@/types'
+import type { MCPAuthType, MCPServerAuthConfig, MCPServerConfig, MCPToolInfo, MCPType } from '@/types'
 import KeyValueEditor, { envToKV, kvToEnv, type KVPair } from '@/components/shared/KeyValueEditor'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
-import { TextInput, Textarea } from '@/components/shared/FormInput'
+import { MaskedInput, SelectInput, TextInput, Textarea } from '@/components/shared/FormInput'
 import { useToast } from '@/stores/toastStore'
 
 const MCP_TYPES: { value: MCPType; label: string }[] = [
@@ -11,6 +11,56 @@ const MCP_TYPES: { value: MCPType; label: string }[] = [
   { value: 'sse', label: 'SSE' },
   { value: 'streamable-http', label: 'Streamable HTTP' },
 ]
+
+const MCP_AUTH_TYPES: { value: MCPAuthType; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'bearer', label: 'Bearer token' },
+  { value: 'basic', label: 'Basic (username/password)' },
+  { value: 'header', label: 'Custom header' },
+  { value: 'oauth', label: 'OAuth 2.1 (authorization code)' },
+]
+
+function emptyAuthForm(): MCPServerAuthConfig {
+  return { type: 'none', hasToken: false, hasPassword: false }
+}
+
+/**
+ * AuthStatusBadge renders the OAuth login state for one server (only
+ * meaningful when authType === 'oauth'): ok / expired / needs login.
+ */
+function AuthStatusBadge({ authType, hasTokens, expired }: { authType: MCPAuthType; hasTokens: boolean; expired: boolean }) {
+  if (authType !== 'oauth') {
+    return <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>—</span>
+  }
+  let label = 'needs login'
+  let bg = 'var(--secondary)'
+  let fg = 'var(--fg)'
+  if (hasTokens && expired) {
+    label = 'expired'
+    bg = 'var(--warning, #b58900)'
+    fg = 'white'
+  } else if (hasTokens) {
+    label = 'ok'
+    bg = 'var(--success)'
+    fg = 'white'
+  }
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '0.125rem 0.5rem',
+        borderRadius: 9999,
+        fontSize: 11,
+        fontWeight: 600,
+        background: bg,
+        color: fg,
+      }}
+    >
+      {label}
+    </span>
+  )
+}
 
 const sectionTitle: React.CSSProperties = {
   fontSize: 18,
@@ -53,6 +103,7 @@ interface ModalFormState {
   type: MCPType
   url: string
   enabled: boolean
+  auth: MCPServerAuthConfig
 }
 
 function parseCommandLineArgs(input: string): string[] {
@@ -148,6 +199,7 @@ function emptyForm(): ModalFormState {
     type: 'stdio',
     url: '',
     enabled: true,
+    auth: emptyAuthForm(),
   }
 }
 
@@ -162,6 +214,7 @@ function serverToForm(s: MCPServerConfig): ModalFormState {
     type: s.type ?? 'stdio',
     url: s.url ?? '',
     enabled: true, // env has no disabled field; treat all as enabled for display
+    auth: s.auth ? { ...s.auth, oauth: s.auth.oauth ? { ...s.auth.oauth } : undefined } : emptyAuthForm(),
   }
 }
 
@@ -174,6 +227,7 @@ function formToServer(f: ModalFormState): MCPServerConfig {
     type: f.type,
     url: f.url,
     headers: Object.fromEntries(f.headerPairs.filter((pair) => pair.key.trim()).map((pair) => [pair.key.trim(), pair.value])),
+    auth: f.auth,
   }
 }
 
@@ -214,7 +268,7 @@ function ToolsOverlay({ tools, serverName, onClose }: { tools: MCPToolInfo[]; se
 }
 
 export default function MCPServersSettings() {
-  const { servers, loading, saving, fetchServers, saveServer, deleteServer, reloadServer } =
+  const { servers, loading, saving, authBusy, fetchServers, saveServer, deleteServer, reloadServer, loginServer, logoutServer } =
     useMCPServersStore()
   const toast = useToast()
 
@@ -277,6 +331,23 @@ export default function MCPServersSettings() {
     })
   }
 
+  function setAuthField<K extends keyof MCPServerAuthConfig>(key: K, value: MCPServerAuthConfig[K]) {
+    setForm((f) => ({ ...f, auth: { ...f.auth, [key]: value } }))
+  }
+
+  function setOAuthField<K extends keyof NonNullable<MCPServerAuthConfig['oauth']>>(
+    key: K,
+    value: NonNullable<MCPServerAuthConfig['oauth']>[K],
+  ) {
+    setForm((f) => ({
+      ...f,
+      auth: {
+        ...f.auth,
+        oauth: { hasClientSecret: f.auth.oauth?.hasClientSecret ?? false, ...f.auth.oauth, [key]: value },
+      },
+    }))
+  }
+
   const isRemoteServer = form.type === 'sse' || form.type === 'streamable-http'
 
   return (
@@ -315,7 +386,7 @@ export default function MCPServersSettings() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Name', 'Type', 'Command / URL', 'Tools', 'Status', 'Actions'].map((h) => (
+              {['Name', 'Type', 'Command / URL', 'Tools', 'Status', 'Auth', 'Actions'].map((h) => (
                 <th
                   key={h}
                   style={{
@@ -371,7 +442,14 @@ export default function MCPServersSettings() {
                   <ServerStatusBadge running={Boolean(s.running)} />
                 </td>
                 <td style={{ padding: '0.625rem 0.75rem' }}>
-                  <div style={{ display: 'flex', gap: '0.375rem' }}>
+                  <AuthStatusBadge
+                    authType={s.auth?.type ?? 'none'}
+                    hasTokens={Boolean(s.authStatus?.hasTokens)}
+                    expired={Boolean(s.authStatus?.expired)}
+                  />
+                </td>
+                <td style={{ padding: '0.625rem 0.75rem' }}>
+                  <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
                     <button
                       onClick={() => openEdit(s)}
                       style={actionBtn}
@@ -385,6 +463,27 @@ export default function MCPServersSettings() {
                     >
                       {reloading === s.name ? '…' : 'Reload'}
                     </button>
+                    {s.auth?.type === 'oauth' && (
+                      <>
+                        <button
+                          onClick={() => loginServer(s.name)}
+                          disabled={authBusy === s.name}
+                          title="Opens the authorization URL in a new tab"
+                          style={{ ...actionBtn, opacity: authBusy === s.name ? 0.6 : 1 }}
+                        >
+                          {authBusy === s.name ? '…' : s.authStatus?.hasTokens ? 'Re-authorize' : 'Login'}
+                        </button>
+                        {s.authStatus?.hasTokens && (
+                          <button
+                            onClick={() => logoutServer(s.name)}
+                            disabled={authBusy === s.name}
+                            style={{ ...actionBtn, opacity: authBusy === s.name ? 0.6 : 1 }}
+                          >
+                            Logout
+                          </button>
+                        )}
+                      </>
+                    )}
                     <button
                       onClick={() => setConfirmDelete(s.name)}
                       style={{ ...actionBtn, color: 'var(--error)', borderColor: 'var(--error)' }}
@@ -485,6 +584,89 @@ export default function MCPServersSettings() {
                   keyPlaceholder="Header-Name"
                   valuePlaceholder="Header value"
                 />
+              )}
+
+              {isRemoteServer && (
+                <>
+                  <div style={dividerStyle} />
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--fg)' }}>Authentication</div>
+
+                  <SelectInput
+                    label="Auth Type"
+                    options={MCP_AUTH_TYPES}
+                    value={form.auth.type}
+                    onChange={(e) => setAuthField('type', e.target.value as MCPAuthType)}
+                  />
+
+                  {(form.auth.type === 'bearer' || form.auth.type === 'header') && (
+                    <MaskedInput
+                      label={form.auth.type === 'header' ? 'Header Value' : 'Bearer Token'}
+                      placeholder={form.auth.hasToken ? 'Leave blank to keep the stored token' : 'Enter a token'}
+                      value={form.auth.token ?? ''}
+                      onChange={(e) => setAuthField('token', e.target.value)}
+                    />
+                  )}
+
+                  {form.auth.type === 'header' && (
+                    <TextInput
+                      label="Header Name"
+                      placeholder="Authorization"
+                      value={form.auth.headerName ?? ''}
+                      onChange={(e) => setAuthField('headerName', e.target.value)}
+                    />
+                  )}
+
+                  {form.auth.type === 'basic' && (
+                    <>
+                      <TextInput
+                        label="Username"
+                        value={form.auth.username ?? ''}
+                        onChange={(e) => setAuthField('username', e.target.value)}
+                      />
+                      <MaskedInput
+                        label="Password"
+                        placeholder={form.auth.hasPassword ? 'Leave blank to keep the stored password' : 'Enter a password'}
+                        value={form.auth.password ?? ''}
+                        onChange={(e) => setAuthField('password', e.target.value)}
+                      />
+                    </>
+                  )}
+
+                  {form.auth.type === 'oauth' && (
+                    <>
+                      <div style={{ fontSize: 12, color: 'var(--fg-muted)', lineHeight: 1.5 }}>
+                        OAuth 2.1 authorization-code flow with PKCE. Leave Client ID empty to rely on dynamic
+                        client registration (RFC 7591) if the server supports it. Save this server first, then
+                        use the Login button in the table to authorize it.
+                      </div>
+                      <TextInput
+                        label="Client ID"
+                        placeholder="(optional — dynamic registration if empty)"
+                        value={form.auth.oauth?.clientID ?? ''}
+                        onChange={(e) => setOAuthField('clientID', e.target.value)}
+                      />
+                      <MaskedInput
+                        label="Client Secret"
+                        placeholder={form.auth.oauth?.hasClientSecret ? 'Leave blank to keep the stored secret' : 'Only for confidential clients'}
+                        value={form.auth.oauth?.clientSecret ?? ''}
+                        onChange={(e) => setOAuthField('clientSecret', e.target.value)}
+                      />
+                      <TextInput
+                        label="Scopes"
+                        placeholder="scope1 scope2"
+                        value={(form.auth.oauth?.scopes ?? []).join(' ')}
+                        onChange={(e) => setOAuthField('scopes', e.target.value.split(/\s+/).filter(Boolean))}
+                      />
+                      <TextInput
+                        label="Callback Port"
+                        type="number"
+                        placeholder="19876"
+                        value={form.auth.oauth?.callbackPort ? String(form.auth.oauth.callbackPort) : ''}
+                        onChange={(e) => setOAuthField('callbackPort', e.target.value ? Number(e.target.value) : undefined)}
+                      />
+                    </>
+                  )}
+                </>
               )}
             </div>
 

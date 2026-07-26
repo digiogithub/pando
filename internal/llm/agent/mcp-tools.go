@@ -11,6 +11,7 @@ import (
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/luaengine"
+	"github.com/digiogithub/pando/internal/mcpauth"
 	"github.com/digiogithub/pando/internal/mcpclient"
 	"github.com/digiogithub/pando/internal/mcpgateway"
 	"github.com/digiogithub/pando/internal/notify"
@@ -55,6 +56,10 @@ func mcpOperationError(serverName, toolName, operation string, err error, timeou
 		msg := mcpclient.BuildTimeoutError(serverName, operation, timeout).Error()
 		mcpclient.PublishError(serverName, msg)
 		return tools.NewTextErrorResponse(msg)
+	}
+	if scopeErr, ok := mcpauth.IsInsufficientScope(err); ok {
+		mcpclient.PublishWarn(serverName, scopeErr.Error())
+		return tools.NewTextErrorResponse(scopeErr.Error())
 	}
 	msg := mcpclient.BuildCallError(serverName, toolName, operation, err).Error()
 	mcpclient.PublishError(serverName, msg)
@@ -171,6 +176,11 @@ func (b *mcpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolRes
 
 	c, cerr := mcpclient.New(clientCtx, b.mcpName, b.mcpConfig)
 	if cerr != nil {
+		if mcpclient.IsAuthorizationRequired(cerr) {
+			msg := fmt.Sprintf("MCP server %q requires authorization. Run: pando mcp login %s", b.mcpName, b.mcpName)
+			mcpclient.PublishWarn(b.mcpName, msg)
+			return tools.NewTextErrorResponse(msg), nil
+		}
 		return mcpToolErrorResponse(b.mcpName, cerr.Error()), nil
 	}
 	response, err = runTool(ctx, c, b.mcpName, timeout, b.tool.Name, params.Input)
@@ -212,7 +222,13 @@ func getTools(ctx context.Context, name string, m config.MCPServer, permissions 
 	initCancel()
 	if err != nil {
 		logging.Error("error initializing mcp client", "server", name, "error", err)
-		mcpclient.PublishWarn(name, mcpclient.BuildCallError(name, "", "initialize during discovery", err).Error())
+		if scopeErr, ok := mcpauth.IsInsufficientScope(err); ok {
+			mcpclient.PublishWarn(name, scopeErr.Error())
+		} else if mcpclient.IsAuthorizationRequired(err) {
+			mcpclient.PublishWarn(name, fmt.Sprintf("MCP server %q requires authorization. Run: pando mcp login %s", name, name))
+		} else {
+			mcpclient.PublishWarn(name, mcpclient.BuildCallError(name, "", "initialize during discovery", err).Error())
+		}
 		return stdioTools
 	}
 	toolsRequest := mcp.ListToolsRequest{}
@@ -221,7 +237,11 @@ func getTools(ctx context.Context, name string, m config.MCPServer, permissions 
 	listCancel()
 	if err != nil {
 		logging.Error("error listing tools", "server", name, "error", err)
-		mcpclient.PublishWarn(name, mcpclient.BuildCallError(name, "", "list tools during discovery", err).Error())
+		if scopeErr, ok := mcpauth.IsInsufficientScope(err); ok {
+			mcpclient.PublishWarn(name, scopeErr.Error())
+		} else {
+			mcpclient.PublishWarn(name, mcpclient.BuildCallError(name, "", "list tools during discovery", err).Error())
+		}
 		return stdioTools
 	}
 	logging.Debug("MCP server tools listed", "serverName", name, "toolCount", len(tools.Tools))
@@ -244,7 +264,11 @@ func GetMcpTools(ctx context.Context, permissions permission.Service) []tools.Ba
 		if err != nil {
 			clientCancel()
 			logging.Error("error creating mcp client", "server", name, "error", err)
-			mcpclient.PublishWarn(name, fmt.Sprintf("Failed to connect MCP server %q: %v", name, err))
+			if mcpclient.IsAuthorizationRequired(err) {
+				mcpclient.PublishWarn(name, fmt.Sprintf("MCP server %q requires authorization. Run: pando mcp login %s", name, name))
+			} else {
+				mcpclient.PublishWarn(name, fmt.Sprintf("Failed to connect MCP server %q: %v", name, err))
+			}
 			continue
 		}
 

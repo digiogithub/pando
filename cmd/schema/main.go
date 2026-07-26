@@ -290,6 +290,89 @@ func generateSchema() map[string]any {
 						"type": "string",
 					},
 				},
+				"auth": map[string]any{
+					"type":        "object",
+					"description": "Authentication for SSE and streamable-http type MCP servers. Ignored by stdio servers, which take credentials from Env instead. See docs/mcp-authentication.md.",
+					"properties": map[string]any{
+						"type": map[string]any{
+							"type":        "string",
+							"description": "Authentication mechanism. \"none\" (default) sends no credentials. \"bearer\" sends 'Authorization: Bearer <Token>'. \"basic\" sends HTTP Basic auth using Username/Password. \"header\" sends Token as the raw value of a custom header named HeaderName. \"oauth\" drives the interactive OAuth 2.1 authorization-code + PKCE flow (pando mcp login). \"oauth_client_credentials\" mints a token non-interactively via the OAuth 2.1 client_credentials grant, for headless/CI use.",
+							"enum":        []string{"none", "bearer", "basic", "header", "oauth", "oauth_client_credentials"},
+							"default":     "none",
+						},
+						"token": map[string]any{
+							"type":        "string",
+							"description": "Bearer token or custom-header value. Required for type=bearer and type=header. Encrypted at rest with AGE.",
+						},
+						"username": map[string]any{
+							"type":        "string",
+							"description": "Username for type=basic.",
+						},
+						"password": map[string]any{
+							"type":        "string",
+							"description": "Password for type=basic. Encrypted at rest with AGE.",
+						},
+						"headerName": map[string]any{
+							"type":        "string",
+							"description": "Header name to use for type=header. Defaults to \"Authorization\" when empty.",
+						},
+						"oauth": map[string]any{
+							"type":        "object",
+							"description": "OAuth 2.1 client parameters, used by type=oauth and type=oauth_client_credentials.",
+							"properties": map[string]any{
+								"clientID": map[string]any{
+									"type":        "string",
+									"description": "Pre-registered OAuth client ID. Leave empty to let Pando perform RFC 7591 dynamic client registration (type=oauth only).",
+								},
+								"clientSecret": map[string]any{
+									"type":        "string",
+									"description": "Pre-registered OAuth client secret, when the authorization server issues one. Encrypted at rest with AGE.",
+								},
+								"scopes": map[string]any{
+									"type":        "array",
+									"description": "OAuth scopes to request.",
+									"items": map[string]any{
+										"type": "string",
+									},
+								},
+								"redirectURI": map[string]any{
+									"type":        "string",
+									"description": "Custom redirect URI for the interactive flow (type=oauth only). Must point at a loopback host (127.0.0.1/localhost). Defaults to http://127.0.0.1:<callbackPort>/mcp/oauth/callback.",
+								},
+								"callbackPort": map[string]any{
+									"type":        "integer",
+									"description": "Local port for the interactive OAuth callback server (type=oauth only). Defaults to 19876.",
+									"default":     19876,
+								},
+								"authServerMetadataURL": map[string]any{
+									"type":        "string",
+									"description": "Override the authorization server metadata (RFC 8414 / OIDC discovery) URL instead of auto-discovering it from the MCP server's protected-resource metadata (RFC 9728).",
+								},
+							},
+						},
+						"clientCert": map[string]any{
+							"type":        "string",
+							"description": "Path to a PEM client certificate for mutual TLS. Requires clientKey. Supports ~ and $VAR expansion.",
+						},
+						"clientKey": map[string]any{
+							"type":        "string",
+							"description": "Path to the PEM private key matching clientCert. Requires clientCert. Supports ~ and $VAR expansion.",
+						},
+						"clientKeyPassword": map[string]any{
+							"type":        "string",
+							"description": "Passphrase for an encrypted clientKey, if any. Encrypted at rest with AGE.",
+						},
+						"caCert": map[string]any{
+							"type":        "string",
+							"description": "Path to a PEM CA certificate bundle to trust for this server, in addition to the system trust store. Supports ~ and $VAR expansion.",
+						},
+						"skipTLSVerify": map[string]any{
+							"type":        "boolean",
+							"description": "Disable TLS certificate validation entirely. Insecure: only use for local development/testing against a known-trusted server.",
+							"default":     false,
+						},
+					},
+				},
 			},
 		},
 	}

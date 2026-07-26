@@ -46,6 +46,10 @@ type MCPServer struct {
 	URL     string            `json:"url" toml:"URL" yaml:"url"`
 	Headers map[string]string `json:"headers" toml:"Headers" yaml:"headers"`
 	Timeout string            `json:"timeout,omitempty" toml:"Timeout" yaml:"timeout"`
+	// Auth declares static (phase 1) or OAuth (phase 2) authentication for this
+	// MCP server. Nil means no authentication beyond whatever is already baked
+	// into Headers/Env/Args, preserving pre-existing behavior. See mcp_auth.go.
+	Auth *MCPAuth `json:"auth,omitempty" toml:"Auth" yaml:"auth"`
 }
 
 type AgentName string
@@ -4209,6 +4213,7 @@ func UpdateMCPServer(name string, server MCPServer) error {
 		URL:     server.URL,
 		Headers: cloneStringMap(server.Headers),
 		Timeout: server.Timeout,
+		Auth:    cloneMCPAuth(server.Auth),
 	}
 	if newServer.Type == "" {
 		newServer.Type = MCPStdio

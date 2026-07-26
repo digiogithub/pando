@@ -177,6 +177,32 @@ func TransformSecretString(value string) (string, error) {
 	return encryptSecretString(value)
 }
 
+// EncryptSecretString is a thin exported wrapper around encryptSecretString
+// for packages outside internal/config (e.g. internal/mcpauth) that need to
+// encrypt a single value at rest using the same AGE key management and
+// "age1:"-prefixed envelope .pando.toml secrets use, without duplicating any
+// key-handling logic. An empty value or one already carrying the
+// encryptedValuePrefix is returned unchanged (idempotent).
+func EncryptSecretString(value string) (string, error) {
+	return encryptSecretString(value)
+}
+
+// DecryptSecretString is a thin exported wrapper around decryptSecretString
+// for packages outside internal/config. A value without the "age1:" prefix
+// is returned unchanged, so callers can pass plaintext (e.g. from a
+// pre-encryption legacy file) through safely.
+func DecryptSecretString(value string) (string, error) {
+	return decryptSecretString(value)
+}
+
+// IsEncryptedSecretString reports whether value carries the "age1:" envelope
+// prefix this package uses for encrypted-at-rest values, without attempting
+// to decrypt it. Useful for callers that want to distinguish "already
+// encrypted" from "plaintext" without triggering key loading/generation.
+func IsEncryptedSecretString(value string) bool {
+	return strings.HasPrefix(value, encryptedValuePrefix)
+}
+
 func ResolveMCPServerSecrets(server MCPServer) (MCPServer, error) {
 	resolved := server
 	var err error
@@ -226,6 +252,38 @@ func ResolveMCPServerSecrets(server MCPServer) (MCPServer, error) {
 			}
 		}
 	}
+	if server.Auth != nil {
+		auth := *server.Auth
+		auth.Token, err = decryptSecretString(server.Auth.Token)
+		if err != nil {
+			return MCPServer{}, fmt.Errorf("decrypt MCP auth token: %w", err)
+		}
+		auth.Username, err = decryptSecretString(server.Auth.Username)
+		if err != nil {
+			return MCPServer{}, fmt.Errorf("decrypt MCP auth username: %w", err)
+		}
+		auth.Password, err = decryptSecretString(server.Auth.Password)
+		if err != nil {
+			return MCPServer{}, fmt.Errorf("decrypt MCP auth password: %w", err)
+		}
+		auth.ClientKeyPassword, err = decryptSecretString(server.Auth.ClientKeyPassword)
+		if err != nil {
+			return MCPServer{}, fmt.Errorf("decrypt MCP auth client key password: %w", err)
+		}
+		if server.Auth.OAuth != nil {
+			oauth := *server.Auth.OAuth
+			oauth.ClientID, err = decryptSecretString(server.Auth.OAuth.ClientID)
+			if err != nil {
+				return MCPServer{}, fmt.Errorf("decrypt MCP auth oauth client id: %w", err)
+			}
+			oauth.ClientSecret, err = decryptSecretString(server.Auth.OAuth.ClientSecret)
+			if err != nil {
+				return MCPServer{}, fmt.Errorf("decrypt MCP auth oauth client secret: %w", err)
+			}
+			auth.OAuth = &oauth
+		}
+		resolved.Auth = &auth
+	}
 	return resolved, nil
 }
 
@@ -261,6 +319,37 @@ func encryptSensitiveConfigFields(in *Config) (*Config, error) {
 				}
 				cloned.Headers[key] = encrypted
 			}
+		}
+		if server.Auth != nil {
+			auth := *server.Auth
+			encToken, err := encryptSecretString(server.Auth.Token)
+			if err != nil {
+				return nil, fmt.Errorf("encrypt MCP auth token for %s: %w", name, err)
+			}
+			auth.Token = encToken
+			encPassword, err := encryptSecretString(server.Auth.Password)
+			if err != nil {
+				return nil, fmt.Errorf("encrypt MCP auth password for %s: %w", name, err)
+			}
+			auth.Password = encPassword
+			encClientKeyPassword, err := encryptSecretString(server.Auth.ClientKeyPassword)
+			if err != nil {
+				return nil, fmt.Errorf("encrypt MCP auth client key password for %s: %w", name, err)
+			}
+			auth.ClientKeyPassword = encClientKeyPassword
+			// Username, HeaderName, and the TLS file paths / SkipTLSVerify
+			// flag are not secrets and are kept in clear.
+			if server.Auth.OAuth != nil {
+				oauth := *server.Auth.OAuth
+				encSecret, err := encryptSecretString(server.Auth.OAuth.ClientSecret)
+				if err != nil {
+					return nil, fmt.Errorf("encrypt MCP auth oauth client secret for %s: %w", name, err)
+				}
+				oauth.ClientSecret = encSecret
+				// ClientID is not a secret and is kept in clear.
+				auth.OAuth = &oauth
+			}
+			cloned.Auth = &auth
 		}
 		out.MCPServers[name] = cloned
 	}
