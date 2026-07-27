@@ -35,7 +35,9 @@ func BuildTLSConfig(srv config.MCPServer) (*tls.Config, error) {
 		return nil, nil
 	}
 	if strings.TrimSpace(auth.ClientCert) == "" && strings.TrimSpace(auth.ClientKey) == "" &&
-		strings.TrimSpace(auth.CACert) == "" && !auth.SkipTLSVerify {
+		strings.TrimSpace(auth.CACert) == "" && !auth.SkipTLSVerify &&
+		strings.TrimSpace(auth.TLSServerName) == "" &&
+		strings.TrimSpace(auth.MinTLSVersion) == "" && strings.TrimSpace(auth.MaxTLSVersion) == "" {
 		return nil, nil
 	}
 
@@ -56,11 +58,37 @@ func BuildTLSConfig(srv config.MCPServer) (*tls.Config, error) {
 	}
 
 	if strings.TrimSpace(auth.CACert) != "" {
-		pool, err := loadCACertPool(expandPath(auth.CACert))
+		pool, err := loadCACertPool(expandPath(auth.CACert), auth.CACertExclusive)
 		if err != nil {
 			return nil, fmt.Errorf("mcpauth: load MCP CA certificate: %w", err)
 		}
 		cfg.RootCAs = pool
+	}
+
+	if name := strings.TrimSpace(auth.TLSServerName); name != "" {
+		// Corporate deployments routinely reach an MCP gateway through an IP
+		// address, an internal alias or a tunnel whose hostname does not match
+		// the certificate; overriding the SNI/verification name keeps full
+		// certificate validation instead of forcing SkipTLSVerify.
+		cfg.ServerName = name
+	}
+
+	if v := strings.TrimSpace(auth.MinTLSVersion); v != "" {
+		parsed, err := parseTLSVersion(v)
+		if err != nil {
+			return nil, fmt.Errorf("mcpauth: MinTLSVersion: %w", err)
+		}
+		cfg.MinVersion = parsed
+	}
+	if v := strings.TrimSpace(auth.MaxTLSVersion); v != "" {
+		parsed, err := parseTLSVersion(v)
+		if err != nil {
+			return nil, fmt.Errorf("mcpauth: MaxTLSVersion: %w", err)
+		}
+		cfg.MaxVersion = parsed
+	}
+	if cfg.MinVersion != 0 && cfg.MaxVersion != 0 && cfg.MinVersion > cfg.MaxVersion {
+		return nil, fmt.Errorf("mcpauth: MinTLSVersion (%s) is higher than MaxTLSVersion (%s)", auth.MinTLSVersion, auth.MaxTLSVersion)
 	}
 
 	if auth.SkipTLSVerify {
@@ -157,7 +185,11 @@ func decryptPEMKey(keyPEM []byte, password string) ([]byte, error) {
 			}
 			out = append(out, pem.EncodeToMemory(&pem.Block{Type: block.Type, Bytes: der})...)
 		case block.Type == "ENCRYPTED PRIVATE KEY":
-			return nil, fmt.Errorf("client key is a PKCS#8 encrypted private key (PBES2), which Go's standard library cannot decrypt; decrypt it out-of-band first (e.g. `openssl pkcs8 -in key.pem -out key-decrypted.pem`) and point ClientKey at the decrypted file, or remove ClientKeyPassword if the key is not actually encrypted")
+			der, decErr := decryptPKCS8PrivateKey(block.Bytes, password)
+			if decErr != nil {
+				return nil, fmt.Errorf("decrypt PKCS#8 client key with ClientKeyPassword: %w", decErr)
+			}
+			out = append(out, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})...)
 		default:
 			// Not actually encrypted (no DEK-Info header, not a PKCS#8
 			// "ENCRYPTED PRIVATE KEY" block) even though ClientKeyPassword
@@ -172,16 +204,58 @@ func decryptPEMKey(keyPEM []byte, password string) ([]byte, error) {
 	return out, nil
 }
 
-func loadCACertPool(path string) (*x509.CertPool, error) {
+// loadCACertPool builds the root pool used to verify the MCP server.
+//
+// By default the configured CA is ADDED to the host's system roots, because
+// the common enterprise case is an internal CA fronting one MCP gateway while
+// every other TLS dependency (the authorization server, an SSO domain, a CDN)
+// still chains to public roots. Setting exclusive pins verification to the
+// configured CA alone — stricter, and what to use when the server must never
+// be accepted under any publicly-trusted chain.
+func loadCACertPool(path string, exclusive bool) (*x509.CertPool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read CA certificate %q: %w", path, err)
 	}
-	pool := x509.NewCertPool()
+
+	var pool *x509.CertPool
+	if exclusive {
+		pool = x509.NewCertPool()
+	} else {
+		pool, err = x509.SystemCertPool()
+		if err != nil || pool == nil {
+			// Windows historically, and any host with an unreadable trust
+			// store, land here: fall back to a CA-only pool rather than
+			// failing the connection outright, and say so.
+			logging.Warn("mcpauth: could not load the system certificate pool, trusting only the configured CACert", "error", err)
+			pool = x509.NewCertPool()
+		}
+	}
+
 	if !pool.AppendCertsFromPEM(data) {
 		return nil, fmt.Errorf("no valid certificates found in CA certificate file %q", path)
 	}
 	return pool, nil
+}
+
+// parseTLSVersion maps a human-written TLS version ("1.2", "TLS1.3",
+// "tls1.2") to its crypto/tls constant. Only 1.2 and 1.3 are accepted: 1.0
+// and 1.1 are deprecated (RFC 8996) and Go's client no longer negotiates them
+// by default, so silently accepting them would promise something that does
+// not work.
+func parseTLSVersion(v string) (uint16, error) {
+	normalized := strings.ToLower(strings.TrimSpace(v))
+	normalized = strings.TrimPrefix(normalized, "tls")
+	normalized = strings.TrimPrefix(normalized, "v")
+	normalized = strings.TrimSpace(normalized)
+	switch normalized {
+	case "1.2", "12":
+		return tls.VersionTLS12, nil
+	case "1.3", "13":
+		return tls.VersionTLS13, nil
+	default:
+		return 0, fmt.Errorf("unsupported TLS version %q (supported: \"1.2\", \"1.3\")", v)
+	}
 }
 
 // TransportForTLS returns an *http.Transport configured with tlsCfg, cloned

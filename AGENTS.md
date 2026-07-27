@@ -38,6 +38,7 @@ Parallelize tasks when possible, but always ensure that you are not losing conte
 - **Verified commands**:
   - Agent/API targeted tests: `go test ./internal/llm/agent ./internal/api`
 - **Documentation**: Update documentation as needed, especially if you are adding new features or making significant changes. Use always the kb tools (`kb_add_document`) to save any extensive or structured information about the project, the changes you are making, and the reasons behind those changes; reserve `remember` for short key-identified facts.
+- **Versioning**: This repository use `jj vcs` that is not always git compatible, normally you can see detached from HEAD, is normal using jj vcs, use the skill for working with this repo.
 
 ### External Research
 

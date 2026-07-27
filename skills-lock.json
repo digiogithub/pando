@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "using-jj": {
+      "source": "trevors/dot-claude",
+      "sourceType": "github",
+      "skillPath": "skills/using-jj/SKILL.md",
+      "computedHash": "f4f02bc8351da219f07cef928e3159e0ba178683c57d957b88ad99c8a1417eef"
+    }
+  }
+}

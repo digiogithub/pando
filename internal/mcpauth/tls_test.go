@@ -324,17 +324,20 @@ func TestBuildTLSConfig_EncryptedClientKeyWrongPassword(t *testing.T) {
 	}
 }
 
-func TestBuildTLSConfig_PKCS8EncryptedKeyGivesActionableError(t *testing.T) {
+// TestBuildTLSConfig_MalformedPKCS8EncryptedKeyGivesActionableError covers a
+// key labelled "ENCRYPTED PRIVATE KEY" whose payload is not a valid
+// EncryptedPrivateKeyInfo. Well-formed PBES2 keys are decrypted (see
+// pkcs8_test.go); this asserts the malformed case still fails with an error
+// that names the format instead of a bare ASN.1 complaint.
+func TestBuildTLSConfig_MalformedPKCS8EncryptedKeyGivesActionableError(t *testing.T) {
 	dir := t.TempDir()
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("generate RSA key: %v", err)
 	}
-	// x509.MarshalPKCS8PrivateKey has no built-in encryption support in the
-	// standard library; simulate the shape of an "ENCRYPTED PRIVATE KEY"
-	// PKCS#8 block (as produced by `openssl pkcs8 -topk8`) directly, since
-	// that block type alone is enough to exercise BuildTLSConfig's error
-	// path without needing a real PBES2 implementation.
+	// An unencrypted PKCS#8 body wrapped in an "ENCRYPTED PRIVATE KEY" block:
+	// the block type promises an EncryptedPrivateKeyInfo that the payload does
+	// not contain.
 	pkcs8DER, err := x509.MarshalPKCS8PrivateKey(priv)
 	if err != nil {
 		t.Fatalf("marshal pkcs8: %v", err)
@@ -373,7 +376,7 @@ func TestBuildTLSConfig_PKCS8EncryptedKeyGivesActionableError(t *testing.T) {
 	}
 	_, err = BuildTLSConfig(srv)
 	if err == nil {
-		t.Fatal("expected an actionable error for a PKCS#8 encrypted key")
+		t.Fatal("expected an actionable error for a malformed PKCS#8 encrypted key")
 	}
 	if !strings.Contains(err.Error(), "PKCS#8") {
 		t.Fatalf("expected error to mention PKCS#8, got: %v", err)

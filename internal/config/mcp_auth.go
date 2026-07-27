@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -76,6 +77,23 @@ type MCPAuth struct {
 	ClientKey         string `json:"clientKey,omitempty" toml:"ClientKey" yaml:"clientKey"`
 	ClientKeyPassword string `json:"clientKeyPassword,omitempty" toml:"ClientKeyPassword" yaml:"clientKeyPassword"`
 	CACert            string `json:"caCert,omitempty" toml:"CACert" yaml:"caCert"`
+	// CACertExclusive makes CACert the ONLY trusted root for this server.
+	// By default the configured CA is added to the host's system roots, since
+	// an internal CA usually fronts just the MCP gateway while the
+	// authorization server and other hops still chain to public roots. Set
+	// this to pin the server to the private CA instead.
+	CACertExclusive bool `json:"caCertExclusive,omitempty" toml:"CACertExclusive" yaml:"caCertExclusive"`
+	// TLSServerName overrides the hostname used for SNI and certificate
+	// verification. Use it when the MCP server is reached through an IP
+	// address, an internal alias or a tunnel whose name does not match the
+	// certificate — it keeps verification on, unlike SkipTLSVerify.
+	TLSServerName string `json:"tlsServerName,omitempty" toml:"TLSServerName" yaml:"tlsServerName"`
+	// MinTLSVersion / MaxTLSVersion pin the negotiated TLS version range,
+	// written as "1.2" or "1.3" (a "TLS" prefix is tolerated). Empty means
+	// the Go defaults. MinTLSVersion enforces a corporate crypto policy;
+	// MaxTLSVersion exists for middleboxes that mishandle TLS 1.3.
+	MinTLSVersion string `json:"minTLSVersion,omitempty" toml:"MinTLSVersion" yaml:"minTLSVersion"`
+	MaxTLSVersion string `json:"maxTLSVersion,omitempty" toml:"MaxTLSVersion" yaml:"maxTLSVersion"`
 	// SkipTLSVerify disables TLS certificate validation entirely. This is
 	// insecure and should only be used against a known-trusted server during
 	// local development/testing; internal/mcpauth.BuildTLSConfig logs a
@@ -164,7 +182,43 @@ func (a *MCPAuth) validateTLS() error {
 	if (strings.TrimSpace(a.ClientCert) == "") != (strings.TrimSpace(a.ClientKey) == "") {
 		return fmt.Errorf("MCP auth: ClientCert and ClientKey must both be set or both be left empty")
 	}
+	if a.CACertExclusive && strings.TrimSpace(a.CACert) == "" {
+		return fmt.Errorf("MCP auth: CACertExclusive requires CACert to be set")
+	}
+	minV, err := parseTLSVersionName(a.MinTLSVersion)
+	if err != nil {
+		return fmt.Errorf("MCP auth: MinTLSVersion: %w", err)
+	}
+	maxV, err := parseTLSVersionName(a.MaxTLSVersion)
+	if err != nil {
+		return fmt.Errorf("MCP auth: MaxTLSVersion: %w", err)
+	}
+	if minV != 0 && maxV != 0 && minV > maxV {
+		return fmt.Errorf("MCP auth: MinTLSVersion (%s) is higher than MaxTLSVersion (%s)", a.MinTLSVersion, a.MaxTLSVersion)
+	}
 	return nil
+}
+
+// parseTLSVersionName validates a configured TLS version string, returning 0
+// for an empty value ("use the Go default"). It intentionally duplicates the
+// tiny mapping in internal/mcpauth.parseTLSVersion so that config validation
+// can reject a typo at load time without internal/config depending on
+// internal/mcpauth (the dependency runs the other way).
+func parseTLSVersionName(v string) (uint16, error) {
+	normalized := strings.ToLower(strings.TrimSpace(v))
+	if normalized == "" {
+		return 0, nil
+	}
+	normalized = strings.TrimPrefix(normalized, "tls")
+	normalized = strings.TrimPrefix(normalized, "v")
+	switch strings.TrimSpace(normalized) {
+	case "1.2", "12":
+		return tls.VersionTLS12, nil
+	case "1.3", "13":
+		return tls.VersionTLS13, nil
+	default:
+		return 0, fmt.Errorf("unsupported TLS version %q (supported: \"1.2\", \"1.3\")", v)
+	}
 }
 
 // AuthHeaders returns the merged set of HTTP headers for an already-decrypted

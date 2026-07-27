@@ -1,0 +1,82 @@
+[
+  {
+    "query": "write a revset expression to find all commits by me that aren't on trunk yet",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to absorb my fixup changes into the right commits in my stack automatically",
+    "should_trigger": true
+  },
+  {
+    "query": "show me how this change evolved over time with evolog, I think I lost some work during a squash",
+    "should_trigger": true
+  },
+  {
+    "query": "my coworker force-pushed and now my local jj repo is out of sync, how do I use jj op restore to recover?",
+    "should_trigger": true
+  },
+  {
+    "query": "I have a conflict in src/main.rs after rebasing in jj, walk me through resolving it",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to rewrite a commit that's protected by immutable_heads in jj, how do I temporarily disable it?",
+    "should_trigger": true
+  },
+  {
+    "query": "how do I split a change in jujutsu that has both frontend and backend modifications?",
+    "should_trigger": true
+  },
+  {
+    "query": "I accidentally described the wrong change, show me how to use jj undo to fix it",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to try two different implementations in parallel using jj new from the same parent and compare them",
+    "should_trigger": true
+  },
+  {
+    "query": "what's the jj revset syntax for finding all divergent changes in my repo?",
+    "should_trigger": true
+  },
+  {
+    "query": "commit my current changes with a good message",
+    "should_trigger": false
+  },
+  {
+    "query": "push my changes to origin",
+    "should_trigger": false
+  },
+  {
+    "query": "create a new bookmark and push it",
+    "should_trigger": false
+  },
+  {
+    "query": "rebase onto the latest main",
+    "should_trigger": false
+  },
+  {
+    "query": "squash the last 3 changes into one",
+    "should_trigger": false
+  },
+  {
+    "query": "what's the git command to cherry-pick a commit from another branch?",
+    "should_trigger": false
+  },
+  {
+    "query": "configure my .gitignore to exclude node_modules and .env files",
+    "should_trigger": false
+  },
+  {
+    "query": "help me write a GitHub Actions workflow that runs tests on every push to main",
+    "should_trigger": false
+  },
+  {
+    "query": "show me the diff of my working copy against its parent",
+    "should_trigger": false
+  },
+  {
+    "query": "describe the current change as 'feat: add user auth'",
+    "should_trigger": false
+  }
+]

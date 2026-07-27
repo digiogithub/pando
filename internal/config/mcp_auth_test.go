@@ -234,3 +234,59 @@ func TestMCPServerAuthHeadersDoesNotMutateSource(t *testing.T) {
 		t.Fatal("AuthHeaders() mutated the source Headers map")
 	}
 }
+
+// TestMCPAuthValidateTLSOptions covers the transport-level TLS knobs, which
+// are validated independently of Type so that a typo in a corporate config is
+// rejected at load time rather than at first connection.
+func TestMCPAuthValidateTLSOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		auth    MCPAuth
+		wantErr string
+	}{
+		{name: "no tls options", auth: MCPAuth{}},
+		{name: "valid version range", auth: MCPAuth{MinTLSVersion: "1.2", MaxTLSVersion: "1.3"}},
+		{name: "tls prefix tolerated", auth: MCPAuth{MinTLSVersion: "TLS1.3"}},
+		{name: "server name only", auth: MCPAuth{TLSServerName: "mcp.internal"}},
+		{name: "ca cert with exclusive", auth: MCPAuth{CACert: "/etc/pki/ca.pem", CACertExclusive: true}},
+		{
+			name:    "exclusive without ca cert",
+			auth:    MCPAuth{CACertExclusive: true},
+			wantErr: "CACertExclusive requires CACert",
+		},
+		{
+			name:    "deprecated tls version",
+			auth:    MCPAuth{MinTLSVersion: "1.0"},
+			wantErr: "unsupported TLS version",
+		},
+		{
+			name:    "garbage max version",
+			auth:    MCPAuth{MaxTLSVersion: "quic"},
+			wantErr: "unsupported TLS version",
+		},
+		{
+			name:    "min above max",
+			auth:    MCPAuth{MinTLSVersion: "1.3", MaxTLSVersion: "1.2"},
+			wantErr: "higher than MaxTLSVersion",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			auth := tc.auth
+			err := auth.Validate()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Validate() = nil, want an error containing %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("Validate() = %v, want an error containing %q", err, tc.wantErr)
+			}
+		})
+	}
+}

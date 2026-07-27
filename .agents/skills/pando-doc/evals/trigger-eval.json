@@ -1,0 +1,98 @@
+[
+  {
+    "query": "write a blog post summarizing all the changes that happened between v0.9.0 and v1.0.0",
+    "should_trigger": true
+  },
+  {
+    "query": "update the documentation for the new browser automation feature in the pando-docs site",
+    "should_trigger": true
+  },
+  {
+    "query": "generate release notes from commits since the last tag for the Pando documentation blog",
+    "should_trigger": true
+  },
+  {
+    "query": "add a new page to the docs section describing the skills system",
+    "should_trigger": true
+  },
+  {
+    "query": "check the Hugo build of the documentation site for errors",
+    "should_trigger": true
+  },
+  {
+    "query": "translate the new blog post to Spanish for pando-docs",
+    "should_trigger": true
+  },
+  {
+    "query": "what changes landed this month that we should document in the pando-docs blog",
+    "should_trigger": true
+  },
+  {
+    "query": "update the features index page to include the new goal mode feature",
+    "should_trigger": true
+  },
+  {
+    "query": "create a changelog for the documentation site based on git commits",
+    "should_trigger": true
+  },
+  {
+    "query": "the hextra hero section on the homepage needs a new feature card for the LLM proxy",
+    "should_trigger": true
+  },
+  {
+    "query": "write a blog post about Pando's new delegation system for the docs site",
+    "should_trigger": true
+  },
+  {
+    "query": "review the Spanish translations in the pando-docs content/es directory",
+    "should_trigger": true
+  },
+  {
+    "query": "fix the sidebar ordering in the documentation section by adjusting weights",
+    "should_trigger": true
+  },
+  {
+    "query": "create a new SDK documentation page for the Go SDK in pando-docs",
+    "should_trigger": true
+  },
+  {
+    "query": "what blog posts do we have for June 2026 and what topics are missing",
+    "should_trigger": true
+  },
+  {
+    "query": "compile my Go code changes into a feature summary",
+    "should_trigger": false
+  },
+  {
+    "query": "run the test suite for the agent package",
+    "should_trigger": false
+  },
+  {
+    "query": "refactor the skills discovery code to be more efficient",
+    "should_trigger": false
+  },
+  {
+    "query": "set up a CI pipeline for the main pando repository",
+    "should_trigger": false
+  },
+  {
+    "query": "debug why the MCP server is not starting correctly",
+    "should_trigger": false
+  },
+  {
+    "query": "optimize the token usage in the prompt system",
+    "should_trigger": false
+  },
+  {
+    "query": "help me write a Lua hook for custom tool filtering",
+    "should_trigger": false
+  },
+  {
+    "query": "fix the merge conflict in the agent loop code",
+    "should_trigger": false
+  },
+  {
+    "query": "deploy the new version to the production server",
+    "should_trigger": false
+  }
+]

@@ -174,21 +174,51 @@ TLS/mTLS options are independent of `Type` — they apply to the transport conne
 so a server can require both a client certificate *and*, say, a bearer token. Stdio servers
 ignore all of these fields (no HTTP transport).
 
+These options are configured in `.pando.toml` only — they are deliberately not exposed in the
+TUI or Web UI settings, since certificate paths and crypto policy belong with the rest of the
+machine's provisioning, not in an interactive dialog.
+
 ```toml
 [MCPServers.example.Auth]
 ClientCert        = "~/.pando/certs/client.pem"
 ClientKey         = "~/.pando/certs/client-key.pem"
-ClientKeyPassword = "key-passphrase"          # only if the key is encrypted
-CACert            = "~/.pando/certs/ca.pem"    # trust an additional CA
+ClientKeyPassword = "key-passphrase"           # only if the key is encrypted
+CACert            = "~/.pando/certs/ca.pem"    # added to the system trust store
+CACertExclusive   = false                      # true = trust ONLY this CA
+TLSServerName     = "mcp.internal.example"     # SNI / verification hostname override
+MinTLSVersion     = "1.2"                      # "1.2" or "1.3"
+MaxTLSVersion     = "1.3"
 ```
 
 `ClientCert`/`ClientKey`/`CACert` accept `~` and `$VAR`/`${VAR}` expansion. `ClientCert` and
 `ClientKey` must both be set or both left empty — setting only one fails config validation.
-An encrypted key must be the legacy RFC 1423 PEM format (`DEK-Info` header, e.g. produced by
-older OpenSSL `-des3`/`-aes256` flags on `BEGIN RSA PRIVATE KEY`); a PKCS#8
-`ENCRYPTED PRIVATE KEY` block is **not** supported by Go's standard library and Pando returns
-an actionable error telling you to decrypt it out-of-band first (e.g.
-`openssl pkcs8 -in key.pem -out key-decrypted.pem`).
+
+**Encrypted client keys.** Both encrypted key formats are supported:
+
+- Legacy RFC 1423 PEM (`DEK-Info` header on a `BEGIN RSA PRIVATE KEY` block, produced by older
+  OpenSSL `-des3`/`-aes256` flags).
+- PKCS#8 `ENCRYPTED PRIVATE KEY` (PBES2) — what `openssl genpkey`/`openssl pkcs8 -topk8`
+  produce by default. Pando implements the decryption itself (Go's standard library does not):
+  PBKDF2 (HMAC-SHA1/224/256/384/512) or scrypt key derivation, with AES-128/192/256-CBC or
+  DES-EDE3-CBC. Anything else (notably obsolete PBES1) returns an error naming the algorithm.
+  A wrong `ClientKeyPassword` is reported as such rather than as a parse failure.
+
+**CA trust.** `CACert` is *added* to the host's system trust store by default, because the
+usual enterprise case is an internal CA fronting the MCP gateway while the authorization
+server and other hops still chain to public roots. Set `CACertExclusive = true` to pin the
+server to that CA alone. If the system trust store cannot be read, Pando falls back to the
+configured CA only and logs a warning.
+
+**Hostname and versions.** `TLSServerName` overrides the name used for SNI and certificate
+verification — use it for a server reached by IP address, internal alias or tunnel, since it
+keeps verification fully enabled, unlike `SkipTLSVerify`. `MinTLSVersion`/`MaxTLSVersion`
+accept `"1.2"` or `"1.3"` (a `TLS` prefix is tolerated); TLS 1.0/1.1 are rejected at config
+load time as deprecated by RFC 8996. An invalid value, or a minimum above the maximum, fails
+config validation instead of being silently ignored.
+
+All of these apply to the OAuth traffic too — metadata discovery, dynamic client registration,
+the token endpoint and refreshes — not just to the MCP tool calls, so an internal CA or a
+required client certificate works for the whole flow.
 
 ```toml
 [MCPServers.example.Auth]
@@ -314,7 +344,8 @@ saved. For `MCPAuth`, that covers:
 | `Auth.OAuth.ClientID`         | No (not a secret) |
 | `Auth.OAuth.Scopes`, `RedirectURI`, `CallbackPort`, `AuthServerMetadataURL` | No |
 | `Auth.ClientCert`, `ClientKey`, `CACert` (file paths) | No — these are paths, not secrets; the referenced key file's own contents are not read/re-encrypted by Pando |
-| `Auth.SkipTLSVerify`          | No (boolean flag) |
+| `Auth.SkipTLSVerify`, `CACertExclusive` | No (boolean flags) |
+| `Auth.TLSServerName`, `MinTLSVersion`, `MaxTLSVersion` | No (not secrets) |
 
 The `mcp-auth.json` store also has its sensitive values encrypted at rest, the same way as
 `.pando.toml`: each server entry's `tokens.accessToken`, `tokens.refreshToken` and
@@ -366,7 +397,9 @@ Pando's MCP OAuth support layers Pando-specific code (`internal/mcpauth`) on top
   performs DCR but never persists it)
 - The local loopback callback server (mcp-go doesn't ship one)
 - Credential storage (`mcp-auth.json`) with cross-process locking
-- mTLS / custom CA / `SkipTLSVerify` transport options
+- mTLS transport options: client certificate/key (including PKCS#8 PBES2 encrypted keys,
+  which Go's standard library cannot decrypt), custom CA merged with or pinned against the
+  system trust store, SNI/verification hostname override, TLS version range, `SkipTLSVerify`
 - The `oauth_client_credentials` grant end-to-end (mcp-go's OAuth transport only implements
   the authorization-code grant)
 
@@ -392,6 +425,23 @@ secret, revoked registration, or the server reset its client store). Pando clear
 registration automatically and tells you to re-run `pando mcp login <name>`, which triggers
 a fresh RFC 7591 registration. If `Auth.OAuth.ClientID` is set explicitly in config, this
 auto-clear does not apply — you must update the config yourself.
+
+**"could not decrypt the client key: the ClientKeyPassword is probably wrong"** — the PKCS#8
+PBES2 payload did not unpad cleanly, which is what a wrong passphrase looks like. Confirm with
+`openssl pkcs8 -in key.pem -passin pass:<passphrase> -nocrypt -out /dev/null`. If the
+passphrase is right, the key may use an algorithm Pando does not implement (PBES1, or a cipher
+outside AES-CBC/DES-EDE3-CBC); re-encrypt it with
+`openssl pkcs8 -topk8 -v2 aes-256-cbc -in key.pem -out key-pbes2.pem`.
+
+**"x509: certificate signed by unknown authority" against an internal gateway** — set `CACert`
+to the internal CA bundle. It is added to the system roots, so public endpoints in the same
+flow (the authorization server, for instance) keep working; use `CACertExclusive = true` only
+when the server must be pinned to that CA.
+
+**"x509: certificate is valid for X, not Y"** — the connection is being made under a name the
+certificate does not carry (IP address, internal alias, tunnel). Set `TLSServerName` to the
+name on the certificate instead of reaching for `SkipTLSVerify`, which turns validation off
+altogether.
 
 **"MCP server ... needs additional permissions (scope: ...)"** (`ErrInsufficientScope`) — the
 server rejected a request with 403 `insufficient_scope`. Run `pando mcp login <name>` again;

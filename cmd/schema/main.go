@@ -360,11 +360,30 @@ func generateSchema() map[string]any {
 						},
 						"clientKeyPassword": map[string]any{
 							"type":        "string",
-							"description": "Passphrase for an encrypted clientKey, if any. Encrypted at rest with AGE.",
+							"description": "Passphrase for an encrypted clientKey (legacy RFC 1423 PEM or PKCS#8 PBES2 with PBKDF2/scrypt and AES-CBC/DES-EDE3-CBC). Encrypted at rest with AGE.",
 						},
 						"caCert": map[string]any{
 							"type":        "string",
 							"description": "Path to a PEM CA certificate bundle to trust for this server, in addition to the system trust store. Supports ~ and $VAR expansion.",
+						},
+						"caCertExclusive": map[string]any{
+							"type":        "boolean",
+							"description": "Trust only caCert for this server instead of adding it to the system trust store. Requires caCert.",
+							"default":     false,
+						},
+						"tlsServerName": map[string]any{
+							"type":        "string",
+							"description": "Override the hostname used for SNI and certificate verification, for servers reached by IP address, internal alias or tunnel. Keeps verification enabled, unlike skipTLSVerify.",
+						},
+						"minTLSVersion": map[string]any{
+							"type":        "string",
+							"enum":        []any{"1.2", "1.3"},
+							"description": "Minimum TLS version to negotiate with this server. Defaults to the Go standard library minimum.",
+						},
+						"maxTLSVersion": map[string]any{
+							"type":        "string",
+							"enum":        []any{"1.2", "1.3"},
+							"description": "Maximum TLS version to negotiate with this server, for middleboxes that mishandle TLS 1.3. Defaults to the Go standard library maximum.",
 						},
 						"skipTLSVerify": map[string]any{
 							"type":        "boolean",
