@@ -976,6 +976,57 @@ type Config struct {
 	TokenOptimization TokenOptimizationConfig `json:"tokenOptimization,omitempty" toml:"TokenOptimization"`
 	ModelsDev         ModelsDevConfig         `json:"modelsDev,omitempty" toml:"ModelsDev"`
 	Image             ImageConfig             `json:"image,omitempty" toml:"Image"`
+	AGUI              AGUIConfig              `json:"agui,omitempty" toml:"AGUI"`
+}
+
+// AGUIConfig controls the AG-UI protocol adapter (internal/agui), the endpoint
+// CopilotKit and other Generative-UI frontends talk to. It is an isolated
+// side-car surface: it runs its own agent instances and its own permission
+// service, so enabling it changes nothing for the TUI, Web-UI or ACP.
+//
+// It is disabled by default because it exposes a code-executing agent to a
+// browser origin.
+type AGUIConfig struct {
+	// Enabled turns the adapter on. Default: false.
+	Enabled bool `json:"enabled,omitempty" toml:"Enabled"`
+	// Path is the route prefix the adapter mounts on. Default: "/api/v1/agui".
+	Path string `json:"path,omitempty" toml:"Path"`
+	// Port serves the adapter on its own listener when > 0, instead of mounting
+	// it on the main API server. A dedicated listener is the recommended shape
+	// for anything a browser reaches: nothing else of the API is exposed on it.
+	// Default: 0 (mounted).
+	Port int `json:"port,omitempty" toml:"Port"`
+	// Host binds that dedicated listener. Default: "localhost". Setting it to
+	// 0.0.0.0 exposes a code-executing agent to the network, so it must be an
+	// explicit choice.
+	Host string `json:"host,omitempty" toml:"Host"`
+	// Agents lists the built-in agent names exposed to clients (and reported by
+	// the /info endpoint). Default: ["coder"].
+	Agents []string `json:"agents,omitempty" toml:"Agents"`
+	// AllowedOrigins is the CORS allow-list. Empty means no cross-origin browser
+	// access; "*" is accepted but strongly discouraged for this surface.
+	AllowedOrigins []string `json:"allowedOrigins,omitempty" toml:"AllowedOrigins"`
+	// RequireToken enforces the API bearer token on AG-UI requests.
+	// Default: true.
+	RequireToken bool `json:"requireToken,omitempty" toml:"RequireToken"`
+	// FrontendTools allows RunAgentInput.tools to be proxied to the browser.
+	// Default: true.
+	FrontendTools bool `json:"frontendTools,omitempty" toml:"FrontendTools"`
+	// AgentPoolSize caps how many agent instances the adapter keeps alive (one
+	// per distinct agent + frontend-toolset combination). Default: 4.
+	AgentPoolSize int `json:"agentPoolSize,omitempty" toml:"AgentPoolSize"`
+	// AgentPoolTTL evicts idle pooled agents. Duration string. Default: "30m".
+	AgentPoolTTL string `json:"agentPoolTtl,omitempty" toml:"AgentPoolTTL"`
+	// AutoApprove approves tool permissions inside AG-UI runs without asking.
+	// It only affects the adapter's own permission service, never the desktop
+	// surfaces. Default: false.
+	AutoApprove bool `json:"autoApprove,omitempty" toml:"AutoApprove"`
+	// HumanInTheLoop surfaces permission prompts and agent questions to the
+	// connected web client as AG-UI tool calls, so a browser user can approve or
+	// answer them. When disabled (and AutoApprove is off) such prompts are
+	// denied and questions cancelled, since no other surface can see them.
+	// Default: true.
+	HumanInTheLoop bool `json:"humanInTheLoop,omitempty" toml:"HumanInTheLoop"`
 }
 
 // ImageConfig controls the image normalization pipeline applied before images
@@ -1675,6 +1726,20 @@ func setDefaults(debug bool) {
 	viper.SetDefault("image.maxBase64Bytes", 5242880) // 5 MB base64 payload
 	viper.SetDefault("image.quality", 85)
 	viper.SetDefault("image.useFilesAPI", false)
+	// AG-UI adapter defaults. Off by default: it is a network surface that
+	// exposes a code-executing agent to browser origins.
+	viper.SetDefault("agui.enabled", false)
+	viper.SetDefault("agui.path", "/api/v1/agui")
+	viper.SetDefault("agui.port", 0)
+	viper.SetDefault("agui.host", "localhost")
+	viper.SetDefault("agui.agents", []string{string(AgentCoder)})
+	viper.SetDefault("agui.requireToken", true)
+	viper.SetDefault("agui.frontendTools", true)
+	viper.SetDefault("agui.agentPoolSize", 4)
+	viper.SetDefault("agui.agentPoolTtl", "30m")
+	viper.SetDefault("agui.autoApprove", false)
+	viper.SetDefault("agui.humanInTheLoop", true)
+
 	viper.SetDefault("skillsCatalog.baseUrl", "https://skills.sh")
 	viper.SetDefault("skillsCatalog.autoUpdate", false)
 	viper.SetDefault("skillsCatalog.defaultScope", "global")

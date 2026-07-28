@@ -1,0 +1,25 @@
+# Dependencies installed by `npm install` (includes the linked @pando-ai/sdk)
+node_modules
+.pnp
+.pnp.js
+.yarn
+
+# Next.js build output
+.next
+out
+build
+dist
+
+# TypeScript / Next generated files
+*.tsbuildinfo
+next-env.d.ts
+
+# Local secrets: PANDO_TOKEN lives here, never in the repo
+.env
+.env.local
+.env.*.local
+
+# Tooling noise
+npm-debug.log*
+yarn-error.log*
+.DS_Store

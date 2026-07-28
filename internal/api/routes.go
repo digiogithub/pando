@@ -193,6 +193,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/instances/{id}/sessions/{sid}/stream", s.handleInstanceSessionStream)
 	mux.HandleFunc("DELETE /api/v1/instances/{id}/sessions/{sid}/cancel", s.handleInstanceCancelSession)
 	mux.HandleFunc("POST /api/v1/instances/{id}/sessions/{sid}/message", s.handleInstanceSendMessage)
+
+	// AG-UI protocol adapter (CopilotKit / Generative-UI frontends). Registered
+	// only when [AGUI] Enabled is set; it owns its own auth and CORS policy.
+	// A dedicated listener (aguiPath empty) serves those routes itself.
+	if s.agui != nil && s.aguiPath != "" {
+		s.agui.Register(mux)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

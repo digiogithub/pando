@@ -83,6 +83,19 @@ This is the backend for the Pando Desktop/Web UI.`,
 		}
 		logging.Debug("Config loaded", "workingDir", cwd)
 
+		// --agui-port turns the AG-UI adapter on and moves it to its own listener,
+		// so a browser origin allowed to reach it cannot reach this API server.
+		if aguiPort, _ := cmd.Flags().GetInt("agui-port"); aguiPort > 0 {
+			if cfg := config.Get(); cfg != nil {
+				cfg.AGUI.Enabled = true
+				cfg.AGUI.Port = aguiPort
+				if aguiHost, _ := cmd.Flags().GetString("agui-host"); aguiHost != "" {
+					cfg.AGUI.Host = aguiHost
+				}
+				logging.Info("AG-UI adapter enabled by flag", "port", aguiPort)
+			}
+		}
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -220,4 +233,6 @@ func init() {
 	serveCmd.Flags().Bool("debug", false, "Enable debug logging")
 	serveCmd.Flags().String("tls-cert", "", "Path to TLS certificate file (auto-generated if omitted)")
 	serveCmd.Flags().String("tls-key", "", "Path to TLS private key file (auto-generated if omitted)")
+	serveCmd.Flags().Int("agui-port", 0, "Serve the AG-UI protocol (CopilotKit) on its own port")
+	serveCmd.Flags().String("agui-host", "", "Host for the AG-UI listener (defaults to localhost)")
 }

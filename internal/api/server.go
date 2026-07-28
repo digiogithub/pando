@@ -16,8 +16,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/agui"
 	"github.com/digiogithub/pando/internal/app"
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/logging"
 )
 
 type ServerConfig struct {
@@ -53,6 +56,19 @@ type Server struct {
 	staticFS      fs.FS
 	staticHandler http.Handler
 	bgRunner      *BackgroundSessionManager
+	// agui is the AG-UI protocol adapter (CopilotKit and other Generative-UI
+	// frontends). It is nil unless [AGUI] Enabled is set. It runs its own agent
+	// instances and its own permission service, so it shares nothing with the
+	// handlers above beyond the process — see internal/agui/doc.go.
+	agui *agui.Runtime
+	// aguiPath is the route prefix owned by that adapter, excluded from the
+	// server-wide CORS and token middleware so the adapter can enforce its own
+	// stricter policy. It is empty when the adapter runs on its own listener,
+	// because then it owns no path on this server at all.
+	aguiPath string
+	// aguiListener is set instead of aguiPath when [AGUI] Port is configured:
+	// the adapter then serves itself, and this server merely owns its lifetime.
+	aguiListener *agui.Listener
 	// seededSessions tracks which sessions have already had the auto-approve
 	// config default applied, so a user toggle is not overridden on later prompts.
 	seededSessions sync.Map
@@ -87,6 +103,8 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 		s.staticHandler = http.FileServer(http.FS(s.staticFS))
 	}
 
+	s.setupAGUI()
+
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 
@@ -103,6 +121,73 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 	}
 
 	return s, nil
+}
+
+// setupAGUI builds the AG-UI adapter when it is enabled in config. It mirrors
+// the dependency set app.go passes to the coder agent, minus the permission and
+// user-input services: the adapter creates its own so a browser run can never
+// raise a prompt on a desktop surface.
+//
+// A failure here is never fatal — the rest of the API server must keep working.
+func (s *Server) setupAGUI() {
+	cfg := config.Get()
+	if cfg == nil || !cfg.AGUI.Enabled {
+		return
+	}
+
+	aguiCfg := agui.ConfigFromApp(cfg.AGUI)
+
+	runtime, err := agui.New(agui.Deps{
+		Sessions:     s.app.Sessions,
+		Messages:     s.app.Messages,
+		History:      s.app.History,
+		Skills:       s.app.SkillManager,
+		Gateway:      s.app.MCPGateway,
+		Orchestrator: s.app.MesnadaOrchestrator,
+		Remembrances: s.app.Remembrances,
+		LSP:          s.app,
+		DB:           s.config.DB,
+		Token:        s.token,
+	}, aguiCfg)
+	if err != nil {
+		logging.Error("Failed to start the AG-UI adapter", err)
+		return
+	}
+
+	s.agui = runtime
+
+	// A configured port moves the adapter off this server entirely, so a browser
+	// origin allowed to reach AG-UI cannot reach the Web-UI API. The routes are
+	// then NOT registered on the main mux, and aguiPath stays empty so the
+	// middleware exclusions do not open a hole for a path nothing serves.
+	if aguiCfg.Port > 0 {
+		listener, lerr := runtime.StartListener(agui.ListenerOptions{
+			Host:     cfg.AGUI.Host,
+			CertFile: s.config.TLSCertFile,
+			KeyFile:  s.config.TLSKeyFile,
+		})
+		if lerr != nil {
+			// Falling back to the shared mux would silently widen the surface the
+			// operator asked to isolate, so the adapter is dropped instead.
+			logging.Error("AG-UI dedicated listener failed to start; the adapter is disabled", lerr)
+			runtime.Close()
+			s.agui = nil
+			return
+		}
+		s.aguiListener = listener
+		return
+	}
+
+	s.aguiPath = strings.TrimSuffix(aguiCfg.Path, "/")
+}
+
+// isAGUIPath reports whether a request belongs to the AG-UI adapter, which
+// enforces its own authentication and CORS policy.
+func (s *Server) isAGUIPath(urlPath string) bool {
+	if s.agui == nil || s.aguiPath == "" {
+		return false
+	}
+	return urlPath == s.aguiPath || strings.HasPrefix(urlPath, s.aguiPath+"/")
 }
 
 func (s *Server) Start() error {
@@ -125,6 +210,15 @@ func (s *Server) PandoApp() *app.App {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.aguiListener != nil {
+		if err := s.aguiListener.Shutdown(ctx); err != nil {
+			logging.Debug("AG-UI listener shutdown", "error", err)
+		}
+	}
+	if s.agui != nil {
+		s.agui.Close()
+	}
+
 	shutdownDone := make(chan struct{})
 	go func() {
 		defer close(shutdownDone)
@@ -157,6 +251,14 @@ func generateToken() (string, error) {
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The AG-UI adapter drives a code-executing agent from a browser, so it
+		// answers a pinned origin allow-list instead of the wildcard used by the
+		// Web-UI routes. Let it write its own headers.
+		if s.isAGUIPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Pando-Token, X-Pando-Client, Authorization")
@@ -185,6 +287,14 @@ func (s *Server) hasValidToken(r *http.Request) bool {
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" || !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/v1/token" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// AG-UI clients authenticate with `Authorization: Bearer <token>`, which
+		// this middleware does not understand; the adapter validates the same
+		// token itself (see agui.Runtime.authorize).
+		if s.isAGUIPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
