@@ -65,20 +65,16 @@ func MarkProjectInitialized() error {
 	return nil
 }
 
-// HasLocalConfigFile returns true if a .pando.toml or .pando.json file exists
-// in the current working directory. It does NOT check profile/home locations.
+// HasLocalConfigFile returns true if a readable and writable .pando.toml or
+// .pando.json applies to the current working directory, either in it or in any
+// parent directory up to the filesystem root (see FindLocalConfigFile). It does
+// NOT check profile/home locations.
 func HasLocalConfigFile() bool {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return false
 	}
-	for _, ext := range []string{"toml", "json"} {
-		candidate := filepath.Join(cwd, fmt.Sprintf(".%s.%s", appName, ext))
-		if _, err := os.Stat(candidate); err == nil {
-			return true
-		}
-	}
-	return false
+	return FindLocalConfigFile(cwd) != ""
 }
 
 // HasPandoDirectory returns true if the .pando directory already exists in
@@ -102,8 +98,12 @@ const DefaultConfigTemplate = `# ===============================================
 # =============================================================================
 # Pando looks for this file in (highest priority first):
 #   1. Current working directory  (.pando.toml)
-#   2. $HOME/.config/pando/.pando.toml
-#   3. $HOME/.pando.toml
+#   2. Any parent directory, walking up to the filesystem root, stopping at
+#      $HOME. Only files the user can read AND write are used, so one config
+#      at the top of a workspace can serve every project below it.
+#      Set PANDO_CONFIG_PARENT_SEARCH=false to disable this upward search.
+#   3. $HOME/.config/pando/.pando.toml
+#   4. $HOME/.pando.toml
 #
 # Environment variables prefixed with PANDO_ override any value here.
 # Example: PANDO_DEBUG=true overrides Debug = false
@@ -622,8 +622,10 @@ func GenerateLocalConfigFile(template string) error {
 // ShouldGenerateLocalConfig returns true when pando is running in a directory
 // that has no local .pando.toml/.pando.json but does have (or should have) one.
 // The rules are:
-//   - If a local config already exists → false (nothing to do).
-//   - Otherwise → true (we should offer/auto-generate one).
+//   - If a local config already exists, in the working directory or in any
+//     parent directory up to the filesystem root, false (nothing to do): that
+//     inherited config is the one being used.
+//   - Otherwise true (we should offer/auto-generate one).
 func ShouldGenerateLocalConfig() bool {
 	return !HasLocalConfigFile()
 }

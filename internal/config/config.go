@@ -2239,12 +2239,19 @@ func readConfig(err error) error {
 	return fmt.Errorf("failed to read config: %w", err)
 }
 
-// mergeLocalConfig loads and merges configuration from the local directory.
+// mergeLocalConfig loads and merges configuration from the local (project)
+// scope. The file is looked up in workingDir and, when absent there, in the
+// parent directories up to the filesystem root (see FindLocalConfigFile), so a
+// single config at the top of a workspace can serve several projects.
 // Supports both JSON and TOML formats via Viper auto-detection.
 func mergeLocalConfig(workingDir string) {
+	configFile := FindLocalConfigFile(workingDir)
+	if configFile == "" {
+		return
+	}
+
 	local := viper.New()
-	local.SetConfigName(fmt.Sprintf(".%s", appName))
-	local.AddConfigPath(workingDir)
+	local.SetConfigFile(configFile)
 
 	// Merge local config if it exists
 	if err := local.ReadInConfig(); err == nil {
@@ -3326,20 +3333,17 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 }
 
 // ResolveConfigFilePath finds the active config file path.
-// A local config file (in the working directory) takes priority over the global
-// one because mergeLocalConfig applies it after ReadInConfig, overriding any
-// overlapping keys. Writes must go to the highest-priority file so that
-// changes are not silently reverted on the next reload.
+// A local config file takes priority over the global one because
+// mergeLocalConfig applies it after ReadInConfig, overriding any overlapping
+// keys. Writes must go to the highest-priority file so that changes are not
+// silently reverted on the next reload. The local file is the same one
+// mergeLocalConfig picked: the working directory first, then its parents up to
+// the filesystem root, and only files the user can read *and* write.
 func ResolveConfigFilePath() (string, error) {
 	// Prefer local config if it exists: it has higher merge priority.
-	if cfg != nil && strings.TrimSpace(cfg.WorkingDir) != "" {
-		for _, extension := range []string{"toml", "json"} {
-			localConfig := filepath.Join(cfg.WorkingDir, fmt.Sprintf(".%s.%s", appName, extension))
-			if _, err := os.Stat(localConfig); err == nil {
-				return localConfig, nil
-			} else if err != nil && !os.IsNotExist(err) {
-				return "", fmt.Errorf("failed to stat config file: %w", err)
-			}
+	if cfg != nil {
+		if localConfig := FindLocalConfigFile(cfg.WorkingDir); localConfig != "" {
+			return localConfig, nil
 		}
 	}
 
