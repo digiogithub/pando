@@ -5,10 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/digiogithub/pando/internal/imageopt"
 	"github.com/digiogithub/pando/internal/message"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
@@ -88,8 +91,15 @@ func (s *groupedThinkingState) markFlushed(now time.Time) {
 	s.lastFlush = now
 }
 
-// extractPromptContent extracts text and image attachments from a Prompt (slice of ContentBlocks).
-// Supports text blocks (ContentBlock::Text) and image blocks (ContentBlock::Image, requires 6d capability).
+// imageOnlyPromptText is used when a client sends a prompt made only of
+// attachments (e.g. a pasted screenshot with no caption). The agent needs a
+// non-empty user turn, and an empty string would otherwise be rejected.
+const imageOnlyPromptText = "(no text provided — see the attached image)"
+
+// extractPromptContent extracts text and attachments from a Prompt (slice of ContentBlocks).
+// Per the ACP content spec it handles text, image (capability `image`),
+// resource_link and embedded resource blocks. Audio is ignored because the
+// agent does not declare the `audio` capability.
 func (a *PandoACPAgent) extractPromptContent(prompt []acpsdk.ContentBlock) (string, []message.Attachment, error) {
 	if len(prompt) == 0 {
 		return "", nil, fmt.Errorf("empty prompt content")
@@ -99,11 +109,11 @@ func (a *PandoACPAgent) extractPromptContent(prompt []acpsdk.ContentBlock) (stri
 	var attachments []message.Attachment
 
 	for _, block := range prompt {
-		if block.Text != nil {
+		switch {
+		case block.Text != nil:
 			textParts = append(textParts, block.Text.Text)
-		}
-		// 6d: handle image content blocks
-		if block.Image != nil {
+
+		case block.Image != nil:
 			img := block.Image
 			var data []byte
 			if img.Data != "" {
@@ -119,19 +129,131 @@ func (a *PandoACPAgent) extractPromptContent(prompt []acpsdk.ContentBlock) (stri
 			if mimeType == "" {
 				mimeType = "image/png"
 			}
+			att := message.Attachment{MimeType: mimeType, Content: data}
+			if img.Uri != nil {
+				att.FilePath = uriToPath(*img.Uri)
+				att.FileName = filepath.Base(att.FilePath)
+			}
+			attachments = append(attachments, att)
+
+		case block.ResourceLink != nil:
+			// Clients attach files by reference (Zed sends resource_link for
+			// @-mentioned or dragged files). Inline the bytes when it is a
+			// readable local image; otherwise mention the path as text so the
+			// agent can open it with its own tools.
+			link := block.ResourceLink
+			path := uriToPath(link.Uri)
+			mime := ""
+			if link.MimeType != nil {
+				mime = *link.MimeType
+			}
+			if att, ok := a.attachmentFromFile(path, mime); ok {
+				attachments = append(attachments, att)
+				continue
+			}
+			label := link.Name
+			if label == "" {
+				label = link.Uri
+			}
+			textParts = append(textParts, fmt.Sprintf("[attached file: %s (%s)]", label, link.Uri))
+
+		case block.Resource != nil:
+			res := block.Resource.Resource
+			if res.TextResourceContents != nil {
+				txt := res.TextResourceContents
+				textParts = append(textParts, fmt.Sprintf("[attached %s]\n%s", txt.Uri, txt.Text))
+				continue
+			}
+			if res.BlobResourceContents == nil {
+				continue
+			}
+			blob := res.BlobResourceContents
+			mime := ""
+			if blob.MimeType != nil {
+				mime = *blob.MimeType
+			}
+			decoded, err := base64.StdEncoding.DecodeString(blob.Blob)
+			if err != nil {
+				a.logger.Printf("[ACP AGENT] Warning: failed to decode embedded resource %s: %v", blob.Uri, err)
+				continue
+			}
+			if mime == "" {
+				mime = imageopt.DetectMIME(decoded)
+			}
+			if !strings.HasPrefix(mime, "image/") {
+				// Binary non-image payloads cannot be sent to the model; point
+				// the agent at the file instead of dropping it silently.
+				textParts = append(textParts, fmt.Sprintf("[attached binary resource: %s (%s)]", blob.Uri, mime))
+				continue
+			}
+			path := uriToPath(blob.Uri)
 			attachments = append(attachments, message.Attachment{
-				MimeType: mimeType,
-				Content:  data,
+				FilePath: path,
+				FileName: filepath.Base(path),
+				MimeType: mime,
+				Content:  decoded,
 			})
 		}
 	}
 
 	if len(textParts) == 0 {
+		// An attachment-only prompt (pasted screenshot, dragged image) is
+		// valid ACP; rejecting it left clients showing an error for every
+		// caption-less image.
+		if len(attachments) > 0 {
+			return imageOnlyPromptText, attachments, nil
+		}
 		return "", nil, fmt.Errorf("no text content in prompt")
 	}
 
 	return joinTextParts(textParts), attachments, nil
 }
+
+// uriToPath converts a file:// URI to a local path, leaving plain paths as-is.
+func uriToPath(uri string) string {
+	if !strings.HasPrefix(uri, "file://") {
+		return uri
+	}
+	if parsed, err := url.Parse(uri); err == nil && parsed.Path != "" {
+		return parsed.Path
+	}
+	return strings.TrimPrefix(uri, "file://")
+}
+
+// attachmentFromFile reads a local image file referenced by a resource_link.
+// It returns ok=false for missing files, non-images or files too large to
+// inline, so the caller can fall back to a textual mention.
+func (a *PandoACPAgent) attachmentFromFile(path, mime string) (message.Attachment, bool) {
+	if path == "" || strings.Contains(path, "://") {
+		return message.Attachment{}, false
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() || info.Size() > maxInlineAttachmentBytes {
+		return message.Attachment{}, false
+	}
+	if mime != "" && !strings.HasPrefix(mime, "image/") {
+		return message.Attachment{}, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		a.logger.Printf("[ACP AGENT] Warning: failed to read attached file %s: %v", path, err)
+		return message.Attachment{}, false
+	}
+	detected := imageopt.DetectMIME(data)
+	if detected == "" {
+		return message.Attachment{}, false
+	}
+	return message.Attachment{
+		FilePath: path,
+		FileName: filepath.Base(path),
+		MimeType: detected,
+		Content:  data,
+	}, true
+}
+
+// maxInlineAttachmentBytes caps how much of a referenced file is inlined into
+// the prompt. Larger files stay on disk and are mentioned by path.
+const maxInlineAttachmentBytes = 32 * 1024 * 1024
 
 // joinTextParts joins multiple text parts with newlines.
 func joinTextParts(parts []string) string {

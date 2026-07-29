@@ -404,6 +404,8 @@ github.com/lucasb-eyer/go-colorful v1.3.0 h1:2/yBRLdWBZKrf7gB40FoiKfAWYQ0lqNcbuQ
 github.com/lucasb-eyer/go-colorful v1.3.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
 github.com/madeindigio/acp-go-sdk v0.15.0 h1:mbVjzqwpntTAMIEso682BcuKZ+VY3981ySpKXfYkLzQ=
 github.com/madeindigio/acp-go-sdk v0.15.0/go.mod h1:BMZz7xBdQdwbL1NIc+iTSgsehARni3mvmUkwsmCEVyg=
+github.com/madeindigio/acp-go-sdk v0.15.1 h1:7BgEbP60y7Fv6SvFdqznMG3miX1iWnC6W/X7SnV1X+M=
+github.com/madeindigio/acp-go-sdk v0.15.1/go.mod h1:BMZz7xBdQdwbL1NIc+iTSgsehARni3mvmUkwsmCEVyg=
 github.com/madeindigio/go-tree-sitter v0.1.0 h1:+3ZOqFKp6yEqCi69EX5IT4NgDNEBoHEZRNiCvm+1LC8=
 github.com/madeindigio/go-tree-sitter v0.1.0/go.mod h1:MwerNxn0L/AUhOD52tA6f0kVuHySiSFxFRU3p9L48y8=
 github.com/mark3labs/mcp-go v0.57.0 h1:jzWKyCzdWnwnZt05cvcQQ+ngiUl2RnixXJa7Kj4qP1E=

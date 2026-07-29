@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"os"
@@ -133,19 +134,39 @@ func (t *StdioTransport) Run(ctx context.Context) error {
 func interceptStdin(in io.Reader, out *syncWriter, fwd *io.PipeWriter, agent *PandoACPAgent, logger *log.Logger) {
 	defer fwd.Close()
 
-	const (
-		initialBufSize = 1 * 1024 * 1024
-		maxBufSize     = 10 * 1024 * 1024
-	)
+	reader := bufio.NewReaderSize(in, 1*1024*1024)
 
-	scanner := bufio.NewScanner(in)
-	buf := make([]byte, 0, initialBufSize)
-	scanner.Buffer(buf, maxBufSize)
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
+	for {
+		line, readErr := readJSONRPCLine(reader, acpMaxLineBytes)
+		if errors.Is(readErr, errLineTooLong) {
+			// Do NOT stop reading: answer the request (so the client is not left
+			// waiting forever) and keep serving the session.
+			logger.Printf("[ACP TRANSPORT] Dropping oversized JSON-RPC line (>%d bytes)", acpMaxLineBytes)
+			if id := peekRequestID(line); id != nil {
+				writeRPCError(out, id, -32600, "request payload too large; attach a smaller image or reference the file by path")
+			}
+			continue
+		}
+		if readErr != nil {
+			if !errors.Is(readErr, io.EOF) {
+				logger.Printf("[ACP TRANSPORT] stdin read error: %v", readErr)
+			}
+			break
+		}
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
+		}
+
+		// Pasted screenshots arrive base64-encoded and can be tens of megabytes.
+		// Re-encode the inline images before forwarding: the provider rescales
+		// them anyway, so this only saves bandwidth, latency and tokens.
+		if len(line) > promptShrinkThresholdBytes {
+			if shrunk, serr := shrinkPromptImages(line, promptShrinkTargetBytes); serr == nil {
+				logger.Printf("[ACP TRANSPORT] Shrunk oversized payload: %d -> %d bytes", len(line), len(shrunk))
+				line = shrunk
+			} else {
+				logger.Printf("[ACP TRANSPORT] Forwarding oversized payload as-is (%d bytes): %v", len(line), serr)
+			}
 		}
 
 		var msg jsonRPCMsg
@@ -211,10 +232,6 @@ func interceptStdin(in io.Reader, out *syncWriter, fwd *io.PipeWriter, agent *Pa
 		if _, werr := fwd.Write([]byte("\n")); werr != nil {
 			break
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		logger.Printf("[ACP TRANSPORT] stdin scanner error: %v", err)
 	}
 }
 
