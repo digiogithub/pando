@@ -130,6 +130,13 @@ func (b *Bus) Shutdown() error {
 // The ZMQ message frame layout is: [topic_bytes + 0x00 + json_envelope_bytes]
 // so subscribers can filter by topic prefix.
 func (b *Bus) Publish(topic string, payload any) error {
+	// The Bus may never have been started (early failure, or shutdown running from
+	// a deferred cleanup after a panic). Fail with an error instead of a nil deref,
+	// which would otherwise mask the original panic.
+	if b == nil || b.pubSock == nil {
+		return fmt.Errorf("ipc: publish %q: bus not started", topic)
+	}
+
 	rawPayload, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("ipc: marshal payload: %w", err)

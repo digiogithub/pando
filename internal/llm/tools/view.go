@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
@@ -427,20 +428,45 @@ func truncateLongLine(line string) string {
 
 const binarySampleSize = 4096
 
-// isBinaryContent detects binary files using null-byte and non-printable ratio checks.
+// isBinaryContent detects binary files using null-byte and non-printable ratio
+// checks. The sample is decoded as UTF-8 so that legitimate multi-byte text
+// (accents, em dashes, CJK, emoji) is not mistaken for binary just because its
+// bytes are above 0x7E — a plain ASCII byte scan flags such files at roughly
+// one non-ASCII character in three.
 func isBinaryContent(data []byte) bool {
 	// Null byte is a strong indicator of binary content
 	if bytes.IndexByte(data, 0) != -1 {
 		return true
 	}
-	// Count non-printable, non-whitespace bytes
-	nonPrintable := 0
-	for _, b := range data {
-		if b < 0x09 || (b > 0x0D && b < 0x20) || b > 0x7E {
+	if len(data) == 0 {
+		return false
+	}
+
+	// Count non-printable runes: C0/C1 control characters other than the usual
+	// whitespace, plus bytes that are not valid UTF-8 at all.
+	nonPrintable, total := 0, 0
+	for i := 0; i < len(data); {
+		r, size := utf8.DecodeRune(data[i:])
+		if r == utf8.RuneError && size == 1 {
+			// The sample is a fixed-size prefix of the file, so a multi-byte rune
+			// may be cut in half at the tail. Ignore that trailing fragment
+			// instead of counting it as garbage.
+			if len(data)-i < utf8.UTFMax {
+				break
+			}
+			nonPrintable++
+			total++
+			i++
+			continue
+		}
+		if r < 0x09 || (r > 0x0D && r < 0x20) || r == 0x7F || (r >= 0x80 && r <= 0x9F) {
 			nonPrintable++
 		}
+		total++
+		i += size
 	}
-	return len(data) > 0 && float64(nonPrintable)/float64(len(data)) > 0.30
+
+	return total > 0 && float64(nonPrintable)/float64(total) > 0.30
 }
 
 func isImageFile(filePath string) (bool, string) {

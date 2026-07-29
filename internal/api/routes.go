@@ -68,7 +68,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/config/mcp-server", s.handleConfigMCPServer)
 	mux.HandleFunc("/api/v1/config/lsp", s.handleConfigLSP)
 	mux.HandleFunc("GET /api/v1/config/lsp/catalog", s.handleConfigLSPCatalog)
-	mux.HandleFunc("/api/v1/config/lsp/activation", s.handleConfigLSPActivation)
+	// Registered per method: a catch-all pattern here would conflict with the
+	// DELETE /api/v1/config/lsp/{language} wildcard below (ServeMux panics when a
+	// pattern matches fewer methods but has a more general path).
+	mux.HandleFunc("GET /api/v1/config/lsp/activation", s.handleConfigLSPActivation)
+	mux.HandleFunc("PUT /api/v1/config/lsp/activation", s.handleConfigLSPActivation)
 	mux.HandleFunc("DELETE /api/v1/config/lsp/{language}", s.handleDeleteConfigLSP)
 	mux.HandleFunc("/api/v1/config/tools", s.handleConfigTools)
 	mux.HandleFunc("GET /api/v1/config/browsers", s.handleConfigBrowsers)
