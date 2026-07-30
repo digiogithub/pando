@@ -71,12 +71,28 @@ type BinaryContent struct {
 	Data     []byte
 }
 
+// String renders the binary payload for a given provider. OpenAI-compatible
+// providers (OpenAI, Azure, Copilot, and the OpenAI-compatible catch-all) expect
+// a full data URL both in chat completions `image_url` and in the Responses API
+// `input_image.image_url`; a bare base64 blob is rejected there with
+// "the provided image URL is invalid". Anthropic/Gemini/Bedrock take the raw
+// base64 payload with the media type carried in a separate field.
 func (bc BinaryContent) String(provider models.ModelProvider) string {
 	base64Encoded := base64.StdEncoding.EncodeToString(bc.Data)
-	if provider == models.ProviderOpenAI {
-		return "data:" + bc.MIMEType + ";base64," + base64Encoded
+	switch provider {
+	case models.ProviderOpenAI, models.ProviderAzure, models.ProviderCopilot, models.ProviderOpenAICompatible:
+		return "data:" + bc.mimeTypeOrDefault() + ";base64," + base64Encoded
 	}
 	return base64Encoded
+}
+
+// mimeTypeOrDefault guards against an empty MIME type, which would produce the
+// malformed data URL "data:;base64,...".
+func (bc BinaryContent) mimeTypeOrDefault() string {
+	if bc.MIMEType != "" {
+		return bc.MIMEType
+	}
+	return "image/png"
 }
 
 func (BinaryContent) isPart() {}
