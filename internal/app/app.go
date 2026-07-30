@@ -2392,6 +2392,12 @@ func (a *appACPAgentAdapter) LastRunSystemMessages(sessionID string) []string {
 
 func (a *appACPAgentAdapter) CurrentModelID() string { return string(a.svc.Model().ID) }
 
+// SessionModelOverrideID reports a runtime model switch made for the session
+// (pando_setup model), empty when it runs on the configured model.
+func (a *appACPAgentAdapter) SessionModelOverrideID(sessionID string) string {
+	return string(agent.SessionModelOverrideID(sessionID))
+}
+
 func (a *appACPAgentAdapter) AvailableModels() []mesnadaACP.ACPModelInfo {
 	all := models.GetAllModels()
 	result := make([]mesnadaACP.ACPModelInfo, 0, len(all))

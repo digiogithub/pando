@@ -14,6 +14,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/diff"
 	"github.com/digiogithub/pando/internal/history"
+	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
@@ -294,8 +295,9 @@ func (m *sidebarCmp) usageSection() string {
 		Bold(true).
 		Render("Usage")
 
-	modelID := config.Get().Agents[config.AgentCoder].Model
-	contextWindow := models.SupportedModels[modelID].ContextWindow
+	// The session may have been switched to another model at runtime, so the
+	// context window shown must follow the session, not the configured agent.
+	contextWindow := models.SupportedModels[agent.SessionModelID(m.session.ID)].ContextWindow
 	totalTokens := m.session.PromptTokens + m.session.CompletionTokens
 
 	row := func(label, value string) string {

@@ -867,6 +867,11 @@ func (a *PandoACPAgent) setSessionModelValue(acpSession *ACPServerSession, model
 	}
 	acpSession.SetModel(modelID)
 	reconcileACPThinkingSession(a.agentService, acpSession)
+	// Push the pick to the agent right away. A model the agent switched to at
+	// runtime lives in the same per-session override the next prompt would read,
+	// so leaving it in place would let reconcileACPSessionModel undo this
+	// explicit user choice before the next turn starts.
+	a.agentService.SetSessionLLMOverrides(acpSession.PandoSessionID(), sessionLLMOverridesFor(acpSession))
 }
 
 func (a *PandoACPAgent) safeSessionUpdate(acpSession *ACPServerSession, sessionID acpsdk.SessionId, update acpsdk.SessionUpdate) (err error) {

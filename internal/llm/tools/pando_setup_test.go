@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -22,6 +23,14 @@ type fakeSetupBridge struct {
 	ranArgs string
 	runOut  string
 	runErr  error
+
+	current      SetupModelState
+	currentErr   error
+	switched     SetupModelSwitch
+	switchErr    error
+	setModelID   string
+	setConfirmed bool
+	setCalls     int
 }
 
 func (f *fakeSetupBridge) SessionInfo(context.Context, string) (SetupSessionInfo, error) {
@@ -35,6 +44,16 @@ func (f *fakeSetupBridge) Commands() []SetupRunnableCommand { return f.commands 
 func (f *fakeSetupBridge) RunCommand(_ context.Context, _, name, args string) (string, error) {
 	f.ranName, f.ranArgs = name, args
 	return f.runOut, f.runErr
+}
+
+func (f *fakeSetupBridge) CurrentModel(string) (SetupModelState, error) {
+	return f.current, f.currentErr
+}
+
+func (f *fakeSetupBridge) SetSessionModel(_, modelID string, confirmed bool) (SetupModelSwitch, error) {
+	f.setCalls++
+	f.setModelID, f.setConfirmed = modelID, confirmed
+	return f.switched, f.switchErr
 }
 
 func runSetupTool(t *testing.T, tool BaseTool, ctx context.Context, command, args string) ToolResponse {
@@ -371,6 +390,139 @@ func TestPandoSetupSession(t *testing.T) {
 	noSession := runSetupTool(t, tool, context.Background(), "session", "")
 	if !noSession.IsError {
 		t.Fatalf("session without a session id should error, got: %s", noSession.Content)
+	}
+}
+
+func TestPandoSetupModelReadsCurrentModel(t *testing.T) {
+	bridge := &fakeSetupBridge{
+		current: SetupModelState{
+			ID: "copilot.gpt-5.4", Name: "GPT-5.4", Provider: "copilot",
+			ContextWindow: 200_000, CostIn: 1.25, CostOut: 10, CostKnown: true, Overridden: true,
+		},
+	}
+	tool := NewPandoSetupTool(bridge, nil)
+
+	resp := runSetupTool(t, tool, sessionCtx("sess-1"), "model", "")
+	if resp.IsError {
+		t.Fatalf("model errored: %s", resp.Content)
+	}
+	for _, want := range []string{"copilot.gpt-5.4", "$1.25 in / $10.00 out", "session override", "model --clear"} {
+		if !strings.Contains(resp.Content, want) {
+			t.Fatalf("model output missing %q:\n%s", want, resp.Content)
+		}
+	}
+	if bridge.setCalls != 0 {
+		t.Fatal("reading the model must not attempt a switch")
+	}
+}
+
+func TestPandoSetupModelReportsUnknownPrice(t *testing.T) {
+	bridge := &fakeSetupBridge{current: SetupModelState{ID: "local.qwen", Provider: "local"}}
+
+	resp := runSetupTool(t, NewPandoSetupTool(bridge, nil), sessionCtx("sess-1"), "model", "")
+	if !strings.Contains(resp.Content, "price unknown") {
+		t.Fatalf("a missing price must be stated, not printed as zero:\n%s", resp.Content)
+	}
+	if strings.Contains(resp.Content, "$0.00") {
+		t.Fatalf("an unknown price must never render as $0.00:\n%s", resp.Content)
+	}
+}
+
+func TestPandoSetupModelSwitchQuoteDoesNotClaimSuccess(t *testing.T) {
+	bridge := &fakeSetupBridge{
+		switched: SetupModelSwitch{
+			Previous:           SetupModelState{ID: "copilot.gpt-5-mini", CostIn: 0.25, CostOut: 2, CostKnown: true},
+			Target:             SetupModelState{ID: "anthropic.claude-opus-5", CostIn: 5, CostOut: 25, CostKnown: true},
+			ConfirmationReason: "This switch increases the cost of the session.",
+		},
+	}
+	tool := NewPandoSetupTool(bridge, nil)
+
+	resp := runSetupTool(t, tool, sessionCtx("sess-1"), "model", "anthropic.claude-opus-5")
+	if resp.IsError {
+		t.Fatalf("model switch errored: %s", resp.Content)
+	}
+	if bridge.setModelID != "anthropic.claude-opus-5" || bridge.setConfirmed {
+		t.Fatalf("bridge called with (%q, confirmed=%v), want the target unconfirmed", bridge.setModelID, bridge.setConfirmed)
+	}
+	// The agent must not report a switch that did not happen.
+	for _, want := range []string{"NOT changed", "increases the cost", "--confirm", "still running on copilot.gpt-5-mini"} {
+		if !strings.Contains(resp.Content, want) {
+			t.Fatalf("quote output missing %q:\n%s", want, resp.Content)
+		}
+	}
+}
+
+func TestPandoSetupModelSwitchConfirmed(t *testing.T) {
+	bridge := &fakeSetupBridge{
+		switched: SetupModelSwitch{
+			Applied:  true,
+			Previous: SetupModelState{ID: "copilot.gpt-5-mini", CostIn: 0.25, CostOut: 2, CostKnown: true},
+			Target:   SetupModelState{ID: "anthropic.claude-opus-5", CostIn: 5, CostOut: 25, CostKnown: true},
+		},
+	}
+	tool := NewPandoSetupTool(bridge, nil)
+
+	resp := runSetupTool(t, tool, sessionCtx("sess-1"), "model", "anthropic.claude-opus-5 --confirm")
+	if !bridge.setConfirmed {
+		t.Fatal("--confirm was not forwarded to the bridge")
+	}
+	for _, want := range []string{"Session model changed", "next request", "model --clear"} {
+		if !strings.Contains(resp.Content, want) {
+			t.Fatalf("applied-switch output missing %q:\n%s", want, resp.Content)
+		}
+	}
+}
+
+func TestPandoSetupModelClear(t *testing.T) {
+	bridge := &fakeSetupBridge{
+		switched: SetupModelSwitch{
+			Applied: true, Cleared: true,
+			Previous: SetupModelState{ID: "anthropic.claude-opus-5", Overridden: true},
+			Target:   SetupModelState{ID: "copilot.gpt-5-mini", CostIn: 0.25, CostOut: 2, CostKnown: true},
+		},
+	}
+	tool := NewPandoSetupTool(bridge, nil)
+
+	resp := runSetupTool(t, tool, sessionCtx("sess-1"), "model", "--clear")
+	if resp.IsError {
+		t.Fatalf("model --clear errored: %s", resp.Content)
+	}
+	// Restoring a model the user already picked never needs a cost confirmation.
+	if bridge.setModelID != "" || !bridge.setConfirmed {
+		t.Fatalf("bridge called with (%q, confirmed=%v), want an unconditional clear", bridge.setModelID, bridge.setConfirmed)
+	}
+	if !strings.Contains(resp.Content, "cleared") {
+		t.Fatalf("clear output missing the confirmation:\n%s", resp.Content)
+	}
+
+	// --clear and an id together are contradictory.
+	bad := runSetupTool(t, tool, sessionCtx("sess-1"), "model", "some.model --clear")
+	if !bad.IsError {
+		t.Fatalf("--clear with a model id should error, got: %s", bad.Content)
+	}
+}
+
+func TestPandoSetupModelRequiresSessionAndBridge(t *testing.T) {
+	bridge := &fakeSetupBridge{current: SetupModelState{ID: "copilot.gpt-5.4"}}
+
+	noSession := runSetupTool(t, NewPandoSetupTool(bridge, nil), context.Background(), "model", "")
+	if !noSession.IsError {
+		t.Fatalf("model without a session id should error, got: %s", noSession.Content)
+	}
+
+	noBridge := runSetupTool(t, NewPandoSetupTool(nil, nil), sessionCtx("sess-1"), "model", "")
+	if !noBridge.IsError {
+		t.Fatalf("model without a bridge should error, got: %s", noBridge.Content)
+	}
+}
+
+func TestPandoSetupModelSurfacesBridgeError(t *testing.T) {
+	bridge := &fakeSetupBridge{switchErr: errors.New("changing the model at runtime is disabled")}
+
+	resp := runSetupTool(t, NewPandoSetupTool(bridge, nil), sessionCtx("sess-1"), "model", "some.model")
+	if !resp.IsError || !strings.Contains(resp.Content, "disabled") {
+		t.Fatalf("bridge refusal not surfaced: %s", resp.Content)
 	}
 }
 

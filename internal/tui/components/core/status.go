@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/lsp/protocol"
@@ -290,10 +290,16 @@ func (m statusCmp) renderBreadcrumbs() string {
 		Render(breadcrumbContent)
 }
 
+// sessionModel returns the model the selected session actually runs on, which is
+// not necessarily the configured one: pando_setup can switch the model for a
+// single session at runtime.
+func (m statusCmp) sessionModel() models.Model {
+	return models.SupportedModels[agent.SessionModelID(m.session.ID)]
+}
+
 func (m statusCmp) View() string {
 	t := theme.CurrentTheme()
-	modelID := config.Get().Agents[config.AgentCoder].Model
-	model := models.SupportedModels[modelID]
+	model := m.sessionModel()
 
 	// Initialize the help widget, wrapped in a clickable zone
 	status := tuizone.MarkStatusHelp(getHelpWidget())
@@ -500,18 +506,8 @@ func (m statusCmp) availableFooterMsgWidth(diagnostics, tokenInfo string) int {
 func (m statusCmp) model() string {
 	t := theme.CurrentTheme()
 
-	cfg := config.Get()
-
-	coder, ok := cfg.Agents[config.AgentCoder]
-	if !ok {
-		return styles.Padded().
-			Background(t.Secondary()).
-			Foreground(t.BadgeText()).
-			Render("No model")
-	}
-	model, modelOK := models.SupportedModels[coder.Model]
-	modelName := model.Name
-	if !modelOK || modelName == "" {
+	modelName := m.sessionModel().Name
+	if modelName == "" {
 		modelName = "No model"
 	}
 

@@ -47,12 +47,63 @@ func (o SessionLLMOverrides) isEmpty() bool {
 
 var sessionLLMOverrides sync.Map
 
+// sessionLLMOverridesMu serializes writers. Reads stay lock-free through the
+// sync.Map; the mutex only exists so read-modify-write updates of a single field
+// (SetSessionModelOverride) cannot lose a concurrent full-struct write.
+var sessionLLMOverridesMu sync.Mutex
+
 func SetSessionLLMOverrides(sessionID string, overrides SessionLLMOverrides) {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		return
 	}
 
+	sessionLLMOverridesMu.Lock()
+	defer sessionLLMOverridesMu.Unlock()
+	storeSessionLLMOverrides(sessionID, overrides)
+}
+
+// SessionLLMOverridesFor returns the overrides stored for a session, or the zero
+// value when none are set. Unlike sessionLLMOverridesForContext it does not need
+// a request context, so callers outside the agent loop (the pando_setup bridge)
+// can read the session's effective model.
+func SessionLLMOverridesFor(sessionID string) SessionLLMOverrides {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return SessionLLMOverrides{}
+	}
+	value, ok := sessionLLMOverrides.Load(sessionID)
+	if !ok {
+		return SessionLLMOverrides{}
+	}
+	overrides, ok := value.(SessionLLMOverrides)
+	if !ok {
+		return SessionLLMOverrides{}
+	}
+	return overrides
+}
+
+// SetSessionModelOverride replaces only the model of a session's overrides,
+// keeping persona and inference settings intact. Writing the whole struct here
+// would silently drop the persona ACP or the Web UI installed for the session.
+// An empty model clears just the model override.
+func SetSessionModelOverride(sessionID string, model models.ModelID) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return
+	}
+
+	sessionLLMOverridesMu.Lock()
+	defer sessionLLMOverridesMu.Unlock()
+
+	current := SessionLLMOverridesFor(sessionID)
+	current.Model = model
+	storeSessionLLMOverrides(sessionID, current)
+}
+
+// storeSessionLLMOverrides normalizes and persists the overrides. Callers must
+// hold sessionLLMOverridesMu.
+func storeSessionLLMOverrides(sessionID string, overrides SessionLLMOverrides) {
 	normalized := SessionLLMOverrides{
 		Model:           overrides.Model,
 		ReasoningEffort: normalizeSessionReasoningEffort(overrides.ReasoningEffort),
@@ -69,21 +120,7 @@ func SetSessionLLMOverrides(sessionID string, overrides SessionLLMOverrides) {
 }
 
 func sessionLLMOverridesForContext(ctx context.Context) SessionLLMOverrides {
-	sessionID := sessionIDFromContext(ctx)
-	if sessionID == "" {
-		return SessionLLMOverrides{}
-	}
-
-	value, ok := sessionLLMOverrides.Load(sessionID)
-	if !ok {
-		return SessionLLMOverrides{}
-	}
-
-	overrides, ok := value.(SessionLLMOverrides)
-	if !ok {
-		return SessionLLMOverrides{}
-	}
-	return overrides
+	return SessionLLMOverridesFor(sessionIDFromContext(ctx))
 }
 
 func sessionIDFromContext(ctx context.Context) string {

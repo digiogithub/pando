@@ -55,12 +55,13 @@ func (b *setupBridge) SessionInfo(ctx context.Context, sessionID string) (tools.
 		Cost:                sess.Cost,
 	}
 
-	if cfg := config.Get(); cfg != nil {
-		if coder, ok := cfg.Agents[config.AgentCoder]; ok {
-			info.Model = string(coder.Model)
-			if model, known := models.SupportedModels[coder.Model]; known {
-				info.ContextWindow = model.ContextWindow
-			}
+	// Report the model actually in force, which is the session override when one
+	// is set — reporting the globally configured model would contradict what the
+	// "model" command says.
+	if id, _ := effectiveSessionModel(sessionID); id != "" {
+		info.Model = string(id)
+		if model, known := models.SupportedModels[id]; known {
+			info.ContextWindow = model.ContextWindow
 		}
 	}
 	return info, nil

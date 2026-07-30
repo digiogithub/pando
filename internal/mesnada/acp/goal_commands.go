@@ -124,6 +124,7 @@ func (a *PandoACPAgent) processGoalPrompt(
 	acpSession.SetGoalCancel(cancel)
 	defer acpSession.ClearGoalCancel()
 
+	reconcileACPSessionModel(a.agentService, acpSession)
 	reconcileACPThinkingSession(a.agentService, acpSession)
 	a.agentService.SetSessionLLMOverrides(acpSession.PandoSessionID(), sessionLLMOverridesFor(acpSession))
 	eventChan, err := a.agentService.RunGoal(goalCtx, acpSession.PandoSessionID(), objective)

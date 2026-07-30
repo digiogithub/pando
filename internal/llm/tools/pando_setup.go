@@ -16,7 +16,8 @@ const (
 	PandoSetupToolName = "pando_setup"
 
 	pandoSetupDescription = `Pando's own control panel: inspect configuration and runtime state, discover
-available models, read session usage, and switch session modes.
+available models, read session usage, switch session modes, and — when the user
+asks for it and the capability is enabled — change this session's model.
 
 It works like a CLI: pick a command and pass CLI-style arguments. Run it with
 command="help" to list every command, or pass "--help" as args to any command to
@@ -68,6 +69,40 @@ type SetupRunnableCommand struct {
 // Runnable reports whether the agent may activate this command itself.
 func (c SetupRunnableCommand) Runnable() bool { return c.Reason == "" }
 
+// SetupModelState describes the model a session runs on, together with the price
+// metadata used to decide whether a switch needs the user's confirmation.
+type SetupModelState struct {
+	ID            string  `json:"id"`
+	Name          string  `json:"name,omitempty"`
+	Provider      string  `json:"provider,omitempty"`
+	Account       string  `json:"account,omitempty"`
+	ContextWindow int64   `json:"contextWindow,omitempty"`
+	CostIn        float64 `json:"costIn"`
+	CostOut       float64 `json:"costOut"`
+	// CostKnown is false when the catalogue has no price for the model (local
+	// models, mock providers, entries models.dev could not enrich). It is not the
+	// same as a price of zero and must not be reported as "free".
+	CostKnown bool `json:"costKnown"`
+	// Overridden reports that the model comes from a session-scoped override
+	// rather than from the agent's configured default.
+	Overridden bool `json:"overridden"`
+}
+
+// SetupModelSwitch is the outcome of a model-switch request.
+type SetupModelSwitch struct {
+	// Applied is false when the switch was only quoted and still needs the user's
+	// confirmation; in that case nothing changed.
+	Applied  bool            `json:"applied"`
+	Previous SetupModelState `json:"previous"`
+	Target   SetupModelState `json:"target"`
+	// ConfirmationReason is set only when Applied is false: why the user has to
+	// approve (the target costs more, or a price is missing on either side).
+	ConfirmationReason string `json:"confirmationReason,omitempty"`
+	// Cleared reports that the session override was removed and the agent's
+	// configured default is back in use.
+	Cleared bool `json:"cleared,omitempty"`
+}
+
 // SetupBridge exposes the session-scoped state that pando_setup needs. It is
 // implemented outside this package (the agent owns session modes and the
 // session store, and both already import this package), so the tool stays
@@ -82,6 +117,13 @@ type SetupBridge interface {
 	// RunCommand activates a slash command for the session and returns the text
 	// the agent should read (a confirmation, or the command's own instructions).
 	RunCommand(ctx context.Context, sessionID, name, args string) (string, error)
+	// CurrentModel reports the model the session runs on.
+	CurrentModel(sessionID string) (SetupModelState, error)
+	// SetSessionModel switches the model for this session only. An empty modelID
+	// clears the override. When the target costs more than the current model — or
+	// either price is unknown — the switch is only applied if confirmed is true;
+	// otherwise it returns a quote with Applied false and changes nothing.
+	SetSessionModel(sessionID, modelID string, confirmed bool) (SetupModelSwitch, error)
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +244,23 @@ Prints the model ids accepted anywhere a model must be chosen, subagents include
   --detail    Add cost per 1M tokens, context window, capabilities and description.
   --limit     Maximum rows to print (default 60, 0 = no limit).`,
 			Run: runSetupModels,
+		},
+		{
+			Name:    "model",
+			Summary: "Show the model this session runs on, or switch it",
+			Usage: `Usage: model [<model-id>] [--confirm] [--clear]
+Without arguments it prints the active model, its price and where it comes from.
+  <model-id>  Switch this session to that model (run "models" for the ids).
+  --confirm   Approve a switch the user has just accepted (see below).
+  --clear     Drop the session override and go back to the configured model.
+The switch is scoped to this session, lives in memory only and is lost when Pando
+restarts. It takes effect on the very next request, so a switch made mid-task
+answers the rest of the task on the new model.
+Switching to a model that costs more — or to or from a model with no published
+price — is NOT applied on the first call: you get a quote to show the user, and
+only after the user accepts do you repeat the call with --confirm.
+Never confirm on your own behalf: the confirmation must come from the user.`,
+			Run: runSetupModel,
 		},
 		{
 			Name:    "lsp",
@@ -760,6 +819,112 @@ func collapseSetupWhitespace(s string) string {
 }
 
 // ---------------------------------------------------------------------------
+// model
+// ---------------------------------------------------------------------------
+
+func runSetupModel(ctx context.Context, t *pandoSetupTool, args setupArgs) (string, error) {
+	if t.bridge == nil {
+		return "", fmt.Errorf("model selection is unavailable in this runtime")
+	}
+	sessionID, _ := GetContextValues(ctx)
+	if sessionID == "" {
+		return "", fmt.Errorf("no session is attached to this call")
+	}
+
+	target := strings.TrimSpace(args.Positional(0))
+	clear := args.Bool("clear")
+	if clear && target != "" {
+		return "", fmt.Errorf("--clear takes no model id: it restores the configured model")
+	}
+
+	if target == "" && !clear {
+		state, err := t.bridge.CurrentModel(sessionID)
+		if err != nil {
+			return "", err
+		}
+		return renderSetupCurrentModel(state), nil
+	}
+
+	// Clearing goes back to a model the user already chose, so it never needs a
+	// cost confirmation.
+	switched, err := t.bridge.SetSessionModel(sessionID, target, clear || args.Bool("confirm"))
+	if err != nil {
+		return "", err
+	}
+	return renderSetupModelSwitch(switched), nil
+}
+
+func renderSetupCurrentModel(state SetupModelState) string {
+	var sb strings.Builder
+	sb.WriteString("## Session model\n\n")
+	sb.WriteString("- " + describeSetupModelState(state) + "\n")
+	if state.Overridden {
+		sb.WriteString("- source: session override (this session only, lost on restart)\n")
+		sb.WriteString("- restore the configured model with: model --clear\n")
+	} else {
+		sb.WriteString("- source: the agent's configured model\n")
+	}
+	sb.WriteString("\nRun \"models\" for the ids you can switch to.\n")
+	return sb.String()
+}
+
+func renderSetupModelSwitch(s SetupModelSwitch) string {
+	var sb strings.Builder
+
+	if !s.Applied {
+		sb.WriteString("## Confirmation required — the model was NOT changed\n\n")
+		sb.WriteString(fmt.Sprintf("- current: %s\n", describeSetupModelState(s.Previous)))
+		sb.WriteString(fmt.Sprintf("- target:  %s\n", describeSetupModelState(s.Target)))
+		sb.WriteString("\n" + s.ConfirmationReason + "\n")
+		sb.WriteString("\nAsk the user whether to switch. Only if the user accepts, repeat this call as:\n")
+		sb.WriteString(fmt.Sprintf("  pando_setup model %s --confirm\n", s.Target.ID))
+		sb.WriteString("\nDo not confirm on the user's behalf, and do not report the model as changed:\n")
+		sb.WriteString("this session is still running on " + s.Previous.ID + ".\n")
+		return sb.String()
+	}
+
+	if s.Cleared {
+		sb.WriteString("## Session model override cleared\n\n")
+		sb.WriteString(fmt.Sprintf("- back to the configured model: %s\n", describeSetupModelState(s.Target)))
+		sb.WriteString("\nIt takes effect on your next request.\n")
+		return sb.String()
+	}
+
+	sb.WriteString("## Session model changed\n\n")
+	sb.WriteString(fmt.Sprintf("- from: %s\n", describeSetupModelState(s.Previous)))
+	sb.WriteString(fmt.Sprintf("- to:   %s\n", describeSetupModelState(s.Target)))
+	sb.WriteString("\nIt takes effect on your next request and applies to this session only; the\n")
+	sb.WriteString("configured model is untouched and the override is lost when Pando restarts\n")
+	sb.WriteString("(editors connected over ACP restore it with the session).\n")
+	sb.WriteString("Restore the configured model with: model --clear\n")
+	return sb.String()
+}
+
+// describeSetupModelState renders one model as a single line: id, name, provider
+// and price. Unknown prices are said to be unknown, never printed as zero.
+func describeSetupModelState(state SetupModelState) string {
+	if state.ID == "" {
+		return "none"
+	}
+	line := state.ID
+	if state.Name != "" {
+		line += " — " + state.Name
+	}
+	if state.Provider != "" {
+		line += " (" + state.Provider + ")"
+	}
+	if state.CostKnown {
+		line += fmt.Sprintf(" | $%.2f in / $%.2f out per 1M", state.CostIn, state.CostOut)
+	} else {
+		line += " | price unknown"
+	}
+	if state.ContextWindow > 0 {
+		line += " | context " + formatSetupTokens(state.ContextWindow)
+	}
+	return line
+}
+
+// ---------------------------------------------------------------------------
 // lsp
 // ---------------------------------------------------------------------------
 
@@ -1071,6 +1236,7 @@ func (a setupArgs) PositionalsFrom(i int) []string {
 // swallowing the word as the flag's value.
 var setupBooleanFlags = map[string]bool{
 	"help": true, "h": true, "detail": true, "all": true,
+	"confirm": true, "clear": true,
 }
 
 // parseSetupArgs tokenizes a CLI-style argument string. Quotes group words, and

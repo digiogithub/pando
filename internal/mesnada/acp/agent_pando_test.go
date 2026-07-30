@@ -401,14 +401,17 @@ type mockAgentService struct {
 	lastRunMessages    []string
 	activePersona      string
 	currentModel       string
-	availableModels    []ACPModelInfo
-	sessionOverrides   map[string]SessionLLMOverrides
-	ponytailModes      map[string]string
-	cavemanModes       map[string]string
-	busy               bool
-	steerErr           error
-	steerCalls         []string
-	pendingSteering    int
+	// sessionModelOverrides mimics the agent-side runtime model switch keyed by
+	// Pando session id (pando_setup model).
+	sessionModelOverrides map[string]string
+	availableModels       []ACPModelInfo
+	sessionOverrides      map[string]SessionLLMOverrides
+	ponytailModes         map[string]string
+	cavemanModes          map[string]string
+	busy                  bool
+	steerErr              error
+	steerCalls            []string
+	pendingSteering       int
 
 	superpowersModes        map[string]bool
 	superpowersFinishCalled bool
@@ -472,6 +475,10 @@ func (m *mockAgentService) CurrentModelID() string {
 		return strings.TrimSpace(m.currentModel)
 	}
 	return "test-model"
+}
+
+func (m *mockAgentService) SessionModelOverrideID(sessionID string) string {
+	return strings.TrimSpace(m.sessionModelOverrides[sessionID])
 }
 
 func (m *mockAgentService) AvailableModels() []ACPModelInfo {

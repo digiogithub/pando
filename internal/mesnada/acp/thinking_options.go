@@ -56,6 +56,31 @@ func sessionLLMOverridesFor(session *ACPServerSession) SessionLLMOverrides {
 	}
 }
 
+// reconcileACPSessionModel adopts a model the agent switched to at runtime
+// (pando_setup model) as the ACP session's model, reporting whether anything
+// changed.
+//
+// It is required in both directions. Without it the ACP session keeps the model
+// the client picked, so (a) the model picker and the persisted session state
+// report a model that is not the one answering, and (b) the next prompt would
+// hand that stale model back to the agent through sessionLLMOverridesFor and
+// silently undo the switch the user confirmed.
+//
+// Only a real override is adopted (never CurrentModelID), so a session running
+// on a model that simply differs from the global default is left alone.
+func reconcileACPSessionModel(svc AgentService, session *ACPServerSession) bool {
+	if svc == nil || session == nil {
+		return false
+	}
+	override := strings.TrimSpace(svc.SessionModelOverrideID(session.PandoSessionID()))
+	if override == "" || override == strings.TrimSpace(session.Model()) {
+		return false
+	}
+	session.SetModel(override)
+	reconcileACPThinkingSession(svc, session)
+	return true
+}
+
 func reconcileACPThinkingSession(svc AgentService, session *ACPServerSession) acpThinkingSettings {
 	settings := normalizedACPThinkingSettingsForSession(svc, session)
 	applyACPThinkingSettings(session, settings)

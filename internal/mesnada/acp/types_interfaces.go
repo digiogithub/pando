@@ -81,6 +81,12 @@ type AgentService interface {
 	LastRunSystemMessages(sessionID string) []string
 	// CurrentModelID returns the ID of the currently active model.
 	CurrentModelID() string
+	// SessionModelOverrideID returns the model the agent switched this session to
+	// at runtime (pando_setup model), or "" when the session still runs on the
+	// configured model. It is not the same as CurrentModelID: it reports only a
+	// deliberate per-session switch, so adopting it never overwrites the model the
+	// ACP client picked with an unrelated global default.
+	SessionModelOverrideID(sessionID string) string
 	// AvailableModels returns the list of available models with name metadata.
 	AvailableModels() []ACPModelInfo
 	// SetModelOverride temporarily changes the active model (in-memory only).

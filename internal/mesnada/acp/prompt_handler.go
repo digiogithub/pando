@@ -341,6 +341,12 @@ func (a *PandoACPAgent) processPromptWithAgent(
 			a.logger.Printf("[ACP AGENT] Failed to send user message chunk: %v", err)
 		}
 	}
+	// Adopt a switch made by pando_setup in an earlier turn before reading the
+	// session's overrides: otherwise this call would hand the pre-switch model
+	// back to the agent and revert it.
+	if reconcileACPSessionModel(a.agentService, acpSession) {
+		a.sendSessionConfigOptionsUpdate(ctx, acpSession.ID)
+	}
 	overrides := sessionLLMOverridesFor(acpSession)
 	a.logger.Printf(
 		"[ACP AGENT] Applying ACP session overrides for session %s: model=%q stream_mode=%q reasoning_effort=%q thinking_mode=%q persona=%q clean=%t",
@@ -357,7 +363,13 @@ func (a *PandoACPAgent) processPromptWithAgent(
 	if err != nil {
 		return "", fmt.Errorf("failed to start agent: %w", err)
 	}
-	return a.processAgentEventStream(ctx, acpSession, eventChan)
+	stopReason, streamErr := a.processAgentEventStream(ctx, acpSession, eventChan)
+	// The run may have switched model mid-loop; publish it so the picker shows
+	// which model actually finished the turn.
+	if reconcileACPSessionModel(a.agentService, acpSession) {
+		a.sendSessionConfigOptionsUpdate(ctx, acpSession.ID)
+	}
+	return stopReason, streamErr
 }
 
 func (a *PandoACPAgent) processAgentEventStream(

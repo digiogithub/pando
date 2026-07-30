@@ -825,6 +825,12 @@ func (a *acpAgentAdapter) CurrentModelID() string {
 	return string(a.svc.Model().ID)
 }
 
+// SessionModelOverrideID returns the runtime model override of a session, empty
+// when it runs on the configured model.
+func (a *acpAgentAdapter) SessionModelOverrideID(sessionID string) string {
+	return string(agent.SessionModelOverrideID(sessionID))
+}
+
 // AvailableModels returns all registered models with name metadata.
 func (a *acpAgentAdapter) AvailableModels() []acpPkg.ACPModelInfo {
 	allModels := models.GetAllModels()

@@ -686,6 +686,39 @@ type InternalToolsConfig struct {
 	// AskUserQuestion lets the agent ask the user selectable questions mid-task.
 	// It is enabled by default; set this to true to remove the tool entirely.
 	AskUserQuestionDisabled bool `json:"askUserQuestionDisabled,omitempty" toml:"AskUserQuestionDisabled"`
+
+	// SetupModelSwitchEnabled lets the agent change the model of its own session
+	// through the pando_setup tool. It is a positive flag on purpose — unlike the
+	// "...Disabled" toggles above, this capability is OFF by default, so the zero
+	// value has to mean disabled: switching model changes what the user is billed
+	// and how the assistant behaves, and must be opted into explicitly.
+	// Reading the active model stays available regardless of this flag.
+	SetupModelSwitchEnabled bool `json:"setupModelSwitchEnabled,omitempty" toml:"SetupModelSwitchEnabled"`
+
+	// SetupModelSwitchMaxPerRun caps how many times the model may be switched
+	// within a single run, so a confused agent cannot spend the turn hopping
+	// between models. 0 selects the built-in default.
+	SetupModelSwitchMaxPerRun int `json:"setupModelSwitchMaxPerRun,omitempty" toml:"SetupModelSwitchMaxPerRun"`
+}
+
+// SetupModelSwitchEnabled reports whether the agent may change its session's
+// model through pando_setup. Disabled whenever configuration is unavailable.
+func SetupModelSwitchEnabled() bool {
+	cfg := Get()
+	if cfg == nil {
+		return false
+	}
+	return cfg.InternalTools.SetupModelSwitchEnabled
+}
+
+// SetupModelSwitchMaxPerRun returns the configured cap on model switches per
+// run, or fallback when it is unset.
+func SetupModelSwitchMaxPerRun(fallback int) int {
+	cfg := Get()
+	if cfg == nil || cfg.InternalTools.SetupModelSwitchMaxPerRun <= 0 {
+		return fallback
+	}
+	return cfg.InternalTools.SetupModelSwitchMaxPerRun
 }
 
 // LuaConfig defines configuration for the Lua scripting engine.

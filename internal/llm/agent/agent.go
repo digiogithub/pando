@@ -1047,6 +1047,12 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		}
 	}
 
+	// Let pando_setup change this session's model from inside the loop: the run
+	// state is what the tool checks before allowing a switch, and it bounds how
+	// many switches this single run may perform.
+	beginModelSwitchRun(sessionID, msgHistory)
+	defer endModelSwitchRun(sessionID)
+
 	for {
 		// Check for cancellation before each iteration
 		select {
@@ -1055,6 +1061,13 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		default:
 			// Continue processing
 		}
+
+		// Adopt a model the agent switched to while running the previous
+		// iteration's tools. This is a safe boundary: the tool results are already
+		// appended, so the history has a valid tool_call/tool_result shape.
+		requestProvider, msgHistory = a.applyPendingModelSwitch(
+			promptCtx, sessionID, requestProvider, content, personaContent, msgHistory, eventCh)
+
 		logging.Debug("processGeneration iteration", "sessionID", sessionID, "historyLength", len(msgHistory))
 		agentMessage, toolResults, err := a.streamAndHandleEvents(runCtx, sessionID, msgHistory, requestProvider, eventCh)
 		if err != nil {
@@ -2306,7 +2319,11 @@ func (a *agent) prepareProvider(ctx context.Context, userPrompt string, personaC
 	// When there is no skill manager, no persona and no active session policy, use
 	// the pre-built provider as-is. Ponytail and Superpowers must still be honored
 	// here because they inject per-turn even without a skill manager.
-	if a.skillManager == nil && personaContent == "" && !sessionPolicyActive(ctx) {
+	// A per-session model override also has to leave this fast path: a.provider was
+	// built for the agent's configured model, so returning it would silently answer
+	// on the wrong model.
+	if a.skillManager == nil && personaContent == "" && !sessionPolicyActive(ctx) &&
+		sessionLLMOverridesForContext(ctx).Model == "" {
 		return a.provider, nil
 	}
 
