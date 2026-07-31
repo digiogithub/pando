@@ -1,0 +1,36 @@
+# Figma remote MCP server — impersonation config.
+#
+# This config uses a client_id obtained by registering with Figma's DCR
+# endpoint using an allowlisted client_name (e.g. "Claude Code (figma)").
+# Run figma-register-client.ts to obtain the client_id/client_secret, then
+# paste them below.
+#
+# With ClientID set, Pando skips Dynamic Client Registration entirely
+# (internal/mcpauth/login.go:189-193) and goes straight to the
+# authorization-code + PKCE S256 flow. The hardcoded clientDisplayName
+# "Pando" is never sent to Figma because RegisterClient is not called.
+#
+# After saving:
+#   pando mcp login figma
+#   pando mcp status figma
+
+[MCPServers.figma]
+Type = "streamable-http"
+URL = "https://mcp.figma.com/mcp"
+
+[MCPServers.figma.Auth]
+Type = "oauth"
+
+[MCPServers.figma.Auth.OAuth]
+# Obtained from figma-register-client.ts (or rexdotsh/figma-mcp-oauth-bypass).
+# These are per-registration values; they are NOT a shared Codex/VS Code secret.
+ClientID = "REPLACE_WITH_CLIENT_ID_FROM_REGISTRATION"
+ClientSecret = "REPLACE_WITH_CLIENT_SECRET_FROM_REGISTRATION"
+
+# Pando's defaults — must match the redirect_uri used during registration.
+# RedirectURI = "http://127.0.0.1:19876/mcp/oauth/callback"
+# CallbackPort = 19876
+
+# mcp:connect is the only scope Figma's MCP server accepts.
+# Leave empty to let Pando pick it up from AS metadata.
+# Scopes = ["mcp:connect"]

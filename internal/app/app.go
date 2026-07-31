@@ -83,6 +83,11 @@ type App struct {
 
 	CoderAgent agent.Service
 
+	// coderToolsBuilder rebuilds the coder agent's tool set with the current
+	// configuration. RefreshAgentTools uses it to pick up MCP servers added or
+	// edited at runtime without restarting the process.
+	coderToolsBuilder func() []tools.BaseTool
+
 	Projects            project.Service
 	ProjectManager      *project.Manager
 	AgentVCS            agentvcs.Service
@@ -658,6 +663,18 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		app.CoderAgent.SetLuaManager(app.LuaManager)
 	}
 	logging.Debug("Coder agent created", "model", app.CoderAgent.Model().ID)
+	app.coderToolsBuilder = func() []tools.BaseTool {
+		return agent.CoderAgentToolsWithMesnada(
+			app.MesnadaOrchestrator,
+			app.Remembrances,
+			app.MCPGateway,
+			app.Permissions,
+			app.History,
+			app,
+			app.UserInput,
+			app.Sessions,
+		)
+	}
 
 	// Delegation supervisor: re-enters the parent loop when a delegated subagent
 	// completes — Case A (inject into a still-running loop) and/or Case B (resurrect
@@ -2619,4 +2636,22 @@ func (a *appACPPermissionAdapter) RegisterSessionHandler(sessionID string, handl
 
 func (a *appACPPermissionAdapter) UnregisterSessionHandler(sessionID string) {
 	a.svc.UnregisterSessionHandler(sessionID)
+}
+
+// RefreshAgentTools rebuilds the coder agent's tool set from the current
+// configuration and installs it on the running agent. It is called after the
+// MCP server configuration changes so newly configured tools become usable
+// without restarting Pando. It is a no-op when the agent does not support a
+// runtime swap or the builder is not wired yet.
+func (a *App) RefreshAgentTools() {
+	if a == nil || a.CoderAgent == nil || a.coderToolsBuilder == nil {
+		return
+	}
+	setter, ok := a.CoderAgent.(agent.ToolsSetter)
+	if !ok {
+		return
+	}
+	newTools := a.coderToolsBuilder()
+	setter.SetTools(newTools)
+	logging.Debug("Coder agent tools refreshed", "count", len(newTools))
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
@@ -37,7 +38,18 @@ type Client interface {
 type stdioLogDrainingClient struct {
 	inner  *client.Client
 	server string
+
+	// logsMu guards recentLogs, a small ring of the last stderr lines written
+	// by the child process. When the handshake fails because the server exited
+	// (typically a missing API key or a bad argument), those lines carry the
+	// only actionable explanation, so they are appended to the returned error
+	// instead of living solely in the log file.
+	logsMu     sync.Mutex
+	recentLogs []string
 }
+
+// maxRecentStderrLines bounds the retained stderr ring per stdio client.
+const maxRecentStderrLines = 5
 
 func New(ctx context.Context, serverName string, srv config.MCPServer) (Client, error) {
 	resolved, err := config.ResolveMCPServerSecrets(srv)
@@ -286,11 +298,43 @@ func BuildInitializeRequest(clientName string) mcp.InitializeRequest {
 }
 
 func (c *stdioLogDrainingClient) Initialize(ctx context.Context, req mcp.InitializeRequest) (*mcp.InitializeResult, error) {
-	return c.inner.Initialize(ctx, req)
+	res, err := c.inner.Initialize(ctx, req)
+	return res, c.explainWithStderr(err)
+}
+
+// explainWithStderr enriches a failure with the child process's last stderr
+// lines. A stdio server that refuses to start ("Either FIGMA_API_KEY or
+// FIGMA_OAUTH_TOKEN is required") otherwise surfaces only as the opaque
+// "transport error: transport closed".
+func (c *stdioLogDrainingClient) explainWithStderr(err error) error {
+	if err == nil {
+		return nil
+	}
+	logs := c.recentStderr()
+	if len(logs) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w (%s stderr: %s)", err, c.server, strings.Join(logs, " | "))
+}
+
+func (c *stdioLogDrainingClient) recentStderr() []string {
+	c.logsMu.Lock()
+	defer c.logsMu.Unlock()
+	return append([]string(nil), c.recentLogs...)
+}
+
+func (c *stdioLogDrainingClient) recordStderr(line string) {
+	c.logsMu.Lock()
+	defer c.logsMu.Unlock()
+	c.recentLogs = append(c.recentLogs, line)
+	if len(c.recentLogs) > maxRecentStderrLines {
+		c.recentLogs = c.recentLogs[len(c.recentLogs)-maxRecentStderrLines:]
+	}
 }
 
 func (c *stdioLogDrainingClient) ListTools(ctx context.Context, req mcp.ListToolsRequest) (*mcp.ListToolsResult, error) {
-	return c.inner.ListTools(ctx, req)
+	res, err := c.inner.ListTools(ctx, req)
+	return res, c.explainWithStderr(err)
 }
 
 func (c *stdioLogDrainingClient) CallTool(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -306,10 +350,10 @@ func (c *stdioLogDrainingClient) startLogDrainer(ctx context.Context) {
 	if !ok || stderr == nil {
 		return
 	}
-	go drainStdioLogs(ctx, c.server, stderr)
+	go drainStdioLogs(ctx, c.server, stderr, c.recordStderr)
 }
 
-func drainStdioLogs(ctx context.Context, serverName string, stderr io.Reader) {
+func drainStdioLogs(ctx context.Context, serverName string, stderr io.Reader, record func(string)) {
 	scanner := bufio.NewScanner(stderr)
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
@@ -326,6 +370,9 @@ func drainStdioLogs(ctx context.Context, serverName string, stderr io.Reader) {
 		if looksLikeJSONRPCLine(line) {
 			logging.Debug("MCP stdio stderr emitted JSON-RPC-like line", "server", serverName, "line", line)
 			continue
+		}
+		if record != nil {
+			record(line)
 		}
 		logging.Warn("MCP stdio server log", "server", serverName, "line", line)
 	}

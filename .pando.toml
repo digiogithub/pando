@@ -48,7 +48,7 @@ apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBIalJySUZJeDNDd3AzZFVHM
 id = 'openrouter'
 displayName = 'openrouter'
 type = 'openrouter'
-apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB5Q0R1NXB2S1ZJVnFJQ25LNDJyZlNoNTRWL0N6S01adUxGbGVxM2p6aEdBClRsb2doc1hXd0NlWmh6RkJPMVJyRDYzY1RMQ3Z1bXg3UkhQbjRPTFZoaDQKLS0tIHNqSE95OE1MWFFXNm9YNlZKMUM2WmV6QU0wN2VvOGpXZCt3OTYvNWllaFUKHnx8qe2FzcLr7DTb9GL7YT9KoYLL2/ifcg0VRR0w2USgMEo7EM1XjiCFG3Q2Z396n+plFnWX0LQU2S2hI4FRP66MbR04Ax83MZ3K0yT+g7tQjSDTDc6FjxaCS+y2h0RTSKiCF0u3WxkP'
+apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA0OFBPZEp3L2dPUURIRmVuaUE0VnRBd0pZWFE2cFFEbHljaDluWUcrQkdnCjExNlFRaGl2K1JQU1VtYUNmRGM3b2VxK1Q1NDFQNW5RTkxBaEFqYTl5bDAKLS0tIG9OaDJnVkJMMFBHbzgvY2ZjbzRicjhQUUtjbmNlNW9BN1F3VGdmUUoxNnMK8BwX5bKvMsPUJt8fdkA3hzi1HJecaO3wk/mmDeobPMgjE4JVrMEFQm/zGpJdwagEwB+cZcTDtLKM5T3uZY/PxhsMLFz4s4WPAfd50c84LnixP6UZjfkZNdUXilI81CbMrMp5ZFtgKkp4'
 
 [[providerAccounts]]
 id = 'ollama'
@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'openrouter.xiaomi/mimo-v2.5'
+Model = 'openrouter.z-ai/glm-5.2'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -338,6 +338,8 @@ BrowserTimeout = 30
 BrowserUserDataDir = ''
 BrowserMaxSessions = 3
 AskUserQuestionDisabled = false
+SetupModelSwitchEnabled = false
+SetupModelSwitchMaxPerRun = 0
 
 [Snapshots]
 Enabled = true
@@ -482,3 +484,17 @@ MaxHeight = 0
 MaxBase64Bytes = 0
 Quality = 0
 UseFilesAPI = true
+
+[AGUI]
+Enabled = false
+Path = ''
+Port = 0
+Host = ''
+Agents = []
+AllowedOrigins = []
+RequireToken = false
+FrontendTools = false
+AgentPoolSize = 0
+AgentPoolTTL = ''
+AutoApprove = false
+HumanInTheLoop = false

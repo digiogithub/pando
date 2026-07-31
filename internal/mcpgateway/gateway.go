@@ -66,6 +66,26 @@ func (g *Gateway) Initialize(ctx context.Context, mcpServers map[string]config.M
 	return g.registry.DiscoverAll(ctx, resolved)
 }
 
+// RefreshServer re-runs tool discovery for a single server and replaces its
+// catalog entries, returning the number of tools discovered. Any pooled client
+// is evicted first so a configuration change (new headers, new credentials,
+// new URL) takes effect immediately instead of reusing the stale connection.
+//
+// srv is the raw configuration; secrets are resolved here.
+func (g *Gateway) RefreshServer(ctx context.Context, name string, srv config.MCPServer) (int, error) {
+	if g == nil {
+		return 0, fmt.Errorf("MCP gateway not initialized")
+	}
+	resolved, err := config.ResolveMCPServerSecrets(srv)
+	if err != nil {
+		return 0, fmt.Errorf("resolve MCP server %s secrets: %w", name, err)
+	}
+	if g.pool != nil {
+		g.pool.Evict(name)
+	}
+	return g.registry.DiscoverServer(ctx, name, resolved)
+}
+
 // GetFavorites returns the current favorite tools based on usage statistics.
 func (g *Gateway) GetFavorites(ctx context.Context) ([]RegisteredTool, error) {
 	return g.stats.GetFavorites(ctx)

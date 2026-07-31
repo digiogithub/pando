@@ -304,6 +304,9 @@ type agent struct {
 	sessions session.Service
 	messages message.Service
 
+	// toolsMu guards tools, which can be swapped at runtime by SetTools when
+	// the MCP server configuration changes (see App.RefreshAgentTools).
+	toolsMu  sync.RWMutex
 	tools    []tools.BaseTool
 	provider provider.Provider
 
@@ -435,7 +438,33 @@ func (a *agent) Model() models.Model {
 }
 
 func (a *agent) GetTools() []tools.BaseTool {
+	return a.currentTools()
+}
+
+// currentTools returns the live tool slice. The slice itself is never mutated
+// in place — SetTools replaces it wholesale — so readers can use the returned
+// value without holding the lock.
+func (a *agent) currentTools() []tools.BaseTool {
+	a.toolsMu.RLock()
+	defer a.toolsMu.RUnlock()
 	return a.tools
+}
+
+// ToolsSetter is implemented by agents whose tool set can be swapped while the
+// process runs. It is deliberately kept out of the Service interface so test
+// doubles do not have to implement it; callers type-assert on it.
+type ToolsSetter interface {
+	SetTools(newTools []tools.BaseTool)
+}
+
+// SetTools replaces the agent's tool set at runtime. It is used when the MCP
+// server configuration changes so a running instance picks up newly configured
+// (or removed) MCP tools without a restart. Runs already in flight keep the
+// snapshot they started with; the next run sees the new set.
+func (a *agent) SetTools(newTools []tools.BaseTool) {
+	a.toolsMu.Lock()
+	a.tools = newTools
+	a.toolsMu.Unlock()
 }
 
 func (a *agent) SetLuaManager(fm *luaengine.FilterManager) {
@@ -1038,10 +1067,10 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	// irrelevant tools. Falls back silently to all tools on any error.
 	runCtx := ctx
 	if globalContextTrimmer != nil && len(msgs) == 0 {
-		toolDescs := toolDescriptionsFrom(a.tools)
+		toolDescs := toolDescriptionsFrom(a.currentTools())
 		if filteredNames, trimErr := globalContextTrimmer.ProfileTask(ctx, content, toolDescs); trimErr == nil && len(filteredNames) > 0 {
 			runCtx = context.WithValue(ctx, trimmedToolsKey{}, filteredNames)
-			logging.Debug("Context trimmer applied", "original_tools", len(a.tools), "filtered_tools", len(filteredNames))
+			logging.Debug("Context trimmer applied", "original_tools", len(a.currentTools()), "filtered_tools", len(filteredNames))
 		} else if trimErr != nil {
 			logging.Debug("Context trimmer failed, using all tools", "error", trimErr)
 		}
@@ -1385,12 +1414,12 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 	}
 
 	// Apply context-trimmed tool list if a pre-session profile was computed.
-	// Only the advertised tool list is filtered; tool execution still looks up from a.tools
+	// Only the advertised tool list is filtered; tool execution still looks up from a.currentTools()
 	// so any tool can always be invoked (e.g. if the LLM calls one based on prior context).
-	activeTools := a.tools
+	activeTools := a.currentTools()
 	if filteredNames, ok := ctx.Value(trimmedToolsKey{}).([]string); ok && len(filteredNames) > 0 {
-		activeTools = filterToolsByNames(a.tools, filteredNames)
-		logging.Debug("streamAndHandleEvents: using trimmed tool list", "active", len(activeTools), "total", len(a.tools))
+		activeTools = filterToolsByNames(a.currentTools(), filteredNames)
+		logging.Debug("streamAndHandleEvents: using trimmed tool list", "active", len(activeTools), "total", len(a.currentTools()))
 	}
 
 	providerEventChan := requestProvider.StreamResponse(ctx, msgHistory, activeTools)
@@ -1453,7 +1482,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 			var tool tools.BaseTool
 			// Resolve cross-model alias first (e.g. "read" → "view" for non-Anthropic models).
 			resolvedName := tools.ResolveToolAlias(toolCall.Name)
-			for _, availableTool := range a.tools {
+			for _, availableTool := range a.currentTools() {
 				name := availableTool.Info().Name
 				if name == toolCall.Name || name == resolvedName {
 					tool = availableTool
@@ -1851,7 +1880,7 @@ func (a *agent) Update(agentName config.AgentName, modelID models.ModelID) (mode
 		return models.Model{}, fmt.Errorf("failed to update config: %w", err)
 	}
 
-	provider, err := createAgentProvider(context.Background(), agentName, a.tools, a.skillManager, nil)
+	provider, err := createAgentProvider(context.Background(), agentName, a.currentTools(), a.skillManager, nil)
 	if err != nil {
 		return models.Model{}, fmt.Errorf("failed to create provider for model %s: %w", modelID, err)
 	}
@@ -2342,7 +2371,7 @@ func (a *agent) prepareProvider(ctx context.Context, userPrompt string, personaC
 
 	activeSkillInstructions = append(activeSkillInstructions, sessionPolicyInstructions(ctx)...)
 
-	return createAgentProvider(ctx, a.agentName, a.tools, a.skillManager, activeSkillInstructions, personaContent)
+	return createAgentProvider(ctx, a.agentName, a.currentTools(), a.skillManager, activeSkillInstructions, personaContent)
 }
 
 // sessionPolicyActive reports whether any per-session prompt policy (Ponytail,

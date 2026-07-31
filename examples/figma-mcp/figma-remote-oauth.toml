@@ -1,0 +1,32 @@
+# Figma remote MCP server over streamable-HTTP with interactive OAuth 2.1.
+#
+# Requires a client_id issued to you by Figma: their dynamic client registration
+# endpoint only accepts allowlisted clients and answers 403 Forbidden otherwise.
+# With ClientID set, Pando skips registration and goes straight to the
+# authorization-code + PKCE flow.
+#
+#   pando mcp login figma
+#   pando mcp status figma
+
+[MCPServers.figma]
+Type = "streamable-http"
+URL = "https://mcp.figma.com/mcp"
+
+[MCPServers.figma.Auth]
+Type = "oauth"
+
+[MCPServers.figma.Auth.OAuth]
+# Issued by Figma. Public client: no ClientSecret, PKCE S256 is used instead.
+ClientID = "REPLACE_WITH_CLIENT_ID_ISSUED_BY_FIGMA"
+
+# Optional. Leave empty to let Pando take the scopes advertised by the
+# authorization-server metadata.
+# Scopes = ["mcp:connect"]
+
+# Optional. Pin the loopback redirect if Figma registered a fixed one for your
+# client; otherwise Pando picks a free port and builds the URI itself.
+# RedirectURI = "http://127.0.0.1:8976/callback"
+# CallbackPort = 8976
+
+# Optional. Only needed if RFC 9728 / RFC 8414 discovery cannot be reached.
+# AuthServerMetadataURL = "https://www.figma.com/.well-known/oauth-authorization-server"

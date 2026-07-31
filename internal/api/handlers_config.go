@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -9,10 +11,17 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mcpauth"
+	"github.com/digiogithub/pando/internal/mcpgateway"
 	"github.com/digiogithub/pando/internal/savings"
 )
+
+// mcpRefreshTimeout bounds an interactive MCP reconnect + ListTools round trip
+// so a hanging server cannot block the HTTP handler indefinitely.
+const mcpRefreshTimeout = 45 * time.Second
 
 // maskAPIKey returns a masked version of the API key showing only the last 4 characters.
 // Returns an empty string if the key is empty or very short.
@@ -470,7 +479,55 @@ func (s *Server) handlePutConfigMCPServer(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Reconnect and rediscover right away so the saved server reports its real
+	// tool count without requiring a restart. Discovery failures are reported
+	// through the GET payload (tools stay empty) and the log; the save itself
+	// already succeeded, so this never fails the request.
+	if _, err := s.refreshMCPServerTools(r.Context(), req.Name); err != nil {
+		logging.Warn("MCP server saved but tool discovery failed", "server", req.Name, "error", err)
+	}
+
 	s.handleGetConfigMCPServers(w, r)
+}
+
+// refreshMCPServerTools reconnects to one configured MCP server, refreshes its
+// entry in the tool catalog and invalidates the agent's MCP tool cache so the
+// next turn sees the new tool set. It works whether or not the MCP gateway is
+// enabled: without a gateway it talks to the catalog registry directly.
+func (s *Server) refreshMCPServerTools(ctx context.Context, name string) (int, error) {
+	cfg := config.Get()
+	if cfg == nil {
+		return 0, fmt.Errorf("configuration not loaded")
+	}
+	srv, ok := cfg.MCPServers[name]
+	if !ok {
+		return 0, fmt.Errorf("MCP server not found: %s", name)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, mcpRefreshTimeout)
+	defer cancel()
+
+	// The agent builds its MCP tool list lazily and caches it process-wide; drop
+	// that cache regardless of how discovery below goes, then hand the running
+	// agent its rebuilt tool set so the change applies without a restart.
+	defer func() {
+		agent.ResetMcpToolsCache()
+		if s.app != nil {
+			s.app.RefreshAgentTools()
+		}
+	}()
+
+	if s.app != nil && s.app.MCPGateway != nil {
+		return s.app.MCPGateway.RefreshServer(ctx, name, srv)
+	}
+	if s.config.DB == nil {
+		return 0, fmt.Errorf("no database available for the MCP tool catalog")
+	}
+	resolved, err := config.ResolveMCPServerSecrets(srv)
+	if err != nil {
+		return 0, fmt.Errorf("resolve MCP server %s secrets: %w", name, err)
+	}
+	return mcpgateway.NewRegistry(s.config.DB).DiscoverServer(ctx, name, resolved)
 }
 
 // handleDeleteConfigMCPServer handles DELETE /api/v1/config/mcp-servers/{name}.
@@ -486,12 +543,29 @@ func (s *Server) handleDeleteConfigMCPServer(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Forget the deleted server's tools so they stop showing up in the catalog
+	// and are not offered to the agent any more.
+	if s.app != nil && s.app.MCPGateway != nil {
+		if err := s.app.MCPGateway.DeleteServerData(r.Context(), name); err != nil {
+			logging.Warn("failed to delete MCP server tool catalog entries", "server", name, "error", err)
+		}
+	} else if s.config.DB != nil {
+		if err := mcpgateway.NewRegistry(s.config.DB).DeleteServer(r.Context(), name); err != nil {
+			logging.Warn("failed to delete MCP server tool catalog entries", "server", name, "error", err)
+		}
+	}
+	agent.ResetMcpToolsCache()
+	if s.app != nil {
+		s.app.RefreshAgentTools()
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // handleReloadMCPServer handles POST /api/v1/config/mcp-servers/{name}/reload.
-// Since MCP servers are managed as external processes, this endpoint signals intent to
-// reconnect. The actual reconnect happens when the MCP client next establishes a session.
+// It drops any pooled connection to the server, reconnects, re-lists its tools
+// and refreshes the catalog, so the caller learns the current tool count — or
+// the exact connection error when discovery fails.
 func (s *Server) handleReloadMCPServer(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if strings.TrimSpace(name) == "" {
@@ -509,7 +583,14 @@ func (s *Server) handleReloadMCPServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "reload scheduled", "name": name})
+	count, err := s.refreshMCPServerTools(r.Context(), name)
+	if err != nil {
+		logging.Error("MCP server reload failed", "server", name, "error", err)
+		writeError(w, http.StatusBadGateway, "failed to reload MCP server "+name+": "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "reloaded", "name": name, "tools": count})
 }
 
 // --- MCP Gateway ---

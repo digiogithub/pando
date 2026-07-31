@@ -236,6 +236,7 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, util.ReportError(err)
 		}
 		agent.ResetMcpToolsCache()
+		p.refreshMCPServer(msg.Name)
 		p.settings.SetSections(buildSections(p.app))
 		p.settings.SetSize(p.width, p.height)
 		p.settings.SetActiveField("MCP Servers", fmt.Sprintf("mcpServers.%s.name", msg.Name))
@@ -485,6 +486,7 @@ func (p *settingsPage) saveField(msg settings.SaveFieldMsg) tea.Cmd {
 	}
 	if strings.HasPrefix(msg.Field.Key, "mcpServers.") {
 		agent.ResetMcpToolsCache()
+		p.refreshMCPServer(mcpServerNameFromFieldKey(msg.Field.Key))
 	}
 
 	p.settings.SetSections(buildSections(p.app))
@@ -514,6 +516,9 @@ func (p *settingsPage) deleteMCPServer(name string) tea.Cmd {
 		return util.ReportError(err)
 	}
 	agent.ResetMcpToolsCache()
+	if p.app != nil {
+		p.app.RefreshAgentTools()
+	}
 	if p.app != nil && p.app.MCPGateway != nil {
 		if err := p.app.MCPGateway.DeleteServerData(context.Background(), name); err != nil {
 			return util.ReportError(err)
@@ -1528,9 +1533,10 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 			settings.Field{
 				Label:    fmt.Sprintf("%s Env", name),
 				Key:      fmt.Sprintf("mcpServers.%s.env", name),
-				Value:    strings.Join(server.Env, " "),
+				Value:    config.FormatEnvPairs(server.Env),
 				Type:     settings.FieldText,
 				Disabled: server.Type != config.MCPStdio,
+				Hint:     "Comma-separated 'KEY=value' entries; values may contain spaces.",
 			},
 			settings.Field{
 				Label:    fmt.Sprintf("%s URL", name),
@@ -1545,6 +1551,7 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 				Value:    headersToString(server.Headers),
 				Type:     settings.FieldText,
 				Disabled: server.Type == config.MCPStdio,
+				Hint:     "Comma-separated 'Header: Value' pairs; values may contain spaces.",
 			},
 		)
 
@@ -3314,16 +3321,7 @@ func headersToString(headers map[string]string) string {
 	if len(headers) == 0 {
 		return ""
 	}
-	keys := make([]string, 0, len(headers))
-	for k := range headers {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		parts = append(parts, k+":"+headers[k])
-	}
-	return strings.Join(parts, " ")
+	return config.FormatHeaderPairs(headers)
 }
 
 func persistSetting(app *pandoapp.App, field settings.Field) error {
@@ -3863,7 +3861,11 @@ func saveMCPServer(field settings.Field) error {
 	case "url":
 		server.URL = strings.TrimSpace(field.Value)
 	case "env":
-		server.Env = strings.Fields(field.Value)
+		env, err := config.ParseEnvPairs(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid environment format: %w", err)
+		}
+		server.Env = env
 	case "headers":
 		headers, err := parseHeaders(field.Value)
 		if err != nil {
@@ -4738,27 +4740,10 @@ func saveInternalTools(field settings.Field) error {
 	return config.UpdateInternalTools(itCfg)
 }
 
-// parseHeaders parses a "Key1:Value1 Key2:Value2" formatted string into a map.
+// parseHeaders parses comma-separated "Key: Value" pairs into a map. Values may
+// contain spaces, which credentials such as "Bearer <token>" require.
 func parseHeaders(s string) (map[string]string, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil, nil
-	}
-
-	result := make(map[string]string)
-	for _, pair := range strings.Fields(s) {
-		idx := strings.IndexByte(pair, ':')
-		if idx < 0 {
-			return nil, fmt.Errorf("invalid header pair %q: expected Key:Value format", pair)
-		}
-		key := strings.TrimSpace(pair[:idx])
-		value := strings.TrimSpace(pair[idx+1:])
-		if key == "" {
-			return nil, fmt.Errorf("invalid header pair %q: key cannot be empty", pair)
-		}
-		result[key] = value
-	}
-	return result, nil
+	return config.ParseHeaderPairs(s)
 }
 
 func saveGeneral(field settings.Field) error {
@@ -5471,3 +5456,47 @@ func savedFieldKey(field settings.Field) string {
 }
 
 var _ layout.Sizeable = (*settingsPage)(nil)
+
+// mcpServerNameFromFieldKey extracts the server name from a settings field key
+// of the form "mcpServers.<name>.<field>".
+// mcpRefreshTimeout bounds an interactive MCP reconnect + ListTools round trip.
+const mcpRefreshTimeout = 45 * time.Second
+
+func mcpServerNameFromFieldKey(key string) string {
+	rest := strings.TrimPrefix(key, "mcpServers.")
+	if idx := strings.IndexByte(rest, '.'); idx > 0 {
+		return rest[:idx]
+	}
+	return rest
+}
+
+// refreshMCPServer reconnects to a server whose configuration just changed,
+// refreshes its entry in the tool catalog and installs the rebuilt tool set on
+// the running agent, so the new tools are usable without restarting Pando.
+// Discovery runs in the background: a slow or unreachable server must not block
+// the TUI, and its failure is already visible as an empty tool list.
+func (p *settingsPage) refreshMCPServer(name string) {
+	if p.app == nil || strings.TrimSpace(name) == "" {
+		return
+	}
+	app := p.app
+	gateway := app.MCPGateway
+	cfg := config.Get()
+	if gateway == nil || cfg == nil {
+		app.RefreshAgentTools()
+		return
+	}
+	srv, ok := cfg.MCPServers[name]
+	if !ok {
+		app.RefreshAgentTools()
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), mcpRefreshTimeout)
+		defer cancel()
+		if _, err := gateway.RefreshServer(ctx, name, srv); err != nil {
+			logging.Warn("MCP server tool discovery failed", "server", name, "error", err)
+		}
+		app.RefreshAgentTools()
+	}()
+}

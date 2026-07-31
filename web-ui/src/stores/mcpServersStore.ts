@@ -75,7 +75,27 @@ export const useMCPServersStore = create<MCPServersStore>((set, get) => ({
   },
 
   reloadServer: async (name: string) => {
-    await api.post(`/api/v1/config/mcp-servers/${encodeURIComponent(name)}/reload`, {})
+    set({ error: null })
+    try {
+      const data = await api.post<{ status: string; name: string; tools: number }>(
+        `/api/v1/config/mcp-servers/${encodeURIComponent(name)}/reload`,
+        {},
+      )
+      const count = data?.tools ?? 0
+      useToastStore
+        .getState()
+        .addToast(`MCP server "${name}" reloaded — ${count} tool${count === 1 ? '' : 's'} discovered`, count > 0 ? 'success' : 'info')
+    } catch (e) {
+      // The reload endpoint reports the real connection/handshake error, which
+      // is the only place the user can see why a server ends up with 0 tools.
+      const msg = e instanceof Error ? e.message : 'Reload failed'
+      set({ error: msg })
+      useToastStore.getState().addToast(msg, 'error')
+    } finally {
+      // Refresh either way: the catalog changed on success, and on failure the
+      // (now empty) tool list is the honest state.
+      await get().fetchServers()
+    }
   },
 
   loginServer: async (name: string) => {

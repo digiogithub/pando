@@ -48,6 +48,35 @@ func (r *Registry) DiscoverAll(ctx context.Context, mcpServers map[string]config
 	return nil
 }
 
+// DiscoverServer refreshes the catalog of a single server: it connects, lists
+// the tools and replaces every row previously stored for that server. Unlike
+// DiscoverAll it reports the connection error to the caller so that an
+// interactive refresh (WebUI "reload", saving a server) can explain why a
+// server ends up with zero tools instead of silently logging it.
+//
+// srv must already be resolved via config.ResolveMCPServerSecrets.
+func (r *Registry) DiscoverServer(ctx context.Context, name string, srv config.MCPServer) (int, error) {
+	tools, err := listServerTools(ctx, name, srv)
+	if err != nil {
+		return 0, err
+	}
+	// Drop the previous snapshot first so tools removed upstream disappear.
+	if err := r.DeleteServer(ctx, name); err != nil {
+		return 0, fmt.Errorf("clear previous tools: %w", err)
+	}
+	for _, t := range tools {
+		schema := map[string]interface{}{}
+		if t.InputSchema.Properties != nil {
+			schema = t.InputSchema.Properties
+		}
+		if err := r.UpsertTool(ctx, name, t.Name, t.Description, schema); err != nil {
+			return 0, fmt.Errorf("store tool %s: %w", t.Name, err)
+		}
+	}
+	logging.Debug("MCP registry: refreshed server", "server", name, "count", len(tools))
+	return len(tools), nil
+}
+
 // listServerTools creates an MCP client for the given server, initializes it,
 // lists its tools, and returns them.
 func listServerTools(ctx context.Context, name string, srv config.MCPServer) ([]mcp.Tool, error) {

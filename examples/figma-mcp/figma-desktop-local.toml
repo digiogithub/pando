@@ -1,0 +1,12 @@
+# Figma Dev Mode MCP server exposed by the Figma desktop app.
+#
+# Enable it in the desktop app: Preferences -> Enable Dev Mode MCP server.
+# The endpoint is loopback-only and unauthenticated, so no Auth block is needed
+# and Figma's client allowlist does not apply.
+#
+# Availability: macOS / Windows desktop app only. Keep a Figma file open — the
+# server acts on the current selection.
+
+[MCPServers.figma-local]
+Type = "streamable-http"
+URL = "http://127.0.0.1:3845/mcp"

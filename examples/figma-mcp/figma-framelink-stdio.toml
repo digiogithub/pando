@@ -1,0 +1,22 @@
+# Framelink "figma-developer-mcp" over stdio.
+#
+# Talks to the public Figma REST API with a personal access token, so it works
+# on any platform and is not subject to Figma's MCP client allowlist.
+#
+# Two mandatory details:
+#   * "--stdio" — without it the process starts an HTTP server and the stdio
+#     transport closes immediately;
+#   * the token variable must be FIGMA_API_KEY (or FIGMA_OAUTH_TOKEN). Any other
+#     name makes the child exit with
+#     "Either FIGMA_API_KEY or FIGMA_OAUTH_TOKEN is required".
+#
+# Create the token in Figma: Settings -> Security -> Personal access tokens.
+# On save Pando AGE-encrypts the Env value in .pando.toml.
+
+[MCPServers.figma]
+Type = "stdio"
+Command = "npx"
+Args = ["-y", "figma-developer-mcp", "--stdio"]
+Env = ["FIGMA_API_KEY=REPLACE_WITH_FIGMA_PERSONAL_ACCESS_TOKEN"]
+
+# Tools exposed: get_figma_data, download_figma_images.

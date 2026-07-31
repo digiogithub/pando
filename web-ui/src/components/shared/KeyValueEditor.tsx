@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 export interface KVPair {
   key: string
@@ -36,12 +36,26 @@ export default function KeyValueEditor({
 }: KeyValueEditorProps) {
   const [newKey, setNewKey] = useState('')
   const [newValue, setNewValue] = useState('')
+  const draftRowRef = useRef<HTMLDivElement>(null)
 
   function addPair() {
     if (!newKey.trim()) return
     onChange([...pairs, { key: newKey.trim(), value: newValue }])
     setNewKey('')
     setNewValue('')
+  }
+
+  /**
+   * Commits the half-typed draft row when focus leaves it entirely (e.g. the
+   * user types KEY/value and clicks "Save" straight away without pressing
+   * "Add" or Enter). Without this the draft lives only in local state and is
+   * silently dropped when the parent form is submitted. Moving between the two
+   * inputs of the draft row keeps focus inside it and must NOT commit.
+   */
+  function commitDraftOnLeave(e: React.FocusEvent<HTMLDivElement>) {
+    const next = e.relatedTarget as Node | null
+    if (next && draftRowRef.current?.contains(next)) return
+    addPair()
   }
 
   function removePair(idx: number) {
@@ -124,7 +138,7 @@ export default function KeyValueEditor({
       ))}
 
       {/* New pair row */}
-      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+      <div ref={draftRowRef} onBlur={commitDraftOnLeave} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
         <input
           value={newKey}
           onChange={(e) => setNewKey(e.target.value)}

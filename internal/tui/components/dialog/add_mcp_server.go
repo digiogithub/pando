@@ -71,8 +71,8 @@ func newAddMCPServerInputs() [5]textinput.Model {
 	inputs[0].Focus()
 	inputs[1].Placeholder = "npx"
 	inputs[2].Placeholder = "-y @modelcontextprotocol/server-filesystem /path"
-	inputs[3].Placeholder = "API_KEY=secret DEBUG=1"
-	inputs[4].Placeholder = "https://example.com/mcp OR Authorization:Bearer token"
+	inputs[3].Placeholder = "API_KEY=secret, DEBUG=1"
+	inputs[4].Placeholder = "https://example.com/mcp"
 	return inputs
 }
 
@@ -205,7 +205,12 @@ func (d *addMCPServerDialogCmp) saveServer() tea.Cmd {
 			return nil
 		}
 		server.Args = strings.Fields(d.inputs[2].Value())
-		server.Env = strings.Fields(d.inputs[3].Value())
+		env, err := config.ParseEnvPairs(d.inputs[3].Value())
+		if err != nil {
+			d.errMsg = err.Error()
+			return nil
+		}
+		server.Env = env
 	} else {
 		server.URL = strings.TrimSpace(d.inputs[4].Value())
 		if server.URL == "" {
@@ -232,26 +237,10 @@ func (d *addMCPServerDialogCmp) saveServer() tea.Cmd {
 	}
 }
 
+// parseHeaderPairs accepts comma-separated "Key: Value" pairs, so header values
+// may contain spaces (e.g. "Authorization: Bearer <token>").
 func parseHeaderPairs(s string) (map[string]string, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil, nil
-	}
-
-	parsed := make(map[string]string)
-	for _, pair := range strings.Fields(s) {
-		idx := strings.IndexByte(pair, ':')
-		if idx <= 0 {
-			return nil, configErr("invalid header pair %q: expected Key:Value format", pair)
-		}
-		key := strings.TrimSpace(pair[:idx])
-		value := strings.TrimSpace(pair[idx+1:])
-		if key == "" {
-			return nil, configErr("invalid header pair %q: key cannot be empty", pair)
-		}
-		parsed[key] = value
-	}
-	return parsed, nil
+	return config.ParseHeaderPairs(s)
 }
 
 func configErr(format string, args ...any) error {
@@ -297,12 +286,12 @@ func (d *addMCPServerDialogCmp) View() string {
 		rows = append(rows,
 			row{"Command", 1, "Executable to launch."},
 			row{"Arguments", 2, "Space-separated command arguments."},
-			row{"Env Vars", 3, "Space-separated KEY=VALUE pairs."},
+			row{"Env Vars", 3, "Comma-separated 'KEY=value' entries (values may contain spaces)."},
 		)
 	} else {
 		rows = append(rows,
 			row{"URL", 4, "Remote MCP endpoint URL."},
-			row{"Headers", 3, "Space-separated Header:Value pairs."},
+			row{"Headers", 3, "Comma-separated 'Header: Value' pairs (values may contain spaces)."},
 		)
 	}
 
