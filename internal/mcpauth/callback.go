@@ -3,6 +3,7 @@ package mcpauth
 import (
 	"context"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"net/url"
@@ -276,7 +277,9 @@ func writeCallbackPage(w http.ResponseWriter, status int, ok bool, detail string
 		body = "You can close this tab and return to Pando to try again."
 		color = "#c62828"
 		if detail != "" {
-			body = detail + " " + body
+			// detail carries authorization-server query parameters, so it must
+			// be escaped before it is interpolated into the response body.
+			body = html.EscapeString(detail) + " " + body
 		}
 	}
 

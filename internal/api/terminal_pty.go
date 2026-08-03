@@ -70,13 +70,26 @@ func ptyShellCommand() (string, []string) {
 	return shell, args
 }
 
+// maxPTYDim bounds the terminal dimensions accepted from API clients. It keeps
+// the pixel sizes (cols*8, rows*16) inside the uint16 range of pty.Winsize, so
+// an oversized request cannot wrap around into a tiny or bogus window size.
+const maxPTYDim = 2000
+
+// clampPTYDim normalizes a client-supplied terminal dimension to a sane range,
+// falling back to def when the value is unusable.
+func clampPTYDim(v, def int) int {
+	if v < 2 {
+		return def
+	}
+	if v > maxPTYDim {
+		return maxPTYDim
+	}
+	return v
+}
+
 func newPTYSession(cwd string, cols, rows int) (*ptySession, error) {
-	if cols < 2 {
-		cols = 80
-	}
-	if rows < 2 {
-		rows = 24
-	}
+	cols = clampPTYDim(cols, 80)
+	rows = clampPTYDim(rows, 24)
 
 	shell, args := ptyShellCommand()
 	cmd := exec.Command(shell, args...)
@@ -229,6 +242,8 @@ func (s *ptySession) resize(cols, rows int) error {
 	if cols < 2 || rows < 2 {
 		return nil
 	}
+	cols = clampPTYDim(cols, 80)
+	rows = clampPTYDim(rows, 24)
 	return pty.Setsize(s.master, &pty.Winsize{
 		Rows: uint16(rows),
 		Cols: uint16(cols),

@@ -3,6 +3,7 @@ package page
 import (
 	"context"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"strings"
@@ -75,7 +76,7 @@ func antigravityLoginCommand(accountID string) tea.Cmd {
 			mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 				if errParam := r.URL.Query().Get("error"); errParam != "" {
 					w.Header().Set("Content-Type", "text/html; charset=utf-8")
-					fmt.Fprintf(w, "<html><body><h2>Authentication failed</h2><p>%s</p><p>You can close this window.</p></body></html>", errParam)
+					fmt.Fprintf(w, "<html><body><h2>Authentication failed</h2><p>%s</p><p>You can close this window.</p></body></html>", html.EscapeString(errParam))
 					resultCh <- callbackResult{err: fmt.Errorf("OAuth error: %s", errParam)}
 					return
 				}

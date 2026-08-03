@@ -63,6 +63,12 @@ func Unpack(ctx context.Context, img v1.Image, destDir string) error {
 				return fmt.Errorf("close file %q: %w", targetPath, err)
 			}
 		case tar.TypeSymlink:
+			// The link target is resolved relative to the symlink's own
+			// directory, so it must be checked against the root as well —
+			// otherwise a "../../.." target escapes the extracted rootfs.
+			if err := checkLinkTarget(destDir, targetPath, header.Linkname); err != nil {
+				return err
+			}
 			if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
 				return fmt.Errorf("create parent directory for symlink %q: %w", targetPath, err)
 			}
@@ -90,6 +96,33 @@ func Unpack(ctx context.Context, img v1.Image, destDir string) error {
 			return fmt.Errorf("unsupported tar entry %q (type %d)", header.Name, header.Typeflag)
 		}
 	}
+}
+
+// checkLinkTarget verifies that a symlink placed at linkPath cannot point
+// outside root, whether its target is absolute or relative.
+func checkLinkTarget(root, linkPath, target string) error {
+	if target == "" {
+		return fmt.Errorf("archive symlink %q has an empty target", linkPath)
+	}
+
+	var resolved string
+	if filepath.IsAbs(target) {
+		// Absolute targets inside an image are relative to the image root.
+		var err error
+		resolved, err = safeJoin(root, target)
+		if err != nil {
+			return err
+		}
+	} else {
+		resolved = filepath.Join(filepath.Dir(linkPath), target)
+	}
+
+	resolved = filepath.Clean(resolved)
+	cleanRoot := filepath.Clean(root)
+	if resolved != cleanRoot && !strings.HasPrefix(resolved, cleanRoot+string(os.PathSeparator)) {
+		return fmt.Errorf("archive symlink target %q escapes destination root", target)
+	}
+	return nil
 }
 
 func safeJoin(root, name string) (string, error) {

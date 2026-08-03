@@ -57,7 +57,12 @@ interface TerminalStore {
 }
 
 function makeId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  // Terminal ids address live PTY sessions, so they are generated from a
+  // cryptographic source rather than Math.random().
+  const bytes = new Uint8Array(8)
+  crypto.getRandomValues(bytes)
+  const suffix = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  return `${prefix}-${Date.now()}-${suffix}`
 }
 
 function createDefaultTab(index: number): TerminalTab {
