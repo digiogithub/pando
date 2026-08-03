@@ -11,13 +11,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/version"
 )
+
+const defaultCopilotModelsURL = "https://api.githubcopilot.com/models"
 
 var (
 	geminiModelsURL     = "https://generativelanguage.googleapis.com/v1beta/models"
 	openRouterModelsURL = "https://openrouter.ai/api/v1/models"
-	copilotModelsURL    = "https://api.githubcopilot.com/models"
+	copilotModelsURL    = defaultCopilotModelsURL
 )
 
 // FetchedModel represents a model returned by a provider's API
@@ -247,13 +250,49 @@ func fetchCopilotModels(ctx context.Context, bearerToken string) ([]FetchedModel
 		return nil, fmt.Errorf("bearer token required for copilot")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, copilotModelsURL, nil)
+	// A caller (or a test) pointing copilotModelsURL somewhere else wants that
+	// exact endpoint, so skip the token exchange and its host resolution.
+	if copilotModelsURL != defaultCopilotModelsURL {
+		return requestCopilotModels(ctx, copilotModelsURL, bearerToken)
+	}
+
+	// Exchanging the GitHub OAuth token for a Copilot API token is what makes
+	// the seat's organization BYOK custom models show up in the listing; on
+	// failure this returns the original token and the default host.
+	apiToken, baseURL := auth.ResolveCopilotAPIAccess(ctx, bearerToken, "", "")
+	modelsURL := copilotModelsURL
+	if baseURL != "" {
+		modelsURL = strings.TrimSuffix(baseURL, "/") + "/models"
+	}
+
+	fetched, err := requestCopilotModels(ctx, modelsURL, apiToken)
+	if err == nil {
+		return fetched, nil
+	}
+	// Fall back to the legacy call (raw OAuth token against the default host)
+	// so a rejected or misrouted exchanged token never leaves the user without
+	// a model list.
+	if apiToken == bearerToken && modelsURL == copilotModelsURL {
+		return nil, err
+	}
+	fallback, fallbackErr := requestCopilotModels(ctx, copilotModelsURL, bearerToken)
+	if fallbackErr != nil {
+		return nil, err
+	}
+	return fallback, nil
+}
+
+func requestCopilotModels(ctx context.Context, modelsURL, bearerToken string) ([]FetchedModel, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "Pando/"+version.Version)
+	req.Header.Set("Editor-Version", "Pando/"+version.Version)
+	req.Header.Set("Editor-Plugin-Version", "Pando/"+version.Version)
+	req.Header.Set("Copilot-Integration-Id", "vscode-chat")
 
 	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
 		var response struct {

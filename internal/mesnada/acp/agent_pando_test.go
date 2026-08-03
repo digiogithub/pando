@@ -2388,14 +2388,14 @@ func TestPandoACPAgent_NewSessionResponse_UsesSeparatedACPSelectors(t *testing.T
 
 func TestPandoACPAgent_NewSessionResponse_ModelAwareThinkingOptions(t *testing.T) {
 	reasoningModelID := llmmodels.ModelID("test.reasoning-effort-model")
-	llmmodels.SupportedModels[reasoningModelID] = llmmodels.Model{
+	llmmodels.SetSupportedModel(llmmodels.Model{
 		ID:                      reasoningModelID,
 		Name:                    "Reasoning Effort Test Model",
 		Provider:                llmmodels.ProviderOpenAI,
 		CanReason:               true,
 		SupportsReasoningEffort: true,
-	}
-	defer delete(llmmodels.SupportedModels, reasoningModelID)
+	})
+	defer llmmodels.DeleteSupportedModels(reasoningModelID)
 
 	availableModels := []ACPModelInfo{
 		{ID: string(llmmodels.Claude46Sonnet), Name: "Claude Sonnet 4.6"},
@@ -2512,14 +2512,14 @@ func TestPandoACPAgent_NewSession_DefaultsThinkingOverridesForReasoningModel(t *
 
 func TestPandoACPAgent_ModelChange_ClearsIncompatibleThinkingOverrides(t *testing.T) {
 	reasoningModelID := llmmodels.ModelID("test.reasoning-effort-model")
-	llmmodels.SupportedModels[reasoningModelID] = llmmodels.Model{
+	llmmodels.SetSupportedModel(llmmodels.Model{
 		ID:                      reasoningModelID,
 		Name:                    "Reasoning Effort Test Model",
 		Provider:                llmmodels.ProviderOpenAI,
 		CanReason:               true,
 		SupportsReasoningEffort: true,
-	}
-	defer delete(llmmodels.SupportedModels, reasoningModelID)
+	})
+	defer llmmodels.DeleteSupportedModels(reasoningModelID)
 
 	availableModels := []ACPModelInfo{
 		{ID: string(llmmodels.Claude46Sonnet), Name: "Claude Sonnet 4.6"},
@@ -3071,8 +3071,8 @@ func TestPandoACPAgent_CurrentUsageSnapshotPrefersSelectedModelContextWindow(t *
 	if used != 1500 {
 		t.Fatalf("used = %d, want %d", used, 1500)
 	}
-	if size != int(llmmodels.SupportedModels[llmmodels.Claude46Sonnet].ContextWindow) {
-		t.Fatalf("size = %d, want model context window %d", size, llmmodels.SupportedModels[llmmodels.Claude46Sonnet].ContextWindow)
+	if size != int(llmmodels.SupportedModels()[llmmodels.Claude46Sonnet].ContextWindow) {
+		t.Fatalf("size = %d, want model context window %d", size, llmmodels.SupportedModels()[llmmodels.Claude46Sonnet].ContextWindow)
 	}
 }
 

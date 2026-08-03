@@ -15,15 +15,29 @@ var (
 // RegisterDynamicModel adds a dynamically discovered model.
 func RegisterDynamicModel(model Model) {
 	dynamicModels.Store(model.ID, model)
-	SupportedModels[model.ID] = model
+	SetSupportedModel(model)
+}
+
+// RegisterDynamicModels adds a batch of dynamically discovered models with a
+// single catalogue update, avoiding one copy-on-write per model.
+func RegisterDynamicModels(batch []Model) {
+	if len(batch) == 0 {
+		return
+	}
+	catalogue := make(map[ModelID]Model, len(batch))
+	for _, model := range batch {
+		dynamicModels.Store(model.ID, model)
+		catalogue[model.ID] = model
+	}
+	SetSupportedModels(catalogue)
 }
 
 // isStaticModel reports whether a registered model ID comes from the curated
 // static catalogue rather than from a provider fetch or the on-disk model cache.
-// Cached models are restored into both SupportedModels and dynamicModels, so
-// presence in SupportedModels alone says nothing about their origin.
+// Cached models are restored into both SupportedModels() and dynamicModels, so
+// presence in SupportedModels() alone says nothing about their origin.
 func isStaticModel(id ModelID) bool {
-	if _, ok := SupportedModels[id]; !ok {
+	if _, ok := SupportedModels()[id]; !ok {
 		return false
 	}
 	_, dynamic := dynamicModels.Load(id)
@@ -34,6 +48,7 @@ func isStaticModel(id ModelID) bool {
 // but whose ID is not in keepIDs. Call this after a successful provider fetch
 // so that deleted models (e.g. removed from Ollama) disappear from the registry.
 func pruneDynamicModelsForProvider(provider ModelProvider, keepIDs map[ModelID]struct{}) {
+	var removed []ModelID
 	dynamicModels.Range(func(key, _ any) bool {
 		id := key.(ModelID)
 		m, ok := dynamicModels.Load(id)
@@ -45,10 +60,12 @@ func pruneDynamicModelsForProvider(provider ModelProvider, keepIDs map[ModelID]s
 		}
 		if _, keep := keepIDs[id]; !keep {
 			dynamicModels.Delete(id)
-			delete(SupportedModels, id)
+			removed = append(removed, id)
 		}
 		return true
 	})
+	// One catalogue update for the whole prune: it is copy-on-write.
+	DeleteSupportedModels(removed...)
 }
 
 // pruneDynamicModelsForAccount removes dynamic models belonging to a specific
@@ -59,6 +76,7 @@ func pruneDynamicModelsForProvider(provider ModelProvider, keepIDs map[ModelID]s
 // stale entries left over when an account transitions between prefixed and
 // unprefixed IDs (the AccountID still matches even though the ID changed).
 func pruneDynamicModelsForAccount(provider ModelProvider, accountID string, keepIDs map[ModelID]struct{}) {
+	var removed []ModelID
 	dynamicModels.Range(func(key, _ any) bool {
 		id := key.(ModelID)
 		mv, ok := dynamicModels.Load(id)
@@ -71,10 +89,11 @@ func pruneDynamicModelsForAccount(provider ModelProvider, accountID string, keep
 		}
 		if _, keep := keepIDs[id]; !keep {
 			dynamicModels.Delete(id)
-			delete(SupportedModels, id)
+			removed = append(removed, id)
 		}
 		return true
 	})
+	DeleteSupportedModels(removed...)
 }
 
 // RefreshProviderModels fetches and registers models from a provider.
@@ -87,6 +106,7 @@ func RefreshProviderModels(ctx context.Context, provider ModelProvider, apiKey s
 	}
 
 	keepIDs := make(map[ModelID]struct{}, len(fetched))
+	batch := make([]Model, 0, len(fetched))
 	for _, fm := range fetched {
 		modelID := ModelID(fmt.Sprintf("%s.%s", provider, fm.ID))
 
@@ -130,17 +150,18 @@ func RefreshProviderModels(ctx context.Context, provider ModelProvider, apiKey s
 		model.ContextWindow = fetchedModelContextWindow(model.ContextWindow)
 		model.DefaultMaxTokens = fetchedModelMaxOutputTokens(model.DefaultMaxTokens, model.ContextWindow)
 
-		RegisterDynamicModel(model)
+		batch = append(batch, model)
 		keepIDs[modelID] = struct{}{}
 	}
 
+	RegisterDynamicModels(batch)
 	pruneDynamicModelsForProvider(provider, keepIDs)
 	return nil
 }
 
 // modelExistsByAPIModel checks if any registered model exists for a given provider+apiModel combination
 func modelExistsByAPIModel(provider ModelProvider, apiModel string) bool {
-	for _, m := range SupportedModels {
+	for _, m := range SupportedModels() {
 		if m.Provider == provider && m.APIModel == apiModel {
 			return true
 		}
@@ -153,7 +174,7 @@ func modelExistsByAPIModel(provider ModelProvider, apiModel string) bool {
 // dynamic and cached entries, so a refresh can re-register (and thereby update)
 // models it discovered on a previous run.
 func staticModelExistsByAPIModel(provider ModelProvider, apiModel string) bool {
-	for id, m := range SupportedModels {
+	for id, m := range SupportedModels() {
 		if m.Provider == provider && m.APIModel == apiModel && isStaticModel(id) {
 			return true
 		}
@@ -195,10 +216,11 @@ func RefreshProviderModelsForAccount(ctx context.Context, params AccountModelRef
 	// for the listing-capable providers.
 	if !ProviderSupportsModelListing(params.ProviderType) {
 		keepIDs := make(map[ModelID]struct{})
-		for _, m := range AccountScopedStaticModels(params.ProviderType, params.AccountID, params.AllAccountsOfType) {
-			RegisterDynamicModel(m)
+		static := AccountScopedStaticModels(params.ProviderType, params.AccountID, params.AllAccountsOfType)
+		for _, m := range static {
 			keepIDs[m.ID] = struct{}{}
 		}
+		RegisterDynamicModels(static)
 		pruneDynamicModelsForAccount(params.ProviderType, params.AccountID, keepIDs)
 		return nil
 	}
@@ -209,14 +231,16 @@ func RefreshProviderModelsForAccount(ctx context.Context, params AccountModelRef
 	}
 
 	keepIDs := make(map[ModelID]struct{}, len(fetched))
+	batch := make([]Model, 0, len(fetched))
 	for _, fm := range fetched {
 		model := modelFromFetchedAccountModel(ctx, params, fm)
 		keepIDs[model.ID] = struct{}{}
 		if shouldSkipAccountScopedModel(params.ProviderType, model.ID, model.APIModel) {
 			continue
 		}
-		RegisterDynamicModel(model)
+		batch = append(batch, model)
 	}
+	RegisterDynamicModels(batch)
 
 	// Scope pruning to this account so refreshing it does not wipe out the
 	// models of another account that shares the same provider type.
@@ -279,7 +303,7 @@ func modelFromFetchedAccountModel(ctx context.Context, params AccountModelRefres
 // considered (dynamic ones carry an AccountID), so this is a stable source of
 // curated metadata regardless of refresh ordering.
 func staticModelByAPIModel(provider ModelProvider, apiModel string) (Model, bool) {
-	for id, m := range SupportedModels {
+	for id, m := range SupportedModels() {
 		if m.AccountID == "" && m.Provider == provider && m.APIModel == apiModel && isStaticModel(id) {
 			return m, true
 		}
@@ -291,7 +315,7 @@ func staticModelByAPIModel(provider ModelProvider, apiModel string) (Model, bool
 // model for a provider type (exported for listing handlers).
 func StaticModelsForProvider(provider ModelProvider) []Model {
 	var out []Model
-	for id, m := range SupportedModels {
+	for id, m := range SupportedModels() {
 		if m.AccountID == "" && m.Provider == provider && isStaticModel(id) {
 			out = append(out, m)
 		}
@@ -358,14 +382,14 @@ func ResolveModelID(input ModelID) (ModelID, bool) {
 	if input == "" {
 		return input, false
 	}
-	if _, ok := SupportedModels[input]; ok {
+	if _, ok := SupportedModels()[input]; ok {
 		return input, true
 	}
 
 	suffix := "." + string(input)
 	var match ModelID
 	count := 0
-	for id, m := range SupportedModels {
+	for id, m := range SupportedModels() {
 		if m.APIModel == string(input) || strings.HasSuffix(string(id), suffix) {
 			if id != match {
 				count++
@@ -421,8 +445,8 @@ func fetchedModelMaxOutputTokens(maxOutputTokens, contextWindow int64) int64 {
 
 // GetAllModels returns both static and dynamic models
 func GetAllModels() map[ModelID]Model {
-	result := make(map[ModelID]Model, len(SupportedModels))
-	for k, v := range SupportedModels {
+	result := make(map[ModelID]Model, len(SupportedModels()))
+	for k, v := range SupportedModels() {
 		result[k] = v
 	}
 	return result

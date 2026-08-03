@@ -1150,9 +1150,9 @@ func init() {
 	})
 
 	rootCmd.RegisterFlagCompletionFunc("model", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		matches := make([]string, 0, len(models.SupportedModels))
+		matches := make([]string, 0, len(models.SupportedModels()))
 		needle := strings.ToLower(strings.TrimSpace(toComplete))
-		for modelID := range models.SupportedModels {
+		for modelID := range models.SupportedModels() {
 			candidate := string(modelID)
 			if needle == "" || strings.Contains(strings.ToLower(candidate), needle) {
 				matches = append(matches, candidate)

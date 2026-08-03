@@ -23,7 +23,7 @@ func NormalizeModelID(input string) ModelID {
 	if trimmed == "" {
 		return ""
 	}
-	if modelID, ok := SupportedModels[ModelID(trimmed)]; ok {
+	if modelID, ok := SupportedModels()[ModelID(trimmed)]; ok {
 		return modelID.ID
 	}
 	lower := strings.ToLower(trimmed)

@@ -133,11 +133,11 @@ func TestSetupBridgeAllowsVisionModelWhenHistoryHasImages(t *testing.T) {
 	bridge, sessionID := newModelTestSession(t, "images-ok")
 
 	vision := models.ModelID("__mock.vision")
-	models.SupportedModels[vision] = models.Model{
+	models.SetSupportedModel(models.Model{
 		ID: vision, Name: "Vision", Provider: models.ProviderMock,
 		CostPer1MIn: 0.1, CostPer1MOut: 0.1, SupportsAttachments: true,
-	}
-	t.Cleanup(func() { delete(models.SupportedModels, vision) })
+	})
+	t.Cleanup(func() { models.DeleteSupportedModels(vision) })
 
 	beginModelSwitchRun(sessionID, []message.Message{{
 		Role:  message.User,
@@ -162,11 +162,11 @@ func TestSetupBridgeCapsSwitchesPerRun(t *testing.T) {
 	// unattended and the cap is what stops the sequence.
 	ids := []models.ModelID{"__mock.alt1", "__mock.alt2", "__mock.alt3", "__mock.alt4"}
 	for i, id := range ids {
-		models.SupportedModels[id] = models.Model{
+		models.SetSupportedModel(models.Model{
 			ID: id, Name: string(id), Provider: models.ProviderMock,
 			CostPer1MIn: 0.01 * float64(len(ids)-i), CostPer1MOut: 0.01 * float64(len(ids)-i),
-		}
-		t.Cleanup(func() { delete(models.SupportedModels, id) })
+		})
+		t.Cleanup(func() { models.DeleteSupportedModels(id) })
 	}
 
 	beginModelSwitchRun(sessionID, nil)
@@ -286,7 +286,7 @@ func TestApplyPendingModelSwitchIsANoOpWithoutAnOverride(t *testing.T) {
 	_, sessionID := newModelTestSession(t, "noop")
 
 	a := &agent{agentName: config.AgentCoder, Broker: pubsub.NewBroker[AgentEvent]()}
-	current := switchStubProvider{model: models.SupportedModels[testModelCheap]}
+	current := switchStubProvider{model: models.SupportedModels()[testModelCheap]}
 	history := []message.Message{{Role: message.User, Parts: []message.ContentPart{message.TextContent{Text: "hi"}}}}
 
 	got, gotHistory := a.applyPendingModelSwitch(
@@ -308,18 +308,18 @@ func TestApplyPendingModelSwitchKeepsRunAliveWhenTheProviderCannotBeBuilt(t *tes
 	// "provider not supported".
 	unbuildable := models.ModelID("__unbuildable.model")
 	unbuildableProvider := models.ModelProvider("__unbuildable")
-	models.SupportedModels[unbuildable] = models.Model{
+	models.SetSupportedModel(models.Model{
 		ID: unbuildable, Name: "Unbuildable", Provider: unbuildableProvider,
 		CostPer1MIn: 0.1, CostPer1MOut: 0.1,
-	}
-	t.Cleanup(func() { delete(models.SupportedModels, unbuildable) })
+	})
+	t.Cleanup(func() { models.DeleteSupportedModels(unbuildable) })
 	cfg := config.Get()
 	cfg.ProviderAccounts = append(cfg.ProviderAccounts, config.ProviderAccount{
 		ID: "unbuildable-1", Type: unbuildableProvider, APIKey: "key",
 	})
 
 	a := &agent{agentName: config.AgentCoder, Broker: pubsub.NewBroker[AgentEvent]()}
-	current := switchStubProvider{model: models.SupportedModels[testModelCheap]}
+	current := switchStubProvider{model: models.SupportedModels()[testModelCheap]}
 	history := []message.Message{{Role: message.User, Parts: []message.ContentPart{message.TextContent{Text: "hi"}}}}
 
 	SetSessionModelOverride(sessionID, unbuildable)

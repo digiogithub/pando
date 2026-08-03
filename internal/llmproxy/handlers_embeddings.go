@@ -51,9 +51,9 @@ func (s *LLMProxyServer) handleEmbeddings(w http.ResponseWriter, r *http.Request
 	// Find a matching provider account.
 	accounts := config.GetProviderAccounts()
 
-	// Try to find from SupportedModels first.
+	// Try to find from SupportedModels() first.
 	var providerType models.ModelProvider
-	if m, ok := models.SupportedModels[normalizedID]; ok {
+	if m, ok := models.SupportedModels()[normalizedID]; ok {
 		providerType = m.Provider
 	}
 
@@ -70,7 +70,7 @@ func (s *LLMProxyServer) handleEmbeddings(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	// If we couldn't find via SupportedModels, try matching model prefix against account types.
+	// If we couldn't find via SupportedModels(), try matching model prefix against account types.
 	// Dynamic models use the format "{provider}.{model}" e.g. "openai.text-embedding-3-small".
 	if account == nil {
 		for i := range accounts {

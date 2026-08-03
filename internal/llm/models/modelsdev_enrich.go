@@ -72,16 +72,20 @@ func EnrichRegisteredModels(ctx context.Context) {
 	if _, err := modelsdev.Get(ctx); err != nil {
 		return
 	}
-	for id, model := range SupportedModels {
+	enriched := make(map[ModelID]Model)
+	for id, model := range SupportedModels() {
 		entry, ok := ModelsDevMetadata(ctx, model.Provider, model.APIModel)
 		if !ok || !applyModelsDevMetadata(&model, entry) {
 			continue
 		}
-		SupportedModels[id] = model
+		enriched[id] = model
 		if _, dynamic := dynamicModels.Load(id); dynamic {
 			dynamicModels.Store(id, model)
 		}
 	}
+	// Publish in one swap: the catalogue is copy-on-write, so writing model by
+	// model would copy it once per enriched entry.
+	SetSupportedModels(enriched)
 }
 
 // applyModelsDevMetadata is the pure part of the enrichment, split out so it can

@@ -114,7 +114,7 @@ func newJudge(cfg config.EvaluatorConfig) (*Judge, error) {
 	}
 
 	// Look up model in supported models; fall back to a minimal model struct for dynamic models.
-	model, ok := models.SupportedModels[cfg.Model]
+	model, ok := models.SupportedModels()[cfg.Model]
 	if !ok {
 		providerName := models.ModelProvider(cfg.Provider)
 		model = models.Model{

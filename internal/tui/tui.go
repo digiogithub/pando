@@ -266,7 +266,7 @@ func (a appModel) Init() tea.Cmd {
 		if !ok {
 			return dialog.OpenModelDialogMsg{}
 		}
-		if _, modelOK := models.SupportedModels[agentCfg.Model]; !modelOK {
+		if _, modelOK := models.SupportedModels()[agentCfg.Model]; !modelOK {
 			return dialog.OpenModelDialogMsg{}
 		}
 		return nil

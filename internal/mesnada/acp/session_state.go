@@ -365,7 +365,7 @@ func selectedACPModel(svc AgentService, currentModel string) (llmmodels.Model, b
 	if modelID == "" {
 		return llmmodels.Model{}, false
 	}
-	model, ok := llmmodels.SupportedModels[llmmodels.ModelID(modelID)]
+	model, ok := llmmodels.SupportedModels()[llmmodels.ModelID(modelID)]
 	if ok {
 		return model, true
 	}
@@ -373,7 +373,7 @@ func selectedACPModel(svc AgentService, currentModel string) (llmmodels.Model, b
 	if !resolved {
 		return llmmodels.Model{}, false
 	}
-	model, ok = llmmodels.SupportedModels[resolvedID]
+	model, ok = llmmodels.SupportedModels()[resolvedID]
 	return model, ok
 }
 

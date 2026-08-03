@@ -568,7 +568,7 @@ func (m *modelDialogCmp) setupModels() {
 			m.filteredModels = nil
 			return
 		}
-		m.provider = models.SupportedModels[m.selectedModelID].Provider
+		m.provider = models.SupportedModels()[m.selectedModelID].Provider
 		if m.provider == "" || findProviderIndex(m.availableProviders, m.provider) == -1 {
 			m.provider = m.availableProviders[0]
 		}
@@ -608,7 +608,7 @@ func GetSelectedModel(cfg *config.Config) models.Model {
 
 	agentCfg := cfg.Agents[config.AgentCoder]
 	selectedModelId := agentCfg.Model
-	return models.SupportedModels[selectedModelId]
+	return models.SupportedModels()[selectedModelId]
 }
 
 func getEnabledProviders(cfg *config.Config) []models.ModelProvider {
@@ -666,7 +666,7 @@ func (m *modelDialogCmp) setupModelsForProvider(provider models.ModelProvider) {
 	}
 
 	// Try to select the current model if it belongs to this provider
-	if provider == models.SupportedModels[selectedModelID].Provider {
+	if provider == models.SupportedModels()[selectedModelID].Provider {
 		for i, model := range m.filteredModels {
 			if model.ID == selectedModelID {
 				m.selectedIdx = i
@@ -681,7 +681,7 @@ func (m *modelDialogCmp) setupModelsForProvider(provider models.ModelProvider) {
 
 func getModelsForProvider(provider models.ModelProvider) []models.Model {
 	var providerModels []models.Model
-	for _, model := range models.SupportedModels {
+	for _, model := range models.SupportedModels() {
 		if model.Provider == provider {
 			providerModels = append(providerModels, model)
 		}
@@ -720,7 +720,7 @@ func NewCustomModelDialogCmp(title string, selectedModelID models.ModelID, model
 	for _, option := range modelOptions {
 		provider := option.Provider
 		if provider == "" {
-			provider = models.SupportedModels[option.ID].Provider
+			provider = models.SupportedModels()[option.ID].Provider
 		}
 		cmp.customProviderModels[provider] = append(cmp.customProviderModels[provider], models.Model{
 			ID:       option.ID,

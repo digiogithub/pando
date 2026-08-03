@@ -73,7 +73,7 @@ func (s *LLMProxyServer) handleListModels(w http.ResponseWriter, r *http.Request
 
 	// Fallback: if still empty, expose static models for the configured providers.
 	if len(allModels) == 0 {
-		for _, m := range models.SupportedModels {
+		for _, m := range models.SupportedModels() {
 			if !configuredProviders[m.Provider] {
 				continue
 			}

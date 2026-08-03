@@ -35,7 +35,7 @@ func (b *setupBridge) CurrentModel(sessionID string) (tools.SetupModelState, err
 		return tools.SetupModelState{}, fmt.Errorf("no model is configured for the coder agent")
 	}
 
-	model, known := models.SupportedModels[id]
+	model, known := models.SupportedModels()[id]
 	if !known {
 		// The configured model is not in the catalogue (removed provider account,
 		// stale config). Report what we know instead of failing: the agent still
@@ -75,7 +75,7 @@ func (b *setupBridge) SetSessionModel(sessionID, modelID string, confirmed bool)
 		if configured == "" {
 			return tools.SetupModelSwitch{}, fmt.Errorf("no model is configured for the coder agent")
 		}
-		known, ok := models.SupportedModels[configured]
+		known, ok := models.SupportedModels()[configured]
 		if !ok {
 			return tools.SetupModelSwitch{}, fmt.Errorf(
 				"the configured model %s is not in the catalogue, so the override cannot be cleared", configured)
@@ -193,7 +193,7 @@ func configuredAgentModel() (models.ModelID, bool) {
 // otherwise the switch would only fail later, mid-request.
 func resolveSetupModel(modelID string) (models.Model, error) {
 	id := models.ModelID(strings.TrimSpace(modelID))
-	model, known := models.SupportedModels[id]
+	model, known := models.SupportedModels()[id]
 	if !known {
 		return models.Model{}, fmt.Errorf(
 			"unknown model %q. Run pando_setup with command=\"models\" to list the selectable ids", modelID)

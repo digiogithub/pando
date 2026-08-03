@@ -25,7 +25,7 @@ func TestAgentModelSurvivesReloadAfterResolve(t *testing.T) {
 		ContextWindow:    128_000,
 		DefaultMaxTokens: 4096,
 	})
-	t.Cleanup(func() { delete(models.SupportedModels, canonical) })
+	t.Cleanup(func() { models.DeleteSupportedModels(canonical) })
 
 	isolateGlobalConfig(t)
 
@@ -61,7 +61,7 @@ func TestResolveModelID(t *testing.T) {
 		Provider: models.ProviderCopilot,
 		APIModel: "gpt-5.4-mini",
 	})
-	t.Cleanup(func() { delete(models.SupportedModels, canonical) })
+	t.Cleanup(func() { models.DeleteSupportedModels(canonical) })
 
 	if got, ok := models.ResolveModelID("gpt-5.4-mini"); !ok || got != canonical {
 		t.Fatalf("ResolveModelID(bare) = %q,%v want %q,true", got, ok, canonical)

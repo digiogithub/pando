@@ -297,7 +297,7 @@ func (m *sidebarCmp) usageSection() string {
 
 	// The session may have been switched to another model at runtime, so the
 	// context window shown must follow the session, not the configured agent.
-	contextWindow := models.SupportedModels[agent.SessionModelID(m.session.ID)].ContextWindow
+	contextWindow := models.SupportedModels()[agent.SessionModelID(m.session.ID)].ContextWindow
 	totalTokens := m.session.PromptTokens + m.session.CompletionTokens
 
 	row := func(label, value string) string {

@@ -2442,13 +2442,13 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 	// and is safe for concurrent sessions running different models in parallel.
 	sessionOverrides := sessionLLMOverridesForContext(ctx)
 	if sessionOverrides.Model != "" {
-		if _, supported := models.SupportedModels[sessionOverrides.Model]; supported {
+		if _, supported := models.SupportedModels()[sessionOverrides.Model]; supported {
 			agentConfig.Model = sessionOverrides.Model
 		} else {
 			logging.Debug("createAgentProvider: ignoring unsupported session model override", "model", sessionOverrides.Model)
 		}
 	}
-	model, ok := models.SupportedModels[agentConfig.Model]
+	model, ok := models.SupportedModels()[agentConfig.Model]
 	if !ok {
 		return nil, fmt.Errorf("model %s not supported", agentConfig.Model)
 	}

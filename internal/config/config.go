@@ -2541,7 +2541,7 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 	// TODO:	If a copilot model is specified, but model is not found,
 	// 		 	it might be new model. The https://api.githubcopilot.com/models
 	// 		 	endpoint should be queried to validate if the model is supported.
-	model, modelExists := models.SupportedModels[agent.Model]
+	model, modelExists := models.SupportedModels()[agent.Model]
 	if !modelExists {
 		// Before discarding the user's selection, try to resolve a non-canonical or
 		// legacy model ID (e.g. a bare "gpt-5.4-mini" saved by an older web-UI) to its
@@ -2554,7 +2554,7 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 				"resolved_model", resolved)
 			agent.Model = resolved
 			cfg.Agents[name] = agent
-			model, modelExists = models.SupportedModels[resolved]
+			model, modelExists = models.SupportedModels()[resolved]
 		}
 	}
 	if !modelExists {
@@ -3169,7 +3169,7 @@ func setDefaultModelForAgent(agent AgentName) bool {
 			modelID = models.GPT41
 		}
 
-		if modelInfo, ok := models.SupportedModels[modelID]; ok && modelInfo.CanReason {
+		if modelInfo, ok := models.SupportedModels()[modelID]; ok && modelInfo.CanReason {
 			reasoningEffort = "medium"
 		}
 
@@ -3482,7 +3482,7 @@ func OverrideAgentModel(agentName AgentName, modelID models.ModelID) error {
 		panic("config not loaded")
 	}
 
-	model, ok := models.SupportedModels[modelID]
+	model, ok := models.SupportedModels()[modelID]
 	if !ok {
 		return fmt.Errorf("model %s not supported", modelID)
 	}
@@ -3549,7 +3549,7 @@ func setAgentModel(agentName AgentName, modelID models.ModelID, persist bool) er
 
 	existingAgentCfg, hadExistingAgent := cfg.Agents[agentName]
 
-	if _, ok := models.SupportedModels[modelID]; !ok {
+	if _, ok := models.SupportedModels()[modelID]; !ok {
 		return fmt.Errorf("model %s not supported", modelID)
 	}
 
@@ -4257,7 +4257,7 @@ func ensureEvaluatorDefaultModel() {
 		return
 	}
 
-	model, ok := models.SupportedModels[coderModel]
+	model, ok := models.SupportedModels()[coderModel]
 	if !ok {
 		return
 	}
@@ -4275,7 +4275,7 @@ func ensureEvaluatorDefaultModel() {
 
 func firstModelForProvider(provider models.ModelProvider) (models.Model, bool) {
 	modelList := make([]models.Model, 0)
-	for _, model := range models.SupportedModels {
+	for _, model := range models.SupportedModels() {
 		if model.Provider == provider {
 			modelList = append(modelList, model)
 		}
@@ -4757,7 +4757,7 @@ func normalizeEvaluatorConfig(eval EvaluatorConfig) (EvaluatorConfig, error) {
 		return eval, nil
 	}
 
-	model, ok := models.SupportedModels[eval.Model]
+	model, ok := models.SupportedModels()[eval.Model]
 	if !ok {
 		return EvaluatorConfig{}, fmt.Errorf("unsupported evaluator.model %q", eval.Model)
 	}

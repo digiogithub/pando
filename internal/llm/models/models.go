@@ -3,6 +3,8 @@ package models
 import (
 	"maps"
 	"regexp"
+	"sync"
+	"sync/atomic"
 )
 
 type (
@@ -101,7 +103,80 @@ var ProviderPopularity = map[ModelProvider]int{
 	ProviderOpenAICompatible: 13,
 }
 
-var SupportedModels = map[ModelID]Model{
+// The model catalogue is read from every surface (TUI, web API, agents) while
+// background refreshes register dynamically discovered models, so it is kept as
+// an immutable snapshot swapped under a mutex: readers get a stable map that is
+// never written to, writers publish a modified copy.
+var (
+	supportedModelsMu    sync.Mutex
+	supportedModelsStore atomic.Pointer[map[ModelID]Model]
+)
+
+// SupportedModels returns the current model catalogue. The returned map is
+// shared and MUST NOT be modified; use the registration helpers instead.
+func SupportedModels() map[ModelID]Model {
+	if snapshot := supportedModelsStore.Load(); snapshot != nil {
+		return *snapshot
+	}
+	return map[ModelID]Model{}
+}
+
+// updateSupportedModels publishes a modified copy of the catalogue. The mutex
+// serialises concurrent writers so no update is lost between copy and swap.
+func updateSupportedModels(mutate func(catalogue map[ModelID]Model)) {
+	supportedModelsMu.Lock()
+	defer supportedModelsMu.Unlock()
+
+	updated := maps.Clone(SupportedModels())
+	if updated == nil {
+		updated = map[ModelID]Model{}
+	}
+	mutate(updated)
+	supportedModelsStore.Store(&updated)
+}
+
+// SetSupportedModel adds or replaces a single model in the catalogue.
+func SetSupportedModel(model Model) {
+	setSupportedModel(model)
+}
+
+// SetSupportedModels adds or replaces several models in a single update, which
+// is what callers registering a batch should use: the catalogue is copy-on-write
+// and a per-model write would copy it once per entry.
+func SetSupportedModels(batch map[ModelID]Model) {
+	if len(batch) == 0 {
+		return
+	}
+	updateSupportedModels(func(catalogue map[ModelID]Model) {
+		maps.Copy(catalogue, batch)
+	})
+}
+
+// DeleteSupportedModels removes models from the catalogue.
+func DeleteSupportedModels(ids ...ModelID) {
+	deleteSupportedModels(ids...)
+}
+
+// setSupportedModel adds or replaces a single model in the catalogue.
+func setSupportedModel(model Model) {
+	updateSupportedModels(func(catalogue map[ModelID]Model) {
+		catalogue[model.ID] = model
+	})
+}
+
+// deleteSupportedModels removes models from the catalogue.
+func deleteSupportedModels(ids ...ModelID) {
+	if len(ids) == 0 {
+		return
+	}
+	updateSupportedModels(func(catalogue map[ModelID]Model) {
+		for _, id := range ids {
+			delete(catalogue, id)
+		}
+	})
+}
+
+var staticSupportedModels = map[ModelID]Model{
 	// Bedrock (static, no simple model listing endpoint)
 	BedrockClaude37Sonnet: {
 		ID:                 BedrockClaude37Sonnet,
@@ -122,9 +197,11 @@ func init() {
 	// Antigravity exposes a small curated logical catalog so users choose stable provider models
 	// without binding selections to a specific OAuth account.
 	// All other providers populate models dynamically via RefreshProviderModels.
-	maps.Copy(SupportedModels, AzureModels)
-	maps.Copy(SupportedModels, VertexAIGeminiModels)
-	maps.Copy(SupportedModels, GeminiModels)
-	maps.Copy(SupportedModels, AntigravityModels)
-	maps.Copy(SupportedModels, AnthropicModels)
+	catalogue := maps.Clone(staticSupportedModels)
+	maps.Copy(catalogue, AzureModels)
+	maps.Copy(catalogue, VertexAIGeminiModels)
+	maps.Copy(catalogue, GeminiModels)
+	maps.Copy(catalogue, AntigravityModels)
+	maps.Copy(catalogue, AnthropicModels)
+	supportedModelsStore.Store(&catalogue)
 }

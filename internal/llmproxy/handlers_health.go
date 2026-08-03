@@ -23,7 +23,7 @@ func (s *LLMProxyServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	modelCount := len(models.SupportedModels)
+	modelCount := len(models.SupportedModels())
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":    "ok",

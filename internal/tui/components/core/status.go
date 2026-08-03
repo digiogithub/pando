@@ -294,7 +294,7 @@ func (m statusCmp) renderBreadcrumbs() string {
 // not necessarily the configured one: pando_setup can switch the model for a
 // single session at runtime.
 func (m statusCmp) sessionModel() models.Model {
-	return models.SupportedModels[agent.SessionModelID(m.session.ID)]
+	return models.SupportedModels()[agent.SessionModelID(m.session.ID)]
 }
 
 func (m statusCmp) View() string {

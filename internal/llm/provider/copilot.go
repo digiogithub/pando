@@ -39,6 +39,11 @@ type copilotClient struct {
 	options         copilotOptions
 	client          openai.Client
 	baseURL         string
+	// sourceToken is the GitHub OAuth token the bearer token was derived from.
+	// Exchanged Copilot API tokens are short lived (~30 min), so it is kept to
+	// re-run the exchange when the current one is about to expire.
+	sourceToken   string
+	enterpriseURL string
 }
 
 type CopilotClient ProviderClient
@@ -51,35 +56,50 @@ func (c *copilotClient) isResponsesAPIModel() bool {
 	return models.CopilotModelUsesResponsesAPI(c.providerOptions.model)
 }
 
-func loadCopilotCredentials(savedToken, configuredToken, configuredBaseURL string) (string, string, error) {
-	if token := strings.TrimSpace(savedToken); token != "" {
-		baseURL := strings.TrimSpace(configuredBaseURL)
-		if baseURL == "" {
-			baseURL = auth.CopilotAPIBaseURL("")
+// copilotCredentials holds everything needed to talk to the Copilot API, plus
+// the source OAuth token so the short-lived bearer can be renewed later.
+type copilotCredentials struct {
+	sourceToken   string
+	bearerToken   string
+	baseURL       string
+	enterpriseURL string
+}
+
+func loadCopilotCredentials(savedToken, configuredToken, configuredBaseURL string) (copilotCredentials, error) {
+	token := strings.TrimSpace(savedToken)
+	if token == "" {
+		token = strings.TrimSpace(configuredToken)
+	}
+	enterpriseURL := ""
+
+	if token == "" {
+		loaded, err := auth.LoadGitHubOAuthToken()
+		if err != nil {
+			return copilotCredentials{}, err
 		}
-		return token, baseURL, nil
+		token = loaded
+		if session, err := auth.LoadCopilotSession(); err == nil && session != nil {
+			enterpriseURL = session.EnterpriseURL
+		}
 	}
 
-	if token := strings.TrimSpace(configuredToken); token != "" {
-		baseURL := strings.TrimSpace(configuredBaseURL)
-		if baseURL == "" {
-			baseURL = auth.CopilotAPIBaseURL("")
-		}
-		return token, baseURL, nil
-	}
+	bearer, baseURL := resolveCopilotAccess(token, enterpriseURL, configuredBaseURL)
+	return copilotCredentials{
+		sourceToken:   token,
+		bearerToken:   bearer,
+		baseURL:       baseURL,
+		enterpriseURL: enterpriseURL,
+	}, nil
+}
 
-	token, err := auth.LoadGitHubOAuthToken()
-	if err != nil {
-		return "", "", err
-	}
-	baseURL := strings.TrimSpace(configuredBaseURL)
-	if baseURL != "" {
-		return token, baseURL, nil
-	}
-	if session, err := auth.LoadCopilotSession(); err == nil && session != nil {
-		return token, auth.CopilotAPIBaseURL(session.EnterpriseURL), nil
-	}
-	return token, auth.CopilotAPIBaseURL(""), nil
+// resolveCopilotAccess swaps the GitHub OAuth token for a short-lived Copilot
+// API token. That exchanged token is what unlocks the seat's organization BYOK
+// custom models and the per-seat API host; when the exchange fails it degrades
+// to the raw token and the default host, i.e. the previous behaviour.
+func resolveCopilotAccess(token, enterpriseURL, configuredBaseURL string) (string, string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	return auth.ResolveCopilotAPIAccess(ctx, token, enterpriseURL, configuredBaseURL)
 }
 
 func newCopilotOpenAIClient(accessToken, baseURL string, headers map[string]string) openai.Client {
@@ -125,7 +145,24 @@ func (c *copilotClient) requestHeaders(messages []message.Message) map[string]st
 }
 
 func (c *copilotClient) requestClient(messages []message.Message) openai.Client {
+	c.refreshBearerToken()
 	return newCopilotOpenAIClient(c.options.bearerToken, c.baseURL, c.requestHeaders(messages))
+}
+
+// refreshBearerToken renews the exchanged Copilot API token when it is close to
+// expiring. auth caches the exchange, so this is a no-op lookup for the vast
+// majority of calls and never touches the network while the token is valid.
+func (c *copilotClient) refreshBearerToken() {
+	if c.sourceToken == "" || !auth.IsCopilotAPIToken(c.options.bearerToken) {
+		return
+	}
+	bearer, baseURL := resolveCopilotAccess(c.sourceToken, c.enterpriseURL, c.options.baseURL)
+	if strings.TrimSpace(bearer) == "" || bearer == c.options.bearerToken {
+		return
+	}
+	c.options.bearerToken = bearer
+	c.baseURL = baseURL
+	c.client = newCopilotOpenAIClient(bearer, baseURL, c.requestHeaders(nil))
 }
 
 func (c *copilotClient) initiator(messages []message.Message) string {
@@ -150,18 +187,20 @@ func (c *copilotClient) hasVisionInput(messages []message.Message) bool {
 }
 
 func (c *copilotClient) reloadCredentials() bool {
-	token, baseURL, err := loadCopilotCredentials("", c.providerOptions.apiKey, c.options.baseURL)
-	if err != nil || strings.TrimSpace(token) == "" {
+	creds, err := loadCopilotCredentials("", c.providerOptions.apiKey, c.options.baseURL)
+	if err != nil || strings.TrimSpace(creds.bearerToken) == "" {
 		return false
 	}
-	if token == c.options.bearerToken && baseURL == c.baseURL {
+	if creds.bearerToken == c.options.bearerToken && creds.baseURL == c.baseURL {
 		return false
 	}
-	c.options.bearerToken = token
-	c.baseURL = baseURL
-	c.client = newCopilotOpenAIClient(token, baseURL, c.requestHeaders(nil))
+	c.options.bearerToken = creds.bearerToken
+	c.baseURL = creds.baseURL
+	c.sourceToken = creds.sourceToken
+	c.enterpriseURL = creds.enterpriseURL
+	c.client = newCopilotOpenAIClient(creds.bearerToken, creds.baseURL, c.requestHeaders(nil))
 	if cfg := config.Get(); cfg != nil && cfg.Debug {
-		logging.Debug("Copilot credentials reloaded", "baseURL", baseURL)
+		logging.Debug("Copilot credentials reloaded", "baseURL", creds.baseURL)
 	}
 	return true
 }
@@ -175,17 +214,35 @@ func newCopilotClient(opts providerClientOptions) CopilotClient {
 		o(&copilotOpts)
 	}
 
-	bearerToken, baseURL, err := loadCopilotCredentials(copilotOpts.bearerToken, opts.apiKey, copilotOpts.baseURL)
+	creds, err := loadCopilotCredentials(copilotOpts.bearerToken, opts.apiKey, copilotOpts.baseURL)
 	if err != nil {
 		logging.Error("GitHub Copilot login is required. Run `pando auth copilot login` or provide a compatible GitHub token.", "error", err)
 		return &copilotClient{providerOptions: opts, options: copilotOpts, baseURL: auth.CopilotAPIBaseURL("")}
 	}
 
+	bearerToken := creds.bearerToken
+	baseURL := creds.baseURL
 	copilotOpts.bearerToken = bearerToken
-	copilotOpts.baseURL = baseURL
 
 	// Verify that the Copilot models API is accessible before creating the client
-	if err := auth.CheckCopilotModelsAPI(bearerToken, baseURL); err != nil {
+	err = auth.CheckCopilotModelsAPI(bearerToken, baseURL)
+	if err != nil && bearerToken != creds.sourceToken {
+		// The exchanged Copilot API token (or the host it advertised) was
+		// rejected: fall back to the legacy raw OAuth token against the default
+		// host rather than disabling the provider.
+		legacyBaseURL := strings.TrimSpace(copilotOpts.baseURL)
+		if legacyBaseURL == "" {
+			legacyBaseURL = auth.CopilotAPIBaseURL(creds.enterpriseURL)
+		}
+		if legacyErr := auth.CheckCopilotModelsAPI(creds.sourceToken, legacyBaseURL); legacyErr == nil {
+			logging.Warn("Copilot API token exchange rejected; falling back to the raw GitHub token", "error", err)
+			bearerToken = creds.sourceToken
+			baseURL = legacyBaseURL
+			copilotOpts.bearerToken = bearerToken
+			err = nil
+		}
+	}
+	if err != nil {
 		logging.Error("Copilot models API is not accessible. Disabling Copilot provider.", "error", err)
 		// Disable the Copilot provider in configuration
 		if cfg := config.Get(); cfg != nil {
@@ -213,6 +270,8 @@ func newCopilotClient(opts providerClientOptions) CopilotClient {
 		options:         copilotOpts,
 		client:          client,
 		baseURL:         baseURL,
+		sourceToken:     creds.sourceToken,
+		enterpriseURL:   creds.enterpriseURL,
 	}
 }
 

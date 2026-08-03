@@ -1065,7 +1065,7 @@ func isWarmColdFallback(err error) bool {
 //
 // Resolution rules:
 //  1. If modelID is non-empty and already contains "." or "/", return as-is.
-//  2. If modelID is non-empty and exists in SupportedModels, return the canonical ID
+//  2. If modelID is non-empty and exists in SupportedModels(), return the canonical ID
 //     (which already encodes the provider as a prefix, e.g. "anthropic.claude-sonnet-4-6").
 //  3. If modelID is non-empty but unknown, prepend the provider of the currently
 //     active AgentCoder model so that the pando CLI can look it up correctly.
@@ -1092,7 +1092,7 @@ func makePandoModelResolver(cfg *config.Config) func(string) string {
 
 		// Try to normalize via the models registry (handles shorthands like "sonnet").
 		normalized := models.NormalizeModelID(modelID)
-		if _, ok := models.SupportedModels[normalized]; ok {
+		if _, ok := models.SupportedModels()[normalized]; ok {
 			return string(normalized)
 		}
 

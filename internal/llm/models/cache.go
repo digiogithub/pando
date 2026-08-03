@@ -67,7 +67,7 @@ func SaveModelCache() error {
 	return os.WriteFile(path, data, 0600)
 }
 
-// LoadModelCache loads previously cached dynamic models into SupportedModels.
+// LoadModelCache loads previously cached dynamic models into SupportedModels().
 // Cached models do not overwrite static entries (Azure, VertexAI, Bedrock).
 func LoadModelCache() error {
 	path, err := cacheFilePath()
@@ -94,12 +94,15 @@ func LoadModelCache() error {
 		return nil
 	}
 
+	catalogue := SupportedModels()
+	restored := make(map[ModelID]Model)
 	for id, model := range cached.Models {
-		if _, exists := SupportedModels[id]; !exists {
-			SupportedModels[id] = model
+		if _, exists := catalogue[id]; !exists {
+			restored[id] = model
 			dynamicModels.Store(id, model)
 		}
 	}
+	SetSupportedModels(restored)
 
 	return nil
 }

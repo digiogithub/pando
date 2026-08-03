@@ -225,7 +225,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 				// bare ID here makes the web-UI save an unrecognised agent model that
 				// gets reverted to a default on the next config reload.
 				modelID := models.CanonicalAccountModelID(acc.Type, acc.ID, sameTypeCount, m.ID)
-				if _, exists := models.SupportedModels[modelID]; !exists {
+				if _, exists := models.SupportedModels()[modelID]; !exists {
 					registered := models.Model{
 						ID:                  modelID,
 						Name:                name,
@@ -264,7 +264,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 					}
 					displayName = accLabel + ": " + name
 				}
-				knownModel := models.SupportedModels[modelID]
+				knownModel := models.SupportedModels()[modelID]
 				if knownModel.APIModel == "" {
 					knownModel.APIModel = m.ID
 				}
@@ -301,7 +301,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fallback: when no dynamic models were fetched (no accounts or all disabled/failed),
-	// return static models from SupportedModels for each configured and enabled provider.
+	// return static models from SupportedModels() for each configured and enabled provider.
 	// This mirrors the TUI model dialog behaviour and ensures the selector is never empty
 	// for users who have providers configured via the legacy Providers map or via
 	// ProviderAccounts that failed to fetch.
@@ -318,7 +318,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			seenProviders[provider] = true
 		}
 		for provider := range seenProviders {
-			for _, m := range models.SupportedModels {
+			for _, m := range models.SupportedModels() {
 				if m.Provider != provider {
 					continue
 				}
@@ -361,7 +361,7 @@ func staticModelInfosForAccount(acc config.ProviderAccount, sameTypeCount int) [
 	if prefixed {
 		src = models.AccountScopedStaticModels(acc.Type, acc.ID, sameTypeCount)
 		for _, m := range src {
-			if _, exists := models.SupportedModels[m.ID]; !exists {
+			if _, exists := models.SupportedModels()[m.ID]; !exists {
 				models.RegisterDynamicModel(m)
 			}
 		}

@@ -124,9 +124,12 @@ func listLocalModels(modelsEndpoint string) []localModel {
 }
 
 func loadLocalModels(models []localModel) {
+	batch := make(map[ModelID]Model, len(models))
+	defer func() { SetSupportedModels(batch) }()
+
 	for i, m := range models {
 		model := convertLocalModel(m)
-		SupportedModels[model.ID] = model
+		batch[model.ID] = model
 
 		if i == 0 || m.State == "loaded" {
 			viper.SetDefault("agents.coder.model", model.ID)

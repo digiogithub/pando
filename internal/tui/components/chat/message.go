@@ -170,25 +170,25 @@ func renderAssistantMessage(
 			info = append(info, baseStyle.
 				Width(width-1).
 				Foreground(t.TextMuted()).
-				Render(fmt.Sprintf(" %s (%s)", models.SupportedModels[msg.Model].Name, took)),
+				Render(fmt.Sprintf(" %s (%s)", models.SupportedModels()[msg.Model].Name, took)),
 			)
 		case message.FinishReasonCanceled:
 			info = append(info, baseStyle.
 				Width(width-1).
 				Foreground(t.TextMuted()).
-				Render(fmt.Sprintf(" %s (%s)", models.SupportedModels[msg.Model].Name, "canceled")),
+				Render(fmt.Sprintf(" %s (%s)", models.SupportedModels()[msg.Model].Name, "canceled")),
 			)
 		case message.FinishReasonError:
 			info = append(info, baseStyle.
 				Width(width-1).
 				Foreground(t.TextMuted()).
-				Render(fmt.Sprintf(" %s (%s)", models.SupportedModels[msg.Model].Name, "error")),
+				Render(fmt.Sprintf(" %s (%s)", models.SupportedModels()[msg.Model].Name, "error")),
 			)
 		case message.FinishReasonPermissionDenied:
 			info = append(info, baseStyle.
 				Width(width-1).
 				Foreground(t.TextMuted()).
-				Render(fmt.Sprintf(" %s (%s)", models.SupportedModels[msg.Model].Name, "permission denied")),
+				Render(fmt.Sprintf(" %s (%s)", models.SupportedModels()[msg.Model].Name, "permission denied")),
 			)
 		}
 	}

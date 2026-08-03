@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -153,39 +154,71 @@ func isCopilotCompatibleToken(token string) bool {
 	return token != ""
 }
 
-func LoadGitHubOAuthToken() (string, error) {
-	// COPILOT_GITHUB_TOKEN is user-explicit and always wins regardless of type.
-	if token := strings.TrimSpace(os.Getenv("COPILOT_GITHUB_TOKEN")); token != "" {
-		return token, nil
+// GitHubTokenCandidate is a GitHub OAuth token discovered locally, tagged with
+// where it came from.
+type GitHubTokenCandidate struct {
+	Source string
+	Token  string
+}
+
+// GitHubOAuthTokenCandidates returns every usable GitHub OAuth token found on
+// this machine, in the same priority order LoadGitHubOAuthToken applies. Not all
+// of them can be exchanged for a Copilot API token (only tokens issued to an
+// app with Copilot entitlement can), so callers that need the exchanged token
+// walk the list instead of taking just the first entry.
+func GitHubOAuthTokenCandidates() []GitHubTokenCandidate {
+	var candidates []GitHubTokenCandidate
+	add := func(source, token string) {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			return
+		}
+		for _, existing := range candidates {
+			if existing.Token == token {
+				return
+			}
+		}
+		candidates = append(candidates, GitHubTokenCandidate{Source: source, Token: token})
 	}
+
+	// COPILOT_GITHUB_TOKEN is user-explicit and always wins regardless of type.
+	add("COPILOT_GITHUB_TOKEN", os.Getenv("COPILOT_GITHUB_TOKEN"))
 
 	// GH_TOKEN is the GitHub CLI token — typically an OAuth token, try it next.
 	if token := strings.TrimSpace(os.Getenv("GH_TOKEN")); isCopilotCompatibleToken(token) {
-		return token, nil
+		add("GH_TOKEN", token)
 	}
 
 	// Saved session from `pando auth copilot login` takes precedence over the
 	// generic GITHUB_TOKEN env var, which may be a PAT (ghp_...) used for CI/CD
 	// and is rejected by the Copilot API.
-	if session, err := LoadCopilotSession(); err == nil && strings.TrimSpace(session.AccessToken) != "" {
-		return session.AccessToken, nil
+	if session, err := LoadCopilotSession(); err == nil && session != nil {
+		add("pando-session", session.AccessToken)
 	}
 
-	if token, err := loadLegacyCopilotToken(); err == nil && token != "" {
-		return token, nil
+	for _, token := range loadLegacyCopilotTokens() {
+		add("github-copilot-app", token)
 	}
 
-	if token, err := loadGitHubCLIToken(); err == nil && token != "" {
-		return token, nil
+	if token, err := loadGitHubCLIToken(); err == nil {
+		add("gh-cli", token)
 	}
 
 	// GITHUB_TOKEN is checked last because it is commonly set to a PAT in CI
 	// environments.  Only accept it when it looks like an OAuth token.
 	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); isCopilotCompatibleToken(token) {
-		return token, nil
+		add("GITHUB_TOKEN", token)
 	}
 
-	return "", fmt.Errorf("GitHub Copilot token not found; run `pando auth copilot login`")
+	return candidates
+}
+
+func LoadGitHubOAuthToken() (string, error) {
+	candidates := GitHubOAuthTokenCandidates()
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("GitHub Copilot token not found; run `pando auth copilot login`")
+	}
+	return candidates[0].Token, nil
 }
 
 func CopilotAPIBaseURL(enterpriseURL string) string {
@@ -390,6 +423,11 @@ func ValidateCopilotToken(ctx context.Context, session CopilotSession) error {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("User-Agent", "Pando/"+version.Version)
+	// The per-seat hosts (api.business/api.enterprise.githubcopilot.com) reject
+	// requests that do not identify an editor with 400 model_not_supported.
+	req.Header.Set("Editor-Version", "Pando/"+version.Version)
+	req.Header.Set("Editor-Plugin-Version", "Pando/"+version.Version)
+	req.Header.Set("Copilot-Integration-Id", "vscode-chat")
 	req.Header.Set("Openai-Intent", "conversation-edits")
 	req.Header.Set("x-initiator", "user")
 
@@ -425,6 +463,11 @@ func CheckCopilotModelsAPI(token, baseURL string) error {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("User-Agent", "Pando/"+version.Version)
+	// The per-seat hosts (api.business/api.enterprise.githubcopilot.com) reject
+	// requests that do not identify an editor with 400 model_not_supported.
+	req.Header.Set("Editor-Version", "Pando/"+version.Version)
+	req.Header.Set("Editor-Plugin-Version", "Pando/"+version.Version)
+	req.Header.Set("Copilot-Integration-Id", "vscode-chat")
 	req.Header.Set("Openai-Intent", "conversation-edits")
 	req.Header.Set("x-initiator", "user")
 
@@ -463,11 +506,24 @@ func oauthEndpoints(domain string) (string, string) {
 }
 
 func loadLegacyCopilotToken() (string, error) {
+	tokens := loadLegacyCopilotTokens()
+	if len(tokens) == 0 {
+		return "", fmt.Errorf("legacy github-copilot token not found")
+	}
+	return tokens[0], nil
+}
+
+// loadLegacyCopilotTokens returns every editor-issued Copilot OAuth token found
+// in ~/.config/github-copilot. Editors register several app ids there and only
+// some of them can be exchanged for a Copilot API token, so all are returned.
+func loadLegacyCopilotTokens() []string {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		return "", err
+		return nil
 	}
 
+	var tokens []string
+	seen := map[string]bool{}
 	for _, fileName := range []string{"hosts.json", "apps.json"} {
 		filePath := filepath.Join(configDir, "github-copilot", fileName)
 		data, err := os.ReadFile(filePath)
@@ -479,17 +535,30 @@ func loadLegacyCopilotToken() (string, error) {
 		if err := json.Unmarshal(data, &payload); err != nil {
 			continue
 		}
-		for host, values := range payload {
+		hosts := make([]string, 0, len(payload))
+		for host := range payload {
+			hosts = append(hosts, host)
+		}
+		// Map iteration order is random; sort so token priority is stable.
+		slices.Sort(hosts)
+		for _, host := range hosts {
 			if !strings.Contains(host, "github.com") {
 				continue
 			}
-			if token, ok := values["oauth_token"].(string); ok && strings.TrimSpace(token) != "" {
-				return token, nil
+			token, ok := payload[host]["oauth_token"].(string)
+			if !ok {
+				continue
 			}
+			token = strings.TrimSpace(token)
+			if token == "" || seen[token] {
+				continue
+			}
+			seen[token] = true
+			tokens = append(tokens, token)
 		}
 	}
 
-	return "", fmt.Errorf("legacy github-copilot token not found")
+	return tokens
 }
 
 func loadGitHubCLIToken() (string, error) {

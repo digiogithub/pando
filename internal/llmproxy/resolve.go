@@ -69,7 +69,7 @@ func stripAccountPrefix(requested string, acc config.ProviderAccount) (string, b
 // loop discovers it.
 func synthModel(acc config.ProviderAccount, apiModel string) models.Model {
 	id := models.ModelID(string(acc.Type) + "." + apiModel)
-	if existing, ok := models.SupportedModels[id]; ok {
+	if existing, ok := models.SupportedModels()[id]; ok {
 		return existing
 	}
 	return models.Model{
@@ -101,13 +101,13 @@ func resolveModel(requested string) (resolvedModel, bool) {
 
 	// 1. Registry lookup via normalization (covers static + dynamically registered
 	//    models, plus shorthand aliases).
-	if m, ok := models.SupportedModels[models.NormalizeModelID(requested)]; ok {
+	if m, ok := models.SupportedModels()[models.NormalizeModelID(requested)]; ok {
 		if acc, ok := accountForModel(accounts, m); ok {
 			return resolvedModel{model: m, account: acc}, true
 		}
 	}
 	// 1b. Direct raw key lookup (in case normalization rewrote an existing key).
-	if m, ok := models.SupportedModels[models.ModelID(requested)]; ok {
+	if m, ok := models.SupportedModels()[models.ModelID(requested)]; ok {
 		if acc, ok := accountForModel(accounts, m); ok {
 			return resolvedModel{model: m, account: acc}, true
 		}
@@ -116,7 +116,7 @@ func resolveModel(requested string) (resolvedModel, bool) {
 	// 2. Reverse lookup by APIModel scoped to a configured account. Handles raw
 	//    upstream IDs (e.g. "gpt-4o") that were registered as "openai.gpt-4o".
 	for _, acc := range accounts {
-		for _, m := range models.SupportedModels {
+		for _, m := range models.SupportedModels() {
 			if m.Provider != acc.Type {
 				continue
 			}

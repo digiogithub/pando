@@ -316,7 +316,7 @@ func TestPandoSetupModels(t *testing.T) {
 		Description:      "A demo model registered by the pando_setup tests.",
 		Knowledge:        "2026-01",
 	})
-	t.Cleanup(func() { delete(models.SupportedModels, id) })
+	t.Cleanup(func() { models.DeleteSupportedModels(id) })
 
 	tool := NewPandoSetupTool(nil, nil)
 
@@ -355,7 +355,7 @@ func TestPandoSetupModelsLimitTruncates(t *testing.T) {
 		models.RegisterDynamicModel(models.Model{
 			ID: id, Name: "Limit Model", Provider: "pandosetuplimit", APIModel: "m",
 		})
-		t.Cleanup(func() { delete(models.SupportedModels, id) })
+		t.Cleanup(func() { models.DeleteSupportedModels(id) })
 	}
 
 	resp := runSetupTool(t, NewPandoSetupTool(nil, nil), context.Background(), "models", "--provider pandosetuplimit --limit 2")

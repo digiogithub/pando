@@ -25,8 +25,8 @@ func TestGeminiStaticModelsAreRegistered(t *testing.T) {
 		Gemini20Flash,
 		Gemini20FlashLite,
 	} {
-		if _, ok := SupportedModels[id]; !ok {
-			t.Fatalf("SupportedModels missing Gemini model %q", id)
+		if _, ok := SupportedModels()[id]; !ok {
+			t.Fatalf("SupportedModels() missing Gemini model %q", id)
 		}
 	}
 }
@@ -41,9 +41,9 @@ func TestGeminiLegacyAliasesPointToCurrentAPIModel(t *testing.T) {
 		{Gemini30FlashLegacy, "gemini-3-flash-preview"},
 	}
 	for _, tc := range checks {
-		m, ok := SupportedModels[tc.id]
+		m, ok := SupportedModels()[tc.id]
 		if !ok {
-			t.Fatalf("SupportedModels missing legacy alias %q", tc.id)
+			t.Fatalf("SupportedModels() missing legacy alias %q", tc.id)
 		}
 		if m.APIModel != tc.wantAPIModel {
 			t.Errorf("legacy alias %q: APIModel = %q, want %q", tc.id, m.APIModel, tc.wantAPIModel)
@@ -57,9 +57,9 @@ func TestAntigravityStaticModelsAreRegistered(t *testing.T) {
 		AntigravityGemini31Pro,
 		AntigravityGemini30Flash,
 	} {
-		m, ok := SupportedModels[id]
+		m, ok := SupportedModels()[id]
 		if !ok {
-			t.Fatalf("SupportedModels missing Antigravity model %q", id)
+			t.Fatalf("SupportedModels() missing Antigravity model %q", id)
 		}
 		if m.Provider != ProviderAntigravity {
 			t.Fatalf("model %q provider = %q, want %q", id, m.Provider, ProviderAntigravity)

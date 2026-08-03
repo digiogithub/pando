@@ -47,17 +47,17 @@ func TestRefreshProviderModelsForAccountStaticProvider(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() {
-		for id := range SupportedModels {
-			m := SupportedModels[id]
+		for id := range SupportedModels() {
+			m := SupportedModels()[id]
 			if m.Provider == ProviderAzure && (m.AccountID == "azure-a" || m.AccountID == "azure-b") {
-				delete(SupportedModels, id)
+				DeleteSupportedModels(id)
 				dynamicModels.Delete(id)
 			}
 		}
 	})
 
 	var aCount, bCount int
-	for _, m := range SupportedModels {
+	for _, m := range SupportedModels() {
 		switch m.AccountID {
 		case "azure-a":
 			aCount++

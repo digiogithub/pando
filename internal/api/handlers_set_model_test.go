@@ -62,7 +62,7 @@ func TestSetCoderModelFallsBackToConfig(t *testing.T) {
 		Provider: models.ProviderCopilot,
 		APIModel: "gpt-5.4-fallback",
 	})
-	t.Cleanup(func() { delete(models.SupportedModels, models.ModelID("copilot.gpt-5.4-fallback")) })
+	t.Cleanup(func() { models.DeleteSupportedModels(models.ModelID("copilot.gpt-5.4-fallback")) })
 
 	s := &Server{app: &app.App{}} // CoderAgent is nil
 

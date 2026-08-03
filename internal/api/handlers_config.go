@@ -160,7 +160,7 @@ func (s *Server) handleGetConfigAgents(w http.ResponseWriter, r *http.Request) {
 	items := make([]AgentConfigItem, 0, len(config.KnownAgentNames))
 	for _, name := range config.KnownAgentNames {
 		a := cfg.Agents[name]
-		model := models.SupportedModels[a.Model]
+		model := models.SupportedModels()[a.Model]
 		items = append(items, AgentConfigItem{
 			Name:                 string(name),
 			Model:                a.Model,

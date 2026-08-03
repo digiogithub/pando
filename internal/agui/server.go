@@ -205,7 +205,7 @@ func modelDescriptor(name config.AgentName) *ModelDescriptor {
 		return nil
 	}
 	out := &ModelDescriptor{ID: string(agentCfg.Model)}
-	if model, ok := models.SupportedModels[agentCfg.Model]; ok {
+	if model, ok := models.SupportedModels()[agentCfg.Model]; ok {
 		out.Name = model.Name
 		out.Provider = string(model.Provider)
 		out.ContextWindow = model.ContextWindow

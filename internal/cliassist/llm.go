@@ -32,7 +32,7 @@ func FetchCommand(ctx context.Context, cfg *config.Config, systemPrompt, userPro
 	}
 
 	// Resolve model from supported models registry
-	model, ok := models.SupportedModels[modelID]
+	model, ok := models.SupportedModels()[modelID]
 	if !ok {
 		return "", fmt.Errorf("model %s not supported", modelID)
 	}

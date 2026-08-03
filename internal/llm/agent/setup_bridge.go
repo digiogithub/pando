@@ -60,7 +60,7 @@ func (b *setupBridge) SessionInfo(ctx context.Context, sessionID string) (tools.
 	// "model" command says.
 	if id, _ := effectiveSessionModel(sessionID); id != "" {
 		info.Model = string(id)
-		if model, known := models.SupportedModels[id]; known {
+		if model, known := models.SupportedModels()[id]; known {
 			info.ContextWindow = model.ContextWindow
 		}
 	}

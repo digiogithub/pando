@@ -465,7 +465,7 @@ func NewSettingsPage(app *pandoapp.App) tea.Model {
 func (p *settingsPage) openModelFieldDialog(msg settings.OpenModelFieldDialogMsg) tea.Cmd {
 	modelOptions := make([]dialog.ModelDialogOption, 0, len(msg.Field.Options))
 	for _, option := range msg.Field.Options {
-		provider := models.SupportedModels[models.ModelID(option)].Provider
+		provider := models.SupportedModels()[models.ModelID(option)].Provider
 		modelOptions = append(modelOptions, dialog.ModelDialogOption{
 			ID:       models.ModelID(option),
 			Name:     option,
@@ -3181,8 +3181,8 @@ func supportedModelOptions(cfg *config.Config) []string {
 		availableProviders[providerID] = struct{}{}
 	}
 
-	modelList := make([]models.Model, 0, len(models.SupportedModels))
-	for _, model := range models.SupportedModels {
+	modelList := make([]models.Model, 0, len(models.SupportedModels()))
+	for _, model := range models.SupportedModels() {
 		if _, ok := availableProviders[model.Provider]; ok {
 			modelList = append(modelList, model)
 		}
@@ -3756,7 +3756,7 @@ func saveAgent(field settings.Field) error {
 	switch parts[2] {
 	case "model":
 		modelID := models.ModelID(strings.TrimSpace(field.Value))
-		if _, ok := models.SupportedModels[modelID]; !ok {
+		if _, ok := models.SupportedModels()[modelID]; !ok {
 			return fmt.Errorf("model %s not supported", modelID)
 		}
 		return config.UpdateAgentModel(agentName, modelID)
@@ -5117,7 +5117,7 @@ func saveEvaluator(field settings.Field) error {
 	case "evaluator.model":
 		modelID := models.ModelID(strings.TrimSpace(field.Value))
 		evalCfg.Model = modelID
-		if model, ok := models.SupportedModels[modelID]; ok {
+		if model, ok := models.SupportedModels()[modelID]; ok {
 			evalCfg.Provider = string(model.Provider)
 		}
 	case "evaluator.alphaWeight":

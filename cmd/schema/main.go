@@ -466,7 +466,7 @@ func generateSchema() map[string]any {
 
 	// Add model enum
 	modelEnum := []string{}
-	for modelID := range models.SupportedModels {
+	for modelID := range models.SupportedModels() {
 		modelEnum = append(modelEnum, string(modelID))
 	}
 	agentSchema["additionalProperties"].(map[string]any)["properties"].(map[string]any)["model"].(map[string]any)["enum"] = modelEnum

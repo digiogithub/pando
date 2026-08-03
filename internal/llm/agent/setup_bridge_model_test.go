@@ -35,9 +35,7 @@ func setupModelTestEnv(t *testing.T, switchEnabled bool) {
 			ContextWindow: 50_000,
 		},
 	}
-	for id, model := range catalogue {
-		models.SupportedModels[id] = model
-	}
+	models.SetSupportedModels(catalogue)
 
 	prev := config.Get()
 	config.SetForTests(&config.Config{
@@ -56,7 +54,7 @@ func setupModelTestEnv(t *testing.T, switchEnabled bool) {
 	t.Cleanup(func() {
 		config.SetForTests(prev)
 		for id := range catalogue {
-			delete(models.SupportedModels, id)
+			models.DeleteSupportedModels(id)
 		}
 	})
 }
@@ -280,11 +278,11 @@ func TestSetupBridgeSetSessionModelRejectsUnknownAndUnusableModels(t *testing.T)
 	// A model whose provider has no configured account must be refused here
 	// rather than blowing up later, mid-request, in createAgentProvider.
 	orphan := models.ModelID("__orphan.model")
-	models.SupportedModels[orphan] = models.Model{
+	models.SetSupportedModel(models.Model{
 		ID: orphan, Name: "Orphan", Provider: models.ModelProvider("__no-account"),
 		CostPer1MIn: 0.1, CostPer1MOut: 0.1,
-	}
-	t.Cleanup(func() { delete(models.SupportedModels, orphan) })
+	})
+	t.Cleanup(func() { models.DeleteSupportedModels(orphan) })
 
 	if _, err := bridge.SetSessionModel(sessionID, string(orphan), true); err == nil {
 		t.Fatal("expected a model without a provider account to be rejected")

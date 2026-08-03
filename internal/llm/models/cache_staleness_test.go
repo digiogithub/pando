@@ -11,14 +11,14 @@ import (
 )
 
 // registerCachedModel simulates a model restored from an on-disk cache written by
-// an older build: present in SupportedModels and dynamicModels, but missing the
+// an older build: present in SupportedModels() and dynamicModels, but missing the
 // endpoint metadata the current code routes on.
 func registerCachedModel(t *testing.T, m Model) {
 	t.Helper()
 	RegisterDynamicModel(m)
 	t.Cleanup(func() {
 		dynamicModels.Delete(m.ID)
-		delete(SupportedModels, m.ID)
+		DeleteSupportedModels(m.ID)
 	})
 }
 
@@ -49,7 +49,7 @@ func TestRefreshProviderModelsUpdatesStaleCachedMetadata(t *testing.T) {
 		t.Fatalf("RefreshProviderModels() error = %v", err)
 	}
 
-	got := SupportedModels["copilot.mai-code-1-flash-picker"]
+	got := SupportedModels()["copilot.mai-code-1-flash-picker"]
 	if len(got.SupportedEndpoints) != 1 || got.SupportedEndpoints[0] != CopilotEndpointResponses {
 		t.Fatalf("SupportedEndpoints = %v, want [%s]", got.SupportedEndpoints, CopilotEndpointResponses)
 	}
@@ -91,7 +91,7 @@ func TestRefreshProviderModelsForAccountUpdatesStaleCachedMetadata(t *testing.T)
 		t.Fatalf("RefreshProviderModelsForAccount() error = %v", err)
 	}
 
-	got := SupportedModels["copilot.mai-code-1-flash-picker"]
+	got := SupportedModels()["copilot.mai-code-1-flash-picker"]
 	if !CopilotModelUsesResponsesAPI(got) {
 		t.Fatalf("CopilotModelUsesResponsesAPI() = false (endpoints %v), want true after refresh", got.SupportedEndpoints)
 	}
@@ -119,7 +119,7 @@ func TestLoadModelCacheDropsUnversionedCache(t *testing.T) {
 	if err := LoadModelCache(); err != nil {
 		t.Fatalf("LoadModelCache() error = %v", err)
 	}
-	if _, ok := SupportedModels["copilot.mai-code-1-flash-picker"]; ok {
+	if _, ok := SupportedModels()["copilot.mai-code-1-flash-picker"]; ok {
 		t.Fatal("unversioned cache entry was loaded; want it dropped")
 	}
 }
@@ -139,13 +139,13 @@ func TestModelCacheRoundTripPreservesEndpoints(t *testing.T) {
 		t.Fatalf("SaveModelCache() error = %v", err)
 	}
 
-	delete(SupportedModels, "copilot.roundtrip-model")
+	DeleteSupportedModels("copilot.roundtrip-model")
 	dynamicModels.Delete(ModelID("copilot.roundtrip-model"))
 
 	if err := LoadModelCache(); err != nil {
 		t.Fatalf("LoadModelCache() error = %v", err)
 	}
-	got := SupportedModels["copilot.roundtrip-model"]
+	got := SupportedModels()["copilot.roundtrip-model"]
 	if len(got.SupportedEndpoints) != 1 || got.SupportedEndpoints[0] != CopilotEndpointResponses {
 		t.Fatalf("SupportedEndpoints = %v, want [%s]", got.SupportedEndpoints, CopilotEndpointResponses)
 	}
