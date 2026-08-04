@@ -64,7 +64,7 @@ Languages = []
 
 [Agents]
 [Agents.cli-assist]
-Model = 'copilot.gpt-5.4-mini'
+Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'openrouter.z-ai/glm-5.2'
+Model = 'ollama.agent-m1-4b:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -91,7 +91,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.context-enricher]
-Model = 'ollama.qwopus:latest'
+Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -100,7 +100,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.persona-selector]
-Model = 'copilot.mai-code-1-flash-picker'
+Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -109,7 +109,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.summarizer]
-Model = 'ollama.qwopus:latest'
+Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -118,7 +118,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.task]
-Model = 'ollama.qwopus:latest'
+Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -127,7 +127,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.title]
-Model = 'ollama.qwopus:latest'
+Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -350,8 +350,8 @@ AutoCleanupDays = 5
 
 [evaluator]
 enabled = true
-model = 'ollama.qwopus:latest'
-provider = 'ollama'
+model = 'openrouter.deepseek/deepseek-v4-flash-0731'
+provider = 'openrouter'
 alphaWeight = 0.8
 betaWeight = 0.2
 explorationC = 1.41
