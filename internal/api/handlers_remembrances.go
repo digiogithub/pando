@@ -103,6 +103,57 @@ func (s *Server) handleIndexCodeProject(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// reindexAllResponse reports the projects a full re-index was started for.
+type reindexAllResponse struct {
+	Started []reindexJob `json:"started"`
+	Failed  []reindexJob `json:"failed,omitempty"`
+}
+
+// reindexJob is one project of a bulk re-index.
+type reindexJob struct {
+	ProjectID string `json:"project_id"`
+	RootPath  string `json:"root_path"`
+	JobID     string `json:"job_id,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// handleReindexAllCodeProjects re-indexes every registered code project.
+// POST /api/v1/remembrances/reindex
+func (s *Server) handleReindexAllCodeProjects(w http.ResponseWriter, r *http.Request) {
+	if s.app.Remembrances == nil || s.app.Remembrances.Code == nil {
+		writeError(w, http.StatusServiceUnavailable, "remembrances code indexer not initialized")
+		return
+	}
+
+	projects, err := s.app.Remembrances.Code.ListProjects(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list projects: "+err.Error())
+		return
+	}
+
+	resp := reindexAllResponse{Started: make([]reindexJob, 0, len(projects))}
+	for _, p := range projects {
+		// Indexing runs in a background goroutine with its own context, so a
+		// project that fails to start must not abort the ones that follow.
+		jobID, err := s.app.Remembrances.Code.IndexProject(r.Context(), p.ProjectID, p.RootPath, nil)
+		if err != nil {
+			resp.Failed = append(resp.Failed, reindexJob{
+				ProjectID: p.ProjectID, RootPath: p.RootPath, Error: err.Error(),
+			})
+			continue
+		}
+		resp.Started = append(resp.Started, reindexJob{
+			ProjectID: p.ProjectID, RootPath: p.RootPath, JobID: jobID,
+		})
+	}
+
+	if len(resp.Started) == 0 && len(resp.Failed) > 0 {
+		writeError(w, http.StatusInternalServerError, "failed to start re-index: "+resp.Failed[0].Error)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, resp)
+}
+
 // sanitizeProjectID converts an absolute path to a safe project identifier.
 func sanitizeProjectID(path string) string {
 	// Use the last path component

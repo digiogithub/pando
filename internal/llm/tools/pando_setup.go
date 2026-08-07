@@ -257,9 +257,11 @@ The switch is scoped to this session, lives in memory only and is lost when Pand
 restarts. It takes effect on the very next request, so a switch made mid-task
 answers the rest of the task on the new model.
 Switching to a model that costs more — or to or from a model with no published
-price — is NOT applied on the first call: you get a quote to show the user, and
-only after the user accepts do you repeat the call with --confirm.
-Never confirm on your own behalf: the confirmation must come from the user.`,
+price — is NOT applied on the first call: you get a quote to show the user. End
+your turn asking the question in plain text and wait for the user's reply; only
+in a later turn, once the answer is yes, repeat the call with --confirm.
+Never confirm on your own behalf: a --confirm sent in the same turn as the quote
+is refused, because the user has not answered yet.`,
 			Run: runSetupModel,
 		},
 		{
@@ -876,7 +878,9 @@ func renderSetupModelSwitch(s SetupModelSwitch) string {
 		sb.WriteString(fmt.Sprintf("- current: %s\n", describeSetupModelState(s.Previous)))
 		sb.WriteString(fmt.Sprintf("- target:  %s\n", describeSetupModelState(s.Target)))
 		sb.WriteString("\n" + s.ConfirmationReason + "\n")
-		sb.WriteString("\nAsk the user whether to switch. Only if the user accepts, repeat this call as:\n")
+		sb.WriteString("\nAsk the user whether to switch as plain text and END YOUR TURN there: no tool call,\n")
+		sb.WriteString("no dialog, the user answers with a normal message. In a LATER turn, only if the\n")
+		sb.WriteString("answer is yes, repeat this call as:\n")
 		sb.WriteString(fmt.Sprintf("  pando_setup model %s --confirm\n", s.Target.ID))
 		sb.WriteString("\nDo not confirm on the user's behalf, and do not report the model as changed:\n")
 		sb.WriteString("this session is still running on " + s.Previous.ID + ".\n")

@@ -211,12 +211,77 @@ func TestSetupBridgeQuoteDoesNotConsumeSwitchBudget(t *testing.T) {
 		}
 	}
 
+	// The user answers in the next turn, which is a new run.
+	beginModelSwitchRun(sessionID, nil)
+
 	confirmed, err := bridge.SetSessionModel(sessionID, string(testModelPricey), true)
 	if err != nil {
 		t.Fatalf("confirm after repeated quotes: %v", err)
 	}
 	if !confirmed.Applied {
 		t.Fatal("the confirmed switch must apply: quotes should not have consumed the budget")
+	}
+}
+
+// TestSetupBridgeConfirmNeedsANewTurn pins the rule that makes the cost
+// handshake real on every surface: the agent cannot approve its own quote inside
+// the turn it was produced in, it has to end the turn and let the user answer.
+func TestSetupBridgeConfirmNeedsANewTurn(t *testing.T) {
+	setupModelTestEnv(t, true)
+	bridge, sessionID := newModelTestSession(t, "confirm-turn")
+
+	beginModelSwitchRun(sessionID, nil)
+	t.Cleanup(func() { endModelSwitchRun(sessionID) })
+
+	quoted, err := bridge.SetSessionModel(sessionID, string(testModelPricey), false)
+	if err != nil {
+		t.Fatalf("quote: %v", err)
+	}
+	if quoted.Applied || quoted.ConfirmationReason == "" {
+		t.Fatal("the pricier switch must be quoted, not applied")
+	}
+
+	selfConfirmed, err := bridge.SetSessionModel(sessionID, string(testModelPricey), true)
+	if err != nil {
+		t.Fatalf("self-confirm: %v", err)
+	}
+	if selfConfirmed.Applied {
+		t.Fatal("a --confirm sent in the same turn as the quote must not apply")
+	}
+	if !strings.Contains(selfConfirmed.ConfirmationReason, "has not answered yet") {
+		t.Fatalf("the refusal must tell the agent to wait for the user, got %q", selfConfirmed.ConfirmationReason)
+	}
+	if got := SessionLLMOverridesFor(sessionID).Model; got != "" {
+		t.Fatalf("no override must be set, got %q", got)
+	}
+
+	// Next turn: the user's answer arrives, the same quote is now confirmable.
+	beginModelSwitchRun(sessionID, nil)
+	applied, err := bridge.SetSessionModel(sessionID, string(testModelPricey), true)
+	if err != nil {
+		t.Fatalf("confirm in a later turn: %v", err)
+	}
+	if !applied.Applied {
+		t.Fatal("the switch must apply once the user confirmed in a later turn")
+	}
+}
+
+// TestSetupBridgeConfirmOutsideARunApplies covers the surfaces that call the
+// bridge with no run in flight (a slash command between turns): there is no turn
+// to compare against, so a live quote stays confirmable.
+func TestSetupBridgeConfirmOutsideARunApplies(t *testing.T) {
+	setupModelTestEnv(t, true)
+	bridge, sessionID := newModelTestSession(t, "confirm-no-run")
+
+	if _, err := bridge.SetSessionModel(sessionID, string(testModelPricey), false); err != nil {
+		t.Fatalf("quote: %v", err)
+	}
+	applied, err := bridge.SetSessionModel(sessionID, string(testModelPricey), true)
+	if err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	if !applied.Applied {
+		t.Fatal("outside a run the confirmed switch must apply")
 	}
 }
 

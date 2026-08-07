@@ -22,6 +22,13 @@ const setupModelProposalTTL = 10 * time.Minute
 type setupModelProposal struct {
 	Model    models.ModelID
 	QuotedAt time.Time
+	// QuotedRun is the run (user turn) the quote was produced in, when the quote
+	// happened inside a run. Confirming from the very same run would mean the
+	// agent answered its own question: the user never saw it. Requiring a later
+	// run is what makes the approval come from the user, in plain text, on every
+	// surface (TUI, Web UI/desktop, ACP) without any dedicated confirmation UI.
+	QuotedRun   uint64
+	QuotedInRun bool
 }
 
 // setupModelProposals maps sessionID -> setupModelProposal.
@@ -108,7 +115,21 @@ func (b *setupBridge) SetSessionModel(sessionID, modelID string, confirmed bool)
 	if !clearing {
 		if reason, needed := setupModelConfirmationReason(current, targetState); needed {
 			if !confirmed || !consumeSetupModelProposal(sessionID, target.ID) {
-				setupModelProposals.Store(sessionID, setupModelProposal{Model: target.ID, QuotedAt: time.Now()})
+				runSeq, inRun := currentModelSwitchRunSeq(sessionID)
+				// Keep the original quote when one is already live for this target:
+				// re-storing it would move QuotedRun to the current run and let the
+				// agent restart the handshake forever inside a single turn.
+				if !hasLiveSetupModelProposal(sessionID, target.ID) {
+					setupModelProposals.Store(sessionID, setupModelProposal{
+						Model:       target.ID,
+						QuotedAt:    time.Now(),
+						QuotedRun:   runSeq,
+						QuotedInRun: inRun,
+					})
+				}
+				if confirmed {
+					reason += " " + setupModelSelfConfirmNote
+				}
 				return tools.SetupModelSwitch{Previous: current, Target: targetState, ConfirmationReason: reason}, nil
 			}
 		}
@@ -275,20 +296,53 @@ func pruneExpiredSetupModelProposals() {
 	})
 }
 
-// consumeSetupModelProposal reports whether the session has a live, matching
-// quote, and removes it. A confirmation for a model that was never quoted (or
-// quoted too long ago) is refused, so the user's approval cannot be recycled for
-// a different or a stale switch.
-func consumeSetupModelProposal(sessionID string, model models.ModelID) bool {
+// setupModelSelfConfirmNote is appended when the agent confirms inside the same
+// turn the quote was produced in: the user has not spoken yet.
+const setupModelSelfConfirmNote = "The user has not answered yet: a confirmation is only accepted in a " +
+	"later turn, after the user has replied. End your turn asking the question in plain text, and repeat " +
+	"the call with --confirm only once the user's answer says yes."
+
+// loadSetupModelProposal returns the session's quote when it matches the model
+// and has not expired.
+func loadSetupModelProposal(sessionID string, model models.ModelID) (setupModelProposal, bool) {
 	value, ok := setupModelProposals.Load(sessionID)
 	if !ok {
-		return false
+		return setupModelProposal{}, false
 	}
-	setupModelProposals.Delete(sessionID)
-
 	proposal, ok := value.(setupModelProposal)
-	if !ok || proposal.Model != model {
+	if !ok || proposal.Model != model || time.Since(proposal.QuotedAt) > setupModelProposalTTL {
+		return setupModelProposal{}, false
+	}
+	return proposal, true
+}
+
+// hasLiveSetupModelProposal reports whether a still-valid quote for this model
+// is already pending, without consuming it.
+func hasLiveSetupModelProposal(sessionID string, model models.ModelID) bool {
+	_, ok := loadSetupModelProposal(sessionID, model)
+	return ok
+}
+
+// consumeSetupModelProposal reports whether the session has a live, matching
+// quote *the user had a chance to answer*, and removes it. A confirmation for a
+// model that was never quoted, quoted too long ago, or quoted in the very same
+// run is refused: the user's approval cannot be recycled for a different or a
+// stale switch, and the agent cannot approve its own quote without ending the
+// turn and getting a real answer from the user.
+func consumeSetupModelProposal(sessionID string, model models.ModelID) bool {
+	proposal, ok := loadSetupModelProposal(sessionID, model)
+	if !ok {
+		// Drop whatever is stored: it is stale or for another model.
+		setupModelProposals.Delete(sessionID)
 		return false
 	}
-	return time.Since(proposal.QuotedAt) <= setupModelProposalTTL
+
+	// Same run as the quote means the agent never handed the question back to the
+	// user. Keep the quote alive so the next turn can confirm it.
+	if runSeq, inRun := currentModelSwitchRunSeq(sessionID); proposal.QuotedInRun && inRun && runSeq == proposal.QuotedRun {
+		return false
+	}
+
+	setupModelProposals.Delete(sessionID)
+	return true
 }

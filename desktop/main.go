@@ -47,6 +47,7 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: frontendFS,
 		},
+		Menu:                     appMenu(),
 		HideWindowOnClose:        false,
 		OnStartup:                app.Startup,
 		OnDomReady:               app.OnDomReady,

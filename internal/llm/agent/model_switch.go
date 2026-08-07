@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
@@ -28,7 +29,14 @@ type modelSwitchRunState struct {
 	// image parts, which a model without attachment support would reject.
 	hasImages bool
 	switches  int
+	// seq identifies this run. A cost quote is only confirmable from a later run,
+	// which is what proves the user actually answered (see setupModelProposal).
+	seq uint64
 }
+
+// modelSwitchRunSeq hands out one identifier per run, process-wide. Sessions
+// share the counter: only equality/inequality matters.
+var modelSwitchRunSeq atomic.Uint64
 
 // modelSwitchRunStates maps sessionID -> *modelSwitchRunState. An entry exists
 // only while a run is in flight.
@@ -41,7 +49,10 @@ func beginModelSwitchRun(sessionID string, msgs []message.Message) {
 	if sessionID == "" {
 		return
 	}
-	state := &modelSwitchRunState{hasImages: historyHasImages(msgs)}
+	state := &modelSwitchRunState{
+		hasImages: historyHasImages(msgs),
+		seq:       modelSwitchRunSeq.Add(1),
+	}
 	modelSwitchRunStates.Store(sessionID, state)
 }
 
@@ -56,6 +67,19 @@ func endModelSwitchRun(sessionID string) {
 	// A quote nobody confirmed would otherwise sit in the map for the life of the
 	// process; the end of a run is a cheap, bounded moment to collect them.
 	pruneExpiredSetupModelProposals()
+}
+
+// currentModelSwitchRunSeq returns the identifier of the run in flight for a
+// session, and whether there is one. Outside a run there is no turn to compare
+// against, so callers treat the answer as "unknown".
+func currentModelSwitchRunSeq(sessionID string) (uint64, bool) {
+	state := modelSwitchRunStateFor(sessionID)
+	if state == nil {
+		return 0, false
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.seq, true
 }
 
 func modelSwitchRunStateFor(sessionID string) *modelSwitchRunState {

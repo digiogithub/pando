@@ -115,8 +115,19 @@ export default function RemembrancesSettings() {
 
   async function handleReindexAll() {
     try {
-      await api.post('/api/v1/config/remembrances/reindex', {})
-      useToastStore.getState().addToast('Re-index started', 'success')
+      const result = await api.post<{ started?: { project_id: string }[]; failed?: { project_id: string }[] }>(
+        '/api/v1/remembrances/reindex',
+        {},
+      )
+      const started = result.started?.length ?? 0
+      const failed = result.failed?.length ?? 0
+      useToastStore.getState().addToast(
+        started === 0
+          ? 'No code projects registered — nothing to re-index'
+          : `Re-index started for ${started} project${started === 1 ? '' : 's'}` +
+              (failed > 0 ? ` (${failed} failed)` : ''),
+        started === 0 ? 'info' : 'success',
+      )
     } catch (e) {
       useToastStore.getState().addToast(
         e instanceof Error ? e.message : 'Re-index failed',
