@@ -416,6 +416,19 @@ ContextEnrichmentKBResults = 3
 ContextEnrichmentCodeResults = 5
 ContextEnrichmentCodeProject = ''
 ContextEnrichmentMinScore = 0.45
+# Run context enrichment as a separate agent loop on the 'context-enricher' model
+# (see [Agents.context-enricher]) instead of the single-shot search pipeline.
+# The loop calls the memory, knowledge-base and code-index tools iteratively and
+# returns one enriched block; the main agent only sees that block.
+ContextEnrichmentAgentLoopEnabled = false
+ContextEnrichmentAgentLoopTimeoutSeconds = 60
+ContextEnrichmentAgentLoopMaxChars = 6000
+# Run the loop on every user turn instead of only on the first message of a session.
+ContextEnrichmentAgentLoopEveryMessage = false
+# Inverted flags (feature on by default):
+ContextEnrichmentAgentLoopFallbackDisabled = false
+ContextEnrichmentAgentLoopHiddenInChat = false
+ContextEnrichmentAgentLoopSilent = false
 MemoryEnabled = true
 MemoryContextEnrichmentEnabled = true
 MemoryContextMaxItems = 10

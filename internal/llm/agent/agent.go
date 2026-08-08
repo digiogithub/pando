@@ -76,6 +76,20 @@ type ContextEnricher interface {
 	EnrichContext(ctx context.Context, query string) string
 }
 
+// SessionContextEnricher is an optional extension of ContextEnricher for enrichers that
+// need the active chat session — the agent-loop enricher attaches its run to that session
+// as a child session so the user can inspect it from the UI.
+type SessionContextEnricher interface {
+	ContextEnricher
+	EnrichContextForSession(ctx context.Context, sessionID, query string) string
+	// SessionStartOnly reports whether enrichment must run only for the first message
+	// of a session instead of every turn.
+	SessionStartOnly() bool
+	// Announce reports whether the run should be announced in the chat with start and
+	// end status messages (same treatment as context compaction).
+	Announce() bool
+}
+
 // globalContextEnricher is the package-level enricher injected from app.go.
 var globalContextEnricher ContextEnricher
 
@@ -794,6 +808,20 @@ func (a *agent) addRunStatusMessage(sessionID string, msg string) {
 	a.runStatusMessages[sessionID] = append(a.runStatusMessages[sessionID], msg)
 }
 
+// emitStatus publishes a chat-visible system message (like the compaction notices) and
+// records it as a run status message so surfaces that read the run summary also see it.
+func (a *agent) emitStatus(sessionID string, eventCh chan<- AgentEvent, chatMsg, statusMsg string) {
+	a.addRunStatusMessage(sessionID, statusMsg)
+	ev := AgentEvent{Type: AgentEventTypeSystemMessage, SessionID: sessionID, SystemMessage: chatMsg}
+	a.publishEvent(ev)
+	if eventCh != nil {
+		select {
+		case eventCh <- ev:
+		default:
+		}
+	}
+}
+
 func (a *agent) clearRunStatusMessages(sessionID string) {
 	if sessionID == "" {
 		return
@@ -1036,8 +1064,32 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 
 	// Context enrichment: if the KB/code enricher is active, append retrieved context
 	// after the user message so the user intent is clear and context follows naturally.
-	if globalContextEnricher != nil {
-		enriched := globalContextEnricher.EnrichContext(ctx, content)
+	// The enrichment agent loop itself runs as an agent, so it must never enrich its
+	// own prompt (that would recurse into a new enrichment run on every retrieval).
+	if globalContextEnricher != nil && a.agentName != config.AgentContextEnricher {
+		enriched := ""
+		if sessionAware, ok := globalContextEnricher.(SessionContextEnricher); ok {
+			// A session-start-only enricher runs once per session: later turns build on
+			// the context already present in the history.
+			if !sessionAware.SessionStartOnly() || len(msgs) == 0 {
+				announce := sessionAware.Announce()
+				if announce {
+					a.emitStatus(sessionID, eventCh, "\n\n🧠 Context enrichment agent gathering project context...\n", "Context enrichment agent started")
+				}
+				enriched = sessionAware.EnrichContextForSession(ctx, sessionID, content)
+				if announce {
+					doneMsg := "✓ Context enrichment done — no additional context found.\n\n"
+					doneStatus := "Context enrichment done: no additional context"
+					if enriched != "" {
+						doneMsg = fmt.Sprintf("✓ Context enrichment done — %d chars of context added.\n\n", len(enriched))
+						doneStatus = fmt.Sprintf("Context enrichment done: %d chars added", len(enriched))
+					}
+					a.emitStatus(sessionID, eventCh, doneMsg, doneStatus)
+				}
+			}
+		} else {
+			enriched = globalContextEnricher.EnrichContext(ctx, content)
+		}
 		if enriched != "" {
 			content = content + "\n\n" + enriched
 		}

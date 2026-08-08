@@ -542,6 +542,63 @@ export default function RemembrancesSettings() {
               onChange={(e) => updateRemembrances('context_enrichment_events_subject', e.target.value)}
               placeholder="e.g. pando  (leave empty for all subjects)"
             />
+
+            {/* Agent loop enrichment */}
+            <Toggle
+              label="Agent Loop Enrichment"
+              description="Run enrichment as a separate agent loop on the context-enricher model. It searches memory, KB and the code index iteratively; the main agent only receives the resulting context block."
+              checked={rem.context_enrichment_agent_loop_enabled ?? false}
+              onChange={(v) => updateRemembrances('context_enrichment_agent_loop_enabled', v)}
+            />
+
+            {rem.context_enrichment_agent_loop_enabled && (
+              <>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <div style={{ flex: 1 }}>
+                    <TextInput
+                      label="Loop Timeout (s)"
+                      type="number"
+                      value={String(rem.context_enrichment_agent_loop_timeout_seconds ?? 60)}
+                      onChange={(e) => updateRemembrances('context_enrichment_agent_loop_timeout_seconds', Number(e.target.value))}
+                      placeholder="60"
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <TextInput
+                      label="Loop Max Chars"
+                      type="number"
+                      value={String(rem.context_enrichment_agent_loop_max_chars ?? 6000)}
+                      onChange={(e) => updateRemembrances('context_enrichment_agent_loop_max_chars', Number(e.target.value))}
+                      placeholder="6000"
+                    />
+                  </div>
+                </div>
+                <Toggle
+                  label="Run on Every Message"
+                  description="Off (default): the loop runs once per session, on the first message. On: it runs on every user turn."
+                  checked={rem.context_enrichment_agent_loop_every_message ?? false}
+                  onChange={(v) => updateRemembrances('context_enrichment_agent_loop_every_message', v)}
+                />
+                <Toggle
+                  label="Announce in Chat"
+                  description="Show start and end notices in the chat while the enrichment agent runs, like context compaction does"
+                  checked={!(rem.context_enrichment_agent_loop_silent ?? false)}
+                  onChange={(v) => updateRemembrances('context_enrichment_agent_loop_silent', !v)}
+                />
+                <Toggle
+                  label="Fallback to Search"
+                  description="Use the classic search pipeline when the loop fails, times out or finds nothing"
+                  checked={!(rem.context_enrichment_agent_loop_fallback_disabled ?? false)}
+                  onChange={(v) => updateRemembrances('context_enrichment_agent_loop_fallback_disabled', !v)}
+                />
+                <Toggle
+                  label="Show Loop in Chat"
+                  description="Record the loop as a child session of the chat session so its tool calls can be inspected"
+                  checked={!(rem.context_enrichment_agent_loop_hidden_in_chat ?? false)}
+                  onChange={(v) => updateRemembrances('context_enrichment_agent_loop_hidden_in_chat', !v)}
+                />
+              </>
+            )}
           </>
         )}
       </div>

@@ -523,6 +523,35 @@ type RemembrancesConfig struct {
 	// when the dedicated context-enricher agent fails. Defaults to true.
 	ContextEnrichmentPlannerFallbackToCoder bool `json:"context_enrichment_planner_fallback_to_coder" toml:"ContextEnrichmentPlannerFallbackToCoder"`
 
+	// ContextEnrichmentAgentLoopEnabled replaces the single-shot retrieval pipeline with a
+	// dedicated agent loop that runs on the context-enricher model (Agents["context-enricher"]),
+	// independent of the model the user selected for the main agent. The loop can call the
+	// memory, knowledge-base and code-index tools iteratively and returns a single enriched
+	// context block that is appended to the user prompt; the main agent only sees that block.
+	ContextEnrichmentAgentLoopEnabled bool `json:"context_enrichment_agent_loop_enabled" toml:"ContextEnrichmentAgentLoopEnabled"`
+	// ContextEnrichmentAgentLoopTimeoutSeconds bounds a single enrichment loop run.
+	// 0 uses the default (60s). The main prompt waits for the loop, so keep it short.
+	ContextEnrichmentAgentLoopTimeoutSeconds int `json:"context_enrichment_agent_loop_timeout_seconds" toml:"ContextEnrichmentAgentLoopTimeoutSeconds"`
+	// ContextEnrichmentAgentLoopMaxChars caps the enriched block produced by the loop.
+	// 0 uses the default (6000).
+	ContextEnrichmentAgentLoopMaxChars int `json:"context_enrichment_agent_loop_max_chars" toml:"ContextEnrichmentAgentLoopMaxChars"`
+	// ContextEnrichmentAgentLoopFallbackDisabled turns off the fallback to the classic
+	// search-based enrichment when the loop fails, times out or returns nothing.
+	// Inverted flag: the fallback is on by default.
+	ContextEnrichmentAgentLoopFallbackDisabled bool `json:"context_enrichment_agent_loop_fallback_disabled" toml:"ContextEnrichmentAgentLoopFallbackDisabled"`
+	// ContextEnrichmentAgentLoopEveryMessage runs the loop on every user turn instead of
+	// only on the first message of a session. Off by default: one enrichment per session
+	// keeps the extra latency and cost bounded, and later turns already have the context
+	// in the conversation history.
+	ContextEnrichmentAgentLoopEveryMessage bool `json:"context_enrichment_agent_loop_every_message" toml:"ContextEnrichmentAgentLoopEveryMessage"`
+	// ContextEnrichmentAgentLoopSilent suppresses the start/end notices shown in the chat
+	// while the loop runs. Inverted flag: the notices are shown by default.
+	ContextEnrichmentAgentLoopSilent bool `json:"context_enrichment_agent_loop_silent" toml:"ContextEnrichmentAgentLoopSilent"`
+	// ContextEnrichmentAgentLoopHiddenInChat stops the loop from being recorded as a child
+	// session of the active chat session. Inverted flag: the loop is visible by default,
+	// so its tool calls and reasoning can be inspected from the UI.
+	ContextEnrichmentAgentLoopHiddenInChat bool `json:"context_enrichment_agent_loop_hidden_in_chat" toml:"ContextEnrichmentAgentLoopHiddenInChat"`
+
 	// Memory System — key/value store layered on top of KB with TTL, scoping, and auto-injection.
 	MemoryEnabled                  bool     `json:"memory_enabled" toml:"MemoryEnabled"`
 	MemoryContextEnrichmentEnabled bool     `json:"memory_context_enrichment_enabled" toml:"MemoryContextEnrichmentEnabled"`
@@ -1292,6 +1321,22 @@ func AutoBudgetByRole(name AgentName) int64 {
 	default:
 		return 4096
 	}
+}
+
+// AgentExposesContextControls reports whether the token-budget and context
+// management knobs (MaxTokens, AutoCompact, AutoCompactThreshold,
+// ContextWindowOverride) are worth showing to the user for the given agent.
+//
+// Only the coder agent drives the long-running agent loop where the context
+// window actually fills up and auto-compaction matters. The remaining built-in
+// agents (title, summarizer, task, cli-assist, persona-selector,
+// context-enricher) are short, single-purpose calls whose output budget is
+// already resolved automatically by ResolveAgentMaxTokens / AutoBudgetByRole,
+// so exposing the knobs only confused users into tuning values that have no
+// visible effect. The fields keep working when set by hand in the TOML config;
+// they are simply hidden from the TUI and web-UI.
+func AgentExposesContextControls(name AgentName) bool {
+	return name == AgentCoder
 }
 
 // roleCeilingTokens returns the hard upper guardrail for output tokens per agent role.

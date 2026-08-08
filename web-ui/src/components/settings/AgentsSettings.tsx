@@ -106,6 +106,10 @@ function AgentCard({
   const [modelProvider, setModelProvider] = useState('')
   const label = AGENT_LABELS[agent.name.toLowerCase()] ?? agent.name
   const description = AGENT_DESCRIPTIONS[agent.name.toLowerCase()] ?? ''
+  // Token budget / auto-compaction only matter for the agent driving the long
+  // agent loop (coder). The backend reports this via contextControls; the name
+  // check is the fallback for older backends.
+  const showContextControls = agent.contextControls ?? agent.name.toLowerCase() === 'coder'
 
   return (
     <div
@@ -196,29 +200,37 @@ function AgentCard({
             />
           </Field>
 
-          {/* MaxTokens + Reasoning Effort + Thinking Mode in a row */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-            <Field label="Max Tokens">
-              <input
-                type="number"
-                min={0}
-                value={agent.maxTokens}
-                onChange={(e) => onUpdate({ maxTokens: parseInt(e.target.value, 10) || 0 })}
-                style={inputStyle}
-                onFocus={(e) => { e.target.style.borderColor = 'var(--border-focus)' }}
-                onBlur={(e) => { e.target.style.borderColor = 'var(--border)' }}
-              />
-              {agent.maxTokens === 0 && (
-                <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>
-                  Auto — effective: {agent.resolvedMaxTokens ?? AUTO_TOKEN_BUDGET[agent.name.toLowerCase()] ?? 4096} tokens
-                </div>
-              )}
-              {agent.maxTokens !== 0 && (
-                <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>
-                  0 = Auto
-                </div>
-              )}
-            </Field>
+          {/* MaxTokens (coder only) + Reasoning Effort + Thinking Mode in a row */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: showContextControls ? '1fr 1fr 1fr' : '1fr 1fr',
+              gap: '1rem',
+            }}
+          >
+            {showContextControls && (
+              <Field label="Max Tokens">
+                <input
+                  type="number"
+                  min={0}
+                  value={agent.maxTokens}
+                  onChange={(e) => onUpdate({ maxTokens: parseInt(e.target.value, 10) || 0 })}
+                  style={inputStyle}
+                  onFocus={(e) => { e.target.style.borderColor = 'var(--border-focus)' }}
+                  onBlur={(e) => { e.target.style.borderColor = 'var(--border)' }}
+                />
+                {agent.maxTokens === 0 && (
+                  <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>
+                    Auto — effective: {agent.resolvedMaxTokens ?? AUTO_TOKEN_BUDGET[agent.name.toLowerCase()] ?? 4096} tokens
+                  </div>
+                )}
+                {agent.maxTokens !== 0 && (
+                  <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>
+                    0 = Auto
+                  </div>
+                )}
+              </Field>
+            )}
 
             <Field label="Reasoning Effort">
               <select
@@ -253,7 +265,8 @@ function AgentCard({
             </Field>
           </div>
 
-          {/* Auto-compact */}
+          {/* Auto-compact — only for the agent that runs the long agent loop */}
+          {showContextControls && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'start' }}>
             <div
               role="switch"
@@ -314,6 +327,7 @@ function AgentCard({
               />
             </Field>
           </div>
+          )}
         </div>
       )}
     </div>
@@ -349,6 +363,7 @@ export default function AgentsSettings() {
         thinkingMode: '',
         autoCompact: false,
         autoCompactThreshold: 0,
+        contextControls: name === 'coder',
       }
   )
 

@@ -344,6 +344,41 @@ func CoderAgentToolsWithMesnada(
 	return ApplyToolDiscovery(result)
 }
 
+// ContextEnricherAgentTools returns the read-only retrieval tool set used by the
+// context-enrichment agent loop: knowledge base, memories, past events and the code
+// index, plus plain file inspection. No tool in this set can modify state, so the loop
+// can never touch the workspace while it gathers context for the main agent.
+func ContextEnricherAgentTools(remembrances *rag.RemembrancesService, lspProvider tools.LSPProvider) []tools.BaseTool {
+	base := []tools.BaseTool{
+		tools.NewGlobTool(),
+		tools.NewGrepTool(),
+		tools.NewLsTool(),
+		tools.NewViewTool(lspProvider),
+	}
+	if remembrances != nil {
+		base = append(base,
+			tools.NewKBSearchDocumentsTool(remembrances.KB),
+			tools.NewKBGetDocumentTool(remembrances.KB),
+			tools.NewSearchEventsTool(remembrances.Events),
+			tools.NewHybridSearchRemembrancesTool(remembrances),
+			tools.NewCodeHybridSearchTool(remembrances.Code),
+			tools.NewCodeFindSymbolTool(remembrances.Code),
+			tools.NewCodeFindReferencesTool(remembrances.Code),
+			tools.NewCodeGetSymbolsOverviewTool(remembrances.Code),
+			tools.NewCodeSearchPatternTool(remembrances.Code),
+			tools.NewCodeRelatedFilesTool(remembrances.Code),
+			tools.NewCodeListProjectsTool(remembrances.Code),
+		)
+		if remembrances.KB != nil && remembrances.KB.WikiLinksEnabled() {
+			base = append(base, tools.NewKBRelatedDocumentsTool(remembrances.KB))
+		}
+		if cfg := config.Get(); cfg != nil && cfg.Remembrances.MemoryEnabled {
+			base = append(base, tools.NewRecallTool(remembrances.KB, cfg.Remembrances.MemoryDefaultTTLDays))
+		}
+	}
+	return base
+}
+
 func TaskAgentTools(lspProvider tools.LSPProvider) []tools.BaseTool {
 	base := []tools.BaseTool{
 		tools.NewGlobTool(),

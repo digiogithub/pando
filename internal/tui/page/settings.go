@@ -1422,13 +1422,6 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 				ModelDialogTitle: fmt.Sprintf("Select %s Model", string(agentName)),
 			},
 			settings.Field{
-				Label: fmt.Sprintf("%s Max Tokens", string(agentName)),
-				Key:   fmt.Sprintf("agents.%s.maxTokens", agentName),
-				Value: fmt.Sprint(agentCfg.MaxTokens),
-				Type:  settings.FieldText,
-				Hint:  agentTokensHint(agentName, agentCfg),
-			},
-			settings.Field{
 				Label:   fmt.Sprintf("%s Reasoning Effort", string(agentName)),
 				Key:     fmt.Sprintf("agents.%s.reasoningEffort", agentName),
 				Value:   agentCfg.ReasoningEffort,
@@ -1442,20 +1435,36 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 				Type:    settings.FieldSelect,
 				Options: []string{"", "disabled", "low", "medium", "high"},
 			},
-			settings.Field{
-				Label: fmt.Sprintf("%s Auto Compact", string(agentName)),
-				Key:   fmt.Sprintf("agents.%s.autoCompact", agentName),
-				Value: boolString(agentCfg.AutoCompact),
-				Type:  settings.FieldToggle,
-			},
-			settings.Field{
-				Label:    fmt.Sprintf("%s Compact Threshold", string(agentName)),
-				Key:      fmt.Sprintf("agents.%s.autoCompactThreshold", agentName),
-				Value:    fmt.Sprintf("%.2f", agentCfg.AutoCompactThreshold),
-				Type:     settings.FieldText,
-				Disabled: !agentCfg.AutoCompact,
-			},
 		)
+
+		// Token budget and context management knobs are only meaningful for the
+		// agent that runs the long agent loop (coder). For the auxiliary agents
+		// they are resolved automatically, so they stay hidden here and remain
+		// editable only through the TOML config.
+		if config.AgentExposesContextControls(agentName) {
+			fields = append(fields,
+				settings.Field{
+					Label: fmt.Sprintf("%s Max Tokens", string(agentName)),
+					Key:   fmt.Sprintf("agents.%s.maxTokens", agentName),
+					Value: fmt.Sprint(agentCfg.MaxTokens),
+					Type:  settings.FieldText,
+					Hint:  agentTokensHint(agentName, agentCfg),
+				},
+				settings.Field{
+					Label: fmt.Sprintf("%s Auto Compact", string(agentName)),
+					Key:   fmt.Sprintf("agents.%s.autoCompact", agentName),
+					Value: boolString(agentCfg.AutoCompact),
+					Type:  settings.FieldToggle,
+				},
+				settings.Field{
+					Label:    fmt.Sprintf("%s Compact Threshold", string(agentName)),
+					Key:      fmt.Sprintf("agents.%s.autoCompactThreshold", agentName),
+					Value:    fmt.Sprintf("%.2f", agentCfg.AutoCompactThreshold),
+					Type:     settings.FieldText,
+					Disabled: !agentCfg.AutoCompact,
+				},
+			)
+		}
 	}
 
 	return settings.Section{
@@ -2455,6 +2464,55 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 					Key:   "remembrances.context_enrichment_planner_fallback_to_coder",
 					Type:  settings.FieldToggle,
 					Value: boolString(rem.ContextEnrichmentPlannerFallbackToCoder),
+				},
+			)
+		}
+		// Agent-loop enrichment — a separate agent on the context-enricher model
+		fields = append(fields,
+			settings.Field{
+				Label: "Agent Loop Enrichment",
+				Key:   "remembrances.context_enrichment_agent_loop_enabled",
+				Type:  settings.FieldToggle,
+				Value: boolString(rem.ContextEnrichmentAgentLoopEnabled),
+			},
+		)
+		if rem.ContextEnrichmentAgentLoopEnabled {
+			fields = append(fields,
+				settings.Field{
+					Label: "Loop Timeout (s)",
+					Key:   "remembrances.context_enrichment_agent_loop_timeout_seconds",
+					Type:  settings.FieldText,
+					Value: fmt.Sprint(rem.ContextEnrichmentAgentLoopTimeoutSeconds),
+				},
+				settings.Field{
+					Label: "Loop Max Chars",
+					Key:   "remembrances.context_enrichment_agent_loop_max_chars",
+					Type:  settings.FieldText,
+					Value: fmt.Sprint(rem.ContextEnrichmentAgentLoopMaxChars),
+				},
+				settings.Field{
+					Label: "Run on Every Message",
+					Key:   "remembrances.context_enrichment_agent_loop_every_message",
+					Type:  settings.FieldToggle,
+					Value: boolString(rem.ContextEnrichmentAgentLoopEveryMessage),
+				},
+				settings.Field{
+					Label: "Announce in Chat",
+					Key:   "remembrances.context_enrichment_agent_loop_announce",
+					Type:  settings.FieldToggle,
+					Value: boolString(!rem.ContextEnrichmentAgentLoopSilent),
+				},
+				settings.Field{
+					Label: "Fallback to Search",
+					Key:   "remembrances.context_enrichment_agent_loop_fallback",
+					Type:  settings.FieldToggle,
+					Value: boolString(!rem.ContextEnrichmentAgentLoopFallbackDisabled),
+				},
+				settings.Field{
+					Label: "Show Loop in Chat",
+					Key:   "remembrances.context_enrichment_agent_loop_show_in_chat",
+					Type:  settings.FieldToggle,
+					Value: boolString(!rem.ContextEnrichmentAgentLoopHiddenInChat),
 				},
 			)
 		}
@@ -4552,6 +4610,54 @@ func saveRemembrances(field settings.Field) error {
 			return fmt.Errorf("invalid planner fallback to coder value: %w", err)
 		}
 		remCfg.ContextEnrichmentPlannerFallbackToCoder = v
+	case "remembrances.context_enrichment_agent_loop_enabled":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid agent loop enrichment value: %w", err)
+		}
+		remCfg.ContextEnrichmentAgentLoopEnabled = v
+	case "remembrances.context_enrichment_agent_loop_timeout_seconds":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid loop timeout value: %w", err)
+		}
+		if n < 5 || n > 600 {
+			return fmt.Errorf("loop timeout must be between 5 and 600 seconds")
+		}
+		remCfg.ContextEnrichmentAgentLoopTimeoutSeconds = n
+	case "remembrances.context_enrichment_agent_loop_max_chars":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid loop max chars value: %w", err)
+		}
+		if n < 200 || n > 100000 {
+			return fmt.Errorf("loop max chars must be between 200 and 100000")
+		}
+		remCfg.ContextEnrichmentAgentLoopMaxChars = n
+	case "remembrances.context_enrichment_agent_loop_every_message":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid loop every message value: %w", err)
+		}
+		remCfg.ContextEnrichmentAgentLoopEveryMessage = v
+	case "remembrances.context_enrichment_agent_loop_announce":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid loop announce value: %w", err)
+		}
+		remCfg.ContextEnrichmentAgentLoopSilent = !v
+	case "remembrances.context_enrichment_agent_loop_fallback":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid loop fallback value: %w", err)
+		}
+		remCfg.ContextEnrichmentAgentLoopFallbackDisabled = !v
+	case "remembrances.context_enrichment_agent_loop_show_in_chat":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid loop visibility value: %w", err)
+		}
+		remCfg.ContextEnrichmentAgentLoopHiddenInChat = !v
 	// Memory System fields
 	case "remembrances.memory.header":
 		// read-only header — no-op

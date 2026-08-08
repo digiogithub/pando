@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/luaengine"
 )
@@ -103,15 +104,19 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 		}
 	}
 
+	// The context enricher is a read-only retrieval loop: the shared coding workflow
+	// and code-style rules would only push it towards writing code it must not write.
+	retrievalOnlyAgent := agentName == string(config.AgentContextEnricher)
+
 	// 3. Workflow guidelines (shared behavioral rules)
-	if b.registry.Exists("base/workflow") {
+	if !retrievalOnlyAgent && b.registry.Exists("base/workflow") {
 		if s := b.renderSection(ctx, "base/workflow"); s.Content != "" {
 			sections = append(sections, s)
 		}
 	}
 
 	// 4. Coding conventions (language-agnostic code style rules)
-	if b.registry.Exists("base/conventions") {
+	if !retrievalOnlyAgent && b.registry.Exists("base/conventions") {
 		if s := b.renderSection(ctx, "base/conventions"); s.Content != "" {
 			sections = append(sections, s)
 		}

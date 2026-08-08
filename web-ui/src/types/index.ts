@@ -329,6 +329,10 @@ export interface AgentConfigItem {
   thinkingMode: string
   autoCompact: boolean
   autoCompactThreshold: number
+  // contextControls is false for the auxiliary agents (title, summarizer, task,
+  // …), whose token budget is resolved automatically: the UI hides the
+  // maxTokens / autoCompact knobs for them.
+  contextControls?: boolean
 }
 
 export interface AgentsConfigResponse {
@@ -795,6 +799,13 @@ export interface RemembrancesConfig {
   context_enrichment_events_last_days: number
   context_enrichment_use_agent_planner: boolean
   context_enrichment_planner_fallback_to_coder: boolean
+  context_enrichment_agent_loop_enabled?: boolean
+  context_enrichment_agent_loop_timeout_seconds?: number
+  context_enrichment_agent_loop_max_chars?: number
+  context_enrichment_agent_loop_every_message?: boolean
+  context_enrichment_agent_loop_silent?: boolean
+  context_enrichment_agent_loop_fallback_disabled?: boolean
+  context_enrichment_agent_loop_hidden_in_chat?: boolean
   // Memory System
   memory_enabled: boolean
   memory_context_enrichment_enabled: boolean

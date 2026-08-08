@@ -360,8 +360,30 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 					}
 
 					app.ContextEnricher = enricher
-					agent.SetContextEnricher(enricher)
+
+					// Agent-loop enrichment: a separate agent running on the context-enricher
+					// model gathers memory, KB and code-index context iteratively. The main
+					// agent only receives the resulting context block.
+					enrichmentMode := "search"
+					if cfg.Remembrances.ContextEnrichmentAgentLoopEnabled {
+						loopEnricher := newAgentLoopEnricher(
+							app.Sessions,
+							app.Messages,
+							remembrances,
+							app,
+							enricher,
+							cfg.Remembrances,
+						)
+						agent.SetContextEnricher(loopEnricher)
+						// Warm start: build the enrichment agent and its provider in the
+						// background so the first prompt of a session does not pay for it.
+						go loopEnricher.Warmup()
+						enrichmentMode = "agent-loop"
+					} else {
+						agent.SetContextEnricher(enricher)
+					}
 					logging.Info("remembrances: context enricher enabled",
+						"mode", enrichmentMode,
 						"planner", plannerMode,
 						"kb_results", cfg.Remembrances.ContextEnrichmentKBResults,
 						"code_results", cfg.Remembrances.ContextEnrichmentCodeResults,

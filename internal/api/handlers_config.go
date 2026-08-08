@@ -134,6 +134,11 @@ type AgentConfigItem struct {
 	ThinkingMode         config.ThinkingMode `json:"thinkingMode,omitempty"`
 	AutoCompact          bool                `json:"autoCompact"`
 	AutoCompactThreshold float64             `json:"autoCompactThreshold"`
+	// ContextControls reports whether the token-budget / auto-compaction knobs
+	// above are meaningful for this agent (see config.AgentExposesContextControls).
+	// The web-UI hides them when false; the values are still returned so a TOML
+	// override remains inspectable, and PUT ignores them for those agents.
+	ContextControls bool `json:"contextControls"`
 }
 
 func (s *Server) handleConfigAgents(w http.ResponseWriter, r *http.Request) {
@@ -170,6 +175,7 @@ func (s *Server) handleGetConfigAgents(w http.ResponseWriter, r *http.Request) {
 			ThinkingMode:         a.ThinkingMode,
 			AutoCompact:          a.AutoCompact,
 			AutoCompactThreshold: a.AutoCompactThreshold,
+			ContextControls:      config.AgentExposesContextControls(name),
 		})
 	}
 
@@ -193,6 +199,7 @@ func (s *Server) handlePutConfigAgents(w http.ResponseWriter, r *http.Request) {
 		if resolved, ok := models.ResolveModelID(modelID); ok {
 			modelID = resolved
 		}
+		name := config.AgentName(item.Name)
 		agent := config.Agent{
 			Model:                modelID,
 			MaxTokens:            item.MaxTokens,
@@ -201,7 +208,21 @@ func (s *Server) handlePutConfigAgents(w http.ResponseWriter, r *http.Request) {
 			AutoCompact:          item.AutoCompact,
 			AutoCompactThreshold: item.AutoCompactThreshold,
 		}
-		if err := config.UpdateAgent(config.AgentName(item.Name), agent); err != nil {
+		if cfg := config.Get(); cfg != nil {
+			existing := cfg.Agents[name]
+			// ContextWindowOverride is never carried by this API; keep the
+			// configured value instead of resetting it on every save.
+			agent.ContextWindowOverride = existing.ContextWindowOverride
+			// Agents that do not expose the context controls keep whatever the
+			// TOML config declares: the UI no longer sends meaningful values for
+			// them, so echoing the payload back would wipe a manual override.
+			if !config.AgentExposesContextControls(name) {
+				agent.MaxTokens = existing.MaxTokens
+				agent.AutoCompact = existing.AutoCompact
+				agent.AutoCompactThreshold = existing.AutoCompactThreshold
+			}
+		}
+		if err := config.UpdateAgent(name, agent); err != nil {
 			writeError(w, http.StatusBadRequest, "failed to update agent "+item.Name+": "+err.Error())
 			return
 		}
