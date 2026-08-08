@@ -144,13 +144,19 @@ func (o *Orchestrator) ListProjectRefs(ctx context.Context) []ProjectRef {
 // left untouched.
 //
 // Gating: warm routing is only attempted when delegation is enabled, the master
-// ReuseWarmInstances flag is on, a resolver is wired, and the task carries a
-// project id or path. Otherwise it is a no-op returning false.
+// ReuseWarmInstances flag is on, a resolver is wired, the task carries a
+// project id or path, and the effective engine is Pando itself (or a previous
+// warm-acp breadcrumb). Explicit CLI / third-party ACP engines must not be
+// hijacked onto the warm path — they spawn their own subprocess. Otherwise
+// this is a no-op returning false.
 func (o *Orchestrator) tryStartWarm(task *models.Task) bool {
 	if o.warmResolver == nil || !o.delegation.Enabled || !o.delegation.ReuseWarmInstances {
 		return false
 	}
 	if task == nil || (task.ProjectID == "" && task.ProjectPath == "") {
+		return false
+	}
+	if !models.IsWarmEligibleEngine(o.effectiveEngine(task)) {
 		return false
 	}
 

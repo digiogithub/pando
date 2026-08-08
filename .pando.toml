@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'ollama.agent-m1-4b:latest'
+Model = 'copilot.mai-code-1.1-flash'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -91,7 +91,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.context-enricher]
-Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
+Model = 'ollama.nova4b:latest'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -175,8 +175,8 @@ LogDir = './.pando/mesnada/logs'
 EnginesDir = ''
 MaxParallel = 5
 MaxPerEngine = 0
-ClaimTTL = ''
-DispatchInterval = ''
+ClaimTTL = '2m'
+DispatchInterval = '10s'
 DefaultEngine = 'pando'
 DefaultModel = ''
 DefaultMCPConfig = '.github/mcp-config.json'
@@ -197,7 +197,7 @@ SessionTimeout = '30m'
 RequireAuth = false
 
 [Mesnada.TUI]
-Enabled = false
+Enabled = true
 WebUI = false
 
 [Mesnada.Delegation]
@@ -217,13 +217,13 @@ AllowExternalWarmTargets = true
 AcceptDelegations = true
 ConclusionGateDisabled = false
 BreakerDisabled = false
-MaxTaskRetries = 0
-RateLimitCooldown = ''
-RecentSuccessWindow = ''
+MaxTaskRetries = 3
+RateLimitCooldown = '5m'
+RecentSuccessWindow = '2m'
 EventLogDisabled = false
-EventLogMaxEntries = 0
-BlackboardMaxEntriesPerSwarm = 0
-BlackboardTTL = ''
+EventLogMaxEntries = 5000
+BlackboardMaxEntriesPerSwarm = 200
+BlackboardTTL = '168h'
 
 [Shell]
 Path = ''
@@ -240,9 +240,9 @@ Enabled = true
 KBPath = './.kb'
 KBWatch = true
 KBAutoImport = true
-KBConvertDocuments = false
+KBConvertDocuments = true
 KBConvertExtensions = []
-KBWikiLinks = false
+KBWikiLinks = true
 AutoIndexSessions = true
 DocumentEmbeddingProvider = 'ollama'
 DocumentEmbeddingModel = 'nomic-embed-text'
@@ -256,7 +256,7 @@ UseSameModel = false
 ChunkSize = 800
 ChunkOverlap = 100
 IndexWorkers = 4
-ContextEnrichmentEnabled = false
+ContextEnrichmentEnabled = true
 ContextEnrichmentKBResults = 2
 ContextEnrichmentCodeResults = 5
 ContextEnrichmentCodeProject = 'pando'
@@ -270,13 +270,20 @@ ContextEnrichmentEventsMaxChars = 0
 ContextEnrichmentTotalMaxChars = 0
 ContextEnrichmentUseAgentPlanner = false
 ContextEnrichmentPlannerFallbackToCoder = false
+ContextEnrichmentAgentLoopEnabled = true
+ContextEnrichmentAgentLoopTimeoutSeconds = 60
+ContextEnrichmentAgentLoopMaxChars = 10000
+ContextEnrichmentAgentLoopFallbackDisabled = false
+ContextEnrichmentAgentLoopEveryMessage = false
+ContextEnrichmentAgentLoopSilent = false
+ContextEnrichmentAgentLoopHiddenInChat = false
 MemoryEnabled = true
 MemoryContextEnrichmentEnabled = true
 MemoryContextMaxItems = 3
-MemoryContextMaxChars = 0
+MemoryContextMaxChars = 500
 MemoryDefaultTTLDays = 0
 MemoryGCInterval = ''
-MemoryAutoCapture = false
+MemoryAutoCapture = true
 MemoryPinnedScopes = []
 
 [Server]
@@ -290,7 +297,7 @@ Enabled = true
 
 [[Server.BasicAuth.Users]]
 Username = 'admin'
-Password = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA4ZEZGNklwVnJWWGg1dFJyalJ5eFNPMGdmYjdMKzlUTnlkTUE0M21GdWhnClVyOWNCVGRucmFENXV3MEJaT1lzQkRyTW8rUXlPVUJJNXg3bFRzWDh5NU0KLS0tIDBpZGdRQTlnR1l3NjFZQ0tZS0VScFF4b0tyUDh4ODFjd0poUUJNSE9NVU0K3DTXCXrbMonfDrNmBzu4S0Ya1FFNjxa/yVmo1RmVVkHMUSrkfQ=='
+Password = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBLdFBOYjRYOGN1Y0l6YmplaStJeEdoVklUZ29NeW43UllSaHh2cmUya0RZClVSZUk3OXVBZmJ6YUwwMkhBdTk2MkVTcXh6SmtOTnZsTXlMNHFUcXZDL2sKLS0tIDVTcHpBdkVaNGtrTjI3WUY5Z2hYcE1Hc2ovK2VhcWdHelZ0QmNLcUEzL0UK2ATmPM0xdt67dLoZMNacXSWhv0aqY9UeoJVZputiNlpb2rswpA=='
 
 [Lua]
 Enabled = false

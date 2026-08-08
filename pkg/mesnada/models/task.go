@@ -66,6 +66,20 @@ func DefaultEngine() Engine {
 	return EnginePando
 }
 
+// IsWarmEligibleEngine reports whether a task with this engine may be routed
+// through a warm per-project Pando ACP instance. Warm reuse is an optimization
+// for Pando itself (empty / engine=pando, or a previous warm-acp breadcrumb).
+// Explicit CLI engines (claude, copilot, gemini, …) and third-party ACP engines
+// must stay on the cold subprocess path.
+func IsWarmEligibleEngine(e Engine) bool {
+	switch e {
+	case "", EnginePando, EngineWarmACP:
+		return true
+	default:
+		return false
+	}
+}
+
 // TaskProgress represents the progress of a task.
 type TaskProgress struct {
 	Percentage  int       `json:"percentage"`

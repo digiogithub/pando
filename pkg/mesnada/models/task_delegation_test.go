@@ -7,6 +7,25 @@ import (
 	"time"
 )
 
+func TestIsWarmEligibleEngine(t *testing.T) {
+	eligible := []Engine{"", EnginePando, EngineWarmACP}
+	for _, e := range eligible {
+		if !IsWarmEligibleEngine(e) {
+			t.Errorf("IsWarmEligibleEngine(%q) = false, want true", e)
+		}
+	}
+	ineligible := []Engine{
+		EngineClaude, EngineCopilot, EngineGemini, EngineOpenCode,
+		EngineMistral, EngineOllamaClaude, EngineOllamaOpenCode,
+		EngineACP, EngineACPClaudeCode, EngineACPCodex, EngineACPCustom, EngineACPServer,
+	}
+	for _, e := range ineligible {
+		if IsWarmEligibleEngine(e) {
+			t.Errorf("IsWarmEligibleEngine(%q) = true, want false", e)
+		}
+	}
+}
+
 // TestTaskDelegationJSONRoundTrip verifies that the delegation correlation
 // fields and the embedded Conclusion survive a marshal -> unmarshal cycle.
 func TestTaskDelegationJSONRoundTrip(t *testing.T) {

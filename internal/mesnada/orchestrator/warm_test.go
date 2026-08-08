@@ -169,6 +169,10 @@ func TestTryStartWarmGating(t *testing.T) {
 		{"delegation disabled", DelegationConfig{Enabled: false, ReuseWarmInstances: true}, warmTask()},
 		{"reuse flag off", DelegationConfig{Enabled: true, ReuseWarmInstances: false}, warmTask()},
 		{"no project", DelegationConfig{Enabled: true, ReuseWarmInstances: true}, &models.Task{ID: "t", Status: models.TaskStatusPending}},
+		{"cli engine claude", DelegationConfig{Enabled: true, ReuseWarmInstances: true}, &models.Task{ID: "t-claude", Status: models.TaskStatusPending, ProjectID: "proj-1", Engine: models.EngineClaude}},
+		{"cli engine copilot", DelegationConfig{Enabled: true, ReuseWarmInstances: true}, &models.Task{ID: "t-copilot", Status: models.TaskStatusPending, ProjectID: "proj-1", Engine: models.EngineCopilot}},
+		{"cli engine gemini", DelegationConfig{Enabled: true, ReuseWarmInstances: true}, &models.Task{ID: "t-gemini", Status: models.TaskStatusPending, ProjectID: "proj-1", Engine: models.EngineGemini}},
+		{"third-party acp", DelegationConfig{Enabled: true, ReuseWarmInstances: true}, &models.Task{ID: "t-acp", Status: models.TaskStatusPending, ProjectID: "proj-1", Engine: models.EngineACPClaudeCode}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -182,6 +186,30 @@ func TestTryStartWarmGating(t *testing.T) {
 				t.Errorf("resolver called %d times, want 0", resolver.called)
 			}
 		})
+	}
+}
+
+// TestTryStartWarmPandoEngineStillRoutes: an explicit engine=pando task with a
+// project still takes the warm path (the intended reuse optimization).
+func TestTryStartWarmPandoEngineStillRoutes(t *testing.T) {
+	resolver := &fakeWarmResolver{result: &WarmRunResult{
+		ChildSessionID: "child-1",
+		Output:         "ok",
+		StopReason:     "end_turn",
+	}}
+	o := newWarmOrch(t, DelegationConfig{Enabled: true, ReuseWarmInstances: true}, resolver)
+	task := warmTask()
+	task.Engine = models.EnginePando
+	_ = o.store.Save(task)
+
+	if handled := o.tryStartWarm(task); !handled {
+		t.Fatal("tryStartWarm returned false for engine=pando, want true")
+	}
+	if resolver.called != 1 {
+		t.Fatalf("resolver called %d times, want 1", resolver.called)
+	}
+	if task.Engine != models.EngineWarmACP {
+		t.Errorf("engine = %q, want warm-acp", task.Engine)
 	}
 }
 
