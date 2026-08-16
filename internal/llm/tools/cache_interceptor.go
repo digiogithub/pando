@@ -20,7 +20,6 @@ var cacheBypassTools = map[string]bool{
 	"edit":            true,
 	"write":           true,
 	"patch":           true,
-	"diagnostics":     true,
 	CacheReadToolName: true,
 	"bash":            false, // bash CAN be large, allow caching
 }

@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'copilot.mai-code-1.1-flash'
+Model = 'openrouter.deepseek/deepseek-v4-pro-0813'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -109,7 +109,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.summarizer]
-Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
+Model = 'copilot.mai-code-1.1-flash'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -118,7 +118,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.task]
-Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
+Model = 'copilot.mai-code-1.1-flash'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -127,7 +127,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.title]
-Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
+Model = 'copilot.gpt-5-mini'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''

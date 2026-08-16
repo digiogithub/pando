@@ -1225,6 +1225,11 @@ func (a *PandoACPAgent) mapFinishReasonToStopReason(finishReason message.FinishR
 		return acpsdk.StopReasonCancelled
 	case message.FinishReasonPermissionDenied:
 		return acpsdk.StopReasonRefusal
+	case message.FinishReasonError:
+		// An assistant message that finished with an error must not be presented
+		// to the client as a clean end_turn; surface it as a refusal so the error
+		// is not silently masked.
+		return acpsdk.StopReasonRefusal
 	default:
 		return acpsdk.StopReasonEndTurn
 	}

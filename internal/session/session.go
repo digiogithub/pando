@@ -206,6 +206,10 @@ func (s *service) Get(ctx context.Context, id string) (Session, error) {
 	session := s.fromDBItem(dbSession)
 	logging.Debug("Session retrieved", "sessionID", id)
 
+	// Register the session cache (idempotently) so tool-response pagination
+	// works for resumed/loaded sessions, not just newly created ones.
+	tools.EnsureSessionCache(session.ID)
+
 	// Hook 3: hook_session_restore — informational
 	if globalLuaManager != nil && globalLuaManager.IsEnabled() {
 		hookData := map[string]interface{}{

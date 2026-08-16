@@ -25,6 +25,22 @@ func RegisterSessionCache(sessionID string) *SessionCache {
 	return cache
 }
 
+// EnsureSessionCache registers a cache for a session only if one does not
+// already exist, and returns the existing cache otherwise. Unlike
+// RegisterSessionCache it never wipes an in-use cache, so it is safe to call
+// on every session lookup (e.g. on session load/resume).
+func EnsureSessionCache(sessionID string) *SessionCache {
+	sessionCacheRegistry.mu.Lock()
+	defer sessionCacheRegistry.mu.Unlock()
+
+	if cache, ok := sessionCacheRegistry.caches[sessionID]; ok {
+		return cache
+	}
+	cache := NewSessionCache(sessionID)
+	sessionCacheRegistry.caches[sessionID] = cache
+	return cache
+}
+
 // GetSessionCacheByID retrieves a session cache by session ID.
 func GetSessionCacheByID(sessionID string) (*SessionCache, bool) {
 	sessionCacheRegistry.mu.RLock()

@@ -1023,7 +1023,13 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	// user message, tool calls, and the model's response.
 	if a.provider != nil {
 		contextWindow := effectiveContextWindow(a.agentName, a.provider.Model())
+		before := len(msgs)
 		msgs = trimMessagesToContextBudget(msgs, contextWindow, 0.40)
+		if len(msgs) < before {
+			a.emitStatus(sessionID, eventCh,
+				fmt.Sprintf("\n\n⚠️ Message history trimmed to fit the context budget (%d messages dropped).\n", before-len(msgs)),
+				fmt.Sprintf("Message history trimmed (%d messages dropped)", before-len(msgs)))
+		}
 	}
 
 	// Sanitize history: if an assistant message has tool_calls but no matching
@@ -2030,7 +2036,15 @@ func (a *agent) shouldCompact(sess session.Session) bool {
 	}
 	cfg := config.Get()
 	agentCfg, ok := cfg.Agents[a.agentName]
-	if !ok || !agentCfg.AutoCompact {
+	if !ok {
+		return false
+	}
+	// Auto-compaction is enabled when either the global switch or the agent's
+	// own flag is set. The generated template writes AutoCompact = true at the
+	// top level but historically left agents.coder.AutoCompact = false, so
+	// relying only on the per-agent flag disabled compaction everywhere (which
+	// is what surfaces as "no auto compact in ACP mode").
+	if !cfg.AutoCompact && !agentCfg.AutoCompact {
 		return false
 	}
 	threshold := agentCfg.AutoCompactThreshold
