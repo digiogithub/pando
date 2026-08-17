@@ -502,9 +502,14 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		logging.Info("Browser registry initialized")
 	}
 
-	// Initialize MCP Gateway if enabled
+	// Initialize MCP Gateway. Single activation point: the unified tool
+	// discovery subsystem (ToolDiscovery.Enabled) activates the gateway
+	// automatically when MCP servers are configured; MCPGateway.Enabled is
+	// kept as an explicit override for backward compatibility.
 	cfg = config.Get()
-	if cfg != nil && cfg.MCPGateway.Enabled {
+	gatewayActive := cfg != nil &&
+		(cfg.MCPGateway.Enabled || (cfg.ToolDiscovery.Enabled && len(cfg.MCPServers) > 0))
+	if gatewayActive {
 		agent.ResetMcpToolsCache()
 		favCfg := mcpgateway.FavoriteConfig{
 			Threshold:    cfg.MCPGateway.FavoriteThreshold,
@@ -793,7 +798,11 @@ func convertMesnadaConfig(cfg *config.Config) mesnadaOrch.Config {
 	// can forward them dynamically to subagents at spawn time.
 	if cfg != nil {
 		orchCfg.MCPServers = convertPandoMCPServers(cfg.MCPServers)
-		orchCfg.GatewayExposeEnabled = cfg.MCPGateway.Enabled && cfg.MCPServer.GatewayExpose.Enabled
+		// Gateway re-export stays opt-in via GatewayExpose; it now works no
+		// matter which trigger activated the gateway (MCPGateway.Enabled or
+		// the unified tool discovery subsystem).
+		gatewayActive := cfg.MCPGateway.Enabled || (cfg.ToolDiscovery.Enabled && len(cfg.MCPServers) > 0)
+		orchCfg.GatewayExposeEnabled = gatewayActive && cfg.MCPServer.GatewayExpose.Enabled
 		// Delegation conclusion protocol options (default-off).
 		orchCfg.Delegation = mesnadaOrch.DelegationConfig{
 			Enabled:            cfg.Mesnada.Delegation.Enabled,

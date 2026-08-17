@@ -52,3 +52,67 @@ func TestToolSearch_DefaultLimitFallback(t *testing.T) {
 		t.Errorf("expected fallback limit 8, got %d", prov.gotLimit)
 	}
 }
+
+// stubExecutor records the last execution request.
+type stubExecutor struct {
+	name   string
+	params map[string]interface{}
+	resp   ToolResponse
+	err    error
+}
+
+func (s *stubExecutor) ExecuteTool(_ context.Context, name string, params map[string]interface{}) (ToolResponse, error) {
+	s.name = name
+	s.params = params
+	return s.resp, s.err
+}
+
+func TestToolSearch_CallMode(t *testing.T) {
+	prov := &stubSearchProvider{}
+	exec := &stubExecutor{resp: NewTextResponse("executed")}
+	tool := NewToolSearchToolWithExecutor(prov, exec, 8)
+
+	resp, err := tool.Run(context.Background(), ToolCall{
+		Input: `{"tool_name":"srv_remote","parameters":{"q":"x"}}`,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if resp.IsError || resp.Content != "executed" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if exec.name != "srv_remote" {
+		t.Errorf("expected execution of srv_remote, got %q", exec.name)
+	}
+	if exec.params["q"] != "x" {
+		t.Errorf("expected parameters forwarded, got %v", exec.params)
+	}
+}
+
+func TestToolSearch_CallModeWithoutExecutor(t *testing.T) {
+	prov := &stubSearchProvider{}
+	tool := NewToolSearchTool(prov, 8) // no executor wired
+
+	resp, err := tool.Run(context.Background(), ToolCall{
+		Input: `{"tool_name":"srv_remote"}`,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !resp.IsError {
+		t.Error("expected error response when execution is unavailable")
+	}
+}
+
+func TestToolSearch_RequiresQueryOrToolName(t *testing.T) {
+	prov := &stubSearchProvider{}
+	tool := NewToolSearchTool(prov, 8)
+
+	resp, err := tool.Run(context.Background(), ToolCall{Input: `{}`})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !resp.IsError {
+		t.Error("expected error response when neither query nor tool_name is set")
+	}
+}

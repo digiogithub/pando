@@ -21,6 +21,11 @@ type ToolMetadata struct {
 	ToolName      string
 	Source        ToolSource
 	Category      string
+	// Description and Parameters back catalog-only entries (no local BaseTool,
+	// e.g. MCP tools reachable only through the gateway). They are ignored when
+	// a live tool is registered, whose Info() takes precedence.
+	Description string
+	Parameters  map[string]any
 	// NonDeferred means this tool is always visible regardless of the threshold.
 	NonDeferred bool
 	// Priority controls ordering within a category (higher = more important).

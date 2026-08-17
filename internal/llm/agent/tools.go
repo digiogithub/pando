@@ -181,7 +181,7 @@ func CoderAgentTools(
 	base = append(base, maybeAskUserQuestionTool(userInput)...)
 	base = append(base, otherTools...)
 	result := appendLuaTools(base)
-	return ApplyToolDiscovery(result)
+	return ApplyToolDiscovery(result, nil)
 }
 
 func CoderAgentToolsWithMesnada(
@@ -198,8 +198,16 @@ func CoderAgentToolsWithMesnada(
 
 	var baseTools []tools.BaseTool
 	if gateway != nil {
-		// Use gateway-aware MCP tools (catalog + call proxy + favorites).
-		gatewayTools := GetMcpToolsWithGateway(ctx, permissions, gateway)
+		// Unified discovery path (ToolDiscovery.Enabled): favorites are exposed
+		// directly and the rest of the MCP catalog becomes searchable and
+		// executable through the single tool_search tool wired in
+		// ApplyToolDiscovery. Legacy path: catalog + call proxy tools.
+		var gatewayTools []tools.BaseTool
+		if cfg := config.Get(); cfg != nil && cfg.ToolDiscovery.Enabled {
+			gatewayTools = GetMcpFavoriteTools(ctx, permissions, gateway)
+		} else {
+			gatewayTools = GetMcpToolsWithGateway(ctx, permissions, gateway)
+		}
 		baseTools = append(
 			[]tools.BaseTool{
 				tools.NewBashTool(permissions),
@@ -341,7 +349,7 @@ func CoderAgentToolsWithMesnada(
 		}
 	}
 	result := appendLuaTools(baseTools)
-	return ApplyToolDiscovery(result)
+	return ApplyToolDiscovery(result, gateway)
 }
 
 // ContextEnricherAgentTools returns the read-only retrieval tool set used by the

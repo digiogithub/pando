@@ -82,11 +82,11 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'openrouter.deepseek/deepseek-v4-pro-0813'
+Model = 'openrouter.qwen/qwen3.8-max'
 MaxTokens = 0
 ReasoningEffort = ''
-ThinkingMode = 'medium'
-AutoCompact = true
+ThinkingMode = ''
+AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 

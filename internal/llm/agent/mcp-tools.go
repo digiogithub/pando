@@ -284,6 +284,11 @@ func GetMcpTools(ctx context.Context, permissions permission.Service) []tools.Ba
 // When gw is non-nil (gateway mode), it exposes two proxy tools plus any
 // favorite tools as direct wrappers. When gw is nil it falls back to the
 // standard per-server tool list.
+//
+// NOTE: this is the legacy gateway exposure path, kept for the
+// ToolDiscovery-disabled configuration and for the pando mcp-server mode.
+// The unified discovery path uses GetMcpFavoriteTools plus the tool_search
+// tool wired in ApplyToolDiscovery.
 func GetMcpToolsWithGateway(ctx context.Context, permissions permission.Service, gw *mcpgateway.Gateway) []tools.BaseTool {
 	if gw == nil {
 		return GetMcpTools(ctx, permissions)
@@ -293,9 +298,16 @@ func GetMcpToolsWithGateway(ctx context.Context, permissions permission.Service,
 		mcpgateway.NewCatalogTool(gw),
 		mcpgateway.NewCallToolProxy(gw),
 	}
+	return append(result, GetMcpFavoriteTools(ctx, permissions, gw)...)
+}
 
-	// Add favorite tools as direct wrappers so the LLM can call them without
-	// going through the proxy (lower latency, richer schema visibility).
+// GetMcpFavoriteTools returns the gateway's favorite MCP tools as direct
+// wrappers so the LLM can call them without going through a proxy (lower
+// latency, richer schema visibility). The rest of the MCP catalog stays
+// reachable through the unified tool_search tool.
+func GetMcpFavoriteTools(ctx context.Context, permissions permission.Service, gw *mcpgateway.Gateway) []tools.BaseTool {
+	result := []tools.BaseTool{}
+
 	favorites, err := gw.GetFavorites(ctx)
 	if err != nil {
 		logging.Error("MCP gateway: failed to load favorites", "error", err)
@@ -322,6 +334,6 @@ func GetMcpToolsWithGateway(ctx context.Context, permissions permission.Service,
 		result = append(result, NewMcpTool(fav.ServerName, t, permissions, srv))
 	}
 
-	logging.Debug("MCP gateway tools assembled", "total", len(result), "favorites", len(favorites))
+	logging.Debug("MCP gateway favorite tools assembled", "favorites", len(result))
 	return result
 }

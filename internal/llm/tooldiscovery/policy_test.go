@@ -1,6 +1,7 @@
 package tooldiscovery_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/digiogithub/pando/internal/llm/tooldiscovery"
@@ -19,7 +20,7 @@ func buildLargeRegistry(n int) (*tooldiscovery.Registry, []tools.BaseTool) {
 	}
 	// MCP tools (deferred by default)
 	for i := 0; i < n; i++ {
-		name := "mcp_server_tool_" + string(rune('a'+i%26))
+		name := fmt.Sprintf("mcp_server_tool_%03d", i)
 		t := &stubTool{name: name, desc: "mcp tool"}
 		all = append(all, t)
 		_ = reg.Register(t, tooldiscovery.SourceMCP, false)
@@ -116,7 +117,7 @@ func TestPolicy_DiscoveredToolsBecomVisible(t *testing.T) {
 	policy := tooldiscovery.NewSelectionPolicy(cfg)
 
 	// Simulate a tool_search result marking a deferred tool as discovered.
-	reg.MarkDiscovered("mcp_server_tool_a")
+	reg.MarkDiscovered("mcp_server_tool_000")
 
 	searchTool := &stubTool{name: "tool_search"}
 	visible := policy.Apply(reg, searchTool)
@@ -125,7 +126,7 @@ func TestPolicy_DiscoveredToolsBecomVisible(t *testing.T) {
 	for _, v := range visible {
 		names[v.Info().Name] = true
 	}
-	if !names["mcp_server_tool_a"] {
-		t.Error("discovered tool mcp_server_tool_a should be visible")
+	if !names["mcp_server_tool_000"] {
+		t.Error("discovered tool mcp_server_tool_000 should be visible")
 	}
 }

@@ -68,14 +68,21 @@ func NewSelectionPolicy(cfg PolicyConfig) *SelectionPolicy {
 
 // Apply returns the visible tool slice given the full set in the registry.
 // If toolSearch is non-nil it is prepended to the visible set when discovery
-// mode is active so the model can always find deferred tools.
+// mode is active so the model can always find deferred tools. When the
+// registry holds catalog-only entries (remote MCP tools) tool_search is the
+// only way to reach them, so it is included even below the activation
+// threshold.
 func (p *SelectionPolicy) Apply(reg *Registry, toolSearch tools.BaseTool) []tools.BaseTool {
 	all := reg.All()
 	total := len(all)
 
 	activate := p.shouldActivate(total)
 	if !activate {
-		return reg.AllTools()
+		visible := reg.AllTools()
+		if toolSearch != nil && reg.HasRemoteEntries() {
+			visible = append([]tools.BaseTool{toolSearch}, visible...)
+		}
+		return visible
 	}
 
 	visible := make([]tools.BaseTool, 0, p.cfg.MaxDirectTools)
@@ -144,7 +151,7 @@ func BuildRegistry(allTools []tools.BaseTool, nonDeferredNames map[string]bool) 
 	reg := NewRegistry()
 	for _, t := range allTools {
 		info := t.Info()
-		source := classifySource(info.Name)
+		source := ClassifySource(info.Name)
 		nd := nonDeferredNames[strings.ToLower(info.Name)]
 		// Always mark core tools as non-deferred.
 		if source == SourceCore {
@@ -155,12 +162,12 @@ func BuildRegistry(allTools []tools.BaseTool, nonDeferredNames map[string]bool) 
 	return reg
 }
 
-// classifySource infers the ToolSource from the tool name. The set of
+// ClassifySource infers the ToolSource from the tool name. The set of
 // agent-native tools is sourced from tools.IsBuiltinTool so this classifier and
 // the MCP gateway share a single source of truth: any built-in tool stays a
 // directly-visible source and is never deferred as an MCP tool. Real MCP tools
 // follow the "<server>_<toolname>" convention established in mcp-tools.go.
-func classifySource(name string) ToolSource {
+func ClassifySource(name string) ToolSource {
 	switch name {
 	case "mcp_query_catalog", "mcp_call_tool":
 		return SourceGateway
@@ -179,7 +186,7 @@ func classifySource(name string) ToolSource {
 	if tools.IsBuiltinTool(name) {
 		return SourceInternal
 	}
-	// Anything else with an underscore is a real MCP "<server>_<tool>".
+	// Anything else with an underscore is a real MCP "<server>_<toolname>".
 	if strings.Contains(name, "_") {
 		return SourceMCP
 	}

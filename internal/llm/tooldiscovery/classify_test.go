@@ -53,8 +53,8 @@ func TestClassifySource(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		if got := classifySource(tc.name); got != tc.want {
-			t.Errorf("classifySource(%q) = %q, want %q", tc.name, got, tc.want)
+		if got := ClassifySource(tc.name); got != tc.want {
+			t.Errorf("ClassifySource(%q) = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }

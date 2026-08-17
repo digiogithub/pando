@@ -60,17 +60,27 @@ func (r *Registry) Search(query string, limit int) []SearchResult {
 	results := make([]SearchResult, limit)
 	for i := range results {
 		e := candidates[i].entry
-		info := e.Tool.Info()
+		desc, _ := entryInfo(e)
 		results[i] = SearchResult{
 			CanonicalName: e.Metadata.CanonicalName,
 			Aliases:       e.Metadata.Aliases,
 			ServerName:    e.Metadata.ServerName,
 			Source:        e.Metadata.Source,
-			Description:   info.Description,
+			Description:   desc,
 			Score:         candidates[i].score,
 		}
 	}
 	return results
+}
+
+// entryInfo returns the description and parameter names of an entry, falling
+// back to metadata for catalog-only entries (Tool == nil).
+func entryInfo(e Entry) (description string, params map[string]any) {
+	if e.Tool != nil {
+		info := e.Tool.Info()
+		return info.Description, info.Parameters
+	}
+	return e.Metadata.Description, e.Metadata.Parameters
 }
 
 // fieldWeights controls how much each field contributes to the score.
@@ -83,11 +93,11 @@ const (
 )
 
 func scoreEntry(e Entry, tokens []string) float64 {
-	info := e.Tool.Info()
+	desc, parameters := entryInfo(e)
 	meta := e.Metadata
 
 	nameTokens := tokenize(meta.CanonicalName)
-	descTokens := tokenize(info.Description)
+	descTokens := tokenize(desc)
 
 	var aliasTokens []string
 	for _, a := range meta.Aliases {
@@ -97,7 +107,7 @@ func scoreEntry(e Entry, tokens []string) float64 {
 	serverTokens := tokenize(meta.ServerName)
 
 	var paramTokens []string
-	for k := range info.Parameters {
+	for k := range parameters {
 		paramTokens = append(paramTokens, tokenize(k)...)
 	}
 
