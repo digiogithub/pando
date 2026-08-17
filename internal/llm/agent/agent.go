@@ -2566,18 +2566,18 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 		}
 		if (model.Provider == models.ProviderOpenAI || model.Provider == models.ProviderLocal) && model.CanReason {
 			opts = append(opts, provider.WithOpenAIOptions(
-				provider.WithReasoningEffort(effectiveReasoningEffort(agentConfig, sessionOverrides)),
+				provider.WithReasoningEffort(effectiveReasoningEffort(model, agentConfig, sessionOverrides)),
 			))
 		}
 		if model.Provider == models.ProviderCopilot && model.CanReason {
 			opts = append(opts, provider.WithCopilotOptions(
-				provider.WithCopilotReasoningEffort(effectiveReasoningEffort(agentConfig, sessionOverrides)),
+				provider.WithCopilotReasoningEffort(effectiveReasoningEffort(model, agentConfig, sessionOverrides)),
 			))
 		}
 		if model.Provider == models.ProviderAnthropic && model.CanReason {
 			opts = append(opts, provider.WithAnthropicOptions(
 				provider.WithAnthropicThinkingMode(effectiveAnthropicThinkingMode(model, agentConfig, sessionOverrides)),
-				provider.WithAnthropicReasoningEffort(effectiveReasoningEffort(agentConfig, sessionOverrides)),
+				provider.WithAnthropicReasoningEffort(effectiveReasoningEffort(model, agentConfig, sessionOverrides)),
 			))
 		}
 		if acc.BaseURL != "" && model.Provider == models.ProviderOllama {

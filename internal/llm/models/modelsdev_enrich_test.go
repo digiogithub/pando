@@ -70,7 +70,8 @@ func TestApplyModelsDevMetadataNeverOverwritesKnownValues(t *testing.T) {
 		CostPer1MIn: 1, CostPer1MOut: 2, CostPer1MInCached: 3, CostPer1MOutCached: 4,
 		ContextWindow: 111, DefaultMaxTokens: 222, Description: "kept",
 		CanReason: true, SupportsReasoningEffort: true, SupportsAttachments: true,
-		Knowledge: "2025-01", ReleaseDate: "2025-09-29",
+		ReasoningEfforts: []string{"low", "high"},
+		Knowledge:        "2025-01", ReleaseDate: "2025-09-29",
 	}
 	if !reflect.DeepEqual(model, want) {
 		t.Errorf("got %+v, want %+v", model, want)

@@ -136,11 +136,22 @@ func sessionIDFromContext(ctx context.Context) string {
 	return ""
 }
 
-func effectiveReasoningEffort(agentConfig config.Agent, overrides SessionLLMOverrides) string {
+// effectiveReasoningEffort resolves the reasoning effort for a request, in
+// precedence order: session override, agent config, model default. Unlike the
+// old fixed "medium" default, every result is clamped against the resolved
+// model's accepted effort set so an invalid value can never be sent upstream.
+func effectiveReasoningEffort(model models.Model, agentConfig config.Agent, overrides SessionLLMOverrides) string {
 	if overrides.ReasoningEffort != "" {
-		return overrides.ReasoningEffort
+		if effort := models.NormalizeReasoningEffort(model, overrides.ReasoningEffort); effort != "" {
+			return effort
+		}
 	}
-	return agentConfig.ReasoningEffort
+	if agentConfig.ReasoningEffort != "" {
+		if effort := models.NormalizeReasoningEffort(model, agentConfig.ReasoningEffort); effort != "" {
+			return effort
+		}
+	}
+	return models.DefaultReasoningEffort(model)
 }
 
 func effectiveAnthropicThinkingMode(model models.Model, agentConfig config.Agent, overrides SessionLLMOverrides) config.ThinkingMode {
@@ -150,14 +161,14 @@ func effectiveAnthropicThinkingMode(model models.Model, agentConfig config.Agent
 	return defaultAnthropicThinkingMode(model, agentConfig.ThinkingMode)
 }
 
+// normalizeSessionReasoningEffort canonicalises a stored per-session effort
+// override. It accepts the union of effort values any model family exposes
+// (none/minimal/low/medium/high/xhigh/max); per-model validity is enforced later
+// in effectiveReasoningEffort against the resolved model.
 func normalizeSessionReasoningEffort(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "low":
-		return "low"
-	case "medium":
-		return "medium"
-	case "high":
-		return "high"
+	case "none", "minimal", "low", "medium", "high", "xhigh", "max":
+		return strings.ToLower(strings.TrimSpace(value))
 	default:
 		return ""
 	}

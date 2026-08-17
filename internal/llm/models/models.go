@@ -25,6 +25,12 @@ type Model struct {
 	DefaultMaxTokens        int64         `json:"default_max_tokens"`
 	CanReason               bool          `json:"can_reason"`
 	SupportsReasoningEffort bool          `json:"supports_reasoning_effort"`
+	// ReasoningEfforts lists the ordered reasoning-effort values (weakest to
+	// strongest) the model accepts for its effort-style control, e.g. OpenAI
+	// "reasoning_effort" or Anthropic adaptive "thinking" budget. It comes from
+	// the models.dev catalog (ReasoningOptions) when available. Empty means
+	// "unknown", and the resolver falls back to a per-family table.
+	ReasoningEfforts []string `json:"reasoning_efforts,omitempty"`
 	SupportsAttachments     bool          `json:"supports_attachments"`
 	// SupportedEndpoints lists the API routes the provider accepts for this
 	// model, as reported by its model-listing API (e.g. "/responses",

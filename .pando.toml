@@ -85,8 +85,8 @@ ContextWindowOverride = 0
 Model = 'openrouter.deepseek/deepseek-v4-pro-0813'
 MaxTokens = 0
 ReasoningEffort = ''
-ThinkingMode = ''
-AutoCompact = false
+ThinkingMode = 'medium'
+AutoCompact = true
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 

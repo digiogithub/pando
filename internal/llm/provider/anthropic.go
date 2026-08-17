@@ -829,6 +829,15 @@ func thinkingBudgetTokens(mode config.ThinkingMode, reasoningEffort string, maxT
 				budget = maxTokens - 1
 			}
 			return budget
+		case "xhigh":
+			budget := int64(float64(maxTokens) * 0.9)
+			if budget < 1 {
+				budget = 1
+			}
+			if budget >= maxTokens {
+				budget = maxTokens - 1
+			}
+			return budget
 		case "max":
 			return maxTokens - 1
 		}
@@ -892,7 +901,7 @@ func WithAnthropicReasoningEffort(effort string) AnthropicOption {
 	return func(options *anthropicOptions) {
 		defaultReasoningEffort := "medium"
 		switch normalizedEffort := strings.ToLower(strings.TrimSpace(effort)); normalizedEffort {
-		case "low", "medium", "high", "max":
+		case "low", "medium", "high", "xhigh", "max":
 			defaultReasoningEffort = normalizedEffort
 		case "":
 			// Keep default.

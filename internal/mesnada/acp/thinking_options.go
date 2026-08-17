@@ -101,7 +101,7 @@ func normalizeACPThinkingSettings(model llmmodels.Model, hasModel bool, settings
 		ThinkingStreamMode: effectiveACPThinkingStreamMode(settings.ThinkingStreamMode),
 	}
 	if hasModel && supportsACPReasoningEffort(model) {
-		normalized.ReasoningEffort = effectiveACPReasoningEffort(settings.ReasoningEffort)
+		normalized.ReasoningEffort = effectiveACPReasoningEffort(model, settings.ReasoningEffort)
 	}
 	if hasModel && supportsACPThinkingMode(model) {
 		normalized.ThinkingMode = effectiveACPThinkingMode(settings.ThinkingMode)
@@ -121,7 +121,7 @@ func validateACPThinkingConfigValue(model llmmodels.Model, hasModel bool, modelI
 		if !hasModel || !supportsACPReasoningEffort(model) {
 			return "", fmt.Errorf("reasoning_effort is not supported for model: %s", modelID)
 		}
-		return parseReasoningEffortValue(value)
+		return parseReasoningEffortValue(model, value)
 	case sessionConfigThinkingModeID:
 		if !hasModel || !supportsACPThinkingMode(model) {
 			return "", fmt.Errorf("thinking_mode is not supported for model: %s", modelID)
@@ -161,28 +161,31 @@ func parseThinkingStreamModeValue(value string) (string, error) {
 	return "", fmt.Errorf("invalid thinking_stream_mode value: %s", value)
 }
 
+// normalizeReasoningEffortValue canonicalises a stored ACP reasoning-effort
+// value. It accepts the union of effort values any model family exposes
+// (none/minimal/low/medium/high/xhigh/max) so the session can hold per-model
+// values; final validation against the selected model happens in
+// effectiveACPReasoningEffort / parseReasoningEffortValue.
 func normalizeReasoningEffortValue(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case reasoningEffortLow:
-		return reasoningEffortLow
-	case reasoningEffortMedium:
-		return reasoningEffortMedium
-	case reasoningEffortHigh:
-		return reasoningEffortHigh
+	switch v := strings.ToLower(strings.TrimSpace(value)); v {
+	case reasoningEffortNone, reasoningEffortMinimal, reasoningEffortLow, reasoningEffortMedium, reasoningEffortHigh, reasoningEffortXHigh, reasoningEffortMax:
+		return v
 	default:
 		return ""
 	}
 }
 
-func effectiveACPReasoningEffort(value string) string {
+func effectiveACPReasoningEffort(model llmmodels.Model, value string) string {
 	if normalized := normalizeReasoningEffortValue(value); normalized != "" {
-		return normalized
+		if v := llmmodels.NormalizeReasoningEffort(model, normalized); v != "" {
+			return v
+		}
 	}
-	return defaultACPReasoningEffort
+	return llmmodels.DefaultReasoningEffort(model)
 }
 
-func parseReasoningEffortValue(value string) (string, error) {
-	if normalized := normalizeReasoningEffortValue(value); normalized != "" {
+func parseReasoningEffortValue(model llmmodels.Model, value string) (string, error) {
+	if normalized := normalizeReasoningEffortValue(value); normalized != "" && llmmodels.NormalizeReasoningEffort(model, normalized) != "" {
 		return normalized, nil
 	}
 	return "", fmt.Errorf("invalid reasoning_effort value: %s", value)

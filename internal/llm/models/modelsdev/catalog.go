@@ -64,12 +64,19 @@ type Model struct {
 // SupportsReasoningEffort reports whether the model exposes an effort-style
 // reasoning control, which is what Pando's UIs gate the effort selector on.
 func (m Model) SupportsReasoningEffort() bool {
+	return len(m.ReasoningEffortValues()) > 0
+}
+
+// ReasoningEffortValues returns the allowed values for the "effort" reasoning
+// control, if the model advertises one. It is the ordered list (weakest to
+// strongest) that Pando copies onto models.Model.ReasoningEfforts.
+func (m Model) ReasoningEffortValues() []string {
 	for _, opt := range m.ReasoningOptions {
 		if strings.EqualFold(opt.Type, "effort") && len(opt.Values) > 0 {
-			return true
+			return opt.Values
 		}
 	}
-	return false
+	return nil
 }
 
 // Provider is one provider entry of the catalog, keyed by its models.dev id.

@@ -29,6 +29,10 @@ const (
 	reasoningEffortLow                = "low"
 	reasoningEffortMedium             = "medium"
 	reasoningEffortHigh               = "high"
+	reasoningEffortNone               = "none"
+	reasoningEffortMinimal            = "minimal"
+	reasoningEffortXHigh              = "xhigh"
+	reasoningEffortMax                = "max"
 	thinkingStreamModeOff             = "off"
 	thinkingStreamModeGrouped         = "grouped"
 	thinkingStreamModeFull            = "full"
@@ -240,11 +244,7 @@ func buildSessionConfigOptions(svc AgentService, session *ACPServerSession) []ac
 			"How much reasoning effort the selected model should use",
 			"thinking",
 			thinkingSettings.ReasoningEffort,
-			[]configOptionValue{
-				{Value: reasoningEffortLow, Name: "Low", Description: "Prefer faster responses with less reasoning effort"},
-				{Value: reasoningEffortMedium, Name: "Medium", Description: "Use a balanced amount of reasoning effort"},
-				{Value: reasoningEffortHigh, Name: "High", Description: "Prefer deeper reasoning when the model supports it"},
-			},
+			reasoningEffortConfigValues(llmmodels.ReasoningEffortsFor(selectedModel)),
 		))
 	}
 
@@ -290,6 +290,49 @@ type configOptionValue struct {
 	Value       string
 	Name        string
 	Description string
+}
+
+// reasoningEffortConfigValues maps the ordered effort values the selected model
+// accepts to selector options. When the model's set is unknown it falls back to
+// the widely supported low/medium/high set so the selector stays usable.
+func reasoningEffortConfigValues(efforts []string) []configOptionValue {
+	if len(efforts) == 0 {
+		efforts = []string{reasoningEffortLow, reasoningEffortMedium, reasoningEffortHigh}
+	}
+	values := make([]configOptionValue, 0, len(efforts))
+	for _, effort := range efforts {
+		values = append(values, reasoningEffortOption(effort))
+	}
+	return values
+}
+
+func reasoningEffortOption(effort string) configOptionValue {
+	name := effort
+	description := "Use " + effort + " reasoning effort"
+	switch effort {
+	case reasoningEffortNone:
+		name = "None"
+		description = "Do not use any reasoning effort"
+	case reasoningEffortMinimal:
+		name = "Minimal"
+		description = "Use minimal reasoning effort"
+	case reasoningEffortLow:
+		name = "Low"
+		description = "Prefer faster responses with less reasoning effort"
+	case reasoningEffortMedium:
+		name = "Medium"
+		description = "Use a balanced amount of reasoning effort"
+	case reasoningEffortHigh:
+		name = "High"
+		description = "Prefer deeper reasoning when the model supports it"
+	case reasoningEffortXHigh:
+		name = "X-High"
+		description = "Use very deep reasoning effort"
+	case reasoningEffortMax:
+		name = "Max"
+		description = "Use the maximum reasoning effort the model supports"
+	}
+	return configOptionValue{Value: effort, Name: name, Description: description}
 }
 
 func newSelectConfigOption(id, name, description, category, currentValue string, values []configOptionValue) acpsdk.SessionConfigOption {

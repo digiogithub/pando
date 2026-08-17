@@ -77,15 +77,23 @@ func TestDefaultAnthropicThinkingMode(t *testing.T) {
 
 func TestEffectiveReasoningEffortPrecedence(t *testing.T) {
 	agentConfig := config.Agent{ReasoningEffort: "low"}
+	model := models.Model{Provider: models.ProviderOpenAI, CanReason: true}
 
-	if got := effectiveReasoningEffort(agentConfig, SessionLLMOverrides{ReasoningEffort: "high"}); got != "high" {
+	if got := effectiveReasoningEffort(model, agentConfig, SessionLLMOverrides{ReasoningEffort: "high"}); got != "high" {
 		t.Fatalf("effectiveReasoningEffort() override = %q, want %q", got, "high")
 	}
-	if got := effectiveReasoningEffort(agentConfig, SessionLLMOverrides{}); got != "low" {
+	if got := effectiveReasoningEffort(model, agentConfig, SessionLLMOverrides{}); got != "low" {
 		t.Fatalf("effectiveReasoningEffort() config fallback = %q, want %q", got, "low")
 	}
-	if got := effectiveReasoningEffort(config.Agent{}, SessionLLMOverrides{}); got != "" {
-		t.Fatalf("effectiveReasoningEffort() empty fallback = %q, want empty", got)
+	if got := effectiveReasoningEffort(model, config.Agent{}, SessionLLMOverrides{}); got != "medium" {
+		t.Fatalf("effectiveReasoningEffort() empty fallback = %q, want the model default %q", got, "medium")
+	}
+
+	// A model that does not accept "medium" must resolve to a valid default
+	// instead of the historical hardcoded "medium".
+	noMedium := models.Model{Provider: models.ProviderAnthropic, APIModel: "claude-sonnet-4-5", CanReason: true, ReasoningEfforts: []string{"low", "high"}}
+	if got := effectiveReasoningEffort(noMedium, config.Agent{}, SessionLLMOverrides{}); got != "high" {
+		t.Fatalf("effectiveReasoningEffort() no-medium default = %q, want %q", got, "high")
 	}
 }
 

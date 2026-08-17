@@ -236,16 +236,10 @@ func (o *openaiClient) preparedParams(messages []openai.ChatCompletionMessagePar
 
 	if o.providerOptions.model.CanReason == true {
 		params.MaxCompletionTokens = openai.Int(o.providerOptions.maxTokens)
-		switch o.options.reasoningEffort {
-		case "low":
-			params.ReasoningEffort = shared.ReasoningEffortLow
-		case "medium":
-			params.ReasoningEffort = shared.ReasoningEffortMedium
-		case "high":
-			params.ReasoningEffort = shared.ReasoningEffortHigh
-		default:
-			params.ReasoningEffort = shared.ReasoningEffortMedium
-		}
+		// clampReasoningEffort has already validated the value, so pass it
+		// through verbatim (including none/minimal/xhigh, which the SDK models
+		// as a plain string enum).
+		params.ReasoningEffort = shared.ReasoningEffort(o.options.reasoningEffort)
 	} else {
 		params.MaxTokens = openai.Int(o.providerOptions.maxTokens)
 	}
@@ -608,13 +602,22 @@ func WithThinkTagParsing() OpenAIOption {
 
 func WithReasoningEffort(effort string) OpenAIOption {
 	return func(options *openaiOptions) {
-		defaultReasoningEffort := "medium"
-		switch effort {
-		case "low", "medium", "high":
-			defaultReasoningEffort = effort
-		default:
-			logging.Warn("Invalid reasoning effort, using default: medium")
-		}
-		options.reasoningEffort = defaultReasoningEffort
+		options.reasoningEffort = clampReasoningEffort(effort)
+	}
+}
+
+// clampReasoningEffort accepts the union of effort values OpenAI-style models
+// expose (none/minimal/low/medium/high/xhigh) and falls back to "medium" only
+// for a value outside that set. The agent layer has already resolved a valid,
+// model-specific value, so this is a last-resort safety net.
+func clampReasoningEffort(effort string) string {
+	switch effort {
+	case "none", "minimal", "low", "medium", "high", "xhigh":
+		return effort
+	case "":
+		return "medium"
+	default:
+		logging.Warn("Invalid reasoning effort, using default: medium")
+		return "medium"
 	}
 }

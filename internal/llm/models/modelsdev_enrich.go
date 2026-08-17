@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"slices"
 
 	"github.com/digiogithub/pando/internal/llm/models/modelsdev"
 )
@@ -92,6 +93,7 @@ func EnrichRegisteredModels(ctx context.Context) {
 // be tested without touching the network. It reports whether anything changed.
 func applyModelsDevMetadata(model *Model, entry modelsdev.Model) bool {
 	before := enrichableFields(*model)
+	beforeEfforts := append([]string(nil), model.ReasoningEfforts...)
 
 	if model.CostPer1MIn == 0 {
 		model.CostPer1MIn = entry.Cost.Input
@@ -119,8 +121,14 @@ func applyModelsDevMetadata(model *Model, entry modelsdev.Model) bool {
 	if entry.Reasoning {
 		model.CanReason = true
 	}
-	if entry.SupportsReasoningEffort() {
+	if efforts := entry.ReasoningEffortValues(); len(efforts) > 0 {
 		model.SupportsReasoningEffort = true
+		// Only fill when the provider/curated catalog did not already state a
+		// value set: whatever Pando already knows stays authoritative, and a
+		// stale catalog entry must never overwrite a known-good list.
+		if len(model.ReasoningEfforts) == 0 {
+			model.ReasoningEfforts = efforts
+		}
 	}
 	if entry.Attachment {
 		model.SupportsAttachments = true
@@ -135,7 +143,7 @@ func applyModelsDevMetadata(model *Model, entry modelsdev.Model) bool {
 		model.ReleaseDate = entry.ReleaseDate
 	}
 
-	return before != enrichableFields(*model)
+	return before != enrichableFields(*model) || !slices.Equal(beforeEfforts, model.ReasoningEfforts)
 }
 
 // enrichable is the comparable projection of the fields enrichment can write.
