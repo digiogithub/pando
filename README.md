@@ -923,6 +923,7 @@ interactive:true
 ```bash
 # Create dist folder
 mkdir -p dist
+rm dist/*.zip
 
 # Build embedded web-ui assets
 cd web-ui && bun install && bun run build:embedded && cd ..
