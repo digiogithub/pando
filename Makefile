@@ -60,6 +60,14 @@ WAILS_TAGS :=
 else
 WAILS_TAGS := $(shell pkg-config --exists webkit2gtk-4.0 2>/dev/null && echo "" || echo "webkit2_41")
 endif
+# UPX-compressed binaries have an invalid Mach-O header on macOS (Big Sur+): the
+# process gets killed on launch and codesign/notarization break. Only pass -upx
+# on non-Darwin platforms.
+ifeq ($(shell uname),Darwin)
+WAILS_UPX_FLAG :=
+else
+WAILS_UPX_FLAG := -upx
+endif
 
 .PHONY: desktop-deps desktop-ui desktop-build desktop-dev desktop-package desktop-embed desktop-clean build build-fast web-ui-embedded dist-clean release release-linux-amd64 release-linux-arm64 release-windows-amd64 release-darwin-amd64 release-darwin-arm64 test-integration help
 
@@ -91,7 +99,7 @@ test-integration: build-fast
 desktop-build:
 	@mkdir -p internal/desktop/bin
 	@[ -f internal/desktop/bin/pando-desktop ] || echo -n "" > internal/desktop/bin/pando-desktop
-	cd desktop && $(WAILS_CMD) build $(if $(WAILS_TAGS),-tags $(WAILS_TAGS),) -o pando-desktop
+	cd desktop && $(WAILS_CMD) build $(if $(WAILS_TAGS),-tags $(WAILS_TAGS),) $(WAILS_UPX_FLAG) -o pando-desktop
 
 ## Development mode: run Wails dev server with hot-reload
 desktop-dev:
@@ -122,7 +130,7 @@ desktop-embed: desktop-build
 
 ## Build production packages for current platform
 desktop-package:
-	cd desktop && $(WAILS_CMD) build $(if $(WAILS_TAGS),-tags $(WAILS_TAGS),) -clean -o pando-desktop
+	cd desktop && $(WAILS_CMD) build $(if $(WAILS_TAGS),-tags $(WAILS_TAGS),) $(WAILS_UPX_FLAG) -clean -o pando-desktop
 
 ## Remove desktop build artifacts
 desktop-clean:
