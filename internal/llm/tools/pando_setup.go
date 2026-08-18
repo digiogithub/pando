@@ -16,8 +16,10 @@ const (
 	PandoSetupToolName = "pando_setup"
 
 	pandoSetupDescription = `Pando's own control panel: inspect configuration and runtime state, discover
-available models, read session usage, switch session modes, and — when the user
-asks for it and the capability is enabled — change this session's model.
+available models, list registered projects (command="projects", for
+mesnada_spawn_agent's "project" argument), read session usage, switch session
+modes, and — when the user asks for it and the capability is enabled — change
+this session's model.
 
 It works like a CLI: pick a command and pass CLI-style arguments. Run it with
 command="help" to list every command, or pass "--help" as args to any command to
@@ -88,6 +90,16 @@ type SetupModelState struct {
 	Overridden bool `json:"overridden"`
 }
 
+// SetupProjectRef describes one project registered in this Pando instance's
+// project registry — the same registry mesnada_spawn_agent's "project"
+// argument resolves against (by id, path, or display name).
+type SetupProjectRef struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Status string `json:"status"`
+}
+
 // SetupModelSwitch is the outcome of a model-switch request.
 type SetupModelSwitch struct {
 	// Applied is false when the switch was only quoted and still needs the user's
@@ -124,6 +136,11 @@ type SetupBridge interface {
 	// either price is unknown — the switch is only applied if confirmed is true;
 	// otherwise it returns a quote with Applied false and changes nothing.
 	SetSessionModel(sessionID, modelID string, confirmed bool) (SetupModelSwitch, error)
+	// Projects lists the projects registered in this Pando instance's project
+	// registry — the ids/paths/names mesnada_spawn_agent's "project" argument
+	// accepts to delegate work into another project. Returns an error when the
+	// project registry is unavailable in this runtime.
+	Projects(ctx context.Context) ([]SetupProjectRef, error)
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +293,16 @@ installed, plus the global on-demand activation settings.
 Servers marked "installable" are installed by Pando with bun or npm the first
 time a matching file is touched; "not installed" ones print the command to run.`,
 			Run: runSetupLSP,
+		},
+		{
+			Name:    "projects",
+			Summary: "List the projects registered in this Pando instance's project registry",
+			Usage: `Usage: projects [--search TERM]
+Lists every registered project: id, display name, path and status.
+  --search   Match id, name or path (case-insensitive).
+Use the id, path or exact name as the "project" argument of mesnada_spawn_agent
+to delegate a task into that project's warm instance (or cold-spawn one).`,
+			Run: runSetupProjects,
 		},
 		{
 			Name:    "session",
@@ -604,6 +631,44 @@ func maskSetupEnv(v any) any {
 		out = append(out, name+"="+fmt.Sprintf("%v", maskSetupSecret(value)))
 	}
 	return out
+}
+
+// ---------------------------------------------------------------------------
+// projects
+// ---------------------------------------------------------------------------
+
+func runSetupProjects(ctx context.Context, t *pandoSetupTool, args setupArgs) (string, error) {
+	if t.bridge == nil {
+		return "", fmt.Errorf("the project registry is unavailable in this runtime")
+	}
+	projects, err := t.bridge.Projects(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to list projects: %w", err)
+	}
+
+	search := strings.ToLower(strings.TrimSpace(args.String("search")))
+	var sb strings.Builder
+	sb.WriteString("## Registered projects\n\n")
+
+	shown := 0
+	for _, p := range projects {
+		if search != "" &&
+			!strings.Contains(strings.ToLower(p.ID), search) &&
+			!strings.Contains(strings.ToLower(p.Name), search) &&
+			!strings.Contains(strings.ToLower(p.Path), search) {
+			continue
+		}
+		shown++
+		sb.WriteString(fmt.Sprintf("- %s — %s\n", p.ID, p.Name))
+		sb.WriteString(fmt.Sprintf("  path: %s | status: %s\n", p.Path, p.Status))
+	}
+
+	if shown == 0 {
+		sb.WriteString("(none)\n")
+	}
+	sb.WriteString("\nPass one of these as the \"project\" argument of mesnada_spawn_agent (id, path or\n")
+	sb.WriteString("exact display name) to delegate a task into that project.\n")
+	return sb.String(), nil
 }
 
 // ---------------------------------------------------------------------------

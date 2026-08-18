@@ -13,10 +13,24 @@ import (
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/ponytail"
+	"github.com/digiogithub/pando/internal/project"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/superpowers"
 	"github.com/digiogithub/pando/internal/vulnhunter"
 )
+
+// globalProjectServiceForTools is the project registry the pando_setup "projects"
+// command reads from. Wired once from app.go via SetProjectServiceForTools, same
+// pattern as globalLuaManagerForTools: the registry is a process-wide singleton
+// and threading it through every CoderAgentTools call site would only add noise.
+var globalProjectServiceForTools project.Service
+
+// SetProjectServiceForTools wires the project registry used by pando_setup's
+// "projects" command. Called once at startup from app.go; a nil service is
+// tolerated and leaves the command reporting "unavailable".
+func SetProjectServiceForTools(svc project.Service) {
+	globalProjectServiceForTools = svc
+}
 
 // setupBridge implements tools.SetupBridge. It lives in this package because
 // the session modes and the session store are owned here, and internal/llm/tools
@@ -75,6 +89,24 @@ func (b *setupBridge) SessionModes(sessionID string) []tools.SetupMode {
 		{Name: "superpowers", State: onOff(SuperpowersMode(sessionID))},
 		{Name: "learning", State: onOff(LearningMode(sessionID))},
 	}
+}
+
+// Projects lists the projects registered in this Pando instance's project
+// registry — the same registry mesnada_spawn_agent's "project" argument
+// resolves ids/paths/names against.
+func (b *setupBridge) Projects(ctx context.Context) ([]tools.SetupProjectRef, error) {
+	if globalProjectServiceForTools == nil {
+		return nil, fmt.Errorf("the project registry is unavailable in this runtime")
+	}
+	list, err := globalProjectServiceForTools.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]tools.SetupProjectRef, 0, len(list))
+	for _, p := range list {
+		refs = append(refs, tools.SetupProjectRef{ID: p.ID, Name: p.Name, Path: p.Path, Status: p.Status})
+	}
+	return refs, nil
 }
 
 func onOff(enabled bool) string {

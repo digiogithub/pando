@@ -231,7 +231,7 @@ func (s *Server) getToolDefinitions() []Tool {
 					},
 					"project": map[string]interface{}{
 						"type":        "string",
-						"description": "Optional: target a registered project by its id, display name, or directory path. The task is routed to that project's warm instance when warm reuse is enabled, and its work_dir defaults to the project's directory. Returns an error listing the known projects if the reference does not match a registered project.",
+						"description": "Optional: target a registered project by its id, display name, or directory path. List the registered projects with pando_setup command=\"projects\". The task is routed to that project's warm instance when warm reuse is enabled, and its work_dir defaults to the project's directory. Returns an error listing the known projects if the reference does not match a registered project.",
 					},
 					"engine": map[string]interface{}{
 						"type":        "string",

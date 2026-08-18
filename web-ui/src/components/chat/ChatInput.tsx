@@ -116,7 +116,7 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
 
   const handleSend = () => {
     const text = value.trim()
-    if (!text || streaming || disabled) return
+    if (!text || disabled) return
     setValue('')
     setSlashMenuOpen(false)
     if (textareaRef.current) {
@@ -205,8 +205,8 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
           }}
         />
 
-        {/* Action button */}
-        {streaming ? (
+        {/* Action buttons: while streaming, Send still queues feedback (steering) alongside Stop */}
+        {streaming && (
           <button
             onClick={onCancel}
             title="Stop generation"
@@ -227,30 +227,29 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
           >
             <FontAwesomeIcon icon={faStop} style={{ fontSize: 12 }} />
           </button>
-        ) : (
-          <button
-            onClick={handleSend}
-            disabled={!hasText || disabled}
-            title="Send message"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 32,
-              height: 32,
-              borderRadius: 0,
-              border: 'none',
-              background: hasText && !disabled ? 'var(--primary)' : 'var(--surface)',
-              color: hasText && !disabled ? 'var(--primary-fg)' : 'var(--fg-dim)',
-              cursor: hasText && !disabled ? 'pointer' : 'default',
-              flexShrink: 0,
-              transition: 'background 0.15s, color 0.15s',
-              boxShadow: 'none',
-            }}
-          >
-            <FontAwesomeIcon icon={faPaperPlane} style={{ fontSize: 12 }} />
-          </button>
         )}
+        <button
+          onClick={handleSend}
+          disabled={!hasText || disabled}
+          title={streaming ? 'Queue feedback' : 'Send message'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 32,
+            height: 32,
+            borderRadius: 0,
+            border: 'none',
+            background: hasText && !disabled ? 'var(--primary)' : 'var(--surface)',
+            color: hasText && !disabled ? 'var(--primary-fg)' : 'var(--fg-dim)',
+            cursor: hasText && !disabled ? 'pointer' : 'default',
+            flexShrink: 0,
+            transition: 'background 0.15s, color 0.15s',
+            boxShadow: 'none',
+          }}
+        >
+          <FontAwesomeIcon icon={faPaperPlane} style={{ fontSize: 12 }} />
+        </button>
       </div>
 
       {/* Footer hints + char counter */}
@@ -264,7 +263,13 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
           color: 'var(--fg-dim)',
         }}
       >
-        <span>{goalActive ? 'Type / for commands' : 'Enter to send · / for commands · Shift+Enter for newline'}</span>
+        <span>
+          {streaming
+            ? 'Agent running · Enter queues feedback, injected at the next safe boundary'
+            : goalActive
+              ? 'Type / for commands'
+              : 'Enter to send · / for commands · Shift+Enter for newline'}
+        </span>
         <span style={{ color: charCount > MAX_CHARS * 0.9 ? 'var(--warning)' : 'var(--fg-dim)' }}>
           {charCount.toLocaleString()} / {MAX_CHARS.toLocaleString()}
         </span>

@@ -97,13 +97,51 @@ function LoadingBubble({ streamingState }: { streamingState: StreamingState }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+// ─── Queued feedback chips ────────────────────────────────────────────────────
+
+/**
+ * Mid-run feedback the user submitted while the agent was busy. It sits here
+ * until the agent loop reaches a safe boundary and injects it, at which point
+ * useChat turns it into a real user message in the transcript.
+ */
+function QueuedFeedback({ items }: { items: string[] }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', padding: '0.25rem 1rem 0.5rem' }}>
+      {items.map((text, i) => (
+        <div
+          key={i}
+          style={{
+            alignSelf: 'flex-end',
+            maxWidth: '80%',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '0.5rem',
+            background: 'var(--card-bg)',
+            border: '1px dashed var(--border)',
+            borderRadius: 'var(--radius-md)',
+            padding: '0.5rem 0.75rem',
+            color: 'var(--fg-muted)',
+            fontSize: 13,
+          }}
+          title="Queued — will be injected into the run at the next safe boundary"
+        >
+          <span style={{ fontSize: 11, color: 'var(--fg-dim)', whiteSpace: 'nowrap' }}>queued ⏳</span>
+          <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{text}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 interface MessageListProps {
   messages: Message[]
   streaming: boolean
   streamingState: StreamingState
+  /** Mid-run feedback queued but not yet injected into the agent loop. */
+  pendingFeedback?: string[]
 }
 
-export default function MessageList({ messages, streaming, streamingState }: MessageListProps) {
+export default function MessageList({ messages, streaming, streamingState, pendingFeedback }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const lastContent = messages[messages.length - 1]?.content[0]?.text ?? ''
@@ -111,7 +149,7 @@ export default function MessageList({ messages, streaming, streamingState }: Mes
   const toolCount = streamingState.toolCalls.length
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages.length, lastContent, thinkingLen, toolCount])
+  }, [messages.length, lastContent, thinkingLen, toolCount, pendingFeedback?.length])
 
   if (messages.length === 0 && !streaming) {
     return <EmptyState />
@@ -147,6 +185,8 @@ export default function MessageList({ messages, streaming, streamingState }: Mes
       ))}
 
       {showLoadingBubble && <LoadingBubble streamingState={streamingState} />}
+
+      {pendingFeedback && pendingFeedback.length > 0 && <QueuedFeedback items={pendingFeedback} />}
 
       <div ref={bottomRef} />
     </div>

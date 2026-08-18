@@ -49,6 +49,13 @@ export interface StreamingState {
   goal: GoalStatus | null
 }
 
+/**
+ * Outcome of queueing mid-run feedback: 'queued' (accepted by the agent loop),
+ * 'not_busy' (no active run — the caller should start a normal run instead),
+ * or 'error'.
+ */
+export type SteerResult = 'queued' | 'not_busy' | 'error'
+
 interface UseChatOptions {
   onNewSession?: (sessionId: string) => void
   onDone?: () => void
@@ -75,6 +82,11 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
   const planRef = useRef<PlanEntry[]>([])
   const itemsRef = useRef<StreamItem[]>([])
   const goalRef = useRef<GoalStatus | null>(null)
+  // Mid-run feedback the user submitted while the agent was busy but that the
+  // agent loop has not injected yet. Rendered as "queued" chips until the
+  // backend emits steering_injected, at which point they become real user turns.
+  const pendingSteerRef = useRef<string[]>([])
+  const [pendingFeedback, setPendingFeedback] = useState<string[]>([])
 
   const resetAccum = useCallback(() => {
     accumulatedRef.current = ''
@@ -83,6 +95,37 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
     itemsRef.current = []
     goalRef.current = null
     useFileChangesStore.getState().clearChanges()
+  }, [])
+
+  /**
+   * Materialize the accumulated stream (text, thinking, tool calls) as message
+   * content parts. Used both when the run ends and when a steering message
+   * splits the live assistant bubble into a finished one plus a fresh one.
+   */
+  const buildStreamParts = useCallback((): ContentPart[] => {
+    const parts: ContentPart[] = []
+    for (const item of itemsRef.current) {
+      if (item.type === 'thinking') {
+        parts.push({ type: 'reasoning', text: item.text })
+      } else if (item.type === 'text') {
+        parts.push({ type: 'text', text: item.text })
+      } else if (item.type === 'tool') {
+        const tc = toolCallsRef.current.find((t) => t.id === item.id)
+        if (tc) {
+          let parsedInput: Record<string, unknown> | undefined
+          try { parsedInput = JSON.parse(tc.input) } catch { parsedInput = undefined }
+          parts.push({
+            type: 'tool_call',
+            tool_name: tc.name,
+            tool_call_id: tc.id,
+            tool_input: parsedInput,
+            tool_result: tc.result?.content,
+            is_error: tc.is_error,
+          })
+        }
+      }
+    }
+    return parts
   }, [])
 
   /** Process a single SSE event and update React state. */
@@ -327,48 +370,72 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
         setStreamingState((prev) => ({ ...prev, plan: planRef.current }))
       }
 
+      // The agent loop reached a safe boundary and turned the queued feedback
+      // into real user turns. Close the assistant bubble that was streaming,
+      // render the feedback as its own user message(s), and open a fresh
+      // assistant bubble so subsequent deltas do not overwrite the user turn.
+      if (event.type === 'steering_injected' && pendingSteerRef.current.length > 0) {
+        const queued = pendingSteerRef.current
+        pendingSteerRef.current = []
+        setPendingFeedback([])
+
+        const finishedParts = buildStreamParts()
+        if (finishedParts.length > 0) {
+          updateLastMessageParts(finishedParts)
+        }
+
+        const sid = event.session_id ?? activeSessionId ?? ''
+        const now = Date.now()
+        queued.forEach((text, idx) => {
+          addMessage({
+            id: `steer-${now}-${idx}`,
+            session_id: sid,
+            role: 'user',
+            content: [{ type: 'text', text }],
+            created_at: new Date().toISOString(),
+          })
+        })
+        addMessage({
+          id: `tmp-asst-steer-${now}`,
+          session_id: sid,
+          role: 'assistant',
+          content: [{ type: 'text', text: '' }],
+          created_at: new Date().toISOString(),
+        })
+
+        // Start a clean accumulation window for the new assistant bubble; the
+        // previous one already holds its finished parts.
+        accumulatedRef.current = ''
+        itemsRef.current = []
+        toolCallsRef.current = []
+        setStreamingState((prev) => ({ ...prev, thinking: '', toolCalls: [], items: [] }))
+      }
+
       if (event.type === 'error') {
         setError(event.error ?? 'Unknown error')
       }
     },
-    [onEvent, onNewSession, updateLastMessage, activeSessionId],
+    [onEvent, onNewSession, updateLastMessage, updateLastMessageParts, addMessage, buildStreamParts, activeSessionId],
   )
 
   /** Called when the stream ends (done event or connection closed). */
   const handleDone = useCallback(
     (sessionId: string | null) => {
-      const parts: ContentPart[] = []
-      for (const item of itemsRef.current) {
-        if (item.type === 'thinking') {
-          parts.push({ type: 'reasoning', text: item.text })
-        } else if (item.type === 'text') {
-          parts.push({ type: 'text', text: item.text })
-        } else if (item.type === 'tool') {
-          const tc = toolCallsRef.current.find((t) => t.id === item.id)
-          if (tc) {
-            let parsedInput: Record<string, unknown> | undefined
-            try { parsedInput = JSON.parse(tc.input) } catch { parsedInput = undefined }
-            parts.push({
-              type: 'tool_call',
-              tool_name: tc.name,
-              tool_call_id: tc.id,
-              tool_input: parsedInput,
-              tool_result: tc.result?.content,
-              is_error: tc.is_error,
-            })
-          }
-        }
-      }
+      const parts = buildStreamParts()
       if (parts.length > 0) {
         updateLastMessageParts(parts)
       }
+      // Anything still queued was never injected (run ended first); drop the
+      // chips so they do not linger over a finished conversation.
+      pendingSteerRef.current = []
+      setPendingFeedback([])
       setStreaming(false)
       setStreamingState(emptyState())
       if (sessionId) markSessionRunning(sessionId, false)
       fetchSessions()
       onDone?.()
     },
-    [updateLastMessageParts, fetchSessions, markSessionRunning, onDone],
+    [buildStreamParts, updateLastMessageParts, fetchSessions, markSessionRunning, onDone],
   )
 
   /**
@@ -377,28 +444,34 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
    * when the user submits while a run is already streaming.
    */
   const steer = useCallback(
-    async (text: string): Promise<boolean> => {
+    async (text: string): Promise<SteerResult> => {
       const sessionId = activeSessionId
-      if (!text.trim() || !sessionId) return false
+      if (!text.trim() || !sessionId) return 'error'
 
-      // Optimistically render the user's feedback in the conversation.
-      addMessage({
-        id: `tmp-steer-${Date.now()}`,
-        session_id: sessionId,
-        role: 'user',
-        content: [{ type: 'text', text }],
-        created_at: new Date().toISOString(),
-      })
+      // Show the feedback as "queued" right away. It becomes a real user turn
+      // in the transcript only when the agent loop injects it (steering_injected).
+      pendingSteerRef.current = [...pendingSteerRef.current, text]
+      setPendingFeedback(pendingSteerRef.current)
+
+      const unqueue = () => {
+        pendingSteerRef.current = pendingSteerRef.current.filter((t) => t !== text)
+        setPendingFeedback(pendingSteerRef.current)
+      }
 
       try {
         await api.post(`/api/v1/sessions/${sessionId}/steer`, { prompt: text })
-        return true
+        return 'queued'
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'failed to queue feedback')
-        return false
+        unqueue()
+        const msg = err instanceof Error ? err.message : 'failed to queue feedback'
+        // 409 not_busy: the run finished between the UI check and the request.
+        // The caller falls back to starting a normal run so the text is not lost.
+        if (msg.includes('not_busy')) return 'not_busy'
+        setError(msg)
+        return 'error'
       }
     },
-    [activeSessionId, addMessage],
+    [activeSessionId],
   )
 
   const sendMessage = useCallback(
@@ -407,8 +480,11 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
       // While a run is active, route the message as steering feedback instead of
       // rejecting it or starting a new run.
       if (streaming) {
-        await steer(text)
-        return
+        const result = await steer(text)
+        // 'not_busy' means the run already ended — fall through and start a
+        // normal run instead of silently dropping the message.
+        if (result !== 'not_busy') return
+        setStreaming(false)
       }
       setError(null)
       setStreaming(true)
@@ -501,5 +577,5 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
     await onCancelled?.(sessionId)
   }, [activeSessionId, markSessionRunning, onCancelled])
 
-  return { sendMessage, steer, reconnectSession, streaming, error, cancelStreaming, streamingState }
+  return { sendMessage, steer, reconnectSession, streaming, error, cancelStreaming, streamingState, pendingFeedback }
 }

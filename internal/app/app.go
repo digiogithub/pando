@@ -232,6 +232,11 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		lspUnavailable: make(map[string]lspUnavailableEntry),
 	}
 
+	// Wire the project registry into pando_setup's "projects" command so the
+	// agent can discover which projects it may target with mesnada_spawn_agent's
+	// "project" argument.
+	agent.SetProjectServiceForTools(projects)
+
 	// Initialize project manager (Phase 2).
 	mgr, mgrErr := project.NewManager(ctx, projects)
 	if mgrErr != nil {

@@ -31,6 +31,9 @@ type fakeSetupBridge struct {
 	setModelID   string
 	setConfirmed bool
 	setCalls     int
+
+	projects    []SetupProjectRef
+	projectsErr error
 }
 
 func (f *fakeSetupBridge) SessionInfo(context.Context, string) (SetupSessionInfo, error) {
@@ -54,6 +57,10 @@ func (f *fakeSetupBridge) SetSessionModel(_, modelID string, confirmed bool) (Se
 	f.setCalls++
 	f.setModelID, f.setConfirmed = modelID, confirmed
 	return f.switched, f.switchErr
+}
+
+func (f *fakeSetupBridge) Projects(context.Context) ([]SetupProjectRef, error) {
+	return f.projects, f.projectsErr
 }
 
 func runSetupTool(t *testing.T, tool BaseTool, ctx context.Context, command, args string) ToolResponse {
@@ -298,6 +305,40 @@ func TestSummarizeSetupValue(t *testing.T) {
 		if got := summarizeSetupValue(tc.value); got != tc.want {
 			t.Fatalf("summarizeSetupValue(%v) = %q, want %q", tc.value, got, tc.want)
 		}
+	}
+}
+
+func TestPandoSetupProjectsListsRegisteredProjects(t *testing.T) {
+	bridge := &fakeSetupBridge{projects: []SetupProjectRef{
+		{ID: "proj-1", Name: "web-app", Path: "/www/web-app", Status: "running"},
+		{ID: "proj-2", Name: "api-server", Path: "/www/api-server", Status: "stopped"},
+	}}
+	tool := NewPandoSetupTool(bridge, nil)
+
+	resp := runSetupTool(t, tool, context.Background(), "projects", "")
+	if resp.IsError {
+		t.Fatalf("projects errored: %s", resp.Content)
+	}
+	for _, want := range []string{"proj-1", "web-app", "/www/web-app", "running", "proj-2", "api-server"} {
+		if !strings.Contains(resp.Content, want) {
+			t.Fatalf("projects output missing %q:\n%s", want, resp.Content)
+		}
+	}
+
+	filtered := runSetupTool(t, tool, context.Background(), "projects", "--search api")
+	if strings.Contains(filtered.Content, "web-app") {
+		t.Fatalf("--search should have excluded web-app:\n%s", filtered.Content)
+	}
+	if !strings.Contains(filtered.Content, "api-server") {
+		t.Fatalf("--search should keep api-server:\n%s", filtered.Content)
+	}
+}
+
+func TestPandoSetupProjectsUnavailableWithoutBridge(t *testing.T) {
+	tool := NewPandoSetupTool(nil, nil)
+	resp := runSetupTool(t, tool, context.Background(), "projects", "")
+	if !resp.IsError {
+		t.Fatalf("expected an error without a bridge, got: %s", resp.Content)
 	}
 }
 

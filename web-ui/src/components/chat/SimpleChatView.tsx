@@ -32,7 +32,7 @@ export default function SimpleChatView() {
     setQuickMenuOpen,
     setChatMode,
   } = useLayoutStore()
-  const { sendMessage, streaming, error, cancelStreaming, streamingState } = useChat({
+  const { sendMessage, streaming, error, cancelStreaming, streamingState, pendingFeedback } = useChat({
     onNewSession: (sessionId) => {
       useSessionStore.setState({ activeSessionId: sessionId })
       fetchSessions()
@@ -326,7 +326,7 @@ export default function SimpleChatView() {
                 New session
               </button>
             )}
-            <MessageList messages={messages} streaming={streaming} streamingState={streamingState} />
+            <MessageList messages={messages} streaming={streaming} streamingState={streamingState} pendingFeedback={pendingFeedback} />
 
             {/* Error banner */}
             {error && (

@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'openrouter.qwen/qwen3.8-max'
+Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -146,7 +146,7 @@ AutoUpdate = false
 DefaultScope = ''
 
 [TUI]
-Theme = 'pando-nobg'
+Theme = 'starbucks-dark'
 ShowHiddenFiles = true
 ChatSidebar = ''
 ChatSidebarMinWidth = 0

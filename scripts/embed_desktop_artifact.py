@@ -20,6 +20,13 @@ def main() -> int:
     if app_target.exists():
         shutil.rmtree(app_target)
 
+    def restore_app_placeholder() -> None:
+        # internal/desktop/bin/Pando.app is tracked in git via .keep so the
+        # go:embed directive and osx build tooling always find the directory,
+        # even on platforms that don't produce a real Pando.app bundle.
+        app_target.mkdir(parents=True, exist_ok=True)
+        (app_target / ".keep").touch()
+
     candidates = [
         (build_bin / "Pando.app", app_target, True),
         (build_bin / "pando-desktop", embed_dir / "pando-desktop", False),
@@ -32,6 +39,7 @@ def main() -> int:
                 shutil.copytree(source, target)
             else:
                 shutil.copy2(source, target)
+                restore_app_placeholder()
             return 0
 
     nested_apps = sorted(build_bin.rglob("*.app"))
@@ -44,6 +52,7 @@ def main() -> int:
     if build_bin.exists():
         for path in sorted(build_bin.rglob("*")):
             print(path, file=sys.stderr)
+    restore_app_placeholder()
     return 1
 
 

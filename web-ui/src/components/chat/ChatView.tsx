@@ -33,7 +33,7 @@ export default function ChatView() {
     })
   }, [notify, sessions, activeSessionId, t])
 
-  const { sendMessage, reconnectSession, streaming, error, cancelStreaming, streamingState } = useChat({
+  const { sendMessage, reconnectSession, streaming, error, cancelStreaming, streamingState, pendingFeedback } = useChat({
     onNewSession: (sessionId) => {
       useSessionStore.setState({ activeSessionId: sessionId })
       fetchSessions()
@@ -128,7 +128,7 @@ export default function ChatView() {
       )}
       <GoalStatus goal={goal ?? streamingState.goal} cancelling={cancelling} onCancel={() => void cancelGoal()} />
       {activePlan.length > 0 && <PlanView plan={activePlan} />}
-      <MessageList messages={messages} streaming={streaming} streamingState={streamingState} />
+      <MessageList messages={messages} streaming={streaming} streamingState={streamingState} pendingFeedback={pendingFeedback} />
 
       {error && (
         <div
