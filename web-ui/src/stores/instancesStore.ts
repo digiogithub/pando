@@ -19,6 +19,13 @@ export interface RemoteSession {
   message_count: number
 }
 
+export interface RemoteMessage {
+  id: string
+  role: string
+  content: string
+  created_at: string
+}
+
 interface InstancesStore {
   instances: InstanceInfo[]
   selectedInstanceId: string | null
@@ -26,12 +33,14 @@ interface InstancesStore {
   loading: boolean
   fetchInstances: () => Promise<void>
   selectInstance: (id: string) => Promise<void>
+  fetchRemoteMessages: (instanceId: string, sessionId: string) => Promise<RemoteMessage[]>
   sendRemoteMessage: (instanceId: string, sessionId: string, content: string) => Promise<void>
   cancelRemote: (instanceId: string, sessionId: string) => Promise<void>
 }
 
 type RawInstancesResponse = { instances: InstanceInfo[] }
 type RawSessionsResponse = { sessions: RemoteSession[] }
+type RawMessagesResponse = { messages: RemoteMessage[] }
 
 export const useInstancesStore = create<InstancesStore>((set) => ({
   instances: [],
@@ -54,9 +63,17 @@ export const useInstancesStore = create<InstancesStore>((set) => ({
     try {
       const data = await api.get<RawSessionsResponse>(`/api/v1/instances/${id}/sessions`)
       set({ remoteSessions: data.sessions ?? [] })
-    } catch {
+    } catch (err) {
+      console.error('[instances] failed to load remote sessions', err)
       set({ remoteSessions: [] })
     }
+  },
+
+  fetchRemoteMessages: async (instanceId: string, sessionId: string) => {
+    const data = await api.get<RawMessagesResponse>(
+      `/api/v1/instances/${instanceId}/sessions/${sessionId}/messages`,
+    )
+    return data.messages ?? []
   },
 
   sendRemoteMessage: async (instanceId: string, sessionId: string, content: string) => {

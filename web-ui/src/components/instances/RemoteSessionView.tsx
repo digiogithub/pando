@@ -2,13 +2,17 @@ import { useState, useEffect, useRef } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faComments, faStop, faPaperPlane, faSpinner, faCircle } from '@fortawesome/free-solid-svg-icons'
 import { format } from 'date-fns'
-import { useInstancesStore, type RemoteSession, type InstanceInfo } from '@/stores/instancesStore'
+import { useInstancesStore, type RemoteSession, type RemoteMessage, type InstanceInfo } from '@/stores/instancesStore'
 import api from '@/services/api'
 
 interface StreamEvent {
   topic: string
   payload: Record<string, unknown>
 }
+
+// Topics that carry no conversation value and would otherwise flood the view
+// (heartbeat fires every 5s on every instance).
+const NOISE_TOPICS = new Set(['instance.heartbeat', 'instance.ping'])
 
 interface RemoteSessionViewProps {
   instance: InstanceInfo
@@ -18,15 +22,48 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
   const { remoteSessions } = useInstancesStore()
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [streamEvents, setStreamEvents] = useState<StreamEvent[]>([])
+  const [history, setHistory] = useState<RemoteMessage[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
   const [streamConnected, setStreamConnected] = useState(false)
   const [messageText, setMessageText] = useState('')
   const [sendingMessage, setSendingMessage] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [showMessageInput, setShowMessageInput] = useState(false)
+  const [autoScroll, setAutoScroll] = useState(true)
   const streamRef = useRef<EventSource | null>(null)
   const eventsEndRef = useRef<HTMLDivElement | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
 
-  const { sendRemoteMessage, cancelRemote } = useInstancesStore()
+  const { sendRemoteMessage, cancelRemote, fetchRemoteMessages } = useInstancesStore()
+
+  // Load the conversation history of the selected remote session.
+  useEffect(() => {
+    if (!selectedSessionId) {
+      setHistory([])
+      setHistoryError(null)
+      return
+    }
+    let cancelled = false
+    setHistoryLoading(true)
+    setHistoryError(null)
+    void fetchRemoteMessages(instance.instance_id, selectedSessionId)
+      .then((msgs) => {
+        if (!cancelled) setHistory(msgs)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setHistory([])
+          setHistoryError(err instanceof Error ? err.message : 'failed to load messages')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedSessionId, instance.instance_id, fetchRemoteMessages])
 
   // Reconnect stream when session changes
   useEffect(() => {
@@ -39,6 +76,7 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
     }
     setStreamEvents([])
     setStreamConnected(false)
+    setAutoScroll(true)
 
     const token = api.getToken()
     const baseURL = (window as Window & { __PANDO_API_BASE__?: string }).__PANDO_API_BASE__ || ''
@@ -52,6 +90,9 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
     es.onmessage = (e) => {
       try {
         const event = JSON.parse(e.data as string) as StreamEvent
+        // Heartbeats only prove the stream is alive; they must not flood or
+        // scroll the view.
+        if (NOISE_TOPICS.has(event.topic)) return
         setStreamEvents((prev) => [...prev.slice(-200), event])
       } catch {
         // ignore parse errors
@@ -68,10 +109,26 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
     }
   }, [selectedSessionId, instance.instance_id])
 
-  // Auto-scroll to bottom
+  // Auto-scroll to bottom only while the user is parked at the bottom. Scrolling
+  // up disables it (and shows a "resume" badge) so reading old messages is not
+  // interrupted by incoming events.
   useEffect(() => {
+    if (!autoScroll) return
     eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [streamEvents])
+  }, [streamEvents, history, autoScroll])
+
+  // Track whether the viewport is at the bottom; that drives autoScroll.
+  const handleScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    setAutoScroll(atBottom)
+  }
+
+  const jumpToBottom = () => {
+    setAutoScroll(true)
+    eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
 
   const handleSelectSession = (session: RemoteSession) => {
     setSelectedSessionId(session.id)
@@ -355,8 +412,42 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
               </div>
             )}
 
-            {/* Live stream events */}
-            <div style={{ flex: 1, overflow: 'auto', padding: '0.5rem 0' }}>
+            {/* Conversation history + live stream events */}
+            <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex' }}>
+            <div
+              ref={scrollRef}
+              onScroll={handleScroll}
+              style={{ flex: 1, overflow: 'auto', padding: '0.5rem 0' }}
+            >
+              {historyLoading && (
+                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--fg-dim)', fontSize: 13 }}>
+                  <FontAwesomeIcon icon={faSpinner} spin /> Loading conversation…
+                </div>
+              )}
+              {historyError && (
+                <div style={{ padding: '0.75rem 1rem', color: '#e55', fontSize: 12 }}>
+                  Could not load conversation: {historyError}
+                </div>
+              )}
+              {history.map((msg) => (
+                <MessageRow key={msg.id} message={msg} />
+              ))}
+              {history.length > 0 && (
+                <div
+                  style={{
+                    padding: '0.35rem 1rem',
+                    fontSize: 10,
+                    color: 'var(--fg-dim)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    borderTop: '1px solid var(--border)',
+                    borderBottom: '1px solid var(--border)',
+                    background: 'var(--sidebar-bg)',
+                  }}
+                >
+                  Live stream
+                </div>
+              )}
               {streamEvents.length === 0 ? (
                 <div
                   style={{
@@ -375,8 +466,66 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
               )}
               <div ref={eventsEndRef} />
             </div>
+            {!autoScroll && (
+              <button
+                onClick={jumpToBottom}
+                style={{
+                  position: 'absolute',
+                  right: '1rem',
+                  bottom: '0.75rem',
+                  padding: '0.35rem 0.75rem',
+                  borderRadius: 999,
+                  border: '1px solid var(--border)',
+                  background: 'var(--primary)',
+                  color: 'white',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                }}
+              >
+                ↓ Jump to latest
+              </button>
+            )}
+            </div>
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+function MessageRow({ message }: { message: RemoteMessage }) {
+  const isUser = message.role === 'user'
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.2rem',
+        padding: '0.5rem 1rem',
+        borderBottom: '1px solid var(--border)',
+      }}
+    >
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'baseline' }}>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            color: isUser ? 'var(--primary)' : '#34d399',
+          }}
+        >
+          {message.role}
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--fg-dim)' }}>
+          {message.created_at ? format(new Date(message.created_at), 'MMM d HH:mm') : ''}
+        </span>
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--fg)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+        {message.content}
       </div>
     </div>
   )

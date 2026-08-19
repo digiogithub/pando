@@ -13,7 +13,29 @@ import (
 	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/bridge"
 	"github.com/digiogithub/pando/internal/ipc/protocol"
+	"github.com/digiogithub/pando/internal/llm/agent"
 )
+
+// agentMessageRunner adapts agent.Service to bridge.MessageRunner: it starts the
+// run and drains the event channel in the background so the RPC caller returns as
+// soon as the agent goroutine is launched. Live progress reaches the caller over
+// the instance's PUB stream.
+type agentMessageRunner struct {
+	agent agent.Service
+}
+
+func (r agentMessageRunner) RunMessage(ctx context.Context, sessionID string, content string) error {
+	// Detach from the RPC request context so the run outlives the HTTP/RPC call.
+	events, err := r.agent.Run(context.WithoutCancel(ctx), sessionID, content)
+	if err != nil {
+		return err
+	}
+	go func() {
+		for range events { //nolint:revive // drain so the agent is not blocked
+		}
+	}()
+	return nil
+}
 
 // registerBridgeHandlers wires the IPC JSON-RPC handlers for an instance bus,
 // including the opt-in hot-peer delegation handler (B3, `delegation.run`) when
@@ -32,9 +54,19 @@ func registerBridgeHandlers(bus *ipc.Bus, instanceID string, pandoApp *app.App) 
 		delRunner = bridge.NewAgentDelegationRunner(pandoApp.Sessions, pandoApp.CoderAgent)
 	}
 
+	// Remote message.send / session.interrupt: the web-UI Instances panel drives
+	// another instance's session through these, so wire them to the local agent
+	// when one exists (they returned "agent runner not available" before).
+	var runner bridge.MessageRunner
+	var interrupter bridge.SessionInterrupter
+	if pandoApp.CoderAgent != nil {
+		runner = agentMessageRunner{agent: pandoApp.CoderAgent}
+		interrupter = pandoApp.CoderAgent
+	}
+
 	bridge.RegisterHandlersWithDelegation(
 		bus, instanceID, pandoApp.Sessions, pandoApp.Messages, time.Now(),
-		nil, nil, delRunner, delRunner != nil,
+		runner, interrupter, delRunner, delRunner != nil,
 	)
 
 	// db.compact — run a VACUUM on this (primary) instance's writer connection so

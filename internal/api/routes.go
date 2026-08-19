@@ -196,6 +196,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/instances/{id}/stream", s.handleInstanceStream)
 	mux.HandleFunc("GET /api/v1/instances/{id}/sessions", s.handleInstanceListSessions)
 	mux.HandleFunc("GET /api/v1/instances/{id}/sessions/{sid}", s.handleInstanceGetSession)
+	mux.HandleFunc("GET /api/v1/instances/{id}/sessions/{sid}/messages", s.handleInstanceListMessages)
 	mux.HandleFunc("GET /api/v1/instances/{id}/sessions/{sid}/stream", s.handleInstanceSessionStream)
 	mux.HandleFunc("DELETE /api/v1/instances/{id}/sessions/{sid}/cancel", s.handleInstanceCancelSession)
 	mux.HandleFunc("POST /api/v1/instances/{id}/sessions/{sid}/message", s.handleInstanceSendMessage)

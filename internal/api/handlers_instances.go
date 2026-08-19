@@ -206,7 +206,82 @@ func (s *Server) handleInstanceListSessions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	// session.list returns a bare JSON array of SessionPayload. The web UI expects
+	// an envelope object, so normalise it here instead of changing the RPC contract
+	// (remoteview and the IPC tests rely on the array form).
+	var sessions []protocol.SessionPayload
+	if err := json.Unmarshal(result, &sessions); err != nil {
+		writeError(w, http.StatusBadGateway, "invalid session list payload: "+err.Error())
+		return
+	}
+	if sessions == nil {
+		sessions = []protocol.SessionPayload{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"sessions": sessions})
+}
+
+// handleInstanceListMessages handles GET /api/v1/instances/{id}/sessions/{sid}/messages.
+// Returns the message history of a remote session via RPC message.list.
+func (s *Server) handleInstanceListMessages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	instanceID := r.PathValue("id")
+	sessionID := r.PathValue("sid")
+	if instanceID == "" {
+		writeError(w, http.StatusBadRequest, "instance id required")
+		return
+	}
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "session id required")
+		return
+	}
+
+	reg := instanceregistry.New()
+	entry, err := reg.Get(instanceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get instance: "+err.Error())
+		return
+	}
+	if entry == nil {
+		writeError(w, http.StatusNotFound, "instance not found")
+		return
+	}
+	if entry.RPCPort == 0 {
+		writeError(w, http.StatusServiceUnavailable, "instance has no RPC port registered")
+		return
+	}
+
+	rpcEndpoint := fmt.Sprintf("tcp://127.0.0.1:%d", entry.RPCPort)
+	client, err := ipc.NewClient(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create IPC client: "+err.Error())
+		return
+	}
+	defer client.Close()
+
+	callCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	result, err := client.Call(callCtx, rpcEndpoint, protocol.MethodMessageList, protocol.MessageListParams{SessionID: sessionID})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "failed to list messages: "+err.Error())
+		return
+	}
+
+	var messages []protocol.MessagePayload
+	if err := json.Unmarshal(result, &messages); err != nil {
+		writeError(w, http.StatusBadGateway, "invalid message list payload: "+err.Error())
+		return
+	}
+	if messages == nil {
+		messages = []protocol.MessagePayload{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"messages": messages})
 }
 
 // handleInstanceGetSession handles GET /api/v1/instances/{id}/sessions/{sid}.
@@ -337,11 +412,16 @@ func (s *Server) handleInstanceSessionStream(w http.ResponseWriter, r *http.Requ
 			if err != nil {
 				continue
 			}
-			// Only forward events related to the requested session_id.
+			// Only forward events related to the requested session_id. The session
+			// can be carried either on the envelope (sessionId) or inside the
+			// payload (session_id); events with neither are forwarded as-is.
 			var raw map[string]interface{}
 			if jsonErr := json.Unmarshal(data, &raw); jsonErr == nil {
+				if sid, ok := raw["sessionId"].(string); ok && sid != "" && sid != sessionID {
+					continue
+				}
 				if payload, ok := raw["payload"].(map[string]interface{}); ok {
-					if sid, ok := payload["session_id"].(string); ok && sid != sessionID {
+					if sid, ok := payload["session_id"].(string); ok && sid != "" && sid != sessionID {
 						continue
 					}
 				}
