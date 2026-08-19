@@ -19,7 +19,13 @@ interface RemoteSessionViewProps {
 }
 
 export default function RemoteSessionView({ instance }: RemoteSessionViewProps) {
-  const { remoteSessions } = useInstancesStore()
+  const {
+    remoteSessions,
+    remoteSessionsTotal,
+    remoteSessionsHasMore,
+    remoteSessionsLoadingMore,
+    loadMoreRemoteSessions,
+  } = useInstancesStore()
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [streamEvents, setStreamEvents] = useState<StreamEvent[]>([])
   const [history, setHistory] = useState<RemoteMessage[]>([])
@@ -188,9 +194,19 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
             letterSpacing: '0.05em',
           }}
         >
-          Sessions ({remoteSessions.length})
+          Sessions ({remoteSessions.length}
+          {remoteSessionsTotal > remoteSessions.length ? `/${remoteSessionsTotal}` : ''})
         </div>
-        <div style={{ flex: 1, overflow: 'auto' }}>
+        <div
+          style={{ flex: 1, overflow: 'auto' }}
+          onScroll={(e) => {
+            // Lazy-load the next page when scrolled near the end of the list.
+            const el = e.currentTarget
+            if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) {
+              void loadMoreRemoteSessions()
+            }
+          }}
+        >
           {remoteSessions.length === 0 ? (
             <div
               style={{
@@ -241,6 +257,28 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
                 </button>
               )
             })
+          )}
+          {remoteSessionsHasMore && (
+            <button
+              onClick={() => void loadMoreRemoteSessions()}
+              disabled={remoteSessionsLoadingMore}
+              style={{
+                width: 'calc(100% - 1rem)',
+                margin: '0.35rem 0.5rem',
+                padding: '0.375rem 0.5rem',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: 'var(--fg-muted)',
+                fontSize: 11,
+                cursor: remoteSessionsLoadingMore ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              {remoteSessionsLoadingMore
+                ? 'Loading…'
+                : `Load more (${remoteSessions.length}/${remoteSessionsTotal})`}
+            </button>
           )}
         </div>
       </div>

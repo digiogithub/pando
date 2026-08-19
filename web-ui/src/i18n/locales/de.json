@@ -15,7 +15,9 @@
     "reloading": "Lädt…",
     "estimatedTokens": "Geschätzt (aktualisiert live, während der Agent läuft)",
     "toggleAutoApprove": "Auto-Genehmigung umschalten (Shift+Tab)",
-    "refresh": "Aktualisieren"
+    "refresh": "Aktualisieren",
+    "loadMore": "Mehr laden",
+    "loading": "Wird geladen…"
   },
   "nav": {
     "chat": "Chat",

@@ -21,7 +21,17 @@ import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
 
 export default function SimpleChatView() {
   const navigate = useNavigate()
-  const { messages, fetchSessions, sessions, activeSessionId, setActiveSession } = useSessionStore()
+  const {
+    messages,
+    fetchSessions,
+    sessions,
+    activeSessionId,
+    setActiveSession,
+    sessionsHasMore,
+    sessionsLoadingMore,
+    sessionsTotal,
+    loadMoreSessions,
+  } = useSessionStore()
   const { connected, startHealthCheck, setConnected } = useServerStore()
   const { config: settingsConfig, fetchSettings } = useSettingsStore()
   const defaultModel = settingsConfig.default_model
@@ -239,8 +249,17 @@ export default function SimpleChatView() {
 
             {/* Session list */}
             {sessionsOpen && (
-              <div style={{ flex: 1, overflowY: 'auto', padding: '0.25rem 0' }}>
-                {sessions.slice(0, 30).map((s) => (
+              <div
+                style={{ flex: 1, overflowY: 'auto', padding: '0.25rem 0' }}
+                onScroll={(e) => {
+                  // Lazy-load the next page when the list is scrolled near its end.
+                  const el = e.currentTarget
+                  if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) {
+                    void loadMoreSessions()
+                  }
+                }}
+              >
+                {sessions.map((s) => (
                   <button
                     key={s.id}
                     onClick={() => setActiveSession(s.id)}
@@ -272,6 +291,26 @@ export default function SimpleChatView() {
                     </div>
                   </button>
                 ))}
+                {sessionsHasMore && (
+                  <button
+                    onClick={() => void loadMoreSessions()}
+                    disabled={sessionsLoadingMore}
+                    style={{
+                      width: 'calc(100% - 1rem)',
+                      margin: '0.25rem 0.5rem',
+                      padding: '0.375rem 0.5rem',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border)',
+                      background: 'transparent',
+                      color: 'var(--fg-muted)',
+                      fontSize: 11,
+                      cursor: sessionsLoadingMore ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    {sessionsLoadingMore ? 'Loading…' : `Load more (${sessions.length}/${sessionsTotal})`}
+                  </button>
+                )}
                 {sessions.length === 0 && (
                   <div style={{ padding: '0.5rem 1rem', fontSize: 12, color: 'var(--fg-dim)' }}>
                     No sessions yet

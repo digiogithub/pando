@@ -15,7 +15,16 @@ export default function Sidebar() {
   const { t } = useTranslation()
   const [sessionsOpen, setSessionsOpen] = useState(false)
   const [navOpen, setNavOpen] = useState(true)
-  const { sessions, activeSessionId, setActiveSession, setMessages } = useSessionStore()
+  const {
+    sessions,
+    activeSessionId,
+    setActiveSession,
+    setMessages,
+    sessionsHasMore,
+    sessionsLoadingMore,
+    sessionsTotal,
+    loadMoreSessions,
+  } = useSessionStore()
   const setSidebarOpen = useLayoutStore((s) => s.setSidebarOpen)
 
   const closeSidebarOnMobile = () => {
@@ -75,7 +84,7 @@ export default function Sidebar() {
         />
         {sessionsOpen && (
           <div style={{ paddingBottom: '0.25rem' }}>
-            {sessions.slice(0, 20).map((s) => (
+            {sessions.map((s) => (
               <button
                 key={s.id}
                 onClick={() => {
@@ -131,6 +140,28 @@ export default function Sidebar() {
                 </div>
               </button>
             ))}
+            {sessionsHasMore && (
+              <button
+                onClick={() => void loadMoreSessions()}
+                disabled={sessionsLoadingMore}
+                style={{
+                  width: 'calc(100% - 1rem)',
+                  margin: '0.25rem 0.5rem',
+                  padding: '0.375rem 0.5rem',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border)',
+                  background: 'transparent',
+                  color: 'var(--fg-muted)',
+                  fontSize: 11,
+                  cursor: sessionsLoadingMore ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {sessionsLoadingMore
+                  ? t('common.loading')
+                  : `${t('common.loadMore')} (${sessions.length}/${sessionsTotal})`}
+              </button>
+            )}
             {sessions.length === 0 && (
               <div style={{ padding: '0.5rem 1rem', fontSize: 12, color: 'var(--fg-dim)' }}>
                 {t('nav.noSessionsYet')}

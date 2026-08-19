@@ -15,7 +15,9 @@
     "reloading": "加载中…",
     "estimatedTokens": "估算值（代理运行时实时更新）",
     "toggleAutoApprove": "切换自动批准（Shift+Tab）",
-    "refresh": "刷新"
+    "refresh": "刷新",
+    "loadMore": "加载更多",
+    "loading": "加载中…"
   },
   "nav": {
     "chat": "聊天",

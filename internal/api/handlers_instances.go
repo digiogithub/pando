@@ -218,7 +218,19 @@ func (s *Server) handleInstanceListSessions(w http.ResponseWriter, r *http.Reque
 		sessions = []protocol.SessionPayload{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"sessions": sessions})
+	// Same windowing as the local /api/v1/sessions endpoint: the remote list is
+	// already ordered newest-first, so the UI can page through it.
+	limit, offset := paginationParams(r, defaultSessionPageSize)
+	total := len(sessions)
+	page := paginate(sessions, limit, offset)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"sessions": page,
+		"total":    total,
+		"limit":    limit,
+		"offset":   offset,
+		"has_more": offset+len(page) < total,
+	})
 }
 
 // handleInstanceListMessages handles GET /api/v1/instances/{id}/sessions/{sid}/messages.

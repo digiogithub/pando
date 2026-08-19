@@ -3,8 +3,17 @@ import type { Session, Message, PermissionRequest, PermissionAction, QuestionReq
 import api from '@/services/api'
 import { mapSession, mapMessages } from '@/services/mappers'
 
+/** page size used by the session list; the API caps a request at 500 */
+export const SESSIONS_PAGE_SIZE = 100
+
 interface SessionStore {
   sessions: Session[]
+  /** total sessions on the server (not only the loaded page) */
+  sessionsTotal: number
+  /** true when the server has more sessions past the loaded ones */
+  sessionsHasMore: boolean
+  /** true while a "load more" page is in flight */
+  sessionsLoadingMore: boolean
   activeSessionId: string | null
   messages: Message[]
   loading: boolean
@@ -17,6 +26,8 @@ interface SessionStore {
   /** whether the active session auto-approves tool permissions ("auto mode") */
   autoApprove: boolean
   fetchSessions: () => Promise<void>
+  /** append the next page of sessions to the list */
+  loadMoreSessions: () => Promise<void>
   setActiveSession: (id: string) => Promise<{ isRunning: boolean }>
   setMessages: (msgs: Message[]) => void
   addMessage: (msg: Message) => void
@@ -52,12 +63,15 @@ interface SessionStore {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RawSessions = { sessions: any[] }
+type RawSessions = { sessions: any[]; total?: number; has_more?: boolean }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RawSessionDetail = { session: any; messages: any[]; is_running?: boolean }
 
-export const useSessionStore = create<SessionStore>((set) => ({
+export const useSessionStore = create<SessionStore>((set, get) => ({
   sessions: [],
+  sessionsTotal: 0,
+  sessionsHasMore: false,
+  sessionsLoadingMore: false,
   activeSessionId: null,
   messages: [],
   loading: false,
@@ -69,11 +83,37 @@ export const useSessionStore = create<SessionStore>((set) => ({
   fetchSessions: async () => {
     set({ loading: true })
     try {
-      const data = await api.get<RawSessions>('/api/v1/sessions')
+      const data = await api.get<RawSessions>(`/api/v1/sessions?limit=${SESSIONS_PAGE_SIZE}&offset=0`)
       const sessions = (data.sessions ?? []).map(mapSession)
-      set({ sessions })
+      set({
+        sessions,
+        sessionsTotal: data.total ?? sessions.length,
+        sessionsHasMore: data.has_more ?? false,
+      })
     } finally {
       set({ loading: false })
+    }
+  },
+
+  loadMoreSessions: async () => {
+    const { sessions, sessionsHasMore, sessionsLoadingMore } = get()
+    if (!sessionsHasMore || sessionsLoadingMore) return
+    set({ sessionsLoadingMore: true })
+    try {
+      const data = await api.get<RawSessions>(
+        `/api/v1/sessions?limit=${SESSIONS_PAGE_SIZE}&offset=${sessions.length}`,
+      )
+      const page = (data.sessions ?? []).map(mapSession)
+      // Guard against duplicates: a session updated between pages can shift.
+      const known = new Set(sessions.map((s) => s.id))
+      const merged = [...sessions, ...page.filter((s) => !known.has(s.id))]
+      set({
+        sessions: merged,
+        sessionsTotal: data.total ?? merged.length,
+        sessionsHasMore: data.has_more ?? false,
+      })
+    } finally {
+      set({ sessionsLoadingMore: false })
     }
   },
 

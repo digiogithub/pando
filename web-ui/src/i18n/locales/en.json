@@ -15,7 +15,9 @@
     "reloading": "Reloading…",
     "estimatedTokens": "Estimated (updates live while the agent runs)",
     "toggleAutoApprove": "Toggle auto-approve (Shift+Tab)",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "loadMore": "Load more",
+    "loading": "Loading…"
   },
   "nav": {
     "chat": "Chat",

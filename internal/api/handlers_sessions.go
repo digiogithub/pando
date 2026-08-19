@@ -20,12 +20,19 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Paginate: sessions come ordered by updated_at DESC, so a window over the
+	// slice is the newest-first page the UI asks for. Clients that send no
+	// parameters get the first page instead of every session ever created.
+	limit, offset := paginationParams(r, defaultSessionPageSize)
+	total := len(sessions)
+	page := paginate(sessions, limit, offset)
+
 	type sessionWithStatus struct {
 		session.Session
 		IsRunning bool `json:"is_running"`
 	}
-	result := make([]sessionWithStatus, len(sessions))
-	for i, sess := range sessions {
+	result := make([]sessionWithStatus, len(page))
+	for i, sess := range page {
 		result[i] = sessionWithStatus{
 			Session:   sess,
 			IsRunning: s.bgRunner.IsBusy(sess.ID),
@@ -34,6 +41,10 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"sessions": result,
+		"total":    total,
+		"limit":    limit,
+		"offset":   offset,
+		"has_more": offset+len(result) < total,
 	})
 }
 

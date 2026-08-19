@@ -15,7 +15,9 @@
     "reloading": "Recarregando…",
     "estimatedTokens": "Estimado (atualiza em tempo real enquanto o agente roda)",
     "toggleAutoApprove": "Alternar auto-aprovação (Shift+Tab)",
-    "refresh": "Atualizar"
+    "refresh": "Atualizar",
+    "loadMore": "Carregar mais",
+    "loading": "A carregar…"
   },
   "nav": {
     "chat": "Chat",
