@@ -40,6 +40,7 @@ func (s *Server) handleAgentVCSLog(w http.ResponseWriter, r *http.Request) {
 			"total_size":         cs.TotalSize,
 			"changed_files":      cs.ChangedFiles,
 			"changed_total_size": cs.ChangedTotalSize,
+			"is_baseline":        cs.IsBaseline,
 			"created_at":         time.Unix(cs.CreatedAt, 0),
 		})
 	}
@@ -64,9 +65,20 @@ func (s *Server) handleAgentVCSSessions(w http.ResponseWriter, r *http.Request) 
 	items := make([]map[string]interface{}, 0, len(sessions))
 	for _, sid := range sessions {
 		count, _ := s.app.AgentVCS.SessionCommitCount(r.Context(), sid)
+		diffs, _ := s.app.AgentVCS.SessionDiff(r.Context(), sid)
+		var changedSize int64
+		for _, d := range diffs {
+			if d.Type == "deleted" {
+				changedSize += d.OldSize
+				continue
+			}
+			changedSize += d.NewSize
+		}
 		items = append(items, map[string]interface{}{
-			"session_id":   sid,
-			"commit_count": count,
+			"session_id":         sid,
+			"commit_count":       count,
+			"changed_files":      len(diffs),
+			"changed_total_size": changedSize,
 		})
 	}
 
@@ -87,6 +99,28 @@ func (s *Server) handleAgentVCSDiff(w http.ResponseWriter, r *http.Request) {
 	}
 
 	diffs, err := s.app.AgentVCS.DiffFromParent(r.Context(), commitID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"diff": diffs})
+}
+
+// handleAgentVCSSessionDiff handles GET /api/v1/agentvcs/sessions/{id}/diff.
+// Returns the aggregate changes made during the session: baseline vs HEAD.
+func (s *Server) handleAgentVCSSessionDiff(w http.ResponseWriter, r *http.Request) {
+	if s.app.AgentVCS == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"diff": []interface{}{}})
+		return
+	}
+
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		sessionID = extractPathSegment(r.URL.Path, "/api/v1/agentvcs/sessions/", "/diff")
+	}
+
+	diffs, err := s.app.AgentVCS.SessionDiff(r.Context(), sessionID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return

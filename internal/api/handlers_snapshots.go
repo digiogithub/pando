@@ -22,6 +22,9 @@ type SnapshotResponse struct {
 	CreatedAt  time.Time `json:"created_at"`
 	Size       int64     `json:"size"`
 	FilesCount int       `json:"files_count"`
+	TreeSize   int64     `json:"tree_size"`
+	TreeFiles  int       `json:"tree_files"`
+	IsBaseline bool      `json:"is_baseline"`
 }
 
 // commitToResponse maps an agentvcs.Commit to the API response format.
@@ -35,24 +38,30 @@ func commitToResponse(c agentvcs.Commit) SnapshotResponse {
 		name = "commit-" + sid
 	}
 	commitType := "delta"
-	if c.ParentID == "" {
-		commitType = "start"
+	if c.IsBaseline {
+		commitType = "baseline"
 	}
 	shortID := c.ID
 	if len(shortID) > 12 {
 		shortID = shortID[:12]
 	}
 	return SnapshotResponse{
-		ID:         c.ID,
-		ShortID:    shortID,
-		Name:       name,
-		SessionID:  c.SessionID,
-		ParentID:   c.ParentID,
-		Type:       commitType,
-		Status:     "active",
-		CreatedAt:  time.Unix(c.CreatedAt, 0),
-		Size:       c.TotalSize,
-		FilesCount: c.FileCount,
+		ID:        c.ID,
+		ShortID:   shortID,
+		Name:      name,
+		SessionID: c.SessionID,
+		ParentID:  c.ParentID,
+		Type:      commitType,
+		Status:    "active",
+		CreatedAt: time.Unix(c.CreatedAt, 0),
+		// Size/FilesCount describe what this commit *changed*; the full working
+		// tree totals are exposed separately so the UI does not report every
+		// commit at the project's maximum size.
+		Size:       c.ChangedTotalSize,
+		FilesCount: c.ChangedFileCount,
+		TreeSize:   c.TotalSize,
+		TreeFiles:  c.FileCount,
+		IsBaseline: c.IsBaseline,
 	}
 }
 
@@ -82,15 +91,17 @@ func (s *Server) handleGetSnapshots(w http.ResponseWriter, r *http.Request) {
 		items := make([]map[string]interface{}, 0, len(log))
 		for _, cs := range log {
 			items = append(items, map[string]interface{}{
-				"id":            cs.ID,
-				"short_id":      cs.ShortID,
-				"parent_id":     cs.ParentID,
-				"session_id":    cs.SessionID,
-				"description":   cs.Description,
-				"file_count":    cs.FileCount,
-				"total_size":    cs.TotalSize,
-				"changed_files": cs.ChangedFiles,
-				"created_at":    time.Unix(cs.CreatedAt, 0),
+				"id":                 cs.ID,
+				"short_id":           cs.ShortID,
+				"parent_id":          cs.ParentID,
+				"session_id":         cs.SessionID,
+				"description":        cs.Description,
+				"file_count":         cs.FileCount,
+				"total_size":         cs.TotalSize,
+				"changed_files":      cs.ChangedFiles,
+				"changed_total_size": cs.ChangedTotalSize,
+				"is_baseline":        cs.IsBaseline,
+				"created_at":         time.Unix(cs.CreatedAt, 0),
 			})
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"commits": items})

@@ -211,19 +211,22 @@ func (p *snapshotsPage) loadCommitsCmd(sessionID string) tea.Cmd {
 		rows := make([]snapshots.CommitRow, 0, len(log))
 		for _, cs := range log {
 			commitType := "delta"
-			if cs.ParentID == "" {
-				commitType = "start"
+			if cs.IsBaseline {
+				commitType = "baseline"
 			}
 			rows = append(rows, snapshots.CommitRow{
-				ID:          cs.ID,
-				ShortID:     cs.ShortID,
-				ParentID:    cs.ParentID,
-				SessionID:   cs.SessionID,
-				Type:        commitType,
-				Description: cs.Description,
-				FileCount:   cs.FileCount,
-				TotalSize:   cs.TotalSize,
-				CreatedAt:   cs.CreatedAt,
+				ID:           cs.ID,
+				ShortID:      cs.ShortID,
+				ParentID:     cs.ParentID,
+				SessionID:    cs.SessionID,
+				Type:         commitType,
+				Description:  cs.Description,
+				FileCount:    cs.FileCount,
+				TotalSize:    cs.TotalSize,
+				ChangedFiles: cs.ChangedFiles,
+				ChangedSize:  cs.ChangedTotalSize,
+				IsBaseline:   cs.IsBaseline,
+				CreatedAt:    cs.CreatedAt,
 			})
 		}
 		return commitsLoadedMsg{sessionID: sessionID, commits: rows}

@@ -87,6 +87,7 @@ export default function Sidebar() {
             {sessions.map((s) => (
               <button
                 key={s.id}
+                title={s.prompt_preview || s.title || t('nav.untitledSession')}
                 onClick={() => {
                   setActiveSession(s.id)
                   closeSidebarOnMobile()

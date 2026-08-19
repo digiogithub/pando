@@ -14,6 +14,7 @@ import (
 type TaskResponse struct {
 	ID          string                    `json:"id"`
 	Name        string                    `json:"name"`
+	Prompt      string                    `json:"prompt"`
 	Agent       string                    `json:"agent"`
 	Model       string                    `json:"model"`
 	Persona     string                    `json:"persona,omitempty"`
@@ -44,6 +45,7 @@ func taskToResponse(t *mesnadaModels.Task) TaskResponse {
 	return TaskResponse{
 		ID:          t.ID,
 		Name:        truncateTaskPrompt(t.Prompt, 80),
+		Prompt:      t.Prompt,
 		Agent:       string(t.Engine),
 		Model:       t.Model,
 		Persona:     t.Persona,

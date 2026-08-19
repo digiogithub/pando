@@ -444,6 +444,20 @@ func NewAgent(
 	return agent, nil
 }
 
+// turnSnapshotDescription builds a short, human-readable label for the delta
+// commit recorded after an agent turn, derived from the prompt that drove it.
+func turnSnapshotDescription(content string) string {
+	prompt := strings.TrimSpace(strings.ReplaceAll(content, "\n", " "))
+	if prompt == "" {
+		return "Agent turn"
+	}
+	const maxLen = 72
+	if len(prompt) > maxLen {
+		prompt = strings.TrimSpace(prompt[:maxLen]) + "…"
+	}
+	return "Agent turn: " + prompt
+}
+
 func (a *agent) Model() models.Model {
 	if a.provider == nil {
 		return models.Model{}
@@ -754,12 +768,30 @@ func (a *agent) generateTitle(ctx context.Context, sessionID string, content str
 	if content == "" {
 		return nil
 	}
-	if a.titleProvider == nil {
-		return nil
-	}
-	session, err := a.sessions.Get(ctx, sessionID)
+	sess, err := a.sessions.Get(ctx, sessionID)
 	if err != nil {
 		return err
+	}
+
+	// When the session still carries a placeholder title, immediately seed it
+	// with a prompt-derived fallback so the session list is meaningful even if
+	// the title provider fails or is not configured. A successful LLM title
+	// below overwrites the fallback.
+	if session.IsDefaultTitle(sess.Title) {
+		if fallback := session.TitleFromPrompt(content); fallback != "" {
+			sess.Title = fallback
+			if _, err := a.sessions.Save(ctx, sess); err != nil {
+				logging.Debug("Failed to save prompt-derived fallback title", "sessionID", sessionID, "error", err)
+			}
+		}
+	}
+	// Delegated sessions keep their "delegated: ..." title — it already
+	// identifies the run, and the runner embeds a prompt snippet in it.
+	if strings.HasPrefix(sess.Title, "delegated: ") {
+		return nil
+	}
+	if a.titleProvider == nil {
+		return nil
 	}
 	ctx = context.WithValue(ctx, tools.SessionIDContextKey, sessionID)
 	parts := []message.ContentPart{message.TextContent{Text: content}}
@@ -782,8 +814,8 @@ func (a *agent) generateTitle(ctx context.Context, sessionID string, content str
 		return nil
 	}
 
-	session.Title = title
-	_, err = a.sessions.Save(ctx, session)
+	sess.Title = title
+	_, err = a.sessions.Save(ctx, sess)
 	return err
 }
 
@@ -907,6 +939,14 @@ func (a *agent) runInternal(ctx context.Context, sessionID string, content strin
 		result := a.processGeneration(genCtx, sessionID, content, attachmentParts, events)
 		if result.Error != nil && !errors.Is(result.Error, ErrRequestCancelled) && !errors.Is(result.Error, context.Canceled) {
 			logging.ErrorPersist(result.Error.Error())
+		}
+		// Record the files this turn changed. Without this the session history
+		// only ever holds the baseline captured at session start, which made
+		// every session look like it had rewritten the whole project. Only the
+		// main coder agent records: sub-agent/task sessions share the same
+		// working directory and would duplicate the same deltas.
+		if a.agentName == config.AgentCoder {
+			session.RecordSnapshot(sessionID, turnSnapshotDescription(content))
 		}
 		logging.Debug("Request completed", "sessionID", sessionID)
 		// activeRequests/steering cleanup and cancel() happen in the deferred

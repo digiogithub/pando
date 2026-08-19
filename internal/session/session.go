@@ -79,6 +79,59 @@ func SetSnapshotCreator(sc SnapshotCreator) {
 	globalSnapshotCreator = sc
 }
 
+// RecordSnapshot asynchronously records a delta snapshot for a session. It is
+// the hook used by the agent loop after every completed turn, so the session
+// history contains the incremental changes the agent made instead of only the
+// baseline captured at session start. It is a no-op when no snapshot creator is
+// registered, and never blocks the caller.
+func RecordSnapshot(sessionID, description string) {
+	if globalSnapshotCreator == nil || sessionID == "" {
+		return
+	}
+	sc := globalSnapshotCreator
+	go func() {
+		if err := sc.CreateSessionSnapshot(context.Background(), sessionID, "delta", description); err != nil {
+			logging.Error("Failed to record delta snapshot", "sessionID", sessionID, "error", err)
+		}
+	}()
+}
+
+// Default title values that carry no information about the session content.
+// They are produced by the UIs on session creation ("New Chat" / "New
+// Session") or by the delegation runner ("delegated task") and are replaced
+// as soon as a real title (LLM-generated or prompt-derived) is available.
+var defaultTitles = map[string]bool{
+	"":              true,
+	"New Chat":      true,
+	"New Session":   true,
+	"delegated task": true,
+	"Generate a title": true,
+}
+
+// IsDefaultTitle reports whether the title is one of the placeholder titles
+// assigned at session creation time.
+func IsDefaultTitle(title string) bool {
+	return defaultTitles[title]
+}
+
+// TitleFromPrompt builds a fallback title from the first user prompt: the
+// first line, whitespace-collapsed, truncated to 100 runes with an ellipsis.
+func TitleFromPrompt(prompt string) string {
+	firstLine := prompt
+	if idx := strings.IndexAny(firstLine, "\r\n"); idx >= 0 {
+		firstLine = firstLine[:idx]
+	}
+	firstLine = strings.Join(strings.Fields(firstLine), " ")
+	if firstLine == "" {
+		return ""
+	}
+	runes := []rune(firstLine)
+	if len(runes) > 100 {
+		return string(runes[:99]) + "…"
+	}
+	return firstLine
+}
+
 type Session struct {
 	ID                  string
 	ParentSessionID     string

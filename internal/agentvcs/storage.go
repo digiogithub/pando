@@ -63,6 +63,7 @@ func (s *storage) LoadCommit(id string) (Commit, error) {
 	if err := readJSON(path, &c); err != nil {
 		return Commit{}, fmt.Errorf("agentvcs: load commit %s: %w", id, err)
 	}
+	c.normalize()
 	return c, nil
 }
 

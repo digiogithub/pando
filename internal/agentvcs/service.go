@@ -39,7 +39,12 @@ type Service interface {
 	Diff(ctx context.Context, commitID1, commitID2 string) ([]DiffEntry, error)
 
 	// DiffFromParent computes the file-level changes between a commit and its parent.
+	// The session baseline (root commit) has no parent and therefore no changes.
 	DiffFromParent(ctx context.Context, commitID string) ([]DiffEntry, error)
+
+	// SessionDiff computes the aggregate changes made during a session: the
+	// difference between the session baseline (first commit) and its HEAD.
+	SessionDiff(ctx context.Context, sessionID string) ([]DiffEntry, error)
 
 	// GetFileContent retrieves blob content by hash.
 	GetFileContent(ctx context.Context, hash string) ([]byte, error)
@@ -130,7 +135,24 @@ func (s *service) Record(ctx context.Context, sessionID, description string) (Co
 		return Commit{}, fmt.Errorf("agentvcs: get working dir: %w", err)
 	}
 
-	entries, err := s.scanner.Scan(workingDir)
+	// Reuse the parent tree's hashes for files whose size and modtime are
+	// unchanged, so recording a delta costs a stat walk instead of re-hashing
+	// the whole working directory.
+	var baseline map[string]TreeEntry
+	if parentTree, terr := s.storage.LoadTree(lastCommit.TreeID); terr == nil {
+		baseline = indexEntries(parentTree.Entries)
+		// Modification times only have second resolution, so a file rewritten
+		// again within the same second the parent commit was recorded can keep
+		// both its size and its modtime. Drop those entries from the cache so
+		// they are always re-hashed instead of silently reusing a stale hash.
+		for path, e := range baseline {
+			if !e.IsDir && e.ModTime >= lastCommit.CreatedAt-1 {
+				delete(baseline, path)
+			}
+		}
+	}
+
+	entries, err := s.scanner.ScanWithBaseline(workingDir, baseline)
 	if err != nil {
 		return Commit{}, fmt.Errorf("agentvcs: scan: %w", err)
 	}
@@ -179,15 +201,20 @@ func (s *service) createCommitFromEntries(_ context.Context, sessionID, parentID
 		return Commit{}, fmt.Errorf("agentvcs: save tree: %w", err)
 	}
 
+	// The root commit of a session is a *baseline*: it records the state the
+	// working directory was already in when the session started. Reporting its
+	// whole tree as "added" made every session look like it had changed 100% of
+	// the project, so a baseline carries no change set at all. Real changes are
+	// the delta commits recorded on top of it.
+	isBaseline := parentID == ""
+
 	var changedFiles []DiffEntry
-	if parentID != "" {
+	if !isBaseline {
 		var err error
 		changedFiles, err = s.diffTreeAgainstParent(parentID, tree)
 		if err != nil {
 			return Commit{}, err
 		}
-	} else {
-		changedFiles = diffTrees(Tree{}, tree)
 	}
 
 	changedPaths := make(map[string]struct{}, len(changedFiles))
@@ -202,12 +229,14 @@ func (s *service) createCommitFromEntries(_ context.Context, sessionID, parentID
 		}
 	}
 
-	// Store blobs only for files introduced or modified by this commit.
+	// Store blobs for the files this commit needs to be self-contained: the
+	// baseline needs the full tree (so later diffs and reverts have a reference),
+	// delta commits only need what they introduced or modified.
 	for _, e := range entries {
 		if e.IsDir || e.Hash == "" {
 			continue
 		}
-		if _, ok := changedPaths[e.Path]; !ok {
+		if _, ok := changedPaths[e.Path]; !ok && !isBaseline {
 			continue
 		}
 		if s.storage.BlobExists(e.Hash) {
@@ -243,6 +272,7 @@ func (s *service) createCommitFromEntries(_ context.Context, sessionID, parentID
 		TotalSize:        totalSize,
 		ChangedFileCount: len(changedFiles),
 		ChangedTotalSize: changedTotalSize,
+		IsBaseline:       isBaseline,
 	}
 
 	if err := s.storage.SaveCommit(commit); err != nil {
@@ -266,6 +296,8 @@ func (s *service) createCommitFromEntries(_ context.Context, sessionID, parentID
 		"id", shortID(commitID),
 		"session", sessionID,
 		"files", fileCount,
+		"changed", len(changedFiles),
+		"baseline", isBaseline,
 		"parent", shortID(parentID),
 		"desc", description,
 	)
@@ -314,26 +346,23 @@ func (s *service) DiffFromParent(_ context.Context, commitID string) ([]DiffEntr
 		return nil, err
 	}
 	if c.ParentID == "" {
-		// Root commit: all files are "added".
-		tree, err := s.storage.LoadTree(c.TreeID)
-		if err != nil {
-			return nil, err
-		}
-		var diffs []DiffEntry
-		for _, e := range tree.Entries {
-			if e.IsDir {
-				continue
-			}
-			diffs = append(diffs, DiffEntry{
-				Path:    e.Path,
-				Type:    DiffAdded,
-				NewHash: e.Hash,
-				NewSize: e.Size,
-			})
-		}
-		return diffs, nil
+		// Session baseline: it is the reference state, not a change set.
+		return []DiffEntry{}, nil
 	}
 	return s.diffCommits(c.ParentID, commitID)
+}
+
+// SessionDiff returns the aggregate changes recorded during a session, i.e. the
+// difference between its baseline commit and its current HEAD.
+func (s *service) SessionDiff(_ context.Context, sessionID string) ([]DiffEntry, error) {
+	sl, err := s.storage.LoadSessionLog(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("agentvcs: load session log: %w", err)
+	}
+	if len(sl.Commits) < 2 {
+		return []DiffEntry{}, nil
+	}
+	return s.diffCommits(sl.Commits[0], sl.Commits[len(sl.Commits)-1])
 }
 
 func (s *service) diffCommits(id1, id2 string) ([]DiffEntry, error) {

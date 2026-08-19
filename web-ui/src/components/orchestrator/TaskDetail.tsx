@@ -143,6 +143,29 @@ export default function TaskDetail({
           <StatusBadge status={task.status} />
         </div>
 
+        {task.prompt && (
+          <div style={{ marginBottom: '1rem' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: '0.375rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Prompt
+            </div>
+            <div
+              style={{
+                background: 'var(--selected)',
+                borderLeft: '3px solid var(--primary)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '0.625rem 0.75rem',
+                fontSize: 12,
+                color: 'var(--fg)',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                fontFamily: 'inherit',
+              }}
+            >
+              {task.prompt}
+            </div>
+          </div>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: 12, color: 'var(--fg-muted)' }}>
             <FontAwesomeIcon icon={faRobot} style={{ width: 12 }} />

@@ -14,6 +14,7 @@ export interface CommitSummary {
   total_size: number;
   changed_files: number;
   changed_total_size: number;
+  is_baseline: boolean;
   created_at: string;
 }
 

@@ -89,10 +89,16 @@ func (d *detailCmp) updateContent() {
 	content.WriteString("\n")
 	content.WriteString(padding.Render(field("Date", createdAt)))
 	content.WriteString("\n")
-	content.WriteString(padding.Render(field("Files", fmt.Sprintf("%d", d.commit.FileCount))))
-	content.WriteString("\n")
-	content.WriteString(padding.Render(field("Size", formatSize(d.commit.TotalSize))))
-	content.WriteString("\n")
+	if d.commit.IsBaseline {
+		content.WriteString(padding.Render(field("Baseline", fmt.Sprintf("%d files / %s (session start state)",
+			d.commit.FileCount, formatSize(d.commit.TotalSize)))))
+		content.WriteString("\n")
+	} else {
+		content.WriteString(padding.Render(field("Changed files", fmt.Sprintf("%d", d.commit.ChangedFiles))))
+		content.WriteString("\n")
+		content.WriteString(padding.Render(field("Changed size", formatSize(d.commit.ChangedSize))))
+		content.WriteString("\n")
+	}
 	if d.commit.Description != "" {
 		content.WriteString("\n")
 		content.WriteString(padding.Render(field("Description", d.commit.Description)))

@@ -26,6 +26,7 @@ type Commit struct {
 	TotalSize        int64  `json:"total_size"`                   // Sum of file sizes in the resulting tree
 	ChangedFileCount int    `json:"changed_file_count,omitempty"` // Files changed vs parent for this commit
 	ChangedTotalSize int64  `json:"changed_total_size,omitempty"` // Aggregate size of changed files for this commit
+	IsBaseline       bool   `json:"is_baseline,omitempty"`        // Root commit of a session: reference state, not a change set
 }
 
 // Tree represents the full file listing for a commit. It is stored
@@ -83,6 +84,7 @@ type CommitSummary struct {
 	CreatedAt        int64  `json:"created_at"`
 	ChangedFiles     int    `json:"changed_files"`      // Files changed vs parent
 	ChangedTotalSize int64  `json:"changed_total_size"` // Aggregate size of changed files
+	IsBaseline       bool   `json:"is_baseline"`        // Root commit: reference state captured at session start
 }
 
 // computeCommitID derives a deterministic ID from the commit's content fields.
@@ -110,6 +112,18 @@ func shortID(id string) string {
 	return id
 }
 
+// normalize back-fills fields on commits written before they existed. Commits
+// recorded by older versions stored the session baseline as a full "everything
+// was added" change set, which made every session report the whole project as
+// modified; a parentless commit is a baseline and changes nothing.
+func (c *Commit) normalize() {
+	if c.ParentID == "" {
+		c.IsBaseline = true
+		c.ChangedFileCount = 0
+		c.ChangedTotalSize = 0
+	}
+}
+
 // toSummary converts a Commit to a lightweight CommitSummary.
 func (c *Commit) toSummary() CommitSummary {
 	return CommitSummary{
@@ -123,6 +137,7 @@ func (c *Commit) toSummary() CommitSummary {
 		CreatedAt:        c.CreatedAt,
 		ChangedFiles:     c.ChangedFileCount,
 		ChangedTotalSize: c.ChangedTotalSize,
+		IsBaseline:       c.IsBaseline,
 	}
 }
 

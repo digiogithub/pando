@@ -153,6 +153,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Agent-VCS native endpoints
 	mux.HandleFunc("GET /api/v1/agentvcs/sessions", s.handleAgentVCSSessions)
 	mux.HandleFunc("GET /api/v1/agentvcs/sessions/{id}/log", s.handleAgentVCSLog)
+	mux.HandleFunc("GET /api/v1/agentvcs/sessions/{id}/diff", s.handleAgentVCSSessionDiff)
 	mux.HandleFunc("GET /api/v1/agentvcs/commits/{id}", s.handleAgentVCSCommit)
 	mux.HandleFunc("GET /api/v1/agentvcs/commits/{id}/diff", s.handleAgentVCSDiff)
 	mux.HandleFunc("GET /api/v1/agentvcs/blobs/{hash}", s.handleAgentVCSBlobContent)

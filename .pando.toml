@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
+Model = 'openrouter.z-ai/glm-5.3'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''

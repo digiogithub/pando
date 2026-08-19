@@ -208,8 +208,8 @@ func (c *commitsTableCmp) syncRows() {
 			row.ShortID,
 			typeIcon(row.Type),
 			time.Unix(row.CreatedAt, 0).Format("2006-01-02 15:04"),
-			fmt.Sprintf("%d", row.FileCount),
-			formatSize(row.TotalSize),
+			fmt.Sprintf("%d", row.ChangedFiles),
+			formatSize(row.ChangedSize),
 			truncate(row.Description, 40),
 		})
 	}
@@ -219,8 +219,8 @@ func (c *commitsTableCmp) syncRows() {
 // typeIcon returns a human-friendly label for the commit type.
 func typeIcon(t string) string {
 	switch t {
-	case "start":
-		return "○ start"
+	case "baseline", "start":
+		return "○ base"
 	case "delta":
 		return "● delta"
 	default:
@@ -279,7 +279,7 @@ func NewCommitsTable() CommitsTableComponent {
 		{Title: "ID", Width: 10},
 		{Title: "Type", Width: 10},
 		{Title: "Date", Width: 16},
-		{Title: "Files", Width: 6},
+		{Title: "Chg", Width: 6},
 		{Title: "Size", Width: 10},
 		{Title: "Description", Width: 30},
 	}

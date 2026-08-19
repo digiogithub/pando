@@ -524,7 +524,7 @@ function CommitsTimeline({
                           fontWeight: 600,
                         }}
                       >
-                        START
+                        BASELINE
                       </span>
                     )}
                     {isFirst && c.parent_id && (
@@ -564,8 +564,14 @@ function CommitsTimeline({
                     }}
                   >
                     <span>{formatDate(c.created_at)}</span>
-                    <span>{c.changed_files} files changed</span>
-                    <span>{formatSize(c.changed_total_size)}</span>
+                    {c.is_baseline || !c.parent_id ? (
+                      <span>session start state — no changes</span>
+                    ) : (
+                      <>
+                        <span>{c.changed_files} files changed</span>
+                        <span>{formatSize(c.changed_total_size)}</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </button>
@@ -817,8 +823,8 @@ function DetailPanel({
               color: "var(--fg-dim)",
             }}
           >
-            {c.type === "start"
-              ? "Initial commit — all files were added."
+            {c.type === "baseline" || c.type === "start"
+              ? "Session baseline — reference state captured at session start, not a change set."
               : "No file changes in this commit."}
           </div>
         ) : (

@@ -35,6 +35,15 @@ func newScanner(maxFileSize int64, excludePatterns []string) *scanner {
 // Scan walks rootDir and returns a sorted slice of TreeEntry.
 // It respects .gitignore, .pandoignore, and config exclude patterns.
 func (sc *scanner) Scan(rootDir string) ([]TreeEntry, error) {
+	return sc.ScanWithBaseline(rootDir, nil)
+}
+
+// ScanWithBaseline behaves like Scan but reuses the content hash of a previous
+// scan whenever a file's size and modification time are unchanged. Hashing the
+// whole working tree on every commit is prohibitively expensive on large
+// projects, so incremental recordings pass the parent commit's tree here and
+// only re-hash the files that actually moved.
+func (sc *scanner) ScanWithBaseline(rootDir string, baseline map[string]TreeEntry) ([]TreeEntry, error) {
 	if !fileutil.IsSafeWorkingDirectory(rootDir) {
 		logging.Debug("agentvcs scanner: skipping – not a project directory", "dir", rootDir)
 		return nil, nil
@@ -99,10 +108,17 @@ func (sc *scanner) Scan(rootDir string) ([]TreeEntry, error) {
 			return nil
 		}
 
-		hash, err := hashFile(path)
-		if err != nil {
-			logging.Error("agentvcs scanner: hash failed", "path", path, "error", err)
-			return nil
+		hash := ""
+		if prev, ok := baseline[relPath]; ok && !prev.IsDir &&
+			prev.Hash != "" && prev.Size == info.Size() && prev.ModTime == info.ModTime().Unix() {
+			hash = prev.Hash
+		} else {
+			var hashErr error
+			hash, hashErr = hashFile(path)
+			if hashErr != nil {
+				logging.Error("agentvcs scanner: hash failed", "path", path, "error", hashErr)
+				return nil
+			}
 		}
 
 		entries = append(entries, TreeEntry{

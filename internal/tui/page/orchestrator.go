@@ -767,13 +767,21 @@ func (p *orchestratorPage) buildDetailContent() string {
 	prompt := taskPrompt(task)
 	output := taskOutput(task)
 
+	// The full prompt is rendered inside a boxed "user message" area so long
+	// prompts stay identifiable; the table column only shows a truncation.
+	promptBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(t.BorderNormal()).
+		BorderBackground(t.Background()).
+		Padding(0, 1).
+		Width(max(0, p.width-8))
 	if p.showDetail {
-		lines = append(lines, "", "Prompt:", prompt, "", "Output:", output)
+		lines = append(lines, "", "Prompt:", promptBox.Render(prompt), "", "Output:", output)
 	} else {
 		lines = append(lines,
 			"",
 			"Prompt:",
-			truncateMultiline(prompt, 4, 240),
+			promptBox.Render(truncateMultiline(prompt, 4, 240)),
 			"",
 			"Output:",
 			truncateMultiline(output, 4, 240),

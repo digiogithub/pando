@@ -262,6 +262,7 @@ export default function SimpleChatView() {
                 {sessions.map((s) => (
                   <button
                     key={s.id}
+                    title={s.prompt_preview || s.title || 'Untitled session'}
                     onClick={() => setActiveSession(s.id)}
                     style={{
                       width: 'calc(100% - 1rem)',

@@ -363,11 +363,24 @@ func TestCreateCommitTracksChangedStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewChange: %v", err)
 	}
-	if first.ChangedFileCount != first.FileCount {
-		t.Fatalf("initial ChangedFileCount = %d, want %d", first.ChangedFileCount, first.FileCount)
+	// The root commit is a baseline: it records the pre-existing state of the
+	// working directory, so it must not be reported as having changed anything.
+	if !first.IsBaseline {
+		t.Fatal("initial commit should be marked as baseline")
 	}
-	if first.ChangedTotalSize != first.TotalSize {
-		t.Fatalf("initial ChangedTotalSize = %d, want %d", first.ChangedTotalSize, first.TotalSize)
+	if first.ChangedFileCount != 0 || first.ChangedTotalSize != 0 {
+		t.Fatalf("baseline reported changes: %d files / %d bytes",
+			first.ChangedFileCount, first.ChangedTotalSize)
+	}
+	if first.FileCount == 0 {
+		t.Fatal("baseline should still capture the full working tree")
+	}
+	baselineDiff, err := svc.DiffFromParent(t.Context(), first.ID)
+	if err != nil {
+		t.Fatalf("DiffFromParent(baseline): %v", err)
+	}
+	if len(baselineDiff) != 0 {
+		t.Fatalf("baseline diff = %d entries, want 0", len(baselineDiff))
 	}
 
 	writeFile(t, workDir, "main.go", "package main\n\nfunc main() {}\n")
@@ -386,6 +399,64 @@ func TestCreateCommitTracksChangedStats(t *testing.T) {
 	}
 	if second.FileCount != first.FileCount {
 		t.Fatalf("FileCount changed unexpectedly: %d -> %d", first.FileCount, second.FileCount)
+	}
+	if second.IsBaseline {
+		t.Fatal("delta commit should not be marked as baseline")
+	}
+
+	// The session-level diff aggregates baseline -> HEAD.
+	sessionDiff, err := svc.SessionDiff(t.Context(), "session-1")
+	if err != nil {
+		t.Fatalf("SessionDiff: %v", err)
+	}
+	if len(sessionDiff) != 1 || sessionDiff[0].Path != "main.go" {
+		t.Fatalf("SessionDiff = %+v, want a single change to main.go", sessionDiff)
+	}
+}
+
+func TestScanWithBaselineReusesHashes(t *testing.T) {
+	_, scan, _ := setupTestStorage(t)
+	workDir := createTestWorkDir(t)
+
+	entries, err := scan.Scan(workDir)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	// Poison the baseline hashes: unchanged files must be taken from it verbatim,
+	// which proves the scanner skipped re-hashing them.
+	baseline := indexEntries(entries)
+	for path, e := range baseline {
+		if e.IsDir {
+			continue
+		}
+		e.Hash = "cached-" + path
+		baseline[path] = e
+	}
+
+	rescanned, err := scan.ScanWithBaseline(workDir, baseline)
+	if err != nil {
+		t.Fatalf("ScanWithBaseline: %v", err)
+	}
+	for _, e := range rescanned {
+		if e.IsDir {
+			continue
+		}
+		if e.Hash != "cached-"+e.Path {
+			t.Fatalf("%s re-hashed instead of reusing the baseline hash", e.Path)
+		}
+	}
+
+	// A modified file must be re-hashed even though it is present in the baseline.
+	writeFile(t, workDir, "main.go", "package main\n\nfunc main() { println(1) }\n")
+	rescanned, err = scan.ScanWithBaseline(workDir, baseline)
+	if err != nil {
+		t.Fatalf("ScanWithBaseline after change: %v", err)
+	}
+	for _, e := range rescanned {
+		if e.Path == "main.go" && e.Hash == "cached-main.go" {
+			t.Fatal("modified file reused the stale baseline hash")
+		}
 	}
 }
 

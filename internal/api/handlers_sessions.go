@@ -1,12 +1,41 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/session"
 )
+
+// firstUserPrompt returns the text of the first user message of a session, or
+// "" when there is none. It is used to derive display fallbacks for sessions
+// that still carry a placeholder title.
+func (s *Server) firstUserPrompt(ctx context.Context, sessionID string) string {
+	msgs, err := s.app.Messages.List(ctx, sessionID)
+	if err != nil {
+		return ""
+	}
+	for _, msg := range msgs {
+		if msg.Role == message.User {
+			if tc, ok := firstTextPart(msg.Parts); ok {
+				return tc
+			}
+		}
+	}
+	return ""
+}
+
+func firstTextPart(parts []message.ContentPart) (string, bool) {
+	for _, part := range parts {
+		if tc, ok := part.(message.TextContent); ok {
+			return tc.Text, true
+		}
+	}
+	return "", false
+}
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -29,13 +58,30 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 
 	type sessionWithStatus struct {
 		session.Session
-		IsRunning bool `json:"is_running"`
+		IsRunning     bool   `json:"is_running"`
+		PromptPreview string `json:"prompt_preview,omitempty"`
 	}
 	result := make([]sessionWithStatus, len(page))
 	for i, sess := range page {
 		result[i] = sessionWithStatus{
 			Session:   sess,
 			IsRunning: s.bgRunner.IsBusy(sess.ID),
+		}
+		// Sessions that still carry a placeholder title (or a delegated marker
+		// without a prompt snippet) get a display title derived from their
+		// first user prompt, plus a prompt_preview the WebUI shows on hover.
+		prompt := ""
+		if session.IsDefaultTitle(sess.Title) || strings.HasPrefix(sess.Title, "delegated: ") {
+			prompt = s.firstUserPrompt(r.Context(), sess.ID)
+		}
+		if snippet := session.TitleFromPrompt(prompt); snippet != "" {
+			result[i].PromptPreview = snippet
+			switch {
+			case session.IsDefaultTitle(sess.Title):
+				result[i].Title = snippet
+			case strings.HasPrefix(sess.Title, "delegated: ") && !strings.Contains(sess.Title, "—"):
+				result[i].Title = sess.Title + " — " + snippet
+			}
 		}
 	}
 

@@ -29,9 +29,15 @@ type CommitRow struct {
 	SessionID   string
 	Type        string
 	Description string
-	FileCount   int
-	TotalSize   int64
-	CreatedAt   int64
+	// FileCount/TotalSize describe the full working tree captured by the commit.
+	FileCount int
+	TotalSize int64
+	// ChangedFiles/ChangedSize describe what this commit actually changed
+	// relative to its parent. A baseline commit changes nothing.
+	ChangedFiles int
+	ChangedSize  int64
+	IsBaseline   bool
+	CreatedAt    int64
 }
 
 // CommitListMsg is sent to populate the commit table for a selected session.

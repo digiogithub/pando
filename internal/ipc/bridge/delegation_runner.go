@@ -111,14 +111,22 @@ func (r *agentDelegationRunner) RunDelegation(ctx context.Context, params protoc
 		return protocol.DelegationRunResult{}, fmt.Errorf("delegated run: prompt must not be empty")
 	}
 
-	// Build a human-readable title for the ephemeral session.
+	// Build a human-readable title for the ephemeral session. The correlation
+	// id identifies the delegation while a prompt snippet keeps the session
+	// recognizable in the session list.
+	short := params.CorrelationID
+	if len(short) > 12 {
+		short = short[:12]
+	}
+	snippet := session.TitleFromPrompt(params.Prompt)
 	title := "delegated task"
-	if params.CorrelationID != "" {
-		short := params.CorrelationID
-		if len(short) > 12 {
-			short = short[:12]
-		}
+	switch {
+	case short != "" && snippet != "":
+		title = "delegated: " + short + " — " + snippet
+	case short != "":
 		title = "delegated: " + short
+	case snippet != "":
+		title = "delegated: " + snippet
 	}
 
 	sess, err := r.sessions.Create(ctx, title)

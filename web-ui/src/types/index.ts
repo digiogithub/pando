@@ -18,6 +18,8 @@ export interface Session {
   context_window?: number
   /** true while prompt/completion tokens are a provisional live estimate */
   tokens_estimated?: boolean
+  /** first user prompt (≤100 chars) shown on hover for placeholder-titled sessions */
+  prompt_preview?: string
 }
 
 export interface ContentPart {
@@ -276,6 +278,8 @@ export interface OrchestratorToolCall {
 export interface OrchestratorTask {
   id: string
   name: string
+  /** full prompt the task received (name is the truncated form) */
+  prompt?: string
   agent: string
   model: string
   /** persona in effect for this delegated/persona-scoped run; empty when unset */
