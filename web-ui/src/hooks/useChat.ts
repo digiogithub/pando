@@ -94,7 +94,6 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
     planRef.current = []
     itemsRef.current = []
     goalRef.current = null
-    useFileChangesStore.getState().clearChanges()
   }, [])
 
   /**
@@ -344,6 +343,15 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
         }))
 
         // Track file changes for the FileChangesBar
+        if (!tr.is_error) {
+          // `patch` (and any multi-file tool) names its files only in the result
+          // metadata: the tool input has no single file_path, so no `diff` block
+          // is built for it server-side.
+          const patchMeta = tr.raw_output?.metadata as { files_changed?: string[] } | undefined
+          for (const path of patchMeta?.files_changed ?? []) {
+            if (path) useFileChangesStore.getState().addChange(path, 0, 0, '', '')
+          }
+        }
         if (tr.diff && !tr.is_error) {
           const meta = tr.raw_output?.metadata as { additions?: number; removals?: number } | undefined
           const oldStr = tr.diff.old_string ?? ''

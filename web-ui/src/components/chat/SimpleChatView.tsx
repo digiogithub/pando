@@ -10,6 +10,7 @@ import { useSessionStore } from '@/stores/sessionStore'
 import { useServerStore } from '@/stores/serverStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useLayoutStore } from '@/stores/layoutStore'
+import { useFileChangesStore } from '@/stores/fileChangesStore'
 import { authenticate } from '@/services/auth'
 import MessageList from './MessageList'
 import ChatInput from './ChatInput'
@@ -53,6 +54,18 @@ export default function SimpleChatView() {
   const [sessionsOpen, setSessionsOpen] = useState(true)
 
   const activeSession = sessions.find((s) => s.id === activeSessionId)
+
+  // Rebuild the modified-files panel from history (plus agent-vcs) whenever a
+  // session is opened: the SSE stream only describes the current run.
+  useEffect(() => {
+    if (!activeSessionId) {
+      useFileChangesStore.getState().clearChanges()
+      return
+    }
+    if (messages.length === 0) return
+    void useFileChangesStore.getState().hydrateSession(activeSessionId, messages)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId, messages.length === 0])
 
   // Initialize auth + health check on standalone mount
   useEffect(() => {

@@ -70,6 +70,15 @@ export default function ChatView() {
     useFileChangesStore.getState().clearChanges()
   }, [activeSessionId])
 
+  // The modified-files panel is fed by the live SSE stream, which only covers
+  // the current run: rebuild it from the session history (plus agent-vcs) every
+  // time a session's messages land, so a reload or a session switch keeps it.
+  useEffect(() => {
+    if (!activeSessionId || messages.length === 0) return
+    void useFileChangesStore.getState().hydrateSession(activeSessionId, messages)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId, messages.length === 0])
+
   const activePlan = streamingState.plan.length > 0 ? streamingState.plan : persistentPlan
 
   // Track which session we last reconnected to avoid duplicate connections. The

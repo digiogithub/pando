@@ -1860,8 +1860,9 @@ func (a *agent) processEvent(
 		return event.Error
 	case provider.EventComplete:
 		logging.Debug("Event: Complete", "sessionID", sessionID, "finishReason", event.Response.FinishReason, "toolCallCount", len(event.Response.ToolCalls), "inputTokens", event.Response.Usage.InputTokens, "outputTokens", event.Response.Usage.OutputTokens)
+		streamedToolCalls := assistantMsg.ToolCalls()
 		resolvedToolCalls := resolveToolCallsOnComplete(
-			assistantMsg.ToolCalls(),
+			streamedToolCalls,
 			event.Response.ToolCalls,
 			event.Response.FinishReason,
 		)
@@ -1869,6 +1870,29 @@ func (a *agent) processEvent(
 		assistantMsg.AddFinish(event.Response.FinishReason)
 		if err := a.messages.Update(ctx, *assistantMsg); err != nil {
 			return fmt.Errorf("failed to update message: %w", err)
+		}
+		// Providers that do not stream tool use (they report every tool call in
+		// the final response) never went through EventToolUseStart/Stop, so no
+		// AgentEventTypeToolCall was ever published for those calls. Surfaces
+		// that render from the event stream (WebUI SSE, AG-UI) would then see a
+		// tool result whose input they never received — which is what kept the
+		// WebUI "modified files" panel empty for those providers. Publish the
+		// missing calls here, once, before their results arrive.
+		streamed := make(map[string]struct{}, len(streamedToolCalls))
+		for _, tc := range streamedToolCalls {
+			streamed[tc.ID] = struct{}{}
+		}
+		for i := range resolvedToolCalls {
+			if _, ok := streamed[resolvedToolCalls[i].ID]; ok {
+				continue
+			}
+			tcCopy := resolvedToolCalls[i]
+			tcCopy.Finished = true
+			a.publishEvent(AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tcCopy})
+			select {
+			case eventCh <- AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tcCopy}:
+			default:
+			}
 		}
 		// Hook 6: hook_agent_response_finish — informational, result ignored
 		if a.luaMgr != nil && a.luaMgr.IsEnabled() {
