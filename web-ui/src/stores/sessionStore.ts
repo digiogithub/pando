@@ -44,6 +44,8 @@ interface SessionStore {
   addQuestionRequest: (req: QuestionRequest) => void
   respondQuestion: (id: string, sessionId: string, answers: QuestionAnswer[]) => Promise<void>
   cancelQuestion: (id: string, sessionId: string) => Promise<void>
+  /** poll the server for permission/question prompts blocking a session */
+  fetchPendingRequests: (sessionId: string) => Promise<void>
   fetchAutoApprove: (sessionId: string) => Promise<void>
   setAutoApprove: (sessionId: string, enabled: boolean) => Promise<void>
   toggleAutoApprove: (sessionId: string) => Promise<void>
@@ -198,6 +200,43 @@ export const useSessionStore = create<SessionStore>((set) => ({
       await api.post('/api/v1/questions/respond', { id, sessionId, cancelled: true })
     } catch {
       // Network failure already surfaced by the api layer.
+    }
+  },
+
+  // Pending prompts are pushed over the chat SSE stream, but a client that is not
+  // attached to it (reload, dropped connection, run continued in the background)
+  // would never render them while the agent stays blocked inside the tool. Polling
+  // this endpoint makes an AskUserQuestion/permission prompt visible regardless of
+  // the stream.
+  fetchPendingRequests: async (sessionId) => {
+    try {
+      const data = await api.get<{
+        permissions?: PermissionRequest[]
+        questions?: QuestionRequest[]
+        running?: boolean
+      }>(`/api/v1/sessions/${sessionId}/pending`)
+      set((s) => {
+        if (s.activeSessionId !== sessionId) return s
+        const perms = data.permissions ?? []
+        const questions = data.questions ?? []
+        const newPerms = perms.filter((p) => !s.pendingPermissions.some((x) => x.id === p.id))
+        const newQuestions = questions.filter((q) => !s.pendingQuestions.some((x) => x.id === q.id))
+        // The server owns the run state: a dropped SSE stream must not leave the
+        // session marked as finished while the agent keeps working (or stays
+        // blocked on a tool). This is what lets the UI reattach to the stream.
+        const running = Boolean(data.running)
+        const sessions = s.sessions.some((sess) => sess.id === sessionId && sess.is_running !== running)
+          ? s.sessions.map((sess) => (sess.id === sessionId ? { ...sess, is_running: running } : sess))
+          : s.sessions
+        if (newPerms.length === 0 && newQuestions.length === 0 && sessions === s.sessions) return s
+        return {
+          pendingPermissions: [...s.pendingPermissions, ...newPerms],
+          pendingQuestions: [...s.pendingQuestions, ...newQuestions],
+          sessions,
+        }
+      })
+    } catch {
+      // Best effort: the api layer already surfaces network failures.
     }
   },
 

@@ -58,7 +58,7 @@ export type SteerResult = 'queued' | 'not_busy' | 'error'
 
 interface UseChatOptions {
   onNewSession?: (sessionId: string) => void
-  onDone?: () => void
+  onDone?: (completed: boolean) => void
   onEvent?: (event: SSEEvent) => void
   onCancelled?: (sessionId: string | null) => Promise<void> | void
 }
@@ -418,9 +418,14 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
     [onEvent, onNewSession, updateLastMessage, updateLastMessageParts, addMessage, buildStreamParts, activeSessionId],
   )
 
-  /** Called when the stream ends (done event or connection closed). */
+  /**
+   * Called when the stream ends. `completed` is true only for a real `done`
+   * event from the server; false means the connection dropped, in which case the
+   * run may still be alive and the session must NOT be marked as finished — the
+   * UI reattaches to it via reconnectSession.
+   */
   const handleDone = useCallback(
-    (sessionId: string | null) => {
+    (sessionId: string | null, completed: boolean) => {
       const parts = buildStreamParts()
       if (parts.length > 0) {
         updateLastMessageParts(parts)
@@ -431,9 +436,9 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
       setPendingFeedback([])
       setStreaming(false)
       setStreamingState(emptyState())
-      if (sessionId) markSessionRunning(sessionId, false)
+      if (sessionId && completed) markSessionRunning(sessionId, false)
       fetchSessions()
-      onDone?.()
+      onDone?.(completed)
     },
     [buildStreamParts, updateLastMessageParts, fetchSessions, markSessionRunning, onDone],
   )
@@ -520,7 +525,7 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
           setStreaming(false)
           setStreamingState(emptyState())
         },
-        () => handleDone(sessionId),
+        (completed) => handleDone(sessionId, completed),
       )
     },
     [activeSessionId, streaming, steer, addMessage, handleEvent, handleDone, resetAccum],
@@ -541,15 +546,24 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
       resetAccum()
       setStreamingState(emptyState())
 
-      // Add a placeholder assistant message to render streamed content into.
-      const assistantMsg: Message = {
-        id: `tmp-asst-reconnect-${Date.now()}`,
-        session_id: sessionId,
-        role: 'assistant',
-        content: [{ type: 'text', text: '' }],
-        created_at: new Date().toISOString(),
+      // Add a placeholder assistant message to render streamed content into —
+      // unless the last message already is an empty assistant bubble left by a
+      // previous reattach, which would otherwise pile up on every reconnection.
+      const msgs = useSessionStore.getState().messages
+      const last: Message | undefined = msgs[msgs.length - 1]
+      const emptyAssistantTail =
+        last?.role === 'assistant' &&
+        !last.content.some((part) => part.type === 'text' && (part.text ?? '').trim() !== '')
+      if (!emptyAssistantTail) {
+        const assistantMsg: Message = {
+          id: `tmp-asst-reconnect-${Date.now()}`,
+          session_id: sessionId,
+          role: 'assistant',
+          content: [{ type: 'text', text: '' }],
+          created_at: new Date().toISOString(),
+        }
+        addMessage(assistantMsg)
       }
-      addMessage(assistantMsg)
 
       const baseURL = (window as Window & { __PANDO_API_BASE__?: string }).__PANDO_API_BASE__ ?? ''
       abortRef.current = createGETSSEStream(
@@ -560,7 +574,7 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
           setStreaming(false)
           setStreamingState(emptyState())
         },
-        () => handleDone(sessionId),
+        (completed) => handleDone(sessionId, completed),
       )
     },
     [streaming, addMessage, handleEvent, handleDone, resetAccum],

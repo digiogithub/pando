@@ -889,6 +889,16 @@ func (a *agent) runInternal(ctx context.Context, sessionID string, content strin
 		defer logging.RecoverPanic("agent.Run", func() {
 			events <- a.err(fmt.Errorf("panic while running the agent"))
 		})
+		// Registered after RecoverPanic so it runs *before* it (LIFO): a panic (or a
+		// blocked send inside the recovery handler) must never leave the session
+		// marked as active. A leaked entry keeps IsBusy() true forever, which blocks
+		// every later model switch with "cannot change model while processing
+		// requests" until the process is restarted.
+		defer func() {
+			a.activeRequests.Delete(sessionID)
+			a.clearSteering(sessionID)
+			cancel()
+		}()
 		var attachmentParts []message.ContentPart
 		model := a.provider.Model()
 		for _, attachment := range attachments {
@@ -899,9 +909,9 @@ func (a *agent) runInternal(ctx context.Context, sessionID string, content strin
 			logging.ErrorPersist(result.Error.Error())
 		}
 		logging.Debug("Request completed", "sessionID", sessionID)
+		// activeRequests/steering cleanup and cancel() happen in the deferred
+		// cleanup above so they also run on the panic path.
 		a.activeRequests.Delete(sessionID)
-		// Drop any steering messages that were not consumed by the loop so they do
-		// not leak into a subsequent run for the same session.
 		a.clearSteering(sessionID)
 		cancel()
 		a.publishEvent(result)

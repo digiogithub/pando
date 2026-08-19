@@ -32,7 +32,7 @@ function isToolResultDiff(value: unknown): value is ToolResultDiff {
 async function consumeSSEBody(
   body: ReadableStream<Uint8Array>,
   onEvent: (event: SSEEvent) => void,
-  onDone?: () => void,
+  onDone?: (completed: boolean) => void,
 ): Promise<void> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
@@ -58,7 +58,8 @@ async function consumeSSEBody(
           currentEventType = ''
           onEvent(event)
           if (event.type === 'done') {
-            onDone?.()
+            // Server said the run finished.
+            onDone?.(true)
             return
           }
         } catch {
@@ -67,7 +68,9 @@ async function consumeSSEBody(
       }
     }
   }
-  onDone?.()
+  // Body ended without a `done` event: the connection dropped, the run itself may
+  // still be alive server-side. Callers must not treat this as completion.
+  onDone?.(false)
 }
 
 /**
@@ -79,7 +82,7 @@ export function createGETSSEStream(
   url: string,
   onEvent: (event: SSEEvent) => void,
   onError?: (error: Error) => void,
-  onDone?: () => void,
+  onDone?: (completed: boolean) => void,
 ): AbortController {
   const controller = new AbortController()
   const token = api.getToken()
@@ -111,7 +114,7 @@ export function createSSEStream(
   body: unknown,
   onEvent: (event: SSEEvent) => void,
   onError?: (error: Error) => void,
-  onDone?: () => void
+  onDone?: (completed: boolean) => void
 ): AbortController {
   const controller = new AbortController()
   const token = api.getToken()

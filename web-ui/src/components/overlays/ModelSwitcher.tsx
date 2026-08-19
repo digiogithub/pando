@@ -49,6 +49,18 @@ const FALLBACK_MODELS: ModelInfo[] = [
   { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', provider: 'google', description: 'Google fast model', badges: ['fast', 'cost'], canReason: false, supportsReasoningEffort: false },
 ]
 
+/** Extracts the server-provided reason from an api error body (`{"error": "..."}`). */
+function serverErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err)
+  try {
+    const parsed = JSON.parse(raw) as { error?: string }
+    if (parsed && typeof parsed.error === 'string' && parsed.error) return parsed.error
+  } catch {
+    // Not JSON — fall through to the raw text.
+  }
+  return raw || 'unknown error'
+}
+
 export default function ModelSwitcher() {
   const { setModelSwitcherOpen } = useLayoutStore()
   const { config, updateField } = useSettingsStore()
@@ -97,8 +109,11 @@ export default function ModelSwitcher() {
         updateField('default_model', modelId)
         addToast(`Model switched to ${modelId}`, 'success')
         close()
-      } catch {
-        addToast('Failed to switch model', 'error')
+      } catch (err) {
+        // Show the server's reason instead of a generic failure: the common case
+        // is "cannot change model while processing requests" (a run still blocked
+        // on a tool), which is actionable only if the user can read it.
+        addToast(`Failed to switch model: ${serverErrorMessage(err)}`, 'error')
       }
     },
     [close, updateField, addToast],
