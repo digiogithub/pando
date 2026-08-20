@@ -5,6 +5,7 @@ import { useSessionStore } from '@/stores/sessionStore'
 import { useServerStore } from '@/stores/serverStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useLayoutStore } from '@/stores/layoutStore'
+import ExternalAccessToggle from './ExternalAccessToggle'
 
 export default function StatusBar() {
   const { t } = useTranslation()
@@ -119,6 +120,9 @@ export default function StatusBar() {
             <span>{autoApprove ? '⏵⏵ auto-accept' : 'auto-accept off'}</span>
           </button>
         )}
+
+        {/* External access (0.0.0.0 bind) toggle */}
+        <ExternalAccessToggle />
 
         {/* Model selector button */}
         <button

@@ -254,5 +254,16 @@
     "signIn": "Anmelden",
     "signingIn": "Anmeldung…",
     "invalid": "Benutzername oder Passwort falsch"
+  },
+  "externalAccess": {
+    "on": "externer Zugriff an",
+    "off": "externer Zugriff aus",
+    "onTooltip": "Von anderen Geräten erreichbar:\n{{urls}}\nKlicken, um den externen Zugriff zu beenden.",
+    "offTooltip": "Nur dieser Rechner erreicht Pando. Klicken, um Verbindungen von anderen Geräten zu erlauben (Passwort erforderlich).",
+    "fixedTooltip": "Die Bind-Adresse wurde beim Start mit --host festgelegt und kann hier nicht geändert werden.",
+    "needsCredentials": "Lege in Einstellungen → WebUI-Zugriff einen Benutzer an, bevor du Pando im Netzwerk freigibst.",
+    "enabledToast": "Externer Zugriff an: {{urls}}",
+    "disabledToast": "Externer Zugriff aus — Pando ist wieder lokal.",
+    "toggleFailed": "Externer Zugriff konnte nicht geändert werden"
   }
 }

@@ -251,5 +251,16 @@
     "signIn": "Se connecter",
     "signingIn": "Connexion…",
     "invalid": "Identifiant ou mot de passe incorrect"
+  },
+  "externalAccess": {
+    "on": "accès externe activé",
+    "off": "accès externe désactivé",
+    "onTooltip": "Accessible depuis d'autres appareils :\n{{urls}}\nCliquez pour arrêter l'accès externe.",
+    "offTooltip": "Seule cette machine peut joindre Pando. Cliquez pour autoriser les connexions depuis d'autres appareils (mot de passe requis).",
+    "fixedTooltip": "L'adresse d'écoute a été fixée avec --host au démarrage de cette instance et ne peut pas être modifiée ici.",
+    "needsCredentials": "Ajoutez un utilisateur dans Paramètres → Accès WebUI avant d'exposer Pando au réseau.",
+    "enabledToast": "Accès externe activé : {{urls}}",
+    "disabledToast": "Accès externe désactivé — Pando est de nouveau local.",
+    "toggleFailed": "Échec du changement d'accès externe"
   }
 }

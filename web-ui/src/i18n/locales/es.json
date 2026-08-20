@@ -254,5 +254,16 @@
     "signIn": "Entrar",
     "signingIn": "Entrando…",
     "invalid": "Usuario o contraseña incorrectos"
+  },
+  "externalAccess": {
+    "on": "acceso externo activo",
+    "off": "acceso externo desactivado",
+    "onTooltip": "Accesible desde otros dispositivos:\n{{urls}}\nHaz clic para detener el acceso externo.",
+    "offTooltip": "Solo esta máquina puede acceder a Pando. Haz clic para permitir conexiones desde otros dispositivos (requiere contraseña).",
+    "fixedTooltip": "La dirección de escucha se fijó con --host al arrancar esta instancia y no se puede cambiar desde aquí.",
+    "needsCredentials": "Añade un usuario en Ajustes → Acceso WebUI antes de exponer Pando a la red.",
+    "enabledToast": "Acceso externo activo: {{urls}}",
+    "disabledToast": "Acceso externo desactivado: Pando vuelve a ser local.",
+    "toggleFailed": "No se pudo cambiar el acceso externo"
   }
 }

@@ -54,7 +54,7 @@ type BasicAuthStatusResponse struct {
 
 func (s *Server) basicAuthStatus() BasicAuthStatusResponse {
 	cfg := config.Get()
-	resp := BasicAuthStatusResponse{Users: []BasicAuthUserResponse{}, BindHost: s.config.Host}
+	resp := BasicAuthStatusResponse{Users: []BasicAuthUserResponse{}, BindHost: s.BindHost()}
 	if cfg == nil {
 		return resp
 	}
@@ -62,7 +62,7 @@ func (s *Server) basicAuthStatus() BasicAuthStatusResponse {
 	for _, user := range cfg.Server.BasicAuth.Users {
 		resp.Users = append(resp.Users, BasicAuthUserResponse{Username: user.Username})
 	}
-	resp.Enforced = resp.Enabled && len(resp.Users) > 0 && !isLoopbackHost(s.config.Host)
+	resp.Enforced = resp.Enabled && len(resp.Users) > 0 && !isLoopbackHost(s.BindHost())
 	return resp
 }
 

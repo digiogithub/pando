@@ -251,5 +251,16 @@
     "signIn": "登录",
     "signingIn": "正在登录…",
     "invalid": "用户名或密码错误"
+  },
+  "externalAccess": {
+    "on": "外部访问已开启",
+    "off": "外部访问已关闭",
+    "onTooltip": "可从其他设备访问：\n{{urls}}\n点击以停止外部访问。",
+    "offTooltip": "目前仅本机可访问 Pando。点击以允许其他设备连接（需要密码）。",
+    "fixedTooltip": "监听地址在启动时由 --host 指定，无法在此更改。",
+    "needsCredentials": "将 Pando 暴露到网络前，请在 设置 → WebUI 访问 中添加用户。",
+    "enabledToast": "外部访问已开启：{{urls}}",
+    "disabledToast": "外部访问已关闭 — Pando 恢复为本地。",
+    "toggleFailed": "更改外部访问失败"
   }
 }

@@ -254,5 +254,16 @@
     "signIn": "Entrar",
     "signingIn": "A entrar…",
     "invalid": "Utilizador ou palavra-passe incorretos"
+  },
+  "externalAccess": {
+    "on": "acesso externo ativo",
+    "off": "acesso externo desativado",
+    "onTooltip": "Acessível a partir de outros dispositivos:\n{{urls}}\nClique para parar o acesso externo.",
+    "offTooltip": "Apenas esta máquina alcança o Pando. Clique para permitir ligações de outros dispositivos (requer palavra-passe).",
+    "fixedTooltip": "O endereço de escuta foi definido com --host no arranque desta instância e não pode ser alterado aqui.",
+    "needsCredentials": "Adicione um utilizador em Definições → Acesso WebUI antes de expor o Pando à rede.",
+    "enabledToast": "Acesso externo ativo: {{urls}}",
+    "disabledToast": "Acesso externo desativado — o Pando voltou a ser local.",
+    "toggleFailed": "Falha ao alterar o acesso externo"
   }
 }

@@ -46,7 +46,7 @@ func (s *Server) basicAuthEnforced(r *http.Request) bool {
 	if r.URL.Path == "/health" || !strings.HasPrefix(r.URL.Path, "/api/") {
 		return false
 	}
-	if isLoopbackHost(s.config.Host) {
+	if isLoopbackHost(s.BindHost()) {
 		return false
 	}
 	cfg := config.Get()

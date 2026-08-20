@@ -5,13 +5,17 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"crypto/tls"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"mime"
+	"net"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -72,6 +76,26 @@ type Server struct {
 	// seededSessions tracks which sessions have already had the auto-approve
 	// config default applied, so a user toggle is not overridden on later prompts.
 	seededSessions sync.Map
+
+	// bindMu guards the live bind host and the rebind handshake below. The bind
+	// host changes at runtime when the external-access toggle is flipped, and it
+	// is read by the basic-auth gate on every request.
+	bindMu sync.RWMutex
+	// bindHost is the address the active listener is bound to.
+	bindHost string
+	// initialHost is the host the process was started with. Turning external
+	// access off returns to it.
+	initialHost string
+	// rebinding is set while SetExternalAccess is swapping listeners, so the
+	// Serve loop in Start knows a closed listener is not a shutdown.
+	rebinding bool
+	// rebindCh hands the freshly bound listener to the Serve loop. A nil value
+	// means the rebind failed and the previous listener could not be restored.
+	rebindCh chan net.Listener
+	// activeListener is the listener Serve is currently accepting on. Rebind
+	// closes it directly: http.Server.Close would also mark the server as shut
+	// down, which would end the Serve loop for good.
+	activeListener net.Listener
 }
 
 func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
@@ -92,11 +116,14 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 	}
 
 	s := &Server{
-		app:      application,
-		config:   cfg,
-		token:    token,
-		staticFS: cfg.StaticFS,
-		bgRunner: NewBackgroundSessionManager(),
+		app:         application,
+		config:      cfg,
+		token:       token,
+		staticFS:    cfg.StaticFS,
+		bgRunner:    NewBackgroundSessionManager(),
+		bindHost:    cfg.Host,
+		initialHost: cfg.Host,
+		rebindCh:    make(chan net.Listener, 1),
 	}
 
 	if s.staticFS != nil {
@@ -190,11 +217,131 @@ func (s *Server) isAGUIPath(urlPath string) bool {
 	return urlPath == s.aguiPath || strings.HasPrefix(urlPath, s.aguiPath+"/")
 }
 
+// Start binds the listener and serves until shutdown. The listener can be
+// swapped underneath the loop by SetExternalAccess, which closes the current one
+// and hands over a replacement bound to a different host; Serve returning
+// because of that swap is not an error.
 func (s *Server) Start() error {
-	if s.config.TLSCertFile != "" && s.config.TLSKeyFile != "" {
-		return s.httpServer.ListenAndServeTLS(s.config.TLSCertFile, s.config.TLSKeyFile)
+	listener, err := s.newListener(s.BindHost())
+	if err != nil {
+		return err
 	}
-	return s.httpServer.ListenAndServe()
+
+	for {
+		s.bindMu.Lock()
+		s.activeListener = listener
+		s.bindMu.Unlock()
+
+		err = s.httpServer.Serve(listener)
+		if errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+
+		s.bindMu.RLock()
+		swapping := s.rebinding
+		s.bindMu.RUnlock()
+		if !swapping {
+			return err
+		}
+
+		next := <-s.rebindCh
+		if next == nil {
+			return err
+		}
+		listener = next
+	}
+}
+
+// newListener binds host:port, wrapped in TLS when the server is configured for
+// it. ServeTLS is not used because the Serve loop above owns the listener.
+func (s *Server) newListener(host string) (net.Listener, error) {
+	addr := net.JoinHostPort(host, strconv.Itoa(s.config.Port))
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	if !s.IsTLS() {
+		return listener, nil
+	}
+
+	cert, err := tls.LoadX509KeyPair(s.config.TLSCertFile, s.config.TLSKeyFile)
+	if err != nil {
+		_ = listener.Close()
+		return nil, fmt.Errorf("failed to load TLS key pair: %w", err)
+	}
+	return tls.NewListener(listener, &tls.Config{Certificates: []tls.Certificate{cert}}), nil
+}
+
+// BindHost returns the host the server is currently listening on. It falls back
+// to the configured host so a Server built without NewServer (tests) still
+// reports the right bind.
+func (s *Server) BindHost() string {
+	s.bindMu.RLock()
+	defer s.bindMu.RUnlock()
+	if s.bindHost == "" {
+		return s.config.Host
+	}
+	return s.bindHost
+}
+
+// InitialHost returns the host the process was started with.
+func (s *Server) InitialHost() string {
+	s.bindMu.RLock()
+	defer s.bindMu.RUnlock()
+	if s.initialHost == "" {
+		return s.config.Host
+	}
+	return s.initialHost
+}
+
+// Rebind moves the listener to another host without dropping the process. The
+// old listener must be closed before the new one is bound: 0.0.0.0 and
+// 127.0.0.1 collide on the same port. On failure the previous host is restored
+// when it can still be bound, and the error is returned either way.
+func (s *Server) Rebind(host string) error {
+	s.bindMu.Lock()
+	current := s.bindHost
+	if current == host {
+		s.bindMu.Unlock()
+		return nil
+	}
+	s.rebinding = true
+	s.bindMu.Unlock()
+
+	defer func() {
+		s.bindMu.Lock()
+		s.rebinding = false
+		s.bindMu.Unlock()
+	}()
+
+	// Closing the listener makes Serve return; the loop in Start then waits on
+	// rebindCh, which every path below must feed exactly once.
+	s.bindMu.RLock()
+	active := s.activeListener
+	s.bindMu.RUnlock()
+	if active == nil {
+		return fmt.Errorf("server is not listening yet")
+	}
+	if err := active.Close(); err != nil {
+		return fmt.Errorf("failed to release %s: %w", current, err)
+	}
+
+	listener, err := s.newListener(host)
+	if err != nil {
+		restored, restoreErr := s.newListener(current)
+		if restoreErr != nil {
+			s.rebindCh <- nil
+			return fmt.Errorf("failed to bind %s (%w) and failed to restore %s: %v", host, err, current, restoreErr)
+		}
+		s.rebindCh <- restored
+		return fmt.Errorf("failed to bind %s: %w", host, err)
+	}
+
+	s.bindMu.Lock()
+	s.bindHost = host
+	s.bindMu.Unlock()
+	s.rebindCh <- listener
+	return nil
 }
 
 // IsTLS reports whether the server is configured to use TLS.
