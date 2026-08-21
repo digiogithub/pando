@@ -702,9 +702,10 @@ func TestRecoverExternalDelegationDeadPid(t *testing.T) {
 // (unchanged legacy behaviour — no IPC call is made).
 func TestWarmDelegateExternalFalsePassthrough(t *testing.T) {
 	dir := t.TempDir()
-	// Write a lock file with the current process PID so pidIsAlive returns true,
-	// making Runtime see a live external instance.
-	writeFakeLockFile(t, dir, os.Getpid(), 19999)
+	// Write a lock file with a live PID that is NOT this process (the parent), so
+	// pidIsAlive returns true and Runtime sees a live *external* instance. Using
+	// our own PID would instead hit the self-delegation guard (ErrSelfInstance).
+	writeFakeLockFile(t, dir, os.Getppid(), 19999)
 
 	// Build a service that knows about this project.
 	svc := &fakeExtService{proj: Project{ID: "proj-ext", Path: dir}}
@@ -716,6 +717,26 @@ func TestWarmDelegateExternalFalsePassthrough(t *testing.T) {
 	_, err := m.WarmDelegate(context.Background(), "proj-ext", dir, "prompt", false, 4, 0, false, "")
 	if err != ErrExternalInstance {
 		t.Fatalf("err = %v, want ErrExternalInstance (allowExternal=false must not route over IPC)", err)
+	}
+}
+
+// TestWarmDelegateSelfInstanceRefused verifies that a project served by THIS
+// process is never a warm target: EnsureInstance returns ErrSelfInstance instead
+// of treating our own IPC lock as an external peer and delegating back to us.
+func TestWarmDelegateSelfInstanceRefused(t *testing.T) {
+	dir := t.TempDir()
+	writeFakeLockFile(t, dir, os.Getpid(), 19999)
+
+	svc := &fakeExtService{proj: Project{ID: "proj-self", Path: dir}}
+	m := &Manager{
+		service:   svc,
+		instances: map[string]*Instance{},
+	}
+
+	// allowExternal=true and autoStart=true: neither may rescue the self case.
+	_, err := m.WarmDelegate(context.Background(), "proj-self", dir, "prompt", true, 4, 0, true, "corr-self")
+	if err != ErrSelfInstance {
+		t.Fatalf("err = %v, want ErrSelfInstance", err)
 	}
 }
 

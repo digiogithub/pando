@@ -82,6 +82,13 @@ func (o *Orchestrator) reclaimExpiredClaims() int {
 		if task.ClaimLock == "" || task.ClaimActive(now) {
 			continue
 		}
+		// Belt-and-braces: a pending task that already has a start time is being
+		// executed by a path that drives completion itself (warm routing). Its claim
+		// lapsing does not mean it was stranded, and returning it to the pool would
+		// start a second run of the same prompt.
+		if task.StartedAt != nil {
+			continue
+		}
 		owner := task.ClaimLock
 		if err := o.store.ReleaseClaim(task.ID); err != nil {
 			continue
@@ -125,6 +132,9 @@ func (o *Orchestrator) drainDispatchable() int {
 	for _, task := range tasks {
 		if task.ClaimActive(time.Now()) {
 			continue // another dispatcher is already starting it
+		}
+		if task.StartedAt != nil {
+			continue // already in flight (see reclaimExpiredClaims)
 		}
 		if !o.canStart(task) {
 			continue
@@ -266,8 +276,9 @@ func (o *Orchestrator) inFlightCounts() (int, map[models.Engine]int) {
 	total := 0
 	perEngine := make(map[models.Engine]int)
 	for _, t := range tasks {
-		// A pending task occupies a slot only while a live claim is starting it.
-		if t.Status == models.TaskStatusPending && !t.ClaimActive(now) {
+		// A pending task occupies a slot while a live claim is starting it, or while
+		// it is already in flight on a path that has not moved it out of "pending".
+		if t.Status == models.TaskStatusPending && !t.ClaimActive(now) && t.StartedAt == nil {
 			continue
 		}
 		total++

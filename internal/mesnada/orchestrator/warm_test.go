@@ -271,3 +271,78 @@ func TestProjectRefAccessorsWired(t *testing.T) {
 		t.Fatalf("ListProjectRefs = %+v, want one p1", refs)
 	}
 }
+
+// TestTryStartWarmMarksRunningDuringRun verifies that the task is persisted as
+// RUNNING (with the warm-acp engine and a start time) for the whole duration of
+// the blocking warm run, even without an external recoverer wired. A task left
+// "pending" while it runs is invisible in the UI and, worse, gets re-dispatched
+// once its claim lease lapses.
+func TestTryStartWarmMarksRunningDuringRun(t *testing.T) {
+	var sawStatus models.TaskStatus
+	var sawEngine models.Engine
+	var sawStarted bool
+
+	resolver := &fakeWarmResolver{result: &WarmRunResult{ChildSessionID: "child-1", Output: "done"}}
+	o := newWarmOrch(t, DelegationConfig{Enabled: true, ReuseWarmInstances: true}, resolver)
+	task := warmTask()
+	if err := o.store.Save(task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Observe the stored task from inside the warm run.
+	o.warmResolver = warmResolverFunc(func() (*WarmRunResult, error) {
+		stored, err := o.store.Get(task.ID)
+		if err != nil {
+			return nil, err
+		}
+		sawStatus, sawEngine, sawStarted = stored.Status, stored.Engine, stored.StartedAt != nil
+		return &WarmRunResult{ChildSessionID: "child-1", Output: "done"}, nil
+	})
+
+	if handled := o.tryStartWarm(task); !handled {
+		t.Fatal("tryStartWarm returned false, want true")
+	}
+	if sawStatus != models.TaskStatusRunning {
+		t.Errorf("status during run = %q, want running", sawStatus)
+	}
+	if sawEngine != models.EngineWarmACP {
+		t.Errorf("engine during run = %q, want warm-acp", sawEngine)
+	}
+	if !sawStarted {
+		t.Error("StartedAt during run = nil, want set")
+	}
+}
+
+// TestTryStartWarmColdFallbackRevertsWithoutRecoverer verifies the in-flight
+// marking is fully reverted when the warm path declines, so the cold path still
+// sees an untouched pending task (no recoverer wired).
+func TestTryStartWarmColdFallbackRevertsWithoutRecoverer(t *testing.T) {
+	resolver := &fakeWarmResolver{err: ErrNoWarmTarget}
+	o := newWarmOrch(t, DelegationConfig{Enabled: true, ReuseWarmInstances: true}, resolver)
+
+	task := warmTask()
+	task.Engine = models.EnginePando
+	if err := o.store.Save(task); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if handled := o.tryStartWarm(task); handled {
+		t.Fatal("tryStartWarm returned true, want false (cold fallback)")
+	}
+	if task.Engine != models.EnginePando {
+		t.Errorf("engine = %q, want pando (reverted)", task.Engine)
+	}
+	if task.Status != models.TaskStatusPending {
+		t.Errorf("status = %q, want pending (reverted)", task.Status)
+	}
+	if task.StartedAt != nil {
+		t.Error("StartedAt = set, want nil (reverted)")
+	}
+}
+
+// warmResolverFunc adapts a plain function to WarmTargetResolver.
+type warmResolverFunc func() (*WarmRunResult, error)
+
+func (f warmResolverFunc) RunWarm(_ context.Context, _, _, _, _ string) (*WarmRunResult, error) {
+	return f()
+}

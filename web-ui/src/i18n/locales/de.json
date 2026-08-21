@@ -221,6 +221,7 @@
       "hide": "Infofenster ausblenden",
       "session": "Sitzung",
       "noSession": "Keine aktive Sitzung",
+      "workingDir": "Arbeitsverzeichnis",
       "usage": "Nutzung",
       "context": "Kontext",
       "totalTokens": "Tokens gesamt",

@@ -221,6 +221,7 @@
       "hide": "隐藏信息面板",
       "session": "会话",
       "noSession": "无活动会话",
+      "workingDir": "工作目录",
       "usage": "用量",
       "context": "上下文",
       "totalTokens": "总令牌数",

@@ -3,15 +3,26 @@ import type { Project } from '@/types'
 import api, { getBaseURL } from '@/services/api'
 import { useToastStore } from './toastStore'
 
+/** Workspace identity of the pando instance the UI is talking to. */
+export interface Workspace {
+  /** Absolute working directory the instance was started in. */
+  cwd: string
+  /** Pando version string reported by the server. */
+  version: string
+}
+
 interface ProjectStore {
   projects: Project[]
   activeProjectId: string | null
+  /** Working directory + version of the connected instance; null until fetched. */
+  workspace: Workspace | null
   loading: boolean
   initDialogProject: Project | null
   _es: EventSource | null
 
   fetchProjects: () => Promise<void>
   fetchActive: () => Promise<void>
+  fetchWorkspace: () => Promise<void>
   addProject: (path: string, name?: string) => Promise<void>
   activateProject: (id: string) => Promise<'ok' | 'needs_init'>
   stopProject: (id: string) => Promise<void>
@@ -29,6 +40,7 @@ const MAX_BACKOFF_MS = 30_000
 export const useProjectStore = create<ProjectStore>((set, get) => ({
   projects: [],
   activeProjectId: null,
+  workspace: null,
   loading: false,
   initDialogProject: null,
   _es: null,
@@ -51,6 +63,18 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       set({ activeProjectId: data.project?.id ?? null })
     } catch {
       set({ activeProjectId: null })
+    }
+  },
+
+  // The instance's own working directory (the TUI shows it as "cwd:" under the
+  // chat). It only changes when pando is restarted or the web UI is pointed at a
+  // different instance, so one fetch per mount is enough.
+  fetchWorkspace: async () => {
+    try {
+      const data = await api.get<{ cwd?: string; version?: string }>('/api/v1/project')
+      set({ workspace: { cwd: data.cwd ?? '', version: data.version ?? '' } })
+    } catch {
+      set({ workspace: null })
     }
   },
 

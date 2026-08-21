@@ -3,9 +3,11 @@ package project
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/pubsub"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
@@ -138,10 +140,29 @@ func (m *Manager) resolveProjectID(ctx context.Context, projectID, projectPath s
 	return proj.ID, nil
 }
 
+// servedBySelf reports whether the on-disk IPC lock for path is held by THIS
+// process. Runtime() cannot distinguish it from any other lock holder — it
+// deliberately reports every untracked live holder as "external" so the Projects
+// panel keeps refusing to stop instances it does not own — so the self case is
+// detected here, where warm routing needs it.
+func (m *Manager) servedBySelf(path string) bool {
+	resolved, err := resolvePath(path)
+	if err != nil {
+		return false
+	}
+	info, err := ipc.ReadLockForPath(resolved)
+	if err != nil || info == nil {
+		return false
+	}
+	return info.PID == os.Getpid()
+}
+
 // EnsureInstance returns a running manager-owned instance for projectID,
 // reusing an existing one or auto-starting a new child WITHOUT changing the
 // active project (delegation must never switch the user's focused project).
 //
+// When the project is served by THIS process it returns ErrSelfInstance (warm
+// delegation to self would loop the IPC call back into the parent instance).
 // When the project is served by an external (editor-launched) instance it
 // returns ErrExternalInstance — such instances are never warm targets. When no
 // instance is running and autoStart is false it returns ErrInstanceNotRunning;
@@ -159,6 +180,16 @@ func (m *Manager) EnsureInstance(ctx context.Context, projectID string, autoStar
 	proj, err := m.service.Get(ctx, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("ensure instance: get project %s: %w", projectID, err)
+	}
+
+	// This very process serving the project is never a warm target: the on-disk IPC
+	// lock would resolve to our own RPC endpoint, so DelegateExternal would send
+	// delegation.run back to ourselves and the "subagent" would run as a hidden
+	// session inside the parent instance (no PID, no log file, no separate loop).
+	// Checked before autoStart so we never spawn a duplicate child for a directory
+	// this process already owns the lock for.
+	if m.servedBySelf(proj.Path) {
+		return nil, ErrSelfInstance
 	}
 
 	// An external instance serving this project is never a warm target.

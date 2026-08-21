@@ -221,6 +221,7 @@
       "hide": "Masquer le panneau d'informations",
       "session": "Session",
       "noSession": "Aucune session active",
+      "workingDir": "Répertoire de travail",
       "usage": "Utilisation",
       "context": "Contexte",
       "totalTokens": "Jetons totaux",

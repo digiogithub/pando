@@ -360,3 +360,58 @@ func mustGet(t *testing.T, o *Orchestrator, id string) *models.Task {
 	}
 	return task
 }
+
+// TestReclaimSkipsInFlightPendingTask verifies that a pending task which is
+// already executing (StartedAt set — the warm-routing path drives completion
+// itself) keeps its claim when the lease lapses. Reclaiming it would return a
+// running prompt to the dispatchable pool and start a second copy of it.
+func TestReclaimSkipsInFlightPendingTask(t *testing.T) {
+	o := newTestOrchestrator(t)
+	expired := time.Now().Add(-time.Minute)
+	started := time.Now().Add(-5 * time.Minute)
+	saveTask(t, o, &models.Task{
+		ID: "in-flight", Status: models.TaskStatusPending,
+		ClaimLock: "this-orch", ClaimExpires: &expired, StartedAt: &started,
+	})
+
+	if got := o.reclaimExpiredClaims(); got != 0 {
+		t.Fatalf("reclaimed %d tasks, want 0", got)
+	}
+	if stored := mustGet(t, o, "in-flight"); stored.ClaimLock != "this-orch" {
+		t.Errorf("claim = %q, want it retained", stored.ClaimLock)
+	}
+}
+
+// TestDrainSkipsInFlightPendingTask verifies the drain never re-dispatches a
+// pending task that is already running, even once its claim has lapsed.
+func TestDrainSkipsInFlightPendingTask(t *testing.T) {
+	o := newTestOrchestrator(t)
+	started := time.Now().Add(-5 * time.Minute)
+	saveTask(t, o, &models.Task{
+		ID: "in-flight", Status: models.TaskStatusPending, StartedAt: &started,
+	})
+
+	if got := o.drainDispatchable(); got != 0 {
+		t.Fatalf("dispatched %d tasks, want 0", got)
+	}
+}
+
+// TestInFlightCountsCountUnclaimedStartedPending verifies an in-flight pending
+// task still occupies a concurrency slot after its claim lapses, so the caps are
+// not silently exceeded by warm-routed work.
+func TestInFlightCountsCountUnclaimedStartedPending(t *testing.T) {
+	o := newTestOrchestrator(t)
+	started := time.Now().Add(-time.Minute)
+	saveTask(t, o, &models.Task{
+		ID: "warm", Status: models.TaskStatusPending,
+		Engine: models.EngineWarmACP, StartedAt: &started,
+	})
+
+	total, perEngine := o.inFlightCounts()
+	if total != 1 {
+		t.Errorf("in-flight total = %d, want 1", total)
+	}
+	if perEngine[models.EngineWarmACP] != 1 {
+		t.Errorf("per-engine counts = %v, want one warm-acp", perEngine)
+	}
+}

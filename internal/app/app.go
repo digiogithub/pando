@@ -1086,6 +1086,9 @@ func makeExternalDelegationRecoverer(mgr *project.Manager) mesnadaOrch.ExternalD
 func isWarmColdFallback(err error) bool {
 	return errors.Is(err, project.ErrInstanceNotRunning) ||
 		errors.Is(err, project.ErrExternalInstance) ||
+		// The project is served by this very process: warm routing refuses to
+		// delegate to itself, so the task cold-spawns its own subagent.
+		errors.Is(err, project.ErrSelfInstance) ||
 		errors.Is(err, project.ErrProjectNeedsInit) ||
 		errors.Is(err, project.ErrProjectNotRegistered) ||
 		errors.Is(err, project.ErrWarmCapReached) ||

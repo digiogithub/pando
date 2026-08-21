@@ -221,6 +221,7 @@
       "hide": "情報パネルを隠す",
       "session": "セッション",
       "noSession": "アクティブなセッションなし",
+      "workingDir": "作業ディレクトリ",
       "usage": "使用状況",
       "context": "コンテキスト",
       "totalTokens": "合計トークン",

@@ -221,6 +221,7 @@
       "hide": "Ocultar painel de informações",
       "session": "Sessão",
       "noSession": "Nenhuma sessão ativa",
+      "workingDir": "Diretório de trabalho",
       "usage": "Uso",
       "context": "Contexto",
       "totalTokens": "Tokens totais",

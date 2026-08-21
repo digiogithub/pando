@@ -163,32 +163,32 @@ func (o *Orchestrator) tryStartWarm(task *models.Task) bool {
 	o.metrics.recordWarmAttempt()
 	start := time.Now()
 
-	// In-flight breadcrumb (A2): when external recovery is enabled, persist the task
-	// as a running warm-acp delegation BEFORE the blocking warm run so that, if this
-	// process restarts mid-run, recoverStaleTasks can try to recover the result from
-	// a surviving external peer instead of failing it. Reverted on a cold fallback so
-	// the cold path is unchanged. Skipped entirely when recovery is off (default).
-	var origEngine models.Engine
-	var origStatus models.TaskStatus
-	var origStartedAt *time.Time
-	breadcrumb := o.externalRecoverer != nil
-	if breadcrumb {
-		origEngine, origStatus, origStartedAt = task.Engine, task.Status, task.StartedAt
-		task.Engine = models.EngineWarmACP
-		task.Status = models.TaskStatusRunning
-		task.StartedAt = &start
-		o.store.Save(task)
-	}
+	// In-flight breadcrumb: persist the task as a RUNNING warm-acp delegation
+	// BEFORE the blocking warm run. This is not optional bookkeeping — RunWarm can
+	// block for minutes, and a task left "pending" for that whole window is both
+	// invisible in the orchestrator panel and, worse, still dispatchable: its claim
+	// lease expires (DefaultClaimTTL), reclaimExpiredClaims returns it to the pool
+	// and the next drain starts a SECOND run of the same prompt. Marking it running
+	// closes that window (reclaim/drain only consider pending tasks) and keeps the
+	// concurrency caps counting it.
+	//
+	// It doubles as the A2 recovery breadcrumb: if this process restarts mid-run,
+	// recoverStaleTasks can try to recover the result from a surviving external peer
+	// instead of failing the task. Reverted on a cold fallback so the cold path is
+	// unchanged.
+	origEngine, origStatus, origStartedAt := task.Engine, task.Status, task.StartedAt
+	task.Engine = models.EngineWarmACP
+	task.Status = models.TaskStatusRunning
+	task.StartedAt = &start
+	o.store.Save(task)
 
 	res, err := o.warmResolver.RunWarm(o.ctx, task.ProjectID, task.ProjectPath, task.Prompt, task.CorrelationID)
 	if errors.Is(err, ErrNoWarmTarget) {
 		// No warm target — leave the task untouched for the cold path. Revert the
 		// breadcrumb first so the cold path sees the original task state. Count the
 		// fallback, attributing the cap-driven subset separately for telemetry.
-		if breadcrumb {
-			task.Engine, task.Status, task.StartedAt = origEngine, origStatus, origStartedAt
-			o.store.Save(task)
-		}
+		task.Engine, task.Status, task.StartedAt = origEngine, origStatus, origStartedAt
+		o.store.Save(task)
 		o.metrics.recordColdFallback()
 		if errors.Is(err, ErrWarmCapReached) {
 			o.metrics.recordCapRejection()

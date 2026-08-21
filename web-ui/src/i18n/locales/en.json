@@ -221,6 +221,7 @@
       "hide": "Hide info panel",
       "session": "Session",
       "noSession": "No active session",
+      "workingDir": "Working directory",
       "usage": "Usage",
       "context": "Context",
       "totalTokens": "Total tokens",

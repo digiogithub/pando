@@ -9,6 +9,7 @@ import {
   faClock,
   faCode,
   faFileCode,
+  faFolderOpen,
   faGaugeHigh,
   faListCheck,
   faRobot,
@@ -19,6 +20,7 @@ import { useSessionStore } from '@/stores/sessionStore'
 import { useFileChangesStore } from '@/stores/fileChangesStore'
 import { useLSPStore } from '@/stores/lspStore'
 import { useOrchestratorStore } from '@/stores/orchestratorStore'
+import { useProjectStore } from '@/stores/projectStore'
 import { useLayoutStore } from '@/stores/layoutStore'
 
 /** Width of the expanded panel, and of the floating tab left behind when collapsed. */
@@ -56,11 +58,20 @@ export default function ChatInfoSidebar({ plan = [] }: ChatInfoSidebarProps) {
   const fetchLSP = useLSPStore((s) => s.fetchLSP)
   const tasks = useOrchestratorStore((s) => s.tasks)
   const fetchTasks = useOrchestratorStore((s) => s.fetchTasks)
+  const workspace = useProjectStore((s) => s.workspace)
+  const fetchWorkspace = useProjectStore((s) => s.fetchWorkspace)
 
   useEffect(() => {
     if (!infoSidebarOpen) return
     void fetchLSP()
   }, [infoSidebarOpen, fetchLSP])
+
+  // Working directory of the connected instance. Fetched once per open (it only
+  // changes when pando restarts) and kept if already known.
+  useEffect(() => {
+    if (!infoSidebarOpen || workspace) return
+    void fetchWorkspace()
+  }, [infoSidebarOpen, workspace, fetchWorkspace])
 
   // Keep the subagent counters live while the panel is visible.
   useEffect(() => {
@@ -134,6 +145,15 @@ export default function ChatInfoSidebar({ plan = [] }: ChatInfoSidebarProps) {
       </div>
 
       <div style={scrollAreaStyle}>
+        {/* Workspace — the instance's working directory, mirroring the TUI's "cwd:" line */}
+        {workspace?.cwd && (
+          <Section icon={faFolderOpen} title={t('chat.info.workingDir')}>
+            <div style={workingDirStyle} title={workspace.cwd}>
+              {workspace.cwd}
+            </div>
+          </Section>
+        )}
+
         {/* Usage */}
         {session && (
           <Section icon={faGaugeHigh} title={t('chat.info.usage')}>
@@ -485,6 +505,16 @@ const chipStyle: CSSProperties = {
   border: '1px solid var(--border)',
   background: 'var(--bg-secondary, var(--bg))',
   color: 'var(--fg-muted)',
+}
+
+// The path can be long and matters most at its tail (the project folder), so it
+// wraps on separators instead of being truncated away.
+const workingDirStyle: CSSProperties = {
+  fontSize: 11,
+  lineHeight: 1.5,
+  color: 'var(--fg)',
+  fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
+  overflowWrap: 'anywhere',
 }
 
 const fileRowStyle: CSSProperties = {
