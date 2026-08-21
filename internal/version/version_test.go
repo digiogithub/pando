@@ -52,3 +52,19 @@ func TestCanonical(t *testing.T) {
 		t.Fatalf("Canonical() = %q, want %q", got, "v1.2.3")
 	}
 }
+
+func TestDisplay(t *testing.T) {
+	originalVersion, originalVariant := Version, Variant
+	defer func() { Version, Variant = originalVersion, originalVariant }()
+
+	Version = "1.2.3"
+	Variant = ""
+	if got := Display(); got != "v1.2.3" {
+		t.Fatalf("Display() = %q, want %q", got, "v1.2.3")
+	}
+
+	Variant = "enterprise"
+	if got := Display(); got != "v1.2.3 (enterprise)" {
+		t.Fatalf("Display() = %q, want %q", got, "v1.2.3 (enterprise)")
+	}
+}

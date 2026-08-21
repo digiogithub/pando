@@ -111,7 +111,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			return nil
 		}
 		if cmd.Flag("version").Changed {
-			fmt.Println(version.Normalize())
+			fmt.Println(version.Display())
 			return nil
 		}
 

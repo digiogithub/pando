@@ -80,3 +80,17 @@ func normalize(v string) (string, bool) {
 // which extensions a binary contains is decided at link time, not by this
 // string.
 var Variant = ""
+
+// Display returns the version as it should be shown to a human: the plain
+// version for a standard build, and the version plus the variant name for a
+// composed one.
+//
+// Standard builds keep the exact output they always had, so anything parsing
+// `pando --version` is unaffected; only a non-standard binary looks different,
+// which is the whole point of the stamp.
+func Display() string {
+	if Variant == "" {
+		return Normalize()
+	}
+	return Normalize() + " (" + Variant + ")"
+}

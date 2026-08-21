@@ -4,7 +4,29 @@
 
 GOPATH ?= $(shell go env GOPATH)
 VERSION ?= $(shell git describe --tags 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X github.com/digiogithub/pando/internal/version.Version=$(VERSION)
+
+# ------------------------------------------------------------
+# Build variant
+# ------------------------------------------------------------
+# MODULE_TAGS is the single knob for the whole variant axis: it feeds the build
+# tags, the version stamp and the artifact names, so a variant can never be
+# half-applied (tagged sources but a binary that reports itself as standard).
+#
+# Building this repository with MODULE_TAGS=enterprise links NO private module:
+# composition happens in a generated main module produced by `xpando build`
+# (see cmd/xpando). The tag only selects tag-guarded code inside the core, and
+# the stamp records which kind of binary this is.
+MODULE_TAGS   ?=
+GO_BUILD_TAGS  = $(strip $(MODULE_TAGS))
+GO_TAGS_FLAG   = $(if $(GO_BUILD_TAGS),-tags "$(GO_BUILD_TAGS)",)
+VARIANT       := $(if $(findstring enterprise,$(MODULE_TAGS)),enterprise,)
+DIST_SUFFIX   := $(if $(VARIANT),-$(VARIANT),)
+
+# The variant stamp is separate from the release stamp so that even the
+# unstamped fast build reports which variant it is. A binary that carries the
+# tags but calls itself standard is worse than no stamp at all.
+VARIANT_LDFLAGS := $(if $(VARIANT),-X github.com/digiogithub/pando/internal/version.Variant=$(VARIANT),)
+LDFLAGS := -s -w -X github.com/digiogithub/pando/internal/version.Version=$(VERSION) $(VARIANT_LDFLAGS)
 DIST_DIR := dist
 WEB_UI_DIR := web-ui
 WEB_UI_INSTALL_CMD ?= bun install
@@ -69,7 +91,7 @@ else
 WAILS_UPX_FLAG := -upx
 endif
 
-.PHONY: desktop-deps desktop-ui desktop-build desktop-dev desktop-package desktop-embed desktop-clean build build-fast web-ui-embedded dist-clean release release-linux-amd64 release-linux-arm64 release-windows-amd64 release-darwin-amd64 release-darwin-arm64 test-integration help
+.PHONY: build-enterprise release-enterprise xpando desktop-deps desktop-ui desktop-build desktop-dev desktop-package desktop-embed desktop-clean build build-fast web-ui-embedded dist-clean release release-linux-amd64 release-linux-arm64 release-windows-amd64 release-darwin-amd64 release-darwin-arm64 test-integration help
 
 ## Install the Wails CLI (run once)
 desktop-deps:
@@ -85,15 +107,23 @@ web-ui-embedded:
 
 ## Build local CLI binary with embedded web-ui and release version from git tag
 build: web-ui-embedded
-	go build -ldflags '$(LDFLAGS)' -o pando .
+	go build $(GO_TAGS_FLAG) -ldflags '$(LDFLAGS)' -o pando$(DIST_SUFFIX) .
+
+## Build the enterprise-variant CLI binary (tags + version stamp + -enterprise suffix)
+build-enterprise: MODULE_TAGS=enterprise
+build-enterprise: build
 
 ## Build local CLI binary without rebuilding web-ui (fast iteration)
 build-fast:
-	go build -o pando .
+	go build $(GO_TAGS_FLAG) $(if $(VARIANT_LDFLAGS),-ldflags '$(VARIANT_LDFLAGS)',) -o pando$(DIST_SUFFIX) .
+
+## Build the xpando builder, which composes a binary from core + extension modules
+xpando:
+	go build -ldflags '$(LDFLAGS)' -o xpando ./cmd/xpando
 
 ## Run multi-process single-writer integration tests (requires compiled binary)
 test-integration: build-fast
-	PANDO_BINARY=./pando go test -tags=integration ./test/integration/single_writer/... -v -timeout 180s
+	PANDO_BINARY=./pando$(DIST_SUFFIX) go test -tags=integration ./test/integration/single_writer/... -v -timeout 180s
 
 ## Full desktop build: compile pando-desktop Wails binary (requires wails CLI)
 desktop-build:
@@ -147,20 +177,23 @@ dist-clean:
 $(DIST_DIR):
 	mkdir -p $(DIST_DIR)
 
+# $(1) GOOS  $(2) GOARCH  $(3) artifact platform name  $(4) binary extension  $(5) extra env
+# The artifact is named pando[-variant]-<platform>, so a standard and an
+# enterprise release can sit in the same dist/ without overwriting each other.
 define build_release
-	@echo "Building $(1)/$(2)..."
-	GOOS=$(1) GOARCH=$(2) CGO_ENABLED=$(CGO_ENABLED) $(5) go build -ldflags '$(LDFLAGS)' -o $(DIST_DIR)/pando-$(3)$(4) .
+	@echo "Building $(1)/$(2)$(if $(VARIANT), [$(VARIANT)],)..."
+	GOOS=$(1) GOARCH=$(2) CGO_ENABLED=$(CGO_ENABLED) $(5) go build $(GO_TAGS_FLAG) -ldflags '$(LDFLAGS)' -o $(DIST_DIR)/pando$(DIST_SUFFIX)-$(3)$(4) .
 	if [ "$(1)" != "darwin" ] && command -v $(UPX) >/dev/null 2>&1; then \
-		$(UPX) --best --lzma $(DIST_DIR)/pando-$(3)$(4); \
+		$(UPX) --best --lzma $(DIST_DIR)/pando$(DIST_SUFFIX)-$(3)$(4); \
 	else echo "Skipping UPX for $(3)"; fi
 	if [ "$(1)" = "darwin" ]; then \
 		_cs="$(MACOS_CODESIGN_WRAPPER)"; \
 		if [ -x "$$_cs" ]; then \
-			echo "Signing $(DIST_DIR)/pando-$(3)$(4) with $$_cs..."; \
-			"$$_cs" "$(DIST_DIR)/pando-$(3)$(4)"; \
+			echo "Signing $(DIST_DIR)/pando$(DIST_SUFFIX)-$(3)$(4) with $$_cs..."; \
+			"$$_cs" "$(DIST_DIR)/pando$(DIST_SUFFIX)-$(3)$(4)"; \
 		fi; \
 	fi
-	cd $(DIST_DIR) && zip -qm pando-$(3).zip pando-$(3)$(4)
+	cd $(DIST_DIR) && zip -qm pando$(DIST_SUFFIX)-$(3).zip pando$(DIST_SUFFIX)-$(3)$(4)
 endef
 
 define require_cmd
@@ -169,6 +202,10 @@ endef
 
 ## Build all release archives in dist/ for Linux, Windows and macOS
 release: web-ui-embedded $(DIST_DIR) release-linux-amd64 release-linux-arm64 release-windows-amd64 $(if $(filter Darwin,$(shell uname)),release-darwin-amd64 release-darwin-arm64)
+
+## Build all release archives for the enterprise variant
+release-enterprise: MODULE_TAGS=enterprise
+release-enterprise: release
 
 ## Build Linux x64 release archive in dist/
 release-linux-amd64: | $(DIST_DIR)

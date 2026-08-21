@@ -46,6 +46,8 @@ Thumbs.db
 node_modules/
 .pando/
 /pando
+/pando-enterprise
+/xpando
 
 *.db
 dist/

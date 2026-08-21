@@ -1,0 +1,61 @@
+name: Build Matrix
+
+# Compiles the core with every tag set we ship, so a change that only builds
+# under the default tags cannot reach main. The enterprise variant links no
+# private module here (composition happens in xpando's generated module), so
+# this job needs no credentials: it verifies the tag-guarded code in the core
+# still compiles and that the variant stamp is applied.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (MODULE_TAGS=${{ matrix.module_tags || 'none' }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module_tags: ''
+            binary: pando
+          - module_tags: 'enterprise'
+            binary: pando-enterprise
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ${{ matrix.module_tags && format('-tags {0}', matrix.module_tags) || '' }} ./...
+
+      - name: Build
+        run: make build-fast MODULE_TAGS=${{ matrix.module_tags }}
+
+      - name: Check the variant stamp
+        run: |
+          got=$(./${{ matrix.binary }} --version)
+          echo "pando --version -> $got"
+          case "${{ matrix.module_tags }}" in
+            enterprise)
+              echo "$got" | grep -q '(enterprise)' \
+                || { echo "enterprise build does not report its variant"; exit 1; } ;;
+            *)
+              echo "$got" | grep -q '(' \
+                && { echo "standard build reports a variant"; exit 1; } || true ;;
+          esac
+
+      - name: Build xpando
+        run: make xpando
+
+      - name: Test the builder
+        run: go test ./cmd/xpando ./pkg/extension ./internal/extensions

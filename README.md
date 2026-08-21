@@ -81,6 +81,10 @@ go build -o pando
 ./pando app
 ```
 
+Extensions are linked in at build time. To build a variant, or to compose a
+binary from the core plus private extension modules with `xpando`, see
+[docs/extension-builds.md](docs/extension-builds.md).
+
 ## Configuration
 
 Pando looks for configuration in the following locations:
