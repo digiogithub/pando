@@ -121,6 +121,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/remembrances/projects/index", s.handleIndexCodeProject)
 	mux.HandleFunc("POST /api/v1/remembrances/reindex", s.handleReindexAllCodeProjects)
 	mux.HandleFunc("POST /api/v1/remembrances/test-connection", s.handleTestEmbeddingConnection)
+	mux.HandleFunc("GET /api/v1/remembrances/embedding-models", s.handleListEmbeddingModels)
 	// Context enrichment runtime toggle
 	mux.HandleFunc("GET /api/v1/remembrances/enrichment", s.handleGetEnrichmentStatus)
 	mux.HandleFunc("PUT /api/v1/remembrances/enrichment", s.handleToggleEnrichment)

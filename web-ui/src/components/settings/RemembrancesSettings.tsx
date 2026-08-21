@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useServicesSettingsStore } from '@/stores/servicesSettingsStore'
 import { TextInput, Toggle } from '@/components/shared/FormInput'
 import MaskedInput from '@/components/shared/MaskedInput'
+import DirBrowserDialog from '@/components/shared/DirBrowserDialog'
+import { useProjectStore } from '@/stores/projectStore'
 import { useToastStore } from '@/stores/toastStore'
 import api from '@/services/api'
 import type { CodeProjectInfo } from '@/types'
@@ -42,6 +44,169 @@ const selectStyle: React.CSSProperties = {
 
 const EMBEDDING_PROVIDERS = ['', 'openai', 'openai-compatible', 'anthropic', 'ollama']
 
+const smallButtonStyle: React.CSSProperties = {
+  padding: '0.5rem 0.875rem',
+  background: 'transparent',
+  color: 'var(--fg)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-sm)',
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  whiteSpace: 'nowrap',
+}
+
+const fieldLabelStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 600,
+  color: 'var(--fg-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+}
+
+const hintStyle: React.CSSProperties = { fontSize: 12, color: 'var(--fg-dim)' }
+
+interface EmbeddingModelInfo {
+  id: string
+  name?: string
+  size?: string
+}
+
+interface EmbeddingModelsResponse {
+  provider: string
+  models: EmbeddingModelInfo[]
+  source: 'api' | 'heuristic' | 'static'
+  error?: string
+}
+
+const SOURCE_HINTS: Record<string, string> = {
+  api: 'reported as embedding models by the provider',
+  heuristic: 'provider does not flag embedders — filtered by name',
+  static: 'known catalog (provider publishes no model list)',
+}
+
+/**
+ * EmbeddingModelPicker keeps the free-text field (some deployments serve models
+ * that no listing endpoint knows about) and adds the list the provider actually
+ * offers, so the model no longer has to be typed from memory.
+ */
+function EmbeddingModelPicker({
+  label,
+  listId,
+  provider,
+  baseUrl,
+  apiKey,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string
+  listId: string
+  provider: string
+  baseUrl: string
+  apiKey: string
+  value: string
+  placeholder?: string
+  onChange: (value: string) => void
+}) {
+  const [models, setModels] = useState<EmbeddingModelInfo[]>([])
+  const [source, setSource] = useState<string>('')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const load = useCallback(async () => {
+    if (!provider) {
+      setModels([])
+      setSource('')
+      setError(null)
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams({ provider })
+      if (baseUrl) params.set('base_url', baseUrl)
+      if (apiKey) params.set('api_key', apiKey)
+      const data = await api.get<EmbeddingModelsResponse>(
+        `/api/v1/remembrances/embedding-models?${params.toString()}`,
+      )
+      setModels(data.models ?? [])
+      setSource(data.source ?? '')
+      setError(data.error ?? null)
+    } catch (e) {
+      setModels([])
+      setError(e instanceof Error ? e.message : 'Failed to list models')
+    } finally {
+      setLoading(false)
+    }
+  }, [provider, baseUrl, apiKey])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+      <label style={fieldLabelStyle}>{label}</label>
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'stretch' }}>
+        <select
+          value={models.some((m) => m.id === value) ? value : ''}
+          onChange={(e) => e.target.value && onChange(e.target.value)}
+          disabled={!provider || loading || models.length === 0}
+          style={{ ...selectStyle, flex: 1 }}
+        >
+          <option value="">
+            {loading
+              ? 'Loading models…'
+              : models.length === 0
+                ? '— no models available —'
+                : '— select a model —'}
+          </option>
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.size ? `${m.name || m.id} (${m.size})` : m.name || m.id}
+            </option>
+          ))}
+        </select>
+        <button type="button" onClick={() => void load()} disabled={!provider || loading} style={smallButtonStyle}>
+          {loading ? '…' : 'Refresh'}
+        </button>
+      </div>
+      <input
+        value={value}
+        list={listId}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          background: 'var(--input-bg)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-sm)',
+          color: 'var(--fg)',
+          fontSize: 14,
+          padding: '0.5rem 0.75rem',
+          outline: 'none',
+          width: '100%',
+          fontFamily: 'inherit',
+          boxSizing: 'border-box',
+        }}
+      />
+      <datalist id={listId}>
+        {models.map((m) => (
+          <option key={m.id} value={m.id} />
+        ))}
+      </datalist>
+      <span style={hintStyle}>
+        {error
+          ? `Could not list models: ${error}. Type the model name manually.`
+          : source
+            ? `${models.length} model(s) — ${SOURCE_HINTS[source] ?? source}. You can also type any name.`
+            : 'Select an embedding provider to list its models.'}
+      </span>
+    </div>
+  )
+}
+
 interface EmbeddingTestResult {
   ok: boolean
   error?: string
@@ -67,10 +232,19 @@ export default function RemembrancesSettings() {
   const [testingCode, setTestingCode] = useState(false)
   const [docTestResult, setDocTestResult] = useState<EmbeddingTestResult | null>(null)
   const [codeTestResult, setCodeTestResult] = useState<EmbeddingTestResult | null>(null)
+  const [browsingKBPath, setBrowsingKBPath] = useState(false)
+  // The KB path is normally relative to the project, so the directory picker
+  // starts at the instance working directory instead of $HOME.
+  const workspace = useProjectStore((s) => s.workspace)
+  const fetchWorkspace = useProjectStore((s) => s.fetchWorkspace)
 
   useEffect(() => {
     fetchServices()
   }, [fetchServices])
+
+  useEffect(() => {
+    if (!workspace) void fetchWorkspace()
+  }, [workspace, fetchWorkspace])
 
   useEffect(() => {
     if (config.remembrances.enabled) {
@@ -175,12 +349,19 @@ export default function RemembrancesSettings() {
       {/* KB Filesystem Sync */}
       <p style={subSectionTitle}>KB Filesystem Sync</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <TextInput
-          label="KB Path"
-          value={rem.kb_path}
-          onChange={(e) => updateRemembrances('kb_path', e.target.value)}
-          placeholder="./.kb"
-        />
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+          <div style={{ flex: 1 }}>
+            <TextInput
+              label="KB Path"
+              value={rem.kb_path}
+              onChange={(e) => updateRemembrances('kb_path', e.target.value)}
+              placeholder="./.kb"
+            />
+          </div>
+          <button type="button" onClick={() => setBrowsingKBPath(true)} style={smallButtonStyle}>
+            Browse…
+          </button>
+        </div>
         <Toggle
           label="Watch KB Path"
           description="Monitor markdown changes in real time and re-index automatically"
@@ -229,11 +410,15 @@ export default function RemembrancesSettings() {
           </select>
         </div>
 
-        <TextInput
+        <EmbeddingModelPicker
           label="Embedding Model"
+          listId="doc-embedding-models"
+          provider={rem.document_embedding_provider}
+          baseUrl={rem.document_embedding_base_url}
+          apiKey={rem.document_embedding_api_key}
           value={rem.document_embedding_model}
-          onChange={(e) => updateRemembrances('document_embedding_model', e.target.value)}
           placeholder="text-embedding-3-small"
+          onChange={(v) => updateRemembrances('document_embedding_model', v)}
         />
 
         {(rem.document_embedding_provider === 'openai-compatible' || rem.document_embedding_provider === 'ollama') && (
@@ -311,11 +496,15 @@ export default function RemembrancesSettings() {
               </select>
             </div>
 
-            <TextInput
+            <EmbeddingModelPicker
               label="Code Embedding Model"
+              listId="code-embedding-models"
+              provider={rem.code_embedding_provider}
+              baseUrl={rem.code_embedding_base_url}
+              apiKey={rem.code_embedding_api_key}
               value={rem.code_embedding_model}
-              onChange={(e) => updateRemembrances('code_embedding_model', e.target.value)}
               placeholder="nomic-embed-code"
+              onChange={(v) => updateRemembrances('code_embedding_model', v)}
             />
 
             {(rem.code_embedding_provider === 'openai-compatible' || rem.code_embedding_provider === 'ollama') && (
@@ -720,6 +909,25 @@ export default function RemembrancesSettings() {
           Reset
         </button>
       </div>
+
+      {browsingKBPath && (
+        <DirBrowserDialog
+          // The browser only understands absolute paths. A relative KB path (the
+          // default './.kb') is project-relative, so the picker opens at the
+          // working directory rather than at $HOME — and at the working
+          // directory itself, not at the KB folder, which may not exist yet.
+          initialPath={
+            rem.kb_path.startsWith('/') || rem.kb_path.startsWith('~')
+              ? rem.kb_path
+              : workspace?.cwd || undefined
+          }
+          onSelect={(path) => {
+            updateRemembrances('kb_path', path)
+            setBrowsingKBPath(false)
+          }}
+          onClose={() => setBrowsingKBPath(false)}
+        />
+      )}
     </div>
   )
 }

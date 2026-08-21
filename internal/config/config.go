@@ -2143,106 +2143,14 @@ func setProviderDefaults() {
 		viper.SetDefault("mesnada.delegation.acceptDelegations", parseEnvBool(v))
 	}
 
-	// Use this order to set the default models
-	// 1. Copilot
-	// 2. Anthropic
-	// 3. OpenAI
-	// 4. Google Gemini
-	// 5. Groq
-	// 6. OpenRouter
-	// 7. AWS Bedrock
-	// 8. Azure
-	// 9. Google Cloud VertexAI
-
-	// copilot configuration
-	if key := viper.GetString("providers.copilot.apiKey"); strings.TrimSpace(key) != "" {
-		viper.SetDefault("agents.coder.model", models.CopilotGPT4o)
-		viper.SetDefault("agents.summarizer.model", models.CopilotGPT4o)
-		viper.SetDefault("agents.task.model", models.CopilotGPT4o)
-		viper.SetDefault("agents.title.model", models.CopilotGPT4o)
-		return
-	}
-
-	// Anthropic configuration
-	if key := viper.GetString("providers.anthropic.apiKey"); strings.TrimSpace(key) != "" {
-		viper.SetDefault("agents.coder.model", models.Claude4Sonnet)
-		viper.SetDefault("agents.summarizer.model", models.Claude4Sonnet)
-		viper.SetDefault("agents.task.model", models.Claude4Sonnet)
-		viper.SetDefault("agents.title.model", models.Claude4Sonnet)
-		return
-	}
-
-	// OpenAI configuration
-	if key := viper.GetString("providers.openai.apiKey"); strings.TrimSpace(key) != "" {
-		viper.SetDefault("agents.coder.model", models.GPT41)
-		viper.SetDefault("agents.summarizer.model", models.GPT41)
-		viper.SetDefault("agents.task.model", models.GPT41Mini)
-		viper.SetDefault("agents.title.model", models.GPT41Mini)
-		return
-	}
-
-	// Google Gemini configuration
-	if key := viper.GetString("providers.gemini.apiKey"); strings.TrimSpace(key) != "" {
-		viper.SetDefault("agents.coder.model", models.Gemini25)
-		viper.SetDefault("agents.summarizer.model", models.Gemini25)
-		viper.SetDefault("agents.task.model", models.Gemini25Flash)
-		viper.SetDefault("agents.title.model", models.Gemini25Flash)
-		return
-	}
-
-	// Groq configuration
-	if key := viper.GetString("providers.groq.apiKey"); strings.TrimSpace(key) != "" {
-		viper.SetDefault("agents.coder.model", models.QWENQwq)
-		viper.SetDefault("agents.summarizer.model", models.QWENQwq)
-		viper.SetDefault("agents.task.model", models.QWENQwq)
-		viper.SetDefault("agents.title.model", models.QWENQwq)
-		return
-	}
-
-	// OpenRouter configuration
-	if key := viper.GetString("providers.openrouter.apiKey"); strings.TrimSpace(key) != "" {
-		viper.SetDefault("agents.coder.model", models.OpenRouterClaude37Sonnet)
-		viper.SetDefault("agents.summarizer.model", models.OpenRouterClaude37Sonnet)
-		viper.SetDefault("agents.task.model", models.OpenRouterClaude37Sonnet)
-		viper.SetDefault("agents.title.model", models.OpenRouterClaude35Haiku)
-		return
-	}
-
-	// XAI configuration
-	if key := viper.GetString("providers.xai.apiKey"); strings.TrimSpace(key) != "" {
-		viper.SetDefault("agents.coder.model", models.XAIGrok3Beta)
-		viper.SetDefault("agents.summarizer.model", models.XAIGrok3Beta)
-		viper.SetDefault("agents.task.model", models.XAIGrok3Beta)
-		viper.SetDefault("agents.title.model", models.XAiGrok3MiniFastBeta)
-		return
-	}
-
-	// AWS Bedrock configuration
-	if hasAWSCredentials() {
-		viper.SetDefault("agents.coder.model", models.BedrockClaude37Sonnet)
-		viper.SetDefault("agents.summarizer.model", models.BedrockClaude37Sonnet)
-		viper.SetDefault("agents.task.model", models.BedrockClaude37Sonnet)
-		viper.SetDefault("agents.title.model", models.BedrockClaude37Sonnet)
-		return
-	}
-
-	// Azure OpenAI configuration
-	if os.Getenv("AZURE_OPENAI_ENDPOINT") != "" {
-		viper.SetDefault("agents.coder.model", models.AzureGPT41)
-		viper.SetDefault("agents.summarizer.model", models.AzureGPT41)
-		viper.SetDefault("agents.task.model", models.AzureGPT41Mini)
-		viper.SetDefault("agents.title.model", models.AzureGPT41Mini)
-		return
-	}
-
-	// Google Cloud VertexAI configuration
-	if hasVertexAICredentials() {
-		viper.SetDefault("agents.coder.model", models.VertexAIGemini25)
-		viper.SetDefault("agents.summarizer.model", models.VertexAIGemini25)
-		viper.SetDefault("agents.task.model", models.VertexAIGemini25Flash)
-		viper.SetDefault("agents.title.model", models.VertexAIGemini25Flash)
-		return
-	}
+	// Agent models are deliberately NOT defaulted here. Hardcoded per-provider
+	// model IDs went stale as providers retired models (Copilot agents ended up
+	// pinned to a gpt-4o that no longer exists), and they silently overrode the
+	// coder model the user actually picked. Models are now resolved from the live
+	// registry: the coder agent gets the best model of the first configured
+	// provider (see setDefaultModelForAgent), and every other agent inherits the
+	// coder model, which is also what propagateCoderModel applies when the user
+	// switches it.
 }
 
 // hasAWSCredentials checks if AWS credentials are available in the environment.
@@ -2884,6 +2792,15 @@ func migrateProvidersToAccounts(c *Config) {
 
 	for _, name := range providerNames {
 		p := c.Providers[models.ModelProvider(name)]
+		if !providerEntryHasCredentials(models.ModelProvider(name), p) {
+			// A credential-less section (typically the commented-out example left
+			// uncommented by an older config template) is not a real account: it
+			// would surface a provider the user never configured, with models that
+			// can never answer. Drop it from the legacy migration.
+			logging.Debug("skipping credential-less provider during account migration", "provider", name)
+			delete(c.Providers, models.ModelProvider(name))
+			continue
+		}
 		c.ProviderAccounts = append(c.ProviderAccounts, ProviderAccount{
 			ID:          name,
 			DisplayName: capitalizeFirst(name),
@@ -2895,6 +2812,38 @@ func migrateProvidersToAccounts(c *Config) {
 		})
 	}
 	logging.Info("migrated legacy providers to provider accounts", "count", len(c.ProviderAccounts))
+}
+
+// providerEntryHasCredentials reports whether a legacy [Providers.x] entry is
+// backed by usable credentials: an explicit API key, an API key in the
+// environment, or a stored OAuth session (Claude / Copilot). Providers that
+// need no key at all (Ollama, llama.cpp, local, ...) always qualify, as do
+// entries explicitly disabled by the user, which must be preserved so the
+// opt-out survives.
+func providerEntryHasCredentials(provider models.ModelProvider, p Provider) bool {
+	if p.Disabled {
+		return true
+	}
+	if !providerRequiresAPIKey(provider) {
+		return true
+	}
+	if strings.TrimSpace(p.APIKey) != "" {
+		return true
+	}
+	if strings.TrimSpace(getProviderAPIKey(provider)) != "" {
+		return true
+	}
+	switch provider {
+	case models.ProviderAnthropic:
+		return hasClaudeCredentials()
+	case models.ProviderCopilot:
+		return hasCopilotCredentials()
+	case models.ProviderBedrock:
+		return hasAWSCredentials()
+	case models.ProviderVertexAI:
+		return hasVertexAICredentials()
+	}
+	return false
 }
 
 // syncProvidersFromAccounts rebuilds the legacy cfg.Providers map entries for
@@ -3183,101 +3132,182 @@ func getProviderAPIKey(provider models.ModelProvider) string {
 
 // setDefaultModelForAgent sets a default model for an agent based on available providers.
 // MaxTokens is left at 0 so ResolveAgentMaxTokens picks the automatic budget at runtime.
+// setDefaultModelForAgent seeds a model for an agent that has none.
+//
+// Only the coder agent resolves a model of its own, and it does so against the
+// live model registry instead of a hardcoded ID, so a provider retiring a model
+// can no longer leave an agent pinned to something that does not exist. Every
+// other agent inherits the coder model; when the coder has no model yet the
+// agent is simply left empty and the user picks one from the TUI/Web UI.
 func setDefaultModelForAgent(agent AgentName) bool {
-	// Only use Copilot if credentials exist AND provider is not disabled
-	if hasCopilotCredentials() {
-		copilotDisabled := false
-		if providerCfg, ok := cfg.Providers[models.ProviderCopilot]; ok && providerCfg.Disabled {
-			copilotDisabled = true
+	if cfg == nil {
+		return false
+	}
+	if cfg.Agents == nil {
+		cfg.Agents = make(map[AgentName]Agent)
+	}
+
+	if agent != AgentCoder {
+		coderModel := cfg.Agents[AgentCoder].Model
+		if strings.TrimSpace(string(coderModel)) == "" {
+			return false
 		}
-		if !copilotDisabled {
-			cfg.Agents[agent] = Agent{Model: models.CopilotGPT4o}
+		if _, ok := models.SupportedModels()[coderModel]; !ok {
+			return false
+		}
+		cfg.Agents[agent] = agentInheritingModel(cfg.Agents[agent], coderModel)
+		return true
+	}
+
+	model, ok := defaultCoderModel()
+	if !ok {
+		return false
+	}
+	cfg.Agents[AgentCoder] = agentInheritingModel(cfg.Agents[AgentCoder], model.ID)
+	return true
+}
+
+// agentInheritingModel returns base with modelID applied, keeping the manual
+// MaxTokens override and dropping controls the new model may not accept
+// (reasoning effort / thinking mode are re-validated by validateAgent).
+func agentInheritingModel(base Agent, modelID models.ModelID) Agent {
+	return Agent{
+		Model:     modelID,
+		MaxTokens: base.MaxTokens,
+	}
+}
+
+// defaultCoderModel picks the strongest usable model for the first provider that
+// has credentials, following the documented provider preference order. It reads
+// the live registry (static catalog + dynamically discovered provider models),
+// so it stays correct as providers add and retire models.
+func defaultCoderModel() (models.Model, bool) {
+	for _, provider := range defaultProviderPreference() {
+		if !providerUsableForDefaults(provider) {
+			continue
+		}
+		if model, ok := bestModelForProvider(provider); ok {
+			return model, true
+		}
+	}
+	return models.Model{}, false
+}
+
+// defaultProviderPreference is the order in which a provider is considered when
+// no model has been selected yet.
+func defaultProviderPreference() []models.ModelProvider {
+	return []models.ModelProvider{
+		models.ProviderCopilot,
+		models.ProviderAnthropic,
+		models.ProviderOpenAI,
+		models.ProviderGemini,
+		models.ProviderGROQ,
+		models.ProviderOpenRouter,
+		models.ProviderXAI,
+		models.ProviderBedrock,
+		models.ProviderAzure,
+		models.ProviderVertexAI,
+		models.ProviderOllama,
+		models.ProviderLlamaCpp,
+	}
+}
+
+// providerUsableForDefaults reports whether a provider can serve a default model:
+// it must not be disabled and must have credentials (config, environment or a
+// stored OAuth session), or need none at all.
+func providerUsableForDefaults(provider models.ModelProvider) bool {
+	if cfg == nil {
+		return false
+	}
+	providerCfg, configured := cfg.Providers[provider]
+	if configured && providerCfg.Disabled {
+		return false
+	}
+	switch provider {
+	case models.ProviderCopilot:
+		return hasCopilotCredentials() || strings.TrimSpace(providerCfg.APIKey) != ""
+	case models.ProviderAnthropic:
+		return hasClaudeCredentials() || strings.TrimSpace(providerCfg.APIKey) != "" ||
+			strings.TrimSpace(getProviderAPIKey(provider)) != ""
+	case models.ProviderBedrock:
+		return hasAWSCredentials()
+	case models.ProviderVertexAI:
+		return hasVertexAICredentials()
+	case models.ProviderOllama, models.ProviderLlamaCpp, models.ProviderLocal:
+		// Local runtimes need no key, but they must be configured explicitly:
+		// otherwise every fresh install would default to a server that is not there.
+		return configured
+	}
+	if !configured && strings.TrimSpace(getProviderAPIKey(provider)) == "" {
+		return false
+	}
+	return strings.TrimSpace(providerCfg.APIKey) != "" || strings.TrimSpace(getProviderAPIKey(provider)) != ""
+}
+
+// nonChatModelMarkers are substrings of model IDs that never belong to a coding
+// agent (embeddings, audio, image and ranking endpoints some providers list
+// alongside their chat models).
+var nonChatModelMarkers = []string{
+	"embed", "embedding", "rerank", "moderation", "whisper", "tts-", "-tts",
+	"dall-e", "image-", "-image", "transcribe", "speech", "guard",
+}
+
+// smallModelMarkers mark the cheap/fast variants of a family. They are valid
+// models, only not the best pick for the coder agent when a flagship exists.
+var smallModelMarkers = []string{"mini", "nano", "small", "lite", "flash", "haiku", "instant", "tiny"}
+
+// bestModelForProvider returns the model of a provider best suited to be the
+// default coder model: a real chat model, preferring flagship variants, then the
+// largest context window, then the more capable (more expensive) one. Ordering
+// is fully deterministic so the same catalog always yields the same default.
+func bestModelForProvider(provider models.ModelProvider) (models.Model, bool) {
+	candidates := make([]models.Model, 0, 16)
+	for _, model := range models.SupportedModels() {
+		if model.Provider != provider {
+			continue
+		}
+		if isNonChatModel(model) {
+			continue
+		}
+		candidates = append(candidates, model)
+	}
+	if len(candidates) == 0 {
+		return models.Model{}, false
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		a, b := candidates[i], candidates[j]
+		if aSmall, bSmall := isSmallModel(a), isSmallModel(b); aSmall != bSmall {
+			return !aSmall
+		}
+		if a.ContextWindow != b.ContextWindow {
+			return a.ContextWindow > b.ContextWindow
+		}
+		if a.CostPer1MOut != b.CostPer1MOut {
+			return a.CostPer1MOut > b.CostPer1MOut
+		}
+		return a.ID < b.ID
+	})
+	return candidates[0], true
+}
+
+func isNonChatModel(model models.Model) bool {
+	id := strings.ToLower(string(model.ID) + " " + model.APIModel + " " + model.Name)
+	for _, marker := range nonChatModelMarkers {
+		if strings.Contains(id, marker) {
 			return true
 		}
 	}
-	// Check providers in order of preference
-	if os.Getenv("ANTHROPIC_API_KEY") != "" {
-		cfg.Agents[agent] = Agent{Model: models.Claude4Sonnet}
-		return true
-	}
+	return false
+}
 
-	if os.Getenv("OPENAI_API_KEY") != "" {
-		var modelID models.ModelID
-		reasoningEffort := ""
-
-		switch agent {
-		case AgentTitle, AgentContextEnricher:
-			modelID = models.GPT41Mini
-		case AgentTask:
-			modelID = models.GPT41Mini
-		default:
-			modelID = models.GPT41
+func isSmallModel(model models.Model) bool {
+	id := strings.ToLower(string(model.ID) + " " + model.APIModel)
+	for _, marker := range smallModelMarkers {
+		if strings.Contains(id, marker) {
+			return true
 		}
-
-		if modelInfo, ok := models.SupportedModels()[modelID]; ok && modelInfo.CanReason {
-			reasoningEffort = "medium"
-		}
-
-		cfg.Agents[agent] = Agent{Model: modelID, ReasoningEffort: reasoningEffort}
-		return true
 	}
-
-	if os.Getenv("OPENROUTER_API_KEY") != "" {
-		var modelID models.ModelID
-		switch agent {
-		case AgentTitle, AgentContextEnricher:
-			modelID = models.OpenRouterClaude35Haiku
-		default:
-			modelID = models.OpenRouterClaude37Sonnet
-		}
-		cfg.Agents[agent] = Agent{Model: modelID}
-		return true
-	}
-
-	if os.Getenv("GEMINI_API_KEY") != "" {
-		var modelID models.ModelID
-		if agent == AgentTitle || agent == AgentContextEnricher {
-			modelID = models.Gemini25Flash
-		} else {
-			modelID = models.Gemini25
-		}
-		cfg.Agents[agent] = Agent{Model: modelID}
-		return true
-	}
-
-	if os.Getenv("GROQ_API_KEY") != "" {
-		cfg.Agents[agent] = Agent{Model: models.QWENQwq}
-		return true
-	}
-
-	if hasAWSCredentials() {
-		cfg.Agents[agent] = Agent{
-			Model:           models.BedrockClaude37Sonnet,
-			ReasoningEffort: "medium",
-		}
-		return true
-	}
-
-	if hasVertexAICredentials() {
-		var modelID models.ModelID
-		if agent == AgentTitle || agent == AgentContextEnricher {
-			modelID = models.VertexAIGemini25Flash
-		} else {
-			modelID = models.VertexAIGemini25
-		}
-		cfg.Agents[agent] = Agent{Model: modelID}
-		return true
-	}
-
-	if providerCfg, ok := cfg.Providers[models.ProviderOllama]; ok && !providerCfg.Disabled {
-		model, ok := firstModelForProvider(models.ProviderOllama)
-		if !ok {
-			return false
-		}
-		cfg.Agents[agent] = Agent{Model: model.ID}
-		return true
-	}
-
 	return false
 }
 
@@ -3617,6 +3647,9 @@ func setAgentModel(agentName AgentName, modelID models.ModelID, persist bool) er
 	}
 
 	if !persist {
+		if agentName == AgentCoder {
+			propagateCoderModel(modelID, false)
+		}
 		return nil
 	}
 
@@ -3631,10 +3664,80 @@ func setAgentModel(agentName AgentName, modelID models.ModelID, persist bool) er
 	}
 
 	if agentName == AgentCoder {
+		propagateCoderModel(modelID, true)
 		ensureEvaluatorDefaultModel()
 	}
 
 	return nil
+}
+
+// propagateCoderModel fills every agent that still has no model of its own, plus
+// the evaluator (self-improvement) model, with the model just selected for the
+// coder agent.
+//
+// Agents are left empty on a fresh install instead of being pinned to a
+// hardcoded per-provider ID, so this is what actually gives the summarizer,
+// title, task, cli-assist, persona-selector and context-enricher agents a
+// working model. An agent the user has already configured is never touched: the
+// explicit selection always wins.
+//
+// A config change event is published so the TUI settings page and the Web UI
+// (over /api/v1/config/events) refresh without a restart.
+func propagateCoderModel(modelID models.ModelID, persist bool) {
+	if cfg == nil || strings.TrimSpace(string(modelID)) == "" {
+		return
+	}
+	if _, ok := models.SupportedModels()[modelID]; !ok {
+		return
+	}
+	if cfg.Agents == nil {
+		cfg.Agents = make(map[AgentName]Agent)
+	}
+
+	updated := make(map[AgentName]Agent)
+	for _, name := range KnownAgentNames {
+		if name == AgentCoder {
+			continue
+		}
+		current := cfg.Agents[name]
+		if strings.TrimSpace(string(current.Model)) != "" {
+			continue
+		}
+		next := agentInheritingModel(current, modelID)
+		cfg.Agents[name] = next
+		if err := validateAgent(cfg, name, next); err != nil {
+			delete(cfg.Agents, name)
+			logging.Warn("failed to propagate coder model to agent", "agent", name, "error", err)
+			continue
+		}
+		updated[name] = cfg.Agents[name]
+	}
+
+	if len(updated) == 0 {
+		return
+	}
+
+	logging.Info("propagated coder model to agents without a model",
+		"model", modelID, "agents", len(updated))
+
+	if persist {
+		if err := updateCfgFile(func(config *Config) {
+			if config.Agents == nil {
+				config.Agents = make(map[AgentName]Agent)
+			}
+			for name, agent := range updated {
+				config.Agents[name] = agent
+			}
+		}); err != nil {
+			logging.Warn("failed to persist propagated agent models", "error", err)
+		}
+	}
+
+	Bus.Publish(ConfigChangeEvent{
+		Section:   "agents",
+		Timestamp: time.Now(),
+		Source:    "config",
+	})
 }
 
 // UpdateTheme updates the theme in the configuration and writes it to the config file.
@@ -4276,7 +4379,15 @@ func ensureAgentDefaults() {
 		cfg.Agents = make(map[AgentName]Agent)
 	}
 
-	for _, agentName := range []AgentName{AgentCoder, AgentSummarizer, AgentTask, AgentTitle, AgentContextEnricher} {
+	// Coder first: every other agent inherits its model when it has none, so the
+	// coder must be resolved before the rest are considered.
+	if strings.TrimSpace(string(cfg.Agents[AgentCoder].Model)) == "" {
+		_ = setDefaultModelForAgent(AgentCoder)
+	}
+	for _, agentName := range KnownAgentNames {
+		if agentName == AgentCoder {
+			continue
+		}
 		if strings.TrimSpace(string(cfg.Agents[agentName].Model)) != "" {
 			continue
 		}

@@ -245,7 +245,7 @@ KBConvertExtensions = []
 KBWikiLinks = true
 AutoIndexSessions = true
 DocumentEmbeddingProvider = 'ollama'
-DocumentEmbeddingModel = 'nomic-embed-text'
+DocumentEmbeddingModel = 'nomic-embed-text:latest'
 DocumentEmbeddingBaseURL = ''
 DocumentEmbeddingAPIKey = ''
 CodeEmbeddingProvider = 'ollama'
@@ -297,7 +297,7 @@ Enabled = true
 
 [[Server.BasicAuth.Users]]
 Username = 'admin'
-Password = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBLdFBOYjRYOGN1Y0l6YmplaStJeEdoVklUZ29NeW43UllSaHh2cmUya0RZClVSZUk3OXVBZmJ6YUwwMkhBdTk2MkVTcXh6SmtOTnZsTXlMNHFUcXZDL2sKLS0tIDVTcHpBdkVaNGtrTjI3WUY5Z2hYcE1Hc2ovK2VhcWdHelZ0QmNLcUEzL0UK2ATmPM0xdt67dLoZMNacXSWhv0aqY9UeoJVZputiNlpb2rswpA=='
+Password = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBCaVFwU1hpZzJnYUZxVHV0MktkUkZqdzdOUzE2TnVFSjZpZE1YQU1hN1h3CjRXMzVMR25UL3VaeWdJYnZGMk1ZZ2ZMeWNSMzZnbGNrOG5PSTFyOTl2YjgKLS0tIHRqYjMvRDNQRENGRkU5MVloNEpKdlprZ0ZLZDMyWGFzL1R0SFZ6eU1oazQKPj8Jap+QMiyWrtJ6WMZ5/zqq7QCbdF8/u0YqWLbaGf/mB1gK6A=='
 
 [Lua]
 Enabled = false

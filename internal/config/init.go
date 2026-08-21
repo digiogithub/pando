@@ -137,11 +137,14 @@ Directory = './.pando/data'
 # =============================================================================
 [Providers]
 
-[Providers.anthropic]
-APIKey   = ''
-BaseURL  = ''
-Disabled = false
-UseOAuth = true
+# Nothing is enabled by default: declare only the providers you actually use.
+# A provider section written here is treated as configured, so leaving one in
+# place with an empty key makes Pando advertise an account that cannot be used.
+# [Providers.anthropic]
+# APIKey   = ''
+# BaseURL  = ''
+# Disabled = false
+# UseOAuth = true
 
 # [Providers.openai]
 # APIKey   = ''

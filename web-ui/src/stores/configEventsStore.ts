@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import api, { getBaseURL } from '@/services/api'
-import { useSettingsStore } from './settingsStore'
+import { useSettingsStore, useAgentsStore, useProvidersStore } from './settingsStore'
 
 export interface ConfigChangeEvent {
   section: string
@@ -48,6 +48,17 @@ export const useConfigEventsStore = create<ConfigEventsStore>((set, get) => ({
           if (event.source === 'webui') return
           // Re-fetch settings so the form reflects the new values.
           useSettingsStore.getState().fetchSettings()
+          // Agents and providers live in their own stores. Selecting the coder
+          // model fills in every agent that had none (summarizer, title, task,
+          // …), so those must be refreshed too — including for a change the
+          // Web-UI itself triggered, which the backend reports with a source
+          // other than "webui" precisely so it is not filtered out above.
+          if (!event.section || event.section === 'agents') {
+            useAgentsStore.getState().fetchAgents()
+          }
+          if (!event.section || event.section === 'providers' || event.section === 'provider_accounts') {
+            useProvidersStore.getState().fetchProviders()
+          }
         } catch {
           // Ignore malformed events
         }
