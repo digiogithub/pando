@@ -8,10 +8,9 @@ import "context"
 // with the agent have to live here. Core adapts these to its internal tool
 // types at the wiring point.
 //
-// NOTE: ToolProvider is not consumed by the agent yet — that wiring lands with
-// P1 of the extension plan. An extension may implement it today, but its tools
-// will not reach the model until then. Manager.Statuses reports it so the gap
-// is visible rather than silent.
+// Tools contributed here reach the model: the agent collects ToolProvider and
+// the middleware interfaces below on every tool-set build (see
+// internal/extensions/tools.go and internal/llm/agent/extension_tools.go).
 
 // ToolInfo describes a tool to the model.
 type ToolInfo struct {
@@ -72,3 +71,45 @@ type ToolProvider interface {
 	// so it may return different tools as configuration changes.
 	Tools() []Tool
 }
+
+// ToolMiddleware is the base interface for extensions that observe or alter the
+// agent's tool set. It carries only the ordering rule; the actual work is
+// declared by ToolFilter, ToolInterceptor, or both.
+//
+// Middleware sees *every* tool, core tools included, not just the tools
+// contributed by extensions. That is the point: an enterprise policy module
+// exists to constrain what the model can reach.
+type ToolMiddleware interface {
+	Extension
+	// Priority orders middleware. Lower runs closer to the tool: filters with a
+	// lower priority run first, and interceptors with a lower priority sit
+	// innermost, so a high-priority interceptor observes the calls a
+	// low-priority one made. Ties break on extension ID, so ordering is stable
+	// across builds.
+	Priority() int
+}
+
+// ToolFilter rewrites the tool list before it is offered to the model. It may
+// drop, reorder or wrap tools, and it must return a slice — returning nil
+// removes every tool, which is a valid (if drastic) policy.
+//
+// Filters run once per tool-set build, not per call.
+type ToolFilter interface {
+	ToolMiddleware
+	FilterTools(tools []Tool) []Tool
+}
+
+// ToolInterceptor wraps the execution of every tool call, core tools included.
+// The implementation must call next exactly once unless it is deliberately
+// refusing the call, in which case it returns a ToolResponse with IsError set
+// and never calls next.
+//
+// Interceptors are the audit/redaction/quota hook. Returning a Go error aborts
+// the call; prefer an error ToolResponse so the model can react.
+type ToolInterceptor interface {
+	ToolMiddleware
+	InterceptTool(ctx context.Context, call ToolCall, next ToolFunc) (ToolResponse, error)
+}
+
+// ToolFunc is the next link in an interceptor chain.
+type ToolFunc func(ctx context.Context, call ToolCall) (ToolResponse, error)
