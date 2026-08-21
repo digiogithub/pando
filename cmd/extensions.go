@@ -120,8 +120,29 @@ func stateOf(st extension.Status) string {
 	}
 }
 
+// extCmd is where extension-contributed subcommands are mounted. Keeping them
+// under one namespace means an extension can never shadow a core command, and
+// `pando ext --help` is an exact list of what this build added.
+var extCmd = &cobra.Command{
+	Use:   "ext",
+	Short: "Run commands contributed by compiled-in extensions",
+	Long: `Subcommands here come from the extensions compiled into this binary.
+
+A standard build has none. Run "pando extensions list" to see which extensions
+are present and whether configuration enabled them.`,
+}
+
 func init() {
 	extensionsListCmd.Flags().BoolVar(&extensionsJSON, "json", false, "Output as JSON")
 	extensionsCmd.AddCommand(extensionsListCmd)
 	rootCmd.AddCommand(extensionsCmd)
+
+	// Building the command tree only instantiates extensions, it does not
+	// provision them or read configuration: cobra must be able to print help
+	// without starting Pando. Whether an extension is enabled is resolved when
+	// a command actually runs.
+	if subs := extensions.Commands(); len(subs) > 0 {
+		extCmd.AddCommand(subs...)
+		rootCmd.AddCommand(extCmd)
+	}
 }

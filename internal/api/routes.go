@@ -3,9 +3,22 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/digiogithub/pando/internal/extensions"
+	"github.com/digiogithub/pando/internal/logging"
 )
 
 func (s *Server) registerRoutes(mux *http.ServeMux) {
+	// Extension routes are mounted first so that a conflicting core pattern is
+	// reported by ServeMux at startup instead of silently winning. They all
+	// live under /api/ext/, so a conflict means the extension claimed a core
+	// path, which is a build error worth surfacing.
+	if s.app != nil {
+		if mounted := extensions.RegisterRoutes(s.app.Extensions, mux); len(mounted) > 0 {
+			logging.Info("Extension HTTP routes mounted", "count", len(mounted))
+		}
+	}
+
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/api/v1/token", s.handleToken)
 	mux.HandleFunc("/api/v1/project", s.handleProject)

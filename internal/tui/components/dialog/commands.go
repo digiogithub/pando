@@ -24,6 +24,9 @@ const (
 	CommandCategoryModels   CommandCategory = "Models"
 	CommandCategoryView     CommandCategory = "View"
 	CommandCategoryAccount  CommandCategory = "Account"
+	// CommandCategoryExtensions groups the commands a build's extensions add,
+	// so a user can tell at a glance what is core and what is not.
+	CommandCategoryExtensions CommandCategory = "Extensions"
 
 	commandDialogMinWidth        = 56
 	commandDialogMaxVisibleItems = 8
@@ -36,6 +39,7 @@ var commandCategoryOrder = []CommandCategory{
 	CommandCategoryModels,
 	CommandCategoryView,
 	CommandCategoryAccount,
+	CommandCategoryExtensions,
 }
 
 // Command represents a command that can be executed.
@@ -56,7 +60,8 @@ type commandMatch struct {
 
 func (c Command) normalizedCategory() CommandCategory {
 	switch c.Category {
-	case CommandCategoryFiles, CommandCategorySessions, CommandCategoryModels, CommandCategoryView, CommandCategoryAccount:
+	case CommandCategoryFiles, CommandCategorySessions, CommandCategoryModels, CommandCategoryView,
+		CommandCategoryAccount, CommandCategoryExtensions:
 		return c.Category
 	default:
 		return CommandCategoryGeneral

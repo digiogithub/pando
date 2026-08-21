@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/digiogithub/pando/internal/caveman"
+	pandocommands "github.com/digiogithub/pando/internal/commands"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
@@ -31,11 +32,19 @@ const (
 	slashCommandVulnhunt          slashCommandKind = "vulnhunt"
 	slashCommandVulnhunterFix     slashCommandKind = "vulnhunter-fix"
 	slashCommandVulnhuntFixVerify slashCommandKind = "vulnhunt-fix-verify"
+
+	// slashCommandExtension is the catch-all kind for a command contributed by
+	// a compiled-in extension. The concrete name lives in slashCommand.Name,
+	// because there is no compile-time constant for something a build adds.
+	slashCommandExtension slashCommandKind = "extension"
 )
 
 type slashCommand struct {
 	Kind      slashCommandKind
 	Objective string
+	// Name is only set for slashCommandExtension: it is the command the user
+	// typed, used to route back to the owning extension.
+	Name string
 }
 
 type slashCommandSpec struct {
@@ -160,6 +169,17 @@ func availableCommands() []acpsdk.AvailableCommand {
 			commands = append(commands, spec.toAvailableCommand(alias))
 		}
 	}
+	// Extension commands are advertised alongside the built-ins so a client
+	// like Zed offers them in its palette.
+	for _, ec := range pandocommands.ExtensionCommands() {
+		cmd := acpsdk.AvailableCommand{Name: ec.Name, Description: ec.Description}
+		if ec.AcceptsArgs {
+			cmd.Input = &acpsdk.AvailableCommandInput{
+				Unstructured: &acpsdk.UnstructuredCommandInput{Hint: "arguments"},
+			}
+		}
+		commands = append(commands, cmd)
+	}
 	return commands
 }
 
@@ -201,6 +221,10 @@ func parseSlashCommand(input string) (slashCommand, bool) {
 		if command, ok := spec.parse(name, args); ok {
 			return command, true
 		}
+	}
+	// Built-ins are matched first, so an extension can never shadow one.
+	if pandocommands.IsExtensionCommand(name) {
+		return slashCommand{Kind: slashCommandExtension, Name: strings.ToLower(name), Objective: args}, true
 	}
 	return slashCommand{}, false
 }

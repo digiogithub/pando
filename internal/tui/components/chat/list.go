@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	osc52 "github.com/aymanbagabas/go-osc52/v2"
 	"github.com/atotto/clipboard"
+	osc52 "github.com/aymanbagabas/go-osc52/v2"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"

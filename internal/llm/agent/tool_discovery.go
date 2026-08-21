@@ -41,6 +41,9 @@ func ResetSharedDiscoveryRegistry() {
 
 // ApplyToolDiscovery applies the unified tool selection policy to allTools.
 // When discovery is enabled it:
+//  0. Adds extension-contributed tools and applies extension tool middleware
+//     (see internal/extensions.ApplyTools). This happens even when discovery is
+//     disabled.
 //  1. Syncs all live tools into the shared registry (upsert by name).
 //  2. When gateway is non-nil, syncs the full MCP catalog as catalog-only
 //     entries and wires the gateway as the remote executor so any MCP tool —
@@ -48,8 +51,12 @@ func ResetSharedDiscoveryRegistry() {
 //  3. Creates the unified tool_search tool (search + call) backed by the registry.
 //  4. Returns only the visible subset (core tools + tool_search + session-discovered).
 //
-// When discovery is disabled allTools is returned unchanged.
+// When discovery is disabled the tool set is returned as-is after step 0.
 func ApplyToolDiscovery(allTools []tools.BaseTool, gateway *mcpgateway.Gateway) []tools.BaseTool {
+	// Extension tools join the set before any discovery decision is taken, so
+	// they are classified and possibly deferred like every other tool.
+	allTools = applyExtensionTools(allTools)
+
 	cfg := config.Get()
 	if cfg == nil {
 		return allTools

@@ -22,6 +22,7 @@ import (
 	"github.com/digiogithub/pando/internal/agentvcs"
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/caveman"
+	"github.com/digiogithub/pando/internal/commands"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/cronjob"
 	"github.com/digiogithub/pando/internal/db"
@@ -793,6 +794,13 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	if err := app.Extensions.Start(ctx); err != nil {
 		logging.Warn("Some extensions failed to start", "error", err)
 	}
+	// The agent builds its tool set lazily, per turn, so it needs the manager
+	// rather than a snapshot of the tools.
+	agent.SetExtensionManager(app.Extensions)
+	// Slash commands are resolved through internal/commands by every surface
+	// (ACP, WebUI, TUI, completions), so the manager is wired there too.
+	commands.SetExtensionManager(app.Extensions)
+	app.startExtensionEventFanout(ctx)
 
 	logging.Debug("App created", "workingDir", config.WorkingDirectory())
 	return app, nil
@@ -2060,6 +2068,27 @@ func RefreshDynamicModels(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// startExtensionEventFanout forwards core resource lifecycle events to the
+// extensions that subscribed to them. Nothing starts when no extension
+// subscribes, so a standard build gains no goroutines.
+//
+// The fan-out is tied to the watcher cancel funcs, so Shutdown stops it the
+// same way it stops every other background loop.
+func (app *App) startExtensionEventFanout(ctx context.Context) {
+	if !extensions.HasEventSubscribers(app.Extensions) {
+		return
+	}
+	evCtx, cancel := context.WithCancel(ctx)
+	app.cancelFuncsMutex.Lock()
+	app.watcherCancelFuncs = append(app.watcherCancelFuncs, cancel)
+	app.cancelFuncsMutex.Unlock()
+
+	extensions.Forward(evCtx, app.Extensions, extension.TopicSession, app.Sessions)
+	extensions.Forward(evCtx, app.Extensions, extension.TopicMessage, app.Messages)
+	extensions.Forward(evCtx, app.Extensions, extension.TopicPermission, app.Permissions)
+	logging.Info("Extension event fan-out started")
 }
 
 // StartModelRefreshLoop refreshes dynamic models immediately and then every 24 h until ctx is cancelled.

@@ -1017,6 +1017,32 @@ func (s *Server) handleSlashCommandStream(w http.ResponseWriter, flusher http.Fl
 			writeSSEEvent(w, flusher, "goal_status", map[string]any{"goal": goalStateFromDB(goal)})
 		}
 	default:
+		// An extension may own this name. Its result decides what happens next:
+		// Output is shown as-is, Prompt starts a model turn, and both empty
+		// means the command only changed hidden state.
+		if res, handled, extErr := commands.RunExtension(ctx, cmdName, cmdArgs); handled {
+			if extErr != nil {
+				writeSSEEvent(w, flusher, "error", map[string]string{"error": extErr.Error()})
+				break
+			}
+			if res.Output != "" {
+				writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": res.Output})
+			}
+			if res.Prompt == "" {
+				break
+			}
+			extAgent := s.app.CoderAgent
+			if submitErr := s.bgRunner.Submit(sessionID, func(bgCtx context.Context) (<-chan agent.AgentEvent, error) {
+				return extAgent.Run(bgCtx, sessionID, res.Prompt)
+			}); submitErr != nil {
+				writeSSEEvent(w, flusher, "error", map[string]string{"error": submitErr.Error()})
+				return
+			}
+			eventChan, unsubFn, _ := s.bgRunner.Subscribe(sessionID)
+			s.streamSessionEvents(w, flusher, ctx, sessionID, unsubFn, eventChan)
+			return
+		}
+
 		// Unknown or custom command: pass through to agent as regular prompt
 		agentSvc := s.app.CoderAgent
 		submitErr := s.bgRunner.Submit(sessionID, func(bgCtx context.Context) (<-chan agent.AgentEvent, error) {

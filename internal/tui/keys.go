@@ -14,18 +14,18 @@ type KeyMap struct {
 }
 
 type GlobalKeys struct {
-	Logs             key.Binding
-	Orchestrator     key.Binding
-	Snapshots        key.Binding
-	Evaluator        key.Binding
-	Projects         key.Binding
-	CronJobs         key.Binding
-	InstancesBrowser key.Binding
-	Quit             key.Binding
-	Help             key.Binding
-	Settings         key.Binding
-	Filepicker       key.Binding
-	SwitchTheme      key.Binding
+	Logs              key.Binding
+	Orchestrator      key.Binding
+	Snapshots         key.Binding
+	Evaluator         key.Binding
+	Projects          key.Binding
+	CronJobs          key.Binding
+	InstancesBrowser  key.Binding
+	Quit              key.Binding
+	Help              key.Binding
+	Settings          key.Binding
+	Filepicker        key.Binding
+	SwitchTheme       key.Binding
 	ToggleTerminal    key.Binding
 	NewTerminal       key.Binding
 	NextTerminal      key.Binding

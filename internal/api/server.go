@@ -24,6 +24,7 @@ import (
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/extensions"
 	"github.com/digiogithub/pando/internal/logging"
 )
 
@@ -135,9 +136,17 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 
-	handler := s.corsMiddleware(s.basicAuthMiddleware(s.authMiddleware(mux)))
+	// Extension middleware wraps the routes but sits *inside* core's own auth
+	// and CORS: an extension must be able to add SSO or audit logging, never to
+	// weaken the token check that protects the API.
+	var routed http.Handler = mux
+	if s.app != nil {
+		routed = extensions.WrapHTTP(s.app.Extensions, routed)
+	}
+
+	handler := s.corsMiddleware(s.basicAuthMiddleware(s.authMiddleware(routed)))
 	if s.staticHandler != nil {
-		handler = s.corsMiddleware(s.uiHandler(s.basicAuthMiddleware(s.authMiddleware(mux))))
+		handler = s.corsMiddleware(s.uiHandler(s.basicAuthMiddleware(s.authMiddleware(routed))))
 	}
 
 	s.httpServer = &http.Server{

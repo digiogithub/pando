@@ -81,27 +81,14 @@ func NewManager(opts Options) *Manager {
 func (m *Manager) Load(ctx context.Context) error {
 	infos := m.registry.List()
 
-	disabled := make(map[ID]struct{}, len(m.opts.Disabled))
-	for _, id := range m.opts.Disabled {
-		disabled[ID(id)] = struct{}{}
-	}
+	disabled := m.disabledSet()
 
 	var errs []error
 	for _, info := range m.resolveOrder(infos) {
-		if _, off := disabled[info.ID]; off {
-			m.setStatus(Status{Info: info, Disabled: true})
-			m.log.Debug("extension disabled by configuration", "id", info.ID)
-			continue
-		}
-
-		entry, configured := m.opts.Entries[string(info.ID)]
-		if configured && !entry.Enabled && len(entry.Config) == 0 {
+		entry := m.opts.Entries[string(info.ID)]
+		if !m.enabled(info, disabled) {
 			m.setStatus(Status{Info: info, Disabled: true})
 			m.log.Debug("extension not enabled", "id", info.ID)
-			continue
-		}
-		if !configured && !m.defaultEnabled(info) {
-			m.setStatus(Status{Info: info, Disabled: true})
 			continue
 		}
 
@@ -124,6 +111,31 @@ func (m *Manager) Load(ctx context.Context) error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// enabled applies the configuration rules that decide whether an extension
+// loads at all. It is shared by Load and Preview so that what `pando ext`
+// advertises is exactly what a real run would load.
+func (m *Manager) enabled(info Info, disabled map[ID]struct{}) bool {
+	if _, off := disabled[info.ID]; off {
+		return false
+	}
+	entry, configured := m.opts.Entries[string(info.ID)]
+	if configured {
+		// A configured-but-not-enabled entry stays off, unless it carries
+		// configuration: writing a Config table is itself an opt-in.
+		return entry.Enabled || len(entry.Config) > 0
+	}
+	return m.defaultEnabled(info)
+}
+
+// disabledSet builds the lookup used by enabled.
+func (m *Manager) disabledSet() map[ID]struct{} {
+	out := make(map[ID]struct{}, len(m.opts.Disabled))
+	for _, id := range m.opts.Disabled {
+		out[ID(id)] = struct{}{}
+	}
+	return out
 }
 
 // defaultEnabled decides what happens to an extension with no configuration
@@ -400,4 +412,56 @@ func reverse[T any](in []T) []T {
 		out[len(in)-1-i] = v
 	}
 	return out
+}
+
+// Instance returns the loaded instance of an extension, or nil when it is not
+// loaded.
+func (m *Manager) Instance(id ID) Extension {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.loaded[id]
+}
+
+// Preview instantiates every *registered* extension and returns the instances
+// implementing T, without provisioning any of them.
+//
+// It exists for surfaces that must be described before Pando is running: the
+// CLI builds its command tree in init(), where no configuration has been read
+// yet and no database may be opened. Preview therefore ignores configuration
+// deliberately — help output describes what the binary contains, and whether an
+// extension is enabled is checked when a command actually runs.
+//
+// The instances returned are throwaway and unprovisioned: read declarations
+// from them, never act. To act, Load the manager and take the provisioned
+// instance from Instance(id).
+func Preview[T any](m *Manager) []T {
+	if m == nil {
+		return nil
+	}
+	var out []T
+	for _, info := range m.registry.List() {
+		if info.New == nil {
+			continue
+		}
+		inst := previewInstance(m, info)
+		if inst == nil {
+			continue
+		}
+		if v, ok := inst.(T); ok {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// previewInstance builds one instance, containing a panic in a factory so that
+// one malformed extension cannot stop the CLI from describing the others.
+func previewInstance(m *Manager, info Info) (inst Extension) {
+	defer func() {
+		if r := recover(); r != nil {
+			m.log.Warn("extension factory panicked during preview", "id", info.ID, "panic", r)
+			inst = nil
+		}
+	}()
+	return info.New()
 }

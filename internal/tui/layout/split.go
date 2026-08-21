@@ -25,11 +25,11 @@ type SplitPaneLayout interface {
 }
 
 type splitPaneLayout struct {
-	width              int
-	height             int
-	ratio              float64
-	verticalRatio      float64
-	fixedBottomHeight  int
+	width             int
+	height            int
+	ratio             float64
+	verticalRatio     float64
+	fixedBottomHeight int
 
 	rightPanel  Container
 	leftPanel   Container

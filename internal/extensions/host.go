@@ -10,6 +10,7 @@ package extensions
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -141,4 +142,13 @@ func Load(ctx context.Context, opts Options) *extension.Manager {
 		logging.Debug("Extension registry", "registered", n)
 	}
 	return mgr
+}
+
+// errFromPanic turns a recovered value into an error, keeping an error value
+// as-is so callers can still match on it.
+func errFromPanic(r any) error {
+	if err, ok := r.(error); ok {
+		return err
+	}
+	return fmt.Errorf("%v", r)
 }

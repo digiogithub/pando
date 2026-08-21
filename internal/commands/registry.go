@@ -39,14 +39,19 @@ func BuiltinCommands() []SlashCommand {
 	}
 }
 
-// AllCommands returns built-in commands plus custom commands discovered from
-// the filesystem (user and project command directories).
+// AllCommands returns built-in commands, custom commands discovered from the
+// filesystem (user and project command directories), and the commands
+// contributed by loaded extensions.
 func AllCommands(dataDir string) []SlashCommand {
 	cmds := BuiltinCommands()
 
 	for _, dir := range customCommandDirs(dataDir) {
 		cmds = append(cmds, loadCustomFromDir(dir.Dir, dir.Prefix)...)
 	}
+
+	// Extension commands come last so a build that adds them never reorders the
+	// list a user already knows.
+	cmds = append(cmds, ExtensionCommands()...)
 
 	return cmds
 }
@@ -90,6 +95,9 @@ func Parse(input string) (name string, args string, ok bool) {
 	}
 	// Also accept custom command names (prefixed with user: or project:)
 	if strings.Contains(name, ":") {
+		return name, args, true
+	}
+	if IsExtensionCommand(name) {
 		return name, args, true
 	}
 	return "", "", false

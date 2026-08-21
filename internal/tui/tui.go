@@ -81,15 +81,15 @@ type terminalFocusChangedMsg struct {
 }
 
 type appModel struct {
-	width, height       int
-	currentPage         page.PageID
-	previousPage        page.PageID
-	pages               map[page.PageID]tea.Model
-	loadedPages         map[page.PageID]bool
-	keys                KeyMap
-	status              core.StatusCmp
-	app                 *app.App
-	selectedSession     session.Session
+	width, height   int
+	currentPage     page.PageID
+	previousPage    page.PageID
+	pages           map[page.PageID]tea.Model
+	loadedPages     map[page.PageID]bool
+	keys            KeyMap
+	status          core.StatusCmp
+	app             *app.App
+	selectedSession session.Session
 	// autoApproveOverride remembers a user-driven auto-approve ("auto mode")
 	// choice made before a session exists (sessions are created lazily on the
 	// first message). nil = no override, fall back to the config default. When
@@ -2940,6 +2940,11 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 			}
 		},
 	})
+
+	// Extension commands, when the build has any.
+	for _, cmd := range dialog.LoadExtensionCommands() {
+		model.RegisterCommand(cmd)
+	}
 
 	// Load custom commands
 	customCommands, err := dialog.LoadCustomCommands()

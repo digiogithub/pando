@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/agentsmd"
+	pandocommands "github.com/digiogithub/pando/internal/commands"
 	"github.com/digiogithub/pando/internal/vulnhunter"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
@@ -87,9 +88,46 @@ func (a *PandoACPAgent) handleSlashCommand(
 		return a.processVulnhunterCommand(ctx, acpSession, "Starting test-driven remediation (vulnhunter-fix)...", vulnhunter.FixPrompt(command.Objective))
 	case slashCommandVulnhuntFixVerify:
 		return a.processVulnhunterCommand(ctx, acpSession, "Verifying claimed security fixes (vulnhunt-fix-verify)...", vulnhunter.VerifyPrompt(command.Objective))
+	case slashCommandExtension:
+		return a.processExtensionCommand(ctx, acpSession, command)
 	default:
 		return acpsdk.StopReasonEndTurn, nil
 	}
+}
+
+// processExtensionCommand runs a slash command owned by a compiled-in
+// extension. Output is shown to the user directly; Prompt starts a normal model
+// turn, which is how prompt-expanding commands work. A command that returns
+// neither only changed hidden state, and ends the turn silently.
+func (a *PandoACPAgent) processExtensionCommand(
+	ctx context.Context,
+	acpSession *ACPServerSession,
+	command slashCommand,
+) (acpsdk.StopReason, error) {
+	res, handled, err := pandocommands.RunExtension(ctx, command.Name, command.Objective)
+	if err != nil {
+		if sendErr := a.sendAgentText(acpSession, fmt.Sprintf("/%s failed: %v", command.Name, err)); sendErr != nil {
+			return "", sendErr
+		}
+		return acpsdk.StopReasonEndTurn, nil
+	}
+	if !handled {
+		// The command disappeared between parsing and running (configuration
+		// reload). Say so rather than sending the raw slash text to the model.
+		if sendErr := a.sendAgentText(acpSession, fmt.Sprintf("/%s is no longer available", command.Name)); sendErr != nil {
+			return "", sendErr
+		}
+		return acpsdk.StopReasonEndTurn, nil
+	}
+	if res.Output != "" {
+		if sendErr := a.sendAgentText(acpSession, res.Output); sendErr != nil {
+			return "", sendErr
+		}
+	}
+	if strings.TrimSpace(res.Prompt) == "" {
+		return acpsdk.StopReasonEndTurn, nil
+	}
+	return a.processPromptWithAgent(ctx, acpSession, res.Prompt)
 }
 
 func (a *PandoACPAgent) processGoalPrompt(
