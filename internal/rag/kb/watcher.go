@@ -104,6 +104,7 @@ func (s *KBStore) WatchDirectory(ctx context.Context, dirPath string) error {
 }
 
 func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fsnotify.Event) {
+	ctx = WithWriteOrigin(ctx, "watcher")
 	absPath, err := filepath.Abs(event.Name)
 	if err != nil {
 		logging.Warn("kb watcher: abs path failed", "path", event.Name, "error", err)

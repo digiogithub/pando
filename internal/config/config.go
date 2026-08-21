@@ -1290,6 +1290,80 @@ type ExtensionsConfig struct {
 	// decoded. Read it through ExtensionEntries, which puts those segments back
 	// together.
 	Entries map[string]any `json:"entries,omitempty" toml:"Entries"`
+	// Memory gates the memory capability (MemorySink / remembrance search
+	// wrapping). It is separate from Entries because it is not an extension's
+	// own configuration: it is core's permission for *any* sink to see
+	// remembrance writes at all.
+	Memory ExtensionsMemoryConfig `json:"memory,omitempty" toml:"Memory"`
+}
+
+// ExtensionsMemoryConfig is the opt-in gate for the memory capability.
+//
+// The capability lets an extension ship memories and knowledge-base documents
+// — project content — off the machine, so the gate is closed by default and
+// stays closed until an operator opens it twice: once with Enabled, and once
+// per scope in Scopes. An empty Scopes list emits nothing however true Enabled
+// is; there is no "everything" wildcard on purpose, because the one thing an
+// operator must never do by accident is share a scope they did not think
+// about.
+//
+// Putting this section in the *project* configuration is what makes the
+// opt-in per project.
+type ExtensionsMemoryConfig struct {
+	// Enabled turns the capability on. Default false.
+	Enabled bool `json:"enabled,omitempty" toml:"Enabled"`
+	// Scopes lists the memory scope prefixes whose writes may reach a sink,
+	// for example ["project/", "user/"]. A write whose scope matches no prefix
+	// is never published. Documents with no scope match the "" prefix, which
+	// must therefore be listed explicitly to be shared.
+	Scopes []string `json:"scopes,omitempty" toml:"Scopes"`
+	// Paths optionally narrows further, to writes whose document path starts
+	// with one of these prefixes. Empty means no path restriction.
+	Paths []string `json:"paths,omitempty" toml:"Paths"`
+	// Origins optionally restricts which subsystems' writes are published
+	// (see extension.MemoryOrigin: tool, api, sync, watcher, gc). Empty means
+	// every origin except "remote", which is never published because pushing
+	// back what a remote store sent is how sync loops start.
+	Origins []string `json:"origins,omitempty" toml:"Origins"`
+	// DryRun marks every published event as a dry run. Sinks must then do
+	// everything except send, and log what they would have sent. This is the
+	// audit mode: turn it on first, read the log, then turn it off.
+	DryRun bool `json:"dryRun,omitempty" toml:"DryRun"`
+	// Mode is "async" (default) or "sync". Async publishes through a bounded
+	// queue and drops events when sinks cannot keep up; sync blocks the write
+	// path until every sink has been called, which a compliance build may need
+	// and an interactive one will feel.
+	Mode string `json:"mode,omitempty" toml:"Mode"`
+	// QueueSize is the async queue depth. Default 256, minimum 1.
+	QueueSize int `json:"queueSize,omitempty" toml:"QueueSize"`
+	// TimeoutMs bounds one sink call. Default 5000. A slow corporate endpoint
+	// must not stall the agent loop.
+	TimeoutMs int `json:"timeoutMs,omitempty" toml:"TimeoutMs"`
+	// WrapSearch enables RemembranceSearchWrapper, so remembrance searches
+	// also consult whatever store a wrapper adds. Reads are a smaller exposure
+	// than writes but still leak the query, so it is its own switch.
+	WrapSearch bool `json:"wrapSearch,omitempty" toml:"WrapSearch"`
+}
+
+// MemoryQueueSize returns the effective async queue depth.
+func (m ExtensionsMemoryConfig) MemoryQueueSize() int {
+	if m.QueueSize <= 0 {
+		return 256
+	}
+	return m.QueueSize
+}
+
+// MemoryTimeout returns the effective per-sink call timeout.
+func (m ExtensionsMemoryConfig) MemoryTimeout() time.Duration {
+	if m.TimeoutMs <= 0 {
+		return 5 * time.Second
+	}
+	return time.Duration(m.TimeoutMs) * time.Millisecond
+}
+
+// Synchronous reports whether sinks are called on the write path.
+func (m ExtensionsMemoryConfig) Synchronous() bool {
+	return strings.EqualFold(strings.TrimSpace(m.Mode), "sync")
 }
 
 // ExtensionEntry is the per-extension configuration inside ExtensionsConfig.

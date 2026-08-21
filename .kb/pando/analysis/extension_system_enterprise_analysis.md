@@ -849,7 +849,9 @@ tag sets.
 React shell with a documented `window.__PANDO_UI__` contract, overlay/branding support. Optional
 `FrontendReplacer` / `enterprise_ui` tag if §8.6-Q2 says yes.
 
-**P5 — Memory capability + first enterprise module.**
+**P5 — Memory capability + first enterprise module. ✅ CORE SIDE DONE 2026-08-22** — full record in
+[[pando/changes/extension-system-p5-memory-capability]]. The enterprise module
+`alchemai-agent/memorysync` is complete except `transport.go`.
 `MemorySink` + `RemembranceStoreWrapper` in core; private repo `alchemai-agent` with the corporate
 remembrances sync module, porting `db-sync-server`'s merged-storage/dedup/sync-queue logic. Redaction,
 spool, dry-run, visible UI indicator.

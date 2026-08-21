@@ -14,6 +14,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	rag "github.com/digiogithub/pando/internal/rag"
+	"github.com/digiogithub/pando/internal/rag/kb"
 )
 
 // kbAddDocRequest mirrors kb.kbAddDocumentRequest (unexported) for JSON decoding.
@@ -95,6 +96,11 @@ var _ dbproxy.RemembrancesDispatcher = (*RemembrancesWriteDispatcher)(nil)
 
 // DispatchRemembrancesWrite routes a proxied write request to the appropriate store method.
 func (d *RemembrancesWriteDispatcher) DispatchRemembrancesWrite(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	// A forwarded write was already published to the extension write observer
+	// by the instance that originated it. Applying it here must not publish it
+	// a second time.
+	ctx = kb.WithoutWriteObserver(ctx)
+
 	switch method {
 
 	// ---- KB writes ----

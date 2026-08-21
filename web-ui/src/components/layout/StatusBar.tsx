@@ -7,6 +7,7 @@ import { useSettingsStore } from '@pando/client/stores/settingsStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import ExternalAccessToggle from './ExternalAccessToggle'
 import ExtensionSlot from '@/components/extensions/ExtensionSlot'
+import MemorySyncIndicator from '@/components/extensions/MemorySyncIndicator'
 
 export default function StatusBar() {
   const { t } = useTranslation()
@@ -159,6 +160,9 @@ export default function StatusBar() {
           }}
         />
         <span>{connected ? t('common.connected') : t('common.disconnected')}</span>
+
+        {/* Renders only when remembrance writes are leaving this machine. */}
+        <MemorySyncIndicator />
 
         <ExtensionSlot slot="status-bar" />
       </div>

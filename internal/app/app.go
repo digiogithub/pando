@@ -109,6 +109,11 @@ type App struct {
 	// non-nil; a build with no extensions simply holds an empty manager.
 	Extensions *extension.Manager
 
+	// MemorySink is the fan-out from remembrance writes to the extensions that
+	// observe them. Nil unless [Extensions.Memory] opens the gate and a loaded
+	// extension implements extension.MemorySink.
+	MemorySink *extensions.MemoryPublisher
+
 	// delegationSupervisor implements Case A of the delegated-conclusion protocol
 	// (inject a completed subagent's conclusion into a still-running parent loop).
 	// It is nil when delegation is disabled (default-off).
@@ -801,6 +806,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	// (ACP, WebUI, TUI, completions), so the manager is wired there too.
 	commands.SetExtensionManager(app.Extensions)
 	app.startExtensionEventFanout(ctx)
+	app.startExtensionMemoryHooks(cfg)
 
 	logging.Debug("App created", "workingDir", config.WorkingDirectory())
 	return app, nil
@@ -2091,6 +2097,37 @@ func (app *App) startExtensionEventFanout(ctx context.Context) {
 	logging.Info("Extension event fan-out started")
 }
 
+// startExtensionMemoryHooks wires the memory capability into the knowledge
+// base: the write observer that feeds MemorySinks, and the search middleware
+// that lets a RemembranceSearchWrapper merge a remote store into local results.
+//
+// Both are opt-in and both are off in a standard build, where this function
+// installs nothing and the store keeps its nil hooks.
+func (app *App) startExtensionMemoryHooks(cfg *config.Config) {
+	if app.Extensions == nil || app.Remembrances == nil || app.Remembrances.KB == nil {
+		return
+	}
+	memCfg := cfg.Extensions.Memory
+
+	app.MemorySink = extensions.NewMemoryPublisher(app.Extensions, memCfg, func() extensions.Attribution {
+		return extensions.Attribution{
+			ProjectID:  config.WorkingDirectory(),
+			InstanceID: app.ipcInstanceID,
+		}
+	})
+	if observer := app.MemorySink.Observer(); observer != nil {
+		app.Remembrances.KB.SetWriteObserver(observer)
+	}
+
+	// Reads are a smaller exposure than writes but still leak the query, so
+	// they have their own switch rather than riding on Enabled.
+	if memCfg.WrapSearch {
+		if mw := extensions.SearchMiddleware(app.Extensions); mw != nil {
+			app.Remembrances.KB.SetSearchMiddleware(mw)
+		}
+	}
+}
+
 // StartModelRefreshLoop refreshes dynamic models immediately and then every 24 h until ctx is cancelled.
 // Use this in startup modes that do not create a full App instance (e.g. LLM Proxy).
 func StartModelRefreshLoop(ctx context.Context) {
@@ -2319,6 +2356,11 @@ func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
 
 func (app *App) Shutdown() {
 	logging.Debug("App shutdown started")
+	// Drain queued memory events before the extensions that consume them are
+	// stopped: the writes made just before the user quit are the ones a
+	// corporate sink is most likely to be missing.
+	app.MemorySink.Close()
+
 	if app.Extensions != nil {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := app.Extensions.Stop(stopCtx); err != nil {

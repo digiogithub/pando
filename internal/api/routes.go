@@ -98,6 +98,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Distinct from the line above: this one is the UI manifest of compiled-in
 	// extension modules, not the skills/Lua settings section.
 	mux.HandleFunc("/api/v1/extensions/ui", s.handleExtensionsUI)
+	mux.HandleFunc("/api/v1/extensions/memory", s.handleExtensionsMemory)
 	mux.HandleFunc("/api/v1/config/services", s.handleConfigServices)
 	mux.HandleFunc("/api/v1/config/evaluator", s.handleConfigEvaluator)
 	// Provider Accounts

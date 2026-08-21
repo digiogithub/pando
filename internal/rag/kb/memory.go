@@ -40,7 +40,49 @@ type MemoryResult struct {
 
 // UpsertMemory stores or updates a memory document, keyed by opts.Key when provided.
 // Returns created=true when a new document was inserted, false when an existing one was updated.
+//
+// It delegates to AddDocument/UpdateDocument on some paths, so the write
+// observer is suppressed for the nested call: the memory event published here
+// carries the scope and key those events cannot know, and one write must be
+// reported once.
 func (s *KBStore) UpsertMemory(ctx context.Context, opts MemoryUpsertOptions) (created bool, err error) {
+	observing := s.observer() != nil && !observerSuppressed(ctx)
+	inner := ctx
+	if observing {
+		inner = withSuppressedObserver(ctx)
+	}
+
+	created, err = s.upsertMemory(inner, opts)
+	if err != nil || !observing {
+		return created, err
+	}
+
+	op := WriteUpdated
+	if created {
+		op = WriteCreated
+	}
+	filePath := opts.FilePath
+	if opts.Key != "" {
+		// An upsert by key lands on the path the memory already had, which is
+		// not necessarily the one the caller passed.
+		if doc, lookupErr := s.GetMemoryByKey(ctx, opts.Key); lookupErr == nil && doc != nil {
+			filePath = doc.FilePath
+		}
+	}
+	s.publishWrite(ctx, WriteEvent{
+		Kind:     WriteKindMemory,
+		Op:       op,
+		FilePath: filePath,
+		Key:      opts.Key,
+		Scope:    opts.Scope,
+		Content:  StripFrontMatter(opts.Content),
+		Tags:     opts.Tags,
+		Metadata: opts.Metadata,
+	})
+	return created, nil
+}
+
+func (s *KBStore) upsertMemory(ctx context.Context, opts MemoryUpsertOptions) (created bool, err error) {
 	if opts.DefaultTTLDays <= 0 {
 		opts.DefaultTTLDays = 180
 	}

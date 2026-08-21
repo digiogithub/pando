@@ -57,6 +57,7 @@ func (g *MemoryGCService) run(ctx context.Context) {
 }
 
 func (g *MemoryGCService) runOnce(ctx context.Context) error {
+	ctx = WithWriteOrigin(ctx, "gc")
 	expired, err := g.store.GetExpiredDocuments(ctx)
 	if err != nil {
 		return err

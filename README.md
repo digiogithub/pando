@@ -83,7 +83,10 @@ go build -o pando
 
 Extensions are linked in at build time. To build a variant, or to compose a
 binary from the core plus private extension modules with `xpando`, see
-[docs/extension-builds.md](docs/extension-builds.md).
+[docs/extension-builds.md](docs/extension-builds.md). Extensions can also
+contribute UI ([docs/extension-frontend.md](docs/extension-frontend.md)) and
+observe or augment the remembrance layer
+([docs/extension-memory.md](docs/extension-memory.md)).
 
 ## Configuration
 

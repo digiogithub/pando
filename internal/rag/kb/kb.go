@@ -33,6 +33,12 @@ type KBStore struct {
 	fsMu         sync.RWMutex
 	converter    DocumentConverter
 
+	// writeObserver and searchMiddleware are the extension hooks (observer.go).
+	// Both are nil in a standard build and guarded by fsMu like the other
+	// hot-swappable fields above.
+	writeObserver    WriteObserver
+	searchMiddleware SearchMiddleware
+
 	// wikiLinks toggles [[wiki link]] extraction and the graph queries built on
 	// it. Defaults to true; the app sets it from Remembrances.KBWikiLinks.
 	wikiLinks bool
@@ -160,7 +166,23 @@ func (s *KBStore) getSyncWorkers() int {
 
 // AddDocument adds a new document to the knowledge base.
 // It chunks the content, generates embeddings, and updates the FTS index.
+//
+// The write is published to the observer (observer.go) only after it commits.
 func (s *KBStore) AddDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}) error {
+	if err := s.addDocument(ctx, filePath, content, metadata); err != nil {
+		return err
+	}
+	s.publishWrite(ctx, WriteEvent{
+		Kind:     WriteKindDocument,
+		Op:       WriteCreated,
+		FilePath: filePath,
+		Content:  content,
+		Metadata: metadata,
+	})
+	return nil
+}
+
+func (s *KBStore) addDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}) error {
 	if filePath == "" {
 		return fmt.Errorf("kb: file_path cannot be empty")
 	}
@@ -407,6 +429,18 @@ func (s *KBStore) listDocumentMetadata(ctx context.Context, limit, offset int) (
 
 // DeleteDocument removes a document and all its chunks from the knowledge base.
 func (s *KBStore) DeleteDocument(ctx context.Context, filePath string) error {
+	if err := s.deleteDocument(ctx, filePath); err != nil {
+		return err
+	}
+	s.publishWrite(ctx, WriteEvent{
+		Kind:     WriteKindDocument,
+		Op:       WriteDeleted,
+		FilePath: filePath,
+	})
+	return nil
+}
+
+func (s *KBStore) deleteDocument(ctx context.Context, filePath string) error {
 	if s.proxy != nil {
 		return s.proxy.WriteWithRetry(ctx, "KBDeleteDocument", filePath, dbproxy.DefaultWriteTimeouts.Default)
 	}
@@ -487,6 +521,20 @@ func (s *KBStore) DeleteDocument(ctx context.Context, filePath string) error {
 // UpdateDocument updates an existing document's content and metadata.
 // It re-chunks and re-embeds the content.
 func (s *KBStore) UpdateDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}) error {
+	if err := s.updateDocument(ctx, filePath, content, metadata); err != nil {
+		return err
+	}
+	s.publishWrite(ctx, WriteEvent{
+		Kind:     WriteKindDocument,
+		Op:       WriteUpdated,
+		FilePath: filePath,
+		Content:  content,
+		Metadata: metadata,
+	})
+	return nil
+}
+
+func (s *KBStore) updateDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}) error {
 	if s.proxy != nil {
 		chunks := embeddings.ChunkText(content, s.chunkSize, s.chunkOverlap)
 		embedVecs := make([][]float32, 0, len(chunks))
@@ -511,13 +559,14 @@ func (s *KBStore) UpdateDocument(ctx context.Context, filePath, content string, 
 		}, dbproxy.DefaultWriteTimeouts.Long)
 	}
 
-	// Delete existing document (including chunks)
-	if err := s.DeleteDocument(ctx, filePath); err != nil {
+	// Delete existing document (including chunks), then re-add with the new
+	// content. Both use the unpublished forms: an update is one write and must
+	// reach the observer as one event, not as a delete followed by a create.
+	if err := s.deleteDocument(ctx, filePath); err != nil {
 		return fmt.Errorf("kb: delete for update: %w", err)
 	}
 
-	// Re-add with new content
-	return s.AddDocument(ctx, filePath, content, metadata)
+	return s.addDocument(ctx, filePath, content, metadata)
 }
 
 type kbAddDocumentRequest struct {
@@ -620,6 +669,13 @@ func (s *KBStore) SearchDocuments(ctx context.Context, query string, limit int) 
 // to documents whose tags fuzzy-match any of the requested tags. When
 // opts.SortByDate is true, results are sorted by updated_at descending.
 func (s *KBStore) SearchDocumentsWithOptions(ctx context.Context, query string, limit int, opts SearchOptions) ([]SearchResult, error) {
+	if mw := s.middleware(); mw != nil {
+		return mw(ctx, query, limit, opts, s.searchDocumentsWithOptions)
+	}
+	return s.searchDocumentsWithOptions(ctx, query, limit, opts)
+}
+
+func (s *KBStore) searchDocumentsWithOptions(ctx context.Context, query string, limit int, opts SearchOptions) ([]SearchResult, error) {
 	if limit <= 0 {
 		limit = 5
 	}

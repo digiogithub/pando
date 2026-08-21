@@ -40,6 +40,9 @@ const kbSyncPerFileTimeout = 5 * time.Minute
 // It recursively scans for .md files, upserts modified documents, and optionally
 // deletes KB documents that no longer exist on disk for that directory source.
 func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, deleteMissing bool) (SyncStats, error) {
+	// A mirror sweep can rewrite thousands of documents at once; the origin
+	// lets an observer treat that differently from a deliberate write.
+	ctx = WithWriteOrigin(ctx, "sync")
 	var stats SyncStats
 	syncStartedAt := time.Now()
 	logging.Debug("kb sync: start",
