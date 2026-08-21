@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
-import type { PlanEntry } from '@/hooks/useChat'
+import type { PlanEntry } from '@pando/client/hooks/useChat'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faChevronDown, faChevronRight, faCheck, faSpinner, faClock } from '@fortawesome/free-solid-svg-icons'
 

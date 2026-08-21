@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useTokenOptimizationStore } from '@/stores/settingsStore'
+import { useTokenOptimizationStore } from '@pando/client/stores/settingsStore'
 import { SelectInput, Toggle } from '@/components/shared/FormInput'
 import TagListEditor from '@/components/shared/TagListEditor'
-import api from '@/services/api'
-import type { SavingsReport } from '@/types'
+import api from '@pando/client/services/api'
+import type { SavingsReport } from '@pando/client/types'
 
 const sectionTitle: React.CSSProperties = {
   fontSize: 18,

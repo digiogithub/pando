@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faUserTie, faChevronDown } from '@fortawesome/free-solid-svg-icons'
-import api from '@/services/api'
+import api from '@pando/client/services/api'
 
 function formatPersonaName(name: string): string {
   if (!name) return 'Auto'

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faFileCode, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons'
-import { useFileChangesStore, type FileChange } from '@/stores/fileChangesStore'
+import { useFileChangesStore, type FileChange } from '@pando/client/stores/fileChangesStore'
 import DiffViewer from './DiffViewer'
 
 export default function FileChangesBar() {

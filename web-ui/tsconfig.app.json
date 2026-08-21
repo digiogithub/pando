@@ -19,8 +19,11 @@
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@pando/client": ["./packages/pando-client/src/index.ts"],
+      "@pando/client/types": ["./packages/pando-client/src/types/index.ts"],
+      "@pando/client/*": ["./packages/pando-client/src/*"]
     }
   },
-  "include": ["src", "wailsjs"]
+  "include": ["src", "wailsjs", "packages/pando-client/src"]
 }

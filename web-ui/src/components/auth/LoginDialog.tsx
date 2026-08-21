@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TextInput } from '@/components/shared/FormInput'
-import { authenticateWithCredentials } from '@/services/auth'
+import { authenticateWithCredentials } from '@pando/client/services/auth'
 
 interface LoginDialogProps {
   onSuccess: () => void

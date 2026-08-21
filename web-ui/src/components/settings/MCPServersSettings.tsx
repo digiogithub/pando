@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useMCPServersStore } from '@/stores/mcpServersStore'
-import type { MCPAuthType, MCPServerAuthConfig, MCPServerConfig, MCPToolInfo, MCPType } from '@/types'
+import { useMCPServersStore } from '@pando/client/stores/mcpServersStore'
+import type { MCPAuthType, MCPServerAuthConfig, MCPServerConfig, MCPToolInfo, MCPType } from '@pando/client/types'
 import KeyValueEditor, { envToKV, kvToEnv, type KVPair } from '@/components/shared/KeyValueEditor'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
 import { MaskedInput, SelectInput, TextInput, Textarea } from '@/components/shared/FormInput'
-import { useToast } from '@/stores/toastStore'
+import { useToast } from '@pando/client/stores/toastStore'
 
 const MCP_TYPES: { value: MCPType; label: string }[] = [
   { value: 'stdio', label: 'stdio' },

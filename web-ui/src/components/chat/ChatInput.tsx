@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useCallback, type KeyboardEvent, type Chan
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPaperPlane, faStop } from '@fortawesome/free-solid-svg-icons'
 import SlashCommandMenu, { type SlashCommandItem } from './SlashCommandMenu'
-import api from '@/services/api'
+import api from '@pando/client/services/api'
 
 const MAX_CHARS = 8000
 // 6 lines × (14px font × 1.5 line-height) = 126px

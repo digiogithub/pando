@@ -1,4 +1,4 @@
-import type { PromptTemplate } from '@/types'
+import type { PromptTemplate } from '@pando/client/types'
 import EmptyState from '@/components/shared/EmptyState'
 
 interface UCBRankingTableProps {

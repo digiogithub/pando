@@ -7,7 +7,7 @@ import {
   faInfoCircle,
   faTimes,
 } from '@fortawesome/free-solid-svg-icons'
-import { useToastStore, type Toast, type ToastType } from '@/stores/toastStore'
+import { useToastStore, type Toast, type ToastType } from '@pando/client/stores/toastStore'
 
 const TOAST_COLORS: Record<ToastType, string> = {
   success: 'var(--success)',

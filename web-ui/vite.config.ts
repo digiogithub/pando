@@ -77,6 +77,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
+      // Resolved straight to source rather than through node_modules: the
+      // package ships TypeScript, and aliasing keeps Vite's dep optimiser out
+      // of a workspace package that changes as often as the app does.
+      '@pando/client': resolve(__dirname, './packages/pando-client/src'),
     },
   },
   server: {

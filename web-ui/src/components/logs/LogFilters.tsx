@@ -1,7 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faSearch, faArrowDown, faSyncAlt } from '@fortawesome/free-solid-svg-icons'
-import { useLogsStore } from '@/stores/logsStore'
-import type { LogLevel } from '@/stores/logsStore'
+import { useLogsStore } from '@pando/client/stores/logsStore'
+import type { LogLevel } from '@pando/client/stores/logsStore'
 
 const LEVELS: { value: LogLevel; label: string; color: string }[] = [
   { value: 'all', label: 'All', color: 'var(--fg)' },

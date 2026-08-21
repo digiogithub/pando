@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faComments, faStop, faPaperPlane, faSpinner, faCircle } from '@fortawesome/free-solid-svg-icons'
 import { format } from 'date-fns'
-import { useInstancesStore, type RemoteSession, type RemoteMessage, type InstanceInfo } from '@/stores/instancesStore'
-import api from '@/services/api'
+import { useInstancesStore, type RemoteSession, type RemoteMessage, type InstanceInfo } from '@pando/client/stores/instancesStore'
+import api from '@pando/client/services/api'
 
 interface StreamEvent {
   topic: string

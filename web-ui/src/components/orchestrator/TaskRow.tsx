@@ -2,8 +2,8 @@ import StatusBadge from '@/components/shared/StatusBadge'
 import ProgressBar from '@/components/shared/ProgressBar'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faStop, faTrash } from '@fortawesome/free-solid-svg-icons'
-import type { OrchestratorTask } from '@/types'
-import { useOrchestratorStore } from '@/stores/orchestratorStore'
+import type { OrchestratorTask } from '@pando/client/types'
+import { useOrchestratorStore } from '@pando/client/stores/orchestratorStore'
 
 export default function TaskRow({
   task,

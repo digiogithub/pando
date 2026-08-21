@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import api from '@/services/api'
-import type { ProviderAccount, ProviderAccountTestResult } from '@/types'
+import api from '@pando/client/services/api'
+import type { ProviderAccount, ProviderAccountTestResult } from '@pando/client/types'
 import KeyValueEditor, { type KVPair } from '@/components/shared/KeyValueEditor'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
 import { TextInput, Toggle } from '@/components/shared/FormInput'
-import { useToast } from '@/stores/toastStore'
+import { useToast } from '@pando/client/stores/toastStore'
 
 const PROVIDER_TYPES = [
   { value: 'anthropic', label: 'Anthropic', icon: '🤖' },

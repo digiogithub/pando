@@ -7,8 +7,8 @@ import {
   registerPtyConnection,
   unregisterPtyConnection,
   type PtyConnection,
-} from '@/services/terminalPty'
-import { useTerminalStore, type TerminalTab } from '@/stores/terminalStore'
+} from '@pando/client/services/terminalPty'
+import { useTerminalStore, type TerminalTab } from '@pando/client/stores/terminalStore'
 
 interface TerminalPtyPaneProps {
   tab: TerminalTab

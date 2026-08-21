@@ -1,4 +1,4 @@
-import type { Skill } from '@/types'
+import type { Skill } from '@pando/client/types'
 import ProgressBar from '@/components/shared/ProgressBar'
 
 interface SkillCardProps {

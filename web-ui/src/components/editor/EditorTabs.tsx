@@ -1,6 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faTimes } from '@fortawesome/free-solid-svg-icons'
-import { useEditorStore } from '@/stores/editorStore'
+import { useEditorStore } from '@pando/client/stores/editorStore'
 
 export default function EditorTabs() {
   const { openFiles, activeFilePath, setActiveFile, closeFile } = useEditorStore()

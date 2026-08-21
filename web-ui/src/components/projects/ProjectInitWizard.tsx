@@ -1,4 +1,4 @@
-import type { Project } from '@/types'
+import type { Project } from '@pando/client/types'
 
 interface ProjectInitWizardProps {
   project: Project

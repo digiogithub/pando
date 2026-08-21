@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import type { TerminalEntry } from '@/stores/terminalStore'
+import type { TerminalEntry } from '@pando/client/stores/terminalStore'
 
 interface TerminalOutputProps {
   entries: TerminalEntry[]

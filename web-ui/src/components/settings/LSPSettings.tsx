@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useLSPStore } from '@/stores/lspStore'
-import type { LSPConfig, LSPServerStatus } from '@/types'
+import { useLSPStore } from '@pando/client/stores/lspStore'
+import type { LSPConfig, LSPServerStatus } from '@pando/client/types'
 import TagListEditor from '@/components/shared/TagListEditor'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
 import { TextInput, Toggle } from '@/components/shared/FormInput'
-import { useToast } from '@/stores/toastStore'
+import { useToast } from '@pando/client/stores/toastStore'
 
 const ACTIVATE_ON_OPTIONS = [
   { value: 'edits', label: 'edits — files Pando edits (default)' },

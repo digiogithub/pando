@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPlay } from '@fortawesome/free-solid-svg-icons'
-import type { TerminalTab } from '@/stores/terminalStore'
-import { useTerminalStore } from '@/stores/terminalStore'
+import type { TerminalTab } from '@pando/client/stores/terminalStore'
+import { useTerminalStore } from '@pando/client/stores/terminalStore'
 
 interface TerminalInputProps {
   tab: TerminalTab

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { SelectInput, TextInput, Textarea, Toggle } from '@/components/shared/FormInput'
-import { useContainerStore } from '@/stores/containerStore'
+import { useContainerStore } from '@pando/client/stores/containerStore'
 
 const dividerStyle: React.CSSProperties = {
   borderTop: '1px solid var(--border)',

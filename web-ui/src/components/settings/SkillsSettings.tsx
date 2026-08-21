@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useExtensionsStore } from '@/stores/extensionsStore'
+import { useExtensionsStore } from '@pando/client/stores/extensionsStore'
 import { Toggle, TextInput, SelectInput } from '@/components/shared/FormInput'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
-import api from '@/services/api'
-import type { InstalledSkill, SkillCatalogItem } from '@/types'
+import api from '@pando/client/services/api'
+import type { InstalledSkill, SkillCatalogItem } from '@pando/client/types'
 
 const SCOPE_OPTIONS = [
   { value: 'session', label: 'Session' },

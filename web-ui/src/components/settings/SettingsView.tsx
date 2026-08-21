@@ -21,7 +21,9 @@ import APIServerSettings from './APIServerSettings'
 import WebUIAccessSettings from './WebUIAccessSettings'
 import ProviderAccountsSettings from './ProviderAccountsSettings'
 import ContainerRuntimeSettings from './ContainerRuntimeSettings'
-import { useConfigEventsStore } from '@/stores/configEventsStore'
+import { useConfigEventsStore } from '@pando/client/stores/configEventsStore'
+import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
+import ExtensionSlot from '@/components/extensions/ExtensionSlot'
 
 type SettingsCategory =
   | 'general'
@@ -64,13 +66,21 @@ const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string }[
   { id: 'webui-access', labelKey: 'settings.categories.webuiAccess', group: 'services' },
 ]
 
+/**
+ * A settings section contributed by an extension, addressed by its panel ID.
+ * Prefixing keeps the extension namespace and the core one from ever colliding.
+ */
+type ExtensionCategory = `ext:${string}`
+type ActiveCategory = SettingsCategory | ExtensionCategory
+
 /** Below this width the view switches to a master/detail flow. */
 const MOBILE_QUERY = '(max-width: 768px)'
 
 export default function SettingsView() {
   const { t } = useTranslation()
-  const [activeCategory, setActiveCategory] = useState<SettingsCategory>('general')
+  const [activeCategory, setActiveCategory] = useState<ActiveCategory>('general')
   const { connect, disconnect } = useConfigEventsStore()
+  const extensionSections = useExtensionPanelsStore((s) => s.panels).filter((p) => p.slot === 'settings')
 
   // Track the mobile breakpoint so the category list and the section can take
   // turns owning the full width instead of splitting it.
@@ -88,7 +98,7 @@ export default function SettingsView() {
   const showMenu = !isMobile || menuOpen
   const showContent = !isMobile || !menuOpen
 
-  const selectCategory = (id: SettingsCategory) => {
+  const selectCategory = (id: ActiveCategory) => {
     setActiveCategory(id)
     setMenuOpen(false)
   }
@@ -211,6 +221,49 @@ export default function SettingsView() {
             </button>
           )
         })}
+        {extensionSections.length > 0 && (
+          <>
+            <div
+              style={{
+                padding: '0.75rem 1rem 0.35rem',
+                fontSize: 11,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                color: 'var(--fg-dim)',
+                borderTop: '1px solid var(--border)',
+                marginTop: '0.5rem',
+              }}
+            >
+              {t('settings.categories.extensions', 'Extensions')}
+            </div>
+            {extensionSections.map((panel) => {
+              const id: ExtensionCategory = `ext:${panel.id}`
+              const isActive = activeCategory === id
+              return (
+                <button
+                  key={panel.id}
+                  onClick={() => selectCategory(id)}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '0.5rem 1rem',
+                    background: isActive ? 'var(--selected)' : 'transparent',
+                    color: isActive ? 'var(--primary)' : 'var(--fg-muted)',
+                    border: 'none',
+                    borderLeft: isActive ? '3px solid var(--primary)' : '3px solid transparent',
+                    fontSize: 14,
+                    fontWeight: isActive ? 600 : 400,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {panel.title || panel.id}
+                </button>
+              )
+            })}
+          </>
+        )}
       </nav>
       )}
 
@@ -249,6 +302,9 @@ export default function SettingsView() {
         {activeCategory === 'snapshots' && <SnapshotsSettings />}
         {activeCategory === 'api-server' && <APIServerSettings />}
         {activeCategory === 'webui-access' && <WebUIAccessSettings />}
+        {activeCategory.startsWith('ext:') && (
+          <ExtensionSlot slot="settings" panelId={activeCategory.slice('ext:'.length)} />
+        )}
       </div>
       )}
     </div>

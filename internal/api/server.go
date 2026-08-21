@@ -127,6 +127,14 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 		rebindCh:    make(chan net.Listener, 1),
 	}
 
+	// Extensions may add asset subtrees, shadow individual core files, or
+	// replace the frontend outright. Composing here means every path that
+	// serves an asset — the precompressed lookup, the SPA fallback, the file
+	// server — sees the same tree, and a standard build gets core's FS back
+	// unchanged.
+	if s.staticFS != nil && application != nil {
+		s.staticFS = extensions.Frontend(application.Extensions, s.staticFS)
+	}
 	if s.staticFS != nil {
 		s.staticHandler = http.FileServer(http.FS(s.staticFS))
 	}

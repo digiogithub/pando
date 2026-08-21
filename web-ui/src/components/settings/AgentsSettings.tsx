@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useAgentsStore } from '@/stores/settingsStore'
+import { useAgentsStore } from '@pando/client/stores/settingsStore'
 import ModelCombobox from '@/components/shared/ModelCombobox'
-import type { AgentConfigItem } from '@/types'
+import type { AgentConfigItem } from '@pando/client/types'
 
 const AGENT_NAMES = ['coder', 'summarizer', 'task', 'title', 'cli-assist', 'persona-selector', 'context-enricher']
 

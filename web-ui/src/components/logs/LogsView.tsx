@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useLogsStore } from '@/stores/logsStore'
+import { useLogsStore } from '@pando/client/stores/logsStore'
 import LogFilters from './LogFilters'
 import LogTable from './LogTable'
 import LogDetail from './LogDetail'

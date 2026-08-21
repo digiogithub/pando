@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { TextInput } from '@/components/shared/FormInput'
-import { useSnapshotsStore } from '@/stores/snapshotsStore'
+import { useSnapshotsStore } from '@pando/client/stores/snapshotsStore'
 
 export default function CreateSnapshotDialog() {
   const [name, setName] = useState('')

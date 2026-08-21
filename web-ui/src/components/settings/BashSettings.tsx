@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useBashStore } from '@/stores/settingsStore'
+import { useBashStore } from '@pando/client/stores/settingsStore'
 import TagListEditor from '@/components/shared/TagListEditor'
 
 const dividerStyle: React.CSSProperties = {

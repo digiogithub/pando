@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useExtensionsStore } from '@/stores/extensionsStore'
+import { useExtensionsStore } from '@pando/client/stores/extensionsStore'
 import { Toggle } from '@/components/shared/FormInput'
 import ModelCombobox from '@/components/shared/ModelCombobox'
 

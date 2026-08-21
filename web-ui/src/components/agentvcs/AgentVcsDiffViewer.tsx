@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { DiffEditor, type BeforeMount } from '@monaco-editor/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faTimes, faFileCode, faSpinner } from '@fortawesome/free-solid-svg-icons'
-import { useAgentVcsStore, type DiffEntry } from '@/stores/agentVcsStore'
+import { useAgentVcsStore, type DiffEntry } from '@pando/client/stores/agentVcsStore'
 
 interface AgentVcsDiffViewerProps {
   entry: DiffEntry

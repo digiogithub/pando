@@ -1,6 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faServer, faStar } from '@fortawesome/free-solid-svg-icons'
-import type { InstanceInfo } from '@/stores/instancesStore'
+import type { InstanceInfo } from '@pando/client/stores/instancesStore'
 
 /** Replace leading /home/<user> or /Users/<user> with ~. */
 function shortenPath(path: string): string {

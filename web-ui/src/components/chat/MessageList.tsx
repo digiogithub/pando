@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
-import type { Message } from '@/types'
-import type { StreamingState } from '@/hooks/useChat'
+import type { Message } from '@pando/client/types'
+import type { StreamingState } from '@pando/client/hooks/useChat'
 import MessageBubble, { EventRow } from './MessageBubble'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
 

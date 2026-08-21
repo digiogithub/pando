@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useServicesSettingsStore } from '@/stores/servicesSettingsStore'
+import { useServicesSettingsStore } from '@pando/client/stores/servicesSettingsStore'
 import { TextInput, Toggle } from '@/components/shared/FormInput'
 import TagListEditor from '@/components/shared/TagListEditor'
-import api from '@/services/api'
+import api from '@pando/client/services/api'
 
 const dividerStyle: React.CSSProperties = {
   borderTop: '1px solid var(--border)',

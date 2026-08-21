@@ -6,10 +6,10 @@ import {
   faCircle,
   faCircleDot,
 } from '@fortawesome/free-solid-svg-icons'
-import { useLayoutStore } from '@/stores/layoutStore'
-import { useSettingsStore } from '@/stores/settingsStore'
-import api from '@/services/api'
-import { useToastStore } from '@/stores/toastStore'
+import { useLayoutStore } from '@pando/client/stores/layoutStore'
+import { useSettingsStore } from '@pando/client/stores/settingsStore'
+import api from '@pando/client/services/api'
+import { useToastStore } from '@pando/client/stores/toastStore'
 import { modelMetaLine } from '@/components/shared/ModelCombobox'
 
 interface ModelInfo {

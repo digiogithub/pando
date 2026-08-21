@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faServer, faSpinner, faSyncAlt } from '@fortawesome/free-solid-svg-icons'
-import { useInstancesStore } from '@/stores/instancesStore'
+import { useInstancesStore } from '@pando/client/stores/instancesStore'
 import InstanceCard from './InstanceCard'
 import RemoteSessionView from './RemoteSessionView'
 

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@pando/client/stores/settingsStore'
 
 /**
  * Syncs the app language with the `language` field in settings config.

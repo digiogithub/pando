@@ -3,8 +3,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faPlus, faClock, faPlay, faTrash, faToggleOn, faToggleOff, faTimes, faCheck,
 } from '@fortawesome/free-solid-svg-icons'
-import { useCronJobsStore } from '@/stores/cronJobsStore'
-import type { CronJobCreate } from '@/types'
+import { useCronJobsStore } from '@pando/client/stores/cronJobsStore'
+import type { CronJobCreate } from '@pando/client/types'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
 import EmptyState from '@/components/shared/EmptyState'
 

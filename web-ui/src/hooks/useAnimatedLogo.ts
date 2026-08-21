@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useSessionStore } from '@/stores/sessionStore'
+import { useSessionStore } from '@pando/client/stores/sessionStore'
 
 /** Idle glyph: the Pando tree, shown whenever no run is in flight. */
 export const LOGO_IDLE_GLYPH = '木'

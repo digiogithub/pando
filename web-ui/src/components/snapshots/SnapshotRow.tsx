@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faUndo, faTrash } from '@fortawesome/free-solid-svg-icons'
-import type { Snapshot } from '@/types'
+import type { Snapshot } from '@pando/client/types'
 import StatusBadge from '@/components/shared/StatusBadge'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
-import { useSnapshotsStore } from '@/stores/snapshotsStore'
+import { useSnapshotsStore } from '@pando/client/stores/snapshotsStore'
 
 function formatDate(iso: string): string {
   try {

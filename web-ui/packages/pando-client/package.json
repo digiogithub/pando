@@ -1,0 +1,18 @@
+{
+  "name": "@pando/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pando API, SSE and state layer. Shared by every Pando frontend.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./services/*": "./src/services/*.ts",
+    "./stores/*": "./src/stores/*.ts",
+    "./hooks/*": "./src/hooks/*.ts",
+    "./types": "./src/types/index.ts"
+  },
+  "peerDependencies": {
+    "react": ">=19",
+    "zustand": ">=5"
+  }
+}

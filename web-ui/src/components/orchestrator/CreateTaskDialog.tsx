@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useOrchestratorStore } from '@/stores/orchestratorStore'
+import { useOrchestratorStore } from '@pando/client/stores/orchestratorStore'
 import ModelCombobox from '@/components/shared/ModelCombobox'
-import api from '@/services/api'
+import api from '@pando/client/services/api'
 
 export default function CreateTaskDialog() {
   const { setCreateDialogOpen, fetchTasks } = useOrchestratorStore()

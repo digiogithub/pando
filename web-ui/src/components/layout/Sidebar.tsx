@@ -5,10 +5,11 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faComments, faPlus, faNetworkWired, faFileLines, faCodeBranch,
   faStar, faCode, faTerminal, faCog, faChevronDown, faChevronRight,
-  faCircle, faFolderOpen, faServer
+  faCircle, faFolderOpen, faServer, faPuzzlePiece
 } from '@fortawesome/free-solid-svg-icons'
-import { useSessionStore } from '@/stores/sessionStore'
-import { useLayoutStore } from '@/stores/layoutStore'
+import { useSessionStore } from '@pando/client/stores/sessionStore'
+import { useLayoutStore } from '@pando/client/stores/layoutStore'
+import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
 import { format } from 'date-fns'
 
 export default function Sidebar() {
@@ -26,6 +27,8 @@ export default function Sidebar() {
     loadMoreSessions,
   } = useSessionStore()
   const setSidebarOpen = useLayoutStore((s) => s.setSidebarOpen)
+
+  const extensionPanels = useExtensionPanelsStore((s) => s.panels)
 
   const closeSidebarOnMobile = () => {
     if (window.matchMedia('(max-width: 768px)').matches) {
@@ -46,6 +49,14 @@ export default function Sidebar() {
     { path: '/projects', label: t('nav.projects'), icon: faFolderOpen },
     { path: '/instances', label: t('nav.instances'), icon: faServer },
   ]
+
+  // Sidebar panels contributed by compiled-in extensions. They are appended
+  // rather than merged into NAV_ITEMS above so a build can never reorder or
+  // displace a core entry. Their labels come from the extension, not from
+  // i18n: core has no translations for a panel it does not know about.
+  const EXT_ITEMS = extensionPanels
+    .filter((p) => p.slot === 'sidebar')
+    .map((p) => ({ path: `/ext/${p.id}`, label: p.title || p.id, end: false }))
 
   return (
     <aside
@@ -200,6 +211,29 @@ export default function Sidebar() {
                 })}
               >
                 <FontAwesomeIcon icon={item.icon} style={{ fontSize: 12, width: 14 }} />
+                {item.label}
+              </NavLink>
+            ))}
+            {EXT_ITEMS.map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                onClick={closeSidebarOnMobile}
+                style={({ isActive }) => ({
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.625rem',
+                  padding: '0.375rem 0.75rem',
+                  margin: '1px 0.5rem',
+                  borderRadius: 'var(--radius-sm)',
+                  textDecoration: 'none',
+                  fontSize: 13,
+                  color: isActive ? 'var(--primary)' : 'var(--fg-muted)',
+                  background: isActive ? 'var(--selected)' : 'transparent',
+                  fontWeight: isActive ? 600 : 400,
+                })}
+              >
+                <FontAwesomeIcon icon={faPuzzlePiece} style={{ fontSize: 12, width: 14 }} />
                 {item.label}
               </NavLink>
             ))}

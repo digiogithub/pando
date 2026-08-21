@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faWifi, faRotateRight } from '@fortawesome/free-solid-svg-icons'
 import { useTranslation } from 'react-i18next'
-import { useServerStore } from '@/stores/serverStore'
-import { useSessionStore } from '@/stores/sessionStore'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useServerStore } from '@pando/client/stores/serverStore'
+import { useSessionStore } from '@pando/client/stores/sessionStore'
+import { useSettingsStore } from '@pando/client/stores/settingsStore'
 
 export default function NetworkErrorBanner() {
   const { t } = useTranslation()

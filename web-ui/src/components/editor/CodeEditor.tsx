@@ -1,8 +1,8 @@
 import { useRef, useCallback } from 'react'
 import MonacoEditor, { OnMount, BeforeMount } from '@monaco-editor/react'
 import type * as monacoTypes from 'monaco-editor'
-import { useEditorStore } from '@/stores/editorStore'
-import api from '@/services/api'
+import { useEditorStore } from '@pando/client/stores/editorStore'
+import api from '@pando/client/services/api'
 
 interface CodeEditorProps {
   filePath: string

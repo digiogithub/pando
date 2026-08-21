@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useServicesSettingsStore } from '@/stores/servicesSettingsStore'
+import { useServicesSettingsStore } from '@pando/client/stores/servicesSettingsStore'
 import { TextInput, Toggle } from '@/components/shared/FormInput'
 import RestartRequiredBanner from '@/components/shared/RestartRequiredBanner'
 import MaskedInput from '@/components/shared/MaskedInput'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
-import { useToastStore } from '@/stores/toastStore'
-import api from '@/services/api'
+import { useToastStore } from '@pando/client/stores/toastStore'
+import api from '@pando/client/services/api'
 
 const dividerStyle: React.CSSProperties = {
   borderTop: '1px solid var(--border)',

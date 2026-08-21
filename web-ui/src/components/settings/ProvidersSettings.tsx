@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useProvidersStore } from '@/stores/settingsStore'
-import type { ProviderConfigItem } from '@/types'
+import { useProvidersStore } from '@pando/client/stores/settingsStore'
+import type { ProviderConfigItem } from '@pando/client/types'
 import { Toggle } from '@/components/shared/FormInput'
 
 // Provider metadata: display name, icon (emoji), supports base URL customization

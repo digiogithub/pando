@@ -5,9 +5,9 @@ import {
   faArrowLeft, faFileMedical, faFileCode,
   faFloppyDisk, faFolderTree,
 } from '@fortawesome/free-solid-svg-icons'
-import type { FileNode } from '@/types'
-import { useEditorStore } from '@/stores/editorStore'
-import api from '@/services/api'
+import type { FileNode } from '@pando/client/types'
+import { useEditorStore } from '@pando/client/stores/editorStore'
+import api from '@pando/client/services/api'
 import FileExplorer from './FileExplorer'
 import EditorTabs from './EditorTabs'
 import CodeEditor from './CodeEditor'

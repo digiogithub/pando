@@ -15,13 +15,14 @@ import {
   faRobot,
   faSpinner,
 } from '@fortawesome/free-solid-svg-icons'
-import type { PlanEntry } from '@/hooks/useChat'
-import { useSessionStore } from '@/stores/sessionStore'
-import { useFileChangesStore } from '@/stores/fileChangesStore'
-import { useLSPStore } from '@/stores/lspStore'
-import { useOrchestratorStore } from '@/stores/orchestratorStore'
-import { useProjectStore } from '@/stores/projectStore'
-import { useLayoutStore } from '@/stores/layoutStore'
+import type { PlanEntry } from '@pando/client/hooks/useChat'
+import { useSessionStore } from '@pando/client/stores/sessionStore'
+import { useFileChangesStore } from '@pando/client/stores/fileChangesStore'
+import { useLSPStore } from '@pando/client/stores/lspStore'
+import { useOrchestratorStore } from '@pando/client/stores/orchestratorStore'
+import { useProjectStore } from '@pando/client/stores/projectStore'
+import { useLayoutStore } from '@pando/client/stores/layoutStore'
+import ExtensionSlot from '@/components/extensions/ExtensionSlot'
 
 /** Width of the expanded panel, and of the floating tab left behind when collapsed. */
 const PANEL_WIDTH = 264
@@ -253,6 +254,10 @@ export default function ChatInfoSidebar({ plan = [] }: ChatInfoSidebarProps) {
             ))
           )}
         </Section>
+
+        {/* Panels contributed by compiled-in extensions, always last so they
+            cannot push core information out of view. */}
+        <ExtensionSlot slot="chat-side" />
       </div>
 
       <style>{`

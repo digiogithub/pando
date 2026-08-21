@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TextInput, Toggle } from '@/components/shared/FormInput'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
-import { useToastStore } from '@/stores/toastStore'
-import api from '@/services/api'
+import { useToastStore } from '@pando/client/stores/toastStore'
+import api from '@pando/client/services/api'
 
 interface BasicAuthUser {
   username: string

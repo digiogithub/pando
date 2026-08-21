@@ -1,16 +1,15 @@
 /**
- * Wails desktop detection and config helpers.
- * In the Wails WebView, the runtime injects `window.go` namespace.
+ * Wails desktop config helpers.
+ *
+ * Detection itself lives in @pando/client/services/host, which every frontend
+ * shares. What stays here is the part that imports the Wails bindings this
+ * repository generates, which a shared package cannot reach.
  */
 
-export interface PandoDesktopConfig {
-  apiBase: string
-  token: string
-}
+import { isDesktop, type PandoDesktopConfig } from '@pando/client/services/host'
 
-/** True when running inside the Wails desktop WebView. */
-export const isDesktop: boolean =
-  typeof window !== 'undefined' && 'go' in (window as unknown as Record<string, unknown>)
+export { isDesktop }
+export type { PandoDesktopConfig }
 
 /**
  * In desktop mode, fetches server info (URL + token) from the Go binding.

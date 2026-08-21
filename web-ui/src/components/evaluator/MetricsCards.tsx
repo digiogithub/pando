@@ -1,6 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faFlask, faLayerGroup, faTrophy } from '@fortawesome/free-solid-svg-icons'
-import type { EvaluatorMetrics } from '@/types'
+import type { EvaluatorMetrics } from '@pando/client/types'
 import MetricCard from '@/components/shared/MetricCard'
 
 interface MetricsCardsProps {

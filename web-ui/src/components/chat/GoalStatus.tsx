@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import type { GoalStatus as GoalStatusModel } from '@/types'
+import type { GoalStatus as GoalStatusModel } from '@pando/client/types'
 
 interface GoalStatusProps {
   goal: GoalStatusModel | null

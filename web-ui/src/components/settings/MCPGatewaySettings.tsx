@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useMCPGatewayStore } from '@/stores/mcpGatewayStore'
+import { useMCPGatewayStore } from '@pando/client/stores/mcpGatewayStore'
 import { Toggle } from '@/components/shared/FormInput'
 
 const sectionTitle: React.CSSProperties = {

@@ -113,7 +113,8 @@ already control.
 The WebUI is embedded into the core module at *its* publish time
 (`internal/api/webui/dist`), and `//go:embed` cannot cross module boundaries. A
 composed binary therefore ships the stock frontend unless an extension module
-supplies its own assets.
+supplies its own assets — which is what `FrontendProvider` and
+`FrontendReplacer` are for. See [extension-frontend.md](extension-frontend.md).
 
 ## CI
 

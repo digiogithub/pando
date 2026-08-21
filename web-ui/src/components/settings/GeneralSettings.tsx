@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@pando/client/stores/settingsStore'
 import { TextInput, SelectInput, Toggle } from '@/components/shared/FormInput'
 import ModelCombobox from '@/components/shared/ModelCombobox'
 import ThemePicker from '@/components/shared/ThemePicker'

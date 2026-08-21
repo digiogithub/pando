@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useServicesSettingsStore } from '@/stores/servicesSettingsStore'
+import { useServicesSettingsStore } from '@pando/client/stores/servicesSettingsStore'
 import { TextInput, Toggle } from '@/components/shared/FormInput'
 import MaskedInput from '@/components/shared/MaskedInput'
 import DirBrowserDialog from '@/components/shared/DirBrowserDialog'
-import { useProjectStore } from '@/stores/projectStore'
-import { useToastStore } from '@/stores/toastStore'
-import api from '@/services/api'
-import type { CodeProjectInfo } from '@/types'
+import { useProjectStore } from '@pando/client/stores/projectStore'
+import { useToastStore } from '@pando/client/stores/toastStore'
+import api from '@pando/client/services/api'
+import type { CodeProjectInfo } from '@pando/client/types'
 
 const dividerStyle: React.CSSProperties = {
   borderTop: '1px solid var(--border)',

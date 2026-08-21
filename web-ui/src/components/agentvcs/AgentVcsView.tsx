@@ -16,7 +16,7 @@ import {
   type CommitSummary,
   type DiffEntry,
   type SessionInfo,
-} from "@/stores/agentVcsStore";
+} from "@pando/client/stores/agentVcsStore";
 import LoadingSpinner from "@/components/shared/LoadingSpinner";
 import EmptyState from "@/components/shared/EmptyState";
 import ConfirmDialog from "@/components/shared/ConfirmDialog";

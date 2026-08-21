@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useEvaluatorStore } from '@/stores/evaluatorStore'
+import { useEvaluatorStore } from '@pando/client/stores/evaluatorStore'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
 import MetricsCards from './MetricsCards'
 import UCBRankingTable from './UCBRankingTable'

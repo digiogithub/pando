@@ -21,10 +21,10 @@ import {
   faKey,
 } from '@fortawesome/free-solid-svg-icons'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
-import { useLayoutStore } from '@/stores/layoutStore'
+import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
-import { useToast } from '@/stores/toastStore'
-import { loadLauncherCommands, type LauncherCommand } from '@/services/commandLauncher'
+import { useToast } from '@pando/client/stores/toastStore'
+import { loadLauncherCommands, type LauncherCommand } from '@pando/client/services/commandLauncher'
 
 const RECENT_KEY = 'pando-quick-menu-recent'
 

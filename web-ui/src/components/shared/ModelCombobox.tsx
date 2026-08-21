@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import api from '@/services/api'
+import api from '@pando/client/services/api'
 
 interface ModelInfo {
   id: string

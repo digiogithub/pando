@@ -1,6 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCamera } from '@fortawesome/free-solid-svg-icons'
-import type { Snapshot } from '@/types'
+import type { Snapshot } from '@pando/client/types'
 import EmptyState from '@/components/shared/EmptyState'
 import SnapshotRow from './SnapshotRow'
 

@@ -1,6 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCodeBranch } from '@fortawesome/free-solid-svg-icons'
-import { useEditorStore } from '@/stores/editorStore'
+import { useEditorStore } from '@pando/client/stores/editorStore'
 
 interface EditorStatusBarProps {
   gitBranch?: string

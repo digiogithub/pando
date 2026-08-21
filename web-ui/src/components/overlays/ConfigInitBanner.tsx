@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useConfigInitStore } from '@/stores/configInitStore'
+import { useConfigInitStore } from '@pando/client/stores/configInitStore'
 
 /**
  * ConfigInitBanner — shown at the top of the layout when no local .pando.toml

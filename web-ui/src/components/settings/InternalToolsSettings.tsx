@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useToolsStore } from '@/stores/settingsStore'
-import api from '@/services/api'
+import { useToolsStore } from '@pando/client/stores/settingsStore'
+import api from '@pando/client/services/api'
 import { Toggle, TextInput, MaskedInput, SelectInput } from '@/components/shared/FormInput'
-import type { BrowserInstallInfo, ToolsConfig } from '@/types'
+import type { BrowserInstallInfo, ToolsConfig } from '@pando/client/types'
 
 // ---- Config status indicator ----
 

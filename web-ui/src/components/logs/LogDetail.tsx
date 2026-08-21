@@ -1,6 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faTimes } from '@fortawesome/free-solid-svg-icons'
-import { useLogsStore } from '@/stores/logsStore'
+import { useLogsStore } from '@pando/client/stores/logsStore'
 
 const LEVEL_COLORS: Record<string, string> = {
   debug: 'var(--fg-dim)',

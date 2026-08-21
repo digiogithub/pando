@@ -1,6 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faTimes, faRobot, faMicrochip, faClock, faUserTie } from '@fortawesome/free-solid-svg-icons'
-import type { OrchestratorTask, OrchestratorToolCall } from '@/types'
+import type { OrchestratorTask, OrchestratorToolCall } from '@pando/client/types'
 import StatusBadge from '@/components/shared/StatusBadge'
 import ProgressBar from '@/components/shared/ProgressBar'
 

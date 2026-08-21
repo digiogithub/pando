@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
-import { useServicesSettingsStore } from '@/stores/servicesSettingsStore'
+import { useServicesSettingsStore } from '@pando/client/stores/servicesSettingsStore'
 import { TextInput, Toggle } from '@/components/shared/FormInput'
-import type { MesnadaACPConfig, MesnadaACPServerConfig, MesnadaOrchestratorConfig, MesnadaTUIConfig, MesnadaServerConfig } from '@/types'
+import type { MesnadaACPConfig, MesnadaACPServerConfig, MesnadaOrchestratorConfig, MesnadaTUIConfig, MesnadaServerConfig } from '@pando/client/types'
 
 const ENGINE_OPTIONS = ['pando', 'claude', 'copilot', 'openai', 'google', 'ollama']
 

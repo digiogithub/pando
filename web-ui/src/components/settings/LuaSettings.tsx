@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useExtensionsStore } from '@/stores/extensionsStore'
+import { useExtensionsStore } from '@pando/client/stores/extensionsStore'
 import { Toggle, TextInput } from '@/components/shared/FormInput'
 import Tooltip from '@/components/shared/Tooltip'
 

@@ -1,11 +1,12 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCircle, faMicrochip } from '@fortawesome/free-solid-svg-icons'
 import { useTranslation } from 'react-i18next'
-import { useSessionStore } from '@/stores/sessionStore'
-import { useServerStore } from '@/stores/serverStore'
-import { useSettingsStore } from '@/stores/settingsStore'
-import { useLayoutStore } from '@/stores/layoutStore'
+import { useSessionStore } from '@pando/client/stores/sessionStore'
+import { useServerStore } from '@pando/client/stores/serverStore'
+import { useSettingsStore } from '@pando/client/stores/settingsStore'
+import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import ExternalAccessToggle from './ExternalAccessToggle'
+import ExtensionSlot from '@/components/extensions/ExtensionSlot'
 
 export default function StatusBar() {
   const { t } = useTranslation()
@@ -158,6 +159,8 @@ export default function StatusBar() {
           }}
         />
         <span>{connected ? t('common.connected') : t('common.disconnected')}</span>
+
+        <ExtensionSlot slot="status-bar" />
       </div>
     </div>
   )

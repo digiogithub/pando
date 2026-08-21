@@ -18,13 +18,16 @@ import CodeEditorView from '@/components/editor/CodeEditorView'
 import ProjectsView from '@/components/projects/ProjectsView'
 import InstancesPanel from '@/components/instances/InstancesPanel'
 import LoginDialog from '@/components/auth/LoginDialog'
-import { authenticate, checkHealth } from '@/services/auth'
+import { authenticate, checkHealth } from '@pando/client/services/auth'
 import { isDesktop, getDesktopConfig } from '@/services/desktop'
-import { initDesktopMode, BasicAuthRequiredError } from '@/services/api'
+import { initDesktopMode, BasicAuthRequiredError } from '@pando/client/services/api'
 import { useLanguageSync } from '@/hooks/useLanguageSync'
 import PWAInstallPrompt from '@/components/shared/PWAInstallPrompt'
-import { useNotificationsStore } from '@/stores/notificationsStore'
-import { useLayoutStore } from '@/stores/layoutStore'
+import { useNotificationsStore } from '@pando/client/stores/notificationsStore'
+import { useLayoutStore } from '@pando/client/stores/layoutStore'
+import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
+import ExtensionPanelPage from '@/components/extensions/ExtensionPanelPage'
+import { installPandoUI } from '@/lib/pandoUI'
 
 function InitialModeRedirect() {
   const navigate = useNavigate()
@@ -80,6 +83,15 @@ function App() {
     void initApp()
   }, [initApp])
 
+  // The extension UI manifest is fixed for the life of the binary, so it is
+  // fetched once. installPandoUI must run before any panel module is imported,
+  // because a panel reaches the shell through window.__PANDO_UI__.
+  const loadExtensionPanels = useExtensionPanelsStore((s) => s.load)
+  useEffect(() => {
+    installPandoUI()
+    void loadExtensionPanels()
+  }, [loadExtensionPanels])
+
   // Connect to the notifications SSE stream once the app is ready.
   useEffect(() => {
     if (!showSplash && splashStatus === 'ready') {
@@ -130,6 +142,7 @@ function App() {
                 <Route path="settings" element={<SettingsView />} />
                 <Route path="projects" element={<ProjectsView />} />
                 <Route path="instances" element={<InstancesPanel />} />
+                <Route path="ext/:panelId" element={<ExtensionPanelPage />} />
                 <Route path="*" element={<NotFound />} />
               </Route>
 

@@ -8,7 +8,7 @@ import {
   faChevronLeft, faChevronRight, faCode, faTerminal, faComment, faFolderOpen, faCircleQuestion,
   faBars, faTimes,
 } from '@fortawesome/free-solid-svg-icons'
-import { useLayoutStore } from '@/stores/layoutStore'
+import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
 import { useAnimatedLogo } from '@/hooks/useAnimatedLogo'
 import PersonaSelector from '@/components/shared/PersonaSelector'

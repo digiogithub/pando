@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useSessionStore } from '@/stores/sessionStore'
-import type { QuestionAnswer } from '@/types'
+import { useSessionStore } from '@pando/client/stores/sessionStore'
+import type { QuestionAnswer } from '@pando/client/types'
 
 /**
  * QuestionDialog surfaces AskUserQuestion prompts emitted by the agent. It mirrors

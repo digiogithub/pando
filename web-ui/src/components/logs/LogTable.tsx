@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { useLogsStore } from '@/stores/logsStore'
-import type { LogEntry } from '@/types'
+import { useLogsStore } from '@pando/client/stores/logsStore'
+import type { LogEntry } from '@pando/client/types'
 
 const LEVEL_COLORS: Record<string, string> = {
   debug: 'var(--fg-dim)',

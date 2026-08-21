@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faFolder, faFolderOpen, faArrowUp, faSpinner, faTimes } from '@fortawesome/free-solid-svg-icons'
-import api from '@/services/api'
+import api from '@pando/client/services/api'
 
 interface BrowseResult {
   path: string

@@ -2,7 +2,7 @@ import { useCallback, useEffect } from 'react'
 import { DiffEditor, type BeforeMount } from '@monaco-editor/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faTimes, faFileCode } from '@fortawesome/free-solid-svg-icons'
-import type { FileChange } from '@/stores/fileChangesStore'
+import type { FileChange } from '@pando/client/stores/fileChangesStore'
 
 interface DiffViewerProps {
   file: FileChange

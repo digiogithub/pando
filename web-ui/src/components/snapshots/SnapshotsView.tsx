@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPlus } from '@fortawesome/free-solid-svg-icons'
-import { useSnapshotsStore } from '@/stores/snapshotsStore'
+import { useSnapshotsStore } from '@pando/client/stores/snapshotsStore'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
 import SnapshotTable from './SnapshotTable'
 import CreateSnapshotDialog from './CreateSnapshotDialog'

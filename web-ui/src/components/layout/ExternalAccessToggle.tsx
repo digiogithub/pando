@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faGlobe } from '@fortawesome/free-solid-svg-icons'
-import { useToastStore } from '@/stores/toastStore'
-import api from '@/services/api'
+import { useToastStore } from '@pando/client/stores/toastStore'
+import api from '@pando/client/services/api'
 
 interface ExternalAccessStatus {
   enabled: boolean

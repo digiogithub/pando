@@ -11,8 +11,8 @@ import {
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import { format } from 'date-fns'
 import 'highlight.js/styles/github-dark-dimmed.css'
-import type { Message, ContentPart, ToolCallStatus, ToolKind, ToolCallLocation } from '@/types'
-import type { StreamingState, StreamItem, ActiveToolCall } from '@/hooks/useChat'
+import type { Message, ContentPart, ToolCallStatus, ToolKind, ToolCallLocation } from '@pando/client/types'
+import type { StreamingState, StreamItem, ActiveToolCall } from '@pando/client/hooks/useChat'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

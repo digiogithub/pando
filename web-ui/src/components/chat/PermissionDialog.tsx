@@ -1,5 +1,5 @@
-import { useSessionStore } from '@/stores/sessionStore'
-import type { PermissionAction } from '@/types'
+import { useSessionStore } from '@pando/client/stores/sessionStore'
+import type { PermissionAction } from '@pando/client/types'
 
 /**
  * PermissionDialog surfaces pending tool permission prompts emitted by the agent
