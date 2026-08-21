@@ -10,10 +10,20 @@ import (
 
 const timeLayoutRFC3339 = time.RFC3339
 
+// There is deliberately no kb_import_path tool.
+//
+// Bulk-importing a directory into the knowledge base is host logic, not a model
+// decision: the document keys are derived from the path the scan is rooted at,
+// so importing the same tree from a different root silently duplicates every
+// document under a second set of keys. Pando syncs the configured KB directory
+// itself on startup (Remembrances.KBAutoImport, see internal/app/remembrances.go),
+// which is the only rooting that produces stable keys. Use
+// kb.KBStore.SyncDirectoryWithStats from host code if another sync point is ever
+// needed; do not expose it as a tool.
+
 // KB tool names
 const (
 	kbAddDocumentToolName     = "kb_add_document"
-	kbImportPathToolName      = "kb_import_path"
 	kbSearchDocumentsToolName = "kb_search_documents"
 	kbGetDocumentToolName     = "kb_get_document"
 	kbDeleteDocumentToolName  = "kb_delete_document"
@@ -22,11 +32,6 @@ const (
 
 // KBAddDocumentTool adds a document to the knowledge base.
 type KBAddDocumentTool struct {
-	store *kb.KBStore
-}
-
-// KBImportPathTool imports/syncs markdown files from a filesystem path.
-type KBImportPathTool struct {
 	store *kb.KBStore
 }
 
@@ -48,11 +53,6 @@ type KBDeleteDocumentTool struct {
 // NewKBAddDocumentTool creates a new KBAddDocumentTool.
 func NewKBAddDocumentTool(store *kb.KBStore) BaseTool {
 	return &KBAddDocumentTool{store: store}
-}
-
-// NewKBImportPathTool creates a new KBImportPathTool.
-func NewKBImportPathTool(store *kb.KBStore) BaseTool {
-	return &KBImportPathTool{store: store}
 }
 
 // NewKBSearchDocumentsTool creates a new KBSearchDocumentsTool.
@@ -217,67 +217,6 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 
 	return NewTextResponse(fmt.Sprintf("Document added: %s (tags: %v)%s",
 		req.FilePath, newFM.Tags, linkFeedback(ctx, t.store, req.FilePath))), nil
-}
-
-// ---- KBImportPathTool ----
-
-func (t *KBImportPathTool) Info() ToolInfo {
-	return ToolInfo{
-		Name:        kbImportPathToolName,
-		Description: "Imports and synchronizes all .md files from a directory (including subdirectories) into the knowledge base. Can optionally delete KB docs that no longer exist on disk. " +
-			"Any [[wiki links]] written in the imported documents are indexed into the document graph and counted as 'links_indexed'.",
-		Parameters: map[string]any{
-			"path": map[string]any{
-				"type":        "string",
-				"description": "Absolute or relative directory path to scan recursively for .md files.",
-			},
-			"delete_missing": map[string]any{
-				"type":        "boolean",
-				"description": "When true (default), remove KB documents previously imported from this path that no longer exist on disk.",
-			},
-		},
-		Required: []string{"path"},
-	}
-}
-
-func (t *KBImportPathTool) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
-	var req struct {
-		Path          string `json:"path"`
-		DeleteMissing *bool  `json:"delete_missing"`
-	}
-	if err := DecodeToolInput(params.Input, &req); err != nil {
-		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
-	}
-	if req.Path == "" {
-		return NewTextErrorResponse("path is required"), nil
-	}
-
-	deleteMissing := true
-	if req.DeleteMissing != nil {
-		deleteMissing = *req.DeleteMissing
-	}
-
-	stats, err := t.store.SyncDirectoryWithStats(ctx, req.Path, deleteMissing)
-	if err != nil {
-		return NewTextErrorResponse(fmt.Sprintf("kb import error: %v", err)), nil
-	}
-
-	out := map[string]any{
-		"path":           req.Path,
-		"delete_missing": deleteMissing,
-		"scanned":        stats.Scanned,
-		"added":          stats.Added,
-		"updated":        stats.Updated,
-		"unchanged":      stats.Unchanged,
-		"deleted":        stats.Deleted,
-	}
-	// Reported only when the imported documents actually use the syntax, so an
-	// import into a knowledge base without wiki links reads as it always did.
-	if stats.LinksIndexed > 0 {
-		out["links_indexed"] = stats.LinksIndexed
-	}
-
-	return NewStructuredResponse(out), nil
 }
 
 // ---- KBSearchDocumentsTool ----

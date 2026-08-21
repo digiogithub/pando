@@ -55,7 +55,6 @@ var builtinToolNames = map[string]struct{}{
 
 	// Remembrances / KB / code-intelligence (RAG) tools.
 	kbAddDocumentToolName:            {},
-	kbImportPathToolName:             {},
 	kbSearchDocumentsToolName:        {},
 	kbGetDocumentToolName:            {},
 	kbDeleteDocumentToolName:         {},

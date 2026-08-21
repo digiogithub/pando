@@ -26,6 +26,7 @@ import (
 	"github.com/digiogithub/pando/internal/cronjob"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/evaluator"
+	"github.com/digiogithub/pando/internal/extensions"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/ipc"
@@ -64,6 +65,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/userinput"
 	"github.com/digiogithub/pando/internal/version"
+	"github.com/digiogithub/pando/pkg/extension"
 )
 
 type App struct {
@@ -101,6 +103,10 @@ type App struct {
 	LuaManager          *luaengine.FilterManager
 	MCPGateway          *mcpgateway.Gateway
 	Evaluator           *evaluator.EvaluatorService
+
+	// Extensions owns the compiled-in extensions (pkg/extension). It is always
+	// non-nil; a build with no extensions simply holds an empty manager.
+	Extensions *extension.Manager
 
 	// delegationSupervisor implements Case A of the delegated-conclusion protocol
 	// (inject a completed subagent's conclusion into a still-running parent loop).
@@ -779,6 +785,13 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	// Default active persona to "assistant" if none is configured.
 	if agent.GetActivePersona() == "" {
 		_ = agent.SetActivePersona("assistant")
+	}
+
+	// Load compiled-in extensions last, so they see a fully built app. A broken
+	// extension is reported but never prevents startup.
+	app.Extensions = extensions.Load(ctx, extensions.Options{Config: cfg})
+	if err := app.Extensions.Start(ctx); err != nil {
+		logging.Warn("Some extensions failed to start", "error", err)
 	}
 
 	logging.Debug("App created", "workingDir", config.WorkingDirectory())
@@ -2277,6 +2290,14 @@ func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
 
 func (app *App) Shutdown() {
 	logging.Debug("App shutdown started")
+	if app.Extensions != nil {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := app.Extensions.Stop(stopCtx); err != nil {
+			logging.Warn("Some extensions failed to stop", "error", err)
+		}
+		cancel()
+		app.Extensions.Cleanup()
+	}
 	if app.MesnadaServer != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := app.MesnadaServer.Shutdown(shutdownCtx); err != nil {

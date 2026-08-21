@@ -353,7 +353,6 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 	if appSvc.Remembrances != nil {
 		tools = append(tools,
 			llmtools.NewKBAddDocumentTool(appSvc.Remembrances.KB),
-			llmtools.NewKBImportPathTool(appSvc.Remembrances.KB),
 			llmtools.NewKBSearchDocumentsTool(appSvc.Remembrances.KB),
 			llmtools.NewKBGetDocumentTool(appSvc.Remembrances.KB),
 			llmtools.NewKBDeleteDocumentTool(appSvc.Remembrances.KB),

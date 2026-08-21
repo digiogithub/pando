@@ -73,3 +73,10 @@ func normalize(v string) (string, bool) {
 	}
 	return "v" + trimmed, true
 }
+
+// Variant identifies the build variant of this binary: empty for the standard
+// open-source build, "enterprise" for a build composed with private extension
+// modules. It is set via -ldflags at release time and is informational only —
+// which extensions a binary contains is decided at link time, not by this
+// string.
+var Variant = ""

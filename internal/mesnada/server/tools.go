@@ -96,7 +96,6 @@ func (s *Server) registerTools() {
 func buildRemembrancesLLMTools(svc *rag.RemembrancesService) []llmtools.BaseTool {
 	return []llmtools.BaseTool{
 		llmtools.NewKBAddDocumentTool(svc.KB),
-		llmtools.NewKBImportPathTool(svc.KB),
 		llmtools.NewKBSearchDocumentsTool(svc.KB),
 		llmtools.NewKBGetDocumentTool(svc.KB),
 		llmtools.NewKBDeleteDocumentTool(svc.KB),

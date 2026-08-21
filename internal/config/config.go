@@ -1039,6 +1039,7 @@ type Config struct {
 	ModelsDev         ModelsDevConfig         `json:"modelsDev,omitempty" toml:"ModelsDev"`
 	Image             ImageConfig             `json:"image,omitempty" toml:"Image"`
 	AGUI              AGUIConfig              `json:"agui,omitempty" toml:"AGUI"`
+	Extensions        ExtensionsConfig        `json:"extensions,omitempty" toml:"Extensions"`
 }
 
 // AGUIConfig controls the AG-UI protocol adapter (internal/agui), the endpoint
@@ -1266,6 +1267,108 @@ func (c *Config) PonytailDefaultMode() string {
 }
 
 // CavemanConfig configures the caveman output-brevity mode.
+// ExtensionsConfig controls the compiled-in extension registry (pkg/extension).
+//
+// Extensions are Go packages linked into the binary; this section only decides
+// which of the registered ones are loaded and how they are configured. An
+// extension the binary does not contain cannot be enabled from here.
+type ExtensionsConfig struct {
+	// Disabled lists extension IDs that must never load, whatever Entries says.
+	// It is the stronger switch and also turns off extensions that would load
+	// by default.
+	Disabled []string `json:"disabled,omitempty" toml:"Disabled"`
+	// Entries holds per-extension configuration keyed by extension ID:
+	//
+	//	[Extensions.Entries."memory.sink.corp"]
+	//	Enabled = true
+	//	[Extensions.Entries."memory.sink.corp".Config]
+	//	Endpoint = "https://remembrances.corp.internal"
+	//
+	// The field is a raw tree rather than map[string]ExtensionEntry on purpose:
+	// Viper uses "." as its key delimiter, so it turns a dotted map key into
+	// nested maps ("memory" -> "sink" -> "corp") before the configuration is
+	// decoded. Read it through ExtensionEntries, which puts those segments back
+	// together.
+	Entries map[string]any `json:"entries,omitempty" toml:"Entries"`
+}
+
+// ExtensionEntry is the per-extension configuration inside ExtensionsConfig.
+type ExtensionEntry struct {
+	Enabled bool           `json:"enabled,omitempty" toml:"Enabled"`
+	Config  map[string]any `json:"config,omitempty" toml:"Config"`
+}
+
+// ExtensionEntries flattens the raw Entries tree back into entries keyed by
+// full extension ID.
+//
+// A node is an entry when it carries "enabled" or "config"; every other key is
+// treated as a further ID segment, so both "a.b" and a longer "a.b.c" can be
+// configured at the same time. Keys are matched case-insensitively because
+// Viper lowercases them.
+func (e ExtensionsConfig) ExtensionEntries() map[string]ExtensionEntry {
+	out := make(map[string]ExtensionEntry)
+	flattenExtensionEntries("", e.Entries, out)
+	return out
+}
+
+func flattenExtensionEntries(prefix string, node map[string]any, out map[string]ExtensionEntry) {
+	if len(node) == 0 {
+		return
+	}
+
+	var entry ExtensionEntry
+	isEntry := false
+	for key, value := range node {
+		switch strings.ToLower(key) {
+		case "enabled":
+			if b, ok := value.(bool); ok {
+				entry.Enabled = b
+				isEntry = true
+			}
+		case "config":
+			if m, ok := toStringMap(value); ok {
+				entry.Config = m
+				isEntry = true
+			}
+		default:
+			child, ok := toStringMap(value)
+			if !ok {
+				continue
+			}
+			next := key
+			if prefix != "" {
+				next = prefix + "." + key
+			}
+			flattenExtensionEntries(next, child, out)
+		}
+	}
+
+	if isEntry && prefix != "" {
+		out[prefix] = entry
+	}
+}
+
+// toStringMap coerces the map shapes a config file can produce (TOML and JSON
+// both decode into map[string]any, but a nested Viper value can arrive as
+// map[any]any) into map[string]any.
+func toStringMap(v any) (map[string]any, bool) {
+	switch m := v.(type) {
+	case map[string]any:
+		return m, true
+	case map[any]any:
+		out := make(map[string]any, len(m))
+		for k, val := range m {
+			ks, ok := k.(string)
+			if !ok {
+				return nil, false
+			}
+			out[ks] = val
+		}
+		return out, true
+	}
+	return nil, false
+}
+
 type CavemanConfig struct {
 	// DefaultMode is the output-brevity level applied to new sessions that have
 	// not explicitly chosen one via /caveman. Valid values: "lite", "full",
