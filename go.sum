@@ -406,6 +406,8 @@ github.com/madeindigio/acp-go-sdk v0.15.1 h1:7BgEbP60y7Fv6SvFdqznMG3miX1iWnC6W/X
 github.com/madeindigio/acp-go-sdk v0.15.1/go.mod h1:BMZz7xBdQdwbL1NIc+iTSgsehARni3mvmUkwsmCEVyg=
 github.com/madeindigio/go-tree-sitter v0.1.0 h1:+3ZOqFKp6yEqCi69EX5IT4NgDNEBoHEZRNiCvm+1LC8=
 github.com/madeindigio/go-tree-sitter v0.1.0/go.mod h1:MwerNxn0L/AUhOD52tA6f0kVuHySiSFxFRU3p9L48y8=
+github.com/madeindigio/toon-go v0.0.0-20260824122047-953870f65a68 h1:2RRiVA+ollkswx6e3+reM+5NQya0zitPk1oEmXN9N7I=
+github.com/madeindigio/toon-go v0.0.0-20260824122047-953870f65a68/go.mod h1:j/BOnpF2ihnz4lELs99h9mwGJBx/zdleOUCnLLRPCsc=
 github.com/mark3labs/mcp-go v0.57.0 h1:jzWKyCzdWnwnZt05cvcQQ+ngiUl2RnixXJa7Kj4qP1E=
 github.com/mark3labs/mcp-go v0.57.0/go.mod h1:+8WclSK1ZUweCP3hvktSji8n8ABG/95QaEkeVE/Uwas=
 github.com/matryer/is v1.4.0/go.mod h1:8I/i5uYgLzgsgEloJE1U6xx5HkBQpAZvepWuujKwMRU=
@@ -626,8 +628,6 @@ github.com/tiendc/go-deepcopy v1.7.2 h1:Ut2yYR7W9tWjTQitganoIue4UGxZwCcJy3orjrrI
 github.com/tiendc/go-deepcopy v1.7.2/go.mod h1:4bKjNC2r7boYOkD2IOuZpYjmlDdzjbpTRyCx+goBCJQ=
 github.com/tkrajina/go-reflector v0.5.8 h1:yPADHrwmUbMq4RGEyaOUpz2H90sRsETNVpjzo3DLVQQ=
 github.com/tkrajina/go-reflector v0.5.8/go.mod h1:ECbqLgccecY5kPmPmXg1MrHW585yMcDkVl6IvJe64T4=
-github.com/toon-format/toon-go v0.0.0-20251108125615-44b4cd22477f h1:qIMJqAPGPH7S4uVRaHflMfJ/ZenGp7W1tWECmVoJitM=
-github.com/toon-format/toon-go v0.0.0-20251108125615-44b4cd22477f/go.mod h1:j/BOnpF2ihnz4lELs99h9mwGJBx/zdleOUCnLLRPCsc=
 github.com/twitchyliquid64/golang-asm v0.15.1 h1:SU5vSMR7hnwNxj24w34ZyCi/FmDZTkS4MhqMhdFk5YI=
 github.com/twitchyliquid64/golang-asm v0.15.1/go.mod h1:a1lVb/DtPvCB8fslRZhAngC2+aY1QWCk3Cedj/Gdt08=
 github.com/ugorji/go/codec v1.3.1 h1:waO7eEiFDwidsBN6agj1vJQ4AG7lh2yqXyOXqhgQuyY=

@@ -292,3 +292,5 @@ require (
 
 //replace github.com/madeindigio/go-tree-sitter => /www/MCP/Remembrances/go-tree-sitter
 //replace github.com/madeindigio/acp-go-sdk => /www/MCP/Pando/acp-go-sdk
+
+replace github.com/toon-format/toon-go => github.com/madeindigio/toon-go v0.0.0-20260824122047-953870f65a68
