@@ -22,7 +22,10 @@ type coreTool struct {
 }
 
 func (t coreTool) Info() tools.ToolInfo {
-	info := t.inner.Info()
+	info, ok := guardValue("Tool.Info", "", t.inner.Info)
+	if !ok {
+		return tools.ToolInfo{}
+	}
 	return tools.ToolInfo{
 		Name:        info.Name,
 		Description: info.Description,
@@ -31,12 +34,23 @@ func (t coreTool) Info() tools.ToolInfo {
 	}
 }
 
-func (t coreTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolResponse, error) {
-	resp, err := t.inner.Run(ctx, extension.ToolCall{ID: params.ID, Name: params.Name, Input: params.Input})
+// Run calls the extension's tool. A panic becomes a tool error rather than a
+// crash: the model can be told a tool failed, but nothing can be told anything
+// once the process is gone. No deadline is imposed here — see guard.go.
+func (t coreTool) Run(ctx context.Context, params tools.ToolCall) (resp tools.ToolResponse, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			logging.Error("Extension tool panicked",
+				"tool", params.Name, "panic", r)
+			resp = tools.NewTextErrorResponse("tool failed")
+			err = nil
+		}
+	}()
+	out, err := t.inner.Run(ctx, extension.ToolCall{ID: params.ID, Name: params.Name, Input: params.Input})
 	if err != nil {
 		return tools.ToolResponse{}, err
 	}
-	return toCoreResponse(resp), nil
+	return toCoreResponse(out), nil
 }
 
 // extTool presents a tools.BaseTool as an extension.Tool.
@@ -138,13 +152,23 @@ func ApplyTools(mgr *extension.Manager, coreTools []tools.BaseTool) []tools.Base
 		seen[t.Info().Name] = true
 	}
 	for _, p := range providers {
-		for _, t := range p.Tools() {
+		id := p.ExtensionInfo().ID
+		declared, ok := guardDeclarative(context.Background(), "ToolProvider.Tools", id,
+			func(context.Context) []extension.Tool { return p.Tools() })
+		if !ok {
+			continue
+		}
+		for _, t := range declared {
 			if t == nil {
 				continue
 			}
-			name := t.Info().Name
+			info, infoOK := guardValue("Tool.Info", id, t.Info)
+			if !infoOK {
+				continue
+			}
+			name := info.Name
 			if name == "" {
-				logging.Warn("Extension tool without a name ignored", "extension", p.ExtensionInfo().ID)
+				logging.Warn("Extension tool without a name ignored", "extension", id)
 				continue
 			}
 			// A core tool always wins a name clash: an extension must never be
@@ -152,7 +176,7 @@ func ApplyTools(mgr *extension.Manager, coreTools []tools.BaseTool) []tools.Base
 			// worth reporting, not a feature.
 			if seen[name] {
 				logging.Warn("Extension tool name already taken, ignored",
-					"extension", p.ExtensionInfo().ID, "tool", name)
+					"extension", id, "tool", name)
 				continue
 			}
 			seen[name] = true

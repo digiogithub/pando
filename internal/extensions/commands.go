@@ -93,7 +93,11 @@ func Commands() []*cobra.Command {
 	taken := make(map[string]extension.ID)
 	for _, p := range providers {
 		id := p.ExtensionInfo().ID
-		for _, spec := range p.Commands() {
+		specs, ok := guardValue("CommandProvider.Commands", id, p.Commands)
+		if !ok {
+			continue
+		}
+		for _, spec := range specs {
 			name := commandName(spec.Use)
 			if name == "" {
 				logging.Warn("Extension command without a name ignored", "extension", id)
@@ -146,14 +150,23 @@ func buildCommand(runner *commandRunner, id extension.ID, spec extension.Command
 			}
 			defer runner.stop(ctx)
 
-			live, err := findCommand(provider.Commands(), here)
+			specs, ok := guardValue("CommandProvider.Commands", id, provider.Commands)
+			if !ok {
+				return fmt.Errorf("extension %s failed while listing its commands", id)
+			}
+			live, err := findCommand(specs, here)
 			if err != nil {
 				return err
 			}
 			if live.Run == nil {
 				return fmt.Errorf("command %q does nothing", strings.Join(here, " "))
 			}
-			return live.Run(ctx, args, collectFlags(c, declared))
+			// A panicking command becomes a normal non-zero exit with a
+			// message. cobra would print a Go stack trace otherwise, which
+			// tells a user nothing and looks like Pando itself crashed.
+			return guardErr("Command.Run", id, func() error {
+				return live.Run(ctx, args, collectFlags(c, declared))
+			})
 		}
 	}
 

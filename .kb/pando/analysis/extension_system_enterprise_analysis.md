@@ -856,9 +856,20 @@ React shell with a documented `window.__PANDO_UI__` contract, overlay/branding s
 remembrances sync module, porting `db-sync-server`'s merged-storage/dedup/sync-queue logic. Redaction,
 spool, dry-run, visible UI indicator.
 
-**P6 — Licensing, docs, hardening.**
+**P6 — Licensing, docs, hardening. ✅ DONE 2026-08-25** — full record in
+[[pando/changes/extension-system-p6-licensing-hardening]].
 `LicenseProvider` + Ed25519 license verification; panic-recovery and timeout wrappers around every
 extension entry point; extension-author guide; "which mechanism do I use" decision doc (§8.5).
+Verified end to end on a composed enterprise binary: entitled loads, unentitled and expired are
+refused with the reason, a hand-edited license fails the signature check. `alchemai-agent` gained
+`license/` (trusted keys + license location) and `cmd/mklicense` (keygen/sign/show).
+Two decisions taken in the doing, beyond §7.6:
+- A `LicenseProvider` is **enabled by default** even though it is non-MIT. Left off by default, an
+  operator who enabled an enterprise module without thinking about licensing would get an ungated
+  build — the exact accident the mechanism exists to prevent. `[Extensions] Disabled` still wins.
+- A build with **no** license provider gates nothing, and logs that it is not gating. The absence of
+  the gate is a fact about how the binary was built, not something a customer did; failing every
+  enterprise module over a packaging mistake would turn it into an outage.
 
 Rough sizing: P0–P2 are small and mostly mechanical (the remembrances-mcp code is a working template,
 ~500 LOC of registry/manager). P3 is a day. P4 is the largest single piece of *new* design (frontend

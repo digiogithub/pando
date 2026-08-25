@@ -320,3 +320,72 @@ func TestAdapterRoundTripDoesNotStack(t *testing.T) {
 		t.Errorf("extension tool was wrapped: %#v", back)
 	}
 }
+
+// panicTool panics wherever it is asked to. A tool compiled into the process
+// can take the agent down with it, which is what these tests exist to prevent.
+type panicTool struct {
+	name  string
+	where string // "info" or "run"
+}
+
+func (t panicTool) Info() extension.ToolInfo {
+	if t.where == "info" {
+		panic("boom")
+	}
+	return extension.ToolInfo{Name: t.name}
+}
+
+func (t panicTool) Run(context.Context, extension.ToolCall) (extension.ToolResponse, error) {
+	if t.where == "run" {
+		panic("boom")
+	}
+	return extension.NewTextResponse("ok"), nil
+}
+
+// panicProvExt panics when asked what tools it has.
+type panicProvExt struct{ baseExt }
+
+func (e *panicProvExt) ExtensionInfo() extension.Info { return e.info(e) }
+func (e *panicProvExt) Tools() []extension.Tool       { panic("boom") }
+
+func TestApplyToolsContainsPanickingProvider(t *testing.T) {
+	core := []tools.BaseTool{fakeCoreTool{name: "bash"}}
+	mgr := managerWith(t, &panicProvExt{baseExt: baseExt{id: "tools.broken"}})
+
+	got := ApplyTools(mgr, core)
+	if names := toolNames(got); len(names) != 1 || names[0] != "bash" {
+		t.Fatalf("tools = %v, want the core set untouched", names)
+	}
+}
+
+func TestApplyToolsSkipsToolWithPanickingInfo(t *testing.T) {
+	core := []tools.BaseTool{fakeCoreTool{name: "bash"}}
+	mgr := managerWith(t, &provExt{
+		baseExt: baseExt{id: "tools.demo"},
+		tools:   []extension.Tool{panicTool{name: "broken", where: "info"}, fakeExtTool{name: "good"}},
+	})
+
+	names := toolNames(ApplyTools(mgr, core))
+	if len(names) != 2 {
+		t.Fatalf("tools = %v, want bash and good", names)
+	}
+}
+
+func TestPanickingToolRunBecomesAToolError(t *testing.T) {
+	mgr := managerWith(t, &provExt{
+		baseExt: baseExt{id: "tools.demo"},
+		tools:   []extension.Tool{panicTool{name: "broken", where: "run"}},
+	})
+
+	tool := findTool(ApplyTools(mgr, nil), "broken")
+	if tool == nil {
+		t.Fatal("tool not offered")
+	}
+	resp, err := tool.Run(context.Background(), tools.ToolCall{Name: "broken"})
+	if err != nil {
+		t.Fatalf("err = %v, want the panic reported as a tool error, not a call failure", err)
+	}
+	if !resp.IsError {
+		t.Fatalf("resp = %+v, want IsError", resp)
+	}
+}

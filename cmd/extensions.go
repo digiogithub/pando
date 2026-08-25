@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -74,9 +77,16 @@ var extensionsListCmd = &cobra.Command{
 				}
 				rows = append(rows, r)
 			}
+			out := struct {
+				Extensions []row                    `json:"extensions"`
+				License    *extension.LicenseStatus `json:"license,omitempty"`
+			}{Extensions: rows}
+			if st, ok := mgr.LicenseStatus(); ok {
+				out.License = &st
+			}
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
-			return enc.Encode(rows)
+			return enc.Encode(out)
 		}
 
 		variant := version.Variant
@@ -103,12 +113,45 @@ var extensionsListCmd = &cobra.Command{
 			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", st.Info.ID, st.Info.Version, lic, stateOf(st), desc)
 		}
-		return w.Flush()
+		if err := w.Flush(); err != nil {
+			return err
+		}
+		printLicense(cmd.OutOrStdout(), mgr)
+		return nil
 	},
+}
+
+// printLicense renders the licensing line under the table.
+//
+// A build with no license provider prints nothing: there is no licensing in
+// that binary, and an empty "License: —" line would suggest there is and that
+// something is missing.
+func printLicense(w io.Writer, mgr *extension.Manager) {
+	st, ok := mgr.LicenseStatus()
+	if !ok {
+		return
+	}
+	switch {
+	case !st.Present:
+		fmt.Fprintf(w, "\nLicense: none installed (%s)\n", st.Source)
+	case st.Error != "":
+		fmt.Fprintf(w, "\nLicense: INVALID — %s (%s)\n", st.Error, st.Source)
+	default:
+		expiry := "perpetual"
+		if !st.ExpiresAt.IsZero() {
+			expiry = "expires " + st.ExpiresAt.Format(time.DateOnly)
+		}
+		fmt.Fprintf(w, "\nLicense: %s, %s\n", st.Customer, expiry)
+		if len(st.Entitlements) > 0 {
+			fmt.Fprintf(w, "Entitlements: %s\n", strings.Join(st.Entitlements, ", "))
+		}
+	}
 }
 
 func stateOf(st extension.Status) string {
 	switch {
+	case st.Unlicensed:
+		return "unlicensed"
 	case st.Err != nil:
 		return "error"
 	case st.Loaded:
