@@ -8,6 +8,7 @@ import (
 	"maps"
 	"sort"
 	"sync"
+	"sync/atomic"
 )
 
 // Entry is the per-extension configuration the host passes to the manager. It
@@ -46,10 +47,18 @@ type Manager struct {
 	opts     Options
 	log      *slog.Logger
 
+	// ungatedLogged keeps the "no license provider" notice to once per manager:
+	// it is a build fact, and repeating it per extension buries it.
+	ungatedLogged atomic.Bool
+
 	mu       sync.RWMutex
 	loaded   map[ID]Extension
 	order    []ID // load order, for deterministic shutdown in reverse
 	statuses map[ID]Status
+	license  LicenseProvider
+	// licenseIDs is the set of registered extensions that provide licensing,
+	// discovered in resolveOrder before anything is provisioned.
+	licenseIDs map[ID]bool
 }
 
 // NewManager builds a Manager. It does not load anything: call Load.
@@ -92,6 +101,14 @@ func (m *Manager) Load(ctx context.Context) error {
 			continue
 		}
 
+		if err := m.entitled(info); err != nil {
+			m.setStatus(Status{Info: info, Unlicensed: true, Err: err})
+			errs = append(errs, err)
+			m.log.Error("extension not licensed, refusing to load",
+				"id", info.ID, "license", info.License, "reason", err)
+			continue
+		}
+
 		if err := m.missingDependencies(info); err != nil {
 			m.setStatus(Status{Info: info, Err: err})
 			errs = append(errs, err)
@@ -106,11 +123,99 @@ func (m *Manager) Load(ctx context.Context) error {
 			continue
 		}
 
+		m.adoptLicenseProvider(info.ID)
 		m.setStatus(Status{Info: info, Loaded: true})
 		m.log.Info("extension loaded", "id", info.ID, "version", info.Version, "license", info.License)
 	}
 
 	return errors.Join(errs...)
+}
+
+// entitled asks the license provider whether this extension may load.
+//
+// Three rules, in order:
+//
+//   - MIT extensions are never gated. The open-source core must load with no
+//     licensing machinery compiled in at all.
+//   - A LicenseProvider is never gated by itself: it has to start before it can
+//     answer anything, and gating it would be a deadlock dressed as a policy.
+//   - With no license provider compiled into the build, nothing is gated. That
+//     is a deliberate choice: the absence of the gate is a fact about how the
+//     binary was built, not something a customer did, and refusing to start
+//     every enterprise module because the build pipeline left out one module
+//     would turn a packaging mistake into an outage. It is logged instead.
+func (m *Manager) entitled(info Info) error {
+	if info.License == "" || info.License == LicenseMIT {
+		return nil
+	}
+	m.mu.RLock()
+	provider := m.license
+	m.mu.RUnlock()
+	if provider == nil {
+		if !m.ungatedLogged.Swap(true) {
+			m.log.Info("no license provider in this build; enterprise extensions load ungated")
+		}
+		return nil
+	}
+	if provider.ExtensionInfo().ID == info.ID {
+		return nil
+	}
+	var err error
+	if callErr := safeCall(func() error { err = provider.Entitled(info); return nil }); callErr != nil {
+		// A panicking license provider must not become a way past the gate.
+		return fmt.Errorf("license check failed: %w", callErr)
+	}
+	return err
+}
+
+// adoptLicenseProvider records the first loaded extension that provides
+// licensing. Later ones are ignored and reported: two gates disagreeing would
+// make "is this licensed" depend on load order.
+func (m *Manager) adoptLicenseProvider(id ID) {
+	m.mu.Lock()
+	inst, ok := m.loaded[id]
+	if !ok {
+		m.mu.Unlock()
+		return
+	}
+	lp, isProvider := inst.(LicenseProvider)
+	if !isProvider {
+		m.mu.Unlock()
+		return
+	}
+	if m.license != nil {
+		existing := m.license.ExtensionInfo().ID
+		m.mu.Unlock()
+		m.log.Warn("more than one license provider compiled in; ignoring the later one",
+			"using", existing, "ignored", id)
+		return
+	}
+	m.license = lp
+	m.mu.Unlock()
+	m.log.Debug("license provider adopted", "id", id)
+}
+
+// LicenseStatus returns the license state reported by the provider in this
+// build, and whether a provider exists at all. Callers render both cases: "no
+// licensing in this build" and "licensing says X" are different answers, and
+// collapsing them would leave a build with a broken license looking unlicensed
+// by design.
+func (m *Manager) LicenseStatus() (LicenseStatus, bool) {
+	if m == nil {
+		return LicenseStatus{}, false
+	}
+	m.mu.RLock()
+	provider := m.license
+	m.mu.RUnlock()
+	if provider == nil {
+		return LicenseStatus{}, false
+	}
+	var st LicenseStatus
+	if err := safeCall(func() error { st = provider.LicenseStatus(); return nil }); err != nil {
+		m.log.Warn("license provider panicked reporting status", "error", err)
+		return LicenseStatus{Error: err.Error()}, true
+	}
+	return st, true
 }
 
 // enabled applies the configuration rules that decide whether an extension
@@ -142,7 +247,17 @@ func (m *Manager) disabledSet() map[ID]struct{} {
 // entry at all. Bundled MIT extensions are on by default; anything else must be
 // switched on explicitly, so that adding a private module to a build never
 // silently changes behaviour.
+//
+// A LicenseProvider is the exception, and has to be. It is not a feature
+// somebody opts into — it is the gate the other extensions are measured
+// against. Left off by default, an operator who enabled an enterprise module
+// but never thought about the licensing extension would get an ungated build,
+// which is precisely the accident this whole mechanism exists to prevent. It
+// can still be switched off explicitly through [Extensions] Disabled.
 func (m *Manager) defaultEnabled(info Info) bool {
+	if m.licenseIDs[info.ID] {
+		return true
+	}
 	return info.License == "" || info.License == LicenseMIT
 }
 
@@ -210,7 +325,19 @@ func (m *Manager) resolveOrder(infos []Info) []Info {
 		index[info.ID] = i
 	}
 
+	// A license provider must be loaded before anything it gates, so it is
+	// pinned ahead of every other extension regardless of declared
+	// dependencies. Depth is otherwise the dependency depth.
 	depth := make(map[ID]int, len(infos))
+	licenseFirst := make(map[ID]bool, 1)
+	for _, info := range infos {
+		if inst := previewInstance(m, info); inst != nil {
+			if _, ok := inst.(LicenseProvider); ok {
+				licenseFirst[info.ID] = true
+			}
+		}
+	}
+	m.licenseIDs = licenseFirst
 	var resolve func(info Info, seen map[ID]bool) int
 	resolve = func(info Info, seen map[ID]bool) int {
 		if d, ok := depth[info.ID]; ok {
@@ -241,7 +368,12 @@ func (m *Manager) resolveOrder(infos []Info) []Info {
 
 	out := make([]Info, len(infos))
 	copy(out, infos)
-	sort.SliceStable(out, func(i, j int) bool { return depth[out[i].ID] < depth[out[j].ID] })
+	sort.SliceStable(out, func(i, j int) bool {
+		if licenseFirst[out[i].ID] != licenseFirst[out[j].ID] {
+			return licenseFirst[out[i].ID]
+		}
+		return depth[out[i].ID] < depth[out[j].ID]
+	})
 	return out
 }
 
@@ -284,6 +416,9 @@ func (m *Manager) Unload(id ID) error {
 	inst, ok := m.loaded[id]
 	if ok {
 		delete(m.loaded, id)
+		if m.license != nil && m.license.ExtensionInfo().ID == id {
+			m.license = nil
+		}
 		for i, cur := range m.order {
 			if cur == id {
 				m.order = append(m.order[:i], m.order[i+1:]...)
@@ -318,6 +453,7 @@ func (m *Manager) Cleanup() {
 	maps.Copy(instances, m.loaded)
 	m.loaded = make(map[ID]Extension)
 	m.order = nil
+	m.license = nil
 	m.mu.Unlock()
 
 	for i := len(order) - 1; i >= 0; i-- {

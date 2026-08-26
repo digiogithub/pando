@@ -166,3 +166,31 @@ func TestForwardStopsOnContextCancel(t *testing.T) {
 		t.Errorf("events kept arriving after cancel: %d", got)
 	}
 }
+
+// topicPanicExt cannot say which topics it wants.
+type topicPanicExt struct{ subExt }
+
+func (e *topicPanicExt) ExtensionInfo() extension.Info { return e.info(e) }
+func (e *topicPanicExt) Topics() []string              { panic("boom") }
+
+func TestForwardContainsPanickingTopics(t *testing.T) {
+	sub := &topicPanicExt{subExt: subExt{baseExt: baseExt{id: "events.broken"}}}
+	good := &subExt{baseExt: baseExt{id: "events.good"}}
+	mgr := managerWith(t, sub, good)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	broker := pubsub.NewBroker[fakeResource]()
+	Forward(ctx, mgr, "test", broker)
+
+	broker.Publish(pubsub.CreatedEvent, fakeResource{ID: "r1"})
+
+	// The healthy subscriber still gets its event; the broken one is skipped
+	// rather than being handed everything.
+	if !waitFor(t, func() bool { return len(good.seen()) == 1 }) {
+		t.Fatal("a panicking Topics() stopped delivery to the other subscribers")
+	}
+	if got := len(sub.seen()); got != 0 {
+		t.Fatalf("broken subscriber received %d events, want 0", got)
+	}
+}

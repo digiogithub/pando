@@ -1,6 +1,7 @@
 package extensions
 
 import (
+	"context"
 	"io/fs"
 	"path"
 	"sort"
@@ -180,11 +181,20 @@ func Panels(mgr *extension.Manager) []Panel {
 	var out []Panel
 	for _, p := range extension.Capability[extension.FrontendProvider](mgr) {
 		id := p.ExtensionInfo().ID
-		seg := strings.Trim(strings.TrimSpace(p.AssetPath()), "/")
+		base, baseOK := guardValue("FrontendProvider.AssetPath", id, p.AssetPath)
+		if !baseOK {
+			continue
+		}
+		seg := strings.Trim(strings.TrimSpace(base), "/")
 		if !validBase(seg) {
 			continue // already reported by assetSubtrees
 		}
-		for _, m := range p.Panels() {
+		declared, ok := guardDeclarative(context.Background(), "FrontendProvider.Panels", id,
+			func(context.Context) []extension.PanelManifest { return p.Panels() })
+		if !ok {
+			continue
+		}
+		for _, m := range declared {
 			if m.ID == "" || m.Entry == "" {
 				logging.Error("Extension panel ignored", "extension", id,
 					"reason", "id and entry are required")

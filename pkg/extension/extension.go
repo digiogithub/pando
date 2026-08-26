@@ -124,6 +124,11 @@ type Status struct {
 	// Disabled is true when configuration switched the extension off; Err is
 	// nil in that case.
 	Disabled bool
+	// Unlicensed is true when the license gate refused the extension. Err then
+	// holds the reason. It is kept apart from a plain load failure because the
+	// two need different answers: a load failure is a bug report, an
+	// unlicensed extension is a question for whoever owns the contract.
+	Unlicensed bool
 	// Err holds the reason an extension failed to load.
 	Err error
 }
@@ -132,6 +137,8 @@ type Status struct {
 func (s Status) String() string {
 	state := "registered"
 	switch {
+	case s.Unlicensed:
+		state = "unlicensed: " + s.Err.Error()
 	case s.Err != nil:
 		state = "error: " + s.Err.Error()
 	case s.Disabled:

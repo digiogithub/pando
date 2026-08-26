@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -398,5 +399,224 @@ func TestManagerStatusesCoverEveryRegisteredExtension(t *testing.T) {
 	}
 	if sts[0].String() == "" {
 		t.Error("Status.String returned empty")
+	}
+}
+
+// licenser is a test LicenseProvider that allows a fixed set of IDs.
+type licenser struct {
+	info    Info
+	allow   map[ID]bool
+	status  LicenseStatus
+	panics  bool
+	entitle func(Info) error
+}
+
+func (l *licenser) ExtensionInfo() Info { return l.info }
+
+func (l *licenser) Entitled(info Info) error {
+	if l.panics {
+		panic("boom")
+	}
+	if l.entitle != nil {
+		return l.entitle(info)
+	}
+	if l.allow[info.ID] {
+		return nil
+	}
+	return errors.New("not entitled: " + string(info.ID))
+}
+
+func (l *licenser) LicenseStatus() LicenseStatus { return l.status }
+
+func registerLicenser(r *Registry, id ID, tweak func(*licenser)) *licenser {
+	inst := &licenser{
+		info:   Info{ID: id, Name: string(id), Version: "1.0.0", License: LicenseEnterprise},
+		allow:  map[ID]bool{},
+		status: LicenseStatus{Present: true, Valid: true, Customer: "ACME"},
+	}
+	if tweak != nil {
+		tweak(inst)
+	}
+	inst.info.New = func() Extension { return inst }
+	r.Register(inst)
+	return inst
+}
+
+func statusOf(m *Manager, id ID) Status {
+	for _, st := range m.Statuses() {
+		if st.Info.ID == id {
+			return st
+		}
+	}
+	return Status{}
+}
+
+func TestLicenseGateBlocksUnentitledExtension(t *testing.T) {
+	reg := NewRegistry()
+	var log []string
+	registerLicenser(reg, "license.corp", func(l *licenser) { l.allow = map[ID]bool{"memory.sink.corp": true} })
+	registerRecorder(reg, "memory.sink.corp", &log, func(r *recorder) { r.info.License = LicenseEnterprise })
+	registerRecorder(reg, "api.audit.corp", &log, func(r *recorder) { r.info.License = LicenseEnterprise })
+
+	m := quietManager(reg, Options{Entries: map[string]Entry{
+		"license.corp":     {Enabled: true},
+		"memory.sink.corp": {Enabled: true},
+		"api.audit.corp":   {Enabled: true},
+	}})
+	_ = m.Load(context.Background())
+
+	if !m.Loaded("memory.sink.corp") {
+		t.Fatal("entitled extension did not load")
+	}
+	if m.Loaded("api.audit.corp") {
+		t.Fatal("unentitled extension loaded")
+	}
+	st := statusOf(m, "api.audit.corp")
+	if !st.Unlicensed || st.Err == nil {
+		t.Fatalf("status = %+v, want Unlicensed with a reason", st)
+	}
+	if st.String() == "" || !strings.Contains(st.String(), "unlicensed") {
+		t.Fatalf("status line = %q, want it to say unlicensed", st.String())
+	}
+}
+
+func TestLicenseProviderLoadsFirstAndIsNotGatedByItself(t *testing.T) {
+	reg := NewRegistry()
+	var log []string
+	// The licenser is registered last and refuses everything, including itself.
+	registerRecorder(reg, "aaa.first.corp", &log, func(r *recorder) { r.info.License = LicenseEnterprise })
+	registerLicenser(reg, "zzz.license.corp", func(l *licenser) {
+		l.entitle = func(Info) error { return errors.New("nothing is entitled") }
+	})
+
+	m := quietManager(reg, Options{Entries: map[string]Entry{
+		"aaa.first.corp":   {Enabled: true},
+		"zzz.license.corp": {Enabled: true},
+	}})
+	_ = m.Load(context.Background())
+
+	if !m.Loaded("zzz.license.corp") {
+		t.Fatal("license provider was gated by its own check")
+	}
+	if m.Loaded("aaa.first.corp") {
+		t.Fatal("extension registered before the provider escaped the gate")
+	}
+}
+
+func TestNoLicenseProviderMeansNoGate(t *testing.T) {
+	reg := NewRegistry()
+	var log []string
+	registerRecorder(reg, "memory.sink.corp", &log, func(r *recorder) { r.info.License = LicenseEnterprise })
+
+	m := quietManager(reg, Options{Entries: map[string]Entry{"memory.sink.corp": {Enabled: true}}})
+	if err := m.Load(context.Background()); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !m.Loaded("memory.sink.corp") {
+		t.Fatal("enterprise extension blocked in a build with no license provider")
+	}
+	if _, ok := m.LicenseStatus(); ok {
+		t.Fatal("LicenseStatus reported a provider where none exists")
+	}
+}
+
+func TestPanickingLicenseProviderDoesNotOpenTheGate(t *testing.T) {
+	reg := NewRegistry()
+	var log []string
+	registerLicenser(reg, "license.corp", func(l *licenser) { l.panics = true })
+	registerRecorder(reg, "memory.sink.corp", &log, func(r *recorder) { r.info.License = LicenseEnterprise })
+
+	m := quietManager(reg, Options{Entries: map[string]Entry{
+		"license.corp":     {Enabled: true},
+		"memory.sink.corp": {Enabled: true},
+	}})
+	_ = m.Load(context.Background())
+
+	if m.Loaded("memory.sink.corp") {
+		t.Fatal("a panicking license provider let an extension through")
+	}
+}
+
+func TestMITExtensionsAreNeverGated(t *testing.T) {
+	reg := NewRegistry()
+	var log []string
+	registerLicenser(reg, "license.corp", func(l *licenser) {
+		l.entitle = func(Info) error { return errors.New("nothing is entitled") }
+	})
+	registerRecorder(reg, "tools.demo", &log, nil) // License defaults to MIT
+
+	m := quietManager(reg, Options{Entries: map[string]Entry{
+		"license.corp": {Enabled: true},
+		"tools.demo":   {Enabled: true},
+	}})
+	_ = m.Load(context.Background())
+
+	if !m.Loaded("tools.demo") {
+		t.Fatal("an MIT extension was blocked by the license gate")
+	}
+}
+
+func TestManagerLicenseStatus(t *testing.T) {
+	reg := NewRegistry()
+	registerLicenser(reg, "license.corp", func(l *licenser) {
+		l.status = LicenseStatus{Present: true, Valid: true, Customer: "ACME", Entitlements: []string{"memory.*"}}
+	})
+
+	m := quietManager(reg, Options{Entries: map[string]Entry{"license.corp": {Enabled: true}}})
+	_ = m.Load(context.Background())
+
+	st, ok := m.LicenseStatus()
+	if !ok {
+		t.Fatal("no license provider reported")
+	}
+	if !st.Valid || st.Customer != "ACME" {
+		t.Fatalf("status = %+v", st)
+	}
+}
+
+func TestLicenseProviderLoadsWithoutBeingEnabled(t *testing.T) {
+	// The gate is not an opt-in feature. An operator who enabled an enterprise
+	// module but never thought about the licensing extension must not end up
+	// with an ungated build.
+	reg := NewRegistry()
+	var log []string
+	registerLicenser(reg, "license.corp", func(l *licenser) {
+		l.entitle = func(Info) error { return errors.New("nothing is entitled") }
+	})
+	registerRecorder(reg, "memory.sink.corp", &log, func(r *recorder) { r.info.License = LicenseEnterprise })
+
+	m := quietManager(reg, Options{Entries: map[string]Entry{
+		"memory.sink.corp": {Enabled: true}, // note: license.corp is not configured
+	}})
+	_ = m.Load(context.Background())
+
+	if !m.Loaded("license.corp") {
+		t.Fatal("the license provider did not load without an explicit Enabled")
+	}
+	if m.Loaded("memory.sink.corp") {
+		t.Fatal("the gate did not apply")
+	}
+}
+
+func TestLicenseProviderCanStillBeDisabled(t *testing.T) {
+	reg := NewRegistry()
+	var log []string
+	registerLicenser(reg, "license.corp", nil)
+	registerRecorder(reg, "memory.sink.corp", &log, func(r *recorder) { r.info.License = LicenseEnterprise })
+
+	m := quietManager(reg, Options{
+		Disabled: []string{"license.corp"},
+		Entries:  map[string]Entry{"memory.sink.corp": {Enabled: true}},
+	})
+	_ = m.Load(context.Background())
+
+	if m.Loaded("license.corp") {
+		t.Fatal("Disabled did not switch the license provider off")
+	}
+	// With no provider loaded there is no gate, which is the documented
+	// behaviour: the absence of the gate is a build/config fact, logged, not an
+	// outage.
+	if !m.Loaded("memory.sink.corp") {
+		t.Fatal("an extension was blocked with no license provider loaded")
 	}
 }

@@ -78,3 +78,38 @@ func TestHandleExtensionsMemoryRejectsNonGET(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 }
+
+// A standard build has no licensing at all. The endpoint still answers, with
+// gated=false: the WebUI must be able to tell "nothing to license here" from
+// "licensing is broken", and a 404 says neither.
+func TestHandleExtensionsLicenseOnStandardBuild(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+
+	s.handleExtensionsLicense(rec, httptest.NewRequest(http.MethodGet, "/api/v1/extensions/license", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var got ExtensionsLicenseResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v (body %s)", err, rec.Body.String())
+	}
+	if got.Gated || got.Status != nil {
+		t.Fatalf("response = %+v, want an ungated build", got)
+	}
+	if got.Unlicensed == nil {
+		t.Fatalf("unlicensed is null, want an empty list: %s", rec.Body.String())
+	}
+}
+
+func TestHandleExtensionsLicenseRejectsNonGET(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+
+	s.handleExtensionsLicense(rec, httptest.NewRequest(http.MethodPost, "/api/v1/extensions/license", nil))
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d", rec.Code)
+	}
+}

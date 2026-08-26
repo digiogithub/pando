@@ -79,7 +79,12 @@ func deliver[T any](ctx context.Context, mgr *extension.Manager, topic string, e
 // wants reports whether sub asked for this topic. An empty topic list means
 // every topic, including ones added after the extension was written.
 func wants(sub extension.EventSubscriber, topic string) bool {
-	topics := sub.Topics()
+	topics, ok := guardValue("EventSubscriber.Topics", sub.ExtensionInfo().ID, sub.Topics)
+	if !ok {
+		// A subscriber that cannot say what it wants gets nothing: guessing
+		// "everything" would hand a broken extension the whole event stream.
+		return false
+	}
 	if len(topics) == 0 {
 		return true
 	}
@@ -91,16 +96,19 @@ func wants(sub extension.EventSubscriber, topic string) bool {
 	return false
 }
 
-// handleSafely contains a panicking subscriber: it must not kill the fan-out
-// goroutine and with it every other subscriber's events.
+// handleSafely contains a panicking or wedged subscriber: it must not kill the
+// fan-out goroutine, and with it every other subscriber's events.
+//
+// The deadline matters as much as the panic guard here. Delivery is sequential,
+// so one subscriber blocking forever silences every subscriber after it and
+// backs the event stream up behind it. A handler with real work to do must
+// start it and return.
 func handleSafely(ctx context.Context, sub extension.EventSubscriber, ev extension.Event) {
-	defer func() {
-		if r := recover(); r != nil {
-			logging.Error("Extension event subscriber panicked",
-				"extension", sub.ExtensionInfo().ID, "topic", ev.Topic, "panic", r)
-		}
-	}()
-	sub.HandleEvent(ctx, ev)
+	id := sub.ExtensionInfo().ID
+	guardDeclarative(ctx, "EventSubscriber.HandleEvent", id, func(callCtx context.Context) struct{} {
+		sub.HandleEvent(callCtx, ev)
+		return struct{}{}
+	})
 }
 
 // toPayload renders a resource as JSON-decoded values. Marshalling is what
