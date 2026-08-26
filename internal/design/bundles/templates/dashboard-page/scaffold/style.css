@@ -1,0 +1,76 @@
+/* Values come from designer/_system/system.css. */
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body, system-ui, sans-serif);
+  line-height: 1.5;
+}
+
+.bar {
+  padding: var(--space-md, 1rem);
+  border-bottom: 1px solid var(--color-border, transparent);
+}
+
+main {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  padding: var(--space-md, 1rem);
+}
+
+.summary {
+  display: grid;
+  gap: var(--space-md, 1rem);
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.figure,
+.panel {
+  background: var(--color-surface, transparent);
+  border: 1px solid var(--color-border, transparent);
+  border-radius: var(--radius-md, 6px);
+  padding: var(--space-md, 1rem);
+}
+
+.figure h2,
+.panel h2 {
+  margin: 0 0 var(--space-sm, 0.5rem);
+  font-size: var(--size-sm, 0.875rem);
+  color: var(--color-muted, inherit);
+  font-weight: 600;
+}
+
+.value {
+  margin: 0;
+  font-size: var(--size-3xl, 2.5rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.delta {
+  margin: var(--space-xs, 0.25rem) 0 0;
+  font-size: var(--size-sm, 0.875rem);
+  color: var(--color-muted, inherit);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: var(--space-sm, 0.5rem);
+  border-bottom: 1px solid var(--color-border, transparent);
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+svg {
+  width: 100%;
+  height: auto;
+}

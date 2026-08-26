@@ -1,0 +1,102 @@
+/* Print styles are load-bearing: PDF export prints one slide per page. */
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body, system-ui, sans-serif);
+}
+
+.slide {
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100vh;
+  padding: var(--space-2xl, 4rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-lg, 2rem);
+}
+
+.slide--title h1 {
+  font-family: var(--font-heading, var(--font-body, system-ui, sans-serif));
+  font-size: clamp(3rem, 8vw, 6rem);
+  line-height: 1.02;
+  margin: 0;
+  max-width: 18ch;
+}
+
+.sub {
+  font-size: clamp(1.25rem, 2vw, 1.75rem);
+  color: var(--color-muted, inherit);
+  margin: 0;
+  max-width: 40ch;
+}
+
+.slide--split {
+  flex-direction: row;
+  align-items: center;
+}
+
+.col {
+  flex: 1;
+  margin: 0;
+}
+
+.col h2 {
+  font-family: var(--font-heading, var(--font-body, system-ui, sans-serif));
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  line-height: 1.1;
+  margin: 0 0 var(--space-md, 1rem);
+}
+
+.col p {
+  font-size: clamp(1.25rem, 1.8vw, 1.65rem);
+  line-height: 1.45;
+  margin: 0;
+  max-width: 34ch;
+}
+
+/* A placeholder must look like one: no stock imagery, no network request. */
+.placeholder {
+  align-self: stretch;
+  display: flex;
+  align-items: flex-end;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--color-surface, #eee),
+    var(--color-surface, #eee) 12px,
+    var(--color-bg) 12px,
+    var(--color-bg) 24px
+  );
+  border: 1px solid var(--color-border, transparent);
+  padding: var(--space-sm, 0.5rem);
+}
+
+.placeholder figcaption {
+  font-size: var(--size-sm, 0.875rem);
+  color: var(--color-muted, inherit);
+}
+
+.slide--quote blockquote {
+  font-family: var(--font-heading, var(--font-body, system-ui, sans-serif));
+  font-size: clamp(2rem, 4.5vw, 3.5rem);
+  line-height: 1.2;
+  margin: 0;
+  max-width: 22ch;
+}
+
+@page {
+  size: 1600px 900px;
+  margin: 0;
+}
+
+@media print {
+  .slide {
+    width: 1600px;
+    height: 900px;
+    break-after: page;
+  }
+  .slide:last-child {
+    break-after: auto;
+  }
+}

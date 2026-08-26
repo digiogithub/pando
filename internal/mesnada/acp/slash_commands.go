@@ -33,6 +33,12 @@ const (
 	slashCommandVulnhunterFix     slashCommandKind = "vulnhunter-fix"
 	slashCommandVulnhuntFixVerify slashCommandKind = "vulnhunt-fix-verify"
 
+	slashCommandDesign          slashCommandKind = "design"
+	slashCommandDesignOpen      slashCommandKind = "design-open"
+	slashCommandDesignVersions  slashCommandKind = "design-versions"
+	slashCommandDesignSystem    slashCommandKind = "design-system"
+	slashCommandDesignTemplates slashCommandKind = "design-templates"
+
 	// slashCommandExtension is the catch-all kind for a command contributed by
 	// a compiled-in extension. The concrete name lives in slashCommand.Name,
 	// because there is no compile-time constant for something a build adds.
@@ -138,6 +144,41 @@ func slashCommandSpecs() []slashCommandSpec {
 			Kind:        slashCommandImproveAgentsMd,
 			Description: "Create or reinforce AGENTS.md with the mandatory AI-agent operating rules",
 			InputHint:   "optional extra guidance",
+		},
+		{
+			Token:       designCommandToken,
+			Kind:        slashCommandDesign,
+			Description: "List the design artifacts of this project, or show one",
+			InputHint:   "optional artifact slug or id",
+			Usage:       "Usage: /design [artifact]\nNo argument lists every artifact. Use /design-open to preview one.",
+		},
+		{
+			Token:       designOpenCommandToken,
+			Kind:        slashCommandDesignOpen,
+			Description: "Preview a design artifact: live URL plus an inline screenshot",
+			InputHint:   "artifact and optional slide number",
+			Usage:       "Usage: /design-open [artifact] [slide]\nNo argument opens the most recently updated artifact.",
+		},
+		{
+			Token:       designVersionsCommandToken,
+			Kind:        slashCommandDesignVersions,
+			Description: "Show the version history of a design artifact",
+			InputHint:   "optional artifact slug or id",
+			Usage:       "Usage: /design-versions [artifact]",
+		},
+		{
+			Token:       designSystemCommandToken,
+			Kind:        slashCommandDesignSystem,
+			Description: "Show the design system every artifact of this project is held to",
+			InputHint:   "",
+			Usage:       "Usage: /design-system\nReads the committed tokens. Extraction and edits go through the design_system tool.",
+		},
+		{
+			Token:       designTemplatesCommandToken,
+			Kind:        slashCommandDesignTemplates,
+			Description: "List the design templates an artifact can be built from",
+			InputHint:   "",
+			Usage:       "Usage: /design-templates\nLists the bundled templates and the brief each one expects.",
 		},
 		{
 			Token:       vulnhuntCommandToken,

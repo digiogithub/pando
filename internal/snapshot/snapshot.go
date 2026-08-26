@@ -64,6 +64,12 @@ type Service interface {
 	Cleanup(ctx context.Context, maxAge int, maxCount int) error
 	Revert(ctx context.Context, snapshotID string) error
 	Apply(ctx context.Context, fromSnapshotID, toSnapshotID string) error
+
+	// CreateScoped captures a snapshot rooted at a sub-directory of the project
+	// instead of the whole working directory.
+	CreateScoped(ctx context.Context, sessionID, description, rootDir string) (Snapshot, error)
+	// RevertScoped restores only the sub-tree captured by a scoped snapshot.
+	RevertScoped(ctx context.Context, snapshotID string) error
 }
 
 // service is the concrete implementation of Service.

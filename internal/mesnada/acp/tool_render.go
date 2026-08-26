@@ -132,7 +132,70 @@ func mapToolKind(toolName string) acpsdk.ToolKind {
 	case "exitplanmode":
 		return acpsdk.ToolKindSwitchMode
 	default:
+		if kind, ok := designToolKind(strings.ToLower(toolName)); ok {
+			return kind
+		}
 		return acpsdk.ToolKindOther
+	}
+}
+
+// designToolKind classifies the Design Studio tools.
+//
+// ACP has no "design" kind — the enum is fixed by the protocol and a client
+// given an unknown value falls back to a generic icon at best. So each design
+// tool is mapped to the protocol kind that matches what it actually does to the
+// workspace: the ones that write files are edits, the ones that only look are
+// reads. That is what makes Zed show the right icon and progress treatment.
+func designToolKind(name string) (acpsdk.ToolKind, bool) {
+	switch name {
+	case "design_create", "design_patch", "design_export", "design_canvas", "design_system":
+		return acpsdk.ToolKindEdit, true
+	case "design_render", "design_screenshot", "design_inspect", "design_versions":
+		return acpsdk.ToolKindRead, true
+	case "design_present":
+		return acpsdk.ToolKindFetch, true
+	default:
+		return "", false
+	}
+}
+
+// designToolTitle gives the design tools a title naming the artifact, because
+// "design_patch" repeated eight times in a tool list tells the user nothing
+// about which of their artifacts is being changed.
+func designToolTitle(name string, rawInput interface{}) (string, bool) {
+	artifact := firstToolInputString(rawInput, "artifact_id", "artifact", "slug", "title")
+	label := func(verb string) string {
+		if artifact == "" {
+			return verb
+		}
+		return verb + " " + artifact
+	}
+	switch name {
+	case "design_create":
+		return label("Design"), true
+	case "design_patch":
+		return label("Edit design"), true
+	case "design_render":
+		return label("Render design"), true
+	case "design_screenshot":
+		return label("Screenshot design"), true
+	case "design_inspect":
+		return label("Inspect design"), true
+	case "design_versions":
+		return label("Design versions of"), true
+	case "design_export":
+		if format := toolInputString(rawInput, "format"); format != "" {
+			return label("Export " + strings.ToUpper(format) + " of"), true
+		}
+		return label("Export design"), true
+	case "design_canvas":
+		return label("Draw canvas for"), true
+	case "design_system":
+		return "Design system", true
+	case "design_present":
+		return label("Open design"), true
+	default:
+		return "", false
 	}
 }
 
@@ -202,6 +265,9 @@ func toolDisplayTitle(toolName string, rawInput interface{}, cwd string) string 
 	case "exitplanmode":
 		return "Ready to code?"
 	default:
+		if title, ok := designToolTitle(name, rawInput); ok {
+			return title
+		}
 		return toolName
 	}
 }

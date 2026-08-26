@@ -201,6 +201,7 @@ func (a *PandoACPAgent) Cancel(ctx context.Context, params acpsdk.CancelNotifica
 	}
 
 	acpSession.Cancel()
+	acpSession.CancelDesignSubscription()
 	a.agentService.Cancel(acpSession.PandoSessionID())
 	if goal, err := a.sessionService.CancelGoal(context.Background(), acpSession.PandoSessionID()); err == nil {
 		a.sendGoalStateUpdate(params.SessionId, goalStateFromDB(goal, time.Now()))
@@ -282,6 +283,7 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 	}
 	a.sessionsMu.Unlock()
 	reconcileACPThinkingSession(a.agentService, acpSession)
+	a.startDesignUpdates(acpSession)
 	if err := a.persistACPState(ctx, acpSession); err != nil {
 		return acpsdk.NewSessionResponse{}, err
 	}
@@ -500,6 +502,7 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 		acpSession = sess
 	}
 	a.sessionsMu.RUnlock()
+	a.startDesignUpdates(acpSession)
 	hadPersistedACPState, err := a.restoreACPState(ctx, acpSession)
 	if err != nil {
 		return acpsdk.LoadSessionResponse{}, err
@@ -752,6 +755,7 @@ func (a *PandoACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSess
 
 	a.logger.Printf("[ACP AGENT] ResumeSession: session %s resumed", req.SessionId)
 	acpSession, _ := a.getSession(req.SessionId)
+	a.startDesignUpdates(acpSession)
 	hadPersistedACPState, err := a.restoreACPState(ctx, acpSession)
 	if err != nil {
 		return acpsdk.ResumeSessionResponse{}, err
@@ -890,6 +894,7 @@ func (a *PandoACPAgent) safeSessionUpdate(acpSession *ACPServerSession, sessionI
 		a.sessionsMu.Lock()
 		delete(a.sessions, sessionID)
 		a.sessionsMu.Unlock()
+		acpSession.CancelDesignSubscription()
 		a.logger.Printf("[ACP AGENT] Session %s removed: ACP client released the entity", sessionID)
 	}
 	return sendErr
@@ -1308,6 +1313,7 @@ func (a *PandoACPAgent) StartNotificationBroadcast(ctx context.Context) {
 						a.sessionsMu.Lock()
 						delete(a.sessions, sess.ID)
 						a.sessionsMu.Unlock()
+						sess.CancelDesignSubscription()
 						a.logger.Printf("[ACP AGENT] Session %s removed during broadcast: ACP client released the entity", sess.ID)
 					} else {
 						a.logger.Printf("[ACP AGENT] Failed to broadcast notification to session %s: %v", sess.ID, err)

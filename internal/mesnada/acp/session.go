@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/design"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
@@ -72,6 +73,13 @@ type ACPServerSession struct {
 
 	// goalCancel cancels the currently executing goal iteration, if any.
 	goalCancel context.CancelFunc
+
+	// designCancel stops the session-scoped design event subscription.
+	designCancel context.CancelFunc
+
+	// designAutoOpen deduplicates best-effort browser launches for this session's
+	// design-created events.
+	designAutoOpen *design.BrowserAutoOpener
 
 	// mu protects concurrent access to session state
 	mu sync.Mutex
@@ -360,4 +368,38 @@ func (s *ACPServerSession) ClearGoalCancel() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.goalCancel = nil
+}
+
+// DesignAutoOpener returns the session-scoped browser auto-opener, creating it
+// on first use.
+func (s *ACPServerSession) DesignAutoOpener() *design.BrowserAutoOpener {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.designAutoOpen == nil {
+		s.designAutoOpen = design.NewBrowserAutoOpener()
+	}
+	return s.designAutoOpen
+}
+
+// SetDesignCancel replaces the session-scoped design subscription cancel
+// function, stopping any earlier subscription first.
+func (s *ACPServerSession) SetDesignCancel(cancel context.CancelFunc) {
+	s.mu.Lock()
+	previous := s.designCancel
+	s.designCancel = cancel
+	s.mu.Unlock()
+	if previous != nil {
+		previous()
+	}
+}
+
+// CancelDesignSubscription stops the design event stream for this session.
+func (s *ACPServerSession) CancelDesignSubscription() {
+	s.mu.Lock()
+	cancel := s.designCancel
+	s.designCancel = nil
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }

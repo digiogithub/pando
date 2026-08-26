@@ -605,6 +605,9 @@ type MCPServerConfig struct {
 	// FileTools exposes file-system tools (view/read, glob, grep, ls) and optionally
 	// write-side tools (write, edit, patch) to MCP clients.
 	FileTools MCPServerFileToolsConfig `json:"fileTools,omitempty" toml:"FileTools"`
+
+	// Design exposes the Design Studio tools (design_*).
+	Design MCPServerDesignToolsConfig `json:"design,omitempty" toml:"Design"`
 	// SystemExecution exposes the bash/shell execution tool to MCP clients.
 	SystemExecution MCPServerSystemConfig `json:"systemExecution,omitempty" toml:"SystemExecution"`
 	// GatewayExpose re-exports every tool discovered by the MCPGateway so that
@@ -613,6 +616,14 @@ type MCPServerConfig struct {
 	// SelfImprovement exposes the evaluator/self-improvement agent as MCP tools
 	// so external orchestrators can query UCB stats, skills, and trigger evaluation.
 	SelfImprovement MCPServerSelfImprovementConfig `json:"selfImprovement,omitempty" toml:"SelfImprovement"`
+}
+
+// MCPServerDesignToolsConfig controls Design Studio tool exposure in MCP server
+// mode. It only affects MCP exposure: the Design Studio itself is always active
+// in the main application.
+type MCPServerDesignToolsConfig struct {
+	// Enabled exposes the design_* tools to MCP clients. Default: false.
+	Enabled bool `json:"enabled,omitempty" toml:"Enabled"`
 }
 
 // MCPServerFileToolsConfig controls file-system tool exposure in MCP server mode.
@@ -1040,6 +1051,44 @@ type Config struct {
 	Image             ImageConfig             `json:"image,omitempty" toml:"Image"`
 	AGUI              AGUIConfig              `json:"agui,omitempty" toml:"AGUI"`
 	Extensions        ExtensionsConfig        `json:"extensions,omitempty" toml:"Extensions"`
+	Design            DesignConfig            `json:"design,omitempty" toml:"Design"`
+}
+
+// DesignConfig controls the always-on Design Studio (internal/design): where
+// design artifacts are written and how the designer/critic loop is bounded.
+//
+// Artifacts deliberately live in the user's working tree rather than under
+// .pando/, so they are reviewable and committable like any other source file.
+type DesignConfig struct {
+	// OutputDir is the project-relative directory holding design artifacts,
+	// one sub-directory per artifact. Default: "designer".
+	OutputDir string `json:"outputDir,omitempty" toml:"OutputDir"`
+	// SystemDir is the sub-directory of OutputDir holding the design system:
+	// tokens.json, the system.css generated from it, and DESIGN.md, the
+	// written contract. Default: "_system".
+	SystemDir string `json:"systemDir,omitempty" toml:"SystemDir"`
+	// DefaultKind is the artifact kind used when a caller does not specify one.
+	// Supported in v1: "web", "deck". Default: "web".
+	DefaultKind string `json:"defaultKind,omitempty" toml:"DefaultKind"`
+	// Critique bounds the designer/critic loop.
+	Critique DesignCritiqueConfig `json:"critique,omitempty" toml:"Critique"`
+}
+
+// DesignCritiqueConfig bounds the critic loop. Both roles run on the model
+// selected as coder; only the persona differs.
+type DesignCritiqueConfig struct {
+	// Enabled turns the critic pass on. Default: true.
+	Enabled bool `json:"enabled" toml:"Enabled"`
+	// MaxRounds caps designer/critic iterations per brief. Default: 3.
+	MaxRounds int `json:"maxRounds,omitempty" toml:"MaxRounds"`
+	// Threshold is the score (0-10) at or above which the loop stops early.
+	// Default: 8.
+	Threshold float64 `json:"threshold,omitempty" toml:"Threshold"`
+	// Policy is how hard the gate is: "strict" also refuses to pass while any
+	// error-level finding remains, "standard" gates on the score alone, "none"
+	// keeps scoring and reporting but never blocks. A skill may override it
+	// through its od.critique.policy frontmatter. Default: "standard".
+	Policy string `json:"policy,omitempty" toml:"Policy"`
 }
 
 // AGUIConfig controls the AG-UI protocol adapter (internal/agui), the endpoint
@@ -1471,8 +1520,13 @@ func (c *Config) CavemanDefaultMode() string {
 // Application constants
 const (
 	defaultDataDirectory = ".pando"
-	defaultLogLevel      = "info"
-	appName              = "pando"
+	// defaultDesignOutputDir is the project-relative directory holding design
+	// artifacts. "designer" (not "design") avoids colliding with the bundled
+	// design-system examples shipped in design/.
+	defaultDesignOutputDir = "designer"
+	defaultDesignSystemDir = "_system"
+	defaultLogLevel        = "info"
+	appName                = "pando"
 
 	MaxTokensFallbackDefault = 4096
 )
@@ -2071,6 +2125,14 @@ func setDefaults(debug bool) {
 	viper.SetDefault("lua.strict_mode", false)
 
 	// Snapshots defaults
+	viper.SetDefault("design.outputDir", defaultDesignOutputDir)
+	viper.SetDefault("design.systemDir", defaultDesignSystemDir)
+	viper.SetDefault("design.defaultKind", "web")
+	viper.SetDefault("design.critique.enabled", true)
+	viper.SetDefault("design.critique.maxRounds", 3)
+	viper.SetDefault("design.critique.threshold", 8.0)
+	viper.SetDefault("design.critique.policy", "standard")
+
 	viper.SetDefault("snapshots.enabled", false)
 	viper.SetDefault("snapshots.maxSnapshots", 100)
 	viper.SetDefault("snapshots.maxFileSize", "10MB")

@@ -26,6 +26,7 @@
     "logs": "Logs",
     "agentVcs": "Agent VCS",
     "selfImprovement": "Self-Improvement",
+    "design": "Design",
     "codeEditor": "Code Editor",
     "terminal": "Terminal",
     "settings": "Settings",
@@ -72,6 +73,7 @@
       "containerRuntime": "Container Runtime",
       "bash": "Bash",
       "skills": "Skills",
+      "designSystem": "Design system",
       "lua": "Lua Engine",
       "selfImprovement": "Self-Improvement",
       "mesnada": "Mesnada",
@@ -266,5 +268,98 @@
     "enabledToast": "External access on: {{urls}}",
     "disabledToast": "External access off — Pando is local again.",
     "toggleFailed": "Failed to change external access"
+  },
+  "design": {
+    "title": "Design",
+    "notFound": "That artifact is not in this project any more.",
+    "backToGallery": "Back to the gallery",
+    "render": "Render",
+    "renderHint": "Re-render the artifact and refresh its structure index",
+    "openExternal": "Open in a new tab",
+    "noRenderer": "No headless browser found: render, screenshot and export are unavailable.",
+    "disabledTitle": "The Design Studio is off",
+    "disabledBody": "It registers ten agent tools whose descriptions cost tokens on every request, so it stays off until a project asks for it. Turn it on in the Pando configuration and restart:",
+    "kind": {
+      "web": "Web prototype",
+      "deck": "Deck"
+    },
+    "pane": {
+      "chat": "Chat",
+      "canvas": "Canvas",
+      "inspector": "Inspect"
+    },
+    "canvas": {
+      "notRenderedYet": "Nothing to show yet. Ask the agent to build something, or press Render.",
+      "noPreviewServer": "This artifact has no served preview. It exists on disk and can be opened as a file."
+    },
+    "gallery": {
+      "loading": "Loading artifacts…",
+      "emptyTitle": "No design artifacts yet",
+      "emptyBody": "Ask the agent for a landing page or a deck. Artifacts live in your working tree, so they show up in git alongside the rest of the project."
+    },
+    "inspector": {
+      "title": "Inspector",
+      "nodeCount": "{{count}} nodes",
+      "filterPlaceholder": "filter by text, selector or role",
+      "clearSelection": "Clear the selection",
+      "askAbout": "Ask about this element",
+      "emptyIndex": "No structure index yet. Press Render to build one.",
+      "noMatches": "No node matches that filter."
+    },
+    "versions": {
+      "title": "Versions",
+      "empty": "No versions recorded yet.",
+      "current": "current",
+      "score": "score {{score}}",
+      "checkout": "Check out",
+      "checkoutHint": "Restore the artifact directory to this version. Only this directory is touched."
+    },
+    "deck": {
+      "slides": "Slides",
+      "count": "{{count}} slides"
+    },
+    "export": {
+      "label": "Export",
+      "html": "Self-contained HTML",
+      "png": "PNG image",
+      "pdf": "PDF"
+    },
+    "tab": {
+      "artifacts": "Artifacts",
+      "templates": "Templates"
+    },
+    "templates": {
+      "loading": "Loading templates…",
+      "empty": "No design templates are bundled with this build.",
+      "hint": "A template says what to build, in what order and what to avoid. Pick one, then say what you actually want — the template is only half the input.",
+      "tryIt": "Try it",
+      "install": "Install",
+      "installed": "Installed",
+      "installHint": "Copy this template into the project skills directory so it loads as an ordinary skill.",
+      "needsSystem": "Needs a committed design system",
+      "workflows": "Workflows (guidance, not artifact scaffolds)",
+      "craft": "Craft references"
+    },
+    "critique": {
+      "tabs": {
+        "structure": "Structure",
+        "issues": "Issues"
+      },
+      "title": "Quality",
+      "run": "Run critique",
+      "running": "Critiquing…",
+      "never": "This version has not been critiqued yet. Run a pass to see what the automated rules find.",
+      "none": "No findings. Every automated rule passes on this version.",
+      "score": "{{score}}/10",
+      "policy": "policy {{policy}}, threshold {{threshold}}",
+      "round": "round {{round}} of {{max}}",
+      "pass": "Meets the bar",
+      "iterate": "Needs another round",
+      "stop": "Rounds spent",
+      "issueCount": "{{count}} findings",
+      "fix": "Fix",
+      "select": "Select this element",
+      "recorded": "recorded {{when}}"
+    }
   }
 }

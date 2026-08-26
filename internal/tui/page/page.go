@@ -1,5 +1,7 @@
 package page
 
+import tea "github.com/charmbracelet/bubbletea"
+
 type PageID string
 
 const (
@@ -9,6 +11,7 @@ const (
 	OrchestratorPage PageID = "orchestrator"
 	SnapshotsPage    PageID = "snapshots"
 	EvaluatorPage    PageID = "evaluator"
+	DesignPage       PageID = "design"
 )
 
 // PageChangeMsg is used to change the current page
@@ -32,4 +35,12 @@ type TagFilterable interface {
 type ModalPage interface {
 	HasActiveModal() bool
 	ClearModals()
+}
+
+// Refreshable is implemented by pages whose content can go stale while another
+// page is on screen. moveToPage calls Refresh on every navigation, so a page
+// shows current data each time it is opened rather than only the first time it
+// is constructed — Init runs once per process.
+type Refreshable interface {
+	Refresh() tea.Cmd
 }

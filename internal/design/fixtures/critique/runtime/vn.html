@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>Dashboard</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #ffffff; color: #111111; }
+</style>
+</head>
+<body>
+  <h1>Dashboard</h1>
+  <p>Weekly totals refresh every hour.</p>
+  <script>
+    if (typeof window.renderChart === 'function') window.renderChart();
+  </script>
+</body>
+</html>

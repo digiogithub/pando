@@ -28,6 +28,21 @@ var builtinToolNames = map[string]struct{}{
 	DiagnosticsToolName:  {},
 	"tool_search":        {},
 
+	// Design Studio tools are always builtin: they are never routed through the
+	// MCP gateway.
+	DesignCreateToolName:     {},
+	DesignPatchToolName:      {},
+	DesignRenderToolName:     {},
+	DesignScreenshotToolName: {},
+	DesignInspectToolName:    {},
+	DesignVersionsToolName:   {},
+	DesignExportToolName:     {},
+	DesignCanvasToolName:     {},
+	DesignSystemToolName:     {},
+	DesignCritiqueToolName:   {},
+	DesignSkillsToolName:     {},
+	DesignPresentToolName:    {},
+
 	// Memory tools.
 	rememberToolName: {},
 	recallToolName:   {},

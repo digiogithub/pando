@@ -17,6 +17,7 @@ import EvaluatorSettings from './EvaluatorSettings'
 import MesnadaSettings from './MesnadaSettings'
 import RemembrancesSettings from './RemembrancesSettings'
 import SnapshotsSettings from './SnapshotsSettings'
+import DesignSystemSettings from './DesignSystemSettings'
 import APIServerSettings from './APIServerSettings'
 import WebUIAccessSettings from './WebUIAccessSettings'
 import ProviderAccountsSettings from './ProviderAccountsSettings'
@@ -36,6 +37,7 @@ type SettingsCategory =
   | 'bash'
   | 'token-optimization'
   | 'skills'
+  | 'design-system'
   | 'lua'
   | 'self-improvement'
   | 'mesnada'
@@ -57,6 +59,7 @@ const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string }[
   { id: 'bash', labelKey: 'settings.categories.bash' },
   { id: 'token-optimization', labelKey: 'settings.categories.tokenOptimization' },
   { id: 'skills', labelKey: 'settings.categories.skills' },
+  { id: 'design-system', labelKey: 'settings.categories.designSystem' },
   { id: 'lua', labelKey: 'settings.categories.lua' },
   { id: 'self-improvement', labelKey: 'settings.categories.selfImprovement' },
   { id: 'mesnada', labelKey: 'settings.categories.mesnada', group: 'services' },
@@ -300,6 +303,7 @@ export default function SettingsView() {
         {activeCategory === 'mesnada' && <MesnadaSettings />}
         {activeCategory === 'remembrances' && <RemembrancesSettings />}
         {activeCategory === 'snapshots' && <SnapshotsSettings />}
+        {activeCategory === 'design-system' && <DesignSystemSettings />}
         {activeCategory === 'api-server' && <APIServerSettings />}
         {activeCategory === 'webui-access' && <WebUIAccessSettings />}
         {activeCategory.startsWith('ext:') && (

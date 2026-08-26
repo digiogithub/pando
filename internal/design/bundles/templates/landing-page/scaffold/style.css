@@ -1,0 +1,47 @@
+/* Every value here resolves through designer/_system/system.css. Keep it that way. */
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body, system-ui, sans-serif);
+  line-height: 1.6;
+}
+
+.wrap {
+  max-width: 65ch;
+  margin: 0 auto;
+  padding: var(--space-xl, 3rem) var(--space-md, 1rem);
+}
+
+h1 {
+  font-size: var(--size-3xl, 2.5rem);
+  line-height: 1.15;
+  margin: 0 0 var(--space-md, 1rem);
+}
+
+h2 {
+  font-size: var(--size-xl, 1.5rem);
+  line-height: 1.25;
+  margin: 0 0 var(--space-sm, 0.5rem);
+}
+
+.lede {
+  font-size: var(--size-lg, 1.125rem);
+  color: var(--color-muted, inherit);
+  margin: 0 0 var(--space-lg, 2rem);
+}
+
+.cta {
+  display: inline-block;
+  background: var(--color-accent);
+  color: var(--color-bg);
+  padding: var(--space-sm, 0.75rem) var(--space-lg, 2rem);
+  border-radius: var(--radius-md, 6px);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.proof {
+  background: var(--color-surface, transparent);
+  border-block: 1px solid var(--color-border, transparent);
+}

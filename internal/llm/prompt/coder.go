@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/design"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/tools"
 )
@@ -22,7 +23,15 @@ func CoderPrompt(provider models.ModelProvider) string {
 	}
 	envInfo := getEnvironmentInfo()
 
-	return fmt.Sprintf("%s\n\n%s\n%s", basePrompt, envInfo, lspInformation())
+	parts := []string{basePrompt, "", envInfo, lspInformation()}
+	// The design system is a hard constraint, not advice, so it goes in the
+	// prompt rather than in a tool description the model may never read. It is
+	// empty unless the Design Studio is on and the project committed a system,
+	// so a project that does not design pays nothing for it.
+	if constraints := design.PromptConstraints(); constraints != "" {
+		parts = append(parts, constraints)
+	}
+	return strings.Join(parts, "\n")
 }
 
 const baseOpenAICoderPrompt = `

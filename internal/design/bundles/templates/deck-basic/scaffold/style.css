@@ -1,0 +1,57 @@
+/* Print styles are load-bearing: PDF export prints one slide per page. */
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body, system-ui, sans-serif);
+}
+
+.slide {
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--space-2xl, 4rem);
+  gap: var(--space-md, 1rem);
+}
+
+.slide h1 {
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  line-height: 1.1;
+  margin: 0;
+}
+
+.slide h2 {
+  font-size: clamp(2rem, 4.5vw, 3rem);
+  line-height: 1.15;
+  margin: 0;
+}
+
+.slide p {
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  line-height: 1.4;
+  margin: 0;
+  max-width: 30ch;
+}
+
+.sub {
+  color: var(--color-muted, inherit);
+}
+
+@page {
+  size: 1280px 720px;
+  margin: 0;
+}
+
+@media print {
+  .slide {
+    width: 1280px;
+    height: 720px;
+    break-after: page;
+  }
+  .slide:last-child {
+    break-after: auto;
+  }
+}

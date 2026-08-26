@@ -17,6 +17,7 @@ import (
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/cronjob"
+	"github.com/digiogithub/pando/internal/design"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
@@ -45,6 +46,11 @@ type startCompactSessionMsg struct{}
 
 type originalWindowTitleMsg struct {
 	title string
+}
+
+type designAutoOpenedMsg struct {
+	url string
+	err error
 }
 
 const pandoWindowTitleBase = "木 Pando"
@@ -162,6 +168,8 @@ type appModel struct {
 
 	terminalPanel   *terminal.TerminalPanel
 	terminalFocused bool
+	designEventsCh  <-chan pubsub.Event[design.Event]
+	designAutoOpen  *design.BrowserAutoOpener
 
 	alert bubbleup.AlertModel
 }
@@ -212,6 +220,8 @@ func (a appModel) Init() tea.Cmd {
 	cmd = a.alert.Init()
 	cmds = append(cmds, cmd)
 	cmd = a.quit.Init()
+	cmds = append(cmds, cmd)
+	cmd = a.waitForDesignEvent()
 	cmds = append(cmds, cmd)
 	cmd = a.help.Init()
 	cmds = append(cmds, cmd)
@@ -286,6 +296,39 @@ func (a appModel) Init() tea.Cmd {
 	}
 
 	return tea.Batch(cmds...)
+}
+
+func (a *appModel) waitForDesignEvent() tea.Cmd {
+	if a.designEventsCh == nil {
+		a.designEventsCh = design.Events().Subscribe(context.Background())
+	}
+	ch := a.designEventsCh
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ev, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return ev
+	}
+}
+
+func (a *appModel) autoOpenDesignArtifact(artifactID string) tea.Cmd {
+	return func() tea.Msg {
+		presentation, err := design.ResolveCreatedArtifactPresentation(context.Background(), artifactID)
+		if err != nil {
+			if errors.Is(err, design.ErrNoProvider) {
+				return nil
+			}
+			return designAutoOpenedMsg{err: err}
+		}
+		if err := a.designAutoOpen.Open(artifactID, presentation.URL); err != nil {
+			return designAutoOpenedMsg{url: presentation.URL, err: err}
+		}
+		return designAutoOpenedMsg{url: presentation.URL}
+	}
 }
 
 func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -551,6 +594,20 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		return a, tea.Batch(cmds...)
+
+	case pubsub.Event[design.Event]:
+		cmds = append(cmds, a.waitForDesignEvent())
+		if msg.Type != pubsub.EventType(design.EventCreated) || msg.Payload.Kind != design.EventCreated || msg.Payload.ArtifactID == "" {
+			return a, tea.Batch(cmds...)
+		}
+		cmds = append(cmds, a.autoOpenDesignArtifact(msg.Payload.ArtifactID))
+		return a, tea.Batch(cmds...)
+
+	case designAutoOpenedMsg:
+		if msg.err != nil {
+			logging.Warn("tui: failed to auto-open design preview", "url", msg.url, "error", msg.err)
+		}
+		return a, nil
 
 	case util.ClearStatusMsg:
 		s, _ := a.status.Update(msg)
@@ -1190,6 +1247,9 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.currentPage == page.EvaluatorPage {
 					return a, a.moveToPage(page.ChatPage)
 				}
+				if a.currentPage == page.DesignPage {
+					return a, a.moveToPage(page.ChatPage)
+				}
 				if a.currentPage == page.InstancesPage {
 					return a, a.moveToPage(page.ChatPage)
 				}
@@ -1201,6 +1261,11 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, a.keys.Global.Evaluator):
 			if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
 				return a, a.moveToPage(page.EvaluatorPage)
+			}
+			return a, nil
+		case key.Matches(msg, a.keys.Global.Design):
+			if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+				return a, a.moveToPage(page.DesignPage)
 			}
 			return a, nil
 		case key.Matches(msg, a.keys.Global.Projects):
@@ -1812,6 +1877,8 @@ func (a *appModel) moveToPage(pageID page.PageID) tea.Cmd {
 		cmd := a.pages[pageID].Init()
 		cmds = append(cmds, cmd)
 		a.loadedPages[pageID] = true
+	} else if refreshable, ok := a.pages[pageID].(page.Refreshable); ok {
+		cmds = append(cmds, refreshable.Refresh())
 	}
 	// Clear any active modals on the page being navigated away from.
 	if a.currentPage != pageID {
@@ -1938,6 +2005,11 @@ func (a appModel) pageHelpSections() []dialog.HelpSection {
 	case page.EvaluatorPage:
 		return []dialog.HelpSection{{
 			Title:    "Self-Improvement",
+			Bindings: a.pageBindings(a.pages[a.currentPage]),
+		}}
+	case page.DesignPage:
+		return []dialog.HelpSection{{
+			Title:    "Design",
 			Bindings: a.pageBindings(a.pages[a.currentPage]),
 		}}
 	case page.InstancesPage:
@@ -2533,10 +2605,13 @@ func New(app *app.App) tea.Model {
 			page.OrchestratorPage: page.NewOrchestratorPage(app),
 			page.SnapshotsPage:    page.NewSnapshotsPage(app),
 			page.EvaluatorPage:    page.NewEvaluatorPage(app.Evaluator),
+			page.DesignPage:       page.NewDesignPage(""),
 			page.InstancesPage:    page.NewInstancesPage(),
 		},
-		filepicker:    dialog.NewFilepickerCmp(app),
-		terminalPanel: terminal.NewTerminalPanel(),
+		filepicker:     dialog.NewFilepickerCmp(app),
+		terminalPanel:  terminal.NewTerminalPanel(),
+		designEventsCh: design.Events().Subscribe(context.Background()),
+		designAutoOpen: design.NewBrowserAutoOpener(),
 		alert: bubbleup.NewAlertModel(60, false, 5*time.Second).
 			WithPosition(bubbleup.TopRightPosition).
 			WithMinWidth(20).
@@ -2752,6 +2827,18 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return func() tea.Msg {
 				return page.PageChangeMsg{ID: page.SnapshotsPage}
+			}
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "design",
+		Title:       "Design Studio",
+		Description: "Browse design artifacts, open previews and diff versions",
+		Shortcut:    "Ctrl+Alt+D",
+		Category:    dialog.CommandCategoryView,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return func() tea.Msg {
+				return page.PageChangeMsg{ID: page.DesignPage}
 			}
 		},
 	})

@@ -179,6 +179,7 @@ func CoderAgentTools(
 		tools.NewTodoWriteTool(),
 	}
 	base = append(base, maybeAskUserQuestionTool(userInput)...)
+	base = append(base, DesignTools(permissions)...)
 	base = append(base, otherTools...)
 	result := appendLuaTools(base)
 	return ApplyToolDiscovery(result, nil)
@@ -225,6 +226,7 @@ func CoderAgentToolsWithMesnada(
 			},
 			maybeAskUserQuestionTool(userInput)...,
 		)
+		baseTools = append(baseTools, DesignTools(permissions)...)
 		baseTools = append(baseTools, gatewayTools...)
 		if lspProvider != nil {
 			baseTools = append(baseTools, tools.NewDiagnosticsTool(lspProvider))
@@ -398,4 +400,24 @@ func TaskAgentTools(lspProvider tools.LSPProvider) []tools.BaseTool {
 		base = append(base, tools.NewSourcegraphTool())
 	}
 	return appendLuaTools(base)
+}
+
+// DesignTools returns the full Design Studio tool set. The Design Studio is
+// always active; MCP server mode decides separately whether to expose these
+// tools to external clients.
+func DesignTools(permissions permission.Service) []tools.BaseTool {
+	return []tools.BaseTool{
+		tools.NewDesignCreateTool(permissions),
+		tools.NewDesignRenderTool(),
+		tools.NewDesignInspectTool(),
+		tools.NewDesignPatchTool(permissions),
+		tools.NewDesignScreenshotTool(),
+		tools.NewDesignVersionsTool(permissions),
+		tools.NewDesignExportTool(permissions),
+		tools.NewDesignCanvasTool(permissions),
+		tools.NewDesignSystemTool(permissions),
+		tools.NewDesignCritiqueTool(),
+		tools.NewDesignSkillsTool(permissions),
+		tools.NewDesignPresentTool(),
+	}
 }

@@ -16,6 +16,8 @@ import AgentVcsView from '@/components/agentvcs/AgentVcsView'
 import SelfImprovementView from '@/components/evaluator/SelfImprovementView'
 import CodeEditorView from '@/components/editor/CodeEditorView'
 import ProjectsView from '@/components/projects/ProjectsView'
+import DesignView from '@/components/design/DesignView'
+import DesignRouteEffects from '@/components/design/DesignRouteEffects'
 import InstancesPanel from '@/components/instances/InstancesPanel'
 import LoginDialog from '@/components/auth/LoginDialog'
 import { authenticate, checkHealth } from '@pando/client/services/auth'
@@ -124,6 +126,7 @@ function App() {
           }
         >
           <ErrorBoundary>
+            <DesignRouteEffects />
             <Routes>
               {/* Standalone — no layout */}
               <Route path="/chat/simple" element={<SimpleChatView />} />
@@ -141,6 +144,10 @@ function App() {
                 <Route path="terminal" element={<TerminalView />} />
                 <Route path="settings" element={<SettingsView />} />
                 <Route path="projects" element={<ProjectsView />} />
+                {/* Both routes render the same view: the gallery without an id,
+                    the Studio with one, so a Studio URL survives a reload. */}
+                <Route path="design" element={<DesignView />} />
+                <Route path="design/:id" element={<DesignView />} />
                 <Route path="instances" element={<InstancesPanel />} />
                 <Route path="ext/:panelId" element={<ExtensionPanelPage />} />
                 <Route path="*" element={<NotFound />} />

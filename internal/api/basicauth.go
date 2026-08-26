@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/design/preview"
 )
 
 // basicAuthRealm is the realm advertised to non-browser clients (curl, scripts).
@@ -43,7 +44,13 @@ func isLoopbackHost(host string) bool {
 // foothold on this machine (or any process able to reach 127.0.0.1) walks past
 // the gate.
 func (s *Server) basicAuthEnforced(r *http.Request) bool {
-	if r.URL.Path == "/health" || !strings.HasPrefix(r.URL.Path, "/api/") {
+	if r.URL.Path == "/health" {
+		return false
+	}
+	// Design previews serve files out of the user's working tree, so they are
+	// gated exactly like the API once the server is exposed. The unguessable
+	// preview token is a capability, not an authentication factor.
+	if !strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, preview.Prefix) {
 		return false
 	}
 	if isLoopbackHost(s.BindHost()) {

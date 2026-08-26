@@ -5,7 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faComments, faPlus, faNetworkWired, faFileLines, faCodeBranch,
   faStar, faCode, faTerminal, faCog, faChevronDown, faChevronRight,
-  faCircle, faFolderOpen, faServer, faPuzzlePiece
+  faCircle, faFolderOpen, faServer, faPuzzlePiece, faPalette
 } from '@fortawesome/free-solid-svg-icons'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
@@ -43,6 +43,7 @@ export default function Sidebar() {
     { path: '/logs', label: t('nav.logs'), icon: faFileLines },
     { path: '/snapshots', label: t('nav.agentVcs'), icon: faCodeBranch },
     { path: '/evaluator', label: t('nav.selfImprovement'), icon: faStar },
+    { path: '/design', label: t('nav.design'), icon: faPalette },
     { path: '/editor', label: t('nav.codeEditor'), icon: faCode },
     { path: '/terminal', label: t('nav.terminal'), icon: faTerminal },
     { path: '/settings', label: t('nav.settings'), icon: faCog },

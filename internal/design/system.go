@@ -1,0 +1,185 @@
+package design
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// The shared design system lives in designer/_system/ and is a plain pair of
+// files: tokens.json (the source of truth, committed and diffable) and the
+// system.css it generates. Artifacts opt in by linking system.css, so a token
+// change is a one-file edit that every artifact picks up on its next render.
+const (
+	// SystemTokensFile is the token source of truth.
+	SystemTokensFile = "tokens.json"
+	// SystemStylesheet is generated from the tokens.
+	SystemStylesheet = "system.css"
+)
+
+// DesignSystem is the token set shared by the artifacts of a project.
+type DesignSystem struct {
+	Name string `json:"name"`
+	// Tokens maps a group ("color", "space", "font", ...) to its named values.
+	// Custom properties are emitted as --<group>-<name>.
+	Tokens map[string]map[string]string `json:"tokens"`
+	// Fonts lists stylesheet URLs to import ahead of the custom properties.
+	Fonts []string `json:"fonts,omitempty"`
+}
+
+// DefaultDesignSystem is the starting point written by design_system init: a
+// neutral, accessible base rather than an opinionated theme.
+func DefaultDesignSystem() DesignSystem {
+	return DesignSystem{
+		Name: "default",
+		Tokens: map[string]map[string]string{
+			"color": {
+				"bg":      "#ffffff",
+				"surface": "#f5f6f7",
+				"text":    "#16181d",
+				"muted":   "#5b6270",
+				"accent":  "#2f6feb",
+				"border":  "#d8dbe2",
+			},
+			"space": {
+				"xs": "4px", "sm": "8px", "md": "16px", "lg": "32px", "xl": "64px",
+			},
+			"font": {
+				"sans":  `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`,
+				"mono":  `ui-monospace, SFMono-Regular, Menlo, monospace`,
+				"scale": "1.25",
+			},
+			"radius": {"sm": "4px", "md": "8px", "lg": "16px"},
+		},
+	}
+}
+
+// LoadSystem reads the design system, returning the default when none exists
+// yet so callers never have to special-case a fresh project.
+func (s *Service) LoadSystem() (DesignSystem, bool, error) {
+	return LoadSystemAt(s.layout)
+}
+
+// decodeSystem parses tokens.json, normalising the nil maps away so callers can
+// write into the result without checking.
+func decodeSystem(raw []byte) (DesignSystem, error) {
+	var ds DesignSystem
+	if err := json.Unmarshal(raw, &ds); err != nil {
+		return DesignSystem{}, fmt.Errorf("design: parse %s: %w", SystemTokensFile, err)
+	}
+	if ds.Tokens == nil {
+		ds.Tokens = map[string]map[string]string{}
+	}
+	return ds, nil
+}
+
+// SaveSystem writes tokens.json, regenerates system.css and refreshes the
+// generated section of DESIGN.md, returning the token and stylesheet paths.
+func (s *Service) SaveSystem(ds DesignSystem) (string, string, error) {
+	dir := s.layout.SystemPath()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", "", fmt.Errorf("design: create system dir: %w", err)
+	}
+	if ds.Name == "" {
+		ds.Name = "default"
+	}
+	if ds.Tokens == nil {
+		ds.Tokens = map[string]map[string]string{}
+	}
+	raw, err := json.MarshalIndent(ds, "", "  ")
+	if err != nil {
+		return "", "", fmt.Errorf("design: encode design system: %w", err)
+	}
+	tokensPath := filepath.Join(dir, SystemTokensFile)
+	if err := os.WriteFile(tokensPath, append(raw, '\n'), 0o644); err != nil {
+		return "", "", fmt.Errorf("design: write %s: %w", SystemTokensFile, err)
+	}
+	cssPath := filepath.Join(dir, SystemStylesheet)
+	if err := os.WriteFile(cssPath, []byte(ds.CSS()), 0o644); err != nil {
+		return "", "", fmt.Errorf("design: write %s: %w", SystemStylesheet, err)
+	}
+	if _, err := s.writeContract(ds); err != nil {
+		return "", "", err
+	}
+	return tokensPath, cssPath, nil
+}
+
+// SetSystemTokens merges updates into the design system and persists it. A
+// token whose value is empty is removed, which is how a group is pruned.
+func (s *Service) SetSystemTokens(name string, updates map[string]map[string]string) (DesignSystem, error) {
+	ds, _, err := s.LoadSystem()
+	if err != nil {
+		return DesignSystem{}, err
+	}
+	if name != "" {
+		ds.Name = name
+	}
+	for group, values := range updates {
+		group = strings.ToLower(strings.TrimSpace(group))
+		if group == "" {
+			continue
+		}
+		if ds.Tokens[group] == nil {
+			ds.Tokens[group] = map[string]string{}
+		}
+		for key, value := range values {
+			key = strings.ToLower(strings.TrimSpace(key))
+			if key == "" {
+				continue
+			}
+			if value == "" {
+				delete(ds.Tokens[group], key)
+				continue
+			}
+			ds.Tokens[group][key] = value
+		}
+		if len(ds.Tokens[group]) == 0 {
+			delete(ds.Tokens, group)
+		}
+	}
+	if _, _, err := s.SaveSystem(ds); err != nil {
+		return DesignSystem{}, err
+	}
+	return ds, nil
+}
+
+// CSS renders the tokens as custom properties. Groups and names are sorted so
+// that the generated stylesheet is byte-stable across runs and produces a clean
+// diff when a single token changes.
+func (ds DesignSystem) CSS() string {
+	var b strings.Builder
+	b.WriteString("/* Generated by Pando design_system from " + SystemTokensFile + ". Edit the tokens, not this file. */\n")
+	for _, font := range ds.Fonts {
+		b.WriteString("@import url(\"" + font + "\");\n")
+	}
+	if len(ds.Fonts) > 0 {
+		b.WriteString("\n")
+	}
+	b.WriteString(":root {\n")
+	groups := make([]string, 0, len(ds.Tokens))
+	for g := range ds.Tokens {
+		groups = append(groups, g)
+	}
+	sort.Strings(groups)
+	for _, g := range groups {
+		names := make([]string, 0, len(ds.Tokens[g]))
+		for n := range ds.Tokens[g] {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			b.WriteString(fmt.Sprintf("  --%s-%s: %s;\n", g, n, ds.Tokens[g][n]))
+		}
+	}
+	b.WriteString("}\n")
+	return b.String()
+}
+
+// SystemRelPath returns the project-relative path of a design-system file, for
+// linking it from an artifact.
+func (s *Service) SystemRelPath(file string) string {
+	return filepath.ToSlash(filepath.Join(s.layout.OutputDir, s.layout.SystemDir, file))
+}

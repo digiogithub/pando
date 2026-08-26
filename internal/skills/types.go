@@ -1,6 +1,11 @@
 package skills
 
-import "time"
+import (
+	"strings"
+	"time"
+
+	"github.com/digiogithub/pando/internal/skills/od"
+)
 
 type SkillMetadata struct {
 	Name                   string `yaml:"name"`
@@ -15,6 +20,8 @@ type SkillMetadata struct {
 	WhenNotToUse           string `yaml:"when-not-to-use"`
 	DisableModelInvocation bool   `yaml:"disable-model-invocation"`
 	Context                string `yaml:"context"`
+	// OD is the optional OpenDesign `od:` block (see od.Metadata).
+	OD *od.Metadata `yaml:"od"`
 }
 
 type SkillLevel int
@@ -37,4 +44,17 @@ type Skill struct {
 type SkillResource struct {
 	Path    string
 	Content []byte
+}
+
+// IsDesignTemplate reports whether the skill offers itself as a design
+// template. A reference or workflow bundle is real and useful, and must not
+// appear as something a user can start an artifact from.
+func (m SkillMetadata) IsDesignTemplate() bool {
+	if m.OD == nil {
+		return false
+	}
+	if strings.EqualFold(m.OD.Mode, "reference") {
+		return false
+	}
+	return strings.TrimSpace(m.OD.Surface) != ""
 }

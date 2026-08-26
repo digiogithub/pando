@@ -35,6 +35,7 @@ By default this mode enables both transports at the same time:
 Tool groups exposed (configurable via .pando.toml [MCPServer] section or CLI flags):
 - fetch and web search tools
 - browser / Chrome DevTools-style tools
+- design / Design Studio tools (design_*, --design-tools)
 - remembrances tools (KB, events, code-intelligence, and KB-backed memory: remember/recall/forget)
 - Mesnada orchestration tools
 - cache and pagination tools
@@ -61,6 +62,7 @@ func init() {
 	mcpServerCmd.Flags().Bool("system-exec", false, "Enable bash/shell execution tool")
 	mcpServerCmd.Flags().Bool("gateway-expose", false, "Re-export MCPGateway tools through this MCP server")
 	mcpServerCmd.Flags().Bool("self-improvement", false, "Expose self-improvement evaluator tools")
+	mcpServerCmd.Flags().Bool("design-tools", false, "Expose Design Studio tools (design_*)")
 }
 
 func runMCPServerMode(cmd *cobra.Command) error {
@@ -250,6 +252,7 @@ func enableMCPServerFeatures() {
 	if cfg.MCPServer.SelfImprovement.Enabled {
 		cfg.Evaluator.Enabled = true
 	}
+
 }
 
 // applyMCPServerFlagOverrides applies CLI flag overrides for tool groups on
@@ -283,6 +286,10 @@ func applyMCPServerFlagOverrides(cmd *cobra.Command) {
 		if v {
 			cfg.Evaluator.Enabled = true
 		}
+	}
+	if cmd.Flags().Changed("design-tools") {
+		v, _ := cmd.Flags().GetBool("design-tools")
+		cfg.MCPServer.Design.Enabled = v
 	}
 }
 
@@ -437,6 +444,11 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 			tools = append(tools, mcpProxyTools...)
 			logging.Info("MCP server: MCP proxy tools exposed", "count", len(mcpProxyTools))
 		}
+	}
+
+	if cfg != nil && cfg.MCPServer.Design.Enabled {
+		tools = append(tools, agent.DesignTools(appSvc.Permissions)...)
+		logging.Info("MCP server: design tools enabled")
 	}
 
 	if cfg != nil && cfg.MCPServer.SelfImprovement.Enabled && appSvc.Evaluator != nil {

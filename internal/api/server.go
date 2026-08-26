@@ -24,6 +24,7 @@ import (
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/design/preview"
 	"github.com/digiogithub/pando/internal/extensions"
 	"github.com/digiogithub/pando/internal/logging"
 )
@@ -93,6 +94,9 @@ type Server struct {
 	// rebindCh hands the freshly bound listener to the Serve loop. A nil value
 	// means the rebind failed and the previous listener could not be restored.
 	rebindCh chan net.Listener
+	// preview serves design artifacts under /preview/. It is mounted at startup;
+	// previewAccess decides whether requests may use it.
+	preview *preview.Server
 	// activeListener is the listener Serve is currently accepting on. Rebind
 	// closes it directly: http.Server.Close would also mark the server as shut
 	// down, which would end the Serve loop for good.
@@ -140,6 +144,7 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 	}
 
 	s.setupAGUI()
+	s.setupPreview()
 
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
@@ -474,7 +479,9 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) uiHandler(apiHandler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/health" {
+		// /preview belongs to the design server, not to the SPA: without this
+		// the static fallback below would answer it with index.html.
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/health" || strings.HasPrefix(r.URL.Path, preview.Prefix) {
 			apiHandler.ServeHTTP(w, r)
 			return
 		}

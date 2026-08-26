@@ -14,6 +14,7 @@ import 'highlight.js/styles/github-dark-dimmed.css'
 import type { Message, ContentPart, ToolCallStatus, ToolKind, ToolCallLocation } from '@pando/client/types'
 import type { StreamingState, StreamItem, ActiveToolCall } from '@pando/client/hooks/useChat'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
+import MarkdownLink from '@/components/shared/MarkdownLink'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -608,7 +609,7 @@ function MarkdownContent({ text, streaming }: { text: string; streaming?: boolea
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
-        components={{ pre: PreWithCopy }}
+        components={{ pre: PreWithCopy, a: MarkdownLink }}
       >
         {text}
       </ReactMarkdown>

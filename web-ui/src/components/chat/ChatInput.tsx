@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPaperPlane, faStop } from '@fortawesome/free-solid-svg-icons'
 import SlashCommandMenu, { type SlashCommandItem } from './SlashCommandMenu'
 import api from '@pando/client/services/api'
+import { useChatDraftStore } from '@pando/client/stores/chatDraftStore'
 
 const MAX_CHARS = 8000
 // 6 lines × (14px font × 1.5 line-height) = 126px
@@ -35,6 +36,18 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
       .then((cmds) => setSlashCommands(Array.isArray(cmds) ? cmds : []))
       .catch(() => {})
   }, [])
+
+  // Text pushed in from another surface — today the Design Studio turning a
+  // preview click into prompt context. It is appended rather than assigned so a
+  // half-written message is never destroyed by a click somewhere else.
+  const pendingInsert = useChatDraftStore((s) => s.pendingInsert)
+  useEffect(() => {
+    if (pendingInsert === null) return
+    const text = useChatDraftStore.getState().takeDraftInsert()
+    if (!text) return
+    setValue((current) => (current.trim() ? `${current.replace(/\s+$/, '')} ${text} ` : `${text} `))
+    textareaRef.current?.focus()
+  }, [pendingInsert])
 
   // Auto-resize: grow up to MAX_LINES, then scroll
   const resize = useCallback(() => {

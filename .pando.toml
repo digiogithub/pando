@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'openrouter.z-ai/glm-5.3'
+Model = 'openrouter.qwen/qwen3.8-max'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -457,6 +457,9 @@ HttpEnabled = true
 Enabled = false
 AllowWrite = false
 
+[MCPServer.Design]
+Enabled = false
+
 [MCPServer.SystemExecution]
 Enabled = false
 AllowedCommands = []
@@ -505,3 +508,28 @@ AgentPoolSize = 0
 AgentPoolTTL = ''
 AutoApprove = false
 HumanInTheLoop = false
+
+[Extensions]
+Disabled = []
+
+[Extensions.Memory]
+Enabled = false
+Scopes = []
+Paths = []
+Origins = []
+DryRun = false
+Mode = ''
+QueueSize = 0
+TimeoutMs = 0
+WrapSearch = false
+
+[Design]
+OutputDir = ''
+SystemDir = ''
+DefaultKind = ''
+
+[Design.Critique]
+Enabled = false
+MaxRounds = 0
+Threshold = 0.0
+Policy = ''

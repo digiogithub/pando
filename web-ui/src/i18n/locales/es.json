@@ -26,6 +26,7 @@
     "logs": "Registros",
     "agentVcs": "Agent VCS",
     "selfImprovement": "Self-Improvement",
+    "design": "Diseño",
     "codeEditor": "Editor de Código",
     "terminal": "Terminal",
     "settings": "Configuración",
@@ -71,6 +72,7 @@
       "tools": "Herramientas",
       "bash": "Bash",
       "skills": "Habilidades",
+      "designSystem": "Sistema de diseño",
       "lua": "Motor Lua",
       "selfImprovement": "Self-Improvement",
       "mesnada": "Mesnada",
@@ -266,5 +268,98 @@
     "enabledToast": "Acceso externo activo: {{urls}}",
     "disabledToast": "Acceso externo desactivado: Pando vuelve a ser local.",
     "toggleFailed": "No se pudo cambiar el acceso externo"
+  },
+  "design": {
+    "title": "Diseño",
+    "notFound": "Ese artefacto ya no está en este proyecto.",
+    "backToGallery": "Volver a la galería",
+    "render": "Renderizar",
+    "renderHint": "Vuelve a renderizar el artefacto y refresca su índice de estructura",
+    "openExternal": "Abrir en una pestaña nueva",
+    "noRenderer": "No se encontró navegador headless: renderizado, captura y exportación no están disponibles.",
+    "disabledTitle": "El Design Studio está desactivado",
+    "disabledBody": "Registra diez herramientas de agente cuyas descripciones cuestan tokens en cada petición, así que permanece apagado hasta que un proyecto lo pida. Actívalo en la configuración de Pando y reinicia:",
+    "kind": {
+      "web": "Prototipo web",
+      "deck": "Presentación"
+    },
+    "pane": {
+      "chat": "Chat",
+      "canvas": "Lienzo",
+      "inspector": "Inspeccionar"
+    },
+    "canvas": {
+      "notRenderedYet": "Todavía no hay nada que mostrar. Pide al agente que construya algo, o pulsa Renderizar.",
+      "noPreviewServer": "Este artefacto no tiene vista previa servida. Existe en disco y puede abrirse como fichero."
+    },
+    "gallery": {
+      "loading": "Cargando artefactos…",
+      "emptyTitle": "Aún no hay artefactos de diseño",
+      "emptyBody": "Pide al agente una landing o una presentación. Los artefactos viven en tu árbol de trabajo, así que aparecen en git junto al resto del proyecto."
+    },
+    "inspector": {
+      "title": "Inspector",
+      "nodeCount": "{{count}} nodos",
+      "filterPlaceholder": "filtrar por texto, selector o rol",
+      "clearSelection": "Limpiar la selección",
+      "askAbout": "Preguntar sobre este elemento",
+      "emptyIndex": "Todavía no hay índice de estructura. Pulsa Renderizar para construirlo.",
+      "noMatches": "Ningún nodo coincide con ese filtro."
+    },
+    "versions": {
+      "title": "Versiones",
+      "empty": "Aún no hay versiones registradas.",
+      "current": "actual",
+      "score": "nota {{score}}",
+      "checkout": "Restaurar",
+      "checkoutHint": "Restaura el directorio del artefacto a esta versión. Solo se toca ese directorio."
+    },
+    "deck": {
+      "slides": "Diapositivas",
+      "count": "{{count}} diapositivas"
+    },
+    "export": {
+      "label": "Exportar",
+      "html": "HTML autocontenido",
+      "png": "Imagen PNG",
+      "pdf": "PDF"
+    },
+    "tab": {
+      "artifacts": "Artefactos",
+      "templates": "Plantillas"
+    },
+    "templates": {
+      "loading": "Cargando plantillas…",
+      "empty": "Esta compilación no incluye plantillas de diseño.",
+      "hint": "Una plantilla dice qué construir, en qué orden y qué evitar. Elige una y luego di lo que quieres de verdad: la plantilla es solo la mitad de la entrada.",
+      "tryIt": "Probar",
+      "install": "Instalar",
+      "installed": "Instalada",
+      "installHint": "Copia esta plantilla en el directorio de skills del proyecto para que se cargue como una skill normal.",
+      "needsSystem": "Necesita un sistema de diseño confirmado",
+      "workflows": "Flujos de trabajo (guía, no andamiaje de artefactos)",
+      "craft": "Referencias de oficio"
+    },
+    "critique": {
+      "tabs": {
+        "structure": "Estructura",
+        "issues": "Problemas"
+      },
+      "title": "Calidad",
+      "run": "Pasar la crítica",
+      "running": "Criticando…",
+      "never": "Esta versión aún no se ha criticado. Ejecuta una pasada para ver qué encuentran las reglas automáticas.",
+      "none": "Sin hallazgos. Todas las reglas automáticas pasan en esta versión.",
+      "score": "{{score}}/10",
+      "policy": "política {{policy}}, umbral {{threshold}}",
+      "round": "ronda {{round}} de {{max}}",
+      "pass": "Cumple el listón",
+      "iterate": "Necesita otra ronda",
+      "stop": "Rondas agotadas",
+      "issueCount": "{{count}} hallazgos",
+      "fix": "Arreglo",
+      "select": "Seleccionar este elemento",
+      "recorded": "registrada {{when}}"
+    }
   }
 }

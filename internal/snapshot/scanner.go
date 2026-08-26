@@ -52,7 +52,27 @@ func (sc *scanner) Scan(rootDir string) ([]SnapshotFile, error) {
 		logging.Debug("scanner: skipping scan – not a project directory", "dir", rootDir)
 		return nil, nil
 	}
+	return sc.scan(rootDir)
+}
 
+// ScanScoped walks rootDir the same way as Scan but without the
+// project-directory guard. It is meant for scoped snapshots whose root is a
+// sub-directory of the project (a design artifact directory, for instance) and
+// therefore carries no project marker of its own. The caller is responsible for
+// proving that rootDir is contained in a legitimate project tree.
+func (sc *scanner) ScanScoped(rootDir string) ([]SnapshotFile, error) {
+	info, err := os.Stat(rootDir)
+	if err != nil {
+		return nil, fmt.Errorf("scanner: stat scoped root %s: %w", rootDir, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("scanner: scoped root %s is not a directory", rootDir)
+	}
+	return sc.scan(rootDir)
+}
+
+// scan is the shared walk used by Scan and ScanScoped.
+func (sc *scanner) scan(rootDir string) ([]SnapshotFile, error) {
 	ignoreMatcher, err := search.LoadIgnoreFiles(rootDir)
 	if err != nil {
 		// Non-fatal: proceed without ignore rules.

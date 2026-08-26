@@ -2806,8 +2806,8 @@ func thoughtUpdateTexts(t *testing.T, raw string) []string {
 
 func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 	commands := availableCommands()
-	if len(commands) != 18 {
-		t.Fatalf("expected 18 available commands, got %d", len(commands))
+	if len(commands) != 23 {
+		t.Fatalf("expected 23 available commands, got %d", len(commands))
 	}
 
 	got := map[string]acpsdk.AvailableCommand{}
@@ -2818,13 +2818,15 @@ func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, superpowersFinishCommandToken, cavemanCommandToken, cavemanFinishCommandToken, learningCommandToken, learningFinishCommandToken, vulnhuntCommandToken, vulnhunterFixCommandToken, vulnhuntFixVerifyCommandToken} {
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, goalStatusCommandToken, goalCancelCommandToken, compactCommandToken, summarizeCommandToken, dbCompactCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, superpowersFinishCommandToken, cavemanCommandToken, cavemanFinishCommandToken, learningCommandToken, learningFinishCommandToken, vulnhuntCommandToken, vulnhunterFixCommandToken, vulnhuntFixVerifyCommandToken, designCommandToken, designOpenCommandToken, designVersionsCommandToken, designSystemCommandToken, designTemplatesCommandToken} {
 		if _, ok := got[name]; !ok {
 			t.Fatalf("expected available command %q to be exposed", name)
 		}
 	}
 
-	for _, name := range []string{goalCommandToken, autopilotCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, cavemanCommandToken, learningCommandToken, vulnhuntCommandToken, vulnhunterFixCommandToken, vulnhuntFixVerifyCommandToken} {
+	// /design-system takes no argument, so it is deliberately absent here: an
+	// input hint on a command that accepts no input is noise in the client.
+	for _, name := range []string{goalCommandToken, autopilotCommandToken, ponytailCommandToken, improveAgentsMdCommandToken, superpowersCommandToken, cavemanCommandToken, learningCommandToken, vulnhuntCommandToken, vulnhunterFixCommandToken, vulnhuntFixVerifyCommandToken, designCommandToken, designOpenCommandToken, designVersionsCommandToken} {
 		cmd := got[name]
 		if cmd.Input == nil || cmd.Input.Unstructured == nil || strings.TrimSpace(cmd.Input.Unstructured.Hint) == "" {
 			t.Fatalf("expected available command %q to include an unstructured input hint, got %#v", name, cmd.Input)

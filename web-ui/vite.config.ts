@@ -86,7 +86,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     allowedHosts: ['lenovop3'],
-    port: 5173,
+    port: 5555,
     proxy: {
       '/api': {
         target: 'http://localhost:8765',

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/digiogithub/pando/internal/design/preview"
 	"github.com/digiogithub/pando/internal/extensions"
 	"github.com/digiogithub/pando/internal/logging"
 )
@@ -221,6 +222,34 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/instances/{id}/sessions/{sid}/stream", s.handleInstanceSessionStream)
 	mux.HandleFunc("DELETE /api/v1/instances/{id}/sessions/{sid}/cancel", s.handleInstanceCancelSession)
 	mux.HandleFunc("POST /api/v1/instances/{id}/sessions/{sid}/message", s.handleInstanceSendMessage)
+
+	// Design Studio. The status route is unconditional so a client can ask
+	// whether the section exists; everything else is registered only when the
+	// subsystem is enabled, so a project that never designs anything pays
+	// nothing for it.
+	mux.HandleFunc("GET /api/v1/design/status", s.handleDesignStatus)
+	if s.preview != nil {
+		mux.Handle(preview.Prefix, s.preview)
+		mux.HandleFunc("GET /api/v1/design/artifacts", s.handleDesignArtifacts)
+		mux.HandleFunc("GET /api/v1/design/events", s.handleDesignEvents)
+		mux.HandleFunc("GET /api/v1/design/artifacts/{id}", s.handleDesignArtifact)
+		mux.HandleFunc("GET /api/v1/design/artifacts/{id}/versions", s.handleDesignVersions)
+		mux.HandleFunc("POST /api/v1/design/artifacts/{id}/checkout", s.handleDesignCheckout)
+		mux.HandleFunc("GET /api/v1/design/artifacts/{id}/nodes", s.handleDesignNodes)
+		mux.HandleFunc("POST /api/v1/design/artifacts/{id}/render", s.handleDesignRender)
+		mux.HandleFunc("GET /api/v1/design/artifacts/{id}/screenshot", s.handleDesignScreenshot)
+		mux.HandleFunc("POST /api/v1/design/artifacts/{id}/export", s.handleDesignExport)
+		mux.HandleFunc("GET /api/v1/design/artifacts/{id}/download", s.handleDesignDownload)
+		mux.HandleFunc("POST /api/v1/design/artifacts/{id}/apply-system", s.handleDesignSystemApply)
+		mux.HandleFunc("POST /api/v1/design/artifacts/{id}/critique", s.handleDesignCritique)
+		mux.HandleFunc("GET /api/v1/design/artifacts/{id}/critique", s.handleDesignLatestCritique)
+		mux.HandleFunc("GET /api/v1/design/system", s.handleDesignSystem)
+		mux.HandleFunc("PUT /api/v1/design/system", s.handleDesignSystemUpdate)
+		mux.HandleFunc("GET /api/v1/design/system/examples", s.handleDesignSystemExamples)
+		mux.HandleFunc("POST /api/v1/design/system/extract", s.handleDesignSystemExtract)
+		mux.HandleFunc("GET /api/v1/design/skills", s.handleDesignSkills)
+		mux.HandleFunc("POST /api/v1/design/skills/{name}/install", s.handleDesignSkillInstall)
+	}
 
 	// AG-UI protocol adapter (CopilotKit / Generative-UI frontends). Registered
 	// only when [AGUI] Enabled is set; it owns its own auth and CORS policy.

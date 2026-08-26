@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/digiogithub/pando/internal/skills/od"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,19 +19,42 @@ func ParseSkillFile(path string) (*Skill, error) {
 		return nil, fmt.Errorf("read skill file %q: %w", path, err)
 	}
 
-	frontmatter, body, err := splitFrontmatter(string(content))
+	skill, err := ParseSkillContent(string(content), filepath.Base(filepath.Dir(path)))
+	if err != nil {
+		return nil, fmt.Errorf("skill file %q: %w", path, err)
+	}
+	skill.SourcePath = path
+	return skill, nil
+}
+
+// ParseSkillContent parses a SKILL.md document that is not necessarily on disk
+// — an embedded bundle, or one fetched from the catalog. defaultName is used
+// when the frontmatter declares no name; on disk that is the directory name.
+func ParseSkillContent(content, defaultName string) (*Skill, error) {
+	path := defaultName
+
+	frontmatter, body, err := od.SplitFrontmatter(content)
 	if err != nil {
 		return nil, fmt.Errorf("parse skill file %q: %w", path, err)
 	}
 
 	var metadata SkillMetadata
 	if err := yaml.Unmarshal([]byte(frontmatter), &metadata); err != nil {
-		return nil, fmt.Errorf("unmarshal skill metadata %q: %w", path, err)
+		// A third-party `od:` block whose shape we do not understand must not
+		// make the whole skill invisible: drop the block and keep the skill.
+		stripped, ok := od.Strip(frontmatter)
+		if !ok {
+			return nil, fmt.Errorf("unmarshal skill metadata %q: %w", path, err)
+		}
+		metadata = SkillMetadata{}
+		if err := yaml.Unmarshal([]byte(stripped), &metadata); err != nil {
+			return nil, fmt.Errorf("unmarshal skill metadata %q: %w", path, err)
+		}
 	}
 
 	instructions := strings.TrimSpace(body)
 	if metadata.Name == "" {
-		metadata.Name = filepath.Base(filepath.Dir(path))
+		metadata.Name = defaultName
 	}
 	if metadata.Description == "" {
 		metadata.Description = firstParagraph(instructions)
@@ -39,35 +63,9 @@ func ParseSkillFile(path string) (*Skill, error) {
 	return &Skill{
 		Metadata:     metadata,
 		Instructions: instructions,
-		SourcePath:   path,
 		LoadedLevel:  LevelMetadata,
 		LastAccessed: time.Now(),
 	}, nil
-}
-
-func splitFrontmatter(content string) (string, string, error) {
-	normalized := strings.ReplaceAll(content, "\r\n", "\n")
-	normalized = strings.TrimPrefix(normalized, "\ufeff")
-
-	lines := strings.Split(normalized, "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return "", "", fmt.Errorf("missing YAML frontmatter opening delimiter")
-	}
-
-	closingIndex := -1
-	for i := 1; i < len(lines); i++ {
-		if strings.TrimSpace(lines[i]) == "---" {
-			closingIndex = i
-			break
-		}
-	}
-	if closingIndex == -1 {
-		return "", "", fmt.Errorf("missing YAML frontmatter closing delimiter")
-	}
-
-	frontmatter := strings.Join(lines[1:closingIndex], "\n")
-	body := strings.Join(lines[closingIndex+1:], "\n")
-	return frontmatter, body, nil
 }
 
 func firstParagraph(body string) string {

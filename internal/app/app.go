@@ -26,6 +26,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/cronjob"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/design"
 	"github.com/digiogithub/pando/internal/evaluator"
 	"github.com/digiogithub/pando/internal/extensions"
 	"github.com/digiogithub/pando/internal/format"
@@ -679,6 +680,22 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 				logging.Info("Mesnada orchestrator initialized without embedded HTTP server")
 			}
 		}
+	}
+
+	// Design Studio: the process-wide provider owns the shared headless browser
+	// and hands the design_* tools a session-bound service. Wired before the
+	// agent is built so the first tool call already resolves it.
+	if designProvider, derr := design.NewProvider(conn); derr != nil {
+		logging.Warn("Design Studio unavailable", "error", derr)
+	} else {
+		// The knowledge base mirrors extracted design systems so brand
+		// knowledge is searchable from other projects. Optional: a process
+		// without remembrances still designs, it just does not publish.
+		if app.Remembrances != nil && app.Remembrances.KB != nil {
+			designProvider.SetMirror(app.Remembrances.KB)
+		}
+		design.SetDefaultProvider(designProvider)
+		logging.Debug("Design Studio provider wired")
 	}
 
 	var err error
@@ -2356,6 +2373,9 @@ func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
 
 func (app *App) Shutdown() {
 	logging.Debug("App shutdown started")
+	// Releases the shared headless browser the design tools render through.
+	design.ClosePreviewServer()
+	design.CloseDefaultProvider()
 	// Drain queued memory events before the extensions that consume them are
 	// stopped: the writes made just before the user quit are the ones a
 	// corporate sink is most likely to be missing.

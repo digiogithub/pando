@@ -170,19 +170,19 @@ type SessionUpdateType string
 const (
 	// SessionUpdateUsage is for usage/cost updates
 	SessionUpdateUsage SessionUpdateType = "usage_update"
-	
+
 	// SessionUpdateToolCall is for tool call status updates
 	SessionUpdateToolCall SessionUpdateType = "tool_call_update"
-	
+
 	// SessionUpdatePlan is for plan information (new feature)
 	SessionUpdatePlan SessionUpdateType = "plan"
-	
+
 	// SessionUpdateAgentMessage is for streaming agent messages
 	SessionUpdateAgentMessage SessionUpdateType = "agent_message_chunk"
-	
+
 	// SessionUpdateUserMessage is for streaming user messages
 	SessionUpdateUserMessage SessionUpdateType = "user_message_chunk"
-	
+
 	// SessionUpdateAgentThought is for streaming agent thoughts/reasoning
 	SessionUpdateAgentThought SessionUpdateType = "agent_thought_chunk"
 )
@@ -192,28 +192,28 @@ const (
 type SessionUpdate struct {
 	// Type is the type of update
 	Type SessionUpdateType `json:"type"`
-	
+
 	// SessionID is the ACP session ID
 	SessionID string `json:"sessionId"`
-	
+
 	// MessageText is the text content (for message updates)
 	MessageText string `json:"messageText,omitempty"`
-	
+
 	// ThinkingText is the model's reasoning content (for thought updates)
 	ThinkingText string `json:"thinkingText,omitempty"`
-	
+
 	// ToolCall contains tool information (for tool updates)
 	ToolCall *ToolCallInfo `json:"toolCall,omitempty"`
-	
+
 	// Plan contains planning information (for plan updates)
 	Plan *SessionPlan `json:"plan,omitempty"`
-	
+
 	// Usage contains usage information (for usage updates)
 	Usage *UsageInfo `json:"usage,omitempty"`
-	
+
 	// StopReason indicates why the agent stopped (if applicable)
 	StopReason string `json:"stopReason,omitempty"`
-	
+
 	// Error contains any error message
 	Error string `json:"error,omitempty"`
 }
@@ -222,13 +222,13 @@ type SessionUpdate struct {
 type UsageInfo struct {
 	// InputTokens is the number of input tokens used
 	InputTokens int64 `json:"inputTokens"`
-	
+
 	// OutputTokens is the number of output tokens used
 	OutputTokens int64 `json:"outputTokens"`
-	
+
 	// TotalTokens is the total tokens used
 	TotalTokens int64 `json:"totalTokens"`
-	
+
 	// Cost is the estimated cost in USD
 	Cost float64 `json:"cost"`
 }

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="../_system/system.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <h1>{{TITLE}}</h1>
+</header>
+
+<main>
+  <section class="summary" aria-label="Summary">
+    <article class="figure">
+      <h2>Metric</h2>
+      <p class="value">0</p>
+      <p class="delta">vs. previous period</p>
+    </article>
+  </section>
+
+  <section class="panel" aria-label="Trend">
+    <h2>Trend</h2>
+    <svg viewBox="0 0 600 200" role="img" aria-label="Placeholder trend chart">
+      <polyline fill="none" stroke="var(--color-accent)" stroke-width="2" points="0,180 150,120 300,140 450,60 600,80" />
+    </svg>
+  </section>
+
+  <section class="panel" aria-label="Rows to act on">
+    <h2>Needs attention</h2>
+    <table>
+      <thead><tr><th scope="col">Item</th><th scope="col">Age</th><th scope="col">State</th></tr></thead>
+      <tbody><tr><td>Sample row</td><td class="num">0</td><td>Waiting</td></tr></tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>

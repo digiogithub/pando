@@ -164,6 +164,62 @@ func runDesktop(binPath, pandoURL string, simpleMode bool) error {
 	return nil
 }
 
+func startDesktop(binPath string, args []string) error {
+	cmd := exec.Command(binPath, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start desktop process: %w", err)
+	}
+	if err := cmd.Process.Release(); err != nil {
+		return fmt.Errorf("release desktop process: %w", err)
+	}
+	return nil
+}
+
+func resolveLaunchBinary(embedBin []byte) (binPath string, cleanupDir string, err error) {
+	if sibling, ok := siblingDesktopBinary(); ok {
+		return sibling, "", nil
+	}
+
+	if runtime.GOOS == "darwin" && hasUsableEmbeddedAppBundle() {
+		tmpDir, err := os.MkdirTemp("", "pando-desktop-*")
+		if err != nil {
+			return "", "", fmt.Errorf("failed to create temp dir: %w", err)
+		}
+		bundlePath, err := extractEmbeddedAppBundle(tmpDir)
+		if err != nil {
+			_ = os.RemoveAll(tmpDir)
+			return "", "", err
+		}
+		binPath, err := macOSBundleExecutablePath(bundlePath)
+		if err != nil {
+			_ = os.RemoveAll(tmpDir)
+			return "", "", err
+		}
+		return binPath, tmpDir, nil
+	}
+
+	if len(embedBin) == 0 {
+		if runtime.GOOS == "darwin" && hasEmbeddedAppBundle() {
+			return "", "", fmt.Errorf("embedded macOS app bundle is incomplete: re-run `make desktop-embed` on macOS so Pando.app includes Contents/Info.plist and Contents/MacOS/*")
+		}
+		return "", "", fmt.Errorf("desktop binary not embedded: run `make desktop-embed` to build and embed it")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "pando-desktop-*")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	binPath = filepath.Join(tmpDir, binaryName())
+	if err := os.WriteFile(binPath, embedBin, 0o755); err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return "", "", fmt.Errorf("failed to write desktop binary: %w", err)
+	}
+	return binPath, tmpDir, nil
+}
+
 // Launch starts the desktop wrapper and blocks until the desktop window exits.
 //
 // Resolution order:
@@ -177,51 +233,25 @@ func runDesktop(binPath, pandoURL string, simpleMode bool) error {
 // embedBin may be nil/empty when the wrapper is shipped on disk instead of
 // embedded.
 func Launch(embedBin []byte, pandoURL string, simpleMode bool) error {
-	if sibling, ok := siblingDesktopBinary(); ok {
-		return runDesktop(sibling, pandoURL, simpleMode)
-	}
-
-	if runtime.GOOS == "darwin" && hasUsableEmbeddedAppBundle() {
-		return launchAppBundle(pandoURL, simpleMode)
-	}
-
-	if len(embedBin) == 0 {
-		if runtime.GOOS == "darwin" && hasEmbeddedAppBundle() {
-			return fmt.Errorf("embedded macOS app bundle is incomplete: re-run `make desktop-embed` on macOS so Pando.app includes Contents/Info.plist and Contents/MacOS/*")
-		}
-		return fmt.Errorf("desktop binary not embedded: run `make desktop-embed` to build and embed it")
-	}
-
-	tmpDir, err := os.MkdirTemp("", "pando-desktop-*")
+	binPath, cleanupDir, err := resolveLaunchBinary(embedBin)
 	if err != nil {
-		return fmt.Errorf("failed to create temp dir: %w", err)
+		return err
 	}
-	defer os.RemoveAll(tmpDir)
-
-	binPath := filepath.Join(tmpDir, binaryName())
-	if err := os.WriteFile(binPath, embedBin, 0o755); err != nil {
-		return fmt.Errorf("failed to write desktop binary: %w", err)
+	if cleanupDir != "" {
+		defer os.RemoveAll(cleanupDir)
 	}
-
 	return runDesktop(binPath, pandoURL, simpleMode)
 }
 
-func launchAppBundle(pandoURL string, simpleMode bool) error {
-	tmpDir, err := os.MkdirTemp("", "pando-desktop-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	bundlePath, err := extractEmbeddedAppBundle(tmpDir)
-	if err != nil {
-		return err
-	}
-
-	binPath, err := macOSBundleExecutablePath(bundlePath)
+// LaunchWindow starts a desktop wrapper for url and returns immediately.
+//
+// When LaunchWindow has to extract an embedded wrapper or app bundle, the temp
+// directory is intentionally left behind so the child process keeps its files
+// for its whole lifetime; the OS temp cleanup can reclaim it later.
+func LaunchWindow(embedBin []byte, url string) error {
+	binPath, _, err := resolveLaunchBinary(embedBin)
 	if err != nil {
 		return err
 	}
-
-	return runDesktop(binPath, pandoURL, simpleMode)
+	return startDesktop(binPath, []string{"--url", url})
 }

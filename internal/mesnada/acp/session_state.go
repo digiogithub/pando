@@ -61,6 +61,11 @@ const (
 	vulnhuntCommandToken              = "vulnhunt"
 	vulnhunterFixCommandToken         = "vulnhunter-fix"
 	vulnhuntFixVerifyCommandToken     = "vulnhunt-fix-verify"
+	designCommandToken                = "design"
+	designOpenCommandToken            = "design-open"
+	designVersionsCommandToken        = "design-versions"
+	designSystemCommandToken          = "design-system"
+	designTemplatesCommandToken       = "design-templates"
 )
 
 const (

@@ -4,15 +4,18 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/digiogithub/pando/internal/api"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/design"
 	"github.com/digiogithub/pando/internal/desktop"
 	"github.com/digiogithub/pando/internal/instanceregistry"
 	"github.com/digiogithub/pando/internal/ipc/bridge"
@@ -209,6 +212,46 @@ func runDesktopMode(cmd *cobra.Command) error {
 	}()
 
 	<-serverReady
+
+	createdEvents := design.Events().Subscribe(ctx)
+	openedDesignWindows := map[string]struct{}{}
+	var openedDesignWindowsMu sync.Mutex
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logging.Warn("Design desktop auto-open stopped", "error", r)
+			}
+		}()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-createdEvents:
+				if !ok {
+					return
+				}
+				if event.Payload.Kind != design.EventCreated || event.Payload.ArtifactID == "" {
+					continue
+				}
+				artifactID := event.Payload.ArtifactID
+				openedDesignWindowsMu.Lock()
+				if _, seen := openedDesignWindows[artifactID]; seen {
+					openedDesignWindowsMu.Unlock()
+					continue
+				}
+				openedDesignWindows[artifactID] = struct{}{}
+				openedDesignWindowsMu.Unlock()
+
+				targetURL := fmt.Sprintf("%s/design/%s", baseURL, url.PathEscape(artifactID))
+				if err := desktop.LaunchWindow(desktop.DesktopBinary, targetURL); err != nil {
+					openedDesignWindowsMu.Lock()
+					delete(openedDesignWindows, artifactID)
+					openedDesignWindowsMu.Unlock()
+					logging.Warn("Design desktop auto-open failed", "artifactID", artifactID, "error", err)
+				}
+			}
+		}
+	}()
 
 	if err := desktop.Launch(desktop.DesktopBinary, baseURL, simpleMode); err != nil {
 		return fmt.Errorf("desktop window exited with error: %w", err)
