@@ -13,6 +13,13 @@ const (
 WHEN TO USE THIS TOOL:
 - Use when you need to open a specific URL in the managed browser session
 - Useful before taking screenshots, reading content, or interacting with a page
+- This is a browser_* tool: scripted page automation over the managed
+  chromedp session. Once a page is open, desktop_apps/desktop_observe can
+  also see it (as app_id "browser") and drive it via the OS accessibility
+  tree, e.g. to interleave the page with native dialogs/windows in the same
+  workflow. Use browser_* (this tool and its siblings) whenever you already
+  know the URL/CSS selectors/JS you need; use desktop_* when the browser is
+  just one more application you are addressing semantically.
 
 HOW TO USE:
 - Provide the URL to navigate to

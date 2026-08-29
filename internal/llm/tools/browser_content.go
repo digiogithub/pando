@@ -13,6 +13,11 @@ const (
 WHEN TO USE THIS TOOL:
 - Use to extract text, HTML structure, or title from the current browser page
 - Useful for reading page content after navigation, scraping, or analysis
+- Prefer this over desktop_observe/desktop_read when you need the actual
+  HTML/DOM structure or a CSS-selector-scoped extract; desktop_observe
+  instead returns the accessibility-tree view (roles/names), which is
+  cheaper and more semantic but collapses a lot of DOM detail (classes,
+  attributes, exact markup) this tool preserves.
 
 HOW TO USE:
 - Optionally specify format: "html", "text", or "title" (default "text")

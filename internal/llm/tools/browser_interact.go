@@ -17,7 +17,7 @@ func NewBrowserClickTool() *BrowserClickTool { return &BrowserClickTool{} }
 func (t *BrowserClickTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        "browser_click",
-		Description: "Click on an element identified by a CSS selector.",
+		Description: "Click on an element identified by a CSS selector. Prefer this for scripted, selector-precise page automation; use desktop_click instead when the browser is one app among several native windows you are driving in the same workflow.",
 		Parameters: map[string]any{
 			"selector": map[string]any{
 				"type":        "string",
@@ -78,7 +78,7 @@ func NewBrowserFillTool() *BrowserFillTool { return &BrowserFillTool{} }
 func (t *BrowserFillTool) Info() ToolInfo {
 	return ToolInfo{
 		Name:        "browser_fill",
-		Description: "Fill a form input or textarea with a value.",
+		Description: "Fill a form input or textarea with a value, addressed by CSS selector. Prefer this for scripted form-filling; use desktop_type instead when the field is part of a mixed native+browser workflow already driven by desktop_observe/desktop_find refs.",
 		Parameters: map[string]any{
 			"selector": map[string]any{
 				"type":        "string",

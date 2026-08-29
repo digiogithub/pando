@@ -832,6 +832,17 @@ type ToolsConfigResponse struct {
 	BrowserTimeout     int    `json:"browserTimeout"`
 	BrowserUserDataDir string `json:"browserUserDataDir"`
 	BrowserMaxSessions int    `json:"browserMaxSessions"`
+
+	DesktopEnabled            bool     `json:"desktopEnabled"`
+	DesktopBackend            string   `json:"desktopBackend"`
+	DesktopAllowPhysicalInput bool     `json:"desktopAllowPhysicalInput"`
+	DesktopMaxNodes           int      `json:"desktopMaxNodes"`
+	DesktopDefaultDepth       int      `json:"desktopDefaultDepth"`
+	DesktopActionTimeout      int      `json:"desktopActionTimeout"`
+	DesktopSnapshotTTL        int      `json:"desktopSnapshotTTL"`
+	DesktopScreenshotScale    float64  `json:"desktopScreenshotScale"`
+	DesktopAllowedApps        []string `json:"desktopAllowedApps"`
+	DesktopDeniedApps         []string `json:"desktopDeniedApps"`
 }
 
 func (s *Server) handleConfigTools(w http.ResponseWriter, r *http.Request) {
@@ -875,6 +886,17 @@ func (s *Server) handleGetConfigTools(w http.ResponseWriter, r *http.Request) {
 		BrowserTimeout:          t.BrowserTimeout,
 		BrowserUserDataDir:      t.BrowserUserDataDir,
 		BrowserMaxSessions:      t.BrowserMaxSessions,
+
+		DesktopEnabled:            t.DesktopEnabled,
+		DesktopBackend:            t.DesktopBackend,
+		DesktopAllowPhysicalInput: t.DesktopAllowPhysicalInput,
+		DesktopMaxNodes:           t.DesktopMaxNodes,
+		DesktopDefaultDepth:       t.DesktopDefaultDepth,
+		DesktopActionTimeout:      t.DesktopActionTimeout,
+		DesktopSnapshotTTL:        t.DesktopSnapshotTTL,
+		DesktopScreenshotScale:    t.DesktopScreenshotScale,
+		DesktopAllowedApps:        t.DesktopAllowedApps,
+		DesktopDeniedApps:         t.DesktopDeniedApps,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -926,6 +948,12 @@ func (s *Server) handlePutConfigTools(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.BrowserType) == "" {
 		req.BrowserType = "chrome"
+	}
+	if strings.TrimSpace(req.DesktopBackend) == "" {
+		req.DesktopBackend = existing.DesktopBackend
+	}
+	if strings.TrimSpace(req.DesktopBackend) == "" {
+		req.DesktopBackend = "auto"
 	}
 
 	if err := config.UpdateInternalTools(req); err != nil {

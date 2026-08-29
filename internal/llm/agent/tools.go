@@ -161,6 +161,22 @@ func CoderAgentTools(
 				tools.NewBrowserPDFTool(),
 			)
 		}
+		if it.DesktopEnabled {
+			otherTools = append(otherTools,
+				tools.NewDesktopAppsTool(),
+				tools.NewDesktopObserveTool(),
+				tools.NewDesktopFindTool(),
+				tools.NewDesktopReadTool(),
+				tools.NewDesktopClickTool(permissions),
+				tools.NewDesktopTypeTool(permissions),
+				tools.NewDesktopKeyTool(permissions),
+				tools.NewDesktopScrollTool(permissions),
+				tools.NewDesktopFocusTool(permissions),
+				tools.NewDesktopWaitTool(),
+				tools.NewDesktopScreenshotTool(permissions),
+				tools.NewDesktopClickAtTool(permissions),
+			)
+		}
 	}
 	base := []tools.BaseTool{
 		tools.NewBashTool(permissions),
@@ -281,6 +297,22 @@ func CoderAgentToolsWithMesnada(
 					tools.NewBrowserConsoleLogsTool(),
 					tools.NewBrowserNetworkTool(),
 					tools.NewBrowserPDFTool(),
+				)
+			}
+			if it.DesktopEnabled {
+				baseTools = append(baseTools,
+					tools.NewDesktopAppsTool(),
+					tools.NewDesktopObserveTool(),
+					tools.NewDesktopFindTool(),
+					tools.NewDesktopReadTool(),
+					tools.NewDesktopClickTool(permissions),
+					tools.NewDesktopTypeTool(permissions),
+					tools.NewDesktopKeyTool(permissions),
+					tools.NewDesktopScrollTool(permissions),
+					tools.NewDesktopFocusTool(permissions),
+					tools.NewDesktopWaitTool(),
+					tools.NewDesktopScreenshotTool(permissions),
+					tools.NewDesktopClickAtTool(permissions),
 				)
 			}
 		}

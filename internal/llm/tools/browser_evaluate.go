@@ -13,6 +13,11 @@ const (
 WHEN TO USE THIS TOOL:
 - Use to run arbitrary JavaScript expressions in the current page context
 - Useful for reading DOM values, triggering actions, or extracting dynamic data
+- No desktop_* equivalent exists for this: the accessibility tree
+  (desktop_observe/desktop_find) exposes roles/names/values, never raw JS
+  execution or DOM internals. Use this tool for anything that needs actual
+  JavaScript, not desktop_read (which only reads the accessibility-tree
+  view of an element).
 
 HOW TO USE:
 - Provide a JavaScript expression to evaluate

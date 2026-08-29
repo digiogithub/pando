@@ -788,3 +788,150 @@ func TestValidateAgentWithoutProviderDoesNotError(t *testing.T) {
 		t.Fatalf("Validate() must not error when an agent has no usable provider, got: %v", err)
 	}
 }
+
+// ---- R3: partial [InternalTools] table config-merge regression tests ----
+//
+// Phase 8 of the Desktop Controller feature (pando/changes/
+// uiauto_exposure_docs_phase8.md) recorded an "incidental finding": a
+// project .pando.toml [InternalTools] table that sets only DesktopEnabled
+// observably lost the DesktopAllowPhysicalInput=true default, attributed to
+// mergeLocalConfig's viper.MergeConfigMap not "reliably preserving
+// unrelated global defaults for sibling keys in that same nested table".
+//
+// Investigating for Block R (2026-08-30): the suspected mechanism is
+// viper's flattenAndMergeMap prefix-shadowing (used by both AllKeys() and
+// Unmarshal(), which calls v.getSettings(v.AllKeys())) -- a higher-priority
+// layer can shadow an entire subtree for a lower-priority layer IF it holds
+// an IMMEDIATE (non-map) value at the exact parent key path. A partial TOML
+// table under a single map (e.g. internalTools.desktopEnabled without
+// internalTools.desktopAllowPhysicalInput) never creates that condition:
+// the parent key ("internaltools") is always a map at every layer that
+// defines it, never a scalar, so nothing shadows the defaults layer's
+// leaves. This test reproduces the exact documented scenario against the
+// currently vendored github.com/spf13/viper (go.mod pins v1.20.0) through
+// the real Load() entry point end to end, including mergeLocalConfig.
+//
+// It currently PASSES: DesktopAllowPhysicalInput correctly reads back true.
+// This is kept as a permanent regression test (not deleted just because it
+// passes) so a future change to mergeLocalConfig/viper's merge behavior
+// that reintroduces the defect fails loudly, and so the finding is backed
+// by an executable check rather than only a KB note.
+func TestPartialInternalToolsTablePreservesDesktopDefaults(t *testing.T) {
+	isolateGlobalConfig(t)
+	cfg = nil
+	viper.Reset()
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	dir := t.TempDir()
+	toml := "[InternalTools]\nDesktopEnabled = true\n"
+	if err := os.WriteFile(filepath.Join(dir, ".pando.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := Load(dir, false)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	it := loaded.InternalTools
+	if !it.DesktopEnabled {
+		t.Fatal("DesktopEnabled should be true (explicitly set in the project config)")
+	}
+	if !it.DesktopAllowPhysicalInput {
+		t.Fatal("DesktopAllowPhysicalInput lost its documented true default when only DesktopEnabled was set in a partial [InternalTools] table")
+	}
+	if it.DesktopBackend != "auto" {
+		t.Fatalf("DesktopBackend = %q, want the documented default %q", it.DesktopBackend, "auto")
+	}
+	if it.DesktopMaxNodes != 500 {
+		t.Fatalf("DesktopMaxNodes = %d, want the documented default 500", it.DesktopMaxNodes)
+	}
+	if it.DesktopDefaultDepth != 3 {
+		t.Fatalf("DesktopDefaultDepth = %d, want the documented default 3", it.DesktopDefaultDepth)
+	}
+	if it.DesktopActionTimeout != 10 {
+		t.Fatalf("DesktopActionTimeout = %d, want the documented default 10", it.DesktopActionTimeout)
+	}
+	if it.DesktopSnapshotTTL != 60 {
+		t.Fatalf("DesktopSnapshotTTL = %d, want the documented default 60", it.DesktopSnapshotTTL)
+	}
+	if it.DesktopScreenshotScale != 1.0 {
+		t.Fatalf("DesktopScreenshotScale = %v, want the documented default 1.0", it.DesktopScreenshotScale)
+	}
+}
+
+// TestPartialInternalToolsTableExplicitFalseOverridesDefault guards the
+// other direction of the same mechanism: an explicit false in the partial
+// table must NOT be shadowed back to the true default -- i.e. the fix for
+// R3 (in this case: confirming no fix was needed, see above) must not
+// accidentally make DesktopAllowPhysicalInput un-overridable.
+func TestPartialInternalToolsTableExplicitFalseOverridesDefault(t *testing.T) {
+	isolateGlobalConfig(t)
+	cfg = nil
+	viper.Reset()
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	dir := t.TempDir()
+	toml := "[InternalTools]\nDesktopEnabled = true\nDesktopAllowPhysicalInput = false\n"
+	if err := os.WriteFile(filepath.Join(dir, ".pando.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := Load(dir, false)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.InternalTools.DesktopAllowPhysicalInput {
+		t.Fatal("an explicit DesktopAllowPhysicalInput = false in the project config must not be overridden back to the default")
+	}
+}
+
+// TestPartialMesnadaDelegationTablePreservesDefaults checks the other
+// partial-table scenario this codebase already suspected the same class of
+// bug for (see the normalizeMesnadaDelegationDefaults doc comment): a
+// [Mesnada] table that sets a sibling key (Enabled) without a
+// [Mesnada.Delegation] sub-table. This is the two-level-nesting case
+// (mesnada -> delegation -> field), a stronger version of R3's single-level
+// InternalTools/Desktop* case. It also currently passes against the
+// vendored viper -- normalizeMesnadaDelegationDefaults's own zero-value
+// workaround is not even required for this to come back correct via a
+// fresh Load(), which confirms R3's finding generalizes: this class of
+// "sibling key without the nested table" partial-config defect is not
+// currently reproducible at the viper-merge level with this dependency
+// version, in either the one-level or two-level nesting shape.
+func TestPartialMesnadaDelegationTablePreservesDefaults(t *testing.T) {
+	isolateGlobalConfig(t)
+	cfg = nil
+	viper.Reset()
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	dir := t.TempDir()
+	toml := "[Mesnada]\nEnabled = true\n"
+	if err := os.WriteFile(filepath.Join(dir, ".pando.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := Load(dir, false)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !loaded.Mesnada.Enabled {
+		t.Fatal("Mesnada.Enabled should be true (explicitly set)")
+	}
+	if loaded.Mesnada.Delegation.MaxResurrections != defaultDelegationMaxResurrections {
+		t.Fatalf("Mesnada.Delegation.MaxResurrections = %d, want the documented default %d",
+			loaded.Mesnada.Delegation.MaxResurrections, defaultDelegationMaxResurrections)
+	}
+	if loaded.Mesnada.Delegation.MaxDepth != defaultDelegationMaxDepth {
+		t.Fatalf("Mesnada.Delegation.MaxDepth = %d, want the documented default %d",
+			loaded.Mesnada.Delegation.MaxDepth, defaultDelegationMaxDepth)
+	}
+}

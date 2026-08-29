@@ -350,6 +350,19 @@ BrowserTimeout        = 30
 BrowserUserDataDir    = ''
 BrowserMaxSessions    = 3
 
+# Desktop Controller — accessibility-tree based UI automation (internal/uiauto).
+# OFF by default: it can read and act on the user's whole desktop session.
+DesktopEnabled            = false
+DesktopBackend            = 'auto'    # auto, atspi, uia, ax, cdp, null
+DesktopAllowPhysicalInput = true      # allow synthetic mouse/keyboard fallback
+DesktopMaxNodes           = 500       # max elements rendered per observe/find
+DesktopDefaultDepth       = 3         # default tree depth for desktop_observe
+DesktopActionTimeout      = 10        # seconds
+DesktopSnapshotTTL        = 60        # seconds before a snapshot ref goes stale
+DesktopScreenshotScale    = 1.0
+DesktopAllowedApps        = []        # empty = all apps allowed
+DesktopDeniedApps         = []
+
 # =============================================================================
 # Snapshots — lightweight point-in-time backups of your working directory
 # =============================================================================

@@ -298,6 +298,16 @@ const TOOLS_DEFAULTS: ToolsConfig = {
   browserTimeout: 30,
   browserUserDataDir: '',
   browserMaxSessions: 3,
+  desktopEnabled: false,
+  desktopBackend: 'auto',
+  desktopAllowPhysicalInput: true,
+  desktopMaxNodes: 500,
+  desktopDefaultDepth: 3,
+  desktopActionTimeout: 10,
+  desktopSnapshotTTL: 60,
+  desktopScreenshotScale: 1.0,
+  desktopAllowedApps: [],
+  desktopDeniedApps: [],
 }
 
 interface ToolsStore {

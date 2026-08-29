@@ -48,6 +48,20 @@ var builtinToolNames = map[string]struct{}{
 	recallToolName:   {},
 	forgetToolName:   {},
 
+	// Desktop Controller (accessibility-tree based UI automation) tools.
+	DesktopAppsToolName:       {},
+	DesktopObserveToolName:    {},
+	DesktopFindToolName:       {},
+	DesktopReadToolName:       {},
+	DesktopClickToolName:      {},
+	DesktopTypeToolName:       {},
+	DesktopKeyToolName:        {},
+	DesktopScrollToolName:     {},
+	DesktopFocusToolName:      {},
+	DesktopWaitToolName:       {},
+	DesktopScreenshotToolName: {},
+	DesktopClickAtToolName:    {},
+
 	// Internal web / search / docs tools.
 	FetchToolName:            {},
 	GoogleSearchToolName:     {},

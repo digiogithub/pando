@@ -336,6 +336,31 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 				llmtools.NewBrowserPDFTool(),
 			)
 		}
+		// Desktop Controller (accessibility-tree based UI automation, internal/uiauto).
+		// This is the ONLY place the desktop_* tools cross an MCP boundary: the
+		// subsystem itself stays an internal tool provider (internal/uiauto +
+		// internal/llm/tools/desktop_*.go, wired into the agent directly in
+		// internal/llm/agent/tools.go), never routed through MCP internally.
+		// External MCP clients get the same 12 tools an in-process Pando agent
+		// would, gated on the exact same config flag, so a client sees this
+		// group present/absent consistently with the agent's own tool list.
+		if it.DesktopEnabled {
+			tools = append(tools,
+				llmtools.NewDesktopAppsTool(),
+				llmtools.NewDesktopObserveTool(),
+				llmtools.NewDesktopFindTool(),
+				llmtools.NewDesktopReadTool(),
+				llmtools.NewDesktopClickTool(appSvc.Permissions),
+				llmtools.NewDesktopTypeTool(appSvc.Permissions),
+				llmtools.NewDesktopKeyTool(appSvc.Permissions),
+				llmtools.NewDesktopScrollTool(appSvc.Permissions),
+				llmtools.NewDesktopFocusTool(appSvc.Permissions),
+				llmtools.NewDesktopWaitTool(),
+				llmtools.NewDesktopScreenshotTool(appSvc.Permissions),
+				llmtools.NewDesktopClickAtTool(appSvc.Permissions),
+			)
+			logging.Info("MCP server: Desktop Controller tools enabled", "count", 12)
+		}
 		if it.Context7Enabled {
 			tools = append(tools, llmtools.NewContext7Tools()...)
 			logging.Info("MCP server: Context7 tools enabled")

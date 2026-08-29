@@ -14,6 +14,10 @@ const (
 WHEN TO USE THIS TOOL:
 - Use to visually inspect the current state of the browser page
 - Useful for verifying navigation results, UI elements, or page layout
+- Scoped to the page/element (via a CSS selector), not the whole screen —
+  use desktop_screenshot instead when you need to see the browser window
+  alongside other native windows, or when you don't have a CSS selector for
+  the region you want.
 
 HOW TO USE:
 - Optionally provide a CSS selector to capture a specific element

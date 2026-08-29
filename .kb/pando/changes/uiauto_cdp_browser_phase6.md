@@ -1,0 +1,61 @@
+---
+created_at: 2026-08-29T19:09:45.45454082Z
+updated_at: 2026-08-29T19:09:45.45454082Z
+---
+# Phase 6 — Browser/CDP backend (`internal/uiauto/platform/browser`)
+
+Part of [[desktop_controller_uiauto_plan]]. Follows [[uiauto_core_phase0]], [[uiauto_tools_phase1]], [[uiauto_linux_atspi_phase2]], [[uiauto_input_screen_phase3]], [[uiauto_windows_uia_phase4]], [[uiauto_macos_ax_phase5]].
+
+Date: 2026-08-29.
+
+## What changed
+
+New package `internal/uiauto/platform/browser` (10 files, ~1450 lines incl. tests) implementing `core.Backend` ("cdp") over the Chrome DevTools Protocol, plus the registration file `internal/uiauto/backends_browser.go` (no `//go:build` tag — CDP is cross-platform), and one additive change to an existing file: `internal/llm/tools/browser_session.go`.
+
+Files:
+- `doc.go` — package doc.
+- `session.go` — `RegisterSession`/`UnregisterSession`/`ActiveSession`: the single-slot registry that lets the existing `browser_*` agent tools publish/retract the chromedp session this backend rides on.
+- `conn.go` — the `axConn` interface (Version/Targets/RootNode/ChildNodes/PartialTree/BoxModel/Focus/Click/SetValue/InsertText/ScrollIntoView/Close) plus `liveConn`, the real CDP implementation: per-target chromedp context attachment (cached, lazily created via `chromedp.NewContext(sessCtx, chromedp.WithTargetID(id))` + one `chromedp.Run` to attach), lazy `Accessibility.enable` per target, and `mergeCancel` to bridge the caller's `ctx` (timeout/cancellation) onto the long-lived registered session context.
+- `element.go` — `toElement(*accessibility.Node, target.ID) *core.Element`: role via `core.NormalizeRole("cdp", raw)` (Chrome's camelCase AX roles collapse correctly onto the existing `cdpRoleMap` after lowercasing, e.g. `"textField"→"textfield"`), name/value/description from `AXValue.Value` (decoded via `encoding/json` since `jsontext.Value` is just `[]byte`), `disabled/hidden/focused/focusable/checked/expanded` split out into `Enabled/Focused/Visible` + `Actions`, everything else parked in `Native.Data`. `backendDOMNodeId` (durable) + the current AX `nodeId` + `targetId` are the three keys stashed in `Native.Data` (`nativeBackendIDKey`/`nativeAXNodeIDKey`/`nativeTargetIDKey`). `refFromElement`/`backendNodeIDFromElement` recover them, falling back to `el.WindowID` for the Manager's synthetic root Element (mirrors the AT-SPI/AX backends' pattern exactly).
+- `traverse.go` — `findRec`: the same selector-driven ds/cs (descendant/child pending-step) DFS as Phase 2/5, using `Accessibility.getChildAXNodes` for incremental descent (never `getFullAXTree`); depth/limit/ctx-capped; a single unreadable branch is skipped, not fatal.
+- `backend.go` — `CdpBackend`: `Name()"cdp"`; `Available` never launches a browser — it checks `ActiveSession()` then a cheap `Browser.getVersion` probe, returning `APP_NOT_FOUND` (with a suggestion to use `browser_navigate`) when no session is registered or reachable; `Apps` reports the connected browser as one virtual app (`appID = "browser"`, named from `Browser.getVersion`'s product string); `Windows` lists `Target.getTargets` entries of type `"page"`; `Find`/`Children` per traverse.go; `Properties` returns the cheap `Native.Data` set by default plus `bounds` (an extra `DOM.getBoxModel` round trip) on request; `Perform` prefers semantic actions — `DOM.focus` for focus, a real `chromedp.Click`/`SetValue` on the node resolved via `DOM.describeNode` for invoke/toggle/select/expand/collapse and setvalue, `DOM.focus` + `Input.insertText` for type, `chromedp.ScrollIntoView` for scroll — and opportunistically fills `el.Bounds` via `DOM.getBoxModel` right before acting (never during traversal), so `core.ActionResolver`'s physical-input fallback has real bounds to click at if a native action fails. Unsupported kinds (e.g. `press`) return `PLATFORM_NOT_SUPPORTED`.
+
+## How the CDP AX tree maps onto `core.Element`
+
+`accessibility.Node.Role/Name/Value/Description` (all `*accessibility.Value`, raw JSON) → `Element.Role` (via `NormalizeRole("cdp", ...)`) / `Name` / `Value` / `Description`. `Node.Properties` (`disabled`/`hidden`/`focused`/`focusable`/`checked`/`expanded`) split into `Enabled`/`Focused`/`Visible`/`Actions`, the rest copied verbatim into `Native.Data` keyed by property name (e.g. `readonly`, `level`, `valuemin`). `Node.BackendDOMNodeID` (durable across AX-node churn) + `Node.NodeID` (session-local, refreshed by `Accessibility.enable`) + the owning CDP `target.ID` are the three-part identity. Bounds are **not** computed during traversal — only `Perform` (about to act) and `Properties("bounds")` fetch `DOM.getBoxModel`, per the plan's explicit lazy-bounds requirement.
+
+## Avoiding a spawned browser
+
+`CdpBackend` never launches Chrome. It only reads a chromedp `context.Context` that `internal/llm/tools/browser_session.go`'s `GetOrCreateBrowserSession` publishes via the new `uiautobrowser.RegisterSession(sessionID, sess.ctx)` call (added on both the "reuse an existing session" and "create a new session" paths) and retracts via `uiautobrowser.UnregisterSession` (added to both `CloseBrowserSession` and `CloseAllBrowserSessions`). `Available`/`Apps`/`Windows`/`Find` all check `ActiveSession()` first and return `APP_NOT_FOUND` immediately when nothing is registered — this matters because `"cdp"` sits in the `Registry`'s `"auto"` order (`atspi, uia, ax, cdp, null`, unchanged from Phase 0/2), so resolving `"auto"` can never spawn a browser as a side effect.
+
+**File-ownership note / the one exception used**: per the task's explicit allowance, `internal/llm/tools/browser_session.go` was the one non-owned file touched, adding a single import (`uiautobrowser "github.com/digiogithub/pando/internal/uiauto/platform/browser"`) and the four `RegisterSession`/`UnregisterSession` call sites described above. No other line in that file changed. `internal/uiauto/manager.go`, `backends.go`, the other `backends_*.go`, `core/*`, `input/**`, `screen/**`, `platform/{linux,windows,darwin}/**` were **not** touched. This direction (tools → uiauto/platform/browser) does not create an import cycle: `internal/llm/tools` already imports `internal/uiauto` (for `desktop_common.go`'s `Manager`), and `internal/uiauto/platform/browser` never imports back into `internal/llm/tools`.
+
+Manager caveat (pre-existing, not something Phase 6 changes): `Manager.Capabilities()` is a snapshot taken once at `NewManager`/`Shared()` construction time (process-wide singleton). If no browser session exists yet when the Manager is built, the cached Capabilities will show `cdp` accessibility as false even after a browser session is later opened — the *live* `Available`/`Find`/etc. calls still work correctly (they re-check `ActiveSession()` every time), only the cached capability-reporting snapshot is stale until the Manager is rebuilt. This mirrors how the AT-SPI backend's Capabilities are similarly a one-time snapshot.
+
+## Testability
+
+Everything above the wire sits behind the `axConn` interface (`conn.go`), so role mapping (`element_test.go`), traversal/pruning (`traverse_test.go`), action dispatch and bounds-laziness (`backend_test.go`) and the session registry (`session_test.go`) are unit-tested against `fake_conn_test.go`'s in-memory `fakeConn` — no real browser involved, 38 test functions total, all passing.
+
+## Live-browser verification (honest result)
+
+This dev machine has a real, working `google-chrome` (`/usr/bin/google-chrome`) — unlike Phases 4/5 (Windows/macOS), a genuine end-to-end run was possible and attempted (`backend_integration_test.go`, `TestIntegrationLiveChromeFindAndClick`, headless, `data:` URL page with a button + text input). It found a **real upstream bug**: Chrome now returns an `AXNode.ignoredReasons[].name` value of `"uninteresting"` that the vendored `cdproto` version's (`v0.0.0-20250724212937-...`, confirmed also absent in the newer `v0.0.0-20250803210736-...` module cached locally) generated `accessibility.PropertyName` enum does not recognize, so cdproto's own `UnmarshalJSON` rejects the *entire* `Accessibility.getChildAXNodes` batch reply with `unknown PropertyName value: uninteresting` — this happens on the very first non-trivial `getChildAXNodes` call, before this package's traversal/mapping code ever sees a node. It is a cdproto/Chrome protocol-version mismatch, not a bug in this package's logic (confirmed by writing a throwaway standalone script replicating the exact same raw CDP calls this backend makes, independent of any of this change's code). `traverse.go`'s deliberate "skip one unreadable branch, don't abort the whole search" policy (same policy Phase 2 documents for AT-SPI) means this failure surfaces as "found nothing" with no error propagated, so `backend_integration_test.go` now probes the raw call directly first and `t.Skip`s with a clear diagnostic when this specific decode error is hit, instead of either silently reporting false success or failing the build on a library gap outside this change's scope to fix (would require vendoring a patched `cdproto`). On this box the test currently skips with that diagnostic. Unit tests (which use the fake conn and are unaffected by this cdproto gap) fully cover Find/Children/Perform/Properties behavior.
+
+## Verification
+
+- `go build ./...` — clean, whole repo.
+- `go vet ./internal/uiauto/...` — clean (native, linux).
+- `go test ./internal/uiauto/...` — all pass, incl. the new `platform/browser` package (38 tests) and the honest live-Chrome skip described above.
+- `go test ./internal/llm/tools/...` — all pass (60s, includes the existing browser_* tool tests, confirming `browser_session.go`'s new `RegisterSession`/`UnregisterSession` calls don't regress anything).
+- `GOOS=windows go build ./internal/uiauto/...` / `GOOS=darwin go build ./internal/uiauto/...` — both clean (CDP is pure Go/HTTP+WebSocket via chromedp, no cgo, no platform-specific code).
+- `gofmt -l internal/uiauto internal/llm/tools` — clean for every file this change added/touched (3 pre-existing, untouched `internal/llm/tools` files were already gofmt-dirty before this change, unrelated: `aliases.go`, `lua_tools.go`, `remembrances_code_test.go`).
+- `GOOS=windows|darwin go build ./...` (whole repo) still fails for the pre-existing, unrelated `github.com/madeindigio/go-tree-sitter` cgo-only reason documented in Phases 2-5; confirmed reproducible with zero changes from this phase involved (the failure is purely inside `go-tree-sitter/iter.go`).
+- No cgo introduced; `internal/uiauto/platform/browser` has zero `import "C"`.
+
+## Deferred / known limitations (documented, not silently dropped)
+
+- The `unknown PropertyName value` cdproto decode gap above blocks real-world `Find`/`Children` traversal on most non-trivial pages until `chromedp/cdproto` ships a newer generated `PropertyName` enum (or this package is changed to decode raw JSON itself, bypassing cdproto's typed `Node`, which is a materially bigger change than Phase 6's scope).
+- `Windows()` reports only `ID`/`AppID`/`Title`/`Focused` — `core.WindowInfo` has no `URL` field, so a target's URL is only surfaced as a `Title` fallback when the page has no `<title>`, per the struct's existing shape (not modified, per file ownership).
+- `Manager.Capabilities()`'s one-time-snapshot-at-construction caveat above (pre-existing Manager behavior, not new to this phase, but worth noting since `"cdp"`'s availability is the most likely of any backend to change over a session's lifetime).
+- `PartialTree`/`axSubtree` (`Properties(el, ["tree"])`) is implemented but not exercised by any `desktop_*` tool yet — available for a future phase if needed.
+- No frame/iframe-id tracking (`accessibility.Node.FrameID` is decoded but discarded) — cross-frame selectors are not specifically handled beyond whatever `getChildAXNodes` naturally returns for same-process iframes.
+- Live end-to-end coverage beyond the diagnostic probe (real Find/Perform/SetValue against a live page) could not be completed on this box due to the cdproto gap above — everything from `Available`/`Apps`/`Windows` through the raw `Accessibility.enable`/`GetRootAXNode` calls was verified live; `Find`/`Perform` were verified against the fake conn only.

@@ -433,6 +433,98 @@ export default function InternalToolsSettings() {
           </div>
         </ToolCard>
 
+        {/* Desktop Controller */}
+        <ToolCard
+          title="Desktop Controller (Accessibility Automation)"
+          enabled={config.desktopEnabled}
+          status={simpleStatus(config.desktopEnabled)}
+          onToggle={(v) => updateField('desktopEnabled', v)}
+        >
+          <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+            Lets the agent read and act on the user&apos;s desktop UI via the OS
+            accessibility tree. Can read and act on the whole desktop session — review
+            carefully before enabling.
+          </div>
+          <SelectInput
+            label="Backend"
+            value={config.desktopBackend}
+            options={[
+              { value: 'auto', label: 'Auto (platform default)' },
+              { value: 'atspi', label: 'AT-SPI2 (Linux)' },
+              { value: 'uia', label: 'UI Automation (Windows)' },
+              { value: 'ax', label: 'Accessibility API (macOS)' },
+              { value: 'cdp', label: 'Chrome DevTools Protocol' },
+              { value: 'null', label: 'Disabled (Null)' },
+            ]}
+            onChange={(e) => updateField('desktopBackend', e.target.value)}
+          />
+          <Toggle
+            label="Allow physical input fallback"
+            description="Fall back to synthetic mouse/keyboard when a native accessibility action is unsupported"
+            checked={config.desktopAllowPhysicalInput}
+            onChange={(v) => updateField('desktopAllowPhysicalInput', v)}
+          />
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <TextInput
+                label="Max Nodes"
+                value={String(config.desktopMaxNodes)}
+                onChange={(e) => updateField('desktopMaxNodes', parseInt(e.target.value, 10) || 500)}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <TextInput
+                label="Default Depth"
+                value={String(config.desktopDefaultDepth)}
+                onChange={(e) => updateField('desktopDefaultDepth', parseInt(e.target.value, 10) || 3)}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <TextInput
+                label="Action Timeout (s)"
+                value={String(config.desktopActionTimeout)}
+                onChange={(e) => updateField('desktopActionTimeout', parseInt(e.target.value, 10) || 10)}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <TextInput
+                label="Snapshot TTL (s)"
+                value={String(config.desktopSnapshotTTL)}
+                onChange={(e) => updateField('desktopSnapshotTTL', parseInt(e.target.value, 10) || 60)}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <TextInput
+                label="Screenshot Scale"
+                value={String(config.desktopScreenshotScale)}
+                onChange={(e) => updateField('desktopScreenshotScale', parseFloat(e.target.value) || 1.0)}
+              />
+            </div>
+          </div>
+          <TextInput
+            label="Allowed Apps (comma-separated, empty = all)"
+            placeholder="e.g. Firefox, VSCode"
+            value={config.desktopAllowedApps.join(', ')}
+            onChange={(e) =>
+              updateField(
+                'desktopAllowedApps',
+                e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
+              )
+            }
+          />
+          <TextInput
+            label="Denied Apps (comma-separated)"
+            placeholder="e.g. 1Password, Keychain Access"
+            value={config.desktopDeniedApps.join(', ')}
+            onChange={(e) =>
+              updateField(
+                'desktopDeniedApps',
+                e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
+              )
+            }
+          />
+        </ToolCard>
+
       </div>
 
       <div style={dividerStyle} />

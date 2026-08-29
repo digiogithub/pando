@@ -19,21 +19,24 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/charmbracelet/x/vt v0.0.0-20260305213658-fe36e8c10185
-	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327
-	github.com/chromedp/chromedp v0.14.2
+	github.com/chromedp/cdproto v0.0.0-20260804232424-e85f50dbfd32
+	github.com/chromedp/chromedp v0.16.0
 	github.com/conductor-oss/markitdown v0.0.1
 	github.com/creack/pty v1.1.24
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-units v0.5.0
+	github.com/ebitengine/purego v0.10.2
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gen2brain/beeep v0.11.2
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-logfmt/logfmt v0.6.0
 	github.com/go-zeromq/zmq4 v0.17.0
+	github.com/godbus/dbus/v5 v5.1.0
 	github.com/google/go-containerregistry v0.21.5
 	github.com/google/go-github/v30 v30.1.0
 	github.com/google/uuid v1.6.0
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf
+	github.com/jezek/xgb v1.3.1
 	github.com/kaptinlin/jsonrepair v0.2.4
 	github.com/layeh/gopher-json v0.0.0-20201124131017-552bb3c4c3bf
 	github.com/lrstanley/bubblezone v0.0.0-20250315020633-c249a3fe1231
@@ -98,14 +101,13 @@ require (
 	github.com/esiqveland/notify v0.13.3 // indirect
 	github.com/extrame/ole2 v0.0.0-20160812065207-d69429661ad7 // indirect
 	github.com/extrame/xls v0.0.1 // indirect
-	github.com/go-json-experiment/json v0.0.0-20250725192818-e39067aee2d2 // indirect
+	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-sql-driver/mysql v1.9.1 // indirect
 	github.com/go-zeromq/goczmq/v4 v4.2.2 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
-	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
@@ -280,7 +282,7 @@ require (
 	golang.org/x/image v0.41.0
 	golang.org/x/net v0.56.0
 	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/term v0.44.0
 	golang.org/x/text v0.38.0 // indirect
 	google.golang.org/genai v1.51.0

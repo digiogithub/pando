@@ -15,6 +15,7 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/digiogithub/pando/internal/config"
+	uiautobrowser "github.com/digiogithub/pando/internal/uiauto/platform/browser"
 )
 
 // browserSession holds a chromedp allocator + browser context for one pando session.
@@ -81,6 +82,10 @@ func GetOrCreateBrowserSession(sessionID string) (*browserSession, error) {
 
 	if sess, ok := globalBrowserRegistry.sessions[sessionID]; ok {
 		sess.lastUsed = time.Now()
+		// Re-publish on every reuse too: harmless, and keeps the CDP
+		// uiauto backend (Phase 6) pointed at the freshest chromedp
+		// context for this session even if it was rebuilt elsewhere.
+		uiautobrowser.RegisterSession(sessionID, sess.ctx)
 		return sess, nil
 	}
 
@@ -161,6 +166,15 @@ func GetOrCreateBrowserSession(sessionID string) (*browserSession, error) {
 		return nil, fmt.Errorf("enable network domain: %w", err)
 	}
 
+	// Publish this session's chromedp context to the CDP uiauto backend
+	// (Phase 6, internal/uiauto/platform/browser) so desktop_* tools can
+	// serve accessibility data from it without launching a second browser.
+	// This is a one-way push (tools -> uiauto/platform/browser): this
+	// package already imports internal/uiauto (desktop_common.go), and
+	// platform/browser never imports back into internal/llm/tools, so
+	// there is no import cycle.
+	uiautobrowser.RegisterSession(sessionID, sess.ctx)
+
 	return sess, nil
 }
 
@@ -219,6 +233,7 @@ func CloseBrowserSession(sessionID string) {
 	if !ok {
 		return
 	}
+	uiautobrowser.UnregisterSession(sessionID)
 	sess.ctxCancel()
 	sess.allocCancel()
 	if sess.serverProcess != nil && sess.serverProcess.Process != nil {
@@ -236,6 +251,7 @@ func CloseAllBrowserSessions() {
 	defer globalBrowserRegistry.mu.Unlock()
 
 	for id, sess := range globalBrowserRegistry.sessions {
+		uiautobrowser.UnregisterSession(id)
 		sess.ctxCancel()
 		sess.allocCancel()
 		if sess.serverProcess != nil && sess.serverProcess.Process != nil {

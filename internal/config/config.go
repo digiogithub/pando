@@ -723,6 +723,40 @@ type InternalToolsConfig struct {
 	BrowserUserDataDir string `json:"browserUserDataDir,omitempty" toml:"BrowserUserDataDir"`
 	BrowserMaxSessions int    `json:"browserMaxSessions,omitempty" toml:"BrowserMaxSessions"`
 
+	// Desktop Controller (accessibility-tree based UI automation, internal/uiauto).
+	// OFF by default: it can read and act on the user's whole desktop session.
+	DesktopEnabled bool `json:"desktopEnabled,omitempty" toml:"DesktopEnabled"`
+	// DesktopBackend selects the accessibility backend: "auto" (platform
+	// default), "atspi", "uia", "ax", "cdp" or "null". Only "auto"/"null" are
+	// meaningful until the P2-P6 platform backends land.
+	DesktopBackend string `json:"desktopBackend,omitempty" toml:"DesktopBackend"`
+	// DesktopAllowPhysicalInput lets the ActionResolver fall back to synthetic
+	// mouse/keyboard input when a native accessibility action is unsupported
+	// or fails. Defaults to true so mutating tools stay useful even against
+	// apps with incomplete accessibility support.
+	DesktopAllowPhysicalInput bool `json:"desktopAllowPhysicalInput,omitempty" toml:"DesktopAllowPhysicalInput"`
+	// DesktopMaxNodes caps how many elements a single desktop_observe/
+	// desktop_find response renders, to keep dense apps token-cheap.
+	DesktopMaxNodes int `json:"desktopMaxNodes,omitempty" toml:"DesktopMaxNodes"`
+	// DesktopDefaultDepth caps how many tree levels desktop_observe descends
+	// when the caller does not specify one.
+	DesktopDefaultDepth int `json:"desktopDefaultDepth,omitempty" toml:"DesktopDefaultDepth"`
+	// DesktopActionTimeout is the default timeout, in seconds, for a single
+	// desktop action (click/type/key/scroll/focus/wait).
+	DesktopActionTimeout int `json:"desktopActionTimeout,omitempty" toml:"DesktopActionTimeout"`
+	// DesktopSnapshotTTL is how long, in seconds, an observed snapshot (and
+	// the qualified refs it produced) stays resolvable before STALE_REF.
+	DesktopSnapshotTTL int `json:"desktopSnapshotTTL,omitempty" toml:"DesktopSnapshotTTL"`
+	// DesktopScreenshotScale downsizes desktop_screenshot output (1.0 = full
+	// resolution), on top of the shared imageopt pipeline.
+	DesktopScreenshotScale float64 `json:"desktopScreenshotScale,omitempty" toml:"DesktopScreenshotScale"`
+	// DesktopAllowedApps, when non-empty, restricts every desktop tool to
+	// these app ids/names; anything else is POLICY_DENIED.
+	DesktopAllowedApps []string `json:"desktopAllowedApps,omitempty" toml:"DesktopAllowedApps"`
+	// DesktopDeniedApps blocks these app ids/names regardless of
+	// DesktopAllowedApps.
+	DesktopDeniedApps []string `json:"desktopDeniedApps,omitempty" toml:"DesktopDeniedApps"`
+
 	// AskUserQuestion lets the agent ask the user selectable questions mid-task.
 	// It is enabled by default; set this to true to remove the tool entirely.
 	AskUserQuestionDisabled bool `json:"askUserQuestionDisabled,omitempty" toml:"AskUserQuestionDisabled"`
@@ -2245,6 +2279,13 @@ func setDefaults(debug bool) {
 	viper.SetDefault("internalTools.browserHeadless", true)
 	viper.SetDefault("internalTools.browserTimeout", 30)
 	viper.SetDefault("internalTools.browserMaxSessions", 3)
+	viper.SetDefault("internalTools.desktopBackend", "auto")
+	viper.SetDefault("internalTools.desktopAllowPhysicalInput", true)
+	viper.SetDefault("internalTools.desktopMaxNodes", 500)
+	viper.SetDefault("internalTools.desktopDefaultDepth", 3)
+	viper.SetDefault("internalTools.desktopActionTimeout", 10)
+	viper.SetDefault("internalTools.desktopSnapshotTTL", 60)
+	viper.SetDefault("internalTools.desktopScreenshotScale", 1.0)
 
 	// Set default shell from environment or fallback to /bin/bash
 	shellPath := os.Getenv("SHELL")

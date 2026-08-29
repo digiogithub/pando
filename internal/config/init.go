@@ -495,6 +495,16 @@ BrowserHeadless         = true
 BrowserTimeout          = 30
 BrowserUserDataDir      = ''
 BrowserMaxSessions      = 3
+DesktopEnabled          = false
+DesktopBackend          = 'auto'
+DesktopAllowPhysicalInput = true
+DesktopMaxNodes         = 500
+DesktopDefaultDepth     = 3
+DesktopActionTimeout    = 10
+DesktopSnapshotTTL      = 60
+DesktopScreenshotScale  = 1.0
+DesktopAllowedApps      = []
+DesktopDeniedApps       = []
 
 # =============================================================================
 # Self-Improvement Evaluator

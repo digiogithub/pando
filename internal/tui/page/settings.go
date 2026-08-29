@@ -2746,6 +2746,71 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 			Value:    browserInfoValue(browserInstalls),
 			ReadOnly: true,
 		},
+		// --- Desktop Controller ---
+		{
+			Label: "Desktop Enabled",
+			Key:   "internalTools.desktopEnabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(it.DesktopEnabled),
+			Hint:  "Accessibility-tree based desktop automation. Can read and act on the whole desktop session.",
+		},
+		{
+			Label:   "Desktop Backend",
+			Key:     "internalTools.desktopBackend",
+			Type:    settings.FieldSelect,
+			Value:   firstNonEmptyString(it.DesktopBackend, "auto"),
+			Options: []string{"auto", "atspi", "uia", "ax", "cdp", "null"},
+		},
+		{
+			Label: "Desktop Allow Physical Input",
+			Key:   "internalTools.desktopAllowPhysicalInput",
+			Type:  settings.FieldToggle,
+			Value: boolString(it.DesktopAllowPhysicalInput),
+		},
+		{
+			Label: "Desktop Max Nodes",
+			Key:   "internalTools.desktopMaxNodes",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(it.DesktopMaxNodes),
+		},
+		{
+			Label: "Desktop Default Depth",
+			Key:   "internalTools.desktopDefaultDepth",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(it.DesktopDefaultDepth),
+		},
+		{
+			Label: "Desktop Action Timeout (s)",
+			Key:   "internalTools.desktopActionTimeout",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(it.DesktopActionTimeout),
+		},
+		{
+			Label: "Desktop Snapshot TTL (s)",
+			Key:   "internalTools.desktopSnapshotTTL",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(it.DesktopSnapshotTTL),
+		},
+		{
+			Label: "Desktop Screenshot Scale",
+			Key:   "internalTools.desktopScreenshotScale",
+			Type:  settings.FieldText,
+			Value: fmt.Sprintf("%g", it.DesktopScreenshotScale),
+		},
+		{
+			Label: "Desktop Allowed Apps",
+			Key:   "internalTools.desktopAllowedApps",
+			Type:  settings.FieldText,
+			Value: strings.Join(it.DesktopAllowedApps, ", "),
+			Hint:  "Comma-separated app ids/names; empty means all apps are allowed.",
+		},
+		{
+			Label: "Desktop Denied Apps",
+			Key:   "internalTools.desktopDeniedApps",
+			Type:  settings.FieldText,
+			Value: strings.Join(it.DesktopDeniedApps, ", "),
+			Hint:  "Comma-separated app ids/names to always block.",
+		},
 		{
 			Label:    "Info",
 			Key:      "internalTools.info",
@@ -4836,6 +4901,73 @@ func saveInternalTools(field settings.Field) error {
 	case "internalTools.browserInfo":
 		// read-only informational field, nothing to save
 		return nil
+	case "internalTools.desktopEnabled":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Desktop Enabled value: %w", err)
+		}
+		itCfg.DesktopEnabled = enabled
+	case "internalTools.desktopBackend":
+		backend := strings.TrimSpace(field.Value)
+		if backend == "" {
+			backend = "auto"
+		}
+		itCfg.DesktopBackend = backend
+	case "internalTools.desktopAllowPhysicalInput":
+		enabled, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Desktop Allow Physical Input value: %w", err)
+		}
+		itCfg.DesktopAllowPhysicalInput = enabled
+	case "internalTools.desktopMaxNodes":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Desktop Max Nodes value: %w", err)
+		}
+		if n < 1 {
+			return fmt.Errorf("desktop max nodes must be greater than zero")
+		}
+		itCfg.DesktopMaxNodes = n
+	case "internalTools.desktopDefaultDepth":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Desktop Default Depth value: %w", err)
+		}
+		if n < 1 {
+			return fmt.Errorf("desktop default depth must be greater than zero")
+		}
+		itCfg.DesktopDefaultDepth = n
+	case "internalTools.desktopActionTimeout":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Desktop Action Timeout value: %w", err)
+		}
+		if n < 1 {
+			return fmt.Errorf("desktop action timeout must be greater than zero")
+		}
+		itCfg.DesktopActionTimeout = n
+	case "internalTools.desktopSnapshotTTL":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Desktop Snapshot TTL value: %w", err)
+		}
+		if n < 1 {
+			return fmt.Errorf("desktop snapshot TTL must be greater than zero")
+		}
+		itCfg.DesktopSnapshotTTL = n
+	case "internalTools.desktopScreenshotScale":
+		f, err := parseFloatValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Desktop Screenshot Scale value: %w", err)
+		}
+		if f <= 0 {
+			return fmt.Errorf("desktop screenshot scale must be greater than zero")
+		}
+		itCfg.DesktopScreenshotScale = f
+	case "internalTools.desktopAllowedApps":
+		itCfg.DesktopAllowedApps = splitCommaList(field.Value)
+	case "internalTools.desktopDeniedApps":
+		itCfg.DesktopDeniedApps = splitCommaList(field.Value)
 	case "internalTools.info":
 		// read-only informational field, nothing to save
 		return nil
@@ -5506,6 +5638,27 @@ func parseBoolValue(value string) (bool, error) {
 		return false, err
 	}
 	return parsedValue, nil
+}
+
+func parseFloatValue(value string) (float64, error) {
+	parsedValue, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil {
+		return 0, err
+	}
+	return parsedValue, nil
+}
+
+// splitCommaList splits a comma-separated field value into a trimmed,
+// non-empty string slice (nil when value has no usable entries).
+func splitCommaList(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func saveBash(field settings.Field) error {

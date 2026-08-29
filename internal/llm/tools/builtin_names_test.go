@@ -27,3 +27,23 @@ func TestIsBuiltinTool(t *testing.T) {
 		}
 	}
 }
+
+func TestDesktopToolsAreBuiltin(t *testing.T) {
+	desktopTools := []string{
+		DesktopAppsToolName, DesktopObserveToolName, DesktopFindToolName,
+		DesktopReadToolName, DesktopClickToolName, DesktopTypeToolName,
+		DesktopKeyToolName, DesktopScrollToolName, DesktopFocusToolName,
+		DesktopWaitToolName, DesktopScreenshotToolName, DesktopClickAtToolName,
+	}
+	if len(desktopTools) != 12 {
+		t.Fatalf("expected 12 desktop tool names, got %d", len(desktopTools))
+	}
+	for _, name := range desktopTools {
+		if !IsBuiltinTool(name) {
+			t.Errorf("expected %q to be a built-in tool", name)
+		}
+		if _, ok := builtinToolNames[name]; !ok {
+			t.Errorf("expected %q to be listed in builtinToolNames", name)
+		}
+	}
+}

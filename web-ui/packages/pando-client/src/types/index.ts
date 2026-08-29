@@ -626,6 +626,17 @@ export interface ToolsConfig {
   browserTimeout: number
   browserUserDataDir: string
   browserMaxSessions: number
+
+  desktopEnabled: boolean
+  desktopBackend: string
+  desktopAllowPhysicalInput: boolean
+  desktopMaxNodes: number
+  desktopDefaultDepth: number
+  desktopActionTimeout: number
+  desktopSnapshotTTL: number
+  desktopScreenshotScale: number
+  desktopAllowedApps: string[]
+  desktopDeniedApps: string[]
 }
 
 export interface BrowserInstallInfo {
