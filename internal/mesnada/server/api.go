@@ -17,6 +17,11 @@ import (
 
 const defaultLogTailBytes = 64 * 1024
 
+// maxLogTailBytes caps how much of a log file one request can pull into memory.
+// Without it a client-supplied ?limit= sizes the read buffer directly, so a
+// large log plus a large limit is an easy way to balloon the server's heap.
+const maxLogTailBytes = 8 * 1024 * 1024
+
 func (s *Server) registerAPI(mux *http.ServeMux) {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -110,7 +115,7 @@ func (s *Server) apiTaskLog(c *gin.Context) {
 	limit := int64(defaultLogTailBytes)
 	if v := c.Query("limit"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
-			limit = n
+			limit = min64(n, maxLogTailBytes)
 		}
 	}
 

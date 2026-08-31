@@ -2,6 +2,7 @@ package darwin
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/digiogithub/pando/internal/uiauto/core"
@@ -199,11 +200,16 @@ func refFromElement(el *core.Element) (axRef, error) {
 		return axRef{}, core.NewElementNotFoundError("element does not carry an owning pid; re-observe or re-find it")
 	}
 	pid, ok := pidAny.(int)
-	if !ok {
+	if !ok || pid < 0 || pid > math.MaxInt32 {
 		return axRef{}, core.NewElementNotFoundError("element carries a malformed pid; re-observe or re-find it")
 	}
+	// The length check must precede the slice: a handle shorter than the "0x"
+	// prefix would otherwise panic instead of being reported as malformed.
+	if len(hexStr) < 2 {
+		return axRef{}, core.NewInvalidArgsError("element carries a malformed AX handle " + hexStr)
+	}
 	handle, err := strconv.ParseUint(hexStr[2:], 16, 64)
-	if err != nil || len(hexStr) < 2 {
+	if err != nil {
 		return axRef{}, core.NewInvalidArgsError("element carries a malformed AX handle " + hexStr)
 	}
 	return axRef{PID: int32(pid), Handle: uintptr(handle)}, nil

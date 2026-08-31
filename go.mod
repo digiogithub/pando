@@ -30,6 +30,7 @@ require (
 	github.com/gen2brain/beeep v0.11.2
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-logfmt/logfmt v0.6.0
+	github.com/go-ole/go-ole v1.3.0
 	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/google/go-containerregistry v0.21.5
@@ -102,7 +103,6 @@ require (
 	github.com/extrame/ole2 v0.0.0-20160812065207-d69429661ad7 // indirect
 	github.com/extrame/xls v0.0.1 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68 // indirect
-	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-sql-driver/mysql v1.9.1 // indirect
 	github.com/go-zeromq/goczmq/v4 v4.2.2 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
@@ -282,7 +282,7 @@ require (
 	golang.org/x/image v0.41.0
 	golang.org/x/net v0.56.0
 	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.44.0
 	golang.org/x/text v0.38.0 // indirect
 	google.golang.org/genai v1.51.0

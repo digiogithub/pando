@@ -307,13 +307,41 @@ func removeStyleAttribute(n *html.Node) {
 	}
 }
 
+// unsafeHrefSchemes are the URL schemes that can execute or smuggle content
+// when a sanitized href is later rendered or followed. "javascript:" is the
+// obvious one, but "data:" and "vbscript:" are equally executable in a browser
+// context, so all three are neutralized.
+var unsafeHrefSchemes = []string{"javascript:", "data:", "vbscript:"}
+
 func sanitizeJSHref(n *html.Node) {
 	for i := range n.Attr {
-		if n.Attr[i].Key == "href" &&
-			strings.HasPrefix(strings.TrimSpace(strings.ToLower(n.Attr[i].Val)), "javascript:") {
+		if n.Attr[i].Key != "href" {
+			continue
+		}
+		if hasUnsafeScheme(n.Attr[i].Val) {
 			n.Attr[i].Val = "#"
 		}
 	}
+}
+
+// hasUnsafeScheme reports whether href uses one of the unsafe schemes. The
+// value is lowercased and stripped of the leading whitespace and control
+// characters browsers ignore when resolving a scheme, so "\njava\tscript:" style
+// evasions do not slip past the prefix check.
+func hasUnsafeScheme(href string) bool {
+	cleaned := strings.Map(func(r rune) rune {
+		if r <= 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, href)
+	cleaned = strings.ToLower(cleaned)
+	for _, scheme := range unsafeHrefSchemes {
+		if strings.HasPrefix(cleaned, scheme) {
+			return true
+		}
+	}
+	return false
 }
 
 // ─── Browser fetch with timeout ────────────────────────────────────────────

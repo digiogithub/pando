@@ -12,6 +12,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# The job only builds and tests the checkout; it needs no write scope.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build (MODULE_TAGS=${{ matrix.module_tags || 'none' }})
@@ -34,6 +38,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Prepare embed placeholders
+        # web-ui/dist and the desktop binary are gitignored build artifacts, but
+        # their go:embed patterns must resolve for vet/build to run.
+        run: make embed-stubs
 
       - name: Vet
         run: go vet ${{ matrix.module_tags && format('-tags {0}', matrix.module_tags) || '' }} ./...

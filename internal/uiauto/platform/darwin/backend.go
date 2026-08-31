@@ -2,6 +2,7 @@ package darwin
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"strings"
 
@@ -180,7 +181,7 @@ func decodeWindowID(id string) (axRef, error) {
 		return axRef{}, core.NewInvalidArgsError("malformed ax window id " + id)
 	}
 	pid, err := strconv.Atoi(parts[0])
-	if err != nil {
+	if err != nil || pid < 0 || pid > math.MaxInt32 {
 		return axRef{}, core.NewInvalidArgsError("malformed ax window id " + id)
 	}
 	handle, err := strconv.ParseUint(parts[1], 16, 64)
