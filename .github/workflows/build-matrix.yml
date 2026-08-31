@@ -35,6 +35,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Prepare embed placeholders
+        # web-ui/dist and the desktop binary are gitignored build artifacts, but
+        # their go:embed patterns must resolve for vet/build to run.
+        run: make embed-stubs
+
       - name: Vet
         run: go vet ${{ matrix.module_tags && format('-tags {0}', matrix.module_tags) || '' }} ./...
 

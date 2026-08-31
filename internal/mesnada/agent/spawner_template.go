@@ -77,9 +77,14 @@ func (s *TemplateSpawner) Spawn(ctx context.Context, task *models.Task) error {
 		return fmt.Errorf("template spawner %q: build args: %w", s.tpl.Name, err)
 	}
 
-	procCtx, cancel := context.WithCancel(ctx)
+	var (
+		procCtx context.Context
+		cancel  context.CancelFunc
+	)
 	if task.Timeout > 0 {
 		procCtx, cancel = context.WithTimeout(ctx, time.Duration(task.Timeout))
+	} else {
+		procCtx, cancel = context.WithCancel(ctx)
 	}
 
 	cmd := exec.CommandContext(procCtx, s.tpl.Command, args...)
@@ -88,6 +93,7 @@ func (s *TemplateSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	// Build environment: inherit parent env + template-defined overrides.
 	taskEnv, err := s.buildEnv(task)
 	if err != nil {
+		cancel()
 		return fmt.Errorf("template spawner %q: build env: %w", s.tpl.Name, err)
 	}
 	cmd.Env = taskEnv

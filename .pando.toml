@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'openrouter.qwen/qwen3.8-max'
+Model = 'openrouter.xiaomi/mimo-v2.5-pro'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -146,7 +146,7 @@ AutoUpdate = false
 DefaultScope = ''
 
 [TUI]
-Theme = 'starbucks-dark'
+Theme = 'starbucks-light'
 ShowHiddenFiles = true
 ChatSidebar = ''
 ChatSidebarMinWidth = 0
@@ -326,14 +326,14 @@ DeferredSources = []
 FetchEnabled = true
 FetchMaxSizeMB = 0
 GoogleSearchEnabled = true
-GoogleAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBFdVhCRm9POXY4OTRCcXdVd1RFbFd0ZW1TblVwZ2puays3Wk5BaFdOckZVClZpalUvaS9xZVdLR3RMOTlFdHJtdTNyM2x6b2V0bnhvRlQ3VUh6OTFNancKLS0tIFdKK0xocFlxcFB0VXlyUlcvVnJCSDRrVDB6aGxnUzNkU0JTS2UxZzFMSXcKsw/dsv8K65/vUwD3oP67qzDJIMggTNpt4sPUave/Y86+4EOuZ48hSJTZKMthm0snRVO1AB7sryuXx2ziu21aTpANtUapt+Q='
-GoogleSearchEngineID = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBOb01scDR5V3UwdDlMUjZub2h6MmpIaHdSTXUxMEpWbC9aTnQ4WXoyTVJBCjdvbXU1MWZyVVJ1anZIZzRoOG0yRUVTSHVpc2JhZGhhODZVaHdjWGtVSm8KLS0tIEZzMWxiTXJ6K05ycmJuSjQrNWRVTjc1WXErT0x0M0hhblJJWno3UEJmVXMKW3nNLchWkYdeLr4OKN7Dmxo/QAZKjxzXE+QNhma9qt3KqGLO6b2i5UcQ1W4SWDPieg=='
+GoogleAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB4NjJ5WnVZY3VsT3pDYlZ1Ujc3UkpUWDhWSlhvT0RyaWl2REVITjVKUlRZCkI0ZUVKeW9panprd3ZEWHljZWFYS0c2Ni9YTzJ2cGo5VDdVZmRKODNuajQKLS0tIGI3K0YzbHc1RHgweE5HbWtxWG5VcEZTNlFqVXQ0Z0J2WGFWeWJ4OWdXRDQKbpzHH8uM2wDwEymDJkK/EVPybJyZ0B1xuk+7JuK6hL4bWWm2UmwcwjgzHoK3XjMPvj06ftVdw4KmtLiqwuBqLBaJ440v4o4='
+GoogleSearchEngineID = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA5K004VWVnZkhsRHcrdEFob2RWUFQ5UUtJNjFCTFUyVWlPVUw2YkxhZUNZCjJVRnpLZ2JjUzNBOTdYZHpMOXUxaGxXMWJxVVNQUVQyYXRoaXV1M0hrUmsKLS0tIFBoZEljSGtWZS9GRmZ0VnJ2MTRBUCsxR090U0Y5Z0lkQkFQR1JmdzMxTTAKIZ3KjVF67gzr20PWK8RVVhb3TUJt4j83XMlQIa2KG9ebf8PWJabzgiqMpC0OCk9gQw=='
 BraveSearchEnabled = true
-BraveAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBjNHhsalp4bmJLdmF2YTAwMG0vRU9rMzVoaVhHSkxZc0lGdDVabmpERmd3ClV5bGRHcFVhMUZIUXFQd21Ya1hRajZORGtIaHRaRndaQzc2MEFjM2ZZb00KLS0tIE1KL01XQ09WR1RSUS9wamVUNWkzdnNaaWM2RFlKdk1xc2J6V3RQUWdsdEUKIsl7h6ZOrmCJ+DGlEZyRwjwHB4gb1NgFii/jxZz0/iIGIKiPh3hsPLodSKudalzq+v7uCWQOunsicaHvz6Ng'
+BraveAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBZRS9hdVV3WTBUTXdoaTN5VG13cHZ6NEVJMytCQ1A3QWE4MDdQMkNIUEdjCmpjMU8zWFR6bDg3VkNGTGppeUhhS1BKblpkc2NaSHhac3FwUHVLVmNXWDQKLS0tIHpGZW82Tmxkc0ptaE5BVFZDQmxGSmpseVhhU3h6N0hNSmFDaWhudHhVUkkK2CR9VSSHfFVJPPktwkm7eTFng/HMiLiZaF9FKfv15+kApi9IpSKszoR5BdM29XXhtLYpkNBHk4gVtpOj4C3H'
 PerplexitySearchEnabled = false
 PerplexityAPIKey = ''
 ExaSearchEnabled = true
-ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAvSmw0ODJCVExNcTJBdTRzY1VsU3A1ZkFVS0p0SHpNdE01MzZiQ2NGMGtnCmFoVFpsZjE0ZGI0M3loU0l3YmhaRUlWVXR5RXlzcmRIVmNGODRxMWJMbU0KLS0tIDVEMTR1VEg3TnpZcndnRHlrb0plOHk3L1luN3dIVXMxUmRYdnNBTFBZRjAKfn/7eh8fYKqE+eruS8b6wR5Cu78Rb930QhoZEqiqnir7AJFg05pzxFfFICILgavTt927iu7NA/q8uF9YvJfpH2vpbP4='
+ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBoU3I5ekVkZ1hQSmNoY1pDN0VqbUZYdWZJTTQreGYvdk9lcE5IUG9lcm1VCmxYWHlmMC93SXFidVdIb2VpTFJ3SFNLTjJRN25ES1h0REx6OXk2WjVBdGMKLS0tIHBJSXdBSk5NOEtSZjFnTEVKN0U5azNJeHVRNnh0VXBKYVFuV1NuZlFmN00KOZK338Qfr4dmxayHUi+1dyInW9WIivQ/8p6Kq+zTMpKsXCcCZUik7b1QKtNmutEDdi6PMVGNp+51hygV79QfI8IrpMs='
 SourcegraphEnabled = false
 SourcegraphToken = ''
 Context7Enabled = true
@@ -344,6 +344,16 @@ BrowserHeadless = false
 BrowserTimeout = 30
 BrowserUserDataDir = ''
 BrowserMaxSessions = 3
+DesktopEnabled = true
+DesktopBackend = 'auto'
+DesktopAllowPhysicalInput = true
+DesktopMaxNodes = 0
+DesktopDefaultDepth = 0
+DesktopActionTimeout = 0
+DesktopSnapshotTTL = 0
+DesktopScreenshotScale = 0.0
+DesktopAllowedApps = []
+DesktopDeniedApps = []
 AskUserQuestionDisabled = false
 SetupModelSwitchEnabled = false
 SetupModelSwitchMaxPerRun = 0

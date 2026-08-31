@@ -91,7 +91,18 @@ else
 WAILS_UPX_FLAG := -upx
 endif
 
-.PHONY: build-enterprise release-enterprise xpando desktop-deps desktop-ui desktop-build desktop-dev desktop-package desktop-embed desktop-clean build build-fast web-ui-embedded dist-clean release release-linux-amd64 release-linux-arm64 release-windows-amd64 release-darwin-amd64 release-darwin-arm64 test-integration help
+.PHONY: build-enterprise release-enterprise xpando embed-stubs desktop-deps desktop-ui desktop-build desktop-dev desktop-package desktop-embed desktop-clean build build-fast web-ui-embedded dist-clean release release-linux-amd64 release-linux-arm64 release-windows-amd64 release-darwin-amd64 release-darwin-arm64 test-integration help
+
+## Create the generated go:embed placeholders (fresh checkout / CI).
+## internal/api/webui/dist and internal/desktop/bin/pando-desktop are build
+## artifacts and are gitignored, but their embed patterns must still resolve
+## for `go vet`/`go build` to work before the real assets are generated.
+## Existing files are never overwritten, so a real build stays untouched.
+embed-stubs:
+	@mkdir -p internal/desktop/bin
+	@[ -f internal/desktop/bin/pando-desktop ] || : > internal/desktop/bin/pando-desktop
+	@mkdir -p internal/api/webui/dist
+	@[ -f internal/api/webui/dist/index.html ] || printf '<!doctype html><title>pando</title>\n' > internal/api/webui/dist/index.html
 
 ## Install the Wails CLI (run once)
 desktop-deps:
