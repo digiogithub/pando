@@ -96,12 +96,27 @@ func Capabilities() core.Capabilities {
 			return core.Capabilities{}
 		}
 		defer conn.Close()
-		return core.Capabilities{Screenshot: true}
+		// Connecting is not proof that captures work: an X server reached
+		// without authority info accepts the connection and then rejects
+		// GetImage (BadMatch), and reporting Screenshot=true there tells
+		// the model it can take a screenshot that always fails. Probe the
+		// real capture path with a 1x1 GetImage instead.
+		return core.Capabilities{Screenshot: canGetImage(conn)}
 	case "wayland":
 		return core.Capabilities{Screenshot: portalAvailable()}
 	default:
 		return core.Capabilities{}
 	}
+}
+
+// canGetImage reports whether this X11 connection can actually serve a
+// capture, by requesting the smallest possible image from the root window.
+// It is the cheapest honest probe of the GetImage path that Capture uses.
+func canGetImage(conn *xgb.Conn) bool {
+	setup := xproto.Setup(conn)
+	screen := setup.DefaultScreen(conn)
+	_, err := xproto.GetImage(conn, xproto.ImageFormatZPixmap, xproto.Drawable(screen.Root), 0, 0, 1, 1, 0xFFFFFFFF).Reply()
+	return err == nil
 }
 
 // ---- X11 ----

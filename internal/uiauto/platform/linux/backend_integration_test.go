@@ -12,6 +12,11 @@ import (
 // WAYLAND_DISPLAY set), so this integration test stays green in headless
 // CI and in a bare tty session even when an a11y bus daemon happens to be
 // registered on the session bus with nothing behind it.
+//
+// Connecting is deliberately not the only probe: a bus address can be
+// published by a session whose daemon then drops the socket on the first
+// call ("use of closed network connection"), which is an environment
+// property rather than a backend bug. A real round trip decides.
 func skipUnlessA11yBusReachable(t *testing.T) *dbusConn {
 	t.Helper()
 	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
@@ -22,6 +27,10 @@ func skipUnlessA11yBusReachable(t *testing.T) *dbusConn {
 	conn, err := connectA11yBus(ctx)
 	if err != nil {
 		t.Skipf("skipping AT-SPI integration test: accessibility bus unreachable: %v", err)
+	}
+	if _, err := listAppRefs(ctx, conn); err != nil {
+		conn.close()
+		t.Skipf("skipping AT-SPI integration test: accessibility bus does not answer calls: %v", err)
 	}
 	return conn
 }

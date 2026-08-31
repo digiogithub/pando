@@ -70,6 +70,16 @@ type Options struct {
 	// ScreenshotScale downsizes desktop_screenshot output on top of the
 	// shared imageopt pipeline. 1.0 means "no extra scaling".
 	ScreenshotScale float64
+
+	// Inert makes the Manager a fully no-op automation surface: no
+	// physical-input layer and no screen capture, so every OS-touching
+	// entry point reports PLATFORM_NOT_SUPPORTED. It is set by
+	// OptionsFromConfig when the user pins the "null" backend, which is
+	// how the desktop policy says "no real desktop automation". Backend
+	// == "null" alone does NOT imply it: uiauto's own tests pin "null" as
+	// a neutral accessibility backend while injecting a fake physical
+	// input layer, and that must keep working.
+	Inert bool
 }
 
 // Manager is the Desktop Controller runtime. Since Block R (2026-08-30) it
@@ -116,6 +126,13 @@ type Manager struct {
 	capabilities core.Capabilities
 	physicalCaps core.Capabilities
 	screenCaps   core.Capabilities
+
+	// inert mirrors Options.Inert: the Manager must not reach the OS
+	// through the side channels that bypass osBackend either -- physical
+	// input (Manager.physical) and screen capture (captureScreen) are
+	// wired up independently of the backend and would otherwise still
+	// drive the real mouse and grab the real screen.
+	inert bool
 
 	opts Options
 }
@@ -186,9 +203,15 @@ func NewManager(opts Options) (*Manager, error) {
 	// degrades to no physical fallback rather than failing Manager
 	// construction (mirrors the backend-resolution fallback above);
 	// Capabilities still reports the true, degraded picture.
+	// An inert Manager never reaches the OS: no physical input layer and
+	// no screen-capture capability, so every OS-touching entry point
+	// reports PLATFORM_NOT_SUPPORTED instead of quietly acting on the real
+	// desktop.
+	inert := opts.Inert
+
 	var physical core.PhysicalInput
 	var inputCaps core.Capabilities
-	if opts.AllowPhysicalInput {
+	if opts.AllowPhysicalInput && !inert {
 		if p, err := newPhysicalInput(); err == nil {
 			physical = p
 		}
@@ -199,7 +222,10 @@ func NewManager(opts Options) (*Manager, error) {
 	// actually deliver in this session. A capability is only ever reported
 	// true when at least one underlying provider (backend, physical input,
 	// or screen capture) can genuinely deliver it.
-	scrCaps := screenCapabilities()
+	var scrCaps core.Capabilities
+	if !inert {
+		scrCaps = screenCapabilities()
+	}
 	caps.Mouse = caps.Mouse || inputCaps.Mouse
 	caps.Keyboard = caps.Keyboard || inputCaps.Keyboard
 	caps.Screenshot = caps.Screenshot || scrCaps.Screenshot
@@ -214,6 +240,7 @@ func NewManager(opts Options) (*Manager, error) {
 		capabilities:  caps,
 		physicalCaps:  inputCaps,
 		screenCaps:    scrCaps,
+		inert:         inert,
 		opts:          opts,
 	}, nil
 }
@@ -892,6 +919,9 @@ func (m *Manager) parseScreenshotTarget(target string) (screen.Target, error) {
 // DrawGrid) is overlaid before any scaling, so labels always read real,
 // unscaled screen coordinates -- the coordinates desktop_click_at expects.
 func (m *Manager) Screenshot(ctx context.Context, target string, grid bool) ([]byte, string, error) {
+	if m.inert {
+		return nil, "", core.NewPlatformNotSupportedError("no screen capture backend is available on this platform/session")
+	}
 	scrTarget, err := m.parseScreenshotTarget(target)
 	if err != nil {
 		return nil, "", err
@@ -976,6 +1006,7 @@ func OptionsFromConfig(it config.InternalToolsConfig) Options {
 	}
 	return Options{
 		Backend:            backend,
+		Inert:              backend == nullBackendName,
 		MaxNodes:           it.DesktopMaxNodes,
 		DefaultDepth:       it.DesktopDefaultDepth,
 		ActionTimeout:      time.Duration(it.DesktopActionTimeout) * time.Second,

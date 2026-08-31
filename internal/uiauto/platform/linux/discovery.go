@@ -68,12 +68,20 @@ func discoverBusAddressViaSessionBus(ctx context.Context) (string, error) {
 // returning a ready-to-use dbusConn. Failure is always reported as a
 // PERM_DENIED/PLATFORM_NOT_SUPPORTED core.DesktopError with an actionable
 // suggestion, never a bare Go error.
+//
+// ctx bounds the discovery and the dial only. The returned connection
+// deliberately does NOT inherit its cancellation: dbus.WithContext binds
+// the CONNECTION's lifetime to the context it is handed, and callers pass
+// a per-operation context here (AtspiBackend.ensureConn caches the result
+// across every later call). Inheriting it killed the cached connection the
+// moment the first operation's deadline elapsed, so every subsequent
+// AT-SPI call failed with "use of closed network connection".
 func connectA11yBus(ctx context.Context) (*dbusConn, error) {
 	addr, err := discoverBusAddress(ctx)
 	if err != nil {
 		return nil, err
 	}
-	conn, err := dbus.Connect(addr, dbus.WithContext(ctx))
+	conn, err := dbus.Connect(addr, dbus.WithContext(context.WithoutCancel(ctx)))
 	if err != nil {
 		de := core.NewPermDeniedError("failed to connect to the AT-SPI2 accessibility bus at " + addr + ": " + err.Error())
 		de.Suggestion = accessibilityDisabledSuggestion

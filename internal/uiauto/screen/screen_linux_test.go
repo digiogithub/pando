@@ -29,13 +29,19 @@ func TestSessionTypeNone(t *testing.T) {
 }
 
 // TestLiveX11Capture is a smoke test that only runs when a real X11 (or
-// XWayland) display session is available; this development box is a tty
-// session with neither DISPLAY nor WAYLAND_DISPLAY set, so it always
-// skips here. Kept for environments (CI with Xvfb, a real desktop) where
-// it can genuinely exercise the GetImage path.
+// XWayland) display session can genuinely serve a capture. DISPLAY being
+// set is not enough: an X server reached without authority info accepts
+// the connection and then rejects GetImage, which is a property of the
+// environment and not a bug in Capture. Capabilities() now probes the
+// actual GetImage path, so gating on it keeps this test meaningful where
+// capture works (CI with Xvfb, a real desktop) and skipped where it
+// cannot.
 func TestLiveX11Capture(t *testing.T) {
 	if os.Getenv("DISPLAY") == "" {
 		t.Skip("no X11 DISPLAY available in this environment")
+	}
+	if !Capabilities().Screenshot {
+		t.Skip("DISPLAY is set but this X11 session cannot serve GetImage (no authority / not viewable)")
 	}
 	img, err := Capture(context.Background(), Target{})
 	if err != nil {

@@ -2636,6 +2636,7 @@ func applyDefaultValues() {
 		}
 	}
 
+	normalizeInternalToolsDefaults()
 	normalizeRemembrancesDefaults()
 	normalizeMesnadaDelegationDefaults()
 	normalizeMesnadaOrchestratorDefaults()
@@ -2647,6 +2648,68 @@ func applyDefaultValues() {
 	if cfg.CLIAssist.Timeout == 0 {
 		cfg.CLIAssist.Timeout = 30
 	}
+}
+
+// Default sizing knobs for the built-in tools. They are also declared as
+// viper defaults, but a viper default only applies while the key is ABSENT
+// from the config file -- and the config is rewritten from the whole struct
+// on every edit (toml.Marshal in the persist path, with no omitempty on the
+// TOML tags), so a knob that was zero in memory gets stamped into the file
+// as an explicit 0 and shadows its default from then on. Re-applying them
+// here keeps config.Get() honest for every consumer, including the TUI and
+// the REST API, which display the raw config rather than the clamped value
+// internal/uiauto.NewManager computes for itself.
+const (
+	defaultFetchMaxSizeMB         = 10
+	defaultBrowserTimeoutSeconds  = 30
+	defaultBrowserMaxSessions     = 3
+	defaultDesktopMaxNodes        = 500
+	defaultDesktopDepth           = 3
+	defaultDesktopActionTimeoutS  = 10
+	defaultDesktopSnapshotTTLSecs = 60
+	defaultDesktopScreenshotScale = 1.0
+	defaultDesktopBackend         = "auto"
+)
+
+// normalizeInternalToolsDefaults replaces non-positive sizing knobs with the
+// documented defaults. A zero here is never a meaningful setting: it is
+// either "never written" or "stamped by a config rewrite", and taking it
+// literally means a 0-node observe budget, a 0-second timeout or (for
+// BrowserMaxSessions, which is read straight from the config) a browser
+// tool that refuses every session with "max browser sessions (0) reached".
+func normalizeInternalToolsDefaults() {
+	it := cfg.InternalTools
+
+	if it.FetchMaxSizeMB <= 0 {
+		it.FetchMaxSizeMB = defaultFetchMaxSizeMB
+	}
+	if it.BrowserTimeout <= 0 {
+		it.BrowserTimeout = defaultBrowserTimeoutSeconds
+	}
+	if it.BrowserMaxSessions <= 0 {
+		it.BrowserMaxSessions = defaultBrowserMaxSessions
+	}
+
+	if strings.TrimSpace(it.DesktopBackend) == "" {
+		it.DesktopBackend = defaultDesktopBackend
+	}
+	if it.DesktopMaxNodes <= 0 {
+		it.DesktopMaxNodes = defaultDesktopMaxNodes
+	}
+	if it.DesktopDefaultDepth <= 0 {
+		it.DesktopDefaultDepth = defaultDesktopDepth
+	}
+	if it.DesktopActionTimeout <= 0 {
+		it.DesktopActionTimeout = defaultDesktopActionTimeoutS
+	}
+	if it.DesktopSnapshotTTL <= 0 {
+		it.DesktopSnapshotTTL = defaultDesktopSnapshotTTLSecs
+	}
+	if it.DesktopScreenshotScale <= 0 {
+		it.DesktopScreenshotScale = defaultDesktopScreenshotScale
+	}
+
+	cfg.InternalTools = it
 }
 
 func normalizeRemembrancesDefaults() {

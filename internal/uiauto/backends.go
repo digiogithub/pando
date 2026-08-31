@@ -21,8 +21,14 @@ import "github.com/digiogithub/pando/internal/uiauto/core"
 // this file or manager.go.
 var globalRegistry = core.NewRegistry()
 
+// nullBackendName is the registry name of the no-op backend, matching
+// core.NullBackend.Name(). Pinning it puts the Manager in its inert mode
+// (see Manager.inert), so the constant is shared rather than spelled as a
+// bare literal at each check.
+const nullBackendName = "null"
+
 func init() {
-	globalRegistry.Register("null", func() (core.Backend, error) {
+	globalRegistry.Register(nullBackendName, func() (core.Backend, error) {
 		return core.NewNullBackend(), nil
 	})
 	// "auto" prefers real platform backends, in the order later phases will
@@ -41,7 +47,7 @@ func init() {
 	// resolveBackends in manager.go) and routes per-operation between it
 	// and whichever backend this auto-order picks, instead of relying on
 	// a single global winner.
-	globalRegistry.SetAutoOrder("atspi", "uia", "ax", "null")
+	globalRegistry.SetAutoOrder("atspi", "uia", "ax", nullBackendName)
 }
 
 // Registry returns the process-wide backend Registry, so platform packages
