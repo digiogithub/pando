@@ -1,0 +1,17 @@
+/* Enhancement only. Most email clients strip or ignore this file entirely, so
+   nothing here may be load-bearing: every rule that matters is inline in the
+   markup. Keep it that way. */
+
+/* Phones: let the 600px table shrink instead of scrolling sideways. */
+@media only screen and (max-width: 620px) {
+  table[width="600"] { width: 100% !important; }
+  td { padding-left: 20px !important; padding-right: 20px !important; }
+  h1 { font-size: 21px !important; }
+}
+
+/* Clients that honour dark mode. The inline light styles stay the truth; this
+   only softens the result where it is respected. */
+@media (prefers-color-scheme: dark) {
+  body, table { background-color: #16161a !important; }
+  h1, p, td { color: #e8e8ee !important; }
+}

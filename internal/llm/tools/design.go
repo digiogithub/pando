@@ -206,6 +206,13 @@ func (t *designCreateTool) Run(ctx context.Context, call ToolCall) (ToolResponse
 	}
 
 	var b strings.Builder
+	// The standing designer brief reaches the prompt from the turn after the
+	// designer directory exists. This is the one turn it cannot cover — the
+	// turn that creates the directory — so the rules travel in the result.
+	if first, err := svc.List(ctx, false); err == nil && len(first) <= 1 {
+		b.WriteString(design.Brief())
+		b.WriteString("\n\n")
+	}
 	fmt.Fprintf(&b, "Created %s artifact %q\n", artifact.Kind, artifact.Title)
 	fmt.Fprintf(&b, "id: %s\ndir: %s\nversion: %d\n", artifact.ID, artifact.Dir, artifact.CurrentVersion)
 	if hasTemplate && len(params.Files) == 0 {

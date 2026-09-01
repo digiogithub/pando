@@ -15,6 +15,7 @@ od:
     requires: false
   craft:
     requires:
+      - process
       - color
       - typography
   critique:

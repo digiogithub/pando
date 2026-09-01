@@ -218,6 +218,13 @@ interface DesignStore {
   _es: EventSource | null
 
   fetchStatus: () => Promise<void>
+  /**
+   * Resolves the address of the read-only design canvas: every artifact of the
+   * project as an artboard on one pan-and-zoom surface. It returns the URL
+   * rather than navigating, because the canvas belongs in its own window — the
+   * Studio keeps the chat, the canvas keeps the overview.
+   */
+  canvasURL: () => Promise<string | null>
   fetchArtifacts: () => Promise<void>
   openArtifact: (id: string) => Promise<void>
   closeArtifact: () => void
@@ -495,6 +502,16 @@ export const useDesignStore = create<DesignStore>((set, get) => ({
       // An older server has no status route. Treating that as "off" is right:
       // every other design route is missing there too.
       set({ status: { enabled: false, preview: false, renderer: false, kinds: [] } })
+    }
+  },
+
+  canvasURL: async () => {
+    try {
+      const data = await api.get<{ url: string; artboards: number }>('/api/v1/design/canvas')
+      return data.url || null
+    } catch {
+      useToastStore.getState().addToast('The design canvas is not available in this process.', 'error')
+      return null
     }
   },
 

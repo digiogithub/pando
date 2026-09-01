@@ -98,6 +98,11 @@ type Options struct {
 	// same id the stored node index holds. Keeping it an option is what lets
 	// this package stay ignorant of the design model.
 	Inject []byte
+	// Artboards supplies the canvas view with the session's artifacts. It is a
+	// function for the same reason Inject is a byte slice: the canvas needs the
+	// design model and this package must not depend on it. A nil provider
+	// leaves the canvas served but empty.
+	Artboards func(sessionID string) ([]Artboard, error)
 }
 
 // Server is the grant registry and the HTTP handler over it.
@@ -107,6 +112,9 @@ type Server struct {
 	mu         sync.RWMutex
 	grants     map[string]*Grant // token -> grant
 	byArtifact map[string]string // artifact id -> token
+
+	// canvas holds the multi-artifact view's own grants.
+	canvas *canvasRegistry
 
 	// listener and httpSrv are set only by StartLoopback.
 	listener net.Listener
@@ -123,6 +131,7 @@ func New(opts Options) *Server {
 		opts:       opts,
 		grants:     make(map[string]*Grant),
 		byArtifact: make(map[string]string),
+		canvas:     newCanvasRegistry(),
 	}
 }
 
@@ -232,6 +241,20 @@ func (s *Server) Bump(artifactID string) {
 	grant.revision.Add(1)
 }
 
+// Revision returns the live-reload revision of a published artifact, or zero
+// when it has no grant. The canvas compares it between polls to tell an
+// artboard whose document changed from one that merely moved.
+func (s *Server) Revision(artifactID string) uint64 {
+	s.mu.RLock()
+	token, ok := s.byArtifact[artifactID]
+	grant := s.grants[token]
+	s.mu.RUnlock()
+	if !ok || grant == nil || grant.revision == nil {
+		return 0
+	}
+	return grant.revision.Load()
+}
+
 // RevokeSession drops every grant a session published. Sessions end; their
 // preview URLs must stop resolving with them.
 func (s *Server) RevokeSession(sessionID string) {
@@ -239,13 +262,16 @@ func (s *Server) RevokeSession(sessionID string) {
 		return
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for token, grant := range s.grants {
 		if grant.SessionID == sessionID {
 			delete(s.grants, token)
 			delete(s.byArtifact, grant.ArtifactID)
 		}
 	}
+	s.mu.Unlock()
+	// The canvas of a session that ended must stop resolving with its
+	// artifacts; leaving it alive would serve a window full of dead frames.
+	s.RevokeCanvas(sessionID)
 }
 
 // Grants lists the live grants, newest expiry first is not guaranteed; the
@@ -373,6 +399,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == BridgePath {
 		s.serveBridge(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, CanvasPath) {
+		s.serveCanvas(w, r)
 		return
 	}
 

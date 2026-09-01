@@ -1,0 +1,96 @@
+/* The frame is chrome; the screen inside it is the design. Values inside the
+   screen resolve through designer/_system/system.css — the device metrics below
+   do not, because they are platform facts, not tokens. */
+:root {
+  --device-w: 390px;   /* iPhone-class logical width */
+  --device-h: 844px;
+  --safe-top: 54px;    /* status bar */
+  --safe-bottom: 34px; /* home indicator */
+  --radius: 44px;
+}
+
+body {
+  margin: 0;
+  padding: 2rem;
+  /* Chrome, not design: the desk behind the devices. */
+  background: var(--color-surface-sunken, #ececed);
+  color: var(--color-text, #111);
+  font-family: var(--font-body, system-ui, sans-serif);
+}
+
+.sheet-head { max-width: 65ch; margin: 0 0 2rem; }
+.sheet-head h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
+.lede { margin: 0; color: var(--color-muted, #666); }
+
+/* The flow reads left to right, one frame per step. */
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 1.5rem 1rem; }
+.step { margin: 0; }
+figcaption { margin-top: 0.75rem; font-size: 0.85rem; color: var(--color-muted, #666); max-width: var(--device-w); }
+.arrow { font-size: 0.8rem; color: var(--color-muted, #888); align-self: center; max-width: 9rem; }
+
+.device {
+  width: var(--device-w);
+  height: var(--device-h);
+  border-radius: var(--radius);
+  background: var(--color-bg, #fff);
+  border: 10px solid var(--color-text, #1b1b1f);
+  box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+}
+
+.status {
+  height: var(--safe-top);
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 0 22px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text, #111);
+}
+
+.screen {
+  flex: 1;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.home {
+  height: var(--safe-bottom);
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+.home::after {
+  content: "";
+  width: 134px;
+  height: 5px;
+  border-radius: 3px;
+  background: currentColor;
+  opacity: 0.25;
+}
+
+.screen-title { font-size: 22px; line-height: 1.2; margin: 4px 0 0; }
+.screen-body { font-size: 17px; line-height: 1.45; margin: 0; color: var(--color-muted, #444); }
+
+/* 44px is the floor for anything a thumb has to hit, and the primary action
+   sits low on the screen where a thumb reaches. */
+.primary {
+  margin-top: auto;
+  min-height: 48px;
+  border: 0;
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-accent, #1a3fb8);
+  color: var(--color-bg, #fff);
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.primary:focus-visible { outline: 3px solid var(--color-accent, #1a3fb8); outline-offset: 3px; }

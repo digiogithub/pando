@@ -240,6 +240,25 @@ func (p *designPage) openArtifact(artifact design.Artifact) tea.Cmd {
 	}
 }
 
+// openCanvas opens the read-only design canvas: every artifact of the project
+// on one pan-and-zoom surface, refreshing while the agent works. It needs no
+// selection, which is why it is a page-level key rather than an artifact one.
+func (p *designPage) openCanvas() tea.Cmd {
+	return func() tea.Msg {
+		if _, err := p.service(); err != nil {
+			return designOpenedMsg{err: err}
+		}
+		url, err := design.CanvasPresentation("")
+		if err != nil {
+			return designOpenedMsg{err: err}
+		}
+		if err := auth.OpenBrowser(url); err != nil {
+			return designOpenedMsg{url: url, err: err}
+		}
+		return designOpenedMsg{url: url}
+	}
+}
+
 func (p *designPage) current() (design.Artifact, bool) {
 	if p.selected < 0 || p.selected >= len(p.artifacts) {
 		return design.Artifact{}, false
@@ -348,6 +367,9 @@ func (p *designPage) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			p.busy = "Opening preview..."
 			return p, p.openArtifact(artifact)
 		}
+	case "b":
+		p.busy = "Opening canvas..."
+		return p, p.openCanvas()
 	case "s":
 		if artifact, ok := p.current(); ok {
 			p.busy = "Rendering screenshot..."
@@ -408,6 +430,7 @@ func (p *designPage) BindingKeys() []key.Binding {
 	return []key.Binding{
 		key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑/↓", "select artifact")),
 		key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open preview in browser")),
+		key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "open the design canvas")),
 		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "render screenshot")),
 		key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "design system")),
 		key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "last critique findings")),

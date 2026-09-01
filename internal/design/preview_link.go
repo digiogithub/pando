@@ -67,6 +67,10 @@ func PreviewOptions(baseURL func() string, access func() error) preview.Options 
 		BaseURL: baseURL,
 		Access:  access,
 		Inject:  previewStampScript(),
+		// The canvas is served by the preview server but described here: the
+		// preview package must stay ignorant of the design model, so the model
+		// reaches it as a function instead of an import.
+		Artboards: CanvasArtboards,
 	}
 }
 

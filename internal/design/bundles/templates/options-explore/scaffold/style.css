@@ -1,0 +1,63 @@
+/* Every value resolves through designer/_system/system.css. This stylesheet is
+   the comparison chrome only — the options themselves are styled by the design
+   system, which is what makes them comparable. */
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body, system-ui, sans-serif);
+  line-height: 1.6;
+}
+
+.sheet-head { padding: var(--space-lg, 2rem) var(--space-lg, 2rem) 0; max-width: 65ch; }
+.sheet-head h1 { font-size: var(--size-2xl, 2rem); margin: 0 0 var(--space-xs, 0.25rem); }
+.lede { margin: 0; color: var(--color-muted, inherit); }
+
+.round { padding: var(--space-lg, 2rem); border-top: 1px solid var(--color-border, #ddd); }
+.round:first-of-type { border-top: 0; }
+
+.round-head {
+  font-size: var(--size-md, 1rem);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-muted, inherit);
+  margin: 0 0 var(--space-md, 1rem);
+}
+
+/* Options sit side by side and wrap; they share a width so a difference in the
+   design is never confused with a difference in the frame. */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-lg, 2rem);
+  align-items: flex-start;
+}
+
+.option { flex: 1 1 420px; min-width: 320px; max-width: 640px; }
+
+.option-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 0.5rem);
+  margin-bottom: var(--space-sm, 0.5rem);
+  font-weight: 600;
+}
+
+/* The id is a badge because the user names it in chat: "go with 1b". */
+.badge {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  color: var(--color-muted, inherit);
+}
+
+.canvas {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: var(--radius-md, 6px);
+  overflow: hidden;
+}
+
+.tradeoff { margin: var(--space-sm, 0.5rem) 0 0; color: var(--color-muted, inherit); font-size: 0.9rem; }

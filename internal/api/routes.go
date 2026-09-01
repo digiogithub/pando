@@ -232,6 +232,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 		mux.Handle(preview.Prefix, s.preview)
 		mux.HandleFunc("GET /api/v1/design/artifacts", s.handleDesignArtifacts)
 		mux.HandleFunc("GET /api/v1/design/events", s.handleDesignEvents)
+		mux.HandleFunc("GET /api/v1/design/canvas", s.handleDesignCanvas)
 		mux.HandleFunc("GET /api/v1/design/artifacts/{id}", s.handleDesignArtifact)
 		mux.HandleFunc("GET /api/v1/design/artifacts/{id}/versions", s.handleDesignVersions)
 		mux.HandleFunc("POST /api/v1/design/artifacts/{id}/checkout", s.handleDesignCheckout)

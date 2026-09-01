@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="../_system/system.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<figure class="plate">
+  <figcaption class="head">
+    <h1>{{TITLE}}</h1>
+    <p class="lede">The one thing this picture says. Replace it.</p>
+  </figcaption>
+
+  <!-- Mechanism: boxes are real components, arrows carry labels saying what
+       actually moves. One direction of flow, left to right. -->
+  <div class="diagram">
+    <div class="node">
+      <b>Component</b>
+      <span>what it does</span>
+    </div>
+
+    <div class="edge"><span>what travels here</span></div>
+
+    <div class="node">
+      <b>Component</b>
+      <span>what it does</span>
+    </div>
+
+    <div class="edge"><span>what travels here</span></div>
+
+    <div class="node out-of-scope">
+      <b>Component</b>
+      <span>out of scope</span>
+    </div>
+  </div>
+
+  <p class="source">Source: where these facts came from. Never omit it, never invent it.</p>
+</figure>
+</body>
+</html>

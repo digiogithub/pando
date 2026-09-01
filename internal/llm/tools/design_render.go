@@ -648,6 +648,9 @@ type DesignPresentParams struct {
 	Slide      int    `json:"slide,omitempty"`
 	NodeID     string `json:"node_id,omitempty"`
 	Open       bool   `json:"open,omitempty"`
+	// View selects the surface: "artifact" (default) is one document, "canvas"
+	// is the read-only board holding every artifact of the session.
+	View string `json:"view,omitempty"`
 }
 
 type designPresentTool struct{ designTool }
@@ -658,20 +661,26 @@ func NewDesignPresentTool() BaseTool { return &designPresentTool{} }
 func (t *designPresentTool) Info() ToolInfo {
 	return ToolInfo{
 		Name: DesignPresentToolName,
-		Description: `Show a design artifact to the user: return the address to open it at, optionally focused on one slide or one node.
+		Description: `Show design work to the user: return the address to open it at.
+
+VIEWS:
+- "artifact" (default): one document, optionally focused on a slide or a node.
+- "canvas": the read-only design canvas — every artifact of this session as an artboard on one pan-and-zoom surface, refreshing itself while you work. It needs no artifact_id. Use it when the user asks to see everything, to compare variations, or to watch the work take shape; it is also what opens by itself when you create the first artifact.
 
 WHEN TO USE THIS TOOL:
 - When the work is ready to look at, or when you want the user to review a specific part of it. Call it at the end of an iteration rather than after every edit.
 
 RETURNS:
-- The artifact address, the entry document path and, for decks, the slide count. A node id is returned as a design://<node_id> selection reference the interface resolves to that element.`,
+- For an artifact: its address, the entry document path and, for decks, the slide count. A node id is returned as a design://<node_id> selection reference the interface resolves to that element.
+- For the canvas: the canvas address. The user can pan, zoom and read there, but not edit — editing an artboard stays your job.`,
 		Parameters: map[string]any{
-			"artifact_id": map[string]any{"type": "string", "description": "Artifact to present"},
+			"artifact_id": map[string]any{"type": "string", "description": "Artifact to present. Not needed when view is \"canvas\"."},
+			"view":        map[string]any{"type": "string", "enum": []string{"artifact", "canvas"}, "description": "What to show (default \"artifact\")"},
 			"slide":       map[string]any{"type": "integer", "description": "Open the deck at this slide (1-based)"},
 			"node_id":     map[string]any{"type": "string", "description": "Focus this node from design_inspect"},
 			"open":        map[string]any{"type": "boolean", "description": "Also open the address in the user's default browser. Use it when the user asked to see the work now, not on every iteration."},
 		},
-		Required: []string{"artifact_id"},
+		Required: []string{},
 	}
 }
 
@@ -680,8 +689,11 @@ func (t *designPresentTool) Run(ctx context.Context, call ToolCall) (ToolRespons
 	if err := DecodeToolInput(call.Input, &params); err != nil {
 		return NewTextErrorResponse("failed to parse parameters: " + err.Error()), nil
 	}
+	if strings.EqualFold(strings.TrimSpace(params.View), "canvas") {
+		return t.presentCanvas(ctx, params)
+	}
 	if params.ArtifactID == "" {
-		return NewTextErrorResponse("artifact_id is required"), nil
+		return NewTextErrorResponse("artifact_id is required unless view is \"canvas\""), nil
 	}
 	svc, err := t.service(ctx)
 	if err != nil {
@@ -722,4 +734,27 @@ func (t *designPresentTool) Run(ctx context.Context, call ToolCall) (ToolRespons
 		fmt.Fprintf(&b, "%s\n", opened)
 	}
 	return WithResponseMetadata(NewTextResponse(b.String()), presentation), nil
+}
+
+// presentCanvas hands back the session canvas: the read-only board every
+// artifact of this session sits on. It is a separate path from the artifact
+// presentation because it needs no artifact and produces no selection.
+func (t *designPresentTool) presentCanvas(ctx context.Context, params DesignPresentParams) (ToolResponse, error) {
+	sessionID, _ := GetContextValues(ctx)
+	url, err := design.CanvasPresentation(sessionID)
+	if err != nil {
+		return designError(err), nil
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "design canvas\nopen: %s\n", url)
+	b.WriteString("Every artifact of this session appears here as an artboard and refreshes while you work. It is read-only: the user pans, zooms and reads; edits stay with you.\n")
+	if params.Open {
+		if err := auth.OpenBrowser(url); err != nil {
+			fmt.Fprintf(&b, "could not open a browser automatically (%v); open the address above manually\n", err)
+		} else {
+			b.WriteString("opened in the default browser\n")
+		}
+	}
+	return NewTextResponse(b.String()), nil
 }

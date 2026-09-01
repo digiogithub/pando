@@ -46,14 +46,14 @@ A template is a design skill: it says what to build, in what order, and what to 
 
 ACTIONS:
 - "list" (default): every template, with the kind it builds, whether it needs a design system, and the starter brief it suggests.
-- "show": the full instructions of one template ("name"), or of one craft reference ("craft": typography, color, layout, anti-ai-slop). Read this before building, not after.
+- "show": the full instructions of one template ("name"), or of one craft reference ("craft"). The craft references are: process (how to run a design job, from brief to presentation), content (copy, and never inventing facts), typography, color, layout, interaction (states, prototypes, motion), print (paper, PDF and fixed-size canvases), anti-ai-slop (the tells of a generated design). Read them before building, not after; start with process.
 - "install": copy a template plus its craft references into a skills directory so it loads as an ordinary skill in later sessions. Not needed to build from it now. It refuses to overwrite an installed copy unless "force" is set, because that copy is the user's to edit.
 
 Templates whose mode is not a surface (a workflow, a craft reference) are listed but cannot scaffold an artifact.`,
 		Parameters: map[string]any{
 			"action": map[string]any{"type": "string", "enum": []string{"list", "show", "install"}, "description": "What to do (default \"list\")"},
 			"name":   map[string]any{"type": "string", "description": "Template name (\"show\", \"install\")"},
-			"craft":  map[string]any{"type": "string", "description": "Craft reference to read instead of a template (\"show\")"},
+			"craft":  map[string]any{"type": "string", "description": "Craft reference to read instead of a template (\"show\"): process, content, typography, color, layout, interaction, print, anti-ai-slop"},
 			"scope":  map[string]any{"type": "string", "enum": []string{"project", "global"}, "description": "Where to install (\"install\", default \"project\")"},
 			"force":  map[string]any{"type": "boolean", "description": "Replace an already installed copy, discarding edits to it (\"install\")"},
 		},

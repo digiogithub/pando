@@ -21,6 +21,8 @@ od:
     requires: true
   craft:
     requires:
+      - process
+      - content
       - typography
       - color
       - layout

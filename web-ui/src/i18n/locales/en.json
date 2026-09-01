@@ -360,6 +360,8 @@
       "fix": "Fix",
       "select": "Select this element",
       "recorded": "recorded {{when}}"
-    }
+    },
+    "canvasWindow": "Canvas",
+    "openCanvas": "Open the read-only design canvas: every artifact as an artboard on one pan-and-zoom surface"
   }
 }

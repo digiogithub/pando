@@ -360,6 +360,8 @@
       "fix": "Arreglo",
       "select": "Seleccionar este elemento",
       "recorded": "registrada {{when}}"
-    }
+    },
+    "canvasWindow": "Lienzo",
+    "openCanvas": "Abre el lienzo de diseño de solo lectura: cada artefacto como una mesa de trabajo en una superficie con desplazamiento y zoom"
   }
 }

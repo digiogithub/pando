@@ -21,10 +21,13 @@ od:
     requires: true
   craft:
     requires:
+      - process
+      - content
       - layout
       - color
       - typography
       - anti-ai-slop
+      - interaction
   critique:
     policy: standard
 ---

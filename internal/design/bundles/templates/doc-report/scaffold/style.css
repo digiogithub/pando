@@ -1,0 +1,60 @@
+/* Values resolve through designer/_system/system.css. What lives here is the
+   page geometry, which is not a token: it is a physical fact about paper. */
+
+/* Set the paper size once, here. A4 is 210x297mm; US Letter is 8.5x11in. */
+@page {
+  size: A4;
+  margin: 20mm 18mm;
+}
+
+body {
+  margin: 0;
+  /* The desk the sheet sits on is chrome, not part of the document, so it
+     takes a token when the system defines one and a neutral grey otherwise. */
+  background: var(--color-surface-sunken, #f2f2f2);
+  color: var(--color-text);
+  font-family: var(--font-body, Georgia, "Times New Roman", serif);
+  font-size: 11pt;
+  line-height: 1.55;
+}
+
+/* On screen the page is drawn as a sheet so the layout is judged at its real
+   proportions; in print the sheet chrome disappears and @page takes over. */
+.page {
+  background: var(--color-bg, #fff);
+  width: 210mm;
+  min-height: 297mm;
+  margin: 12mm auto;
+  padding: 20mm 18mm;
+  box-shadow: 0 2mm 8mm rgb(0 0 0 / 12%);
+  box-sizing: border-box;
+}
+
+.doc-head { margin-bottom: 10mm; }
+h1 { font-size: 20pt; line-height: 1.15; margin: 0 0 2mm; }
+.subtitle { margin: 0 0 3mm; font-size: 12pt; color: var(--color-muted, #555); }
+.byline { margin: 0; font-size: 9.5pt; color: var(--color-muted, #555); }
+
+h2 { font-size: 13pt; margin: 8mm 0 2mm; }
+h3 { font-size: 11.5pt; margin: 6mm 0 1.5mm; }
+p { margin: 0 0 3mm; max-width: 72ch; }
+p, li { orphans: 3; widows: 3; }
+
+figure { margin: 5mm 0; }
+caption { text-align: left; font-size: 9.5pt; color: var(--color-muted, #555); padding-bottom: 1.5mm; }
+table { border-collapse: collapse; width: 100%; font-size: 10pt; }
+th, td { text-align: left; padding: 1.5mm 2mm; border-bottom: 0.3pt solid var(--color-border, #bbb); }
+th { font-weight: 600; }
+
+.running-foot { display: none; }
+
+/* Break control is the whole difference between a document and a tall web page. */
+h1, h2, h3 { break-after: avoid; }
+figure, table, tr, li { break-inside: avoid; }
+section { break-inside: auto; }
+.page-break { break-before: page; }
+
+@media print {
+  body { background: none; }
+  .page { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+}

@@ -315,6 +315,11 @@ func (a *appModel) waitForDesignEvent() tea.Cmd {
 	}
 }
 
+// designSessionID is the session the design canvas is scoped to. An empty id
+// (no session selected yet) means the canvas covers the whole project, which is
+// the right answer rather than an error.
+func (a *appModel) designSessionID() string { return a.selectedSession.ID }
+
 func (a *appModel) autoOpenDesignArtifact(artifactID string) tea.Cmd {
 	return func() tea.Msg {
 		presentation, err := design.ResolveCreatedArtifactPresentation(context.Background(), artifactID)
@@ -324,10 +329,16 @@ func (a *appModel) autoOpenDesignArtifact(artifactID string) tea.Cmd {
 			}
 			return designAutoOpenedMsg{err: err}
 		}
-		if err := a.designAutoOpen.Open(artifactID, presentation.URL); err != nil {
-			return designAutoOpenedMsg{url: presentation.URL, err: err}
+		// The canvas is the window that opens: one surface per session, showing
+		// this artifact being built alongside the ones already there.
+		key, url, err := design.AutoOpenTarget(context.Background(), a.designSessionID(), artifactID)
+		if err != nil {
+			key, url = artifactID, presentation.URL
 		}
-		return designAutoOpenedMsg{url: presentation.URL}
+		if err := a.designAutoOpen.Open(key, url); err != nil {
+			return designAutoOpenedMsg{url: url, err: err}
+		}
+		return designAutoOpenedMsg{url: url}
 	}
 }
 

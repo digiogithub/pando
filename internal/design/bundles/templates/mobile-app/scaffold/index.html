@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="../_system/system.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="sheet-head">
+  <h1>{{TITLE}}</h1>
+  <p class="lede">The flow this shows, and the platform it targets. Replace it.</p>
+</header>
+
+<main class="flow">
+  <figure class="step">
+    <div class="device">
+      <div class="status" aria-hidden="true"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="screen">
+        <!-- Screen content. Keep clear of the status bar and the home indicator;
+             the .screen padding already reserves both safe areas. -->
+        <h2 class="screen-title">Screen title</h2>
+        <p class="screen-body">Real content, never lorem: placeholder text hides
+           every sizing mistake until it is expensive.</p>
+        <button class="primary" type="button">Primary action</button>
+      </div>
+      <div class="home" aria-hidden="true"></div>
+    </div>
+    <figcaption><b>1. Step name</b> — what the user does here.</figcaption>
+  </figure>
+
+  <div class="arrow" aria-hidden="true">→ taps “Primary action”</div>
+
+  <figure class="step">
+    <div class="device">
+      <div class="status" aria-hidden="true"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="screen">
+        <h2 class="screen-title">Next screen</h2>
+        <p class="screen-body">Include the empty and error states as their own
+           frames once the happy path holds.</p>
+        <button class="primary" type="button">Primary action</button>
+      </div>
+      <div class="home" aria-hidden="true"></div>
+    </div>
+    <figcaption><b>2. Step name</b> — what the user does here.</figcaption>
+  </figure>
+</main>
+</body>
+</html>

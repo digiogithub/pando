@@ -1,0 +1,97 @@
+/* Wireframe fidelity is a constraint, not a style: greys, one type family, one
+   accent for the primary action. Anything more invites feedback on the wrong
+   subject. Do not link the design system here — a wireframe is deliberately
+   pre-brand. */
+:root {
+  --ink: #222;
+  --line: #b9b9b9;
+  --fill: #ececec;
+  --paper: #fff;
+  --accent: #2b5fd9;
+  --gap: 1rem;
+}
+
+body {
+  margin: 0;
+  padding: 2rem;
+  background: #f6f6f6;
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+.sheet-head { max-width: 65ch; margin: 0 0 2rem; }
+.sheet-head h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
+.question { margin: 0; color: #666; }
+
+.options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 2rem;
+  align-items: start;
+}
+
+.screen { margin: 0; }
+figcaption { font-size: 0.85rem; margin-bottom: 0.5rem; }
+.tag {
+  display: inline-block;
+  min-width: 1.4em;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  margin-right: 0.4rem;
+  font-family: ui-monospace, monospace;
+}
+
+.frame {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  aspect-ratio: 4 / 3;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bar, .side {
+  background: var(--fill);
+  color: #777;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  padding: 0 0.6rem;
+}
+.bar { height: 2.2rem; border-bottom: 1px solid var(--line); }
+.side { border-right: 1px solid var(--line); width: 6rem; align-items: flex-start; padding-top: 0.6rem; }
+
+.body { flex: 1; padding: var(--gap); display: flex; flex-direction: column; gap: 0.7rem; }
+.body.two-col { flex-direction: row; padding: 0; gap: 0; }
+.body.two-col > div:last-child { flex: 1; padding: var(--gap); display: flex; flex-direction: column; gap: 0.7rem; }
+
+.block { background: var(--fill); border-radius: 2px; }
+.block.h1 { height: 1.6rem; width: 60%; }
+.block.text { height: 3.2rem; }
+.block.action {
+  height: 2rem;
+  width: 10rem;
+  background: transparent;
+  border: 1.5px solid var(--accent);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+}
+
+/* An image is never drawn. It is a labelled hole the user fills. */
+.ph {
+  flex: 1;
+  min-height: 5rem;
+  border: 1px dashed var(--line);
+  display: grid;
+  place-items: center;
+  color: #888;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+
+.tradeoff { margin: 0.6rem 0 0; font-size: 0.85rem; color: #666; }

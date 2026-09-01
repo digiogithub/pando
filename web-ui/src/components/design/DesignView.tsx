@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPalette, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons'
+import { faPalette, faTriangleExclamation, faBorderAll } from '@fortawesome/free-solid-svg-icons'
 import { useDesignStore } from '@pando/client/stores/designStore'
+import { openExternal } from '../../services/desktopRuntime'
 import ArtifactGallery from './ArtifactGallery'
 import TemplateGallery from './TemplateGallery'
 import DesignStudio from './DesignStudio'
@@ -32,6 +33,14 @@ export default function DesignView() {
   const fetchArtifacts = useDesignStore((s) => s.fetchArtifacts)
   const openArtifact = useDesignStore((s) => s.openArtifact)
   const closeArtifact = useDesignStore((s) => s.closeArtifact)
+  const canvasURL = useDesignStore((s) => s.canvasURL)
+
+  // The canvas opens in its own window: it is the overview of every artifact,
+  // and it belongs beside Pando rather than inside one of its panes.
+  const openCanvas = async () => {
+    const url = await canvasURL()
+    if (url) void openExternal(url)
+  }
 
   useEffect(() => {
     void fetchStatus()
@@ -91,6 +100,24 @@ export default function DesignView() {
           </span>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.25rem' }}>
+          <button
+            type="button"
+            onClick={() => void openCanvas()}
+            title={t('design.openCanvas')}
+            style={{
+              padding: '0.25rem 0.6rem',
+              fontSize: 12,
+              cursor: 'pointer',
+              borderRadius: 4,
+              border: '1px solid var(--border)',
+              background: 'transparent',
+              color: 'var(--fg-muted)',
+              marginRight: '0.35rem',
+            }}
+          >
+            <FontAwesomeIcon icon={faBorderAll} style={{ fontSize: 10, marginRight: 5 }} />
+            {t('design.canvasWindow')}
+          </button>
           {(['artifacts', 'templates'] as const).map((name) => (
             <button
               key={name}

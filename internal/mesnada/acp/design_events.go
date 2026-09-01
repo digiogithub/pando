@@ -48,8 +48,15 @@ func (a *PandoACPAgent) handleDesignEvent(acpSession *ACPServerSession, event pu
 		}
 		return
 	}
-	if err := acpSession.DesignAutoOpener().Open(event.Payload.ArtifactID, presentation.URL); err != nil {
-		a.logger.Printf("[ACP AGENT] Failed to auto-open design preview for %s: %v", event.Payload.ArtifactID, err)
+	// What opens is the session canvas, not this one artifact: it shows the
+	// artboard being built next to everything already built, and a later
+	// artifact lands in the same window instead of opening another one.
+	openKey, openURL, err := design.AutoOpenTarget(context.Background(), acpSession.PandoSessionID(), event.Payload.ArtifactID)
+	if err != nil {
+		openKey, openURL = event.Payload.ArtifactID, presentation.URL
+	}
+	if err := acpSession.DesignAutoOpener().Open(openKey, openURL); err != nil {
+		a.logger.Printf("[ACP AGENT] Failed to auto-open design canvas for %s: %v", event.Payload.ArtifactID, err)
 	}
 	title := event.Payload.Title
 	if title == "" {

@@ -1,0 +1,79 @@
+/* Values resolve through designer/_system/system.css where one exists. The
+   canvas size is fixed so the diagram reads the same on a slide and in a
+   document. */
+:root { --plate-w: 1280px; }
+
+body {
+  margin: 0;
+  padding: 2rem;
+  background: #f2f2f3;
+  color: var(--color-text, #17171a);
+  font-family: var(--font-body, system-ui, sans-serif);
+}
+
+.plate {
+  width: var(--plate-w);
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 40px;
+  box-sizing: border-box;
+  background: var(--color-bg, #fff);
+  border: 1px solid var(--color-border, #ddd);
+}
+
+.head { margin-bottom: 32px; }
+.head h1 { font-size: 26px; line-height: 1.2; margin: 0 0 6px; }
+.lede { margin: 0; color: var(--color-muted, #666); max-width: 70ch; }
+
+/* One axis of flow. Never mix left-to-right with top-to-bottom in one picture. */
+.diagram {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  flex-wrap: wrap;
+}
+
+.node {
+  flex: 1 1 200px;
+  min-height: 96px;
+  padding: 16px 18px;
+  border: 2px solid currentColor;
+  border-radius: var(--radius-md, 4px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 15px;
+}
+.node b { font-size: 16px; }
+.node span { color: var(--color-muted, #666); }
+
+/* Out of scope is drawn, not omitted: leaving it out implies it does not exist. */
+.node.out-of-scope { border-style: dashed; opacity: 0.55; }
+
+/* Every arrow carries a label saying what moves along it. */
+.edge {
+  flex: 0 0 140px;
+  display: grid;
+  place-items: center;
+  position: relative;
+  font-size: 13px;
+  color: var(--color-muted, #666);
+  text-align: center;
+  padding: 0 8px;
+}
+.edge::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  border-top: 2px solid currentColor;
+  opacity: 0.5;
+}
+.edge span {
+  position: relative;
+  background: var(--color-bg, #fff);
+  padding: 0 6px;
+}
+
+.source { margin: 28px 0 0; font-size: 12px; color: var(--color-muted, #777); }

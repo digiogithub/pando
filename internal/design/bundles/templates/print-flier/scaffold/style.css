@@ -1,0 +1,64 @@
+/* A fixed canvas: one size, no breakpoints, no reflow. Retarget the piece by
+   changing these two values and nothing else — A4 portrait at 96dpi by
+   default. US Letter is 816x1056; a square social post is 1080x1080. */
+:root {
+  --canvas-w: 794px;
+  --canvas-h: 1123px;
+  --edge: 48px; /* the quiet margin: never let content into it */
+}
+
+body {
+  margin: 0;
+  background: #e9e9e9;
+  display: grid;
+  place-items: start center;
+  padding: 24px;
+  font-family: var(--font-body, system-ui, sans-serif);
+  color: var(--color-text, #111);
+}
+
+.canvas {
+  width: var(--canvas-w);
+  height: var(--canvas-h);
+  box-sizing: border-box;
+  padding: var(--edge);
+  background: var(--color-bg, #fff);
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 28px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+/* Pass one: readable across a room. Pass two: the facts. Pass three: the rest. */
+.hook h1 {
+  margin: 0;
+  font-size: 96px;
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.facts { display: flex; flex-wrap: wrap; gap: 12px 32px; }
+.fact { margin: 0; font-size: 28px; line-height: 1.2; }
+
+.art { display: grid; }
+.ph {
+  border: 2px dashed var(--color-border, #bbb);
+  display: grid;
+  place-items: center;
+  color: var(--color-muted, #777);
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  text-align: center;
+  padding: 16px;
+}
+
+.details { border-top: 2px solid currentColor; padding-top: 14px; }
+.details p { margin: 0; font-size: 14px; line-height: 1.45; max-width: 60ch; }
+
+@media print {
+  body { background: none; padding: 0; display: block; }
+  .canvas { box-shadow: none; }
+  @page { size: A4; margin: 0; }
+}

@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'openrouter.xiaomi/mimo-v2.5-pro'
+Model = 'copilot.mai-code-1.1-flash'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
@@ -518,6 +518,7 @@ AgentPoolSize = 0
 AgentPoolTTL = ''
 AutoApprove = false
 HumanInTheLoop = false
+Persona = ''
 
 [Extensions]
 Disabled = []

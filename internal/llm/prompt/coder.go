@@ -24,10 +24,14 @@ func CoderPrompt(provider models.ModelProvider) string {
 	envInfo := getEnvironmentInfo()
 
 	parts := []string{basePrompt, "", envInfo, lspInformation()}
-	// The design system is a hard constraint, not advice, so it goes in the
-	// prompt rather than in a tool description the model may never read. It is
-	// empty unless the Design Studio is on and the project committed a system,
-	// so a project that does not design pays nothing for it.
+	// The designer brief and the design system are constraints, not advice, so
+	// they go in the prompt rather than in a tool description the model may
+	// never read. Both are empty until the project actually designs something —
+	// the brief until a designer directory exists, the constraints until a
+	// system is committed — so a project that does not design pays nothing.
+	if brief := design.PromptBrief(); brief != "" {
+		parts = append(parts, brief)
+	}
 	if constraints := design.PromptConstraints(); constraints != "" {
 		parts = append(parts, constraints)
 	}

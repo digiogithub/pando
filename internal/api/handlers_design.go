@@ -109,6 +109,37 @@ func (s *Server) handleDesignStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
+// DesignCanvasResponse is the address of the read-only design canvas.
+type DesignCanvasResponse struct {
+	URL string `json:"url"`
+	// Artboards is how many artifacts the canvas currently holds, so a caller
+	// can tell an empty canvas from a full one before opening a window.
+	Artboards int `json:"artboards"`
+}
+
+// handleDesignCanvas publishes the canvas of a session and returns its address.
+// The UI opens it in a separate window rather than framing it: the canvas is
+// the whole surface, and it frames the artifacts itself.
+//
+// GET /api/v1/design/canvas[?session_id=…]
+func (s *Server) handleDesignCanvas(w http.ResponseWriter, r *http.Request) {
+	if err := s.previewAccess(); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	sessionID := r.URL.Query().Get("session_id")
+	url, err := design.CanvasPresentation(sessionID)
+	if err != nil {
+		writeDesignError(w, err)
+		return
+	}
+	response := DesignCanvasResponse{URL: url}
+	if boards, err := design.CanvasArtboards(sessionID); err == nil {
+		response.Artboards = len(boards)
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
 // handleDesignArtifacts lists artifacts.
 //
 // GET /api/v1/design/artifacts[?session_only=1]

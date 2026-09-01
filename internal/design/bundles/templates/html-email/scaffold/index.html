@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{TITLE}}</title>
+<!-- The stylesheet is a progressive enhancement only: most clients strip it.
+     Every rule that matters is inline on the element it styles. -->
+<link rel="stylesheet" href="style.css">
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f4;">
+
+<!-- Preheader: 40-90 characters, hidden, shown beside the subject in the inbox. -->
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+  One line that continues the subject. Replace it.
+</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;background-color:#ffffff;">
+        <tr>
+          <td style="padding:28px 32px 8px 32px;font-family:Arial,Helvetica,sans-serif;">
+            <h1 style="margin:0;font-size:24px;line-height:1.25;color:#111111;">{{TITLE}}</h1>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:8px 32px 4px 32px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.5;color:#333333;">
+            <p style="margin:0 0 16px 0;">The message. One point, said in the first screenful.</p>
+            <p style="margin:0 0 16px 0;">Anything else is optional reading.</p>
+          </td>
+        </tr>
+
+        <!-- Bulletproof button: a cell with a background, not an image. -->
+        <tr>
+          <td style="padding:12px 32px 28px 32px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td bgcolor="#1a3fb8" style="border-radius:4px;">
+                  <a href="https://example.com"
+                     style="display:inline-block;padding:12px 24px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#ffffff;text-decoration:none;">
+                    What happens when you click
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:20px 32px;border-top:1px solid #e3e3e3;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#666666;">
+            Who is sending this and why you are receiving it.<br>
+            <a href="https://example.com/unsubscribe" style="color:#1a3fb8;">Unsubscribe</a>
+          </td>
+        </tr>
+      </table>
+
+    </td>
+  </tr>
+</table>
+</body>
+</html>

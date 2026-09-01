@@ -30,7 +30,11 @@ func (s *Service) Render(ctx context.Context, artifactID string, opts RenderOpti
 		return RenderResult{}, fmt.Errorf("%w: no renderer attached", ErrNoBrowser)
 	}
 
+	// The canvas badges an artifact while its render runs, which is the only
+	// signal a watcher gets that the frame in front of them is about to change.
+	done := markRendering(artifact.ID)
 	result, err := s.renderer.Render(ctx, artifact, opts)
+	done()
 	if err != nil {
 		return RenderResult{}, err
 	}

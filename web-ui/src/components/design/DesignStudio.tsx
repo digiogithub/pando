@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faArrowLeft, faRotate, faArrowUpRightFromSquare, faComments,
-  faCrosshairs, faClockRotateLeft, faSpinner,
+  faCrosshairs, faClockRotateLeft, faSpinner, faBorderAll,
 } from '@fortawesome/free-solid-svg-icons'
 import { useDesignStore, type DesignArtifact } from '@pando/client/stores/designStore'
 import ChatView from '@/components/chat/ChatView'
@@ -42,6 +42,14 @@ export default function DesignStudio({ artifact, onBack }: DesignStudioProps) {
   const rendering = useDesignStore((s) => s.rendering)
   const render = useDesignStore((s) => s.render)
   const status = useDesignStore((s) => s.status)
+  const canvasURL = useDesignStore((s) => s.canvasURL)
+
+  // The canvas is a window of its own, not a pane: it holds every artifact at
+  // once, so framing it inside the Studio would nest one canvas in another.
+  const openCanvas = async () => {
+    const url = await canvasURL()
+    if (url) void openExternal(url)
+  }
 
   const [isMobile, setIsMobile] = useState(() => window.matchMedia(MOBILE_QUERY).matches)
   useEffect(() => {
@@ -98,6 +106,14 @@ export default function DesignStudio({ artifact, onBack }: DesignStudioProps) {
           >
             <FontAwesomeIcon icon={rendering ? faSpinner : faRotate} spin={rendering} style={{ fontSize: 10 }} />
             {t('design.render')}
+          </button>
+          <button
+            onClick={() => void openCanvas()}
+            title={t('design.openCanvas')}
+            style={toolbarButton}
+          >
+            <FontAwesomeIcon icon={faBorderAll} style={{ fontSize: 10 }} />
+            {t('design.canvasWindow')}
           </button>
           {artifact.url && (
             <button

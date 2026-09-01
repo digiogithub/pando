@@ -261,6 +261,45 @@ selection bridge are not available.`,
 	},
 }
 
+var designCanvasCmd = &cobra.Command{
+	Use:   "canvas",
+	Short: "Open the read-only design canvas in the browser",
+	Long: `Serve every design artifact of this project as an artboard on one
+pan-and-zoom canvas, and open it in a browser.
+
+The canvas is a viewer: pan, zoom, focus an artboard, watch the artboards
+refresh as they are rewritten. It never edits — that stays with the agent.
+
+The preview server lives as long as this command does, so it stays running
+until you interrupt it.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runWithDesignService(func(ctx context.Context, svc *design.Service) error {
+			// The CLI has no session, so the canvas covers the whole project.
+			url, err := design.CanvasPresentation("")
+			if err != nil {
+				return err
+			}
+			boards, err := design.CanvasArtboards("")
+			if err != nil {
+				return err
+			}
+			if designJSON {
+				if err := printDesignJSON(map[string]any{"url": url, "artboards": boards}); err != nil {
+					return err
+				}
+			} else {
+				fmt.Printf("design canvas (%d artboard(s))\n%s\n", len(boards), url)
+			}
+			if err := auth.OpenBrowser(url); err != nil {
+				fmt.Fprintf(os.Stderr, "could not open a browser (%v); the URL above still works\n", err)
+			}
+			fmt.Println("\nServing the canvas. Press Ctrl+C to stop.")
+			return waitForInterrupt()
+		})
+	},
+}
+
 var designExportCmd = &cobra.Command{
 	Use:   "export [artifact]",
 	Short: "Export an artifact as HTML, PNG or PDF",
@@ -576,7 +615,7 @@ func init() {
 	designSystemCmd.AddCommand(designSystemShowCmd, designSystemInitCmd,
 		designSystemExtractCmd, designSystemApplyCmd, designSystemExamplesCmd)
 	designCmd.AddCommand(designListCmd, designCreateCmd, designVersionsCmd, designOpenCmd,
-		designExportCmd, designCritiqueCmd, designSystemCmd, designSkillsCmd)
+		designCanvasCmd, designExportCmd, designCritiqueCmd, designSystemCmd, designSkillsCmd)
 	// Cobra reads SilenceUsage off the command that failed, not off its parent,
 	// so setting it on the tree is what actually keeps a "not found" from
 	// printing the whole flag list under it.
