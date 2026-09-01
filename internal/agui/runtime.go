@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/userinput"
@@ -50,6 +51,9 @@ func New(deps Deps, cfg Config) (*Runtime, error) {
 	if err := deps.validate(); err != nil {
 		return nil, err
 	}
+	if err := validatePersona(cfg.Persona); err != nil {
+		return nil, err
+	}
 	perms := permission.NewPermissionService()
 	ui := userinput.NewService()
 	pending := newPendingRegistry()
@@ -77,6 +81,7 @@ func New(deps Deps, cfg Config) (*Runtime, error) {
 		"allowedOrigins", cfg.AllowedOrigins,
 		"autoApprove", cfg.AutoApprove,
 		"humanInTheLoop", cfg.HumanInTheLoop,
+		"persona", cfg.Persona,
 	)
 	return r, nil
 }
@@ -123,6 +128,7 @@ func (r *Runtime) sessionForThread(ctx context.Context, threadID, agentName, tit
 			// The handler is per session and the mapping outlives the process, so
 			// it must be (re)installed here, not only where the session is created.
 			r.installPermissionPolicy(sessionID)
+			r.applySessionPersona(sessionID)
 			return sessionID, nil
 		}
 		logging.Warn("agui: thread pointed at a missing session, rebinding",
@@ -133,6 +139,7 @@ func (r *Runtime) sessionForThread(ctx context.Context, threadID, agentName, tit
 	if sess, err := r.deps.Sessions.Get(ctx, threadID); err == nil && sess.ID != "" {
 		r.threads.put(ctx, threadID, sess.ID, agentName)
 		r.installPermissionPolicy(sess.ID)
+		r.applySessionPersona(sess.ID)
 		return sess.ID, nil
 	}
 
@@ -142,8 +149,38 @@ func (r *Runtime) sessionForThread(ctx context.Context, threadID, agentName, tit
 	}
 	r.threads.put(ctx, threadID, sess.ID, agentName)
 	r.installPermissionPolicy(sess.ID)
+	r.applySessionPersona(sess.ID)
 	logging.Debug("agui: thread bound to session", "thread", threadID, "session", sess.ID)
 	return sess.ID, nil
+}
+
+// applySessionPersona scopes the adapter's configured persona to one session
+// through the same per-session override the ACP server uses, so every run of
+// the thread resolves the persona's instructions into its system prompt
+// without touching the process-wide active persona (the TUI/desktop sharing
+// this process keep theirs). Merging keeps any other override fields (model,
+// reasoning) already installed for the session.
+func (r *Runtime) applySessionPersona(sessionID string) {
+	if r.cfg.Persona == "" {
+		return
+	}
+	ov := agent.SessionLLMOverridesFor(sessionID)
+	ov.Persona = r.cfg.Persona
+	ov.PersonaScoped = true
+	agent.SetSessionLLMOverrides(sessionID, ov)
+}
+
+// validatePersona fails fast rather than serving every run without the persona
+// the deployment declared. Built-ins are always loaded, so the manager is
+// expected to exist; a nil manager means personas are unavailable.
+func validatePersona(name string) error {
+	if name == "" {
+		return nil
+	}
+	if mgr := agent.GetPersonaManager(); mgr == nil || !mgr.HasPersona(name) {
+		return fmt.Errorf("agui: persona %q not found", name)
+	}
+	return nil
 }
 
 // sessionTitle builds a recognizable title so AG-UI threads are distinguishable

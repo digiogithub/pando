@@ -1173,6 +1173,14 @@ type AGUIConfig struct {
 	// denied and questions cancelled, since no other surface can see them.
 	// Default: true.
 	HumanInTheLoop bool `json:"humanInTheLoop,omitempty" toml:"HumanInTheLoop"`
+	// Persona names a persona injected into the system prompt of every run this
+	// adapter serves. It is applied as a per-session persona override, so it
+	// never mutates the process-wide active persona: a `pando agui-serve`
+	// process can run a different persona than the TUI or desktop sharing the
+	// same configuration. The name must exist among the loaded personas
+	// (built-ins plus the configured persona path). Default: "" (no override —
+	// the process-wide active persona applies as usual).
+	Persona string `json:"persona,omitempty" toml:"Persona"`
 }
 
 // ImageConfig controls the image normalization pipeline applied before images

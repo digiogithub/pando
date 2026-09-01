@@ -73,6 +73,10 @@ type Config struct {
 	// client. With it off (and AutoApprove off) a run that needs approval is
 	// denied instead of asking, which is the pre-P4 behaviour.
 	HumanInTheLoop bool
+	// Persona names a persona injected into the system prompt of every run, via
+	// a per-session persona override. Empty means no override: the
+	// process-wide active persona (or auto-selection) applies as usual.
+	Persona string
 }
 
 const (
@@ -96,6 +100,7 @@ func ConfigFromApp(c config.AGUIConfig) Config {
 		AgentPoolSize:  c.AgentPoolSize,
 		AutoApprove:    c.AutoApprove,
 		HumanInTheLoop: c.HumanInTheLoop,
+		Persona:        c.Persona,
 	}
 	if out.Path == "" {
 		out.Path = defaultPath

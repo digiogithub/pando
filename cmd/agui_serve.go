@@ -39,6 +39,9 @@ The bearer token is printed on startup unless --token or --no-token is given.`,
   # Serve the coder agent for a Next.js app running on localhost:3000
   pando agui-serve --port 8090 --allow-origin http://localhost:3000
 
+  # Serve the coder agent with a persona injected into every run's prompt
+  pando agui-serve --port 8090 --allow-origin http://localhost:3000 --persona perfumer
+
   # Serve a different project directory with a fixed token
   pando agui-serve --cwd /path/to/project --token "$PANDO_AGUI_TOKEN"
 
@@ -60,6 +63,7 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 	tlsCert, _ := cmd.Flags().GetString("tls-cert")
 	tlsKey, _ := cmd.Flags().GetString("tls-key")
 	autoApprove, _ := cmd.Flags().GetBool("auto-approve")
+	persona, _ := cmd.Flags().GetString("persona")
 
 	cwd, err := resolveWorkingDir(cwdFlag)
 	if err != nil {
@@ -83,6 +87,9 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 	}
 	if len(agents) > 0 {
 		cfg.AGUI.Agents = agents
+	}
+	if persona != "" {
+		cfg.AGUI.Persona = persona
 	}
 	if cmd.Flags().Changed("auto-approve") {
 		cfg.AGUI.AutoApprove = autoApprove
@@ -161,6 +168,9 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 	fmt.Printf("Pando AG-UI server listening on %s%s\n", listener.URL(), cfg.AGUI.Path)
 	fmt.Printf("Project: %s\n", cwd)
 	fmt.Printf("Agents:  %v\n", cfg.AGUI.Agents)
+	if cfg.AGUI.Persona != "" {
+		fmt.Printf("Persona: %s\n", cfg.AGUI.Persona)
+	}
 	if token != "" {
 		fmt.Printf("Token:   %s\n", token)
 	}
@@ -222,6 +232,7 @@ func init() {
 	aguiServeCmd.Flags().Bool("debug", false, "Enable debug logging")
 	aguiServeCmd.Flags().StringArray("allow-origin", nil, "Browser origin allowed to connect (repeatable)")
 	aguiServeCmd.Flags().StringArray("agent", nil, "Agent exposed over AG-UI (repeatable, defaults to the configured list)")
+	aguiServeCmd.Flags().String("persona", "", "Persona injected into every run's system prompt (per-session override; must be a loaded persona)")
 	aguiServeCmd.Flags().String("token", "", "Bearer token clients must present (generated when omitted)")
 	aguiServeCmd.Flags().Bool("no-token", false, "Disable bearer-token authentication")
 	aguiServeCmd.Flags().Bool("no-tls", false, "Serve plain HTTP instead of TLS")
