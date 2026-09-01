@@ -170,8 +170,12 @@ fi
 security set-keychain-settings -lut "$KEYCHAIN_TIMEOUT_SECONDS" "$KEYCHAIN_BASE_NAME"
 security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_BASE_NAME"
 
+# Only add the keychain when it is not already in the search list: an
+# unconditional -s re-appends it on every run and the list grows without bound.
 CURRENT_KEYCHAINS="$(security list-keychains -d user | tr -d '"')"
-security list-keychains -d user -s "$KEYCHAIN_PATH" $CURRENT_KEYCHAINS
+if ! printf '%s' "$CURRENT_KEYCHAINS" | grep -qF "$KEYCHAIN_PATH"; then
+    security list-keychains -d user -s "$KEYCHAIN_PATH" $CURRENT_KEYCHAINS
+fi
 if [[ "$DEFAULT_KEYCHAIN" == "1" ]]; then
     security default-keychain -d user -s "$KEYCHAIN_PATH"
 fi

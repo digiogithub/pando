@@ -1,0 +1,227 @@
+name: Release
+
+# Full release pipeline, triggered by pushing a version tag.
+#
+#   Linux/Windows  : cross-compiled on ubuntu (zig as the cross C toolchain).
+#   macOS          : built, signed (Developer ID + hardened runtime) and
+#                    notarized on a macOS runner — the embedded wails desktop
+#                    wrapper, the CLI zips, the .app bundles and the .pkg
+#                    installers, exactly like the `release-osx` xc task does
+#                    manually on mac-mini-de-digio.
+#   Release        : one GitHub release with every artifact and the changes
+#                    since the previous tag.
+#
+# The signing material is a single repository secret, MACOS_SIGNING_BUNDLE: a
+# base64 .tar.gz of ~/DIGIO_Software_Signing_Keys (both Developer ID .p12 files
+# plus the kvagerc env file with the passwords and notary credentials). See
+# docs/release-pipeline.md.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)build and release.'
+        required: true
+        type: string
+      draft:
+        description: 'Publish the release as a draft.'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  # The shared composite actions live in digiogithub/ci-actions and are pinned
+  # to @v1 in each `uses:` below (a `uses:` cannot read an env var).
+  WAILS_VERSION: v2.12.0
+  ZIG_VERSION: '0.14.1'
+
+jobs:
+  linux-windows:
+    name: Linux + Windows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Set up Zig
+        uses: digiogithub/ci-actions/setup-zig@v1
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Install system dependencies
+        # webkit2gtk/gtk are needed by the wails wrapper; upx compresses the
+        # non-darwin release binaries.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y upx-ucl libgtk-3-dev libwebkit2gtk-4.1-dev zip
+
+      - name: Install wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+
+      - name: Build the embedded web-ui
+        run: make web-ui-embedded
+
+      - name: Build and embed the desktop wrapper
+        run: make desktop-embed
+
+      - name: Build release archives
+        run: make release-linux-amd64 release-linux-arm64 release-windows-amd64
+
+      - name: List artifacts
+        run: ls -la dist/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux-windows
+          path: dist/*.zip
+          if-no-files-found: error
+
+  macos:
+    name: macOS (signed + notarized)
+    runs-on: macos-latest
+    # Notarization submits several artifacts to Apple with --wait.
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Set up Zig
+        # The Makefile requires zig to be present for the non-native darwin
+        # arch, even though it compiles that one with `clang -arch`.
+        uses: digiogithub/ci-actions/setup-zig@v1
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Install wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+
+      - name: Set up the signing keychain
+        # Exports SIGNING_IDENTITY, PKG_SIGN_IDENTITY, NOTARY_PROFILE and
+        # MACOS_SIGN_KEYCHAIN_PATH/PASSWORD for every step below; the Makefile
+        # and scripts/ read exactly those variables.
+        uses: digiogithub/ci-actions/macos-signing-keychain@v1
+        with:
+          signing-bundle: ${{ secrets.MACOS_SIGNING_BUNDLE }}
+          env-file: kvagerc
+          keychain-name: pando-build
+          notary-profile: pando-notary
+
+      - name: Build the embedded web-ui
+        run: make web-ui-embedded
+
+      - name: Build, sign and notarize the embedded desktop wrapper
+        # make desktop-embed signs the wails wrapper with the hardened runtime
+        # and notarizes it before go:embed bakes it into the CLI binary —
+        # without that, `pando desktop` from a standalone binary is SIGKILLed.
+        run: make desktop-embed
+
+      - name: Build and sign the CLI release archives
+        run: make release-darwin-arm64 release-darwin-amd64
+
+      - name: Build, sign and notarize the .app bundles and .pkg installers
+        # Also notarizes the two CLI zips (submit-only: a bare Mach-O cannot
+        # carry a stapled ticket).
+        run: bash scripts/build-macos-app "${{ inputs.tag || github.ref_name }}"
+
+      - name: Verify notarization staples
+        run: |
+          set -euo pipefail
+          status=0
+          for f in dist/Pando-arm64.app dist/Pando-x64.app dist/*.pkg; do
+            [ -e "$f" ] || continue
+            echo "-- $f"
+            xcrun stapler validate "$f" || { echo "::error::Not stapled: $f"; status=1; }
+          done
+          exit $status
+
+      - name: Archive the .app bundles
+        # A release asset must be a single file, and ditto preserves the
+        # stapled ticket and the signature inside the archive.
+        run: |
+          set -euo pipefail
+          for app in dist/Pando-arm64.app dist/Pando-x64.app; do
+            [ -d "$app" ] || continue
+            ditto -c -k --keepParent "$app" "${app}.zip"
+          done
+          ls -la dist/
+
+      - name: Clean up the signing keychain
+        if: always()
+        uses: digiogithub/ci-actions/macos-keychain-cleanup@v1
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos
+          path: |
+            dist/*.zip
+            dist/*.pkg
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [linux-windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish
+        uses: digiogithub/ci-actions/github-release@v1
+        with:
+          tag: ${{ inputs.tag || github.ref_name }}
+          files: |
+            dist/*.zip
+            dist/*.pkg
+          draft: ${{ inputs.draft || false }}
+          notes-header: |
+            Downloads: `.pkg` for macOS (signed, notarized and stapled),
+            `pando-linux-*.zip` / `pando-windows-x64.zip` for the other
+            platforms.
+          token: ${{ github.token }}

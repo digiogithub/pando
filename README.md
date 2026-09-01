@@ -928,6 +928,12 @@ rm -f *.upx
 
 ### release
 
+> **Note:** these two tasks are the manual/local path. Pushing a `v*` tag runs
+> the whole thing on GitHub Actions — Linux x64/arm64, Windows x64, and the
+> signed + notarized macOS `.zip`, `.app` and `.pkg` artifacts — and publishes a
+> release with the changes since the previous tag. See
+> [docs/release-pipeline.md](docs/release-pipeline.md).
+
 Compiles the binaries for the different platforms (Linux x64, Windows x64, macOS aarch64) and zip them into `dist/`.
 
 interactive:true
