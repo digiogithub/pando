@@ -3448,6 +3448,14 @@ func headersToString(headers map[string]string) string {
 }
 
 func persistSetting(app *pandoapp.App, field settings.Field) error {
+	// A key an extension has locked is refused here, before anything is
+	// written or applied in memory, so a managed setting cannot be half-saved.
+	// The message is deliberately generic: core knows only that the key is
+	// managed, never by whom or why.
+	if err := config.ErrIfLocked(field.Key); err != nil {
+		return err
+	}
+
 	switch {
 	case field.Key == "tui.theme":
 		return saveTheme(field)

@@ -119,7 +119,7 @@ func (s *Server) handleCreateProviderAccount(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := config.AddProviderAccount(account); err != nil {
-		writeError(w, http.StatusBadRequest, "failed to create provider account: "+err.Error())
+		writeConfigError(w, http.StatusBadRequest, "failed to create provider account: "+err.Error(), err)
 		return
 	}
 
@@ -168,7 +168,7 @@ func (s *Server) handleUpdateProviderAccount(w http.ResponseWriter, r *http.Requ
 	updated.ID = id
 
 	if err := config.UpdateProviderAccount(id, updated); err != nil {
-		writeError(w, http.StatusBadRequest, "failed to update provider account: "+err.Error())
+		writeConfigError(w, http.StatusBadRequest, "failed to update provider account: "+err.Error(), err)
 		return
 	}
 
@@ -188,7 +188,7 @@ func (s *Server) handleDeleteProviderAccount(w http.ResponseWriter, r *http.Requ
 	id := r.PathValue("id")
 
 	if err := config.DeleteProviderAccount(id); err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeConfigError(w, http.StatusNotFound, err.Error(), err)
 		return
 	}
 

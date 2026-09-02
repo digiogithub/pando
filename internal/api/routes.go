@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/design/preview"
 	"github.com/digiogithub/pando/internal/extensions"
 	"github.com/digiogithub/pando/internal/logging"
@@ -96,6 +98,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/config/token-optimization", s.handleConfigTokenOptimization)
 	mux.HandleFunc("/api/v1/savings", s.handleSavings)
 	mux.HandleFunc("/api/v1/config/extensions", s.handleConfigExtensions)
+	mux.HandleFunc("/api/v1/config/locked-keys", s.handleConfigLockedKeys)
 	// Distinct from the line above: this one is the UI manifest of compiled-in
 	// extension modules, not the skills/Lua settings section.
 	mux.HandleFunc("/api/v1/extensions/ui", s.handleExtensionsUI)
@@ -268,4 +271,22 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+// writeConfigError reports the failure of a configuration write.
+//
+// A refusal because an extension locked the key is not a server fault and not
+// a malformed request: the value is simply not this client's to set. It gets
+// 409 Conflict and a stable code so a UI can render the field as managed
+// instead of showing a save error. Everything else keeps the status the caller
+// chose.
+func writeConfigError(w http.ResponseWriter, status int, message string, err error) {
+	if errors.Is(err, config.ErrKeyLocked) {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": err.Error(),
+			"code":  "config_key_locked",
+		})
+		return
+	}
+	writeError(w, status, message)
 }

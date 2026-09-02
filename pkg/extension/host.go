@@ -36,6 +36,11 @@ type HostServices struct {
 	// Variant identifies the build variant ("", "enterprise", ...). Extensions
 	// should not branch on it; it exists for reporting.
 	Variant string
+
+	// ConfigOverlays lets an extension that implements ConfigOverlayProvider
+	// tell the host its overlay document has changed. Nil in hosts that do not
+	// support configuration overlays, so check before calling.
+	ConfigOverlays ConfigOverlayController
 }
 
 // Bool reads a boolean from the extension's own config subtree.
@@ -82,6 +87,11 @@ type ConfigView interface {
 	// case where an extension must read a core setting. Returns false when the
 	// path is unknown. Implementations return copies, never live pointers.
 	Lookup(path string) (any, bool)
+	// LockedKeys lists the configuration paths currently locked by an overlay
+	// (see ConfigOverlay.Locked), sorted and deduplicated. It is the state a
+	// panel or a settings surface reads to render a key as managed rather than
+	// editable. Empty when no overlay locks anything.
+	LockedKeys() []string
 }
 
 // Lifecycle is an optional interface for extensions that run background work.

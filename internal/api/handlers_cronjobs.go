@@ -147,7 +147,7 @@ func (s *Server) handleCreateCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := config.UpdateCronJobs(updated); err != nil {
-		writeError(w, http.StatusBadRequest, "failed to save cronjob: "+err.Error())
+		writeConfigError(w, http.StatusBadRequest, "failed to save cronjob: "+err.Error(), err)
 		return
 	}
 
@@ -238,7 +238,7 @@ func (s *Server) handleUpdateCronJob(w http.ResponseWriter, r *http.Request, nam
 	}
 
 	if err := config.UpdateCronJobs(updated); err != nil {
-		writeError(w, http.StatusBadRequest, "failed to update cronjob: "+err.Error())
+		writeConfigError(w, http.StatusBadRequest, "failed to update cronjob: "+err.Error(), err)
 		return
 	}
 
@@ -282,7 +282,7 @@ func (s *Server) handleDeleteCronJob(w http.ResponseWriter, r *http.Request, nam
 	}
 
 	if err := config.UpdateCronJobs(updated); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to delete cronjob: "+err.Error())
+		writeConfigError(w, http.StatusInternalServerError, "failed to delete cronjob: "+err.Error(), err)
 		return
 	}
 

@@ -11,8 +11,17 @@ type ConfigChangeEvent struct {
 	Section string `json:"section"`
 	// Timestamp is when the change occurred.
 	Timestamp time.Time `json:"timestamp"`
-	// Source identifies the origin of the change: "tui", "webui", or "file".
+	// Source identifies the origin of the change: "tui", "webui", "file", or
+	// "overlay" for a change imposed by a configuration overlay provider.
 	Source string `json:"source"`
+	// Event names the kind of change when it is more specific than "something
+	// under Section moved". Empty for an ordinary change; see
+	// EventOverlayApplied. Subscribers must ignore names they do not know.
+	Event string `json:"event,omitempty"`
+	// ChangedKeys lists the dotted configuration paths the change touched,
+	// when the publisher can name them. Empty means "unknown, assume the
+	// whole section changed".
+	ChangedKeys []string `json:"changedKeys,omitempty"`
 }
 
 // EventBus is a simple fan-out publisher for ConfigChangeEvent.

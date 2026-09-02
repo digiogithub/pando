@@ -45,7 +45,7 @@ a new endpoint that speaks a protocol Pando already knows.
 **Extension** — a Go package compiled into the binary, registered in
 `pkg/extension`. It is the only mechanism with access to core interfaces: tool
 middleware, HTTP routes, the event bus, the remembrance layer, the frontend
-asset tree, licensing. It is also the only one that can crash the process, which
+asset tree, the configuration overlay, licensing. It is also the only one that can crash the process, which
 is why every entry point into extension code is wrapped
 (`internal/extensions/guard.go`).
 
@@ -53,7 +53,8 @@ is why every entry point into extension code is wrapped
 
 1. **It needs a core interface.** Filtering the tool set, wrapping remembrance
    search, mounting an authenticated HTTP route, subscribing to the internal
-   event bus. No other mechanism can see any of these.
+   event bus, imposing configuration and locking keys against local edits. No
+   other mechanism can see any of these.
 2. **It must ship in the binary.** Enterprise modules distributed as one
    executable, with no separate process to deploy and nothing extra to install.
 3. **It is first-party and privileged.** Extensions run in-process with full

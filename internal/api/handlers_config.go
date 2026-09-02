@@ -108,12 +108,12 @@ func (s *Server) handlePutConfigProviders(w http.ResponseWriter, r *http.Request
 		}
 
 		if err := config.UpdateProvider(name, apiKey, item.BaseURL, item.Disabled); err != nil {
-			writeError(w, http.StatusBadRequest, "failed to update provider "+item.Name+": "+err.Error())
+			writeConfigError(w, http.StatusBadRequest, "failed to update provider "+item.Name+": "+err.Error(), err)
 			return
 		}
 		if item.UseOAuth != existing.UseOAuth {
 			if err := config.UpdateProviderOAuth(name, item.UseOAuth); err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to update provider OAuth "+item.Name+": "+err.Error())
+				writeConfigError(w, http.StatusInternalServerError, "failed to update provider OAuth "+item.Name+": "+err.Error(), err)
 				return
 			}
 		}
@@ -223,7 +223,7 @@ func (s *Server) handlePutConfigAgents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err := config.UpdateAgent(name, agent); err != nil {
-			writeError(w, http.StatusBadRequest, "failed to update agent "+item.Name+": "+err.Error())
+			writeConfigError(w, http.StatusBadRequest, "failed to update agent "+item.Name+": "+err.Error(), err)
 			return
 		}
 	}
@@ -496,7 +496,7 @@ func (s *Server) handlePutConfigMCPServer(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := config.UpdateMCPServer(req.Name, server); err != nil {
-		writeError(w, http.StatusBadRequest, "failed to update MCP server: "+err.Error())
+		writeConfigError(w, http.StatusBadRequest, "failed to update MCP server: "+err.Error(), err)
 		return
 	}
 
@@ -560,7 +560,7 @@ func (s *Server) handleDeleteConfigMCPServer(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := config.DeleteMCPServer(name); err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeConfigError(w, http.StatusNotFound, err.Error(), err)
 		return
 	}
 
@@ -632,7 +632,7 @@ func (s *Server) handleConfigMCPGateway(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if err := config.UpdateMCPGateway(req); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update MCP gateway config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update MCP gateway config: "+err.Error(), err)
 			return
 		}
 		writeJSON(w, http.StatusOK, config.Get().MCPGateway)
@@ -658,7 +658,7 @@ func (s *Server) handleConfigMCPServer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := config.UpdateMCPServerConfig(req); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update MCP server config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update MCP server config: "+err.Error(), err)
 			return
 		}
 		writeJSON(w, http.StatusOK, config.Get().MCPServer)
@@ -747,7 +747,7 @@ func (s *Server) handleConfigLSPActivation(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		if err := config.UpdateLSPActivation(req); err != nil {
-			writeError(w, http.StatusBadRequest, "failed to update LSP activation: "+err.Error())
+			writeConfigError(w, http.StatusBadRequest, "failed to update LSP activation: "+err.Error(), err)
 			return
 		}
 		writeJSON(w, http.StatusOK, config.Get().LSPActivationSettings())
@@ -776,7 +776,7 @@ func (s *Server) handlePutConfigLSP(w http.ResponseWriter, r *http.Request) {
 		Autostart: req.Autostart,
 	}
 	if err := config.UpdateLSP(req.Language, lsp); err != nil {
-		writeError(w, http.StatusBadRequest, "failed to update LSP config: "+err.Error())
+		writeConfigError(w, http.StatusBadRequest, "failed to update LSP config: "+err.Error(), err)
 		return
 	}
 
@@ -792,7 +792,7 @@ func (s *Server) handleDeleteConfigLSP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := config.DeleteLSP(language); err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeConfigError(w, http.StatusNotFound, err.Error(), err)
 		return
 	}
 
@@ -957,7 +957,7 @@ func (s *Server) handlePutConfigTools(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := config.UpdateInternalTools(req); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to update tools config: "+err.Error())
+		writeConfigError(w, http.StatusInternalServerError, "failed to update tools config: "+err.Error(), err)
 		return
 	}
 
@@ -982,7 +982,7 @@ func (s *Server) handleConfigOpenLit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := config.UpdateOpenLit(req); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update OpenLit config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update OpenLit config: "+err.Error(), err)
 			return
 		}
 		writeJSON(w, http.StatusOK, config.Get().OpenLit)
@@ -1009,7 +1009,7 @@ func (s *Server) handleConfigBash(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := config.UpdateBash(req); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update bash config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update bash config: "+err.Error(), err)
 			return
 		}
 		writeJSON(w, http.StatusOK, config.Get().Bash)
@@ -1051,7 +1051,7 @@ func (s *Server) handleConfigTokenOptimization(w http.ResponseWriter, r *http.Re
 			return
 		}
 		if err := config.UpdateTokenOptimization(req.TokenOptimizationConfig); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update token optimization config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update token optimization config: "+err.Error(), err)
 			return
 		}
 		// Surface the RTK toggle: write the inverted enable flag + paths back into Bash.
@@ -1059,7 +1059,7 @@ func (s *Server) handleConfigTokenOptimization(w http.ResponseWriter, r *http.Re
 		bashCfg.OutputFilterDisabled = !req.OutputFilterEnabled
 		bashCfg.OutputFilterPaths = req.OutputFilterPaths
 		if err := config.UpdateBash(bashCfg); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update output filter config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update output filter config: "+err.Error(), err)
 			return
 		}
 		cfg := config.Get()
@@ -1133,15 +1133,15 @@ func (s *Server) handleConfigExtensions(w http.ResponseWriter, r *http.Request) 
 		}
 
 		if err := config.UpdateSkills(req.Skills); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update skills config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update skills config: "+err.Error(), err)
 			return
 		}
 		if err := config.UpdateSkillsCatalog(req.SkillsCatalog); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update skills catalog config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update skills catalog config: "+err.Error(), err)
 			return
 		}
 		if err := config.UpdateLua(req.Lua); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update Lua config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update Lua config: "+err.Error(), err)
 			return
 		}
 
@@ -1189,7 +1189,7 @@ func (s *Server) handleConfigServices(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := config.UpdateMesnada(req.Mesnada); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update Mesnada config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update Mesnada config: "+err.Error(), err)
 			return
 		}
 
@@ -1203,16 +1203,16 @@ func (s *Server) handleConfigServices(w http.ResponseWriter, r *http.Request) {
 			req.Remembrances.CodeEmbeddingAPIKey = existing.CodeEmbeddingAPIKey
 		}
 		if err := config.UpdateRemembrances(req.Remembrances); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update Remembrances config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update Remembrances config: "+err.Error(), err)
 			return
 		}
 
 		if err := config.UpdateSnapshots(req.Snapshots); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update Snapshots config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update Snapshots config: "+err.Error(), err)
 			return
 		}
 		if err := config.UpdateServer(preserveBasicAuth(req.Server, cfg.Server)); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update Server config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update Server config: "+err.Error(), err)
 			return
 		}
 
@@ -1246,11 +1246,30 @@ func (s *Server) handleConfigEvaluator(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := config.UpdateEvaluator(req); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update evaluator config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update evaluator config: "+err.Error(), err)
 			return
 		}
 		writeJSON(w, http.StatusOK, config.Get().Evaluator)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+// handleConfigLockedKeys reports the configuration paths an extension overlay
+// has locked, so a settings surface can render those fields as managed rather
+// than discovering it by attempting a save and getting a 409 back.
+//
+// The core deliberately says nothing about *which* extension locked a key or
+// why: it knows only the list. Anything richer belongs to the extension that
+// imposed it and reaches the UI through its own panel.
+func (s *Server) handleConfigLockedKeys(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	keys := config.LockedKeys()
+	if keys == nil {
+		keys = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"lockedKeys": keys})
 }

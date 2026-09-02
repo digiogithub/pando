@@ -111,12 +111,12 @@ func (s *Server) handleAntigravityOAuthStart(w http.ResponseWriter, r *http.Requ
 		merged.OAuthCodeVerifier = account.OAuthCodeVerifier
 		merged.OAuthRedirectURI = account.OAuthRedirectURI
 		if err := config.UpdateProviderAccount(req.AccountID, merged); err != nil {
-			writeError(w, http.StatusBadRequest, "failed to update provider account: "+err.Error())
+			writeConfigError(w, http.StatusBadRequest, "failed to update provider account: "+err.Error(), err)
 			return
 		}
 	} else {
 		if err := config.AddProviderAccount(account); err != nil {
-			writeError(w, http.StatusBadRequest, "failed to create provider account: "+err.Error())
+			writeConfigError(w, http.StatusBadRequest, "failed to create provider account: "+err.Error(), err)
 			return
 		}
 	}
@@ -173,7 +173,7 @@ func (s *Server) handleAntigravityOAuthCallback(w http.ResponseWriter, r *http.R
 		return
 	}
 	if err := config.UpdateProviderAccount(account.ID, updated); err != nil {
-		writeError(w, http.StatusBadRequest, "failed to persist provider account: "+err.Error())
+		writeConfigError(w, http.StatusBadRequest, "failed to persist provider account: "+err.Error(), err)
 		return
 	}
 

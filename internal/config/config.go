@@ -1778,6 +1778,11 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 
 	setProviderDefaults()
 
+	// Merge any configuration overlays on top of the files, before the decode,
+	// so overlaid values go through exactly the same unmarshal, migration and
+	// decryption path as file-sourced ones.
+	overlayChanged := applyOverlayProviders()
+
 	// Apply configuration to the struct
 	if err := viper.Unmarshal(cfg); err != nil {
 		return cfg, fmt.Errorf("failed to unmarshal config: %w", err)
@@ -1909,6 +1914,11 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	// The catalog is consulted from the model registry, which cannot import
 	// this package; push the switch down instead.
 	modelsdev.SetDisabled(!cfg.ModelsDev.Enabled)
+
+	// Announce the overlay only once the load has actually succeeded, so no
+	// subscriber ever acts on a configuration that was rolled back by an error
+	// further down.
+	publishOverlayApplied(overlayChanged)
 
 	return cfg, nil
 }
@@ -3762,7 +3772,25 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 		userCfg.Providers = nil
 	}
 
+	// Snapshot the file configuration before the mutation so the write path can
+	// tell exactly which paths this write changes, and refuse it when one of
+	// them is locked by a configuration overlay.
+	var beforeTree map[string]any
+	enforceLocks := len(LockedKeys()) > 0
+	if enforceLocks {
+		beforeTree, err = configTree(userCfg)
+		if err != nil {
+			return fmt.Errorf("failed to inspect configuration before write: %w", err)
+		}
+	}
+
 	updateCfg(userCfg)
+
+	if enforceLocks {
+		if err := ensureNoLockedChange(beforeTree, userCfg); err != nil {
+			return err
+		}
+	}
 
 	persistedCfg, err := encryptSensitiveConfigFields(userCfg)
 	if err != nil {
@@ -3835,11 +3863,20 @@ func ResolveConfigFilePath() (string, error) {
 	return "", nil
 }
 
-// Reload re-reads the config file and updates the global config.
-// It resets the global config and reloads from disk.
+// Reload re-reads the config file and updates the global config. It resets the
+// global state so Load runs fresh, which also means every registered
+// configuration overlay is asked again and reapplied.
+//
+// The reloaded values are copied *into the existing Config value* rather than
+// replacing the pointer. Subsystems built at startup hold that pointer, and
+// swapping it under them would leave them reading a configuration nobody
+// updates again. Copying in place keeps every holder consistent; a holder that
+// copied a value out at construction time still needs its own refresh, which
+// is what the config event bus is for.
 func Reload() error {
 	workingDir := ""
 	debug := false
+	previous := cfg
 	if cfg != nil {
 		workingDir = cfg.WorkingDir
 		debug = cfg.Debug
@@ -3849,8 +3886,15 @@ func Reload() error {
 	cfg = nil
 	viper.Reset()
 
-	_, err := Load(workingDir, debug)
-	return err
+	fresh, err := Load(workingDir, debug)
+	if err != nil {
+		return err
+	}
+	if previous != nil && fresh != nil && fresh != previous {
+		*previous = *fresh
+		cfg = previous
+	}
+	return nil
 }
 
 // ConfigFileFormat returns the format ("json" or "toml") of the active config file.
@@ -3871,6 +3915,17 @@ func Get() *Config {
 // SetForTests replaces the global configuration for package-external tests.
 func SetForTests(c *Config) {
 	cfg = c
+}
+
+// ResetForTests clears every piece of process-wide configuration state: the
+// loaded configuration, viper's accumulated settings and any registered
+// overlay provider. Configuration is a singleton, so a test in another package
+// that calls Load has to start from a known state or it inherits whatever the
+// previous test left behind.
+func ResetForTests() {
+	cfg = nil
+	viper.Reset()
+	ClearOverlayProviders()
 }
 
 // WorkingDirectory returns the current working directory from the configuration.

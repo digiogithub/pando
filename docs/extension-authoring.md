@@ -146,6 +146,7 @@ step per capability.
 | `HTTPEndpointProvider` | Mounts routes under `/api/ext/<base>/` |
 | `HTTPMiddlewareProvider` | Wraps the HTTP stack (auth, headers) |
 | `EventSubscriber` | Receives internal events (sessions, messages, …) |
+| `ConfigOverlayProvider` | Imposes configuration on the host and locks keys |
 | `MemorySink` | Observes remembrance and KB writes |
 | `RemembranceSearchWrapper` | Adds to or reorders remembrance search results |
 | `FrontendProvider` | Ships WebUI assets and panels |
@@ -159,6 +160,59 @@ every process for a given build.
 
 A core tool always wins a name clash. An extension cannot shadow `bash` or
 `edit`; the attempt is logged and dropped.
+
+### Imposing configuration: `ConfigOverlayProvider`
+
+Most capabilities add something to Pando. This one changes what Pando *is
+configured to be*, so it works differently: an extension does not get a write
+handle on the configuration, it returns a document, and the host merges that
+document on top of what it read from files and the environment.
+
+```go
+func (e *policy) ConfigOverlay(ctx context.Context) (extension.ConfigOverlay, error) {
+    doc, ok := e.cache.Current() // whatever the extension fetched, out of band
+    if !ok {
+        return extension.ConfigOverlay{}, errors.New("no policy cached yet")
+    }
+    return extension.ConfigOverlay{
+        Source:   "acme-policy",
+        Values:   doc,                          // shaped like the config file
+        Locked:   []string{"internalTools", "container"},
+        Additive: []string{"bash.bannedCommands"},
+    }, nil
+}
+```
+
+Merge semantics, per key: a scalar replaces the loaded value; a map merges key
+by key; a list of objects that all carry an `id` merges by that id, the overlay
+entries first; any other list replaces, unless its path is named in `Additive`,
+in which case the lists are unioned with the loaded values first.
+
+`Locked` is the half that makes an overlay authoritative rather than merely a
+default. A configuration mutator that would change a locked path fails, the
+REST surfaces answer `409` with `"code": "config_key_locked"`, the TUI settings
+page refuses the save, and `GET /api/v1/config/locked-keys` tells a UI which
+fields to draw as managed. Locking a path the document does not set is
+meaningful too: it freezes whatever the file says.
+
+Four rules to build against:
+
+- **`ConfigOverlay` is called during configuration load**, which happens before
+  `Start` and can happen again at any time. Answer from a cache; never block on
+  the network. Returning an error means "nothing to say", and the host keeps
+  the configuration it already has — an overlay can never stop Pando starting.
+- **Nothing is persisted.** The overlay lives in memory and is rebuilt from the
+  provider on every load, so the configuration file keeps saying what the user
+  wrote and stops fighting the provider.
+- **To publish a new document, call `host.ConfigOverlays.ReapplyOverlays(ctx)`**
+  (`extension.ConfigOverlayController`, on `HostServices`). It re-runs the whole
+  load path. Do not call it from inside `ConfigOverlay`: reapplies are
+  serialised, so you would be waiting for yourself.
+- **Announcements land on the config event bus.** A load that merged an overlay
+  publishes a `ConfigChangeEvent` with `Event: "overlay_applied"` and the
+  changed keys, which is how a subsystem that copied a value out at startup
+  learns to refresh it. `HostServices.Config.LockedKeys()` reads the live lock
+  list.
 
 ## What the host guarantees
 

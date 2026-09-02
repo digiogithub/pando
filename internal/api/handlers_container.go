@@ -77,7 +77,7 @@ func (s *Server) handleContainerConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := config.UpdateContainer(req); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update container config: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update container config: "+err.Error(), err)
 			return
 		}
 		writeJSON(w, http.StatusOK, config.Get().Container)

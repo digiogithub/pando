@@ -82,6 +82,14 @@ func (v configView) Lookup(path string) (any, bool) {
 	return cur, true
 }
 
+// LockedKeys lists the configuration paths an overlay currently locks, so a
+// panel can render a field as managed instead of editable. It reads the live
+// lock list rather than a snapshot taken at Provision time, because an overlay
+// may be reapplied while Pando runs.
+func (v configView) LockedKeys() []string {
+	return config.LockedKeys()
+}
+
 // Options overrides how the manager is built. The zero value is what
 // production code uses.
 type Options struct {
@@ -120,10 +128,11 @@ func NewManager(opts Options) *extension.Manager {
 		Disabled: disabled,
 		Logger:   log,
 		Host: extension.HostServices{
-			Config:      configView{cfg: cfg},
-			WorkingDir:  workingDir,
-			CoreVersion: version.Version,
-			Variant:     version.Variant,
+			Config:         configView{cfg: cfg},
+			ConfigOverlays: overlayController{},
+			WorkingDir:     workingDir,
+			CoreVersion:    version.Version,
+			Variant:        version.Variant,
 		},
 	})
 }
@@ -137,6 +146,12 @@ func Load(ctx context.Context, opts Options) *extension.Manager {
 	mgr := NewManager(opts)
 	if err := mgr.Load(ctx); err != nil {
 		logging.Warn("Some extensions failed to load", "error", err)
+	}
+	// Configuration overlays are collected right after load and before Start,
+	// so an extension that starts background work already runs against the
+	// configuration it imposed.
+	if err := RegisterConfigOverlays(ctx, mgr); err != nil {
+		logging.Warn("Failed to apply extension configuration overlays", "error", err)
 	}
 	if n := len(extension.List()); n > 0 {
 		logging.Debug("Extension registry", "registered", n)

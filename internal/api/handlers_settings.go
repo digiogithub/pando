@@ -306,7 +306,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// Apply theme update (uses the dedicated config helper that also persists).
 	if req.Theme != nil {
 		if err := config.UpdateTheme(*req.Theme); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update theme: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update theme: "+err.Error(), err)
 			return
 		}
 	}
@@ -322,35 +322,35 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 
 	if req.Debug != nil {
 		if err := config.UpdateDebug(*req.Debug); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update debug setting")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update debug setting", err)
 			return
 		}
 	}
 
 	if req.AutoCompact != nil {
 		if err := config.UpdateAutoCompact(*req.AutoCompact); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update auto compact setting")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update auto compact setting", err)
 			return
 		}
 	}
 
 	if req.SkillsEnabled != nil {
 		if err := config.UpdateSkillsEnabled(*req.SkillsEnabled); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update skills enabled setting")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update skills enabled setting", err)
 			return
 		}
 	}
 
 	if req.ShowHiddenFiles != nil {
 		if err := config.UpdateShowHiddenFiles(*req.ShowHiddenFiles); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update show hidden files setting")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update show hidden files setting", err)
 			return
 		}
 	}
 
 	if req.NerdFonts != nil {
 		if err := config.UpdateNerdFonts(*req.NerdFonts); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update nerd fonts setting")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update nerd fonts setting", err)
 			return
 		}
 		// Apply immediately so the running TUI's icon set swaps live.
@@ -359,28 +359,28 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 
 	if req.LLMCacheEnabled != nil {
 		if err := config.UpdateLLMCache(*req.LLMCacheEnabled); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update llm cache setting")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update llm cache setting", err)
 			return
 		}
 	}
 
 	if req.ModelsDevEnabled != nil {
 		if err := config.UpdateModelsDev(*req.ModelsDevEnabled); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update models.dev setting")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update models.dev setting", err)
 			return
 		}
 	}
 
 	if req.ImageAutoResize != nil {
 		if err := config.UpdateImageAutoResize(*req.ImageAutoResize); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update image auto-resize setting")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update image auto-resize setting", err)
 			return
 		}
 	}
 
 	if req.ImageUseFilesAPI != nil {
 		if err := config.UpdateImageUseFilesAPI(*req.ImageUseFilesAPI); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update image files API setting")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update image files API setting", err)
 			return
 		}
 	}
@@ -390,7 +390,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		// The UI exposes "enabled"; the config stores the inverse "disabled" flag.
 		bashCfg.OutputFilterDisabled = !*req.OutputFilterEnabled
 		if err := config.UpdateBash(bashCfg); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update output filter setting")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update output filter setting", err)
 			return
 		}
 	}
@@ -410,7 +410,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		cavemanCfg := config.Get().Caveman
 		cavemanCfg.DefaultMode = string(mode)
 		if err := config.UpdateCaveman(cavemanCfg); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update caveman setting: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update caveman setting: "+err.Error(), err)
 			return
 		}
 	}
@@ -445,7 +445,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			td.SearchLimit = *req.ToolDiscoverySearchLimit
 		}
 		if err := config.UpdateToolDiscovery(td); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update tool discovery settings")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update tool discovery settings", err)
 			return
 		}
 	}
@@ -459,7 +459,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			eval.Model = models.ModelID(*req.JudgeModel)
 		}
 		if err := config.UpdateEvaluator(eval); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update evaluator settings")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update evaluator settings", err)
 			return
 		}
 	}
@@ -583,7 +583,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			del.EventLogMaxEntries = *req.DelegationEventLogMaxEntries
 		}
 		if err := config.UpdateMesnadaDelegation(del); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update delegation settings")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update delegation settings", err)
 			return
 		}
 	}
@@ -620,7 +620,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			orch.DispatchInterval = *req.OrchestratorDispatchInterval
 		}
 		if err := config.UpdateMesnadaOrchestrator(orch); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update orchestrator settings")
+			writeConfigError(w, http.StatusInternalServerError, "failed to update orchestrator settings", err)
 			return
 		}
 	}
