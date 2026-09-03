@@ -146,7 +146,7 @@ AutoUpdate = false
 DefaultScope = ''
 
 [TUI]
-Theme = 'starbucks-light'
+Theme = 'monokai-nobg'
 ShowHiddenFiles = true
 ChatSidebar = ''
 ChatSidebarMinWidth = 0

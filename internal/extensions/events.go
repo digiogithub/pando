@@ -68,11 +68,17 @@ func deliver[T any](ctx context.Context, mgr *extension.Manager, topic string, e
 		Payload:   payload,
 		Time:      time.Now(),
 	}
+	dispatch(ctx, mgr, out)
+}
+
+// dispatch hands one ready-made event to every subscriber that asked for its
+// topic. Delivery is sequential and guarded; see handleSafely.
+func dispatch(ctx context.Context, mgr *extension.Manager, ev extension.Event) {
 	for _, sub := range extension.Capability[extension.EventSubscriber](mgr) {
-		if !wants(sub, topic) {
+		if !wants(sub, ev.Topic) {
 			continue
 		}
-		handleSafely(ctx, sub, out)
+		handleSafely(ctx, sub, ev)
 	}
 }
 

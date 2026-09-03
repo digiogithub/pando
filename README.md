@@ -13,6 +13,19 @@ A powerful terminal-based AI assistant for developers, providing intelligent cod
 
 Pando is a Go-based CLI application that brings AI assistance to your terminal. It provides a TUI (Terminal User Interface), PWA WebUI and desktop application for interacting with various AI models to help with coding tasks, debugging, and more.
 
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <img src="assets/tui.jpg" alt="Pando TUI" width="500" />
+      </td>
+      <td align="center">
+        <img src="assets/webui-desktop.jpg" alt="Pando WebUI desktop" width="500" />
+      </td>
+    </tr>
+  </table>
+</div>
+
 ## Features
 
 - **Interactive TUI**: Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) for a smooth terminal experience

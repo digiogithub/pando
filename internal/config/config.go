@@ -1783,6 +1783,15 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	// decryption path as file-sourced ones.
 	overlayChanged := applyOverlayProviders()
 
+	// Values that apply to this process only (command-line overrides) are the
+	// top layer: they win over files and overlays, except where an overlay
+	// locked the key. Recording them is what keeps a reload from throwing them
+	// away halfway through a run.
+	if len(logFile) > 0 && logFile[0] != "" {
+		SetRuntimeOverride("logFile", logFile[0])
+	}
+	applyRuntimeOverrides()
+
 	// Apply configuration to the struct
 	if err := viper.Unmarshal(cfg); err != nil {
 		return cfg, fmt.Errorf("failed to unmarshal config: %w", err)
@@ -3873,13 +3882,22 @@ func ResolveConfigFilePath() (string, error) {
 // updates again. Copying in place keeps every holder consistent; a holder that
 // copied a value out at construction time still needs its own refresh, which
 // is what the config event bus is for.
+//
+// Runtime overrides recorded with SetRuntimeOverride (the --model and
+// --log-file flags, among others) are reapplied, so a reload does not revert
+// the run to the saved values. A failed reload leaves the previous
+// configuration in effect: the half-built value Load returned on the way to the
+// error is discarded and the global configuration keeps pointing at what
+// callers already hold.
 func Reload() error {
 	workingDir := ""
 	debug := false
 	previous := cfg
+	var before map[string]any
 	if cfg != nil {
 		workingDir = cfg.WorkingDir
 		debug = cfg.Debug
+		before, _ = configTree(cfg)
 	}
 
 	// Reset global state so Load() runs fresh
@@ -3888,13 +3906,36 @@ func Reload() error {
 
 	fresh, err := Load(workingDir, debug)
 	if err != nil {
+		// Put the previous configuration back: a subsystem holding the pointer
+		// must never be left reading a partially loaded value.
+		cfg = previous
 		return err
 	}
 	if previous != nil && fresh != nil && fresh != previous {
 		*previous = *fresh
 		cfg = previous
 	}
+	publishConfigReloaded(before)
 	return nil
+}
+
+// publishConfigReloaded announces a successful reload, naming the paths whose
+// value actually moved so a subscriber can refresh only what changed. It runs
+// after the new values are in effect, so a subscriber that reads the
+// configuration when the event arrives sees them.
+func publishConfigReloaded(before map[string]any) {
+	after, err := configTree(cfg)
+	if err != nil {
+		after = nil
+	}
+	changed := normalizePaths(changedPaths(before, after, nil))
+	Bus.Publish(ConfigChangeEvent{
+		Section:     "",
+		Event:       EventConfigReloaded,
+		ChangedKeys: changed,
+		Source:      ReloadSource,
+		Timestamp:   time.Now(),
+	})
 }
 
 // ConfigFileFormat returns the format ("json" or "toml") of the active config file.
@@ -3926,6 +3967,7 @@ func ResetForTests() {
 	cfg = nil
 	viper.Reset()
 	ClearOverlayProviders()
+	ClearRuntimeOverrides()
 }
 
 // WorkingDirectory returns the current working directory from the configuration.
@@ -4053,6 +4095,11 @@ func setAgentModel(agentName AgentName, modelID models.ModelID, persist bool) er
 	}
 
 	if !persist {
+		// The selection lives only in memory, so record it as a runtime
+		// override: without that, the next reload (a config file write, an
+		// extension asking for one) would silently put the saved model back
+		// halfway through a run started with --model.
+		SetRuntimeOverride("agents."+string(agentName)+".model", string(modelID))
 		if agentName == AgentCoder {
 			propagateCoderModel(modelID, false)
 		}
@@ -4068,6 +4115,9 @@ func setAgentModel(agentName AgentName, modelID models.ModelID, persist bool) er
 	if err != nil {
 		return err
 	}
+	// The saved value is authoritative again, so an earlier runtime override
+	// for this agent must stop shadowing it on the next load.
+	ClearRuntimeOverride("agents." + string(agentName) + ".model")
 
 	if agentName == AgentCoder {
 		propagateCoderModel(modelID, true)
@@ -4117,6 +4167,11 @@ func propagateCoderModel(modelID models.ModelID, persist bool) {
 			continue
 		}
 		updated[name] = cfg.Agents[name]
+		if !persist {
+			// Same reason as in setAgentModel: an inherited model that exists
+			// only in memory has to survive a reload.
+			SetRuntimeOverride("agents."+string(name)+".model", string(modelID))
+		}
 	}
 
 	if len(updated) == 0 {

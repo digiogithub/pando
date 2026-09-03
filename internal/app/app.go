@@ -2111,6 +2111,9 @@ func (app *App) startExtensionEventFanout(ctx context.Context) {
 	extensions.Forward(evCtx, app.Extensions, extension.TopicSession, app.Sessions)
 	extensions.Forward(evCtx, app.Extensions, extension.TopicMessage, app.Messages)
 	extensions.Forward(evCtx, app.Extensions, extension.TopicPermission, app.Permissions)
+	// Configuration is not one of core's resource brokers, so it needs its own
+	// bridge; the topic reaches subscribers exactly like the others.
+	extensions.ForwardConfigEvents(evCtx, app.Extensions)
 	logging.Info("Extension event fan-out started")
 }
 

@@ -17,6 +17,16 @@ const (
 	EventCreated EventType = "created"
 	EventUpdated EventType = "updated"
 	EventDeleted EventType = "deleted"
+
+	// EventOverlayApplied is the Type of a TopicConfig event published after a
+	// load in which a configuration overlay was merged. Payload["changedKeys"]
+	// names the paths whose value the overlay moved.
+	EventOverlayApplied EventType = "overlay_applied"
+
+	// EventConfigReloaded is the Type of a TopicConfig event published after
+	// the host reloaded its configuration, whatever caused it: a file change,
+	// a settings save, an extension asking for one.
+	EventConfigReloaded EventType = "config_reloaded"
 )
 
 // The topics core publishes. More may be added; an unknown topic is not an
@@ -25,6 +35,25 @@ const (
 	TopicSession    = "session"
 	TopicMessage    = "message"
 	TopicPermission = "permission"
+
+	// TopicConfig carries host configuration changes. Unlike the resource
+	// topics its events are not about one identified object: ID and SessionID
+	// are empty, Type says what happened (EventUpdated for an ordinary change,
+	// EventOverlayApplied, EventConfigReloaded) and the payload carries
+	//
+	//	"event"       string   the host's own name for the change, if any
+	//	"section"     string   which part of the configuration moved, or ""
+	//	"source"      string   where the change came from ("file", "tui",
+	//	                       "webui", "overlay", "reload")
+	//	"changedKeys" []any    dotted paths whose value changed, when the
+	//	                       publisher can name them; absent means unknown,
+	//	                       so assume the whole section moved
+	//	"lockedKeys"  []any    the lock list as it stands after the change
+	//	"timestamp"   string   RFC 3339
+	//
+	// This is how an extension that imposes configuration learns that its
+	// values went live, and how it notices a local edit fighting its overlay.
+	TopicConfig = "config"
 )
 
 // Event is one resource lifecycle notification.

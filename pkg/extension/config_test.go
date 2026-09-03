@@ -113,10 +113,18 @@ func (stubConfigView) Debug() bool               { return false }
 func (stubConfigView) Lookup(string) (any, bool) { return nil, false }
 func (s stubConfigView) LockedKeys() []string    { return s.locked }
 
-type stubOverlayController struct{ calls int }
+type stubOverlayController struct {
+	calls   int
+	reloads []string
+}
 
 func (c *stubOverlayController) ReapplyOverlays(context.Context) error {
 	c.calls++
+	return nil
+}
+
+func (c *stubOverlayController) RequestReload(_ context.Context, reason string) error {
+	c.reloads = append(c.reloads, reason)
 	return nil
 }
 
@@ -138,5 +146,14 @@ func TestHostServicesExposeLockStateAndReapply(t *testing.T) {
 	}
 	if ctrl.calls != 1 {
 		t.Fatalf("controller called %d times, want once", ctrl.calls)
+	}
+
+	// The coalesced form is part of the same handle, so an extension driven by
+	// a remote stream never has to reach for anything else.
+	if err := host.ConfigOverlays.RequestReload(context.Background(), "new generation"); err != nil {
+		t.Fatalf("RequestReload: %v", err)
+	}
+	if len(ctrl.reloads) != 1 || ctrl.reloads[0] != "new generation" {
+		t.Fatalf("reload reasons = %v, want [new generation]", ctrl.reloads)
 	}
 }

@@ -103,4 +103,23 @@ type ConfigOverlayController interface {
 	// Calls are serialised by the host; a call made while another is in
 	// progress waits for it.
 	ReapplyOverlays(ctx context.Context) error
+
+	// RequestReload is the same operation, coalesced. Requests that arrive
+	// close together share one reload and all return its outcome, so an
+	// extension driven by a stream of remote notifications cannot make the
+	// host reload once per notification. Prefer it for anything triggered by
+	// an external event; use ReapplyOverlays when the caller needs the reload
+	// to have finished by the time the call returns, with no delay.
+	//
+	// reason is a short label for the host log ("new policy generation"), not
+	// something the host interprets.
+	//
+	// The error returned is the reload's own, so an extension learns that the
+	// document it published cannot be loaded. A failed reload leaves the
+	// previous configuration in effect. Cancelling ctx abandons the wait, not
+	// the reload.
+	//
+	// Never call it from inside ConfigOverlay: the provider would be waiting
+	// for a load that is waiting for the provider.
+	RequestReload(ctx context.Context, reason string) error
 }

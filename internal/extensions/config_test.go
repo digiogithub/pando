@@ -208,3 +208,36 @@ func TestOverlayControllerReapplies(t *testing.T) {
 		t.Fatalf("tui.theme = %q, want the refreshed overlay value", got)
 	}
 }
+
+func TestOverlayControllerRequestReload(t *testing.T) {
+	dir := projectWithConfig(t, map[string]any{"tui": map[string]any{"theme": "dark"}})
+
+	ext := newOverlayExtension("policy.test", extension.ConfigOverlay{
+		Values: map[string]any{"tui": map[string]any{"theme": "corporate"}},
+	})
+	mgr := quietManagerWith(t, ext)
+
+	ctx := context.Background()
+	if _, err := config.Load(dir, false); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if err := mgr.Load(ctx); err != nil {
+		t.Fatalf("manager Load: %v", err)
+	}
+	if err := RegisterConfigOverlays(ctx, mgr); err != nil {
+		t.Fatalf("RegisterConfigOverlays: %v", err)
+	}
+
+	// The coalesced path an extension uses when a remote notification arrives:
+	// several requests, one reload, everyone told how it went.
+	ext.overlay.Values = map[string]any{"tui": map[string]any{"theme": "corporate-v3"}}
+	var ctrl extension.ConfigOverlayController = overlayController{}
+	for i := 0; i < 3; i++ {
+		if err := ctrl.RequestReload(ctx, "new generation"); err != nil {
+			t.Fatalf("RequestReload: %v", err)
+		}
+	}
+	if got := config.Get().TUI.Theme; got != "corporate-v3" {
+		t.Fatalf("tui.theme = %q, want the refreshed overlay value", got)
+	}
+}

@@ -61,6 +61,14 @@ func (overlayController) ReapplyOverlays(ctx context.Context) error {
 	return config.ApplyOverlays(ctx)
 }
 
+// RequestReload is the coalesced form. Bursts of requests collapse into a
+// single reload and every caller that joined it gets the same result, which is
+// what keeps an extension driven by a remote stream from making the host
+// re-read its configuration once per message.
+func (overlayController) RequestReload(ctx context.Context, reason string) error {
+	return config.RequestReload(ctx, reason)
+}
+
 // RegisterConfigOverlays registers every loaded extension that provides a
 // configuration overlay and applies the result.
 //
