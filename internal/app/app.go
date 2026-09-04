@@ -123,6 +123,14 @@ type App struct {
 	// every consumer behaves exactly as an unextended Pando.
 	Identity func(ctx context.Context) (extensions.Identity, bool)
 
+	// UIPolicy reports what the settings surfaces should hide and what they
+	// should render read-only, when a loaded extension implements
+	// extension.UIPolicyProvider. It is always non-nil and is asked at render
+	// time, so a policy that appears or disappears during a run takes effect on
+	// the next rebuild. With no provider it returns the zero policy and every
+	// surface behaves exactly as an unextended Pando.
+	UIPolicy func(ctx context.Context) extensions.UIPolicy
+
 	// delegationSupervisor implements Case A of the delegated-conclusion protocol
 	// (inject a completed subagent's conclusion into a still-running parent loop).
 	// It is nil when delegation is disabled (default-off).
@@ -833,6 +841,10 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	// Identity is resolved through the manager on every use, so it is wired
 	// before the consumers that read it.
 	app.Identity = extensions.IdentityResolver(app.Extensions)
+	// The settings surfaces read the UI policy through the app, the same way
+	// they read the identity. Load already installed it process-wide, so this
+	// is the same value the HTTP surface and the write path see.
+	app.UIPolicy = extensions.CurrentUIPolicy
 	// Outgoing provider requests may be decorated per call. Setting nil is the
 	// same as never setting one, so this is unconditional.
 	provider.SetRequestDecorator(extensions.ProviderRequestDecorator(app.Extensions))

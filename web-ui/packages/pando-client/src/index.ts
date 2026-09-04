@@ -18,6 +18,7 @@ export * from './services/host'
 export * from './services/mappers'
 export * from './services/sse'
 export * from './services/terminalPty'
+export * from './services/uiPolicy'
 
 // stores
 export * from './stores/agentVcsStore'
@@ -47,6 +48,7 @@ export * from './stores/settingsStore'
 export * from './stores/snapshotsStore'
 export * from './stores/terminalStore'
 export * from './stores/toastStore'
+export * from './stores/uiPolicyStore'
 
 // hooks
 export * from './hooks/useChat'

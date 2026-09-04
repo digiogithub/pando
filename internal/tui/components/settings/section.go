@@ -157,8 +157,8 @@ func (s *Section) renderFields(width int, active bool) []string {
 		value := field.DisplayValue(false)
 		if isEditingField {
 			value = s.editor.View()
-		} else if field.Locked {
-			value = lockedFieldMarker + " " + value
+		} else if marker := field.LockMarker(); marker != "" {
+			value = marker + " " + value
 		}
 
 		valueStyle := base.

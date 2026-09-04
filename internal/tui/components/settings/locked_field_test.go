@@ -56,3 +56,33 @@ func TestLockedFieldRendersMarker(t *testing.T) {
 		t.Fatalf("unlocked field rendered with the marker:\n%s", views[1])
 	}
 }
+
+// A caller-supplied note replaces the generic marker, so a managed row can say
+// who owns the value. It is only rendered on a locked field: a note on an
+// editable one would claim the value is not the user's while still letting them
+// change it.
+func TestManagedNoteReplacesTheMarker(t *testing.T) {
+	locked := Field{Label: "Theme", Key: "tui.theme", Value: "corporate", Type: FieldText,
+		Locked: true, ManagedNote: "Managed by the operator"}
+	if got := locked.LockMarker(); got != "[Managed by the operator]" {
+		t.Fatalf("LockMarker() = %q", got)
+	}
+	editable := Field{Label: "Debug", Key: "debug", Value: "false", Type: FieldToggle,
+		ManagedNote: "Managed by the operator"}
+	if got := editable.LockMarker(); got != "" {
+		t.Fatalf("LockMarker() on an unlocked field = %q, want empty", got)
+	}
+
+	s := &Section{Title: "General", Fields: []Field{locked, editable}}
+	s.SetWidth(80)
+	views := s.renderFields(80, true)
+	if !strings.Contains(views[0], "Managed by the operator") {
+		t.Fatalf("the note is not in the rendered row:\n%s", views[0])
+	}
+	if strings.Contains(views[0], lockedFieldMarker) {
+		t.Fatalf("both the note and the generic marker were drawn:\n%s", views[0])
+	}
+	if strings.Contains(views[1], "Managed by the operator") {
+		t.Fatalf("an editable field was drawn as managed:\n%s", views[1])
+	}
+}

@@ -98,6 +98,41 @@ var (
 	overlayCtx context.Context
 )
 
+var (
+	restrictedMu     sync.RWMutex
+	restrictedSource func() []string
+)
+
+// SetRestrictedPathSource installs a second source of configuration paths that
+// may not be written locally, on top of the paths the overlays lock.
+//
+// It exists because a host-level policy can withdraw a part of the
+// configuration from local control without setting a value: a settings surface
+// told not to render a section must not be the only thing standing between a
+// client and that section, so the same paths are refused by the write path.
+// Passing nil removes the source and restores the overlay-only behaviour.
+//
+// The function is called on every lock check, including inside the write path's
+// per-changed-path loop, so it must be cheap: callers memoise. It is called
+// without any configuration lock held, so it may read configuration itself.
+func SetRestrictedPathSource(fn func() []string) {
+	restrictedMu.Lock()
+	defer restrictedMu.Unlock()
+	restrictedSource = fn
+}
+
+// restrictedPaths asks the installed source for its current paths. It returns
+// nil when no source is installed, which is the standalone case.
+func restrictedPaths() []string {
+	restrictedMu.RLock()
+	fn := restrictedSource
+	restrictedMu.RUnlock()
+	if fn == nil {
+		return nil
+	}
+	return fn()
+}
+
 // ErrKeyLocked is the sentinel every locked-key refusal wraps. Callers report
 // the key as managed rather than as a failed save:
 //
@@ -190,12 +225,35 @@ func OverlayChangedKeys() []string {
 	return append([]string(nil), lastOverlayKeys...)
 }
 
-// LockedKeys returns the paths locked by the overlays applied on the last
-// load, sorted and deduplicated.
+// LockedKeys returns the paths that may not be written locally, sorted and
+// deduplicated: the ones the overlays locked on the last load, plus the ones
+// the restricted-path source reports (see SetRestrictedPathSource).
 func LockedKeys() []string {
+	extra := restrictedPaths()
 	overlayMu.RLock()
-	defer overlayMu.RUnlock()
-	return append([]string(nil), lockedKeys...)
+	keys := append([]string(nil), lockedKeys...)
+	overlayMu.RUnlock()
+	if len(extra) == 0 {
+		return keys
+	}
+	return sortUniquePaths(append(keys, extra...))
+}
+
+// sortUniquePaths sorts paths and drops duplicates, comparing them
+// case-insensitively because configuration paths are case-insensitive
+// throughout. The first spelling of a path wins.
+func sortUniquePaths(paths []string) []string {
+	sort.Slice(paths, func(i, j int) bool {
+		return strings.ToLower(paths[i]) < strings.ToLower(paths[j])
+	})
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if len(out) > 0 && strings.EqualFold(p, out[len(out)-1]) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // IsKeyLocked reports whether path is covered by the current lock list.
@@ -212,6 +270,11 @@ func IsKeyLocked(path string) bool {
 	if path == "" {
 		return false
 	}
+	for _, restricted := range restrictedPaths() {
+		if pathsOverlap(restricted, path) {
+			return true
+		}
+	}
 	overlayMu.RLock()
 	defer overlayMu.RUnlock()
 	for _, locked := range lockedKeys {
@@ -220,6 +283,16 @@ func IsKeyLocked(path string) bool {
 		}
 	}
 	return false
+}
+
+// PathsOverlap reports whether either dotted configuration path covers the
+// other, comparing whole segments case-insensitively. It is the same question
+// IsKeyLocked asks of the lock list, exported so that other host-side policies
+// over configuration paths (which section a surface may render, for instance)
+// decide coverage exactly as the lock list does instead of writing a second,
+// subtly different matcher.
+func PathsOverlap(a, b string) bool {
+	return pathsOverlap(a, b)
 }
 
 // ErrIfLocked returns a *LockedKeyError for the first locked path among paths,
@@ -238,6 +311,11 @@ func ErrIfLocked(paths ...string) error {
 // does. Unlike IsKeyLocked it only matches a locked path that is path itself or
 // an ancestor of it, which is the right question for a concrete changed leaf.
 func lockedKeyCovering(path string) string {
+	for _, restricted := range restrictedPaths() {
+		if pathHasPrefix(path, restricted) {
+			return restricted
+		}
+	}
 	overlayMu.RLock()
 	defer overlayMu.RUnlock()
 	for _, locked := range lockedKeys {

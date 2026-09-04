@@ -60,6 +60,10 @@ var exemptedMutators = map[string]string{
 		"on every load. Nothing is written and nothing takes effect here; applyRuntimeOverrides " +
 		"skips an override whose path is locked when the value is merged.",
 
+	"SetRestrictedPathSource": "installs the source the lock check itself reads: the paths a " +
+		"host-level policy withdraws from local control. It writes no configuration, and making " +
+		"it consult the lock list would mean asking the lock list to authorise its own contents.",
+
 	"UpdateGlobalProjectName": "writes the user-level project registry (a list of known project " +
 		"directories under the XDG config dir), which is a separate file and not part of the " +
 		"configuration document. It has no dotted configuration path a lock could name.",

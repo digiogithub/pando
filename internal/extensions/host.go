@@ -153,6 +153,11 @@ func Load(ctx context.Context, opts Options) *extension.Manager {
 	if err := RegisterConfigOverlays(ctx, mgr); err != nil {
 		logging.Warn("Failed to apply extension configuration overlays", "error", err)
 	}
+	// The UI policy is installed after the overlays, because a provider that
+	// derives its policy from the configuration it just imposed must find that
+	// configuration already loaded. It also points the configuration write path
+	// at the policy, so a hidden section is refused as well as not offered.
+	RegisterUIPolicy(mgr)
 	if n := len(extension.List()); n > 0 {
 		logging.Debug("Extension registry", "registered", n)
 	}

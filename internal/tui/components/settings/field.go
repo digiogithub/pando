@@ -47,6 +47,27 @@ type Field struct {
 	// field, is set from the live lock list on every rebuild, and can appear
 	// and disappear while Pando runs.
 	Locked bool
+
+	// ManagedNote replaces the generic lock marker with a caller-supplied
+	// label ("Managed by the operator"), so a managed row says who owns the
+	// value instead of only that somebody does.
+	//
+	// It is rendered only when Locked is set: a note on an editable field would
+	// tell the user a value is not theirs while still letting them change it.
+	ManagedNote string
+}
+
+// LockMarker is the text drawn before the value of a locked field: the
+// caller-supplied note when there is one, and the generic marker otherwise.
+// It returns "" for a field that is not locked.
+func (f Field) LockMarker() string {
+	if !f.Locked {
+		return ""
+	}
+	if note := strings.TrimSpace(f.ManagedNote); note != "" {
+		return "[" + note + "]"
+	}
+	return lockedFieldMarker
 }
 
 // Editable reports whether the field accepts input. It is the single question
