@@ -282,12 +282,16 @@ func splitPath(path string) []string {
 // viper and records the resulting lock list. It runs inside Load, between the
 // file merge and viper.Unmarshal.
 //
-// It returns the dotted paths whose value the overlays changed, so the caller
-// can report them once the load has succeeded.
-func applyOverlayProviders() []string {
+// It returns the dotted paths whose value the overlays changed, plus whether
+// the lock list itself moved, so the caller can report both once the load has
+// succeeded. The two are independent: an overlay may lock a key without
+// setting it, and a surface that draws locked keys as managed has to hear
+// about that even though no value changed.
+func applyOverlayProviders() (changedKeys []string, locksChanged bool) {
 	overlayMu.RLock()
 	providers := append([]OverlayProvider(nil), overlayProviders...)
 	ctx := overlayCtx
+	previousLocks := append([]string(nil), lockedKeys...)
 	overlayMu.RUnlock()
 
 	// Reset the lock list even when nothing is registered: a provider that
@@ -297,7 +301,7 @@ func applyOverlayProviders() []string {
 		lockedKeys = nil
 		lastOverlayKeys = nil
 		overlayMu.Unlock()
-		return nil
+		return nil, len(previousLocks) > 0
 	}
 
 	if ctx == nil {
@@ -338,6 +342,7 @@ func applyOverlayProviders() []string {
 
 	locked = normalizePaths(locked)
 	changed = normalizePaths(changed)
+	locksChanged = !equalStringSlices(previousLocks, locked)
 
 	overlayMu.Lock()
 	lockedKeys = locked
@@ -345,9 +350,24 @@ func applyOverlayProviders() []string {
 	overlayMu.Unlock()
 
 	if applied == 0 {
-		return nil
+		return nil, locksChanged
 	}
-	return changed
+	return changed, locksChanged
+}
+
+// equalStringSlices compares two normalised path lists. Both sides come out of
+// normalizePaths, so they are sorted and deduplicated and an element-wise
+// comparison is exact.
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // callOverlayProvider runs one provider under a deadline, converting a panic
@@ -365,9 +385,16 @@ func callOverlayProvider(parent context.Context, p OverlayProvider) (ov Overlay,
 	return p.ConfigOverlay(ctx)
 }
 
-// publishOverlayApplied announces a load in which an overlay was merged.
-func publishOverlayApplied(changed []string) {
-	if len(changed) == 0 {
+// publishOverlayApplied announces a load in which an overlay took effect.
+//
+// It fires when the overlay changed a value *or* when the lock list moved.
+// The second case carries an empty ChangedKeys on purpose: nothing was
+// rewritten, but a key that was editable a moment ago is now managed (or the
+// other way round), and a settings surface has to redraw. ChangedKeys stays
+// exactly what it claims to be — the keys whose value changed — rather than
+// being padded with the locks to make the event look non-empty.
+func publishOverlayApplied(changed []string, locksChanged bool) {
+	if len(changed) == 0 && !locksChanged {
 		return
 	}
 	Bus.Publish(ConfigChangeEvent{

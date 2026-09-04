@@ -38,6 +38,7 @@ import (
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/prompt"
+	"github.com/digiogithub/pando/internal/llm/provider"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
@@ -114,6 +115,13 @@ type App struct {
 	// observe them. Nil unless [Extensions.Memory] opens the gate and a loaded
 	// extension implements extension.MemorySink.
 	MemorySink *extensions.MemoryPublisher
+
+	// Identity reports who the host is running for, when a loaded extension
+	// implements extension.IdentityProvider. It is always non-nil and is asked
+	// per use, never cached, so a sign-in or a sign-out during a run takes
+	// effect without a restart. With no provider it always reports false and
+	// every consumer behaves exactly as an unextended Pando.
+	Identity func(ctx context.Context) (extensions.Identity, bool)
 
 	// delegationSupervisor implements Case A of the delegated-conclusion protocol
 	// (inject a completed subagent's conclusion into a still-running parent loop).
@@ -822,6 +830,12 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	// Slash commands are resolved through internal/commands by every surface
 	// (ACP, WebUI, TUI, completions), so the manager is wired there too.
 	commands.SetExtensionManager(app.Extensions)
+	// Identity is resolved through the manager on every use, so it is wired
+	// before the consumers that read it.
+	app.Identity = extensions.IdentityResolver(app.Extensions)
+	// Outgoing provider requests may be decorated per call. Setting nil is the
+	// same as never setting one, so this is unconditional.
+	provider.SetRequestDecorator(extensions.ProviderRequestDecorator(app.Extensions))
 	app.startExtensionEventFanout(ctx)
 	app.startExtensionMemoryHooks(cfg)
 
@@ -2130,10 +2144,21 @@ func (app *App) startExtensionMemoryHooks(cfg *config.Config) {
 	memCfg := cfg.Extensions.Memory
 
 	app.MemorySink = extensions.NewMemoryPublisher(app.Extensions, memCfg, func() extensions.Attribution {
-		return extensions.Attribution{
+		attr := extensions.Attribution{
 			ProjectID:  config.WorkingDirectory(),
 			InstanceID: app.ipcInstanceID,
 		}
+		// Attribution carries the user id and nothing else from the identity:
+		// the address and the group list are personal data that would then
+		// leave the machine on every single write, with no separate consent.
+		// An extension that legitimately needs them is the one that supplied
+		// them and can read them from its own state.
+		if app.Identity != nil {
+			if id, ok := app.Identity(context.Background()); ok {
+				attr.UserID = id.UserID
+			}
+		}
+		return attr
 	})
 	if observer := app.MemorySink.Observer(); observer != nil {
 		app.Remembrances.KB.SetWriteObserver(observer)

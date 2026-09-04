@@ -74,6 +74,17 @@ func newOpenAIClient(opts providerClientOptions) OpenAIClient {
 			option.WithHTTPClient(&http.Client{Transport: newDebugRoundTripper(nil)}))
 	}
 
+	// Per-request decoration. The extraHeaders above are fixed for the life of
+	// the client; this middleware is consulted on every request, so a value
+	// that varies from call to call can still reach the provider. It is a
+	// pass-through when nothing installed a decorator, which is the standard
+	// build.
+	openaiClientOptions = append(openaiClientOptions, option.WithMiddleware(
+		decoratorMiddleware(RequestInfo{
+			Provider: string(opts.model.Provider),
+			Model:    opts.model.APIModel,
+		})))
+
 	client := openai.NewClient(openaiClientOptions...)
 	if cfg := config.Get(); cfg != nil && cfg.Debug {
 		logging.Debug("Creating OpenAI client", "model", opts.model.APIModel, "baseURL", openaiOpts.baseURL)

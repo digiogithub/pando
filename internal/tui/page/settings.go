@@ -920,7 +920,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		return nil
 	}
 
-	return []settings.Section{
+	return markLockedFields([]settings.Section{
 		// ── Core ──
 		withGroup(buildGeneralSection(cfg), "Core"),
 
@@ -952,7 +952,31 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		withGroup(buildOpenLitSection(cfg), "Services"),
 		withGroup(buildServerSection(cfg), "Services"),
 		withGroup(buildSnapshotsSection(cfg), "Services"),
+	})
+}
+
+// markLockedFields flags every field whose configuration key an extension has
+// taken over, so the page draws it as managed and refuses to edit it.
+//
+// It runs once over the assembled sections rather than inside each builder,
+// for the same reason enforcement lives in one funnel rather than in fifty
+// mutators: a builder added later is covered without being told to be. The
+// lock list is read here, at rebuild time, so a lock that appears or
+// disappears while Pando runs is reflected on the next config event.
+func markLockedFields(sections []settings.Section) []settings.Section {
+	if len(config.LockedKeys()) == 0 {
+		return sections
 	}
+	for i := range sections {
+		for j := range sections[i].Fields {
+			field := &sections[i].Fields[j]
+			if field.Key == "" {
+				continue
+			}
+			field.Locked = config.IsKeyLocked(field.Key)
+		}
+	}
+	return sections
 }
 
 func buildGeneralSection(cfg *config.Config) settings.Section {

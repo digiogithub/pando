@@ -398,3 +398,84 @@ func contains(list []string, want string) bool {
 	}
 	return false
 }
+
+// A lock is a statement in its own right. An overlay that locks a key without
+// setting a value changes nothing on disk and nothing in memory, but a surface
+// that draws locked keys as managed still has to redraw, so the topic fires
+// with an accurate (empty) ChangedKeys rather than not firing at all.
+func TestOverlayAppliedFiresWhenOnlyTheLockListChanges(t *testing.T) {
+	isolateGlobalConfig(t)
+	resetOverlayState(t)
+
+	dir := writeProjectConfig(t, map[string]any{"tui": map[string]any{"theme": "dark"}})
+
+	RegisterOverlayProvider(OverlayProviderFunc(func(ctx context.Context) (Overlay, error) {
+		// No Values at all: the document only freezes what the file says.
+		return Overlay{Source: "test", Locked: []string{"tui.theme"}}, nil
+	}))
+
+	events := make(chan ConfigChangeEvent, 8)
+	Bus.Subscribe(events)
+	t.Cleanup(func() { Bus.Unsubscribe(events) })
+
+	loaded, err := Load(dir, false)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.TUI.Theme != "dark" {
+		t.Fatalf("tui.theme = %q, a lock-only overlay must not change a value", loaded.TUI.Theme)
+	}
+	if !IsKeyLocked("tui.theme") {
+		t.Fatal("the lock was not recorded")
+	}
+
+	for {
+		select {
+		case ev := <-events:
+			if ev.Event != EventOverlayApplied {
+				continue
+			}
+			if len(ev.ChangedKeys) != 0 {
+				t.Fatalf("changed keys = %v, want none: no value moved", ev.ChangedKeys)
+			}
+			return
+		default:
+			t.Fatal("no overlay_applied event was published for a lock-only overlay")
+		}
+	}
+}
+
+// A locked agent model is refused before the in-memory configuration is
+// touched, so a refusal cannot leave the running process on a model the lock
+// forbids while the file still says otherwise.
+func TestSetAgentModelRefusedWhenLocked(t *testing.T) {
+	isolateGlobalConfig(t)
+	resetOverlayState(t)
+
+	dir := writeProjectConfig(t, map[string]any{"tui": map[string]any{"theme": "dark"}})
+	RegisterOverlayProvider(OverlayProviderFunc(func(ctx context.Context) (Overlay, error) {
+		return Overlay{Source: "test", Locked: []string{"agents.coder.model"}}, nil
+	}))
+	loaded, err := Load(dir, false)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	before := loaded.Agents[AgentCoder].Model
+
+	err = UpdateAgentModel(AgentCoder, "some.model")
+	if !errors.Is(err, ErrKeyLocked) {
+		t.Fatalf("UpdateAgentModel error = %v, want ErrKeyLocked", err)
+	}
+	if got := Get().Agents[AgentCoder].Model; got != before {
+		t.Fatalf("in-memory model changed to %q despite the refusal", got)
+	}
+
+	// The non-persisting form escapes updateCfgFile entirely, so it needs the
+	// same refusal or the lock means nothing for --model.
+	if err := OverrideAgentModel(AgentCoder, "some.model"); !errors.Is(err, ErrKeyLocked) {
+		t.Fatalf("OverrideAgentModel error = %v, want ErrKeyLocked", err)
+	}
+	if got := Get().Agents[AgentCoder].Model; got != before {
+		t.Fatalf("in-memory model changed to %q despite the refusal", got)
+	}
+}

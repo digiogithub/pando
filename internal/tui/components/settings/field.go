@@ -36,6 +36,23 @@ type Field struct {
 	ModelDialogTitle string
 	// Hint is optional helper text shown below the field row (e.g. recommended default).
 	Hint string
+	// Locked marks a field whose configuration key an extension has taken
+	// over. The write path refuses the save regardless, so this exists to say
+	// so before the user types rather than after: the row is drawn with a lock
+	// marker and editing it does nothing.
+	//
+	// It is deliberately separate from ReadOnly and Disabled. Those describe
+	// the field itself — a value that is derived, a control that does not
+	// apply in this configuration. Locked describes something outside the
+	// field, is set from the live lock list on every rebuild, and can appear
+	// and disappear while Pando runs.
+	Locked bool
+}
+
+// Editable reports whether the field accepts input. It is the single question
+// the section asks before opening an editor or emitting a save.
+func (f Field) Editable() bool {
+	return !f.ReadOnly && !f.Disabled && !f.Locked
 }
 
 func (f Field) DisplayValue(editing bool) string {

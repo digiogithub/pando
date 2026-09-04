@@ -445,7 +445,7 @@ func (s *Server) handleSetActiveModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.setCoderModel(models.ModelID(req.Model)); err != nil {
-		writeError(w, http.StatusBadRequest, "failed to update model: "+err.Error())
+		writeConfigError(w, http.StatusBadRequest, "failed to update model: "+err.Error(), err)
 		return
 	}
 
