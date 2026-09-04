@@ -107,6 +107,15 @@ func Connect() (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	// Cap the connection pool. The WASM-based SQLite driver (ncruces/go-sqlite3)
+	// instantiates a separate WASM module per connection, each holding 3 real
+	// file descriptors (db, wal, shm). Without a cap, concurrent workers (code
+	// indexer, KB sync, etc.) can open hundreds of connections under load,
+	// exhausting file descriptors and spiking CPU. SQLite in WAL mode supports
+	// concurrent readers but only one writer, so a small pool is optimal.
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(4)
+
 	// Set pragmas for better performance
 	pragmas := []string{
 		"PRAGMA foreign_keys = ON;",

@@ -82,7 +82,7 @@ AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 
 [Agents.coder]
-Model = 'copilot.mai-code-1.1-flash'
+Model = 'openrouter.qwen/qwen3.8-max'
 MaxTokens = 0
 ReasoningEffort = ''
 ThinkingMode = ''
