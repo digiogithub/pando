@@ -130,9 +130,12 @@ func NewManager(opts Options) *extension.Manager {
 		Host: extension.HostServices{
 			Config:         configView{cfg: cfg},
 			ConfigOverlays: overlayController{},
-			WorkingDir:     workingDir,
-			CoreVersion:    version.Version,
-			Variant:        version.Variant,
+			// Nil unless the host registered a runner, so an extension can
+			// tell an agent-less process from one it may drive.
+			Prompts:     currentPromptRunner(),
+			WorkingDir:  workingDir,
+			CoreVersion: version.Version,
+			Variant:     version.Variant,
 		},
 	})
 }

@@ -41,6 +41,10 @@ type HostServices struct {
 	// tell the host its overlay document has changed. Nil in hosts that do not
 	// support configuration overlays, so check before calling.
 	ConfigOverlays ConfigOverlayController
+
+	// Prompts runs a non-interactive prompt through the host's agent. Nil in a
+	// host that has no agent, so check before calling.
+	Prompts PromptRunner
 }
 
 // Bool reads a boolean from the extension's own config subtree.

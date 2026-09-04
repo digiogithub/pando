@@ -145,7 +145,7 @@ step per capability.
 | `SlashCommandProvider` | Adds slash commands to the chat surfaces |
 | `HTTPEndpointProvider` | Mounts routes under `/api/ext/<base>/` |
 | `HTTPMiddlewareProvider` | Wraps the HTTP stack (auth, headers) |
-| `EventSubscriber` | Receives internal events (sessions, messages, …) |
+| `EventSubscriber` | Receives internal events (sessions, messages, tools, MCP, skills, …) |
 | `ConfigOverlayProvider` | Imposes configuration on the host and locks keys |
 | `MemorySink` | Observes remembrance and KB writes |
 | `RemembranceSearchWrapper` | Adds to or reorders remembrance search results |
@@ -213,6 +213,52 @@ Four rules to build against:
   changed keys, which is how a subsystem that copied a value out at startup
   learns to refresh it. `HostServices.Config.LockedKeys()` reads the live lock
   list.
+
+### Observing what happens: `EventSubscriber`
+
+`Topics()` names what you want (an empty list means everything, including
+topics added later) and `HandleEvent` receives it. The topics core publishes:
+
+| Topic | Types | ID | What it reports |
+|---|---|---|---|
+| `session`, `message`, `permission` | `created`, `updated`, `deleted` | resource id | the resource in its JSON form, the same shape the REST API exposes |
+| `config` | `updated`, `overlay_applied`, `config_reloaded` | empty | which section moved, which keys changed, the current lock list |
+| `tool` | `started`, `completed` | tool call id | tool name and agent, plus duration, outcome and failure reason on completion |
+| `mcp` | `connected`, `auth_required`, `failed` | server name | the outcome of an MCP server handshake, with the transport and the connecting component |
+| `skill` | `activated` | skill name | a skill switched on for a run, and what activated it |
+| `provider` | `created`, `updated`, `deleted` | account id | the set of configured provider accounts moved |
+
+Payload field names are documented on each topic constant in
+`pkg/extension/event.go` and are a contract of that package.
+
+What is deliberately **not** in a payload: tool arguments and results, skill
+instructions, provider keys, tokens and base URLs. These topics are for
+accounting and inventory, not for copying the conversation or the credentials
+out of the process. An extension that must see tool arguments uses
+`ToolInterceptor`, where the interception is explicit.
+
+Publishing never blocks the work it reports, and events are dropped rather than
+queued when a subscriber is slow, so an extension that must not lose an event
+buffers it itself.
+
+### Running a prompt: `HostServices.Prompts`
+
+An extension that automates Pando (a schedule, a webhook, a batch job) can run
+a turn through the host's own agent:
+
+```go
+res, err := host.Prompts.RunPrompt(ctx, extension.PromptRequest{
+    Prompt:      "summarise today's commits",
+    AutoApprove: true, // nobody is watching to answer a permission request
+    OnProgress:  func(p extension.PromptProgress) { log.Print(p.Delta) },
+})
+```
+
+It is the non-interactive contract, the same one `pando -p` uses: one prompt
+in, one answer out, with token totals and cost on the result. Sessions,
+messages, models and the tool loop stay inside core. `Prompts` is nil in a
+process with no agent, so check it before calling; `AutoApprove` applies to the
+run's own session and is lifted when the turn ends.
 
 ## What the host guarantees
 

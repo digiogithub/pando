@@ -21,6 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/digiogithub/pando/internal/auth"
+	"github.com/digiogithub/pando/internal/extevents"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/models/modelsdev"
 	"github.com/digiogithub/pando/internal/logging"
@@ -3307,6 +3308,10 @@ func AddProviderAccount(account ProviderAccount) error {
 		cfg.ProviderAccounts = cfg.ProviderAccounts[:len(cfg.ProviderAccounts)-1]
 		return err
 	}
+	// Provider accounts are the host's link to a paying account, so a fleet
+	// manager needs to know when the set of them moves. The event carries the
+	// identity of the account only; credentials never leave this package.
+	extevents.ProviderAccountAdded(account.ID, string(account.Type), account.Disabled)
 	return nil
 }
 
@@ -3343,6 +3348,7 @@ func UpdateProviderAccount(id string, updated ProviderAccount) error {
 		cfg.ProviderAccounts[idx] = old
 		return err
 	}
+	extevents.ProviderAccountUpdated(id, string(updated.Type), updated.Disabled)
 	return nil
 }
 
@@ -3378,6 +3384,7 @@ func DeleteProviderAccount(id string) error {
 		cfg.ProviderAccounts = newSlice
 		return err
 	}
+	extevents.ProviderAccountRemoved(removed.ID, string(removed.Type))
 	return nil
 }
 
@@ -3401,6 +3408,7 @@ func SetProviderAccountDisabled(id string, disabled bool) error {
 				cfg.ProviderAccounts[i] = old
 				return err
 			}
+			extevents.ProviderAccountUpdated(id, string(cfg.ProviderAccounts[i].Type), disabled)
 			return nil
 		}
 	}

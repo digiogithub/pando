@@ -828,6 +828,9 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 
 	// Load compiled-in extensions last, so they see a fully built app. A broken
 	// extension is reported but never prevents startup.
+	// The prompt-running service is published before the load, because the
+	// manager copies the host services into every extension at Provision.
+	app.registerPromptRunner()
 	app.Extensions = extensions.Load(ctx, extensions.Options{Config: cfg})
 	if err := app.Extensions.Start(ctx); err != nil {
 		logging.Warn("Some extensions failed to start", "error", err)
@@ -2140,6 +2143,10 @@ func (app *App) startExtensionEventFanout(ctx context.Context) {
 	// Configuration is not one of core's resource brokers, so it needs its own
 	// bridge; the topic reaches subscribers exactly like the others.
 	extensions.ForwardConfigEvents(evCtx, app.Extensions)
+	// Tool calls, MCP handshakes, skill activations and provider account edits
+	// have no broker at all: they are published where they happen, through
+	// internal/extevents, and reach subscribers on the same topics.
+	extensions.StartEventPublisher(evCtx, app.Extensions)
 	logging.Info("Extension event fan-out started")
 }
 

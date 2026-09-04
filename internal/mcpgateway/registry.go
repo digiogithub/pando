@@ -90,13 +90,10 @@ func listServerTools(ctx context.Context, name string, srv config.MCPServer) ([]
 	defer c.Close()
 
 	timeout := mcpclient.ResolveTimeout(srv.Timeout, mcpclient.DefaultDiscoveryTimeout)
-	initReq := mcpclient.BuildInitializeRequest("pando-gateway")
-	initCtx, initCancel := mcpclient.WithTimeout(ctx, timeout)
-	if _, err := c.Initialize(initCtx, initReq); err != nil {
-		initCancel()
+	// Handshake also reports the outcome on the extension mcp topic.
+	if _, err := mcpclient.Handshake(ctx, c, name, srv, "pando-gateway"); err != nil {
 		return nil, fmt.Errorf("initialize: %w", err)
 	}
-	initCancel()
 
 	listCtx, listCancel := mcpclient.WithTimeout(ctx, timeout)
 	result, err := c.ListTools(listCtx, mcp.ListToolsRequest{})

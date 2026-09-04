@@ -16,6 +16,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/caveman"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/extevents"
 	"github.com/digiogithub/pando/internal/imageopt"
 	"github.com/digiogithub/pando/internal/learning"
 	"github.com/digiogithub/pando/internal/llm/models"
@@ -830,6 +831,25 @@ func (a *agent) publishEvent(event AgentEvent) {
 	a.Publish(pubsub.CreatedEvent, event)
 }
 
+// errToolReportedError stands in for a tool that answered with an error result
+// rather than failing outright. The tool's own text is not published: it is
+// the model's working material and may carry user content, while the fact that
+// the call failed is what an accounting subscriber needs.
+var errToolReportedError = errors.New("tool reported an error")
+
+// publishToolStarted announces a tool call to extension subscribers. It is
+// published at the dispatch point rather than inside the tools, so every tool
+// is covered once: built-in, MCP-backed and extension-contributed alike.
+func (a *agent) publishToolStarted(sessionID string, call message.ToolCall) {
+	extevents.ToolStarted(sessionID, call.ID, call.Name, string(a.agentName))
+}
+
+// publishToolCompleted closes the pair opened by publishToolStarted. err is
+// the failure the host observed, or nil when the call succeeded.
+func (a *agent) publishToolCompleted(sessionID string, call message.ToolCall, start time.Time, err error) {
+	extevents.ToolCompleted(sessionID, call.ID, call.Name, string(a.agentName), time.Since(start), err)
+}
+
 func (a *agent) addRunStatusMessage(sessionID string, msg string) {
 	msg = strings.TrimSpace(msg)
 	if sessionID == "" || msg == "" {
@@ -1587,6 +1607,11 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 			goto out
 		default:
 			// Continue processing
+			// The call is bracketed by a started/completed pair on the tool
+			// topic. Publishing is a non-blocking hand-off and costs one atomic
+			// load when no extension subscribes.
+			a.publishToolStarted(sessionID, toolCall)
+			toolStart := time.Now()
 			var tool tools.BaseTool
 			// Resolve cross-model alias first (e.g. "read" → "view" for non-Anthropic models).
 			resolvedName := tools.ResolveToolAlias(toolCall.Name)
@@ -1607,6 +1632,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 					IsError:    true,
 					Input:      toolCall.Input,
 				}
+				a.publishToolCompleted(sessionID, toolCall, toolStart, fmt.Errorf("tool not found: %s", toolCall.Name))
 				a.publishEvent(AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]})
 				select {
 				case eventCh <- AgentEvent{Type: AgentEventTypeToolResult, SessionID: sessionID, ToolResult: &toolResults[i]}:
@@ -1619,6 +1645,15 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 				Name:  toolCall.Name,
 				Input: toolCall.Input,
 			})
+			if toolErr != nil || toolResult.IsError {
+				completionErr := toolErr
+				if completionErr == nil {
+					completionErr = errToolReportedError
+				}
+				a.publishToolCompleted(sessionID, toolCall, toolStart, completionErr)
+			} else {
+				a.publishToolCompleted(sessionID, toolCall, toolStart, nil)
+			}
 			if toolErr != nil {
 				if errors.Is(toolErr, permission.ErrorPermissionDenied) {
 					toolResults[i] = message.ToolResult{
@@ -2505,6 +2540,10 @@ func (a *agent) prepareProvider(ctx context.Context, userPrompt string, personaC
 			}
 			if injected := prompt.InjectSkillInstructions(skillName, instructions); injected != "" {
 				activeSkillInstructions = append(activeSkillInstructions, injected)
+				// Published here rather than in the skill manager: this is the
+				// point at which the skill actually takes effect on a run, and
+				// it is the only point that knows which session it affects.
+				extevents.SkillActivated(sessionIDFromContext(ctx), skillName, string(a.agentName), "auto")
 			}
 		}
 	}
