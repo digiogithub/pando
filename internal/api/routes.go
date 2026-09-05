@@ -23,7 +23,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	}
 
 	mux.HandleFunc("/health", s.handleHealth)
-	mux.HandleFunc("/api/v1/token", s.handleToken)
+	mux.HandleFunc(TokenPath, s.handleToken)
 	mux.HandleFunc("/api/v1/project", s.handleProject)
 	mux.HandleFunc("/api/v1/project/context", s.handleProjectContext)
 	mux.HandleFunc("/api/v1/sessions", s.handleSessions)

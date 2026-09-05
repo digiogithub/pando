@@ -453,9 +453,50 @@ func (s *Server) hasValidToken(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) == 1
 }
 
+// TokenPath is the endpoint that hands a caller this server's API token. It is
+// how the Web UI turns a basic-auth login into the session credential every
+// other call (including SSE streams, which cannot set a header) then carries.
+const TokenPath = "/api/v1/token"
+
+// tokenEndpointAuthenticated reports whether a request for the API token has
+// already been authenticated by something other than the token itself.
+//
+// Two cases, and only two:
+//
+//   - A loopback bind. The server is reachable only from this machine, where
+//     the token is already readable from the user's own state directory, so a
+//     gate here would protect nothing and would break the local Web UI.
+//   - Basic auth is enforced for this request, which means the request reached
+//     this middleware through basicAuthMiddleware and presented credentials.
+//
+// Anything else is an exposed server with no credential configured, where
+// handing the API token to whoever asks gives the network every other /api/
+// path. Such a server must be given a [Server.BasicAuth] user before it can
+// mint tokens.
+func (s *Server) tokenEndpointAuthenticated(r *http.Request) bool {
+	return isLoopbackHost(s.BindHost()) || s.basicAuthEnforced(r)
+}
+
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" || !strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api/v1/token" {
+		if r.URL.Path == TokenPath {
+			if s.tokenEndpointAuthenticated(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			// An exposed server with no configured credential: a caller that
+			// already holds the token may still ask (that is how a client
+			// refreshes), and everybody else is told what is missing rather
+			// than being handed the keys.
+			if !s.hasValidToken(r) {
+				http.Error(w, `{"error":"unauthorized","reason":"this server is not bound to loopback and has no [Server.BasicAuth] user configured, so it cannot hand out its API token"}`,
+					http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == "/health" || !strings.HasPrefix(r.URL.Path, "/api/") {
 			next.ServeHTTP(w, r)
 			return
 		}
