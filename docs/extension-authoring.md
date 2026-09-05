@@ -114,10 +114,32 @@ Enabled = true
 Greeting = "hola"
 ```
 
-`HostServices.Raw` is that `Config` table, and `Bool`/`String`/`Int` are typed
-readers over it with defaults. Read the config in `Provision`, validate it in
-`Validate`, and never read it again — configuration is a startup input, not a
-live channel.
+`HostServices.Raw` is that `Config` table, and `Bool`, `String`, `Int`,
+`Float64`, `Duration`, `StringSlice` and `Map` are typed readers over it with
+defaults. Read the config in `Provision`, validate it in `Validate`, and never
+read it again — configuration is a startup input, not a live channel.
+
+**Keys are case-insensitive.** The configuration system lowercases every key it
+reads, so a `baseURL` in the file arrives in `Raw` as `baseurl`. The accessors
+fold the key you ask for the same way, so `host.String("baseURL", "")` finds a
+value written as `baseURL`, `baseurl` or `BASEURL`. Two option names in one
+`Config` table that differ only in case are a mistake: the host keeps one,
+ignores the other and logs a warning. Prefer the accessors over indexing `Raw`;
+if you index it directly, use a lower-case key.
+
+**Every option can be overridden from the environment**, which is how a
+container configures an extension with no file at all. The variable is the
+prefix, `EXT`, the extension ID and the key, uppercased with everything that is
+not a letter or a digit replaced by an underscore:
+
+```
+PANDO_EXT_TOOLS_ACME_HELLO_GREETING=hola
+```
+
+`HostServices.ConfigEnvVar("Greeting")` returns that name, so an extension can
+name it in an error message. An environment value wins over the file, matching
+the precedence the host applies to core settings. Numbers, booleans and
+durations are parsed from the string, and a list is comma-separated.
 
 Two rules decide whether an extension loads at all:
 

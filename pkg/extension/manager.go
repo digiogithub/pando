@@ -288,12 +288,14 @@ func (m *Manager) load(ctx context.Context, info Info, raw map[string]any) (err 
 		return fmt.Errorf("extension %s: New returned nil", info.ID)
 	}
 
-	if raw == nil {
-		raw = map[string]any{}
-	}
 	host := m.opts.Host
-	host.Raw = raw
+	host.ID = info.ID
 	host.Logger = m.log.With("extension", string(info.ID))
+	// The configuration system lowercases every key it reads, so the subtree is
+	// folded to that same form before the extension sees it. The warning is
+	// what stops two spellings of one option from silently shadowing each other
+	// without the author being told.
+	host.Raw = foldConfigSubtree(raw, host.Logger.Warn)
 
 	if p, ok := inst.(Provisioner); ok {
 		if err := p.Provision(ctx, host); err != nil {
