@@ -74,12 +74,34 @@ func (v configView) Lookup(path string) (any, bool) {
 		if !ok {
 			return nil, false
 		}
-		cur, ok = obj[seg]
+		cur, ok = lookupSegment(obj, seg)
 		if !ok {
 			return nil, false
 		}
 	}
 	return cur, true
+}
+
+// lookupSegment resolves one path segment, preferring an exact match and
+// falling back to a case-insensitive one.
+//
+// The fallback exists because the paths in this tree are the JSON encoding of
+// the configuration struct, which is not the spelling anyone writes. A
+// configuration file, a pushed overlay and a lock list all name the same
+// setting the way the documentation does, and answering "absent" for a
+// spelling this package does not happen to use made a converged installation
+// report itself as diverged. An exact match still wins, so a configuration
+// that really does carry two keys differing only in case is unaffected.
+func lookupSegment(obj map[string]any, seg string) (any, bool) {
+	if v, ok := obj[seg]; ok {
+		return v, true
+	}
+	for k, v := range obj {
+		if strings.EqualFold(k, seg) {
+			return v, true
+		}
+	}
+	return nil, false
 }
 
 // LockedKeys lists the configuration paths an overlay currently locks, so a

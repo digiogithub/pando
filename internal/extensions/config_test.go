@@ -241,3 +241,37 @@ func TestOverlayControllerRequestReload(t *testing.T) {
 		t.Fatalf("tui.theme = %q, want the refreshed overlay value", got)
 	}
 }
+
+// TestLookupAcceptsTheSpellingPeopleWrite covers the defect that made a
+// converged installation report itself as diverged. The paths in this view are
+// the JSON encoding of the configuration struct, while a configuration file, a
+// pushed overlay and a lock list all name a setting the way the documentation
+// spells it. Answering "absent" for a spelling this package does not happen to
+// use made drift detection permanently wrong, which then drove a reload loop.
+func TestLookupAcceptsTheSpellingPeopleWrite(t *testing.T) {
+	dir := projectWithConfig(t, map[string]any{"tui": map[string]any{"theme": "corporate"}})
+	if _, err := config.Load(dir, false); err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	view := configView{cfg: config.Get()}
+
+	exact, ok := view.Lookup("tui.theme")
+	if !ok {
+		t.Fatalf("Lookup(tui.theme) reported the setting absent")
+	}
+	for _, path := range []string{"TUI.Theme", "tui.Theme", "TUI.theme"} {
+		got, ok := view.Lookup(path)
+		if !ok {
+			t.Errorf("Lookup(%q) reported the setting absent", path)
+			continue
+		}
+		if got != exact {
+			t.Errorf("Lookup(%q) = %v, want the encoded spelling's value %v", path, got, exact)
+		}
+	}
+
+	// A path that names nothing is still absent.
+	if _, ok := view.Lookup("tui.thehme"); ok {
+		t.Error("Lookup of a misspelt path reported a value")
+	}
+}
