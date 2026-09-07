@@ -121,6 +121,15 @@ func (app *App) indexSessionConversation(ctx context.Context, svc *rag.Remembran
 		"source":        "pando_session",
 		"updated_at":    sess.UpdatedAt,
 	}
+	// Attribution, when an extension knows who the user is. The key is absent
+	// in a standard build, so an index written without a provider is exactly
+	// what it was before. Only the user id is recorded: the address and the
+	// group list stay with the extension that holds them.
+	if app.Identity != nil {
+		if id, ok := app.Identity(ctx); ok && strings.TrimSpace(id.UserID) != "" {
+			metadata["user_id"] = id.UserID
+		}
+	}
 
 	chunks := embeddings.ChunkText(content, embeddings.DefaultChunkSize, embeddings.DefaultChunkOverlap)
 	if len(chunks) == 0 {

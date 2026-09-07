@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/extensions"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
@@ -1272,4 +1273,56 @@ func (s *Server) handleConfigLockedKeys(w http.ResponseWriter, r *http.Request) 
 		keys = []string{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"lockedKeys": keys})
+}
+
+// UIPolicyBannerResponse is the banner a settings surface renders above the
+// sections. Both fields are empty when no extension asked for one.
+type UIPolicyBannerResponse struct {
+	Text string `json:"text"`
+	Link string `json:"link"`
+}
+
+// UIPolicyResponse is the body of GET /api/v1/config/ui-policy.
+//
+// The lists are never null, so a client can iterate them blindly, and they hold
+// dotted configuration paths matched the way the locked-key list is: a path
+// covers itself and everything under it, compared segment by segment and
+// case-insensitively.
+type UIPolicyResponse struct {
+	HiddenSections   []string               `json:"hiddenSections"`
+	ReadOnlySections []string               `json:"readOnlySections"`
+	ReadOnlyLabel    string                 `json:"readOnlyLabel"`
+	Banner           UIPolicyBannerResponse `json:"banner"`
+}
+
+// handleConfigUIPolicy reports the UI policy the loaded extensions declare, so
+// a settings surface knows which sections not to render and which to render
+// read-only before it draws anything.
+//
+// It is the sibling of handleConfigLockedKeys and says just as little: the core
+// knows the paths, never which extension asked or why. Hiding a section here is
+// presentation only — the same paths are refused by the configuration write
+// path, so a client that ignores this endpoint still cannot write them.
+func (s *Server) handleConfigUIPolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	policy := extensions.CurrentUIPolicy(r.Context())
+	resp := UIPolicyResponse{
+		HiddenSections:   policy.HiddenSections,
+		ReadOnlySections: policy.ReadOnlySections,
+		ReadOnlyLabel:    policy.ReadOnlyLabel,
+		Banner: UIPolicyBannerResponse{
+			Text: policy.Banner.Text,
+			Link: policy.Banner.Link,
+		},
+	}
+	if resp.HiddenSections == nil {
+		resp.HiddenSections = []string{}
+	}
+	if resp.ReadOnlySections == nil {
+		resp.ReadOnlySections = []string{}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }

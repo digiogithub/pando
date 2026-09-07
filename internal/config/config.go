@@ -21,6 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/digiogithub/pando/internal/auth"
+	"github.com/digiogithub/pando/internal/extevents"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/models/modelsdev"
 	"github.com/digiogithub/pando/internal/logging"
@@ -1781,7 +1782,7 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	// Merge any configuration overlays on top of the files, before the decode,
 	// so overlaid values go through exactly the same unmarshal, migration and
 	// decryption path as file-sourced ones.
-	overlayChanged := applyOverlayProviders()
+	overlayChanged, overlayLocksChanged := applyOverlayProviders()
 
 	// Values that apply to this process only (command-line overrides) are the
 	// top layer: they win over files and overlays, except where an overlay
@@ -1809,7 +1810,14 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	// Restore WorkingDir after unmarshal: it's a runtime parameter, not a config file setting,
 	// so viper.Unmarshal would reset it to empty string if not present in the config file.
 	cfg.WorkingDir = workingDir
-	if ageKeysOverride != "" {
+	// The --age-keys flag is a command-line override and therefore local
+	// editing, so a lock beats it exactly as it beats a runtime override.
+	// Applying it here rather than through applyRuntimeOverrides is a
+	// historical accident, so the same rule has to be spelled out again.
+	if ageKeysOverride != "" && IsKeyLocked("ageKeys") {
+		logging.Warn("Command-line AGE keypair override ignored, the key is managed by an extension",
+			"key", "ageKeys")
+	} else if ageKeysOverride != "" {
 		cfg.AgeKeys = ageKeysOverride
 	}
 
@@ -1927,7 +1935,7 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	// Announce the overlay only once the load has actually succeeded, so no
 	// subscriber ever acts on a configuration that was rolled back by an error
 	// further down.
-	publishOverlayApplied(overlayChanged)
+	publishOverlayApplied(overlayChanged, overlayLocksChanged)
 
 	return cfg, nil
 }
@@ -3300,6 +3308,10 @@ func AddProviderAccount(account ProviderAccount) error {
 		cfg.ProviderAccounts = cfg.ProviderAccounts[:len(cfg.ProviderAccounts)-1]
 		return err
 	}
+	// Provider accounts are the host's link to a paying account, so a fleet
+	// manager needs to know when the set of them moves. The event carries the
+	// identity of the account only; credentials never leave this package.
+	extevents.ProviderAccountAdded(account.ID, string(account.Type), account.Disabled)
 	return nil
 }
 
@@ -3336,6 +3348,7 @@ func UpdateProviderAccount(id string, updated ProviderAccount) error {
 		cfg.ProviderAccounts[idx] = old
 		return err
 	}
+	extevents.ProviderAccountUpdated(id, string(updated.Type), updated.Disabled)
 	return nil
 }
 
@@ -3371,6 +3384,7 @@ func DeleteProviderAccount(id string) error {
 		cfg.ProviderAccounts = newSlice
 		return err
 	}
+	extevents.ProviderAccountRemoved(removed.ID, string(removed.Type))
 	return nil
 }
 
@@ -3394,6 +3408,7 @@ func SetProviderAccountDisabled(id string, disabled bool) error {
 				cfg.ProviderAccounts[i] = old
 				return err
 			}
+			extevents.ProviderAccountUpdated(id, string(cfg.ProviderAccounts[i].Type), disabled)
 			return nil
 		}
 	}
@@ -4005,6 +4020,14 @@ func OverrideAgentModel(agentName AgentName, modelID models.ModelID) error {
 		panic("config not loaded")
 	}
 
+	// Checked before the provider validation below, so a locked key reports as
+	// locked rather than as whatever else happens to be wrong with the model
+	// the caller named. This form never reaches updateCfgFile, so without this
+	// the lock would say nothing about --model.
+	if err := ErrIfLocked("agents." + string(agentName) + ".model"); err != nil {
+		return err
+	}
+
 	model, ok := models.SupportedModels()[modelID]
 	if !ok {
 		return fmt.Errorf("model %s not supported", modelID)
@@ -4064,6 +4087,15 @@ func OverrideAgentModel(agentName AgentName, modelID models.ModelID) error {
 func setAgentModel(agentName AgentName, modelID models.ModelID, persist bool) error {
 	if cfg == nil {
 		panic("config not loaded")
+	}
+
+	// Checked before anything is touched, not left to updateCfgFile. This
+	// mutator changes the in-memory configuration first and only then writes
+	// the file, so a refusal discovered at write time would leave the process
+	// running a model the lock forbids. The non-persisting form never reaches
+	// the file funnel at all, and would otherwise escape the lock entirely.
+	if err := ErrIfLocked("agents." + string(agentName) + ".model"); err != nil {
+		return err
 	}
 
 	if cfg.Agents == nil {

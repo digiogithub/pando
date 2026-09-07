@@ -24,6 +24,7 @@ import ProviderAccountsSettings from './ProviderAccountsSettings'
 import ContainerRuntimeSettings from './ContainerRuntimeSettings'
 import { useConfigEventsStore } from '@pando/client/stores/configEventsStore'
 import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
+import { useUIPolicyStore } from '@pando/client/stores/uiPolicyStore'
 import ExtensionSlot from '@/components/extensions/ExtensionSlot'
 
 type SettingsCategory =
@@ -47,25 +48,32 @@ type SettingsCategory =
   | 'webui-access'
   | 'container-runtime'
 
-const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string }[] = [
+/**
+ * The settings categories, each with the configuration path it edits.
+ *
+ * The path is what the UI policy (GET /api/v1/config/ui-policy) matches when an
+ * extension declares a section hidden. A category with no path edits nothing an
+ * extension can own and is always shown.
+ */
+const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string; path?: string }[] = [
   { id: 'general', labelKey: 'settings.categories.general' },
-  { id: 'providers', labelKey: 'settings.categories.providers' },
-  { id: 'agents', labelKey: 'settings.categories.agents' },
-  { id: 'mcp-servers', labelKey: 'settings.categories.mcpServers' },
-  { id: 'mcp-gateway', labelKey: 'settings.categories.mcpGateway' },
-  { id: 'lsp', labelKey: 'settings.categories.lsp' },
-  { id: 'tools', labelKey: 'settings.categories.tools' },
-  { id: 'container-runtime', labelKey: 'settings.categories.containerRuntime' },
-  { id: 'bash', labelKey: 'settings.categories.bash' },
-  { id: 'token-optimization', labelKey: 'settings.categories.tokenOptimization' },
-  { id: 'skills', labelKey: 'settings.categories.skills' },
+  { id: 'providers', labelKey: 'settings.categories.providers', path: 'providerAccounts' },
+  { id: 'agents', labelKey: 'settings.categories.agents', path: 'agents' },
+  { id: 'mcp-servers', labelKey: 'settings.categories.mcpServers', path: 'mcpServers' },
+  { id: 'mcp-gateway', labelKey: 'settings.categories.mcpGateway', path: 'mcpGateway' },
+  { id: 'lsp', labelKey: 'settings.categories.lsp', path: 'lsp' },
+  { id: 'tools', labelKey: 'settings.categories.tools', path: 'internalTools' },
+  { id: 'container-runtime', labelKey: 'settings.categories.containerRuntime', path: 'container' },
+  { id: 'bash', labelKey: 'settings.categories.bash', path: 'bash' },
+  { id: 'token-optimization', labelKey: 'settings.categories.tokenOptimization', path: 'tokenOptimization' },
+  { id: 'skills', labelKey: 'settings.categories.skills', path: 'skills' },
   { id: 'design-system', labelKey: 'settings.categories.designSystem' },
-  { id: 'lua', labelKey: 'settings.categories.lua' },
-  { id: 'self-improvement', labelKey: 'settings.categories.selfImprovement' },
-  { id: 'mesnada', labelKey: 'settings.categories.mesnada', group: 'services' },
-  { id: 'remembrances', labelKey: 'settings.categories.remembrances', group: 'services' },
-  { id: 'snapshots', labelKey: 'settings.categories.snapshots', group: 'services' },
-  { id: 'api-server', labelKey: 'settings.categories.apiServer', group: 'services' },
+  { id: 'lua', labelKey: 'settings.categories.lua', path: 'lua' },
+  { id: 'self-improvement', labelKey: 'settings.categories.selfImprovement', path: 'evaluator' },
+  { id: 'mesnada', labelKey: 'settings.categories.mesnada', group: 'services', path: 'mesnada' },
+  { id: 'remembrances', labelKey: 'settings.categories.remembrances', group: 'services', path: 'remembrances' },
+  { id: 'snapshots', labelKey: 'settings.categories.snapshots', group: 'services', path: 'snapshots' },
+  { id: 'api-server', labelKey: 'settings.categories.apiServer', group: 'services', path: 'server' },
   { id: 'webui-access', labelKey: 'settings.categories.webuiAccess', group: 'services' },
 ]
 
@@ -84,6 +92,26 @@ export default function SettingsView() {
   const [activeCategory, setActiveCategory] = useState<ActiveCategory>('general')
   const { connect, disconnect } = useConfigEventsStore()
   const extensionSections = useExtensionPanelsStore((s) => s.panels).filter((p) => p.slot === 'settings')
+
+  // The settings policy an extension may declare. It can change while the app
+  // runs, so it is fetched whenever this view mounts rather than once at boot.
+  const loadUIPolicy = useUIPolicyStore((s) => s.load)
+  const uiPolicy = useUIPolicyStore((s) => s.policy)
+  const isSectionHidden = useUIPolicyStore((s) => s.isHidden)
+  useEffect(() => { void loadUIPolicy() }, [loadUIPolicy])
+
+  // A hidden category is not offered at all. Hiding is presentation: the
+  // backend refuses writes to the same paths, so this only decides what the
+  // user is asked to fill in, never what may be changed.
+  const categories = CATEGORY_KEYS.filter((c) => !c.path || !isSectionHidden(c.path))
+
+  // A policy that arrives while a now-hidden category is open falls back to the
+  // first one still offered, so the view never renders a section it just
+  // stopped listing.
+  const visibleCategory: ActiveCategory =
+    activeCategory.startsWith('ext:') || categories.some((c) => c.id === activeCategory)
+      ? activeCategory
+      : (categories[0]?.id ?? 'general')
 
   // Track the mobile breakpoint so the category list and the section can take
   // turns owning the full width instead of splitting it.
@@ -128,7 +156,7 @@ export default function SettingsView() {
           overflowY: 'auto',
         }}
       >
-        {CATEGORY_KEYS.filter((c) => !c.group).map((cat) => {
+        {categories.filter((c) => !c.group).map((cat) => {
           const isActive = activeCategory === cat.id
           return (
             <button
@@ -184,7 +212,7 @@ export default function SettingsView() {
         >
           {t('nav.sections.services')}
         </div>
-        {CATEGORY_KEYS.filter((c) => c.group === 'services').map((cat) => {
+        {categories.filter((c) => c.group === 'services').map((cat) => {
           const isActive = activeCategory === cat.id
           return (
             <button
@@ -281,31 +309,54 @@ export default function SettingsView() {
           background: 'var(--bg)',
         }}
       >
+        {(uiPolicy.banner.text || uiPolicy.banner.link) && (
+          <div
+            style={{
+              marginBottom: '1rem',
+              padding: '0.6rem 0.8rem',
+              border: '1px solid var(--border)',
+              borderLeft: '3px solid var(--primary)',
+              background: 'var(--sidebar-bg)',
+              color: 'var(--fg-muted)',
+              fontSize: 13,
+            }}
+          >
+            {uiPolicy.banner.text}
+            {uiPolicy.banner.link && (
+              <>
+                {' '}
+                <a href={uiPolicy.banner.link} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)' }}>
+                  {uiPolicy.banner.link}
+                </a>
+              </>
+            )}
+          </div>
+        )}
         {isMobile && (
           <button onClick={() => setMenuOpen(true)} style={backButtonStyle}>
             <FontAwesomeIcon icon={faBars} style={{ fontSize: 12 }} />
             {t('settings.backToCategories')}
           </button>
         )}
-        {activeCategory === 'general' && <GeneralSettings />}
-        {activeCategory === 'providers' && <ProviderAccountsSettings />}
-        {activeCategory === 'agents' && <AgentsSettings />}
-        {activeCategory === 'mcp-servers' && <MCPServersSettings />}
-        {activeCategory === 'mcp-gateway' && <MCPGatewaySettings />}
-        {activeCategory === 'lsp' && <LSPSettings />}
-        {activeCategory === 'tools' && <InternalToolsSettings />}
-        {activeCategory === 'container-runtime' && <ContainerRuntimeSettings />}
-        {activeCategory === 'bash' && <BashSettings />}
-        {activeCategory === 'token-optimization' && <TokenOptimizationSettings />}
-        {activeCategory === 'skills' && <SkillsSettings />}
-        {activeCategory === 'lua' && <LuaSettings />}
-        {activeCategory === 'self-improvement' && <EvaluatorSettings />}
-        {activeCategory === 'mesnada' && <MesnadaSettings />}
-        {activeCategory === 'remembrances' && <RemembrancesSettings />}
-        {activeCategory === 'snapshots' && <SnapshotsSettings />}
-        {activeCategory === 'design-system' && <DesignSystemSettings />}
-        {activeCategory === 'api-server' && <APIServerSettings />}
-        {activeCategory === 'webui-access' && <WebUIAccessSettings />}
+        {visibleCategory === 'general' && <GeneralSettings />}
+        {visibleCategory === 'providers' && <ProviderAccountsSettings />}
+        {visibleCategory === 'agents' && <AgentsSettings />}
+        {visibleCategory === 'mcp-servers' && <MCPServersSettings />}
+        {visibleCategory === 'mcp-gateway' && <MCPGatewaySettings />}
+        {visibleCategory === 'lsp' && <LSPSettings />}
+        {visibleCategory === 'tools' && <InternalToolsSettings />}
+        {visibleCategory === 'container-runtime' && <ContainerRuntimeSettings />}
+        {visibleCategory === 'bash' && <BashSettings />}
+        {visibleCategory === 'token-optimization' && <TokenOptimizationSettings />}
+        {visibleCategory === 'skills' && <SkillsSettings />}
+        {visibleCategory === 'lua' && <LuaSettings />}
+        {visibleCategory === 'self-improvement' && <EvaluatorSettings />}
+        {visibleCategory === 'mesnada' && <MesnadaSettings />}
+        {visibleCategory === 'remembrances' && <RemembrancesSettings />}
+        {visibleCategory === 'snapshots' && <SnapshotsSettings />}
+        {visibleCategory === 'design-system' && <DesignSystemSettings />}
+        {visibleCategory === 'api-server' && <APIServerSettings />}
+        {visibleCategory === 'webui-access' && <WebUIAccessSettings />}
         {activeCategory.startsWith('ext:') && (
           <ExtensionSlot slot="settings" panelId={activeCategory.slice('ext:'.length)} />
         )}

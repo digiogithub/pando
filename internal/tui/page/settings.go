@@ -15,6 +15,7 @@ import (
 	pandoapp "github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/caveman"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/extensions"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	llmtools "github.com/digiogithub/pando/internal/llm/tools"
@@ -358,6 +359,11 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (p *settingsPage) View() string {
 	base := p.settings.View()
+	// The banner sits above the sections, so the reason the page looks
+	// simplified is stated once instead of being inferred from missing rows.
+	if banner := managedBanner(p.app, p.width); banner != "" {
+		base = lipgloss.JoinVertical(lipgloss.Left, banner, base)
+	}
 	if p.catalogDialog != nil {
 		overlay := p.catalogDialog.View()
 		x := (p.width - dialog.DialogDialogWidth) / 2
@@ -418,6 +424,11 @@ func (p *settingsPage) View() string {
 func (p *settingsPage) SetSize(width, height int) tea.Cmd {
 	p.width = width
 	p.height = height
+	// The sections give up the rows the policy banner takes, so the page still
+	// fits the terminal when one is shown.
+	if banner := managedBanner(p.app, width); banner != "" {
+		height = max(1, height-lipgloss.Height(banner))
+	}
 	p.settings.SetSize(width, height)
 	return nil
 }
@@ -920,7 +931,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		return nil
 	}
 
-	return []settings.Section{
+	return applyFieldPolicy(app, []settings.Section{
 		// ── Core ──
 		withGroup(buildGeneralSection(cfg), "Core"),
 
@@ -952,7 +963,92 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		withGroup(buildOpenLitSection(cfg), "Services"),
 		withGroup(buildServerSection(cfg), "Services"),
 		withGroup(buildSnapshotsSection(cfg), "Services"),
+	})
+}
+
+// applyFieldPolicy stamps the assembled sections with everything the host
+// knows about what may be shown and edited: the keys an extension has locked,
+// and the sections a UI policy hides or renders read-only.
+//
+// It runs once over the assembled sections rather than inside each builder,
+// for the same reason enforcement lives in one funnel rather than in fifty
+// mutators: a builder added later is covered without being told to be. Both
+// inputs are read here, at rebuild time, so a lock or a policy that appears or
+// disappears while Pando runs is reflected on the next config event.
+//
+// A hidden field is dropped, and a section left with no fields goes with it. A
+// read-only field is marked exactly as a locked one, since the page has one
+// notion of "not yours to change" and the write path refuses both.
+func applyFieldPolicy(app *pandoapp.App, sections []settings.Section) []settings.Section {
+	policy := uiPolicy(app)
+	locked := len(config.LockedKeys()) > 0
+	if !locked && policy.Empty() {
+		return sections
 	}
+
+	kept := sections[:0]
+	for i := range sections {
+		section := sections[i]
+		fields := make([]settings.Field, 0, len(section.Fields))
+		for _, field := range section.Fields {
+			if field.Key != "" && policy.IsHidden(field.Key) {
+				continue
+			}
+			if field.Key != "" {
+				// config.IsKeyLocked already covers the policy's paths: the
+				// host feeds them to the same lock check, so what is drawn as
+				// managed and what the write path refuses cannot disagree.
+				field.Locked = config.IsKeyLocked(field.Key)
+				if field.Locked && policy.IsReadOnly(field.Key) {
+					field.ManagedNote = policy.ReadOnlyLabel
+				}
+			}
+			fields = append(fields, field)
+		}
+		if len(fields) == 0 && len(section.Fields) > 0 {
+			continue
+		}
+		section.Fields = fields
+		kept = append(kept, section)
+	}
+	return kept
+}
+
+// uiPolicy reads the current UI policy through the app. The app wires it at
+// start-up and a page built without one (tests, an embedded surface) simply
+// gets the empty policy, which is how an unextended Pando behaves.
+func uiPolicy(app *pandoapp.App) extensions.UIPolicy {
+	if app == nil || app.UIPolicy == nil {
+		return extensions.UIPolicy{}
+	}
+	return app.UIPolicy(context.Background())
+}
+
+// managedBanner renders the UI policy banner shown above the settings, or ""
+// when no extension asked for one. The link is appended as a plain URL: a
+// terminal cannot be relied on to make it clickable, and a user who can see it
+// can copy it.
+func managedBanner(app *pandoapp.App, width int) string {
+	policy := uiPolicy(app)
+	text := strings.TrimSpace(policy.Banner.Text)
+	link := strings.TrimSpace(policy.Banner.Link)
+	if text == "" && link == "" {
+		return ""
+	}
+	switch {
+	case text == "":
+		text = link
+	case link != "":
+		text = text + "  " + link
+	}
+
+	t := theme.CurrentTheme()
+	return styles.BaseStyle().
+		Width(max(1, width)).
+		Foreground(t.TextEmphasized()).
+		Background(t.BackgroundSecondary()).
+		Padding(0, 1).
+		Render(text)
 }
 
 func buildGeneralSection(cfg *config.Config) settings.Section {

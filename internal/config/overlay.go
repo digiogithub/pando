@@ -98,6 +98,41 @@ var (
 	overlayCtx context.Context
 )
 
+var (
+	restrictedMu     sync.RWMutex
+	restrictedSource func() []string
+)
+
+// SetRestrictedPathSource installs a second source of configuration paths that
+// may not be written locally, on top of the paths the overlays lock.
+//
+// It exists because a host-level policy can withdraw a part of the
+// configuration from local control without setting a value: a settings surface
+// told not to render a section must not be the only thing standing between a
+// client and that section, so the same paths are refused by the write path.
+// Passing nil removes the source and restores the overlay-only behaviour.
+//
+// The function is called on every lock check, including inside the write path's
+// per-changed-path loop, so it must be cheap: callers memoise. It is called
+// without any configuration lock held, so it may read configuration itself.
+func SetRestrictedPathSource(fn func() []string) {
+	restrictedMu.Lock()
+	defer restrictedMu.Unlock()
+	restrictedSource = fn
+}
+
+// restrictedPaths asks the installed source for its current paths. It returns
+// nil when no source is installed, which is the standalone case.
+func restrictedPaths() []string {
+	restrictedMu.RLock()
+	fn := restrictedSource
+	restrictedMu.RUnlock()
+	if fn == nil {
+		return nil
+	}
+	return fn()
+}
+
 // ErrKeyLocked is the sentinel every locked-key refusal wraps. Callers report
 // the key as managed rather than as a failed save:
 //
@@ -190,12 +225,35 @@ func OverlayChangedKeys() []string {
 	return append([]string(nil), lastOverlayKeys...)
 }
 
-// LockedKeys returns the paths locked by the overlays applied on the last
-// load, sorted and deduplicated.
+// LockedKeys returns the paths that may not be written locally, sorted and
+// deduplicated: the ones the overlays locked on the last load, plus the ones
+// the restricted-path source reports (see SetRestrictedPathSource).
 func LockedKeys() []string {
+	extra := restrictedPaths()
 	overlayMu.RLock()
-	defer overlayMu.RUnlock()
-	return append([]string(nil), lockedKeys...)
+	keys := append([]string(nil), lockedKeys...)
+	overlayMu.RUnlock()
+	if len(extra) == 0 {
+		return keys
+	}
+	return sortUniquePaths(append(keys, extra...))
+}
+
+// sortUniquePaths sorts paths and drops duplicates, comparing them
+// case-insensitively because configuration paths are case-insensitive
+// throughout. The first spelling of a path wins.
+func sortUniquePaths(paths []string) []string {
+	sort.Slice(paths, func(i, j int) bool {
+		return strings.ToLower(paths[i]) < strings.ToLower(paths[j])
+	})
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if len(out) > 0 && strings.EqualFold(p, out[len(out)-1]) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // IsKeyLocked reports whether path is covered by the current lock list.
@@ -212,6 +270,11 @@ func IsKeyLocked(path string) bool {
 	if path == "" {
 		return false
 	}
+	for _, restricted := range restrictedPaths() {
+		if pathsOverlap(restricted, path) {
+			return true
+		}
+	}
 	overlayMu.RLock()
 	defer overlayMu.RUnlock()
 	for _, locked := range lockedKeys {
@@ -220,6 +283,16 @@ func IsKeyLocked(path string) bool {
 		}
 	}
 	return false
+}
+
+// PathsOverlap reports whether either dotted configuration path covers the
+// other, comparing whole segments case-insensitively. It is the same question
+// IsKeyLocked asks of the lock list, exported so that other host-side policies
+// over configuration paths (which section a surface may render, for instance)
+// decide coverage exactly as the lock list does instead of writing a second,
+// subtly different matcher.
+func PathsOverlap(a, b string) bool {
+	return pathsOverlap(a, b)
 }
 
 // ErrIfLocked returns a *LockedKeyError for the first locked path among paths,
@@ -238,6 +311,11 @@ func ErrIfLocked(paths ...string) error {
 // does. Unlike IsKeyLocked it only matches a locked path that is path itself or
 // an ancestor of it, which is the right question for a concrete changed leaf.
 func lockedKeyCovering(path string) string {
+	for _, restricted := range restrictedPaths() {
+		if pathHasPrefix(path, restricted) {
+			return restricted
+		}
+	}
 	overlayMu.RLock()
 	defer overlayMu.RUnlock()
 	for _, locked := range lockedKeys {
@@ -282,12 +360,16 @@ func splitPath(path string) []string {
 // viper and records the resulting lock list. It runs inside Load, between the
 // file merge and viper.Unmarshal.
 //
-// It returns the dotted paths whose value the overlays changed, so the caller
-// can report them once the load has succeeded.
-func applyOverlayProviders() []string {
+// It returns the dotted paths whose value the overlays changed, plus whether
+// the lock list itself moved, so the caller can report both once the load has
+// succeeded. The two are independent: an overlay may lock a key without
+// setting it, and a surface that draws locked keys as managed has to hear
+// about that even though no value changed.
+func applyOverlayProviders() (changedKeys []string, locksChanged bool) {
 	overlayMu.RLock()
 	providers := append([]OverlayProvider(nil), overlayProviders...)
 	ctx := overlayCtx
+	previousLocks := append([]string(nil), lockedKeys...)
 	overlayMu.RUnlock()
 
 	// Reset the lock list even when nothing is registered: a provider that
@@ -297,7 +379,7 @@ func applyOverlayProviders() []string {
 		lockedKeys = nil
 		lastOverlayKeys = nil
 		overlayMu.Unlock()
-		return nil
+		return nil, len(previousLocks) > 0
 	}
 
 	if ctx == nil {
@@ -338,6 +420,7 @@ func applyOverlayProviders() []string {
 
 	locked = normalizePaths(locked)
 	changed = normalizePaths(changed)
+	locksChanged = !equalStringSlices(previousLocks, locked)
 
 	overlayMu.Lock()
 	lockedKeys = locked
@@ -345,9 +428,24 @@ func applyOverlayProviders() []string {
 	overlayMu.Unlock()
 
 	if applied == 0 {
-		return nil
+		return nil, locksChanged
 	}
-	return changed
+	return changed, locksChanged
+}
+
+// equalStringSlices compares two normalised path lists. Both sides come out of
+// normalizePaths, so they are sorted and deduplicated and an element-wise
+// comparison is exact.
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // callOverlayProvider runs one provider under a deadline, converting a panic
@@ -365,9 +463,16 @@ func callOverlayProvider(parent context.Context, p OverlayProvider) (ov Overlay,
 	return p.ConfigOverlay(ctx)
 }
 
-// publishOverlayApplied announces a load in which an overlay was merged.
-func publishOverlayApplied(changed []string) {
-	if len(changed) == 0 {
+// publishOverlayApplied announces a load in which an overlay took effect.
+//
+// It fires when the overlay changed a value *or* when the lock list moved.
+// The second case carries an empty ChangedKeys on purpose: nothing was
+// rewritten, but a key that was editable a moment ago is now managed (or the
+// other way round), and a settings surface has to redraw. ChangedKeys stays
+// exactly what it claims to be — the keys whose value changed — rather than
+// being padded with the locks to make the event look non-empty.
+func publishOverlayApplied(changed []string, locksChanged bool) {
+	if len(changed) == 0 && !locksChanged {
 		return
 	}
 	Bus.Publish(ConfigChangeEvent{

@@ -36,6 +36,44 @@ type Field struct {
 	ModelDialogTitle string
 	// Hint is optional helper text shown below the field row (e.g. recommended default).
 	Hint string
+	// Locked marks a field whose configuration key an extension has taken
+	// over. The write path refuses the save regardless, so this exists to say
+	// so before the user types rather than after: the row is drawn with a lock
+	// marker and editing it does nothing.
+	//
+	// It is deliberately separate from ReadOnly and Disabled. Those describe
+	// the field itself — a value that is derived, a control that does not
+	// apply in this configuration. Locked describes something outside the
+	// field, is set from the live lock list on every rebuild, and can appear
+	// and disappear while Pando runs.
+	Locked bool
+
+	// ManagedNote replaces the generic lock marker with a caller-supplied
+	// label ("Managed by the operator"), so a managed row says who owns the
+	// value instead of only that somebody does.
+	//
+	// It is rendered only when Locked is set: a note on an editable field would
+	// tell the user a value is not theirs while still letting them change it.
+	ManagedNote string
+}
+
+// LockMarker is the text drawn before the value of a locked field: the
+// caller-supplied note when there is one, and the generic marker otherwise.
+// It returns "" for a field that is not locked.
+func (f Field) LockMarker() string {
+	if !f.Locked {
+		return ""
+	}
+	if note := strings.TrimSpace(f.ManagedNote); note != "" {
+		return "[" + note + "]"
+	}
+	return lockedFieldMarker
+}
+
+// Editable reports whether the field accepts input. It is the single question
+// the section asks before opening an editor or emitting a save.
+func (f Field) Editable() bool {
+	return !f.ReadOnly && !f.Disabled && !f.Locked
 }
 
 func (f Field) DisplayValue(editing bool) string {

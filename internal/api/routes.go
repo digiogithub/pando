@@ -23,7 +23,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	}
 
 	mux.HandleFunc("/health", s.handleHealth)
-	mux.HandleFunc("/api/v1/token", s.handleToken)
+	mux.HandleFunc(TokenPath, s.handleToken)
 	mux.HandleFunc("/api/v1/project", s.handleProject)
 	mux.HandleFunc("/api/v1/project/context", s.handleProjectContext)
 	mux.HandleFunc("/api/v1/sessions", s.handleSessions)
@@ -99,6 +99,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/savings", s.handleSavings)
 	mux.HandleFunc("/api/v1/config/extensions", s.handleConfigExtensions)
 	mux.HandleFunc("/api/v1/config/locked-keys", s.handleConfigLockedKeys)
+	// Sibling of the line above: what the settings surfaces should hide or draw
+	// read-only, as declared by the loaded extensions.
+	mux.HandleFunc("/api/v1/config/ui-policy", s.handleConfigUIPolicy)
 	// Distinct from the line above: this one is the UI manifest of compiled-in
 	// extension modules, not the skills/Lua settings section.
 	mux.HandleFunc("/api/v1/extensions/ui", s.handleExtensionsUI)

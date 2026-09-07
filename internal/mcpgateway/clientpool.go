@@ -67,16 +67,12 @@ func (p *MCPClientPool) GetOrCreate(ctx context.Context, serverName string, srv 
 		return nil, fmt.Errorf("create MCP client for %q: %w", serverName, err)
 	}
 
-	timeout := mcpclient.ResolveTimeout(srv.Timeout, mcpclient.DefaultDiscoveryTimeout)
-	initReq := mcpclient.BuildInitializeRequest("pando-gateway")
-	initCtx, initCancel := mcpclient.WithTimeout(ctx, timeout)
-	if _, err := c.Initialize(initCtx, initReq); err != nil {
-		initCancel()
+	// Handshake also reports the outcome on the extension mcp topic.
+	if _, err := mcpclient.Handshake(ctx, c, serverName, srv, "pando-gateway"); err != nil {
 		clientCancel()
 		_ = c.Close()
 		return nil, fmt.Errorf("initialize MCP client for %q: %w", serverName, err)
 	}
-	initCancel()
 
 	now := time.Now()
 	p.clients[serverName] = &clientEntry{

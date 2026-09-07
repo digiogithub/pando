@@ -193,6 +193,16 @@ func newAnthropicClient(opts providerClientOptions) AnthropicClient {
 			option.WithHTTPClient(&http.Client{Transport: newDebugRoundTripper(nil)}))
 	}
 
+	// Per-request decoration, the dynamic counterpart of the static headers
+	// built above. It is a pass-through when nothing installed a decorator,
+	// which is the standard build, and it can never replace the credential or
+	// anthropic-* headers set here (see IsProtectedRequestHeader).
+	anthropicClientOptions = append(anthropicClientOptions, option.WithMiddleware(
+		decoratorMiddleware(RequestInfo{
+			Provider: string(opts.model.Provider),
+			Model:    opts.model.APIModel,
+		})))
+
 	client := anthropic.NewClient(anthropicClientOptions...)
 	if cfg := config.Get(); cfg != nil && cfg.Debug {
 		logging.Debug("Creating Anthropic client", "model", opts.model.APIModel)

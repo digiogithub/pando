@@ -315,7 +315,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// running agent's provider is rebuilt, not just the persisted config.
 	if req.DefaultModel != nil {
 		if err := s.setCoderModel(models.ModelID(*req.DefaultModel)); err != nil {
-			writeError(w, http.StatusBadRequest, "failed to update model: "+err.Error())
+			writeConfigError(w, http.StatusBadRequest, "failed to update model: "+err.Error(), err)
 			return
 		}
 	}

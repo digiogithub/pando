@@ -8,6 +8,11 @@ import (
 	"github.com/digiogithub/pando/internal/tui/theme"
 )
 
+// lockedFieldMarker precedes the value of a field whose configuration key an
+// extension has locked. It is plain ASCII rather than a glyph so that it reads
+// the same on a terminal without a patched font.
+const lockedFieldMarker = "[managed]"
+
 type SaveFieldMsg struct {
 	SectionTitle string
 	Field        Field
@@ -142,10 +147,18 @@ func (s *Section) renderFields(width int, active bool) []string {
 		if field.Disabled {
 			labelStyle = labelStyle.Foreground(t.TextMuted()).Bold(false)
 		}
+		// A locked key is drawn like a disabled one, so a managed row reads as
+		// "not yours to change" at a glance instead of only when the save is
+		// refused.
+		if field.Locked {
+			labelStyle = labelStyle.Foreground(t.TextMuted()).Bold(false)
+		}
 
 		value := field.DisplayValue(false)
 		if isEditingField {
 			value = s.editor.View()
+		} else if marker := field.LockMarker(); marker != "" {
+			value = marker + " " + value
 		}
 
 		valueStyle := base.
@@ -155,7 +168,7 @@ func (s *Section) renderFields(width int, active bool) []string {
 		if !isEditingField {
 			valueStyle = valueStyle.Foreground(t.TextEmphasized())
 		}
-		if field.Disabled {
+		if field.Disabled || field.Locked {
 			valueStyle = valueStyle.Foreground(t.TextMuted())
 		}
 
@@ -238,7 +251,7 @@ func (s *Section) SetActiveFieldIdx(idx int) {
 
 func (s *Section) startEditing() tea.Cmd {
 	field := s.ActiveField()
-	if field == nil || field.ReadOnly || field.Disabled {
+	if field == nil || !field.Editable() {
 		return nil
 	}
 
@@ -283,7 +296,7 @@ func (s Section) editorWidth() int {
 
 func (s *Section) saveActiveField() tea.Cmd {
 	field := s.ActiveField()
-	if field == nil || field.ReadOnly || field.Disabled {
+	if field == nil || !field.Editable() {
 		return nil
 	}
 

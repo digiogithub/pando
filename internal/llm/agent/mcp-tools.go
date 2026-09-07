@@ -215,11 +215,9 @@ func getTools(ctx context.Context, name string, m config.MCPServer, permissions 
 	logging.Debug("getTools", "serverName", name, "type", string(m.Type))
 	var stdioTools []tools.BaseTool
 	timeout := mcpclient.ResolveTimeout(m.Timeout, mcpclient.DefaultDiscoveryTimeout)
-	initRequest := mcpclient.BuildInitializeRequest("OpenCode")
 
-	initCtx, initCancel := mcpclient.WithTimeout(ctx, timeout)
-	_, err := c.Initialize(initCtx, initRequest)
-	initCancel()
+	// Handshake also reports the outcome on the extension mcp topic.
+	_, err := mcpclient.Handshake(ctx, c, name, m, "OpenCode")
 	if err != nil {
 		logging.Error("error initializing mcp client", "server", name, "error", err)
 		if scopeErr, ok := mcpauth.IsInsufficientScope(err); ok {

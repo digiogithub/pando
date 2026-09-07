@@ -100,7 +100,7 @@ func (s *Server) handleConfigBasicAuth(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := updateBasicAuth(func(ba *config.BasicAuthConfig) { ba.Enabled = req.Enabled }); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update basic auth: "+err.Error())
+			writeConfigError(w, http.StatusInternalServerError, "failed to update basic auth: "+err.Error(), err)
 			return
 		}
 		writeJSON(w, http.StatusOK, s.basicAuthStatus())
@@ -149,7 +149,7 @@ func (s *Server) handleCreateBasicAuthUser(w http.ResponseWriter, r *http.Reques
 		ba.Users = append(ba.Users, config.BasicAuthUser{Username: req.Username, Password: req.Password})
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to save user: "+err.Error())
+		writeConfigError(w, http.StatusInternalServerError, "failed to save user: "+err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.basicAuthStatus())
@@ -190,7 +190,7 @@ func (s *Server) handleDeleteBasicAuthUser(w http.ResponseWriter, r *http.Reques
 		}
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to delete user: "+err.Error())
+		writeConfigError(w, http.StatusInternalServerError, "failed to delete user: "+err.Error(), err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.basicAuthStatus())

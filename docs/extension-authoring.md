@@ -114,10 +114,32 @@ Enabled = true
 Greeting = "hola"
 ```
 
-`HostServices.Raw` is that `Config` table, and `Bool`/`String`/`Int` are typed
-readers over it with defaults. Read the config in `Provision`, validate it in
-`Validate`, and never read it again — configuration is a startup input, not a
-live channel.
+`HostServices.Raw` is that `Config` table, and `Bool`, `String`, `Int`,
+`Float64`, `Duration`, `StringSlice` and `Map` are typed readers over it with
+defaults. Read the config in `Provision`, validate it in `Validate`, and never
+read it again — configuration is a startup input, not a live channel.
+
+**Keys are case-insensitive.** The configuration system lowercases every key it
+reads, so a `baseURL` in the file arrives in `Raw` as `baseurl`. The accessors
+fold the key you ask for the same way, so `host.String("baseURL", "")` finds a
+value written as `baseURL`, `baseurl` or `BASEURL`. Two option names in one
+`Config` table that differ only in case are a mistake: the host keeps one,
+ignores the other and logs a warning. Prefer the accessors over indexing `Raw`;
+if you index it directly, use a lower-case key.
+
+**Every option can be overridden from the environment**, which is how a
+container configures an extension with no file at all. The variable is the
+prefix, `EXT`, the extension ID and the key, uppercased with everything that is
+not a letter or a digit replaced by an underscore:
+
+```
+PANDO_EXT_TOOLS_ACME_HELLO_GREETING=hola
+```
+
+`HostServices.ConfigEnvVar("Greeting")` returns that name, so an extension can
+name it in an error message. An environment value wins over the file, matching
+the precedence the host applies to core settings. Numbers, booleans and
+durations are parsed from the string, and a list is comma-separated.
 
 Two rules decide whether an extension loads at all:
 
@@ -145,7 +167,7 @@ step per capability.
 | `SlashCommandProvider` | Adds slash commands to the chat surfaces |
 | `HTTPEndpointProvider` | Mounts routes under `/api/ext/<base>/` |
 | `HTTPMiddlewareProvider` | Wraps the HTTP stack (auth, headers) |
-| `EventSubscriber` | Receives internal events (sessions, messages, …) |
+| `EventSubscriber` | Receives internal events (sessions, messages, tools, MCP, skills, …) |
 | `ConfigOverlayProvider` | Imposes configuration on the host and locks keys |
 | `MemorySink` | Observes remembrance and KB writes |
 | `RemembranceSearchWrapper` | Adds to or reorders remembrance search results |
@@ -213,6 +235,52 @@ Four rules to build against:
   changed keys, which is how a subsystem that copied a value out at startup
   learns to refresh it. `HostServices.Config.LockedKeys()` reads the live lock
   list.
+
+### Observing what happens: `EventSubscriber`
+
+`Topics()` names what you want (an empty list means everything, including
+topics added later) and `HandleEvent` receives it. The topics core publishes:
+
+| Topic | Types | ID | What it reports |
+|---|---|---|---|
+| `session`, `message`, `permission` | `created`, `updated`, `deleted` | resource id | the resource in its JSON form, the same shape the REST API exposes |
+| `config` | `updated`, `overlay_applied`, `config_reloaded` | empty | which section moved, which keys changed, the current lock list |
+| `tool` | `started`, `completed` | tool call id | tool name and agent, plus duration, outcome and failure reason on completion |
+| `mcp` | `connected`, `auth_required`, `failed` | server name | the outcome of an MCP server handshake, with the transport and the connecting component |
+| `skill` | `activated` | skill name | a skill switched on for a run, and what activated it |
+| `provider` | `created`, `updated`, `deleted` | account id | the set of configured provider accounts moved |
+
+Payload field names are documented on each topic constant in
+`pkg/extension/event.go` and are a contract of that package.
+
+What is deliberately **not** in a payload: tool arguments and results, skill
+instructions, provider keys, tokens and base URLs. These topics are for
+accounting and inventory, not for copying the conversation or the credentials
+out of the process. An extension that must see tool arguments uses
+`ToolInterceptor`, where the interception is explicit.
+
+Publishing never blocks the work it reports, and events are dropped rather than
+queued when a subscriber is slow, so an extension that must not lose an event
+buffers it itself.
+
+### Running a prompt: `HostServices.Prompts`
+
+An extension that automates Pando (a schedule, a webhook, a batch job) can run
+a turn through the host's own agent:
+
+```go
+res, err := host.Prompts.RunPrompt(ctx, extension.PromptRequest{
+    Prompt:      "summarise today's commits",
+    AutoApprove: true, // nobody is watching to answer a permission request
+    OnProgress:  func(p extension.PromptProgress) { log.Print(p.Delta) },
+})
+```
+
+It is the non-interactive contract, the same one `pando -p` uses: one prompt
+in, one answer out, with token totals and cost on the result. Sessions,
+messages, models and the tool loop stay inside core. `Prompts` is nil in a
+process with no agent, so check it before calling; `AutoApprove` applies to the
+run's own session and is lifted when the turn ends.
 
 ## What the host guarantees
 

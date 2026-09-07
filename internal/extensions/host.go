@@ -74,12 +74,34 @@ func (v configView) Lookup(path string) (any, bool) {
 		if !ok {
 			return nil, false
 		}
-		cur, ok = obj[seg]
+		cur, ok = lookupSegment(obj, seg)
 		if !ok {
 			return nil, false
 		}
 	}
 	return cur, true
+}
+
+// lookupSegment resolves one path segment, preferring an exact match and
+// falling back to a case-insensitive one.
+//
+// The fallback exists because the paths in this tree are the JSON encoding of
+// the configuration struct, which is not the spelling anyone writes. A
+// configuration file, a pushed overlay and a lock list all name the same
+// setting the way the documentation does, and answering "absent" for a
+// spelling this package does not happen to use made a converged installation
+// report itself as diverged. An exact match still wins, so a configuration
+// that really does carry two keys differing only in case is unaffected.
+func lookupSegment(obj map[string]any, seg string) (any, bool) {
+	if v, ok := obj[seg]; ok {
+		return v, true
+	}
+	for k, v := range obj {
+		if strings.EqualFold(k, seg) {
+			return v, true
+		}
+	}
+	return nil, false
 }
 
 // LockedKeys lists the configuration paths an overlay currently locks, so a
@@ -130,9 +152,12 @@ func NewManager(opts Options) *extension.Manager {
 		Host: extension.HostServices{
 			Config:         configView{cfg: cfg},
 			ConfigOverlays: overlayController{},
-			WorkingDir:     workingDir,
-			CoreVersion:    version.Version,
-			Variant:        version.Variant,
+			// Nil unless the host registered a runner, so an extension can
+			// tell an agent-less process from one it may drive.
+			Prompts:     currentPromptRunner(),
+			WorkingDir:  workingDir,
+			CoreVersion: version.Version,
+			Variant:     version.Variant,
 		},
 	})
 }
@@ -153,6 +178,11 @@ func Load(ctx context.Context, opts Options) *extension.Manager {
 	if err := RegisterConfigOverlays(ctx, mgr); err != nil {
 		logging.Warn("Failed to apply extension configuration overlays", "error", err)
 	}
+	// The UI policy is installed after the overlays, because a provider that
+	// derives its policy from the configuration it just imposed must find that
+	// configuration already loaded. It also points the configuration write path
+	// at the policy, so a hidden section is refused as well as not offered.
+	RegisterUIPolicy(mgr)
 	if n := len(extension.List()); n > 0 {
 		logging.Debug("Extension registry", "registered", n)
 	}
