@@ -310,6 +310,19 @@ const TOOLS_DEFAULTS: ToolsConfig = {
   desktopDeniedApps: [],
 }
 
+// Older Pando versions (and config files predating a list option) return `null`
+// for the desktop app lists instead of an array. Spreading that over the
+// defaults replaces `[]` with `null` and every consumer that calls `.join()`
+// throws, taking the whole Tools settings section down.
+const normalizeToolsConfig = (data: Partial<ToolsConfig>): ToolsConfig => {
+  const merged = { ...TOOLS_DEFAULTS, ...data }
+  return {
+    ...merged,
+    desktopAllowedApps: Array.isArray(merged.desktopAllowedApps) ? merged.desktopAllowedApps : [],
+    desktopDeniedApps: Array.isArray(merged.desktopDeniedApps) ? merged.desktopDeniedApps : [],
+  }
+}
+
 interface ToolsStore {
   config: ToolsConfig
   original: ToolsConfig
@@ -339,7 +352,7 @@ export const useToolsStore = create<ToolsStore>((set, get) => ({
     set({ loading: true, error: null })
     try {
       const data = await api.get<ToolsConfig>('/api/v1/config/tools')
-      const merged = { ...TOOLS_DEFAULTS, ...data }
+      const merged = normalizeToolsConfig(data)
       set({ config: merged, original: { ...merged }, dirty: false, dirtyKeys: {} })
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to load tools config'
@@ -371,7 +384,7 @@ export const useToolsStore = create<ToolsStore>((set, get) => ({
     const payload = { ...config, ...dirtyKeys }
     try {
       const data = await api.put<ToolsConfig>('/api/v1/config/tools', payload)
-      const updated = { ...TOOLS_DEFAULTS, ...data }
+      const updated = normalizeToolsConfig(data)
       set({ config: updated, original: { ...updated }, dirty: false, dirtyKeys: {} })
       useToastStore.getState().addToast('Tools saved', 'success')
     } catch (e) {

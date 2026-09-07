@@ -79,16 +79,26 @@ func (t *BrowserGetContentTool) Run(ctx context.Context, call ToolCall) (ToolRes
 	}
 	defer cancel()
 
+	jsDriven := browserSessionIsJSDriven(ctx)
+
 	var result string
 	var action chromedp.Action
 
 	switch format {
 	case "html":
-		action = chromedp.OuterHTML(selector, &result, chromedp.ByQuery)
+		if jsDriven {
+			action = jsOuterHTML(selector, &result)
+		} else {
+			action = chromedp.OuterHTML(selector, &result, chromedp.ByQuery)
+		}
 	case "title":
 		action = chromedp.Title(&result)
 	default: // "text"
-		action = chromedp.Text(selector, &result, chromedp.ByQuery)
+		if jsDriven {
+			action = jsText(selector, &result)
+		} else {
+			action = chromedp.Text(selector, &result, chromedp.ByQuery)
+		}
 	}
 
 	if err := chromedp.Run(browserCtx, action); err != nil {

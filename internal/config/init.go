@@ -489,7 +489,10 @@ SourcegraphEnabled      = false
 SourcegraphToken        = ''
 Context7Enabled         = true
 BrowserEnabled          = true
-BrowserType             = 'chrome'
+BrowserType             = 'chrome' # chrome, msedge, chromium, opera, lightpanda, obscura
+                                    # lightpanda and obscura are CDP-server browsers: Pando launches
+                                    # them as a background process and drives them over a WebSocket,
+                                    # instead of launching a Chromium executable directly.
 BrowserExecutable       = ''
 BrowserHeadless         = true
 BrowserTimeout          = 30

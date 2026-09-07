@@ -846,6 +846,17 @@ type ToolsConfigResponse struct {
 	DesktopDeniedApps         []string `json:"desktopDeniedApps"`
 }
 
+// nonNilStrings returns an empty slice for a nil one so the JSON encoder emits
+// `[]` instead of `null`. Config files written before a list option existed
+// leave the slice nil, and clients that treat the field as an array (the WebUI
+// joins it for display) crash on a null.
+func nonNilStrings(v []string) []string {
+	if v == nil {
+		return []string{}
+	}
+	return v
+}
+
 func (s *Server) handleConfigTools(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -896,8 +907,8 @@ func (s *Server) handleGetConfigTools(w http.ResponseWriter, r *http.Request) {
 		DesktopActionTimeout:      t.DesktopActionTimeout,
 		DesktopSnapshotTTL:        t.DesktopSnapshotTTL,
 		DesktopScreenshotScale:    t.DesktopScreenshotScale,
-		DesktopAllowedApps:        t.DesktopAllowedApps,
-		DesktopDeniedApps:         t.DesktopDeniedApps,
+		DesktopAllowedApps:        nonNilStrings(t.DesktopAllowedApps),
+		DesktopDeniedApps:         nonNilStrings(t.DesktopDeniedApps),
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

@@ -343,7 +343,10 @@ ExaSearchEnabled      = false
 ExaAPIKey             = ''
 Context7Enabled       = false
 BrowserEnabled        = false
-BrowserType           = 'chrome' # Preferred browser: chrome, msedge, chromium, opera
+BrowserType           = 'chrome' # Preferred browser: chrome, msedge, chromium, opera, lightpanda, obscura
+                                  # lightpanda and obscura are CDP-server browsers: Pando launches
+                                  # them as a background process and drives them over a WebSocket,
+                                  # instead of launching a Chromium executable directly.
 BrowserExecutable     = ''       # Optional absolute path to the browser binary
 BrowserHeadless       = false
 BrowserTimeout        = 30

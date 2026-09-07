@@ -105,6 +105,13 @@ function simpleStatus(enabled: boolean): ConfigStatus {
   return enabled ? 'ok' : 'disabled'
 }
 
+// Remote CDP-server browsers (Lightpanda, Obscura) are launched by Pando as a
+// CDP WebSocket server rather than a Chromium executable, so profile/user-data-dir
+// and headless flags do not apply to them.
+function isRemoteBrowserType(type: string): boolean {
+  return type === 'lightpanda' || type === 'obscura'
+}
+
 // ---- Main component ----
 
 const dividerStyle: React.CSSProperties = {
@@ -338,6 +345,11 @@ export default function InternalToolsSettings() {
               }
             }}
           />
+          {isRemoteBrowserType(config.browserType) && (
+            <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+              Launched by Pando as a local CDP server; profile, user-data-dir and headless options do not apply.
+            </div>
+          )}
           <TextInput
             label="Browser Executable"
             placeholder="Auto-detected from selected browser"
@@ -504,7 +516,7 @@ export default function InternalToolsSettings() {
           <TextInput
             label="Allowed Apps (comma-separated, empty = all)"
             placeholder="e.g. Firefox, VSCode"
-            value={config.desktopAllowedApps.join(', ')}
+            value={(config.desktopAllowedApps ?? []).join(', ')}
             onChange={(e) =>
               updateField(
                 'desktopAllowedApps',
@@ -515,7 +527,7 @@ export default function InternalToolsSettings() {
           <TextInput
             label="Denied Apps (comma-separated)"
             placeholder="e.g. 1Password, Keychain Access"
-            value={config.desktopDeniedApps.join(', ')}
+            value={(config.desktopDeniedApps ?? []).join(', ')}
             onChange={(e) =>
               updateField(
                 'desktopDeniedApps',
