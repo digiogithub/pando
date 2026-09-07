@@ -8,12 +8,17 @@ name: Release
 #                    wrapper, the CLI zips, the .app bundles and the .pkg
 #                    installers, exactly like the `release-osx` xc task does
 #                    manually on mac-mini-de-digio.
+#   Windows        : the cross-compiled .exe is Authenticode-signed on a
+#                    windows runner with Azure Trusted Signing (OIDC, no
+#                    long-lived secret) and repackaged into its zip.
 #   Release        : one GitHub release with every artifact and the changes
 #                    since the previous tag.
 #
-# The signing material is a single repository secret, MACOS_SIGNING_BUNDLE: a
-# base64 .tar.gz of ~/DIGIO_Software_Signing_Keys (both Developer ID .p12 files
-# plus the kvagerc env file with the passwords and notary credentials). See
+# The macOS signing material is a single repository secret,
+# MACOS_SIGNING_BUNDLE: a base64 .tar.gz of ~/DIGIO_Software_Signing_Keys (both
+# Developer ID .p12 files plus the kvagerc env file with the passwords and
+# notary credentials). The Windows side needs no secret at all: the `release`
+# environment federates into the Entra app named by vars.AZURE_CLIENT_ID. See
 # docs/release-pipeline.md.
 
 on:
@@ -90,10 +95,99 @@ jobs:
       - name: List artifacts
         run: ls -la dist/
 
-      - name: Upload artifacts
+      - name: Upload the Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist-linux-windows
+          name: dist-linux
+          path: dist/pando-linux-*.zip
+          if-no-files-found: error
+
+      - name: Upload the unsigned Windows artifact
+        # Deliberately not named dist-* : the release job globs dist-* and must
+        # pick up the signed zip produced by the windows-sign job instead.
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-windows
+          path: dist/pando-windows-*.zip
+          if-no-files-found: error
+
+  windows-sign:
+    name: Windows (Authenticode)
+    needs: linux-windows
+    runs-on: windows-latest
+    # The federated credential on the Entra app is scoped to
+    # repo:digiogithub/pando:environment:release, so the OIDC token minted for
+    # this job only validates from within that environment.
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download the unsigned Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: unsigned-windows
+          path: dist
+
+      - name: Unpack the zip
+        # Trusted Signing signs the .exe, not the archive, so the zip is
+        # rebuilt around the signed binary afterwards.
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path unsigned | Out-Null
+          Get-ChildItem dist/pando-windows-*.zip | ForEach-Object {
+            Expand-Archive -Path $_.FullName -DestinationPath unsigned -Force
+          }
+          Get-ChildItem unsigned
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign with Azure Trusted Signing
+        # No credential inputs: the action falls back to the Azure CLI session
+        # established above, which is the federated GitHub identity.
+        uses: azure/trusted-signing-action@v0
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}\unsigned
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify the signature
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-ChildItem unsigned/*.exe | ForEach-Object {
+            $sig = Get-AuthenticodeSignature $_.FullName
+            "-- $($_.Name): $($sig.Status) / $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') {
+              Write-Output "::error::Unsigned or invalid: $($_.Name) ($($sig.Status))"
+              exit 1
+            }
+          }
+
+      - name: Repackage the signed zip
+        shell: pwsh
+        run: |
+          Remove-Item dist/*.zip -Force
+          Get-ChildItem unsigned/*.exe | ForEach-Object {
+            $zip = "dist/" + [IO.Path]::GetFileNameWithoutExtension($_.Name) + ".zip"
+            Compress-Archive -Path $_.FullName -DestinationPath $zip -Force
+          }
+          Get-ChildItem dist
+
+      - name: Upload the signed Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows
           path: dist/*.zip
           if-no-files-found: error
 
@@ -195,7 +289,7 @@ jobs:
 
   release:
     name: Publish release
-    needs: [linux-windows, macos]
+    needs: [linux-windows, windows-sign, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -209,6 +303,9 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
+          # dist-* only: it skips the unsigned Windows zip, which the
+          # windows-sign job has already replaced with dist-windows.
+          pattern: dist-*
           path: dist
           merge-multiple: true
 
@@ -222,6 +319,6 @@ jobs:
           draft: ${{ inputs.draft || false }}
           notes-header: |
             Downloads: `.pkg` for macOS (signed, notarized and stapled),
-            `pando-linux-*.zip` / `pando-windows-x64.zip` for the other
-            platforms.
+            `pando-linux-*.zip` for Linux and `pando-windows-x64.zip`
+            (Authenticode-signed) for Windows.
           token: ${{ github.token }}
