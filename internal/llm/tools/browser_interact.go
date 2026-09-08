@@ -55,11 +55,22 @@ func (t *BrowserClickTool) Run(ctx context.Context, call ToolCall) (ToolResponse
 	}
 	defer cancel()
 
-	if err := chromedp.Run(browserCtx,
-		chromedp.WaitVisible(params.Selector, chromedp.ByQuery),
-		chromedp.Click(params.Selector, chromedp.ByQuery),
-		chromedp.Sleep(time.Duration(params.WaitAfterMs)*time.Millisecond),
-	); err != nil {
+	var clickActions []chromedp.Action
+	if browserSessionIsJSDriven(ctx) {
+		clickActions = []chromedp.Action{
+			jsWaitVisible(params.Selector, jsDriverWaitTimeout),
+			jsClick(params.Selector),
+			chromedp.Sleep(time.Duration(params.WaitAfterMs) * time.Millisecond),
+		}
+	} else {
+		clickActions = []chromedp.Action{
+			chromedp.WaitVisible(params.Selector, chromedp.ByQuery),
+			chromedp.Click(params.Selector, chromedp.ByQuery),
+			chromedp.Sleep(time.Duration(params.WaitAfterMs) * time.Millisecond),
+		}
+	}
+
+	if err := chromedp.Run(browserCtx, clickActions...); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("click failed: %v", err)), nil
 	}
 
@@ -123,13 +134,23 @@ func (t *BrowserFillTool) Run(ctx context.Context, call ToolCall) (ToolResponse,
 	}
 	defer cancel()
 
-	actions := []chromedp.Action{
-		chromedp.WaitVisible(params.Selector, chromedp.ByQuery),
+	var actions []chromedp.Action
+	if browserSessionIsJSDriven(ctx) {
+		// jsFill always sets the element's full value directly, so
+		// clear_first is a no-op here (there is nothing to append to).
+		actions = []chromedp.Action{
+			jsWaitVisible(params.Selector, jsDriverWaitTimeout),
+			jsFill(params.Selector, params.Value),
+		}
+	} else {
+		actions = []chromedp.Action{
+			chromedp.WaitVisible(params.Selector, chromedp.ByQuery),
+		}
+		if clearFirst {
+			actions = append(actions, chromedp.Clear(params.Selector, chromedp.ByQuery))
+		}
+		actions = append(actions, chromedp.SendKeys(params.Selector, params.Value, chromedp.ByQuery))
 	}
-	if clearFirst {
-		actions = append(actions, chromedp.Clear(params.Selector, chromedp.ByQuery))
-	}
-	actions = append(actions, chromedp.SendKeys(params.Selector, params.Value, chromedp.ByQuery))
 
 	if err := chromedp.Run(browserCtx, actions...); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("fill failed: %v", err)), nil

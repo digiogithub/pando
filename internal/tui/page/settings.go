@@ -2696,7 +2696,7 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 	browserOptions := []string{"chrome", "msedge", "chromium", "opera"}
 	for _, install := range browserInstalls {
 		browserOptions = ensureOption(browserOptions, install.Type)
-		if strings.TrimSpace(it.BrowserExecutable) == "" && install.Type == llmtools.NormalizeBrowserType(it.BrowserType) && strings.TrimSpace(it.BrowserUserDataDir) == "" && strings.TrimSpace(install.UserDataDir) != "" {
+		if !llmtools.IsRemoteBrowserType(install.Type) && strings.TrimSpace(it.BrowserExecutable) == "" && install.Type == llmtools.NormalizeBrowserType(it.BrowserType) && strings.TrimSpace(it.BrowserUserDataDir) == "" && strings.TrimSpace(install.UserDataDir) != "" {
 			it.BrowserUserDataDir = install.UserDataDir
 		}
 	}
@@ -4970,7 +4970,7 @@ func saveInternalTools(field settings.Field) error {
 		itCfg.BrowserType = llmtools.NormalizeBrowserType(field.Value)
 		if install, ok := llmtools.ResolveBrowserInstall(itCfg.BrowserType, ""); ok && strings.TrimSpace(itCfg.BrowserExecutable) == "" {
 			itCfg.BrowserExecutable = install.Executable
-			if strings.TrimSpace(itCfg.BrowserUserDataDir) == "" {
+			if !llmtools.IsRemoteBrowserType(itCfg.BrowserType) && strings.TrimSpace(itCfg.BrowserUserDataDir) == "" {
 				itCfg.BrowserUserDataDir = install.UserDataDir
 			}
 		}

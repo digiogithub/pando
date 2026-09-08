@@ -80,15 +80,33 @@ func (t *BrowserNavigateTool) Run(ctx context.Context, call ToolCall) (ToolRespo
 	}
 	defer cancel()
 
+	jsDriven := browserSessionIsJSDriven(ctx)
+
 	var title string
-	actions := []chromedp.Action{
-		chromedp.Navigate(params.URL),
-		chromedp.WaitVisible(`body`, chromedp.ByQuery),
-		chromedp.Title(&title),
+	var actions []chromedp.Action
+	if jsDriven {
+		// Obscura never emits the DOM node-cache events chromedp.WaitVisible
+		// relies on (see browserNeedsJSDriver in browser_jsdriven.go), so
+		// drive the wait through plain JavaScript polling instead.
+		actions = []chromedp.Action{
+			chromedp.Navigate(params.URL),
+			jsWaitVisible("body", jsDriverWaitTimeout),
+			chromedp.Title(&title),
+		}
+	} else {
+		actions = []chromedp.Action{
+			chromedp.Navigate(params.URL),
+			chromedp.WaitVisible(`body`, chromedp.ByQuery),
+			chromedp.Title(&title),
+		}
 	}
 
 	if params.WaitFor != "" {
-		actions = append(actions, chromedp.WaitVisible(params.WaitFor, chromedp.ByQuery))
+		if jsDriven {
+			actions = append(actions, jsWaitVisible(params.WaitFor, jsDriverWaitTimeout))
+		} else {
+			actions = append(actions, chromedp.WaitVisible(params.WaitFor, chromedp.ByQuery))
+		}
 	}
 
 	if err := chromedp.Run(browserCtx, actions...); err != nil {

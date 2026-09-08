@@ -86,7 +86,11 @@ func (t *BrowserScreenshotTool) Run(ctx context.Context, call ToolCall) (ToolRes
 	case params.FullPage:
 		action = chromedp.FullScreenshot(&buf, quality)
 	case params.Selector != "":
-		action = chromedp.Screenshot(params.Selector, &buf, chromedp.NodeVisible)
+		if browserSessionIsJSDriven(ctx) {
+			action = jsElementScreenshot(params.Selector, &buf, quality)
+		} else {
+			action = chromedp.Screenshot(params.Selector, &buf, chromedp.NodeVisible)
+		}
 	default:
 		action = chromedp.FullScreenshot(&buf, quality)
 	}

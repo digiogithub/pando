@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,8 +27,14 @@ type browserSession struct {
 	ctxCancel   context.CancelFunc
 	lastUsed    time.Time
 	tempDir     string
-	// For remote browsers (e.g. Lightpanda), the managed server process.
+	// For remote browsers (e.g. Lightpanda, Obscura), the managed server process.
 	serverProcess *exec.Cmd
+	// jsDriven is true when the browser engine behind this session does not
+	// support chromedp's high-level query actions (WaitVisible, Click,
+	// SendKeys, OuterHTML, Text, selector Screenshot) and must be driven via
+	// plain JavaScript instead. See browserNeedsJSDriver in
+	// browser_jsdriven.go for why.
+	jsDriven bool
 	// Console and network event buffers (used by devtools tools)
 	consoleLogs []BrowserConsoleEntry
 	networkLog  []BrowserNetworkEntry
@@ -115,12 +122,13 @@ func GetOrCreateBrowserSession(sessionID string) (*browserSession, error) {
 	)
 
 	if IsRemoteBrowserType(resolvedInstall.Type) {
-		// Lightpanda and other CDP-server browsers: launch the server process and
-		// connect via remote allocator — no profile or headless flags apply.
+		// Lightpanda, Obscura, and other CDP-server browsers: launch the server
+		// process and connect via remote allocator — no profile or headless
+		// flags apply.
 		var err error
-		ctx, ctxCancel, allocCtx, allocCancel, serverProcess, err = startLightpandaProcess(resolvedInstall.Executable)
+		ctx, ctxCancel, allocCtx, allocCancel, serverProcess, err = startRemoteBrowserProcess(resolvedInstall)
 		if err != nil {
-			return nil, fmt.Errorf("lightpanda startup failed: %w", err)
+			return nil, fmt.Errorf("%s startup failed: %w", resolvedInstall.Label, err)
 		}
 	} else {
 		userDataDir := strings.TrimSpace(cfg.BrowserUserDataDir)
@@ -156,6 +164,7 @@ func GetOrCreateBrowserSession(sessionID string) (*browserSession, error) {
 		lastUsed:      time.Now(),
 		tempDir:       tempDir,
 		serverProcess: serverProcess,
+		jsDriven:      browserNeedsJSDriver(resolvedInstall.Type),
 	}
 	globalBrowserRegistry.sessions[sessionID] = sess
 
@@ -353,10 +362,30 @@ func joinStrings(parts []string, sep string) string {
 	return result
 }
 
-// startLightpandaProcess launches a Lightpanda CDP server on a free local port,
-// waits for it to accept connections, and returns chromedp contexts connected via
-// remote allocator. The returned *exec.Cmd must be killed when the session closes.
-func startLightpandaProcess(executable string) (context.Context, context.CancelFunc, context.Context, context.CancelFunc, *exec.Cmd, error) {
+// remoteBrowserServeArgs builds the "serve" argument list for a CDP-server
+// browser (Lightpanda, Obscura, ...) listening on host:port.
+func remoteBrowserServeArgs(browserType, host string, port int) []string {
+	switch NormalizeBrowserType(browserType) {
+	case "obscura":
+		// Obscura defaults to blocking navigation to loopback/RFC1918
+		// addresses (--allow-private-network) and to file:// URLs
+		// (--allow-file-access). The server here is bound to loopback only
+		// and the agent driving it already has local shell/file access, so
+		// those restrictions would just break the primary use cases (local
+		// dev servers on http://localhost, local file inspection) without
+		// adding any real security boundary. --quiet keeps its stdout/stderr
+		// out of the pando process logs.
+		return []string{"serve", "--host", host, "--port", strconv.Itoa(port), "--allow-private-network", "--allow-file-access", "--quiet"}
+	default: // "lightpanda" and anything else that behaves like it
+		return []string{"serve", "--host", host, "--port", strconv.Itoa(port)}
+	}
+}
+
+// startRemoteBrowserProcess launches a CDP-server browser (Lightpanda,
+// Obscura, ...) on a free local port, waits for it to accept connections, and
+// returns chromedp contexts connected via remote allocator. The returned
+// *exec.Cmd must be killed when the session closes.
+func startRemoteBrowserProcess(install BrowserInstall) (context.Context, context.CancelFunc, context.Context, context.CancelFunc, *exec.Cmd, error) {
 	port, err := findFreePort()
 	if err != nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("find free port: %w", err)
@@ -366,17 +395,18 @@ func startLightpandaProcess(executable string) (context.Context, context.CancelF
 	addr := fmt.Sprintf("%s:%d", host, port)
 	wsURL := fmt.Sprintf("ws://%s", addr)
 
-	cmd := exec.Command(executable, "serve", "--host", host, "--port", fmt.Sprintf("%d", port)) //nolint:gosec
+	args := remoteBrowserServeArgs(install.Type, host, port)
+	cmd := exec.Command(install.Executable, args...) //nolint:gosec
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	if err := cmd.Start(); err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("start lightpanda: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("start %s: %w", install.Label, err)
 	}
 
 	// Wait until the CDP endpoint is reachable (up to 10 seconds).
 	if err := waitForCDPEndpoint(fmt.Sprintf("http://%s/json/version", addr), 10*time.Second); err != nil {
 		_ = cmd.Process.Kill()
-		return nil, nil, nil, nil, nil, fmt.Errorf("lightpanda did not become ready: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("%s did not become ready: %w", install.Label, err)
 	}
 
 	allocCtx, allocCancel := chromedp.NewRemoteAllocator(context.Background(), wsURL)
@@ -385,7 +415,7 @@ func startLightpandaProcess(executable string) (context.Context, context.CancelF
 		ctxCancel()
 		allocCancel()
 		_ = cmd.Process.Kill()
-		return nil, nil, nil, nil, nil, fmt.Errorf("chromedp connect to lightpanda: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("chromedp connect to %s: %w", install.Label, err)
 	}
 
 	return ctx, ctxCancel, allocCtx, allocCancel, cmd, nil

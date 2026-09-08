@@ -42,6 +42,22 @@ var supportedBrowserCandidates = []browserCandidate{
 		Profiles: []string{}, // Lightpanda has no user profile concept
 	},
 	{
+		Type:      "obscura",
+		Label:     "Obscura",
+		ExecNames: []string{"obscura", "obscura.exe"},
+		Paths: []string{
+			"/usr/local/bin/obscura",
+			"/usr/bin/obscura",
+			"~/.local/bin/obscura",
+			"~/bin/obscura",
+			"~/.cargo/bin/obscura",
+			"/opt/obscura/obscura",
+			"/Applications/Obscura.app/Contents/MacOS/obscura",
+			`C:\\Program Files\\Obscura\\obscura.exe`,
+		},
+		Profiles: []string{}, // Obscura has no user profile concept
+	},
+	{
 		Type:      "chrome",
 		Label:     "Google Chrome",
 		ExecNames: []string{"google-chrome", "google-chrome-stable", "chrome", "chrome.exe"},
@@ -162,15 +178,23 @@ func NormalizeBrowserType(value string) string {
 		return "opera"
 	case "lightpanda", "light-panda":
 		return "lightpanda"
+	case "obscura", "obscura-browser":
+		return "obscura"
 	default:
 		return strings.ToLower(strings.TrimSpace(value))
 	}
 }
 
 // IsRemoteBrowserType returns true for browser types that act as CDP servers
-// (launched separately and connected to via WebSocket) rather than local executables.
+// (launched separately and connected to via WebSocket) rather than local
+// executables driven directly, e.g. "lightpanda" or "obscura".
 func IsRemoteBrowserType(browserType string) bool {
-	return NormalizeBrowserType(browserType) == "lightpanda"
+	switch NormalizeBrowserType(browserType) {
+	case "lightpanda", "obscura":
+		return true
+	default:
+		return false
+	}
 }
 
 func browserLabel(browserType string) string {
