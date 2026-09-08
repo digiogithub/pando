@@ -331,6 +331,13 @@ func (app *App) Clients() map[string]*lsp.Client {
 // createAndStartLSPClient creates a new LSP client, initializes it, and starts its workspace watcher
 func (app *App) createAndStartLSPClient(ctx context.Context, name string, command string, args ...string) {
 	// Create a specific context for initialization with a timeout
+	// Kept at Info (code review flagged this as a "user content at Info"
+	// site): args here are the LSP server's launch flags from the user's
+	// own lsp.* config (binary path/flags), not per-request session
+	// content, and knowing which command/args started a client is useful
+	// operational diagnostic. internal/telemetry.NewRecord's redact.Value
+	// pipeline already redacts any secret-shaped flag=value pair in args
+	// (e.g. "--token X") before this could ever be shipped remotely.
 	logging.Info("Creating LSP client", "name", name, "command", command, "args", args)
 
 	// Create the LSP client

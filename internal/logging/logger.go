@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/digiogithub/pando/internal/telemetry"
 )
 
 func getCaller() string {
@@ -67,8 +70,34 @@ func ErrorPersist(msg string, args ...any) {
 // and executes an optional cleanup function before returning.
 func RecoverPanic(name string, cleanup func()) {
 	if r := recover(); r != nil {
-		// Log the panic
-		ErrorPersist(fmt.Sprintf("Panic in %s: %v", name, r))
+		stack := debug.Stack()
+
+		// Log the panic locally. Tagged with telemetry.SkipAttrKey so the
+		// tee handler never also ships this bare summary to the remote
+		// sink: the dedicated, richer "event=panic" record built below
+		// (same message, plus the full stack trace) is the one and only
+		// copy of this panic that gets shipped remotely.
+		ErrorPersist(fmt.Sprintf("Panic in %s: %v", name, r), telemetry.SkipAttrKey, true)
+
+		// When remote telemetry is active, ship a dedicated panic record with
+		// the full stack (the Record builder redacts and truncates it to
+		// 8 KiB, same as any other string attr), then flush it synchronously
+		// with a short deadline: the process may be about to exit, so the
+		// sink's normal interval/threshold batching might otherwise never
+		// get a chance to send it.
+		if sink := getRemoteSink(); sink != nil {
+			sink.Handle(context.Background(), time.Now(), slog.LevelError,
+				fmt.Sprintf("Panic in %s: %v", name, r),
+				[]slog.Attr{
+					slog.String("event", "panic"),
+					slog.String("panic_name", name),
+					slog.String("stack", string(stack)),
+				},
+			)
+			flushCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			_ = FlushRemoteSink(flushCtx)
+			cancel()
+		}
 
 		// Create a timestamped panic log file
 		timestamp := time.Now().Format("20060102-150405")
@@ -85,7 +114,7 @@ func RecoverPanic(name string, cleanup func()) {
 			// Write panic information and stack trace
 			fmt.Fprintf(file, "Panic in %s: %v\n\n", name, r)
 			fmt.Fprintf(file, "Time: %s\n\n", time.Now().Format(time.RFC3339))
-			fmt.Fprintf(file, "Stack Trace:\n%s\n", debug.Stack())
+			fmt.Fprintf(file, "Stack Trace:\n%s\n", stack)
 
 			InfoPersist(fmt.Sprintf("Panic details written to %s", filename))
 		}

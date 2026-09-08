@@ -10,6 +10,7 @@ import (
 
 	toolsPkg "github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/redact"
 )
 
 var httpDebugSeq atomic.Int64
@@ -130,16 +131,12 @@ func (d *debugRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 }
 
 // sanitizeHeaders returns a flattened map of headers with sensitive values
-// replaced by "[REDACTED]".
+// replaced by "[REDACTED]" (Authorization, X-Api-Key, Cookie, and anything
+// else redact.IsSecretKey recognizes as a credential-bearing header name).
 func sanitizeHeaders(headers http.Header) map[string]string {
-	sensitive := map[string]bool{
-		"authorization": true,
-		"x-api-key":     true,
-		"api-key":       true,
-	}
 	result := make(map[string]string, len(headers))
 	for k, v := range headers {
-		if sensitive[strings.ToLower(k)] {
+		if redact.IsSecretKey(k) {
 			result[k] = "[REDACTED]"
 		} else {
 			result[k] = strings.Join(v, ", ")

@@ -65,6 +65,14 @@ jobs:
         run: cd web-ui && npm ci
 
       - name: Build desktop app
+        # Only carries the real secret on a tag-triggered (release) build, not
+        # on a workflow_dispatch dev build. NOTE: `make desktop-build` invokes
+        # `wails build` directly and does not currently forward LDFLAGS/
+        # TELEMETRY_LDFLAGS to it (unlike `make build`/`release-*`), so this
+        # env var is forward-looking plumbing only — wiring wails to actually
+        # consume it is tracked as an open issue, out of scope for Phase 0.
+        env:
+          PANDO_BETTERSTACK_TOKEN: ${{ startsWith(github.ref, 'refs/tags/') && secrets.PANDO_BETTERSTACK_TOKEN || '' }}
         run: make desktop-build
 
       - name: Package artifacts (Unix)

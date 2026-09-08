@@ -160,20 +160,38 @@ export function Toggle({
   checked,
   onChange,
   description,
+  disabled,
+  hint,
 }: {
   label: string
   checked: boolean
   onChange: (v: boolean) => void
   description?: string
+  disabled?: boolean
+  /** Shown under description, e.g. why the toggle is disabled. */
+  hint?: string
 }) {
+  const toggle = () => {
+    if (disabled) return
+    onChange(!checked)
+  }
+
   return (
     <div
       role="switch"
       aria-checked={checked}
-      tabIndex={0}
-      style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}
-      onClick={() => onChange(!checked)}
+      aria-disabled={disabled || undefined}
+      tabIndex={disabled ? -1 : 0}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.75rem',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
+      }}
+      onClick={toggle}
       onKeyDown={(e) => {
+        if (disabled) return
         if (e.key === ' ' || e.key === 'Enter') {
           e.preventDefault()
           onChange(!checked)
@@ -211,6 +229,9 @@ export function Toggle({
         <div style={{ fontSize: 14, color: 'var(--fg)', fontWeight: 500 }}>{label}</div>
         {description && (
           <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{description}</div>
+        )}
+        {hint && (
+          <div style={{ fontSize: 12, color: 'var(--warning, var(--fg-muted))', marginTop: '0.2rem' }}>{hint}</div>
         )}
       </div>
     </div>

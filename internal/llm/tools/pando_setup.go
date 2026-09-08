@@ -10,6 +10,8 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/redact"
+	"github.com/digiogithub/pando/internal/telemetry"
 )
 
 const (
@@ -331,6 +333,28 @@ return them as text: follow them immediately in the current turn.
 Run "commands" first to see what is available.`,
 			Run: runSetupRun,
 		},
+		{
+			Name:    "telemetry",
+			Summary: "Show or change remote telemetry (opt-in diagnostics shipped to Better Stack)",
+			Usage: `Usage: telemetry [status|enable|disable|regenerate|level <level>]
+Without an argument (or "status") prints whether remote telemetry is available
+in this build, whether it is enabled, the debug ID (if any) and the minimum
+level shipped.
+  enable      Turn on remote telemetry. Refused if this build has no ingest
+              token (ask a maintainer, or see the telemetry docs). Generates
+              a debug ID on first enable.
+  disable     Turn off remote telemetry. The debug ID is kept, so re-enabling
+              later reuses it.
+  regenerate  Replace the debug ID with a new one (also refused without a
+              token, same as enable).
+  level LVL   Set the minimum level shipped: debug, info, warn or error.
+This is a GLOBAL, user-level setting — it is never turned on by a project's
+own configuration. Only the debug ID identifies the sender (never a username,
+hostname or file path); secrets are always redacted before anything is sent.
+When the user asks to help diagnose an issue, "status" and the debug ID it
+prints is what they quote in a bug report.`,
+			Run: runSetupTelemetry,
+		},
 	}
 }
 
@@ -530,15 +554,14 @@ func filterSetupValue(v any, term string) any {
 // Secret redaction
 // ---------------------------------------------------------------------------
 
-// setupSecretKeySuffixes matches configuration keys whose value must never be
-// printed. Matching is on the lowercased key: "token" (singular) catches
-// sourcegraphToken and oauthAccessToken while leaving promptTokens,
+// setupExtraSecretKeySuffixes adds pando-specific secret suffixes on top of
+// the generic key/token/secret/password/authorization/cookie/credential
+// suffixes that redact.IsSecretKey already covers: OAuth/PKCE fields and the
+// age-encryption key list, none of which end in a generic secret word.
+// Matching is on the lowercased key: "token" (singular, via redact.IsSecretKey)
+// catches sourcegraphToken and oauthAccessToken while leaving promptTokens,
 // maxOutputTokens and tokenOptimization untouched.
-var setupSecretKeySuffixes = []string{
-	"apikey", "api_key", "token", "secret", "password", "passwd",
-	"credential", "credentials", "privatekey", "agekeys", "codeverifier",
-	"oauthstate",
-}
+var setupExtraSecretKeySuffixes = []string{"agekeys", "codeverifier", "oauthstate"}
 
 // setupHeaderKeys are maps whose values are credentials even though the header
 // names themselves are safe to show.
@@ -573,7 +596,10 @@ func redactSetupValue(v any) {
 }
 
 func isSetupSecretKey(lower string) bool {
-	for _, suffix := range setupSecretKeySuffixes {
+	if redact.IsSecretKey(lower) {
+		return true
+	}
+	for _, suffix := range setupExtraSecretKeySuffixes {
 		if strings.HasSuffix(lower, suffix) {
 			return true
 		}
@@ -1239,6 +1265,90 @@ func runSetupCommands(_ context.Context, t *pandoSetupTool, args setupArgs) (str
 		}
 	}
 	return sb.String(), nil
+}
+
+// ---------------------------------------------------------------------------
+// telemetry
+// ---------------------------------------------------------------------------
+
+// runSetupTelemetry reads or changes the opt-in remote telemetry setting. It
+// is a GLOBAL, user-level setting (internal/config/telemetry.go), so — same
+// as "config" — it goes straight to the config package rather than through
+// SetupBridge: there is nothing session-scoped about it.
+func runSetupTelemetry(_ context.Context, _ *pandoSetupTool, args setupArgs) (string, error) {
+	cfg := config.Get()
+	if cfg == nil {
+		return "", fmt.Errorf("configuration is not loaded")
+	}
+
+	action := strings.ToLower(strings.TrimSpace(args.Positional(0)))
+	switch action {
+	case "", "status":
+		return renderSetupTelemetryStatus(cfg), nil
+
+	case "enable":
+		if !telemetry.Available() {
+			return "", fmt.Errorf("remote telemetry is not available in this build: no Better Stack ingest token is linked in (ask a maintainer, or see the telemetry docs to build with one)")
+		}
+		id, err := config.UpdateTelemetry(true)
+		if err != nil {
+			return "", fmt.Errorf("enable telemetry: %w", err)
+		}
+		return fmt.Sprintf("Remote telemetry enabled. Debug ID: %s\nShare this ID when reporting a problem.\n", telemetry.FormatDebugID(id)), nil
+
+	case "disable":
+		if _, err := config.UpdateTelemetry(false); err != nil {
+			return "", fmt.Errorf("disable telemetry: %w", err)
+		}
+		return "Remote telemetry disabled. The debug ID is kept, so re-enabling later reuses it.\n", nil
+
+	case "regenerate":
+		if !telemetry.Available() {
+			return "", fmt.Errorf("remote telemetry is not available in this build: no Better Stack ingest token is linked in")
+		}
+		id, err := config.RegenerateTelemetryID()
+		if err != nil {
+			return "", fmt.Errorf("regenerate telemetry debug id: %w", err)
+		}
+		return fmt.Sprintf("New debug ID: %s\n", telemetry.FormatDebugID(id)), nil
+
+	case "level":
+		level := strings.TrimSpace(args.Positional(1))
+		if level == "" {
+			return "", fmt.Errorf("telemetry level expects a value: debug, info, warn or error")
+		}
+		if err := config.UpdateTelemetryMinLevel(level); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Telemetry minimum level set to %s.\n", strings.ToLower(level)), nil
+
+	default:
+		return "", fmt.Errorf("unknown telemetry action %q; run telemetry --help for usage", action)
+	}
+}
+
+func renderSetupTelemetryStatus(cfg *config.Config) string {
+	var sb strings.Builder
+	sb.WriteString("## Remote telemetry\n\n")
+	sb.WriteString(fmt.Sprintf("- available: %s\n", yesNoSetup(telemetry.Available())))
+	sb.WriteString(fmt.Sprintf("- enabled:   %s\n", yesNoSetup(cfg.Telemetry.Enabled)))
+	debugID := config.TelemetryDebugIDDisplay()
+	if debugID == "" {
+		debugID = "(none yet — enable to generate one)"
+	}
+	sb.WriteString(fmt.Sprintf("- debug id:  %s\n", debugID))
+	sb.WriteString(fmt.Sprintf("- min level: %s\n", cfg.Telemetry.MinLevel))
+	if !telemetry.Available() {
+		sb.WriteString("\nUnavailable in this build: no Better Stack ingest token is linked in.\n")
+	}
+	return sb.String()
+}
+
+func yesNoSetup(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
 }
 
 func runSetupRun(ctx context.Context, t *pandoSetupTool, args setupArgs) (string, error) {

@@ -1,290 +1,420 @@
-WorkingDir = ''
 AgeKeys = ''
-LSPAutoActivate = true
+AutoCompact = true
+ContextPaths = []
+Debug = false
+DebugLSP = false
 LSPActivateOn = 'edits'
+LSPAutoActivate = true
 LSPAutoInstall = true
+LSPInstallTimeout = '2m0s'
 LSPRunner = 'auto'
 LSPStartupTimeout = '20s'
-LSPInstallTimeout = '2m0s'
-Debug = false
 LogFile = ''
-DebugLSP = false
-ContextPaths = []
-AutoCompact = true
+WorkingDir = ''
+
+[AGUI]
+AgentPoolSize = 0
+AgentPoolTTL = ''
+Agents = []
+AllowedOrigins = []
+AutoApprove = false
+Enabled = false
+FrontendTools = false
+Host = ''
+HumanInTheLoop = false
+Path = ''
+Persona = ''
+Port = 0
+RequireToken = false
+
+[Agents]
+[Agents.cli-assist]
+AutoCompact = false
+AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
+MaxTokens = 0
+Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
+ReasoningEffort = ''
+ThinkingMode = ''
+
+[Agents.cliassist]
+AutoCompact = false
+AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
+MaxTokens = 0
+Model = 'ollama.qwopus:latest'
+ReasoningEffort = ''
+ThinkingMode = ''
+
+[Agents.coder]
+AutoCompact = false
+AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
+MaxTokens = 0
+Model = 'openrouter.qwen/qwen3.8-2.4t-a95b'
+ReasoningEffort = ''
+ThinkingMode = ''
+
+[Agents.context-enricher]
+AutoCompact = false
+AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
+MaxTokens = 0
+Model = 'ollama.nova4b:latest'
+ReasoningEffort = ''
+ThinkingMode = ''
+
+[Agents.persona-selector]
+AutoCompact = false
+AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
+MaxTokens = 0
+Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
+ReasoningEffort = ''
+ThinkingMode = ''
+
+[Agents.summarizer]
+AutoCompact = false
+AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
+MaxTokens = 0
+Model = 'copilot.mai-code-1.1-flash'
+ReasoningEffort = ''
+ThinkingMode = ''
+
+[Agents.task]
+AutoCompact = false
+AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
+MaxTokens = 0
+Model = 'copilot.mai-code-1.1-flash'
+ReasoningEffort = ''
+ThinkingMode = ''
+
+[Agents.title]
+AutoCompact = false
+AutoCompactThreshold = 0.0
+ContextWindowOverride = 0
+MaxTokens = 0
+Model = 'copilot.gpt-5-mini'
+ReasoningEffort = ''
+ThinkingMode = ''
+
+[Bash]
+AllowedCommands = ['curl']
+BannedCommands = []
+OutputFilterDisabled = false
+OutputFilterPaths = []
+
+[Caveman]
+DefaultMode = 'lite'
+
+[Container]
+allow_env = []
+allow_mounts = []
+cpu_limit = ''
+embedded_cache_dir = ''
+embedded_gc_keep_n = 0
+extra_env = []
+extra_mounts = []
+image = ''
+mem_limit = ''
+network = ''
+no_new_privileges = false
+pids_limit = 0
+pull_policy = ''
+read_only = false
+runtime = 'host'
+socket = ''
+user = ''
+work_dir = ''
+
+[CronJobs]
+Enabled = false
+Jobs = []
 
 [Data]
 Directory = './.pando/data'
 
-[MCPServers]
-[MCPServers.deepwiki]
-Command = ''
-Env = []
-Args = []
-Type = 'streamable-http'
-URL = 'https://mcp.deepwiki.com/mcp'
-Timeout = '5m'
+[Design]
+DefaultKind = ''
+OutputDir = ''
+SystemDir = ''
 
-[MCPServers.mycommandmcp]
-Command = 'mycommandmcp'
-Env = []
-Args = ['-c', '.ai/mycommand-mcp.yaml']
-Type = 'stdio'
-URL = ''
-Timeout = ''
+[Design.Critique]
+Enabled = false
+MaxRounds = 0
+Policy = ''
+Threshold = 0.0
 
-[[providerAccounts]]
-id = 'copilot'
-displayName = 'copilot'
-type = 'copilot'
-useOAuth = true
+[Extensions]
+Disabled = []
 
-[[providerAccounts]]
-id = 'gemini'
-displayName = 'gemini'
-type = 'gemini'
-apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBIalJySUZJeDNDd3AzZFVHMFhNbCtMNmo5UHdBYjcxUkVBS0NtcURWdEFVCmdnZFNsTFppWm1ZK1Raak0wUDVRZWM3OUdKTTFON0x4TzZUcVYyeW0ya2cKLS0tIG9KdG5mSmc4d28rTS9NMExzWmo4RC9EQyt4bHZ1VVJ4TThIVU53c2xjWXcKzvj8pn0kqomhkK1anxt3EDvRYCc8ZvOBzejzU6QEW0Hg93P/RkWLF6/t9vdd/lEDalZ0XG+pioRfP3bPwaMFjU/JU5dt+vw='
+[Extensions.Memory]
+DryRun = false
+Enabled = false
+Mode = ''
+Origins = []
+Paths = []
+QueueSize = 0
+Scopes = []
+TimeoutMs = 0
+WrapSearch = false
 
-[[providerAccounts]]
-id = 'openrouter'
-displayName = 'openrouter'
-type = 'openrouter'
-apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA0OFBPZEp3L2dPUURIRmVuaUE0VnRBd0pZWFE2cFFEbHljaDluWUcrQkdnCjExNlFRaGl2K1JQU1VtYUNmRGM3b2VxK1Q1NDFQNW5RTkxBaEFqYTl5bDAKLS0tIG9OaDJnVkJMMFBHbzgvY2ZjbzRicjhQUUtjbmNlNW9BN1F3VGdmUUoxNnMK8BwX5bKvMsPUJt8fdkA3hzi1HJecaO3wk/mmDeobPMgjE4JVrMEFQm/zGpJdwagEwB+cZcTDtLKM5T3uZY/PxhsMLFz4s4WPAfd50c84LnixP6UZjfkZNdUXilI81CbMrMp5ZFtgKkp4'
+[Goal]
+AutoApprove = false
+DangerousPatterns = []
+MaxDuration = ''
+MaxIterations = 0
+StallIterations = 0
 
-[[providerAccounts]]
-id = 'ollama'
-displayName = 'ollama'
-type = 'ollama'
+[Image]
+AutoResize = true
+MaxBase64Bytes = 0
+MaxHeight = 0
+MaxWidth = 0
+Quality = 0
+UseFilesAPI = true
+
+[InternalTools]
+AskUserQuestionDisabled = false
+BraveAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBZRS9hdVV3WTBUTXdoaTN5VG13cHZ6NEVJMytCQ1A3QWE4MDdQMkNIUEdjCmpjMU8zWFR6bDg3VkNGTGppeUhhS1BKblpkc2NaSHhac3FwUHVLVmNXWDQKLS0tIHpGZW82Tmxkc0ptaE5BVFZDQmxGSmpseVhhU3h6N0hNSmFDaWhudHhVUkkK2CR9VSSHfFVJPPktwkm7eTFng/HMiLiZaF9FKfv15+kApi9IpSKszoR5BdM29XXhtLYpkNBHk4gVtpOj4C3H'
+BraveSearchEnabled = true
+BrowserEnabled = true
+BrowserExecutable = '/usr/bin/microsoft-edge'
+BrowserHeadless = false
+BrowserMaxSessions = 3
+BrowserTimeout = 30
+BrowserType = 'chrome'
+BrowserUserDataDir = ''
+Context7Enabled = true
+DesktopActionTimeout = 0
+DesktopAllowPhysicalInput = true
+DesktopAllowedApps = []
+DesktopBackend = 'auto'
+DesktopDefaultDepth = 0
+DesktopDeniedApps = []
+DesktopEnabled = true
+DesktopMaxNodes = 0
+DesktopScreenshotScale = 0.0
+DesktopSnapshotTTL = 0
+ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBoU3I5ekVkZ1hQSmNoY1pDN0VqbUZYdWZJTTQreGYvdk9lcE5IUG9lcm1VCmxYWHlmMC93SXFidVdIb2VpTFJ3SFNLTjJRN25ES1h0REx6OXk2WjVBdGMKLS0tIHBJSXdBSk5NOEtSZjFnTEVKN0U5azNJeHVRNnh0VXBKYVFuV1NuZlFmN00KOZK338Qfr4dmxayHUi+1dyInW9WIivQ/8p6Kq+zTMpKsXCcCZUik7b1QKtNmutEDdi6PMVGNp+51hygV79QfI8IrpMs='
+ExaSearchEnabled = true
+FetchEnabled = true
+FetchMaxSizeMB = 0
+GoogleAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB4NjJ5WnVZY3VsT3pDYlZ1Ujc3UkpUWDhWSlhvT0RyaWl2REVITjVKUlRZCkI0ZUVKeW9panprd3ZEWHljZWFYS0c2Ni9YTzJ2cGo5VDdVZmRKODNuajQKLS0tIGI3K0YzbHc1RHgweE5HbWtxWG5VcEZTNlFqVXQ0Z0J2WGFWeWJ4OWdXRDQKbpzHH8uM2wDwEymDJkK/EVPybJyZ0B1xuk+7JuK6hL4bWWm2UmwcwjgzHoK3XjMPvj06ftVdw4KmtLiqwuBqLBaJ440v4o4='
+GoogleSearchEnabled = true
+GoogleSearchEngineID = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA5K004VWVnZkhsRHcrdEFob2RWUFQ5UUtJNjFCTFUyVWlPVUw2YkxhZUNZCjJVRnpLZ2JjUzNBOTdYZHpMOXUxaGxXMWJxVVNQUVQyYXRoaXV1M0hrUmsKLS0tIFBoZEljSGtWZS9GRmZ0VnJ2MTRBUCsxR090U0Y5Z0lkQkFQR1JmdzMxTTAKIZ3KjVF67gzr20PWK8RVVhb3TUJt4j83XMlQIa2KG9ebf8PWJabzgiqMpC0OCk9gQw=='
+PerplexityAPIKey = ''
+PerplexitySearchEnabled = false
+SetupModelSwitchEnabled = false
+SetupModelSwitchMaxPerRun = 0
+SourcegraphEnabled = false
+SourcegraphToken = ''
+
+[LLMCache]
+Enabled = true
 
 [LSP]
 [LSP.gopls]
-Disabled = false
-Command = 'gopls'
 Args = []
+Command = 'gopls'
+Disabled = false
 Languages = []
 
-[Agents]
-[Agents.cli-assist]
-Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
-MaxTokens = 0
-ReasoningEffort = ''
-ThinkingMode = ''
-AutoCompact = false
-AutoCompactThreshold = 0.0
-ContextWindowOverride = 0
+[Lua]
+Enabled = false
+HotReload = false
+LogFilteredData = false
+ScriptPath = ''
+StrictMode = false
+Timeout = ''
 
-[Agents.cliassist]
-Model = 'ollama.qwopus:latest'
-MaxTokens = 0
-ReasoningEffort = ''
-ThinkingMode = ''
-AutoCompact = false
-AutoCompactThreshold = 0.0
-ContextWindowOverride = 0
-
-[Agents.coder]
-Model = 'openrouter.qwen/qwen3.8-2.4t-a95b'
-MaxTokens = 0
-ReasoningEffort = ''
-ThinkingMode = ''
-AutoCompact = false
-AutoCompactThreshold = 0.0
-ContextWindowOverride = 0
-
-[Agents.context-enricher]
-Model = 'ollama.nova4b:latest'
-MaxTokens = 0
-ReasoningEffort = ''
-ThinkingMode = ''
-AutoCompact = false
-AutoCompactThreshold = 0.0
-ContextWindowOverride = 0
-
-[Agents.persona-selector]
-Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
-MaxTokens = 0
-ReasoningEffort = ''
-ThinkingMode = ''
-AutoCompact = false
-AutoCompactThreshold = 0.0
-ContextWindowOverride = 0
-
-[Agents.summarizer]
-Model = 'copilot.mai-code-1.1-flash'
-MaxTokens = 0
-ReasoningEffort = ''
-ThinkingMode = ''
-AutoCompact = false
-AutoCompactThreshold = 0.0
-ContextWindowOverride = 0
-
-[Agents.task]
-Model = 'copilot.mai-code-1.1-flash'
-MaxTokens = 0
-ReasoningEffort = ''
-ThinkingMode = ''
-AutoCompact = false
-AutoCompactThreshold = 0.0
-ContextWindowOverride = 0
-
-[Agents.title]
-Model = 'copilot.gpt-5-mini'
-MaxTokens = 0
-ReasoningEffort = ''
-ThinkingMode = ''
-AutoCompact = false
-AutoCompactThreshold = 0.0
-ContextWindowOverride = 0
-
-[Skills]
+[MCPGateway]
+DecayDays = 30
 Enabled = true
-Paths = ['./agents/skills']
+FavoriteThreshold = 3
+FavoriteWindowDays = 7
+MaxFavorites = 10
 
-[SkillsCatalog]
-Enabled = true
-BaseURL = ''
-AutoUpdate = false
-DefaultScope = ''
+[MCPServer]
+Enabled = false
+HttpEnabled = true
+HttpHost = 'localhost'
+HttpPort = 9777
+StdioEnabled = true
 
-[TUI]
-Theme = 'monokai-nobg'
-ShowHiddenFiles = true
-ChatSidebar = ''
-ChatSidebarMinWidth = 0
-NerdFonts = true
+[MCPServer.Design]
+Enabled = false
 
-[Permissions]
-AutoApproveTools = true
+[MCPServer.FileTools]
+AllowWrite = false
+Enabled = false
 
-[Goal]
-MaxIterations = 0
-MaxDuration = ''
-StallIterations = 0
-AutoApprove = false
-DangerousPatterns = []
+[MCPServer.GatewayExpose]
+Enabled = false
+
+[MCPServer.SelfImprovement]
+Enabled = false
+
+[MCPServer.SystemExecution]
+AllowedCommands = []
+Enabled = false
+
+[MCPServers]
+[MCPServers.deepwiki]
+Args = []
+Command = ''
+Env = []
+Timeout = '5m'
+Type = 'streamable-http'
+URL = 'https://mcp.deepwiki.com/mcp'
+
+[MCPServers.mycommandmcp]
+Args = ['-c', '.ai/mycommand-mcp.yaml']
+Command = 'mycommandmcp'
+Env = []
+Timeout = ''
+Type = 'stdio'
+URL = ''
 
 [Mesnada]
 Enabled = true
+
+[Mesnada.ACP]
+AutoPermission = true
+DefaultAgent = 'pando'
+Enabled = false
+
+[Mesnada.ACP.Server]
+Enabled = true
+Host = '0.0.0.0'
+MaxSessions = 100
+Port = 8766
+RequireAuth = false
+SessionTimeout = '30m'
+Transports = ['http']
+
+[Mesnada.Delegation]
+AcceptDelegations = true
+AllowExternalWarmTargets = true
+AutoStartWarmInstance = false
+BlackboardMaxEntriesPerSwarm = 200
+BlackboardTTL = '168h'
+BreakerDisabled = false
+ConclusionGateDisabled = false
+Enabled = true
+EventLogDisabled = false
+EventLogMaxEntries = 5000
+InjectIntoLiveLoop = true
+MaxConcurrent = 8
+MaxDepth = 3
+MaxResurrections = 4
+MaxTaskRetries = 3
+RateLimitCooldown = '5m'
+RecentSuccessWindow = '2m'
+ResurrectIdleLoop = true
+ResurrectionTimeout = '10m'
+ReuseWarmInstances = true
+SynthesizeFallback = true
+WarmInstanceIdleTimeout = '0'
+WarmQueueDepth = 0
+
+[Mesnada.Orchestrator]
+ClaimTTL = '2m'
+DefaultEngine = 'pando'
+DefaultMCPConfig = '.github/mcp-config.json'
+DefaultModel = ''
+DispatchInterval = '10s'
+EnginesDir = ''
+LogDir = './.pando/mesnada/logs'
+MaxParallel = 5
+MaxPerEngine = 0
+PersonaPath = './.pando/mesnada/personas'
+StorePath = './.pando/mesnada'
 
 [Mesnada.Server]
 Host = ''
 Port = 5013
 
-[Mesnada.Orchestrator]
-StorePath = './.pando/mesnada'
-LogDir = './.pando/mesnada/logs'
-EnginesDir = ''
-MaxParallel = 5
-MaxPerEngine = 0
-ClaimTTL = '2m'
-DispatchInterval = '10s'
-DefaultEngine = 'pando'
-DefaultModel = ''
-DefaultMCPConfig = '.github/mcp-config.json'
-PersonaPath = './.pando/mesnada/personas'
-
-[Mesnada.ACP]
-Enabled = false
-DefaultAgent = 'pando'
-AutoPermission = true
-
-[Mesnada.ACP.Server]
-Enabled = true
-Transports = ['http']
-Host = '0.0.0.0'
-Port = 8766
-MaxSessions = 100
-SessionTimeout = '30m'
-RequireAuth = false
-
 [Mesnada.TUI]
 Enabled = true
 WebUI = false
 
-[Mesnada.Delegation]
+[ModelsDev]
 Enabled = true
-InjectIntoLiveLoop = true
-ResurrectIdleLoop = true
-SynthesizeFallback = true
-MaxResurrections = 4
-MaxDepth = 3
-MaxConcurrent = 8
-ResurrectionTimeout = '10m'
-ReuseWarmInstances = true
-AutoStartWarmInstance = false
-WarmInstanceIdleTimeout = '0'
-WarmQueueDepth = 0
-AllowExternalWarmTargets = true
-AcceptDelegations = true
-ConclusionGateDisabled = false
-BreakerDisabled = false
-MaxTaskRetries = 3
-RateLimitCooldown = '5m'
-RecentSuccessWindow = '2m'
-EventLogDisabled = false
-EventLogMaxEntries = 5000
-BlackboardMaxEntriesPerSwarm = 200
-BlackboardTTL = '168h'
 
-[Shell]
-Path = ''
-Args = []
+[OpenLit]
+Enabled = false
+Endpoint = ''
+Insecure = false
+ServiceName = ''
 
-[Bash]
-BannedCommands = []
-AllowedCommands = ['curl']
-OutputFilterDisabled = false
-OutputFilterPaths = []
+[Permissions]
+AutoApproveTools = true
+
+[PersonaAutoSelect]
+Enabled = true
+PersonaPath = ''
+
+[Ponytail]
+DefaultMode = ''
+
+[Projects]
+AutoRestore = false
+Enabled = false
+MaxProjects = 0
 
 [Remembrances]
+AutoIndexSessions = true
+ChunkOverlap = 100
+ChunkSize = 800
+CodeEmbeddingAPIKey = ''
+CodeEmbeddingBaseURL = ''
+CodeEmbeddingModel = 'hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M'
+CodeEmbeddingProvider = 'ollama'
+ContextEnrichmentAgentLoopEnabled = true
+ContextEnrichmentAgentLoopEveryMessage = false
+ContextEnrichmentAgentLoopFallbackDisabled = false
+ContextEnrichmentAgentLoopHiddenInChat = false
+ContextEnrichmentAgentLoopMaxChars = 10000
+ContextEnrichmentAgentLoopSilent = false
+ContextEnrichmentAgentLoopTimeoutSeconds = 60
+ContextEnrichmentCodeMaxChars = 0
+ContextEnrichmentCodeProject = 'pando'
+ContextEnrichmentCodeResults = 5
+ContextEnrichmentEnabled = true
+ContextEnrichmentEventsLastDays = 10
+ContextEnrichmentEventsMaxChars = 0
+ContextEnrichmentEventsResults = 5
+ContextEnrichmentEventsSubject = ''
+ContextEnrichmentKBMaxChars = 0
+ContextEnrichmentKBResults = 2
+ContextEnrichmentMinScore = 0.0
+ContextEnrichmentPlannerFallbackToCoder = false
+ContextEnrichmentTotalMaxChars = 0
+ContextEnrichmentUseAgentPlanner = false
+DocumentEmbeddingAPIKey = ''
+DocumentEmbeddingBaseURL = ''
+DocumentEmbeddingModel = 'nomic-embed-text:latest'
+DocumentEmbeddingProvider = 'ollama'
 Enabled = true
-KBPath = './.kb'
-KBWatch = true
+IndexWorkers = 4
 KBAutoImport = true
 KBConvertDocuments = true
 KBConvertExtensions = []
+KBPath = './.kb'
+KBWatch = true
 KBWikiLinks = true
-AutoIndexSessions = true
-DocumentEmbeddingProvider = 'ollama'
-DocumentEmbeddingModel = 'nomic-embed-text:latest'
-DocumentEmbeddingBaseURL = ''
-DocumentEmbeddingAPIKey = ''
-CodeEmbeddingProvider = 'ollama'
-CodeEmbeddingModel = 'hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M'
-CodeEmbeddingBaseURL = ''
-CodeEmbeddingAPIKey = ''
-UseSameModel = false
-ChunkSize = 800
-ChunkOverlap = 100
-IndexWorkers = 4
-ContextEnrichmentEnabled = true
-ContextEnrichmentKBResults = 2
-ContextEnrichmentCodeResults = 5
-ContextEnrichmentCodeProject = 'pando'
-ContextEnrichmentEventsResults = 5
-ContextEnrichmentEventsSubject = ''
-ContextEnrichmentEventsLastDays = 10
-ContextEnrichmentMinScore = 0.0
-ContextEnrichmentKBMaxChars = 0
-ContextEnrichmentCodeMaxChars = 0
-ContextEnrichmentEventsMaxChars = 0
-ContextEnrichmentTotalMaxChars = 0
-ContextEnrichmentUseAgentPlanner = false
-ContextEnrichmentPlannerFallbackToCoder = false
-ContextEnrichmentAgentLoopEnabled = true
-ContextEnrichmentAgentLoopTimeoutSeconds = 60
-ContextEnrichmentAgentLoopMaxChars = 10000
-ContextEnrichmentAgentLoopFallbackDisabled = false
-ContextEnrichmentAgentLoopEveryMessage = false
-ContextEnrichmentAgentLoopSilent = false
-ContextEnrichmentAgentLoopHiddenInChat = false
-MemoryEnabled = true
-MemoryContextEnrichmentEnabled = true
-MemoryContextMaxItems = 3
-MemoryContextMaxChars = 500
-MemoryDefaultTTLDays = 0
-MemoryGCInterval = ''
 MemoryAutoCapture = true
+MemoryContextEnrichmentEnabled = true
+MemoryContextMaxChars = 500
+MemoryContextMaxItems = 3
+MemoryDefaultTTLDays = 0
+MemoryEnabled = true
+MemoryGCInterval = ''
 MemoryPinnedScopes = []
+UseSameModel = false
 
 [Server]
 Enabled = true
@@ -296,88 +426,77 @@ RequireAuth = false
 Enabled = true
 
 [[Server.BasicAuth.Users]]
-Username = 'admin'
 Password = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBCaVFwU1hpZzJnYUZxVHV0MktkUkZqdzdOUzE2TnVFSjZpZE1YQU1hN1h3CjRXMzVMR25UL3VaeWdJYnZGMk1ZZ2ZMeWNSMzZnbGNrOG5PSTFyOTl2YjgKLS0tIHRqYjMvRDNQRENGRkU5MVloNEpKdlprZ0ZLZDMyWGFzL1R0SFZ6eU1oazQKPj8Jap+QMiyWrtJ6WMZ5/zqq7QCbdF8/u0YqWLbaGf/mB1gK6A=='
+Username = 'admin'
 
-[Lua]
-Enabled = false
-ScriptPath = ''
-Timeout = ''
-StrictMode = false
-HotReload = false
-LogFilteredData = false
+[Shell]
+Args = []
+Path = ''
 
-[MCPGateway]
+[Skills]
 Enabled = true
-FavoriteThreshold = 3
-MaxFavorites = 10
-FavoriteWindowDays = 7
-DecayDays = 30
+Paths = ['./agents/skills']
 
-[ToolDiscovery]
+[SkillsCatalog]
+AutoUpdate = false
+BaseURL = ''
+DefaultScope = ''
 Enabled = true
-Mode = 'auto'
-MaxDirectTools = 64
-SearchLimit = 8
-NonDeferredTools = []
-DeferredSources = []
-
-[InternalTools]
-FetchEnabled = true
-FetchMaxSizeMB = 0
-GoogleSearchEnabled = true
-GoogleAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB4NjJ5WnVZY3VsT3pDYlZ1Ujc3UkpUWDhWSlhvT0RyaWl2REVITjVKUlRZCkI0ZUVKeW9panprd3ZEWHljZWFYS0c2Ni9YTzJ2cGo5VDdVZmRKODNuajQKLS0tIGI3K0YzbHc1RHgweE5HbWtxWG5VcEZTNlFqVXQ0Z0J2WGFWeWJ4OWdXRDQKbpzHH8uM2wDwEymDJkK/EVPybJyZ0B1xuk+7JuK6hL4bWWm2UmwcwjgzHoK3XjMPvj06ftVdw4KmtLiqwuBqLBaJ440v4o4='
-GoogleSearchEngineID = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA5K004VWVnZkhsRHcrdEFob2RWUFQ5UUtJNjFCTFUyVWlPVUw2YkxhZUNZCjJVRnpLZ2JjUzNBOTdYZHpMOXUxaGxXMWJxVVNQUVQyYXRoaXV1M0hrUmsKLS0tIFBoZEljSGtWZS9GRmZ0VnJ2MTRBUCsxR090U0Y5Z0lkQkFQR1JmdzMxTTAKIZ3KjVF67gzr20PWK8RVVhb3TUJt4j83XMlQIa2KG9ebf8PWJabzgiqMpC0OCk9gQw=='
-BraveSearchEnabled = true
-BraveAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBZRS9hdVV3WTBUTXdoaTN5VG13cHZ6NEVJMytCQ1A3QWE4MDdQMkNIUEdjCmpjMU8zWFR6bDg3VkNGTGppeUhhS1BKblpkc2NaSHhac3FwUHVLVmNXWDQKLS0tIHpGZW82Tmxkc0ptaE5BVFZDQmxGSmpseVhhU3h6N0hNSmFDaWhudHhVUkkK2CR9VSSHfFVJPPktwkm7eTFng/HMiLiZaF9FKfv15+kApi9IpSKszoR5BdM29XXhtLYpkNBHk4gVtpOj4C3H'
-PerplexitySearchEnabled = false
-PerplexityAPIKey = ''
-ExaSearchEnabled = true
-ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBoU3I5ekVkZ1hQSmNoY1pDN0VqbUZYdWZJTTQreGYvdk9lcE5IUG9lcm1VCmxYWHlmMC93SXFidVdIb2VpTFJ3SFNLTjJRN25ES1h0REx6OXk2WjVBdGMKLS0tIHBJSXdBSk5NOEtSZjFnTEVKN0U5azNJeHVRNnh0VXBKYVFuV1NuZlFmN00KOZK338Qfr4dmxayHUi+1dyInW9WIivQ/8p6Kq+zTMpKsXCcCZUik7b1QKtNmutEDdi6PMVGNp+51hygV79QfI8IrpMs='
-SourcegraphEnabled = false
-SourcegraphToken = ''
-Context7Enabled = true
-BrowserEnabled = true
-BrowserType = 'chrome'
-BrowserExecutable = '/usr/bin/microsoft-edge'
-BrowserHeadless = false
-BrowserTimeout = 30
-BrowserUserDataDir = ''
-BrowserMaxSessions = 3
-DesktopEnabled = true
-DesktopBackend = 'auto'
-DesktopAllowPhysicalInput = true
-DesktopMaxNodes = 0
-DesktopDefaultDepth = 0
-DesktopActionTimeout = 0
-DesktopSnapshotTTL = 0
-DesktopScreenshotScale = 0.0
-DesktopAllowedApps = []
-DesktopDeniedApps = []
-AskUserQuestionDisabled = false
-SetupModelSwitchEnabled = false
-SetupModelSwitchMaxPerRun = 0
 
 [Snapshots]
-Enabled = true
-MaxSnapshots = 5
-MaxFileSize = '10MB'
-ExcludePatterns = ['dist', 'node_modules', '.env', '.pando']
 AutoCleanupDays = 5
+Enabled = true
+ExcludePatterns = ['dist', 'node_modules', '.env', '.pando']
+MaxFileSize = '10MB'
+MaxSnapshots = 5
+
+[TUI]
+ChatSidebar = ''
+ChatSidebarMinWidth = 0
+NerdFonts = true
+ShowHiddenFiles = true
+Theme = 'monokai-nobg'
+
+[TokenOptimization]
+BuildCodeGraph = true
+ReadDedupDisabled = false
+ReadModeDefault = ''
+ReadModeLearning = false
+RelatedFilesHint = false
+SavingsLedgerDisabled = false
+
+[ToolDiscovery]
+DeferredSources = []
+Enabled = true
+MaxDirectTools = 64
+Mode = 'auto'
+NonDeferredTools = []
+SearchLimit = 8
+
+[acp]
+auto_permission = false
+enabled = false
+idle_timeout = ''
+log_level = ''
+max_sessions = 0
+
+[cliAssist]
+Model = ''
+Timeout = 0
 
 [evaluator]
+alphaWeight = 0.8
+async = true
+betaWeight = 0.2
+correctionsPatterns = ['(?i)\\bno[,.]?\\b', '(?i)\\bwrong\\b', '(?i)\\bincorrect\\b', "(?i)that'?s not", '(?i)not what i', '(?i)\\bmistake\\b', '(?i)\\bfix that\\b', '(?i)\\bvuelve a\\b', '(?i)\\bno era eso\\b', '(?i)\\bte equivocaste\\b']
 enabled = true
+explorationC = 1.41
+judgePromptTemplate = ''
+maxSkills = 100
+maxTokensBaseline = 50
+minSessionsForUCB = 5
 model = 'openrouter.deepseek/deepseek-v4-flash-0731'
 provider = 'openrouter'
-alphaWeight = 0.8
-betaWeight = 0.2
-explorationC = 1.41
-minSessionsForUCB = 5
-correctionsPatterns = ['(?i)\\bno[,.]?\\b', '(?i)\\bwrong\\b', '(?i)\\bincorrect\\b', "(?i)that'?s not", '(?i)not what i', '(?i)\\bmistake\\b', '(?i)\\bfix that\\b', '(?i)\\bvuelve a\\b', '(?i)\\bno era eso\\b', '(?i)\\bte equivocaste\\b']
-maxTokensBaseline = 50
-maxSkills = 100
-judgePromptTemplate = ''
-async = true
 
 [[evaluator.taskPatterns]]
 pattern = 'fix|bug|error|crash|exception|failing|panic|traceback'
@@ -403,144 +522,25 @@ taskType = 'code'
 pattern = 'find|search|where\s+is|locate|grep\s+for'
 taskType = 'search'
 
-[cliAssist]
-Model = ''
-Timeout = 0
+[[providerAccounts]]
+displayName = 'copilot'
+id = 'copilot'
+type = 'copilot'
+useOAuth = true
 
-[PersonaAutoSelect]
-Enabled = true
-PersonaPath = ''
+[[providerAccounts]]
+apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBIalJySUZJeDNDd3AzZFVHMFhNbCtMNmo5UHdBYjcxUkVBS0NtcURWdEFVCmdnZFNsTFppWm1ZK1Raak0wUDVRZWM3OUdKTTFON0x4TzZUcVYyeW0ya2cKLS0tIG9KdG5mSmc4d28rTS9NMExzWmo4RC9EQyt4bHZ1VVJ4TThIVU53c2xjWXcKzvj8pn0kqomhkK1anxt3EDvRYCc8ZvOBzejzU6QEW0Hg93P/RkWLF6/t9vdd/lEDalZ0XG+pioRfP3bPwaMFjU/JU5dt+vw='
+displayName = 'gemini'
+id = 'gemini'
+type = 'gemini'
 
-[acp]
-enabled = false
-max_sessions = 0
-idle_timeout = ''
-log_level = ''
-auto_permission = false
+[[providerAccounts]]
+apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA0OFBPZEp3L2dPUURIRmVuaUE0VnRBd0pZWFE2cFFEbHljaDluWUcrQkdnCjExNlFRaGl2K1JQU1VtYUNmRGM3b2VxK1Q1NDFQNW5RTkxBaEFqYTl5bDAKLS0tIG9OaDJnVkJMMFBHbzgvY2ZjbzRicjhQUUtjbmNlNW9BN1F3VGdmUUoxNnMK8BwX5bKvMsPUJt8fdkA3hzi1HJecaO3wk/mmDeobPMgjE4JVrMEFQm/zGpJdwagEwB+cZcTDtLKM5T3uZY/PxhsMLFz4s4WPAfd50c84LnixP6UZjfkZNdUXilI81CbMrMp5ZFtgKkp4'
+displayName = 'openrouter'
+id = 'openrouter'
+type = 'openrouter'
 
-[OpenLit]
-Enabled = false
-Endpoint = ''
-ServiceName = ''
-Insecure = false
-
-[Projects]
-Enabled = false
-AutoRestore = false
-MaxProjects = 0
-
-[CronJobs]
-Enabled = false
-Jobs = []
-
-[LLMCache]
-Enabled = true
-
-[Container]
-runtime = 'host'
-image = ''
-pull_policy = ''
-socket = ''
-work_dir = ''
-network = ''
-read_only = false
-user = ''
-cpu_limit = ''
-mem_limit = ''
-pids_limit = 0
-no_new_privileges = false
-allow_env = []
-allow_mounts = []
-extra_env = []
-extra_mounts = []
-embedded_cache_dir = ''
-embedded_gc_keep_n = 0
-
-[MCPServer]
-Enabled = false
-HttpPort = 9777
-HttpHost = 'localhost'
-StdioEnabled = true
-HttpEnabled = true
-
-[MCPServer.FileTools]
-Enabled = false
-AllowWrite = false
-
-[MCPServer.Design]
-Enabled = false
-
-[MCPServer.SystemExecution]
-Enabled = false
-AllowedCommands = []
-
-[MCPServer.GatewayExpose]
-Enabled = false
-
-[MCPServer.SelfImprovement]
-Enabled = false
-
-[Ponytail]
-DefaultMode = ''
-
-[Caveman]
-DefaultMode = 'lite'
-
-[TokenOptimization]
-ReadModeDefault = ''
-ReadDedupDisabled = false
-ReadModeLearning = false
-BuildCodeGraph = true
-RelatedFilesHint = false
-SavingsLedgerDisabled = false
-
-[ModelsDev]
-Enabled = true
-
-[Image]
-AutoResize = true
-MaxWidth = 0
-MaxHeight = 0
-MaxBase64Bytes = 0
-Quality = 0
-UseFilesAPI = true
-
-[AGUI]
-Enabled = false
-Path = ''
-Port = 0
-Host = ''
-Agents = []
-AllowedOrigins = []
-RequireToken = false
-FrontendTools = false
-AgentPoolSize = 0
-AgentPoolTTL = ''
-AutoApprove = false
-HumanInTheLoop = false
-Persona = ''
-
-[Extensions]
-Disabled = []
-
-[Extensions.Memory]
-Enabled = false
-Scopes = []
-Paths = []
-Origins = []
-DryRun = false
-Mode = ''
-QueueSize = 0
-TimeoutMs = 0
-WrapSearch = false
-
-[Design]
-OutputDir = ''
-SystemDir = ''
-DefaultKind = ''
-
-[Design.Critique]
-Enabled = false
-MaxRounds = 0
-Threshold = 0.0
-Policy = ''
+[[providerAccounts]]
+displayName = 'ollama'
+id = 'ollama'
+type = 'ollama'

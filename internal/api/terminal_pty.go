@@ -117,6 +117,13 @@ func newPTYSession(cwd string, cols, rows int) (*ptySession, error) {
 		done:     make(chan struct{}),
 	}
 
+	// Kept at Info (code review flagged this as a "user content at Info"
+	// site): args are the shell's own launch flags from cfg.Shell.Args
+	// (e.g. "-l"/"-i"), configured ahead of time by the user, not per-
+	// keystroke terminal session content — nothing typed into the PTY
+	// afterwards is ever logged here or anywhere else. Still covered by
+	// internal/telemetry.NewRecord's redact.Value pipeline as
+	// defense-in-depth for the rare custom shell flag shaped like a secret.
 	logging.Info("terminal.pty: shell started", "id", session.id, "shell", shell, "args", args, "pid", cmd.Process.Pid)
 	go session.pump()
 	return session, nil

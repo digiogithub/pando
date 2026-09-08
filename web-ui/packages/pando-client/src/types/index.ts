@@ -560,6 +560,16 @@ export interface SettingsConfig {
   image_use_files_api: boolean
   output_filter_enabled: boolean        // RTK-style command-output compression (inverse of Bash.OutputFilterDisabled)
   caveman_default_mode: string          // output brevity default: '' (off) | 'lite' | 'full' | 'ultra'
+  // Remote telemetry: opt-in logs/diagnostics shipping to Better Stack. Off by
+  // default and GLOBAL-only (see internal/config.TelemetryConfig).
+  telemetry_enabled: boolean
+  /** Display format "1234-5678-9012-3456", or "" if telemetry was never enabled. Read-only. */
+  telemetry_debug_id: string
+  telemetry_min_level: string           // 'debug' | 'info' | 'warn' | 'error'
+  /** Whether this build carries a Better Stack ingest token. Read-only; disables the toggle client-side when false. */
+  telemetry_available: boolean
+  /** Request-only: set to true to replace the debug id with a freshly generated one. Never persisted in store state, never echoed back by the server. */
+  telemetry_regenerate_id?: boolean
   evaluator_enabled: boolean
   judge_model: string
   tool_discovery_enabled: boolean

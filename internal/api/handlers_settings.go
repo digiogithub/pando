@@ -10,6 +10,7 @@ import (
 	"github.com/digiogithub/pando/internal/caveman"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/telemetry"
 	"github.com/digiogithub/pando/internal/tui/styles"
 )
 
@@ -44,6 +45,18 @@ type SettingsResponse struct {
 	// CavemanDefaultMode is the global output-brevity default ("" = off, or
 	// lite|full|ultra). Sessions that ran /caveman keep their own choice.
 	CavemanDefaultMode string `json:"caveman_default_mode"`
+
+	// Telemetry: opt-in remote logs/diagnostics shipping to Better Stack. Off
+	// by default and GLOBAL-only (see internal/config.TelemetryConfig).
+	TelemetryEnabled bool `json:"telemetry_enabled"`
+	// TelemetryDebugID is the anonymous debug id in display format
+	// ("1234-5678-9012-3456"), or "" if telemetry was never enabled.
+	TelemetryDebugID  string `json:"telemetry_debug_id,omitempty"`
+	TelemetryMinLevel string `json:"telemetry_min_level"`
+	// TelemetryAvailable reports whether this build carries a Better Stack
+	// ingest token (internal/telemetry.Available()). The UI keeps the toggle
+	// disabled when this is false, regardless of TelemetryEnabled.
+	TelemetryAvailable bool `json:"telemetry_available"`
 
 	ToolDiscoveryEnabled        bool   `json:"tool_discovery_enabled"`
 	ToolDiscoveryMode           string `json:"tool_discovery_mode"`
@@ -100,6 +113,16 @@ type SettingsUpdateRequest struct {
 	JudgeModel          *string `json:"judge_model,omitempty"`
 	OutputFilterEnabled *bool   `json:"output_filter_enabled,omitempty"`
 	CavemanDefaultMode  *string `json:"caveman_default_mode,omitempty"`
+
+	// TelemetryEnabled toggles opt-in remote logs/diagnostics shipping.
+	// Rejected (config untouched) when internal/telemetry.Available() is
+	// false, i.e. this build carries no Better Stack ingest token.
+	TelemetryEnabled *bool `json:"telemetry_enabled,omitempty"`
+	// TelemetryRegenerateID, when true, replaces the current debug id with a
+	// freshly generated one. Request-only: never echoed back by GET/PUT, so
+	// the client must not persist it in its local draft state.
+	TelemetryRegenerateID *bool   `json:"telemetry_regenerate_id,omitempty"`
+	TelemetryMinLevel     *string `json:"telemetry_min_level,omitempty"`
 
 	ToolDiscoveryEnabled        *bool   `json:"tool_discovery_enabled,omitempty"`
 	ToolDiscoveryMode           *string `json:"tool_discovery_mode,omitempty"`
@@ -189,6 +212,11 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		OutputFilterEnabled: !cfg.Bash.OutputFilterDisabled,
 		CavemanDefaultMode:  cfg.CavemanDefaultMode(),
 
+		TelemetryEnabled:   cfg.Telemetry.Enabled,
+		TelemetryDebugID:   config.TelemetryDebugIDDisplay(),
+		TelemetryMinLevel:  telemetryMinLevelOrDefault(cfg.Telemetry.MinLevel),
+		TelemetryAvailable: telemetry.Available(),
+
 		ToolDiscoveryEnabled:        cfg.ToolDiscovery.Enabled,
 		ToolDiscoveryMode:           toolDiscoveryModeOrDefault(cfg.ToolDiscovery.Mode),
 		ToolDiscoveryMaxDirectTools: intOrDefault(cfg.ToolDiscovery.MaxDirectTools, 64),
@@ -249,6 +277,17 @@ func warmIdleTimeoutOrDefault(timeout string) string {
 		return "0"
 	}
 	return timeout
+}
+
+// telemetryMinLevelOrDefault normalizes an empty min level to "info". In
+// practice Load already normalizes this (see
+// internal/config.normalizeTelemetryDefaults), so this only guards a config
+// snapshot obtained before that runs.
+func telemetryMinLevelOrDefault(level string) string {
+	if strings.TrimSpace(level) == "" {
+		return config.TelemetryLevelInfo
+	}
+	return level
 }
 
 // toolDiscoveryModeOrDefault normalizes an empty mode to "auto".
@@ -323,6 +362,55 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if req.Debug != nil {
 		if err := config.UpdateDebug(*req.Debug); err != nil {
 			writeConfigError(w, http.StatusInternalServerError, "failed to update debug setting", err)
+			return
+		}
+	}
+
+	// Remote telemetry (opt-in logs/diagnostics shipping to Better Stack).
+	// Only call UpdateTelemetry when the value actually changes: it always
+	// persists to the GLOBAL config file (see internal/config/telemetry.go),
+	// so a no-op save should not perform that write.
+	if req.TelemetryEnabled != nil && *req.TelemetryEnabled != config.Get().Telemetry.Enabled {
+		if *req.TelemetryEnabled && !telemetry.Available() {
+			writeError(w, http.StatusUnprocessableEntity, "remote telemetry is not available in this build (no ingest token configured)")
+			return
+		}
+		if _, err := config.UpdateTelemetry(*req.TelemetryEnabled); err != nil {
+			writeConfigError(w, http.StatusInternalServerError, "failed to update telemetry setting", err)
+			return
+		}
+	}
+
+	// Same no-op-when-unchanged guard as TelemetryEnabled above: only
+	// persist (another GLOBAL config file write) when the value actually
+	// differs from what is already stored. Comparison is case-insensitive/
+	// trimmed to match config.UpdateTelemetryMinLevel's own normalization,
+	// so e.g. re-saving "Info" against a stored "info" is correctly treated
+	// as unchanged rather than triggering a write.
+	if req.TelemetryMinLevel != nil &&
+		!strings.EqualFold(strings.TrimSpace(*req.TelemetryMinLevel), config.Get().Telemetry.MinLevel) {
+		if err := config.UpdateTelemetryMinLevel(*req.TelemetryMinLevel); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid telemetry_min_level (expected debug, info, warn or error): "+err.Error())
+			return
+		}
+	}
+
+	// Regenerate is a one-shot request flag, applied last so it reflects an
+	// enable/min-level change made in the same request. Allowed whenever a
+	// debug id already exists, independent of telemetry.Available() — a
+	// build could carry no token yet still have a leftover id from before,
+	// or vice versa, and this is the rule the TUI side (settings.go's
+	// regenerateTelemetryID) now also uses, for a single consistent
+	// behavior across both surfaces (code review flagged the previous
+	// TUI-vs-API mismatch: the TUI refused whenever the build was
+	// unavailable, this handler never checked either condition at all).
+	if req.TelemetryRegenerateID != nil && *req.TelemetryRegenerateID {
+		if config.Get().Telemetry.DebugID == "" {
+			writeError(w, http.StatusUnprocessableEntity, "no telemetry debug id to regenerate: enable remote telemetry first")
+			return
+		}
+		if _, err := config.RegenerateTelemetryID(); err != nil {
+			writeConfigError(w, http.StatusInternalServerError, "failed to regenerate telemetry debug id", err)
 			return
 		}
 	}

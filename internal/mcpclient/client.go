@@ -196,6 +196,16 @@ func BuildCallError(serverName, toolName, operation string, err error) error {
 	return fmt.Errorf("MCP server %q %s for tool %q failed: %w", serverName, operation, toolName, err)
 }
 
+// PublishError and PublishWarn are kept at their existing Error/Warn levels
+// (code review flagged these as "server messages at Info-or-above" sites):
+// message is a short, already-summarized failure/warning description (a
+// wrapped error or a protocol-level note), not a raw dump of an MCP
+// server's output, and surfacing real connection/auth/tool failures is the
+// whole point of these two functions — downgrading them to Debug would hide
+// genuinely actionable diagnostics from local logs and from support issues
+// that quote a debug id. internal/telemetry.NewRecord's redact.Value
+// pipeline still scrubs any secret-shaped pattern out of message before it
+// could ever be shipped remotely.
 func PublishError(serverName, message string) {
 	logging.Error("MCP operation failed", "server", serverName, "message", message)
 	notify.Error(notify.SourceTool, message)

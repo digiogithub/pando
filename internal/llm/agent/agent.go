@@ -1062,6 +1062,27 @@ func sanitizeToolCallHistory(msgs []message.Message) []message.Message {
 	return result
 }
 
+// summarizeToolResults builds an Info-level-safe summary of msg's tool
+// results: a total count plus, per result, its tool name, content size in
+// bytes and error flag — never the actual tool output (see the CRITICAL
+// privacy finding this addresses at this function's call site). msg may be
+// nil (no tool results this turn).
+func summarizeToolResults(msg *message.Message) any {
+	if msg == nil {
+		return map[string]any{"count": 0}
+	}
+	results := msg.ToolResults()
+	entries := make([]map[string]any, 0, len(results))
+	for _, tr := range results {
+		entries = append(entries, map[string]any{
+			"name":         tr.Name,
+			"content_size": len(tr.Content),
+			"is_error":     tr.IsError,
+		})
+	}
+	return map[string]any{"count": len(results), "results": entries}
+}
+
 func (a *agent) processGeneration(ctx context.Context, sessionID, content string, attachmentParts []message.ContentPart, eventCh chan<- AgentEvent) AgentEvent {
 	cfg := config.Get()
 	// List existing messages; if none, start title generation asynchronously.
@@ -1235,13 +1256,29 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			}
 			return a.err(fmt.Errorf("failed to process events: %w", err))
 		}
+		// CRITICAL (code review): the raw *message.Message toolResults value
+		// can carry full tool output — file contents, bash output, HTTP
+		// bodies, anything a tool returned, secrets included. Logging it
+		// directly at Info level meant it was captured (and, once remote
+		// telemetry ships Info-level records by default, shipped) in full
+		// and unredacted every turn. Info now only ever gets a bounded
+		// summary (tool count, names, per-result content size, is_error);
+		// the full value is only ever logged at Debug — which is itself
+		// gated both locally (the slog level threshold only opens at Debug
+		// when cfg.Debug is on) and remotely (internal/app's telemetry
+		// runtime clamps the shipped minimum level up to Info unless
+		// cfg.Debug is also on — see effectiveMinLevel) — and is still
+		// redacted/truncated again downstream by internal/telemetry's
+		// record builder regardless.
+		summary := summarizeToolResults(toolResults)
 		if cfg.Debug {
 			seqId := (len(msgHistory) + 1) / 2
 			toolResultFilepath := logging.WriteToolResultsJson(sessionID, seqId, toolResults)
-			logging.Info("Result", "message", agentMessage.FinishReason(), "toolResults", "{}", "filepath", toolResultFilepath)
+			logging.Info("Result", "message", agentMessage.FinishReason(), "toolResults", summary, "filepath", toolResultFilepath)
 		} else {
-			logging.Info("Result", "message", agentMessage.FinishReason(), "toolResults", toolResults)
+			logging.Info("Result", "message", agentMessage.FinishReason(), "toolResults", summary)
 		}
+		logging.Debug("Result full", "message", agentMessage.FinishReason(), "toolResults", toolResults)
 		if (agentMessage.FinishReason() == message.FinishReasonToolUse) && toolResults != nil {
 			// We are not done, we need to respond with the tool response
 			msgHistory = append(msgHistory, agentMessage, *toolResults)

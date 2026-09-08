@@ -1087,6 +1087,7 @@ type Config struct {
 	AGUI              AGUIConfig              `json:"agui,omitempty" toml:"AGUI"`
 	Extensions        ExtensionsConfig        `json:"extensions,omitempty" toml:"Extensions"`
 	Design            DesignConfig            `json:"design,omitempty" toml:"Design"`
+	Telemetry         TelemetryConfig         `json:"telemetry,omitempty" toml:"Telemetry"`
 }
 
 // DesignConfig controls the always-on Design Studio (internal/design): where
@@ -1740,6 +1741,13 @@ func EffectiveContextPaths(workDir string, configured []string) []string {
 var cfg *Config
 var ageKeysOverride string
 
+// slogLevel is the live level threshold for the default slog handlers Load
+// installs (all 3 branches: LogFile, PANDO_DEV_DEBUG, and the default
+// pubsub-writer one). It is passed as the handler's slog.Leveler instead of
+// a plain slog.Level constant so UpdateDebug can change the effective log
+// level of the running process without rebuilding the handler.
+var slogLevel = new(slog.LevelVar)
+
 // SetAgeKeysOverride sets the runtime override for the named AGE keypair.
 func SetAgeKeysOverride(name string) {
 	ageKeysOverride = strings.TrimSpace(name)
@@ -1772,6 +1780,17 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	// Read global config
 	if err := readGlobalConfig(); err != nil {
 		return cfg, err
+	}
+
+	// Telemetry is a global-only setting (see updateGlobalCfgFile): snapshot
+	// it here, before mergeLocalConfig and applyOverlayProviders layer
+	// project-local or overlay values into this same viper instance, so
+	// neither can enable remote logging, change the debug id, or change the
+	// level. The snapshot is re-applied to cfg further down, after the main
+	// unmarshal.
+	var globalTelemetry TelemetryConfig
+	if err := viper.UnmarshalKey("telemetry", &globalTelemetry); err != nil {
+		return cfg, fmt.Errorf("failed to read telemetry config: %w", err)
 	}
 
 	// Load and merge local config
@@ -1821,6 +1840,32 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 		cfg.AgeKeys = ageKeysOverride
 	}
 
+	// Re-pin telemetry to the global-only snapshot taken before
+	// mergeLocalConfig/applyOverlayProviders ran: neither a project-local
+	// config nor an overlay provider is allowed to change it — UNLESS an
+	// overlay explicitly LOCKED a telemetry.* path (an Enterprise/host
+	// policy), in which case that overlay is authoritative for that one
+	// field, exactly as a lock makes it authoritative for every other
+	// configuration path (see overlay.go's doc: "locking... is what makes
+	// an overlay authoritative rather than merely a default"). Without this,
+	// an overlay that locks telemetry.enabled=true to enforce an
+	// organization-wide diagnostics policy would have that value silently
+	// discarded by the blanket re-pin below, since cfg.Telemetry already
+	// reflects whatever applyOverlayProviders merged into viper (before the
+	// unmarshal above) at this point — captured here as overlayTelemetry
+	// before the snapshot overwrites everything else.
+	overlayTelemetry := cfg.Telemetry
+	cfg.Telemetry = globalTelemetry
+	if IsKeyLocked("telemetry.enabled") {
+		cfg.Telemetry.Enabled = overlayTelemetry.Enabled
+	}
+	if IsKeyLocked("telemetry.minLevel") {
+		cfg.Telemetry.MinLevel = overlayTelemetry.MinLevel
+	}
+	if IsKeyLocked("telemetry.debugId") {
+		cfg.Telemetry.DebugID = overlayTelemetry.DebugID
+	}
+
 	applyDefaultValues()
 
 	// Move (or drop) the obsolete <workdir>/.pando/pando.db database before any
@@ -1842,6 +1887,10 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	if cfg.Debug {
 		defaultLevel = slog.LevelDebug
 	}
+	// slogLevel is shared (by pointer) with whichever handler branch below
+	// gets built, so UpdateDebug can change the live level afterwards
+	// without rebuilding the handler or calling slog.SetDefault again.
+	slogLevel.Set(defaultLevel)
 
 	if cfg.LogFile != "" {
 		// Log to the specified file
@@ -1865,9 +1914,9 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 		if err != nil {
 			return cfg, fmt.Errorf("failed to open log file: %w", err)
 		}
-		logger := slog.New(slog.NewTextHandler(sloggingFileWriter, &slog.HandlerOptions{
-			Level: defaultLevel,
-		}))
+		logger := slog.New(logging.NewTeeHandler(slog.NewTextHandler(sloggingFileWriter, &slog.HandlerOptions{
+			Level: slogLevel,
+		})))
 		slog.SetDefault(logger)
 	} else if os.Getenv("PANDO_DEV_DEBUG") == "true" {
 		loggingFile := fmt.Sprintf("%s/%s", cfg.Data.Directory, "debug.log")
@@ -1894,15 +1943,15 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 		if err != nil {
 			return cfg, fmt.Errorf("failed to open log file: %w", err)
 		}
-		logger := slog.New(slog.NewTextHandler(sloggingFileWriter, &slog.HandlerOptions{
-			Level: defaultLevel,
-		}))
+		logger := slog.New(logging.NewTeeHandler(slog.NewTextHandler(sloggingFileWriter, &slog.HandlerOptions{
+			Level: slogLevel,
+		})))
 		slog.SetDefault(logger)
 	} else {
 		// Configure logger
-		logger := slog.New(slog.NewTextHandler(logging.NewWriter(), &slog.HandlerOptions{
-			Level: defaultLevel,
-		}))
+		logger := slog.New(logging.NewTeeHandler(slog.NewTextHandler(logging.NewWriter(), &slog.HandlerOptions{
+			Level: slogLevel,
+		})))
 		slog.SetDefault(logger)
 	}
 
@@ -2095,6 +2144,10 @@ func setDefaults(debug bool) {
 	viper.SetDefault("lspStartupTimeout", defaultLSPStartupTimeout)
 	viper.SetDefault("lspInstallTimeout", defaultLSPInstallTimeout)
 	viper.SetDefault("modelsDev.enabled", true) // model pricing/capability catalog from models.dev
+
+	// Telemetry (opt-in remote logs to Better Stack) defaults: off, info level.
+	viper.SetDefault("telemetry.enabled", false)
+	viper.SetDefault("telemetry.minLevel", "info")
 
 	// Image normalization defaults (OpenCode-style). Resize/recompress on by
 	// default so oversized attachments and screenshots don't bloat the payload.
@@ -2675,6 +2728,7 @@ func applyDefaultValues() {
 	normalizeRemembrancesDefaults()
 	normalizeMesnadaDelegationDefaults()
 	normalizeMesnadaOrchestratorDefaults()
+	normalizeTelemetryDefaults()
 	refreshConfiguredDynamicModels()
 	ensureAgentDefaults()
 	ensureEvaluatorDefaultModel()
@@ -3044,6 +3098,13 @@ func Validate() error {
 	if err := validateCronJobs(cfg.CronJobs); err != nil {
 		return err
 	}
+
+	// Telemetry is deliberately NOT validated here: normalizeTelemetryDefaults
+	// (called from applyDefaultValues, earlier in Load, before Validate runs)
+	// already repairs/defaults cfg.Telemetry so it is always well-formed by
+	// this point — see its doc. A bad telemetry.* value in the config file
+	// must never fail Load (code review finding): validateTelemetryConfig is
+	// still used, strictly, by the interactive Settings write paths instead.
 
 	// Drop any stray/legacy agent entries whose name is not a recognized built-in
 	// agent (e.g. a malformed "cliassist" key sitting next to the canonical
@@ -3742,12 +3803,33 @@ func ValidateCronJobsConfig(cronJobs CronJobsConfig) error {
 	return validateCronJobs(cronJobs)
 }
 
+// updateCfgFile mutates and persists the active config file: a project-local
+// one when it exists for the current working directory, the global one
+// otherwise. See ResolveConfigFilePath.
 func updateCfgFile(updateCfg func(config *Config)) error {
+	return updateConfigFileAt(ResolveConfigFilePath, updateCfg)
+}
+
+// updateGlobalCfgFile mutates and persists the GLOBAL config file only,
+// ignoring any project-local override for the current working directory.
+// Telemetry is the setting that must always be global: opening an untrusted
+// project must never be able to enable remote logging or change the debug id
+// by dropping a [Telemetry] section into a local .pando.toml. Everything
+// else — format detection, lock checks, sensitive-field encryption — is
+// identical to updateCfgFile.
+func updateGlobalCfgFile(updateCfg func(config *Config)) error {
+	return updateConfigFileAt(resolveGlobalConfigFilePath, updateCfg)
+}
+
+// updateConfigFileAt is the shared read/mutate/encrypt/write path behind
+// updateCfgFile and updateGlobalCfgFile; resolvePath is the only thing that
+// differs between the two.
+func updateConfigFileAt(resolvePath func() (string, error), updateCfg func(config *Config)) error {
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")
 	}
 
-	configFile, err := ResolveConfigFilePath()
+	configFile, err := resolvePath()
 	if err != nil {
 		return err
 	}
@@ -3821,6 +3903,25 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 		return fmt.Errorf("failed to encrypt sensitive config fields: %w", err)
 	}
 
+	// Telemetry is a GLOBAL-only setting (see updateGlobalCfgFile's doc): a
+	// project-local config file must never carry a [Telemetry]/"telemetry"
+	// section at all, even an empty/default-valued one. Zeroing
+	// persistedCfg.Telemetry alone is not enough to make the key disappear
+	// from the output: `json:"telemetry,omitempty"` is a no-op on a
+	// non-pointer struct field (encoding/json's omitempty never treats a
+	// struct value as "empty"), and go-toml/v2 always emits a table header
+	// for a struct field regardless of its values — confirmed empirically,
+	// an embedded-struct-plus-shadowing-field trick (the usual
+	// encoding/json idiom for this) does not omit the key with go-toml/v2
+	// either. So the key is stripped from the already-marshaled bytes
+	// below, by round-tripping through a generic map — the one
+	// representation both libraries reliably omit an absent key from on
+	// re-marshal — whenever the file being written is not the global one.
+	isGlobal := isGlobalConfigFilePath(configFile)
+	if !isGlobal {
+		persistedCfg.Telemetry = TelemetryConfig{} // defense in depth: never the real state
+	}
+
 	// Write the updated config back to file in the same format
 	var updatedData []byte
 	switch format {
@@ -3833,6 +3934,12 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 		updatedData, err = json.MarshalIndent(persistedCfg, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal JSON config: %w", err)
+		}
+	}
+
+	if !isGlobal {
+		if updatedData, err = stripTelemetryKey(updatedData, format); err != nil {
+			return fmt.Errorf("failed to strip telemetry section from config: %w", err)
 		}
 	}
 
@@ -3858,6 +3965,20 @@ func ResolveConfigFilePath() (string, error) {
 		}
 	}
 
+	return resolveGlobalConfigFilePath()
+}
+
+// resolveGlobalConfigFilePath finds the active GLOBAL config file, ignoring
+// any project-local override. It is the second half of
+// ResolveConfigFilePath's search order: viper.ConfigFileUsed() after Load
+// always names the global file, never a project-local one, because
+// mergeLocalConfig merges the local file's keys into this same viper
+// instance through a throwaway viper.New() that is never registered as
+// viper.ConfigFileUsed(). Falls back to $HOME/.pando.toml or .json, then the
+// legacy $XDG_CONFIG_HOME|~/.config/pando/config.* location. Returns "" (not
+// an error) when nothing exists yet, matching ResolveConfigFilePath's own
+// contract of leaving the caller to default to a fresh $HOME/.pando.json.
+func resolveGlobalConfigFilePath() (string, error) {
 	if configFile := viper.ConfigFileUsed(); configFile != "" {
 		return configFile, nil
 	}
@@ -3885,6 +4006,61 @@ func ResolveConfigFilePath() (string, error) {
 	}
 
 	return "", nil
+}
+
+// stripTelemetryKey removes the top-level "telemetry" (JSON) / "Telemetry"
+// (TOML) key from already-marshaled config bytes, by decoding into a
+// generic map, deleting the key, and re-marshaling — the one representation
+// both encoding/json and go-toml/v2 reliably omit an absent key from,
+// unlike a zero-valued (but still present) struct field. Used by
+// updateConfigFileAt whenever the file being written is not the GLOBAL
+// config file (see its telemetry-stripping guard for why: telemetry must
+// never be persisted to a project-local file). Re-marshaling from a map
+// means the rest of the file's keys come out in the map's (alphabetically
+// sorted, for both libraries) order rather than Config's declared field
+// order — an accepted cosmetic trade-off, since this write path already
+// fully rewrites the file from the in-memory struct on every call and
+// never preserves the original file's formatting/comments either way.
+func stripTelemetryKey(data []byte, format string) ([]byte, error) {
+	var m map[string]any
+	switch format {
+	case "toml":
+		if err := toml.Unmarshal(data, &m); err != nil {
+			return nil, fmt.Errorf("failed to re-parse TOML: %w", err)
+		}
+		delete(m, "Telemetry")
+		return toml.Marshal(m)
+	default:
+		if err := json.Unmarshal(data, &m); err != nil {
+			return nil, fmt.Errorf("failed to re-parse JSON: %w", err)
+		}
+		delete(m, "telemetry")
+		return json.MarshalIndent(m, "", "  ")
+	}
+}
+
+// isGlobalConfigFilePath reports whether path is (or, resolved the same way
+// updateConfigFileAt itself falls back, would resolve to) the GLOBAL config
+// file — the only file allowed to carry a persisted [Telemetry] section (see
+// the write-time guard in updateConfigFileAt). Mirrors
+// updateConfigFileAt's own "resolver returned empty -> default to
+// $HOME/.appName.json" fallback, so the comparison is correct even on a
+// fresh machine with no config file anywhere yet. Errors resolving the
+// global path are treated conservatively as "not global", so telemetry is
+// stripped rather than risk writing it to the wrong file.
+func isGlobalConfigFilePath(path string) bool {
+	global, err := resolveGlobalConfigFilePath()
+	if err != nil {
+		return false
+	}
+	if global == "" {
+		homeDir, herr := os.UserHomeDir()
+		if herr != nil {
+			return false
+		}
+		global = filepath.Join(homeDir, fmt.Sprintf(".%s.json", appName))
+	}
+	return path != "" && path == global
 }
 
 // Reload re-reads the config file and updates the global config. It resets the
@@ -4529,6 +4705,15 @@ func UpdateDebug(enabled bool) error {
 	}); err != nil {
 		cfg.Debug = oldValue
 		return err
+	}
+
+	// Apply the new level to the already-running slog handler immediately:
+	// slogLevel is shared by pointer with whichever handler Load installed,
+	// so this takes effect without a restart or a fresh slog.SetDefault.
+	if enabled {
+		slogLevel.Set(slog.LevelDebug)
+	} else {
+		slogLevel.Set(slog.LevelInfo)
 	}
 
 	return nil

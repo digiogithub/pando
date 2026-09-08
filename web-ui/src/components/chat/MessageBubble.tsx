@@ -6,7 +6,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faRobot, faUser, faWrench, faChevronDown, faChevronRight,
   faBrain, faTerminal, faPen, faEye, faFolder, faGlobe,
-  faFileLines, faMagnifyingGlass, faUserSecret, faCopy, faCheck,
+  faFileLines, faMagnifyingGlass, faUserSecret,
 } from '@fortawesome/free-solid-svg-icons'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import { format } from 'date-fns'
@@ -15,6 +15,7 @@ import type { Message, ContentPart, ToolCallStatus, ToolKind, ToolCallLocation }
 import type { StreamingState, StreamItem, ActiveToolCall } from '@pando/client/hooks/useChat'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
 import MarkdownLink from '@/components/shared/MarkdownLink'
+import CopyButton from '@/components/shared/CopyButton'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -549,54 +550,22 @@ export function EventRow({
 }
 
 // ─── Code block copy button ───────────────────────────────────────────────────
-
-function CopyButton({ preRef }: { preRef: React.RefObject<HTMLPreElement | null> }) {
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = () => {
-    const text = preRef.current?.textContent ?? ''
-    if (!text) return
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }
-
-  return (
-    <button
-      onClick={handleCopy}
-      title={copied ? 'Copied!' : 'Copy code'}
-      style={{
-        position: 'absolute',
-        top: '0.375rem',
-        right: '0.375rem',
-        background: copied ? 'color-mix(in srgb, var(--success) 15%, var(--surface))' : 'var(--surface)',
-        border: `1px solid ${copied ? 'var(--success)' : 'var(--border)'}`,
-        borderRadius: 'var(--radius-sm)',
-        padding: '0.2rem 0.45rem',
-        cursor: 'pointer',
-        color: copied ? 'var(--success)' : 'var(--fg-dim)',
-        fontSize: 10,
-        lineHeight: 1,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.25rem',
-        transition: 'all 0.15s ease',
-        zIndex: 1,
-      }}
-    >
-      <FontAwesomeIcon icon={copied ? faCheck : faCopy} style={{ fontSize: 9 }} />
-      {copied ? 'copied' : 'copy'}
-    </button>
-  )
-}
+// The button itself lives in components/shared/CopyButton — it is generic
+// (plain text or a lazy getter) so Settings can reuse it for the telemetry
+// debug ID. Here it reads the <pre>'s live DOM text via a getter rather than
+// a plain string, since the code block content can still be streaming when
+// the button is clicked.
 
 function PreWithCopy({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
   const preRef = useRef<HTMLPreElement>(null)
   return (
     <div style={{ position: 'relative' }}>
       <pre ref={preRef} {...props}>{children}</pre>
-      <CopyButton preRef={preRef} />
+      <CopyButton
+        text={() => preRef.current?.textContent ?? ''}
+        title="Copy code"
+        style={{ position: 'absolute', top: '0.375rem', right: '0.375rem', zIndex: 1 }}
+      />
     </div>
   )
 }

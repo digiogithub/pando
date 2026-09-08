@@ -26,7 +26,24 @@ DIST_SUFFIX   := $(if $(VARIANT),-$(VARIANT),)
 # unstamped fast build reports which variant it is. A binary that carries the
 # tags but calls itself standard is worse than no stamp at all.
 VARIANT_LDFLAGS := $(if $(VARIANT),-X github.com/digiogithub/pando/internal/version.Variant=$(VARIANT),)
-LDFLAGS := -s -w -X github.com/digiogithub/pando/internal/version.Version=$(VERSION) $(VARIANT_LDFLAGS)
+# TELEMETRY_LDFLAGS embeds the Better Stack ingest source token into the
+# binary at link time, so it is never committed and never stored in user
+# config (see internal/telemetry/build.go). Only set when the caller supplies
+# PANDO_BETTERSTACK_TOKEN, so a token-less build (CI PR builds, `go install`,
+# forks) carries no empty -X flag and simply reports telemetry as unavailable.
+#   Local dev: PANDO_BETTERSTACK_TOKEN=$(kvage get pando_betterstack_token) make build
+# NOTE: PANDO_BETTERSTACK_TOKEN is interpolated unquoted-inside-single-quotes
+# into the -ldflags string below (LDFLAGS := ... -ldflags '$(LDFLAGS)' ...).
+# It must never contain a single quote ('), which would break out of that
+# shell-quoted argument — Better Stack source tokens are alphanumeric, so
+# this is not expected to matter in practice, but it is exactly the kind of
+# thing worth flagging for anyone tempted to source this value from
+# somewhere less trusted than `kvage`/a CI secret.
+TELEMETRY_LDFLAGS :=
+ifneq ($(PANDO_BETTERSTACK_TOKEN),)
+TELEMETRY_LDFLAGS := -X github.com/digiogithub/pando/internal/telemetry.sourceToken=$(PANDO_BETTERSTACK_TOKEN)
+endif
+LDFLAGS := -s -w -X github.com/digiogithub/pando/internal/version.Version=$(VERSION) $(VARIANT_LDFLAGS) $(TELEMETRY_LDFLAGS)
 DIST_DIR := dist
 WEB_UI_DIR := web-ui
 WEB_UI_INSTALL_CMD ?= bun install
@@ -126,7 +143,7 @@ build-enterprise: build
 
 ## Build local CLI binary without rebuilding web-ui (fast iteration)
 build-fast:
-	go build $(GO_TAGS_FLAG) $(if $(VARIANT_LDFLAGS),-ldflags '$(VARIANT_LDFLAGS)',) -o pando$(DIST_SUFFIX) .
+	go build $(GO_TAGS_FLAG) $(if $(strip $(VARIANT_LDFLAGS) $(TELEMETRY_LDFLAGS)),-ldflags '$(VARIANT_LDFLAGS) $(TELEMETRY_LDFLAGS)',) -o pando$(DIST_SUFFIX) .
 
 ## Build the xpando builder, which composes a binary from core + extension modules
 xpando:

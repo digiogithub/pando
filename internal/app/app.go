@@ -166,6 +166,10 @@ type App struct {
 
 	openlitShutdown func(context.Context) error
 
+	// telemetryShutdown stops the opt-in remote logging runtime (see
+	// telemetry.go), if one was started for this App instance.
+	telemetryShutdown func(context.Context) error
+
 	clientsMutex sync.RWMutex
 	// lspSpawning tracks LSP servers whose lazy startup is in flight,
 	// lspInstalling those whose binary is being downloaded, and lspUnavailable
@@ -326,6 +330,14 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			}
 			app.openlitShutdown = shutdownFn
 		}
+
+		// --- Opt-in remote telemetry (Better Stack) lifecycle ---
+		// Starts the shipper live when cfg.Telemetry.Enabled and this build
+		// carries a token (internal/telemetry.Available()), and subscribes
+		// to config.Bus so a later toggle from the TUI/WebUI settings (or a
+		// config file edit) starts/stops it without a restart. See
+		// internal/app/telemetry.go.
+		app.telemetryShutdown = initTelemetry(cfg, opt.StartupMode)
 
 		var remembrancesProxy *dbproxy.DBProxy
 		if p, ok := q.(*dbproxy.DBProxy); ok {
@@ -2499,6 +2511,14 @@ func (app *App) Shutdown() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = app.openlitShutdown(ctx)
+	}
+	// Stop the opt-in remote telemetry runtime: ships an "App shutdown"
+	// record (when a shipper is running) and flushes it, bounded by
+	// remoteSinkStopDeadline.
+	if app.telemetryShutdown != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), remoteSinkStopDeadline)
+		defer cancel()
+		_ = app.telemetryShutdown(ctx)
 	}
 	// Shutdown project manager and all child project ACP processes.
 	if app.ProjectManager != nil {

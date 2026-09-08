@@ -20,6 +20,13 @@ name: Release
 # notary credentials). The Windows side needs no secret at all: the `release`
 # environment federates into the Entra app named by vars.AZURE_CLIENT_ID. See
 # docs/release-pipeline.md.
+#
+# PANDO_BETTERSTACK_TOKEN (repository secret) is the Better Stack ingest
+# source token for the opt-in remote telemetry feature. It is passed as `env:`
+# on the `make release-*` steps below, which forward it into the Makefile's
+# TELEMETRY_LDFLAGS (see internal/telemetry/build.go). A release built without
+# this secret still succeeds; that binary just reports telemetry as
+# unavailable.
 
 on:
   push:
@@ -90,6 +97,8 @@ jobs:
         run: make desktop-embed
 
       - name: Build release archives
+        env:
+          PANDO_BETTERSTACK_TOKEN: ${{ secrets.PANDO_BETTERSTACK_TOKEN }}
         run: make release-linux-amd64 release-linux-arm64 release-windows-amd64
 
       - name: List artifacts
@@ -245,6 +254,8 @@ jobs:
         run: make desktop-embed
 
       - name: Build and sign the CLI release archives
+        env:
+          PANDO_BETTERSTACK_TOKEN: ${{ secrets.PANDO_BETTERSTACK_TOKEN }}
         run: make release-darwin-arm64 release-darwin-amd64
 
       - name: Build, sign and notarize the .app bundles and .pkg installers

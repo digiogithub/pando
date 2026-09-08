@@ -22,6 +22,10 @@ const DEFAULTS: SettingsConfig = {
   image_use_files_api: false,
   output_filter_enabled: true,
   caveman_default_mode: '',
+  telemetry_enabled: false,
+  telemetry_debug_id: '',
+  telemetry_min_level: 'info',
+  telemetry_available: false,
   evaluator_enabled: false,
   judge_model: '',
   tool_discovery_enabled: true,
@@ -68,6 +72,14 @@ interface SettingsStore {
   updateField: <K extends keyof SettingsConfig>(key: K, value: SettingsConfig[K]) => void
   saveSettings: () => Promise<void>
   resetSettings: () => void
+  /**
+   * Regenerates the remote telemetry debug id. Sent as a minimal, dedicated
+   * request (`{ telemetry_regenerate_id: true }`) rather than through
+   * saveSettings, so it never picks up other unsaved draft edits and the
+   * one-shot flag never lands in `config`/`original` state (the server
+   * doesn't echo it back either).
+   */
+  regenerateTelemetryId: () => Promise<void>
 }
 
 export const useSettingsStore = create<SettingsStore>((set, get) => ({
@@ -101,8 +113,25 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   saveSettings: async () => {
     set({ saving: true, error: null })
     try {
-      await api.put('/api/v1/settings', get().config)
-      set((s) => ({ original: { ...s.config }, dirty: false }))
+      const data = await api.put<SettingsConfig>('/api/v1/settings', get().config)
+      set((s) => {
+        // Merge the server-authoritative telemetry fields back in: enabling
+        // telemetry generates a debug id server-side, and the PUT response
+        // is the only place the UI ever learns it — the previous code
+        // discarded `data` entirely and copied the local draft as the new
+        // `original`, so the generated id only ever showed up after a
+        // manual reload. Only these 4 fields are merged (not the whole
+        // response) so a UI-only field the backend never echoes back at all
+        // (`language`) is not clobbered back to its default on every save.
+        const config = {
+          ...s.config,
+          telemetry_enabled: data.telemetry_enabled,
+          telemetry_debug_id: data.telemetry_debug_id,
+          telemetry_min_level: data.telemetry_min_level,
+          telemetry_available: data.telemetry_available,
+        }
+        return { config, original: { ...config }, dirty: false }
+      })
       useToastStore.getState().addToast('Settings saved', 'success')
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Save failed'
@@ -115,6 +144,31 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   resetSettings: () =>
     set((s) => ({ config: { ...s.original }, dirty: false })),
+
+  regenerateTelemetryId: async () => {
+    set({ saving: true, error: null })
+    try {
+      const data = await api.put<SettingsConfig>('/api/v1/settings', {
+        telemetry_regenerate_id: true,
+      })
+      // Update only telemetry_debug_id in both config and original — NOT
+      // the whole response — so any unsaved edits the user made elsewhere
+      // in the draft (config) survive a regenerate. Replacing the whole
+      // config/original with the server's response (the previous
+      // behavior) silently dropped those unsaved edits.
+      set((s) => ({
+        config: { ...s.config, telemetry_debug_id: data.telemetry_debug_id },
+        original: { ...s.original, telemetry_debug_id: data.telemetry_debug_id },
+      }))
+      useToastStore.getState().addToast('Debug ID regenerated', 'success')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to regenerate debug ID'
+      set({ error: msg })
+      useToastStore.getState().addToast(msg, 'error')
+    } finally {
+      set({ saving: false })
+    }
+  },
 }))
 
 // ---- Providers Store ----

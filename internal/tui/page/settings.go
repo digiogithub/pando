@@ -24,6 +24,7 @@ import (
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 	pandoruntime "github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/skills/catalog"
+	"github.com/digiogithub/pando/internal/telemetry"
 	"github.com/digiogithub/pando/internal/tui/components/chat"
 	"github.com/digiogithub/pando/internal/tui/components/dialog"
 	"github.com/digiogithub/pando/internal/tui/components/filetree"
@@ -177,6 +178,12 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.Field.Key == "action:remembrances_test_code_embedding" {
 			return p, p.testEmbeddingConnection("code")
+		}
+		if msg.Field.Key == "action:telemetry_copy_id" {
+			return p, p.copyTelemetryDebugID()
+		}
+		if msg.Field.Key == "action:telemetry_regenerate_id" {
+			return p, p.regenerateTelemetryID()
 		}
 		return p, p.saveField(msg)
 	case skillUninstalledMsg:
@@ -780,6 +787,44 @@ func (p *settingsPage) testEmbeddingConnection(embType string) tea.Cmd {
 }
 
 // indexWorkingDirectory starts a code indexing job for the current working directory.
+// copyTelemetryDebugID copies the grouped debug id ("1234-5678-9012-3456") to
+// the clipboard — the same format shown next to the toggle, so what the user
+// copies matches what they see and can dictate into a support issue.
+func (p *settingsPage) copyTelemetryDebugID() tea.Cmd {
+	cfg := config.Get()
+	if cfg == nil || strings.TrimSpace(cfg.Telemetry.DebugID) == "" {
+		return util.ReportError(fmt.Errorf("no debug ID yet: enable remote telemetry first"))
+	}
+	if !util.CopyToClipboard(config.TelemetryDebugIDDisplay()) {
+		return util.ReportError(fmt.Errorf("failed to copy the debug ID"))
+	}
+	return util.ReportInfo("Debug ID copied to clipboard")
+}
+
+// regenerateTelemetryID issues a fresh debug id independent of whether
+// telemetry is currently enabled — a user may want one ready before
+// re-enabling — then rebuilds the section so the new id shows immediately
+// regardless of whether the config-bus event for the write also triggers one.
+//
+// Gated on "a debug id already exists", not telemetry.Available(): the two
+// are independent questions (a build could carry no token yet still have a
+// leftover id from before, or vice versa), and this is the behavior the API
+// side (handlers_settings.go's handlePutSettings) already uses — code
+// review flagged the two surfaces as inconsistent (the TUI previously
+// refused regenerate whenever the build was unavailable, even with an id
+// already present) and asked for one consistent rule across both.
+func (p *settingsPage) regenerateTelemetryID() tea.Cmd {
+	if cfg := config.Get(); cfg == nil || cfg.Telemetry.DebugID == "" {
+		return util.ReportError(fmt.Errorf("no debug ID yet: enable remote telemetry first"))
+	}
+	if _, err := config.RegenerateTelemetryID(); err != nil {
+		return util.ReportError(err)
+	}
+	p.settings.SetSections(buildSections(p.app))
+	p.settings.SetSize(p.width, p.height)
+	return util.ReportInfo("Debug ID regenerated")
+}
+
 func (p *settingsPage) indexWorkingDirectory() tea.Cmd {
 	return func() tea.Msg {
 		if p.app == nil || p.app.Remembrances == nil || p.app.Remembrances.Code == nil {
@@ -1059,6 +1104,23 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 
 	themeOptions := ensureOption(theme.AvailableThemes(), currentTheme)
 
+	telemetryAvailable := telemetry.Available()
+	telemetryEnabled := cfg.Telemetry.Enabled
+	telemetryDebugID := strings.TrimSpace(cfg.Telemetry.DebugID)
+	debugIDDisplay := config.TelemetryDebugIDDisplay()
+	if debugIDDisplay == "" {
+		debugIDDisplay = "—"
+	}
+	telemetryMinLevel := strings.TrimSpace(cfg.Telemetry.MinLevel)
+	if telemetryMinLevel == "" {
+		telemetryMinLevel = config.TelemetryLevelInfo
+	}
+	telemetryEnabledHint := "Sends logs, crashes and version info tagged with an anonymous debug ID " +
+		"to help diagnose problems. Secrets are redacted before anything is sent. Off by default."
+	if !telemetryAvailable {
+		telemetryEnabledHint = "Not available in this build."
+	}
+
 	return settings.Section{
 		Title: "General",
 		Fields: []settings.Field{
@@ -1148,6 +1210,50 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Key:   "debug",
 				Value: boolString(cfg.Debug),
 				Type:  settings.FieldToggle,
+			},
+			{
+				Label:    "Remote Telemetry",
+				Key:      "telemetry.enabled",
+				Value:    boolString(telemetryEnabled),
+				Type:     settings.FieldToggle,
+				Disabled: !telemetryAvailable,
+				Hint:     telemetryEnabledHint,
+			},
+			{
+				Label:    "Debug ID",
+				Key:      "telemetry.debug_id",
+				Value:    debugIDDisplay,
+				Type:     settings.FieldText,
+				ReadOnly: true,
+				Hint:     "Share this ID when reporting a problem.",
+			},
+			{
+				Label:    "Telemetry Min Level",
+				Key:      "telemetry.min_level",
+				Value:    telemetryMinLevel,
+				Type:     settings.FieldSelect,
+				Options:  []string{config.TelemetryLevelDebug, config.TelemetryLevelInfo, config.TelemetryLevelWarn, config.TelemetryLevelError},
+				Disabled: !telemetryAvailable || !telemetryEnabled,
+				Hint:     "Lowest level shipped remotely. A \"debug\" record still requires Debug to also be on.",
+			},
+			{
+				Label:    "Copy Debug ID",
+				Key:      "action:telemetry_copy_id",
+				Value:    "Copy the debug ID to the clipboard",
+				Type:     settings.FieldAction,
+				ReadOnly: true,
+				Disabled: telemetryDebugID == "",
+			},
+			{
+				Label:    "Regenerate Debug ID",
+				Key:      "action:telemetry_regenerate_id",
+				Value:    "Generate a new anonymous debug ID",
+				Type:     settings.FieldAction,
+				ReadOnly: true,
+				// Matches "Copy Debug ID"'s condition, and regenerateTelemetryID's
+				// own guard: allowed whenever an id already exists, independent
+				// of telemetry.Available() (see that method's doc).
+				Disabled: telemetryDebugID == "",
 			},
 			{
 				Label: "Shell Path",
@@ -3628,6 +3734,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveRemembrances(field)
 	case strings.HasPrefix(field.Key, "openlit."):
 		return saveOpenLit(field)
+	case strings.HasPrefix(field.Key, "telemetry."):
+		return saveTelemetry(field)
 	case strings.HasPrefix(field.Key, "internalTools."):
 		return saveInternalTools(field)
 	case strings.HasPrefix(field.Key, "general."):
@@ -5230,6 +5338,36 @@ func saveOpenLit(field settings.Field) error {
 		return fmt.Errorf("unsupported OpenLit setting %q", field.Key)
 	}
 	return config.UpdateOpenLit(ol)
+}
+
+// saveTelemetry persists the two directly-editable telemetry fields. The
+// debug id (telemetry.debug_id) is read-only and never reaches here — the
+// settings component refuses to save a non-Editable field before emitting a
+// SaveFieldMsg — but the case is kept explicit (no-op) rather than falling
+// into "unsupported setting" in case that changes. The copy/regenerate
+// actions are separate FieldAction rows (action:telemetry_copy_id,
+// action:telemetry_regenerate_id) handled directly in settingsPage.Update,
+// like every other FieldAction in this file, since they run a side effect
+// instead of saving a value.
+func saveTelemetry(field settings.Field) error {
+	switch field.Key {
+	case "telemetry.enabled":
+		if !telemetry.Available() {
+			return fmt.Errorf("remote telemetry is not available in this build")
+		}
+		value, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Remote Telemetry value: %w", err)
+		}
+		_, err = config.UpdateTelemetry(value)
+		return err
+	case "telemetry.min_level":
+		return config.UpdateTelemetryMinLevel(field.Value)
+	case "telemetry.debug_id":
+		return nil
+	default:
+		return fmt.Errorf("unsupported telemetry setting %q", field.Key)
+	}
 }
 
 func saveLua(field settings.Field) error {

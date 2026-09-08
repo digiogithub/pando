@@ -12,7 +12,12 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X github.com/digiogithub/pando/internal/version.Version={{.Version}}
+      # PANDO_BETTERSTACK_TOKEN embeds the Better Stack ingest source token
+      # (see internal/telemetry/build.go and the Makefile's
+      # TELEMETRY_LDFLAGS). envOrDefault never errors when the env var is
+      # unset, unlike `.Env.PANDO_BETTERSTACK_TOKEN`, so a goreleaser run
+      # without the secret still builds, just with telemetry unavailable.
+      - -s -w -X github.com/digiogithub/pando/internal/version.Version={{.Version}} -X github.com/digiogithub/pando/internal/telemetry.sourceToken={{ envOrDefault "PANDO_BETTERSTACK_TOKEN" "" }}
     main: ./main.go
 
 archives:

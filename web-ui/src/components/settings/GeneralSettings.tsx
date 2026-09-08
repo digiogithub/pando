@@ -4,6 +4,7 @@ import { useSettingsStore } from '@pando/client/stores/settingsStore'
 import { TextInput, SelectInput, Toggle } from '@/components/shared/FormInput'
 import ModelCombobox from '@/components/shared/ModelCombobox'
 import ThemePicker from '@/components/shared/ThemePicker'
+import CopyButton from '@/components/shared/CopyButton'
 import { SUPPORTED_LANGUAGES } from '@/i18n'
 import { useTheme } from '@/hooks/useTheme'
 
@@ -38,8 +39,18 @@ const fieldLabel: React.CSSProperties = {
 
 export default function GeneralSettings() {
   const { t } = useTranslation()
-  const { config, dirty, loading, saving, error, fetchSettings, updateField, saveSettings, resetSettings } =
-    useSettingsStore()
+  const {
+    config,
+    dirty,
+    loading,
+    saving,
+    error,
+    fetchSettings,
+    updateField,
+    saveSettings,
+    resetSettings,
+    regenerateTelemetryId,
+  } = useSettingsStore()
   const { setTheme } = useTheme()
 
   useEffect(() => {
@@ -172,17 +183,98 @@ export default function GeneralSettings() {
           checked={config.nerd_fonts}
           onChange={(v) => updateField('nerd_fonts', v)}
         />
+      </div>
+
+      <div style={dividerStyle} />
+
+      {/* Diagnostics: local debug logging plus opt-in remote telemetry
+          (Better Stack). Telemetry is off by default; the debug id is
+          generated server-side on first enable and only shown once the
+          server confirms it (after a save/regenerate), never invented
+          client-side. */}
+      <h3 style={{ ...sectionTitle, fontSize: 15, marginBottom: '1rem' }}>
+        {t('settings.general.diagnosticsTitle')}
+      </h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
         <Toggle
           label={t('settings.general.debug')}
           description={t('settings.general.debugDescription')}
           checked={config.debug}
           onChange={(v) => updateField('debug', v)}
         />
+        <Toggle
+          label={t('settings.general.telemetryEnabled')}
+          description={t('settings.general.telemetryEnabledDescription')}
+          checked={config.telemetry_enabled}
+          disabled={!config.telemetry_available}
+          hint={!config.telemetry_available ? t('settings.general.telemetryUnavailableHint') : undefined}
+          onChange={(v) => updateField('telemetry_enabled', v)}
+        />
+
+        {config.telemetry_debug_id && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+            <label style={fieldLabel}>{t('settings.general.telemetryDebugId')}</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span
+                style={{
+                  fontFamily: 'monospace',
+                  fontSize: 14,
+                  color: 'var(--fg)',
+                  background: 'var(--input-bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '0.5rem 0.75rem',
+                }}
+              >
+                {config.telemetry_debug_id}
+              </span>
+              <CopyButton text={config.telemetry_debug_id} size="md" />
+              <button
+                type="button"
+                onClick={() => regenerateTelemetryId()}
+                disabled={saving}
+                style={{
+                  padding: '0.5rem 0.9rem',
+                  background: 'transparent',
+                  color: saving ? 'var(--fg-dim)' : 'var(--fg-muted)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {t('settings.general.telemetryRegenerateId')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {config.telemetry_enabled && (
+          <SelectInput
+            label={t('settings.general.telemetryMinLevel')}
+            options={[
+              { value: 'debug', label: t('settings.general.telemetryMinLevelDebug') },
+              { value: 'info', label: t('settings.general.telemetryMinLevelInfo') },
+              { value: 'warn', label: t('settings.general.telemetryMinLevelWarn') },
+              { value: 'error', label: t('settings.general.telemetryMinLevelError') },
+            ]}
+            value={config.telemetry_min_level || 'info'}
+            onChange={(e) => updateField('telemetry_min_level', e.target.value)}
+          />
+        )}
       </div>
 
-      {/* Caveman output brevity: global default only. Sessions that ran
-          /caveman or /caveman-finish keep their own level. */}
-      <div style={{ marginTop: '1.25rem' }}>
+      <div style={dividerStyle} />
+
+      {/* Feedback optimization — caveman output brevity: global default
+          only. Sessions that ran /caveman or /caveman-finish keep their own
+          level. */}
+      <h3 style={{ ...sectionTitle, fontSize: 15, marginBottom: '1rem' }}>
+        {t('settings.general.feedbackOptimizationTitle')}
+      </h3>
+      <div>
         <SelectInput
           label={t('settings.general.caveman')}
           options={cavemanOptions}

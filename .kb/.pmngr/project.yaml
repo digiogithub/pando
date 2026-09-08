@@ -1,0 +1,45 @@
+schema: 1
+key: PANDO
+name: PANDO
+timezone: UTC
+docs:
+  path: .kb
+  wikilinks: true
+  mermaid: true
+  math: false
+  footnotes: true
+  callouts: true
+  attachments_dir: .pmngr/attachments
+workflow:
+  initial: backlog
+  statuses:
+    - id: backlog
+      name: Backlog
+      category: todo
+    - id: todo
+      name: To Do
+      category: todo
+    - id: in_progress
+      name: In Progress
+      category: in_progress
+    - id: in_review
+      name: In Review
+      category: in_progress
+    - id: done
+      name: Done
+      category: done
+      terminal: true
+    - id: cancelled
+      name: Cancelled
+      category: cancelled
+      terminal: true
+id_allocation:
+  strategy: scan
+  write_counters: true
+priorities:
+  - critical
+  - high
+  - medium
+  - low
+estimation:
+  scale: fibonacci
