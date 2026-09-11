@@ -164,6 +164,36 @@ func TestIndexSessionConversationChunksContentForEmbeddings(t *testing.T) {
 	}
 }
 
+func TestIsEphemeralIndexSession(t *testing.T) {
+	cases := map[string]bool{
+		"ctxenrich-abc123":     true,
+		"title-parent-session": true,
+		"session-1":            false,
+		"":                     false,
+	}
+	for id, want := range cases {
+		if got := isEphemeralIndexSession(id); got != want {
+			t.Errorf("isEphemeralIndexSession(%q) = %v, want %v", id, got, want)
+		}
+	}
+}
+
+// TestIndexSessionConversationSkipsEphemeralSessions pins the indexer's skip
+// filter: ctxenrich- (agent-loop enrichment child sessions) and title- (title
+// generation sessions) must never be indexed into remembrances, since they
+// either duplicate content already indexed elsewhere or are pure scratch. The
+// App under test has no Sessions/Messages wired, so anything past the guard
+// would panic on a nil-interface method call — proving the guard runs first.
+func TestIndexSessionConversationSkipsEphemeralSessions(t *testing.T) {
+	app := &App{}
+	svc := &rag.RemembrancesService{}
+	for _, id := range []string{"ctxenrich-" + "abc123", "title-parent-session-1"} {
+		if err := app.indexSessionConversation(context.Background(), svc, id); err != nil {
+			t.Fatalf("indexSessionConversation(%q) = %v, want nil (ephemeral sessions must be skipped)", id, err)
+		}
+	}
+}
+
 func setDocumentEmbedderForTest(svc *rag.RemembrancesService, embedder embeddings.Embedder) {
 	field := reflect.ValueOf(svc).Elem().FieldByName("docEmbedder")
 	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(embedder))

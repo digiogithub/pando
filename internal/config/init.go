@@ -424,7 +424,7 @@ ContextEnrichmentMinScore = 0.45
 # The loop calls the memory, knowledge-base and code-index tools iteratively and
 # returns one enriched block; the main agent only sees that block.
 ContextEnrichmentAgentLoopEnabled = false
-ContextEnrichmentAgentLoopTimeoutSeconds = 60
+ContextEnrichmentAgentLoopTimeoutSeconds = 25
 ContextEnrichmentAgentLoopMaxChars = 6000
 # Run the loop on every user turn instead of only on the first message of a session.
 ContextEnrichmentAgentLoopEveryMessage = false

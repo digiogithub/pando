@@ -410,6 +410,74 @@ func TestApplyPendingModelSwitchKeepsRunAliveWhenTheProviderCannotBeBuilt(t *tes
 	}
 }
 
+// TestApplyPendingModelSwitchIgnoresConfiguredCoderModelForOtherAgents pins
+// Defect B's fix: a non-coder agent (context-enricher here) must never be
+// compared against the coder's configured model when the session carries no
+// explicit override. Before the fix this fired a spurious "Could not switch"
+// message and rebuilt the provider on every iteration whenever the coder was
+// configured on a different model than the agent actually running.
+func TestApplyPendingModelSwitchIgnoresConfiguredCoderModelForOtherAgents(t *testing.T) {
+	setupModelTestEnv(t, true) // coder configured on testModelCheap
+	_, sessionID := newModelTestSession(t, "non-coder-noop")
+
+	a := &agent{agentName: config.AgentContextEnricher, Broker: pubsub.NewBroker[AgentEvent]()}
+	// The enricher runs on a different model than the coder; with no override
+	// this must stay a no-op instead of trying to "correct" it to the coder's.
+	current := switchStubProvider{model: models.SupportedModels()[testModelPricey]}
+	history := []message.Message{{Role: message.User, Parts: []message.ContentPart{message.TextContent{Text: "hi"}}}}
+	events := make(chan AgentEvent, 4)
+
+	got, gotHistory := a.applyPendingModelSwitch(
+		context.Background(), sessionID, current, "hi", "", history, events)
+
+	if got.Model().ID != testModelPricey {
+		t.Fatalf("provider model = %q, want it left untouched at %q", got.Model().ID, testModelPricey)
+	}
+	if len(gotHistory) != len(history) {
+		t.Fatalf("history len = %d, want %d", len(gotHistory), len(history))
+	}
+	select {
+	case event := <-events:
+		t.Fatalf("unexpected event for a non-coder agent with no override: %+v", event)
+	default:
+	}
+}
+
+// TestApplyPendingModelSwitchOverrideStillAppliesForNonCoderAgent covers the
+// other half: an explicit per-session override must still be honored for a
+// non-coder agent, exactly like it is for the coder — the agent-aware guard
+// only special-cases the "no override" path. The context-enricher agent has no
+// entry at all in setupModelTestEnv's cfg.Agents fixture, so prepareProvider
+// fails ("agent context-enricher not found"); what matters here is that the
+// switch was actually attempted (and its failure reported) rather than the
+// call being skipped outright by the guard, which is what a no-op would do.
+func TestApplyPendingModelSwitchOverrideStillAppliesForNonCoderAgent(t *testing.T) {
+	setupModelTestEnv(t, true)
+	_, sessionID := newModelTestSession(t, "non-coder-override")
+
+	a := &agent{agentName: config.AgentContextEnricher, Broker: pubsub.NewBroker[AgentEvent]()}
+	current := switchStubProvider{model: models.SupportedModels()[testModelCheap]}
+	history := []message.Message{{Role: message.User, Parts: []message.ContentPart{message.TextContent{Text: "hi"}}}}
+
+	SetSessionModelOverride(sessionID, testModelPricey)
+	events := make(chan AgentEvent, 4)
+
+	got, _ := a.applyPendingModelSwitch(
+		context.Background(), sessionID, current, "hi", "", history, events)
+
+	if got.Model().ID != testModelCheap {
+		t.Fatalf("provider model = %q, want the run to continue on the old model", got.Model().ID)
+	}
+	select {
+	case event := <-events:
+		if !strings.Contains(event.SystemMessage, "Could not switch") {
+			t.Fatalf("event = %q, want the switch attempt's failure reported", event.SystemMessage)
+		}
+	default:
+		t.Fatal("no event was emitted: the override was not attempted for the non-coder agent")
+	}
+}
+
 func TestDescribeModelPriceStatesUnknownPrice(t *testing.T) {
 	if got := describeModelPrice(models.Model{ID: "local.qwen"}); !strings.Contains(got, "unknown") {
 		t.Fatalf("describeModelPrice = %q, want the price reported as unknown", got)

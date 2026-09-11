@@ -355,6 +355,16 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 				app.initKBLinkBackfill(ctx, remembrances)
 				app.initRemembrancesSessionIndexing(ctx, remembrances, &cfg.Remembrances)
 
+				// One-off cleanup of ctxenrich-* sessions accumulated by a version of
+				// the enrichment agent loop that never deleted its own sessions (see
+				// [[pando/fixes/context_enricher_agent_loop_first_event.md]]). Only the
+				// instance with direct DB access runs it (remembrancesProxy == nil): a
+				// secondary would just proxy every one of these over IPC for rows the
+				// primary has usually already cleaned up.
+				if remembrancesProxy == nil {
+					go app.cleanupLeftoverEnrichmentSessions(context.Background())
+				}
+
 				// Initialize context enricher if enabled: searches KB and code index
 				// before every user prompt and prepends relevant context.
 				if cfg.Remembrances.ContextEnrichmentEnabled {

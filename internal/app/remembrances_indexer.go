@@ -18,6 +18,27 @@ import (
 
 const sessionIndexSubject = "session"
 
+// ephemeralIndexSessionPrefixes are session ID prefixes that must never be
+// indexed into remembrances: their content duplicates what is already indexed
+// elsewhere (the enrichment loop's KB/code/events lookups) or is pure scratch
+// (a one-line title-generation prompt), so indexing them only adds writes and
+// clutters search results with retrieval-trace noise. ctxenrich- sessions used
+// to accumulate unindexed-but-unfiltered leftovers before the enrichment loop
+// deleted its own sessions — see
+// [[pando/fixes/context_enricher_agent_loop_first_event.md]].
+var ephemeralIndexSessionPrefixes = []string{ctxEnrichSessionIDPrefix, "title-"}
+
+// isEphemeralIndexSession reports whether sessionID belongs to one of the
+// synthetic child-session kinds that ephemeralIndexSessionPrefixes lists.
+func isEphemeralIndexSession(sessionID string) bool {
+	for _, prefix := range ephemeralIndexSessionPrefixes {
+		if strings.HasPrefix(sessionID, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func (app *App) initRemembrancesSessionIndexing(ctx context.Context, svc *rag.RemembrancesService, cfg *config.RemembrancesConfig) {
 	if svc == nil || svc.Events == nil || cfg == nil || !cfg.AutoIndexSessions {
 		return
@@ -55,7 +76,7 @@ func (app *App) initRemembrancesSessionIndexing(ctx context.Context, svc *rag.Re
 					continue
 				}
 				sessionID := ev.Payload.SessionID
-				if strings.TrimSpace(sessionID) == "" {
+				if strings.TrimSpace(sessionID) == "" || isEphemeralIndexSession(sessionID) {
 					continue
 				}
 				mu.Lock()
@@ -79,6 +100,13 @@ func (app *App) initRemembrancesSessionIndexing(ctx context.Context, svc *rag.Re
 }
 
 func (app *App) indexSessionConversation(ctx context.Context, svc *rag.RemembrancesService, sessionID string) error {
+	// Belt and braces: the watcher above already filters these out before
+	// scheduling the debounce timer, but this method is also called directly
+	// (tests, potential future manual re-index paths), so it must refuse
+	// ephemeral sessions on its own too.
+	if isEphemeralIndexSession(sessionID) {
+		return nil
+	}
 	sess, err := app.Sessions.Get(ctx, sessionID)
 	if err != nil {
 		return err

@@ -747,9 +747,9 @@ export default function RemembrancesSettings() {
                     <TextInput
                       label="Loop Timeout (s)"
                       type="number"
-                      value={String(rem.context_enrichment_agent_loop_timeout_seconds ?? 60)}
+                      value={String(rem.context_enrichment_agent_loop_timeout_seconds ?? 25)}
                       onChange={(e) => updateRemembrances('context_enrichment_agent_loop_timeout_seconds', Number(e.target.value))}
-                      placeholder="60"
+                      placeholder="25"
                     />
                   </div>
                   <div style={{ flex: 1 }}>

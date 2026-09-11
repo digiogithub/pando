@@ -531,7 +531,7 @@ type RemembrancesConfig struct {
 	// context block that is appended to the user prompt; the main agent only sees that block.
 	ContextEnrichmentAgentLoopEnabled bool `json:"context_enrichment_agent_loop_enabled" toml:"ContextEnrichmentAgentLoopEnabled"`
 	// ContextEnrichmentAgentLoopTimeoutSeconds bounds a single enrichment loop run.
-	// 0 uses the default (60s). The main prompt waits for the loop, so keep it short.
+	// 0 uses the default (25s). The main prompt waits for the loop, so keep it short.
 	ContextEnrichmentAgentLoopTimeoutSeconds int `json:"context_enrichment_agent_loop_timeout_seconds" toml:"ContextEnrichmentAgentLoopTimeoutSeconds"`
 	// ContextEnrichmentAgentLoopMaxChars caps the enriched block produced by the loop.
 	// 0 uses the default (6000).

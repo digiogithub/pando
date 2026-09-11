@@ -171,7 +171,18 @@ func (a *agent) applyPendingModelSwitch(
 	if current == nil {
 		return current, msgHistory
 	}
-	desired, _ := effectiveSessionModel(sessionID)
+	desired, isOverride := effectiveSessionModel(sessionID)
+	// Only an explicit per-session override may change a non-coder agent's
+	// model. Without one, effectiveSessionModel falls back to the coder's
+	// configured model, which has nothing to do with what a task/summarizer/
+	// context-enricher/etc. agent is supposed to run on. Comparing against it
+	// anyway used to fire a spurious "Could not switch" message plus a full
+	// provider rebuild on every single loop iteration whenever the coder
+	// happened to be configured on a different model — see
+	// [[pando/fixes/context_enricher_agent_loop_first_event.md]] Defect B.
+	if !isOverride && a.agentName != config.AgentCoder {
+		return current, msgHistory
+	}
 	if desired == "" || desired == current.Model().ID {
 		return current, msgHistory
 	}

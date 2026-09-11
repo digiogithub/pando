@@ -82,13 +82,46 @@ type ContextEnricher interface {
 // as a child session so the user can inspect it from the UI.
 type SessionContextEnricher interface {
 	ContextEnricher
-	EnrichContextForSession(ctx context.Context, sessionID, query string) string
+	// EnrichContextForSession runs enrichment for the given chat session and reports
+	// what it found (or why it didn't), so the caller can render a status notice
+	// richer than "some text came back".
+	EnrichContextForSession(ctx context.Context, sessionID, query string) EnrichmentOutcome
 	// SessionStartOnly reports whether enrichment must run only for the first message
 	// of a session instead of every turn.
 	SessionStartOnly() bool
 	// Announce reports whether the run should be announced in the chat with start and
 	// end status messages (same treatment as context compaction).
 	Announce() bool
+}
+
+// EnrichmentSource identifies what produced an EnrichmentOutcome's Block.
+type EnrichmentSource string
+
+const (
+	// EnrichmentSourceAgentLoop marks a block produced by the dedicated
+	// enrichment agent loop (memory/KB/code tools run iteratively).
+	EnrichmentSourceAgentLoop EnrichmentSource = "agent-loop"
+	// EnrichmentSourceSearchFallback marks a block produced by the classic
+	// single-shot search pipeline, used when the agent loop failed, timed out
+	// or found nothing (unless the fallback itself is disabled).
+	EnrichmentSourceSearchFallback EnrichmentSource = "search-fallback"
+)
+
+// EnrichmentOutcome reports how a SessionContextEnricher run finished. It carries
+// enough detail for the caller to render a "done" status that says more than
+// "N chars added": whether the loop actually ran, fell back to search, or timed
+// out, and how long it took.
+type EnrichmentOutcome struct {
+	// Block is the enriched context to append to the prompt; empty when
+	// nothing useful was found.
+	Block string
+	// Source identifies what produced Block. Zero value when Block is empty.
+	Source EnrichmentSource
+	// TimedOut is true when the agent loop hit its configured timeout (the
+	// fallback may still have produced Block afterwards).
+	TimedOut bool
+	// Duration is the wall-clock time the whole run took, fallback included.
+	Duration time.Duration
 }
 
 // globalContextEnricher is the package-level enricher injected from app.go.
@@ -874,6 +907,81 @@ func (a *agent) emitStatus(sessionID string, eventCh chan<- AgentEvent, chatMsg,
 	}
 }
 
+// enrichmentHeartbeatInterval bounds how often the "still enriching..." notice
+// repeats while a session-aware enrichment run is in flight. The agent loop can
+// legitimately take several tool round-trips, and with no heartbeat the ACP
+// client (Zed, Xcode, ...) shows nothing but silence between the start and done
+// notices, which reads as a hang — this is the same problem auto-compaction
+// would have if a single compaction ever took long enough to need one.
+const enrichmentHeartbeatInterval = 7 * time.Second
+
+// runSessionEnrichment runs a SessionContextEnricher and, while announce is
+// true, emits a periodic heartbeat on eventCh for as long as the call is in
+// flight. The enrichment loop itself has no eventCh of its own (it runs on a
+// separate child session), so the heartbeat has to come from here, using the
+// same emitStatus mechanism the start/done notices use — the one auto-compaction
+// also uses — so every surface (TUI, WebUI, ACP) that already renders those
+// notices renders this one the same way, with nothing extra to wire up.
+func (a *agent) runSessionEnrichment(
+	ctx context.Context,
+	sessionID, content string,
+	enricher SessionContextEnricher,
+	announce bool,
+	eventCh chan<- AgentEvent,
+) EnrichmentOutcome {
+	if !announce {
+		return enricher.EnrichContextForSession(ctx, sessionID, content)
+	}
+
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		ticker := time.NewTicker(enrichmentHeartbeatInterval)
+		defer ticker.Stop()
+		elapsed := time.Duration(0)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				elapsed += enrichmentHeartbeatInterval
+				logging.Debug("context enrichment: still running", "session_id", sessionID, "elapsed", elapsed)
+				a.emitStatus(sessionID, eventCh,
+					fmt.Sprintf("\n\n🔍 Still enriching context… %ds\n", int(elapsed.Seconds())),
+					fmt.Sprintf("Context enrichment agent still running (%ds)", int(elapsed.Seconds())))
+			}
+		}
+	}()
+
+	return enricher.EnrichContextForSession(ctx, sessionID, content)
+}
+
+// describeEnrichmentOutcome renders the "done" chat and status messages for a
+// finished session enrichment run, distinguishing the outcomes a user actually
+// cares about: nothing found, a usable block (from the loop or its search
+// fallback), or a timeout — always reporting how long the run took.
+func describeEnrichmentOutcome(outcome EnrichmentOutcome) (chatMsg, statusMsg string) {
+	dur := outcome.Duration.Round(time.Millisecond)
+	switch {
+	case outcome.TimedOut && outcome.Block == "":
+		return fmt.Sprintf("✗ Context enrichment timed out after %s.\n\n", dur),
+			fmt.Sprintf("Context enrichment timed out after %s", dur)
+	case outcome.Block == "":
+		return fmt.Sprintf("✓ Context enrichment done (%s) — no additional context found.\n\n", dur),
+			fmt.Sprintf("Context enrichment done: no additional context (%s)", dur)
+	case outcome.Source == EnrichmentSourceSearchFallback:
+		suffix := ""
+		if outcome.TimedOut {
+			suffix = ", agent loop timed out"
+		}
+		return fmt.Sprintf("✓ Context enrichment done (%s) — %d chars via search fallback%s.\n\n", dur, len(outcome.Block), suffix),
+			fmt.Sprintf("Context enrichment done: %d chars via search fallback%s (%s)", len(outcome.Block), suffix, dur)
+	default:
+		return fmt.Sprintf("✓ Context enrichment done (%s) — %d chars of context added.\n\n", dur, len(outcome.Block)),
+			fmt.Sprintf("Context enrichment done: %d chars added (%s)", len(outcome.Block), dur)
+	}
+}
+
 func (a *agent) clearRunStatusMessages(sessionID string) {
 	if sessionID == "" {
 		return
@@ -1171,17 +1279,17 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			if !sessionAware.SessionStartOnly() || len(msgs) == 0 {
 				announce := sessionAware.Announce()
 				if announce {
-					a.emitStatus(sessionID, eventCh, "\n\n🧠 Context enrichment agent gathering project context...\n", "Context enrichment agent started")
+					logging.Info("context enrichment: run started", "session_id", sessionID)
+					a.emitStatus(sessionID, eventCh, "\n\n🔍 Enriching context…\n", "Context enrichment agent started")
 				}
-				enriched = sessionAware.EnrichContextForSession(ctx, sessionID, content)
+				outcome := a.runSessionEnrichment(ctx, sessionID, content, sessionAware, announce, eventCh)
+				enriched = outcome.Block
 				if announce {
-					doneMsg := "✓ Context enrichment done — no additional context found.\n\n"
-					doneStatus := "Context enrichment done: no additional context"
-					if enriched != "" {
-						doneMsg = fmt.Sprintf("✓ Context enrichment done — %d chars of context added.\n\n", len(enriched))
-						doneStatus = fmt.Sprintf("Context enrichment done: %d chars added", len(enriched))
-					}
-					a.emitStatus(sessionID, eventCh, doneMsg, doneStatus)
+					chatMsg, statusMsg := describeEnrichmentOutcome(outcome)
+					a.emitStatus(sessionID, eventCh, chatMsg, statusMsg)
+					logging.Info("context enrichment: run finished", "session_id", sessionID,
+						"source", outcome.Source, "chars", len(outcome.Block),
+						"timed_out", outcome.TimedOut, "duration", outcome.Duration)
 				}
 			}
 		} else {

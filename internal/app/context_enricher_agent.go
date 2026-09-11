@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -19,13 +20,36 @@ import (
 )
 
 const (
-	defaultEnrichmentLoopTimeout  = 60 * time.Second
+	// defaultEnrichmentLoopTimeout bounds a single enrichment loop run when
+	// ContextEnrichmentAgentLoopTimeoutSeconds is unset. Lowered from the
+	// original 60s: the main prompt blocks on this (see EnrichContextForSession),
+	// and 25s is already a long silence for an ACP client to sit through even
+	// with the start/heartbeat/done notices this package now emits.
+	defaultEnrichmentLoopTimeout  = 25 * time.Second
 	defaultEnrichmentLoopMaxChars = 6000
 	// noRelevantContextMarker is what the enrichment agent emits when it found nothing.
 	noRelevantContextMarker = "NO_RELEVANT_CONTEXT"
 	enrichedContextOpenTag  = "<enriched_context>"
 	enrichedContextCloseTag = "</enriched_context>"
+	// ctxEnrichSessionIDPrefix identifies a session as an ephemeral enrichment-loop
+	// run rather than a real chat session. Shared with the remembrances session
+	// indexer (which must skip these) and the startup cleanup of leftovers from
+	// before this package deleted its own sessions.
+	ctxEnrichSessionIDPrefix = "ctxenrich-"
 )
+
+// ErrEnrichmentTimeout is wrapped into the error runLoop returns when the loop
+// did not finish within its configured timeout, so EnrichContextForSession can
+// tell a timeout apart from every other failure without string matching.
+var ErrEnrichmentTimeout = errors.New("enrichment loop timed out")
+
+// searchFallbackEnricher is the minimal surface agentLoopEnricher needs from the
+// classic single-shot search enricher (*rag.ContextEnricher). Kept as a narrow
+// interface rather than the concrete type so tests can substitute a fake
+// instead of constructing a real one.
+type searchFallbackEnricher interface {
+	EnrichContext(ctx context.Context, query string) string
+}
 
 // agentLoopEnricher runs context enrichment as a dedicated agent loop on the
 // context-enricher model, independent of the model the user selected for the main
@@ -39,7 +63,7 @@ type agentLoopEnricher struct {
 	messages message.Service
 	// fallback is the classic single-shot search enricher, used when the loop is
 	// unavailable, times out or returns nothing (unless disabled by config).
-	fallback *rag.ContextEnricher
+	fallback searchFallbackEnricher
 
 	timeout      time.Duration
 	maxChars     int
@@ -73,10 +97,18 @@ func newAgentLoopEnricher(
 	if cfg.ContextEnrichmentAgentLoopMaxChars > 0 {
 		maxChars = cfg.ContextEnrichmentAgentLoopMaxChars
 	}
+	// Converted explicitly (rather than assigned straight into the interface
+	// field) so a nil *rag.ContextEnricher becomes a true nil interface: a
+	// typed-nil pointer boxed directly into an interface value is non-nil, which
+	// would silently defeat every "e.fallback == nil" check below.
+	var fb searchFallbackEnricher
+	if fallback != nil {
+		fb = fallback
+	}
 	return &agentLoopEnricher{
 		sessions:     sessions,
 		messages:     messages,
-		fallback:     fallback,
+		fallback:     fb,
 		timeout:      timeout,
 		maxChars:     maxChars,
 		fallbackOff:  cfg.ContextEnrichmentAgentLoopFallbackDisabled,
@@ -133,28 +165,40 @@ func (e *agentLoopEnricher) ensureAgent() (agent.Service, error) {
 
 // EnrichContext satisfies agent.ContextEnricher for callers with no session at hand.
 func (e *agentLoopEnricher) EnrichContext(ctx context.Context, query string) string {
-	return e.EnrichContextForSession(ctx, "", query)
+	return e.EnrichContextForSession(ctx, "", query).Block
 }
 
 // EnrichContextForSession runs the enrichment loop for the given chat session and
-// returns the context block to append to the user prompt (empty when nothing helps).
-func (e *agentLoopEnricher) EnrichContextForSession(ctx context.Context, sessionID, query string) string {
+// reports the context block to append to the user prompt (empty when nothing
+// helps) along with how the run went, so the caller can render a meaningful
+// status notice instead of just "some text came back".
+func (e *agentLoopEnricher) EnrichContextForSession(ctx context.Context, sessionID, query string) agent.EnrichmentOutcome {
 	if e == nil || strings.TrimSpace(query) == "" {
-		return ""
+		return agent.EnrichmentOutcome{}
 	}
 
+	start := time.Now()
 	block, err := e.runLoop(ctx, sessionID, query)
+	timedOut := errors.Is(err, ErrEnrichmentTimeout)
 	if err != nil {
-		logging.Warn("context enrichment agent loop failed", "error", err)
+		logging.Warn("context enrichment agent loop failed", "session_id", sessionID, "error", err)
 	}
 	if block != "" {
-		return block
+		return agent.EnrichmentOutcome{
+			Block: block, Source: agent.EnrichmentSourceAgentLoop,
+			TimedOut: timedOut, Duration: time.Since(start),
+		}
 	}
 	if e.fallbackOff || e.fallback == nil {
-		return ""
+		return agent.EnrichmentOutcome{TimedOut: timedOut, Duration: time.Since(start)}
 	}
-	logging.Debug("context enrichment: falling back to search pipeline")
-	return e.fallback.EnrichContext(ctx, query)
+	logging.Debug("context enrichment: falling back to search pipeline", "session_id", sessionID)
+	fallbackBlock := e.fallback.EnrichContext(ctx, query)
+	outcome := agent.EnrichmentOutcome{Block: fallbackBlock, TimedOut: timedOut, Duration: time.Since(start)}
+	if fallbackBlock != "" {
+		outcome.Source = agent.EnrichmentSourceSearchFallback
+	}
+	return outcome
 }
 
 func (e *agentLoopEnricher) runLoop(ctx context.Context, sessionID, query string) (string, error) {
@@ -164,62 +208,84 @@ func (e *agentLoopEnricher) runLoop(ctx context.Context, sessionID, query string
 	}
 
 	runCtx, cancel := context.WithTimeout(ctx, e.timeout)
-	defer cancel()
+	defer cancel() // runs only after the drain below returns (the agent has finished).
 
 	loopSession, cleanup, err := e.createSession(runCtx, sessionID)
 	if err != nil {
 		return "", err
 	}
-	defer cleanup()
+	defer cleanup() // LIFO: runs before cancel(), also only after the drain returns.
 
 	done, err := enrichAgent.Run(runCtx, loopSession.ID, query)
 	if err != nil {
 		return "", fmt.Errorf("enrichment run failed: %w", err)
 	}
 
-	var result agent.AgentEvent
-	select {
-	case result = <-done:
-	case <-runCtx.Done():
-		enrichAgent.Cancel(loopSession.ID)
-		return "", fmt.Errorf("enrichment loop timed out after %s", e.timeout)
+	// Drain until the channel closes and use the terminal event as the result,
+	// instead of reading a single event (the original bug: the agent streams
+	// many events — status, deltas, tool calls, token usage — before the real
+	// one, so the first receive is essentially never it). On timeout this also
+	// cancels the run and keeps draining for a bounded grace period, so the
+	// agent's own in-flight write finishes before cleanup()/cancel() run.
+	final, timedOut := agent.CollectRunResult(runCtx, done, func() { enrichAgent.Cancel(loopSession.ID) })
+	if timedOut {
+		return "", fmt.Errorf("%w after %s", ErrEnrichmentTimeout, e.timeout)
 	}
-	if result.Error != nil {
-		return "", fmt.Errorf("enrichment loop error: %w", result.Error)
+	if final.Error != nil {
+		if errors.Is(final.Error, agent.ErrRequestCancelled) || errors.Is(final.Error, context.Canceled) {
+			return "", fmt.Errorf("enrichment loop cancelled: %w", final.Error)
+		}
+		return "", fmt.Errorf("enrichment loop error: %w", final.Error)
 	}
-	if result.Message.Role != message.Assistant {
-		return "", fmt.Errorf("enrichment loop produced no assistant message")
+	if final.Type != agent.AgentEventTypeResponse || final.Message.Role != message.Assistant {
+		return "", fmt.Errorf("enrichment loop ended without a response (last event %q)", final.Type)
 	}
 
 	e.chargeParent(ctx, sessionID, loopSession.ID)
 
-	return normalizeEnrichedBlock(result.Message.Content().String(), e.maxChars), nil
+	return normalizeEnrichedBlock(final.Message.Content().String(), e.maxChars), nil
 }
 
-// createSession creates the session the loop runs in. When the loop is visible (default)
-// and there is a parent chat session, it becomes a child session of it so the UI can show
-// the whole retrieval trace; otherwise it is a standalone session deleted after the run.
+// createSession creates the session the loop runs in. When there is a parent chat
+// session (the default), it becomes a child session of it so the UI can show the
+// live retrieval trace while the loop runs; otherwise (no parent, or hiddenInChat)
+// it is a standalone session never shown in the UI. Either way it is ephemeral:
+// the returned cleanup deletes it once the run finishes draining (see runLoop's
+// defer order), unless cfg.Debug is on. Before this, the child-session branch
+// never deleted its session at all, which is what let 28 "ctxenrich-*" sessions
+// (and their duplicated remembrances index entries) pile up — see
+// [[pando/fixes/context_enricher_agent_loop_first_event.md]].
 func (e *agentLoopEnricher) createSession(ctx context.Context, parentSessionID string) (session.Session, func(), error) {
-	noop := func() {}
 	if parentSessionID != "" && !e.hiddenInChat {
-		s, err := e.sessions.CreateTaskSession(ctx, "ctxenrich-"+uuid.NewString(), parentSessionID, "Context enrichment")
+		s, err := e.sessions.CreateTaskSession(ctx, ctxEnrichSessionIDPrefix+uuid.NewString(), parentSessionID, "Context enrichment")
 		if err != nil {
-			return session.Session{}, noop, fmt.Errorf("failed to create enrichment session: %w", err)
+			return session.Session{}, func() {}, fmt.Errorf("failed to create enrichment session: %w", err)
 		}
-		return s, noop, nil
+		return s, e.deleteSessionCleanup(s.ID), nil
 	}
 
 	s, err := e.sessions.Create(ctx, "Context enrichment")
 	if err != nil {
-		return session.Session{}, noop, fmt.Errorf("failed to create enrichment session: %w", err)
+		return session.Session{}, func() {}, fmt.Errorf("failed to create enrichment session: %w", err)
 	}
-	cleanup := func() {
-		// Detached context: the run context is already cancelled by the caller's defer.
-		if err := e.sessions.Delete(context.Background(), s.ID); err != nil {
-			logging.Debug("context enrichment: failed to delete hidden session", "error", err)
+	return s, e.deleteSessionCleanup(s.ID), nil
+}
+
+// deleteSessionCleanup returns the callback that removes an ephemeral enrichment
+// session after the run finishes draining. It is skipped when cfg.Debug is on so a
+// developer investigating a bad enrichment result can still open the run's child
+// session from the UI, at the cost of the DB litter this package otherwise avoids.
+func (e *agentLoopEnricher) deleteSessionCleanup(sessionID string) func() {
+	return func() {
+		if cfg := config.Get(); cfg != nil && cfg.Debug {
+			return
+		}
+		// Detached context: the run context (and its timeout) is already done by
+		// the time this fires — it runs from runLoop's defer, after the drain.
+		if err := e.sessions.Delete(context.Background(), sessionID); err != nil {
+			logging.Debug("context enrichment: failed to delete ephemeral session", "session_id", sessionID, "error", err)
 		}
 	}
-	return s, cleanup, nil
 }
 
 // chargeParent adds the loop's cost to the chat session so the enrichment model shows
