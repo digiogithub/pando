@@ -5,10 +5,17 @@ package dbproxy
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	sqlite3 "github.com/ncruces/go-sqlite3"
+	sqlite3driver "github.com/ncruces/go-sqlite3/driver"
+	_ "github.com/ncruces/go-sqlite3/embed"
 
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/ipc"
@@ -151,7 +158,7 @@ func TestDispatchWrite_BadParamsReturnsInvalidParams(t *testing.T) {
 }
 
 func TestWriteError_IsRetryable(t *testing.T) {
-	retryable := []WriteErrorCode{ErrCodeTimeout, ErrCodeUnreachable}
+	retryable := []WriteErrorCode{ErrCodeTimeout, ErrCodeUnreachable, ErrCodeBusy}
 	for _, code := range retryable {
 		werr := &WriteError{Code: code}
 		if !werr.IsRetryable() {
@@ -164,6 +171,93 @@ func TestWriteError_IsRetryable(t *testing.T) {
 		werr := &WriteError{Code: code}
 		if werr.IsRetryable() {
 			t.Errorf("expected %s to NOT be retryable", code)
+		}
+	}
+}
+
+// openBusyReproDB opens a temp-file SQLite DB configured exactly like the
+// production pool (BEGIN IMMEDIATE writes, a short busy_timeout) so a second
+// writer's BeginTx reliably fails with a genuine SQLITE_BUSY error — the same
+// failure mode the primary's own indexer hits when it calls
+// events.ReplaceSessionEvents directly (no IPC round trip involved).
+func openBusyReproDB(t *testing.T) *sql.DB {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "busy-repro.db")
+	dsn := fmt.Sprintf("file:%s?_txlock=immediate&_pragma=busy_timeout(50)", path)
+	sqlDB, err := sqlite3driver.Open(dsn)
+	if err != nil {
+		t.Fatalf("open busy-repro DB: %v", err)
+	}
+	t.Cleanup(func() { sqlDB.Close() })
+	if _, err := sqlDB.Exec(`CREATE TABLE t(x INTEGER)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	return sqlDB
+}
+
+func TestMapToWriteError_BusyAndLockedErrorsAreErrCodeBusy(t *testing.T) {
+	sqlDB := openBusyReproDB(t)
+	ctx := context.Background()
+
+	tx1, err := sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("BeginTx #1: %v", err)
+	}
+	defer tx1.Rollback() //nolint:errcheck
+
+	_, busyErr := sqlDB.BeginTx(ctx, nil)
+	if busyErr == nil {
+		t.Fatal("BeginTx #2 succeeded while #1 held the write lock open; want SQLITE_BUSY")
+	}
+	// The ncruces driver does not always wrap this as *sqlite3.Error — a bare
+	// BeginTx collision surfaces as a plain sqlite3.ExtendedErrorCode value
+	// instead — so assert via errors.Is (which isLockError also now uses)
+	// rather than assuming a concrete type.
+	if !errors.Is(busyErr, sqlite3.BUSY) {
+		t.Fatalf("expected errors.Is(err, sqlite3.BUSY), got %T: %v", busyErr, busyErr)
+	}
+
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"genuine SQLITE_BUSY from a real BeginTx collision", busyErr},
+		{"plain database is locked string (primary's own direct wrap)", errors.New("events: fts delete: sqlite3: database is locked")},
+		{"IPC RPC error string wrapping a lock failure (secondary side)", fmt.Errorf("ipc: RPC error -32000: %s", "events: fts delete: sqlite3: database is locked")},
+		{"database table is locked variant", errors.New("sqlite3: database table is locked")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			werr := mapToWriteError("ReplaceSessionEvents", tc.err)
+			if werr.Code != ErrCodeBusy {
+				t.Fatalf("mapToWriteError(%v) code = %s, want %s", tc.err, werr.Code, ErrCodeBusy)
+			}
+			if !werr.IsRetryable() {
+				t.Fatalf("mapToWriteError(%v) should be retryable", tc.err)
+			}
+			if !IsBusyOrLockedError(tc.err) {
+				t.Fatalf("IsBusyOrLockedError(%v) = false, want true", tc.err)
+			}
+			// And once it has round-tripped through mapToWriteError into a
+			// *WriteError (simulating the secondary side re-deriving the code
+			// after an IPC round trip), IsBusyOrLockedError must still say yes.
+			if !IsBusyOrLockedError(werr) {
+				t.Fatalf("IsBusyOrLockedError(%v) = false, want true", werr)
+			}
+		})
+	}
+}
+
+func TestIsBusyOrLockedError_NonBusyErrorsAreFalse(t *testing.T) {
+	cases := []error{
+		nil,
+		errors.New("boom"),
+		&WriteError{Code: ErrCodeInternal, Message: "boom"},
+		&WriteError{Code: ErrCodeConflict, Message: "UNIQUE constraint failed: sessions.id"},
+	}
+	for _, err := range cases {
+		if IsBusyOrLockedError(err) {
+			t.Errorf("IsBusyOrLockedError(%v) = true, want false", err)
 		}
 	}
 }

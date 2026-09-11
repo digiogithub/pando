@@ -17,11 +17,13 @@ import (
 )
 
 type recordingEmbedder struct {
-	texts []string
-	err   error
+	texts     []string
+	err       error
+	callCount int
 }
 
 func (e *recordingEmbedder) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
+	e.callCount++
 	if e.err != nil {
 		return nil, e.err
 	}
@@ -191,6 +193,49 @@ func TestIndexSessionConversationSkipsEphemeralSessions(t *testing.T) {
 		if err := app.indexSessionConversation(context.Background(), svc, id); err != nil {
 			t.Fatalf("indexSessionConversation(%q) = %v, want nil (ephemeral sessions must be skipped)", id, err)
 		}
+	}
+}
+
+// TestShouldIndexOnEvent pins the finished-message filter (#4 of
+// [[pando/plans/sqlite_contention_fix_roadmap.md]]): a Created event always
+// qualifies (new user messages, the empty pre-stream assistant message, and
+// the one-shot tool-result message — none of which get a follow-up Update),
+// while an Updated event only qualifies once message.Message.IsFinished is
+// true, so the mid-stream ThinkingDelta/ContentDelta/ToolCall Updates
+// agent.go persists on every provider event never trigger a run.
+func TestShouldIndexOnEvent(t *testing.T) {
+	unfinishedAssistant := message.Message{
+		Role:  message.Assistant,
+		Parts: []message.ContentPart{message.TextContent{Text: "partial"}},
+	}
+	finishedAssistant := message.Message{
+		Role: message.Assistant,
+		Parts: []message.ContentPart{
+			message.TextContent{Text: "done"},
+			message.Finish{Reason: message.FinishReasonEndTurn},
+		},
+	}
+	userMsg := message.Message{Role: message.User, Parts: []message.ContentPart{message.TextContent{Text: "hi"}}}
+	toolMsg := message.Message{Role: message.Tool, Parts: []message.ContentPart{message.ToolResult{ToolCallID: "t1", Content: "ok"}}}
+
+	cases := []struct {
+		name string
+		ev   pubsub.Event[message.Message]
+		want bool
+	}{
+		{"created user message qualifies", pubsub.Event[message.Message]{Type: pubsub.CreatedEvent, Payload: userMsg}, true},
+		{"created empty/pre-stream assistant message qualifies", pubsub.Event[message.Message]{Type: pubsub.CreatedEvent, Payload: unfinishedAssistant}, true},
+		{"created tool-result message qualifies (no follow-up Update ever arrives)", pubsub.Event[message.Message]{Type: pubsub.CreatedEvent, Payload: toolMsg}, true},
+		{"mid-stream update without a Finish part is skipped", pubsub.Event[message.Message]{Type: pubsub.UpdatedEvent, Payload: unfinishedAssistant}, false},
+		{"final update with a Finish part qualifies", pubsub.Event[message.Message]{Type: pubsub.UpdatedEvent, Payload: finishedAssistant}, true},
+		{"deleted events never qualify", pubsub.Event[message.Message]{Type: pubsub.DeletedEvent, Payload: finishedAssistant}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldIndexOnEvent(tc.ev); got != tc.want {
+				t.Errorf("shouldIndexOnEvent(%s) = %v, want %v", tc.name, got, tc.want)
+			}
+		})
 	}
 }
 

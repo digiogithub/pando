@@ -131,12 +131,27 @@ func isLockError(err error) bool {
 	if err == nil {
 		return false
 	}
+	// The ncruces driver does not always wrap failures in *sqlite3.Error: a
+	// plain BeginTx lock collision (verified empirically — see
+	// TestMapToWriteError_BusyAndLockedErrorsAreErrCodeBusy) surfaces as a
+	// bare sqlite3.ExtendedErrorCode/sqlite3.ErrorCode value instead, which
+	// errors.As into *sqlite3.Error does not match. errors.Is covers both
+	// shapes: *sqlite3.Error.Is compares codes directly, and
+	// ExtendedErrorCode.Is compares against an ErrorCode target the same way.
+	if errors.Is(err, sqlite3.BUSY) || errors.Is(err, sqlite3.LOCKED) {
+		return true
+	}
 	var e *sqlite3.Error
 	if errors.As(err, &e) {
 		c := e.Code()
 		return c == sqlite3.BUSY || c == sqlite3.LOCKED
 	}
-	// String fallback for wrapped or driver-specific error representations.
+	// String fallback for wrapped or driver-specific error representations,
+	// and for an error that already crossed the IPC boundary as plain text
+	// (the primary's remembrances dispatcher returns the raw store error,
+	// which the JSON-RPC layer flattens to a message-only rpcError before the
+	// secondary's ipc.Client.Call re-wraps it — no typed error survives that
+	// round trip either way).
 	s := strings.ToLower(err.Error())
 	return strings.Contains(s, "database is locked") ||
 		strings.Contains(s, "database table is locked") ||
