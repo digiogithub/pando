@@ -1,15 +1,10 @@
 ---
-created_at: 2026-09-11T12:36:39.296696373Z
-updated_at: 2026-09-11T18:19:12.605508217Z
-tags:
-    - plan
-    - ipc
-    - sqlite
-    - mcp-server
+created_at: 2026-09-11T19:07:15.549828414Z
+updated_at: 2026-09-11T19:08:58.468750654Z
 ---
 # Plan: put `pando mcp-server` (and other direct-DB entry points) on the IPC primary/secondary bootstrap
 
-Date: 2026-09-11. Status: **P0 (failover correctness, G1–G6) IMPLEMENTED 2026-09-11**, see [[pando/fixes/ipc_failover_p0_inplace_promotion.md]]. P1–P6 and G7 not started (originally design only). Author: Claude (analysis task, point 1 of 3).
+Date: 2026-09-11. Status: **P0 (failover correctness, G1–G6) IMPLEMENTED 2026-09-11**, see [[pando/fixes/ipc_failover_p0_inplace_promotion.md]]. **P1 (shared `wireIPC`, `BootstrapWithOptions`, `ModeMCP`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_wiring_p1_shared_wireipc.md]]. P2–P6 and G7 not started. Author: Claude (analysis task, point 1 of 3).
 Builds on: [[pando/analysis/sqlite_locked_interrupted_errors.md]], [[pando/plans/unified_single_writer_master_plan.md]], [[pando/plans/unified_single_writer_phase1_bootstrap.md]], [[pando/plans/unified_single_writer_phase3_serialisation.md]], [[pando/plans/unified_single_writer_phase5_failover.md]], [[pando/plans/inter_instance_phase4_completed.md]], [[pando/plans/inter_instance_ipc_plan.md]], [[pando/analysis/remembrances-single-writer-proxy-gap-2026-05-27.md]], [[pando/plans/remembrances_ipc_proxy_implementation_plan.md]], [[pando/fixes/sqlite-connection-pool-exhaustion-mcp-server.md]].
 
 Target scenario: TUI/desktop/ACP plus one or more `pando mcp-server --no-http` processes (started by Claude Code, Copilot, Cursor...) in the same project, all sharing `.pando/data/pando.db`. Any of them may start first. mcp-server processes come and go, so handover and failover are on the normal path, not rare edge cases.
@@ -251,11 +246,16 @@ The session indexer stays per process, because it only sees its own message brok
     - The lock file is truncated, not unlinked, on release (this removes a two-primaries unlink race).
     - The secondary watcher and the promotion bind the lock-file ports, with a bind retry.
     - `startPrimaryServices` is only a hook (P3).
-- **P1 — `cmd/ipc_wiring.go` `wireIPC`.**
-  - Migrate `cmd/root.go` (TUI + ACP), `serve.go`, `desktop.go`, `app.go`.
-  - `BootstrapWithOptions`.
+- **P1 — `cmd/ipc_wiring.go` `wireIPC`.** **IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_wiring_p1_shared_wireipc.md]].
+  - Migrated `cmd/root.go` (TUI + ACP), `serve.go`, `desktop.go`, `app.go` to `wireIPC`. As a side effect, serve/desktop/app primaries now also get `SetupIPC` (the remembrances dispatcher was previously never registered there), `changepub` (app.go was silently missing it), and `rt.Watcher.Start` — not just the secondary branch and ordered handover the plan asked for.
+  - `BootstrapWithOptions(ctx, workdir, id, Options{ProbeTimeout, AllowKillStalePrimary})`; `Bootstrap` now calls it with `DefaultOptions()` (10 s, kill allowed).
   - `instanceregistry.ModeMCP`.
-  - `registerBridgeHandlers` gains an `AcceptDelegations` override.
+  - `registerBridgeHandlers` gains an `acceptOverride *bool` parameter, resolved by the new `resolveAcceptDelegations`.
+  - Also fixed, since it blocked validating the ordered handover end-to-end: ACP had no SIGINT/SIGTERM handler at all (`signal.NotifyContext` added around the ACP main `ctx`).
+  - Deviations from the sketch, with reasons in the change doc:
+    - `wireIPC`'s secondary branch does not call `rt.Watcher.Start` again — `ipcruntime.Bootstrap` already starts the secondary watcher unconditionally (P0), and starting it twice would double-close its `done` channel.
+    - The primary and promotion wiring share one `primaryBusSetupFunc` (an `app.IPCBusSetupFunc`) instead of two separate blocks, so bridge heartbeats now start as soon as handlers are registered in both cases (previously TUI/ACP's own bootstrap-time wiring started the bridge only after `bus.Start` succeeded).
+  - Validated with a two-process smoke test: `pando serve` (primary) SIGTERM'd, `pando acp` (secondary) promoted in 0.115 s, rebound serve's ports, and a `session/new` call after promotion wrote a real row — the serve entrypoint specifically, which had no working secondary/handover path before P1.
 - **P2 — mcp-server on the bootstrap.** `cmd/mcp_server.go`: absolute cwd, Bootstrap(no-kill, 3 s), `wireIPC(ModeMCP)`, signal/EOF handling, stdout-clean test.
 - **P3 — role-aware services.** `AppOptions.IPCRole`, `startPrimaryServices` in `internal/app/app.go`, `remembrances*.go`, cron gating.
 - **P4 — other entry points.** agui-serve → wireIPC; cronjob → Bootstrap + oneshot; `kb.relink` RPC; `db.ConnectCLI` for project/design.

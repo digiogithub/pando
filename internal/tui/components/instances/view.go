@@ -456,6 +456,8 @@ func modeStr(e *instanceregistry.Entry) string {
 		return "ACP"
 	case instanceregistry.ModeProxy:
 		return "PRX"
+	case instanceregistry.ModeMCP:
+		return "MCP"
 	default:
 		return "TUI"
 	}

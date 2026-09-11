@@ -133,7 +133,51 @@ func canonicalWorkdir(workdir string) string {
 	return abs
 }
 
-// Bootstrap runs the unified startup sequence for the given workdir.
+// Options customizes Bootstrap's stale-primary handling. Use DefaultOptions
+// (what Bootstrap itself uses) unless an entrypoint needs a different policy —
+// see BootstrapWithOptions.
+type Options struct {
+	// ProbeTimeout bounds how long a freshly started secondary waits for the
+	// existing primary to answer ipc.ping before treating it as unresponsive.
+	// Zero falls back to stalePrimaryProbeTimeout (10s).
+	ProbeTimeout time.Duration
+
+	// AllowKillStalePrimary, when true, SIGKILLs an unresponsive primary so
+	// this instance can take over — Bootstrap's long-standing behaviour, and
+	// correct for a TUI/ACP/serve/desktop/app instance where the previous
+	// occupant of this workdir is presumed to be another one of the same kind.
+	//
+	// When false, an unresponsive primary is left alone: this instance
+	// continues as a (degraded) secondary instead. Direct-first sqlc writes
+	// still work as normal (DBProxy always tries them locally before
+	// forwarding), but every remembrances write (which always proxies, never
+	// direct) fails loudly once its forward times out, because there is
+	// nobody alive to answer it. Intended for short-lived, low-trust
+	// entrypoints (P2's ephemeral mcp-server) that must never kill a user's
+	// long-running TUI/desktop/serve instance just because it is slow, under a
+	// debugger, or SIGSTOPped to answer one probe.
+	AllowKillStalePrimary bool
+}
+
+// DefaultOptions returns Bootstrap's long-standing policy: the 10s probe
+// timeout (stalePrimaryProbeTimeout) and permission to kill an unresponsive
+// primary.
+func DefaultOptions() Options {
+	return Options{
+		ProbeTimeout:          stalePrimaryProbeTimeout,
+		AllowKillStalePrimary: true,
+	}
+}
+
+// Bootstrap runs the unified startup sequence for the given workdir using
+// DefaultOptions. See BootstrapWithOptions for the full sequence and for
+// entrypoints that need a different stale-primary policy.
+func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResult, error) {
+	return BootstrapWithOptions(ctx, workdir, instanceID, DefaultOptions())
+}
+
+// BootstrapWithOptions runs the unified startup sequence for the given
+// workdir.
 //
 //  1. Derive deterministic PUB/RPC ports from the path.
 //  2. Attempt to acquire the exclusive IPC lock.
@@ -142,7 +186,14 @@ func canonicalWorkdir(workdir string) string {
 //
 // On lock error the function continues as primary so the caller does not lose
 // functionality — consistent with the existing root.go behaviour.
-func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResult, error) {
+//
+// opts controls the stale-primary probe timeout and whether an unresponsive
+// primary is killed (see Options). A zero opts.ProbeTimeout falls back to
+// stalePrimaryProbeTimeout.
+func BootstrapWithOptions(ctx context.Context, workdir, instanceID string, opts Options) (*BootstrapResult, error) {
+	if opts.ProbeTimeout <= 0 {
+		opts.ProbeTimeout = stalePrimaryProbeTimeout
+	}
 	workdir = canonicalWorkdir(workdir)
 	pubPort, rpcPort := ipc.PortsForPath(workdir)
 
@@ -154,11 +205,25 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 	// We acquired the secondary role, which means another process holds the lock.
 	// That process may, however, be suspended (SIGSTOP) or hung while still
 	// holding the flock — in which case this secondary would block forever on the
-	// DB proxy. Probe the primary; if it does not answer within the timeout, kill
-	// it and re-acquire the lock so we become the primary instead of hanging.
+	// DB proxy. Probe the primary; if it does not answer within the timeout,
+	// either kill it and re-acquire the lock so we become the primary instead of
+	// hanging (opts.AllowKillStalePrimary), or continue as a degraded secondary
+	// without touching it.
 	if !isPrimary && lockErr == nil && lockInfo != nil {
-		if killStalePrimary(ctx, workdir, lockInfo) {
-			isPrimary, lockInfo, lockFile, lockErr = reacquireAfterKill(workdir, instanceID, pubPort, rpcPort)
+		if opts.AllowKillStalePrimary {
+			if killStalePrimary(ctx, workdir, lockInfo, opts.ProbeTimeout) {
+				isPrimary, lockInfo, lockFile, lockErr = reacquireAfterKill(workdir, instanceID, pubPort, rpcPort)
+			}
+		} else if lockInfo.PID > 0 && lockInfo.PID != os.Getpid() {
+			rpcAddr := fmt.Sprintf("tcp://127.0.0.1:%d", lockInfo.RPCPort)
+			if !primaryResponds(ctx, rpcAddr, opts.ProbeTimeout) {
+				logging.Warn("IPC: primary did not respond within the probe timeout; continuing as a degraded secondary instead of killing it",
+					"workdir", workdir,
+					"primary_pid", lockInfo.PID,
+					"primary_instance", lockInfo.InstanceID,
+					"timeout", opts.ProbeTimeout,
+				)
+			}
 		}
 	}
 
@@ -325,17 +390,17 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 }
 
 // killStalePrimary probes the primary recorded in lockInfo. If it does not
-// respond to pingMethod within stalePrimaryProbeTimeout (e.g. it is suspended or
-// hung while still holding the flock), the primary process is killed so this
-// instance can take over. Returns true when the primary was killed and the lock
-// should be re-acquired.
-func killStalePrimary(ctx context.Context, workdir string, lockInfo *ipc.LockInfo) bool {
+// respond to pingMethod within timeout (e.g. it is suspended or hung while
+// still holding the flock), the primary process is killed so this instance
+// can take over. Returns true when the primary was killed and the lock should
+// be re-acquired.
+func killStalePrimary(ctx context.Context, workdir string, lockInfo *ipc.LockInfo, timeout time.Duration) bool {
 	if lockInfo == nil || lockInfo.PID <= 0 || lockInfo.PID == os.Getpid() {
 		return false
 	}
 
 	rpcAddr := fmt.Sprintf("tcp://127.0.0.1:%d", lockInfo.RPCPort)
-	if primaryResponds(ctx, rpcAddr) {
+	if primaryResponds(ctx, rpcAddr, timeout) {
 		return false
 	}
 
@@ -343,7 +408,7 @@ func killStalePrimary(ctx context.Context, workdir string, lockInfo *ipc.LockInf
 		"workdir", workdir,
 		"primary_pid", lockInfo.PID,
 		"primary_instance", lockInfo.InstanceID,
-		"timeout", stalePrimaryProbeTimeout,
+		"timeout", timeout,
 	)
 
 	if err := killProcess(lockInfo.PID); err != nil {
@@ -357,11 +422,11 @@ func killStalePrimary(ctx context.Context, workdir string, lockInfo *ipc.LockInf
 }
 
 // primaryResponds reports whether the primary at rpcAddr answers an RPC within
-// stalePrimaryProbeTimeout. Any reply — including a "method not found" error from
-// an older primary that lacks the ping handler — counts as alive; only a timeout
-// (or inability to reach the RPC loop at all) counts as unresponsive.
-func primaryResponds(ctx context.Context, rpcAddr string) bool {
-	probeCtx, cancel := context.WithTimeout(ctx, stalePrimaryProbeTimeout)
+// timeout. Any reply — including a "method not found" error from an older
+// primary that lacks the ping handler — counts as alive; only a timeout (or
+// inability to reach the RPC loop at all) counts as unresponsive.
+func primaryResponds(ctx context.Context, rpcAddr string, timeout time.Duration) bool {
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	client, err := ipc.NewClient(probeCtx)

@@ -180,22 +180,39 @@ func TestSelectReleaseForTargetsPrefersLinuxX64Asset(t *testing.T) {
 	}
 }
 
-func TestRunACPServerWithOptions_ConfiguresSecondaryIPCFailoverPath(t *testing.T) {
-	source, err := os.ReadFile("root.go")
-	if err != nil {
-		t.Fatalf("read root.go: %v", err)
+// TestEntrypointsUseSharedIPCWiring guards P1 of
+// pando/plans/mcp_server_ipc_bootstrap.md: TUI, ACP, serve, desktop and app
+// must all wire IPC through the single cmd/ipc_wiring.go helper instead of
+// each copy-pasting the primary/secondary setup. It replaces the older
+// TestRunACPServerWithOptions_ConfiguresSecondaryIPCFailoverPath, which only
+// checked ACP's (then hand-rolled) secondary wiring.
+func TestEntrypointsUseSharedIPCWiring(t *testing.T) {
+	for _, file := range []string{"root.go", "serve.go", "desktop.go", "app.go"} {
+		source, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		if !strings.Contains(string(source), "wireIPC(") {
+			t.Errorf("%s does not call wireIPC", file)
+		}
 	}
-	body := string(source)
+
+	wiringSource, err := os.ReadFile("ipc_wiring.go")
+	if err != nil {
+		t.Fatalf("read ipc_wiring.go: %v", err)
+	}
+	body := string(wiringSource)
 
 	checks := []string{
 		"pandoApp.SetIPCSecondaryContext(",
 		"rt.Watcher.SetPromoteCallback(pandoApp.PromoteToPrimary)",
-		"pandoApp.SetupIPC(acpBus)",
+		"pandoApp.SetupIPC(bus)",
 		"rt.Watcher.Start(ctx)",
+		"pandoApp.SetIPCPrimaryHandover(",
 	}
 	for _, needle := range checks {
 		if !strings.Contains(body, needle) {
-			t.Fatalf("runACPServerWithOptions is missing %q", needle)
+			t.Errorf("ipc_wiring.go is missing %q", needle)
 		}
 	}
 }

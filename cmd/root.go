@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -22,12 +23,7 @@ import (
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/instanceregistry"
-	"github.com/digiogithub/pando/internal/ipc"
-	"github.com/digiogithub/pando/internal/ipc/bridge"
-	"github.com/digiogithub/pando/internal/ipc/changepub"
-	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
-	"github.com/digiogithub/pando/internal/ipc/writecoordinator"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
@@ -227,18 +223,6 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			logging.Info("IPC: auto-failover enabled")
 		}
 
-		_ = instanceregistry.Announce(&instanceregistry.Entry{
-			InstanceID: instanceID,
-			Path:       cwd,
-			PID:        os.Getpid(),
-			PubPort:    rt.PubPort,
-			RPCPort:    rt.RPCPort,
-			StartedAt:  time.Now(),
-			Mode:       instanceregistry.ModeTUI,
-			IsPrimary:  rt.Role == ipcruntime.RolePrimary,
-		})
-		defer func() { _ = instanceregistry.Revoke(instanceID) }()
-
 		conn := rt.SQLDB
 		logging.Debug("Database connected")
 
@@ -248,61 +232,8 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			return err
 		}
 
-		// Start IPC bus and register handlers only on the primary instance.
-		if rt.Role == ipcruntime.RolePrimary {
-			bus := rt.Bus
-			coord := writecoordinator.New(ctx, db.New(conn), 256)
-			defer coord.Shutdown()
-			pub := changepub.NewBusPublisher(bus.Publish, instanceID, cwd)
-			coord.SetPublisher(pub)
-			dbproxy.RegisterHandlersWithCoordinator(bus, coord)
-			registerBridgeHandlers(bus, instanceID, pandoApp)
-			pandoApp.SetupIPC(bus)
-			// Ordered handover on shutdown: drain coord, release the lock, then
-			// announce instance.shutdown and close the bus (App.Shutdown).
-			pandoApp.SetIPCPrimaryHandover(coord, rt.ReleaseLock)
-			if busErr := bus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
-				logging.Warn("IPC: failed to start bus, continuing without IPC", "error", busErr)
-			} else {
-				br := bridge.New(bus, pandoApp.Sessions, pandoApp.CoderAgent)
-				br.Start(ctx)
-				// Start the primary failover watcher after the bus is up so heartbeat
-				// publishes have a live socket. The bridge also publishes heartbeats, but the
-				// watcher covers the shutdown signal path independently.
-				rt.Watcher.Start(ctx)
-			}
-		} else {
-			// Secondary instance: register IPC context on the app so it can perform
-			// per-prompt probes and promote itself to primary on failure.
-			//
-			// busSetupFunc is the closure that recreates the full primary wiring
-			// (writecoordinator, changepub, bridge) using the new RW connection and Bus.
-			// It captures the current pandoApp and cmd-level vars by reference so it can
-			// reference them after promotion.
-			busSetupFunc := func(busCtx context.Context, newBus *ipc.Bus, rwConn *sql.DB) (app.PrimaryWriteCoordinator, error) {
-				coord := writecoordinator.New(busCtx, db.New(rwConn), 256)
-				pub := changepub.NewBusPublisher(newBus.Publish, instanceID, cwd)
-				coord.SetPublisher(pub)
-				dbproxy.RegisterHandlersWithCoordinator(newBus, coord)
-				registerBridgeHandlers(newBus, instanceID, pandoApp)
-				br := bridge.New(newBus, pandoApp.Sessions, pandoApp.CoderAgent)
-				br.Start(busCtx)
-				return coord, nil
-			}
-			pandoApp.SetIPCSecondaryContext(
-				rt.IPCClient,
-				rt.SQLDB,
-				cwd,
-				instanceID,
-				rt.PubPort,
-				rt.RPCPort,
-				rt.Watcher,
-				busSetupFunc,
-			)
-			// Register the promotion callback so the watcher can call PromoteToPrimary
-			// when it wins the lock race.
-			rt.Watcher.SetPromoteCallback(pandoApp.PromoteToPrimary)
-		}
+		unwireIPC := wireIPC(ctx, rt, pandoApp, instanceID, cwd, instanceregistry.ModeTUI, wireOptions{})
+		defer unwireIPC()
 
 		app := pandoApp
 		logging.Debug("App initialized")
@@ -602,7 +533,19 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 		cfg.ACP.AutoPermission = true
 	}
 
-	ctx := context.Background()
+	// Run the normal shutdown path (drain, release the IPC lock, announce
+	// instance.shutdown, close the bus, then the rest of App.Shutdown) on
+	// SIGINT/SIGTERM. Without this, a signal killed the process outright and
+	// skipped the ordered handover (see the P0 fix doc's risks): the kernel
+	// still frees the flock, but any writes secondaries had already forwarded
+	// are lost instead of drained. Logged via slog only — stdout must stay pure
+	// JSON-RPC.
+	ctx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
+	go func() {
+		<-ctx.Done()
+		logging.Info("acp: shutdown signal received")
+	}()
 
 	// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
 	acpInstanceID := uuid.New().String()
@@ -630,62 +573,11 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 	}
 	pandoApp.Permissions.SetGlobalAutoApprove(true)
 
-	_ = instanceregistry.Announce(&instanceregistry.Entry{
-		InstanceID: acpInstanceID,
-		Path:       cwd,
-		PID:        os.Getpid(),
-		PubPort:    rt.PubPort,
-		RPCPort:    rt.RPCPort,
-		StartedAt:  time.Now(),
-		Mode:       instanceregistry.ModeACP,
-		IsPrimary:  rt.Role == ipcruntime.RolePrimary,
-	})
-	defer func() { _ = instanceregistry.Revoke(acpInstanceID) }()
-
-	// Start IPC bus and register handlers only on the primary instance.
-	if rt.Role == ipcruntime.RolePrimary {
-		acpBus := rt.Bus
-		acpCoord := writecoordinator.New(ctx, db.New(conn), 256)
-		acpPub := changepub.NewBusPublisher(acpBus.Publish, acpInstanceID, cwd)
-		acpCoord.SetPublisher(acpPub)
-		dbproxy.RegisterHandlersWithCoordinator(acpBus, acpCoord)
-		registerBridgeHandlers(acpBus, acpInstanceID, pandoApp)
-		pandoApp.SetupIPC(acpBus)
-		// Ordered handover on shutdown (the deferred pandoApp.Shutdown): drain
-		// and stop acpCoord, release the lock, then announce instance.shutdown
-		// and close the bus. No separate `defer acpCoord.Shutdown()`: it would
-		// run first (LIFO) and discard queued writes instead of draining them.
-		pandoApp.SetIPCPrimaryHandover(acpCoord, rt.ReleaseLock)
-		if busErr := acpBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
-			logger.Printf("IPC: ACP bus failed to start (instances browser will not see this instance): %v", busErr)
-		} else {
-			acpBridge := bridge.New(acpBus, pandoApp.Sessions, pandoApp.CoderAgent)
-			acpBridge.Start(ctx)
-			rt.Watcher.Start(ctx)
-		}
-	} else {
-		busSetupFunc := func(busCtx context.Context, newBus *ipc.Bus, rwConn *sql.DB) (app.PrimaryWriteCoordinator, error) {
-			coord := writecoordinator.New(busCtx, db.New(rwConn), 256)
-			pub := changepub.NewBusPublisher(newBus.Publish, acpInstanceID, cwd)
-			coord.SetPublisher(pub)
-			dbproxy.RegisterHandlersWithCoordinator(newBus, coord)
-			registerBridgeHandlers(newBus, acpInstanceID, pandoApp)
-			br := bridge.New(newBus, pandoApp.Sessions, pandoApp.CoderAgent)
-			br.Start(busCtx)
-			return coord, nil
-		}
-		pandoApp.SetIPCSecondaryContext(
-			rt.IPCClient,
-			rt.SQLDB,
-			cwd,
-			acpInstanceID,
-			rt.PubPort,
-			rt.RPCPort,
-			rt.Watcher,
-			busSetupFunc,
-		)
-		rt.Watcher.SetPromoteCallback(pandoApp.PromoteToPrimary)
-	}
+	// wireIPC logs a bus-start failure via logging.Warn (never to stdout, which
+	// must stay pure JSON-RPC), same as every other entrypoint; it still
+	// registers the ordered handover either way.
+	unwireIPC := wireIPC(ctx, rt, pandoApp, acpInstanceID, cwd, instanceregistry.ModeACP, wireOptions{})
+	defer unwireIPC()
 
 	// Build adapters (defined below) that bridge internal services to ACP interfaces,
 	// avoiding import cycles between internal/mesnada/acp and internal/llm/agent.
@@ -720,7 +612,14 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 	go pandoAgent.StartNotificationBroadcast(ctx)
 
 	transport := acpPkg.NewStdioTransport(pandoAgent, logger)
-	return transport.Run(ctx)
+	if err := transport.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		return err
+	}
+	// A SIGINT/SIGTERM-triggered cancellation is a graceful shutdown (the
+	// deferred rt.Cleanup/pandoApp.Shutdown/CronService.Stop above already ran
+	// the ordered handover), not a failure — matching how serve/desktop/app
+	// treat http.ErrServerClosed after their own signal-triggered Shutdown.
+	return nil
 }
 
 // acpAgentAdapter adapts agent.Service to acpPkg.AgentService.

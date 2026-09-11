@@ -15,10 +15,7 @@ import (
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/instanceregistry"
-	"github.com/digiogithub/pando/internal/ipc/bridge"
-	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
-	"github.com/digiogithub/pando/internal/ipc/writecoordinator"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/tlsutil"
 	"github.com/digiogithub/pando/internal/version"
@@ -144,34 +141,9 @@ func runAppMode(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to create app server: %w", err)
 	}
 
-	_ = instanceregistry.Announce(&instanceregistry.Entry{
-		InstanceID: instanceID,
-		Path:       cwd,
-		PID:        os.Getpid(),
-		PubPort:    rt.PubPort,
-		RPCPort:    rt.RPCPort,
-		StartedAt:  time.Now(),
-		Mode:       instanceregistry.ModeWebUI,
-		IsPrimary:  rt.Role == ipcruntime.RolePrimary,
-	})
-	defer func() { _ = instanceregistry.Revoke(instanceID) }()
-
-	// Start IPC bus and register handlers only on the primary instance.
-	if rt.Role == ipcruntime.RolePrimary {
-		pandoApp := server.PandoApp()
-		appBus := rt.Bus
-		appCoord := writecoordinator.New(ctx, rt.Querier, 256)
-		defer appCoord.Shutdown()
-		dbproxy.RegisterHandlersWithCoordinator(appBus, appCoord)
-		registerBridgeHandlers(appBus, instanceID, pandoApp)
-		if busErr := appBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
-			logging.Warn("IPC: app mode failed to start bus", "error", busErr)
-		} else {
-			appBridge := bridge.New(appBus, pandoApp.Sessions, pandoApp.CoderAgent)
-			appBridge.Start(ctx)
-			logging.Debug("IPC: app mode announced", "instanceID", instanceID, "pubPort", rt.PubPort, "rpcPort", rt.RPCPort)
-		}
-	}
+	pandoApp := server.PandoApp()
+	unwireIPC := wireIPC(ctx, rt, pandoApp, instanceID, cwd, instanceregistry.ModeWebUI, wireOptions{})
+	defer unwireIPC()
 
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignals()

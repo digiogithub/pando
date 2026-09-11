@@ -210,6 +210,26 @@ func TestGetPrunesStaleEntry(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr), "stale entry file should be removed by Get()")
 }
 
+// TestModeMCPRoundTrips guards P1's new Mode value (unused until P2 wires
+// `pando mcp-server` onto the IPC bootstrap): it must announce, list and Get
+// like every other mode instead of being silently coerced to something else.
+func TestModeMCPRoundTrips(t *testing.T) {
+	cleanup := setupTestDir(t)
+	defer cleanup()
+
+	id := uuid.New().String()
+	entry := newTestEntry(id)
+	entry.Mode = ModeMCP
+
+	require.NoError(t, Announce(entry))
+
+	r := New()
+	got, err := r.Get(id)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, ModeMCP, got.Mode)
+}
+
 func TestMultipleInstancesSameProcess(t *testing.T) {
 	cleanup := setupTestDir(t)
 	defer cleanup()

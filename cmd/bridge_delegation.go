@@ -37,6 +37,19 @@ func (r agentMessageRunner) RunMessage(ctx context.Context, sessionID string, co
 	return nil
 }
 
+// resolveAcceptDelegations resolves the effective AcceptDelegations setting for
+// an instance's bridge handlers. acceptOverride, when non-nil, takes precedence
+// over the persisted config default — used by wireIPC's ephemeral entrypoints
+// (P2's mcp-server) to force delegations off regardless of what the user's
+// config says. nil (every current long-lived entrypoint) keeps today's
+// behaviour: config.Get().Mesnada.Delegation.AcceptDelegations.
+func resolveAcceptDelegations(acceptOverride *bool) bool {
+	if acceptOverride != nil {
+		return *acceptOverride
+	}
+	return config.Get().Mesnada.Delegation.AcceptDelegations
+}
+
 // registerBridgeHandlers wires the IPC JSON-RPC handlers for an instance bus,
 // including the opt-in hot-peer delegation handler (B3, `delegation.run`) when
 // the instance has AcceptDelegations enabled and a coder agent is available.
@@ -46,8 +59,11 @@ func (r agentMessageRunner) RunMessage(ctx context.Context, sessionID string, co
 // advertises AcceptsDelegations=false over instance.ping, so peers never route a
 // delegation to it. Centralising this keeps every entrypoint (tui/acp/serve/
 // app/desktop, plus failover-promoted buses) consistent.
-func registerBridgeHandlers(bus *ipc.Bus, instanceID string, pandoApp *app.App) {
-	accept := config.Get().Mesnada.Delegation.AcceptDelegations
+//
+// acceptOverride lets a caller (wireIPC) override the configured default; see
+// resolveAcceptDelegations. Every current entrypoint passes nil.
+func registerBridgeHandlers(bus *ipc.Bus, instanceID string, pandoApp *app.App, acceptOverride *bool) {
+	accept := resolveAcceptDelegations(acceptOverride)
 
 	var delRunner bridge.DelegationRunner
 	if accept && pandoApp.CoderAgent != nil {

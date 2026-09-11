@@ -40,17 +40,17 @@ func TestProcessAlive(t *testing.T) {
 func TestKillStalePrimaryNeverTargetsSelf(t *testing.T) {
 	self := &ipc.LockInfo{PID: os.Getpid()}
 
-	if killStalePrimary(context.Background(), t.TempDir(), self) {
+	if killStalePrimary(context.Background(), t.TempDir(), self, stalePrimaryProbeTimeout) {
 		t.Fatal("killStalePrimary targeted our own PID; must never kill self")
 	}
 }
 
 // TestKillStalePrimaryIgnoresInvalidPID ensures we do not act on a malformed lock.
 func TestKillStalePrimaryIgnoresInvalidPID(t *testing.T) {
-	if killStalePrimary(context.Background(), t.TempDir(), &ipc.LockInfo{PID: 0}) {
+	if killStalePrimary(context.Background(), t.TempDir(), &ipc.LockInfo{PID: 0}, stalePrimaryProbeTimeout) {
 		t.Fatal("killStalePrimary acted on PID 0")
 	}
-	if killStalePrimary(context.Background(), t.TempDir(), nil) {
+	if killStalePrimary(context.Background(), t.TempDir(), nil, stalePrimaryProbeTimeout) {
 		t.Fatal("killStalePrimary acted on nil lockInfo")
 	}
 }

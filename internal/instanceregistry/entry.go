@@ -18,6 +18,11 @@ const (
 	ModeNonInteractive Mode = "noninteractive"
 	// ModeProxy identifies an LLM proxy server instance.
 	ModeProxy Mode = "proxy"
+	// ModeMCP identifies an ephemeral `pando mcp-server` instance spawned by an
+	// editor/agent over stdio. Unused until P2 (pando/plans/mcp_server_ipc_bootstrap.md)
+	// wires mcp_server.go onto the IPC bootstrap; defined now so P1's wireIPC and
+	// the registry Mode type are ready for it.
+	ModeMCP Mode = "mcp"
 )
 
 // Entry describes a running Pando instance. It is serialized as JSON and

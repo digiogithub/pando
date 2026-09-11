@@ -13,11 +13,7 @@ import (
 	"github.com/digiogithub/pando/internal/api"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/instanceregistry"
-	"github.com/digiogithub/pando/internal/ipc/bridge"
-	"github.com/digiogithub/pando/internal/ipc/changepub"
-	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
-	"github.com/digiogithub/pando/internal/ipc/writecoordinator"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/tlsutil"
 	"github.com/digiogithub/pando/internal/version"
@@ -147,36 +143,9 @@ This is the backend for the Pando Desktop/Web UI.`,
 			return fmt.Errorf("failed to create API server: %w", err)
 		}
 
-		_ = instanceregistry.Announce(&instanceregistry.Entry{
-			InstanceID: instanceID,
-			Path:       cwd,
-			PID:        os.Getpid(),
-			PubPort:    rt.PubPort,
-			RPCPort:    rt.RPCPort,
-			StartedAt:  time.Now(),
-			Mode:       instanceregistry.ModeWebUI,
-			IsPrimary:  rt.Role == ipcruntime.RolePrimary,
-		})
-		defer func() { _ = instanceregistry.Revoke(instanceID) }()
-
-		// Start IPC bus and register handlers only on the primary instance.
-		if rt.Role == ipcruntime.RolePrimary {
-			pandoApp := server.PandoApp()
-			serveBus := rt.Bus
-			serveCoord := writecoordinator.New(ctx, rt.Querier, 256)
-			defer serveCoord.Shutdown()
-			servePub := changepub.NewBusPublisher(serveBus.Publish, instanceID, cwd)
-			serveCoord.SetPublisher(servePub)
-			dbproxy.RegisterHandlersWithCoordinator(serveBus, serveCoord)
-			registerBridgeHandlers(serveBus, instanceID, pandoApp)
-			if busErr := serveBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
-				logging.Warn("IPC: serve mode failed to start bus", "error", busErr)
-			} else {
-				serveBridge := bridge.New(serveBus, pandoApp.Sessions, pandoApp.CoderAgent)
-				serveBridge.Start(ctx)
-				logging.Debug("IPC: serve mode announced", "instanceID", instanceID, "pubPort", rt.PubPort, "rpcPort", rt.RPCPort)
-			}
-		}
+		pandoApp := server.PandoApp()
+		unwireIPC := wireIPC(ctx, rt, pandoApp, instanceID, cwd, instanceregistry.ModeWebUI, wireOptions{})
+		defer unwireIPC()
 
 		sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer stopSignals()
