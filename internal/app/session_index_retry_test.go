@@ -144,7 +144,7 @@ func openTempEventStore(t *testing.T, embedder embeddings.Embedder) (*events.Eve
 // TestIndexSessionConversationRetriesRealBusyErrorAndReusesEmbeddings drives
 // indexSessionConversation end-to-end against a real temp SQLite DB: a
 // competing BEGIN IMMEDIATE transaction holds the write lock just long
-// enough that the first ReplaceSessionEvents attempt gets a genuine
+// enough that the first ReplaceMessageEvents attempt gets a genuine
 // SQLITE_BUSY, then releases it before the retries are exhausted. This
 // proves the retry wiring in indexSessionConversation (not just the isolated
 // replaceSessionEventsWithRetry helper) recovers from a real lock conflict,
@@ -154,9 +154,15 @@ func TestIndexSessionConversationRetriesRealBusyErrorAndReusesEmbeddings(t *test
 	embedder := &recordingEmbedder{}
 	store, sqlDB := openTempEventStore(t, embedder)
 
+	// No title: the incremental indexer would otherwise also write a
+	// separate session-header row (see sessionHeaderIndexContent), which
+	// would call EmbedDocuments a second time and complicate the "called
+	// exactly once" assertion below without adding anything this test needs
+	// to prove.
 	app := &App{
-		Sessions: &indexingSessionService{sess: session.Session{ID: "session-1", Title: "Busy retry"}},
+		Sessions: &indexingSessionService{sess: session.Session{ID: "session-1"}},
 		Messages: &indexingMessagesService{msgs: []message.Message{{
+			ID:        "msg-1",
 			SessionID: "session-1",
 			Role:      message.User,
 			Parts:     []message.ContentPart{message.TextContent{Text: "hello"}},

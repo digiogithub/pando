@@ -119,6 +119,24 @@ type replaceSessionEventsRequest struct {
 	Embeddings [][]float32            `json:"embeddings"`
 }
 
+// replaceMessageEventsRequest is the IPC payload for ReplaceMessageEvents,
+// mirrored (unexported, same field set) by internal/rag/proxy.dispatcher for
+// JSON decoding on the primary.
+type replaceMessageEventsRequest struct {
+	SessionID  string                 `json:"session_id"`
+	MessageID  string                 `json:"message_id"`
+	Subject    string                 `json:"subject"`
+	Metadata   map[string]interface{} `json:"metadata"`
+	Chunks     []string               `json:"chunks"`
+	Embeddings [][]float32            `json:"embeddings"`
+}
+
+// deleteMessageEventsRequest is the IPC payload for DeleteMessageEvents.
+type deleteMessageEventsRequest struct {
+	MessageID string `json:"message_id"`
+	Subject   string `json:"subject"`
+}
+
 // SaveEventWithEmbedding inserts an event using a pre-computed embedding.
 // Called by the primary IPC dispatcher when a secondary forwards a SaveEvent write.
 // No embedding generation is performed; the provided embedding is stored directly.
@@ -189,6 +207,184 @@ func (s *EventStore) ReplaceSessionEvents(ctx context.Context, sessionID, subjec
 	return nil
 }
 
+// ReplaceMessageEvents replaces all indexed chunks for exactly one message
+// (identified by messageID) atomically, without touching any other message's
+// rows — including other messages in the same session. This is the
+// per-message counterpart to ReplaceSessionEvents used by the incremental
+// session indexer (internal/app/remembrances_indexer.go): only messages that
+// are new or whose content changed need to go through this path, so a
+// session-wide replace-all (O(n) re-embedding, O(n) write tx) is no longer
+// required on every index run. sessionID is carried for logging/API parity
+// with ReplaceSessionEvents and is expected in metadata (as "session_id") for
+// search-time filtering; the delete scope itself is keyed by messageID alone,
+// which is safe because message IDs (internal/message.Message.ID) are
+// globally unique UUIDs, not just unique within a session.
+// Embeddings must already be computed; if embedding generation fails before
+// this method is called, the previous indexed version of this message
+// remains untouched.
+func (s *EventStore) ReplaceMessageEvents(ctx context.Context, sessionID, messageID, subject string, metadata map[string]interface{}, chunks []string, embeddings [][]float32) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("events: session_id cannot be empty")
+	}
+	if strings.TrimSpace(messageID) == "" {
+		return fmt.Errorf("events: message_id cannot be empty")
+	}
+	if strings.TrimSpace(subject) == "" {
+		subject = "session"
+	}
+	if len(chunks) != len(embeddings) {
+		return fmt.Errorf("events: chunk embedding count mismatch: got %d embeddings for %d chunks", len(embeddings), len(chunks))
+	}
+
+	if s.proxy != nil {
+		return s.proxy.WriteWithRetry(ctx, "ReplaceMessageEvents", replaceMessageEventsRequest{
+			SessionID:  sessionID,
+			MessageID:  messageID,
+			Subject:    subject,
+			Metadata:   metadata,
+			Chunks:     chunks,
+			Embeddings: embeddings,
+		}, dbproxy.DefaultWriteTimeouts.Long)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("events: begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if err := s.deleteMessageEventsTx(ctx, tx, subject, messageID); err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	for i, chunk := range chunks {
+		chunkMetadata := cloneMetadata(metadata)
+		chunkMetadata["chunk_index"] = i
+		chunkMetadata["chunk_count"] = len(chunks)
+		if _, err := s.insertEventTx(ctx, tx, subject, chunk, chunkMetadata, embeddings[i], now); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("events: commit replace message events: %w", err)
+	}
+	return nil
+}
+
+// DeleteMessageEvents removes every indexed chunk for one message (e.g. when
+// the message no longer exists in the session, such as after history
+// truncation). No-op — not an error — when the message has no indexed rows.
+func (s *EventStore) DeleteMessageEvents(ctx context.Context, messageID, subject string) error {
+	if strings.TrimSpace(messageID) == "" {
+		return fmt.Errorf("events: message_id cannot be empty")
+	}
+	if strings.TrimSpace(subject) == "" {
+		subject = "session"
+	}
+
+	if s.proxy != nil {
+		return s.proxy.WriteWithRetry(ctx, "DeleteMessageEvents", deleteMessageEventsRequest{
+			MessageID: messageID,
+			Subject:   subject,
+		}, dbproxy.DefaultWriteTimeouts.Default)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("events: begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if err := s.deleteMessageEventsTx(ctx, tx, subject, messageID); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("events: commit delete message events: %w", err)
+	}
+	return nil
+}
+
+// SessionHasLegacyRows reports whether sessionID still has any indexed rows
+// written by the old whole-transcript replace path (metadata with no
+// "message_id" key) rather than the per-message path. It is a cheap
+// read-only lookup: the (subject, session_id) equality narrows to this
+// session's rows via idx_events_session before the IS NULL filter is
+// evaluated, so cost scales with the size of one session, not the whole
+// events table. The incremental indexer uses this to lazily migrate a
+// session on its first post-upgrade run: when true, it clears every row for
+// the session (a plain ReplaceSessionEvents with no chunks) before writing
+// any per-message rows, so legacy and per-message rows for the same session
+// never coexist.
+func (s *EventStore) SessionHasLegacyRows(ctx context.Context, sessionID, subject string) (bool, error) {
+	if strings.TrimSpace(subject) == "" {
+		subject = "session"
+	}
+	var exists int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT 1
+		FROM events
+		WHERE subject = ?
+		  AND json_extract(metadata, '$.session_id') = ?
+		  AND json_extract(metadata, '$.message_id') IS NULL
+		LIMIT 1`,
+		subject, sessionID,
+	).Scan(&exists)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, fmt.Errorf("events: query legacy session rows: %w", err)
+	}
+	return exists == 1, nil
+}
+
+// MessageEventMarkers returns, for every message currently indexed under
+// sessionID (per-message rows only — see SessionHasLegacyRows for legacy
+// detection), a map of message_id to its stored content_hash. The incremental
+// indexer reads this once per run (a single read-only query, no lock held) to
+// decide which messages are unchanged (hash matches, skip re-embedding),
+// changed (hash differs, re-embed and replace), or removed (message_id
+// present here but not among the session's current messages, delete). A
+// message's chunk rows all carry the same content_hash (set once by the
+// caller before ReplaceMessageEvents), so picking any one row per message_id
+// is sufficient; GROUP BY guarantees exactly one row is returned per message.
+func (s *EventStore) MessageEventMarkers(ctx context.Context, sessionID, subject string) (map[string]string, error) {
+	if strings.TrimSpace(subject) == "" {
+		subject = "session"
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT json_extract(metadata, '$.message_id') AS message_id,
+		       json_extract(metadata, '$.content_hash') AS content_hash
+		FROM events
+		WHERE subject = ?
+		  AND json_extract(metadata, '$.session_id') = ?
+		  AND json_extract(metadata, '$.message_id') IS NOT NULL
+		GROUP BY json_extract(metadata, '$.message_id')`,
+		subject, sessionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("events: query message markers: %w", err)
+	}
+	defer rows.Close()
+
+	markers := make(map[string]string)
+	for rows.Next() {
+		var messageID string
+		var hash sql.NullString
+		if err := rows.Scan(&messageID, &hash); err != nil {
+			return nil, fmt.Errorf("events: scan message marker: %w", err)
+		}
+		markers[messageID] = hash.String
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("events: iterate message markers: %w", err)
+	}
+	return markers, nil
+}
+
 func (s *EventStore) insertEventTx(ctx context.Context, tx *sql.Tx, subject, content string, metadata map[string]interface{}, embedding []float32, now time.Time) (int64, error) {
 	metaJSON := []byte("{}")
 	if metadata != nil {
@@ -225,16 +421,39 @@ func (s *EventStore) insertEventTx(ctx context.Context, tx *sql.Tx, subject, con
 	return id, nil
 }
 
+// deleteSessionEventsTx deletes every row for one session. The query text
+// must stay byte-for-byte identical to the expression indexed by
+// idx_events_session (internal/db/migrations/20260911000001_add_events_session_index.sql)
+// for SQLite to match that index.
 func (s *EventStore) deleteSessionEventsTx(ctx context.Context, tx *sql.Tx, subject, sessionID string) error {
-	rows, err := tx.QueryContext(ctx, `
-		SELECT id, subject, content
-		FROM events
-		WHERE subject = ?
-		  AND json_extract(metadata, '$.session_id') = ?`,
+	return s.deleteEventsMatchingTx(ctx, tx,
+		`SELECT id, subject, content FROM events WHERE subject = ? AND json_extract(metadata, '$.session_id') = ?`,
+		`DELETE FROM events WHERE subject = ? AND json_extract(metadata, '$.session_id') = ?`,
 		subject, sessionID,
 	)
+}
+
+// deleteMessageEventsTx deletes every row for one message. The query text
+// must stay byte-for-byte identical to the expression indexed by
+// idx_events_message (internal/db/migrations/20260911190000_add_events_message_index.sql)
+// for SQLite to match that index.
+func (s *EventStore) deleteMessageEventsTx(ctx context.Context, tx *sql.Tx, subject, messageID string) error {
+	return s.deleteEventsMatchingTx(ctx, tx,
+		`SELECT id, subject, content FROM events WHERE subject = ? AND json_extract(metadata, '$.message_id') = ?`,
+		`DELETE FROM events WHERE subject = ? AND json_extract(metadata, '$.message_id') = ?`,
+		subject, messageID,
+	)
+}
+
+// deleteEventsMatchingTx runs selectQuery to find the rows a caller is about
+// to delete, removes each from the FTS5 external-content index (which must
+// be kept in sync by hand — see the package doc), then runs deleteQuery to
+// remove the rows themselves. selectQuery and deleteQuery must accept the
+// same args and match the same rows (typically the exact same WHERE clause).
+func (s *EventStore) deleteEventsMatchingTx(ctx context.Context, tx *sql.Tx, selectQuery, deleteQuery string, args ...interface{}) error {
+	rows, err := tx.QueryContext(ctx, selectQuery, args...)
 	if err != nil {
-		return fmt.Errorf("events: query session events for delete: %w", err)
+		return fmt.Errorf("events: query events for delete: %w", err)
 	}
 	defer rows.Close()
 
@@ -247,12 +466,12 @@ func (s *EventStore) deleteSessionEventsTx(ctx context.Context, tx *sql.Tx, subj
 	for rows.Next() {
 		var item existingEvent
 		if err := rows.Scan(&item.id, &item.subject, &item.content); err != nil {
-			return fmt.Errorf("events: scan session event for delete: %w", err)
+			return fmt.Errorf("events: scan event for delete: %w", err)
 		}
 		existing = append(existing, item)
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("events: iterate session events for delete: %w", err)
+		return fmt.Errorf("events: iterate events for delete: %w", err)
 	}
 
 	for _, item := range existing {
@@ -265,13 +484,8 @@ func (s *EventStore) deleteSessionEventsTx(ctx context.Context, tx *sql.Tx, subj
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM events
-		WHERE subject = ?
-		  AND json_extract(metadata, '$.session_id') = ?`,
-		subject, sessionID,
-	); err != nil {
-		return fmt.Errorf("events: delete session events: %w", err)
+	if _, err := tx.ExecContext(ctx, deleteQuery, args...); err != nil {
+		return fmt.Errorf("events: delete events: %w", err)
 	}
 
 	return nil

@@ -17,6 +17,18 @@ func openTestEventStoreDB(t *testing.T) *sql.DB {
 		t.Fatalf("sql.Open() error = %v", err)
 	}
 	t.Cleanup(func() { _ = dbConn.Close() })
+	// A ":memory:" DSN gives every new physical connection its own empty
+	// database (there is no file to share), so a query that needs two
+	// connections at once — e.g. SearchEvents' concurrent vector/FTS
+	// sub-searches — would silently see an empty "events" table on whichever
+	// connection is second to open. Capping the pool at 1 connection forces
+	// every query in a test to serialize on the single connection that
+	// actually has the schema, which is exactly what every test in this
+	// package needs (none of them test real cross-connection concurrency;
+	// internal/app/session_index_retry_test.go and
+	// internal/rag/events/session_index_test.go use real temp-file DBs, not
+	// this helper, whenever a test actually needs that).
+	dbConn.SetMaxOpenConns(1)
 
 	migration := `
 	CREATE TABLE events (

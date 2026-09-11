@@ -42,6 +42,22 @@ type replaceSessionEventsReq struct {
 	Embeddings [][]float32            `json:"embeddings"`
 }
 
+// replaceMessageEventsReq mirrors events.replaceMessageEventsRequest (unexported) for JSON decoding.
+type replaceMessageEventsReq struct {
+	SessionID  string                 `json:"session_id"`
+	MessageID  string                 `json:"message_id"`
+	Subject    string                 `json:"subject"`
+	Metadata   map[string]interface{} `json:"metadata"`
+	Chunks     []string               `json:"chunks"`
+	Embeddings [][]float32            `json:"embeddings"`
+}
+
+// deleteMessageEventsReq mirrors events.deleteMessageEventsRequest (unexported) for JSON decoding.
+type deleteMessageEventsReq struct {
+	MessageID string `json:"message_id"`
+	Subject   string `json:"subject"`
+}
+
 // codeUpsertProjectReq mirrors code.codeUpsertProjectRequest for JSON decoding.
 type codeUpsertProjectReq struct {
 	ProjectID string    `json:"project_id"`
@@ -165,6 +181,28 @@ func (d *RemembrancesWriteDispatcher) DispatchRemembrancesWrite(ctx context.Cont
 			return nil, fmt.Errorf("rag dispatcher: ReplaceSessionEvents unmarshal: %w", err)
 		}
 		err := d.svc.Events.ReplaceSessionEvents(ctx, req.SessionID, req.Subject, req.Metadata, req.Chunks, req.Embeddings)
+		return nil, err
+
+	case "ReplaceMessageEvents":
+		if d.svc.Events == nil {
+			return nil, fmt.Errorf("rag dispatcher: Events store not available")
+		}
+		var req replaceMessageEventsReq
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("rag dispatcher: ReplaceMessageEvents unmarshal: %w", err)
+		}
+		err := d.svc.Events.ReplaceMessageEvents(ctx, req.SessionID, req.MessageID, req.Subject, req.Metadata, req.Chunks, req.Embeddings)
+		return nil, err
+
+	case "DeleteMessageEvents":
+		if d.svc.Events == nil {
+			return nil, fmt.Errorf("rag dispatcher: Events store not available")
+		}
+		var req deleteMessageEventsReq
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("rag dispatcher: DeleteMessageEvents unmarshal: %w", err)
+		}
+		err := d.svc.Events.DeleteMessageEvents(ctx, req.MessageID, req.Subject)
 		return nil, err
 
 	// ---- Code indexing writes ----

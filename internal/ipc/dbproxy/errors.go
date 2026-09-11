@@ -68,6 +68,26 @@ func mapToWriteError(method string, err error) *WriteError {
 	case errors.Is(err, ipc.ErrConnectionFailed):
 		return &WriteError{Code: ErrCodeUnreachable, Method: method, Message: msg}
 
+	// The primary does not recognise this write method at all — most likely a
+	// version-skew case: a secondary running newer code (e.g. it knows about
+	// EventStore.ReplaceMessageEvents) talking to an older primary binary
+	// whose dispatchWrite/RemembrancesWriteDispatcher switch predates that
+	// method. Both dispatch layers use a distinct literal message for this:
+	// dispatchWrite's own default case ("unknown write method %q", handled
+	// via the typed ErrCodeMethodNotFound WriteError already, so it never
+	// reaches mapToWriteError as plain text) and
+	// internal/rag/proxy.RemembrancesWriteDispatcher's default case
+	// ("unsupported remembrances write method %q", a plain fmt.Errorf that
+	// does round-trip through mapToWriteError once it crosses the IPC
+	// boundary as message-only text). Recognising both here lets a caller use
+	// IsMethodNotSupportedError to detect version skew and fall back to an
+	// older, more broadly supported write path — see the incremental session
+	// indexer's fallback to the whole-transcript ReplaceSessionEvents in
+	// internal/app/remembrances_indexer.go.
+	case strings.Contains(msg, "unsupported remembrances write method"),
+		strings.Contains(msg, "unknown write method"):
+		return &WriteError{Code: ErrCodeMethodNotFound, Method: method, Message: msg}
+
 	// SQLITE_BUSY / SQLITE_LOCKED: the write could not acquire the lock in
 	// time. isLockError (proxy.go) recognises this both as a typed
 	// *sqlite3.Error (a direct local failure, e.g. the primary's own
@@ -108,4 +128,25 @@ func IsBusyOrLockedError(err error) bool {
 		return werr.Code == ErrCodeBusy
 	}
 	return isLockError(err)
+}
+
+// IsMethodNotSupportedError reports whether err indicates that the primary
+// does not recognise a proxied write method — a version-skew signal (see the
+// mapToWriteError case above for the two shapes this can arrive in). Callers
+// on a secondary should treat this as "the primary predates this write path"
+// and fall back to an older, more broadly supported one rather than treating
+// it as a permanent failure of the specific write attempted. Unlike
+// IsBusyOrLockedError, this only ever matches after the error has round-
+// tripped through mapToWriteError into a *WriteError — a primary (no proxy
+// configured) never calls a write method by name over IPC, so this check is
+// meaningless, and never true, for a primary's own direct calls.
+func IsMethodNotSupportedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var werr *WriteError
+	if errors.As(err, &werr) {
+		return werr.Code == ErrCodeMethodNotFound
+	}
+	return false
 }

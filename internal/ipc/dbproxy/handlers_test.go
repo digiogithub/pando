@@ -248,6 +248,69 @@ func TestMapToWriteError_BusyAndLockedErrorsAreErrCodeBusy(t *testing.T) {
 	}
 }
 
+// TestMapToWriteError_UnsupportedMethodTextIsErrCodeMethodNotFound covers the
+// version-skew detection path (see [[pando/features/session_index_incremental_per_message.md]]):
+// a secondary running newer code (e.g. it knows about
+// events.EventStore.ReplaceMessageEvents) can talk to an older primary
+// binary whose write dispatcher does not recognise that method name yet.
+// Both dispatch layers surface that as a distinct plain-text message —
+// dispatchWrite's own "unknown write method %q" (though that one is already
+// wrapped as a typed ErrCodeMethodNotFound WriteError before it ever reaches
+// mapToWriteError as plain text — included here for completeness) and
+// internal/rag/proxy.RemembrancesWriteDispatcher's "unsupported remembrances
+// write method %q" (a plain fmt.Errorf that does round-trip through
+// mapToWriteError once it crosses the IPC boundary as message-only text,
+// exactly as exercised by
+// TestDispatchRemembrancesWrite_UnsupportedMethodMessageMatchesVersionSkewDetection
+// in internal/rag/proxy) — this test pins that mapToWriteError classifies
+// both, is not retryable, and IsMethodNotSupportedError recognises the
+// result.
+func TestMapToWriteError_UnsupportedMethodTextIsErrCodeMethodNotFound(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"rag dispatcher default case, direct", fmt.Errorf("rag dispatcher: unsupported remembrances write method %q", "ReplaceMessageEvents")},
+		{"rag dispatcher default case, round-tripped through IPC", fmt.Errorf("ipc: RPC error -32000: %s", `rag dispatcher: unsupported remembrances write method "ReplaceMessageEvents"`)},
+		{"dispatchWrite default case text", errors.New(`unknown write method "SomeFutureMethod"`)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			werr := mapToWriteError("ReplaceMessageEvents", tc.err)
+			if werr.Code != ErrCodeMethodNotFound {
+				t.Fatalf("mapToWriteError(%v) code = %s, want %s", tc.err, werr.Code, ErrCodeMethodNotFound)
+			}
+			if werr.IsRetryable() {
+				t.Fatalf("mapToWriteError(%v) should not be retryable (version skew is not transient)", tc.err)
+			}
+			// IsMethodNotSupportedError, unlike IsBusyOrLockedError, only
+			// ever matches after an error has round-tripped through
+			// mapToWriteError into a *WriteError (see its doc comment) — the
+			// only shape a caller like the incremental indexer actually
+			// receives, since every real call site that can hit this
+			// (dbproxy.DBProxy.WriteWithRetry on a secondary) already maps
+			// the error before returning it.
+			if !IsMethodNotSupportedError(werr) {
+				t.Fatalf("IsMethodNotSupportedError(%v) = false, want true (after round-tripping into *WriteError)", werr)
+			}
+		})
+	}
+}
+
+func TestIsMethodNotSupportedError_NonMatchingErrorsAreFalse(t *testing.T) {
+	cases := []error{
+		nil,
+		errors.New("boom"),
+		&WriteError{Code: ErrCodeInternal, Message: "boom"},
+		&WriteError{Code: ErrCodeBusy, Message: "database is locked"},
+	}
+	for _, err := range cases {
+		if IsMethodNotSupportedError(err) {
+			t.Errorf("IsMethodNotSupportedError(%v) = true, want false", err)
+		}
+	}
+}
+
 func TestIsBusyOrLockedError_NonBusyErrorsAreFalse(t *testing.T) {
 	cases := []error{
 		nil,

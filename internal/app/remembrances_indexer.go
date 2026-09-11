@@ -14,6 +14,7 @@ import (
 	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
+	"github.com/digiogithub/pando/internal/session"
 )
 
 const sessionIndexSubject = "session"
@@ -118,26 +119,29 @@ func (app *App) initRemembrancesSessionIndexing(ctx context.Context, svc *rag.Re
 	logging.Info("remembrances: automatic session indexing enabled")
 }
 
-func (app *App) indexSessionConversation(ctx context.Context, svc *rag.RemembrancesService, sessionID string) error {
-	// Belt and braces: the watcher above already filters these out before
-	// scheduling the debounce timer, but this method is also called directly
-	// (tests, potential future manual re-index paths), so it must refuse
-	// ephemeral sessions on its own too.
-	if isEphemeralIndexSession(sessionID) {
-		return nil
-	}
-	sess, err := app.Sessions.Get(ctx, sessionID)
-	if err != nil {
-		return err
-	}
-	msgs, err := app.Messages.List(ctx, sessionID)
-	if err != nil {
-		return err
-	}
-	if len(msgs) == 0 {
-		return nil
-	}
+// indexSessionConversation is implemented in session_index_incremental.go:
+// it is the incremental per-message entry point that the scheduler above
+// calls, and it delegates to indexSessionConversationFullRebuild just below
+// on a version-skew primary (see that function's doc comment) or to clear
+// legacy whole-transcript rows.
 
+// indexSessionConversationFullRebuild rebuilds and re-embeds the *entire*
+// session transcript as one flat, ordered set of chunks and replaces it via
+// the original (pre-#6) EventStore.ReplaceSessionEvents. This is the exact
+// behavior every session indexing run used before incremental per-message
+// indexing existed — see
+// [[pando/analysis/session_index_locked_residual_risk.md]] section 5 (#6).
+//
+// It is kept only as a fallback for the rare version-skew window during a
+// rolling upgrade: a secondary running this newer code (which knows about
+// EventStore.ReplaceMessageEvents/DeleteMessageEvents) talking over IPC to
+// an older primary binary whose write dispatcher predates those methods.
+// indexSessionConversation detects that case via
+// dbproxy.IsMethodNotSupportedError and switches to this function for the
+// rest of that run, so the session's index is never left half-migrated
+// between the two row layouts. Once every instance in a deployment has
+// upgraded, this path is never reached again.
+func (app *App) indexSessionConversationFullRebuild(ctx context.Context, svc *rag.RemembrancesService, sess session.Session, msgs []message.Message) error {
 	var b strings.Builder
 	if strings.TrimSpace(sess.Title) != "" {
 		b.WriteString("Session title: ")
@@ -161,22 +165,7 @@ func (app *App) indexSessionConversation(ctx context.Context, svc *rag.Remembran
 		return nil
 	}
 
-	metadata := map[string]interface{}{
-		"session_id":    sess.ID,
-		"title":         sess.Title,
-		"message_count": len(msgs),
-		"source":        "pando_session",
-		"updated_at":    sess.UpdatedAt,
-	}
-	// Attribution, when an extension knows who the user is. The key is absent
-	// in a standard build, so an index written without a provider is exactly
-	// what it was before. Only the user id is recorded: the address and the
-	// group list stay with the extension that holds them.
-	if app.Identity != nil {
-		if id, ok := app.Identity(ctx); ok && strings.TrimSpace(id.UserID) != "" {
-			metadata["user_id"] = id.UserID
-		}
-	}
+	metadata := sessionIndexBaseMetadata(ctx, app, sess, len(msgs))
 
 	chunks := embeddings.ChunkText(content, embeddings.DefaultChunkSize, embeddings.DefaultChunkOverlap)
 	if len(chunks) == 0 {

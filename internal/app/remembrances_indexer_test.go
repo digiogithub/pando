@@ -115,11 +115,18 @@ func TestCloneSessionMetadataCreatesIndependentCopy(t *testing.T) {
 	}
 }
 
-func TestIndexSessionConversationPropagatesEmbedErrors(t *testing.T) {
-	embedder := &recordingEmbedder{err: errors.New("boom")}
+// TestIndexSessionConversationRequiresEventStore pins the new (post-#6)
+// ordering: since checking for legacy rows and reading per-message markers
+// both require svc.Events, indexSessionConversation must fail fast with
+// "session event store not configured" before ever computing content or
+// calling the embedder — unlike the pre-#6 whole-transcript path, which only
+// discovered a missing store after already embedding the whole transcript.
+func TestIndexSessionConversationRequiresEventStore(t *testing.T) {
+	embedder := &recordingEmbedder{}
 	app := &App{
 		Sessions: &indexingSessionService{sess: session.Session{ID: "session-1", Title: "Chunky"}},
 		Messages: &indexingMessagesService{msgs: []message.Message{{
+			ID:        "msg-1",
 			SessionID: "session-1",
 			Role:      message.User,
 			Parts:     []message.ContentPart{message.TextContent{Text: "hello"}},
@@ -129,13 +136,50 @@ func TestIndexSessionConversationPropagatesEmbedErrors(t *testing.T) {
 	setDocumentEmbedderForTest(svc, embedder)
 
 	err := app.indexSessionConversation(context.Background(), svc, "session-1")
-	if err == nil || !strings.Contains(err.Error(), "embed session chunks") {
+	if err == nil || !strings.Contains(err.Error(), "session event store not configured") {
+		t.Fatalf("expected missing store error, got %v", err)
+	}
+	if embedder.callCount != 0 {
+		t.Fatalf("expected EmbedDocuments never called without an event store, got %d calls", embedder.callCount)
+	}
+}
+
+// TestIndexSessionConversationPropagatesEmbedErrors uses a real temp event
+// store (so the incremental path reaches the per-message embed step) and an
+// embedder that always errors, and checks the error is surfaced with the
+// per-message wrapping text (not the legacy whole-transcript
+// "embed session chunks" text, which is now only used by
+// indexSessionConversationFullRebuild).
+func TestIndexSessionConversationPropagatesEmbedErrors(t *testing.T) {
+	embedder := &recordingEmbedder{err: errors.New("boom")}
+	store, _ := openTempEventStore(t, embedder)
+	app := &App{
+		Sessions: &indexingSessionService{sess: session.Session{ID: "session-1", Title: "Chunky"}},
+		Messages: &indexingMessagesService{msgs: []message.Message{{
+			ID:        "msg-1",
+			SessionID: "session-1",
+			Role:      message.User,
+			Parts:     []message.ContentPart{message.TextContent{Text: "hello"}},
+		}}},
+	}
+	svc := &rag.RemembrancesService{Events: store}
+	setDocumentEmbedderForTest(svc, embedder)
+
+	err := app.indexSessionConversation(context.Background(), svc, "session-1")
+	if err == nil || !strings.Contains(err.Error(), "embed message chunks") {
 		t.Fatalf("expected embed error, got %v", err)
 	}
 }
 
-func TestIndexSessionConversationChunksContentForEmbeddings(t *testing.T) {
+// TestIndexSessionConversationChunksLongMessageContentForEmbeddings pins the
+// per-message content format (messageIndexContent: an optional "Session: "
+// title prefix, then "ROLE:\n" plus the message's own text) and confirms an
+// oversized single message is still split with the same embeddings.ChunkText
+// logic used before, just scoped to one message instead of the whole
+// transcript.
+func TestIndexSessionConversationChunksLongMessageContentForEmbeddings(t *testing.T) {
 	embedder := &recordingEmbedder{}
+	store, _ := openTempEventStore(t, embedder)
 	content := strings.Repeat("A", embeddings.DefaultChunkSize+200)
 	app := &App{
 		Sessions: &indexingSessionService{sess: session.Session{
@@ -144,25 +188,36 @@ func TestIndexSessionConversationChunksContentForEmbeddings(t *testing.T) {
 			UpdatedAt: time.Now().Unix(),
 		}},
 		Messages: &indexingMessagesService{msgs: []message.Message{{
+			ID:        "msg-1",
 			SessionID: "session-1",
 			Role:      message.User,
 			Parts:     []message.ContentPart{message.TextContent{Text: content}},
 		}}},
 	}
-	svc := &rag.RemembrancesService{}
+	svc := &rag.RemembrancesService{Events: store}
 	setDocumentEmbedderForTest(svc, embedder)
 
-	err := app.indexSessionConversation(context.Background(), svc, "session-1")
-	if err == nil || !strings.Contains(err.Error(), "session event store not configured") {
-		t.Fatalf("expected missing store error, got %v", err)
+	if err := app.indexSessionConversation(context.Background(), svc, "session-1"); err != nil {
+		t.Fatalf("indexSessionConversation() error = %v", err)
 	}
 
-	expected := embeddings.ChunkText("Session title: Chunky session\n\nUSER:\n"+content, embeddings.DefaultChunkSize, embeddings.DefaultChunkOverlap)
+	expected := embeddings.ChunkText("Session: Chunky session\nUSER:\n"+content, embeddings.DefaultChunkSize, embeddings.DefaultChunkOverlap)
 	if len(expected) < 2 {
 		t.Fatalf("expected chunked content, got %d chunks", len(expected))
 	}
 	if !reflect.DeepEqual(embedder.texts, expected) {
 		t.Fatalf("embedded chunks = %#v, want %#v", embedder.texts, expected)
+	}
+
+	// +1 for the session-header row (the session has a non-empty title, so
+	// sessionHeaderIndexContent also produces one small, single-chunk plan
+	// entry alongside the message's own chunks).
+	count, err := store.CountEvents(context.Background())
+	if err != nil {
+		t.Fatalf("count events: %v", err)
+	}
+	if want := len(expected) + 1; int(count) != want {
+		t.Fatalf("expected %d indexed rows (message chunks + header row), got %d", want, count)
 	}
 }
 
