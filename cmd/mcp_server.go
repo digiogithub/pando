@@ -13,15 +13,24 @@ import (
 
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/config"
-	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/instanceregistry"
+	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/evaluatortools"
 	llmtools "github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
 	mesnadaServer "github.com/digiogithub/pando/internal/mesnada/server"
 	"github.com/digiogithub/pando/internal/version"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
+
+// mcpServerProbeTimeout bounds how long a freshly started `pando mcp-server`
+// secondary waits for an existing primary to answer ipc.ping before treating
+// it as unresponsive (see ipcruntime.Options.ProbeTimeout). Shorter than
+// ipcruntime.DefaultOptions' 10s because mcp-server is spawned interactively
+// by an editor/agent, which should not stall long on a slow probe.
+const mcpServerProbeTimeout = 3 * time.Second
 
 var mcpServerCmd = &cobra.Command{
 	Use:   "mcp-server",
@@ -82,18 +91,18 @@ func runMCPServerMode(cmd *cobra.Command) error {
 		return fmt.Errorf("at least one MCP transport must be enabled")
 	}
 
-	var cwd string
+	// Chdir first (if requested), then always resolve cwd via os.Getwd() so it
+	// is absolute regardless of whether --cwd was relative. ipcruntime.Bootstrap
+	// canonicalises it again internally (Abs + EvalSymlinks), but config.Load
+	// below and the instance registry entry should already see the real path.
 	if cwdFlag != "" {
 		if err := os.Chdir(cwdFlag); err != nil {
 			return fmt.Errorf("failed to change directory to %q: %w", cwdFlag, err)
 		}
-		cwd = cwdFlag
-	} else {
-		var err error
-		cwd, err = os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current working directory: %w", err)
-		}
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
 	if _, err := config.Load(cwd, debug, ""); err != nil {
@@ -104,23 +113,35 @@ func runMCPServerMode(cmd *cobra.Command) error {
 	// Apply CLI flag overrides for tool groups on top of the config defaults.
 	applyMCPServerFlagOverrides(cmd)
 
-	conn, err := db.Connect()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	rt, pandoApp, unwireIPC, err := bootstrapMCPServer(ctx, cwd)
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	pandoApp, err := app.New(ctx, conn, app.AppOptions{
-		SkipLSP:           true,
-		SkipMesnadaServer: true,
-		StartupMode:       "mcp",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to initialize app: %w", err)
-	}
-	defer pandoApp.Shutdown()
+	// httpSrv/stdioSrv are assigned further down, only for the transports that
+	// end up enabled; the deferred shutdown below reads them by reference (via
+	// the closure) at return time, so it always sees whichever of the two (or
+	// neither, on an early error before either is created) actually started.
+	var httpSrv, stdioSrv *mesnadaServer.Server
+	defer func() {
+		// Ordered shutdown (P2 of pando/plans/mcp_server_ipc_bootstrap.md §5.5):
+		// stop accepting new MCP requests, then hand over the IPC primary role
+		// (pandoApp.Shutdown's releasePrimaryRole: drain, release the lock,
+		// announce instance.shutdown, close the bus), then drop this instance
+		// from the registry, then release the runtime's own resources (DB,
+		// watcher; ReleaseLock again is a no-op by then). All four steps are
+		// individually idempotent, and this defer is the only place that calls
+		// them, so each runs exactly once no matter which return path got here.
+		shutdownMCPServerOrdered(
+			func() { stopMCPTransports(httpSrv, stdioSrv) },
+			pandoApp.Shutdown,
+			unwireIPC,
+			rt.Cleanup,
+		)
+	}()
 	pandoApp.Permissions.SetGlobalAutoApprove(true)
 
 	toolList := buildMCPServerTools(ctx, pandoApp)
@@ -146,9 +167,11 @@ func runMCPServerMode(cmd *cobra.Command) error {
 		}
 	}
 
-	errCh := make(chan error, 2)
-	var httpSrv *mesnadaServer.Server
-
+	// httpErrCh/stdioDoneCh: each transport that is enabled runs in its own
+	// goroutine and reports back on its own channel. A disabled transport's
+	// channel is simply never written to, so the select below only ever fires
+	// on the transports actually running plus the signal context.
+	httpErrCh := make(chan error, 1)
 	if !noHTTP {
 		selectedPort, err := chooseAvailablePort(host, port)
 		if err != nil {
@@ -170,58 +193,164 @@ func runMCPServerMode(cmd *cobra.Command) error {
 		})
 		go func() {
 			if err := httpSrv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				errCh <- err
+				httpErrCh <- err
 			}
 		}()
 		fmt.Fprintf(os.Stderr, "Pando MCP HTTP transport listening on http://%s/mcp\n", addr)
 	}
 
-	if noStdio {
-		sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		defer stopSignals()
-
-		select {
-		case <-sigCtx.Done():
-			cancel()
-			shutdownHTTPMCPServer(httpSrv)
-			return nil
-		case err := <-errCh:
-			cancel()
-			shutdownHTTPMCPServer(httpSrv)
-			return err
-		}
+	// stdioDoneCh receives exactly once when the stdio transport stops, either
+	// with nil (the client closed stdin — EOF, a graceful signal to shut down)
+	// or a real read/encode error. Running it in a goroutine even when it is
+	// the only enabled transport (--no-http) is what lets the select below
+	// react to SIGINT/SIGTERM: os.Stdin's blocking Scan() cannot itself observe
+	// ctx cancellation, so previously (no goroutine, a bare `return
+	// stdioSrv.Start()`) a signal had no handler installed and killed the
+	// process outright, skipping every deferred cleanup above.
+	stdioDoneCh := make(chan error, 1)
+	if !noStdio {
+		stdioSrv = mesnadaServer.New(mesnadaServer.Config{
+			Orchestrator: pandoApp.MesnadaOrchestrator,
+			Version:      version.Normalize(),
+			UseStdio:     true,
+			Remembrances: pandoApp.Remembrances,
+			PandoTools:   toolList,
+		})
+		go func() {
+			stdioDoneCh <- stdioSrv.Start()
+		}()
 	}
-
-	stdioSrv := mesnadaServer.New(mesnadaServer.Config{
-		Orchestrator: pandoApp.MesnadaOrchestrator,
-		Version:      version.Normalize(),
-		UseStdio:     true,
-		Remembrances: pandoApp.Remembrances,
-		PandoTools:   toolList,
-	})
-
-	if noHTTP {
-		return stdioSrv.Start()
-	}
-
-	go func() {
-		if err := stdioSrv.Start(); err != nil {
-			errCh <- err
-		}
-	}()
 
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignals()
 
+	return waitForMCPServerShutdown(sigCtx, stdioDoneCh, httpErrCh)
+}
+
+// waitForMCPServerShutdown blocks until one of three shutdown triggers fires
+// and returns the error runMCPServerMode should itself return (nil for a
+// graceful stop):
+//
+//   - sigCtx.Done(): SIGINT/SIGTERM.
+//   - stdioDoneCh: the stdio transport stopped on its own. nil means the
+//     client closed stdin (EOF) — a graceful signal to shut down, same as a
+//     signal. A non-nil error is a real read/encode failure and is returned.
+//   - httpErrCh: the HTTP transport failed to serve and is returned.
+//
+// A disabled transport's channel is never written to; passing one of those
+// (buffered, empty, nothing left to send) is fine since an empty channel a
+// select is not ready to read from simply never fires that case.
+//
+// Extracted from runMCPServerMode so the shutdown-trigger logic — in
+// particular that a graceful stdin EOF and a graceful signal both return nil,
+// while a genuine stdio error or HTTP failure is propagated — is unit
+// testable without cobra flags, a real IPC bootstrap, or a real MCP
+// transport. See TestWaitForMCPServerShutdown_* in mcp_server_ipc_test.go.
+func waitForMCPServerShutdown(sigCtx context.Context, stdioDoneCh, httpErrCh <-chan error) error {
 	select {
 	case <-sigCtx.Done():
-		cancel()
-		shutdownHTTPMCPServer(httpSrv)
+		logging.Info("mcp-server: shutdown signal received")
 		return nil
-	case err := <-errCh:
-		cancel()
-		shutdownHTTPMCPServer(httpSrv)
+	case err := <-stdioDoneCh:
+		if err != nil {
+			logging.Warn("mcp-server: stdio transport ended with an error", "error", err)
+			return err
+		}
+		logging.Info("mcp-server: stdio transport closed (stdin EOF)")
+		return nil
+	case err := <-httpErrCh:
+		logging.Error("mcp-server: HTTP transport failed", "error", err)
 		return err
+	}
+}
+
+// bootstrapMCPServer performs the IPC-aware startup for `pando mcp-server`
+// (P2 of pando/plans/mcp_server_ipc_bootstrap.md, §5.3): it joins the shared
+// primary/secondary bootstrap instead of calling db.Connect() directly, builds
+// the App against the resulting querier, and wires the shared IPC handlers
+// (registry, write coordinator, changepub, bridge, failover watcher).
+//
+// mcp-server never kills an unresponsive primary (AllowKillStalePrimary:
+// false): it is an ephemeral, low-trust process spawned by an editor/agent,
+// and must never SIGKILL a user's long-running TUI/desktop/serve instance
+// just because that instance is slow, under a debugger, or SIGSTOPped to
+// answer one liveness probe (see ipcruntime.Options's doc comment). It also
+// never accepts peer delegations (AcceptDelegations: false): it dies with the
+// client that spawned it, so it is not a stable target for another instance
+// to route work to.
+//
+// Extracted from runMCPServerMode so a regression test can drive exactly this
+// bootstrap+wiring sequence with os.Stdout redirected to a pipe and assert
+// nothing was written to it — see cmd/mcp_server_ipc_test.go. (That test
+// exercises ipcruntime.BootstrapWithOptions and wireIPC directly against a
+// minimal test App rather than calling this function, mirroring
+// cmd/ipc_wiring_test.go's bareAppForIPCTest: a real app.New pulls in LLM
+// providers, LSP and the MCP gateway, which is deliberately never exercised
+// by this package's tests. The two code paths share the exact same
+// BootstrapWithOptions/wireIPC arguments, so the source-shape test in
+// cmd/mcp_server_ipc_test.go also asserts this function calls them with
+// mcp-server's specific options.)
+func bootstrapMCPServer(ctx context.Context, cwd string) (rt *ipcruntime.BootstrapResult, pandoApp *app.App, unwireIPC func(), err error) {
+	instanceID := uuid.New().String()
+
+	rt, err = ipcruntime.BootstrapWithOptions(ctx, cwd, instanceID, ipcruntime.Options{
+		ProbeTimeout:          mcpServerProbeTimeout,
+		AllowKillStalePrimary: false,
+	})
+	if err != nil {
+		logging.Error("mcp-server: IPC bootstrap failed", "error", err)
+		return nil, nil, nil, fmt.Errorf("IPC bootstrap failed: %w", err)
+	}
+
+	pandoApp, err = app.New(ctx, rt.SQLDB, app.AppOptions{
+		SkipLSP:           true,
+		SkipMesnadaServer: true,
+		StartupMode:       "mcp",
+		DBQuerier:         rt.Querier,
+	})
+	if err != nil {
+		rt.Cleanup()
+		return nil, nil, nil, fmt.Errorf("failed to initialize app: %w", err)
+	}
+
+	acceptDelegations := false
+	unwireIPC = wireIPC(ctx, rt, pandoApp, instanceID, cwd, instanceregistry.ModeMCP, wireOptions{
+		AcceptDelegations: &acceptDelegations,
+	})
+
+	return rt, pandoApp, unwireIPC, nil
+}
+
+// shutdownMCPServerOrdered runs the four P2 shutdown steps in the order the
+// plan requires: stop accepting new MCP requests, then hand over the IPC
+// primary role, then drop this instance from the registry, then release the
+// bootstrap runtime's own resources. Factored into a plain function of
+// closures (rather than relying on defer's LIFO order across several
+// statements) so the order itself — not just each individual step — is
+// covered directly by TestShutdownMCPServerOrdered without needing real
+// IPC/DB resources.
+func shutdownMCPServerOrdered(stopTransports, shutdownApp, unwireIPC, cleanupRuntime func()) {
+	stopTransports()
+	shutdownApp()
+	unwireIPC()
+	cleanupRuntime()
+}
+
+// stopMCPTransports gracefully stops whichever MCP transports are non-nil.
+// The HTTP transport's Shutdown drains in-flight requests and closes its
+// listener; the stdio transport's Shutdown only releases per-session
+// resources (llmtools.RegisterSessionCache et al. via cleanupSessions) — it
+// has no way to interrupt a blocked read from os.Stdin, so on the
+// signal-triggered shutdown path that goroutine is simply abandoned when the
+// process exits after this function's caller returns.
+func stopMCPTransports(httpSrv, stdioSrv *mesnadaServer.Server) {
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if httpSrv != nil {
+		_ = httpSrv.Shutdown(shutdownCtx)
+	}
+	if stdioSrv != nil {
+		_ = stdioSrv.Shutdown(shutdownCtx)
 	}
 }
 
@@ -486,13 +615,4 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 	}
 
 	return tools
-}
-
-func shutdownHTTPMCPServer(server *mesnadaServer.Server) {
-	if server == nil {
-		return
-	}
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
-	_ = server.Shutdown(shutdownCtx)
 }

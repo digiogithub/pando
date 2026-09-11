@@ -1,6 +1,6 @@
 ---
-created_at: 2026-09-11T17:36:25.595647436Z
-updated_at: 2026-09-11T18:17:34.013283292Z
+created_at: 2026-09-11T18:17:34.383801266Z
+updated_at: 2026-09-11T19:42:31.508508284Z
 ---
 # Roadmap: SQLite contention / ACP stall fixes (2026-09-11)
 
@@ -86,11 +86,11 @@ Sources: [[pando/analysis/sqlite_locked_interrupted_errors.md]], [[pando/plans/m
   - One known gap: the version-skew fallback branch inside the indexer has no live multi-process IPC round-trip test. Its two inputs (the error classification and the fallback function) are each tested independently.
 - Step 4 (IPC failover, then mcp-server on IPC per [[pando/plans/mcp_server_ipc_bootstrap.md]]):
   - **P0 done (2026-09-11)**; see [[pando/fixes/ipc_failover_p0_inplace_promotion.md]].
-  - **Next up — P1: shared `wireIPC`.** This also gives serve/desktop/app a secondary branch, a promote callback, the `SetIPCPrimaryHandover` wiring and `SetupIPC`.
+  - **P1 done (2026-09-11): shared `wireIPC`.** See [[pando/changes/ipc_wiring_p1_shared_wireipc.md]]. Gave serve/desktop/app a secondary branch, a promote callback, the `SetIPCPrimaryHandover` wiring and `SetupIPC`; also fixed ACP's missing SIGINT/SIGTERM handler.
+  - **P2 done (2026-09-11): mcp-server on the bootstrap.** See [[pando/changes/mcp_server_ipc_bootstrap_p2.md]]. `cmd/mcp_server.go` now uses `ipcruntime.BootstrapWithOptions` (no-kill, 3s probe) + `wireIPC(ModeMCP, AcceptDelegations:false)`; SIGINT/SIGTERM and stdin-EOF on the stdio path all drive one ordered shutdown (stop transports → `App.Shutdown` → registry revoke → `rt.Cleanup`); stdout stays pure JSON-RPC (regression-tested); remembrances write tools work unchanged on a secondary (no code changes needed there, P0 already covers it).
+  - **Next up — P3:** primary-only background services (fill `startPrimaryServices`; NOT the enricher).
   - Then:
-    - P2: mcp-server on the bootstrap (`ModeMCP`), plus signal/EOF handling; ACP also lacks a SIGTERM handler.
-    - P3: primary-only background services (fill `startPrimaryServices`; NOT the enricher).
     - P4: agui-serve / cronjob / kb relink.
     - P5: remaining direct writers.
-    - P6: multi-process tests.
+    - P6: multi-process tests (`tests/`, Python).
   - G7 (kill policy) is still open.

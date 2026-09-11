@@ -1,10 +1,10 @@
 ---
-created_at: 2026-09-11T19:07:15.549828414Z
-updated_at: 2026-09-11T19:08:58.468750654Z
+created_at: 2026-09-11T19:08:59.014852368Z
+updated_at: 2026-09-11T19:40:37.614810381Z
 ---
 # Plan: put `pando mcp-server` (and other direct-DB entry points) on the IPC primary/secondary bootstrap
 
-Date: 2026-09-11. Status: **P0 (failover correctness, G1–G6) IMPLEMENTED 2026-09-11**, see [[pando/fixes/ipc_failover_p0_inplace_promotion.md]]. **P1 (shared `wireIPC`, `BootstrapWithOptions`, `ModeMCP`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_wiring_p1_shared_wireipc.md]]. P2–P6 and G7 not started. Author: Claude (analysis task, point 1 of 3).
+Date: 2026-09-11. Status: **P0 (failover correctness, G1–G6) IMPLEMENTED 2026-09-11**, see [[pando/fixes/ipc_failover_p0_inplace_promotion.md]]. **P1 (shared `wireIPC`, `BootstrapWithOptions`, `ModeMCP`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_wiring_p1_shared_wireipc.md]]. **P2 (mcp-server on the bootstrap) IMPLEMENTED 2026-09-11**, see [[pando/changes/mcp_server_ipc_bootstrap_p2.md]]. P3–P6 and G7 not started. Author: Claude (analysis task, point 1 of 3).
 Builds on: [[pando/analysis/sqlite_locked_interrupted_errors.md]], [[pando/plans/unified_single_writer_master_plan.md]], [[pando/plans/unified_single_writer_phase1_bootstrap.md]], [[pando/plans/unified_single_writer_phase3_serialisation.md]], [[pando/plans/unified_single_writer_phase5_failover.md]], [[pando/plans/inter_instance_phase4_completed.md]], [[pando/plans/inter_instance_ipc_plan.md]], [[pando/analysis/remembrances-single-writer-proxy-gap-2026-05-27.md]], [[pando/plans/remembrances_ipc_proxy_implementation_plan.md]], [[pando/fixes/sqlite-connection-pool-exhaustion-mcp-server.md]].
 
 Target scenario: TUI/desktop/ACP plus one or more `pando mcp-server --no-http` processes (started by Claude Code, Copilot, Cursor...) in the same project, all sharing `.pando/data/pando.db`. Any of them may start first. mcp-server processes come and go, so handover and failover are on the normal path, not rare edge cases.
@@ -256,7 +256,13 @@ The session indexer stays per process, because it only sees its own message brok
     - `wireIPC`'s secondary branch does not call `rt.Watcher.Start` again — `ipcruntime.Bootstrap` already starts the secondary watcher unconditionally (P0), and starting it twice would double-close its `done` channel.
     - The primary and promotion wiring share one `primaryBusSetupFunc` (an `app.IPCBusSetupFunc`) instead of two separate blocks, so bridge heartbeats now start as soon as handlers are registered in both cases (previously TUI/ACP's own bootstrap-time wiring started the bridge only after `bus.Start` succeeded).
   - Validated with a two-process smoke test: `pando serve` (primary) SIGTERM'd, `pando acp` (secondary) promoted in 0.115 s, rebound serve's ports, and a `session/new` call after promotion wrote a real row — the serve entrypoint specifically, which had no working secondary/handover path before P1.
-- **P2 — mcp-server on the bootstrap.** `cmd/mcp_server.go`: absolute cwd, Bootstrap(no-kill, 3 s), `wireIPC(ModeMCP)`, signal/EOF handling, stdout-clean test.
+- **P2 — mcp-server on the bootstrap.** **IMPLEMENTED 2026-09-11**, see [[pando/changes/mcp_server_ipc_bootstrap_p2.md]].
+  - `cmd/mcp_server.go`: absolute `cwd` (`os.Chdir` then always `os.Getwd()`), a new `bootstrapMCPServer(ctx, cwd)` helper wrapping `ipcruntime.BootstrapWithOptions(..., Options{ProbeTimeout: 3s, AllowKillStalePrimary: false})` + `app.New(..., DBQuerier: rt.Querier)` + `wireIPC(..., instanceregistry.ModeMCP, wireOptions{AcceptDelegations: &false})`, replacing the old `db.Connect()` path.
+  - Ordered shutdown via a single `shutdownMCPServerOrdered` closure (stop transports → `pandoApp.Shutdown()` → registry revoke → `rt.Cleanup()`), triggered uniformly by SIGINT/SIGTERM, stdin EOF on the stdio transport, or an HTTP failure — unifying what were three separate branches (`--no-http`, `--no-stdio`, both) into one `waitForMCPServerShutdown` select, and fixing the `--no-http` path's complete lack of signal handling (previously a bare `return stdioSrv.Start()`).
+  - Deviations from this sketch, with reasons in the change doc:
+    - No `AppOptions.IPCRole` field exists yet (that is P3's `startPrimaryServices`/role-aware plumbing, §5.4, not started); mcp-server passes only `DBQuerier`, matching every other migrated entrypoint today.
+    - `buildMCPServerTools` needed no changes: the KB/events/code stores already pick `Forward`/`IsRemote` correctly per P0, so remembrances tool writes (`kb_add_document`, `remember`, `save_event`, code index tools, `kb_delete_document`, `forget`) work unchanged on a secondary.
+  - Verified with an isolated three-scenario smoke test (mcp-server primary→ACP secondary EOF-promotes; ACP primary→mcp-server secondary proxied delete + stdout purity; SIGTERM of the primary while mcp-server is secondary). See the change doc for exact latencies.
 - **P3 — role-aware services.** `AppOptions.IPCRole`, `startPrimaryServices` in `internal/app/app.go`, `remembrances*.go`, cron gating.
 - **P4 — other entry points.** agui-serve → wireIPC; cronjob → Bootstrap + oneshot; `kb.relink` RPC; `db.ConnectCLI` for project/design.
 - **P5 — remaining direct writers on secondaries.** history (`WithTx`), project, mcpgateway favorites, design provider. Route them via the proxy or document direct-first plus retry. Plus the analysis items: `BEGIN IMMEDIATE`, an index on `json_extract(metadata,'$.session_id')`, an incremental session indexer, retrying lock errors in `WriteError.IsRetryable`.
