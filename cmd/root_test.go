@@ -187,7 +187,7 @@ func TestSelectReleaseForTargetsPrefersLinuxX64Asset(t *testing.T) {
 // TestRunACPServerWithOptions_ConfiguresSecondaryIPCFailoverPath, which only
 // checked ACP's (then hand-rolled) secondary wiring.
 func TestEntrypointsUseSharedIPCWiring(t *testing.T) {
-	for _, file := range []string{"root.go", "serve.go", "desktop.go", "app.go"} {
+	for _, file := range []string{"root.go", "serve.go", "desktop.go", "app.go", "agui_serve.go", "cronjob.go"} {
 		source, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatalf("read %s: %v", file, err)

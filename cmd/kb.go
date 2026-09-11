@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -8,6 +9,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/ipc/protocol"
 	"github.com/digiogithub/pando/internal/rag/kb"
 )
 
@@ -30,7 +32,11 @@ content. It costs no embeddings and never rewrites the markdown files.
 
 By default only documents that have no links yet are scanned, so the command is
 cheap and safe to repeat. Use --force to drop the whole graph and re-extract every
-link, which is what you want after an upgrade that changed how links are parsed.`,
+link, which is what you want after an upgrade that changed how links are parsed.
+
+If another Pando instance is already running for this directory, the rebuild is
+forwarded to it over IPC and runs on its writer connection, so this command never
+opens a second writer next to it. Otherwise it runs in-process.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -43,24 +49,9 @@ link, which is what you want after an upgrade that changed how links are parsed.
 			return fmt.Errorf("wiki links are disabled: set Remembrances.KBWikiLinks = true to build the link graph")
 		}
 
-		conn, err := db.Connect()
+		stats, forwarded, err := runKBRelink(cmd.Context(), cwd, kbRelinkForce)
 		if err != nil {
-			return fmt.Errorf("open database: %w", err)
-		}
-		defer conn.Close()
-
-		// Link extraction reads stored content and writes kb_links: no embedder,
-		// no chunking, so a bare store is enough.
-		store := kb.NewKBStore(conn, nil, 0, 0)
-
-		var stats kb.BackfillStats
-		if kbRelinkForce {
-			stats, err = store.RelinkAll(cmd.Context())
-		} else {
-			stats, err = store.BackfillLinks(cmd.Context())
-		}
-		if err != nil {
-			if isDBLockedErr(err) {
+			if !forwarded && isDBLockedErr(err) {
 				return fmt.Errorf("%w\nanother Pando instance may be writing to the database; stop it and retry", err)
 			}
 			return err
@@ -74,6 +65,42 @@ link, which is what you want after an upgrade that changed how links are parsed.
 			stats.Links, stats.Documents, stats.Scanned)
 		return nil
 	},
+}
+
+// runKBRelink rebuilds the wiki-link graph for the project at cwd (config
+// already loaded). It prefers the running primary (kb.relink RPC, see
+// kbRelinkViaRunningInstance) and only relinks in-process when no live
+// instance holds the IPC lock. forwarded reports which path ran.
+func runKBRelink(ctx context.Context, cwd string, force bool) (protocol.KBRelinkResult, bool, error) {
+	if res, forwarded, err := kbRelinkViaRunningInstance(ctx, cwd, force); forwarded {
+		return res, true, err
+	}
+
+	// No instance running for this directory: relink in-process. ConnectCLI
+	// never migrates an existing database from this (possibly different)
+	// binary.
+	conn, err := db.ConnectCLI()
+	if err != nil {
+		return protocol.KBRelinkResult{}, false, fmt.Errorf("open database: %w", err)
+	}
+	defer conn.Close()
+
+	// Link extraction reads stored content and writes kb_links: no embedder,
+	// no chunking, so a bare store is enough.
+	store := kb.NewKBStore(conn, nil, 0, 0)
+
+	var stats kb.BackfillStats
+	if force {
+		stats, err = store.RelinkAll(ctx)
+	} else {
+		stats, err = store.BackfillLinks(ctx)
+	}
+	return protocol.KBRelinkResult{
+		Candidates: stats.Candidates,
+		Scanned:    stats.Scanned,
+		Documents:  stats.Documents,
+		Links:      stats.Links,
+	}, false, err
 }
 
 func init() {

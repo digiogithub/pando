@@ -33,6 +33,18 @@ type wireOptions struct {
 	// spawned by an editor/agent and dies with it, and is not a stable target
 	// for another instance to route work to.
 	AcceptDelegations *bool
+
+	// OneShot is for short-lived processes (`pando cronjob run`, P4): on a
+	// secondary, the promotion callback is NOT armed, so this process never
+	// takes over as primary through failover — it would hold the IPC lock for
+	// a few seconds and then hand it over again, delaying the long-running
+	// instance that should win. The secondary watcher keeps running with no
+	// callback, and P0 guarantees it then never takes the lock. On a primary
+	// nothing changes: the process serves the bus (so a secondary started
+	// meanwhile can forward its writes) and hands the role over in order when
+	// it exits. Pair it with app.AppOptions.OneShot, which keeps the
+	// primary-only background services off.
+	OneShot bool
 }
 
 // wireIPC performs the post-app.New half of the IPC bootstrap shared by every
@@ -88,6 +100,21 @@ func wireIPC(
 	return func() { _ = instanceregistry.Revoke(instanceID) }
 }
 
+// shutdownEntrypointOrdered runs the teardown of a wireIPC entrypoint in the
+// order the plan requires (§5.5, same order as mcp-server's
+// shutdownMCPServerOrdered minus its transport step): first the App's
+// Shutdown, whose releasePrimaryRole drains the write coordinator, releases
+// the IPC lock and announces instance.shutdown before the slower teardown;
+// then the registry revoke, once this instance has definitely stopped acting
+// as primary; then the bootstrap runtime (DB, watcher; ReleaseLock again is a
+// no-op by then). Used by agui-serve and cronjob run as a single defer, so
+// the order is a property of this function, not of defer stacking.
+func shutdownEntrypointOrdered(shutdownApp, unwireIPC, cleanupRuntime func()) {
+	shutdownApp()
+	unwireIPC()
+	cleanupRuntime()
+}
+
 // primaryBusSetupFunc returns the app.IPCBusSetupFunc closure that wires the
 // write coordinator, changepub publisher, db.write RPC handlers and bridge
 // handlers/heartbeats onto bus — the "primary wiring" every entrypoint needs.
@@ -106,6 +133,7 @@ func primaryBusSetupFunc(instanceID, cwd string, pandoApp *app.App, opts wireOpt
 		coord.SetPublisher(pub)
 		dbproxy.RegisterHandlersWithCoordinator(bus, coord)
 		registerBridgeHandlers(bus, instanceID, pandoApp, opts.AcceptDelegations)
+		registerPrimaryMaintenanceHandlers(bus, pandoApp)
 		br := bridge.New(bus, pandoApp.Sessions, pandoApp.CoderAgent)
 		br.Start(ctx)
 		return coord, nil
@@ -163,6 +191,13 @@ func wireSecondary(rt *ipcruntime.BootstrapResult, pandoApp *app.App, instanceID
 		rt.Watcher,
 		busSetupFunc,
 	)
+	if opts.OneShot {
+		// A one-shot process is never a promotion candidate (see
+		// wireOptions.OneShot). With no callback the watcher never takes the
+		// lock (P0's G3 guard), so it cannot leave a zombie lock behind either.
+		logging.Info("IPC: one-shot secondary, failover promotion not armed", "instance_id", instanceID)
+		return
+	}
 	// Register the promotion callback so the watcher can call PromoteToPrimary
 	// when it wins the lock race. The secondary watcher is already running
 	// (ipcruntime.Bootstrap starts it unconditionally); see the wireIPC doc

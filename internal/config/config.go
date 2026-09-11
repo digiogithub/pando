@@ -5532,6 +5532,32 @@ func UpdateCronJobs(cronJobs CronJobsConfig) error {
 	return nil
 }
 
+// SetCronJobsInMemory validates cronJobs and installs it as the in-memory cron
+// configuration WITHOUT writing any config file and without re-reading one.
+//
+// It is the IPC primary's side of the `cronjob.reload` RPC: another instance of
+// the same project has already persisted the change with UpdateCronJobs, so the
+// primary only needs its in-memory copy (read by its own later edits and by a
+// cron restart) to match. Reload() is deliberately not used for this: it would
+// rebuild the whole configuration from disk and discard runtime overrides that
+// exist only in memory (for example mcp-server's flag overrides).
+func SetCronJobsInMemory(cronJobs CronJobsConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	// The sender's UpdateCronJobs already went through the write funnel's lock
+	// check, but a policy overlay that locks cron here must still win over a
+	// peer (which may run under a different policy or binary).
+	if err := ErrIfLocked("cronJobs"); err != nil {
+		return err
+	}
+	if err := validateCronJobs(cronJobs); err != nil {
+		return err
+	}
+	cfg.CronJobs = cronJobs
+	return nil
+}
+
 // EvaluatorWithDefaults returns a copy of eval with zero/empty values replaced
 // by the recommended defaults. This ensures the TUI and Web-UI always display
 // sensible values even when the user has not explicitly configured the evaluator.

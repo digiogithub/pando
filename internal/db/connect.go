@@ -3,7 +3,9 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -385,6 +387,64 @@ func ConnectRWSecondaryAt(dbPath string) (*sql.DB, error) {
 	if _, err = conn.Exec("PRAGMA journal_mode = WAL;"); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("failed to set journal_mode on secondary RW connection: %w", err)
+	}
+	return conn, nil
+}
+
+// Settings for ConnectCLI: short-lived CLI commands (`pando project`,
+// `pando design`, the local fallbacks of `pando kb relink` / `pando db
+// compact`) that open the shared database while a long-running instance may be
+// writing to it.
+const (
+	// cliBusyTimeout is longer than a secondary's 200 ms (a CLI has no IPC
+	// proxy to fall back to, so it should wait out a normal write) and shorter
+	// than the primary's 10 s (a user is waiting at the terminal).
+	cliBusyTimeout  = 5 * time.Second
+	cliMaxOpenConns = 4
+	cliMaxIdleConns = 1
+)
+
+// ConnectCLI opens the project database for a short-lived CLI command.
+//
+// When the database file already exists it does NOT run the goose migrations:
+// the CLI may come from a different (older or newer) binary than the
+// long-running instance that owns the schema, and a CLI must never migrate a
+// database under it. It uses the same DSN (`_txlock=immediate`) and
+// per-connection pragmas as Connect, a 5 s busy timeout and a small pool.
+//
+// When the database does not exist yet (or is an empty file, which no
+// migration has touched) it falls back to Connect, which creates the data
+// directory and applies the migrations: there is no other owner to defer to.
+func ConnectCLI() (*sql.DB, error) {
+	dataDir := config.Get().Data.Directory
+	if dataDir == "" {
+		return nil, fmt.Errorf("data.dir is not set")
+	}
+	return ConnectCLIAt(filepath.Join(dataDir, "pando.db"))
+}
+
+// ConnectCLIAt is ConnectCLI for an explicit database path.
+func ConnectCLIAt(dbPath string) (*sql.DB, error) {
+	info, err := os.Stat(dbPath)
+	switch {
+	case errors.Is(err, fs.ErrNotExist) || (err == nil && info.Size() == 0):
+		if err := os.MkdirAll(filepath.Dir(dbPath), 0o700); err != nil {
+			return nil, fmt.Errorf("failed to create data directory: %w", err)
+		}
+		return ConnectAt(dbPath)
+	case err != nil:
+		return nil, fmt.Errorf("failed to stat database: %w", err)
+	}
+
+	conn, err := openPool(dbPath, poolOptions{
+		immediateWrites: true,
+		busyTimeout:     cliBusyTimeout,
+		perConnPragmas:  primaryPerConnPragmas,
+		maxOpenConns:    cliMaxOpenConns,
+		maxIdleConns:    cliMaxIdleConns,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 	return conn, nil
 }

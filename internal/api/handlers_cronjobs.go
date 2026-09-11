@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/logging"
 )
 
 // CronJobResponse is the JSON representation of a cronjob returned by the API.
@@ -152,12 +154,7 @@ func (s *Server) handleCreateCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hot-reload the service if running.
-	if s.app.CronService != nil {
-		cfg2 := config.Get()
-		if cfg2 != nil {
-			_ = s.app.CronService.Reload(cfg2.CronJobs)
-		}
-	}
+	s.reloadCronJobsEverywhere(r.Context())
 
 	writeJSON(w, http.StatusCreated, map[string]string{"name": newJob.Name})
 }
@@ -242,12 +239,7 @@ func (s *Server) handleUpdateCronJob(w http.ResponseWriter, r *http.Request, nam
 		return
 	}
 
-	if s.app.CronService != nil {
-		cfg2 := config.Get()
-		if cfg2 != nil {
-			_ = s.app.CronService.Reload(cfg2.CronJobs)
-		}
-	}
+	s.reloadCronJobsEverywhere(r.Context())
 
 	writeJSON(w, http.StatusOK, map[string]string{"name": name})
 }
@@ -286,14 +278,45 @@ func (s *Server) handleDeleteCronJob(w http.ResponseWriter, r *http.Request, nam
 		return
 	}
 
-	if s.app.CronService != nil {
-		cfg2 := config.Get()
-		if cfg2 != nil {
-			_ = s.app.CronService.Reload(cfg2.CronJobs)
-		}
-	}
+	s.reloadCronJobsEverywhere(r.Context())
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// cronJobPropagateTimeout bounds the best-effort cronjob.reload call a
+// secondary makes after persisting a cron edit.
+const cronJobPropagateTimeout = 5 * time.Second
+
+// reloadCronJobsEverywhere applies the cron configuration just persisted by
+// config.UpdateCronJobs: it hot-reloads this process's own cron service (a
+// no-op validation on an unstarted service) and, when this process is an IPC
+// secondary, hands the configuration to the primary over the cronjob.reload
+// RPC, because the primary's scheduler is the only one running and a non-TUI
+// primary does not watch the config file. Best effort: the edit is already
+// saved, so a failed forward is only logged (the primary picks it up on its
+// next restart or when another instance is promoted).
+func (s *Server) reloadCronJobsEverywhere(ctx context.Context) {
+	cfg := config.Get()
+	if cfg == nil {
+		return
+	}
+	jobs := cfg.CronJobs
+	if s.app.CronService != nil {
+		_ = s.app.CronService.Reload(jobs)
+	}
+
+	// Detached from the request: a client that disconnects right after the
+	// save must not cancel the forward.
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cronJobPropagateTimeout)
+	defer cancel()
+	forwarded, err := s.app.ForwardCronJobsToPrimary(fctx, jobs)
+	switch {
+	case err != nil:
+		logging.Warn("cronjob: failed to hand the saved cron configuration to the IPC primary; it applies after the primary restarts",
+			"error", err)
+	case forwarded:
+		logging.Info("cronjob: saved cron configuration handed to the IPC primary", "jobs", len(jobs.Jobs))
+	}
 }
 
 // handleRunCronJobNow handles POST /api/v1/cronjobs/{name}/run.

@@ -180,6 +180,8 @@ type App struct {
 	primarySvcs       []primaryService
 	primarySvcStarted bool
 	primarySvcClosed  bool
+	// oneShot is AppOptions.OneShot: startPrimaryServices is always a no-op.
+	oneShot bool
 
 	// ---- Secondary-only IPC context (set via SetIPCSecondaryContext) ----
 
@@ -294,6 +296,13 @@ type AppOptions struct {
 	// DBQuerier is a remote *dbproxy.DBProxy, primary otherwise, so callers
 	// without IPC (tests, one-shot CLIs) keep running every service.
 	IPCRole ipcruntime.Role
+	// OneShot marks a short-lived process (`pando cronjob run`) that must never
+	// start the primary-only background services (code index + watcher, KB
+	// sync/watch/backfill, memory GC, cron scheduler...), not at startup even
+	// when it holds the IPC primary role, and not on a promotion either: it
+	// exits within seconds, so starting them would only duplicate work the
+	// long-running primary does and race its own shutdown.
+	OneShot bool
 }
 
 // findFreePort returns the first available TCP port starting at preferred, trying
@@ -353,6 +362,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		DBQuerier:      q,
 		rwConn:         conn,
 		lifetimeCtx:    ctx,
+		oneShot:        opt.OneShot,
 		Projects:       projects,
 		LSPClients:     make(map[string]*lsp.Client),
 		lspSpawning:    make(map[string]struct{}),

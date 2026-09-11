@@ -254,7 +254,9 @@ func runWithProjectService(fn func(ctx context.Context, svc project.Service) err
 	if _, err := config.Load(cwd, false, ""); err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
-	conn, err := db.Connect()
+	// ConnectCLI: a short-lived command never migrates an existing database
+	// from this (possibly different) binary, and waits at most 5 s on a lock.
+	conn, err := db.ConnectCLI()
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}

@@ -1,10 +1,10 @@
 ---
-created_at: 2026-09-11T19:40:38.939627699Z
-updated_at: 2026-09-11T20:55:44.029876818Z
+created_at: 2026-09-11T20:55:44.710308509Z
+updated_at: 2026-09-11T21:53:02.288149387Z
 ---
 # Plan: put `pando mcp-server` (and other direct-DB entry points) on the IPC primary/secondary bootstrap
 
-Date: 2026-09-11. Status: **P0 (failover correctness, G1–G6) IMPLEMENTED 2026-09-11**, see [[pando/fixes/ipc_failover_p0_inplace_promotion.md]]. **P1 (shared `wireIPC`, `BootstrapWithOptions`, `ModeMCP`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_wiring_p1_shared_wireipc.md]]. **P2 (mcp-server on the bootstrap) IMPLEMENTED 2026-09-11**, see [[pando/changes/mcp_server_ipc_bootstrap_p2.md]]. **P3 (role-aware, primary-only background services) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_role_aware_services_p3.md]]. P4–P6 and G7 not started. Author: Claude (analysis task, point 1 of 3).
+Date: 2026-09-11. Status: **P0 (failover correctness, G1–G6) IMPLEMENTED 2026-09-11**, see [[pando/fixes/ipc_failover_p0_inplace_promotion.md]]. **P1 (shared `wireIPC`, `BootstrapWithOptions`, `ModeMCP`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_wiring_p1_shared_wireipc.md]]. **P2 (mcp-server on the bootstrap) IMPLEMENTED 2026-09-11**, see [[pando/changes/mcp_server_ipc_bootstrap_p2.md]]. **P3 (role-aware, primary-only background services) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_role_aware_services_p3.md]]. **P4 (other entry points: agui-serve, one-shot `cronjob run`, `cronjob.reload`, `kb.relink`, `db.ConnectCLI`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_other_entrypoints_p4.md]]. P5–P6 and G7 not started. Author: Claude (analysis task, point 1 of 3).
 Builds on: [[pando/analysis/sqlite_locked_interrupted_errors.md]], [[pando/plans/unified_single_writer_master_plan.md]], [[pando/plans/unified_single_writer_phase1_bootstrap.md]], [[pando/plans/unified_single_writer_phase3_serialisation.md]], [[pando/plans/unified_single_writer_phase5_failover.md]], [[pando/plans/inter_instance_phase4_completed.md]], [[pando/plans/inter_instance_ipc_plan.md]], [[pando/analysis/remembrances-single-writer-proxy-gap-2026-05-27.md]], [[pando/plans/remembrances_ipc_proxy_implementation_plan.md]], [[pando/fixes/sqlite-connection-pool-exhaustion-mcp-server.md]].
 
 Target scenario: TUI/desktop/ACP plus one or more `pando mcp-server --no-http` processes (started by Claude Code, Copilot, Cursor...) in the same project, all sharing `.pando/data/pando.db`. Any of them may start first. mcp-server processes come and go, so handover and failover are on the normal path, not rare edge cases.
@@ -291,7 +291,16 @@ The session indexer stays per process, because it only sees its own message brok
   - Verified:
     - Unit tests (`-race`), including a real in-place promotion.
     - An isolated three-process smoke test: acp primary, plus acp and mcp-server secondaries. The secondaries started nothing. After a graceful handover the winner (acp in one run, mcp-server in the other) started the services exactly once with `trigger=promotion`, 0.215 s after the handover.
-- **P4 — other entry points.** agui-serve → wireIPC; cronjob → Bootstrap + oneshot; `kb.relink` RPC; `db.ConnectCLI` for project/design.
+- **P4 — other entry points.** **IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_other_entrypoints_p4.md]].
+  - `agui-serve` → `ipcruntime.Bootstrap` (serve's default options) + `app.New(DBQuerier, IPCRole)` + `wireIPC(..., instanceregistry.ModeAGUI)`. A new shared helper, `shutdownEntrypointOrdered`, runs the ordered shutdown on SIGINT/SIGTERM, with a 6 s watchdog as in serve. `--cwd` is now resolved to an absolute path.
+  - `cronjob run` → `BootstrapWithOptions(ProbeTimeout: 3s, AllowKillStalePrimary: false)`, then `wireIPC(..., ModeCronJob, {AcceptDelegations: false, OneShot: true})`. Two new knobs:
+    - `AppOptions.OneShot`: no primary-only services, even as primary.
+    - `wireOptions.OneShot`: a secondary is never armed for promotion.
+  - `cronjob.reload` RPC (resolves the P3 deviation above). All three cron REST handlers call `Server.reloadCronJobsEverywhere`, which reloads locally and then, on a secondary, sends a best-effort `App.ForwardCronJobsToPrimary`. The primary's handler is registered in `primaryBusSetupFunc`, so a promoted instance gets it too. It calls `config.SetCronJobsInMemory` (lock-aware; no file write, no `config.Reload()`) and then `CronService.Reload`.
+  - `kb.relink` RPC. `pando kb relink [--force]` forwards through the new `dialRunningPrimary` helper, which `db compact` now uses too, and falls back to a local run. On the primary, `App.RelinkKB` uses the KB store's own batched IMMEDIATE-transaction path, not the single-goroutine writecoordinator, to avoid head-of-line blocking.
+  - `db.ConnectCLI()`: no migrations when the DB exists, 5 s busy timeout, a pool of 4, and the same DSN and pragmas; a missing or empty DB falls back to `Connect`. Used by `project`, `design`, and the local fallbacks of `kb relink` and `db compact`. After P4 the only `db.Connect()` caller left is the bootstrap's own primary branch.
+  - Also: registry modes `ModeAGUI`/`ModeCronJob`, and nil-DB guards in the two P4 entrypoints.
+  - Verified with `-race` unit tests (including a real-bus `cronjob.reload` and `kb.relink` forward, and a one-shot secondary that is never promoted) and an isolated smoke test with 45/45 checks passing. That smoke found a pre-existing bug: `updateConfigFileAt` rewrites the whole project config, blanking `Data.Directory` (see the change doc).
 - **P5 — remaining direct writers on secondaries.** history (`WithTx`), project, mcpgateway favorites, design provider. Route them via the proxy or document direct-first plus retry. Plus the analysis items: `BEGIN IMMEDIATE`, an index on `json_extract(metadata,'$.session_id')`, an incremental session indexer, retrying lock errors in `WriteError.IsRetryable`.
 - **P6 — tests and docs.** See §8. Update the stale statuses in the `unified_single_writer_*` KB docs.
 

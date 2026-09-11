@@ -58,6 +58,17 @@ func (app *App) registerPrimaryService(name string, start func(ctx context.Conte
 // applyStartupIPCRole is the end of New: a primary starts its primary-only
 // services now, a secondary logs that they wait for a promotion.
 func (app *App) applyStartupIPCRole(role ipcruntime.Role, startupMode string) {
+	if app.oneShot {
+		app.primarySvcMu.Lock()
+		names := app.primaryServiceNamesLocked()
+		app.primarySvcMu.Unlock()
+		logging.Info("IPC role: one-shot process, primary-only background services disabled",
+			"role", role,
+			"startup_mode", startupMode,
+			"services", names,
+		)
+		return
+	}
 	if role == ipcruntime.RoleSecondary {
 		app.primarySvcMu.Lock()
 		names := app.primaryServiceNamesLocked()
@@ -85,6 +96,14 @@ func (app *App) startPrimaryServices(trigger string) bool {
 	app.primarySvcMu.Lock()
 	defer app.primarySvcMu.Unlock()
 
+	if app.oneShot {
+		// AppOptions.OneShot: never, whatever the trigger (a one-shot process
+		// is not armed for promotion either, see cmd/ipc_wiring.go
+		// wireOptions.OneShot, so this only guards against a future caller).
+		logging.Info("IPC role: primary-only background services not started, one-shot process",
+			"trigger", trigger)
+		return false
+	}
 	if app.primarySvcClosed {
 		logging.Info("IPC role: primary-only background services not started, app is shutting down",
 			"trigger", trigger)

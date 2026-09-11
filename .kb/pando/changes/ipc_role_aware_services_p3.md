@@ -1,6 +1,6 @@
 ---
-created_at: 2026-09-11T20:53:44.79602729Z
-updated_at: 2026-09-11T20:53:44.79602729Z
+created_at: 2026-09-11T20:53:45.27564435Z
+updated_at: 2026-09-11T21:54:07.657955601Z
 tags:
     - change
     - ipc
@@ -11,6 +11,8 @@ tags:
 # Change: P3 — role-aware background services (primary-only) (2026-09-11)
 
 Implements phase **P3** of [[pando/plans/mcp_server_ipc_bootstrap.md]] (§1.4, §5.4, §7 P3, §8). Builds on [[pando/fixes/ipc_failover_p0_inplace_promotion.md]] (in-place promotion and the `startPrimaryServices` hook), [[pando/changes/ipc_wiring_p1_shared_wireipc.md]] (shared `wireIPC`) and [[pando/changes/mcp_server_ipc_bootstrap_p2.md]] (mcp-server on the bootstrap). P4–P6 and G7 are not started.
+
+> **Update 2026-09-11:** the cron cross-process follow-up (§5 "Cross-process consistency" and the first two "Follow-ups and risks" items) is **resolved by P4**, see [[pando/changes/ipc_other_entrypoints_p4.md]].
 
 ## Problem
 
@@ -105,7 +107,7 @@ Every process started by `app.New` (primary or secondary) ran all the background
 - **`Stop` removes the entries,** so a restart does not double-schedule.
 - **Pre-existing data race fixed.** `watchConfigChanges` read the `s.reloadCh` field without the lock while `Stop` cleared it under `s.mu`; production hits this too, via `App.Shutdown` → `CronService.Stop`. The channel is now passed to the goroutine as a parameter. The new `-race` test found it.
 
-**Cross-process consistency (task item 4). Decision: document as a follow-up, not implemented.**
+**Cross-process consistency (task item 4). Decision: document as a follow-up, not implemented.** **RESOLVED by P4 (2026-09-11):** the proposed `cronjob.reload` RPC is implemented, see [[pando/changes/ipc_other_entrypoints_p4.md]] §4. All three cron REST handlers now forward the saved configuration from a secondary to the primary. The primary applies it with `config.SetCronJobsInMemory` (no file write, no `config.Reload()`) plus `CronService.Reload`. The smoke test showed an ACP primary scheduling a job added through a serve secondary 0.018 s after the save. The original analysis is kept below for the record.
 - Cron jobs live in the **config file** (`config.UpdateCronJobs` → `updateCfgFile`). There are no cron DB tables, so there are no changepub events to react to.
 - The primary reloads cron today through:
   - the in-process `config.Bus` (`watchConfigChanges`), which covers edits made on the primary itself;
@@ -195,11 +197,11 @@ Only the automatic starts are gated. The following all run on a secondary as bef
 - A first attempt failed only because the harness passed `--log-file` to mcp-server (the unknown flag made C exit 1). The harness was fixed; the code was not changed.
 
 ## Follow-ups and risks
-- **Cron cross-process edits** reach a non-TUI primary only after a restart or promotion (see §5). The proposed fix is the `cronjob.reload` RPC.
-- **P4 entrypoints still have no IPC** (`agui-serve`, `cronjob run`, `kb relink`). They fall back to "primary" and therefore still run the primary services, as before P3. `cronjob run`'s code-indexer skip is unchanged, and its cron scheduler starts as before. The plan's P4 "oneshot" role should skip them.
+- **Cron cross-process edits** reach a non-TUI primary only after a restart or promotion (see §5). The proposed fix is the `cronjob.reload` RPC. **RESOLVED by P4** ([[pando/changes/ipc_other_entrypoints_p4.md]]).
+- **P4 entrypoints still have no IPC** (`agui-serve`, `cronjob run`, `kb relink`). They fall back to "primary" and therefore still run the primary services, as before P3. `cronjob run`'s code-indexer skip is unchanged, and its cron scheduler starts as before. The plan's P4 "oneshot" role should skip them. **RESOLVED by P4:** agui-serve is on `wireIPC`; `cronjob run` is a one-shot process (`AppOptions.OneShot`), which starts no primary services even as primary and is never armed for promotion; `kb relink` forwards over `kb.relink`.
 - A primary whose bus fails to start ("continue without IPC") still reports `RolePrimary` and runs the services, the same as before.
 - A degraded mcp-server secondary (unresponsive primary, `AllowKillStalePrimary=false`) runs none of the services. If the primary is stuck but alive, nobody indexes until it recovers or dies. This is acceptable: the kill policy is G7.
 - The service parameters (KB path, GC interval, code project id) are snapshotted at `New`. A config change between startup and a promotion is not reflected, matching pre-P3 behaviour, where they started at `New`. Cron reads `config.Get()` at start time.
 - A promotion's `startPrimaryServices` reads `config.Get()` on the watcher goroutine. This is the same unsynchronised global-config access pattern used throughout the app.
 
-Links: [[pando/plans/mcp_server_ipc_bootstrap.md]], [[pando/fixes/ipc_failover_p0_inplace_promotion.md]], [[pando/changes/ipc_wiring_p1_shared_wireipc.md]], [[pando/changes/mcp_server_ipc_bootstrap_p2.md]]
+Links: [[pando/plans/mcp_server_ipc_bootstrap.md]], [[pando/fixes/ipc_failover_p0_inplace_promotion.md]], [[pando/changes/ipc_wiring_p1_shared_wireipc.md]], [[pando/changes/mcp_server_ipc_bootstrap_p2.md]], [[pando/changes/ipc_other_entrypoints_p4.md]]

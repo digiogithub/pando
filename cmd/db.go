@@ -68,8 +68,10 @@ instance is running, the VACUUM runs in-process.`,
 			return nil
 		}
 
-		// No instance running for this directory: VACUUM in-process.
-		conn, err := db.Connect()
+		// No instance running for this directory: VACUUM in-process. ConnectCLI
+		// never migrates an existing database from this (possibly different)
+		// binary.
+		conn, err := db.ConnectCLI()
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}
@@ -108,30 +110,15 @@ var dbCompactAliasCmd = &cobra.Command{
 // the caller should compact in-process. A stale lock file (primary dead) is
 // treated as "not running" so the caller falls back to a local VACUUM.
 func compactViaRunningInstance(ctx context.Context, workdir string, params protocol.DBCompactParams) (protocol.DBCompactResult, bool, error) {
-	info, err := ipc.ReadLockForPath(workdir)
-	if err != nil || info == nil || info.RPCPort == 0 {
+	primary := dialRunningPrimary(ctx, workdir)
+	if primary == nil {
 		return protocol.DBCompactResult{}, false, nil
 	}
+	defer primary.Close()
 
-	client, err := ipc.NewClient(ctx)
-	if err != nil {
-		return protocol.DBCompactResult{}, false, nil
-	}
-	defer client.Close()
+	fmt.Printf("Forwarding compaction to the running Pando instance (pid %d)...\n", primary.pid)
 
-	rpcAddr := fmt.Sprintf("tcp://127.0.0.1:%d", info.RPCPort)
-
-	// Quick liveness probe: a stale lock (no live primary) means we should run
-	// locally instead of blocking on a dead endpoint.
-	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	if _, perr := client.Call(probeCtx, rpcAddr, protocol.MethodInstancePing, nil); perr != nil {
-		return protocol.DBCompactResult{}, false, nil
-	}
-
-	fmt.Printf("Forwarding compaction to the running Pando instance (pid %d)...\n", info.PID)
-
-	raw, err := client.CallWithTimeout(ctx, rpcAddr, protocol.MethodDBCompact, params, dbCompactForwardTimeout)
+	raw, err := primary.call(ctx, protocol.MethodDBCompact, params, dbCompactForwardTimeout)
 	if err != nil {
 		if errors.Is(err, ipc.ErrMethodNotFound) {
 			return protocol.DBCompactResult{}, true, fmt.Errorf("the running Pando instance is too old to handle db compaction over IPC; please stop it and retry, or upgrade it")

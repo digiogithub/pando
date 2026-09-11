@@ -458,6 +458,10 @@ func modeStr(e *instanceregistry.Entry) string {
 		return "PRX"
 	case instanceregistry.ModeMCP:
 		return "MCP"
+	case instanceregistry.ModeAGUI:
+		return "AGU"
+	case instanceregistry.ModeCronJob:
+		return "CRN"
 	default:
 		return "TUI"
 	}

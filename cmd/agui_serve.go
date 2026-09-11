@@ -13,9 +13,11 @@ import (
 	"github.com/digiogithub/pando/internal/agui"
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/config"
-	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/instanceregistry"
+	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/tlsutil"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -112,17 +114,35 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	conn, err := db.Connect()
+	// --- IPC bootstrap (P4 of pando/plans/mcp_server_ipc_bootstrap.md): a
+	// long-running peer of `pando serve`, so the same default policy, the same
+	// role-aware App and the same shared wiring. ---
+	instanceID := uuid.New().String()
+	rt, err := ipcruntime.Bootstrap(ctx, cwd, instanceID)
 	if err != nil {
-		return err
+		return fmt.Errorf("IPC bootstrap failed: %w", err)
 	}
-	defer conn.Close()
+	conn := rt.SQLDB
+	if conn == nil {
+		// A secondary whose DB failed to open (Bootstrap logs why): app.New
+		// would panic on the nil pool, so fail with the reason instead.
+		rt.Cleanup()
+		return fmt.Errorf("IPC bootstrap: no database connection (see the log for the cause)")
+	}
 
-	pandoApp, err := app.New(ctx, conn, app.AppOptions{StartupMode: "agui"})
+	pandoApp, err := app.New(ctx, conn, app.AppOptions{
+		StartupMode: "agui",
+		DBQuerier:   rt.Querier,
+		IPCRole:     rt.Role,
+	})
 	if err != nil {
+		rt.Cleanup()
 		return fmt.Errorf("failed to initialize app: %w", err)
 	}
-	defer pandoApp.Shutdown()
+	unwireIPC := wireIPC(ctx, rt, pandoApp, instanceID, cwd, instanceregistry.ModeAGUI, wireOptions{})
+	// Registered before the AG-UI runtime's own defer, so (LIFO) the listener
+	// and runtime stop first, then the ordered IPC handover runs.
+	defer shutdownEntrypointOrdered(pandoApp.Shutdown, unwireIPC, rt.Cleanup)
 
 	if !noTLS && (tlsCert == "" || tlsKey == "") {
 		dataDir := cfg.Data.Directory
@@ -182,6 +202,17 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignals()
 
+	// Watchdog, as in `pando serve`: force-exit if the process has not
+	// terminated within 6 seconds of the shutdown signal. The IPC handover
+	// (drain, lock release, instance.shutdown) is the first thing
+	// App.Shutdown does, so it has run by then; only slower teardown is cut.
+	go func() {
+		<-sigCtx.Done()
+		time.Sleep(6 * time.Second)
+		logging.Error("AG-UI server shutdown watchdog: forced exit after 6s")
+		os.Exit(1)
+	}()
+
 	select {
 	case <-sigCtx.Done():
 		logging.Info("Shutdown signal received")
@@ -204,15 +235,17 @@ func serveResult(l *agui.Listener) <-chan error {
 	return out
 }
 
-// resolveWorkingDir applies --cwd, mirroring what the MCP server command does.
+// resolveWorkingDir applies --cwd, mirroring what the MCP server command does:
+// chdir first, then always re-derive the directory with os.Getwd so it is
+// absolute (the IPC lock, ports and registry entry must not see a relative
+// spelling).
 func resolveWorkingDir(cwdFlag string) (string, error) {
-	if cwdFlag == "" {
-		return os.Getwd()
+	if cwdFlag != "" {
+		if err := os.Chdir(cwdFlag); err != nil {
+			return "", fmt.Errorf("failed to change directory to %q: %w", cwdFlag, err)
+		}
 	}
-	if err := os.Chdir(cwdFlag); err != nil {
-		return "", fmt.Errorf("failed to change directory to %q: %w", cwdFlag, err)
-	}
-	return cwdFlag, nil
+	return os.Getwd()
 }
 
 func randomToken() (string, error) {

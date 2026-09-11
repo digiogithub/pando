@@ -643,7 +643,10 @@ func runWithDesignService(fn func(ctx context.Context, svc *design.Service) erro
 	if _, err := config.Load(cwd, false, ""); err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	conn, err := db.Connect()
+	// ConnectCLI: a CLI never migrates an existing database from this
+	// (possibly different) binary, and waits at most 5 s on a lock. `design
+	// canvas`/`open` stay up to serve a preview, which the small pool covers.
+	conn, err := db.ConnectCLI()
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}

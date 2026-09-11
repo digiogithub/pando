@@ -6,14 +6,18 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/config"
-	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/instanceregistry"
+	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
+	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 	"github.com/spf13/cobra"
 )
@@ -167,18 +171,16 @@ func runCronJobRun(name string) error {
 		return fmt.Errorf("cronjob %q not found in configuration", name)
 	}
 
-	conn, err := db.Connect()
-	if err != nil {
-		return fmt.Errorf("connect database: %w", err)
-	}
-	defer conn.Close()
+	// SIGINT/SIGTERM (the OS scheduler killing a slow run) cancels ctx, so the
+	// run returns and the ordered shutdown below still hands the IPC role over.
+	ctx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
 
-	ctx := context.Background()
-	a, err := app.New(ctx, conn, app.AppOptions{SkipLSP: true, StartupMode: "cronjob"})
+	rt, a, unwireIPC, err := bootstrapCronJobRun(ctx, cwd)
 	if err != nil {
-		return fmt.Errorf("initialize app: %w", err)
+		return err
 	}
-	defer a.Shutdown()
+	defer shutdownEntrypointOrdered(a.Shutdown, unwireIPC, rt.Cleanup)
 
 	if a.CronService == nil {
 		return fmt.Errorf("CronService is not available; verify that Mesnada is properly configured")
@@ -191,6 +193,65 @@ func runCronJobRun(name string) error {
 	}
 	fmt.Printf("Task spawned: %s\n", task.ID)
 	return nil
+}
+
+// cronJobRunProbeTimeout bounds how long `cronjob run` waits for an existing
+// primary to answer its liveness probe. Short: the run is unattended and a
+// slow primary is simply left alone (see bootstrapCronJobRun).
+const cronJobRunProbeTimeout = 3 * time.Second
+
+// bootstrapCronJobRun joins the project's IPC topology for one `cronjob run`
+// (P4 of pando/plans/mcp_server_ipc_bootstrap.md), instead of opening the
+// database as an independent writer the running instances cannot see.
+//
+// The OS scheduler fires it while a TUI/desktop/ACP instance may be running,
+// so it normally ends up an IPC secondary and forwards its writes to that
+// primary. It is a "one-shot" process in both roles:
+//   - AllowKillStalePrimary: false — an unattended cron run must never kill
+//     the user's instance because it answered one probe slowly (it continues
+//     as a degraded secondary instead).
+//   - app.AppOptions.OneShot — the primary-only background services (code
+//     index + watcher, KB sync/watch/backfill, memory GC, cron scheduler) are
+//     never started, not even when this process ends up primary.
+//   - wireOptions.OneShot — a secondary is not armed for failover promotion.
+//   - AcceptDelegations: false — it exits right after spawning its task.
+//
+// On error the runtime is already cleaned up.
+func bootstrapCronJobRun(ctx context.Context, cwd string) (*ipcruntime.BootstrapResult, *app.App, func(), error) {
+	instanceID := uuid.New().String()
+
+	rt, err := ipcruntime.BootstrapWithOptions(ctx, cwd, instanceID, ipcruntime.Options{
+		ProbeTimeout:          cronJobRunProbeTimeout,
+		AllowKillStalePrimary: false,
+	})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("IPC bootstrap failed: %w", err)
+	}
+	if rt.SQLDB == nil {
+		// A secondary whose DB failed to open (Bootstrap logs why): app.New
+		// would panic on the nil pool, so fail with the reason instead.
+		rt.Cleanup()
+		return nil, nil, nil, fmt.Errorf("IPC bootstrap: no database connection (see the log for the cause)")
+	}
+
+	a, err := app.New(ctx, rt.SQLDB, app.AppOptions{
+		SkipLSP:     true,
+		StartupMode: "cronjob",
+		DBQuerier:   rt.Querier,
+		IPCRole:     rt.Role,
+		OneShot:     true,
+	})
+	if err != nil {
+		rt.Cleanup()
+		return nil, nil, nil, fmt.Errorf("initialize app: %w", err)
+	}
+
+	acceptDelegations := false
+	unwireIPC := wireIPC(ctx, rt, a, instanceID, cwd, instanceregistry.ModeCronJob, wireOptions{
+		AcceptDelegations: &acceptDelegations,
+		OneShot:           true,
+	})
+	return rt, a, unwireIPC, nil
 }
 
 // runCronJobInstall adds the named cronjob to the OS scheduler.

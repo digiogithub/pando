@@ -23,6 +23,12 @@ const (
 	// wires mcp_server.go onto the IPC bootstrap; defined now so P1's wireIPC and
 	// the registry Mode type are ready for it.
 	ModeMCP Mode = "mcp"
+	// ModeAGUI identifies a dedicated `pando agui-serve` AG-UI protocol server.
+	ModeAGUI Mode = "agui"
+	// ModeCronJob identifies a short-lived `pando cronjob run` process fired by
+	// the OS scheduler. It never runs the primary-only background services and
+	// never takes over as primary through failover.
+	ModeCronJob Mode = "cronjob"
 )
 
 // Entry describes a running Pando instance. It is serialized as JSON and

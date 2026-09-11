@@ -3,6 +3,8 @@
 
 package protocol
 
+import "encoding/json"
+
 // RPC method name constants used for JSON-RPC 2.0 calls over the ROUTER socket.
 const (
 	// MethodStateSync requests a full state snapshot from the primary instance.
@@ -44,6 +46,15 @@ const (
 	// route the request here instead of opening a second writer. VACUUM can take a
 	// long time on a large database, so callers must use a generous call timeout.
 	MethodDBCompact = "db.compact"
+	// MethodCronJobReload hands the primary a cron configuration a secondary
+	// just persisted to the config file (params: CronJobReloadParams), so the
+	// primary's scheduler (the only one running) picks it up without a restart.
+	// Cron jobs live in the config file, which only the TUI watches.
+	MethodCronJobReload = "cronjob.reload"
+	// MethodKBRelink rebuilds the knowledge-base wiki-link graph on the primary
+	// (params: KBRelinkParams, result: KBRelinkResult), so `pando kb relink`
+	// does not open a second writer next to a running instance.
+	MethodKBRelink = "kb.relink"
 )
 
 // DelegationProtocolVersion is the wire version of the delegation.run contract.
@@ -180,6 +191,37 @@ type DBCompactResult struct {
 	SizeBefore int64  `json:"size_before"`
 	SizeAfter  int64  `json:"size_after"`
 	Freed      int64  `json:"freed"`
+}
+
+// CronJobReloadParams is the parameter struct for cronjob.reload. CronJobs is
+// the JSON encoding of a config.CronJobsConfig (kept raw so this package does
+// not import internal/config).
+type CronJobReloadParams struct {
+	CronJobs json.RawMessage `json:"cron_jobs"`
+}
+
+// CronJobReloadResult is the response for cronjob.reload. Jobs is how many jobs
+// the applied configuration holds; Scheduler reports whether the primary has a
+// cron service to reschedule (false when Mesnada is disabled there, in which
+// case only its in-memory configuration was updated).
+type CronJobReloadResult struct {
+	Jobs      int  `json:"jobs"`
+	Scheduler bool `json:"scheduler"`
+}
+
+// KBRelinkParams is the parameter struct for kb.relink. Force drops the whole
+// link graph and re-extracts every link; otherwise only documents with no link
+// rows are scanned.
+type KBRelinkParams struct {
+	Force bool `json:"force,omitempty"`
+}
+
+// KBRelinkResult is the response for kb.relink (mirrors kb.BackfillStats).
+type KBRelinkResult struct {
+	Candidates int `json:"candidates"`
+	Scanned    int `json:"scanned"`
+	Documents  int `json:"documents"`
+	Links      int `json:"links"`
 }
 
 // PingResult is the response for instance.ping. It doubles as the delegation
