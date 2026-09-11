@@ -1,11 +1,14 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	sqlite3 "github.com/ncruces/go-sqlite3"
@@ -28,6 +31,63 @@ const (
 	primaryBusyTimeout   = 10 * time.Second
 	secondaryBusyTimeout = 200 * time.Millisecond
 )
+
+// Per-connection pragmas and pool sizes for each role. Shared by the Connect*
+// constructors and by PromoteToPrimaryPool/DemoteToSecondaryPool, so a pool
+// promoted in place ends up configured exactly like one opened by Connect.
+const (
+	primaryPerConnPragmas   = "PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -8000;"
+	secondaryPerConnPragmas = "PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;"
+
+	primaryMaxOpenConns   = 8
+	primaryMaxIdleConns   = 4
+	secondaryMaxOpenConns = 1
+)
+
+// poolState holds the per-connection settings a pool's init callback reads
+// every time database/sql opens a new physical connection. They are atomics,
+// not values captured by the callback, so a live pool can be reconfigured in
+// place (see reconfigurePool): connections opened after the switch read the
+// new values directly, and reconfigurePool re-applies them to the connections
+// that already exist.
+type poolState struct {
+	busyTimeout    atomic.Int64 // a time.Duration
+	perConnPragmas atomic.Pointer[string]
+}
+
+func (s *poolState) load() (time.Duration, string) {
+	pragmas := ""
+	if p := s.perConnPragmas.Load(); p != nil {
+		pragmas = *p
+	}
+	return time.Duration(s.busyTimeout.Load()), pragmas
+}
+
+func (s *poolState) store(busyTimeout time.Duration, pragmas string) {
+	s.busyTimeout.Store(int64(busyTimeout))
+	s.perConnPragmas.Store(&pragmas)
+}
+
+// pools maps every *sql.DB opened by openPool to its poolState, so the
+// promote/demote helpers can find the settings the pool's init callback reads.
+// Entries are never removed: a process opens only a handful of pools, and a
+// stale entry for a closed pool is harmless.
+var pools sync.Map // *sql.DB -> *poolState
+
+// applyConnSettings applies busyTimeout and pragmas to one physical connection.
+func applyConnSettings(c *sqlite3.Conn, busyTimeout time.Duration, pragmas string) error {
+	if busyTimeout > 0 {
+		if err := c.BusyTimeout(busyTimeout); err != nil {
+			return fmt.Errorf("busy_timeout: %w", err)
+		}
+	}
+	if pragmas != "" {
+		if err := c.Exec(pragmas); err != nil {
+			return fmt.Errorf("per-connection pragmas: %w", err)
+		}
+	}
+	return nil
+}
 
 // buildDSN turns a plain SQLite filesystem path into a "file:" URI DSN
 // carrying extra as query parameters. Building it with net/url ensures a
@@ -118,18 +178,12 @@ func openPool(dbPath string, opts poolOptions) (*sql.DB, error) {
 	}
 	dsn := buildDSN(dbPath, query)
 
+	state := &poolState{}
+	state.store(opts.busyTimeout, opts.perConnPragmas)
+
 	sqlDB, err := sqlite3driver.Open(dsn, func(c *sqlite3.Conn) error {
-		if opts.busyTimeout > 0 {
-			if err := c.BusyTimeout(opts.busyTimeout); err != nil {
-				return fmt.Errorf("busy_timeout: %w", err)
-			}
-		}
-		if opts.perConnPragmas != "" {
-			if err := c.Exec(opts.perConnPragmas); err != nil {
-				return fmt.Errorf("per-connection pragmas: %w", err)
-			}
-		}
-		return nil
+		busyTimeout, pragmas := state.load()
+		return applyConnSettings(c, busyTimeout, pragmas)
 	})
 	if err != nil {
 		return nil, err
@@ -146,7 +200,121 @@ func openPool(dbPath string, opts poolOptions) (*sql.DB, error) {
 	if opts.maxIdleConns > 0 {
 		sqlDB.SetMaxIdleConns(opts.maxIdleConns)
 	}
+	pools.Store(sqlDB, state)
 	return sqlDB, nil
+}
+
+// reconfigurePool switches a live pool to new per-connection settings, so that
+// afterwards NO connection of the pool keeps the old ones:
+//
+//  1. The new values are stored in the pool's poolState first, so any
+//     connection database/sql opens from now on gets them from the init
+//     callback.
+//  2. Then the helper checks out MaxOpenConnections connections at once and
+//     re-applies the settings to each one through (*sql.Conn).Raw. A pool can
+//     never hold more physical connections than MaxOpenConnections, so holding
+//     that many means holding every connection the pool has: existing ones are
+//     reconfigured here, and any it had to open to reach the count were already
+//     configured by step 1. Checking out a connection another goroutine is
+//     using waits until that goroutine returns it (bounded by ctx), so a
+//     connection in use is reconfigured as soon as it is released rather than
+//     skipped.
+//
+// This is why the pool size is only raised AFTER this call (promotion) or only
+// lowered after it (demotion): the number of connections to hold is the
+// current, smaller or equal, bound. Recycling idle connections instead
+// (SetMaxIdleConns(0)) cannot give the same guarantee: a connection that is in
+// use at that moment is returned to the pool later, still carrying the old
+// busy_timeout.
+func reconfigurePool(ctx context.Context, sqlDB *sql.DB, busyTimeout time.Duration, pragmas string) error {
+	v, ok := pools.Load(sqlDB)
+	if !ok {
+		return fmt.Errorf("db: reconfigure pool: pool was not opened by openPool")
+	}
+	state := v.(*poolState)
+
+	n := sqlDB.Stats().MaxOpenConnections
+	if n <= 0 {
+		// An unbounded pool has no count that guarantees reaching every
+		// connection; every pool openPool creates is bounded.
+		return fmt.Errorf("db: reconfigure pool: pool has no MaxOpenConns bound")
+	}
+
+	state.store(busyTimeout, pragmas)
+
+	held := make([]*sql.Conn, 0, n)
+	defer func() {
+		for _, c := range held {
+			_ = c.Close()
+		}
+	}()
+	for range n {
+		c, err := sqlDB.Conn(ctx)
+		if err != nil {
+			return fmt.Errorf("db: reconfigure pool: check out connection: %w", err)
+		}
+		held = append(held, c)
+		if err := c.Raw(func(driverConn any) error {
+			rc, ok := driverConn.(interface{ Raw() *sqlite3.Conn })
+			if !ok {
+				return fmt.Errorf("unexpected driver connection type %T", driverConn)
+			}
+			return applyConnSettings(rc.Raw(), busyTimeout, pragmas)
+		}); err != nil {
+			return fmt.Errorf("db: reconfigure pool: apply settings: %w", err)
+		}
+	}
+	return nil
+}
+
+// PromoteToPrimaryPool turns, in place, a pool opened by ConnectRWSecondary
+// (1 connection, 200 ms busy_timeout, no migrations) into the primary's
+// configuration: primary busy_timeout and pragmas on every connection
+// (reconfigurePool), primaryMaxOpenConns/primaryMaxIdleConns, and the goose
+// migrations Connect runs.
+//
+// The *sql.DB itself is kept — failover promotion must not close or reopen it,
+// because the session/message queriers, history, project, the remembrances
+// stores and every other service built by app.New hold this exact pool.
+func PromoteToPrimaryPool(ctx context.Context, sqlDB *sql.DB) error {
+	if err := reconfigurePool(ctx, sqlDB, primaryBusyTimeout, primaryPerConnPragmas); err != nil {
+		return err
+	}
+	sqlDB.SetMaxOpenConns(primaryMaxOpenConns)
+	sqlDB.SetMaxIdleConns(primaryMaxIdleConns)
+
+	if err := runMigrations(sqlDB); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DemoteToSecondaryPool reverts PromoteToPrimaryPool's pool settings. It exists
+// so a promotion that fails after the pool was upgraded can leave the process
+// as a well-behaved secondary (short busy_timeout, single connection) again.
+// Migrations that already ran are not reverted; they are forward-compatible.
+func DemoteToSecondaryPool(ctx context.Context, sqlDB *sql.DB) error {
+	if err := reconfigurePool(ctx, sqlDB, secondaryBusyTimeout, secondaryPerConnPragmas); err != nil {
+		return err
+	}
+	sqlDB.SetMaxOpenConns(secondaryMaxOpenConns)
+	return nil
+}
+
+// runMigrations applies the embedded goose migrations to sqlDB.
+func runMigrations(sqlDB *sql.DB) error {
+	goose.SetBaseFS(FS)
+
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		logging.Error("Failed to set dialect", "error", err)
+		return fmt.Errorf("failed to set dialect: %w", err)
+	}
+
+	if err := goose.Up(sqlDB, "migrations"); err != nil {
+		logging.Error("Failed to apply migrations", "error", err)
+		return fmt.Errorf("failed to apply migrations: %w", err)
+	}
+	return nil
 }
 
 // ConnectReadOnly opens the existing SQLite database in read-only mode.
@@ -194,15 +362,18 @@ func ConnectRWSecondary() (*sql.DB, error) {
 	if dataDir == "" {
 		return nil, fmt.Errorf("data.dir is not set")
 	}
-	dbPath := filepath.Join(dataDir, "pando.db")
+	return ConnectRWSecondaryAt(filepath.Join(dataDir, "pando.db"))
+}
 
+// ConnectRWSecondaryAt is ConnectRWSecondary for an explicit database path.
+func ConnectRWSecondaryAt(dbPath string) (*sql.DB, error) {
 	conn, err := openPool(dbPath, poolOptions{
 		immediateWrites: true,
 		busyTimeout:     secondaryBusyTimeout,
-		perConnPragmas:  "PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
+		perConnPragmas:  secondaryPerConnPragmas,
 		// Limit to a single writer so concurrent secondary writes don't race
 		// each other before reaching the proxy fallback.
-		maxOpenConns: 1,
+		maxOpenConns: secondaryMaxOpenConns,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect secondary RW database: %w", err)
@@ -226,8 +397,12 @@ func Connect() (*sql.DB, error) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
-	dbPath := filepath.Join(dataDir, "pando.db")
+	return ConnectAt(filepath.Join(dataDir, "pando.db"))
+}
 
+// ConnectAt is Connect for an explicit database path (the parent directory must
+// already exist): primary pool, pragmas, and migrations.
+func ConnectAt(dbPath string) (*sql.DB, error) {
 	// Cap the connection pool. The WASM-based SQLite driver (ncruces/go-sqlite3)
 	// instantiates a separate WASM module per connection, each holding 3 real
 	// file descriptors (db, wal, shm). Without a cap, concurrent workers (code
@@ -237,9 +412,9 @@ func Connect() (*sql.DB, error) {
 	sqlDB, err := openPool(dbPath, poolOptions{
 		immediateWrites: true,
 		busyTimeout:     primaryBusyTimeout,
-		perConnPragmas:  "PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -8000;",
-		maxOpenConns:    8,
-		maxIdleConns:    4,
+		perConnPragmas:  primaryPerConnPragmas,
+		maxOpenConns:    primaryMaxOpenConns,
+		maxIdleConns:    primaryMaxIdleConns,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
@@ -261,16 +436,8 @@ func Connect() (*sql.DB, error) {
 		}
 	}
 
-	goose.SetBaseFS(FS)
-
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		logging.Error("Failed to set dialect", "error", err)
-		return nil, fmt.Errorf("failed to set dialect: %w", err)
-	}
-
-	if err := goose.Up(sqlDB, "migrations"); err != nil {
-		logging.Error("Failed to apply migrations", "error", err)
-		return nil, fmt.Errorf("failed to apply migrations: %w", err)
+	if err := runMigrations(sqlDB); err != nil {
+		return nil, err
 	}
 	return sqlDB, nil
 }

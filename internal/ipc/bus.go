@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/digiogithub/pando/internal/ipc/protocol"
@@ -57,6 +59,11 @@ type Bus struct {
 	handlers map[string]HandlerFunc
 
 	cancel context.CancelFunc
+
+	// closed is set once Shutdown has closed the sockets; Publish checks it.
+	closed       atomic.Bool
+	shutdownOnce sync.Once
+	shutdownErr  error
 }
 
 // NewBus creates a Bus for the given instanceID.
@@ -94,8 +101,27 @@ func (b *Bus) Start(ctx context.Context, pubPort, rpcPort int) error {
 	return nil
 }
 
+// ErrBusClosed is returned (wrapped) by Publish once Shutdown has run.
+var ErrBusClosed = errors.New("ipc: bus is shut down")
+
+// shutdownLinger is how long Shutdown waits between publishing
+// instance.shutdown and closing the sockets. zmq4's PUB writer sends queued
+// messages from a background goroutine and drops whatever is still queued when
+// the socket closes, so without this pause the announcement secondaries rely on
+// for a fast handover could be lost.
+const shutdownLinger = 100 * time.Millisecond
+
 // Shutdown publishes instance.shutdown and then closes both sockets gracefully.
+// It is idempotent: only the first call publishes and closes; later calls
+// return the first call's result. Callers that must release the IPC lock
+// before the announcement (see app.App's primary handover) release it first
+// and then call Shutdown.
 func (b *Bus) Shutdown() error {
+	b.shutdownOnce.Do(func() { b.shutdownErr = b.shutdown() })
+	return b.shutdownErr
+}
+
+func (b *Bus) shutdown() error {
 	// Publish the shutdown event before closing sockets so secondaries can react
 	// immediately instead of waiting for the heartbeat timeout.
 	if b.pubSock != nil {
@@ -103,8 +129,11 @@ func (b *Bus) Shutdown() error {
 			InstanceID: b.instanceID,
 			Reason:     "graceful shutdown",
 		}
-		_ = b.Publish(protocol.TopicInstanceShutdown, payload)
+		if err := b.Publish(protocol.TopicInstanceShutdown, payload); err == nil {
+			time.Sleep(shutdownLinger)
+		}
 	}
+	b.closed.Store(true)
 
 	if b.cancel != nil {
 		b.cancel()
@@ -135,6 +164,9 @@ func (b *Bus) Publish(topic string, payload any) error {
 	// which would otherwise mask the original panic.
 	if b == nil || b.pubSock == nil {
 		return fmt.Errorf("ipc: publish %q: bus not started", topic)
+	}
+	if b.closed.Load() {
+		return fmt.Errorf("ipc: publish %q: %w", topic, ErrBusClosed)
 	}
 
 	rawPayload, err := json.Marshal(payload)

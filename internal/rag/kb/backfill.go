@@ -43,7 +43,7 @@ type BackfillStats struct {
 // The pass is a no-op on instances that write through the IPC proxy: the primary
 // owns the writer connection and runs the backfill itself.
 func (s *KBStore) BackfillLinks(ctx context.Context) (BackfillStats, error) {
-	if s.proxy != nil {
+	if s.proxy.IsRemote() {
 		return BackfillStats{}, nil
 	}
 	return s.backfillLinks(ctx, false)
@@ -55,7 +55,7 @@ func (s *KBStore) BackfillLinks(ctx context.Context) (BackfillStats, error) {
 // in the extractor (a new syntax, a different slug rule) that made the stored
 // rows stale.
 func (s *KBStore) RelinkAll(ctx context.Context) (BackfillStats, error) {
-	if s.proxy != nil {
+	if s.proxy.IsRemote() {
 		return BackfillStats{}, nil
 	}
 	return s.backfillLinks(ctx, true)

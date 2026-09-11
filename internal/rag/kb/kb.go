@@ -223,14 +223,14 @@ func (s *KBStore) addDocument(ctx context.Context, filePath, content string, met
 		}
 	}
 
-	if s.proxy != nil {
-		return s.proxy.WriteWithRetry(ctx, "KBAddDocument", kbAddDocumentRequest{
-			FilePath:   filePath,
-			Content:    content,
-			Metadata:   metadata,
-			Chunks:     chunks,
-			Embeddings: embedVecs,
-		}, dbproxy.DefaultWriteTimeouts.Long)
+	if forwarded, err := s.proxy.Forward(ctx, "KBAddDocument", kbAddDocumentRequest{
+		FilePath:   filePath,
+		Content:    content,
+		Metadata:   metadata,
+		Chunks:     chunks,
+		Embeddings: embedVecs,
+	}, dbproxy.DefaultWriteTimeouts.Long); forwarded {
+		return err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -421,8 +421,8 @@ func (s *KBStore) DeleteDocument(ctx context.Context, filePath string) error {
 }
 
 func (s *KBStore) deleteDocument(ctx context.Context, filePath string) error {
-	if s.proxy != nil {
-		return s.proxy.WriteWithRetry(ctx, "KBDeleteDocument", filePath, dbproxy.DefaultWriteTimeouts.Default)
+	if forwarded, err := s.proxy.Forward(ctx, "KBDeleteDocument", filePath, dbproxy.DefaultWriteTimeouts.Default); forwarded {
+		return err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -515,7 +515,7 @@ func (s *KBStore) UpdateDocument(ctx context.Context, filePath, content string, 
 }
 
 func (s *KBStore) updateDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}) error {
-	if s.proxy != nil {
+	if s.proxy.IsRemote() {
 		chunks := embeddings.ChunkText(content, s.chunkSize, s.chunkOverlap)
 		embedVecs := make([][]float32, 0, len(chunks))
 		if len(chunks) > 0 {
@@ -530,13 +530,16 @@ func (s *KBStore) updateDocument(ctx context.Context, filePath, content string, 
 				return fmt.Errorf("kb: embedding count mismatch: got %d, expected %d", len(embedVecs), len(chunks))
 			}
 		}
-		return s.proxy.WriteWithRetry(ctx, "KBUpdateDocument", kbAddDocumentRequest{
+		if forwarded, err := s.proxy.Forward(ctx, "KBUpdateDocument", kbAddDocumentRequest{
 			FilePath:   filePath,
 			Content:    content,
 			Metadata:   metadata,
 			Chunks:     chunks,
 			Embeddings: embedVecs,
-		}, dbproxy.DefaultWriteTimeouts.Long)
+		}, dbproxy.DefaultWriteTimeouts.Long); forwarded {
+			return err
+		}
+		// Promoted to primary while embedding: fall through to the direct write.
 	}
 
 	// Delete existing document (including chunks), then re-add with the new

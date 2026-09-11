@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	sqlite3 "github.com/ncruces/go-sqlite3"
@@ -66,49 +67,79 @@ var DefaultWriteTimeouts = WriteTimeout{
 //
 // When client is nil the proxy behaves identically to the embedded querier
 // (useful for the primary instance itself, which never proxies).
+//
+// The client is held in an atomic pointer because failover promotion turns a
+// live secondary's proxy into a passthrough (Promote) while other goroutines
+// keep writing through it: every write reads the pointer exactly once and acts
+// on that snapshot.
 type DBProxy struct {
 	db.Querier // local reads and direct write attempts — embedded interface
-	client     *ipc.Client
+	client     atomic.Pointer[ipc.Client]
 	rpcAddr    string
 	instanceID string
 }
+
+// ErrNotRemote is returned by the forwarding helpers (WriteWithRetry,
+// ProxyWriteWithResult) when the proxy has no IPC client, i.e. this instance is
+// the primary's local writer. A caller that checked IsRemote() just before the
+// call can still see it when a failover promotion raced the call; it should
+// then perform the write directly, as a primary would.
+var ErrNotRemote = errors.New("dbproxy: not forwarding writes: this instance is the local writer")
 
 // New creates a DBProxy backed by local for reads and direct write attempts.
 // Pass a non-nil client and the primary's rpcAddr to enable write proxying.
 // Pass client=nil for primary instances (writes go directly to the local querier).
 func New(local db.Querier, client *ipc.Client, rpcAddr string) *DBProxy {
-	return &DBProxy{
-		Querier: local,
-		client:  client,
-		rpcAddr: rpcAddr,
-	}
+	return NewWithInstanceID(local, client, rpcAddr, "")
 }
 
 // NewWithInstanceID is like New but records the caller's instance ID in every
 // WriteMeta so the primary can attribute writes to the originating secondary.
 func NewWithInstanceID(local db.Querier, client *ipc.Client, rpcAddr, instanceID string) *DBProxy {
-	return &DBProxy{
+	p := &DBProxy{
 		Querier:    local,
-		client:     client,
 		rpcAddr:    rpcAddr,
 		instanceID: instanceID,
 	}
+	if client != nil {
+		p.client.Store(client)
+	}
+	return p
+}
+
+// IsRemote reports whether writes may be forwarded to another (primary)
+// instance over IPC. It is false for a proxy built without a client and after
+// Promote. Safe to call on a nil *DBProxy (reports false), so stores can test
+// an optional proxy with a single call.
+func (p *DBProxy) IsRemote() bool {
+	return p != nil && p.client.Load() != nil
+}
+
+// Promote atomically turns the proxy into a pure passthrough to its local
+// querier: from now on no write is forwarded over IPC. It is called when this
+// instance wins a failover promotion and its local pool has become the
+// primary's writer. It returns the IPC client the proxy used (nil if it had
+// none) so the caller decides when to close it; writes already in flight keep
+// the client snapshot they read and finish (or fail) against it.
+func (p *DBProxy) Promote() *ipc.Client {
+	return p.client.Swap(nil)
 }
 
 // isPrimary returns true when no write proxying is configured.
-func (p *DBProxy) isPrimary() bool { return p.client == nil }
+func (p *DBProxy) isPrimary() bool { return !p.IsRemote() }
 
 // ProbePrimary sends an instance.ping JSON-RPC call to the primary with a 2-second
 // timeout and returns nil on success.  Returns an error if the primary is
 // unreachable, the call times out, or the proxy is not configured.
 // Always returns nil when this instance is the primary (no proxy needed).
 func (p *DBProxy) ProbePrimary(ctx context.Context) error {
-	if p.isPrimary() {
+	client := p.client.Load()
+	if client == nil {
 		return nil
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	_, err := p.client.Call(probeCtx, p.rpcAddr, "instance.ping", struct{}{})
+	_, err := client.Call(probeCtx, p.rpcAddr, "instance.ping", struct{}{})
 	if err != nil {
 		return fmt.Errorf("dbproxy: probe primary: %w", err)
 	}
@@ -165,6 +196,10 @@ func isLockError(err error) bool {
 // timeout, and deserialises the result.
 func proxyWrite[R any](ctx context.Context, p *DBProxy, method string, params any, timeout time.Duration) (R, error) {
 	var zero R
+	client := p.client.Load()
+	if client == nil {
+		return zero, ErrNotRemote
+	}
 	rawParams, err := json.Marshal(params)
 	if err != nil {
 		return zero, fmt.Errorf("dbproxy: marshal params for %s: %w", method, err)
@@ -174,7 +209,7 @@ func proxyWrite[R any](ctx context.Context, p *DBProxy, method string, params an
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	raw, err := p.client.Call(callCtx, p.rpcAddr, MethodDBWrite, req)
+	raw, err := client.Call(callCtx, p.rpcAddr, MethodDBWrite, req)
 	if err != nil {
 		return zero, mapToWriteError(method, err)
 	}
@@ -192,6 +227,10 @@ func ProxyWriteWithResult[R any](ctx context.Context, p *DBProxy, method string,
 
 // proxyVoidWrite sends a write that returns only an error.
 func proxyVoidWrite(ctx context.Context, p *DBProxy, method string, params any, timeout time.Duration) error {
+	client := p.client.Load()
+	if client == nil {
+		return ErrNotRemote
+	}
 	rawParams, err := json.Marshal(params)
 	if err != nil {
 		return fmt.Errorf("dbproxy: marshal params for %s: %w", method, err)
@@ -201,7 +240,7 @@ func proxyVoidWrite(ctx context.Context, p *DBProxy, method string, params any, 
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	_, err = p.client.Call(callCtx, p.rpcAddr, MethodDBWrite, req)
+	_, err = client.Call(callCtx, p.rpcAddr, MethodDBWrite, req)
 	if err != nil {
 		return mapToWriteError(method, err)
 	}
@@ -209,9 +248,11 @@ func proxyVoidWrite(ctx context.Context, p *DBProxy, method string, params any, 
 }
 
 // WriteWithRetry forwards a void write with the provided timeout and retry logic.
+// It returns an error wrapping ErrNotRemote when the proxy has no client (see
+// ErrNotRemote for how callers should react).
 func (p *DBProxy) WriteWithRetry(ctx context.Context, method string, params any, timeout time.Duration) error {
 	if p.isPrimary() {
-		return fmt.Errorf("dbproxy: WriteWithRetry requires a configured client")
+		return fmt.Errorf("dbproxy: WriteWithRetry %s: %w", method, ErrNotRemote)
 	}
 	return p.writeWithRetry(ctx, method, params, timeout)
 }
@@ -265,7 +306,14 @@ func directOrProxy[R any](
 	}
 	logging.Debug("dbproxy: direct write got lock contention, falling back to proxy",
 		"method", method, "error", err)
-	return proxyWrite[R](ctx, p, method, params, timeout)
+	proxied, perr := proxyWrite[R](ctx, p, method, params, timeout)
+	if errors.Is(perr, ErrNotRemote) {
+		// Promoted between the direct attempt and the fallback: this pool is
+		// now the primary's writer (with its long busy_timeout), so retry
+		// directly instead of forwarding.
+		return directFn()
+	}
+	return proxied, perr
 }
 
 // directOrProxyVoid is like directOrProxy but for operations that return only
@@ -288,7 +336,44 @@ func directOrProxyVoid(
 	}
 	logging.Debug("dbproxy: direct void write got lock contention, falling back to proxy",
 		"method", method)
-	return p.writeWithRetry(ctx, method, params, timeout)
+	err := p.writeWithRetry(ctx, method, params, timeout)
+	if errors.Is(err, ErrNotRemote) {
+		// Promoted between the direct attempt and the fallback (see directOrProxy).
+		return directFn()
+	}
+	return err
+}
+
+// Forward sends a void write to the primary when this proxy is remote. It
+// reports forwarded=false — and the caller must perform the write directly
+// against its local connection — when p is nil, has no client, or lost it to a
+// failover promotion that raced this call (ErrNotRemote). When forwarded is
+// true, err is the outcome of the forwarded write.
+//
+// This is the single check stores use for "write through the primary or
+// locally", instead of testing p != nil: after Promote a store's proxy is
+// still non-nil but must no longer forward.
+func (p *DBProxy) Forward(ctx context.Context, method string, params any, timeout time.Duration) (forwarded bool, err error) {
+	if !p.IsRemote() {
+		return false, nil
+	}
+	err = p.WriteWithRetry(ctx, method, params, timeout)
+	if errors.Is(err, ErrNotRemote) {
+		return false, nil
+	}
+	return true, err
+}
+
+// ForwardWithResult is Forward for a write that returns a typed result.
+func ForwardWithResult[R any](ctx context.Context, p *DBProxy, method string, params any) (result R, forwarded bool, err error) {
+	if !p.IsRemote() {
+		return result, false, nil
+	}
+	result, err = ProxyWriteWithResult[R](ctx, p, method, params)
+	if errors.Is(err, ErrNotRemote) {
+		return result, false, nil
+	}
+	return result, true, err
 }
 
 // ---- Write method overrides ----

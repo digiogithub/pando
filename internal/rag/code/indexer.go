@@ -124,17 +124,17 @@ func (c *CodeIndexer) IndexProject(ctx context.Context, projectID, projectPath s
 	// Upsert project record
 	now := time.Now().UTC()
 	projectName := filepath.Base(projectPath)
-	if c.proxy != nil {
-		if err := c.proxy.WriteWithRetry(ctx, "CodeUpsertProject", codeUpsertProjectRequest{
-			ProjectID:  projectID,
-			Name:       projectName,
-			RootPath:   projectPath,
-			Status:     string(IndexingStatusInProgress),
-			CreatedAt:  now,
-			UpdatedAt:  now,
-			JobID:      jobID,
-			Languages:  languages,
-		}, dbproxy.DefaultWriteTimeouts.Default); err != nil {
+	if forwarded, err := c.proxy.Forward(ctx, "CodeUpsertProject", codeUpsertProjectRequest{
+		ProjectID: projectID,
+		Name:      projectName,
+		RootPath:  projectPath,
+		Status:    string(IndexingStatusInProgress),
+		CreatedAt: now,
+		UpdatedAt: now,
+		JobID:     jobID,
+		Languages: languages,
+	}, dbproxy.DefaultWriteTimeouts.Default); forwarded {
+		if err != nil {
 			return "", fmt.Errorf("code: upsert project: %w", err)
 		}
 	} else {
@@ -176,13 +176,11 @@ func (c *CodeIndexer) IndexProject(ctx context.Context, projectID, projectPath s
 			c.jobsMu.Unlock()
 
 			updatedAt := time.Now().UTC()
-			if c.proxy != nil {
-				_ = c.proxy.WriteWithRetry(bgCtx, "CodeSetProjectStatus", codeSetProjectStatusRequest{
-					ProjectID: projectID,
-					Status:    string(IndexingStatusFailed),
-					UpdatedAt: updatedAt,
-				}, dbproxy.DefaultWriteTimeouts.Default)
-			} else {
+			if forwarded, _ := c.proxy.Forward(bgCtx, "CodeSetProjectStatus", codeSetProjectStatusRequest{
+				ProjectID: projectID,
+				Status:    string(IndexingStatusFailed),
+				UpdatedAt: updatedAt,
+			}, dbproxy.DefaultWriteTimeouts.Default); !forwarded {
 				c.db.ExecContext(bgCtx, `UPDATE code_projects SET indexing_status='failed', updated_at=? WHERE project_id=?`, updatedAt, projectID)
 			}
 		} else {
@@ -194,14 +192,12 @@ func (c *CodeIndexer) IndexProject(ctx context.Context, projectID, projectPath s
 
 			lastIndexed := time.Now().UTC()
 			updatedAt := time.Now().UTC()
-			if c.proxy != nil {
-				_ = c.proxy.WriteWithRetry(bgCtx, "CodeSetProjectStatus", codeSetProjectStatusRequest{
-					ProjectID:     projectID,
-					Status:        string(IndexingStatusCompleted),
-					LastIndexedAt: &lastIndexed,
-					UpdatedAt:     updatedAt,
-				}, dbproxy.DefaultWriteTimeouts.Default)
-			} else {
+			if forwarded, _ := c.proxy.Forward(bgCtx, "CodeSetProjectStatus", codeSetProjectStatusRequest{
+				ProjectID:     projectID,
+				Status:        string(IndexingStatusCompleted),
+				LastIndexedAt: &lastIndexed,
+				UpdatedAt:     updatedAt,
+			}, dbproxy.DefaultWriteTimeouts.Default); !forwarded {
 				c.db.ExecContext(bgCtx, `UPDATE code_projects SET indexing_status='completed', last_indexed_at=?, updated_at=? WHERE project_id=?`,
 					lastIndexed, updatedAt, projectID)
 			}
@@ -418,16 +414,16 @@ func (c *CodeIndexer) indexFile(ctx context.Context, projectID, rootPath, filePa
 		}
 	}
 
-	if c.proxy != nil {
-		return c.proxy.WriteWithRetry(ctx, "CodeIndexFile", codeIndexFileRequest{
-			ProjectID: projectID,
-			RootPath:  rootPath,
-			FilePath:  relPath,
-			Language:  string(lang),
-			FileHash:  hash,
-			Symbols:   symbols,
-			Edges:     edges,
-		}, dbproxy.DefaultWriteTimeouts.Long)
+	if forwarded, err := c.proxy.Forward(ctx, "CodeIndexFile", codeIndexFileRequest{
+		ProjectID: projectID,
+		RootPath:  rootPath,
+		FilePath:  relPath,
+		Language:  string(lang),
+		FileHash:  hash,
+		Symbols:   symbols,
+		Edges:     edges,
+	}, dbproxy.DefaultWriteTimeouts.Long); forwarded {
+		return err
 	}
 
 	// Upsert file record in a transaction
@@ -701,8 +697,8 @@ func (c *CodeIndexer) DeleteProject(ctx context.Context, projectID string) error
 	if strings.TrimSpace(projectID) == "" {
 		return fmt.Errorf("code: project_id is required")
 	}
-	if c.proxy != nil {
-		if err := c.proxy.WriteWithRetry(ctx, "CodeDeleteProject", projectID, dbproxy.DefaultWriteTimeouts.Default); err != nil {
+	if forwarded, err := c.proxy.Forward(ctx, "CodeDeleteProject", projectID, dbproxy.DefaultWriteTimeouts.Default); forwarded {
+		if err != nil {
 			return err
 		}
 		c.jobsMu.Lock()

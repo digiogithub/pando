@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,10 +32,12 @@ import (
 	"github.com/digiogithub/pando/internal/extensions"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/history"
+	"github.com/digiogithub/pando/internal/instanceregistry"
 	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/ipc/failover"
 	"github.com/digiogithub/pando/internal/ipc/protocol"
+	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/prompt"
@@ -136,33 +139,50 @@ type App struct {
 	// It is nil when delegation is disabled (default-off).
 	delegationSupervisor *delegationSupervisor
 
-	// IPCBus is set on the primary instance after calling SetupIPC.
-	// Secondary instances leave this nil.
+	// IPCBus is set on the primary instance after calling SetupIPC, or by a
+	// failover promotion. Secondary instances leave this nil. Guarded by ipcMu.
 	IPCBus *ipc.Bus
-	// IPCIsPrimary is true when this instance holds the IPC lock.
-	IPCIsPrimary bool
+
+	// ipcPrimary is true when this instance holds the IPC lock (it started as
+	// the primary or was promoted). Atomic because the failover watcher
+	// goroutine sets it while prompt paths read it; see IsIPCPrimary.
+	ipcPrimary atomic.Bool
 
 	// ipcWatcher is the failover watcher. Non-nil when IPC is active.
 	ipcWatcher *failover.Watcher
 
+	// ipcMu guards IPCBus and the primary-role resources below, and serialises
+	// PromoteToPrimary against the primary handover in Shutdown.
+	ipcMu sync.Mutex
+	// ipcCoordinator is the primary's write coordinator (drained first in the
+	// handover), ipcLockRelease releases the IPC lock (idempotent), and
+	// ipcPrimaryCancel stops the goroutines a promotion started (bridge
+	// heartbeats, coordinator). All nil on a secondary. See releasePrimaryRole.
+	ipcCoordinator   PrimaryWriteCoordinator
+	ipcLockRelease   func()
+	ipcPrimaryCancel context.CancelFunc
+	// ipcHandedOver is set once the primary handover ran; a promotion racing a
+	// shutdown is then refused.
+	ipcHandedOver bool
+
 	// ---- Secondary-only IPC context (set via SetIPCSecondaryContext) ----
 
-	// ipcClient is the ZMQ client used by secondary instances.
+	// ipcClient is the ZMQ client used by secondary instances. It is owned by
+	// the IPC runtime (closed by BootstrapResult.Cleanup) and deliberately not
+	// closed on promotion.
 	ipcClient *ipc.Client
-	// ipcROConn is the read-only SQLite connection held by the secondary.
-	// Closed and replaced with a RW connection on promotion.
-	ipcROConn *sql.DB
 	// ipcWorkdir is the working directory used to derive IPC ports and lock path.
 	ipcWorkdir string
 	// ipcInstanceID is the instance ID used in lock acquisition and IPC messaging.
 	ipcInstanceID string
-	// ipcPubPort and ipcRPCPort are the deterministic ports derived from ipcWorkdir.
+	// ipcPubPort and ipcRPCPort are the primary's ports (from the lock file);
+	// a promoted instance binds exactly these so other secondaries keep working.
 	ipcPubPort int
 	ipcRPCPort int
-	// ipcBusSetupFunc is provided by cmd/root.go and performs the full primary wiring
-	// (writecoordinator, changepub, bridge registration) once the RW DB and Bus are
-	// available after promotion.
-	ipcBusSetupFunc func(ctx context.Context, bus *ipc.Bus, rwConn *sql.DB) error
+	// ipcBusSetupFunc is provided by the entrypoint (cmd/root.go) and performs
+	// the primary-side wiring (writecoordinator, changepub, db.write and bridge
+	// handlers, bridge heartbeats) on a new Bus during promotion.
+	ipcBusSetupFunc IPCBusSetupFunc
 
 	openlitShutdown func(context.Context) error
 
@@ -183,6 +203,57 @@ type App struct {
 	watcherCancelFuncs []context.CancelFunc
 	cancelFuncsMutex   sync.Mutex
 	watcherWG          sync.WaitGroup
+}
+
+// PrimaryWriteCoordinator is the part of writecoordinator.Coordinator the
+// primary handover needs: stop accepting forwarded writes and apply the queued
+// ones (Drain), then stop (Shutdown).
+type PrimaryWriteCoordinator interface {
+	Drain(ctx context.Context) error
+	Shutdown()
+}
+
+// IPCBusSetupFunc wires the primary-side IPC handlers on bus during a failover
+// promotion — the same wiring a primary entrypoint does after Bootstrap
+// (writecoordinator on rwConn, changepub publisher, db.write handlers, bridge
+// handlers, bridge heartbeats). It must not start the bus. It returns the write
+// coordinator it created so the App can drain and stop it on shutdown. ctx is
+// cancelled when the promoted primary hands over.
+type IPCBusSetupFunc func(ctx context.Context, bus *ipc.Bus, rwConn *sql.DB) (PrimaryWriteCoordinator, error)
+
+// Timeouts for the IPC role transitions.
+const (
+	// promotePoolTimeout bounds reconfiguring the secondary pool into the
+	// primary's (waiting for in-use connections) plus the migrations.
+	promotePoolTimeout = 60 * time.Second
+	// handoverDrainTimeout bounds how long a shutting-down primary waits for
+	// already-forwarded writes before releasing the lock anyway.
+	handoverDrainTimeout = 5 * time.Second
+	// promoteBindTimeout / promoteBindInterval bound the retries when the
+	// primary's ports are still bound during a promotion (see startPrimaryBus).
+	promoteBindTimeout  = 3 * time.Second
+	promoteBindInterval = 50 * time.Millisecond
+)
+
+// startPrimaryBus binds bus on the primary's ports, retrying for up to
+// promoteBindTimeout. In an ordered handover the old primary releases the lock
+// and announces instance.shutdown BEFORE it closes its sockets (it must still
+// own the PUB socket to announce), so a secondary that wins the lock
+// immediately can find the ports still bound for a few tens of milliseconds.
+// Retrying here turns that into a short wait instead of a failed promotion.
+func startPrimaryBus(ctx context.Context, bus *ipc.Bus, pubPort, rpcPort int) error {
+	deadline := time.Now().Add(promoteBindTimeout)
+	for {
+		err := bus.Start(ctx, pubPort, rpcPort)
+		if err == nil || time.Now().After(deadline) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(promoteBindInterval):
+		}
+	}
 }
 
 // AppOptions configures optional behaviour for New().
@@ -2237,39 +2308,77 @@ func StartModelRefreshLoop(ctx context.Context) {
 // and to register the db.write handler so secondary instances can proxy writes.
 // bus must already be started (bus.Start called) before calling SetupIPC.
 func (app *App) SetupIPC(bus *ipc.Bus) {
+	app.ipcMu.Lock()
+	defer app.ipcMu.Unlock()
+	app.setupIPCLocked(bus)
+}
+
+// setupIPCLocked is SetupIPC with ipcMu already held (PromoteToPrimary).
+func (app *App) setupIPCLocked(bus *ipc.Bus) {
 	app.IPCBus = bus
-	app.IPCIsPrimary = true
+	app.ipcPrimary.Store(true)
 	// Wire the bus as the ZMQ publisher for the session service so session
 	// create/update/delete events are broadcast over PUB to other instances.
 	session.SetIPCPublisher(bus)
 
-	// Register the Remembrances write dispatcher so that KB, Events and Code
-	// indexing writes forwarded from secondary instances via IPC are correctly
-	// applied to the primary's read-write SQLite database.
+	app.registerRemembrancesDispatcher()
+
+	logging.Info("IPC bus wired to session service", "pubAddr", bus.PubAddr, "rpcAddr", bus.RPCAddr)
+}
+
+// registerRemembrancesDispatcher registers the Remembrances write dispatcher so
+// that KB, Events and Code indexing writes forwarded from secondary instances
+// via IPC are applied to this primary's read-write SQLite database.
+// Idempotent. A promotion calls it before starting the bus, so the first
+// forwarded remembrances write cannot hit "unsupported remembrances write
+// method" (which secondaries would misread as version skew).
+func (app *App) registerRemembrancesDispatcher() {
 	if app.Remembrances != nil {
 		dispatcher := ragproxy.NewRemembrancesWriteDispatcher(app.Remembrances)
 		dbproxy.RegisterRemembrancesDispatcher(dispatcher)
 		logging.Info("Remembrances IPC write dispatcher registered on primary")
 	}
+}
 
-	logging.Info("IPC bus wired to session service", "pubAddr", bus.PubAddr, "rpcAddr", bus.RPCAddr)
+// IsIPCPrimary reports whether this instance currently holds the IPC primary
+// role (started as primary, or promoted by failover).
+func (app *App) IsIPCPrimary() bool { return app.ipcPrimary.Load() }
+
+// SetIPCPrimaryHandover registers, on an instance that started as the IPC
+// primary, the resources Shutdown must hand over first and in order: drain
+// coord, then call releaseLock (idempotent, e.g. BootstrapResult.ReleaseLock),
+// then shut down the bus set by SetupIPC. Without it the lock is only released
+// by the runtime cleanup at the very end of process shutdown. A promoted
+// primary registers the equivalent resources itself in PromoteToPrimary.
+func (app *App) SetIPCPrimaryHandover(coord PrimaryWriteCoordinator, releaseLock func()) {
+	app.ipcMu.Lock()
+	defer app.ipcMu.Unlock()
+	app.ipcCoordinator = coord
+	app.ipcLockRelease = releaseLock
 }
 
 // SetIPCSecondaryContext stores the secondary IPC state and registers the active-probe
 // function on the watcher so it can perform per-prompt and per-minute liveness checks.
 //
-// busSetupFunc is called during promotion with the new Bus and RW connection.
+// secondaryConn is the secondary's RW pool (the runtime's SQLDB). It must be
+// the same pool the App was built on: promotion upgrades it in place.
+//
+// busSetupFunc is called during promotion with the new Bus and that pool.
 // It must wire the writecoordinator, changepub publisher, and bridge handlers.
 func (app *App) SetIPCSecondaryContext(
 	client *ipc.Client,
-	roConn *sql.DB,
+	secondaryConn *sql.DB,
 	workdir, instanceID string,
 	pubPort, rpcPort int,
 	watcher *failover.Watcher,
-	busSetupFunc func(ctx context.Context, bus *ipc.Bus, rwConn *sql.DB) error,
+	busSetupFunc IPCBusSetupFunc,
 ) {
+	if app.rwConn == nil {
+		app.rwConn = secondaryConn
+	} else if secondaryConn != nil && secondaryConn != app.rwConn {
+		logging.Warn("IPC: secondary pool differs from the pool the app was built on; promotion will upgrade the app's pool")
+	}
 	app.ipcClient = client
-	app.ipcROConn = roConn
 	app.ipcWorkdir = workdir
 	app.ipcInstanceID = instanceID
 	app.ipcPubPort = pubPort
@@ -2278,7 +2387,7 @@ func (app *App) SetIPCSecondaryContext(
 	app.ipcBusSetupFunc = busSetupFunc
 
 	// Wire the per-prompt probe function on the watcher so it can do active pings.
-	if proxy, ok := app.DBQuerier.(*dbproxy.DBProxy); ok {
+	if proxy, ok := app.DBQuerier.(*dbproxy.DBProxy); ok && watcher != nil {
 		watcher.SetProbePrimary(proxy.ProbePrimary)
 	}
 }
@@ -2288,7 +2397,7 @@ func (app *App) SetIPCSecondaryContext(
 // sequence.  Must be called before processing each user prompt on a secondary
 // instance.  Safe to call on the primary instance (no-op).
 func (app *App) EnsurePrimary(ctx context.Context) {
-	if app.IPCIsPrimary || app.ipcWatcher == nil {
+	if app.IsIPCPrimary() || app.ipcWatcher == nil {
 		return
 	}
 	if err := app.ipcWatcher.CheckAndMaybeFailover(ctx); err != nil {
@@ -2314,7 +2423,7 @@ const dbCompactCallTimeout = 30 * time.Minute
 // database to auto_vacuum=INCREMENTAL before the full VACUUM.
 func (app *App) CompactDatabase(ctx context.Context, incremental, enableAutoVacuum bool) (protocol.DBCompactResult, error) {
 	// Secondary: forward to the primary's writer connection over IPC.
-	if !app.IPCIsPrimary && app.ipcClient != nil {
+	if !app.IsIPCPrimary() && app.ipcClient != nil {
 		rpcAddr := fmt.Sprintf("tcp://127.0.0.1:%d", app.ipcRPCPort)
 		params := protocol.DBCompactParams{Incremental: incremental, EnableAutoVacuum: enableAutoVacuum}
 		raw, err := app.ipcClient.CallWithTimeout(ctx, rpcAddr, protocol.MethodDBCompact, params, dbCompactCallTimeout)
@@ -2371,77 +2480,209 @@ func (app *App) ACPDBCompactor() mesnadaACP.DBCompactor { return acpDBCompactorA
 // PromoteToPrimary is the failover.PromoteFunc implementation.
 // It is called by the Watcher when this secondary wins the lock race.
 // lockFile is the open flock file that must be kept open for the duration of
-// this instance's primary role.
+// this instance's primary role; the App now owns it and releases it in the
+// Shutdown handover.
 //
-// The method:
-//  1. Closes the old read-only SQLite connection.
-//  2. Opens a new read-write connection (with migrations).
-//  3. Creates a new IPC Bus and calls ipcBusSetupFunc to wire all handlers.
-//  4. Updates the app's Querier, IPCBus, and IPCIsPrimary fields.
-//  5. Publishes instance.promoted on the new Bus so other secondaries reconnect.
+// Promotion is IN PLACE: nothing that services captured at construction is
+// closed or swapped. The session/message services, history, project, the MCP
+// gateway, the design provider and the remembrances stores all keep the same
+// *sql.DB (app.rwConn, the runtime's secondary pool) and the same DBProxy
+// (app.DBQuerier), and simply start behaving like the primary's:
+//
+//  1. db.PromoteToPrimaryPool upgrades the pool: primary busy_timeout and
+//     pragmas on every connection, 8 connections, goose migrations.
+//  2. A new Bus (with ipc.ping) gets the primary-side handlers through
+//     ipcBusSetupFunc (coordinator, changepub, db.write, bridge) and the
+//     remembrances dispatcher, then binds the primary's ports.
+//  3. DBProxy.Promote turns the proxy into a passthrough, so session/message
+//     writes and every remembrances store (which check IsRemote) write
+//     directly from now on.
+//  4. The App records the bus, coordinator and lock for the ordered handover,
+//     the watcher switches to publishing heartbeats on the new bus, the
+//     instance registry entry is re-announced with IsPrimary=true, and
+//     instance.promoted is published.
+//
+// On an error before step 3 the pool is reverted to the secondary settings and
+// the error is returned; the watcher then releases the lock and keeps
+// monitoring as a secondary.
 func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
+	app.ipcMu.Lock()
+	defer app.ipcMu.Unlock()
+
+	if app.ipcHandedOver {
+		return errors.New("failover: app is shutting down; not promoting")
+	}
+	if app.rwConn == nil {
+		return errors.New("failover: no database pool to promote")
+	}
+
+	started := time.Now()
 	logging.Info("failover: PromoteToPrimary starting",
 		"instance_id", app.ipcInstanceID,
 		"workdir", app.ipcWorkdir,
 	)
 
-	// 1. Close old read-only connection.
-	if app.ipcROConn != nil {
-		_ = app.ipcROConn.Close()
-		app.ipcROConn = nil
-	}
-	if app.ipcClient != nil {
-		_ = app.ipcClient.Close()
-		app.ipcClient = nil
-	}
-
-	// 2. Open read-write SQLite connection.
-	rwConn, err := db.Connect()
+	// 1. Upgrade the secondary pool in place.
+	poolCtx, cancelPool := context.WithTimeout(ctx, promotePoolTimeout)
+	err := db.PromoteToPrimaryPool(poolCtx, app.rwConn)
+	cancelPool()
 	if err != nil {
-		return fmt.Errorf("failover: open RW DB: %w", err)
+		app.revertPromotedPool()
+		return fmt.Errorf("failover: promote DB pool: %w", err)
 	}
 
-	// 3. Create a new IPC Bus and wire all handlers via the injected setup function.
-	bus := ipc.NewBus(app.ipcInstanceID)
+	// 2. Create the primary bus and wire the primary-side handlers. The primary
+	//    goroutines outlive the watcher's context (it is cancelled when the
+	//    watcher stops); they are stopped by the handover instead.
+	primaryCtx, primaryCancel := context.WithCancel(context.WithoutCancel(ctx))
+	bus := ipcruntime.NewPrimaryBus(app.ipcInstanceID)
+	var coord PrimaryWriteCoordinator
 	if app.ipcBusSetupFunc != nil {
-		if setupErr := app.ipcBusSetupFunc(ctx, bus, rwConn); setupErr != nil {
-			_ = rwConn.Close()
-			return fmt.Errorf("failover: bus setup: %w", setupErr)
+		coord, err = app.ipcBusSetupFunc(primaryCtx, bus, app.rwConn)
+		if err != nil {
+			primaryCancel()
+			app.revertPromotedPool()
+			return fmt.Errorf("failover: bus setup: %w", err)
 		}
 	}
-	if startErr := bus.Start(ctx, app.ipcPubPort, app.ipcRPCPort); startErr != nil {
-		_ = rwConn.Close()
-		return fmt.Errorf("failover: start bus: %w", startErr)
+	app.registerRemembrancesDispatcher()
+	if err := startPrimaryBus(primaryCtx, bus, app.ipcPubPort, app.ipcRPCPort); err != nil {
+		if coord != nil {
+			coord.Shutdown()
+		}
+		primaryCancel()
+		app.revertPromotedPool()
+		return fmt.Errorf("failover: start bus: %w", err)
 	}
 
-	// 4. Update app state.
-	app.DBQuerier = db.New(rwConn)
-	app.rwConn = rwConn
-	app.SetupIPC(bus)
+	// 3. Point of no return: local writes stop being forwarded. The IPC client
+	//    stays open (writes already in flight keep their snapshot of it); the
+	//    runtime closes it on shutdown.
+	if proxy, ok := app.DBQuerier.(*dbproxy.DBProxy); ok {
+		proxy.Promote()
+	}
 
-	// 5. Publish instance.promoted so other secondaries reset their heartbeat timers
-	//    and reconnect to the new primary.
-	_ = bus.Publish(protocol.TopicInstancePromoted, protocol.PromotedPayload{
+	// 4. Record the primary role and its resources.
+	app.setupIPCLocked(bus)
+	app.ipcCoordinator = coord
+	app.ipcLockRelease = sync.OnceFunc(func() { ipc.ReleaseLock(lockFile) })
+	app.ipcPrimaryCancel = primaryCancel
+	if app.ipcWatcher != nil {
+		app.ipcWatcher.SetPrimaryBus(bus)
+	}
+	app.reannounceAsPrimary()
+	app.startPrimaryServices(primaryCtx)
+
+	// Publish instance.promoted so other secondaries reset their heartbeat timers.
+	if err := bus.Publish(protocol.TopicInstancePromoted, protocol.PromotedPayload{
 		InstanceID: app.ipcInstanceID,
 		PubAddr:    bus.PubAddr,
 		RPCAddr:    bus.RPCAddr,
-	})
+	}); err != nil {
+		logging.Warn("failover: failed to publish instance.promoted", "error", err)
+	}
 
 	logging.Info("failover: PromoteToPrimary complete",
 		"instance_id", app.ipcInstanceID,
 		"pub_addr", bus.PubAddr,
 		"rpc_addr", bus.RPCAddr,
+		"elapsed", time.Since(started).String(),
 	)
-
-	// The lockFile is intentionally NOT closed here — it must remain open for the
-	// duration of this instance's primary role to maintain the flock.
-	_ = lockFile
-
 	return nil
+}
+
+// revertPromotedPool puts the pool back to the secondary settings after a
+// promotion failed part-way, so this instance keeps failing fast and falling
+// back to the IPC proxy as a secondary should.
+func (app *App) revertPromotedPool() {
+	ctx, cancel := context.WithTimeout(context.Background(), promotePoolTimeout)
+	defer cancel()
+	if err := db.DemoteToSecondaryPool(ctx, app.rwConn); err != nil {
+		logging.Warn("failover: could not revert the DB pool to secondary settings", "error", err)
+	}
+}
+
+// reannounceAsPrimary rewrites this instance's registry entry with
+// IsPrimary=true, so `pando ipc status` and peers see the new primary.
+func (app *App) reannounceAsPrimary() {
+	entry, err := instanceregistry.New().Get(app.ipcInstanceID)
+	if err != nil || entry == nil {
+		logging.Debug("failover: no registry entry to re-announce", "instance_id", app.ipcInstanceID, "error", err)
+		return
+	}
+	entry.IsPrimary = true
+	entry.PubPort = app.ipcPubPort
+	entry.RPCPort = app.ipcRPCPort
+	if err := instanceregistry.Announce(entry); err != nil {
+		logging.Warn("failover: failed to re-announce as primary", "error", err)
+	}
+}
+
+// startPrimaryServices is the hook for background services only the primary
+// should run once it owns the database (startup code index + fsnotify watcher,
+// KB mirror/auto-import, KB link backfill, memory GC, cron).
+//
+// TODO(P3, pando/plans/mcp_server_ipc_bootstrap.md §5.4): app.New still starts
+// those services for every role, so a promoted secondary already runs them and
+// there is nothing to start here yet. P3 moves them behind this hook and calls
+// it from New (primary) and from PromoteToPrimary.
+func (app *App) startPrimaryServices(context.Context) {}
+
+// releasePrimaryRole performs a primary's ordered handover, the first thing
+// Shutdown does:
+//
+//  1. drain the write coordinator (no new forwarded db.write; queued ones are
+//     applied), bounded by handoverDrainTimeout, then stop it;
+//  2. release the IPC lock;
+//  3. publish instance.shutdown and 4. close the bus (Bus.Shutdown does both).
+//
+// Releasing the lock before the announcement means a secondary reacting to
+// instance.shutdown finds the lock free instead of losing the race and giving
+// up; doing it before the rest of Shutdown (extensions, agent-vcs cleanup, LSP
+// ...) means the handover does not wait for those. A no-op on a secondary and
+// when called again.
+func (app *App) releasePrimaryRole() {
+	app.ipcMu.Lock()
+	if app.ipcHandedOver {
+		app.ipcMu.Unlock()
+		return
+	}
+	app.ipcHandedOver = true
+	bus, coord, release, cancel := app.IPCBus, app.ipcCoordinator, app.ipcLockRelease, app.ipcPrimaryCancel
+	app.ipcMu.Unlock()
+
+	if coord != nil {
+		drainCtx, cancelDrain := context.WithTimeout(context.Background(), handoverDrainTimeout)
+		if err := coord.Drain(drainCtx); err != nil {
+			logging.Warn("IPC handover: write coordinator did not drain in time", "error", err)
+		}
+		cancelDrain()
+		coord.Shutdown()
+	}
+	if release != nil {
+		release()
+	}
+	if bus != nil {
+		if err := bus.Shutdown(); err != nil {
+			logging.Error("Failed to shutdown IPC bus", "error", err)
+		}
+	}
+	if cancel != nil {
+		cancel()
+	}
+	if bus != nil || release != nil {
+		pubAddr := ""
+		if bus != nil {
+			pubAddr = bus.PubAddr
+		}
+		logging.Info("IPC handover: primary role released", "pub_addr", pubAddr, "pid", os.Getpid())
+	}
 }
 
 func (app *App) Shutdown() {
 	logging.Debug("App shutdown started")
+	// Hand the IPC primary role over before anything slow below runs.
+	app.releasePrimaryRole()
 	// Releases the shared headless browser the design tools render through.
 	design.ClosePreviewServer()
 	design.CloseDefaultProvider()
@@ -2534,12 +2775,7 @@ func (app *App) Shutdown() {
 	if app.ProjectManager != nil {
 		app.ProjectManager.Shutdown()
 	}
-	// Shutdown IPC bus (primary only).
-	if app.IPCBus != nil {
-		if err := app.IPCBus.Shutdown(); err != nil {
-			logging.Error("Failed to shutdown IPC bus", "error", err)
-		}
-	}
+	// The IPC bus (primary only) was already shut down by releasePrimaryRole.
 	logging.Debug("App shutdown completed")
 }
 

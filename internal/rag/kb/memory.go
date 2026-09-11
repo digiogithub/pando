@@ -164,7 +164,7 @@ func (s *KBStore) upsertMemory(ctx context.Context, opts MemoryUpsertOptions) (c
 }
 
 func (s *KBStore) upsertMemoryByKey(ctx context.Context, opts MemoryUpsertOptions, bodyContent string) (bool, error) {
-	if s.proxy != nil {
+	if s.proxy.IsRemote() {
 		// Via proxy: check existence first, then route through proxy's Add/Update.
 		existing, err := s.GetMemoryByKey(ctx, opts.Key)
 		if err != nil {

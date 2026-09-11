@@ -1,6 +1,6 @@
 ---
-created_at: 2026-09-11T12:36:38.730601285Z
-updated_at: 2026-09-11T12:36:38.730601285Z
+created_at: 2026-09-11T12:36:39.296696373Z
+updated_at: 2026-09-11T18:19:12.605508217Z
 tags:
     - plan
     - ipc
@@ -9,7 +9,7 @@ tags:
 ---
 # Plan: put `pando mcp-server` (and other direct-DB entry points) on the IPC primary/secondary bootstrap
 
-Date: 2026-09-11. Status: design only, nothing implemented. Author: Claude (analysis task, point 1 of 3).
+Date: 2026-09-11. Status: **P0 (failover correctness, G1–G6) IMPLEMENTED 2026-09-11**, see [[pando/fixes/ipc_failover_p0_inplace_promotion.md]]. P1–P6 and G7 not started (originally design only). Author: Claude (analysis task, point 1 of 3).
 Builds on: [[pando/analysis/sqlite_locked_interrupted_errors.md]], [[pando/plans/unified_single_writer_master_plan.md]], [[pando/plans/unified_single_writer_phase1_bootstrap.md]], [[pando/plans/unified_single_writer_phase3_serialisation.md]], [[pando/plans/unified_single_writer_phase5_failover.md]], [[pando/plans/inter_instance_phase4_completed.md]], [[pando/plans/inter_instance_ipc_plan.md]], [[pando/analysis/remembrances-single-writer-proxy-gap-2026-05-27.md]], [[pando/plans/remembrances_ipc_proxy_implementation_plan.md]], [[pando/fixes/sqlite-connection-pool-exhaustion-mcp-server.md]].
 
 Target scenario: TUI/desktop/ACP plus one or more `pando mcp-server --no-http` processes (started by Claude Code, Copilot, Cursor...) in the same project, all sharing `.pando/data/pando.db`. Any of them may start first. mcp-server processes come and go, so handover and failover are on the normal path, not rare edge cases.
@@ -104,7 +104,7 @@ On secondaries these are "safe" only because their writes are proxied. The cost:
   - **P2 write contract:** done (WriteMeta, WriteTimeouts 5 s/30 s, WriteError/IsRetryable, 3-try backoff).
   - **P3 writecoordinator:** done (a single goroutine, so head-of-line blocking; see the analysis doc).
   - **P4 changepub:** done. Secondaries only log the events.
-  - **P5 failover:** partial and **broken** (G1-G5 below). Enabled by default. Wired only in TUI/ACP.
+  - **P5 failover:** partial and **broken** (G1-G5 below). Enabled by default. Wired only in TUI/ACP. (G1–G6 fixed by this plan's P0 on 2026-09-11.)
   - **P6 observability:** partial (`pando ipc status`, role logs).
   - **P7 multi-process tests:** not done.
 - `remembrances_ipc_proxy_implementation_plan` ("Ready for execution"): **implemented**.
@@ -238,13 +238,19 @@ The session indexer stays per process, because it only sees its own message brok
 `PromoteToPrimary` itself (`app.go:2389`) uses `db.Connect`. Replace it with in-place promotion (§5.5).
 
 ## 7. Phased implementation
-- **P0 — failover correctness (hard prerequisite).**
+- **P0 — failover correctness (hard prerequisite).** **IMPLEMENTED 2026-09-11**, see [[pando/fixes/ipc_failover_p0_inplace_promotion.md]].
   - `internal/ipc/failover/watcher.go`: nil-callback guard, monitoring loop, retry after shutdown.
   - `internal/ipc/dbproxy/proxy.go`: `Promote()`, `IsRemote()`.
   - `internal/rag/{kb,events,code}`: switch the proxy checks to `IsRemote()`.
   - `internal/app/app.go`: in-place `PromoteToPrimary`, Shutdown ordering, keep lock/bus.
   - `internal/ipc/runtime/runtime.go`: Cleanup order, path canonicalisation, fix stale comments.
   - `internal/db/connect.go`: DSN pragmas, promote helper.
+  - Deviations from this sketch, with the reasons in the fix doc:
+    - The busy_timeout switch uses an atomic per-pool init state and reconfigures every pooled connection by checking out `MaxOpenConnections` connections. DSN `_pragma=` was rejected because it cannot change a live pool.
+    - Stores use `DBProxy.Forward`, which is safe when a promotion races the call.
+    - The lock file is truncated, not unlinked, on release (this removes a two-primaries unlink race).
+    - The secondary watcher and the promotion bind the lock-file ports, with a bind retry.
+    - `startPrimaryServices` is only a hook (P3).
 - **P1 — `cmd/ipc_wiring.go` `wireIPC`.**
   - Migrate `cmd/root.go` (TUI + ACP), `serve.go`, `desktop.go`, `app.go`.
   - `BootstrapWithOptions`.

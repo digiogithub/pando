@@ -219,8 +219,9 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		}
 		defer rt.Cleanup()
 
-		// Enable automatic failover if requested. The watcher is always created but starts
-		// inactive (Enabled: false) to keep the default behaviour safe.
+		// Automatic failover is already enabled by default (failover.DefaultConfig);
+		// --auto-failover only forces it on explicitly. A secondary still never
+		// promotes until its promotion callback is registered below.
 		if autoFailover, _ := cmd.Flags().GetBool("auto-failover"); autoFailover {
 			rt.Watcher.SetEnabled(true)
 			logging.Info("IPC: auto-failover enabled")
@@ -257,6 +258,9 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			dbproxy.RegisterHandlersWithCoordinator(bus, coord)
 			registerBridgeHandlers(bus, instanceID, pandoApp)
 			pandoApp.SetupIPC(bus)
+			// Ordered handover on shutdown: drain coord, release the lock, then
+			// announce instance.shutdown and close the bus (App.Shutdown).
+			pandoApp.SetIPCPrimaryHandover(coord, rt.ReleaseLock)
 			if busErr := bus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
 				logging.Warn("IPC: failed to start bus, continuing without IPC", "error", busErr)
 			} else {
@@ -275,7 +279,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			// (writecoordinator, changepub, bridge) using the new RW connection and Bus.
 			// It captures the current pandoApp and cmd-level vars by reference so it can
 			// reference them after promotion.
-			busSetupFunc := func(busCtx context.Context, newBus *ipc.Bus, rwConn *sql.DB) error {
+			busSetupFunc := func(busCtx context.Context, newBus *ipc.Bus, rwConn *sql.DB) (app.PrimaryWriteCoordinator, error) {
 				coord := writecoordinator.New(busCtx, db.New(rwConn), 256)
 				pub := changepub.NewBusPublisher(newBus.Publish, instanceID, cwd)
 				coord.SetPublisher(pub)
@@ -283,7 +287,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 				registerBridgeHandlers(newBus, instanceID, pandoApp)
 				br := bridge.New(newBus, pandoApp.Sessions, pandoApp.CoderAgent)
 				br.Start(busCtx)
-				return nil
+				return coord, nil
 			}
 			pandoApp.SetIPCSecondaryContext(
 				rt.IPCClient,
@@ -642,12 +646,16 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 	if rt.Role == ipcruntime.RolePrimary {
 		acpBus := rt.Bus
 		acpCoord := writecoordinator.New(ctx, db.New(conn), 256)
-		defer acpCoord.Shutdown()
 		acpPub := changepub.NewBusPublisher(acpBus.Publish, acpInstanceID, cwd)
 		acpCoord.SetPublisher(acpPub)
 		dbproxy.RegisterHandlersWithCoordinator(acpBus, acpCoord)
 		registerBridgeHandlers(acpBus, acpInstanceID, pandoApp)
 		pandoApp.SetupIPC(acpBus)
+		// Ordered handover on shutdown (the deferred pandoApp.Shutdown): drain
+		// and stop acpCoord, release the lock, then announce instance.shutdown
+		// and close the bus. No separate `defer acpCoord.Shutdown()`: it would
+		// run first (LIFO) and discard queued writes instead of draining them.
+		pandoApp.SetIPCPrimaryHandover(acpCoord, rt.ReleaseLock)
 		if busErr := acpBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
 			logger.Printf("IPC: ACP bus failed to start (instances browser will not see this instance): %v", busErr)
 		} else {
@@ -656,7 +664,7 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 			rt.Watcher.Start(ctx)
 		}
 	} else {
-		busSetupFunc := func(busCtx context.Context, newBus *ipc.Bus, rwConn *sql.DB) error {
+		busSetupFunc := func(busCtx context.Context, newBus *ipc.Bus, rwConn *sql.DB) (app.PrimaryWriteCoordinator, error) {
 			coord := writecoordinator.New(busCtx, db.New(rwConn), 256)
 			pub := changepub.NewBusPublisher(newBus.Publish, acpInstanceID, cwd)
 			coord.SetPublisher(pub)
@@ -664,7 +672,7 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 			registerBridgeHandlers(newBus, acpInstanceID, pandoApp)
 			br := bridge.New(newBus, pandoApp.Sessions, pandoApp.CoderAgent)
 			br.Start(busCtx)
-			return nil
+			return coord, nil
 		}
 		pandoApp.SetIPCSecondaryContext(
 			rt.IPCClient,

@@ -57,13 +57,13 @@ func (s *EventStore) SaveEvent(ctx context.Context, subject, content string, met
 		}
 	}
 
-	if s.proxy != nil {
-		return dbproxy.ProxyWriteWithResult[int64](ctx, s.proxy, "SaveEvent", saveEventRequest{
-			Subject:   subject,
-			Content:   content,
-			Metadata:  metadata,
-			Embedding: embedding,
-		})
+	if id, forwarded, err := dbproxy.ForwardWithResult[int64](ctx, s.proxy, "SaveEvent", saveEventRequest{
+		Subject:   subject,
+		Content:   content,
+		Metadata:  metadata,
+		Embedding: embedding,
+	}); forwarded {
+		return id, err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -171,14 +171,14 @@ func (s *EventStore) ReplaceSessionEvents(ctx context.Context, sessionID, subjec
 		return fmt.Errorf("events: chunk embedding count mismatch: got %d embeddings for %d chunks", len(embeddings), len(chunks))
 	}
 
-	if s.proxy != nil {
-		return s.proxy.WriteWithRetry(ctx, "ReplaceSessionEvents", replaceSessionEventsRequest{
-			SessionID:  sessionID,
-			Subject:    subject,
-			Metadata:   metadata,
-			Chunks:     chunks,
-			Embeddings: embeddings,
-		}, dbproxy.DefaultWriteTimeouts.Long)
+	if forwarded, err := s.proxy.Forward(ctx, "ReplaceSessionEvents", replaceSessionEventsRequest{
+		SessionID:  sessionID,
+		Subject:    subject,
+		Metadata:   metadata,
+		Chunks:     chunks,
+		Embeddings: embeddings,
+	}, dbproxy.DefaultWriteTimeouts.Long); forwarded {
+		return err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -236,15 +236,15 @@ func (s *EventStore) ReplaceMessageEvents(ctx context.Context, sessionID, messag
 		return fmt.Errorf("events: chunk embedding count mismatch: got %d embeddings for %d chunks", len(embeddings), len(chunks))
 	}
 
-	if s.proxy != nil {
-		return s.proxy.WriteWithRetry(ctx, "ReplaceMessageEvents", replaceMessageEventsRequest{
-			SessionID:  sessionID,
-			MessageID:  messageID,
-			Subject:    subject,
-			Metadata:   metadata,
-			Chunks:     chunks,
-			Embeddings: embeddings,
-		}, dbproxy.DefaultWriteTimeouts.Long)
+	if forwarded, err := s.proxy.Forward(ctx, "ReplaceMessageEvents", replaceMessageEventsRequest{
+		SessionID:  sessionID,
+		MessageID:  messageID,
+		Subject:    subject,
+		Metadata:   metadata,
+		Chunks:     chunks,
+		Embeddings: embeddings,
+	}, dbproxy.DefaultWriteTimeouts.Long); forwarded {
+		return err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -284,11 +284,11 @@ func (s *EventStore) DeleteMessageEvents(ctx context.Context, messageID, subject
 		subject = "session"
 	}
 
-	if s.proxy != nil {
-		return s.proxy.WriteWithRetry(ctx, "DeleteMessageEvents", deleteMessageEventsRequest{
-			MessageID: messageID,
-			Subject:   subject,
-		}, dbproxy.DefaultWriteTimeouts.Default)
+	if forwarded, err := s.proxy.Forward(ctx, "DeleteMessageEvents", deleteMessageEventsRequest{
+		MessageID: messageID,
+		Subject:   subject,
+	}, dbproxy.DefaultWriteTimeouts.Default); forwarded {
+		return err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)

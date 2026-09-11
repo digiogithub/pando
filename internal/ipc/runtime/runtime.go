@@ -13,6 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -55,8 +57,10 @@ type BootstrapResult struct {
 	// to the primary via ZMQ RPC and serves reads from the local RO connection.
 	Querier db.Querier
 
-	// SQLDB is the underlying *sql.DB. Primary holds a RW connection with WAL
-	// pragmas applied and migrations run. Secondary holds a RO connection.
+	// SQLDB is the underlying *sql.DB. Primary holds a RW pool with WAL
+	// pragmas applied and migrations run. Secondary holds a 1-connection RW
+	// pool with a short busy_timeout (db.ConnectRWSecondary); on failover
+	// promotion that same pool is upgraded in place (db.PromoteToPrimaryPool).
 	SQLDB *sql.DB
 
 	// Bus is non-nil only on the primary instance.
@@ -72,13 +76,61 @@ type BootstrapResult struct {
 	// LockFile is the open flock file held by the primary, nil on secondary.
 	LockFile *os.File
 
-	// Watcher monitors primary liveness. Always non-nil; disabled by default (feature flag).
-	// Callers can call Watcher.SetEnabled(true) to opt in to automatic failover.
+	// Watcher monitors primary liveness. Non-nil on a primary and on a
+	// secondary with a working IPC client. Automatic failover is enabled by
+	// default (failover.DefaultConfig); Watcher.SetEnabled(false) turns it off.
+	// A secondary watcher never takes the IPC lock until a promotion callback
+	// is registered with Watcher.SetPromoteCallback.
 	Watcher *failover.Watcher
 
-	// Cleanup releases all resources acquired during Bootstrap in reverse order.
-	// The caller MUST call this exactly once on shutdown.
+	// Cleanup releases all resources acquired during Bootstrap. On a primary
+	// it follows the ordered handover: release the lock, announce
+	// instance.shutdown, close the bus, then close the DB. It is idempotent;
+	// the caller should call it on shutdown (typically deferred).
 	Cleanup func()
+
+	releaseOnce sync.Once
+}
+
+// ReleaseLock releases the primary's IPC lock now, ahead of Cleanup, so a
+// shutting-down primary can hand the lock over before it finishes its own
+// (possibly slow) shutdown. Idempotent, and a no-op on a secondary; Cleanup
+// calls it too.
+func (r *BootstrapResult) ReleaseLock() {
+	r.releaseOnce.Do(func() {
+		if r.LockFile != nil {
+			ipc.ReleaseLock(r.LockFile)
+		}
+	})
+}
+
+// NewPrimaryBus creates the Bus a primary serves on, with the ipc.ping
+// liveness handler registered, so a freshly started secondary can tell a
+// healthy primary apart from a suspended one (see killStalePrimary). Used by
+// Bootstrap and by failover promotion, so a promoted primary answers the probe
+// exactly like one that started as primary.
+func NewPrimaryBus(instanceID string) *ipc.Bus {
+	bus := ipc.NewBus(instanceID)
+	bus.RegisterMethod(pingMethod, func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`"pong"`), nil
+	})
+	return bus
+}
+
+// canonicalWorkdir maps every spelling of a working directory (relative,
+// absolute, through a symlink) to one path, so they all derive the same
+// deterministic ports (ipc.PortsForPath hashes the raw string) and name the
+// same lock file. Falls back to the absolute path, then to the input, when
+// resolution fails (e.g. a component was removed).
+func canonicalWorkdir(workdir string) string {
+	abs, err := filepath.Abs(workdir)
+	if err != nil {
+		return workdir
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
+	}
+	return abs
 }
 
 // Bootstrap runs the unified startup sequence for the given workdir.
@@ -91,6 +143,7 @@ type BootstrapResult struct {
 // On lock error the function continues as primary so the caller does not lose
 // functionality — consistent with the existing root.go behaviour.
 func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResult, error) {
+	workdir = canonicalWorkdir(workdir)
 	pubPort, rpcPort := ipc.PortsForPath(workdir)
 
 	isPrimary, lockInfo, lockFile, lockErr := ipc.AcquireLock(workdir, instanceID, pubPort, rpcPort)
@@ -136,12 +189,7 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 		)
 		logging.Debug("IPC: primary DB opened", "role", RolePrimary, "workdir", workdir)
 
-		bus := ipc.NewBus(instanceID)
-		// Answer liveness probes from newly started secondaries so they can tell a
-		// healthy primary apart from a suspended/hung one (see killStalePrimary).
-		bus.RegisterMethod(pingMethod, func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
-			return json.RawMessage(`"pong"`), nil
-		})
+		bus := NewPrimaryBus(instanceID)
 
 		watcher := failover.NewWatcherForPrimary(
 			failover.DefaultConfig(),
@@ -155,17 +203,18 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 		res.Bus = bus
 		res.Watcher = watcher
 
-		res.Cleanup = func() {
-			shutdownCtx := context.Background()
-			watcher.Shutdown(shutdownCtx)
-			if bus != nil {
-				_ = bus.Shutdown()
-			}
+		res.Cleanup = sync.OnceFunc(func() {
+			// Ordered handover: release the lock BEFORE announcing
+			// instance.shutdown, so a secondary reacting to the announcement
+			// finds the lock free. Bus.Shutdown announces and then closes the
+			// sockets; the watcher stops afterwards (its own shutdown publish
+			// then hits a closed bus and is skipped). All steps are idempotent:
+			// app.App's primary handover may already have done the first two.
+			res.ReleaseLock()
+			_ = bus.Shutdown()
+			watcher.Shutdown(context.Background())
 			_ = conn.Close()
-			if lockFile != nil {
-				ipc.ReleaseLock(lockFile)
-			}
-		}
+		})
 
 		logging.Debug("IPC bootstrap: primary", "pubPort", pubPort, "rpcPort", rpcPort)
 		return res, nil
@@ -203,7 +252,7 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 		logging.Warn("IPC bootstrap: failed to create IPC client, secondary has no proxy", "error", clientErr)
 		res.SQLDB = rwConn
 		res.Querier = db.New(rwConn)
-		res.Cleanup = func() { _ = rwConn.Close() }
+		res.Cleanup = sync.OnceFunc(func() { _ = rwConn.Close() })
 		return res, nil
 	}
 
@@ -225,27 +274,41 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 		go handleWriteChanges(ctx, changeCh)
 	}
 
-	// Create a failover watcher for this secondary. Auto-failover is disabled by default;
-	// the caller can enable it with Watcher.SetEnabled(true) or via --auto-failover.
+	// Create a failover watcher for this secondary. Auto-failover is enabled by
+	// default (failover.DefaultConfig), but the watcher is created WITHOUT a
+	// promotion callback: until the entrypoint registers one with
+	// Watcher.SetPromoteCallback (TUI and ACP do; serve/desktop/app do not yet),
+	// it only monitors and never takes the IPC lock, so it cannot leave a
+	// zombie primary behind.
+	//
+	// It is bound to the primary's ports from the lock file (not the ports
+	// derived from this workdir): if this instance wins a promotion it binds
+	// and records those same ports, so every other secondary's DBProxy — which
+	// points at them — keeps working, even against an older primary that
+	// derived its ports from a differently spelled path.
+	watcherPubPort, watcherRPCPort := lockInfo.PubPort, lockInfo.RPCPort
+	if watcherPubPort == 0 || watcherRPCPort == 0 {
+		watcherPubPort, watcherRPCPort = pubPort, rpcPort
+	}
 	watcher := failover.NewWatcherForSecondary(
 		failover.DefaultConfig(),
 		instanceID, workdir,
-		pubPort, rpcPort,
+		watcherPubPort, watcherRPCPort,
 		ipcClient,
 		pubAddr,
-		nil, // nil → defaultPromoteStub; Phase 5b will wire real promotion logic
+		nil,
 	)
 	res.Watcher = watcher
-	// Start the secondary watcher immediately; it will monitor primary heartbeats and
-	// act if the primary dies. Disabled by default — safe even if started early.
+	// Start the secondary watcher immediately; it monitors primary heartbeats
+	// and, once a promotion callback is registered, promotes this instance if
+	// the primary dies.
 	watcher.Start(ctx)
 
-	res.Cleanup = func() {
-		shutdownCtx := context.Background()
-		watcher.Shutdown(shutdownCtx)
+	res.Cleanup = sync.OnceFunc(func() {
+		watcher.Shutdown(context.Background())
 		_ = ipcClient.Close()
 		_ = rwConn.Close()
-	}
+	})
 
 	logging.Info("IPC: secondary connected to primary",
 		"role", RoleSecondary,

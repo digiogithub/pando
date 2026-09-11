@@ -9,6 +9,7 @@ package writecoordinator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -25,7 +26,15 @@ const defaultQueueSize = 256
 type WriteJob struct {
 	req     dbproxy.WriteRequest
 	resultC chan WriteResult
+
+	// barrier, when non-nil, marks a drain barrier queued by Drain instead of
+	// a write: run closes it once every job queued before it has completed.
+	barrier chan struct{}
 }
+
+// ErrDraining is returned by Submit once Drain has been called: the
+// coordinator no longer accepts writes because the primary is handing over.
+var ErrDraining = errors.New("writecoordinator: draining for primary handover, not accepting writes")
 
 // WriteResult is the outcome of a serialised write operation.
 type WriteResult struct {
@@ -59,6 +68,9 @@ type Coordinator struct {
 	completed atomic.Uint64
 	failed    atomic.Uint64
 
+	// draining is set by Drain; Submit rejects new jobs once it is true.
+	draining atomic.Bool
+
 	mu         sync.Mutex
 	queueDepth int
 	maxQueue   int
@@ -91,6 +103,9 @@ func (c *Coordinator) SetPublisher(pub changepub.Publisher) {
 // Submit enqueues a write job and blocks until the result is available or
 // the caller's context is cancelled. It satisfies dbproxy.WriteSubmitter.
 func (c *Coordinator) Submit(ctx context.Context, req dbproxy.WriteRequest) (json.RawMessage, error) {
+	if c.draining.Load() {
+		return nil, ErrDraining
+	}
 	job := WriteJob{
 		req:     req,
 		resultC: make(chan WriteResult, 1),
@@ -135,6 +150,36 @@ func (c *Coordinator) Shutdown() {
 	<-c.done
 }
 
+// Drain stops accepting new writes (Submit returns ErrDraining from now on)
+// and waits until every job already queued has been executed, or ctx expires.
+// It is the first step of a primary's ordered handover: the writes secondaries
+// already forwarded are applied before the lock is released, so the next
+// primary never races them. It does not stop the coordinator; call Shutdown
+// afterwards. Safe to call more than once and after Shutdown.
+//
+// A Submit that passed the draining check just before Drain was called may
+// still enqueue behind the barrier; that caller is unblocked with an error by
+// the subsequent Shutdown, like any write pending at shutdown.
+func (c *Coordinator) Drain(ctx context.Context) error {
+	c.draining.Store(true)
+	barrier := make(chan struct{})
+	select {
+	case c.jobs <- WriteJob{barrier: barrier}:
+	case <-c.done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("writecoordinator: drain: %w", ctx.Err())
+	}
+	select {
+	case <-barrier:
+		return nil
+	case <-c.done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("writecoordinator: drain: %w", ctx.Err())
+	}
+}
+
 // Metrics returns a consistent snapshot of coordinator statistics.
 func (c *Coordinator) Metrics() CoordinatorMetrics {
 	c.mu.Lock()
@@ -177,6 +222,10 @@ func (c *Coordinator) run(ctx context.Context) {
 		case job, ok := <-c.jobs:
 			if !ok {
 				return
+			}
+			if job.barrier != nil {
+				close(job.barrier)
+				continue
 			}
 			c.mu.Lock()
 			c.queueDepth--
