@@ -1,10 +1,10 @@
 ---
-created_at: 2026-09-11T20:55:44.710308509Z
-updated_at: 2026-09-11T21:53:02.288149387Z
+created_at: 2026-09-11T22:20:23.371480205Z
+updated_at: 2026-09-11T22:24:23.582093595Z
 ---
 # Plan: put `pando mcp-server` (and other direct-DB entry points) on the IPC primary/secondary bootstrap
 
-Date: 2026-09-11. Status: **P0 (failover correctness, G1–G6) IMPLEMENTED 2026-09-11**, see [[pando/fixes/ipc_failover_p0_inplace_promotion.md]]. **P1 (shared `wireIPC`, `BootstrapWithOptions`, `ModeMCP`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_wiring_p1_shared_wireipc.md]]. **P2 (mcp-server on the bootstrap) IMPLEMENTED 2026-09-11**, see [[pando/changes/mcp_server_ipc_bootstrap_p2.md]]. **P3 (role-aware, primary-only background services) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_role_aware_services_p3.md]]. **P4 (other entry points: agui-serve, one-shot `cronjob run`, `cronjob.reload`, `kb.relink`, `db.ConnectCLI`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_other_entrypoints_p4.md]]. P5–P6 and G7 not started. Author: Claude (analysis task, point 1 of 3).
+Date: 2026-09-11. Status: **P0 (failover correctness, G1–G6) IMPLEMENTED 2026-09-11**, see [[pando/fixes/ipc_failover_p0_inplace_promotion.md]]. **P1 (shared `wireIPC`, `BootstrapWithOptions`, `ModeMCP`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_wiring_p1_shared_wireipc.md]]. **P2 (mcp-server on the bootstrap) IMPLEMENTED 2026-09-11**, see [[pando/changes/mcp_server_ipc_bootstrap_p2.md]]. **P3 (role-aware, primary-only background services) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_role_aware_services_p3.md]]. **P4 (other entry points: agui-serve, one-shot `cronjob run`, `cronjob.reload`, `kb.relink`, `db.ConnectCLI`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_other_entrypoints_p4.md]]. **P5 (remaining direct writers on secondaries: history, project, mcpgateway, design, AG-UI threads; plus handover-tolerant forwarding) IMPLEMENTED 2026-09-12**, see [[pando/changes/ipc_direct_writers_p5.md]]. P6 and G7 not started. Author: Claude (analysis task, point 1 of 3).
 Builds on: [[pando/analysis/sqlite_locked_interrupted_errors.md]], [[pando/plans/unified_single_writer_master_plan.md]], [[pando/plans/unified_single_writer_phase1_bootstrap.md]], [[pando/plans/unified_single_writer_phase3_serialisation.md]], [[pando/plans/unified_single_writer_phase5_failover.md]], [[pando/plans/inter_instance_phase4_completed.md]], [[pando/plans/inter_instance_ipc_plan.md]], [[pando/analysis/remembrances-single-writer-proxy-gap-2026-05-27.md]], [[pando/plans/remembrances_ipc_proxy_implementation_plan.md]], [[pando/fixes/sqlite-connection-pool-exhaustion-mcp-server.md]].
 
 Target scenario: TUI/desktop/ACP plus one or more `pando mcp-server --no-http` processes (started by Claude Code, Copilot, Cursor...) in the same project, all sharing `.pando/data/pando.db`. Any of them may start first. mcp-server processes come and go, so handover and failover are on the normal path, not rare edge cases.
@@ -59,6 +59,8 @@ Target scenario: TUI/desktop/ACP plus one or more `pando mcp-server --no-http` p
   - `project.NewService(rawQ)` (`app.go:251`)
   - `mcpgateway.NewGateway(conn)` (`app.go:566`)
   - `design.NewProvider(conn)` (`app.go:716`)
+
+  (All fixed by P5, together with the AG-UI thread map that P4 later found.)
 
 ### 1.4 Background services disabled on secondaries: none
 `app.New` starts the same things for every role:
@@ -217,7 +219,7 @@ The session indexer stays per process, because it only sees its own message brok
   2. TUI/desktop secondaries receive `instance.shutdown`, and exactly one of them wins the flock.
   3. The winner promotes in place and starts the primary services. Because workdirs are canonicalised, it binds the same deterministic ports, so the other secondaries' proxies keep working.
   - On SIGKILL: the kernel frees the flock, and the same flow runs after the 15 s heartbeat timeout. During that gap remembrances writes fail after 3 retries.
-  - Optional: have `WriteWithRetry` wait up to about 20 s on "unavailable" when the lock file shows a new PID.
+  - Optional: have `WriteWithRetry` wait up to about 20 s on "unavailable" when the lock file shows a new PID. (Implemented by P5.)
 - **Lifecycle when the primary dies while mcp-server is a secondary.** mcp-server can win the promotion and become primary. With §5.4 it then runs the indexers. The same rules apply.
 
 ## 6. Other direct-DB entry points
@@ -301,7 +303,11 @@ The session indexer stays per process, because it only sees its own message brok
   - `db.ConnectCLI()`: no migrations when the DB exists, 5 s busy timeout, a pool of 4, and the same DSN and pragmas; a missing or empty DB falls back to `Connect`. Used by `project`, `design`, and the local fallbacks of `kb relink` and `db compact`. After P4 the only `db.Connect()` caller left is the bootstrap's own primary branch.
   - Also: registry modes `ModeAGUI`/`ModeCronJob`, and nil-DB guards in the two P4 entrypoints.
   - Verified with `-race` unit tests (including a real-bus `cronjob.reload` and `kb.relink` forward, and a one-shot secondary that is never promoted) and an isolated smoke test with 45/45 checks passing. That smoke found a pre-existing bug: `updateConfigFileAt` rewrites the whole project config, blanking `Data.Directory` (see the change doc).
-- **P5 — remaining direct writers on secondaries.** history (`WithTx`), project, mcpgateway favorites, design provider. Route them via the proxy or document direct-first plus retry. Plus the analysis items: `BEGIN IMMEDIATE`, an index on `json_extract(metadata,'$.session_id')`, an incremental session indexer, retrying lock errors in `WriteError.IsRetryable`.
+- **P5 — remaining direct writers on secondaries.** **IMPLEMENTED 2026-09-12**, see [[pando/changes/ipc_direct_writers_p5.md]]. (The analysis items listed here — `BEGIN IMMEDIATE`, the `json_extract(metadata,'$.session_id')` index, the incremental session indexer, retrying lock errors in `WriteError.IsRetryable` — were already done earlier, see [[pando/fixes/sqlite_immediate_tx_conn_pragmas_session_index.md]].)
+  - Every writer was **routed through the proxy** (option 1); none was left as "direct-first plus retry".
+  - `history.NewService(q db.Querier)` and `project.NewService(q db.Querier)` now take the app's querier (the `*DBProxy` on a secondary). History's `WithTx` wrapped a single INSERT, so it was dropped for the plain `CreateFile` write; the rename needed a new `DBProxy.UpdateProjectName` plus a `dispatchWrite` case, since it is not in the generated `db.Querier`.
+  - The writers that hold a raw `*sql.DB` (design store, MCP gateway registry/stats, AG-UI thread map) use a new `dbproxy.SQLWriter` over **registered named statements** (`dbproxy.RegisterStatement` + the `ExecStatements` write method): only a name and typed arguments cross IPC, and a batch runs in one transaction on whichever side executes it, which is how design's `AddVersion`/`ReplaceNodes` keep their atomicity across the proxy. An older primary answers "unknown write method", and the secondary falls back to a bounded direct retry.
+  - **Handover tolerance** (the §5.5 optional item and the P0 risk): forwarded writes now wait out a primary handover — `forwardWithHandoverRetry`, ~20 s bounded, re-reading the lock file between retries — instead of failing after 3 short retries. A drained/shut-down coordinator maps to the new retryable `ErrCodeUnavailable`, and an ambiguous outcome (timeout / lost response) is still only re-sent for void writes.
 - **P6 — tests and docs.** See §8. Update the stale statuses in the `unified_single_writer_*` KB docs.
 
 ## 8. Test plan
@@ -331,5 +337,5 @@ The session indexer stays per process, because it only sees its own message brok
   - Migrations are run by whoever is primary.
   - Mitigation: `ipc.ping` returns version and schema; secondaries warn or refuse to promote across major skew.
 - Head-of-line blocking in the single writecoordinator grows as more instances proxy through it (CodeIndexFile runs embedding HTTP calls inline). See the analysis.
-- During a 15 s heartbeat gap after a SIGKILL, MCP tool writes (`kb_add_document`, `remember`) return errors to the client agent.
+- During a 15 s heartbeat gap after a SIGKILL, MCP tool writes (`kb_add_document`, `remember`) return errors to the client agent. (P5's handover wait covers most of this gap: a forwarded write now waits up to ~20 s for the new primary.)
 - Keeping SIGKILL of a suspended primary for the other entrypoints is still a policy decision.

@@ -41,6 +41,7 @@ func resetIPCGlobals(t *testing.T) {
 	t.Cleanup(func() {
 		session.SetIPCPublisher(nil)
 		dbproxy.RegisterRemembrancesDispatcher(nil)
+		dbproxy.RegisterStatementExecutor(nil)
 	})
 }
 

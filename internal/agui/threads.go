@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/logging"
 )
 
@@ -28,6 +29,11 @@ type threadStore struct {
 	m  map[string]string
 
 	db *sql.DB
+	// w executes the writes. On an IPC secondary the shared pool is bound to
+	// the app's write proxy (dbproxy.BindPool), so an upsert that hits the
+	// secondary's 200 ms busy timeout is forwarded to the primary instead of
+	// degrading the store to memory-only for the rest of the process.
+	w *dbproxy.SQLWriter
 	// degraded is set after the first persistence failure so a broken or absent
 	// table produces one warning instead of one per request. It is read on every
 	// call from arbitrary goroutines, hence the atomic.
@@ -39,8 +45,24 @@ type threadStore struct {
 // and the in-memory map is a correct fallback.
 const threadStoreTimeout = 2 * time.Second
 
+var (
+	stmtThreadDelete = dbproxy.RegisterStatement("agui.thread_delete",
+		`DELETE FROM agui_threads WHERE thread_id = ?`)
+	stmtThreadUpsert = dbproxy.RegisterStatement("agui.thread_upsert", `
+		INSERT INTO agui_threads (thread_id, session_id, agent)
+		VALUES (?, ?, ?)
+		ON CONFLICT(thread_id) DO UPDATE SET
+			session_id = excluded.session_id,
+			agent      = excluded.agent,
+			updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`)
+)
+
 func newThreadStore(db *sql.DB) *threadStore {
-	return &threadStore{m: make(map[string]string), db: db}
+	t := &threadStore{m: make(map[string]string), db: db}
+	if db != nil {
+		t.w = dbproxy.NewSQLWriter(db, nil)
+	}
+	return t
 }
 
 // get returns the session bound to a thread, consulting the database only when
@@ -82,7 +104,7 @@ func (t *threadStore) forget(ctx context.Context, threadID string) {
 	}
 	qctx, cancel := context.WithTimeout(detach(ctx), threadStoreTimeout)
 	defer cancel()
-	if _, err := t.db.ExecContext(qctx, `DELETE FROM agui_threads WHERE thread_id = ?`, threadID); err != nil {
+	if _, err := t.w.Exec(qctx, stmtThreadDelete, threadID); err != nil {
 		t.degrade("delete", err)
 	}
 }
@@ -114,14 +136,7 @@ func (t *threadStore) saveToDB(ctx context.Context, threadID, sessionID, agent s
 	qctx, cancel := context.WithTimeout(detach(ctx), threadStoreTimeout)
 	defer cancel()
 
-	_, err := t.db.ExecContext(qctx, `
-		INSERT INTO agui_threads (thread_id, session_id, agent)
-		VALUES (?, ?, ?)
-		ON CONFLICT(thread_id) DO UPDATE SET
-			session_id = excluded.session_id,
-			agent      = excluded.agent,
-			updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
-		threadID, sessionID, agent)
+	_, err := t.w.Exec(qctx, stmtThreadUpsert, threadID, sessionID, agent)
 	if err != nil {
 		t.degrade("persist", err)
 	}

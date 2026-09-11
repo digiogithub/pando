@@ -44,13 +44,23 @@ type Service interface {
 	Delete(ctx context.Context, id string) error
 }
 
-// NewService creates a new project service backed by the given DB queries.
-func NewService(q *db.Queries) Service {
+// NewService creates a new project service backed by the given querier. Pass
+// the app's querier (app.DBQuerier): on an IPC secondary that is the
+// *dbproxy.DBProxy, so project writes are direct first and forwarded to the
+// primary on lock contention. Rename additionally needs the querier to
+// implement projectNameUpdater (*db.Queries and *dbproxy.DBProxy do).
+func NewService(q db.Querier) Service {
 	return &service{q: q}
 }
 
+// projectNameUpdater is the hand-written rename query, which is not part of
+// the generated db.Querier interface.
+type projectNameUpdater interface {
+	UpdateProjectName(ctx context.Context, id, name string) error
+}
+
 type service struct {
-	q *db.Queries
+	q db.Querier
 }
 
 // Create registers a new project directory.
@@ -153,7 +163,11 @@ func (s *service) Rename(ctx context.Context, id, name string) error {
 	if name == "" {
 		return fmt.Errorf("name must not be empty")
 	}
-	return s.q.UpdateProjectName(ctx, id, name)
+	u, ok := s.q.(projectNameUpdater)
+	if !ok {
+		return fmt.Errorf("project: querier %T cannot rename projects", s.q)
+	}
+	return u.UpdateProjectName(ctx, id, name)
 }
 
 // Delete removes a project from the registry (does NOT delete files on disk).

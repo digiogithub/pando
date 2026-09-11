@@ -289,6 +289,28 @@ func dispatchWrite(ctx context.Context, q db.Querier, req WriteRequest) (json.Ra
 		}
 		return nil, nil
 
+	case "UpdateProjectName":
+		var p UpdateProjectNameParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, invalidParamsErr(req.Method, err)
+		}
+		u, ok := q.(ProjectNameUpdater)
+		if !ok {
+			return nil, &WriteError{
+				Code:    ErrCodeMethodNotFound,
+				Method:  req.Method,
+				Message: fmt.Sprintf("unknown write method %q: querier %T cannot rename projects", req.Method, q),
+			}
+		}
+		if err := u.UpdateProjectName(ctx, p.ID, p.Name); err != nil {
+			return nil, mapToWriteError(req.Method, err)
+		}
+		return nil, nil
+
+	// ---- Registered SQL statements (design, MCP gateway, AG-UI threads) ----
+	case MethodExecStatements:
+		return dispatchExecStatements(ctx, req.Params)
+
 	default:
 		if remembrancesDispatcher != nil {
 			return remembrancesDispatcher.DispatchRemembrancesWrite(ctx, req.Method, req.Params)

@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/snapshot"
 )
@@ -34,6 +35,18 @@ type Provider struct {
 	mu       sync.Mutex
 	renderer *Renderer
 	mirror   SystemMirror
+	// writeProxy routes store writes through the IPC write proxy (see
+	// SetWriteProxy); nil means direct (or the pool's bound proxy).
+	writeProxy *dbproxy.DBProxy
+}
+
+// SetWriteProxy makes every service the provider hands out write its design
+// metadata through p: direct first, forwarded to the IPC primary on lock
+// contention. The App calls it with its DBProxy (a passthrough on a primary).
+func (p *Provider) SetWriteProxy(proxy *dbproxy.DBProxy) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.writeProxy = proxy
 }
 
 // NewProvider builds a provider over an open database. The snapshot service is
@@ -82,11 +95,12 @@ func (p *Provider) SetMirror(m SystemMirror) {
 // Service returns a design service bound to a session. The returned value is
 // cheap: it shares the store, the snapshotter and the renderer.
 func (p *Provider) Service(sessionID string) *Service {
-	svc := NewServiceFromConfig(p.db, p.snaps, sessionID)
-	svc = svc.WithRenderer(p.renderForConfig())
 	p.mu.Lock()
 	mirror := p.mirror
+	writeProxy := p.writeProxy
 	p.mu.Unlock()
+	svc := newServiceFromConfig(NewStoreWithProxy(p.db, writeProxy), p.snaps, sessionID)
+	svc = svc.WithRenderer(p.renderForConfig())
 	if mirror != nil {
 		svc = svc.WithMirror(mirror)
 	}

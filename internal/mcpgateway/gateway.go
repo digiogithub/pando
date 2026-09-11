@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mcpclient"
 
@@ -34,6 +35,15 @@ func NewGateway(db *sql.DB, cfg FavoriteConfig) *Gateway {
 		config:   cfg,
 		db:       db,
 	}
+}
+
+// SetWriteProxy routes the gateway's catalog and usage writes through the IPC
+// write proxy: direct first, forwarded to the primary on lock contention. The
+// App calls it with its DBProxy on every instance (a passthrough on the
+// primary and after promotion). A nil proxy restores plain direct writes.
+func (g *Gateway) SetWriteProxy(p *dbproxy.DBProxy) {
+	g.registry.w.SetProxy(p)
+	g.stats.w.SetProxy(p)
 }
 
 // Close releases all pooled MCP client connections.

@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -75,9 +76,42 @@ var DefaultWriteTimeouts = WriteTimeout{
 type DBProxy struct {
 	db.Querier // local reads and direct write attempts — embedded interface
 	client     atomic.Pointer[ipc.Client]
-	rpcAddr    string
+	// rpcAddr is the primary's ROUTER endpoint. It changes only when the
+	// resolver reports a different primary after a failover (normally the
+	// ports are identical: every instance derives them from the canonical
+	// workdir, and a promoted instance rebinds the lock-file ports).
+	rpcAddr    atomic.Pointer[string]
 	instanceID string
+	// resolver re-reads where the current primary serves (the IPC lock
+	// file); consulted between forwarding retries. Optional.
+	resolver atomic.Pointer[PrimaryResolver]
+	// handoverWait overrides DefaultHandoverWait when > 0 (nanoseconds).
+	handoverWait atomic.Int64
 }
+
+// PrimaryResolver reports the RPC endpoint of the instance currently holding
+// the IPC primary role, or ok=false when it cannot tell (no lock info, lock
+// just released). The runtime wires one that reads the IPC lock file.
+type PrimaryResolver func() (rpcAddr string, ok bool)
+
+// DefaultHandoverWait bounds how long a forwarded write keeps waiting for a
+// primary that is unreachable or handing its role over (drain → lock release
+// → instance.shutdown → a secondary promotes and rebinds the ports). A
+// graceful handover completes in well under a second; the bound also covers
+// most of the 15 s heartbeat gap after a primary is SIGKILLed. One call
+// already in flight when the bound expires may add up to its own timeout.
+const DefaultHandoverWait = 20 * time.Second
+
+// Backoff between forwarding retries: doubles from min to max, jittered.
+const (
+	forwardRetryBackoffMin = 50 * time.Millisecond
+	forwardRetryBackoffMax = time.Second
+	// forwardMaxAttemptsPerClass caps retries for BUSY answers and for
+	// ambiguous outcomes (timeout / lost response), exactly like the legacy
+	// 3-attempt loop. Unreachable/unavailable primaries are bounded by the
+	// handover wait instead.
+	forwardMaxAttemptsPerClass = 3
+)
 
 // ErrNotRemote is returned by the forwarding helpers (WriteWithRetry,
 // ProxyWriteWithResult) when the proxy has no IPC client, i.e. this instance is
@@ -98,13 +132,72 @@ func New(local db.Querier, client *ipc.Client, rpcAddr string) *DBProxy {
 func NewWithInstanceID(local db.Querier, client *ipc.Client, rpcAddr, instanceID string) *DBProxy {
 	p := &DBProxy{
 		Querier:    local,
-		rpcAddr:    rpcAddr,
 		instanceID: instanceID,
 	}
+	p.rpcAddr.Store(&rpcAddr)
 	if client != nil {
 		p.client.Store(client)
 	}
 	return p
+}
+
+// RPCAddr returns the primary endpoint writes are currently forwarded to.
+func (p *DBProxy) RPCAddr() string {
+	if p == nil {
+		return ""
+	}
+	if a := p.rpcAddr.Load(); a != nil {
+		return *a
+	}
+	return ""
+}
+
+// SetPrimaryResolver installs the function consulted between forwarding
+// retries to re-point the proxy at the current primary after a failover.
+// Pass nil to remove it.
+func (p *DBProxy) SetPrimaryResolver(r PrimaryResolver) {
+	if r == nil {
+		p.resolver.Store(nil)
+		return
+	}
+	p.resolver.Store(&r)
+}
+
+// SetHandoverWait overrides DefaultHandoverWait for this proxy (tests, or a
+// caller that must fail faster). d <= 0 restores the default.
+func (p *DBProxy) SetHandoverWait(d time.Duration) {
+	if d < 0 {
+		d = 0
+	}
+	p.handoverWait.Store(int64(d))
+}
+
+func (p *DBProxy) handoverWaitBound() time.Duration {
+	if d := time.Duration(p.handoverWait.Load()); d > 0 {
+		return d
+	}
+	return DefaultHandoverWait
+}
+
+// refreshPrimaryAddr re-points the proxy at the endpoint the resolver
+// reports, when it reports one that differs from the current one.
+func (p *DBProxy) refreshPrimaryAddr() {
+	rp := p.resolver.Load()
+	if rp == nil || *rp == nil {
+		return
+	}
+	addr, ok := (*rp)()
+	if !ok || addr == "" {
+		return
+	}
+	if old := p.rpcAddr.Swap(&addr); old == nil || *old != addr {
+		prev := ""
+		if old != nil {
+			prev = *old
+		}
+		logging.Info("dbproxy: primary endpoint changed, re-pointing forwarded writes",
+			"old", prev, "new", addr)
+	}
 }
 
 // IsRemote reports whether writes may be forwarded to another (primary)
@@ -139,7 +232,7 @@ func (p *DBProxy) ProbePrimary(ctx context.Context) error {
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	_, err := client.Call(probeCtx, p.rpcAddr, "instance.ping", struct{}{})
+	_, err := client.Call(probeCtx, p.RPCAddr(), "instance.ping", struct{}{})
 	if err != nil {
 		return fmt.Errorf("dbproxy: probe primary: %w", err)
 	}
@@ -209,7 +302,7 @@ func proxyWrite[R any](ctx context.Context, p *DBProxy, method string, params an
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	raw, err := client.Call(callCtx, p.rpcAddr, MethodDBWrite, req)
+	raw, err := client.Call(callCtx, p.RPCAddr(), MethodDBWrite, req)
 	if err != nil {
 		return zero, mapToWriteError(method, err)
 	}
@@ -221,8 +314,26 @@ func proxyWrite[R any](ctx context.Context, p *DBProxy, method string, params an
 }
 
 // ProxyWriteWithResult forwards a write method and decodes a typed result.
+// It waits out a primary handover (see forwardWithHandoverRetry) but never
+// re-sends a write whose outcome is unknown: typed writes are mostly creates,
+// and a re-sent create that had in fact been applied would fail with a
+// conflict after succeeding.
 func ProxyWriteWithResult[R any](ctx context.Context, p *DBProxy, method string, params any) (R, error) {
-	return proxyWrite[R](ctx, p, method, params, DefaultWriteTimeouts.Default)
+	return proxyWriteRetry[R](ctx, p, method, params, DefaultWriteTimeouts.Default)
+}
+
+// proxyWriteRetry is proxyWrite wrapped in the handover-tolerant retry loop,
+// without re-sending ambiguous outcomes.
+func proxyWriteRetry[R any](ctx context.Context, p *DBProxy, method string, params any, timeout time.Duration) (R, error) {
+	var result R
+	err := p.forwardWithHandoverRetry(ctx, method, false, func(ctx context.Context) error {
+		r, err := proxyWrite[R](ctx, p, method, params, timeout)
+		if err == nil {
+			result = r
+		}
+		return err
+	})
+	return result, err
 }
 
 // proxyVoidWrite sends a write that returns only an error.
@@ -240,7 +351,7 @@ func proxyVoidWrite(ctx context.Context, p *DBProxy, method string, params any, 
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	_, err = client.Call(callCtx, p.rpcAddr, MethodDBWrite, req)
+	_, err = client.Call(callCtx, p.RPCAddr(), MethodDBWrite, req)
 	if err != nil {
 		return mapToWriteError(method, err)
 	}
@@ -257,27 +368,112 @@ func (p *DBProxy) WriteWithRetry(ctx context.Context, method string, params any,
 	return p.writeWithRetry(ctx, method, params, timeout)
 }
 
-// writeWithRetry retries proxyVoidWrite on transient errors with exponential backoff.
-// Maximum 3 attempts starting with a 50ms delay.
+// writeWithRetry forwards a void write through the handover-tolerant retry
+// loop. Void writes keep the legacy behaviour of re-sending an ambiguous
+// outcome (timeout) up to forwardMaxAttemptsPerClass times: they are mostly
+// idempotent replaces/deletes/updates.
 func (p *DBProxy) writeWithRetry(ctx context.Context, method string, params any, timeout time.Duration) error {
-	const maxRetries = 3
-	backoff := 50 * time.Millisecond
+	return p.forwardWithHandoverRetry(ctx, method, true, func(ctx context.Context) error {
+		return proxyVoidWrite(ctx, p, method, params, timeout)
+	})
+}
 
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		err := proxyVoidWrite(ctx, p, method, params, timeout)
+// forwardWithHandoverRetry runs attempt (one forwarded call) until it
+// succeeds or fails for good. Per error class:
+//
+//   - ErrNotRemote: this instance was promoted meanwhile; returned at once so
+//     the caller performs the write locally (every caller already does).
+//   - Unreachable (the request was never delivered) and Unavailable (the
+//     primary refused it while draining for a handover): nothing was applied,
+//     so the write is re-sent, re-resolving the primary endpoint before each
+//     attempt, until the handover wait (DefaultHandoverWait, 20 s) expires.
+//   - Busy (the primary's own busy timeout expired): re-sent, at most
+//     forwardMaxAttemptsPerClass attempts in total, as before.
+//   - Timeout / lost response (outcome unknown): re-sent only when
+//     retryAmbiguous, at most forwardMaxAttemptsPerClass attempts.
+//   - anything else (constraint violation, invalid params, unknown method,
+//     SQL error): returned at once.
+//
+// Waits are jittered exponential backoff (50 ms → 1 s) and honour ctx. When
+// the handover wait is exhausted the last error is returned wrapped in a
+// message that says so (errors.As still finds the *WriteError).
+func (p *DBProxy) forwardWithHandoverRetry(ctx context.Context, method string, retryAmbiguous bool, attempt func(context.Context) error) error {
+	started := time.Now()
+	bound := p.handoverWaitBound()
+	deadline := started.Add(bound)
+	backoff := forwardRetryBackoffMin
+	busyAttempts, ambiguousAttempts := 0, 0
+	waitingForPrimary := false
+
+	for n := 1; ; n++ {
+		err := attempt(ctx)
 		if err == nil {
+			if waitingForPrimary {
+				logging.Info("dbproxy: forwarded write accepted after waiting for the primary",
+					"method", method, "attempts", n, "waited", time.Since(started).Round(time.Millisecond),
+					"primary_rpc", p.RPCAddr())
+			}
 			return nil
 		}
-
-		var werr *WriteError
-		if errors.As(err, &werr) && werr.IsRetryable() && attempt < maxRetries-1 {
-			time.Sleep(backoff)
-			backoff *= 2
-			continue
+		if errors.Is(err, ErrNotRemote) {
+			return err
 		}
-		return err
+		var werr *WriteError
+		if !errors.As(err, &werr) {
+			return err
+		}
+		switch werr.Code {
+		case ErrCodeUnreachable, ErrCodeUnavailable:
+			if werr.Code == ErrCodeUnavailable {
+				// The primary answered that it is going away: its ROUTER is
+				// about to close, so re-dial for the next attempt instead of
+				// writing into a socket whose peer is gone.
+				if c := p.client.Load(); c != nil {
+					c.ForgetEndpoint(p.RPCAddr())
+				}
+			}
+			if !waitingForPrimary {
+				logging.Info("dbproxy: primary unreachable or handing over, waiting for a primary",
+					"method", method, "code", werr.Code, "max_wait", bound, "error", werr.Message)
+			}
+			waitingForPrimary = true
+		case ErrCodeBusy:
+			busyAttempts++
+			if busyAttempts >= forwardMaxAttemptsPerClass {
+				return err
+			}
+		case ErrCodeTimeout:
+			ambiguousAttempts++
+			if !retryAmbiguous || ambiguousAttempts >= forwardMaxAttemptsPerClass {
+				return err
+			}
+		default:
+			return err
+		}
+
+		delay := jitterDuration(backoff)
+		if time.Until(deadline) < delay {
+			if waitingForPrimary {
+				return fmt.Errorf("dbproxy: %s: no primary accepted the write within %s (waited for a handover, %d attempts): %w",
+					method, bound, n, err)
+			}
+			return err
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return fmt.Errorf("dbproxy: %s: gave up waiting for the primary: %v: %w", method, ctx.Err(), err)
+		case <-timer.C:
+		}
+		backoff = min(backoff*2, forwardRetryBackoffMax)
+		p.refreshPrimaryAddr()
 	}
-	return fmt.Errorf("dbproxy: exhausted retries for %s", method)
+}
+
+// jitterDuration returns d scaled by a random factor in [0.75, 1.25).
+func jitterDuration(d time.Duration) time.Duration {
+	return time.Duration(float64(d) * (0.75 + rand.Float64()*0.5))
 }
 
 // ---- direct-then-proxy helpers ----
@@ -306,7 +502,7 @@ func directOrProxy[R any](
 	}
 	logging.Debug("dbproxy: direct write got lock contention, falling back to proxy",
 		"method", method, "error", err)
-	proxied, perr := proxyWrite[R](ctx, p, method, params, timeout)
+	proxied, perr := proxyWriteRetry[R](ctx, p, method, params, timeout)
 	if errors.Is(perr, ErrNotRemote) {
 		// Promoted between the direct attempt and the fallback: this pool is
 		// now the primary's writer (with its long busy_timeout), so retry
@@ -502,6 +698,31 @@ func (p *DBProxy) DeleteProject(ctx context.Context, id string) error {
 	return directOrProxyVoid(ctx, p,
 		func() error { return p.Querier.DeleteProject(ctx, id) },
 		"DeleteProject", id, DefaultWriteTimeouts.Default)
+}
+
+// ProjectNameUpdater is the project rename write, which is hand-written on
+// *db.Queries and therefore not part of the generated db.Querier interface.
+type ProjectNameUpdater interface {
+	UpdateProjectName(ctx context.Context, id, name string) error
+}
+
+// UpdateProjectNameParams is the forwarded payload of UpdateProjectName.
+type UpdateProjectNameParams struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// UpdateProjectName renames a project: direct first, forwarded on lock
+// contention like every other sqlc write. The local querier must implement
+// ProjectNameUpdater (*db.Queries does).
+func (p *DBProxy) UpdateProjectName(ctx context.Context, id, name string) error {
+	u, ok := p.Querier.(ProjectNameUpdater)
+	if !ok {
+		return fmt.Errorf("dbproxy: UpdateProjectName: local querier %T cannot rename projects", p.Querier)
+	}
+	return directOrProxyVoid(ctx, p,
+		func() error { return u.UpdateProjectName(ctx, id, name) },
+		"UpdateProjectName", UpdateProjectNameParams{ID: id, Name: name}, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) UpdateSessionACPState(ctx context.Context, arg db.UpdateSessionACPStateParams) error {

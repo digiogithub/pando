@@ -8,20 +8,41 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mcpclient"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// Registered so a secondary can forward catalog writes to the IPC primary
+// when its own short-busy-timeout pool is locked (see dbproxy.SQLWriter).
+var (
+	stmtUpsertTool = dbproxy.RegisterStatement("mcpgateway.upsert_tool", `
+		INSERT INTO mcp_tool_registry (id, server_name, tool_name, description, input_schema, last_discovered)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			description = excluded.description,
+			input_schema = excluded.input_schema,
+			last_discovered = excluded.last_discovered
+	`)
+	stmtDeleteServer = dbproxy.RegisterStatement("mcpgateway.delete_server", `
+		DELETE FROM mcp_tool_registry
+		WHERE server_name = ?
+	`)
+)
+
 // Registry manages the MCP tool catalog in SQLite.
 type Registry struct {
 	db *sql.DB
+	w  *dbproxy.SQLWriter
 }
 
 // NewRegistry creates a new Registry backed by the given database connection.
+// Writes follow the IPC topology the pool is bound to (dbproxy.BindPool);
+// Gateway.SetWriteProxy sets the proxy explicitly.
 func NewRegistry(db *sql.DB) *Registry {
-	return &Registry{db: db}
+	return &Registry{db: db, w: dbproxy.NewSQLWriter(db, nil)}
 }
 
 // DiscoverAll iterates the configured MCP servers, calls ListTools on each,
@@ -111,14 +132,8 @@ func (r *Registry) UpsertTool(ctx context.Context, serverName, toolName, descrip
 		schemaJSON = []byte("{}")
 	}
 	id := fmt.Sprintf("%s/%s", serverName, toolName)
-	_, err = r.db.ExecContext(ctx, `
-		INSERT INTO mcp_tool_registry (id, server_name, tool_name, description, input_schema, last_discovered)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			description = excluded.description,
-			input_schema = excluded.input_schema,
-			last_discovered = excluded.last_discovered
-	`, id, serverName, toolName, description, string(schemaJSON), time.Now().UTC())
+	_, err = r.w.Exec(ctx, stmtUpsertTool,
+		id, serverName, toolName, description, string(schemaJSON), time.Now().UTC())
 	return err
 }
 
@@ -215,10 +230,7 @@ func (r *Registry) GetAllTools(ctx context.Context) ([]RegisteredTool, error) {
 
 // DeleteServer removes all registry rows for a server; usage rows are cascade-deleted by FK.
 func (r *Registry) DeleteServer(ctx context.Context, serverName string) error {
-	_, err := r.db.ExecContext(ctx, `
-		DELETE FROM mcp_tool_registry
-		WHERE server_name = ?
-	`, serverName)
+	_, err := r.w.Exec(ctx, stmtDeleteServer, serverName)
 	return err
 }
 

@@ -36,9 +36,13 @@ type Service struct {
 // NewServiceFromConfig builds a design service from the loaded configuration,
 // which is how the tools, the HTTP surface and the CLI all obtain one.
 func NewServiceFromConfig(db *sql.DB, snaps Snapshotter, sessionID string) *Service {
+	return newServiceFromConfig(NewStore(db), snaps, sessionID)
+}
+
+func newServiceFromConfig(store *Store, snaps Snapshotter, sessionID string) *Service {
 	cfg := config.Get()
 	layout := NewLayout(cfg.WorkingDir, cfg.Design.OutputDir, cfg.Design.SystemDir)
-	return NewService(NewStore(db), snaps, layout, sessionID)
+	return NewService(store, snaps, layout, sessionID)
 }
 
 // NewService builds a design service. sessionID is recorded on artifacts and

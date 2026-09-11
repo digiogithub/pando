@@ -339,19 +339,25 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	// Use the provided querier override (secondary instances pass a dbproxy.DBProxy),
 	// or fall back to the standard direct querier for primary instances.
 	var q db.Querier
-	rawQ := db.New(conn) // always needed for history (uses WithTx)
 	if opt.DBQuerier != nil {
 		q = opt.DBQuerier
 	} else {
-		q = rawQ
+		q = db.New(conn)
+	}
+	// On an IPC secondary q is the runtime's *dbproxy.DBProxy. Every writer
+	// built here must write through it (direct first, forwarded to the
+	// primary on lock contention) rather than straight on conn, the
+	// secondary's 1-connection 200 ms pool. Binding the pool lets writers
+	// that only receive conn (the AG-UI thread map, the WebUI's MCP catalog
+	// fallback) find the proxy too (dbproxy.SQLWriter).
+	writeProxy, _ := q.(*dbproxy.DBProxy)
+	if writeProxy != nil {
+		dbproxy.BindPool(conn, writeProxy)
 	}
 	sessions := session.NewService(q)
 	messages := message.NewService(q)
-	files := history.NewService(rawQ, conn)
-	// project.NewService uses *db.Queries directly (UpdateProjectName is not in db.Querier).
-	// Secondary instances will have project writes go through rawQ (read-only conn) which
-	// will fail gracefully; project management on secondaries is a Phase 5+ concern.
-	projects := project.NewService(rawQ)
+	files := history.NewService(q)
+	projects := project.NewService(q)
 
 	app := &App{
 		Sessions:       sessions,
@@ -682,6 +688,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			DecayDays:    cfg.MCPGateway.DecayDays,
 		}
 		gw := mcpgateway.NewGateway(conn, favCfg)
+		gw.SetWriteProxy(writeProxy)
 		go func() {
 			if err := gw.Initialize(ctx, cfg.MCPServers); err != nil {
 				logging.Error("MCP Gateway initialization failed", "error", err)
@@ -845,6 +852,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	if designProvider, derr := design.NewProvider(conn); derr != nil {
 		logging.Warn("Design Studio unavailable", "error", derr)
 	} else {
+		designProvider.SetWriteProxy(writeProxy)
 		// The knowledge base mirrors extracted design systems so brand
 		// knowledge is searchable from other projects. Optional: a process
 		// without remembrances still designs, it just does not publish.
@@ -2384,7 +2392,13 @@ func (app *App) setupIPCLocked(bus *ipc.Bus) {
 // Idempotent. A promotion calls it before starting the bus, so the first
 // forwarded remembrances write cannot hit "unsupported remembrances write
 // method" (which secondaries would misread as version skew).
+//
+// It also registers the pool forwarded dbproxy.MethodExecStatements batches
+// (design store, MCP gateway, AG-UI threads) execute on, for the same reason.
 func (app *App) registerRemembrancesDispatcher() {
+	if app.rwConn != nil {
+		dbproxy.RegisterStatementExecutor(app.rwConn)
+	}
 	if app.Remembrances != nil {
 		dispatcher := ragproxy.NewRemembrancesWriteDispatcher(app.Remembrances)
 		dbproxy.RegisterRemembrancesDispatcher(dispatcher)
@@ -2438,9 +2452,30 @@ func (app *App) SetIPCSecondaryContext(
 	app.ipcWatcher = watcher
 	app.ipcBusSetupFunc = busSetupFunc
 
-	// Wire the per-prompt probe function on the watcher so it can do active pings.
-	if proxy, ok := app.DBQuerier.(*dbproxy.DBProxy); ok && watcher != nil {
-		watcher.SetProbePrimary(proxy.ProbePrimary)
+	if proxy, ok := app.DBQuerier.(*dbproxy.DBProxy); ok {
+		// Wire the per-prompt probe function on the watcher so it can do active pings.
+		if watcher != nil {
+			watcher.SetProbePrimary(proxy.ProbePrimary)
+		}
+		// Forwarded writes that hit a handover re-read the lock file between
+		// retries, so they follow the new primary even if it serves elsewhere.
+		if workdir != "" {
+			proxy.SetPrimaryResolver(lockFilePrimaryResolver(workdir, instanceID))
+		}
+	}
+}
+
+// lockFilePrimaryResolver reports the RPC endpoint recorded in the IPC lock
+// file of workdir, unless the file is empty (lock just released), unreadable,
+// or names this instance itself (then the proxy has been promoted and no
+// longer forwards anyway).
+func lockFilePrimaryResolver(workdir, self string) dbproxy.PrimaryResolver {
+	return func() (string, bool) {
+		info, err := ipc.ReadLockForPath(workdir)
+		if err != nil || info == nil || info.RPCPort <= 0 || info.InstanceID == self {
+			return "", false
+		}
+		return fmt.Sprintf("tcp://127.0.0.1:%d", info.RPCPort), true
 	}
 }
 

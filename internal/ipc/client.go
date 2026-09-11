@@ -186,7 +186,7 @@ func (c *Client) CallWithTimeout(ctx context.Context, routerEndpoint, method str
 	if err := dc.dealer.Send(zmq4.NewMsgFrom([]byte{}, reqBytes)); err != nil {
 		// Socket may have become stale; evict it so the next call recreates it.
 		c.evictDealer(routerEndpoint)
-		return nil, fmt.Errorf("ipc: send RPC request: %w", err)
+		return nil, classify(ErrConnectionFailed, fmt.Errorf("ipc: send RPC request: %w", err))
 	}
 
 	// Wait for response with timeout.
@@ -214,7 +214,7 @@ func (c *Client) CallWithTimeout(ctx context.Context, routerEndpoint, method str
 	case r := <-done:
 		if r.err != nil {
 			c.evictDealer(routerEndpoint)
-			return nil, fmt.Errorf("ipc: recv RPC response: %w", r.err)
+			return nil, classify(ErrResponseLost, fmt.Errorf("ipc: recv RPC response: %w", r.err))
 		}
 
 		// DEALER receives: [empty][data] or just [data]
@@ -232,6 +232,14 @@ func (c *Client) CallWithTimeout(ctx context.Context, routerEndpoint, method str
 
 		return resp.Result, nil
 	}
+}
+
+// ForgetEndpoint drops the cached DEALER for routerEndpoint so the next call
+// dials it afresh. Callers use it when the peer announced it is going away
+// (e.g. a primary refusing writes while it hands over): the replacement that
+// will serve the same endpoint is a different ROUTER.
+func (c *Client) ForgetEndpoint(routerEndpoint string) {
+	c.evictDealer(routerEndpoint)
 }
 
 // evictDealer removes and closes the cached DEALER for the given endpoint.

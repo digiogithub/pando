@@ -26,8 +26,27 @@ const (
 	// [[pando/analysis/session_index_locked_residual_risk.md]] section 2).
 	// Unlike ErrCodeInternal, this is always safe to retry for an idempotent
 	// write such as ReplaceSessionEvents.
-	ErrCodeBusy     WriteErrorCode = "BUSY"
-	ErrCodeInternal WriteErrorCode = "INTERNAL"
+	ErrCodeBusy WriteErrorCode = "BUSY"
+	// ErrCodeUnavailable identifies a primary that refused the write without
+	// applying it because it is handing its role over (its write coordinator
+	// is draining or already shut down). The write is safe to re-send, and
+	// the forwarding retry loop waits for the next primary on this code (see
+	// forwardWithHandoverRetry).
+	ErrCodeUnavailable WriteErrorCode = "UNAVAILABLE"
+	ErrCodeInternal    WriteErrorCode = "INTERNAL"
+)
+
+// Texts the primary's write coordinator returns while handing over. They
+// cross the IPC boundary as plain text (the JSON-RPC layer keeps only the
+// message), so they are matched by substring. Kept in sync with
+// internal/ipc/writecoordinator (dbproxy cannot import it: cycle).
+const (
+	// writecoordinator.ErrDraining: rejected before being queued.
+	coordinatorDrainingText = "draining for primary handover"
+	// Submit after Shutdown: rejected before being queued.
+	coordinatorShutDownText = "coordinator is shut down"
+	// Shutdown while the job was queued or running: outcome unknown.
+	coordinatorShutDownWaitingText = "coordinator shut down while waiting for result"
 )
 
 // WriteError is a structured error returned by the write channel.
@@ -44,7 +63,7 @@ func (e *WriteError) Error() string {
 // IsRetryable reports whether the error is transient and the operation may succeed on retry.
 func (e *WriteError) IsRetryable() bool {
 	switch e.Code {
-	case ErrCodeTimeout, ErrCodeUnreachable, ErrCodeBusy:
+	case ErrCodeTimeout, ErrCodeUnreachable, ErrCodeBusy, ErrCodeUnavailable:
 		return true
 	default:
 		return false
@@ -65,8 +84,19 @@ func mapToWriteError(method string, err error) *WriteError {
 	case errors.Is(err, ipc.ErrTimeout):
 		return &WriteError{Code: ErrCodeTimeout, Method: method, Message: msg}
 
+	// The request was sent but the connection broke before the response
+	// arrived: like a timeout, the write may or may not have been applied.
+	case errors.Is(err, ipc.ErrResponseLost),
+		strings.Contains(msg, coordinatorShutDownWaitingText):
+		return &WriteError{Code: ErrCodeTimeout, Method: method, Message: msg}
+
 	case errors.Is(err, ipc.ErrConnectionFailed):
 		return &WriteError{Code: ErrCodeUnreachable, Method: method, Message: msg}
+
+	// The primary is handing over and refused the write before queueing it.
+	case strings.Contains(msg, coordinatorDrainingText),
+		strings.Contains(msg, coordinatorShutDownText):
+		return &WriteError{Code: ErrCodeUnavailable, Method: method, Message: msg}
 
 	// The primary does not recognise this write method at all — most likely a
 	// version-skew case: a secondary running newer code (e.g. it knows about
@@ -110,6 +140,15 @@ func mapToWriteError(method string, err error) *WriteError {
 	default:
 		return &WriteError{Code: ErrCodeInternal, Method: method, Message: msg}
 	}
+}
+
+// ClassifyError maps an error observed on the write channel (an IPC call
+// failure, or a primary-side error that crossed the boundary as text) to the
+// *WriteError a forwarding secondary would see. Exposed so packages that
+// produce such errors (e.g. the write coordinator) can pin their texts to the
+// intended codes in tests.
+func ClassifyError(method string, err error) *WriteError {
+	return mapToWriteError(method, err)
 }
 
 // IsBusyOrLockedError reports whether err represents a transient SQLite

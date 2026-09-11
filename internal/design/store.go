@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 )
 
 // ErrNotFound is returned when an artifact, version or node does not exist.
@@ -19,14 +21,53 @@ var ErrNoIndex = errors.New("design: no structure index")
 // Store persists design metadata. The artifact files and their history live on
 // disk (working tree + scoped snapshots); this only holds what is needed to
 // list, resolve and navigate them.
+//
+// Reads use db directly. Writes go through w, which on an IPC secondary runs
+// them directly first and forwards them to the primary on lock contention;
+// multi-statement writes (AddVersion, ReplaceNodes) are sent as one batch and
+// run in one transaction on whichever side executes them.
 type Store struct {
 	db *sql.DB
+	w  *dbproxy.SQLWriter
 }
 
-// NewStore wraps an open database handle.
+// NewStore wraps an open database handle. Writes follow the IPC topology the
+// pool is bound to (dbproxy.BindPool), if any.
 func NewStore(db *sql.DB) *Store {
-	return &Store{db: db}
+	return NewStoreWithProxy(db, nil)
 }
+
+// NewStoreWithProxy wraps db and routes writes through proxy (nil: direct, or
+// the pool's bound proxy).
+func NewStoreWithProxy(db *sql.DB, proxy *dbproxy.DBProxy) *Store {
+	return &Store{db: db, w: dbproxy.NewSQLWriter(db, proxy)}
+}
+
+// Registered write statements (see dbproxy.RegisterStatement).
+var (
+	stmtInsertArtifact = dbproxy.RegisterStatement("design.insert_artifact", insertArtifactSQL)
+	stmtUpdateArtifact = dbproxy.RegisterStatement("design.update_artifact", `
+UPDATE design_artifacts
+SET title = ?, kind = ?, skill_id = ?, design_system = ?, current_version = ?, updated_at = ?
+WHERE id = ?`)
+	stmtDeleteArtifact = dbproxy.RegisterStatement("design.delete_artifact",
+		`DELETE FROM design_artifacts WHERE id = ?`)
+	stmtInsertVersion = dbproxy.RegisterStatement("design.insert_version", `
+INSERT INTO design_versions (artifact_id, number, snapshot_id, summary, created_at)
+VALUES (?, ?, ?, ?, ?)`)
+	stmtSetCurrentVersion = dbproxy.RegisterStatement("design.set_current_version", `
+UPDATE design_artifacts SET current_version = ?, updated_at = ? WHERE id = ?`)
+	stmtClearNodes = dbproxy.RegisterStatement("design.clear_nodes",
+		`DELETE FROM design_nodes WHERE artifact_id = ? AND version = ?`)
+	stmtInsertNode = dbproxy.RegisterStatement("design.insert_node", `
+INSERT INTO design_nodes (
+    artifact_id, version, node_id, parent_id, selector, role, text, slide,
+    box_x, box_y, box_w, box_h, styles
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	stmtInsertCritique = dbproxy.RegisterStatement("design.insert_critique", `
+INSERT INTO design_critiques (id, artifact_id, version, score, summary, issues, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)`)
+)
 
 // --- artifacts ---
 
@@ -43,7 +84,7 @@ func (s *Store) CreateArtifact(ctx context.Context, a Artifact) (Artifact, error
 		a.CreatedAt = time.Now()
 	}
 	a.UpdatedAt = a.CreatedAt
-	_, err := s.db.ExecContext(ctx, insertArtifactSQL,
+	_, err := s.w.Exec(ctx, stmtInsertArtifact,
 		a.ID, a.SessionID, a.ProjectID, a.Title, a.Slug, a.Dir, string(a.Kind),
 		a.SkillID, a.DesignSystemID, a.CurrentVersion,
 		a.CreatedAt.Unix(), a.UpdatedAt.Unix(),
@@ -134,25 +175,22 @@ func (s *Store) ListArtifacts(ctx context.Context, sessionID string) ([]Artifact
 // updated_at.
 func (s *Store) UpdateArtifact(ctx context.Context, a Artifact) error {
 	a.UpdatedAt = time.Now()
-	res, err := s.db.ExecContext(ctx, `
-UPDATE design_artifacts
-SET title = ?, kind = ?, skill_id = ?, design_system = ?, current_version = ?, updated_at = ?
-WHERE id = ?`,
+	n, err := s.w.Exec(ctx, stmtUpdateArtifact,
 		a.Title, string(a.Kind), a.SkillID, a.DesignSystemID, a.CurrentVersion, a.UpdatedAt.Unix(), a.ID)
 	if err != nil {
 		return fmt.Errorf("design: update artifact %s: %w", a.ID, err)
 	}
-	return requireAffected(res, "artifact "+a.ID)
+	return requireAffected(n, "artifact "+a.ID)
 }
 
 // DeleteArtifact removes an artifact and, by cascade, its versions, nodes and
 // critiques. The files on disk are never touched: they belong to the user.
 func (s *Store) DeleteArtifact(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM design_artifacts WHERE id = ?`, id)
+	n, err := s.w.Exec(ctx, stmtDeleteArtifact, id)
 	if err != nil {
 		return fmt.Errorf("design: delete artifact %s: %w", id, err)
 	}
-	return requireAffected(res, "artifact "+id)
+	return requireAffected(n, "artifact "+id)
 }
 
 // --- versions ---
@@ -162,27 +200,12 @@ func (s *Store) AddVersion(ctx context.Context, v Version) error {
 	if v.CreatedAt.IsZero() {
 		v.CreatedAt = time.Now()
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("design: add version: begin: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck // no-op once committed
-
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO design_versions (artifact_id, number, snapshot_id, summary, created_at)
-VALUES (?, ?, ?, ?, ?)`,
-		v.ArtifactID, v.Number, v.SnapshotID, v.Summary, v.CreatedAt.Unix()); err != nil {
-		return fmt.Errorf("design: insert version %s v%d: %w", v.ArtifactID, v.Number, err)
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-UPDATE design_artifacts SET current_version = ?, updated_at = ? WHERE id = ?`,
-		v.Number, time.Now().Unix(), v.ArtifactID); err != nil {
-		return fmt.Errorf("design: bump current version %s: %w", v.ArtifactID, err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("design: add version: commit: %w", err)
+	// One transaction: the version row and the artifact's pointer to it.
+	if _, err := s.w.ExecBatch(ctx,
+		stmtInsertVersion.With(v.ArtifactID, v.Number, v.SnapshotID, v.Summary, v.CreatedAt.Unix()),
+		stmtSetCurrentVersion.With(v.Number, time.Now().Unix(), v.ArtifactID),
+	); err != nil {
+		return fmt.Errorf("design: add version %s v%d: %w", v.ArtifactID, v.Number, err)
 	}
 	return nil
 }
@@ -236,13 +259,11 @@ FROM design_versions WHERE artifact_id = ? ORDER BY number ASC`, artifactID)
 // SetCurrentVersion points the artifact at an existing version, as a checkout
 // does. It does not create history.
 func (s *Store) SetCurrentVersion(ctx context.Context, artifactID string, number int) error {
-	res, err := s.db.ExecContext(ctx, `
-UPDATE design_artifacts SET current_version = ?, updated_at = ? WHERE id = ?`,
-		number, time.Now().Unix(), artifactID)
+	n, err := s.w.Exec(ctx, stmtSetCurrentVersion, number, time.Now().Unix(), artifactID)
 	if err != nil {
 		return fmt.Errorf("design: set current version %s: %w", artifactID, err)
 	}
-	return requireAffected(res, "artifact "+artifactID)
+	return requireAffected(n, "artifact "+artifactID)
 }
 
 // --- nodes ---
@@ -250,27 +271,10 @@ UPDATE design_artifacts SET current_version = ?, updated_at = ? WHERE id = ?`,
 // ReplaceNodes swaps the whole structure index of one artifact version. The
 // index is a render product, so it is rebuilt wholesale rather than merged.
 func (s *Store) ReplaceNodes(ctx context.Context, artifactID string, version int, nodes []Node) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("design: replace nodes: begin: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck // no-op once committed
-
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM design_nodes WHERE artifact_id = ? AND version = ?`, artifactID, version); err != nil {
-		return fmt.Errorf("design: clear nodes %s v%d: %w", artifactID, version, err)
-	}
-
-	stmt, err := tx.PrepareContext(ctx, `
-INSERT INTO design_nodes (
-    artifact_id, version, node_id, parent_id, selector, role, text, slide,
-    box_x, box_y, box_w, box_h, styles
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-	if err != nil {
-		return fmt.Errorf("design: prepare node insert: %w", err)
-	}
-	defer stmt.Close()
-
+	// One transaction: clear the version's index, then insert every node
+	// (the writer prepares the repeated insert once).
+	calls := make([]dbproxy.StmtCall, 0, len(nodes)+1)
+	calls = append(calls, stmtClearNodes.With(artifactID, version))
 	for _, n := range nodes {
 		styles := "{}"
 		if len(n.Styles) > 0 {
@@ -280,15 +284,12 @@ INSERT INTO design_nodes (
 			}
 			styles = string(encoded)
 		}
-		if _, err := stmt.ExecContext(ctx,
+		calls = append(calls, stmtInsertNode.With(
 			artifactID, version, n.NodeID, n.ParentID, n.Selector, n.Role, n.Text, n.Slide,
-			n.Box.X, n.Box.Y, n.Box.W, n.Box.H, styles); err != nil {
-			return fmt.Errorf("design: insert node %s: %w", n.NodeID, err)
-		}
+			n.Box.X, n.Box.Y, n.Box.W, n.Box.H, styles))
 	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("design: replace nodes: commit: %w", err)
+	if _, err := s.w.ExecBatch(ctx, calls...); err != nil {
+		return fmt.Errorf("design: replace nodes %s v%d: %w", artifactID, version, err)
 	}
 	return nil
 }
@@ -378,9 +379,7 @@ func (s *Store) AddCritique(ctx context.Context, c Critique) (Critique, error) {
 		}
 		issues = string(encoded)
 	}
-	if _, err := s.db.ExecContext(ctx, `
-INSERT INTO design_critiques (id, artifact_id, version, score, summary, issues, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)`,
+	if _, err := s.w.Exec(ctx, stmtInsertCritique,
 		c.ID, c.ArtifactID, c.Version, c.Score, c.Summary, issues, c.CreatedAt.Unix()); err != nil {
 		return Critique{}, fmt.Errorf("design: insert critique %s: %w", c.ID, err)
 	}
@@ -417,12 +416,7 @@ ORDER BY created_at DESC, rowid DESC LIMIT 1`, artifactID, version)
 }
 
 // requireAffected turns a no-op UPDATE/DELETE into ErrNotFound.
-func requireAffected(res sql.Result, what string) error {
-	n, err := res.RowsAffected()
-	if err != nil {
-		// Not every driver reports this; treat it as success.
-		return nil //nolint:nilerr // absence of the count is not a failure
-	}
+func requireAffected(n int64, what string) error {
 	if n == 0 {
 		return fmt.Errorf("%w: %s", ErrNotFound, what)
 	}

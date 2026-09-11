@@ -5,26 +5,32 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/logging"
 )
+
+// stmtRecordUsage is registered so a secondary can forward the insert to the
+// IPC primary when its own short-busy-timeout pool is locked.
+var stmtRecordUsage = dbproxy.RegisterStatement("mcpgateway.record_usage", `
+		INSERT INTO mcp_tool_usage_stats (tool_id, session_id, called_at, duration_ms, success)
+		VALUES (?, ?, ?, ?, ?)
+	`)
 
 // Stats manages usage statistics and favorite computation.
 type Stats struct {
 	db     *sql.DB
+	w      *dbproxy.SQLWriter
 	config FavoriteConfig
 }
 
 // NewStats creates a new Stats instance with the given database and configuration.
 func NewStats(db *sql.DB, cfg FavoriteConfig) *Stats {
-	return &Stats{db: db, config: cfg}
+	return &Stats{db: db, w: dbproxy.NewSQLWriter(db, nil), config: cfg}
 }
 
 // RecordUsage inserts a single invocation record into mcp_tool_usage_stats.
 func (s *Stats) RecordUsage(ctx context.Context, toolID, sessionID string, durationMs int64, success bool) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO mcp_tool_usage_stats (tool_id, session_id, called_at, duration_ms, success)
-		VALUES (?, ?, ?, ?, ?)
-	`, toolID, sessionID, time.Now().UTC(), durationMs, success)
+	_, err := s.w.Exec(ctx, stmtRecordUsage, toolID, sessionID, time.Now().UTC(), durationMs, success)
 	return err
 }
 

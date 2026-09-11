@@ -2,7 +2,6 @@ package history
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
@@ -42,15 +41,18 @@ type Service interface {
 
 type service struct {
 	*pubsub.Broker[File]
-	db *sql.DB
-	q  *db.Queries
+	q db.Querier
 }
 
-func NewService(q *db.Queries, db *sql.DB) Service {
+// NewService builds the file history service on q. Pass the same querier the
+// session and message services use (app.DBQuerier): on an IPC secondary that
+// is the *dbproxy.DBProxy, so file versions are written directly first and
+// forwarded to the primary on lock contention instead of failing on the
+// secondary's short busy timeout.
+func NewService(q db.Querier) Service {
 	return &service{
 		Broker: pubsub.NewBroker[File](),
 		q:      q,
-		db:     db,
 	}
 }
 
@@ -100,19 +102,11 @@ func (s *service) createWithVersion(ctx context.Context, sessionID, path, conten
 	var file File
 	var err error
 
-	// Retry loop for transaction conflicts
+	// Retry loop for version conflicts. The insert is a single statement, so
+	// it needs no explicit transaction (the former BEGIN/INSERT/COMMIT was
+	// equivalent to autocommit and could not cross the IPC write proxy).
 	for attempt := range maxRetries {
-		// Start a transaction
-		tx, txErr := s.db.Begin()
-		if txErr != nil {
-			return File{}, fmt.Errorf("failed to begin transaction: %w", txErr)
-		}
-
-		// Create a new queries instance with the transaction
-		qtx := s.q.WithTx(tx)
-
-		// Try to create the file within the transaction
-		dbFile, txErr := qtx.CreateFile(ctx, db.CreateFileParams{
+		dbFile, txErr := s.q.CreateFile(ctx, db.CreateFileParams{
 			ID:        uuid.New().String(),
 			SessionID: sessionID,
 			Path:      path,
@@ -120,10 +114,8 @@ func (s *service) createWithVersion(ctx context.Context, sessionID, path, conten
 			Version:   version,
 		})
 		if txErr != nil {
-			// Rollback the transaction
-			tx.Rollback()
-
-			// Check if this is a uniqueness constraint violation
+			// Check if this is a uniqueness constraint violation (also when
+			// the insert was forwarded: the primary's error text survives).
 			if strings.Contains(txErr.Error(), "UNIQUE constraint failed") {
 				if attempt < maxRetries-1 {
 					// If we have retries left, generate a new version and try again
@@ -140,11 +132,6 @@ func (s *service) createWithVersion(ctx context.Context, sessionID, path, conten
 				}
 			}
 			return File{}, txErr
-		}
-
-		// Commit the transaction
-		if txErr = tx.Commit(); txErr != nil {
-			return File{}, fmt.Errorf("failed to commit transaction: %w", txErr)
 		}
 
 		file = s.fromDBItem(dbFile)
