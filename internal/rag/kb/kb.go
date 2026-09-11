@@ -187,35 +187,43 @@ func (s *KBStore) addDocument(ctx context.Context, filePath, content string, met
 		return fmt.Errorf("kb: file_path cannot be empty")
 	}
 
-	if s.proxy != nil {
-		chunks := embeddings.ChunkText(content, s.chunkSize, s.chunkOverlap)
-		embedVecs := make([][]float32, 0, len(chunks))
-		if len(chunks) > 0 {
-			logging.Debug("kb add: embedding start", "file_path", filePath, "chunks", len(chunks), "bytes", len(content))
-			embedStartedAt := time.Now()
-			embedCtx, embedCancel := context.WithTimeout(ctx, kbEmbeddingsTimeout)
-			defer embedCancel()
-			var err error
-			embedVecs, err = s.embedder.EmbedDocuments(embedCtx, chunks)
-			if err != nil {
-				logging.Debug("kb add: embedding failed",
-					"file_path", filePath,
-					"chunks", len(chunks),
-					"elapsed", time.Since(embedStartedAt).String(),
-					"error", err,
-				)
-				return fmt.Errorf("kb: embed chunks: %w", err)
-			}
-			logging.Debug("kb add: embedding completed",
+	// Chunk and embed BEFORE opening any transaction. Embedding is a network
+	// call (local or remote provider); running it while a write transaction
+	// is open would hold the SQLite write lock for however long the
+	// provider takes (kbEmbeddingsTimeout allows up to 45s), which is far
+	// longer than any busy_timeout and would starve every other writer.
+	// This mirrors the proxy path below, which already had to precompute
+	// embeddings to ship them over IPC.
+	chunks := embeddings.ChunkText(content, s.chunkSize, s.chunkOverlap)
+	embedVecs := make([][]float32, 0, len(chunks))
+	if len(chunks) > 0 {
+		logging.Debug("kb add: embedding start", "file_path", filePath, "chunks", len(chunks), "bytes", len(content))
+		embedStartedAt := time.Now()
+		embedCtx, embedCancel := context.WithTimeout(ctx, kbEmbeddingsTimeout)
+		var err error
+		embedVecs, err = s.embedder.EmbedDocuments(embedCtx, chunks)
+		embedCancel()
+		if err != nil {
+			logging.Debug("kb add: embedding failed",
 				"file_path", filePath,
 				"chunks", len(chunks),
-				"vectors", len(embedVecs),
 				"elapsed", time.Since(embedStartedAt).String(),
+				"error", err,
 			)
-			if len(embedVecs) != len(chunks) {
-				return fmt.Errorf("kb: embedding count mismatch: got %d, expected %d", len(embedVecs), len(chunks))
-			}
+			return fmt.Errorf("kb: embed chunks: %w", err)
 		}
+		logging.Debug("kb add: embedding completed",
+			"file_path", filePath,
+			"chunks", len(chunks),
+			"vectors", len(embedVecs),
+			"elapsed", time.Since(embedStartedAt).String(),
+		)
+		if len(embedVecs) != len(chunks) {
+			return fmt.Errorf("kb: embedding count mismatch: got %d, expected %d", len(embedVecs), len(chunks))
+		}
+	}
+
+	if s.proxy != nil {
 		return s.proxy.WriteWithRetry(ctx, "KBAddDocument", kbAddDocumentRequest{
 			FilePath:   filePath,
 			Content:    content,
@@ -263,41 +271,13 @@ func (s *KBStore) addDocument(ctx context.Context, filePath, content string, met
 		return err
 	}
 
-	// Chunk the content
-	chunks := embeddings.ChunkText(content, s.chunkSize, s.chunkOverlap)
 	if len(chunks) == 0 {
 		// No chunks, still commit the document
 		return tx.Commit()
 	}
 
-	logging.Debug("kb add: embedding start", "file_path", filePath, "chunks", len(chunks), "bytes", len(content))
-	embedStartedAt := time.Now()
-	embedCtx, embedCancel := context.WithTimeout(ctx, kbEmbeddingsTimeout)
-	defer embedCancel()
-
-	// Generate embeddings for all chunks
-	embedVecs, err := s.embedder.EmbedDocuments(embedCtx, chunks)
-	if err != nil {
-		logging.Debug("kb add: embedding failed",
-			"file_path", filePath,
-			"chunks", len(chunks),
-			"elapsed", time.Since(embedStartedAt).String(),
-			"error", err,
-		)
-		return fmt.Errorf("kb: embed chunks: %w", err)
-	}
-	logging.Debug("kb add: embedding completed",
-		"file_path", filePath,
-		"chunks", len(chunks),
-		"vectors", len(embedVecs),
-		"elapsed", time.Since(embedStartedAt).String(),
-	)
-
-	if len(embedVecs) != len(chunks) {
-		return fmt.Errorf("kb: embedding count mismatch: got %d, expected %d", len(embedVecs), len(chunks))
-	}
-
-	// Insert chunks with embeddings
+	// Insert chunks with the embeddings computed above (no network I/O while
+	// the write transaction is open).
 	for i, chunk := range chunks {
 		var embBlob []byte
 		if i < len(embedVecs) {

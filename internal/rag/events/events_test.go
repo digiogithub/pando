@@ -30,6 +30,7 @@ func openTestEventStoreDB(t *testing.T) *sql.DB {
 	);
 	CREATE INDEX idx_events_subject ON events(subject);
 	CREATE INDEX idx_events_event_at ON events(event_at);
+	CREATE INDEX idx_events_session ON events(subject, json_extract(metadata, '$.session_id'));
 	CREATE VIRTUAL TABLE events_fts USING fts5(
 		subject,
 		content,
