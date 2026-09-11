@@ -262,6 +262,32 @@ AllowedCommands = []
 Enabled = false
 
 [MCPServers]
+[MCPServers.betterstack]
+Args = []
+Command = ''
+Env = []
+Timeout = ''
+Type = 'streamable-http'
+URL = 'https://mcp.betterstack.com'
+
+[MCPServers.betterstack.Auth]
+CACert = ''
+CACertExclusive = false
+ClientCert = ''
+ClientKey = ''
+ClientKeyPassword = ''
+HeaderName = ''
+MaxTLSVersion = ''
+MinTLSVersion = ''
+Password = ''
+SkipTLSVerify = false
+TLSServerName = ''
+Token = ''
+Type = 'oauth'
+Username = ''
+
+[MCPServers.betterstack.Headers]
+
 [MCPServers.deepwiki]
 Args = []
 Command = ''

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"regexp"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/logging"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
@@ -30,7 +32,7 @@ type ACPPermissionBridge struct {
 // NewACPPermissionBridge creates a new bridge for the given session.
 func NewACPPermissionBridge(conn *acpsdk.AgentSideConnection, sessionID acpsdk.SessionId, logger *log.Logger) *ACPPermissionBridge {
 	if logger == nil {
-		logger = log.Default()
+		logger = logging.NewStdLogger("acp", slog.LevelDebug)
 	}
 
 	return &ACPPermissionBridge{
@@ -50,10 +52,12 @@ func (b *ACPPermissionBridge) Handle(req PermissionRequestData) bool {
 
 	if b.conn == nil {
 		b.logger.Printf("[ACP BRIDGE] No ACP connection available for tool=%s session=%s — denying", req.ToolName, req.SessionID)
+		logging.Warn("acp: permission denied, no client connection", "session_id", string(b.sessionID), "tool", req.ToolName)
 		return false
 	}
 
 	b.logger.Printf("[ACP BRIDGE] Requesting permission for tool=%s session=%s path=%s", req.ToolName, req.SessionID, req.Path)
+	logging.Info("acp: permission requested", "session_id", string(b.sessionID), "tool", req.ToolName)
 
 	title := req.ToolName
 	if req.Description != "" {
@@ -113,19 +117,24 @@ func (b *ACPPermissionBridge) Handle(req PermissionRequestData) bool {
 		},
 	}
 
+	requestedAt := time.Now()
 	resp, err := b.conn.RequestPermission(context.Background(), permReq)
+	waitMs := time.Since(requestedAt).Milliseconds()
 	if err != nil {
 		b.logger.Printf("[ACP BRIDGE] RequestPermission error for tool=%s session=%s: %v — denying", req.ToolName, req.SessionID, err)
+		logging.Warn("acp: permission request failed", "session_id", string(b.sessionID), "tool", req.ToolName, "wait_ms", waitMs, "error", err)
 		return false
 	}
 
 	if resp.Outcome.Selected == nil {
 		b.logger.Printf("[ACP BRIDGE] Permission cancelled for tool=%s session=%s", req.ToolName, req.SessionID)
+		logging.Info("acp: permission resolved", "session_id", string(b.sessionID), "tool", req.ToolName, "outcome", "cancelled", "wait_ms", waitMs)
 		return false
 	}
 
 	selected := string(resp.Outcome.Selected.OptionId)
 	b.logger.Printf("[ACP BRIDGE] Permission outcome=%s for tool=%s session=%s", selected, req.ToolName, req.SessionID)
+	logging.Info("acp: permission resolved", "session_id", string(b.sessionID), "tool", req.ToolName, "outcome", selected, "wait_ms", waitMs)
 
 	approved := selected == "once" || selected == "always"
 

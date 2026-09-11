@@ -8,10 +8,12 @@ import (
 	"errors"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
 
+	"github.com/digiogithub/pando/internal/logging"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
@@ -92,7 +94,7 @@ func (lw *loggingWriter) Write(p []byte) (int, error) {
 // (e.g. "session/list", which the TypeScript SDK v0.14+ clients send).
 func NewStdioTransport(agent *PandoACPAgent, logger *log.Logger) *StdioTransport {
 	if logger == nil {
-		logger = log.Default()
+		logger = logging.NewStdLogger("acp", slog.LevelDebug)
 	}
 
 	// Wrap stdout so both the SDK and our interceptor can write without races.
@@ -117,13 +119,16 @@ func NewStdioTransport(agent *PandoACPAgent, logger *log.Logger) *StdioTransport
 // Run waits until the context is cancelled or the connection closes.
 func (t *StdioTransport) Run(ctx context.Context) error {
 	t.logger.Printf("[ACP TRANSPORT] Starting stdio transport with interceptor")
+	logging.Info("acp: stdio transport started")
 
 	select {
 	case <-ctx.Done():
 		t.logger.Printf("[ACP TRANSPORT] Context cancelled")
+		logging.Info("acp: stdio transport stopped", "reason", "context cancelled")
 		return ctx.Err()
 	case <-t.conn.Done():
 		t.logger.Printf("[ACP TRANSPORT] Connection closed")
+		logging.Info("acp: stdio transport stopped", "reason", "connection closed")
 		return nil
 	}
 }
@@ -142,6 +147,7 @@ func interceptStdin(in io.Reader, out *syncWriter, fwd *io.PipeWriter, agent *Pa
 			// Do NOT stop reading: answer the request (so the client is not left
 			// waiting forever) and keep serving the session.
 			logger.Printf("[ACP TRANSPORT] Dropping oversized JSON-RPC line (>%d bytes)", acpMaxLineBytes)
+			logging.Warn("acp: dropped oversized JSON-RPC line", "limit_bytes", acpMaxLineBytes)
 			if id := peekRequestID(line); id != nil {
 				writeRPCError(out, id, -32600, "request payload too large; attach a smaller image or reference the file by path")
 			}
@@ -150,6 +156,9 @@ func interceptStdin(in io.Reader, out *syncWriter, fwd *io.PipeWriter, agent *Pa
 		if readErr != nil {
 			if !errors.Is(readErr, io.EOF) {
 				logger.Printf("[ACP TRANSPORT] stdin read error: %v", readErr)
+				logging.Error("acp: stdin read error", "error", readErr)
+			} else {
+				logging.Info("acp: stdin closed by client (EOF)")
 			}
 			break
 		}
@@ -163,9 +172,11 @@ func interceptStdin(in io.Reader, out *syncWriter, fwd *io.PipeWriter, agent *Pa
 		if len(line) > promptShrinkThresholdBytes {
 			if shrunk, serr := shrinkPromptImages(line, promptShrinkTargetBytes); serr == nil {
 				logger.Printf("[ACP TRANSPORT] Shrunk oversized payload: %d -> %d bytes", len(line), len(shrunk))
+				logging.Info("acp: shrunk oversized payload", "from_bytes", len(line), "to_bytes", len(shrunk))
 				line = shrunk
 			} else {
 				logger.Printf("[ACP TRANSPORT] Forwarding oversized payload as-is (%d bytes): %v", len(line), serr)
+				logging.Warn("acp: forwarding oversized payload as-is", "bytes", len(line), "error", serr)
 			}
 		}
 

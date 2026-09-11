@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/logging"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
@@ -17,7 +19,7 @@ type planServiceImpl struct {
 // NewPlanService creates a new plan service instance.
 func NewPlanService(logger *log.Logger) *planServiceImpl {
 	if logger == nil {
-		logger = log.Default()
+		logger = logging.NewStdLogger("acp", slog.LevelDebug)
 	}
 	return &planServiceImpl{
 		logger: logger,

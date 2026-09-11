@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/digiogithub/pando/internal/logging"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
@@ -72,7 +74,7 @@ func DefaultHTTPTransportConfig() HTTPTransportConfig {
 // NewHTTPTransport creates a new HTTP transport for the ACP agent.
 func NewHTTPTransport(agent ACPAgent, logger *log.Logger, config HTTPTransportConfig) *HTTPTransport {
 	if logger == nil {
-		logger = log.Default()
+		logger = logging.NewStdLogger("acp", slog.LevelDebug)
 	}
 
 	if config.MaxSessions == 0 {

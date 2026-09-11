@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/design"
+	"github.com/digiogithub/pando/internal/logging"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
@@ -36,6 +37,8 @@ type ACPServerSession struct {
 	// updateMu serializes outbound session/update notifications so tool starts
 	// are observed by the client before follow-up updates for the same tool call.
 	updateMu sync.Mutex
+	// lastUpdateErrLog throttles SendUpdate failure logs; guarded by updateMu.
+	lastUpdateErrLog time.Time
 
 	// mode is the current session mode (set via SetSessionMode)
 	mode string
@@ -177,8 +180,28 @@ func (s *ACPServerSession) SendUpdate(update acpsdk.SessionUpdate) (err error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return agentConn.SessionUpdate(ctx, notification)
+	started := time.Now()
+	err = agentConn.SessionUpdate(ctx, notification)
+	if err != nil {
+		// A failing or timing-out update usually means the client stopped
+		// reading its end of the stdio pipe, which from the user's side looks
+		// like a frozen turn. Throttled because every streamed delta goes
+		// through here and would otherwise flood the logs.
+		if now := time.Now(); now.Sub(s.lastUpdateErrLog) >= sendUpdateErrLogInterval {
+			s.lastUpdateErrLog = now
+			logging.Warn("acp: session update to client failed",
+				"session_id", string(sessionID),
+				"elapsed_ms", time.Since(started).Milliseconds(),
+				"error", err,
+			)
+		}
+	}
+	return err
 }
+
+// sendUpdateErrLogInterval bounds how often SendUpdate failures are logged per
+// session.
+const sendUpdateErrLogInterval = 10 * time.Second
 
 // PandoSessionID returns the internal Pando session ID.
 func (s *ACPServerSession) PandoSessionID() string {

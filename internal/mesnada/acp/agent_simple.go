@@ -3,7 +3,9 @@ package acp
 import (
 	"context"
 	"log"
+	"log/slog"
 
+	"github.com/digiogithub/pando/internal/logging"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
@@ -18,7 +20,7 @@ type SimpleACPAgent struct {
 // NewSimpleACPAgent creates a simple ACP agent for testing.
 func NewSimpleACPAgent(version string, logger *log.Logger) *SimpleACPAgent {
 	if logger == nil {
-		logger = log.Default()
+		logger = logging.NewStdLogger("acp", slog.LevelDebug)
 	}
 
 	return &SimpleACPAgent{

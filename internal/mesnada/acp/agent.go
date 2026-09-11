@@ -3,13 +3,16 @@ package acp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/notify"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -113,7 +116,7 @@ func NewPandoACPAgent(
 	permSvc PermissionService,
 ) *PandoACPAgent {
 	if logger == nil {
-		logger = log.Default()
+		logger = logging.NewStdLogger("acp", slog.LevelDebug)
 	}
 
 	agent := &PandoACPAgent{
@@ -160,6 +163,18 @@ func (a *PandoACPAgent) Initialize(ctx context.Context, req acpsdk.InitializeReq
 		req.ClientCapabilities.Fs.WriteTextFile,
 		req.ClientCapabilities.Terminal,
 	)
+	clientName, clientVersion := "", ""
+	if req.ClientInfo != nil {
+		clientName, clientVersion = req.ClientInfo.Name, req.ClientInfo.Version
+	}
+	logging.Info("acp: initialize",
+		"client_name", clientName,
+		"client_version", clientVersion,
+		"protocol_version", req.ProtocolVersion,
+		"fs_read", req.ClientCapabilities.Fs.ReadTextFile,
+		"fs_write", req.ClientCapabilities.Fs.WriteTextFile,
+		"terminal", req.ClientCapabilities.Terminal,
+	)
 
 	// Store whether this client supports receiving file content via WriteTextFile (6a).
 	a.clientSupportsWriteFile = req.ClientCapabilities.Fs.WriteTextFile
@@ -197,8 +212,10 @@ func (a *PandoACPAgent) Cancel(ctx context.Context, params acpsdk.CancelNotifica
 
 	if !exists {
 		a.logger.Printf("[ACP AGENT] Session not found for cancellation: %s", params.SessionId)
+		logging.Warn("acp: cancel for unknown session", "session_id", string(params.SessionId))
 		return nil
 	}
+	logging.Info("acp: cancel requested", "session_id", string(params.SessionId))
 
 	acpSession.Cancel()
 	acpSession.CancelDesignSubscription()
@@ -250,6 +267,7 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 	pandoSessionID, err := a.sessionService.CreateSession(ctx, "ACP Session")
 	if err != nil {
 		a.logger.Printf("[ACP AGENT] Failed to create Pando session: %v", err)
+		logging.Error("acp: session create failed", "cwd", workDir, "error", err)
 		return acpsdk.NewSessionResponse{}, fmt.Errorf("failed to create session: %w", err)
 	}
 
@@ -290,6 +308,7 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 
 	a.logger.Printf("[ACP AGENT] NewSession created: SessionID=%s, PandoSessionID=%s, WorkDir=%s",
 		sessionID, pandoSessionID, workDir)
+	logging.Info("acp: session created", "session_id", string(sessionID), "cwd", workDir, "mode", currentMode)
 
 	// Deferred so the notification lands after the session/new response; a bare
 	// goroutine here races the response onto the wire and Zed drops commands for
@@ -306,8 +325,9 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 }
 
 // Prompt handles prompt requests from the client.
-func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (acpsdk.PromptResponse, error) {
+func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (resp acpsdk.PromptResponse, err error) {
 	a.logger.Printf("[ACP AGENT] Prompt request: SessionID=%s", req.SessionId)
+	defer logPromptOutcome(ctx, string(req.SessionId), time.Now(), &resp, &err)
 
 	a.sessionsMu.RLock()
 	acpSession, exists := a.sessions[req.SessionId]
@@ -326,6 +346,12 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 
 	a.logger.Printf("[ACP AGENT] Processing prompt (length=%d, attachments=%d) for session %s",
 		len(promptText), len(attachments), req.SessionId)
+	logging.Info("acp: prompt started",
+		"session_id", string(req.SessionId),
+		"mode", acpSession.Mode(),
+		"prompt_chars", len(promptText),
+		"attachments", len(attachments),
+	)
 
 	// Mid-run steering: if a run is already active for this session and the new
 	// prompt is not a slash command, queue it as feedback to be injected into the
@@ -339,8 +365,10 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 			// steering was rejected. Fall through to normal processing below.
 			a.logger.Printf("[ACP AGENT] Steer failed for session %s, falling back to normal run: %v", req.SessionId, steerErr)
 		} else {
+			pending := a.agentService.PendingSteering(pandoSessionID)
 			a.logger.Printf("[ACP AGENT] Queued steering feedback for active session %s (pending=%d)",
-				req.SessionId, a.agentService.PendingSteering(pandoSessionID))
+				req.SessionId, pending)
+			logging.Info("acp: steering queued", "session_id", string(req.SessionId), "pending", pending)
 			if sendErr := acpSession.SendUpdate(acpsdk.UpdateAgentMessageText(
 				"💬 Feedback queued — it will be injected into the running task at the next step.")); sendErr != nil {
 				a.logger.Printf("[ACP AGENT] Failed to send steering acknowledgement: %v", sendErr)
@@ -399,6 +427,36 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (a
 	return a.finishPrompt(ctx, req.SessionId, acpSession, stopReason)
 }
 
+// logPromptOutcome records how a session/prompt request ended, tagged with its
+// session_id like the run logs of the other agent modes, so a stuck or failing
+// ACP turn can be traced in the log file and in remote telemetry. A user
+// cancellation is logged at Info rather than Error so it does not pollute the
+// error stats.
+func logPromptOutcome(ctx context.Context, sessionID string, started time.Time, resp *acpsdk.PromptResponse, err *error) {
+	durationMs := time.Since(started).Milliseconds()
+	if *err == nil {
+		logging.Info("acp: prompt completed", "session_id", sessionID, "stop_reason", string(resp.StopReason), "duration_ms", durationMs)
+		return
+	}
+	if isPromptCancellation(ctx, *err) {
+		logging.Info("acp: prompt cancelled", "session_id", sessionID, "duration_ms", durationMs, "error", *err)
+		return
+	}
+	logging.Error("acp: prompt failed", "session_id", sessionID, "duration_ms", durationMs, "error", *err)
+}
+
+// isPromptCancellation reports whether a prompt error comes from a cancel
+// (client session/cancel or a cancelled request context). The agent service
+// surfaces a user cancel as a plain "request cancelled by user" error that the
+// acp package cannot match by type without an import cycle, hence the message
+// check.
+func isPromptCancellation(ctx context.Context, err error) bool {
+	if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "cancelled by user")
+}
+
 func (a *PandoACPAgent) finishPrompt(ctx context.Context, sessionID acpsdk.SessionId, acpSession *ACPServerSession, stopReason acpsdk.StopReason) (acpsdk.PromptResponse, error) {
 	a.sendRunStatusMeta(ctx, sessionID, acpSession)
 
@@ -451,6 +509,7 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 	_, err := a.sessionService.GetSession(ctx, string(req.SessionId))
 	if err != nil {
 		a.logger.Printf("[ACP AGENT] LoadSession: session not found: %v", err)
+		logging.Warn("acp: load session not found", "session_id", string(req.SessionId), "error", err)
 		return acpsdk.LoadSessionResponse{}, fmt.Errorf("session not found: %w", err)
 	}
 
@@ -493,6 +552,7 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 		a.logger.Printf("[ACP AGENT] LoadSession: registered session %s", req.SessionId)
 	}
 	a.sessionsMu.Unlock()
+	logging.Info("acp: session loaded", "session_id", string(req.SessionId), "cwd", workDir, "mode", currentMode)
 
 	var currentPersona string
 	var acpSession *ACPServerSession
@@ -556,6 +616,7 @@ func (a *PandoACPAgent) SetSessionMode(ctx context.Context, req acpsdk.SetSessio
 	acpSession.SetAskPermission(defaultAskPermissionForMode(modeID))
 	acpSession.SetPermissionConfigured(false)
 	a.logger.Printf("[ACP AGENT] Session mode set: SessionID=%s, Mode=%s (mode will take effect on next prompt)", req.SessionId, modeID)
+	logging.Info("acp: session mode set", "session_id", string(req.SessionId), "mode", modeID)
 
 	a.sendCurrentModeUpdate(ctx, req.SessionId, modeID)
 	a.sendSessionConfigOptionsUpdate(ctx, req.SessionId)
@@ -632,6 +693,7 @@ func (a *PandoACPAgent) SetSessionConfigOption(ctx context.Context, req acpsdk.S
 	if err := a.persistACPState(ctx, acpSession); err != nil {
 		return acpsdk.SetSessionConfigOptionResponse{}, err
 	}
+	logging.Info("acp: session config option set", "session_id", string(sessionID), "option", configID, "value", value)
 	configOptions := buildSessionConfigOptions(a.agentService, acpSession)
 	a.sendSessionConfigOptionsUpdate(ctx, sessionID)
 	return acpsdk.SetSessionConfigOptionResponse{ConfigOptions: configOptions}, nil
@@ -664,6 +726,7 @@ func (a *PandoACPAgent) setSessionModel(ctx context.Context, sessionID acpsdk.Se
 	reconcileACPThinkingSession(a.agentService, acpSession)
 	a.agentService.SetSessionLLMOverrides(acpSession.PandoSessionID(), sessionLLMOverridesFor(acpSession))
 	a.logger.Printf("[ACP AGENT] SetSessionModel: model set to %s for session %s", modelID, sessionID)
+	logging.Info("acp: session model set", "session_id", string(sessionID), "model", modelID)
 	if err := a.persistACPState(ctx, acpSession); err != nil {
 		return acpsdk.SetSessionModelResponse{}, err
 	}
@@ -701,6 +764,7 @@ func (a *PandoACPAgent) CloseSession(ctx context.Context, req acpsdk.CloseSessio
 	a.sessionsMu.Unlock()
 
 	a.logger.Printf("[ACP AGENT] CloseSession: session %s closed", req.SessionId)
+	logging.Info("acp: session closed", "session_id", string(req.SessionId))
 	return acpsdk.CloseSessionResponse{}, nil
 }
 
@@ -712,6 +776,7 @@ func (a *PandoACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSess
 	_, err := a.sessionService.GetSession(ctx, string(req.SessionId))
 	if err != nil {
 		a.logger.Printf("[ACP AGENT] ResumeSession: session not found: %v", err)
+		logging.Warn("acp: resume session not found", "session_id", string(req.SessionId), "error", err)
 		return acpsdk.ResumeSessionResponse{}, fmt.Errorf("session not found: %w", err)
 	}
 
@@ -754,6 +819,7 @@ func (a *PandoACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSess
 	a.sessionsMu.Unlock()
 
 	a.logger.Printf("[ACP AGENT] ResumeSession: session %s resumed", req.SessionId)
+	logging.Info("acp: session resumed", "session_id", string(req.SessionId), "cwd", workDir, "mode", currentMode)
 	acpSession, _ := a.getSession(req.SessionId)
 	a.startDesignUpdates(acpSession)
 	hadPersistedACPState, err := a.restoreACPState(ctx, acpSession)
@@ -788,6 +854,7 @@ func (a *PandoACPAgent) SetSessionPersona(ctx context.Context, sessionID acpsdk.
 
 	acpSession.SetPersona(personaName)
 	a.logger.Printf("[ACP AGENT] SetSessionPersona: persona set to %q for session %s", personaName, sessionID)
+	logging.Info("acp: session persona set", "session_id", string(sessionID), "persona", personaName)
 	a.sendSessionConfigOptionsUpdate(ctx, sessionID)
 	return nil
 }
