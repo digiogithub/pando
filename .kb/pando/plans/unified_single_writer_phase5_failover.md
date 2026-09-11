@@ -2,9 +2,11 @@
 
 **Date:** 2026-05-18
 **Parent plan:** `pando/plans/unified_single_writer_master_plan.md`
-**Status:** not started
+**Status:** IMPLEMENTED (correct only since 2026-09-11)
 **Risk:** high
 **Effort:** large
+
+> **Status update, as of 2026-09-12.** Automatic failover has been enabled by default for a long time, but it was **broken** until 2026-09-11: promotion closed the pool it kept using, serve/desktop/app could leave a zombie lock, the watcher gave up after one attempt, and a graceful handover usually ended with no primary at all. Those gaps (G1-G6) were fixed by P0 of the bootstrap plan, which replaced the object swap with in-place promotion and made the handover ordered (drain, release the lock, announce, close). See [[pando/plans/mcp_server_ipc_bootstrap.md]], which audited this plan against the code, and its phase documents: [[pando/fixes/ipc_failover_p0_inplace_promotion.md]], [[pando/changes/ipc_wiring_p1_shared_wireipc.md]], [[pando/changes/mcp_server_ipc_bootstrap_p2.md]], [[pando/changes/ipc_role_aware_services_p3.md]], [[pando/changes/ipc_other_entrypoints_p4.md]], [[pando/changes/ipc_direct_writers_p5.md]], [[pando/changes/ipc_multiprocess_tests_p6.md]].
 
 ## 1. Goal
 

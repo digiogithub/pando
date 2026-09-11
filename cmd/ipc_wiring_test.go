@@ -6,6 +6,9 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -32,7 +35,7 @@ func isolatedIPCProject(t *testing.T) string {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", "")
-	project := t.TempDir()
+	project := projectWithFreeIPCPorts(t)
 	t.Chdir(project)
 	config.ResetForTests()
 	t.Cleanup(config.ResetForTests)
@@ -40,6 +43,90 @@ func isolatedIPCProject(t *testing.T) string {
 		t.Fatalf("config.Load: %v", err)
 	}
 	return project
+}
+
+// projectWithFreeIPCPorts returns a throwaway project directory whose
+// deterministic IPC ports are actually bindable right now.
+//
+// ipc.PortsForPath hashes the path into 40000-60000, which overlaps this
+// platform's ephemeral port range (/proc/sys/net/ipv4/ip_local_port_range is
+// 32768-60999 by default): any unrelated process on the machine can hold the
+// port a given temp directory hashes to. When that happens the primary's
+// bus.Start fails, wirePrimary only logs "failed to start bus, continuing
+// without IPC", and every later RPC in the test dies with "connection
+// refused" — the observed flake in TestCronJobReloadRPCReachesPrimary.
+//
+// Probing the ports and picking a different directory (a different hash) makes
+// the tests independent of whatever else this machine is doing. It is a probe,
+// not a reservation: the listeners are closed before Bootstrap binds them, so
+// a collision is still theoretically possible — waitForPrimaryBus covers the
+// residual window by failing with a diagnosis instead of a bare refusal.
+func projectWithFreeIPCPorts(t *testing.T) string {
+	t.Helper()
+	base := t.TempDir()
+	for attempt := 0; attempt < 20; attempt++ {
+		project := filepath.Join(base, fmt.Sprintf("proj%d", attempt))
+		if err := os.MkdirAll(project, 0o700); err != nil {
+			t.Fatalf("mkdir project: %v", err)
+		}
+		// Bootstrap canonicalises the workdir before hashing it, so hash the
+		// same spelling here (/tmp is a symlink on some systems).
+		canon := project
+		if resolved, err := filepath.EvalSymlinks(project); err == nil {
+			canon = resolved
+		}
+		if pub, rpc := ipc.PortsForPath(canon); portFree(pub) && portFree(rpc) {
+			return project
+		}
+	}
+	t.Skip("could not find a temp project directory whose derived IPC ports are free; the machine is using most of the 40000-60000 range")
+	return ""
+}
+
+// portFree reports whether 127.0.0.1:port can be bound right now.
+func portFree(port int) bool {
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return false
+	}
+	_ = ln.Close()
+	return true
+}
+
+// waitForPrimaryBus blocks until the primary's ROUTER answers ipc.ping, or
+// fails the test with a diagnosis.
+//
+// wirePrimary deliberately degrades instead of failing when bus.Start cannot
+// bind (it logs and continues without IPC, matching Bootstrap's own
+// fallback), so a test that sends an RPC right after wireIPC has no way to
+// know the bus never came up: it just sees "connection refused". Every test
+// that drives a real RPC must gate on this first, so a bind failure is
+// reported as such instead of surfacing as a flaky transport error.
+func waitForPrimaryBus(t *testing.T, ctx context.Context, rpcAddr string) {
+	t.Helper()
+	client, err := ipc.NewClient(ctx)
+	if err != nil {
+		t.Fatalf("ipc.NewClient: %v", err)
+	}
+	defer client.Close()
+
+	deadline := time.Now().Add(10 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		probeCtx, cancel := context.WithTimeout(ctx, time.Second)
+		_, lastErr = client.Call(probeCtx, rpcAddr, "ipc.ping", nil)
+		cancel()
+		if lastErr == nil {
+			return
+		}
+		// A cached DEALER that failed to connect stays broken; drop it so the
+		// next attempt redials.
+		client.ForgetEndpoint(rpcAddr)
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("the primary bus never answered ipc.ping on %s within 10s (last error: %v). "+
+		"wirePrimary logs \"failed to start bus, continuing without IPC\" and carries on when it cannot bind, "+
+		"so this usually means the deterministic port was taken by another process on this machine", rpcAddr, lastErr)
 }
 
 // resetIPCTestGlobals undoes the process-wide globals SetupIPC/PromoteToPrimary
@@ -110,22 +197,14 @@ func bareAppForIPCTest(sqlDB *ipcruntime.BootstrapResult) *app.App {
 	}
 }
 
-// pingOverRPC dials rpcAddr and calls ipc.ping, failing the test if it does
-// not answer within 2s. Used to prove a bus wired by wireIPC/
-// primaryBusSetupFunc is actually up and serving, not just registered.
+// pingOverRPC proves a bus wired by wireIPC/primaryBusSetupFunc is actually up
+// and serving, not just registered. It retries (see waitForPrimaryBus) rather
+// than making a single call: a promoted primary binds its ports with a retry
+// loop of its own (the old primary's sockets linger ~100ms), so a one-shot
+// probe raced that window.
 func pingOverRPC(t *testing.T, ctx context.Context, rpcAddr string) {
 	t.Helper()
-	client, err := ipc.NewClient(ctx)
-	if err != nil {
-		t.Fatalf("ipc.NewClient: %v", err)
-	}
-	defer client.Close()
-
-	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	if _, err := client.Call(probeCtx, rpcAddr, "ipc.ping", nil); err != nil {
-		t.Fatalf("ipc.ping against %s: %v", rpcAddr, err)
-	}
+	waitForPrimaryBus(t, ctx, rpcAddr)
 }
 
 // TestWireIPCPrimaryBranch covers wireIPC's primary branch: it must announce

@@ -4,7 +4,7 @@ updated_at: 2026-09-11T22:24:23.582093595Z
 ---
 # Plan: put `pando mcp-server` (and other direct-DB entry points) on the IPC primary/secondary bootstrap
 
-Date: 2026-09-11. Status: **P0 (failover correctness, G1–G6) IMPLEMENTED 2026-09-11**, see [[pando/fixes/ipc_failover_p0_inplace_promotion.md]]. **P1 (shared `wireIPC`, `BootstrapWithOptions`, `ModeMCP`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_wiring_p1_shared_wireipc.md]]. **P2 (mcp-server on the bootstrap) IMPLEMENTED 2026-09-11**, see [[pando/changes/mcp_server_ipc_bootstrap_p2.md]]. **P3 (role-aware, primary-only background services) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_role_aware_services_p3.md]]. **P4 (other entry points: agui-serve, one-shot `cronjob run`, `cronjob.reload`, `kb.relink`, `db.ConnectCLI`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_other_entrypoints_p4.md]]. **P5 (remaining direct writers on secondaries: history, project, mcpgateway, design, AG-UI threads; plus handover-tolerant forwarding) IMPLEMENTED 2026-09-12**, see [[pando/changes/ipc_direct_writers_p5.md]]. P6 and G7 not started. Author: Claude (analysis task, point 1 of 3).
+Date: 2026-09-11. Status: **P0 (failover correctness, G1–G6) IMPLEMENTED 2026-09-11**, see [[pando/fixes/ipc_failover_p0_inplace_promotion.md]]. **P1 (shared `wireIPC`, `BootstrapWithOptions`, `ModeMCP`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_wiring_p1_shared_wireipc.md]]. **P2 (mcp-server on the bootstrap) IMPLEMENTED 2026-09-11**, see [[pando/changes/mcp_server_ipc_bootstrap_p2.md]]. **P3 (role-aware, primary-only background services) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_role_aware_services_p3.md]]. **P4 (other entry points: agui-serve, one-shot `cronjob run`, `cronjob.reload`, `kb.relink`, `db.ConnectCLI`) IMPLEMENTED 2026-09-11**, see [[pando/changes/ipc_other_entrypoints_p4.md]]. **P5 (remaining direct writers on secondaries: history, project, mcpgateway, design, AG-UI threads; plus handover-tolerant forwarding) IMPLEMENTED 2026-09-12**, see [[pando/changes/ipc_direct_writers_p5.md]]. **P6 (multi-process tests, the G7 kill policy, and the stale-doc cleanup) IMPLEMENTED 2026-09-12**, see [[pando/changes/ipc_multiprocess_tests_p6.md]]. **All phases (P0-P6) and all gaps (G1-G7) are implemented.** Author: Claude (analysis task, point 1 of 3).
 Builds on: [[pando/analysis/sqlite_locked_interrupted_errors.md]], [[pando/plans/unified_single_writer_master_plan.md]], [[pando/plans/unified_single_writer_phase1_bootstrap.md]], [[pando/plans/unified_single_writer_phase3_serialisation.md]], [[pando/plans/unified_single_writer_phase5_failover.md]], [[pando/plans/inter_instance_phase4_completed.md]], [[pando/plans/inter_instance_ipc_plan.md]], [[pando/analysis/remembrances-single-writer-proxy-gap-2026-05-27.md]], [[pando/plans/remembrances_ipc_proxy_implementation_plan.md]], [[pando/fixes/sqlite-connection-pool-exhaustion-mcp-server.md]].
 
 Target scenario: TUI/desktop/ACP plus one or more `pando mcp-server --no-http` processes (started by Claude Code, Copilot, Cursor...) in the same project, all sharing `.pando/data/pando.db`. Any of them may start first. mcp-server processes come and go, so handover and failover are on the normal path, not rare edge cases.
@@ -96,14 +96,14 @@ On secondaries these are "safe" only because their writes are proxied. The cost:
 
 ## 3. Status of earlier plans (the KB docs are stale)
 - `inter_instance_phase4_completed`: done. The RO secondary was later replaced by direct-then-proxy on a RW 200 ms connection.
-- `unified_single_writer_*` phase docs all say "not started". The code actually shows:
+- `unified_single_writer_*` phase docs all say "not started" (corrected 2026-09-12 by this plan's P6; the audit below is what they were corrected to). The code actually shows:
   - **P1 bootstrap:** done for 5 entrypoints. Missing for mcp-server, cronjob, agui-serve and the CLIs.
   - **P2 write contract:** done (WriteMeta, WriteTimeouts 5 s/30 s, WriteError/IsRetryable, 3-try backoff).
   - **P3 writecoordinator:** done (a single goroutine, so head-of-line blocking; see the analysis doc).
   - **P4 changepub:** done. Secondaries only log the events.
   - **P5 failover:** partial and **broken** (G1-G5 below). Enabled by default. Wired only in TUI/ACP. (G1–G6 fixed by this plan's P0 on 2026-09-11.)
   - **P6 observability:** partial (`pando ipc status`, role logs).
-  - **P7 multi-process tests:** not done.
+  - **P7 multi-process tests:** not done. (Done 2026-09-12 by this plan's P6: `tests/test_ipc_multiprocess.py`.)
 - `remembrances_ipc_proxy_implementation_plan` ("Ready for execution"): **implemented**.
   - `rag/proxy/dispatcher.go` handles 11 methods, more than planned: ReplaceSessionEvents, CodeDeleteFile and CodeUpdateLanguageStats were added.
   - `SetWriteProxy` exists on all 3 stores.
@@ -132,7 +132,7 @@ Once mcp-server joins the topology, an mcp-server primary exiting triggers promo
   - End state: **no primary**. Direct sqlc writes keep working, but every remembrances write, which always proxies, fails.
   - With SIGKILL/SIGTERM (no defers) the kernel releases the lock, so the only cost is a 15 s heartbeat gap.
 - **G6 — relative or symlinked `--cwd`.** Different path strings produce different ports. A promoted instance binds `PortsForPath(its own string)`, while the other secondaries' `DBProxy.rpcAddr` is fixed to the old ports. `instance.promoted` carries the new addresses, but nobody re-points the proxy.
-- **G7 — killStalePrimary.** An mcp-server spawned by Claude Code can SIGKILL a TUI that is SIGSTOPped or under a debugger. `handleRPC` runs one goroutine per request (`bus.go:208`), so a busy coordinator does not trigger this; only a truly suspended process does.
+- **G7 — killStalePrimary.** An mcp-server spawned by Claude Code can SIGKILL a TUI that is SIGSTOPped or under a debugger. `handleRPC` runs one goroutine per request (`bus.go:208`), so a busy coordinator does not trigger this; only a truly suspended process does. **FIXED 2026-09-12 (P6):** before killing, `killStalePrimary` reads the primary's state from `/proc/<pid>/stat` and refuses to kill a process stopped by job control (`T`) or by a debugger (`t`), logging how to resume or stop it. A primary that is genuinely unresponsive but running (`R`/`S`/`D`), a zombie, or already gone is still killed. Off Linux the state cannot be read and today's behaviour is kept.
 
 ## 5. Proposed design
 
@@ -308,7 +308,12 @@ The session indexer stays per process, because it only sees its own message brok
   - `history.NewService(q db.Querier)` and `project.NewService(q db.Querier)` now take the app's querier (the `*DBProxy` on a secondary). History's `WithTx` wrapped a single INSERT, so it was dropped for the plain `CreateFile` write; the rename needed a new `DBProxy.UpdateProjectName` plus a `dispatchWrite` case, since it is not in the generated `db.Querier`.
   - The writers that hold a raw `*sql.DB` (design store, MCP gateway registry/stats, AG-UI thread map) use a new `dbproxy.SQLWriter` over **registered named statements** (`dbproxy.RegisterStatement` + the `ExecStatements` write method): only a name and typed arguments cross IPC, and a batch runs in one transaction on whichever side executes it, which is how design's `AddVersion`/`ReplaceNodes` keep their atomicity across the proxy. An older primary answers "unknown write method", and the secondary falls back to a bounded direct retry.
   - **Handover tolerance** (the §5.5 optional item and the P0 risk): forwarded writes now wait out a primary handover — `forwardWithHandoverRetry`, ~20 s bounded, re-reading the lock file between retries — instead of failing after 3 short retries. A drained/shut-down coordinator maps to the new retryable `ErrCodeUnavailable`, and an ambiguous outcome (timeout / lost response) is still only re-sent for void writes.
-- **P6 — tests and docs.** See §8. Update the stale statuses in the `unified_single_writer_*` KB docs.
+- **P6 — multi-process tests, G7 and docs.** **IMPLEMENTED 2026-09-12**, see [[pando/changes/ipc_multiprocess_tests_p6.md]].
+  - `tests/test_ipc_multiprocess.py` (new): seven scenarios driving real `mcp-server`/`acp`/`serve`/`cronjob run` processes, each inside `unshare -Urmn` with a tmpfs over `/tmp/pando-instances`, a scratch HOME/project and an explicit `[Data] Directory`. Covers primary election and the lock/`ipc status`/registry view of it; promotion after stdin EOF, SIGTERM and SIGKILL, including that the promoted instance starts the primary-only services and the other secondary does not; 3 concurrent mcp-servers plus an ACP instance; one-shot `cronjob run` and `cronjob.reload`; and a write issued during a graceful handover. All 7 pass.
+  - **G7 (kill policy)**: `killStalePrimary` never kills a suspended (`T`/`t`) primary — see §4 G7.
+  - De-flaked `TestCronJobReloadRPCReachesPrimary`: `PortsForPath` derives 40000-60000, inside the ephemeral range, so a foreign socket could own the port; `wirePrimary` then only logged "continuing without IPC" and the test's RPC failed with "connection refused". The cmd tests now pick a project directory whose ports are free and gate every RPC on the bus actually answering `ipc.ping`.
+  - Fixed a second, unrelated flake found while running the suite: `TestHandoverRefusalsClassifyAsUnavailable` (`internal/ipc/writecoordinator`) asserted one classification for a `Submit` that has two non-deterministic exits after `Shutdown`.
+  - Updated the stale statuses in `unified_single_writer_master_plan.md` and every `unified_single_writer_phase*.md`.
 
 ## 8. Test plan
 - `internal/ipc/failover/watcher_test.go`:
@@ -338,4 +343,4 @@ The session indexer stays per process, because it only sees its own message brok
   - Mitigation: `ipc.ping` returns version and schema; secondaries warn or refuse to promote across major skew.
 - Head-of-line blocking in the single writecoordinator grows as more instances proxy through it (CodeIndexFile runs embedding HTTP calls inline). See the analysis.
 - During a 15 s heartbeat gap after a SIGKILL, MCP tool writes (`kb_add_document`, `remember`) return errors to the client agent. (P5's handover wait covers most of this gap: a forwarded write now waits up to ~20 s for the new primary.)
-- Keeping SIGKILL of a suspended primary for the other entrypoints is still a policy decision.
+- ~~Keeping SIGKILL of a suspended primary for the other entrypoints is still a policy decision.~~ Decided and implemented by P6 (G7): a suspended primary is never killed; an unresponsive-but-running one still is. The residual risk is that a primary wedged in an uninterruptible state (`D`) or spinning without serving RPC is still killed, which is the intended behaviour.

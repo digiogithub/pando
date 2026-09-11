@@ -2,9 +2,11 @@
 
 **Date:** 2026-05-18
 **Parent plan:** `pando/plans/unified_single_writer_master_plan.md`
-**Status:** not started
+**Status:** IMPLEMENTED (extended 2026-09-12)
 **Risk:** low
 **Effort:** small
+
+> **Status update, as of 2026-09-12.** Done: `WriteMeta`, `WriteTimeouts` (5s default / 30s long), typed `WriteError` with `IsRetryable`, and a 3-try backoff. Extended since: the retryable `ErrCodeUnavailable` for a primary that is draining, and a bounded (~20s) handover wait so a write issued while the primary hands over is re-sent to its successor. See [[pando/plans/mcp_server_ipc_bootstrap.md]], which audited this plan against the code, and its phase documents: [[pando/fixes/ipc_failover_p0_inplace_promotion.md]], [[pando/changes/ipc_wiring_p1_shared_wireipc.md]], [[pando/changes/mcp_server_ipc_bootstrap_p2.md]], [[pando/changes/ipc_role_aware_services_p3.md]], [[pando/changes/ipc_other_entrypoints_p4.md]], [[pando/changes/ipc_direct_writers_p5.md]], [[pando/changes/ipc_multiprocess_tests_p6.md]].
 
 ## 1. Goal
 

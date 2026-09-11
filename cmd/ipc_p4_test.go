@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"regexp"
 	"slices"
@@ -154,6 +155,11 @@ func TestCronJobReloadRPCReachesPrimary(t *testing.T) {
 	t.Cleanup(svc.Stop)
 	primaryApp.CronService = svc
 	t.Cleanup(wireIPC(ctx, rtP, primaryApp, "p4-test-cron-primary", project, instanceregistry.ModeTUI, wireOptions{}))
+	// Gate on the primary's ROUTER actually answering before anything is
+	// forwarded to it: wirePrimary only logs and carries on when it cannot
+	// bind, so without this the forward below fails with a bare "connection
+	// refused" instead of naming the real cause.
+	waitForPrimaryBus(t, ctx, fmt.Sprintf("tcp://127.0.0.1:%d", rtP.RPCPort))
 
 	rtS, err := ipcruntime.Bootstrap(ctx, project, "p4-test-cron-secondary")
 	if err != nil {
@@ -222,6 +228,9 @@ func TestKBRelinkForwardsToPrimaryElseRunsLocally(t *testing.T) {
 	primaryApp := bareAppForIPCTest(rtP)
 	primaryApp.Remembrances = &rag.RemembrancesService{KB: kb.NewKBStore(rtP.SQLDB, nil, 0, 0)}
 	t.Cleanup(wireIPC(ctx, rtP, primaryApp, "p4-test-kb-primary", project, instanceregistry.ModeTUI, wireOptions{}))
+	// See the note in TestCronJobReloadRPCReachesPrimary: kb.relink is
+	// forwarded over this bus, so it must be confirmed up first.
+	waitForPrimaryBus(t, ctx, fmt.Sprintf("tcp://127.0.0.1:%d", rtP.RPCPort))
 
 	if _, err := rtP.SQLDB.Exec(`INSERT INTO kb_documents (file_path, content) VALUES ('b.md', 'back to [[a.md]]')`); err != nil {
 		t.Fatalf("seed b.md: %v", err)

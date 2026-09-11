@@ -2,9 +2,11 @@
 
 **Date:** 2026-05-18
 **Parent plan:** `pando/plans/unified_single_writer_master_plan.md`
-**Status:** not started
+**Status:** IMPLEMENTED (2026-09-12)
 **Risk:** medium
 **Effort:** medium
+
+> **Status update, as of 2026-09-12.** Done, though as Python rather than Go: `tests/test_ipc_multiprocess.py` drives real `mcp-server`/`acp`/`serve`/`cronjob run` processes against one project, inside `unshare -Urmn` with a tmpfs over `/tmp/pando-instances`, and covers primary election, promotion after stdin EOF / SIGTERM / SIGKILL, role-aware services, three concurrent mcp-servers, one-shot `cronjob run`, `cronjob.reload`, and a write that survives a handover. The older Go suite in `test/integration/single_writer/` (behind `//go:build integration`) still covers lock/port/bootstrap basics. Neither runs in normal CI; both are run on demand. See [[pando/plans/mcp_server_ipc_bootstrap.md]], which audited this plan against the code, and its phase documents: [[pando/fixes/ipc_failover_p0_inplace_promotion.md]], [[pando/changes/ipc_wiring_p1_shared_wireipc.md]], [[pando/changes/mcp_server_ipc_bootstrap_p2.md]], [[pando/changes/ipc_role_aware_services_p3.md]], [[pando/changes/ipc_other_entrypoints_p4.md]], [[pando/changes/ipc_direct_writers_p5.md]], [[pando/changes/ipc_multiprocess_tests_p6.md]].
 
 ## 1. Goal
 

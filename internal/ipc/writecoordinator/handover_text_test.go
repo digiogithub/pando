@@ -6,6 +6,7 @@ package writecoordinator
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,13 +33,30 @@ func TestHandoverRefusalsClassifyAsUnavailable(t *testing.T) {
 		t.Fatalf("draining refusal classified as %s, want %s", werr.Code, dbproxy.ErrCodeUnavailable)
 	}
 
+	// Submit on a shut-down coordinator has two exits, and which one is taken
+	// is NOT deterministic: the enqueue select has both `<-c.done` and the
+	// buffered `c.jobs <- job` ready at once, and Go picks a ready case at
+	// random. Both texts must therefore be pinned, each to the class its own
+	// semantics require:
+	//
+	//   - refused before queueing  -> the write provably never ran  -> UNAVAILABLE
+	//     (retryable: the secondary re-sends it to the next primary)
+	//   - shut down while waiting  -> the job may have been dequeued and run
+	//     -> TIMEOUT (ambiguous: only void writes are re-sent)
+	//
+	// Asserting UNAVAILABLE for both made this test fail on roughly 40% of
+	// -race runs.
 	c2 := New(ctx, nil, 4)
 	c2.Shutdown()
 	_, err = c2.Submit(ctx, dbproxy.WriteRequest{Method: "CreateSession"})
 	if err == nil {
 		t.Fatal("Submit after Shutdown must fail")
 	}
-	if werr := dbproxy.ClassifyError("CreateSession", errors.New("ipc: RPC error -32000: "+err.Error())); werr.Code != dbproxy.ErrCodeUnavailable {
-		t.Fatalf("shut-down refusal %q classified as %s, want %s", err, werr.Code, dbproxy.ErrCodeUnavailable)
+	wantCode := dbproxy.ErrCodeUnavailable
+	if strings.Contains(err.Error(), "while waiting for result") {
+		wantCode = dbproxy.ErrCodeTimeout
+	}
+	if werr := dbproxy.ClassifyError("CreateSession", errors.New("ipc: RPC error -32000: "+err.Error())); werr.Code != wantCode {
+		t.Fatalf("shut-down refusal %q classified as %s, want %s", err, werr.Code, wantCode)
 	}
 }

@@ -394,10 +394,20 @@ func BootstrapWithOptions(ctx context.Context, workdir, instanceID string, opts 
 }
 
 // killStalePrimary probes the primary recorded in lockInfo. If it does not
-// respond to pingMethod within timeout (e.g. it is suspended or hung while
-// still holding the flock), the primary process is killed so this instance
-// can take over. Returns true when the primary was killed and the lock should
-// be re-acquired.
+// respond to pingMethod within timeout (e.g. it is hung while still holding
+// the flock), the primary process is killed so this instance can take over.
+// Returns true when the primary was killed and the lock should be re-acquired.
+//
+// A primary that is merely SUSPENDED — stopped by job control (SIGSTOP/^Z) or
+// halted in a debugger — is never killed (G7 of
+// pando/plans/mcp_server_ipc_bootstrap.md). Such a process cannot answer the
+// probe by definition, yet it is perfectly healthy and its user expects to
+// resume it: SIGKILLing a TUI someone paused under a debugger, or ^Z'd in
+// their shell, destroys real work. It keeps holding the flock, so this
+// instance continues as a secondary and the user is told to resume or kill it
+// themselves. Only genuinely unresponsive-but-running (R/S/D), zombie, or
+// already-gone primaries are killed. Off Linux the state cannot be read
+// (procStateSupported is false) and the long-standing kill behaviour is kept.
 func killStalePrimary(ctx context.Context, workdir string, lockInfo *ipc.LockInfo, timeout time.Duration) bool {
 	if lockInfo == nil || lockInfo.PID <= 0 || lockInfo.PID == os.Getpid() {
 		return false
@@ -405,6 +415,18 @@ func killStalePrimary(ctx context.Context, workdir string, lockInfo *ipc.LockInf
 
 	rpcAddr := fmt.Sprintf("tcp://127.0.0.1:%d", lockInfo.RPCPort)
 	if primaryResponds(ctx, rpcAddr, timeout) {
+		return false
+	}
+
+	if state, ok := processState(lockInfo.PID); ok && isSuspendedState(state) {
+		logging.Warn("IPC: primary is suspended, not killing it; this instance continues as a secondary",
+			"workdir", workdir,
+			"primary_pid", lockInfo.PID,
+			"primary_instance", lockInfo.InstanceID,
+			"process_state", string(state),
+			"reason", suspendedStateReason(state),
+			"action", fmt.Sprintf("resume it with `kill -CONT %d` (or continue it in your debugger), or stop it yourself with `kill %d`", lockInfo.PID, lockInfo.PID),
+		)
 		return false
 	}
 
@@ -423,6 +445,23 @@ func killStalePrimary(ctx context.Context, workdir string, lockInfo *ipc.LockInf
 	// Wait for the killed process to fully exit so the kernel releases the flock.
 	waitForProcessExit(lockInfo.PID, 2*time.Second)
 	return true
+}
+
+// isSuspendedState reports whether a Linux process state letter means the
+// process is stopped rather than unresponsive: 'T' is stopped by a job-control
+// signal (SIGSTOP/SIGTSTP, `kill -STOP`, shell ^Z) and 't' is stopped in a
+// ptrace trap (a debugger). Both resume on SIGCONT/continue and are healthy.
+func isSuspendedState(state byte) bool {
+	return state == 'T' || state == 't'
+}
+
+// suspendedStateReason renders a suspended state letter for the log line that
+// tells the user why their primary was left alone.
+func suspendedStateReason(state byte) string {
+	if state == 't' {
+		return "stopped by a debugger (ptrace)"
+	}
+	return "stopped by a job-control signal (SIGSTOP/SIGTSTP)"
 }
 
 // primaryResponds reports whether the primary at rpcAddr answers an RPC within

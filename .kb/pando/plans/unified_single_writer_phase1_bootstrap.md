@@ -2,9 +2,11 @@
 
 **Date:** 2026-05-18
 **Parent plan:** `pando/plans/unified_single_writer_master_plan.md`
-**Status:** not started
+**Status:** IMPLEMENTED (2026-05-18 for TUI/ACP/serve/desktop/app; extended 2026-09-11/12)
 **Risk:** low
 **Effort:** medium
+
+> **Status update, as of 2026-09-12.** This phase is done, and now covers more entrypoints than the table below lists. The five original entrypoints share a single helper (`wireIPC` in `cmd/ipc_wiring.go`), and `mcp-server`, `agui-serve` and `cronjob run` were put on the same bootstrap afterwards. Secondaries no longer open the database read-only: they hold a 1-connection RW pool and write direct-first, falling back to the proxy on BUSY. See [[pando/plans/mcp_server_ipc_bootstrap.md]], which audited this plan against the code, and its phase documents: [[pando/fixes/ipc_failover_p0_inplace_promotion.md]], [[pando/changes/ipc_wiring_p1_shared_wireipc.md]], [[pando/changes/mcp_server_ipc_bootstrap_p2.md]], [[pando/changes/ipc_role_aware_services_p3.md]], [[pando/changes/ipc_other_entrypoints_p4.md]], [[pando/changes/ipc_direct_writers_p5.md]], [[pando/changes/ipc_multiprocess_tests_p6.md]].
 
 ## 1. Goal
 
