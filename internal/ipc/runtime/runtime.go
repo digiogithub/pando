@@ -303,17 +303,21 @@ func BootstrapWithOptions(ctx context.Context, workdir, instanceID string, opts 
 	// at which point DBProxy falls back to the IPC proxy.
 	rwConn, rwErr := db.ConnectRWSecondary()
 	if rwErr != nil {
-		// Cannot open DB — fall back gracefully with an empty cleanup.
-		logging.Warn("IPC bootstrap: failed to open secondary RW DB, secondary has no DB", "error", rwErr)
-		res.Cleanup = func() {}
-		return res, nil
+		// Every entrypoint builds its App on res.SQLDB, and app.New panics on a
+		// nil pool. A secondary without a database cannot do anything useful,
+		// so fail the bootstrap with the reason instead of returning a result
+		// every caller would have to remember to check.
+		logging.Error("IPC bootstrap: failed to open the secondary database", "error", rwErr)
+		return nil, fmt.Errorf("ipc/runtime: open secondary DB: %w", rwErr)
 	}
 
 	logging.Debug("IPC: secondary RW DB opened (WAL mode)", "role", RoleSecondary, "workdir", workdir)
 
 	ipcClient, clientErr := ipc.NewClient(ctx)
 	if clientErr != nil {
-		_ = rwConn.Close()
+		// Keep the pool open: it is the direct Querier returned below, and the
+		// cleanup closes it. (It used to be closed here, which handed callers a
+		// closed *sql.DB.)
 		logging.Warn("IPC bootstrap: failed to create IPC client, secondary has no proxy", "error", clientErr)
 		res.SQLDB = rwConn
 		res.Querier = db.New(rwConn)

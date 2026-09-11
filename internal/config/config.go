@@ -4,7 +4,6 @@ package config
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -16,7 +15,6 @@ import (
 	"time"
 	"unicode"
 
-	toml "github.com/pelletier/go-toml/v2"
 	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
 
@@ -2716,6 +2714,16 @@ func resolveLegacyGlobalConfigPath() (string, error) {
 
 // applyDefaultValues sets default values for configuration fields that need processing.
 func applyDefaultValues() {
+	// An explicit empty [Data] Directory (for example stamped into a project
+	// .pando.toml by the old whole-struct config rewrite) shadows the viper
+	// default and would make every database open fail with "data.dir is not
+	// set". Empty is never a meaningful data directory: use the default.
+	if strings.TrimSpace(cfg.Data.Directory) == "" {
+		logging.Warn("Config: [Data] Directory is empty, using the default data directory",
+			"default", defaultDataDirectory)
+		cfg.Data.Directory = defaultDataDirectory
+	}
+
 	// Set default MCP type if not specified
 	for k, v := range cfg.MCPServers {
 		if v.Type == "" {
@@ -3849,24 +3857,38 @@ func updateConfigFileAt(resolvePath func() (string, error), updateCfg func(confi
 		configData = data
 	case os.IsNotExist(err):
 		logging.Info("config file not found, creating new one", "path", configFile)
-		configData = []byte(`{}`)
 	default:
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	format := configFileFormat(configFile)
 
-	// Parse the config file based on its format
-	var userCfg *Config
-	switch format {
-	case "toml":
-		if err := toml.Unmarshal(configData, &userCfg); err != nil {
-			return fmt.Errorf("failed to parse TOML config file: %w", err)
-		}
-	default:
-		if err := json.Unmarshal(configData, &userCfg); err != nil {
-			return fmt.Errorf("failed to parse JSON config file: %w", err)
-		}
+	// The write is a PATCH of the file, never a re-serialisation of the whole
+	// struct (see config_patch.go): rawTree is the file exactly as written,
+	// and only the leaves the mutation changes are applied to it. A whole-struct
+	// rewrite stamped a zero value for every key the file did not have — e.g.
+	// `[Data] Directory = ''`, which broke every later start with "data.dir is
+	// not set" — and dropped keys unknown to this binary.
+	rawTree, err := parseConfigFileTree(configData, format)
+	if err != nil {
+		return err
+	}
+	userCfg, err := decodeConfigFile(configData, format)
+	if err != nil {
+		return err
+	}
+
+	// Seed the keys the file does not set with their effective values, so a
+	// mutator that sets one of them to its zero value (a default-on feature
+	// turned off) registers as a change, while an untouched seeded key does
+	// not and is never written.
+	fillAbsentScalars(userCfg, effectiveLayeredConfig(), rawTree, format)
+
+	// The patch baseline is taken before the legacy providers migration below,
+	// so the migration itself is persisted (as the whole-struct rewrite did).
+	beforeFileTree, err := configFileTree(userCfg, format)
+	if err != nil {
+		return fmt.Errorf("failed to inspect configuration before write: %w", err)
 	}
 
 	// Ensure providerAccounts is populated from the legacy providers map so
@@ -3905,42 +3927,33 @@ func updateConfigFileAt(resolvePath func() (string, error), updateCfg func(confi
 
 	// Telemetry is a GLOBAL-only setting (see updateGlobalCfgFile's doc): a
 	// project-local config file must never carry a [Telemetry]/"telemetry"
-	// section at all, even an empty/default-valued one. Zeroing
-	// persistedCfg.Telemetry alone is not enough to make the key disappear
-	// from the output: `json:"telemetry,omitempty"` is a no-op on a
-	// non-pointer struct field (encoding/json's omitempty never treats a
-	// struct value as "empty"), and go-toml/v2 always emits a table header
-	// for a struct field regardless of its values — confirmed empirically,
-	// an embedded-struct-plus-shadowing-field trick (the usual
-	// encoding/json idiom for this) does not omit the key with go-toml/v2
-	// either. So the key is stripped from the already-marshaled bytes
-	// below, by round-tripping through a generic map — the one
-	// representation both libraries reliably omit an absent key from on
-	// re-marshal — whenever the file being written is not the global one.
+	// section at all, even an empty/default-valued one. The patched tree is a
+	// generic map, so the key is simply deleted from it (any spelling) below
+	// whenever the file being written is not the global one; zeroing
+	// persistedCfg.Telemetry is defense in depth on top of that.
 	isGlobal := isGlobalConfigFilePath(configFile)
 	if !isGlobal {
 		persistedCfg.Telemetry = TelemetryConfig{} // defense in depth: never the real state
 	}
 
-	// Write the updated config back to file in the same format
-	var updatedData []byte
-	switch format {
-	case "toml":
-		updatedData, err = toml.Marshal(persistedCfg)
-		if err != nil {
-			return fmt.Errorf("failed to marshal TOML config: %w", err)
-		}
-	default:
-		updatedData, err = json.MarshalIndent(persistedCfg, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal JSON config: %w", err)
-		}
+	afterFileTree, err := configFileTree(userCfg, format)
+	if err != nil {
+		return fmt.Errorf("failed to inspect configuration after write: %w", err)
+	}
+	persistedFileTree, err := configFileTree(persistedCfg, format)
+	if err != nil {
+		return fmt.Errorf("failed to render configuration for write: %w", err)
 	}
 
+	// Apply only what the mutation changed to the file's own tree.
+	mergeConfigChanges(rawTree, beforeFileTree, afterFileTree, persistedFileTree)
 	if !isGlobal {
-		if updatedData, err = stripTelemetryKey(updatedData, format); err != nil {
-			return fmt.Errorf("failed to strip telemetry section from config: %w", err)
-		}
+		deleteInsensitive(rawTree, "telemetry")
+	}
+
+	updatedData, err := marshalConfigFileTree(rawTree, format)
+	if err != nil {
+		return err
 	}
 
 	if err := os.WriteFile(configFile, updatedData, 0o644); err != nil {
@@ -4006,37 +4019,6 @@ func resolveGlobalConfigFilePath() (string, error) {
 	}
 
 	return "", nil
-}
-
-// stripTelemetryKey removes the top-level "telemetry" (JSON) / "Telemetry"
-// (TOML) key from already-marshaled config bytes, by decoding into a
-// generic map, deleting the key, and re-marshaling — the one representation
-// both encoding/json and go-toml/v2 reliably omit an absent key from,
-// unlike a zero-valued (but still present) struct field. Used by
-// updateConfigFileAt whenever the file being written is not the GLOBAL
-// config file (see its telemetry-stripping guard for why: telemetry must
-// never be persisted to a project-local file). Re-marshaling from a map
-// means the rest of the file's keys come out in the map's (alphabetically
-// sorted, for both libraries) order rather than Config's declared field
-// order — an accepted cosmetic trade-off, since this write path already
-// fully rewrites the file from the in-memory struct on every call and
-// never preserves the original file's formatting/comments either way.
-func stripTelemetryKey(data []byte, format string) ([]byte, error) {
-	var m map[string]any
-	switch format {
-	case "toml":
-		if err := toml.Unmarshal(data, &m); err != nil {
-			return nil, fmt.Errorf("failed to re-parse TOML: %w", err)
-		}
-		delete(m, "Telemetry")
-		return toml.Marshal(m)
-	default:
-		if err := json.Unmarshal(data, &m); err != nil {
-			return nil, fmt.Errorf("failed to re-parse JSON: %w", err)
-		}
-		delete(m, "telemetry")
-		return json.MarshalIndent(m, "", "  ")
-	}
 }
 
 // isGlobalConfigFilePath reports whether path is (or, resolved the same way
