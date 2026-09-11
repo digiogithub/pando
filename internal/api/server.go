@@ -26,6 +26,7 @@ import (
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/design/preview"
 	"github.com/digiogithub/pando/internal/extensions"
+	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
 	"github.com/digiogithub/pando/internal/logging"
 )
 
@@ -47,7 +48,9 @@ type ServerConfig struct {
 	StartupMode string
 
 	// IPC identity fields populated by Bootstrap so the /api/ipc/status
-	// endpoint can report them without re-reading the lock file.
+	// endpoint can report them without re-reading the lock file. Role is also
+	// passed to app.New as AppOptions.IPCRole, so only the IPC primary starts
+	// the primary-only background services (empty: inferred from Querier).
 	InstanceID string
 	Role       string
 	PubPort    int
@@ -104,7 +107,11 @@ type Server struct {
 }
 
 func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
-	appOpts := app.AppOptions{DBQuerier: cfg.Querier, StartupMode: cfg.StartupMode}
+	appOpts := app.AppOptions{
+		DBQuerier:   cfg.Querier,
+		StartupMode: cfg.StartupMode,
+		IPCRole:     ipcruntime.Role(cfg.Role),
+	}
 	application, err := app.New(ctx, cfg.DB, appOpts)
 	if err != nil {
 		return nil, err

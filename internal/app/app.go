@@ -165,6 +165,22 @@ type App struct {
 	// shutdown is then refused.
 	ipcHandedOver bool
 
+	// ---- Primary-only background services (see primary_services.go) ----
+
+	// lifetimeCtx is the context New was called with. Primary-only services
+	// run on it whether they start in New or on a later promotion, so a
+	// promotion (which runs on the failover watcher's goroutine and context)
+	// never ties them to a context that ends early. Shutdown stops them
+	// through watcherCancelFuncs/watcherWG and CronService.Stop either way.
+	lifetimeCtx context.Context
+	// primarySvcMu guards the fields below. startPrimaryServices holds it
+	// while starting, so Shutdown (closePrimaryServices) can never observe a
+	// half-started set and then wait on watcherWG while a start still Adds.
+	primarySvcMu      sync.Mutex
+	primarySvcs       []primaryService
+	primarySvcStarted bool
+	primarySvcClosed  bool
+
 	// ---- Secondary-only IPC context (set via SetIPCSecondaryContext) ----
 
 	// ipcClient is the ZMQ client used by secondary instances. It is owned by
@@ -271,6 +287,13 @@ type AppOptions struct {
 	// When non-nil this querier is used instead of db.New(conn).
 	// Primary instances leave this nil; secondary instances pass a dbproxy.DBProxy.
 	DBQuerier db.Querier
+	// IPCRole is the IPC role this process took at bootstrap
+	// (ipcruntime.RolePrimary or RoleSecondary). It gates the primary-only
+	// background services (see startPrimaryServices): a secondary defers them
+	// until it is promoted. When empty, New infers the role: secondary when
+	// DBQuerier is a remote *dbproxy.DBProxy, primary otherwise, so callers
+	// without IPC (tests, one-shot CLIs) keep running every service.
+	IPCRole ipcruntime.Role
 }
 
 // findFreePort returns the first available TCP port starting at preferred, trying
@@ -329,6 +352,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		UserInput:      userinput.NewService(),
 		DBQuerier:      q,
 		rwConn:         conn,
+		lifetimeCtx:    ctx,
 		Projects:       projects,
 		LSPClients:     make(map[string]*lsp.Client),
 		lspSpawning:    make(map[string]struct{}),
@@ -421,20 +445,20 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			app.Remembrances = remembrances
 			if remembrances != nil {
 				logging.Info("Remembrances service initialized", "startup_mode", opt.StartupMode)
-				app.initRemembrancesProjectIndexing(ctx, remembrances, &cfg.Remembrances, opt.StartupMode)
-				app.initRemembrancesKBSync(ctx, remembrances, &cfg.Remembrances)
-				app.initKBLinkBackfill(ctx, remembrances)
+				app.initRemembrancesProjectIndexing(remembrances, &cfg.Remembrances, opt.StartupMode)
+				app.initRemembrancesKBSync(remembrances, &cfg.Remembrances)
+				app.initKBLinkBackfill(remembrances)
 				app.initRemembrancesSessionIndexing(ctx, remembrances, &cfg.Remembrances)
 
 				// One-off cleanup of ctxenrich-* sessions accumulated by a version of
 				// the enrichment agent loop that never deleted its own sessions (see
 				// [[pando/fixes/context_enricher_agent_loop_first_event.md]]). Only the
-				// instance with direct DB access runs it (remembrancesProxy == nil): a
-				// secondary would just proxy every one of these over IPC for rows the
-				// primary has usually already cleaned up.
-				if remembrancesProxy == nil {
+				// IPC primary runs it (at startup, or when promoted): a secondary
+				// would just proxy every one of these over IPC for rows the primary
+				// has usually already cleaned up.
+				app.registerPrimaryService("enrichment-session-cleanup", func(context.Context) {
 					go app.cleanupLeftoverEnrichmentSessions(context.Background())
-				}
+				})
 
 				// Initialize context enricher if enabled: searches KB and code index
 				// before every user prompt and prepends relevant context.
@@ -535,7 +559,8 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 					)
 				}
 
-				// Memory GC service — periodically marks expired memories as outdated.
+				// Memory GC service — periodically marks expired memories as
+				// outdated. Primary-only: one GC per project is enough.
 				if cfg.Remembrances.MemoryEnabled && remembrances.KB != nil {
 					gcInterval := time.Hour
 					if cfg.Remembrances.MemoryGCInterval != "" {
@@ -544,16 +569,18 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 						}
 					}
 					gcSvc := kb.NewMemoryGCService(remembrances.KB, gcInterval)
-					gcCtx, gcCancel := context.WithCancel(ctx)
-					app.cancelFuncsMutex.Lock()
-					app.watcherCancelFuncs = append(app.watcherCancelFuncs, gcCancel)
-					app.cancelFuncsMutex.Unlock()
-					app.watcherWG.Add(1)
-					go func() {
-						defer app.watcherWG.Done()
-						gcSvc.Start(gcCtx)
-					}()
-					logging.Info("remembrances: memory GC service started", "interval", gcInterval)
+					app.registerPrimaryService("memory-gc", func(ctx context.Context) {
+						gcCtx, gcCancel := context.WithCancel(ctx)
+						app.cancelFuncsMutex.Lock()
+						app.watcherCancelFuncs = append(app.watcherCancelFuncs, gcCancel)
+						app.cancelFuncsMutex.Unlock()
+						app.watcherWG.Add(1)
+						go func() {
+							defer app.watcherWG.Done()
+							gcSvc.Start(gcCtx)
+						}()
+						logging.Info("remembrances: memory GC service started", "interval", gcInterval)
+					})
 				}
 			}
 		}
@@ -701,9 +728,20 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		} else {
 			app.MesnadaOrchestrator = orch
 			app.CronService = cronjob.NewService(orch, cfg.WorkingDir, nil)
-			if err := app.CronService.Start(ctx, cfg.CronJobs); err != nil {
-				logging.Error("Failed to start cronjob service", "error", err)
-			}
+			// The scheduler is primary-only, so every job fires once per
+			// project instead of once per process. A secondary keeps the
+			// (unstarted) service for explicit actions: ListJobs and RunNow
+			// read the live configuration while it is not scheduling.
+			cronSvc := app.CronService
+			app.registerPrimaryService("cron", func(ctx context.Context) {
+				jobs := config.CronJobsConfig{}
+				if c := config.Get(); c != nil {
+					jobs = c.CronJobs
+				}
+				if err := cronSvc.Start(ctx, jobs); err != nil {
+					logging.Error("Failed to start cronjob service", "error", err)
+				}
+			})
 
 			// Initialize ACP handler if ACP server is enabled
 			var acpHandler *mesnadaServer.ACPHandler
@@ -946,6 +984,10 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	provider.SetRequestDecorator(extensions.ProviderRequestDecorator(app.Extensions))
 	app.startExtensionEventFanout(ctx)
 	app.startExtensionMemoryHooks(cfg)
+
+	// Start the primary-only background services now, or defer them until a
+	// failover promotion when this process is an IPC secondary.
+	app.applyStartupIPCRole(resolveIPCRole(opt), opt.StartupMode)
 
 	logging.Debug("App created", "workingDir", config.WorkingDirectory())
 	return app, nil
@@ -2571,7 +2613,10 @@ func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
 		app.ipcWatcher.SetPrimaryBus(bus)
 	}
 	app.reannounceAsPrimary()
-	app.startPrimaryServices(primaryCtx)
+	// The primary-only background services run on the app's lifetime
+	// context, not on primaryCtx or the watcher's ctx; a no-op when they
+	// already run (e.g. a spurious promotion of a primary).
+	app.startPrimaryServices("promotion")
 
 	// Publish instance.promoted so other secondaries reset their heartbeat timers.
 	if err := bus.Publish(protocol.TopicInstancePromoted, protocol.PromotedPayload{
@@ -2617,16 +2662,6 @@ func (app *App) reannounceAsPrimary() {
 		logging.Warn("failover: failed to re-announce as primary", "error", err)
 	}
 }
-
-// startPrimaryServices is the hook for background services only the primary
-// should run once it owns the database (startup code index + fsnotify watcher,
-// KB mirror/auto-import, KB link backfill, memory GC, cron).
-//
-// TODO(P3, pando/plans/mcp_server_ipc_bootstrap.md §5.4): app.New still starts
-// those services for every role, so a promoted secondary already runs them and
-// there is nothing to start here yet. P3 moves them behind this hook and calls
-// it from New (primary) and from PromoteToPrimary.
-func (app *App) startPrimaryServices(context.Context) {}
 
 // releasePrimaryRole performs a primary's ordered handover, the first thing
 // Shutdown does:
@@ -2683,6 +2718,9 @@ func (app *App) Shutdown() {
 	logging.Debug("App shutdown started")
 	// Hand the IPC primary role over before anything slow below runs.
 	app.releasePrimaryRole()
+	// No primary-only service may start from here on (a promotion racing the
+	// shutdown), so the watcherWG.Wait below never races a new Add.
+	app.closePrimaryServices()
 	// Releases the shared headless browser the design tools render through.
 	design.ClosePreviewServer()
 	design.CloseDefaultProvider()

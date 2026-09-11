@@ -13,7 +13,12 @@ import (
 	rag "github.com/digiogithub/pando/internal/rag"
 )
 
-func (app *App) initRemembrancesProjectIndexing(ctx context.Context, svc *rag.RemembrancesService, cfg *config.RemembrancesConfig, startupMode string) {
+// initRemembrancesProjectIndexing resolves this project's code-index project id
+// (every role: the context enricher built later in New reads it from cfg) and
+// registers the primary-only startup index + fsnotify watcher (see
+// primary_services.go), so one process per project indexes and watches the
+// tree instead of every process reindexing each changed file.
+func (app *App) initRemembrancesProjectIndexing(svc *rag.RemembrancesService, cfg *config.RemembrancesConfig, startupMode string) {
 	if svc == nil || svc.Code == nil || cfg == nil || !cfg.Enabled {
 		return
 	}
@@ -63,29 +68,31 @@ func (app *App) initRemembrancesProjectIndexing(ctx context.Context, svc *rag.Re
 		cfg.ContextEnrichmentCodeProject = projectID
 	}
 
-	logging.Info("remembrances code: startup indexing scheduled",
-		"project_id", projectID,
-		"path", rootPath,
-		"startup_mode", startupMode,
-	)
+	app.registerPrimaryService("code-index-watcher", func(ctx context.Context) {
+		logging.Info("remembrances code: startup indexing scheduled",
+			"project_id", projectID,
+			"path", rootPath,
+			"startup_mode", startupMode,
+		)
 
-	indexCtx, cancel := context.WithCancel(ctx)
-	app.cancelFuncsMutex.Lock()
-	app.watcherCancelFuncs = append(app.watcherCancelFuncs, cancel)
-	app.cancelFuncsMutex.Unlock()
+		indexCtx, cancel := context.WithCancel(ctx)
+		app.cancelFuncsMutex.Lock()
+		app.watcherCancelFuncs = append(app.watcherCancelFuncs, cancel)
+		app.cancelFuncsMutex.Unlock()
 
-	app.watcherWG.Add(1)
-	go func() {
-		defer app.watcherWG.Done()
-		if err := app.runStartupProjectIndex(indexCtx, svc, projectID, rootPath, startupMode); err != nil && !errors.Is(err, context.Canceled) {
-			logging.Error("remembrances code: startup indexing failed",
-				"project_id", projectID,
-				"path", rootPath,
-				"startup_mode", startupMode,
-				"error", err,
-			)
-		}
-	}()
+		app.watcherWG.Add(1)
+		go func() {
+			defer app.watcherWG.Done()
+			if err := app.runStartupProjectIndex(indexCtx, svc, projectID, rootPath, startupMode); err != nil && !errors.Is(err, context.Canceled) {
+				logging.Error("remembrances code: startup indexing failed",
+					"project_id", projectID,
+					"path", rootPath,
+					"startup_mode", startupMode,
+					"error", err,
+				)
+			}
+		}()
+	})
 }
 
 func (app *App) runStartupProjectIndex(ctx context.Context, svc *rag.RemembrancesService, projectID, rootPath, startupMode string) error {

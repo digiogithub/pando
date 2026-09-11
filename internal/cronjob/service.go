@@ -26,6 +26,18 @@ type Service struct {
 	reloadCh     chan config.ConfigChangeEvent
 	reloadCancel context.CancelFunc
 	broker       *pubsub.Broker[CronJobFiredPayload]
+	// configJobs returns the live cron configuration. ListJobs and RunNow
+	// read it while the scheduler is not started: only the IPC primary starts
+	// it, and a secondary still lists and runs jobs on explicit request.
+	configJobs func() config.CronJobsConfig
+}
+
+// liveConfigJobs reads the cron jobs from the process configuration.
+func liveConfigJobs() config.CronJobsConfig {
+	if c := config.Get(); c != nil {
+		return c.CronJobs
+	}
+	return config.CronJobsConfig{}
 }
 
 func NewService(orchestrator OrchestratorClient, workDir string, logger *slog.Logger) *Service {
@@ -34,13 +46,14 @@ func NewService(orchestrator OrchestratorClient, workDir string, logger *slog.Lo
 	}
 	broker := pubsub.NewBroker[CronJobFiredPayload]()
 	return &Service{
-		entryIDs: make(map[string]cron.EntryID),
-		runner:   newRunner(orchestrator, workDir, logger, broker),
-		logger:   logger,
-		cron:     cron.New(cron.WithParser(cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow))),
-		cfg:      config.CronJobsConfig{},
-		started:  false,
-		broker:   broker,
+		entryIDs:   make(map[string]cron.EntryID),
+		runner:     newRunner(orchestrator, workDir, logger, broker),
+		logger:     logger,
+		cron:       cron.New(cron.WithParser(cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow))),
+		cfg:        config.CronJobsConfig{},
+		started:    false,
+		broker:     broker,
+		configJobs: liveConfigJobs,
 	}
 }
 
@@ -71,7 +84,9 @@ func (s *Service) Start(ctx context.Context, cfg config.CronJobsConfig) error {
 	s.reloadCancel = cancel
 	s.reloadCh = make(chan config.ConfigChangeEvent, 8)
 	config.Bus.Subscribe(s.reloadCh)
-	go s.watchConfigChanges(reloadCtx)
+	// The goroutine gets the channel itself: Stop clears s.reloadCh under
+	// s.mu, which the goroutine does not hold.
+	go s.watchConfigChanges(reloadCtx, s.reloadCh)
 	return nil
 }
 
@@ -93,6 +108,11 @@ func (s *Service) Stop() {
 	select {
 	case <-ctx.Done():
 	case <-time.After(5 * time.Second):
+	}
+	// Remove the entries too, so a later Start does not schedule every job a
+	// second time on the same cron instance.
+	for _, entryID := range s.entryIDs {
+		s.cron.Remove(entryID)
 	}
 	s.entryIDs = make(map[string]cron.EntryID)
 	s.cfg = config.CronJobsConfig{}
@@ -121,8 +141,9 @@ func (s *Service) RunNow(ctx context.Context, name string) (*mesnadamodels.Task,
 func (s *Service) ListJobs() []JobStatus {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	jobs := make([]JobStatus, 0, len(s.cfg.Jobs))
-	for _, job := range s.cfg.Jobs {
+	cfg := s.jobsLocked()
+	jobs := make([]JobStatus, 0, len(cfg.Jobs))
+	for _, job := range cfg.Jobs {
 		status := JobStatus{CronJob: job}
 		if entryID, ok := s.entryIDs[job.Name]; ok {
 			status.NextRun = s.cron.Entry(entryID).Next
@@ -141,6 +162,12 @@ type JobStatus struct {
 func (s *Service) reloadLocked(cfg config.CronJobsConfig) error {
 	if err := config.ValidateCronJobsConfig(cfg); err != nil {
 		return err
+	}
+	if !s.started {
+		// Not scheduling (an IPC secondary, or before Start): nothing to
+		// reschedule, and ListJobs/RunNow read the live configuration. Adding
+		// entries here would make a later Start schedule every job twice.
+		return nil
 	}
 	s.cfg = cloneCronJobsConfig(cfg)
 	for _, entryID := range s.entryIDs {
@@ -175,12 +202,12 @@ func (s *Service) scheduleLocked() error {
 	return nil
 }
 
-func (s *Service) watchConfigChanges(ctx context.Context) {
+func (s *Service) watchConfigChanges(ctx context.Context, reloadCh <-chan config.ConfigChangeEvent) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case ev, ok := <-s.reloadCh:
+		case ev, ok := <-reloadCh:
 			if !ok {
 				return
 			}
@@ -198,8 +225,17 @@ func (s *Service) watchConfigChanges(ctx context.Context) {
 	}
 }
 
+// jobsLocked is the job set ListJobs and RunNow use: the scheduled one while
+// started, otherwise the live configuration. Requires s.mu.
+func (s *Service) jobsLocked() config.CronJobsConfig {
+	if s.started || s.configJobs == nil {
+		return s.cfg
+	}
+	return s.configJobs()
+}
+
 func (s *Service) jobByNameLocked(name string) (config.CronJob, bool) {
-	for _, job := range s.cfg.Jobs {
+	for _, job := range s.jobsLocked().Jobs {
 		if strings.EqualFold(job.Name, name) {
 			return normalizeJob(job), true
 		}

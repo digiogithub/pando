@@ -226,7 +226,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		conn := rt.SQLDB
 		logging.Debug("Database connected")
 
-		pandoApp, err := app.New(ctx, conn, app.AppOptions{DBQuerier: rt.Querier, StartupMode: "tui"})
+		pandoApp, err := app.New(ctx, conn, app.AppOptions{DBQuerier: rt.Querier, IPCRole: rt.Role, StartupMode: "tui"})
 		if err != nil {
 			logging.Error("Failed to create app: %v", err)
 			return err
@@ -559,7 +559,7 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 
 	// Create app with all services (sessions, messages, agent, etc.).
 	// LSP is skipped: in ACP stdio mode the editor manages its own language servers.
-	pandoApp, err := app.New(ctx, conn, app.AppOptions{SkipLSP: true, DBQuerier: rt.Querier, StartupMode: "acp"})
+	pandoApp, err := app.New(ctx, conn, app.AppOptions{SkipLSP: true, DBQuerier: rt.Querier, IPCRole: rt.Role, StartupMode: "acp"})
 	if err != nil {
 		return fmt.Errorf("failed to initialize app: %w", err)
 	}
@@ -588,15 +588,9 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 	sessionAdapter := &acpSessionAdapter{svc: pandoApp.Sessions, msgSvc: pandoApp.Messages, q: pandoApp.DBQuerier}
 	permAdapter := &acpPermissionAdapter{svc: pandoApp.Permissions}
 
-	// Start the CronService in ACP mode so headless background jobs run even
-	// when Pando is used as an IDE extension without the TUI.
-	if pandoApp.CronService != nil && cfg.CronJobs.Enabled {
-		if err := pandoApp.CronService.Start(ctx, cfg.CronJobs); err != nil {
-			logging.Warn("cronjob: failed to start in ACP mode", "error", err)
-		} else {
-			defer pandoApp.CronService.Stop()
-		}
-	}
+	// The CronService is started by app.New itself, once and only on the IPC
+	// primary (a promoted ACP secondary starts it on promotion), and stopped
+	// by pandoApp.Shutdown; ACP no longer starts it a second time.
 
 	pandoAgent := acpPkg.NewPandoACPAgent(
 		version.Normalize(),
@@ -616,7 +610,7 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 		return err
 	}
 	// A SIGINT/SIGTERM-triggered cancellation is a graceful shutdown (the
-	// deferred rt.Cleanup/pandoApp.Shutdown/CronService.Stop above already ran
+	// deferred rt.Cleanup/pandoApp.Shutdown above already ran
 	// the ordered handover), not a failure — matching how serve/desktop/app
 	// treat http.ErrServerClosed after their own signal-triggered Shutdown.
 	return nil

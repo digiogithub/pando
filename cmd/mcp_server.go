@@ -307,6 +307,7 @@ func bootstrapMCPServer(ctx context.Context, cwd string) (rt *ipcruntime.Bootstr
 		SkipMesnadaServer: true,
 		StartupMode:       "mcp",
 		DBQuerier:         rt.Querier,
+		IPCRole:           rt.Role,
 	})
 	if err != nil {
 		rt.Cleanup()

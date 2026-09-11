@@ -40,39 +40,48 @@ func sanitizeRemembrancesProjectID(s string) string {
 // graph instead of one that only covers documents written from now on. It runs
 // in the background because it is pure local work (no embeddings) and must not
 // delay startup. Databases with nothing to backfill exit on the first query.
-func (app *App) initKBLinkBackfill(ctx context.Context, svc *rag.RemembrancesService) {
+// Primary-only (see primary_services.go): it is registered here and started by
+// startPrimaryServices.
+func (app *App) initKBLinkBackfill(svc *rag.RemembrancesService) {
 	if svc == nil || svc.KB == nil || !svc.KB.WikiLinksEnabled() {
 		return
 	}
 
-	backfillCtx, cancel := context.WithCancel(ctx)
-	app.cancelFuncsMutex.Lock()
-	app.watcherCancelFuncs = append(app.watcherCancelFuncs, cancel)
-	app.cancelFuncsMutex.Unlock()
+	app.registerPrimaryService("kb-link-backfill", func(ctx context.Context) {
+		backfillCtx, cancel := context.WithCancel(ctx)
+		app.cancelFuncsMutex.Lock()
+		app.watcherCancelFuncs = append(app.watcherCancelFuncs, cancel)
+		app.cancelFuncsMutex.Unlock()
 
-	app.watcherWG.Add(1)
-	go func() {
-		defer app.watcherWG.Done()
-		stats, err := svc.KB.BackfillLinks(backfillCtx)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
+		app.watcherWG.Add(1)
+		go func() {
+			defer app.watcherWG.Done()
+			stats, err := svc.KB.BackfillLinks(backfillCtx)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return
+				}
+				logging.Error("remembrances kb: wiki link backfill failed", "error", err)
 				return
 			}
-			logging.Error("remembrances kb: wiki link backfill failed", "error", err)
-			return
-		}
-		if stats.Links == 0 {
-			return
-		}
-		logging.Info("remembrances kb: wiki link backfill completed",
-			"documents", stats.Documents,
-			"links", stats.Links,
-			"scanned", stats.Scanned,
-		)
-	}()
+			if stats.Links == 0 {
+				return
+			}
+			logging.Info("remembrances kb: wiki link backfill completed",
+				"documents", stats.Documents,
+				"links", stats.Links,
+				"scanned", stats.Scanned,
+			)
+		}()
+	})
 }
 
-func (app *App) initRemembrancesKBSync(ctx context.Context, svc *rag.RemembrancesService, cfg *config.RemembrancesConfig) {
+// initRemembrancesKBSync configures the KB filesystem mirror and document
+// converter for this process (every role: they shape this process's own KB
+// writes) and registers the primary-only KB auto-import and directory watcher
+// (see primary_services.go), so the KB directory is imported and watched once
+// per project instead of once per process.
+func (app *App) initRemembrancesKBSync(svc *rag.RemembrancesService, cfg *config.RemembrancesConfig) {
 	if svc == nil || svc.KB == nil || cfg == nil {
 		return
 	}
@@ -100,62 +109,66 @@ func (app *App) initRemembrancesKBSync(ctx context.Context, svc *rag.Remembrance
 	}
 
 	if cfg.KBAutoImport {
-		logging.WarnPersist("KB import/index started in background", "path", kbPath)
-		importCtx, importCancel := context.WithCancel(ctx)
-		app.cancelFuncsMutex.Lock()
-		app.watcherCancelFuncs = append(app.watcherCancelFuncs, importCancel)
-		app.cancelFuncsMutex.Unlock()
+		app.registerPrimaryService("kb-auto-import", func(ctx context.Context) {
+			logging.WarnPersist("KB import/index started in background", "path", kbPath)
+			importCtx, importCancel := context.WithCancel(ctx)
+			app.cancelFuncsMutex.Lock()
+			app.watcherCancelFuncs = append(app.watcherCancelFuncs, importCancel)
+			app.cancelFuncsMutex.Unlock()
 
-		app.watcherWG.Add(1)
-		go func() {
-			defer app.watcherWG.Done()
-			stats, err := svc.KB.SyncDirectoryWithStats(importCtx, kbPath, true)
-			if err != nil {
-				logging.ErrorPersist("KB import/index failed", "path", kbPath, "error", err)
-				logging.Error("remembrances kb: initial import failed", "path", kbPath, "error", err)
-				return
-			}
-			summary := fmt.Sprintf("KB import/index completed (%d scanned, %d added, %d updated, %d unchanged, %d deleted)",
-				stats.Scanned,
-				stats.Added,
-				stats.Updated,
-				stats.Unchanged,
-				stats.Deleted,
-			)
-			// Mentioned only when the imported documents use the syntax, so a KB
-			// without wiki links logs exactly the line it logged before.
-			if stats.LinksIndexed > 0 {
-				summary = fmt.Sprintf("%s — %d wiki links indexed", summary, stats.LinksIndexed)
-			}
-			logging.WarnPersist(summary, "path", kbPath)
-			logging.Info("remembrances kb: initial import completed",
-				"path", kbPath,
-				"scanned", stats.Scanned,
-				"added", stats.Added,
-				"updated", stats.Updated,
-				"unchanged", stats.Unchanged,
-				"deleted", stats.Deleted,
-				"links_indexed", stats.LinksIndexed,
-			)
-		}()
+			app.watcherWG.Add(1)
+			go func() {
+				defer app.watcherWG.Done()
+				stats, err := svc.KB.SyncDirectoryWithStats(importCtx, kbPath, true)
+				if err != nil {
+					logging.ErrorPersist("KB import/index failed", "path", kbPath, "error", err)
+					logging.Error("remembrances kb: initial import failed", "path", kbPath, "error", err)
+					return
+				}
+				summary := fmt.Sprintf("KB import/index completed (%d scanned, %d added, %d updated, %d unchanged, %d deleted)",
+					stats.Scanned,
+					stats.Added,
+					stats.Updated,
+					stats.Unchanged,
+					stats.Deleted,
+				)
+				// Mentioned only when the imported documents use the syntax, so a KB
+				// without wiki links logs exactly the line it logged before.
+				if stats.LinksIndexed > 0 {
+					summary = fmt.Sprintf("%s — %d wiki links indexed", summary, stats.LinksIndexed)
+				}
+				logging.WarnPersist(summary, "path", kbPath)
+				logging.Info("remembrances kb: initial import completed",
+					"path", kbPath,
+					"scanned", stats.Scanned,
+					"added", stats.Added,
+					"updated", stats.Updated,
+					"unchanged", stats.Unchanged,
+					"deleted", stats.Deleted,
+					"links_indexed", stats.LinksIndexed,
+				)
+			}()
+		})
 	}
 
 	if !cfg.KBWatch {
 		return
 	}
 
-	watchCtx, cancel := context.WithCancel(ctx)
-	app.cancelFuncsMutex.Lock()
-	app.watcherCancelFuncs = append(app.watcherCancelFuncs, cancel)
-	app.cancelFuncsMutex.Unlock()
+	app.registerPrimaryService("kb-watch", func(ctx context.Context) {
+		watchCtx, cancel := context.WithCancel(ctx)
+		app.cancelFuncsMutex.Lock()
+		app.watcherCancelFuncs = append(app.watcherCancelFuncs, cancel)
+		app.cancelFuncsMutex.Unlock()
 
-	app.watcherWG.Add(1)
-	go func() {
-		defer app.watcherWG.Done()
-		if err := svc.KB.WatchDirectory(watchCtx, kbPath); err != nil {
-			logging.Error("remembrances kb: watcher exited with error", "path", kbPath, "error", err)
-		}
-	}()
+		app.watcherWG.Add(1)
+		go func() {
+			defer app.watcherWG.Done()
+			if err := svc.KB.WatchDirectory(watchCtx, kbPath); err != nil {
+				logging.Error("remembrances kb: watcher exited with error", "path", kbPath, "error", err)
+			}
+		}()
 
-	logging.Info("remembrances kb: filesystem sync enabled", "path", kbPath, "watch", cfg.KBWatch)
+		logging.Info("remembrances kb: filesystem sync enabled", "path", kbPath, "watch", true)
+	})
 }
