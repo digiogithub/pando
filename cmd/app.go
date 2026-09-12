@@ -15,6 +15,7 @@ import (
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/instanceregistry"
+	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/bridge"
 	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
@@ -164,8 +165,8 @@ func runAppMode(cmd *cobra.Command) error {
 		defer appCoord.Shutdown()
 		dbproxy.RegisterHandlersWithCoordinator(appBus, appCoord)
 		registerBridgeHandlers(appBus, instanceID, pandoApp)
-		if busErr := appBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
-			logging.Warn("IPC: app mode failed to start bus", "error", busErr)
+		if busErr := ipc.StartBusWithRetry(ctx, appBus, rt.PubPort, rt.RPCPort); busErr != nil {
+			logging.Error("IPC: app mode failed to start bus; this instance is primary but unreachable over IPC", "error", busErr)
 		} else {
 			appBridge := bridge.New(appBus, pandoApp.Sessions, pandoApp.CoderAgent)
 			appBridge.Start(ctx)

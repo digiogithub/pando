@@ -64,16 +64,20 @@ var ipcStatusCmd = &cobra.Command{
 		fmt.Println("IPC Status")
 		fmt.Println("----------")
 		fmt.Printf("Workdir:   %s\n", path)
-		fmt.Printf("PUB port:  %d\n", pubPort)
-		fmt.Printf("RPC port:  %d\n", rpcPort)
+		// These are the ports THIS binary would derive for the path. The ports that
+		// are actually in use are the ones the running primary recorded in the lock
+		// file below; they differ when the primary was started by a binary with a
+		// different derived port range, or when it fell back to free ports.
+		fmt.Printf("Derived PUB port:  %d\n", pubPort)
+		fmt.Printf("Derived RPC port:  %d\n", rpcPort)
 		fmt.Println()
 
 		if lockErr != nil || lockInfo == nil {
 			fmt.Println("Lock:      no active primary (lock file absent or unreadable)")
 		} else {
 			fmt.Printf("Lock:      held by instance %s (PID %d)\n", lockInfo.InstanceID, lockInfo.PID)
-			fmt.Printf("  PUB port: %d\n", lockInfo.PubPort)
-			fmt.Printf("  RPC port: %d\n", lockInfo.RPCPort)
+			fmt.Printf("  PUB port: %d (in use)\n", lockInfo.PubPort)
+			fmt.Printf("  RPC port: %d (in use)\n", lockInfo.RPCPort)
 			fmt.Printf("  Started:  %s\n", lockInfo.StartedAt.Format(time.RFC3339))
 		}
 

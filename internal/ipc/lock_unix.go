@@ -34,9 +34,12 @@ func AcquireLock(workdir, instanceID string, pubPort, rpcPort int) (isPrimary bo
 	flockErr := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if flockErr != nil {
 		_ = f.Close()
-		existing, readErr := readLockInfo(path)
+		existing, readErr := waitForLockInfoRetry(path)
 		if readErr != nil {
-			return false, nil, nil, fmt.Errorf("ipc: read existing lock info: %w", readErr)
+			// Another process demonstrably holds the lock (the flock failed) but we
+			// cannot learn its ports. Report it as a distinct error so callers do not
+			// mistake it for "no primary" and start a second writer on the same DB.
+			return false, nil, nil, fmt.Errorf("%w: read existing lock info: %w", ErrPrimaryLockHeld, readErr)
 		}
 		return false, existing, nil, nil
 	}

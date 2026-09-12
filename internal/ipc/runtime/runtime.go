@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -94,6 +95,23 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 	pubPort, rpcPort := ipc.PortsForPath(workdir)
 
 	isPrimary, lockInfo, lockFile, lockErr := ipc.AcquireLock(workdir, instanceID, pubPort, rpcPort)
+	if errors.Is(lockErr, ipc.ErrPrimaryLockHeld) {
+		// Another process holds the lock but we could not read its ports. Retry once
+		// in case we simply raced with the primary rewriting the file.
+		time.Sleep(250 * time.Millisecond)
+		isPrimary, lockInfo, lockFile, lockErr = ipc.AcquireLock(workdir, instanceID, pubPort, rpcPort)
+	}
+	if errors.Is(lockErr, ipc.ErrPrimaryLockHeld) {
+		// Never fall through to the primary branch here: that would open a second
+		// read-write connection to a database another process already owns.
+		logging.Error("IPC: another instance holds the lock but its lock file is unreadable; refusing to start a second primary",
+			"workdir", workdir,
+			"lock_file", filepath.Join(workdir, ".pando", "ipc.lock"),
+			"error", lockErr,
+			"hint", "if no other pando process is running for this directory, delete .pando/ipc.lock",
+		)
+		return nil, fmt.Errorf("ipc/runtime: %w", lockErr)
+	}
 	if lockErr != nil {
 		logging.Warn("IPC lock acquisition failed, continuing as primary without IPC", "error", lockErr)
 	}
@@ -227,10 +245,16 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 
 	// Create a failover watcher for this secondary. Auto-failover is disabled by default;
 	// the caller can enable it with Watcher.SetEnabled(true) or via --auto-failover.
+	// Use the primary's ports, not the ports derived from the path: when this
+	// watcher wins the lock race it writes them into the lock file, and the
+	// promotion path binds exactly these ports. Deriving here would publish ports
+	// that nobody listens on whenever the running primary bound different ones
+	// (an older binary with the previous 40000-60000 port range, or a primary that
+	// fell back to FindFreePorts).
 	watcher := failover.NewWatcherForSecondary(
 		failover.DefaultConfig(),
 		instanceID, workdir,
-		pubPort, rpcPort,
+		res.PubPort, res.RPCPort,
 		ipcClient,
 		pubAddr,
 		nil, // nil → defaultPromoteStub; Phase 5b will wire real promotion logic

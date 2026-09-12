@@ -4,8 +4,12 @@
 package ipc
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -46,7 +50,10 @@ func TestPortsForPathDifferentPaths(t *testing.T) {
 	}
 }
 
-// TestPortsForPathRange verifies that all ports fall within [40000, 60001).
+// TestPortsForPathRange verifies that all derived ports fall within the
+// configured window, and — more importantly — that the window stays clear of the
+// OS ephemeral ranges (Linux 32768-60999, macOS/Windows 49152-65535) and of the
+// well-known/registered ports used by common dev tooling.
 func TestPortsForPathRange(t *testing.T) {
 	testPaths := []string{
 		"/",
@@ -64,6 +71,124 @@ func TestPortsForPathRange(t *testing.T) {
 		if rpc < portBase+1 || rpc > portBase+portRange {
 			t.Errorf("path %q: RPC port %d is out of range", p, rpc)
 		}
+	}
+}
+
+// lowestEphemeralPort is the lowest port any of the three supported platforms may
+// hand out as an ephemeral/dynamic port (Linux's default ip_local_port_range).
+const lowestEphemeralPort = 32768
+
+// TestPortsForPathWindowOutsideEphemeralRange pins the constants themselves: the
+// whole window, RPC port included, must sit below the ephemeral range on every
+// platform and above the ports dev tooling commonly listens on.
+func TestPortsForPathWindowOutsideEphemeralRange(t *testing.T) {
+	if portBase < 10000 {
+		t.Errorf("portBase %d is too low; it must stay clear of well-known/registered dev ports", portBase)
+	}
+	highestDerived := portBase + portRange // max RPC port = (portBase+portRange-1)+1
+	if highestDerived >= lowestEphemeralPort {
+		t.Errorf("derived ports reach %d, which is inside the OS ephemeral range (>= %d): "+
+			"a foreign socket could own the port and the primary would fail to bind",
+			highestDerived, lowestEphemeralPort)
+	}
+	for _, forbidden := range []int{3000, 3306, 5000, 5432, 6379, 8000, 8080, 9000, 9090, 27017} {
+		if forbidden >= portBase && forbidden <= highestDerived {
+			t.Errorf("port %d used by common dev tooling falls inside the derived window [%d, %d]",
+				forbidden, portBase, highestDerived)
+		}
+	}
+}
+
+// TestAcquireLockSecondaryUsesPrimaryPortsFromLockFile is the version-skew
+// regression: a primary started by an older binary recorded ports from the old
+// 40000-60000 window. A new binary that fails to take the lock must report those
+// recorded ports, never its own freshly derived ones — otherwise it would dial
+// nothing, and (since the derived ports are free) could quietly become a second
+// primary.
+func TestAcquireLockSecondaryUsesPrimaryPortsFromLockFile(t *testing.T) {
+	dir := t.TempDir()
+
+	const oldPub, oldRPC = 47123, 47124 // ports an older binary would have derived
+	isPrimary, _, lockFile, err := AcquireLock(dir, "old-binary-primary", oldPub, oldRPC)
+	if err != nil {
+		t.Fatalf("AcquireLock (primary) failed: %v", err)
+	}
+	if !isPrimary {
+		t.Fatal("first instance should be primary")
+	}
+	defer ReleaseLock(lockFile)
+
+	newPub, newRPC := PortsForPath(dir)
+	if newPub == oldPub {
+		t.Fatalf("test setup: derived port %d must differ from the simulated old port", newPub)
+	}
+
+	isPrimary2, info, _, err := AcquireLock(dir, "new-binary-secondary", newPub, newRPC)
+	if err != nil {
+		t.Fatalf("AcquireLock (secondary) failed: %v", err)
+	}
+	if isPrimary2 {
+		t.Fatal("second instance must not become primary while the lock is held")
+	}
+	if info == nil {
+		t.Fatal("secondary got no LockInfo; it would not know where the primary listens")
+	}
+	if info.PubPort != oldPub || info.RPCPort != oldRPC {
+		t.Errorf("secondary must use the primary's recorded ports %d/%d, got %d/%d",
+			oldPub, oldRPC, info.PubPort, info.RPCPort)
+	}
+}
+
+// TestAcquireLockUnreadableLockInfoIsNotPrimary verifies that a held lock whose
+// info cannot be parsed is reported as ErrPrimaryLockHeld and never as "I am
+// primary" — the one outcome that would put two writers on the same database.
+func TestAcquireLockUnreadableLockInfoIsNotPrimary(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("flock semantics differ on Windows; covered by waitForLockInfo there")
+	}
+	dir := t.TempDir()
+
+	isPrimary, _, lockFile, err := AcquireLock(dir, "primary", 20100, 20101)
+	if err != nil || !isPrimary {
+		t.Fatalf("AcquireLock (primary) failed: isPrimary=%v err=%v", isPrimary, err)
+	}
+	defer ReleaseLock(lockFile)
+
+	// Corrupt the lock file content while the flock is still held.
+	if writeErr := os.WriteFile(lockFilePath(dir), []byte("{not json"), 0o600); writeErr != nil {
+		t.Fatalf("corrupt lock file: %v", writeErr)
+	}
+
+	isPrimary2, _, _, err2 := AcquireLock(dir, "second", 20200, 20201)
+	if isPrimary2 {
+		t.Fatal("second instance became primary while another process holds the lock")
+	}
+	if !errors.Is(err2, ErrPrimaryLockHeld) {
+		t.Errorf("expected ErrPrimaryLockHeld, got %v", err2)
+	}
+}
+
+// TestStartBusWithRetryFailsLoudlyOnPortConflict verifies that a taken port
+// produces an ErrBusBindFailed instead of a silent "continuing without IPC".
+func TestStartBusWithRetryFailsLoudlyOnPortConflict(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer l.Close()
+	taken := l.Addr().(*net.TCPAddr).Port
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	bus := NewBus("bind-conflict-test")
+	startErr := StartBusWithRetry(ctx, bus, taken, taken+1)
+	if startErr == nil {
+		_ = bus.Shutdown()
+		t.Fatal("expected the bind to fail on an occupied port")
+	}
+	if !errors.Is(startErr, ErrBusBindFailed) {
+		t.Errorf("expected ErrBusBindFailed, got %v", startErr)
 	}
 }
 

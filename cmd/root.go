@@ -257,8 +257,8 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			dbproxy.RegisterHandlersWithCoordinator(bus, coord)
 			registerBridgeHandlers(bus, instanceID, pandoApp)
 			pandoApp.SetupIPC(bus)
-			if busErr := bus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
-				logging.Warn("IPC: failed to start bus, continuing without IPC", "error", busErr)
+			if busErr := ipc.StartBusWithRetry(ctx, bus, rt.PubPort, rt.RPCPort); busErr != nil {
+				logging.Error("IPC: failed to start bus; continuing as primary but unreachable over IPC", "error", busErr)
 			} else {
 				br := bridge.New(bus, pandoApp.Sessions, pandoApp.CoderAgent)
 				br.Start(ctx)
@@ -648,8 +648,8 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 		dbproxy.RegisterHandlersWithCoordinator(acpBus, acpCoord)
 		registerBridgeHandlers(acpBus, acpInstanceID, pandoApp)
 		pandoApp.SetupIPC(acpBus)
-		if busErr := acpBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
-			logger.Printf("IPC: ACP bus failed to start (instances browser will not see this instance): %v", busErr)
+		if busErr := ipc.StartBusWithRetry(ctx, acpBus, rt.PubPort, rt.RPCPort); busErr != nil {
+			logging.Error("IPC: ACP bus failed to start; this instance is primary but unreachable over IPC (it will not appear in the instances browser)", "error", busErr)
 		} else {
 			acpBridge := bridge.New(acpBus, pandoApp.Sessions, pandoApp.CoderAgent)
 			acpBridge.Start(ctx)

@@ -36,6 +36,10 @@ workflow:
 id_allocation:
   strategy: scan
   write_counters: true
+  counters:
+    milestone: 2
+    epic: 7
+    story: 29
 priorities:
   - critical
   - high

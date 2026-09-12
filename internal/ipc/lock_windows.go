@@ -29,7 +29,9 @@ func AcquireLock(workdir, instanceID string, pubPort, rpcPort int) (isPrimary bo
 		if os.IsExist(openErr) {
 			existing, readErr := waitForLockInfo(path)
 			if readErr != nil {
-				return false, nil, nil, fmt.Errorf("ipc: read existing lock info: %w", readErr)
+				// Another process holds the lock but we cannot learn its ports; see
+				// the same branch in lock_unix.go.
+				return false, nil, nil, fmt.Errorf("%w: read existing lock info: %w", ErrPrimaryLockHeld, readErr)
 			}
 			return false, existing, nil, nil
 		}

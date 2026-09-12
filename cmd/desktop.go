@@ -18,6 +18,7 @@ import (
 	"github.com/digiogithub/pando/internal/design"
 	"github.com/digiogithub/pando/internal/desktop"
 	"github.com/digiogithub/pando/internal/instanceregistry"
+	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/bridge"
 	"github.com/digiogithub/pando/internal/ipc/changepub"
 	"github.com/digiogithub/pando/internal/ipc/dbproxy"
@@ -164,8 +165,8 @@ func runDesktopMode(cmd *cobra.Command) error {
 		desktopCoord.SetPublisher(desktopPub)
 		dbproxy.RegisterHandlersWithCoordinator(desktopBus, desktopCoord)
 		registerBridgeHandlers(desktopBus, instanceID, pandoApp)
-		if busErr := desktopBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
-			logging.Warn("IPC: desktop mode failed to start bus", "error", busErr)
+		if busErr := ipc.StartBusWithRetry(ctx, desktopBus, rt.PubPort, rt.RPCPort); busErr != nil {
+			logging.Error("IPC: desktop mode failed to start bus; this instance is primary but unreachable over IPC", "error", busErr)
 		} else {
 			desktopBridge := bridge.New(desktopBus, pandoApp.Sessions, pandoApp.CoderAgent)
 			desktopBridge.Start(ctx)

@@ -13,6 +13,7 @@ import (
 	"github.com/digiogithub/pando/internal/api"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/instanceregistry"
+	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/bridge"
 	"github.com/digiogithub/pando/internal/ipc/changepub"
 	"github.com/digiogithub/pando/internal/ipc/dbproxy"
@@ -169,8 +170,8 @@ This is the backend for the Pando Desktop/Web UI.`,
 			serveCoord.SetPublisher(servePub)
 			dbproxy.RegisterHandlersWithCoordinator(serveBus, serveCoord)
 			registerBridgeHandlers(serveBus, instanceID, pandoApp)
-			if busErr := serveBus.Start(ctx, rt.PubPort, rt.RPCPort); busErr != nil {
-				logging.Warn("IPC: serve mode failed to start bus", "error", busErr)
+			if busErr := ipc.StartBusWithRetry(ctx, serveBus, rt.PubPort, rt.RPCPort); busErr != nil {
+				logging.Error("IPC: serve mode failed to start bus; this instance is primary but unreachable over IPC", "error", busErr)
 			} else {
 				serveBridge := bridge.New(serveBus, pandoApp.Sessions, pandoApp.CoderAgent)
 				serveBridge.Start(ctx)

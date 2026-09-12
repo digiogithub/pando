@@ -2399,7 +2399,10 @@ func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
 			return fmt.Errorf("failover: bus setup: %w", setupErr)
 		}
 	}
-	if startErr := bus.Start(ctx, app.ipcPubPort, app.ipcRPCPort); startErr != nil {
+	// Bind the ports recorded by the outgoing primary (see SetIPCSecondaryContext),
+	// not the ports derived from the path: existing secondaries are already dialling
+	// those and an older primary may have derived them from the previous port range.
+	if startErr := ipc.StartBusWithRetry(ctx, bus, app.ipcPubPort, app.ipcRPCPort); startErr != nil {
 		_ = rwConn.Close()
 		return fmt.Errorf("failover: start bus: %w", startErr)
 	}
