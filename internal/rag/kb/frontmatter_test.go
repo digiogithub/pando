@@ -216,3 +216,244 @@ func TestStripFrontMatter_NoFrontMatter(t *testing.T) {
 		t.Errorf("expected raw returned as-is")
 	}
 }
+
+func TestParseFrontMatterWithRaw_Scalars(t *testing.T) {
+	raw := "---\nstatus: backlog\ncount: 3\nratio: 1.5\nactive: true\n---\nBody"
+	fm, rawFM, body, err := ParseFrontMatterWithRaw(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if body != "Body" {
+		t.Errorf("unexpected body: %q", body)
+	}
+	if fm.Tags != nil {
+		t.Errorf("expected no typed tags, got %v", fm.Tags)
+	}
+	if rawFM["status"] != "backlog" {
+		t.Errorf("expected status=backlog, got %v", rawFM["status"])
+	}
+	if rawFM["count"] != 3 {
+		t.Errorf("expected count=3, got %v (%T)", rawFM["count"], rawFM["count"])
+	}
+	if rawFM["ratio"] != 1.5 {
+		t.Errorf("expected ratio=1.5, got %v", rawFM["ratio"])
+	}
+	if rawFM["active"] != true {
+		t.Errorf("expected active=true, got %v", rawFM["active"])
+	}
+}
+
+func TestParseFrontMatterWithRaw_Lists(t *testing.T) {
+	raw := "---\nlabels:\n  - rag\n  - kb\ntags:\n  - plan\n---\nBody"
+	fm, rawFM, _, err := ParseFrontMatterWithRaw(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fm.Tags) != 1 || fm.Tags[0] != "plan" {
+		t.Errorf("expected typed tags [plan], got %v", fm.Tags)
+	}
+	labels, ok := rawFM["labels"].([]interface{})
+	if !ok || len(labels) != 2 || labels[0] != "rag" || labels[1] != "kb" {
+		t.Errorf("unexpected labels: %#v", rawFM["labels"])
+	}
+	// tags is present in the raw map too; the reserved-key filtering happens
+	// in MergeUnknownFrontMatterKeys, not in ParseFrontMatterWithRaw.
+	if _, ok := rawFM["tags"]; !ok {
+		t.Errorf("expected raw map to still contain tags key")
+	}
+}
+
+func TestParseFrontMatterWithRaw_NestedMaps(t *testing.T) {
+	raw := "---\nparent: PANDO-EP-0005\nlinks:\n  blocks: PANDO-US-0001\n  related:\n    - PANDO-US-0003\n---\nBody"
+	_, rawFM, _, err := ParseFrontMatterWithRaw(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	links, ok := rawFM["links"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected links to be a map[string]interface{}, got %T", rawFM["links"])
+	}
+	if links["blocks"] != "PANDO-US-0001" {
+		t.Errorf("unexpected blocks: %v", links["blocks"])
+	}
+	related, ok := links["related"].([]interface{})
+	if !ok || len(related) != 1 || related[0] != "PANDO-US-0003" {
+		t.Errorf("unexpected related: %#v", links["related"])
+	}
+}
+
+func TestParseFrontMatterWithRaw_EmptyBlock(t *testing.T) {
+	raw := "---\n---\nBody content"
+	fm, rawFM, body, err := ParseFrontMatterWithRaw(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !fm.CreatedAt.IsZero() {
+		t.Errorf("expected zero created_at")
+	}
+	if rawFM != nil {
+		t.Errorf("expected nil raw map for empty block, got %v", rawFM)
+	}
+	if body != "Body content" {
+		t.Errorf("unexpected body: %q", body)
+	}
+}
+
+func TestParseFrontMatterWithRaw_NoFrontMatter(t *testing.T) {
+	raw := "# No front matter\nJust text."
+	fm, rawFM, body, err := ParseFrontMatterWithRaw(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !fm.CreatedAt.IsZero() {
+		t.Errorf("expected zero created_at")
+	}
+	if rawFM != nil {
+		t.Errorf("expected nil raw map, got %v", rawFM)
+	}
+	if body != raw {
+		t.Errorf("expected body == raw, got %q", body)
+	}
+}
+
+func TestParseFrontMatterWithRaw_Unparseable(t *testing.T) {
+	// Duplicate mapping key at the top level makes this invalid YAML for
+	// gopkg.in/yaml.v3, so both unmarshal calls fail.
+	raw := "---\nstatus: backlog\nstatus: done\n---\nBody"
+	fm, rawFM, body, err := ParseFrontMatterWithRaw(raw)
+	if err == nil {
+		t.Fatalf("expected a parse error for duplicate key front matter")
+	}
+	if !fm.CreatedAt.IsZero() || fm.Tags != nil {
+		t.Errorf("expected zero FrontMatter on error, got %+v", fm)
+	}
+	if rawFM != nil {
+		t.Errorf("expected nil raw map on error, got %v", rawFM)
+	}
+	// The existing fallback: on error, body is the original raw content, so
+	// callers (sync.go) still index it as-is.
+	if body != raw {
+		t.Errorf("expected body == raw on parse error, got %q", body)
+	}
+}
+
+func TestParseFrontMatter_WrapperMatchesWithRaw(t *testing.T) {
+	raw := "---\nstatus: backlog\n---\nBody"
+	fm, body, err := ParseFrontMatter(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	wantFM, _, wantBody, wantErr := ParseFrontMatterWithRaw(raw)
+	if wantErr != nil {
+		t.Fatalf("unexpected error: %v", wantErr)
+	}
+	if body != wantBody {
+		t.Errorf("body mismatch: %q vs %q", body, wantBody)
+	}
+	if !fm.CreatedAt.Equal(wantFM.CreatedAt) {
+		t.Errorf("FrontMatter mismatch: %+v vs %+v", fm, wantFM)
+	}
+}
+
+func TestMergeUnknownFrontMatterKeys_AddsUnknownKeys(t *testing.T) {
+	meta := map[string]interface{}{
+		"source_path":       "/tmp/doc.md",
+		"source_mtime_unix": int64(123),
+		"source_format":     "markdown",
+	}
+	rawFM := map[string]interface{}{
+		"id":        "PANDO-US-0002",
+		"status":    "backlog",
+		"project":   "pando",
+		"milestone": "PANDO-M-0002",
+	}
+	merged := MergeUnknownFrontMatterKeys(meta, rawFM)
+
+	if merged["status"] != "backlog" {
+		t.Errorf("expected status=backlog, got %v", merged["status"])
+	}
+	if merged["id"] != "PANDO-US-0002" {
+		t.Errorf("expected id preserved, got %v", merged["id"])
+	}
+	if merged["project"] != "pando" {
+		t.Errorf("expected project preserved, got %v", merged["project"])
+	}
+	if merged["milestone"] != "PANDO-M-0002" {
+		t.Errorf("expected milestone preserved, got %v", merged["milestone"])
+	}
+	// Sync-owned fields are untouched.
+	if merged["source_path"] != "/tmp/doc.md" {
+		t.Errorf("expected source_path preserved, got %v", merged["source_path"])
+	}
+}
+
+func TestMergeUnknownFrontMatterKeys_ReservedKeysCannotOverwrite(t *testing.T) {
+	meta := map[string]interface{}{
+		"source_path": "/real/authoritative/path.md",
+	}
+	rawFM := map[string]interface{}{
+		"source_path": "/attacker/controlled/path.md",
+		"key":         "should-not-overwrite-memory-key",
+		"status":      "backlog",
+	}
+	merged := MergeUnknownFrontMatterKeys(meta, rawFM)
+
+	if merged["source_path"] != "/real/authoritative/path.md" {
+		t.Errorf("reserved key source_path was overwritten: %v", merged["source_path"])
+	}
+	if _, ok := merged["key"]; ok {
+		t.Errorf("reserved key 'key' should not be copied from front matter, got %v", merged["key"])
+	}
+	if merged["status"] != "backlog" {
+		t.Errorf("expected unreserved key status to be copied, got %v", merged["status"])
+	}
+}
+
+func TestMergeUnknownFrontMatterKeys_EmptyRaw(t *testing.T) {
+	meta := map[string]interface{}{"source_path": "/x.md"}
+	merged := MergeUnknownFrontMatterKeys(meta, nil)
+	if len(merged) != 1 || merged["source_path"] != "/x.md" {
+		t.Errorf("expected meta unchanged for nil rawFM, got %v", merged)
+	}
+}
+
+func TestMergeUnknownFrontMatterKeys_NilMeta(t *testing.T) {
+	merged := MergeUnknownFrontMatterKeys(nil, map[string]interface{}{"status": "backlog"})
+	if merged["status"] != "backlog" {
+		t.Errorf("expected status copied into freshly allocated map, got %v", merged)
+	}
+}
+
+func TestJSONSafeValue_StringifiesExoticTypes(t *testing.T) {
+	ts := time.Date(2026, 9, 13, 21, 14, 28, 0, time.UTC)
+	got := jsonSafeValue(ts)
+	s, ok := got.(string)
+	if !ok {
+		t.Fatalf("expected time.Time to be stringified, got %T", got)
+	}
+	if s == "" {
+		t.Errorf("expected non-empty stringified value")
+	}
+}
+
+func TestJSONSafeValue_NestedListsAndMaps(t *testing.T) {
+	in := []interface{}{
+		map[string]interface{}{"a": 1, "b": []interface{}{"x", "y"}},
+	}
+	got := jsonSafeValue(in)
+	out, ok := got.([]interface{})
+	if !ok || len(out) != 1 {
+		t.Fatalf("expected a 1-element slice, got %#v", got)
+	}
+	m, ok := out[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected nested map, got %T", out[0])
+	}
+	if m["a"] != 1 {
+		t.Errorf("expected a=1, got %v", m["a"])
+	}
+	inner, ok := m["b"].([]interface{})
+	if !ok || len(inner) != 2 || inner[0] != "x" || inner[1] != "y" {
+		t.Errorf("unexpected nested list: %#v", m["b"])
+	}
+}

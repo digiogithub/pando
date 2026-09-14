@@ -1,6 +1,7 @@
 package kb
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -43,9 +44,20 @@ type MemoryOptions struct {
 // If no valid front matter is found, it returns a zero FrontMatter and the
 // original content as body.
 func ParseFrontMatter(raw string) (FrontMatter, string, error) {
+	fm, _, body, err := ParseFrontMatterWithRaw(raw)
+	return fm, body, err
+}
+
+// ParseFrontMatterWithRaw splits YAML front matter from the body of a document,
+// like ParseFrontMatter, but also unmarshals the same YAML block a second time
+// into a generic map so callers can recover front-matter keys the typed
+// FrontMatter struct does not name (e.g. host-defined fields such as "status"
+// or "project"). If no valid front matter is found, it returns a zero
+// FrontMatter, a nil map, and the original content as body.
+func ParseFrontMatterWithRaw(raw string) (FrontMatter, map[string]interface{}, string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if !strings.HasPrefix(trimmed, frontMatterDelimiter) {
-		return FrontMatter{}, raw, nil
+		return FrontMatter{}, nil, raw, nil
 	}
 
 	// Find the closing delimiter after the opening one.
@@ -53,11 +65,11 @@ func ParseFrontMatter(raw string) (FrontMatter, string, error) {
 	// The opening delimiter must be followed by a newline.
 	nlIdx := strings.Index(rest, "\n")
 	if nlIdx == -1 {
-		return FrontMatter{}, raw, nil
+		return FrontMatter{}, nil, raw, nil
 	}
 	// Everything before the newline after "---" should be empty or whitespace.
 	if strings.TrimSpace(rest[:nlIdx]) != "" {
-		return FrontMatter{}, raw, nil
+		return FrontMatter{}, nil, raw, nil
 	}
 	rest = rest[nlIdx+1:]
 
@@ -69,7 +81,7 @@ func ParseFrontMatter(raw string) (FrontMatter, string, error) {
 	} else {
 		closeIdx := strings.Index(rest, "\n"+frontMatterDelimiter)
 		if closeIdx == -1 {
-			return FrontMatter{}, raw, nil
+			return FrontMatter{}, nil, raw, nil
 		}
 		yamlBlock = rest[:closeIdx]
 		afterClose = rest[closeIdx+1+len(frontMatterDelimiter):]
@@ -79,10 +91,19 @@ func ParseFrontMatter(raw string) (FrontMatter, string, error) {
 
 	var fm FrontMatter
 	if err := yaml.Unmarshal([]byte(yamlBlock), &fm); err != nil {
-		return FrontMatter{}, raw, err
+		return FrontMatter{}, nil, raw, err
 	}
 
-	return fm, body, nil
+	var rawFM map[string]interface{}
+	if err := yaml.Unmarshal([]byte(yamlBlock), &rawFM); err != nil {
+		// The typed unmarshal above already succeeded on the same bytes, so
+		// this should not normally happen. Degrade gracefully: keep the
+		// typed result and drop only the raw key set rather than failing
+		// the whole parse.
+		return fm, nil, body, nil
+	}
+
+	return fm, rawFM, body, nil
 }
 
 // SerializeFrontMatter produces a document string with YAML front matter
@@ -272,4 +293,87 @@ func injectStringSliceIntoMetadata(meta map[string]interface{}, key string, valu
 		meta[key] = values
 	}
 	return meta
+}
+
+// reservedFrontMatterKeys are front-matter keys that already have typed
+// handling elsewhere: the sync-owned metadata fields, tags/aliases injection,
+// and the memory-layer fields on FrontMatter. A key in this set is never
+// copied from a document's raw front matter into its metadata, so a
+// host-written front-matter key can never shadow the authoritative value
+// already stored under that name.
+var reservedFrontMatterKeys = map[string]struct{}{
+	"source_path":       {},
+	"source_mtime_unix": {},
+	"source_format":     {},
+	"converted":         {},
+	"tags":              {},
+	"aliases":           {},
+	"created_at":        {},
+	"updated_at":        {},
+	// Memory fields.
+	"key":        {},
+	"scope":      {},
+	"source":     {},
+	"outdated":   {},
+	"expires_at": {},
+	"hits":       {},
+	"importance": {},
+}
+
+// MergeUnknownFrontMatterKeys copies every key from rawFM into meta that is
+// not part of reservedFrontMatterKeys, so host-defined front-matter fields
+// (e.g. "status", "project", "milestone") survive into a document's stored
+// metadata instead of being silently dropped by the typed FrontMatter struct.
+// Values that aren't JSON-representable scalars, lists or maps are
+// stringified, since metadata is marshalled to JSON when persisted.
+func MergeUnknownFrontMatterKeys(meta map[string]interface{}, rawFM map[string]interface{}) map[string]interface{} {
+	if len(rawFM) == 0 {
+		return meta
+	}
+	if meta == nil {
+		meta = make(map[string]interface{})
+	}
+	for k, v := range rawFM {
+		if _, reserved := reservedFrontMatterKeys[k]; reserved {
+			continue
+		}
+		meta[k] = jsonSafeValue(v)
+	}
+	return meta
+}
+
+// jsonSafeValue recursively normalizes a YAML-decoded value so it marshals
+// cleanly to JSON: nested mappings become map[string]interface{}, slices are
+// walked element-wise, and any value JSON cannot represent natively (e.g. a
+// time.Time or other exotic scalar) is stringified rather than dropped.
+func jsonSafeValue(v interface{}) interface{} {
+	switch val := v.(type) {
+	case nil, string, bool,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64:
+		return val
+	case []interface{}:
+		out := make([]interface{}, len(val))
+		for i, item := range val {
+			out[i] = jsonSafeValue(item)
+		}
+		return out
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(val))
+		for k, item := range val {
+			out[k] = jsonSafeValue(item)
+		}
+		return out
+	case map[interface{}]interface{}:
+		// yaml.v3 decodes nested mappings as map[string]interface{} when the
+		// keys are strings, but fall back to stringifying keys defensively.
+		out := make(map[string]interface{}, len(val))
+		for k, item := range val {
+			out[fmt.Sprintf("%v", k)] = jsonSafeValue(item)
+		}
+		return out
+	default:
+		return fmt.Sprintf("%v", val)
+	}
 }

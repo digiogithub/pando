@@ -2,7 +2,7 @@
 id: PANDO-US-0002
 type: story
 title: Preserve unknown front-matter keys in document metadata
-status: backlog
+status: done
 priority: critical
 parent: PANDO-EP-0005
 milestone: PANDO-M-0002
@@ -10,7 +10,7 @@ author: claude
 labels: [rag, kb]
 estimate: 3
 created: 2026-09-13T21:14:28Z
-updated: 2026-09-13T21:14:28Z
+updated: 2026-09-14T00:00:00Z
 ---
 
 ## Description

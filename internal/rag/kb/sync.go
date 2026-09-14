@@ -213,7 +213,16 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		} else {
 			// Parse YAML front matter from file content to extract tags.
 			// Store only the body (without front matter) in the database.
-			fm, body, _ := ParseFrontMatter(res.content)
+			fm, rawFM, body, parseErr := ParseFrontMatterWithRaw(res.content)
+			if parseErr != nil {
+				// Front matter did not parse; ParseFrontMatterWithRaw already falls
+				// back to returning the raw content as body, so the document is
+				// still indexed below, just without metadata pulled from front matter.
+				logging.Warn("kb sync: front matter parse failed, indexing body as-is",
+					"doc_path", res.job.docPath,
+					"error", parseErr,
+				)
+			}
 			if strings.TrimSpace(body) == "" {
 				body = res.content // Fallback if parse strips everything.
 			}
@@ -226,6 +235,10 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			if len(fm.Aliases) > 0 {
 				meta = InjectAliasesIntoMetadata(meta, fm.Aliases)
 			}
+			// Preserve every other front-matter key (e.g. "status", "project",
+			// "milestone") that the typed FrontMatter struct does not name, so
+			// hosts writing structured records get them back in metadata.
+			meta = MergeUnknownFrontMatterKeys(meta, rawFM)
 		}
 
 		processingCtx, cancel := context.WithTimeout(ctxSync, kbSyncPerFileTimeout)
