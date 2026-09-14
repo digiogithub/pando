@@ -2,7 +2,7 @@
 id: PANDO-EP-0004
 type: epic
 title: AG-UI operability for embedded deployments
-status: backlog
+status: done
 priority: medium
 milestone: PANDO-M-0001
 labels: [agui, ops, docs]

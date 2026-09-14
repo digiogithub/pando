@@ -192,4 +192,90 @@
 //     startup config dump (New's "AG-UI adapter ready" line never carries
 //     Deps.Token), and is printed to stdout only in the generated case —
 //     the only one the operator has no other way to learn it.
+//
+// # Reverse-proxy contract (PANDO-US-0024)
+//
+// Everything a product's own backend needs to know to sit between a browser
+// and this adapter. Each fact is pinned to the line that enforces it today,
+// verified against the source at the time this section was written — if a
+// future refactor moves these lines, update the citations, not just the
+// prose.
+//
+//   - Origin: authorize (server.go:71-95) skips the AllowedOrigins check
+//     entirely when the Origin header is absent (server.go:72-73: "origin
+//     != \"\" && !r.originAllowed(origin)") — a server-to-server proxy that
+//     does not forward the browser's own Origin needs no
+//     Config.AllowedOrigins entry at all, and that is the recommended
+//     shape: the browser authenticates to the proxy, the proxy talks to
+//     Pando, and Pando never sees a browser Origin to check.
+//     agui-serve's startup warning "AG-UI server has no allowed origins"
+//     (cmd/agui_serve.go:125-127) is therefore correct to ignore in this
+//     deployment shape — it exists to warn about the OTHER shape, a
+//     browser reaching this adapter directly. If a proxy instead forwards
+//     the browser's Origin verbatim, the exact string must be listed:
+//     originAllowed (server.go:109-116) is exact, case-insensitive match
+//     (strings.EqualFold) or the literal "*", with no wildcard subdomain or
+//     port pattern support.
+//
+//   - Token: bearerToken (server.go:97-103) accepts "Authorization: Bearer
+//     <token>" first, falling back to a "?token=" query parameter. The
+//     fallback exists only because the browser's native EventSource API
+//     cannot set request headers, and it must never be used from a
+//     browser-originated request: a query string is captured in access
+//     logs, in the Referer header of any same-page navigation, and in
+//     browser history. A proxy in front of this adapter should strip any
+//     inbound "?token=" and set the real "Authorization" header itself,
+//     keeping the Pando token entirely server-side — the browser
+//     authenticates to the PROXY under whatever scheme the product already
+//     uses, and never learns Pando's own token. A RequireToken deployment
+//     with no Deps.Token configured fails closed with 500 rather than
+//     silently degrading into an open endpoint (server.go:83-88).
+//
+//   - Streaming: NewSSEWriter (sse.go:33-46) sets "X-Accel-Buffering: no"
+//     (sse.go:43) and flushes after every event (Write/Comment both call
+//     flusher.Flush(), sse.go:63,88) plus a ": keep-alive" comment every
+//     15s of otherwise-silent heartbeat (defaultHeartbeat, deps.go:162;
+//     ticker armed in attachLoop, server.go:790-791; emitted at
+//     server.go:801-803 — an SSE comment, invisible to a client parsing
+//     "data:" frames). A Go httputil.ReverseProxy therefore needs
+//     FlushInterval: -1 (flush after every write, never batch), and any
+//     intermediary must not buffer the response body at all. The dedicated
+//     listener sets WriteTimeout: 0 on purpose, because a run's response is
+//     exactly as long-lived as the agent takes (listener.go:88-92); a
+//     proxy's own write/idle timeout must be 0 or comfortably above the 15s
+//     heartbeat — below it, a slow tool call reads as a dead connection and
+//     the intermediary cuts the stream.
+//
+//   - /info URL rewriting: requestBaseURL (server.go:346-358) builds every
+//     Agents[].url from req.Host, honouring X-Forwarded-Proto for the
+//     scheme ONLY when the request did not already arrive over TLS, and
+//     deliberately never reads X-Forwarded-Host (an attacker-controlled
+//     value there would let /info hand out URLs pointing at somebody
+//     else's server). Behind a proxy that rewrites the request path (e.g.
+//     strips a "/pando" prefix) those URLs come back wrong to use as-is:
+//     either rewrite the Host header upstream to the public host the
+//     browser actually used, or ignore /info's URLs entirely and construct
+//     the run endpoint yourself from the proxy's own configured origin plus
+//     the path /info reports.
+//
+//   - TLS: agui-serve self-signs a certificate into the data directory
+//     unless --no-tls is given (cmd/agui_serve.go:144-157); --tls-cert /
+//     --tls-key substitute a certificate of your own. On loopback behind a
+//     proxy that already terminates TLS for the browser, --no-tls is the
+//     pragmatic choice for the Pando-facing hop; across any other network
+//     boundary, pin the certificate instead of disabling TLS.
+//
+//   - Body limit: a RunAgentInput body over defaultMaxRequestBytes (8 MiB,
+//     sse.go:13) is truncated by the io.LimitReader DecodeRunAgentInput
+//     wraps the request body in (input.go:169-182) and then fails to
+//     decode — a proxy must not impose a tighter body-size limit of its own
+//     without raising it to match, or a legitimate long conversation's
+//     resent transcript can be cut off before Pando ever sees it.
+//
+// A copy-pasteable Go proxy implementing all of the above (newReverseProxy)
+// lives at examples/vite-react/proxy/main.go, compiled by
+// examples/vite-react/proxy/example_test.go so it cannot silently stop
+// building; the same snippet is mirrored in sdk/typescript/README.md for SDK
+// consumers who never clone this repository. examples/vite-react/ is the
+// worked SPA client for it — see PANDO-US-0024's story for scope.
 package agui

@@ -1,0 +1,24 @@
+{
+  "name": "pando-vite-react-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal Vite + React 18 SPA driving a Pando agent over AG-UI through a Go reverse proxy -- no CopilotKit, no Next.js, no Node server beyond the proxy.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@pando-ai/sdk": "file:../../sdk/typescript",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^5.4.0",
+    "vite": "^8.3.0"
+  }
+}

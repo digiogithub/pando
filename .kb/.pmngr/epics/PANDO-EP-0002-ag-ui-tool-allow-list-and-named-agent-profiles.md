@@ -2,7 +2,7 @@
 id: PANDO-EP-0002
 type: epic
 title: AG-UI tool allow-list and named agent profiles
-status: backlog
+status: done
 priority: critical
 milestone: PANDO-M-0001
 labels: [agui, config, security]

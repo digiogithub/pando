@@ -2,7 +2,7 @@
 id: PANDO-US-0024
 type: story
 title: Document the reverse-proxy contract and ship a Vite/React 18 example
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0004
 milestone: PANDO-M-0001

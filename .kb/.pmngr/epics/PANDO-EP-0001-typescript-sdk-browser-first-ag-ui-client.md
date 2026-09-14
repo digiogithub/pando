@@ -2,7 +2,7 @@
 id: PANDO-EP-0001
 type: epic
 title: "TypeScript SDK: browser-first AG-UI client"
-status: backlog
+status: in_review
 priority: critical
 milestone: PANDO-M-0001
 labels: [sdk, typescript, agui]

@@ -2,7 +2,7 @@
 id: PANDO-M-0001
 type: milestone
 title: Embeddable AG-UI backend for web hosts
-status: backlog
+status: in_review
 labels: [agui, sdk, web-host]
 created: 2026-09-13T21:10:04Z
 updated: 2026-09-13T21:10:04Z
