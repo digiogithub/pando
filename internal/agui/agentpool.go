@@ -5,7 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +16,17 @@ import (
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/userinput"
+)
+
+const (
+	// toolSearchToolName mirrors tools.toolSearchTool.Info().Name
+	// (internal/llm/tools/tool_search.go): the unexported constant is not
+	// exported from that package, so the literal is kept in sync here.
+	toolSearchToolName = "tool_search"
+	// mesnadaToolPrefix is the canonical name prefix every mesnada_* tool
+	// registered by agent.CoderAgentToolsWithMesnada uses (spawn_agent,
+	// list_tasks, wait_task, cancel_task, get_task/output, note, await, swarm).
+	mesnadaToolPrefix = "mesnada_"
 )
 
 // agentPool owns the agent instances this adapter drives.
@@ -79,6 +92,26 @@ func (p *agentPool) get(name config.AgentName, frontendTools []Tool) (agent.Serv
 // buildLocked mirrors internal/app/app.go's coder-agent construction, with the
 // adapter's own permission and user-input services substituted in.
 func (p *agentPool) buildLocked(name config.AgentName, frontendTools []Tool) (agent.Service, error) {
+	agentTools := p.buildToolsLocked(frontendTools)
+
+	svc, err := agent.NewAgent(
+		name,
+		p.deps.Sessions,
+		p.deps.Messages,
+		agentTools,
+		p.deps.Skills,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("agui: build agent %q: %w", name, err)
+	}
+	return svc, nil
+}
+
+// buildToolsLocked builds the tool set handed to agent.NewAgent: the coder
+// tool set, adapter-wide filtering, HITL substitution, then frontend-tool
+// proxies. Split out from buildLocked so tests can assert on the exact slice
+// a run's tool schema is built from without needing a live model provider.
+func (p *agentPool) buildToolsLocked(frontendTools []Tool) []tools.BaseTool {
 	agentTools := agent.CoderAgentToolsWithMesnada(
 		p.deps.Orchestrator,
 		p.deps.Remembrances,
@@ -89,6 +122,25 @@ func (p *agentPool) buildLocked(name config.AgentName, frontendTools []Tool) (ag
 		p.userInput,
 		p.deps.Sessions,
 	)
+
+	// reserved captures every tool name Pando itself would have registered
+	// for this agent, BEFORE the allow-list/Mesnada filter below removes any
+	// of them. It is what the frontend-tool reserved-name guard uses further
+	// down, so a client-declared frontend tool can never claim a name the
+	// allow-list denies (e.g. "bash") just because that tool is no longer in
+	// the filtered agentTools slice.
+	reserved := make(map[string]bool, len(agentTools))
+	for _, t := range agentTools {
+		reserved[t.Info().Name] = true
+	}
+
+	// Adapter-wide Tools glob allow-list and Mesnada switch (config.AGUIConfig
+	// .Tools / .Mesnada). This MUST run after agent.CoderAgentToolsWithMesnada,
+	// which already applied agent.ApplyToolDiscovery internally: filtering the
+	// slice it returns is what lets filterAGUITools also strip the tool_search
+	// tool itself, closing the deferred-tool bypass its remote executor would
+	// otherwise leave open onto the whole MCP catalog (see filterAGUITools).
+	agentTools = filterAGUITools(agentTools, p.cfg.Tools, p.cfg.Mesnada)
 
 	if p.cfg.HumanInTheLoop {
 		// AskUserQuestion normally blocks on a local overlay nobody can see from
@@ -108,24 +160,65 @@ func (p *agentPool) buildLocked(name config.AgentName, frontendTools []Tool) (ag
 	}
 
 	if p.cfg.FrontendTools && len(frontendTools) > 0 {
-		reserved := make(map[string]bool, len(agentTools))
-		for _, t := range agentTools {
-			reserved[t.Info().Name] = true
-		}
 		agentTools = append(agentTools, newFrontendTools(frontendTools, reserved, p.pending)...)
 	}
 
-	svc, err := agent.NewAgent(
-		name,
-		p.deps.Sessions,
-		p.deps.Messages,
-		agentTools,
-		p.deps.Skills,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("agui: build agent %q: %w", name, err)
+	return agentTools
+}
+
+// filterAGUITools applies the adapter-wide Tools glob allow-list and Mesnada
+// switch to allTools, returning the kept subset in the same order.
+//
+// Unlike agent.filterToolsByNames (internal/llm/agent/tools.go), this is a
+// plain subtractive filter: nothing is force-included. filterToolsByNames
+// exists to keep a context-trimmed tool set usable (it always keeps bash,
+// edit, view, glob, grep, write, patch, ls) — exactly the tools an
+// adapter-wide allow-list needs to be able to exclude, so it must not be
+// reused here.
+//
+// With an empty allow-list and Mesnada true (the defaults) it returns
+// allTools unchanged, not a copy, so an adapter with no restriction
+// configured produces a byte-identical tool set to before this filter
+// existed.
+func filterAGUITools(allTools []tools.BaseTool, allow []string, mesnada bool) []tools.BaseTool {
+	if len(allow) == 0 && mesnada {
+		return allTools
 	}
-	return svc, nil
+	kept := make([]tools.BaseTool, 0, len(allTools))
+	for _, t := range allTools {
+		if aguiToolAllowed(t.Info().Name, allow, mesnada) {
+			kept = append(kept, t)
+		}
+	}
+	return kept
+}
+
+// aguiToolAllowed is the single predicate behind filterAGUITools.
+func aguiToolAllowed(name string, allow []string, mesnada bool) bool {
+	if !mesnada && strings.HasPrefix(name, mesnadaToolPrefix) {
+		return false
+	}
+	if len(allow) == 0 {
+		return true
+	}
+	// tool_search (internal/llm/tools/tool_search.go) is the single deferred
+	// discovery+execution entry point agent.ApplyToolDiscovery wires up: its
+	// remote executor can search and call any tool in the shared discovery
+	// registry, including MCP catalog tools that were never even in allTools
+	// as a direct entry. ToolDiscovery is visibility, not authorization, so
+	// once an explicit allow-list is configured, tool_search is always
+	// dropped too — never matched against allow, even by an explicit "*" or
+	// literal "tool_search" glob — closing that bypass rather than trying to
+	// scope its catalog/executor to the allowed set.
+	if name == toolSearchToolName {
+		return false
+	}
+	for _, pattern := range allow {
+		if ok, err := path.Match(pattern, name); err == nil && ok {
+			return true
+		}
+	}
+	return false
 }
 
 // evictLocked drops idle entries past the TTL and, when the pool is over its

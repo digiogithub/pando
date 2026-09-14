@@ -77,6 +77,14 @@ type Config struct {
 	// a per-session persona override. Empty means no override: the
 	// process-wide active persona (or auto-selection) applies as usual.
 	Persona string
+	// Tools is the adapter-wide glob allow-list applied to every agent's tool
+	// set (see config.AGUIConfig.Tools). Empty means no restriction.
+	Tools []string
+	// Mesnada gates mesnada_* delegation tools independent of Tools. Resolved
+	// from config.AGUIConfig.Mesnada (a *bool) to its documented default of
+	// true here, so every other consumer of this already-resolved Config can
+	// treat it as a plain switch.
+	Mesnada bool
 }
 
 const (
@@ -101,6 +109,11 @@ func ConfigFromApp(c config.AGUIConfig) Config {
 		AutoApprove:    c.AutoApprove,
 		HumanInTheLoop: c.HumanInTheLoop,
 		Persona:        c.Persona,
+		Tools:          c.Tools,
+		Mesnada:        true,
+	}
+	if c.Mesnada != nil {
+		out.Mesnada = *c.Mesnada
 	}
 	if out.Path == "" {
 		out.Path = defaultPath

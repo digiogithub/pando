@@ -1183,6 +1183,24 @@ type AGUIConfig struct {
 	// (built-ins plus the configured persona path). Default: "" (no override —
 	// the process-wide active persona applies as usual).
 	Persona string `json:"persona,omitempty" toml:"Persona"`
+	// Tools is an adapter-wide glob allow-list (path.Match semantics, matched
+	// against each tool's Info().Name) applied to every AG-UI agent's tool
+	// set, after it is built. It is subtractive only: a tool is kept when its
+	// name matches at least one glob, nothing is force-included. Empty (the
+	// default) means no restriction — today's behaviour, the full coder tool
+	// set including bash/edit/write. A non-empty list also drops the deferred
+	// `tool_search` tool unconditionally, since its remote executor can reach
+	// any tool in the shared discovery registry regardless of this list.
+	// Default: [] (no restriction).
+	Tools []string `json:"tools,omitempty" toml:"Tools"`
+	// Mesnada controls whether mesnada_* delegation tools (spawn/wait/list/
+	// cancel/get-output/note/await/swarm) are exposed to AG-UI agents,
+	// independent of Tools: an explicit false drops every mesnada_* tool even
+	// when Tools is empty. A pointer, like TUI.NerdFonts elsewhere in this
+	// file, so a config file that predates this field (nil, key absent)
+	// resolves to the documented default instead of the zero value: see
+	// agui.ConfigFromApp. Default: true (mesnada tools exposed).
+	Mesnada *bool `json:"mesnada,omitempty" toml:"Mesnada"`
 }
 
 // ImageConfig controls the image normalization pipeline applied before images

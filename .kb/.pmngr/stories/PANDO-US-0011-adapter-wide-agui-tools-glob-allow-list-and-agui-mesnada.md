@@ -2,7 +2,7 @@
 id: PANDO-US-0011
 type: story
 title: Adapter-wide [AGUI] Tools glob allow-list and [AGUI] Mesnada switch
-status: backlog
+status: done
 priority: critical
 parent: PANDO-EP-0002
 milestone: PANDO-M-0001
@@ -10,7 +10,7 @@ author: claude
 labels: [agui, config, security]
 estimate: 3
 created: 2026-09-13T21:14:53Z
-updated: 2026-09-13T21:14:53Z
+updated: 2026-09-14T00:00:00Z
 ---
 
 ## Description
