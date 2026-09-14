@@ -2,7 +2,7 @@
 id: PANDO-US-0005
 type: story
 title: REST routes for knowledge-base and code search
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0005
 milestone: PANDO-M-0002

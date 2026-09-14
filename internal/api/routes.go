@@ -147,6 +147,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/remembrances/reindex", s.handleReindexAllCodeProjects)
 	mux.HandleFunc("POST /api/v1/remembrances/test-connection", s.handleTestEmbeddingConnection)
 	mux.HandleFunc("GET /api/v1/remembrances/embedding-models", s.handleListEmbeddingModels)
+	// KB document upsert/delete/reindex (host-driven freshness over REST)
+	mux.HandleFunc("POST /api/v1/remembrances/kb/documents", s.handleUpsertKBDocument)
+	mux.HandleFunc("DELETE /api/v1/remembrances/kb/documents", s.handleDeleteKBDocument)
+	mux.HandleFunc("POST /api/v1/remembrances/kb/reindex", s.handleReindexKB)
+	// KB and code search over REST (no MCP client needed)
+	mux.HandleFunc("POST /api/v1/remembrances/kb/search", s.handleKBSearch)
+	mux.HandleFunc("POST /api/v1/remembrances/code/search", s.handleCodeSearch)
 	// Context enrichment runtime toggle
 	mux.HandleFunc("GET /api/v1/remembrances/enrichment", s.handleGetEnrichmentStatus)
 	mux.HandleFunc("PUT /api/v1/remembrances/enrichment", s.handleToggleEnrichment)

@@ -468,6 +468,19 @@ type hybridResultItem struct {
 	FTSScore    float64 `json:"fts_score,omitempty"`
 }
 
+// HybridResultItem is the exported form of hybridResultItem so callers outside
+// this package (internal/api's REST code-search route, PANDO-US-0005) can hold
+// the same ranked projection code_hybrid_search emits.
+type HybridResultItem = hybridResultItem
+
+// RankAndFilterHybrid is the exported form of rankAndFilterHybrid. REST calls
+// this directly instead of reimplementing ranking/filtering, so
+// POST /api/v1/remembrances/code/search orders results identically to
+// code_hybrid_search for the same arguments (PANDO-US-0005).
+func RankAndFilterHybrid(results []code.HybridSearchResult, minScore float64, includeDocs, debug bool) []HybridResultItem {
+	return rankAndFilterHybrid(results, minScore, includeDocs, debug)
+}
+
 // rankAndFilterHybrid turns raw hybrid search results into a ranked, slim
 // projection: it drops documentation files (unless includeDocs), normalizes
 // scores to 0..1 relative to the top hit and trims the low-relevance tail

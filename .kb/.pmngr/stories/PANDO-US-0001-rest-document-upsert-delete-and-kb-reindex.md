@@ -2,7 +2,7 @@
 id: PANDO-US-0001
 type: story
 title: REST document upsert, delete and KB reindex
-status: backlog
+status: done
 priority: critical
 parent: PANDO-EP-0005
 milestone: PANDO-M-0002
