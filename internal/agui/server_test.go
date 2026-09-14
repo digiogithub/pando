@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -174,6 +175,111 @@ func TestHandleInfoListsConfiguredAgents(t *testing.T) {
 	}
 	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+}
+
+// -------------------------------------------------------- PANDO-US-0020
+// unauthenticated GET {path}/healthz.
+
+// TestHealthzIsUnauthenticatedAndMinimal is the PANDO-US-0020 acceptance
+// criterion: no Authorization header and no ?token= are required, and the
+// response's field set is exactly what handleHealthz is documented to send
+// -- no agent names, no origins, no token, no session/thread identifiers.
+func TestHealthzIsUnauthenticatedAndMinimal(t *testing.T) {
+	r := newTestRuntime(testConfig(), "secret")
+	r.startedAt = time.Now().Add(-5 * time.Second)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, defaultPath+"/healthz", nil)
+	// Deliberately no Authorization header and no ?token= query parameter.
+	r.handleHealthz(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	wantFields := map[string]bool{
+		"status": true, "version": true, "uptimeSeconds": true,
+		"activeRuns": true, "maxConcurrentRuns": true, "draining": true,
+	}
+	if len(raw) != len(wantFields) {
+		t.Fatalf("field set = %v, want exactly %v", raw, wantFields)
+	}
+	for k := range raw {
+		if !wantFields[k] {
+			t.Fatalf("unexpected field %q in healthz payload: %s", k, rec.Body.String())
+		}
+	}
+
+	var resp HealthResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode into HealthResponse: %v", err)
+	}
+	if resp.Status != "ok" {
+		t.Fatalf("status = %q, want ok", resp.Status)
+	}
+	if resp.Version == "" {
+		t.Fatal("missing version")
+	}
+	if resp.UptimeSeconds <= 0 {
+		t.Fatalf("uptimeSeconds = %v, want > 0", resp.UptimeSeconds)
+	}
+	if resp.Draining {
+		t.Fatal("a fresh runtime must not report draining")
+	}
+
+	// Nothing token-, session- or agent-identifying leaked into the raw body.
+	body := rec.Body.String()
+	for _, leak := range []string{"secret", string(config.AgentCoder), defaultPath, "Origin"} {
+		if strings.Contains(body, leak) {
+			t.Fatalf("healthz body unexpectedly contains %q: %s", leak, body)
+		}
+	}
+}
+
+// TestHealthzNotRoutedThroughCORSOrOriginAllowList is the PANDO-US-0020
+// constraint: healthz never calls setCORSHeaders and never consults the
+// Origin allow-list -- a probe's Origin (if any) must not affect the
+// response, and no CORS header is ever set on it.
+func TestHealthzNotRoutedThroughCORSOrOriginAllowList(t *testing.T) {
+	r := newTestRuntime(testConfig(), "secret")
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, defaultPath+"/healthz", nil)
+	req.Header.Set("Origin", "https://evil.test") // not in AllowedOrigins
+	r.handleHealthz(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 -- healthz must not apply the origin allow-list", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("unexpected CORS header %q on healthz", got)
+	}
+}
+
+// TestHealthzBypassesAuthorizeButInfoStillRequiresToken is the PANDO-US-0020
+// regression: adding healthz must not have widened authorize() -- GET
+// {path}/info on the very same Runtime/mux still 401s with no token.
+func TestHealthzBypassesAuthorizeButInfoStillRequiresToken(t *testing.T) {
+	r := newTestRuntime(testConfig(), "secret")
+	mux := r.Handler()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, defaultPath+"/healthz", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("healthz status = %d, want 200", rec.Code)
+	}
+
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, defaultPath+"/info", nil)
+	mux.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusUnauthorized {
+		t.Fatalf("info status = %d, want 401 (authorize must not have been widened)", rec2.Code)
 	}
 }
 
@@ -573,6 +679,14 @@ type fakeAgentService struct {
 	// before the run produces its response, widening the race window a real
 	// concurrent bug would need.
 	runDelay time.Duration
+	// suspendCall, when set, makes Run emit a fully-described (Finished)
+	// tool-call event for this id and then block until resumeSignal is
+	// closed (or the context is cancelled) before completing -- enough to
+	// drive a real frontend-tool suspension end to end through handleRun
+	// (PANDO-US-0021/0022's admission/drain tests), without a real tool or
+	// model provider.
+	suspendCall  string
+	resumeSignal chan struct{}
 }
 
 func newFakeAgentService() *fakeAgentService {
@@ -583,13 +697,36 @@ func (f *fakeAgentService) Model() models.Model { return models.Model{ID: "fake-
 
 func (f *fakeAgentService) Run(ctx context.Context, sessionID, content string, _ ...message.Attachment) (<-chan agent.AgentEvent, error) {
 	atomic.AddInt32(&f.runCalls, 1)
-	ch := make(chan agent.AgentEvent, 1)
+	ch := make(chan agent.AgentEvent, 2)
 	go func() {
 		defer close(ch)
 		if f.runDelay > 0 {
 			select {
 			case <-time.After(f.runDelay):
 			case <-ctx.Done():
+				// A real provider call reports a cancelled context as an
+				// error on its event stream rather than silently closing
+				// it (that is what lets Runtime.pump tell "the run was cut
+				// off" from "the run finished normally", both of which
+				// close the same channel) -- mirrored here so a fake-driven
+				// shutdown test observes the same RUN_ERROR a real one
+				// would, deterministically rather than racing the pump's
+				// own cancelSignal case.
+				ch <- agent.AgentEvent{Type: agent.AgentEventTypeError, Error: ctx.Err()}
+				return
+			}
+		}
+		if f.suspendCall != "" {
+			ch <- agent.AgentEvent{
+				Type: agent.AgentEventTypeToolCall,
+				ToolCall: &message.ToolCall{
+					ID: f.suspendCall, Name: "frontendTool", Input: `{}`, Finished: true,
+				},
+			}
+			select {
+			case <-f.resumeSignal:
+			case <-ctx.Done():
+				ch <- agent.AgentEvent{Type: agent.AgentEventTypeError, Error: ctx.Err()}
 				return
 			}
 		}
@@ -761,5 +898,215 @@ func TestPostWithNoNewMessageReattachesToALiveRun(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"outcome":"success"`) {
 		t.Fatalf("reattach via POST did not observe the run finishing: %s", rec.Body.String())
+	}
+}
+
+// -------------------------------------------------------- PANDO-US-0021
+// MaxConcurrentRuns cap with 503 and Retry-After.
+
+// TestMaxConcurrentRunsRejectsOverCapWithNoStateCreated is the PANDO-US-0021
+// acceptance criterion: over the cap, handleRun answers 503 with a numeric
+// Retry-After, opens no SSE stream, emits no RUN_ERROR, and -- critically --
+// creates no session, no agent instance and no agui_threads row. r.pool is
+// deliberately left nil: if the admission check let the request through
+// despite the cap, the test would panic on a nil pool.get call instead of
+// silently passing.
+func TestMaxConcurrentRunsRejectsOverCapWithNoStateCreated(t *testing.T) {
+	db := newThreadDB(t)
+	r, sessions, _ := newThreadTestRuntime(t, db)
+	r.admission = newRunAdmission(1)
+	if !r.admission.tryAdmit() {
+		t.Fatal("setup: expected to admit the first synthetic slot")
+	}
+
+	rec := httptest.NewRecorder()
+	r.handleRun(rec, newRunRequest("cap-thread", "run-1", "hello"))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	retryAfter, err := strconv.Atoi(rec.Header().Get("Retry-After"))
+	if err != nil || retryAfter <= 0 {
+		t.Fatalf("Retry-After = %q, want a positive integer", rec.Header().Get("Retry-After"))
+	}
+	if strings.Contains(rec.Body.String(), "RUN_ERROR") {
+		t.Fatal("a rejected request must not emit RUN_ERROR: no run was started")
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "json") {
+		t.Fatalf("Content-Type = %q, want a JSON error body", ct)
+	}
+
+	if len(sessions.sessions) != 0 {
+		t.Fatalf("a rejected request must create no session, got %d", len(sessions.sessions))
+	}
+	threads, err := r.threads.list(context.Background(), 10, 0)
+	if err != nil {
+		t.Fatalf("list threads: %v", err)
+	}
+	if len(threads) != 0 {
+		t.Fatalf("a rejected request must create no agui_threads row, got %d", len(threads))
+	}
+}
+
+// TestMaxConcurrentRunsZeroMeansUnlimited is the PANDO-US-0021 acceptance
+// criterion: 0 (the config zero value / unset) preserves today's unlimited
+// behaviour.
+func TestMaxConcurrentRunsZeroMeansUnlimited(t *testing.T) {
+	a := newRunAdmission(0)
+	for i := 0; i < 50; i++ {
+		if !a.tryAdmit() {
+			t.Fatalf("admission %d unexpectedly rejected under max=0 (unlimited)", i)
+		}
+	}
+	current, max := a.snapshot()
+	if current != 50 || max != 0 {
+		t.Fatalf("snapshot = (%d, %d), want (50, 0)", current, max)
+	}
+}
+
+// TestMaxConcurrentRunsHoldsSlotWhileSuspendedThenReleasesOnFinish is the
+// PANDO-US-0021 acceptance criterion: a suspended (interrupt-parked) run
+// still holds its slot -- driven end to end through handleRun to
+// RUN_FINISHED{outcome:"interrupt"} -- and the slot is released only once
+// the run truly finishes.
+func TestMaxConcurrentRunsHoldsSlotWhileSuspendedThenReleasesOnFinish(t *testing.T) {
+	db := newThreadDB(t)
+	r, _, _ := newThreadTestRuntime(t, db)
+	r.cfg.AgentPoolSize = defaultPoolSize
+	r.cfg.AgentPoolTTL = defaultPoolTTL
+	r.admission = newRunAdmission(1)
+	r.pool = newAgentPool(r.deps, r.cfg, r.perms, nil, r.pending)
+
+	svc := newFakeAgentService()
+	svc.suspendCall = "call-1"
+	svc.resumeSignal = make(chan struct{})
+	r.pool.entries["coder"] = &poolEntry{svc: svc, lastUsed: time.Now()}
+
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		rec := httptest.NewRecorder()
+		r.handleRun(rec, newRunRequest("susp-thread", "run-1", "go"))
+		done <- rec
+	}()
+
+	var run *activeRun
+	deadline := time.Now().Add(2 * time.Second)
+	for run == nil && time.Now().Before(deadline) {
+		if got, ok := r.runs.get("susp-thread"); ok {
+			run = got
+		} else {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if run == nil {
+		t.Fatal("run never registered")
+	}
+	r.pending.register(run.sessionID, suspension{callID: "call-1"})
+
+	select {
+	case rec := <-done:
+		if !strings.Contains(rec.Body.String(), `"outcome":"interrupt"`) {
+			t.Fatalf("expected the first segment to report an interrupt: %s", rec.Body.String())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the interrupted segment never returned")
+	}
+
+	if current, _ := r.admission.snapshot(); current != 1 {
+		t.Fatalf("a suspended run must still hold its slot: current=%d", current)
+	}
+
+	// The cap is still full: a second, unrelated run must be rejected too.
+	rec2 := httptest.NewRecorder()
+	r.handleRun(rec2, newRunRequest("other-thread", "run-x", "go"))
+	if rec2.Code != http.StatusServiceUnavailable {
+		t.Fatalf("a suspended run must still occupy its slot: status = %d, want 503", rec2.Code)
+	}
+
+	close(svc.resumeSignal)
+
+	select {
+	case <-run.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the run was never torn down after finishing")
+	}
+	if current, _ := r.admission.snapshot(); current != 0 {
+		t.Fatalf("the slot was not released on completion: current=%d", current)
+	}
+}
+
+// TestMaxConcurrentRunsNoLeakAcrossRepeatedCycles is the PANDO-US-0021
+// acceptance criterion: slots are released on normal completion with no
+// leak across many cap-to-limit cycles.
+func TestMaxConcurrentRunsNoLeakAcrossRepeatedCycles(t *testing.T) {
+	db := newThreadDB(t)
+	r, _, _ := newThreadTestRuntime(t, db)
+	r.cfg.AgentPoolSize = defaultPoolSize
+	r.cfg.AgentPoolTTL = defaultPoolTTL
+	r.admission = newRunAdmission(2)
+	r.pool = newAgentPool(r.deps, r.cfg, r.perms, nil, r.pending)
+	svc := newFakeAgentService()
+	r.pool.entries["coder"] = &poolEntry{svc: svc, lastUsed: time.Now()}
+
+	for i := 0; i < 20; i++ {
+		rec := httptest.NewRecorder()
+		r.handleRun(rec, newRunRequest(fmt.Sprintf("thread-%d", i), "run-1", "go"))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("iteration %d: status = %d, want 200: %s", i, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), `"outcome":"success"`) {
+			t.Fatalf("iteration %d: expected a normal completion: %s", i, rec.Body.String())
+		}
+	}
+	if current, _ := r.admission.snapshot(); current != 0 {
+		t.Fatalf("leaked %d admission slots after 20 completed runs", current)
+	}
+}
+
+// TestResumeOfAdmittedRunNotRejectedEvenWhenCapFull is the PANDO-US-0021
+// "do NOT count a resume a second time" constraint: resuming an
+// already-admitted, suspended run must succeed even though the cap (1) is
+// already fully occupied by that very run.
+func TestResumeOfAdmittedRunNotRejectedEvenWhenCapFull(t *testing.T) {
+	r := newTestRuntime(testConfig(), "secret")
+	r.admission = newRunAdmission(1)
+	if !r.admission.tryAdmit() {
+		t.Fatal("setup: expected to admit the run's own slot")
+	}
+
+	events := make(chan agent.AgentEvent, 4)
+	suspend := make(chan suspension, 1)
+	run := newSuspendableRun(events, suspend)
+	r.runs.put(run)
+	t.Cleanup(func() { close(events) })
+
+	// Suspend it first, exactly like TestStreamSuspendsOnFrontendTool.
+	attachAndRecord(t, r, run, context.Background(), true, func() {
+		events <- agent.AgentEvent{
+			Type:     agent.AgentEventTypeToolCall,
+			ToolCall: &message.ToolCall{ID: "call-1", Name: "showChart", Input: `{}`, Finished: true},
+		}
+		suspend <- suspension{callID: "call-1"}
+	})
+	run.unpark()
+
+	// The cap is fully occupied by this one suspended run; a resume must
+	// still be accepted -- it does not go through tryAdmit at all.
+	in := &RunAgentInput{
+		ThreadID: "t1", RunID: "r2",
+		Messages: []Message{
+			{ID: "m2", Role: RoleTool, ToolCallID: "call-1", Content: MessageContent{Text: "rendered"}},
+		},
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, defaultPath+"/coder", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	r.handleExistingThreadRun(rec, req, run, in)
+
+	if rec.Code == http.StatusServiceUnavailable {
+		t.Fatalf("a resume of an already-admitted run must not be rejected by the cap: %d", rec.Code)
+	}
+	if current, _ := r.admission.snapshot(); current != 1 {
+		t.Fatalf("a resume must not take a second slot: current=%d", current)
 	}
 }

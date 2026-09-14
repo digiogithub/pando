@@ -96,6 +96,43 @@ func TestListenerRejectsTokenlessRequest(t *testing.T) {
 	}
 }
 
+// TestListenerHealthzIsUnauthenticated is the PANDO-US-0020 acceptance
+// criterion, exercised literally: curl http://127.0.0.1:PORT{path}/healthz
+// with no Authorization header and no ?token= returns 200 and a JSON body
+// with status and version -- on the actual dedicated listener a load
+// balancer or orchestrator would probe.
+func TestListenerHealthzIsUnauthenticated(t *testing.T) {
+	cfg := testConfig()
+	cfg.Port = freePort(t)
+	r := newTestRuntime(cfg, "secret")
+
+	listener, err := r.StartListener(ListenerOptions{Host: "127.0.0.1"})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = listener.Shutdown(ctx)
+	})
+
+	resp, err := http.Get(listener.URL() + defaultPath + "/healthz")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var health HealthResponse
+	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if health.Status != "ok" || health.Version == "" {
+		t.Fatalf("unexpected healthz payload: %+v", health)
+	}
+}
+
 func TestListenerShutdownIsClean(t *testing.T) {
 	cfg := testConfig()
 	cfg.Port = freePort(t)

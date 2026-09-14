@@ -2,7 +2,7 @@
 id: PANDO-US-0022
 type: story
 title: Graceful drain of in-flight runs on shutdown
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0004
 milestone: PANDO-M-0001

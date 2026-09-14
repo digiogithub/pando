@@ -1185,6 +1185,17 @@ type AGUIConfig struct {
 	// suspended-run reaper (the frontend-tool/permission wait timeout, see
 	// internal/agui's suspendGrace), which this setting does not affect.
 	DisconnectGrace string `json:"disconnectGrace,omitempty" toml:"DisconnectGrace"`
+	// MaxConcurrentRuns caps how many runs the adapter admits at once
+	// (PANDO-US-0021): a run over the cap is rejected with 503 and
+	// Retry-After instead of starting. A run holds its slot for its whole
+	// lifetime, including while suspended waiting on a client -- a parked
+	// run still occupies a slot. Default: 0 (unlimited, today's behaviour).
+	MaxConcurrentRuns int `json:"maxConcurrentRuns,omitempty" toml:"MaxConcurrentRuns"`
+	// ShutdownGrace bounds how long the adapter waits for in-flight runs to
+	// finish on shutdown before cancelling whatever is left (PANDO-US-0022).
+	// Duration string. Default: "30s". An explicit "0s" reproduces the
+	// pre-PANDO-US-0022 behaviour of cancelling every run immediately.
+	ShutdownGrace string `json:"shutdownGrace,omitempty" toml:"ShutdownGrace"`
 	// AutoApprove approves tool permissions inside AG-UI runs without asking.
 	// It only affects the adapter's own permission service, never the desktop
 	// surfaces. Default: false.

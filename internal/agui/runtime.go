@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/agent"
@@ -37,6 +39,14 @@ type Runtime struct {
 	// that reported it (see run.go).
 	pending *pendingRegistry
 	runs    *runStore
+	// admission enforces Config.MaxConcurrentRuns (PANDO-US-0021). Never nil
+	// on a Runtime built through New; a nil-receiver-safe zero value on one
+	// built directly by a test.
+	admission *runAdmission
+	// draining is set once shutdown has begun (PANDO-US-0022): handleRun
+	// stops admitting new runs, existing streams are left to finish. See
+	// Runtime.Close and isDraining/StartDraining.
+	draining atomic.Bool
 
 	// baseCtx is the parent of every agent run. Runs are deliberately NOT bound
 	// to the HTTP request: an interrupted run must stay alive between the
@@ -44,6 +54,10 @@ type Runtime struct {
 	baseCtx context.Context
 	cancel  context.CancelFunc
 	once    sync.Once
+
+	// startedAt is when this adapter instance came up, used to compute the
+	// uptime reported by GET {path}/healthz (PANDO-US-0020).
+	startedAt time.Time
 }
 
 // New builds the adapter. It does not start any listener; call Register to
@@ -75,8 +89,10 @@ func New(deps Deps, cfg Config) (*Runtime, error) {
 		states:    newStateStore(),
 		pending:   pending,
 		runs:      newRunStore(),
+		admission: newRunAdmission(cfg.MaxConcurrentRuns),
 		baseCtx:   ctx,
 		cancel:    cancel,
+		startedAt: time.Now(),
 	}
 	go r.watchQuestions(ctx)
 
@@ -93,13 +109,88 @@ func New(deps Deps, cfg Config) (*Runtime, error) {
 	return r, nil
 }
 
-// Close stops the adapter's background work and cancels every detached run.
-// Pooled agents are left to the garbage collector.
+// StartDraining stops the adapter from admitting new runs (PANDO-US-0022):
+// handleRun starts answering every new-run POST with 503 + Retry-After,
+// reusing the PANDO-US-0021 rejection path, while runs already in flight are
+// left to keep streaming. It is idempotent and safe to call before Close --
+// Close calls it itself, first thing, but a caller that wants the /healthz
+// draining flag to flip before the rest of teardown begins (e.g. so a load
+// balancer notices sooner) may call it directly.
+func (r *Runtime) StartDraining() {
+	r.draining.Store(true)
+}
+
+// isDraining reports whether the adapter has begun shutting down (see
+// StartDraining), consulted by handleRun and reported in GET {path}/healthz.
+func (r *Runtime) isDraining() bool {
+	return r.draining.Load()
+}
+
+// Close begins draining (see StartDraining) so no new run is admitted, then
+// gives every already-admitted, non-suspended run up to Config.ShutdownGrace
+// to finish naturally -- letting the normal per-chunk message-store writes
+// internal/llm/agent already performs while streaming catch up -- before
+// falling back to the hard cancel this method always did for whatever is
+// still running. A suspended run (parked on a permission prompt) is never
+// waited on: nobody is going to answer a human-in-the-loop prompt inside a
+// shutdown window, so it is checkpointed and released immediately regardless
+// of grace -- its accumulated messages are already durably persisted by the
+// same per-chunk writes, so releasing it early loses nothing that waiting
+// would have preserved. Pooled agents are left to the garbage collector.
+//
+// ShutdownGrace <= 0 reproduces the pre-PANDO-US-0022 behaviour: every run is
+// cancelled immediately, with no wait.
 func (r *Runtime) Close() {
 	r.once.Do(func() {
+		r.StartDraining()
+
+		var waiting, suspended []*activeRun
 		for _, run := range r.runs.all() {
+			if run.isSuspended() {
+				suspended = append(suspended, run)
+				continue
+			}
+			waiting = append(waiting, run)
+		}
+		for _, run := range suspended {
+			// cancelAll first: a human-in-the-loop wait (hitl.go) selects on
+			// the adapter's own base context, not the run's (see
+			// pendingRegistry.cancelAll's doc comment), so cancelling the
+			// run's context alone would not reach it -- exactly the same
+			// two-step handleCancelRun already uses.
+			r.pending.cancelAll(run.sessionID)
 			r.finishRun(run)
 		}
+
+		grace := r.cfg.ShutdownGrace
+		if grace > 0 && len(waiting) > 0 {
+			logging.Info("agui: draining, waiting for in-flight runs to finish",
+				"count", len(waiting), "grace", grace)
+			deadline := time.NewTimer(grace)
+		waitLoop:
+			for _, run := range waiting {
+				select {
+				case <-run.done:
+				case <-deadline.C:
+					break waitLoop
+				}
+			}
+			deadline.Stop()
+		}
+
+		var cut int
+		for _, run := range waiting {
+			select {
+			case <-run.done:
+			default:
+				cut++
+				r.finishRun(run)
+			}
+		}
+		if cut > 0 {
+			logging.Warn("agui: shutdown deadline reached, cancelling runs still in flight", "count", cut)
+		}
+
 		r.cancel()
 		if r.pool.busy() {
 			logging.Warn("AG-UI adapter closing with runs still in flight")

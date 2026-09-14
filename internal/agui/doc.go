@@ -152,4 +152,44 @@
 //     dedicated signal channel) so RUN_ERROR{code:"cancelled"} reaches every
 //     attached stream through the one translator, never raced against it
 //     from the HTTP handler's own goroutine.
+//
+// # Operability for embedded deployments (PANDO-EP-0004)
+//
+//   - PANDO-US-0020: GET {path}/healthz is the one route Register mounts
+//     outside authorize() — see server.go's handleHealthz. It answers 200
+//     with status, version, uptime and (below) the concurrency gauge and
+//     draining flag, and nothing else: no agent/profile list, no origins, no
+//     token, no session or thread identifier.
+//
+//   - PANDO-US-0021: Config.MaxConcurrentRuns caps runs the adapter admits,
+//     enforced by runAdmission (admission.go) before any session, agent
+//     instance or thread binding is created. A slot is held for a run's
+//     whole lifetime, including while suspended waiting on a client — a
+//     parked run still occupies one — and released exactly once, by
+//     Runtime.finishRun, guarded by activeRun.stop()'s once-only return so a
+//     run finalized from more than one path never double-releases. A
+//     resumption of an already-admitted run never calls tryAdmit again. Over
+//     the cap, handleRun answers 503 + Retry-After through
+//     Runtime.rejectOverCapacity before opening any stream.
+//
+//   - PANDO-US-0022: Config.ShutdownGrace bounds how long Runtime.Close waits
+//     for in-flight runs to finish before falling back to the hard cancel it
+//     always did for whatever is left, logging the cut count. Close begins
+//     by draining (Runtime.StartDraining), so handleRun rejects every new
+//     run through the same PANDO-US-0021 path for the rest of shutdown. A
+//     suspended run is never waited on — nobody is going to answer a
+//     human-in-the-loop prompt inside a shutdown window — so it is released
+//     immediately, cancelAll'd first so a hitl.go wait (which selects on the
+//     adapter's base context, not the run's) is actually unblocked.
+//     cmd/agui_serve.go orders listener.Shutdown before the deferred
+//     Runtime.Close, both bounded by the same configured grace.
+//
+//   - PANDO-US-0023: agui-serve resolves its bearer token in precedence
+//     --token > --token-file > PANDO_AGUI_TOKEN > generated
+//     (cmd/agui_serve.go's resolveAGUIToken), rejecting an explicitly
+//     supplied-but-empty source as a startup error rather than falling
+//     through. The token is never logged at any level, including the
+//     startup config dump (New's "AG-UI adapter ready" line never carries
+//     Deps.Token), and is printed to stdout only in the generated case —
+//     the only one the operator has no other way to learn it.
 package agui

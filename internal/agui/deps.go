@@ -107,6 +107,17 @@ type Config struct {
 	// attached client disconnects before it is torn down (PANDO-US-0017).
 	// ConfigFromApp always resolves this to defaultDisconnectGrace.
 	DisconnectGrace time.Duration
+	// MaxConcurrentRuns caps how many runs the adapter admits at once
+	// (PANDO-US-0021). A run holds its slot for its whole lifetime,
+	// including while suspended waiting on a client. <= 0 means unlimited,
+	// the pre-PANDO-US-0021 behaviour and the default.
+	MaxConcurrentRuns int
+	// ShutdownGrace bounds how long Runtime.Close waits for in-flight runs
+	// to finish before cancelling whatever is left (PANDO-US-0022).
+	// ConfigFromApp always resolves this to defaultShutdownGrace unless the
+	// config file set an explicit value -- including an explicit 0, which
+	// reproduces the pre-PANDO-US-0022 immediate-cancel behaviour.
+	ShutdownGrace time.Duration
 }
 
 // Profile is one resolved AG-UI profile: a Base built-in agent plus the
@@ -162,6 +173,11 @@ const (
 	// a run stays parked after its last attached client disconnects before
 	// it is torn down.
 	defaultDisconnectGrace = 2 * time.Minute
+
+	// defaultShutdownGrace is PANDO-US-0022's documented default: how long
+	// Runtime.Close waits for in-flight runs to finish before cancelling
+	// whatever is left.
+	defaultShutdownGrace = 30 * time.Second
 )
 
 // ConfigFromApp resolves an AGUIConfig into the adapter's own Config, applying
@@ -202,6 +218,17 @@ func ConfigFromApp(c config.AGUIConfig) Config {
 	if c.DisconnectGrace != "" {
 		if d, err := time.ParseDuration(c.DisconnectGrace); err == nil && d > 0 {
 			out.DisconnectGrace = d
+		}
+	}
+	out.MaxConcurrentRuns = c.MaxConcurrentRuns
+	// Unlike DisconnectGrace above, an explicit "0s"/"0" must be honoured as
+	// the deliberate "no grace, cancel immediately" choice the story
+	// documents, not silently discarded in favour of the default -- so this
+	// accepts d >= 0, not d > 0.
+	out.ShutdownGrace = defaultShutdownGrace
+	if c.ShutdownGrace != "" {
+		if d, err := time.ParseDuration(c.ShutdownGrace); err == nil && d >= 0 {
+			out.ShutdownGrace = d
 		}
 	}
 	for _, name := range c.Agents {

@@ -2,7 +2,7 @@
 id: PANDO-US-0020
 type: story
 title: Unauthenticated GET {path}/healthz on the AG-UI listener
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0004
 milestone: PANDO-M-0001

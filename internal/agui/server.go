@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 
 // Register mounts the adapter's routes on mux:
 //
+//	GET    {path}/healthz               unauthenticated liveness probe (PANDO-US-0020)
 //	POST   {path}/{agent}               run an agent, streaming AG-UI events over SSE
 //	GET    {path}/info                  agent discovery, consumed by CopilotKit's runtime
 //	GET    {path}/threads               list this adapter's threads, paginated newest-first
@@ -32,8 +34,16 @@ import (
 // let a browser client rebuild a conversation without co-mounting the Web-UI
 // REST API: they work on the dedicated `agui-serve` listener, which carries no
 // REST API by design (see cmd/agui_serve.go).
+//
+// /healthz is the one route that does not go through authorize(): it is
+// registered directly against handleHealthz, never wrapped by the bearer-token
+// check every other handler below performs on its own first line. That is a
+// deliberate, narrow exception -- see handleHealthz's doc comment for what it
+// is and is not allowed to expose -- and nothing else may bypass authorize()
+// this way.
 func (r *Runtime) Register(mux *http.ServeMux) {
 	path := strings.TrimSuffix(r.cfg.Path, "/")
+	mux.HandleFunc("GET "+path+"/healthz", r.handleHealthz)
 	mux.HandleFunc("GET "+path+"/info", r.handleInfo)
 	mux.HandleFunc("OPTIONS "+path+"/", r.handlePreflight)
 	mux.HandleFunc("GET "+path+"/threads", r.handleListThreads)
@@ -127,6 +137,56 @@ func (r *Runtime) handlePreflight(w http.ResponseWriter, req *http.Request) {
 }
 
 // ------------------------------------------------------------------ handlers
+
+// HealthResponse is the GET {path}/healthz payload (PANDO-US-0020). It is
+// deliberately minimal and carries nothing an unauthenticated caller
+// shouldn't see: no agent/profile names, no configured path, no allowed
+// origins, no token or anything token-derived, and no session or thread
+// identifier. ActiveRuns/MaxConcurrentRuns (PANDO-US-0021) and Draining
+// (PANDO-US-0022) are the one aggregate signal about user activity this
+// payload carries -- a concurrency gauge and a drain flag, never a count or
+// list that could identify a particular user or conversation.
+type HealthResponse struct {
+	Status  string `json:"status"`
+	Version string `json:"version"`
+	// UptimeSeconds is how long this adapter instance has been running.
+	UptimeSeconds float64 `json:"uptimeSeconds"`
+	// ActiveRuns is the number of runs currently holding an admission slot
+	// (PANDO-US-0021): running, or suspended waiting on a client -- a parked
+	// run still occupies its slot, so it is included here too.
+	ActiveRuns int `json:"activeRuns"`
+	// MaxConcurrentRuns is the configured cap (Config.MaxConcurrentRuns); 0
+	// means unlimited, matching the config's own default semantics.
+	MaxConcurrentRuns int `json:"maxConcurrentRuns"`
+	// Draining reports whether the adapter is shutting down and no longer
+	// admitting new runs (PANDO-US-0022), so a load balancer can take this
+	// instance out of rotation.
+	Draining bool `json:"draining"`
+}
+
+// handleHealthz answers GET {path}/healthz: an unauthenticated liveness probe
+// for a load balancer, systemd unit or container orchestrator (PANDO-US-0020).
+// It is the only route Register mounts outside authorize() -- see Register's
+// doc comment -- and it is never routed through setCORSHeaders/the Origin
+// allow-list either: an absent Origin (what every such probe sends) already
+// bypasses that check in authorize(), and the payload here contains nothing
+// sensitive, so a browser hitting it directly is harmless.
+func (r *Runtime) handleHealthz(w http.ResponseWriter, _ *http.Request) {
+	current, max := r.admission.snapshot()
+	resp := HealthResponse{
+		Status:            "ok",
+		Version:           version.Normalize(),
+		UptimeSeconds:     time.Since(r.startedAt).Seconds(),
+		ActiveRuns:        current,
+		MaxConcurrentRuns: max,
+		Draining:          r.isDraining(),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logging.Debug("agui: encode healthz response", "error", err)
+	}
+}
 
 // AgentDescriptor is one entry of the /info response.
 type AgentDescriptor struct {
@@ -366,9 +426,33 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 		prompt = ctxBlock + "\n\n" + prompt
 	}
 
+	// Draining (PANDO-US-0022) and the concurrency cap (PANDO-US-0021) are
+	// both checked here, before anything is created for this request: no
+	// session, no agent instance, no thread binding. Checked in this order
+	// (rather than folded into one condition) only so the two rejection log
+	// lines stay distinct; both answer through the same rejectOverCapacity
+	// helper. A resumption or reattach never reaches this point -- it took
+	// the hasRun branch above and is re-attaching to a run that already
+	// holds its slot.
+	if r.isDraining() {
+		unlock()
+		logging.Info("agui: run rejected, adapter draining", "thread", in.ThreadID)
+		r.rejectOverCapacity(w, "the server is shutting down; retry against another instance")
+		return
+	}
+	if !r.admission.tryAdmit() {
+		unlock()
+		current, max := r.admission.snapshot()
+		logging.Warn("agui: run rejected, concurrency cap reached",
+			"thread", in.ThreadID, "current", current, "max", max)
+		r.rejectOverCapacity(w, "too many concurrent runs, try again later")
+		return
+	}
+
 	sessionID, existed, err := r.sessionForThread(req.Context(), in.ThreadID, routeKey, prompt, profile)
 	if err != nil {
 		unlock()
+		r.admission.release()
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -376,6 +460,7 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 	svc, err := r.pool.get(routeKey, agentName, profile, in.Tools)
 	if err != nil {
 		unlock()
+		r.admission.release()
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -385,6 +470,7 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 	sse, err := NewSSEWriter(w)
 	if err != nil {
 		unlock()
+		r.admission.release()
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -399,6 +485,7 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 	t := newTranslator(in.ThreadID, in.RunID).withState(state)
 	if err := r.runPrelude(req.Context(), sse, t, state, sessionID, existed && attached); err != nil {
 		unlock()
+		r.admission.release()
 		return
 	}
 
@@ -420,6 +507,7 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		cancel()
 		unlock()
+		r.admission.release()
 		_ = sse.WriteAll(t.Fail(err.Error(), runErrorCode(err)))
 		return
 	}
@@ -431,10 +519,14 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 		logging.Warn("agui: run store rejected a newly created run", "thread", in.ThreadID)
 		cancel()
 		unlock()
+		r.admission.release()
 		_ = sse.WriteAll(t.Fail("internal error starting the run", ""))
 		return
 	}
 	unlock()
+	// From here on the run is registered and its admission slot is released
+	// exactly once, by finishRun, when the run truly ends -- see
+	// runAdmission's doc comment for why a suspension must not release it.
 
 	go r.pump(run)
 	r.attachRun(req.Context(), sse, run, true)
@@ -752,6 +844,25 @@ func runErrorCode(err error) string {
 	default:
 		return ""
 	}
+}
+
+// runRejectedRetryAfterSeconds is the Retry-After value sent with a 503 from
+// rejectOverCapacity. It is a plain constant rather than derived from
+// Config.ShutdownGrace/MaxConcurrentRuns: those bound how long a slot might
+// take to free up, but a short, fixed retry hint is simpler for a client to
+// implement correctly than one that varies by rejection reason.
+const runRejectedRetryAfterSeconds = 5
+
+// rejectOverCapacity answers a POST that handleRun will not admit -- the
+// concurrency cap is reached (PANDO-US-0021) or the adapter is draining for
+// shutdown (PANDO-US-0022) -- with 503 and a numeric Retry-After header. It is
+// called before any session, agent instance or thread binding is created and
+// before any SSE stream is opened, so the caller must not have started
+// anything yet: no RUN_ERROR event is emitted, because no run exists to
+// attribute one to.
+func (r *Runtime) rejectOverCapacity(w http.ResponseWriter, reason string) {
+	w.Header().Set("Retry-After", strconv.Itoa(runRejectedRetryAfterSeconds))
+	writeJSONError(w, http.StatusServiceUnavailable, reason)
 }
 
 func writeJSONError(w http.ResponseWriter, status int, msg string) {

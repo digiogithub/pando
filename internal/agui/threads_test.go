@@ -382,6 +382,11 @@ func newThreadTestRuntime(t *testing.T, db *sql.DB) (*Runtime, *fakeSessionServi
 		pending: newPendingRegistry(),
 		runs:    newRunStore(),
 		baseCtx: context.Background(),
+		// A no-op: baseCtx is context.Background(), which nothing here needs
+		// to actually cancel -- but Runtime.Close (PANDO-US-0022) always
+		// calls r.cancel(), so it must not be nil for a test that exercises
+		// Close on a Runtime built by this helper.
+		cancel: func() {},
 	}
 	return r, sessions, messages
 }

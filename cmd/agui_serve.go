@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
-	"time"
 
 	"github.com/digiogithub/pando/internal/agui"
 	"github.com/digiogithub/pando/internal/app"
@@ -34,7 +34,11 @@ process of their own, which is the recommended shape for anything a browser
 reaches: the Web-UI API, the session endpoints and the static UI are simply not
 served here.
 
-The bearer token is printed on startup unless --token or --no-token is given.`,
+The bearer token is resolved in this order: --token, then --token-file, then
+the PANDO_AGUI_TOKEN environment variable, then a freshly generated one. Only
+the generated case is printed on startup, since it is the only one the
+operator has no other way to learn; an explicitly supplied token is never
+printed or logged. --no-token disables bearer-token authentication entirely.`,
 	Example: `
   # Serve the coder agent for a Next.js app running on localhost:3000
   pando agui-serve --port 8090 --allow-origin http://localhost:3000
@@ -42,8 +46,13 @@ The bearer token is printed on startup unless --token or --no-token is given.`,
   # Serve the coder agent with a persona injected into every run's prompt
   pando agui-serve --port 8090 --allow-origin http://localhost:3000 --persona perfumer
 
-  # Serve a different project directory with a fixed token
-  pando agui-serve --cwd /path/to/project --token "$PANDO_AGUI_TOKEN"
+  # Serve a different project directory, reading the token from the
+  # environment -- e.g. a systemd unit's EnvironmentFile, never logged and
+  # never visible in "ps"
+  PANDO_AGUI_TOKEN="$(cat /run/secrets/agui-token)" pando agui-serve --cwd /path/to/project
+
+  # Read the token from a file directly, e.g. a container secret mount
+  pando agui-serve --cwd /path/to/project --token-file /run/secrets/agui-token
 
   # Plain HTTP (only sane behind a reverse proxy that terminates TLS)
   pando agui-serve --no-tls`,
@@ -58,6 +67,7 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 	origins, _ := cmd.Flags().GetStringArray("allow-origin")
 	agents, _ := cmd.Flags().GetStringArray("agent")
 	token, _ := cmd.Flags().GetString("token")
+	tokenFile, _ := cmd.Flags().GetString("token-file")
 	noToken, _ := cmd.Flags().GetBool("no-token")
 	noTLS, _ := cmd.Flags().GetBool("no-tls")
 	tlsCert, _ := cmd.Flags().GetString("tls-cert")
@@ -96,11 +106,18 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 	}
 	cfg.AGUI.RequireToken = !noToken
 
-	if !noToken && token == "" {
-		token, err = randomToken()
-		if err != nil {
-			return err
+	var generatedToken bool
+	if !noToken {
+		envToken, envSet := os.LookupEnv("PANDO_AGUI_TOKEN")
+		resolved, generated, terr := resolveAGUIToken(
+			token, cmd.Flags().Changed("token"),
+			tokenFile, cmd.Flags().Changed("token-file"),
+			envToken, envSet,
+		)
+		if terr != nil {
+			return terr
 		}
+		token, generatedToken = resolved, generated
 	}
 	if noToken {
 		logging.Warn("AG-UI server started without a token: any local process can drive the agent")
@@ -139,6 +156,7 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 		tlsCert, tlsKey = "", ""
 	}
 
+	aguiRuntimeCfg := agui.ConfigFromApp(cfg.AGUI)
 	runtime, err := agui.New(agui.Deps{
 		Sessions:     pandoApp.Sessions,
 		Messages:     pandoApp.Messages,
@@ -150,7 +168,7 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 		LSP:          pandoApp,
 		DB:           conn,
 		Token:        token,
-	}, agui.ConfigFromApp(cfg.AGUI))
+	}, aguiRuntimeCfg)
 	if err != nil {
 		return fmt.Errorf("failed to build the AG-UI adapter: %w", err)
 	}
@@ -171,7 +189,11 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 	if cfg.AGUI.Persona != "" {
 		fmt.Printf("Persona: %s\n", cfg.AGUI.Persona)
 	}
-	if token != "" {
+	if generatedToken {
+		// The only case printed to stdout: an explicitly supplied token
+		// (--token, --token-file or PANDO_AGUI_TOKEN) is never echoed back
+		// anywhere, so it cannot land in a captured journal/log -- see
+		// resolveAGUIToken's doc comment.
 		fmt.Printf("Token:   %s\n", token)
 	}
 	if len(cfg.AGUI.AllowedOrigins) > 0 {
@@ -185,7 +207,21 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 	select {
 	case <-sigCtx.Done():
 		logging.Info("Shutdown signal received")
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// Draining should be visible (via GET {path}/healthz) and new runs
+		// should start being rejected as early in shutdown as possible,
+		// before the listener even stops accepting connections -- not only
+		// once the deferred runtime.Close() below finally runs.
+		runtime.StartDraining()
+		// The listener is given a context derived from the same grace
+		// PANDO-US-0022 gives Runtime.Close, instead of the previous
+		// hardcoded 5s: a run that legitimately needs the whole grace to
+		// finish must not have its response cut off by the listener alone.
+		// listener.Shutdown is called here, before the deferred
+		// runtime.Close() (which runs on this function's return, i.e.
+		// strictly after) -- that ordering matters: Close is what actually
+		// drives in-flight runs to finish or be cancelled, so it must not
+		// race the listener tearing down their HTTP responses first.
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), aguiRuntimeCfg.ShutdownGrace)
 		defer shutdownCancel()
 		if err := listener.Shutdown(shutdownCtx); err != nil {
 			logging.Debug("AG-UI listener shutdown", "error", err)
@@ -223,6 +259,50 @@ func randomToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+// resolveAGUIToken decides the bearer token agui-serve enforces, in
+// precedence order: --token, then --token-file, then the PANDO_AGUI_TOKEN
+// environment variable, then a freshly generated one. generated reports
+// whether the last case fired -- the only one safe to print to stdout (see
+// runAGUIServe): an explicitly supplied token must never be echoed back to a
+// terminal or log that might be captured into a journal or CI artifact.
+//
+// Each explicit source is identified by *Set, not merely by its value being
+// non-empty, so an operator who explicitly points --token-file at an empty
+// secrets file (or sets PANDO_AGUI_TOKEN="" in an EnvironmentFile) gets a
+// startup error instead of silently falling through to a generated token --
+// a systemd unit with a misconfigured secret must fail loudly, not start
+// unauthenticated under a token nobody wrote down.
+func resolveAGUIToken(flagToken string, flagSet bool, tokenFile string, tokenFileSet bool, envToken string, envSet bool) (token string, generated bool, err error) {
+	if flagSet {
+		if flagToken == "" {
+			return "", false, fmt.Errorf("--token was given but empty")
+		}
+		return flagToken, false, nil
+	}
+	if tokenFileSet {
+		data, rerr := os.ReadFile(tokenFile)
+		if rerr != nil {
+			return "", false, fmt.Errorf("failed to read --token-file %q: %w", tokenFile, rerr)
+		}
+		fileToken := strings.TrimSpace(string(data))
+		if fileToken == "" {
+			return "", false, fmt.Errorf("--token-file %q is empty", tokenFile)
+		}
+		return fileToken, false, nil
+	}
+	if envSet {
+		if envToken == "" {
+			return "", false, fmt.Errorf("PANDO_AGUI_TOKEN is set but empty")
+		}
+		return envToken, false, nil
+	}
+	token, err = randomToken()
+	if err != nil {
+		return "", false, err
+	}
+	return token, true, nil
+}
+
 func init() {
 	rootCmd.AddCommand(aguiServeCmd)
 
@@ -233,7 +313,8 @@ func init() {
 	aguiServeCmd.Flags().StringArray("allow-origin", nil, "Browser origin allowed to connect (repeatable)")
 	aguiServeCmd.Flags().StringArray("agent", nil, "Agent exposed over AG-UI (repeatable, defaults to the configured list)")
 	aguiServeCmd.Flags().String("persona", "", "Persona injected into every run's system prompt (per-session override; must be a loaded persona)")
-	aguiServeCmd.Flags().String("token", "", "Bearer token clients must present (generated when omitted)")
+	aguiServeCmd.Flags().String("token", "", "Bearer token clients must present (highest precedence; see --token-file and PANDO_AGUI_TOKEN; generated and printed once when none of the three is given)")
+	aguiServeCmd.Flags().String("token-file", "", "Path to a file containing the bearer token (trailing whitespace/newline trimmed; used when --token is not given)")
 	aguiServeCmd.Flags().Bool("no-token", false, "Disable bearer-token authentication")
 	aguiServeCmd.Flags().Bool("no-tls", false, "Serve plain HTTP instead of TLS")
 	aguiServeCmd.Flags().String("tls-cert", "", "Path to a TLS certificate file (auto-generated if omitted)")

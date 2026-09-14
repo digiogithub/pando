@@ -492,6 +492,12 @@ func (s *runStore) lockThread(threadID string) func() {
 func (r *Runtime) finishRun(run *activeRun) {
 	if run.stop() {
 		logging.Debug("agui: run finished", "thread", run.threadID, "session", run.sessionID)
+		// Released exactly once, guarded by stop()'s once-only return value:
+		// finishRun can be (and is) called more than once for the same run
+		// (e.g. an explicit cancel racing the pump's own natural finish), and
+		// only the call that actually stopped it may free its admission slot
+		// (PANDO-US-0021).
+		r.admission.release()
 	}
 	r.pending.discard(run.sessionID)
 	r.runs.remove(run)

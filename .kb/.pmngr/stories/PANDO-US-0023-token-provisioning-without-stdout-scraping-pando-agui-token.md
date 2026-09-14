@@ -2,7 +2,7 @@
 id: PANDO-US-0023
 type: story
 title: "Token provisioning without stdout scraping: PANDO_AGUI_TOKEN and --token-file"
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0004
 milestone: PANDO-M-0001
