@@ -2,7 +2,7 @@
 id: PANDO-US-0009
 type: story
 title: Complete the AG-UI event and input typings, with a CI drift check
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0001
 milestone: PANDO-M-0001

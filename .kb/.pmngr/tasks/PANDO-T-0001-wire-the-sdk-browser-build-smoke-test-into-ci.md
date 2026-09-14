@@ -32,6 +32,19 @@ and `npm run test:browser-build`.
 - [ ] The job fails the build when the bundle regains a `node:` builtin or a CopilotKit reference.
 - [ ] The chosen repository and workflow file are recorded here, so the split is not rediscovered.
 
+## Progress
+
+PANDO-US-0009 added `.github/workflows/ci.yml` inside the `sdk/typescript` repository — the first
+workflow that repository has ever had — running the build, both typechecks, the test suite, the
+browser-build smoke test and the new `check:agui-drift` script. That answers the "which repository"
+question in practice: SDK CI lives in the SDK repository.
+
+Two things are still open. The workflow has never run against real GitHub Actions, so it is
+unverified. And `check:agui-drift` parses the Go source of the monorepo at runtime, so the job
+checks out `digiogithub/pando`; if that repository is private the job needs a token secret, which
+nobody has provisioned. Until then the drift check cannot pass in CI even though it passes locally.
+
 ## Notes
 
-Follow-up of PANDO-US-0006. Size XS, but it needs a decision about repository ownership first.
+Follow-up of PANDO-US-0006, advanced by PANDO-US-0009. Related to PANDO-T-0002: both are about
+where SDK integration tests are allowed to run.
