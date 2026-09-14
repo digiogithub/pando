@@ -598,6 +598,17 @@ type MCPServerConfig struct {
 	HttpPort int `json:"httpPort,omitempty" toml:"HttpPort"`
 	// HttpHost is the interface to bind the HTTP transport. Default: "localhost".
 	HttpHost string `json:"httpHost,omitempty" toml:"HttpHost"`
+	// HttpToken is the bearer token clients must present as
+	// "Authorization: Bearer <token>" to reach /mcp and /mcp/sse. When empty,
+	// the server generates a random token at startup (loopback binds only; see
+	// HttpHost) and prints it once to stderr. The field name intentionally ends
+	// in "Token" so internal/redact.IsSecretKey masks it from any config dump.
+	HttpToken string `json:"httpToken,omitempty" toml:"HttpToken"`
+	// HttpAllowedOrigins is the browser-origin allow-list for the HTTP
+	// transport's CORS policy. An empty (or absent) list is the safe default:
+	// no Access-Control-* headers are emitted and preflight requests are
+	// refused, since loopback Go/CLI clients are not browsers and need none.
+	HttpAllowedOrigins []string `json:"httpAllowedOrigins,omitempty" toml:"HttpAllowedOrigins"`
 	// StdioEnabled enables the stdio transport. Default: true.
 	StdioEnabled bool `json:"stdioEnabled,omitempty" toml:"StdioEnabled"`
 	// HttpEnabled enables the HTTP/streamable transport. Default: true.

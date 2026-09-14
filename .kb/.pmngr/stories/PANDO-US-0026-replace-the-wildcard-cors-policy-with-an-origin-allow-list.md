@@ -2,7 +2,7 @@
 id: PANDO-US-0026
 type: story
 title: Replace the wildcard CORS policy with an origin allow-list
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0006
 milestone: PANDO-M-0002

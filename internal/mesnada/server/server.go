@@ -4,6 +4,7 @@ package server
 import (
 	"bufio"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -11,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,16 +31,18 @@ const (
 
 // Server is the MCP HTTP Streamable and stdio server.
 type Server struct {
-	orchestrator *orchestrator.Orchestrator
-	addr         string
-	version      string
-	commit       string
-	httpServer   *http.Server
-	sessions     map[string]*Session
-	sessionMu    sync.RWMutex
-	tools        map[string]ToolHandler
-	useStdio     bool
-	config       *config.Config
+	orchestrator   *orchestrator.Orchestrator
+	addr           string
+	version        string
+	commit         string
+	httpServer     *http.Server
+	sessions       map[string]*Session
+	sessionMu      sync.RWMutex
+	tools          map[string]ToolHandler
+	useStdio       bool
+	config         *config.Config
+	token          string
+	allowedOrigins []string
 
 	uiOnce   sync.Once
 	uiTpl    *template.Template
@@ -104,22 +108,40 @@ type Config struct {
 	ACPHandler   *ACPHandler              // Optional ACP handler for remote connections
 	Remembrances *rag.RemembrancesService // Optional remembrances service
 	PandoTools   []llmtools.BaseTool      // Optional native Pando tools exposed as MCP tools
+
+	// Token is the bearer token required on "Authorization: Bearer <token>"
+	// for every HTTP request except /health. Empty means the HTTP transport is
+	// unauthenticated (existing embedded-server deployments that never set a
+	// token keep their current behavior); the pando mcp-server command never
+	// leaves this empty, generating one when none is configured (see
+	// cmd/mcp_server.go).
+	Token string
+
+	// AllowedOrigins is the browser-origin CORS allow-list. An empty (or nil)
+	// list is the safe default: no Access-Control-* headers are emitted and a
+	// preflight OPTIONS is refused with 403, since loopback Go/CLI clients are
+	// not browsers and send no Origin header at all. A configured origin still
+	// has to authenticate with the bearer token: this list only decides which
+	// pages are allowed to *attempt* a call, never a substitute for Token.
+	AllowedOrigins []string
 }
 
 // New creates a new MCP server.
 func New(cfg Config) *Server {
 	s := &Server{
-		orchestrator: cfg.Orchestrator,
-		addr:         cfg.Addr,
-		version:      cfg.Version,
-		commit:       cfg.Commit,
-		sessions:     make(map[string]*Session),
-		tools:        make(map[string]ToolHandler),
-		useStdio:     cfg.UseStdio,
-		config:       cfg.AppConfig,
-		acpHandler:   cfg.ACPHandler,
-		remembrances: cfg.Remembrances,
-		pandoTools:   cfg.PandoTools,
+		orchestrator:   cfg.Orchestrator,
+		addr:           cfg.Addr,
+		version:        cfg.Version,
+		commit:         cfg.Commit,
+		sessions:       make(map[string]*Session),
+		tools:          make(map[string]ToolHandler),
+		useStdio:       cfg.UseStdio,
+		config:         cfg.AppConfig,
+		acpHandler:     cfg.ACPHandler,
+		remembrances:   cfg.Remembrances,
+		pandoTools:     cfg.PandoTools,
+		token:          cfg.Token,
+		allowedOrigins: cfg.AllowedOrigins,
 	}
 
 	s.registerTools()
@@ -137,8 +159,13 @@ func New(cfg Config) *Server {
 		}
 
 		s.httpServer = &http.Server{
-			Addr:         cfg.Addr,
-			Handler:      s.corsMiddleware(mux),
+			Addr: cfg.Addr,
+			// bearerMiddleware sits inside corsMiddleware: corsMiddleware answers
+			// OPTIONS preflights itself (never calling next), so a browser
+			// preflight is never subject to the bearer check, matching how
+			// browsers never attach credentials to a preflight. bearerMiddleware
+			// still gates every actual GET/POST/DELETE that reaches the mux.
+			Handler:      s.corsMiddleware(s.bearerMiddleware(mux)),
 			ReadTimeout:  30 * time.Second,
 			WriteTimeout: 0,
 		}
@@ -147,20 +174,108 @@ func New(cfg Config) *Server {
 	return s
 }
 
+// corsMiddleware answers browser CORS according to s.allowedOrigins.
+//
+// The default (empty list) emits no Access-Control-* header at all and
+// refuses a preflight OPTIONS with 403: loopback Go/CLI clients are not
+// browsers, never send an Origin header, and need none of this. When the
+// list is non-empty, a request's Origin is echoed back only on an exact
+// match — never "*", and Access-Control-Allow-Credentials is never set, so
+// the two are never combined. An allow-listed origin still has to
+// authenticate with the bearer token (see bearerMiddleware): this is not a
+// substitute for it.
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id, ACP-Session-Id")
-		w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id, ACP-Session-Id")
+		origin := r.Header.Get("Origin")
+		allowed := s.isAllowedOrigin(origin)
+
+		if allowed {
+			// Vary: Origin tells caches/proxies this response differs by
+			// request Origin, since we echo it back instead of a fixed value.
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id, ACP-Session-Id")
+			w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id, ACP-Session-Id")
+		}
 
 		if r.Method == "OPTIONS" {
+			if !allowed {
+				http.Error(w, "origin not allowed", http.StatusForbidden)
+				return
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isAllowedOrigin reports whether origin appears verbatim in s.allowedOrigins.
+// An empty Origin header or an empty allow-list never matches: this is what
+// keeps the default (no configured origins) refusing every browser request
+// while still letting non-browser clients, which never send Origin, through
+// to bearerMiddleware.
+func (s *Server) isAllowedOrigin(origin string) bool {
+	if origin == "" {
+		return false
+	}
+	for _, allowed := range s.allowedOrigins {
+		if allowed == origin {
+			return true
+		}
+	}
+	return false
+}
+
+// bearerAuthHeaderPrefix is the required prefix of the Authorization header
+// value; RFC 6750 mandates the exact case "Bearer".
+const bearerAuthHeaderPrefix = "Bearer "
+
+// bearerMiddleware requires "Authorization: Bearer <token>" on every request
+// except /health, which is a liveness probe with no data. The comparison is
+// constant-time to avoid leaking the token through response-time timing.
+//
+// An empty s.token means no token is configured, in which case the transport
+// is unauthenticated and every request passes through unchanged. This is
+// deliberate: it is what lets a Server built without a Token (e.g. the
+// embedded orchestrator server in internal/app/app.go, which this story does
+// not touch) keep its current behavior unchanged. The `pando mcp-server`
+// command, which this story does wire up, never leaves the token empty — see
+// cmd/mcp_server.go's startup token resolution.
+func (s *Server) bearerMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.token == "" || r.URL.Path == "/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, bearerAuthHeaderPrefix) {
+			s.writeUnauthorized(w)
+			return
+		}
+		candidate := strings.TrimPrefix(auth, bearerAuthHeaderPrefix)
+
+		// subtle.ConstantTimeCompare requires equal-length inputs to be
+		// meaningful; a length mismatch alone reveals nothing an attacker
+		// doesn't already know (token length is not secret), so short-circuiting
+		// on it does not reintroduce a timing side-channel on the token's
+		// content.
+		if len(candidate) != len(s.token) || subtle.ConstantTimeCompare([]byte(candidate), []byte(s.token)) != 1 {
+			s.writeUnauthorized(w)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) writeUnauthorized(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
 }
 
 // Start starts the HTTP server or stdio loop.

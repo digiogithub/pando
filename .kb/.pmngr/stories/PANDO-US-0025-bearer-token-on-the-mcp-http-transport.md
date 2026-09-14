@@ -2,7 +2,7 @@
 id: PANDO-US-0025
 type: story
 title: Bearer token on the MCP HTTP transport
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0006
 milestone: PANDO-M-0002

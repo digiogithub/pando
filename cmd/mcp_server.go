@@ -2,8 +2,11 @@ package cmd
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -159,14 +162,40 @@ func runMCPServerMode(cmd *cobra.Command) error {
 			port = selectedPort
 		}
 
+		configuredToken := ""
+		if cfg != nil {
+			configuredToken = cfg.MCPServer.HttpToken
+		}
+		httpToken, tokenGenerated, err := ensureMCPHTTPToken(host, configuredToken)
+		if err != nil {
+			return err
+		}
+		if tokenGenerated {
+			// Printed once to stderr, exactly like cmd/agui_serve.go's token
+			// line, and never logged afterwards (see MCPServer.HttpToken's doc
+			// in internal/config/config.go for why the field name alone keeps
+			// it out of any config dump too).
+			fmt.Fprintf(os.Stderr, "No MCPServer.HttpToken configured; generated one for this run:\n%s\n", httpToken)
+		}
+
+		var allowedOrigins []string
+		if cfg != nil {
+			allowedOrigins = cfg.MCPServer.HttpAllowedOrigins
+		}
+		if len(allowedOrigins) == 0 {
+			logging.Warn("MCP HTTP transport has no MCPServer.HttpAllowedOrigins configured: all browser requests will be refused (non-browser clients are unaffected)")
+		}
+
 		addr := fmt.Sprintf("%s:%d", host, port)
 		httpSrv = mesnadaServer.New(mesnadaServer.Config{
-			Addr:         addr,
-			Orchestrator: pandoApp.MesnadaOrchestrator,
-			Version:      version.Normalize(),
-			UseStdio:     false,
-			Remembrances: pandoApp.Remembrances,
-			PandoTools:   toolList,
+			Addr:           addr,
+			Orchestrator:   pandoApp.MesnadaOrchestrator,
+			Version:        version.Normalize(),
+			UseStdio:       false,
+			Remembrances:   pandoApp.Remembrances,
+			PandoTools:     toolList,
+			Token:          httpToken,
+			AllowedOrigins: allowedOrigins,
 		})
 		go func() {
 			if err := httpSrv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -486,6 +515,60 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 	}
 
 	return tools
+}
+
+// ensureMCPHTTPToken decides the bearer token the MCP HTTP transport will
+// require, mirroring the token handling in cmd/agui_serve.go.
+//
+// A configured token is returned as-is. An empty token is only accepted when
+// host resolves to loopback: the port is then reachable only from this
+// machine, but that still includes any other local process or the user's own
+// browser (see PANDO-US-0026 for the CORS half of that), so a token is
+// generated rather than left off. Binding to a non-loopback interface with no
+// configured token is refused outright — loopback is not a security boundary
+// against the network, and there is nothing else standing between a remote
+// caller and the tool surface (see cmd/mcp_server.go:124's
+// SetGlobalAutoApprove(true)).
+func ensureMCPHTTPToken(host, configuredToken string) (token string, generated bool, err error) {
+	if configuredToken != "" {
+		return configuredToken, false, nil
+	}
+	if !isLoopbackMCPHost(host) {
+		return "", false, fmt.Errorf(
+			"MCP HTTP transport is bound to non-loopback host %q with no MCPServer.HttpToken configured; "+
+				"set MCPServer.HttpToken in .pando.toml (or bind --host to loopback) before starting", host)
+	}
+	token, err = randomMCPHTTPToken()
+	if err != nil {
+		return "", false, err
+	}
+	return token, true, nil
+}
+
+// isLoopbackMCPHost reports whether host only accepts local connections. An
+// empty host or a wildcard bind (0.0.0.0, ::) is reachable from the network
+// and therefore not loopback.
+func isLoopbackMCPHost(host string) bool {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback()
+}
+
+func randomMCPHTTPToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate MCP HTTP token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 func shutdownHTTPMCPServer(server *mesnadaServer.Server) {
