@@ -2,7 +2,7 @@
 id: PANDO-US-0006
 type: story
 title: Make the SDK package browser-safe for a Vite build
-status: backlog
+status: done
 priority: critical
 parent: PANDO-EP-0001
 milestone: PANDO-M-0001
@@ -10,7 +10,7 @@ author: claude
 labels: [sdk, typescript, agui, build]
 estimate: 5
 created: 2026-09-13T21:14:35Z
-updated: 2026-09-13T21:17:17Z
+updated: 2026-09-14T00:00:00Z
 ---
 
 ## Description
