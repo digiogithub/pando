@@ -1201,6 +1201,66 @@ type AGUIConfig struct {
 	// resolves to the documented default instead of the zero value: see
 	// agui.ConfigFromApp. Default: true (mesnada tools exposed).
 	Mesnada *bool `json:"mesnada,omitempty" toml:"Mesnada"`
+	// Profiles declares named, restricted AG-UI agent profiles keyed by
+	// route name (e.g. "backlog-assistant"), so one `agui-serve` process can
+	// serve several distinct assistants instead of one process per profile.
+	// A profile name must not collide with a KnownAgentNames entry. See
+	// AGUIProfile. Default: none (every request resolves against
+	// KnownAgentNames exactly as before this field existed).
+	Profiles map[string]AGUIProfile `json:"profiles,omitempty" toml:"Profiles"`
+}
+
+// AGUIProfile declares one named, restricted AG-UI agent profile: a Base
+// built-in agent plus the overrides that let one `agui-serve` process serve
+// several distinct assistants without running one process per profile. See
+// AGUIConfig.Profiles.
+//
+// This is where PANDO-US-0012 absorbs the adapter-wide Tools/Mesnada knobs
+// as per-profile fields: an adapter-wide [AGUI] Tools/Mesnada value remains
+// valid and is what a profile declaring none of its own inherits, while an
+// explicit profile value overrides it. Persona/Prompt/Model resolve the same
+// way against their own adapter-wide counterparts; see internal/agui for the
+// resolution logic (this struct is config schema only, no adapter
+// behaviour).
+type AGUIProfile struct {
+	// Base is the built-in agent this profile inherits its model/token
+	// configuration from. Required; must satisfy IsKnownAgent. It is never
+	// the profile's own route name: config validation refuses a profile
+	// whose name collides with a KnownAgentNames entry, so the two
+	// namespaces the adapter resolves a route against never overlap.
+	Base AgentName `json:"base" toml:"Base"`
+	// Model overrides the Base agent's configured model for runs served
+	// under this profile. Empty means inherit the Base agent's own model.
+	Model models.ModelID `json:"model,omitempty" toml:"Model"`
+	// Persona overrides the adapter-wide [AGUI] Persona for runs served
+	// under this profile. Empty means fall back to the adapter-wide value.
+	Persona string `json:"persona,omitempty" toml:"Persona"`
+	// Prompt is extra system-prompt text injected for runs served under
+	// this profile, on top of any resolved Persona content. Empty means
+	// none.
+	Prompt string `json:"prompt,omitempty" toml:"Prompt"`
+	// Tools is this profile's glob allow-list (see AGUIConfig.Tools for the
+	// matching semantics). A pointer, like Mesnada below, so the config API
+	// can tell "key absent" (nil: inherit the adapter-wide [AGUI] Tools)
+	// from "key present but empty" (non-nil, len 0: this profile explicitly
+	// has no allow-list of its own and does NOT fall back to the
+	// adapter-wide one -- full/unrestricted-by-Tools access regardless of
+	// what [AGUI] Tools says). A plain []string cannot make that
+	// distinction survive a decode/encode round-trip: both a nil and an
+	// empty slice serialize identically with `omitempty`, and identically
+	// again without it (confirmed empirically against go-toml/v2 and
+	// viper/mapstructure), so only a pointer preserves it either way.
+	Tools *[]string `json:"tools,omitempty" toml:"Tools"`
+	// DenyTools is a glob deny-list applied on top of Tools: a tool matching
+	// a DenyTools glob is dropped even when Tools would otherwise allow it.
+	// There is no adapter-wide DenyTools to fall back to, so nil and an
+	// explicit empty list both mean "no deny-list"; it is a pointer only
+	// for round-trip symmetry with Tools.
+	DenyTools *[]string `json:"denyTools,omitempty" toml:"DenyTools"`
+	// Mesnada overrides the adapter-wide [AGUI] Mesnada switch for this
+	// profile. nil means inherit the adapter-wide value (itself defaulting
+	// to true -- see AGUIConfig.Mesnada above).
+	Mesnada *bool `json:"mesnada,omitempty" toml:"Mesnada"`
 }
 
 // ImageConfig controls the image normalization pipeline applied before images
@@ -2938,6 +2998,66 @@ func normalizeMesnadaOrchestratorDefaults() {
 	// per-engine cap", so it is left alone.
 }
 
+// aguiProfileKnownKeys is the set of AGUIProfile field keys, lowercased to
+// match viper's case-insensitive key normalization (confirmed empirically:
+// viper lowercases both map keys and their nested keys on decode). It is
+// what lets validateAGUIProfiles refuse an unrecognized key inside an
+// [AGUI.Profiles.<name>] block instead of silently dropping it, unlike a
+// stray top-level agent entry (pruned above in Validate): a typoed profile
+// key (e.g. "Persnoa") would otherwise silently produce an unrestricted
+// profile instead of the one the operator wrote.
+var aguiProfileKnownKeys = map[string]bool{
+	"base":      true,
+	"model":     true,
+	"persona":   true,
+	"prompt":    true,
+	"tools":     true,
+	"denytools": true,
+	"mesnada":   true,
+}
+
+// validateAGUIProfiles enforces the PANDO-US-0012 schema rules for
+// [AGUI.Profiles.<name>] blocks:
+//   - a profile's Base must be a known built-in agent (see IsKnownAgent);
+//   - a profile name must not collide with a KnownAgentNames entry, since
+//     the adapter resolves one route-name namespace against both profiles
+//     and built-in agents (internal/agui.Runtime.resolveAgent) and a
+//     collision would make one of the two unreachable;
+//   - an unrecognized key inside a profile block is a hard error rather
+//     than the silent pruning a stray top-level agent entry gets.
+//
+// The key check reads viper's raw settings tree directly (rather than
+// relying on cfg.AGUI.Profiles, which only reflects known fields after
+// decode) because that is the only place an unknown key is still visible:
+// viper/mapstructure decoding into AGUIProfile silently discards it.
+func validateAGUIProfiles(c *Config) error {
+	for name, prof := range c.AGUI.Profiles {
+		if IsKnownAgent(AgentName(name)) {
+			return fmt.Errorf("agui profile %q: name collides with a built-in agent name", name)
+		}
+		if !IsKnownAgent(prof.Base) {
+			return fmt.Errorf("agui profile %q: unknown base agent %q", name, prof.Base)
+		}
+	}
+
+	raw, ok := viper.Get("agui.profiles").(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	for name, entry := range raw {
+		block, ok := entry.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for key := range block {
+			if !aguiProfileKnownKeys[strings.ToLower(key)] {
+				return fmt.Errorf("agui profile %q: unknown key %q", name, key)
+			}
+		}
+	}
+	return nil
+}
+
 // It validates model IDs and providers, ensuring they are supported.
 func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 	// Check if model exists
@@ -3140,6 +3260,10 @@ func Validate() error {
 		if err := validateAgent(cfg, name, agent); err != nil {
 			return err
 		}
+	}
+
+	if err := validateAGUIProfiles(cfg); err != nil {
+		return err
 	}
 
 	// Validate providers

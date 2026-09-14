@@ -2,7 +2,7 @@
 id: PANDO-US-0012
 type: story
 title: "[AGUI.Profiles.<name>] config schema and validation"
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0002
 milestone: PANDO-M-0001

@@ -3,6 +3,7 @@ package agui
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/digiogithub/pando/internal/config"
@@ -64,7 +65,7 @@ func TestApplySessionPersonaScopesOverridePerSession(t *testing.T) {
 	t.Cleanup(func() { agent.SetSessionLLMOverrides(sessionID, agent.SessionLLMOverrides{}) })
 
 	r := newTestRuntime(testConfig(), "secret")
-	r.applySessionPersona(sessionID)
+	r.applySessionOverrides(sessionID, nil)
 	if got := agent.SessionLLMOverridesFor(sessionID); got.PersonaScoped || got.Persona != "" {
 		t.Fatalf("a runtime without a persona must not install overrides, got %+v", got)
 	}
@@ -72,7 +73,7 @@ func TestApplySessionPersonaScopesOverridePerSession(t *testing.T) {
 	cfg := testConfig()
 	cfg.Persona = "perfumer"
 	r = newTestRuntime(cfg, "secret")
-	r.applySessionPersona(sessionID)
+	r.applySessionOverrides(sessionID, nil)
 
 	got := agent.SessionLLMOverridesFor(sessionID)
 	if !got.PersonaScoped || got.Persona != "perfumer" {
@@ -94,10 +95,134 @@ func TestApplySessionPersonaMergesExistingOverrides(t *testing.T) {
 	cfg := testConfig()
 	cfg.Persona = "perfumer"
 	r := newTestRuntime(cfg, "secret")
-	r.applySessionPersona(sessionID)
+	r.applySessionOverrides(sessionID, nil)
 
 	got := agent.SessionLLMOverridesFor(sessionID)
 	if got.Persona != "perfumer" || !got.PersonaScoped || got.ReasoningEffort != "high" {
 		t.Fatalf("override = %+v, want persona merged with reasoning effort high", got)
+	}
+}
+
+// PANDO-US-0014: "Per-profile persona, prompt and model override via
+// SetSessionLLMOverrides".
+
+// TestApplySessionOverrides_ProfileOverridesPersonaPromptModel: a profile's
+// Persona/Prompt/Model reach the session override in place of the
+// adapter-wide Persona, which a profile is declared to override.
+func TestApplySessionOverrides_ProfileOverridesPersonaPromptModel(t *testing.T) {
+	withTestPersonaManager(t, "backlog-bot")
+	sessionID := "agui-profile-override-session"
+	t.Cleanup(func() { agent.SetSessionLLMOverrides(sessionID, agent.SessionLLMOverrides{}) })
+
+	cfg := testConfig()
+	cfg.Persona = "adapter-wide-persona" // must NOT surface: the profile overrides it
+	r := newTestRuntime(cfg, "secret")
+
+	profile := &Profile{
+		Name:    "backlog-assistant",
+		Base:    config.AgentCoder,
+		Persona: "backlog-bot",
+		Prompt:  "Stay terse.",
+		Model:   "claude-sonnet-4-20250514",
+	}
+	r.applySessionOverrides(sessionID, profile)
+
+	got := agent.SessionLLMOverridesFor(sessionID)
+	if !got.PersonaScoped {
+		t.Fatal("expected the session to be persona-scoped")
+	}
+	if got.Persona != "backlog-bot" {
+		t.Fatalf("Persona = %q, want the profile's own %q, not the adapter-wide value", got.Persona, "backlog-bot")
+	}
+	if got.Prompt != "Stay terse." {
+		t.Fatalf("Prompt = %q, want %q", got.Prompt, "Stay terse.")
+	}
+	if got.Model != "claude-sonnet-4-20250514" {
+		t.Fatalf("Model = %q, want the profile's own model", got.Model)
+	}
+}
+
+// TestApplySessionOverrides_ProfileWithNoPersonaFallsBackToAdapterWide is the
+// PANDO-US-0014 acceptance criterion: a profile with no Persona falls back to
+// the adapter-wide [AGUI] Persona; with neither set, behaviour is unchanged
+// from today (no override installed at all).
+func TestApplySessionOverrides_ProfileWithNoPersonaFallsBackToAdapterWide(t *testing.T) {
+	sessionID := "agui-profile-fallback-session"
+	t.Cleanup(func() { agent.SetSessionLLMOverrides(sessionID, agent.SessionLLMOverrides{}) })
+
+	cfg := testConfig()
+	cfg.Persona = "adapter-wide-persona"
+	r := newTestRuntime(cfg, "secret")
+
+	// ConfigFromApp already applies this fallback onto Profile.Persona before
+	// runtime.go ever sees it (see deps_test.go); this test exercises
+	// applySessionOverrides directly with that already-resolved shape.
+	profile := &Profile{Name: "docs-assistant", Base: config.AgentTask, Persona: "adapter-wide-persona"}
+	r.applySessionOverrides(sessionID, profile)
+
+	got := agent.SessionLLMOverridesFor(sessionID)
+	if !got.PersonaScoped || got.Persona != "adapter-wide-persona" {
+		t.Fatalf("override = %+v, want the adapter-wide persona applied through the profile", got)
+	}
+
+	// With neither the profile nor the adapter declaring a persona (and no
+	// Prompt/Model either), behaviour must be unchanged from today: no
+	// override installed at all.
+	sessionID2 := "agui-profile-nothing-session"
+	t.Cleanup(func() { agent.SetSessionLLMOverrides(sessionID2, agent.SessionLLMOverrides{}) })
+	cfg2 := testConfig()
+	r2 := newTestRuntime(cfg2, "secret")
+	profile2 := &Profile{Name: "bare-assistant", Base: config.AgentTask}
+	r2.applySessionOverrides(sessionID2, profile2)
+	if got2 := agent.SessionLLMOverridesFor(sessionID2); got2.PersonaScoped || got2.Persona != "" || got2.Prompt != "" || got2.Model != "" {
+		t.Fatalf("override = %+v, want no override installed at all", got2)
+	}
+}
+
+// TestApplySessionOverrides_TwoProfilesConcurrentlyStayIsolated is the
+// PANDO-US-0014 headline acceptance criterion: two threads (sessions) running
+// two profiles concurrently in one process resolve different personas and
+// different models, interleaved rather than serialized.
+func TestApplySessionOverrides_TwoProfilesConcurrentlyStayIsolated(t *testing.T) {
+	withTestPersonaManager(t, "backlog-bot", "docs-bot")
+
+	r := newTestRuntime(testConfig(), "secret")
+	backlog := &Profile{Name: "backlog-assistant", Base: config.AgentCoder, Persona: "backlog-bot", Model: "backlog-model"}
+	docs := &Profile{Name: "docs-assistant", Base: config.AgentTask, Persona: "docs-bot", Model: "docs-model"}
+
+	const rounds = 50
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < rounds; i++ {
+			r.applySessionOverrides("thread-backlog", backlog)
+			if got := agent.SessionLLMOverridesFor("thread-backlog"); got.Persona != "backlog-bot" || got.Model != "backlog-model" {
+				t.Errorf("thread-backlog override = %+v, want backlog-bot/backlog-model", got)
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < rounds; i++ {
+			r.applySessionOverrides("thread-docs", docs)
+			if got := agent.SessionLLMOverridesFor("thread-docs"); got.Persona != "docs-bot" || got.Model != "docs-model" {
+				t.Errorf("thread-docs override = %+v, want docs-bot/docs-model", got)
+			}
+		}
+	}()
+	wg.Wait()
+	t.Cleanup(func() {
+		agent.SetSessionLLMOverrides("thread-backlog", agent.SessionLLMOverrides{})
+		agent.SetSessionLLMOverrides("thread-docs", agent.SessionLLMOverrides{})
+	})
+
+	backlogGot := agent.SessionLLMOverridesFor("thread-backlog")
+	docsGot := agent.SessionLLMOverridesFor("thread-docs")
+	if backlogGot.Persona != "backlog-bot" || backlogGot.Model != "backlog-model" {
+		t.Fatalf("thread-backlog final override = %+v", backlogGot)
+	}
+	if docsGot.Persona != "docs-bot" || docsGot.Model != "docs-model" {
+		t.Fatalf("thread-docs final override = %+v", docsGot)
 	}
 }

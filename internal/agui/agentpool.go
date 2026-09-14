@@ -64,12 +64,20 @@ func newAgentPool(deps Deps, cfg Config, perms permission.Service, ui userinput.
 	}
 }
 
-// get returns the agent for the given name and frontend toolset, building it on
-// first use. frontendTools is accepted now so P3 only has to add the proxies:
-// the pool key already accounts for it, which means a page declaring different
-// tools can never silently reuse another page's agent.
-func (p *agentPool) get(name config.AgentName, frontendTools []Tool) (agent.Service, error) {
-	key := poolKey(name, frontendTools)
+// get returns the agent for the given route key (a profile name, or the
+// base agent name when no profile is involved) and frontend toolset,
+// building it on first use. frontendTools is accepted now so P3 only has to
+// add the proxies: the pool key already accounts for it, which means a page
+// declaring different tools can never silently reuse another page's agent.
+//
+// routeKey, not name, is what keys the pool (PANDO-US-0013): two profiles
+// sharing the same Base agent must never collapse onto one pooled instance,
+// since each can carry its own Tools/DenyTools/Mesnada/Persona/Model. name is
+// still what agent.NewAgent is built as (the Base agent), and profile carries
+// the per-profile overrides applied on top of it -- nil when name is a plain
+// built-in agent with no profile involved.
+func (p *agentPool) get(routeKey string, name config.AgentName, profile *Profile, frontendTools []Tool) (agent.Service, error) {
+	key := poolKey(routeKey, frontendTools)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -81,7 +89,7 @@ func (p *agentPool) get(name config.AgentName, frontendTools []Tool) (agent.Serv
 		return e.svc, nil
 	}
 
-	svc, err := p.buildLocked(name, frontendTools)
+	svc, err := p.buildLocked(name, profile, frontendTools)
 	if err != nil {
 		return nil, err
 	}
@@ -91,8 +99,8 @@ func (p *agentPool) get(name config.AgentName, frontendTools []Tool) (agent.Serv
 
 // buildLocked mirrors internal/app/app.go's coder-agent construction, with the
 // adapter's own permission and user-input services substituted in.
-func (p *agentPool) buildLocked(name config.AgentName, frontendTools []Tool) (agent.Service, error) {
-	agentTools := p.buildToolsLocked(frontendTools)
+func (p *agentPool) buildLocked(name config.AgentName, profile *Profile, frontendTools []Tool) (agent.Service, error) {
+	agentTools := p.buildToolsLocked(profile, frontendTools)
 
 	svc, err := agent.NewAgent(
 		name,
@@ -108,10 +116,11 @@ func (p *agentPool) buildLocked(name config.AgentName, frontendTools []Tool) (ag
 }
 
 // buildToolsLocked builds the tool set handed to agent.NewAgent: the coder
-// tool set, adapter-wide filtering, HITL substitution, then frontend-tool
-// proxies. Split out from buildLocked so tests can assert on the exact slice
-// a run's tool schema is built from without needing a live model provider.
-func (p *agentPool) buildToolsLocked(frontendTools []Tool) []tools.BaseTool {
+// tool set, adapter-wide (or, when profile is set, per-profile) filtering,
+// HITL substitution, then frontend-tool proxies. Split out from buildLocked
+// so tests can assert on the exact slice a run's tool schema is built from
+// without needing a live model provider.
+func (p *agentPool) buildToolsLocked(profile *Profile, frontendTools []Tool) []tools.BaseTool {
 	agentTools := agent.CoderAgentToolsWithMesnada(
 		p.deps.Orchestrator,
 		p.deps.Remembrances,
@@ -134,13 +143,24 @@ func (p *agentPool) buildToolsLocked(frontendTools []Tool) []tools.BaseTool {
 		reserved[t.Info().Name] = true
 	}
 
-	// Adapter-wide Tools glob allow-list and Mesnada switch (config.AGUIConfig
-	// .Tools / .Mesnada). This MUST run after agent.CoderAgentToolsWithMesnada,
-	// which already applied agent.ApplyToolDiscovery internally: filtering the
-	// slice it returns is what lets filterAGUITools also strip the tool_search
-	// tool itself, closing the deferred-tool bypass its remote executor would
-	// otherwise leave open onto the whole MCP catalog (see filterAGUITools).
-	agentTools = filterAGUITools(agentTools, p.cfg.Tools, p.cfg.Mesnada)
+	// Tools glob allow-list, DenyTools glob deny-list and Mesnada switch:
+	// adapter-wide (config.AGUIConfig.Tools/.Mesnada) by default, or the
+	// declared profile's already-resolved values when a profile is serving
+	// this run (Config.Profiles -- see ConfigFromApp, which applies the
+	// adapter-wide fallback once at resolution time so this is a plain
+	// lookup, never a second fallback). This MUST run after
+	// agent.CoderAgentToolsWithMesnada, which already applied
+	// agent.ApplyToolDiscovery internally: filtering the slice it returns is
+	// what lets filterAGUITools also strip the tool_search tool itself,
+	// closing the deferred-tool bypass its remote executor would otherwise
+	// leave open onto the whole MCP catalog (see filterAGUITools). The same
+	// authorization boundary applies per profile: it is enforced exactly as
+	// the adapter-wide list is, never weakened for a profile.
+	allow, deny, mesnada := p.cfg.Tools, []string(nil), p.cfg.Mesnada
+	if profile != nil {
+		allow, deny, mesnada = profile.Tools, profile.DenyTools, profile.Mesnada
+	}
+	agentTools = filterAGUITools(agentTools, allow, deny, mesnada)
 
 	if p.cfg.HumanInTheLoop {
 		// AskUserQuestion normally blocks on a local overlay nobody can see from
@@ -166,8 +186,11 @@ func (p *agentPool) buildToolsLocked(frontendTools []Tool) []tools.BaseTool {
 	return agentTools
 }
 
-// filterAGUITools applies the adapter-wide Tools glob allow-list and Mesnada
-// switch to allTools, returning the kept subset in the same order.
+// filterAGUITools applies a Tools glob allow-list, a DenyTools glob
+// deny-list and the Mesnada switch to allTools, returning the kept subset in
+// the same order. The caller passes either the adapter-wide values or a
+// declared profile's already-resolved ones (see buildToolsLocked); the
+// filter itself does not care which.
 //
 // Unlike agent.filterToolsByNames (internal/llm/agent/tools.go), this is a
 // plain subtractive filter: nothing is force-included. filterToolsByNames
@@ -176,17 +199,17 @@ func (p *agentPool) buildToolsLocked(frontendTools []Tool) []tools.BaseTool {
 // adapter-wide allow-list needs to be able to exclude, so it must not be
 // reused here.
 //
-// With an empty allow-list and Mesnada true (the defaults) it returns
-// allTools unchanged, not a copy, so an adapter with no restriction
-// configured produces a byte-identical tool set to before this filter
-// existed.
-func filterAGUITools(allTools []tools.BaseTool, allow []string, mesnada bool) []tools.BaseTool {
-	if len(allow) == 0 && mesnada {
+// With an empty allow-list, an empty deny-list and Mesnada true (the
+// defaults) it returns allTools unchanged, not a copy, so an adapter with no
+// restriction configured produces a byte-identical tool set to before this
+// filter existed.
+func filterAGUITools(allTools []tools.BaseTool, allow, deny []string, mesnada bool) []tools.BaseTool {
+	if len(allow) == 0 && len(deny) == 0 && mesnada {
 		return allTools
 	}
 	kept := make([]tools.BaseTool, 0, len(allTools))
 	for _, t := range allTools {
-		if aguiToolAllowed(t.Info().Name, allow, mesnada) {
+		if aguiToolAllowed(t.Info().Name, allow, deny, mesnada) {
 			kept = append(kept, t)
 		}
 	}
@@ -194,9 +217,14 @@ func filterAGUITools(allTools []tools.BaseTool, allow []string, mesnada bool) []
 }
 
 // aguiToolAllowed is the single predicate behind filterAGUITools.
-func aguiToolAllowed(name string, allow []string, mesnada bool) bool {
+func aguiToolAllowed(name string, allow, deny []string, mesnada bool) bool {
 	if !mesnada && strings.HasPrefix(name, mesnadaToolPrefix) {
 		return false
+	}
+	for _, pattern := range deny {
+		if ok, err := path.Match(pattern, name); err == nil && ok {
+			return false
+		}
 	}
 	if len(allow) == 0 {
 		return true
@@ -209,7 +237,9 @@ func aguiToolAllowed(name string, allow []string, mesnada bool) bool {
 	// once an explicit allow-list is configured, tool_search is always
 	// dropped too — never matched against allow, even by an explicit "*" or
 	// literal "tool_search" glob — closing that bypass rather than trying to
-	// scope its catalog/executor to the allowed set.
+	// scope its catalog/executor to the allowed set. This applies to a
+	// profile's own allow-list exactly as it does to the adapter-wide one:
+	// the authorization boundary is not weakened per profile.
 	if name == toolSearchToolName {
 		return false
 	}
@@ -260,12 +290,19 @@ func (p *agentPool) busy() bool {
 	return false
 }
 
-// poolKey identifies an agent instance by name plus the schema of the frontend
-// tools it must expose. Tool order is normalized so two clients declaring the
-// same tools in a different order share one instance.
-func poolKey(name config.AgentName, frontendTools []Tool) string {
+// poolKey identifies an agent instance by route key (a profile name, or the
+// base agent name when no profile is involved -- see agentPool.get) plus the
+// schema of the frontend tools it must expose. Tool order is normalized so
+// two clients declaring the same tools in a different order share one
+// instance.
+//
+// Keying by route rather than by Base agent name is what PANDO-US-0013
+// extends this for: two profiles sharing one Base agent get two distinct
+// keys (their route names differ), so they get two distinct pooled
+// instances with their own toolsets and neither evicts the other on lookup.
+func poolKey(name string, frontendTools []Tool) string {
 	if len(frontendTools) == 0 {
-		return string(name)
+		return name
 	}
 	sorted := make([]Tool, len(frontendTools))
 	copy(sorted, frontendTools)
@@ -282,5 +319,5 @@ func poolKey(name config.AgentName, frontendTools []Tool) string {
 		}
 		h.Write([]byte{0})
 	}
-	return string(name) + ":" + hex.EncodeToString(h.Sum(nil))[:16]
+	return name + ":" + hex.EncodeToString(h.Sum(nil))[:16]
 }

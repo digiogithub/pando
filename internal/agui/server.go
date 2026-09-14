@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -183,6 +184,26 @@ func (r *Runtime) handleInfo(w http.ResponseWriter, req *http.Request) {
 		})
 	}
 
+	// Declared profiles are listed alongside the built-in agents (PANDO-US-0013),
+	// sorted by name for a deterministic response. Neither loop instantiates an
+	// agent: modelDescriptor/profileModelDescriptor resolve the model from
+	// config only, so /info stays cheap enough to poll and never warms the
+	// pool for an agent or profile nobody has run yet.
+	profileNames := make([]string, 0, len(r.cfg.Profiles))
+	for name := range r.cfg.Profiles {
+		profileNames = append(profileNames, name)
+	}
+	sort.Strings(profileNames)
+	for _, name := range profileNames {
+		profile := r.cfg.Profiles[name]
+		resp.Agents = append(resp.Agents, AgentDescriptor{
+			Name:        name,
+			Description: "Pando profile " + name + " (base " + string(profile.Base) + ")",
+			URL:         base + path + "/" + name,
+			Model:       profileModelDescriptor(profile),
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	// Discovery reflects live configuration (models and agents can change at
 	// runtime), and it is served to a browser that may hold a stale token.
@@ -211,6 +232,32 @@ func modelDescriptor(name config.AgentName) *ModelDescriptor {
 		out.ContextWindow = model.ContextWindow
 	}
 	if agentCfg.ContextWindowOverride > 0 {
+		out.ContextWindow = agentCfg.ContextWindowOverride
+	}
+	return out
+}
+
+// profileModelDescriptor reports the model a profile's runs are actually
+// configured to use: the profile's own Model override when it set one
+// (PANDO-US-0014), otherwise its Base agent's configured model -- the same
+// fallback the session-override wiring applies at run time (see
+// Runtime.applySessionOverrides). Like modelDescriptor, it never instantiates
+// an agent or warms the pool.
+func profileModelDescriptor(profile Profile) *ModelDescriptor {
+	if profile.Model == "" {
+		return modelDescriptor(profile.Base)
+	}
+	cfg := config.Get()
+	if cfg == nil {
+		return nil
+	}
+	out := &ModelDescriptor{ID: string(profile.Model)}
+	if model, ok := models.SupportedModels()[profile.Model]; ok {
+		out.Name = model.Name
+		out.Provider = string(model.Provider)
+		out.ContextWindow = model.ContextWindow
+	}
+	if agentCfg, ok := cfg.Agents[profile.Base]; ok && agentCfg.ContextWindowOverride > 0 {
 		out.ContextWindow = agentCfg.ContextWindowOverride
 	}
 	return out
@@ -248,10 +295,18 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	agentName, err := r.resolveAgent(req.PathValue("agent"))
+	routeName := strings.TrimSpace(req.PathValue("agent"))
+	agentName, profile, err := r.resolveAgent(routeName)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
+	}
+	// The pool is keyed by route (a profile name, or the base agent name
+	// when no profile is involved -- PANDO-US-0013), not by Base agent name:
+	// two profiles sharing one Base must never collapse onto one instance.
+	routeKey := routeName
+	if routeKey == "" {
+		routeKey = string(agentName)
 	}
 
 	in, err := DecodeRunAgentInput(req.Body, defaultMaxRequestBytes)
@@ -284,13 +339,13 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 		prompt = ctxBlock + "\n\n" + prompt
 	}
 
-	sessionID, err := r.sessionForThread(req.Context(), in.ThreadID, string(agentName), prompt)
+	sessionID, err := r.sessionForThread(req.Context(), in.ThreadID, routeKey, prompt, profile)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	svc, err := r.pool.get(agentName, in.Tools)
+	svc, err := r.pool.get(routeKey, agentName, profile, in.Tools)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return

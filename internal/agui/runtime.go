@@ -8,6 +8,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/agent"
+	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/userinput"
@@ -54,6 +55,11 @@ func New(deps Deps, cfg Config) (*Runtime, error) {
 	if err := validatePersona(cfg.Persona); err != nil {
 		return nil, err
 	}
+	for name, profile := range cfg.Profiles {
+		if err := validatePersona(profile.Persona); err != nil {
+			return nil, fmt.Errorf("agui profile %q: %w", name, err)
+		}
+	}
 	perms := permission.NewPermissionService()
 	ui := userinput.NewService()
 	pending := newPendingRegistry()
@@ -77,6 +83,7 @@ func New(deps Deps, cfg Config) (*Runtime, error) {
 	logging.Info("AG-UI adapter ready",
 		"path", cfg.Path,
 		"agents", cfg.Agents,
+		"profiles", len(cfg.Profiles),
 		"requireToken", cfg.RequireToken,
 		"allowedOrigins", cfg.AllowedOrigins,
 		"autoApprove", cfg.AutoApprove,
@@ -100,35 +107,46 @@ func (r *Runtime) Close() {
 	})
 }
 
-// resolveAgent maps the agent name from the request path to a configured agent.
-func (r *Runtime) resolveAgent(name string) (config.AgentName, error) {
+// resolveAgent maps the agent name/profile from the request path to a
+// configured Base agent, plus the declared profile that named it, if any.
+//
+// A declared profile always takes precedence over a same-named built-in
+// agent, though config validation already refuses a profile name that
+// collides with a KnownAgentNames entry (PANDO-US-0012), so in practice the
+// two namespaces never actually overlap. The 404 for an undeclared name is
+// unchanged from before profiles existed.
+func (r *Runtime) resolveAgent(name string) (config.AgentName, *Profile, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return r.cfg.Agents[0], nil
+		return r.cfg.Agents[0], nil, nil
+	}
+	if profile, ok := r.cfg.resolveProfile(name); ok {
+		return profile.Base, &profile, nil
 	}
 	agentName := config.AgentName(name)
 	if !config.IsKnownAgent(agentName) {
-		return "", fmt.Errorf("unknown agent %q", name)
+		return "", nil, fmt.Errorf("unknown agent %q", name)
 	}
 	if !r.cfg.allowsAgent(agentName) {
-		return "", fmt.Errorf("agent %q is not exposed over AG-UI", name)
+		return "", nil, fmt.Errorf("agent %q is not exposed over AG-UI", name)
 	}
-	return agentName, nil
+	return agentName, nil, nil
 }
 
 // sessionForThread resolves the Pando session backing an AG-UI thread, creating
-// it on first contact.
+// it on first contact. profile is the declared profile serving this request,
+// if any (nil for a plain built-in agent name) -- see resolveAgent.
 //
 // Since P5 the mapping survives a restart (see threads.go). A binding whose
 // session has since been deleted is dropped rather than returned: the run would
 // otherwise fail on every message of a thread the browser still considers open.
-func (r *Runtime) sessionForThread(ctx context.Context, threadID, agentName, title string) (string, error) {
+func (r *Runtime) sessionForThread(ctx context.Context, threadID, agentName, title string, profile *Profile) (string, error) {
 	if sessionID, ok := r.threads.get(ctx, threadID); ok {
 		if sess, err := r.deps.Sessions.Get(ctx, sessionID); err == nil && sess.ID != "" {
 			// The handler is per session and the mapping outlives the process, so
 			// it must be (re)installed here, not only where the session is created.
 			r.installPermissionPolicy(sessionID)
-			r.applySessionPersona(sessionID)
+			r.applySessionOverrides(sessionID, profile)
 			return sessionID, nil
 		}
 		logging.Warn("agui: thread pointed at a missing session, rebinding",
@@ -139,7 +157,7 @@ func (r *Runtime) sessionForThread(ctx context.Context, threadID, agentName, tit
 	if sess, err := r.deps.Sessions.Get(ctx, threadID); err == nil && sess.ID != "" {
 		r.threads.put(ctx, threadID, sess.ID, agentName)
 		r.installPermissionPolicy(sess.ID)
-		r.applySessionPersona(sess.ID)
+		r.applySessionOverrides(sess.ID, profile)
 		return sess.ID, nil
 	}
 
@@ -149,24 +167,44 @@ func (r *Runtime) sessionForThread(ctx context.Context, threadID, agentName, tit
 	}
 	r.threads.put(ctx, threadID, sess.ID, agentName)
 	r.installPermissionPolicy(sess.ID)
-	r.applySessionPersona(sess.ID)
+	r.applySessionOverrides(sess.ID, profile)
 	logging.Debug("agui: thread bound to session", "thread", threadID, "session", sess.ID)
 	return sess.ID, nil
 }
 
-// applySessionPersona scopes the adapter's configured persona to one session
-// through the same per-session override the ACP server uses, so every run of
-// the thread resolves the persona's instructions into its system prompt
+// applySessionOverrides scopes a profile's Persona/Prompt/Model -- or, absent
+// a profile, just the adapter-wide Persona -- to one session through the same
+// per-session override the ACP server uses (agent.SetSessionLLMOverrides), so
+// every run of the thread resolves them into its system prompt/provider
 // without touching the process-wide active persona (the TUI/desktop sharing
-// this process keep theirs). Merging keeps any other override fields (model,
-// reasoning) already installed for the session.
-func (r *Runtime) applySessionPersona(sessionID string) {
-	if r.cfg.Persona == "" {
+// this process keep theirs) or any other session's overrides. Because the
+// overrides are per session and a thread is bound to one session, two threads
+// on two profiles in one process never see each other's values
+// (PANDO-US-0014). Merging keeps any other override field (reasoning effort,
+// thinking mode) already installed for the session.
+//
+// profile's fields are already fully resolved against the adapter-wide
+// fallback (see ConfigFromApp / Profile's field docs): profile.Persona is
+// only empty here when neither the profile nor [AGUI] Persona declared one,
+// so there is no second fallback to apply.
+func (r *Runtime) applySessionOverrides(sessionID string, profile *Profile) {
+	persona, prompt, model := r.cfg.Persona, "", models.ModelID("")
+	if profile != nil {
+		persona, prompt, model = profile.Persona, profile.Prompt, profile.Model
+	}
+	if persona == "" && prompt == "" && model == "" {
 		return
 	}
+
 	ov := agent.SessionLLMOverridesFor(sessionID)
-	ov.Persona = r.cfg.Persona
-	ov.PersonaScoped = true
+	if persona != "" || prompt != "" {
+		ov.Persona = persona
+		ov.PersonaScoped = true
+		ov.Prompt = prompt
+	}
+	if model != "" {
+		ov.Model = model
+	}
 	agent.SetSessionLLMOverrides(sessionID, ov)
 }
 

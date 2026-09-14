@@ -132,16 +132,20 @@ func getPersonaContent(ctx context.Context, userPrompt string) string {
 	// persona authoritatively: an explicit name wins, otherwise auto-selection is
 	// used (the global active persona is intentionally ignored for that session).
 	if ov := sessionLLMOverridesForContext(ctx); ov.PersonaScoped {
+		// ov.Prompt (PANDO-US-0014: an AG-UI profile's extra system-prompt
+		// text) is appended to whatever persona content this branch resolves,
+		// below every return in it, so a profile's Prompt reaches the system
+		// prompt regardless of whether the profile also named a persona.
 		if ov.Persona != "" {
 			if mgr := personaManager(); mgr != nil && mgr.HasPersona(ov.Persona) {
 				logging.Debug("Persona: using per-session persona", "persona", ov.Persona)
-				return mgr.GetPersona(ov.Persona)
+				return appendSessionPrompt(mgr.GetPersona(ov.Persona), ov.Prompt)
 			}
 		}
 		if selector := personaSelector(); selector != nil {
-			return selector.SelectPersonaContent(ctx, userPrompt)
+			return appendSessionPrompt(selector.SelectPersonaContent(ctx, userPrompt), ov.Prompt)
 		}
-		return ""
+		return appendSessionPrompt("", ov.Prompt)
 	}
 
 	// Manual persona takes priority over auto-selection.
@@ -158,6 +162,20 @@ func getPersonaContent(ctx context.Context, userPrompt string) string {
 	}
 
 	return ""
+}
+
+// appendSessionPrompt joins persona content with a session's extra Prompt
+// override (SessionLLMOverrides.Prompt), separated by a blank line like the
+// other sections buildSystemMessage assembles. Either half may be empty.
+func appendSessionPrompt(personaContent, prompt string) string {
+	switch {
+	case personaContent == "":
+		return prompt
+	case prompt == "":
+		return personaContent
+	default:
+		return personaContent + "\n\n" + prompt
+	}
 }
 
 // effectiveActivePersona returns the persona name in effect for the given

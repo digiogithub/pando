@@ -35,6 +35,13 @@ type SessionLLMOverrides struct {
 	// auto-selection) takes precedence over the package-global active persona.
 	// This is what lets concurrent sessions use different personas safely.
 	PersonaScoped bool
+	// Prompt is extra system-prompt text appended for this session only, on
+	// top of whatever persona content PersonaScoped resolves (see
+	// getPersonaContent in persona_selector.go). It is only honored when
+	// PersonaScoped is true, exactly like Persona above: this is the AG-UI
+	// per-profile Prompt override (PANDO-US-0014) reusing the existing
+	// per-session mechanism instead of adding a second one.
+	Prompt string
 }
 
 func (o SessionLLMOverrides) isEmpty() bool {
@@ -42,6 +49,7 @@ func (o SessionLLMOverrides) isEmpty() bool {
 		o.ReasoningEffort == "" &&
 		o.ThinkingMode == "" &&
 		o.Persona == "" &&
+		o.Prompt == "" &&
 		!o.PersonaScoped
 }
 
@@ -110,6 +118,7 @@ func storeSessionLLMOverrides(sessionID string, overrides SessionLLMOverrides) {
 		ThinkingMode:    normalizeSessionThinkingMode(overrides.ThinkingMode),
 		Persona:         strings.TrimSpace(overrides.Persona),
 		PersonaScoped:   overrides.PersonaScoped,
+		Prompt:          overrides.Prompt,
 	}
 	if normalized.isEmpty() {
 		sessionLLMOverrides.Delete(sessionID)

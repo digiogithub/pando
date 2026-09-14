@@ -39,7 +39,7 @@ func toolNameSet(in []tools.BaseTool) map[string]bool {
 // equal contents.
 func TestFilterAGUITools_EmptyAllowListIsNoOp(t *testing.T) {
 	input := []tools.BaseTool{fakeAGUITool{"bash"}, fakeAGUITool{"kb_search_documents"}}
-	got := filterAGUITools(input, nil, true)
+	got := filterAGUITools(input, nil, nil, true)
 
 	if len(got) != len(input) {
 		t.Fatalf("expected %d tools unchanged, got %d", len(input), len(got))
@@ -69,7 +69,7 @@ func TestFilterAGUITools_AllowListIsSubtractiveOnly(t *testing.T) {
 		fakeAGUITool{"kb_search_documents"},
 	}
 
-	got := filterAGUITools(input, []string{"gintrack__*", "kb_search_documents"}, true)
+	got := filterAGUITools(input, []string{"gintrack__*", "kb_search_documents"}, nil, true)
 	names := toolNameSet(got)
 
 	for _, denied := range []string{
@@ -110,10 +110,52 @@ func TestAGUIToolAllowed_MesnadaSwitchWinsOverAllowList(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := aguiToolAllowed(tc.toolNam, tc.allow, tc.mesnada); got != tc.want {
+			if got := aguiToolAllowed(tc.toolNam, tc.allow, nil, tc.mesnada); got != tc.want {
 				t.Fatalf("aguiToolAllowed(%q, %v, %v) = %v, want %v", tc.toolNam, tc.allow, tc.mesnada, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestAGUIToolAllowed_DenyListWinsOverAllowList is the PANDO-US-0013
+// acceptance criterion for a profile's DenyTools: a tool matching a
+// DenyTools glob is dropped even when Tools would otherwise allow it, and an
+// empty DenyTools leaves the allow-list's decision untouched.
+func TestAGUIToolAllowed_DenyListWinsOverAllowList(t *testing.T) {
+	cases := []struct {
+		name string
+		tool string
+		allow,
+		deny []string
+		want bool
+	}{
+		{"deny wins over a matching allow entry", "bash", []string{"*"}, []string{"bash"}, false},
+		{"deny glob wins over allow", tools.EditToolName, []string{tools.EditToolName}, []string{"edit*"}, false},
+		{"no deny match leaves allow's decision", "kb_search_documents", []string{"kb_search_documents"}, []string{"bash"}, true},
+		{"empty deny list changes nothing", "kb_search_documents", []string{"kb_search_documents"}, nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := aguiToolAllowed(tc.tool, tc.allow, tc.deny, true); got != tc.want {
+				t.Fatalf("aguiToolAllowed(%q, allow=%v, deny=%v) = %v, want %v", tc.tool, tc.allow, tc.deny, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestFilterAGUITools_DenyOnlyStillFiltersUnderEmptyAllow guards the early-out
+// in filterAGUITools: with Tools empty but DenyTools set, the fast "return
+// allTools unchanged" path must not fire, or the deny-list would be silently
+// ignored.
+func TestFilterAGUITools_DenyOnlyStillFiltersUnderEmptyAllow(t *testing.T) {
+	input := []tools.BaseTool{fakeAGUITool{"bash"}, fakeAGUITool{"kb_search_documents"}}
+	got := filterAGUITools(input, nil, []string{"bash"}, true)
+	names := toolNameSet(got)
+	if names["bash"] {
+		t.Fatal("bash must be dropped by DenyTools even with no Tools allow-list configured")
+	}
+	if !names["kb_search_documents"] {
+		t.Fatal("kb_search_documents must survive: it matches no deny glob")
 	}
 }
 
@@ -124,11 +166,11 @@ func TestAGUIToolAllowed_MesnadaSwitchWinsOverAllowList(t *testing.T) {
 // allow-list configured at all, tool_search is unaffected (today's
 // behaviour, required for the byte-identical no-op).
 func TestAGUIToolAllowed_ToolSearchAlwaysDeniedOnceAllowListSet(t *testing.T) {
-	if !aguiToolAllowed("tool_search", nil, true) {
+	if !aguiToolAllowed("tool_search", nil, nil, true) {
 		t.Fatal("tool_search must be unaffected when no Tools allow-list is configured")
 	}
 	for _, allow := range [][]string{{"*"}, {"tool_search"}, {"gintrack__*", "kb_search_documents"}} {
-		if aguiToolAllowed("tool_search", allow, true) {
+		if aguiToolAllowed("tool_search", allow, nil, true) {
 			t.Fatalf("tool_search must be denied once an allow-list is set, allow=%v", allow)
 		}
 	}
@@ -237,7 +279,7 @@ func TestFilterAGUITools_ToolSearchBypassRegression(t *testing.T) {
 		t.Fatalf("expected the unfiltered tool_search to find github_create_issue, got: %s", resp.Content)
 	}
 
-	filtered := filterAGUITools(visible, []string{"kb_search_documents"}, true)
+	filtered := filterAGUITools(visible, []string{"kb_search_documents"}, nil, true)
 	names := toolNameSet(filtered)
 
 	if names["tool_search"] {
@@ -257,12 +299,20 @@ func TestFilterAGUITools_ToolSearchBypassRegression(t *testing.T) {
 // newAGUIPoolTestConfig returns an agui.Config with the same resolved
 // defaults agui.ConfigFromApp would produce for a config file that predates
 // Tools/Mesnada: no restriction. Individual tests override Tools/Mesnada.
+// AgentPoolSize/AgentPoolTTL are set to ConfigFromApp's own defaults (4,
+// 30m): a zero value for either is not a shape ConfigFromApp ever produces
+// (it always applies defaultPoolSize/defaultPoolTTL when the resolved value
+// is <= 0/empty), and evictLocked assumes that invariant -- a zero
+// AgentPoolTTL in particular makes it evict an entry the instant it is
+// added, and an unset AgentPoolSize makes it index an empty slice.
 func newAGUIPoolTestConfig() Config {
 	return Config{
 		Path:          defaultPath,
 		Agents:        []config.AgentName{config.AgentCoder},
 		FrontendTools: true,
 		Mesnada:       true,
+		AgentPoolSize: defaultPoolSize,
+		AgentPoolTTL:  defaultPoolTTL,
 	}
 }
 
@@ -292,7 +342,7 @@ func TestBuildToolsLocked_AllowListAndFrontendToolGuard(t *testing.T) {
 	cfg.Tools = []string{"glob", "grep"}
 	pool := newAGUITestPool(t, cfg)
 
-	got := pool.buildToolsLocked([]Tool{
+	got := pool.buildToolsLocked(nil, []Tool{
 		{Name: "bash"},      // denied: a real Pando tool name the allow-list excludes
 		{Name: "showChart"}, // fine: not a Pando tool name at all
 	})
@@ -344,8 +394,94 @@ func TestBuildToolsLocked_ToolSearchNeverReachesBuiltSetUnderAllowList(t *testin
 	cfg.Tools = []string{"glob", "grep"}
 	pool := newAgentPool(Deps{}, cfg, nil, nil, newPendingRegistry())
 
-	got := pool.buildToolsLocked(nil)
+	got := pool.buildToolsLocked(nil, nil)
 	if toolNameSet(got)["tool_search"] {
 		t.Fatal("tool_search must never reach the built tool set once a Tools allow-list is configured")
+	}
+}
+
+// TestPoolGet_TwoProfilesOverSameBaseGetDistinctInstances is the PANDO-US-0013
+// acceptance criterion: two profiles declared over the same Base agent get
+// two distinct pooled agent.Service instances with different toolsets, and
+// neither evicts the other on a pool lookup.
+func TestPoolGet_TwoProfilesOverSameBaseGetDistinctInstances(t *testing.T) {
+	cfg := newAGUIPoolTestConfig()
+	pool := newAGUITestPool(t, cfg)
+
+	backlog := Profile{Name: "backlog-assistant", Base: config.AgentCoder, Tools: []string{"gintrack__*"}, Mesnada: true}
+	docs := Profile{Name: "docs-assistant", Base: config.AgentCoder, Tools: []string{"kb_search_documents"}, Mesnada: true}
+
+	svcBacklog, err := pool.get(backlog.Name, backlog.Base, &backlog, nil)
+	if err != nil {
+		t.Fatalf("get(backlog): %v", err)
+	}
+	svcDocs, err := pool.get(docs.Name, docs.Base, &docs, nil)
+	if err != nil {
+		t.Fatalf("get(docs): %v", err)
+	}
+
+	if svcBacklog == svcDocs {
+		t.Fatal("two profiles sharing a Base agent must get distinct agent.Service instances")
+	}
+
+	pool.mu.Lock()
+	entries := len(pool.entries)
+	pool.mu.Unlock()
+	if entries != 2 {
+		t.Fatalf("pool has %d entries, want 2 (one per profile, neither evicting the other)", entries)
+	}
+
+	// A repeat lookup of either profile must return the SAME instance, not a
+	// fresh one that displaced the other.
+	again, err := pool.get(backlog.Name, backlog.Base, &backlog, nil)
+	if err != nil {
+		t.Fatalf("get(backlog) again: %v", err)
+	}
+	if again != svcBacklog {
+		t.Fatal("a repeat lookup of the same profile must reuse its pooled instance")
+	}
+	pool.mu.Lock()
+	entries = len(pool.entries)
+	pool.mu.Unlock()
+	if entries != 2 {
+		t.Fatalf("pool has %d entries after a repeat lookup, want still 2 (docs must not have been evicted)", entries)
+	}
+}
+
+// TestPoolGet_ProfileToolAllowListEnforcedExactlyLikeAdapterWide is the
+// PANDO-US-0013 acceptance criterion: a profile's tool allow-list is
+// enforced on the run exactly as the adapter-wide list is, including the
+// tool_search bypass regression.
+func TestPoolGet_ProfileToolAllowListEnforcedExactlyLikeAdapterWide(t *testing.T) {
+	prev := config.Get()
+	config.SetForTests(&config.Config{
+		ToolDiscovery: config.ToolDiscoveryConfig{
+			Enabled: true, Mode: "always", SearchLimit: 8, MaxDirectTools: 64,
+		},
+	})
+	t.Cleanup(func() { config.SetForTests(prev) })
+	agent.ResetSharedDiscoveryRegistry()
+	t.Cleanup(agent.ResetSharedDiscoveryRegistry)
+
+	cfg := newAGUIPoolTestConfig()
+	// Adapter-wide Tools is deliberately left unrestricted: the profile's own
+	// (narrower) allow-list must still be what is enforced for its runs.
+	pool := newAgentPool(Deps{}, cfg, nil, nil, newPendingRegistry())
+
+	profile := &Profile{
+		Name: "backlog-assistant", Base: config.AgentCoder,
+		Tools: []string{tools.GrepToolName}, Mesnada: true,
+	}
+	got := pool.buildToolsLocked(profile, nil)
+	names := toolNameSet(got)
+
+	if names[tools.BashToolName] {
+		t.Fatal("bash must be dropped by the profile's own allow-list")
+	}
+	if names["tool_search"] {
+		t.Fatal("tool_search must be dropped once the profile's own allow-list is configured, exactly as the adapter-wide bypass regression requires")
+	}
+	if !names[tools.GrepToolName] {
+		t.Fatal("grep must survive: it matches the profile's allow-list")
 	}
 }

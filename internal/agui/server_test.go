@@ -166,6 +166,59 @@ func TestHandleInfoListsConfiguredAgents(t *testing.T) {
 	}
 }
 
+// TestHandleInfoListsProfilesWithEffectiveModelAndNoAgentInstantiation is the
+// PANDO-US-0013 acceptance criterion: GET {path}/info lists every declared
+// profile with its effective model, and does so without instantiating an
+// agent. r.pool is left nil (as newTestRuntime always builds it): a
+// nil-pointer panic here would prove handleInfo tried to warm the pool.
+func TestHandleInfoListsProfilesWithEffectiveModelAndNoAgentInstantiation(t *testing.T) {
+	prevGlobal := config.Get()
+	config.SetForTests(&config.Config{
+		Agents: map[config.AgentName]config.Agent{
+			config.AgentCoder: {Model: "claude-sonnet-4-20250514"},
+		},
+	})
+	t.Cleanup(func() { config.SetForTests(prevGlobal) })
+
+	cfg := testConfig()
+	cfg.Profiles = map[string]Profile{
+		"backlog-assistant": {Name: "backlog-assistant", Base: config.AgentCoder},
+	}
+	r := newTestRuntime(cfg, "secret")
+	if r.pool != nil {
+		t.Fatal("test setup: expected a nil pool so this test can prove /info never touches it")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, defaultPath+"/info", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	r.handleInfo(rec, req) // would panic on r.pool.get(...) if this warmed the pool
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", rec.Code, rec.Body.String())
+	}
+	var resp InfoResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	var profileEntry *AgentDescriptor
+	for i := range resp.Agents {
+		if resp.Agents[i].Name == "backlog-assistant" {
+			profileEntry = &resp.Agents[i]
+		}
+	}
+	if profileEntry == nil {
+		t.Fatalf("profile not listed in /info: %+v", resp.Agents)
+	}
+	if want := "http://" + req.Host + defaultPath + "/backlog-assistant"; profileEntry.URL != want {
+		t.Fatalf("profile URL = %q, want %q", profileEntry.URL, want)
+	}
+	if profileEntry.Model == nil || profileEntry.Model.ID != "claude-sonnet-4-20250514" {
+		t.Fatalf("profile model = %+v, want the Base agent's configured model", profileEntry.Model)
+	}
+}
+
 // TestHandleInfoIgnoresForwardedHost: an attacker-controlled X-Forwarded-Host
 // must not make discovery hand out URLs pointing at somebody else's server.
 func TestHandleInfoIgnoresForwardedHost(t *testing.T) {
@@ -198,15 +251,47 @@ func TestHandleInfoRequiresToken(t *testing.T) {
 func TestResolveAgent(t *testing.T) {
 	r := newTestRuntime(testConfig(), "secret")
 
-	if got, err := r.resolveAgent(""); err != nil || got != config.AgentCoder {
-		t.Fatalf("empty name should default to coder, got %q (%v)", got, err)
+	if got, profile, err := r.resolveAgent(""); err != nil || got != config.AgentCoder || profile != nil {
+		t.Fatalf("empty name should default to coder with no profile, got %q profile=%v (%v)", got, profile, err)
 	}
-	if _, err := r.resolveAgent("nope"); err == nil {
+	if _, _, err := r.resolveAgent("nope"); err == nil {
 		t.Fatal("unknown agent should be rejected")
 	}
 	// Known to Pando but not exposed over AG-UI.
-	if _, err := r.resolveAgent(string(config.AgentTitle)); err == nil {
+	if _, _, err := r.resolveAgent(string(config.AgentTitle)); err == nil {
 		t.Fatal("unexposed agent should be rejected")
+	}
+}
+
+// TestResolveAgentProfile is the PANDO-US-0013 acceptance criterion: a
+// declared profile resolves to its Base agent plus its own overrides, and an
+// undeclared name still 404s.
+func TestResolveAgentProfile(t *testing.T) {
+	cfg := testConfig()
+	cfg.Profiles = map[string]Profile{
+		"backlog-assistant": {
+			Name:      "backlog-assistant",
+			Base:      config.AgentCoder,
+			Tools:     []string{"gintrack__*"},
+			DenyTools: []string{"bash"},
+			Mesnada:   false,
+		},
+	}
+	r := newTestRuntime(cfg, "secret")
+
+	base, profile, err := r.resolveAgent("backlog-assistant")
+	if err != nil {
+		t.Fatalf("resolveAgent(backlog-assistant): %v", err)
+	}
+	if base != config.AgentCoder {
+		t.Fatalf("base = %q, want coder", base)
+	}
+	if profile == nil || profile.Name != "backlog-assistant" || len(profile.Tools) != 1 || profile.Tools[0] != "gintrack__*" {
+		t.Fatalf("profile = %+v, want the declared backlog-assistant profile", profile)
+	}
+
+	if _, _, err := r.resolveAgent("undeclared-profile"); err == nil {
+		t.Fatal("an undeclared name must still 404, not resolve to a profile")
 	}
 }
 
@@ -241,17 +326,27 @@ func TestSessionTitleIsNamespaced(t *testing.T) {
 func TestPoolKeyIsToolsetAwareAndOrderIndependent(t *testing.T) {
 	a := []Tool{{Name: "b"}, {Name: "a"}}
 	b := []Tool{{Name: "a"}, {Name: "b"}}
-	if poolKey(config.AgentCoder, a) != poolKey(config.AgentCoder, b) {
+	if poolKey("coder", a) != poolKey("coder", b) {
 		t.Fatal("tool order must not change the pool key")
 	}
-	if poolKey(config.AgentCoder, nil) == poolKey(config.AgentCoder, a) {
+	if poolKey("coder", nil) == poolKey("coder", a) {
 		t.Fatal("a declared toolset must not reuse the bare agent instance")
 	}
-	if poolKey(config.AgentCoder, a) == poolKey(config.AgentTask, a) {
+	if poolKey("coder", a) == poolKey("task", a) {
 		t.Fatal("different agents must not share an instance")
 	}
 	changed := []Tool{{Name: "a"}, {Name: "b", Description: "now documented"}}
-	if poolKey(config.AgentCoder, b) == poolKey(config.AgentCoder, changed) {
+	if poolKey("coder", b) == poolKey("coder", changed) {
 		t.Fatal("a changed tool schema must produce a new key")
+	}
+}
+
+// TestPoolKeyDistinguishesProfilesOverSameBase is the PANDO-US-0013
+// acceptance criterion: two profiles over the same Base agent must key to
+// different pool entries, so building one never evicts or reuses the other's
+// instance.
+func TestPoolKeyDistinguishesProfilesOverSameBase(t *testing.T) {
+	if poolKey("backlog-assistant", nil) == poolKey("docs-assistant", nil) {
+		t.Fatal("two profiles sharing a Base agent must not collapse onto one pool key")
 	}
 }

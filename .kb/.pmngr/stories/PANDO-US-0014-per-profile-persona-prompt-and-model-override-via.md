@@ -2,7 +2,7 @@
 id: PANDO-US-0014
 type: story
 title: Per-profile persona, prompt and model override via SetSessionLLMOverrides
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0002
 milestone: PANDO-M-0001

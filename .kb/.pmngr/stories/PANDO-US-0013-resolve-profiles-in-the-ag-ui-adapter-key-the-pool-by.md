@@ -2,7 +2,7 @@
 id: PANDO-US-0013
 type: story
 title: Resolve profiles in the AG-UI adapter, key the pool by profile, list them in /info
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0002
 milestone: PANDO-M-0001
