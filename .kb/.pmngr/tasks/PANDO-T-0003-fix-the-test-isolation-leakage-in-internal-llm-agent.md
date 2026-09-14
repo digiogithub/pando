@@ -2,7 +2,7 @@
 id: PANDO-T-0003
 type: task
 title: Fix the test-isolation leakage in internal/llm/agent
-status: backlog
+status: done
 priority: high
 labels: [tests, ci, config]
 estimate: 3

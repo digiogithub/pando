@@ -180,6 +180,22 @@ func TestCreateAgentProviderAllowsLogicalAntigravityModelWithoutConcreteAccount(
 }
 
 func TestBuildSystemMessageUsesTemplatePromptBuilder(t *testing.T) {
+	// config.Load is a process-wide singleton loader (it short-circuits with
+	// "if cfg != nil { return cfg, nil }" and otherwise assigns the package
+	// global internal/config.cfg). Left alone, this test would leak that
+	// loaded *Config — read from the real $HOME/XDG config, not a fixture —
+	// into every later test in this binary via config.Get(), including the
+	// caveman-mode and tool-discovery tests that assert on the zero-value
+	// (no configured) default. Isolate HOME so Load() cannot pick up a real
+	// host config, and reset the global before and after via the same
+	// config.ResetForTests() seam internal/config's own tests use for this
+	// (see isolateGlobalConfig in internal/config/config_test.go), instead of
+	// only restoring the handful of fields this test happens to mutate.
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+	config.ResetForTests()
+	t.Cleanup(config.ResetForTests)
+
 	tmpDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte("Use AGENTS instructions"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "CLAUDE.md"), []byte("Use CLAUDE instructions"), 0644))
@@ -188,18 +204,6 @@ func TestBuildSystemMessageUsesTemplatePromptBuilder(t *testing.T) {
 
 	cfg, err := config.Load(tmpDir, false)
 	require.NoError(t, err)
-
-	oldWorkingDir := cfg.WorkingDir
-	oldContextPaths := append([]string(nil), cfg.ContextPaths...)
-	oldMCPServers := make(map[string]config.MCPServer, len(cfg.MCPServers))
-	for name, server := range cfg.MCPServers {
-		oldMCPServers[name] = server
-	}
-	t.Cleanup(func() {
-		cfg.WorkingDir = oldWorkingDir
-		cfg.ContextPaths = oldContextPaths
-		cfg.MCPServers = oldMCPServers
-	})
 
 	cfg.WorkingDir = tmpDir
 	cfg.ContextPaths = []string{"AGENTS.md", "CLAUDE.md"}
