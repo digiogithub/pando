@@ -27,6 +27,7 @@ type kbSearchRequest struct {
 	SortByDate      bool     `json:"sort_by_date"`
 	ExcludeOutdated *bool    `json:"exclude_outdated"`
 	Scope           string   `json:"scope"`
+	PathPrefix      string   `json:"path_prefix"`
 }
 
 // kbSearchResultItem mirrors the resultItem the kb_search_documents tool
@@ -70,7 +71,7 @@ func kbSearchRelatedViews(related []kb.RelatedDocument) []kbSearchRelatedView {
 // POST /api/v1/remembrances/kb/search
 // Body: {"query": "...", "limit": 5, "tags": [...], "sort_by_date": false,
 //
-//	"exclude_outdated": true, "scope": ""}
+//	"exclude_outdated": true, "scope": "", "path_prefix": ""}
 func (s *Server) handleKBSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -109,14 +110,19 @@ func (s *Server) handleKBSearch(w http.ResponseWriter, r *http.Request) {
 		SortByDate:      req.SortByDate,
 		ExcludeOutdated: excludeOutdated,
 		Scope:           req.Scope,
+		PathPrefix:      req.PathPrefix,
 	}
-	results, err := store.SearchDocumentsWithOptions(ctx, req.Query, req.Limit, opts)
+	results, stats, err := store.SearchDocumentsWithOptionsAndStats(ctx, req.Query, req.Limit, opts)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "kb search error: "+err.Error())
 		return
 	}
 	if len(results) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"count": 0, "results": []kbSearchResultItem{}})
+		empty := map[string]any{"count": 0, "results": []kbSearchResultItem{}}
+		if stats.SkippedForDimensionMismatch > 0 {
+			empty["warning"] = tools.StaleEmbeddingWarning(stats.SkippedForDimensionMismatch)
+		}
+		writeJSON(w, http.StatusOK, empty)
 		return
 	}
 
@@ -150,6 +156,9 @@ func (s *Server) handleKBSearch(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"count":   len(items),
 		"results": items,
+	}
+	if stats.SkippedForDimensionMismatch > 0 {
+		out["warning"] = tools.StaleEmbeddingWarning(stats.SkippedForDimensionMismatch)
 	}
 
 	// Same as kb_search_documents: hand over the top result's graph

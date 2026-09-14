@@ -32,6 +32,21 @@ func (s *RemembrancesService) DocumentEmbedder() embeddings.Embedder {
 	return s.docEmbedder
 }
 
+// SetDocumentEmbedder overrides the document embedder DocumentEmbedder()
+// returns. docEmbedder is otherwise only set by
+// NewRemembrancesServiceWithProxy; this exists so tests that construct a
+// RemembrancesService directly (a bare &RemembrancesService{KB: store}
+// struct literal, common across internal/api and internal/llm/tools tests)
+// can exercise callers of DocumentEmbedder() — e.g. the embedding-staleness
+// check on GET /api/v1/remembrances/enrichment (PANDO-US-0029) — without
+// going through the full provider-config wiring.
+func (s *RemembrancesService) SetDocumentEmbedder(e embeddings.Embedder) {
+	if s == nil {
+		return
+	}
+	s.docEmbedder = e
+}
+
 // NewRemembrancesService creates a RemembrancesService from the app configuration and an
 // existing SQLite connection. Returns nil (no error) when remembrances is disabled.
 func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*RemembrancesService, error) {
@@ -82,6 +97,9 @@ func NewRemembrancesServiceWithProxy(db *sql.DB, cfg *config.RemembrancesConfig,
 	workers := cfg.IndexWorkers
 	kbStore := kb.NewKBStore(db, docEmbedder, cfg.ChunkSize, cfg.ChunkOverlap)
 	kbStore.SetSyncWorkers(workers)
+	// Recorded on every chunk this store writes so a later document embedder
+	// change can be detected instead of silently degrading recall (PANDO-US-0029).
+	kbStore.SetEmbeddingModel(cfg.DocumentEmbeddingModel)
 	// Honor Remembrances.KBWikiLinks: when off, no [[wiki link]] is indexed and
 	// the graph queries answer empty. config.Get() is nil-safe and defaults to on.
 	kbStore.SetWikiLinksEnabled(config.Get().KBWikiLinksEnabled())

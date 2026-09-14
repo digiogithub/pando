@@ -2,7 +2,7 @@
 id: PANDO-US-0028
 type: story
 title: Push a path-prefix filter into the search SQL
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0007
 milestone: PANDO-M-0002

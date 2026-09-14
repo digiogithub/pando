@@ -72,6 +72,50 @@ func (app *App) initKBLinkBackfill(ctx context.Context, svc *rag.RemembrancesSer
 	}()
 }
 
+// initKBEmbeddingStalenessCheck compares the recorded embedding dimension of
+// every chunk against the currently configured document embedder and logs a
+// single loud warning naming both the configured model and the model(s)
+// recorded on the mismatched chunks, plus the count — evidence the document
+// embedding model changed since those chunks were written, which otherwise
+// blinds every consumer at once with no error, no log line, and no way to
+// notice (PANDO-US-0029). It logs nothing on a consistent corpus.
+//
+// Unlike the link backfill above, this is one indexed COUNT query (and, only
+// when it finds a mismatch, one more DISTINCT query for the offending model
+// names) — fast enough to run inline at startup rather than in a background
+// goroutine.
+func (app *App) initKBEmbeddingStalenessCheck(ctx context.Context, svc *rag.RemembrancesService, cfg *config.RemembrancesConfig) {
+	if svc == nil || svc.KB == nil || cfg == nil {
+		return
+	}
+	embedder := svc.DocumentEmbedder()
+	if embedder == nil {
+		return
+	}
+	configuredDims := embedder.Dimension()
+	if configuredDims <= 0 {
+		return
+	}
+
+	stats, err := svc.KB.CountStaleEmbeddings(ctx, configuredDims)
+	if err != nil {
+		logging.Error("remembrances kb: embedding staleness check failed", "error", err)
+		return
+	}
+	if stats.Count == 0 {
+		return
+	}
+
+	recordedModels := "unknown"
+	if len(stats.RecordedModels) > 0 {
+		recordedModels = strings.Join(stats.RecordedModels, ", ")
+	}
+	logging.WarnPersist(fmt.Sprintf(
+		"KB embedding staleness: %d chunk(s) recorded under model(s) %q no longer match the configured document embedding model %q (%d dims) — recall from those chunks is degraded until a reindex (POST /api/v1/remembrances/kb/reindex)",
+		stats.Count, recordedModels, cfg.DocumentEmbeddingModel, configuredDims,
+	))
+}
+
 func (app *App) initRemembrancesKBSync(ctx context.Context, svc *rag.RemembrancesService, cfg *config.RemembrancesConfig) {
 	if svc == nil || svc.KB == nil || cfg == nil {
 		return

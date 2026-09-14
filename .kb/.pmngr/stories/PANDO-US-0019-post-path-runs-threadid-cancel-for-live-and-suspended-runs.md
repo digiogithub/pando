@@ -2,7 +2,7 @@
 id: PANDO-US-0019
 type: story
 title: POST {path}/runs/{threadId}/cancel for live and suspended runs
-status: backlog
+status: in_progress
 priority: medium
 parent: PANDO-EP-0003
 milestone: PANDO-M-0001

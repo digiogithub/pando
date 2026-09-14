@@ -2,7 +2,7 @@
 id: PANDO-EP-0006
 type: epic
 title: Authenticate the MCP HTTP transport
-status: backlog
+status: done
 priority: high
 milestone: PANDO-M-0002
 labels: [mcp, security]

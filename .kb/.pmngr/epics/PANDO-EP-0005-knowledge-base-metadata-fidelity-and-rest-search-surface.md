@@ -2,7 +2,7 @@
 id: PANDO-EP-0005
 type: epic
 title: "Knowledge base: metadata fidelity and REST search surface"
-status: backlog
+status: done
 priority: critical
 milestone: PANDO-M-0002
 labels: [rag, kb, api]

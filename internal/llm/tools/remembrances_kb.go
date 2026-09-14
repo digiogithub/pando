@@ -219,6 +219,27 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 		req.FilePath, newFM.Tags, linkFeedback(ctx, t.store, req.FilePath))), nil
 }
 
+// staleEmbeddingWarning formats the response warning for
+// SearchStats.SkippedForDimensionMismatch (PANDO-US-0029): the query
+// embedding's dimension did not match the recorded dimension of `skipped`
+// chunks, so they were excluded from ranking rather than compared against a
+// vector of the wrong shape. Shared with the REST search route
+// (internal/api/handlers_remembrances_search.go) so both surfaces phrase it
+// identically.
+func staleEmbeddingWarning(skipped int) string {
+	return fmt.Sprintf(
+		"skipped %d chunk(s) with a stale embedding dimension (the document embedding model changed since they were written); run a reindex (POST /api/v1/remembrances/kb/reindex) to refresh them",
+		skipped,
+	)
+}
+
+// StaleEmbeddingWarning is the exported form of staleEmbeddingWarning so
+// REST's search route (internal/api, PANDO-US-0005) can render the identical
+// message when SearchStats.SkippedForDimensionMismatch is non-zero.
+func StaleEmbeddingWarning(skipped int) string {
+	return staleEmbeddingWarning(skipped)
+}
+
 // ---- KBSearchDocumentsTool ----
 
 func (t *KBSearchDocumentsTool) Info() ToolInfo {
@@ -252,6 +273,10 @@ func (t *KBSearchDocumentsTool) Info() ToolInfo {
 				"type":        "string",
 				"description": "Optional memory scope prefix to restrict results (e.g. 'user/', 'project/'). Empty means all scopes.",
 			},
+			"path_prefix": map[string]any{
+				"type":        "string",
+				"description": "Optional document path prefix (e.g. 'corpus/project/'). Restricts both search legs to documents whose file_path starts with this prefix, applied in SQL so it never under-returns when a query's top matches all belong to another prefix. Empty means no restriction.",
+			},
 		},
 		Required: []string{"query"},
 	}
@@ -265,6 +290,7 @@ func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolR
 		SortByDate      bool     `json:"sort_by_date"`
 		ExcludeOutdated *bool    `json:"exclude_outdated"`
 		Scope           string   `json:"scope"`
+		PathPrefix      string   `json:"path_prefix"`
 	}
 	if err := DecodeToolInput(params.Input, &req); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %v", err)), nil
@@ -290,13 +316,20 @@ func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolR
 		SortByDate:      req.SortByDate,
 		ExcludeOutdated: excludeOutdated,
 		Scope:           req.Scope,
+		PathPrefix:      req.PathPrefix,
 	}
-	results, err := t.store.SearchDocumentsWithOptions(ctx, req.Query, req.Limit, opts)
+	results, stats, err := t.store.SearchDocumentsWithOptionsAndStats(ctx, req.Query, req.Limit, opts)
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("kb search error: %v", err)), nil
 	}
 
 	if len(results) == 0 {
+		if stats.SkippedForDimensionMismatch > 0 {
+			return NewTextResponse(fmt.Sprintf(
+				"No documents found matching the query. %s",
+				staleEmbeddingWarning(stats.SkippedForDimensionMismatch),
+			)), nil
+		}
 		return NewTextResponse("No documents found matching the query."), nil
 	}
 
@@ -344,6 +377,9 @@ func (t *KBSearchDocumentsTool) Run(ctx context.Context, params ToolCall) (ToolR
 	out := map[string]any{
 		"count":   len(items),
 		"results": items,
+	}
+	if stats.SkippedForDimensionMismatch > 0 {
+		out["warning"] = staleEmbeddingWarning(stats.SkippedForDimensionMismatch)
 	}
 
 	// The best match is the one that will actually be read, so hand over its

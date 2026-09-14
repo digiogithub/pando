@@ -19,11 +19,12 @@ import (
 
 // kbAddDocRequest mirrors kb.kbAddDocumentRequest (unexported) for JSON decoding.
 type kbAddDocRequest struct {
-	FilePath   string                 `json:"file_path"`
-	Content    string                 `json:"content"`
-	Metadata   map[string]interface{} `json:"metadata"`
-	Chunks     []string               `json:"chunks"`
-	Embeddings [][]float32            `json:"embeddings"`
+	FilePath       string                 `json:"file_path"`
+	Content        string                 `json:"content"`
+	Metadata       map[string]interface{} `json:"metadata"`
+	Chunks         []string               `json:"chunks"`
+	Embeddings     [][]float32            `json:"embeddings"`
+	EmbeddingModel string                 `json:"embedding_model,omitempty"`
 }
 
 // saveEventReq mirrors events.saveEventRequest (unexported) for JSON decoding.
@@ -113,7 +114,7 @@ func (d *RemembrancesWriteDispatcher) DispatchRemembrancesWrite(ctx context.Cont
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, fmt.Errorf("rag dispatcher: KBAddDocument unmarshal: %w", err)
 		}
-		err := d.svc.KB.AddDocumentWithEmbeddings(ctx, req.FilePath, req.Content, req.Metadata, req.Chunks, req.Embeddings)
+		err := d.svc.KB.AddDocumentWithEmbeddings(ctx, req.FilePath, req.Content, req.Metadata, req.Chunks, req.Embeddings, req.EmbeddingModel)
 		return nil, err
 
 	case "KBUpdateDocument":
@@ -126,7 +127,7 @@ func (d *RemembrancesWriteDispatcher) DispatchRemembrancesWrite(ctx context.Cont
 		}
 		// Delete then re-insert with new content and pre-computed embeddings.
 		_ = d.svc.KB.DeleteDocument(ctx, req.FilePath)
-		err := d.svc.KB.AddDocumentWithEmbeddings(ctx, req.FilePath, req.Content, req.Metadata, req.Chunks, req.Embeddings)
+		err := d.svc.KB.AddDocumentWithEmbeddings(ctx, req.FilePath, req.Content, req.Metadata, req.Chunks, req.Embeddings, req.EmbeddingModel)
 		return nil, err
 
 	case "KBDeleteDocument":

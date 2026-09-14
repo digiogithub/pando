@@ -2,7 +2,7 @@
 id: PANDO-EP-0007
 type: epic
 title: Search scale and correctness
-status: backlog
+status: done
 priority: medium
 milestone: PANDO-M-0002
 labels: [rag, performance]

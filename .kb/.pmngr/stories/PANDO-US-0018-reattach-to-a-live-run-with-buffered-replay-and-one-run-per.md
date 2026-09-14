@@ -2,7 +2,7 @@
 id: PANDO-US-0018
 type: story
 title: Reattach to a live run with buffered replay, and one run per thread
-status: backlog
+status: in_progress
 priority: high
 parent: PANDO-EP-0003
 milestone: PANDO-M-0001

@@ -186,6 +186,16 @@ func sanitizeProjectID(path string) string {
 type enrichmentStatusResponse struct {
 	Enabled     bool   `json:"enabled"`
 	PlannerMode string `json:"planner_mode"` // "llm" or "heuristic"
+	// StaleChunks is the number of KB chunks whose recorded embedding
+	// dimension no longer matches DocumentEmbeddingModel's — evidence the
+	// document embedding model changed since they were written
+	// (PANDO-US-0029). A host can pin the model in its own config and refuse
+	// to start when this reports a different one than expected.
+	StaleChunks int64 `json:"stale_chunks"`
+	// DocumentEmbeddingModel is the currently configured document embedding
+	// model id (Remembrances.DocumentEmbeddingModel), empty when
+	// remembrances/KB is not available.
+	DocumentEmbeddingModel string `json:"document_embedding_model,omitempty"`
 }
 
 // handleGetEnrichmentStatus returns the current context enrichment state.
@@ -200,7 +210,34 @@ func (s *Server) handleGetEnrichmentStatus(w http.ResponseWriter, r *http.Reques
 		Enabled:     e.IsEnabled(),
 		PlannerMode: e.PlannerMode(),
 	}
+	resp.StaleChunks, resp.DocumentEmbeddingModel = s.kbEmbeddingStaleness(r.Context())
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// kbEmbeddingStaleness reports the count of KB chunks whose recorded
+// embedding dimension no longer matches the configured document embedder's,
+// and the active document embedding model (PANDO-US-0029). Returns
+// (0, "") when remembrances/KB or the configured embedder are unavailable.
+func (s *Server) kbEmbeddingStaleness(ctx context.Context) (staleChunks int64, model string) {
+	if cfg := config.Get(); cfg != nil {
+		model = cfg.Remembrances.DocumentEmbeddingModel
+	}
+	if s.app == nil || s.app.Remembrances == nil || s.app.Remembrances.KB == nil {
+		return 0, model
+	}
+	embedder := s.app.Remembrances.DocumentEmbedder()
+	if embedder == nil {
+		return 0, model
+	}
+	dims := embedder.Dimension()
+	if dims <= 0 {
+		return 0, model
+	}
+	stats, err := s.app.Remembrances.KB.CountStaleEmbeddings(ctx, dims)
+	if err != nil {
+		return 0, model
+	}
+	return stats.Count, model
 }
 
 // embeddingTestResult holds the result of a single embedder connectivity test.

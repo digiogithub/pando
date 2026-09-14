@@ -2,7 +2,7 @@
 id: PANDO-US-0027
 type: story
 title: Stop selecting the document body in vector and FTS search
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0007
 milestone: PANDO-M-0002

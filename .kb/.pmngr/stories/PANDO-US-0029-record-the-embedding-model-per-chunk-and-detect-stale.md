@@ -2,7 +2,7 @@
 id: PANDO-US-0029
 type: story
 title: Record the embedding model per chunk and detect stale embeddings
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0007
 milestone: PANDO-M-0002

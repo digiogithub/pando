@@ -11,9 +11,13 @@ import (
 
 // openTestKBDB creates an in-memory SQLite DB with the KB schema, mirroring the
 // production migrations (20260311000001_add_kb.sql + 20260611000001_add_kb_memory.sql
-// + 20260713000001_add_kb_links.sql). Foreign keys are enabled as in production
-// (internal/db/connect.go) so ON DELETE CASCADE behaves the same.
-func openTestKBDB(t *testing.T) *sql.DB {
+// + 20260713000001_add_kb_links.sql + 20260914000001_add_kb_chunk_embedding_meta.sql).
+// Foreign keys are enabled as in production (internal/db/connect.go) so ON
+// DELETE CASCADE behaves the same.
+//
+// t is testing.TB rather than *testing.T so benchmarks (*testing.B) can share
+// this helper with the unit tests.
+func openTestKBDB(t testing.TB) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
@@ -47,7 +51,9 @@ func openTestKBDB(t *testing.T) *sql.DB {
 	    chunk_index INTEGER NOT NULL DEFAULT 0,
 	    content     TEXT    NOT NULL,
 	    embedding   BLOB,
-	    created_at  DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+	    created_at  DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+	    embedding_model TEXT    NOT NULL DEFAULT '',
+	    embedding_dims  INTEGER NOT NULL DEFAULT 0
 	);
 
 	CREATE VIRTUAL TABLE kb_fts USING fts5(

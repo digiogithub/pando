@@ -50,6 +50,28 @@ type KBStore struct {
 	// wikiLinks toggles [[wiki link]] extraction and the graph queries built on
 	// it. Defaults to true; the app sets it from Remembrances.KBWikiLinks.
 	wikiLinks bool
+
+	// embeddingModel is the configured document embedder's model id (e.g.
+	// "text-embedding-3-small"), set via SetEmbeddingModel from
+	// Remembrances.DocumentEmbeddingModel. It is recorded on every chunk this
+	// store writes so a later embedder change can be detected instead of
+	// silently degrading recall (PANDO-US-0029). Empty is a valid value (no
+	// model configured / not set by the caller) and is treated as "unknown",
+	// not a mismatch, everywhere it is read.
+	embeddingModel string
+}
+
+// SetEmbeddingModel records the document embedder's model id so it can be
+// written alongside every chunk this store inserts. Called once at startup
+// from Remembrances.DocumentEmbeddingModel (internal/rag/service.go).
+func (s *KBStore) SetEmbeddingModel(model string) {
+	s.embeddingModel = model
+}
+
+// EmbeddingModel returns the configured document embedder's model id, as set
+// by SetEmbeddingModel. Empty when never set.
+func (s *KBStore) EmbeddingModel() string {
+	return s.embeddingModel
 }
 
 // DocumentConverter converts rich document formats (docx, pdf, xlsx, …) to
@@ -225,11 +247,12 @@ func (s *KBStore) addDocument(ctx context.Context, filePath, content string, met
 			}
 		}
 		return s.proxy.WriteWithRetry(ctx, "KBAddDocument", kbAddDocumentRequest{
-			FilePath:   filePath,
-			Content:    content,
-			Metadata:   metadata,
-			Chunks:     chunks,
-			Embeddings: embedVecs,
+			FilePath:       filePath,
+			Content:        content,
+			Metadata:       metadata,
+			Chunks:         chunks,
+			Embeddings:     embedVecs,
+			EmbeddingModel: s.embeddingModel,
 		}, dbproxy.DefaultWriteTimeouts.Long)
 	}
 
@@ -308,14 +331,18 @@ func (s *KBStore) addDocument(ctx context.Context, filePath, content string, met
 	// Insert chunks with embeddings
 	for i, chunk := range chunks {
 		var embBlob []byte
+		var embModel string
+		var embDims int
 		if i < len(embedVecs) {
 			embBlob = serializeFloat32(embedVecs[i])
+			embModel = s.embeddingModel
+			embDims = len(embedVecs[i])
 		}
 
 		chunkRes, err := tx.ExecContext(ctx, `
-			INSERT INTO kb_chunks (document_id, chunk_index, content, embedding, created_at)
-			VALUES (?, ?, ?, ?, ?)`,
-			docID, i, chunk, embBlob, now,
+			INSERT INTO kb_chunks (document_id, chunk_index, content, embedding, created_at, embedding_model, embedding_dims)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			docID, i, chunk, embBlob, now, embModel, embDims,
 		)
 		if err != nil {
 			return fmt.Errorf("kb: insert chunk %d: %w", i, err)
@@ -559,11 +586,12 @@ func (s *KBStore) updateDocument(ctx context.Context, filePath, content string, 
 			}
 		}
 		return s.proxy.WriteWithRetry(ctx, "KBUpdateDocument", kbAddDocumentRequest{
-			FilePath:   filePath,
-			Content:    content,
-			Metadata:   metadata,
-			Chunks:     chunks,
-			Embeddings: embedVecs,
+			FilePath:       filePath,
+			Content:        content,
+			Metadata:       metadata,
+			Chunks:         chunks,
+			Embeddings:     embedVecs,
+			EmbeddingModel: s.embeddingModel,
 		}, dbproxy.DefaultWriteTimeouts.Long)
 	}
 
@@ -583,12 +611,19 @@ type kbAddDocumentRequest struct {
 	Metadata   map[string]interface{} `json:"metadata"`
 	Chunks     []string               `json:"chunks"`
 	Embeddings [][]float32            `json:"embeddings"`
+	// EmbeddingModel is the originating instance's configured document
+	// embedder model id, recorded per chunk on the primary (PANDO-US-0029).
+	// Dimensions are not forwarded separately: they are derived per chunk
+	// from len(Embeddings[i]) on the receiving end.
+	EmbeddingModel string `json:"embedding_model,omitempty"`
 }
 
 // AddDocumentWithEmbeddings inserts a document using pre-computed chunks and embeddings.
 // Called by the primary IPC dispatcher when a secondary forwards a KBAddDocument write.
 // No embedding generation is performed; the provided values are stored directly.
-func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, content string, metadata map[string]interface{}, chunks []string, embeddings [][]float32) error {
+// embeddingModel is recorded on every inserted chunk that has an embedding
+// (PANDO-US-0029); embedding_dims is derived from each vector's own length.
+func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, content string, metadata map[string]interface{}, chunks []string, embeddings [][]float32, embeddingModel string) error {
 	if filePath == "" {
 		return fmt.Errorf("kb: file_path cannot be empty")
 	}
@@ -636,14 +671,18 @@ func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, conte
 
 	for i, chunk := range chunks {
 		var embBlob []byte
+		var embModel string
+		var embDims int
 		if i < len(embeddings) {
 			embBlob = serializeFloat32(embeddings[i])
+			embModel = embeddingModel
+			embDims = len(embeddings[i])
 		}
 
 		chunkRes, err := tx.ExecContext(ctx, `
-			INSERT INTO kb_chunks (document_id, chunk_index, content, embedding, created_at)
-			VALUES (?, ?, ?, ?, ?)`,
-			docID, i, chunk, embBlob, now,
+			INSERT INTO kb_chunks (document_id, chunk_index, content, embedding, created_at, embedding_model, embedding_dims)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			docID, i, chunk, embBlob, now, embModel, embDims,
 		)
 		if err != nil {
 			return fmt.Errorf("kb: insert chunk %d: %w", i, err)
@@ -683,7 +722,39 @@ func (s *KBStore) SearchDocumentsWithOptions(ctx context.Context, query string, 
 	return s.searchDocumentsWithOptions(ctx, query, limit, opts)
 }
 
+// SearchStats reports auxiliary counters from a search call that are not
+// carried by the ranked results themselves.
+type SearchStats struct {
+	// SkippedForDimensionMismatch counts chunks the vector leg skipped
+	// because their recorded embedding dimension does not match the query
+	// embedding's — evidence the document embedding model changed and some
+	// chunks have not been re-embedded yet (PANDO-US-0029). Zero on a
+	// consistent corpus.
+	SkippedForDimensionMismatch int
+}
+
+// SearchDocumentsWithOptionsAndStats is SearchDocumentsWithOptions plus
+// SearchStats. Callers that need to warn on a stale-embedding skip
+// (kb_search_documents, the REST search route) use this instead of
+// SearchDocumentsWithOptions; every other caller is unaffected. When a
+// search extension middleware is installed (observer.go), stats are not
+// tracked through it — the middleware only ever saw the ranked results, the
+// same as SearchDocumentsWithOptions, so this returns a zero SearchStats in
+// that case rather than misreporting.
+func (s *KBStore) SearchDocumentsWithOptionsAndStats(ctx context.Context, query string, limit int, opts SearchOptions) ([]SearchResult, SearchStats, error) {
+	if mw := s.middleware(); mw != nil {
+		results, err := mw(ctx, query, limit, opts, s.searchDocumentsWithOptions)
+		return results, SearchStats{}, err
+	}
+	return s.searchDocumentsWithOptionsStats(ctx, query, limit, opts)
+}
+
 func (s *KBStore) searchDocumentsWithOptions(ctx context.Context, query string, limit int, opts SearchOptions) ([]SearchResult, error) {
+	results, _, err := s.searchDocumentsWithOptionsStats(ctx, query, limit, opts)
+	return results, err
+}
+
+func (s *KBStore) searchDocumentsWithOptionsStats(ctx context.Context, query string, limit int, opts SearchOptions) ([]SearchResult, SearchStats, error) {
 	if limit <= 0 {
 		limit = 5
 	}
@@ -697,7 +768,7 @@ func (s *KBStore) searchDocumentsWithOptions(ctx context.Context, query string, 
 	// Generate query embedding
 	queryEmb, err := s.embedder.EmbedQuery(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("kb: embed query: %w", err)
+		return nil, SearchStats{}, fmt.Errorf("kb: embed query: %w", err)
 	}
 
 	// Fetch more candidates for better fusion
@@ -705,31 +776,33 @@ func (s *KBStore) searchDocumentsWithOptions(ctx context.Context, query string, 
 
 	// Concurrent vector and FTS search
 	type result struct {
-		items []SearchResult
-		err   error
+		items   []SearchResult
+		skipped int
+		err     error
 	}
 	vecCh := make(chan result, 1)
 	ftsCh := make(chan result, 1)
 
 	go func() {
-		items, err := s.searchVector(ctx, queryEmb, subLimit)
-		vecCh <- result{items, err}
+		items, skipped, err := s.searchVector(ctx, queryEmb, subLimit, opts.PathPrefix)
+		vecCh <- result{items, skipped, err}
 	}()
 
 	go func() {
-		items, err := s.searchFTS(ctx, query, subLimit)
-		ftsCh <- result{items, err}
+		items, err := s.searchFTS(ctx, query, subLimit, opts.PathPrefix)
+		ftsCh <- result{items, 0, err}
 	}()
 
 	vec := <-vecCh
 	fts := <-ftsCh
 
 	if vec.err != nil {
-		return nil, fmt.Errorf("kb: vector search: %w", vec.err)
+		return nil, SearchStats{}, fmt.Errorf("kb: vector search: %w", vec.err)
 	}
 	if fts.err != nil {
-		return nil, fmt.Errorf("kb: fts search: %w", fts.err)
+		return nil, SearchStats{}, fmt.Errorf("kb: fts search: %w", fts.err)
 	}
+	stats := SearchStats{SkippedForDimensionMismatch: vec.skipped}
 
 	// Fuse results using RRF — fetch more than limit to allow post-filtering.
 	fused := rrfFuse(vec.items, fts.items, fetchLimit)
@@ -764,7 +837,7 @@ func (s *KBStore) searchDocumentsWithOptions(ctx context.Context, query string, 
 		fused[i].Rank = i + 1
 	}
 
-	return fused, nil
+	return fused, stats, nil
 }
 
 // filterByTags returns results whose document tags fuzzy-match any of the query tags.
@@ -838,25 +911,45 @@ func matchesTags(docTags []string, queryTags []string) bool {
 }
 
 // searchVector performs vector similarity search on chunks.
-func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit int) ([]SearchResult, error) {
+// searchVector returns the ranked vector-similarity candidates plus the
+// number of chunks skipped because their stored embedding's dimension does
+// not match queryEmb's — evidence the document embedding model changed since
+// those chunks were written (PANDO-US-0029). Skipped chunks are silently
+// excluded from results, not an error.
+func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit int, pathPrefix string) ([]SearchResult, int, error) {
 	queryNorm := l2norm(queryEmb)
 	if queryNorm == 0 {
-		return nil, fmt.Errorf("kb: query embedding is zero vector")
+		return nil, 0, fmt.Errorf("kb: query embedding is zero vector")
 	}
 
-	// Load all chunks with embeddings
-	rows, err := s.db.QueryContext(ctx, `
+	// Load all chunks with embeddings. d.content (the full document body) is
+	// deliberately NOT selected: it is never read from SearchResult.Document.Content
+	// (PANDO-US-0027) and materialising it once per chunk dominated both bytes
+	// scanned and bytes allocated on a corpus of any size. A caller that needs
+	// the full body backfills it with a keyed query over its own top-k results
+	// (see documentContentByID), never by re-adding it here.
+	sqlQuery := `
 		SELECT c.id, c.document_id, c.content, c.embedding,
-		       d.file_path, d.content, d.metadata, d.created_at, d.updated_at,
+		       d.file_path, d.metadata, d.created_at, d.updated_at,
 		       COALESCE(d.memory_key,''), COALESCE(d.memory_scope,''),
 		       COALESCE(d.importance,0.5), COALESCE(d.hits,0),
 		       COALESCE(d.source,''), COALESCE(d.outdated,0), d.expires_at
 		FROM kb_chunks c
 		JOIN kb_documents d ON d.id = c.document_id
-		WHERE c.embedding IS NOT NULL
-	`)
+		WHERE c.embedding IS NOT NULL`
+	var args []interface{}
+	// PathPrefix is pushed into the SQL as a bound parameter, never string
+	// concatenation, and the prefix's own '%'/'_' are escaped so they match
+	// literally — only the '%' appended in SQL after the bound value is a
+	// wildcard (PANDO-US-0028).
+	if pathPrefix != "" {
+		sqlQuery += ` AND d.file_path LIKE ? || '%' ESCAPE '\'`
+		args = append(args, escapeLikePrefix(pathPrefix))
+	}
+
+	rows, err := s.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
-		return nil, fmt.Errorf("kb: load embeddings: %w", err)
+		return nil, 0, fmt.Errorf("kb: load embeddings: %w", err)
 	}
 	defer rows.Close()
 
@@ -867,6 +960,7 @@ func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit in
 		score        float64
 	}
 	var candidates []candidate
+	var skipped int
 
 	for rows.Next() {
 		var c candidate
@@ -877,12 +971,12 @@ func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit in
 
 		if err := rows.Scan(
 			&c.chunkID, &c.document.ID, &c.chunkContent, &blob,
-			&c.document.FilePath, &c.document.Content, &metaJSON,
+			&c.document.FilePath, &metaJSON,
 			&c.document.CreatedAt, &c.document.UpdatedAt,
 			&c.document.MemoryKey, &c.document.MemoryScope, &c.document.Importance, &c.document.Hits,
 			&c.document.Source, &outdated, &expiresAt,
 		); err != nil {
-			return nil, fmt.Errorf("kb: scan chunk: %w", err)
+			return nil, 0, fmt.Errorf("kb: scan chunk: %w", err)
 		}
 		c.document.Outdated = outdated != 0
 		if expiresAt.Valid {
@@ -900,14 +994,15 @@ func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit in
 
 		vec := deserializeFloat32(blob)
 		if len(vec) != len(queryEmb) {
-			continue // Skip dimension mismatch
+			skipped++ // Skip dimension mismatch (PANDO-US-0029)
+			continue
 		}
 
 		c.score = cosine(queryEmb, queryNorm, vec)
 		candidates = append(candidates, c)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Sort by descending similarity
@@ -929,7 +1024,7 @@ func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit in
 		})
 	}
 
-	return results, nil
+	return results, skipped, nil
 }
 
 // searchFTS performs full-text search using SQLite FTS5.
@@ -950,15 +1045,28 @@ func sanitizeFTSQuery(query string) string {
 	return strings.Join(parts, " ")
 }
 
-func (s *KBStore) searchFTS(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+// escapeLikePrefix escapes SQLite LIKE metacharacters (the escape character
+// itself, '%', and '_') in a literal path prefix so that, when bound as a
+// parameter to `d.file_path LIKE ? || '%' ESCAPE '\'`, a prefix containing
+// '%' or '_' matches those characters literally instead of as wildcards. The
+// '%' appended in SQL after the bound value is the only wildcard the
+// resulting pattern carries (PANDO-US-0028).
+func escapeLikePrefix(prefix string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(prefix)
+}
+
+func (s *KBStore) searchFTS(ctx context.Context, query string, limit int, pathPrefix string) ([]SearchResult, error) {
 	escapedQuery := sanitizeFTSQuery(query)
 	if escapedQuery == "" {
 		return nil, nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	// d.content is deliberately NOT selected here either — see the matching
+	// comment on searchVector's query (PANDO-US-0027).
+	sqlQuery := `
 		SELECT c.id, c.content,
-		       d.id, d.file_path, d.content, d.metadata, d.created_at, d.updated_at,
+		       d.id, d.file_path, d.metadata, d.created_at, d.updated_at,
 		       -bm25(kb_fts) AS score,
 		       COALESCE(d.memory_key,''), COALESCE(d.memory_scope,''),
 		       COALESCE(d.importance,0.5), COALESCE(d.hits,0),
@@ -966,11 +1074,20 @@ func (s *KBStore) searchFTS(ctx context.Context, query string, limit int) ([]Sea
 		FROM kb_fts
 		JOIN kb_chunks c ON c.id = kb_fts.rowid
 		JOIN kb_documents d ON d.id = c.document_id
-		WHERE kb_fts MATCH ?
+		WHERE kb_fts MATCH ?`
+	args := []interface{}{escapedQuery}
+	// Same bound-parameter, ESCAPE-clause path prefix as searchVector
+	// (PANDO-US-0028) — never string concatenation.
+	if pathPrefix != "" {
+		sqlQuery += ` AND d.file_path LIKE ? || '%' ESCAPE '\'`
+		args = append(args, escapeLikePrefix(pathPrefix))
+	}
+	sqlQuery += `
 		ORDER BY score DESC
-		LIMIT ?`,
-		escapedQuery, limit,
-	)
+		LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("kb: fts search: %w", err)
 	}
@@ -987,7 +1104,7 @@ func (s *KBStore) searchFTS(ctx context.Context, query string, limit int) ([]Sea
 		var ftsExpiresAt sql.NullTime
 		if err := rows.Scan(
 			&chunkID, &r.ChunkContent,
-			&r.Document.ID, &r.Document.FilePath, &r.Document.Content, &metaJSON,
+			&r.Document.ID, &r.Document.FilePath, &metaJSON,
 			&r.Document.CreatedAt, &r.Document.UpdatedAt,
 			&rawScore,
 			&r.Document.MemoryKey, &r.Document.MemoryScope, &r.Document.Importance, &r.Document.Hits,
@@ -1026,6 +1143,95 @@ func (s *KBStore) searchFTS(ctx context.Context, query string, limit int) ([]Sea
 	}
 
 	return results, nil
+}
+
+// documentContentByID backfills the full document body for exactly the given
+// document IDs in a single keyed query. searchVector and searchFTS never
+// select d.content (PANDO-US-0027), so a caller whose SearchResult/MemoryResult
+// hits genuinely need the full body — as opposed to the matched ChunkContent
+// excerpt — asks for it here, scoped to its own top-k, instead of the query
+// scanning every candidate's body up front.
+func (s *KBStore) documentContentByID(ctx context.Context, ids []int64) (map[int64]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	placeholders := strings.Repeat("?,", len(ids))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+
+	rows, err := s.db.QueryContext(ctx, `SELECT id, content FROM kb_documents WHERE id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("kb: backfill document content: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[int64]string, len(ids))
+	for rows.Next() {
+		var id int64
+		var content string
+		if err := rows.Scan(&id, &content); err != nil {
+			return nil, fmt.Errorf("kb: scan backfilled content: %w", err)
+		}
+		out[id] = content
+	}
+	return out, rows.Err()
+}
+
+// StaleEmbeddingStats reports chunks whose recorded embedding dimension does
+// not match a given (normally the currently configured) embedder dimension
+// — evidence the document embedding model changed since those chunks were
+// written (PANDO-US-0029).
+type StaleEmbeddingStats struct {
+	// Count is the number of embedded chunks whose recorded embedding_dims
+	// differs from the configured dimension.
+	Count int64
+	// RecordedModels lists the distinct, non-empty embedding_model values
+	// found among the mismatched chunks (sorted). A chunk written before
+	// PANDO-US-0029 has an empty embedding_model — treated as "unknown", not
+	// listed here — even though it still counts towards Count if its
+	// backfilled dimension does not match.
+	RecordedModels []string
+}
+
+// CountStaleEmbeddings counts chunks whose recorded embedding dimension does
+// not match configuredDims. Used by the startup staleness check
+// (internal/app/remembrances.go) and by the enrichment status REST route.
+func (s *KBStore) CountStaleEmbeddings(ctx context.Context, configuredDims int) (StaleEmbeddingStats, error) {
+	var stats StaleEmbeddingStats
+
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM kb_chunks
+		WHERE embedding IS NOT NULL AND embedding_dims != ?`,
+		configuredDims,
+	).Scan(&stats.Count); err != nil {
+		return stats, fmt.Errorf("kb: count stale embeddings: %w", err)
+	}
+	if stats.Count == 0 {
+		return stats, nil
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT embedding_model FROM kb_chunks
+		WHERE embedding IS NOT NULL AND embedding_dims != ? AND embedding_model != ''
+		ORDER BY embedding_model`,
+		configuredDims,
+	)
+	if err != nil {
+		return stats, fmt.Errorf("kb: list stale embedding models: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var model string
+		if err := rows.Scan(&model); err != nil {
+			return stats, fmt.Errorf("kb: scan stale embedding model: %w", err)
+		}
+		stats.RecordedModels = append(stats.RecordedModels, model)
+	}
+	return stats, rows.Err()
 }
 
 // ListDocuments returns paginated documents.

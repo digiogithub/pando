@@ -50,7 +50,9 @@ func openMarkOutdatedTestStore(t *testing.T) (*kb.KBStore, *sql.DB) {
 	    chunk_index INTEGER NOT NULL DEFAULT 0,
 	    content     TEXT    NOT NULL,
 	    embedding   BLOB,
-	    created_at  DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+	    created_at  DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+	    embedding_model TEXT    NOT NULL DEFAULT '',
+	    embedding_dims  INTEGER NOT NULL DEFAULT 0
 	);
 
 	CREATE TABLE kb_links (

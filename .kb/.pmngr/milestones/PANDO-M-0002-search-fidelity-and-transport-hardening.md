@@ -2,7 +2,7 @@
 id: PANDO-M-0002
 type: milestone
 title: Search fidelity and transport hardening
-status: backlog
+status: done
 labels: [rag, kb, mcp, security]
 created: 2026-09-13T21:10:04Z
 updated: 2026-09-13T21:10:04Z

@@ -437,6 +437,25 @@ func (s *KBStore) GetMemoriesForInjection(ctx context.Context, query string, lim
 		if err != nil {
 			return nil, fmt.Errorf("kb: memory injection search: %w", err)
 		}
+
+		// A memory's whole point is its content: unlike a generic KB search
+		// hit, formatMemoryLine and the recall tool render Document.Content
+		// directly, not the chunk excerpt. searchVector/searchFTS never select
+		// it (PANDO-US-0027), so backfill it here with one keyed query scoped
+		// to exactly this batch's hits — never by re-adding it to the scan.
+		ids := make([]int64, 0, len(hits))
+		seenID := make(map[int64]bool, len(hits))
+		for _, r := range hits {
+			if !seenID[r.Document.ID] {
+				seenID[r.Document.ID] = true
+				ids = append(ids, r.Document.ID)
+			}
+		}
+		contentByID, err := s.documentContentByID(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+
 		now := time.Now().UTC()
 		for _, r := range hits {
 			ageDays := now.Sub(r.Document.UpdatedAt).Hours() / 24.0
@@ -445,8 +464,10 @@ func (s *KBStore) GetMemoriesForInjection(ctx context.Context, query string, lim
 				hitNorm = 1.0
 			}
 			score := 0.6*r.Score + 0.3*(1.0/(ageDays+1.0)) + 0.1*hitNorm
+			doc := r.Document
+			doc.Content = contentByID[doc.ID]
 			searchResults = append(searchResults, MemoryResult{
-				Document:     r.Document,
+				Document:     doc,
 				ChunkContent: r.ChunkContent,
 				Score:        score,
 			})

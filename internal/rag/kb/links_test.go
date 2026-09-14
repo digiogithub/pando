@@ -197,7 +197,7 @@ func TestAddDocumentWithEmbeddingsIndexesLinks(t *testing.T) {
 
 	// Mirrors what the primary does for an IPC-forwarded KB write.
 	if err := store.AddDocumentWithEmbeddings(ctx, path, body, nil,
-		[]string{body}, [][]float32{{1, 0, 0}}); err != nil {
+		[]string{body}, [][]float32{{1, 0, 0}}, "test-model"); err != nil {
 		t.Fatalf("AddDocumentWithEmbeddings() error = %v", err)
 	}
 

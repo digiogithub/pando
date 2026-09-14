@@ -353,6 +353,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 				app.initRemembrancesProjectIndexing(ctx, remembrances, &cfg.Remembrances, opt.StartupMode)
 				app.initRemembrancesKBSync(ctx, remembrances, &cfg.Remembrances)
 				app.initKBLinkBackfill(ctx, remembrances)
+				app.initKBEmbeddingStalenessCheck(ctx, remembrances, &cfg.Remembrances)
 				app.initRemembrancesSessionIndexing(ctx, remembrances, &cfg.Remembrances)
 
 				// Initialize context enricher if enabled: searches KB and code index
