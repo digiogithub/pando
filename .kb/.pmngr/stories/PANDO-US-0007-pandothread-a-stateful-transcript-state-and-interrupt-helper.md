@@ -2,7 +2,7 @@
 id: PANDO-US-0007
 type: story
 title: "PandoThread: a stateful transcript, state and interrupt helper"
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0001
 milestone: PANDO-M-0001
