@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"os/signal"
@@ -35,10 +33,15 @@ reaches: the Web-UI API, the session endpoints and the static UI are simply not
 served here.
 
 The bearer token is resolved in this order: --token, then --token-file, then
-the PANDO_AGUI_TOKEN environment variable, then a freshly generated one. Only
-the generated case is printed on startup, since it is the only one the
-operator has no other way to learn; an explicitly supplied token is never
-printed or logged. --no-token disables bearer-token authentication entirely.`,
+the PANDO_AGUI_TOKEN environment variable, then a token stored from an
+earlier start under the global config directory (~/.config/pando/agui-token
+by default), then a freshly generated one persisted there for next time. Only
+the generated case prints the token itself on startup, since it is the only
+one the operator has no other way to learn; an explicitly supplied token is
+never printed or logged, and neither is a token read back from the stored
+file -- only its path is. --no-token disables bearer-token authentication
+entirely. Use --print-token to read the stored token back later without
+starting the server.`,
 	Example: `
   # Serve the coder agent for a Next.js app running on localhost:3000
   pando agui-serve --port 8090 --allow-origin http://localhost:3000
@@ -54,12 +57,19 @@ printed or logged. --no-token disables bearer-token authentication entirely.`,
   # Read the token from a file directly, e.g. a container secret mount
   pando agui-serve --cwd /path/to/project --token-file /run/secrets/agui-token
 
+  # Read back a previously generated and stored token, without starting the server
+  pando agui-serve --print-token
+
   # Plain HTTP (only sane behind a reverse proxy that terminates TLS)
   pando agui-serve --no-tls`,
 	RunE: runAGUIServe,
 }
 
 func runAGUIServe(cmd *cobra.Command, _ []string) error {
+	if printToken, _ := cmd.Flags().GetBool("print-token"); printToken {
+		return printStoredListenerToken(aguiTokenKind)
+	}
+
 	host, _ := cmd.Flags().GetString("host")
 	port, _ := cmd.Flags().GetInt("port")
 	cwdFlag, _ := cmd.Flags().GetString("cwd")
@@ -107,11 +117,15 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 	cfg.AGUI.RequireToken = !noToken
 
 	var generatedToken bool
+	var explicitToken bool
 	if !noToken {
 		envToken, envSet := os.LookupEnv("PANDO_AGUI_TOKEN")
+		flagSet := cmd.Flags().Changed("token")
+		fileSet := cmd.Flags().Changed("token-file")
+		explicitToken = flagSet || fileSet || envSet
 		resolved, generated, terr := resolveAGUIToken(
-			token, cmd.Flags().Changed("token"),
-			tokenFile, cmd.Flags().Changed("token-file"),
+			token, flagSet,
+			tokenFile, fileSet,
 			envToken, envSet,
 		)
 		if terr != nil {
@@ -189,11 +203,24 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 	if cfg.AGUI.Persona != "" {
 		fmt.Printf("Persona: %s\n", cfg.AGUI.Persona)
 	}
+	if !noToken && !explicitToken {
+		// The token came from the stored file (PANDO-US-0030), whether just
+		// generated or read back from an earlier start: tell the operator
+		// where to find it again. An explicitly supplied token (--token,
+		// --token-file or PANDO_AGUI_TOKEN) never touches this file and
+		// never prints here -- the operator already knows it, since they
+		// supplied it.
+		if tokenPath, perr := listenerTokenFilePath(aguiTokenKind); perr == nil {
+			fmt.Printf("Token file: %s\n", tokenPath)
+		}
+	}
 	if generatedToken {
-		// The only case printed to stdout: an explicitly supplied token
-		// (--token, --token-file or PANDO_AGUI_TOKEN) is never echoed back
-		// anywhere, so it cannot land in a captured journal/log -- see
-		// resolveAGUIToken's doc comment.
+		// The only case whose token value is printed: an explicitly supplied
+		// token (--token, --token-file or PANDO_AGUI_TOKEN) is never echoed
+		// back anywhere, so it cannot land in a captured journal/log -- see
+		// resolveAGUIToken's doc comment. A later start reads the same token
+		// back from the file above instead of generating (and printing) a
+		// new one.
 		fmt.Printf("Token:   %s\n", token)
 	}
 	if len(cfg.AGUI.AllowedOrigins) > 0 {
@@ -251,27 +278,25 @@ func resolveWorkingDir(cwdFlag string) (string, error) {
 	return cwdFlag, nil
 }
 
-func randomToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate an AG-UI token: %w", err)
-	}
-	return hex.EncodeToString(b), nil
-}
-
 // resolveAGUIToken decides the bearer token agui-serve enforces, in
 // precedence order: --token, then --token-file, then the PANDO_AGUI_TOKEN
-// environment variable, then a freshly generated one. generated reports
-// whether the last case fired -- the only one safe to print to stdout (see
+// environment variable, then a token stored from an earlier start (see
+// resolveStoredOrGeneratedListenerToken), then a freshly generated one
+// persisted for next time (PANDO-US-0030). generated reports whether the
+// last case fired -- the only one safe to print to stdout (see
 // runAGUIServe): an explicitly supplied token must never be echoed back to a
-// terminal or log that might be captured into a journal or CI artifact.
+// terminal or log that might be captured into a journal or CI artifact, and
+// neither must a token read back from the stored file.
 //
 // Each explicit source is identified by *Set, not merely by its value being
 // non-empty, so an operator who explicitly points --token-file at an empty
 // secrets file (or sets PANDO_AGUI_TOKEN="" in an EnvironmentFile) gets a
 // startup error instead of silently falling through to a generated token --
 // a systemd unit with a misconfigured secret must fail loudly, not start
-// unauthenticated under a token nobody wrote down.
+// unauthenticated under a token nobody wrote down. Only once every explicit
+// source is ruled out does this fall through to the stored/generated tail,
+// so an explicitly configured token always wins over the stored file and is
+// never written to it.
 func resolveAGUIToken(flagToken string, flagSet bool, tokenFile string, tokenFileSet bool, envToken string, envSet bool) (token string, generated bool, err error) {
 	if flagSet {
 		if flagToken == "" {
@@ -296,11 +321,7 @@ func resolveAGUIToken(flagToken string, flagSet bool, tokenFile string, tokenFil
 		}
 		return envToken, false, nil
 	}
-	token, err = randomToken()
-	if err != nil {
-		return "", false, err
-	}
-	return token, true, nil
+	return resolveStoredOrGeneratedListenerToken(aguiTokenKind)
 }
 
 func init() {
@@ -320,4 +341,5 @@ func init() {
 	aguiServeCmd.Flags().String("tls-cert", "", "Path to a TLS certificate file (auto-generated if omitted)")
 	aguiServeCmd.Flags().String("tls-key", "", "Path to a TLS private key file (auto-generated if omitted)")
 	aguiServeCmd.Flags().Bool("auto-approve", false, "Approve tool permissions without asking the client")
+	aguiServeCmd.Flags().Bool("print-token", false, "Print the stored AG-UI listener token (if any) to stdout and exit, without starting the server")
 }

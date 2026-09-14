@@ -2,7 +2,7 @@
 id: PANDO-US-0030
 type: story
 title: Persist and reuse the generated AG-UI and MCP listener tokens
-status: in_progress
+status: done
 priority: high
 parent: PANDO-EP-0004
 author: claude

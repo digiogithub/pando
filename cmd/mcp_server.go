@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -58,6 +56,7 @@ func init() {
 	mcpServerCmd.Flags().Bool("no-stdio", false, "Disable the stdio MCP transport")
 	mcpServerCmd.Flags().Bool("no-http", false, "Disable the HTTP MCP transport")
 	mcpServerCmd.Flags().StringP("cwd", "c", "", "Working directory for the MCP server (defaults to current directory)")
+	mcpServerCmd.Flags().Bool("print-token", false, "Print the stored MCP HTTP listener token (if any) to stdout and exit, without starting the server")
 
 	// Tool group flags – when provided they override the config file.
 	mcpServerCmd.Flags().Bool("file-tools", false, "Enable file read tools (view, glob, grep, ls)")
@@ -69,6 +68,10 @@ func init() {
 }
 
 func runMCPServerMode(cmd *cobra.Command) error {
+	if printToken, _ := cmd.Flags().GetBool("print-token"); printToken {
+		return printStoredListenerToken(mcpTokenKind)
+	}
+
 	host, _ := cmd.Flags().GetString("host")
 	port, _ := cmd.Flags().GetInt("port")
 	debug, _ := cmd.Flags().GetBool("debug")
@@ -170,12 +173,24 @@ func runMCPServerMode(cmd *cobra.Command) error {
 		if err != nil {
 			return err
 		}
-		if tokenGenerated {
-			// Printed once to stderr, exactly like cmd/agui_serve.go's token
-			// line, and never logged afterwards (see MCPServer.HttpToken's doc
-			// in internal/config/config.go for why the field name alone keeps
-			// it out of any config dump too).
-			fmt.Fprintf(os.Stderr, "No MCPServer.HttpToken configured; generated one for this run:\n%s\n", httpToken)
+		if configuredToken == "" {
+			// The token came from the stored file (PANDO-US-0030), whether
+			// just generated or read back from an earlier start: tell the
+			// operator where to find it again. An explicitly configured
+			// MCPServer.HttpToken never touches this file and never prints
+			// here -- the operator already knows it, since they set it.
+			if tokenPath, perr := listenerTokenFilePath(mcpTokenKind); perr == nil {
+				fmt.Fprintf(os.Stderr, "MCP HTTP token file: %s\n", tokenPath)
+			}
+			if tokenGenerated {
+				// Printed once to stderr, exactly like cmd/agui_serve.go's
+				// token line, and never logged afterwards (see
+				// MCPServer.HttpToken's doc in internal/config/config.go for
+				// why the field name alone keeps it out of any config dump
+				// too). A later start reads the same token back from the
+				// file above instead of generating (and printing) a new one.
+				fmt.Fprintf(os.Stderr, "Generated a new token and stored it there:\n%s\n", httpToken)
+			}
 		}
 
 		var allowedOrigins []string
@@ -523,12 +538,20 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 // A configured token is returned as-is. An empty token is only accepted when
 // host resolves to loopback: the port is then reachable only from this
 // machine, but that still includes any other local process or the user's own
-// browser (see PANDO-US-0026 for the CORS half of that), so a token is
-// generated rather than left off. Binding to a non-loopback interface with no
-// configured token is refused outright — loopback is not a security boundary
-// against the network, and there is nothing else standing between a remote
-// caller and the tool surface (see cmd/mcp_server.go:124's
-// SetGlobalAutoApprove(true)).
+// browser (see PANDO-US-0026 for the CORS half of that). Binding to a
+// non-loopback interface with no configured token is refused outright —
+// loopback is not a security boundary against the network, and there is
+// nothing else standing between a remote caller and the tool surface (see
+// cmd/mcp_server.go:124's SetGlobalAutoApprove(true)). This refusal is
+// checked before ever looking at a stored token file (PANDO-US-0030): a
+// token generated for a loopback bind must never silently become the
+// credential for a network-facing one just because the file happens to
+// exist.
+//
+// On a loopback bind with no configured token, a previously stored token is
+// read back (see resolveStoredOrGeneratedListenerToken) so a client
+// configured once keeps working across restarts; only on the very first
+// start is a new token generated and persisted.
 func ensureMCPHTTPToken(host, configuredToken string) (token string, generated bool, err error) {
 	if configuredToken != "" {
 		return configuredToken, false, nil
@@ -538,11 +561,7 @@ func ensureMCPHTTPToken(host, configuredToken string) (token string, generated b
 			"MCP HTTP transport is bound to non-loopback host %q with no MCPServer.HttpToken configured; "+
 				"set MCPServer.HttpToken in .pando.toml (or bind --host to loopback) before starting", host)
 	}
-	token, err = randomMCPHTTPToken()
-	if err != nil {
-		return "", false, err
-	}
-	return token, true, nil
+	return resolveStoredOrGeneratedListenerToken(mcpTokenKind)
 }
 
 // isLoopbackMCPHost reports whether host only accepts local connections. An
@@ -561,14 +580,6 @@ func isLoopbackMCPHost(host string) bool {
 		return false
 	}
 	return ip.IsLoopback()
-}
-
-func randomMCPHTTPToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate MCP HTTP token: %w", err)
-	}
-	return hex.EncodeToString(b), nil
 }
 
 func shutdownHTTPMCPServer(server *mesnadaServer.Server) {
