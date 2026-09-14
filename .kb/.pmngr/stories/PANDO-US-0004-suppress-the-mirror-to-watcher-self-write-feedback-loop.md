@@ -2,7 +2,7 @@
 id: PANDO-US-0004
 type: story
 title: Suppress the mirror to watcher self-write feedback loop
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0005
 milestone: PANDO-M-0002

@@ -198,48 +198,11 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			continue
 		}
 
-		meta := map[string]interface{}{
-			"source_path":       res.job.absPath,
-			"source_mtime_unix": res.job.mtimeUnix,
-			"source_format":     res.format,
-		}
-
-		var bodyContent string
-		if res.converted {
-			// Converted documents carry no front matter; index the markdown
-			// produced by the converter and flag the original source format.
-			bodyContent = res.content
-			meta["converted"] = true
-		} else {
-			// Parse YAML front matter from file content to extract tags.
-			// Store only the body (without front matter) in the database.
-			fm, rawFM, body, parseErr := ParseFrontMatterWithRaw(res.content)
-			if parseErr != nil {
-				// Front matter did not parse; ParseFrontMatterWithRaw already falls
-				// back to returning the raw content as body, so the document is
-				// still indexed below, just without metadata pulled from front matter.
-				logging.Warn("kb sync: front matter parse failed, indexing body as-is",
-					"doc_path", res.job.docPath,
-					"error", parseErr,
-				)
-			}
-			if strings.TrimSpace(body) == "" {
-				body = res.content // Fallback if parse strips everything.
-			}
-			bodyContent = body
-			// Inject tags from front matter into metadata.
-			if len(fm.Tags) > 0 {
-				meta = InjectTagsIntoMetadata(meta, fm.Tags)
-			}
-			// Aliases feed [[wiki link]] resolution, which reads them from metadata.
-			if len(fm.Aliases) > 0 {
-				meta = InjectAliasesIntoMetadata(meta, fm.Aliases)
-			}
-			// Preserve every other front-matter key (e.g. "status", "project",
-			// "milestone") that the typed FrontMatter struct does not name, so
-			// hosts writing structured records get them back in metadata.
-			meta = MergeUnknownFrontMatterKeys(meta, rawFM)
-		}
+		meta, bodyContent := buildDocumentMetadata(res.job.absPath, res.job.docPath, res.job.mtimeUnix, loadResult{
+			content:   res.content,
+			format:    res.format,
+			converted: res.converted,
+		})
 
 		processingCtx, cancel := context.WithTimeout(ctxSync, kbSyncPerFileTimeout)
 
@@ -424,6 +387,70 @@ func loadDocumentBody(absPath string, conv DocumentConverter) (content, format s
 		return "", format, false, rErr
 	}
 	return string(b), format, false, nil
+}
+
+// loadResult holds the content produced by loadDocumentBody for one file,
+// passed to buildDocumentMetadata so metadata/body construction has a single
+// input shape shared by the sync walker and the watcher.
+type loadResult struct {
+	content   string
+	format    string
+	converted bool
+}
+
+// buildDocumentMetadata builds the metadata map and the indexable body for a
+// document from its loaded content. It is the one place that decides how
+// front matter becomes metadata, shared by SyncDirectoryWithStats and the
+// watcher's handleWatchEvent so the two paths cannot drift apart again: a
+// converted document is indexed verbatim and flagged "converted", while a
+// markdown document has its YAML front matter parsed, tags/aliases injected,
+// and every other front-matter key merged into metadata via
+// MergeUnknownFrontMatterKeys. docPath is used only for diagnostic logging.
+func buildDocumentMetadata(absPath, docPath string, mtimeUnix int64, res loadResult) (map[string]interface{}, string) {
+	meta := map[string]interface{}{
+		"source_path":       absPath,
+		"source_mtime_unix": mtimeUnix,
+		"source_format":     res.format,
+	}
+
+	if res.converted {
+		// Converted documents carry no front matter; index the markdown
+		// produced by the converter and flag the original source format.
+		meta["converted"] = true
+		return meta, res.content
+	}
+
+	// Parse YAML front matter from file content to extract tags and other
+	// host-defined keys. Store only the body (without front matter) in the
+	// database.
+	fm, rawFM, body, parseErr := ParseFrontMatterWithRaw(res.content)
+	if parseErr != nil {
+		// Front matter did not parse; ParseFrontMatterWithRaw already falls
+		// back to returning the raw content as body, so the document is
+		// still indexed below, just without metadata pulled from front matter.
+		logging.Warn("kb: front matter parse failed, indexing body as-is",
+			"doc_path", docPath,
+			"error", parseErr,
+		)
+	}
+	if strings.TrimSpace(body) == "" {
+		body = res.content // Fallback if parse strips everything.
+	}
+
+	// Inject tags from front matter into metadata.
+	if len(fm.Tags) > 0 {
+		meta = InjectTagsIntoMetadata(meta, fm.Tags)
+	}
+	// Aliases feed [[wiki link]] resolution, which reads them from metadata.
+	if len(fm.Aliases) > 0 {
+		meta = InjectAliasesIntoMetadata(meta, fm.Aliases)
+	}
+	// Preserve every other front-matter key (e.g. "status", "project",
+	// "milestone") that the typed FrontMatter struct does not name, so
+	// hosts writing structured records get them back in metadata.
+	meta = MergeUnknownFrontMatterKeys(meta, rawFM)
+
+	return meta, body
 }
 
 // fileFormat returns the lower-cased file extension without the leading dot.

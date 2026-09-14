@@ -33,6 +33,14 @@ type KBStore struct {
 	fsMu         sync.RWMutex
 	converter    DocumentConverter
 
+	// selfWriteMu guards selfWrites, the bounded record of filesystem mirror
+	// writes/deletes this store just made (selfwrite.go). The watcher
+	// consults it to drop the fsnotify event its own mirror write generates,
+	// instead of feeding that write back through UpdateDocument and
+	// clobbering the metadata the write just stored (PANDO-US-0004).
+	selfWriteMu sync.Mutex
+	selfWrites  map[string]selfWriteEntry
+
 	// writeObserver and searchMiddleware are the extension hooks (observer.go).
 	// Both are nil in a standard build and guarded by fsMu like the other
 	// hot-swappable fields above.

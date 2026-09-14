@@ -95,12 +95,46 @@ func (s *KBStore) WatchDirectory(ctx context.Context, dirPath string) error {
 				continue
 			}
 
+			// Drop the event before it ever reaches the debounce timer when it
+			// is the direct result of this store's own filesystem mirror write
+			// or delete: letting it through would have the watcher re-index (or
+			// delete) the document with bare source_* metadata and clobber the
+			// metadata/tags the mirror write just stored (PANDO-US-0004).
+			if s.shouldSkipSelfWriteEvent(event) {
+				logging.Debug("kb watcher: skipping self-write event", "path", event.Name, "op", event.Op.String())
+				continue
+			}
+
 			evt := event
 			handleWithDebounce(event.Name, func() {
 				s.handleWatchEvent(ctx, baseDir, evt)
 			})
 		}
 	}
+}
+
+// shouldSkipSelfWriteEvent reports whether event is the direct result of this
+// store's own filesystem mirror write or delete (selfwrite.go), matched by
+// absolute path and, for a write, by mtime. A delete event is matched by path
+// alone since a removed file has no meaningful mtime to compare.
+func (s *KBStore) shouldSkipSelfWriteEvent(event fsnotify.Event) bool {
+	absPath, err := filepath.Abs(event.Name)
+	if err != nil {
+		return false
+	}
+
+	if event.Op&(fsnotify.Remove|fsnotify.Rename) != 0 {
+		return s.consumeSelfDelete(absPath)
+	}
+
+	fi, statErr := os.Stat(absPath)
+	if statErr != nil {
+		// Can't determine the current mtime (e.g. the file vanished between
+		// the event and this check); let the normal handler decide, it stats
+		// again and already treats a missing file as a delete.
+		return false
+	}
+	return s.consumeSelfWrite(absPath, fi.ModTime().Unix())
 }
 
 func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fsnotify.Event) {
@@ -170,23 +204,23 @@ func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fs
 		return
 	}
 
-	metadata := map[string]interface{}{
-		"source_path":       absPath,
-		"source_mtime_unix": mtimeUnix,
-		"source_format":     format,
-	}
-	if converted {
-		metadata["converted"] = true
-	}
+	// Build metadata and body through the same helper the sync path uses, so
+	// an edit made through the watcher cannot erase the tags and other
+	// front-matter keys the initial sync stored (PANDO-US-0003).
+	metadata, body := buildDocumentMetadata(absPath, docPath, mtimeUnix, loadResult{
+		content:   content,
+		format:    format,
+		converted: converted,
+	})
 
 	if existingMeta == nil {
-		if err := s.AddDocument(ctx, docPath, content, metadata); err != nil {
+		if err := s.AddDocument(ctx, docPath, body, metadata); err != nil {
 			logging.Warn("kb watcher: add document failed", "doc_path", docPath, "error", err)
 		}
 		return
 	}
 
-	if err := s.UpdateDocument(ctx, docPath, content, metadata); err != nil {
+	if err := s.UpdateDocument(ctx, docPath, body, metadata); err != nil {
 		logging.Warn("kb watcher: update document failed", "doc_path", docPath, "error", err)
 	}
 }

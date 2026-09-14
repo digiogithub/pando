@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ConfigureFilesystemMirror sets a base directory where KB documents are mirrored
@@ -56,8 +57,19 @@ func (s *KBStore) WriteDocumentToFilesystem(filePath, content string) error {
 		return fmt.Errorf("kb: create mirror parent for %q: %w", targetPath, err)
 	}
 
+	// Record the self-write before os.WriteFile returns, so the fsnotify event
+	// this write is about to generate can never race ahead of the watcher's
+	// suppression check (PANDO-US-0004). The predicted mtime (now) covers that
+	// race window; it is corrected below to the real on-disk mtime immediately
+	// after the write, well before the watcher's 250ms debounce elapses.
+	s.recordSelfWrite(targetPath, time.Now().Unix())
+
 	if err := os.WriteFile(targetPath, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("kb: write mirrored document %q: %w", targetPath, err)
+	}
+
+	if fi, statErr := os.Stat(targetPath); statErr == nil {
+		s.recordSelfWrite(targetPath, fi.ModTime().Unix())
 	}
 	return nil
 }
@@ -74,6 +86,10 @@ func (s *KBStore) DeleteDocumentFromFilesystem(filePath string) error {
 	if err != nil {
 		return err
 	}
+
+	// Record before the removal happens, for the same race-avoidance reason
+	// WriteDocumentToFilesystem does above (PANDO-US-0004).
+	s.recordSelfDelete(targetPath)
 
 	err = os.Remove(targetPath)
 	if err != nil && !os.IsNotExist(err) {

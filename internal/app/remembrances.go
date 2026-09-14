@@ -137,6 +137,31 @@ func (app *App) initRemembrancesKBSync(ctx context.Context, svc *rag.Remembrance
 				"deleted", stats.Deleted,
 				"links_indexed", stats.LinksIndexed,
 			)
+
+			// One-shot repair for documents a pre-fix watcher damaged: it replaced
+			// a document's metadata with bare source_* fields on every edit,
+			// discarding tags and other front-matter keys, and recorded a fresh
+			// source_mtime_unix so the sync above never noticed and never fixed
+			// it. Bounded: it records a marker on success and is a no-op on any
+			// later start, including one against a corpus this fixed code indexed
+			// from scratch (PANDO-US-0003).
+			repairStats, repairErr := svc.KB.RepairFrontMatterMetadata(importCtx, kbPath)
+			if repairErr != nil {
+				if errors.Is(repairErr, context.Canceled) {
+					return
+				}
+				logging.Error("remembrances kb: front matter repair failed", "path", kbPath, "error", repairErr)
+				return
+			}
+			if repairStats.Repaired > 0 {
+				logging.WarnPersist(fmt.Sprintf("KB front-matter metadata repair completed (%d scanned, %d repaired)",
+					repairStats.Scanned, repairStats.Repaired), "path", kbPath)
+			}
+			logging.Info("remembrances kb: front matter repair completed",
+				"path", kbPath,
+				"scanned", repairStats.Scanned,
+				"repaired", repairStats.Repaired,
+			)
 		}()
 	}
 

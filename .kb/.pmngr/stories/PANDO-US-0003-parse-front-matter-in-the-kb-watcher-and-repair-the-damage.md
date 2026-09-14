@@ -2,7 +2,7 @@
 id: PANDO-US-0003
 type: story
 title: Parse front matter in the KB watcher and repair the damage at startup
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0005
 milestone: PANDO-M-0002

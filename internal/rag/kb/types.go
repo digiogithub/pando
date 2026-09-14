@@ -53,3 +53,12 @@ type SyncStats struct {
 	// are not counted, so this is what the run wrote, not the size of the graph.
 	LinksIndexed int `json:"links_indexed"`
 }
+
+// RepairStats reports the outcome of RepairFrontMatterMetadata: how many
+// filesystem-backed documents it looked at, and how many of those had their
+// metadata rebuilt because it was missing front-matter-derived keys their
+// source file still declares.
+type RepairStats struct {
+	Scanned  int `json:"scanned"`
+	Repaired int `json:"repaired"`
+}
