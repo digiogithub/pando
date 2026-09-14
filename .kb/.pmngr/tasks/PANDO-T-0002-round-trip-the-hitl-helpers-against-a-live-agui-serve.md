@@ -2,7 +2,7 @@
 id: PANDO-T-0002
 type: task
 title: Round-trip the HITL helpers against a live agui-serve
-status: backlog
+status: done
 priority: medium
 parent: PANDO-US-0008
 milestone: PANDO-M-0001

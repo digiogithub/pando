@@ -2,7 +2,7 @@
 id: PANDO-US-0008
 type: story
 title: Typed HITL helpers for permission requests and AskUserQuestion
-status: in_review
+status: done
 priority: high
 parent: PANDO-EP-0001
 milestone: PANDO-M-0001

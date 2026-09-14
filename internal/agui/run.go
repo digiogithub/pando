@@ -66,11 +66,17 @@ const (
 
 // eventBuffer is a bounded ring of AG-UI events a run keeps so a (re)attaching
 // client can replay what it missed. See defaultReplayBufferSize.
+//
+// dropped counts every event ever evicted, which is what lets snapshotFrom
+// translate an absolute position recorded earlier (activeRun.segmentStart)
+// into a current slice index even after eviction has shifted items — see
+// PANDO-T-0002's fixture-agent-uncovered fix in snapshotFrom's doc comment.
 type eventBuffer struct {
-	mu    sync.Mutex
-	items []Event
-	limit int
-	lossy bool
+	mu      sync.Mutex
+	items   []Event
+	limit   int
+	lossy   bool
+	dropped int
 }
 
 func newEventBuffer(limit int) *eventBuffer {
@@ -89,9 +95,21 @@ func (b *eventBuffer) append(events ...Event) {
 		if b.limit > 0 && len(b.items) >= b.limit {
 			b.items = b.items[1:]
 			b.lossy = true
+			b.dropped++
 		}
 		b.items = append(b.items, ev)
 	}
+}
+
+// nextIndex returns the absolute position the next appended event will land
+// at (dropped + len(items)): a monotonically increasing sequence number
+// unaffected by eviction, suitable for activeRun.markSegmentStart to record
+// "replay should start here" before any eviction has had a chance to shift
+// slice indices.
+func (b *eventBuffer) nextIndex() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.dropped + len(b.items)
 }
 
 // snapshot returns a copy of the buffered events and whether the buffer has
@@ -103,6 +121,44 @@ func (b *eventBuffer) snapshot() ([]Event, bool) {
 	out := make([]Event, len(b.items))
 	copy(out, b.items)
 	return out, b.lossy
+}
+
+// snapshotFrom returns the buffered events at or after the absolute position
+// from (an activeRun.segmentStart value, from a prior nextIndex call), and
+// whether that necessarily lost events: either the buffer overall dropped
+// something, or from itself already fell off the ring's tail.
+//
+// PANDO-T-0002 finding: attachRun's replay stops at the first segment
+// boundary it finds (RUN_FINISHED/RUN_ERROR) — by design, "one HTTP response
+// is one AG-UI run segment" (see isSegmentBoundary's doc comment). Before
+// this method existed, every replay started at absolute position 0
+// (plain snapshot()), so on a run that had already interrupted once,
+// EVERY subsequent attach — including the resume that just answered that
+// very interrupt — replayed from the start of the OLDEST segment still in
+// the buffer and stopped at ITS boundary, never reaching the segment the
+// attaching request actually cares about. A real model's latency happened to
+// leave enough of a window that this was rarely exercised end-to-end before;
+// PANDO-T-0002's zero-latency fixture agent made it reproduce on every
+// resume. activeRun.markSegmentStart/segmentStart now record where the
+// current segment begins, and replaySnapshot passes that here instead of
+// always reading from the very beginning.
+func (b *eventBuffer) snapshotFrom(from int) ([]Event, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	lossy := b.lossy
+	rel := from - b.dropped
+	if rel < 0 {
+		// The requested start already fell off the ring: the caller is told
+		// so via lossy, and gets everything still available instead.
+		rel = 0
+		lossy = true
+	}
+	if rel > len(b.items) {
+		rel = len(b.items)
+	}
+	out := make([]Event, len(b.items)-rel)
+	copy(out, b.items[rel:])
+	return out, lossy
 }
 
 // subscriber is one attached HTTP request's view of a run: the primary
@@ -144,9 +200,18 @@ type activeRun struct {
 	translator *translator
 	// ended remembers the tool calls already closed for this thread, so a
 	// resumption does not re-close them (see translator.inheritEnded).
-	ended   map[string]bool
-	reaper  *time.Timer
-	stopped bool
+	ended map[string]bool
+	// segmentStart is the buffer's absolute position (eventBuffer.nextIndex)
+	// where the CURRENT segment began. It starts at zero (the run's first
+	// segment begins at the buffer's very start) and is advanced by
+	// markSegmentStart, called from beginResumeSegment before that segment's
+	// RUN_STARTED is broadcast. replaySnapshot uses it so a replaying attach
+	// — most importantly the resume request itself — starts from the
+	// segment it actually needs, not from the oldest one still buffered. See
+	// eventBuffer.snapshotFrom's doc comment for the bug this closes.
+	segmentStart int
+	reaper       *time.Timer
+	stopped      bool
 	// suspended is true while the run is parked waiting for a frontend-tool
 	// or permission result, as opposed to merely disconnected. It decides
 	// which grace period a last-subscriber-detach re-arms (see
@@ -215,6 +280,26 @@ func (a *activeRun) setTranslator(t *translator) {
 	a.mu.Lock()
 	a.translator = t
 	a.mu.Unlock()
+}
+
+// markSegmentStart records the buffer position the CURRENT segment begins
+// at. Called from Runtime.beginResumeSegment before that segment's
+// RUN_STARTED is broadcast, so the recorded position is exactly where that
+// event will land — see the segmentStart field doc and
+// eventBuffer.snapshotFrom.
+func (a *activeRun) markSegmentStart() {
+	idx := a.buffer.nextIndex()
+	a.mu.Lock()
+	a.segmentStart = idx
+	a.mu.Unlock()
+}
+
+// currentSegmentStart returns where the current segment begins in the
+// buffer, for replaySnapshot.
+func (a *activeRun) currentSegmentStart() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.segmentStart
 }
 
 // currentTranslator returns the translator the pump should use right now. It
@@ -378,9 +463,13 @@ func (a *activeRun) broadcastFinal(events []Event) {
 }
 
 // replaySnapshot returns the buffered events a (re)attaching client should
-// replay before going live, and whether the buffer has dropped any.
+// replay before going live, and whether the buffer has dropped any. It
+// starts from the current segment (see segmentStart/markSegmentStart), not
+// from the run's very first event, so a resume replays the segment the
+// attaching request actually needs instead of stopping at an older segment
+// boundary still sitting earlier in the buffer.
 func (a *activeRun) replaySnapshot() ([]Event, bool) {
-	return a.buffer.snapshot()
+	return a.buffer.snapshotFrom(a.currentSegmentStart())
 }
 
 // subscriberCount reports how many attaches are currently registered. Used

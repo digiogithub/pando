@@ -580,6 +580,15 @@ func (r *Runtime) resumeCandidates(run *activeRun, in *RunAgentInput) []Message 
 // the old, already-closed-out translator -- reopening a call the client
 // already watched close, or emitting a bare result with no run to attribute
 // it to. See activeRun.setTranslator.
+//
+// markSegmentStart is called here too, before the broadcast, for the same
+// reason: the resuming request's own streamAttach (handleExistingThreadRun,
+// right after this returns) replays from the buffer via replaySnapshot,
+// which stops at the first segment boundary it finds. Without recording
+// where THIS segment starts, that replay would restart from the run's very
+// first buffered event and stop at ITS boundary -- the interrupt this very
+// resume is answering -- never reaching the new segment at all. See
+// eventBuffer.snapshotFrom's doc comment (PANDO-T-0002).
 func (r *Runtime) beginResumeSegment(run *activeRun, in *RunAgentInput, resolved []Message) {
 	t := newTranslator(in.ThreadID, in.RunID).withState(run.state).inheritEnded(run.endedCalls())
 	for _, msg := range resolved {
@@ -588,6 +597,7 @@ func (r *Runtime) beginResumeSegment(run *activeRun, in *RunAgentInput, resolved
 	run.setTranslator(t)
 	run.setSuspended(false)
 	run.unpark()
+	run.markSegmentStart()
 	run.broadcast(t.Start())
 
 	logging.Debug("agui: resuming suspended run",

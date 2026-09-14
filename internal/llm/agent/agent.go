@@ -2647,6 +2647,13 @@ func sessionPolicyInstructions(ctx context.Context) []string {
 
 func createAgentProvider(ctx context.Context, agentName config.AgentName, agentTools []tools.BaseTool, skillManager *skills.SkillManager, activeSkillInstructions []string, personaContent ...string) (provider.Provider, error) {
 	logging.Debug("createAgentProvider", "agentName", string(agentName))
+	// PANDO-T-0002: a deterministic, test-only fixture agent that answers
+	// without any LLM call. maybeFixtureProvider is a no-op (nil, false) in
+	// every binary not built with `-tags agui_fixture_agent` — see
+	// fixture_hitl_agent_stub.go/fixture_hitl_agent.go.
+	if fixtureProvider, ok := maybeFixtureProvider(agentName); ok {
+		return fixtureProvider, nil
+	}
 	cfg := config.Get()
 	agentConfig, ok := cfg.Agents[agentName]
 	if !ok {

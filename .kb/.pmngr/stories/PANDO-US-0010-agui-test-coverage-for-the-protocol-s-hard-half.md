@@ -2,7 +2,7 @@
 id: PANDO-US-0010
 type: story
 title: agui test coverage for the protocol's hard half
-status: in_review
+status: done
 priority: medium
 parent: PANDO-EP-0001
 milestone: PANDO-M-0001

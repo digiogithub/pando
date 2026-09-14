@@ -69,6 +69,10 @@ func init() {
 
 func runMCPServerMode(cmd *cobra.Command) error {
 	if printToken, _ := cmd.Flags().GetBool("print-token"); printToken {
+		// --print-token is consumed by scripts: its only output on success is
+		// the token on stdout, so a failure must be one error line and not the
+		// command's whole usage text dumped after it.
+		cmd.SilenceUsage = true
 		return printStoredListenerToken(mcpTokenKind)
 	}
 
