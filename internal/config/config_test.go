@@ -17,10 +17,11 @@ import (
 // viper.AddConfigPath calls in setDefaults), so a test that does not do this reads
 // the config of whoever runs it: the developer's own ~/.pando.toml wins over the
 // defaults under test, and the suite passes or fails depending on the machine.
+// isolateGlobalConfig is the in-package spelling of IsolateForTests, kept so the
+// call sites in this package read as they always have.
 func isolateGlobalConfig(t *testing.T) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", "")
+	IsolateForTests(t)
 }
 
 func TestMesnadaDefaults(t *testing.T) {

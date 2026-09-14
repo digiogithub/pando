@@ -118,3 +118,21 @@ untouched; the defect was entirely in test hygiene.
 - `config.Load`'s singleton-with-cache design (`internal/config/config.go:1863`) itself was left
   unchanged; it is relied upon in production and by other tests, and restructuring it is out of
   proportion to this defect.
+
+## Follow-up (2026-09-14): the seam is now exported
+
+The first fix repeated `isolateGlobalConfig`'s two `t.Setenv` lines inline, because that helper is
+unexported and private to `internal/config`. That is the third copy of the same two lines and the
+reason the defect kept coming back.
+
+`internal/config/testing.go` now exports `IsolateForTests(t)`: it points `HOME` at a scratch
+directory, clears `XDG_CONFIG_HOME`, calls `ResetForTests()` before the test and registers it as
+cleanup. It takes a `config.TestingT` interface (`Helper`, `Setenv`, `TempDir`, `Cleanup`) rather
+than `*testing.T`, so the file stays out of the `testing` package's import graph even though it is
+part of the normal package build.
+
+`isolateGlobalConfig` in `config_test.go` is now a one-line delegation, so the twenty-odd call
+sites in `internal/config` read as they always have, and
+`TestBuildSystemMessageUsesTemplatePromptBuilder` calls `config.IsolateForTests(t)` directly.
+
+Any test in any package that reaches configuration should call it first.

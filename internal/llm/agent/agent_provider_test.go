@@ -188,13 +188,10 @@ func TestBuildSystemMessageUsesTemplatePromptBuilder(t *testing.T) {
 	// caveman-mode and tool-discovery tests that assert on the zero-value
 	// (no configured) default. Isolate HOME so Load() cannot pick up a real
 	// host config, and reset the global before and after via the same
-	// config.ResetForTests() seam internal/config's own tests use for this
-	// (see isolateGlobalConfig in internal/config/config_test.go), instead of
-	// only restoring the handful of fields this test happens to mutate.
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", "")
-	config.ResetForTests()
-	t.Cleanup(config.ResetForTests)
+	// config.IsolateForTests() seam internal/config's own tests use for this,
+	// instead of only restoring the handful of fields this test happens to
+	// mutate.
+	config.IsolateForTests(t)
 
 	tmpDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte("Use AGENTS instructions"), 0644))
