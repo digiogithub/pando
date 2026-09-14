@@ -233,13 +233,19 @@ func TestStateStoreKeepsDocumentAcrossRuns(t *testing.T) {
 	store := newStateStore()
 	model := models.Model{ID: "m1", Name: "Model One", ContextWindow: 1000}
 
-	first := store.get("t1", "sess1", config.AgentCoder, model, nil)
+	first, created := store.get("t1", "sess1", config.AgentCoder, model, nil)
+	if !created {
+		t.Fatal("the first call for a thread must report a newly created document")
+	}
 	toolResult(first, "c1", "write", `{"file_path":"/repo/notes.txt"}`, "ok")
 
 	newer := models.Model{ID: "m2", Name: "Model Two", ContextWindow: 2000}
-	second := store.get("t1", "sess1", config.AgentCoder, newer, nil)
+	second, created := store.get("t1", "sess1", config.AgentCoder, newer, nil)
 	if second != first {
 		t.Fatal("the same thread must keep its document")
+	}
+	if created {
+		t.Fatal("a repeat call for the same thread/session must not report a new document")
 	}
 
 	snap := second.Snapshot().(StateSnapshotEvent).Snapshot.(StateDoc)
@@ -251,13 +257,43 @@ func TestStateStoreKeepsDocumentAcrossRuns(t *testing.T) {
 	}
 
 	// A rebound thread starts over: its files belong to a session that is gone.
-	rebound := store.get("t1", "sess2", config.AgentCoder, model, nil)
+	rebound, created := store.get("t1", "sess2", config.AgentCoder, model, nil)
 	if rebound == first {
 		t.Fatal("a new session must get a new document")
+	}
+	if !created {
+		t.Fatal("a rebound thread must report a newly created document")
 	}
 	if files := rebound.Snapshot().(StateSnapshotEvent).Snapshot.(StateDoc).Files; len(files) != 0 {
 		t.Fatalf("the new document must be empty: %+v", files)
 	}
+}
+
+// TestStateStoreDelete pins the PANDO-US-0015 DELETE route's cleanup: once a
+// thread's document is deleted, the next get for the same thread id builds a
+// fresh one, even if the session id happens to be reused.
+func TestStateStoreDelete(t *testing.T) {
+	store := newStateStore()
+	model := models.Model{ID: "m1"}
+
+	first, _ := store.get("t1", "sess1", config.AgentCoder, model, nil)
+	toolResult(first, "c1", "write", `{"file_path":"/repo/notes.txt"}`, "ok")
+
+	store.delete("t1")
+	if _, ok := store.byThread["t1"]; ok {
+		t.Fatal("delete must drop the thread's document")
+	}
+
+	again, created := store.get("t1", "sess1", config.AgentCoder, model, nil)
+	if !created {
+		t.Fatal("a deleted thread must report a newly created document on its next get")
+	}
+	if files := again.Snapshot().(StateSnapshotEvent).Snapshot.(StateDoc).Files; len(files) != 0 {
+		t.Fatalf("the document rebuilt after delete must be empty: %+v", files)
+	}
+
+	// Deleting an unknown thread must be a harmless no-op.
+	store.delete("never-existed")
 }
 
 func TestStateStoreEvictsLeastRecentlyUsed(t *testing.T) {

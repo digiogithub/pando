@@ -3,6 +3,10 @@ package agui
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -87,6 +91,53 @@ func (t *threadStore) forget(ctx context.Context, threadID string) {
 	}
 }
 
+// threadRecord is one row of the adapter-owned thread list (PANDO-US-0015).
+// It is the threadStore-level shape; server.go's handleListThreads projects
+// it into the wire-level ThreadSummary.
+type threadRecord struct {
+	ThreadID  string
+	SessionID string
+	Agent     string
+	UpdatedAt string
+}
+
+// list returns up to limit threads owned by this adapter, newest-first by
+// updated_at, starting at offset. It reads only the agui_threads table -- the
+// in-memory map has no ordering of its own and is never consulted here, so a
+// database-less (degraded) adapter simply has no threads to list, the same
+// shape get/put/forget already degrade to. Because agui_threads is a table
+// this package alone writes to, every row it returns belongs to this adapter:
+// there is no need (and, per the story, no fallback allowed) to reconstruct
+// the list from session titles.
+func (t *threadStore) list(ctx context.Context, limit, offset int) ([]threadRecord, error) {
+	if t.db == nil || t.degraded.Load() {
+		return nil, nil
+	}
+	qctx, cancel := context.WithTimeout(detach(ctx), threadStoreTimeout)
+	defer cancel()
+
+	rows, err := t.db.QueryContext(qctx, `
+		SELECT thread_id, session_id, agent, updated_at
+		FROM agui_threads
+		ORDER BY updated_at DESC, thread_id DESC
+		LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		t.degrade("list", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]threadRecord, 0, limit)
+	for rows.Next() {
+		var rec threadRecord
+		if err := rows.Scan(&rec.ThreadID, &rec.SessionID, &rec.Agent, &rec.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
 func (t *threadStore) loadFromDB(ctx context.Context, threadID string) (string, bool) {
 	if t.db == nil || t.degraded.Load() {
 		return "", false
@@ -143,4 +194,164 @@ func (t *threadStore) degrade(op string, err error) {
 // session was being created; the values are still needed by the next request.
 func detach(ctx context.Context) context.Context {
 	return context.WithoutCancel(ctx)
+}
+
+// ---------------------------------------------------------------- thread API
+//
+// PANDO-US-0015: list threads, read one's transcript, delete a thread -- the
+// three routes a browser client needs to rebuild a conversation on reload
+// without co-mounting the Web-UI REST API. They are registered by
+// server.go's Register/Handler and go through the same authorize() every
+// other route does.
+
+const (
+	// defaultThreadPageSize is used when a client sends no ?limit.
+	defaultThreadPageSize = 50
+	// maxThreadPageSize caps how much a single request can ask for.
+	maxThreadPageSize = 200
+)
+
+// ThreadSummary is one entry of GET {path}/threads.
+type ThreadSummary struct {
+	ThreadID  string `json:"threadId"`
+	SessionID string `json:"sessionId"`
+	Agent     string `json:"agent"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
+// handleListThreads answers GET {path}/threads: this adapter's threads,
+// newest-first, paginated by ?limit=&offset=.
+func (r *Runtime) handleListThreads(w http.ResponseWriter, req *http.Request) {
+	if !r.authorize(w, req) {
+		return
+	}
+	limit, offset := threadPaginationParams(req)
+
+	// One extra row is fetched to learn hasMore without a second COUNT(*).
+	records, err := r.threads.list(req.Context(), limit+1, offset)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	hasMore := len(records) > limit
+	if hasMore {
+		records = records[:limit]
+	}
+
+	threads := make([]ThreadSummary, len(records))
+	for i, rec := range records {
+		threads[i] = ThreadSummary{
+			ThreadID:  rec.ThreadID,
+			SessionID: rec.SessionID,
+			Agent:     rec.Agent,
+			UpdatedAt: rec.UpdatedAt,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"threads": threads,
+		"limit":   limit,
+		"offset":  offset,
+		"hasMore": hasMore,
+	})
+}
+
+// threadPaginationParams reads ?limit= and ?offset=. A missing or invalid
+// limit falls back to defaultThreadPageSize; limit is capped at
+// maxThreadPageSize and offset is never negative.
+func threadPaginationParams(req *http.Request) (limit, offset int) {
+	limit = defaultThreadPageSize
+	if raw := req.URL.Query().Get("limit"); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			limit = v
+		}
+	}
+	if limit > maxThreadPageSize {
+		limit = maxThreadPageSize
+	}
+	if raw := req.URL.Query().Get("offset"); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			offset = v
+		}
+	}
+	return limit, offset
+}
+
+// handleThreadMessages answers GET {path}/threads/{id}/messages: the thread's
+// transcript, AG-UI Message[] shaped via toAGUIMessages (transcript.go). An
+// id this adapter has no binding for answers 404, never an empty transcript:
+// there would be no way to tell "empty conversation" from "never existed"
+// apart otherwise.
+func (r *Runtime) handleThreadMessages(w http.ResponseWriter, req *http.Request) {
+	if !r.authorize(w, req) {
+		return
+	}
+	threadID := strings.TrimSpace(req.PathValue("id"))
+	sessionID, ok := r.threads.get(req.Context(), threadID)
+	if !ok {
+		writeJSONError(w, http.StatusNotFound, "thread not found")
+		return
+	}
+
+	msgs, err := r.deps.Messages.List(req.Context(), sessionID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"threadId": threadID,
+		"messages": toAGUIMessages(msgs),
+	})
+}
+
+// handleDeleteThread answers DELETE {path}/threads/{id}: it removes the
+// thread's messages, its session and the agui_threads binding itself, so a
+// subsequent GET on the same id 404s and a subsequent run on it starts a
+// fresh session. It is idempotent: an id this adapter has no binding for --
+// never bound, or already deleted -- is a no-op success, not an error,
+// exactly like a repeat DELETE of the same thread.
+func (r *Runtime) handleDeleteThread(w http.ResponseWriter, req *http.Request) {
+	if !r.authorize(w, req) {
+		return
+	}
+	threadID := strings.TrimSpace(req.PathValue("id"))
+	ctx := req.Context()
+
+	sessionID, ok := r.threads.get(ctx, threadID)
+	if !ok {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// A run still in flight for this thread must not be left dangling on a
+	// session that is about to disappear out from under it.
+	if run, ok := r.runs.get(threadID); ok {
+		r.finishRun(run)
+	}
+	// The thread's shared-state document belongs to the conversation being
+	// deleted; a fresh run on the same thread id must start with a clean one
+	// rather than inheriting its predecessor's todos/files/sub-agents.
+	r.states.delete(threadID)
+
+	if err := r.deps.Messages.DeleteSessionMessages(ctx, sessionID); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := r.deps.Sessions.Delete(ctx, sessionID); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// The existing dangling-binding recovery (Runtime.sessionForThread) stays
+	// the safety net for a session deleted through some other path; forgetting
+	// the binding here is what makes THIS deletion observable immediately, on
+	// both the in-memory map and the durable table, instead of waiting for
+	// that recovery to notice on the next run.
+	r.threads.forget(ctx, threadID)
+
+	w.WriteHeader(http.StatusNoContent)
 }

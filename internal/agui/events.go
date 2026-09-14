@@ -254,10 +254,20 @@ func NewStateDelta(ops []JSONPatchOperation) StateDeltaEvent {
 type MessagesSnapshotEvent struct {
 	BaseEvent
 	Messages []Message `json:"messages"`
+	// Truncated reports whether Messages was cut down to the adapter's
+	// configured cap (max message count and/or max bytes), keeping the most
+	// recent messages (PANDO-US-0016). A client that sees it true knows the
+	// transcript is partial and must not treat index 0 as the conversation's
+	// start.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
-func NewMessagesSnapshot(msgs []Message) MessagesSnapshotEvent {
-	return MessagesSnapshotEvent{BaseEvent: base(EventMessagesSnapshot), Messages: msgs}
+func NewMessagesSnapshot(msgs []Message, truncated bool) MessagesSnapshotEvent {
+	return MessagesSnapshotEvent{
+		BaseEvent: base(EventMessagesSnapshot),
+		Messages:  msgs,
+		Truncated: truncated,
+	}
 }
 
 // ---------------------------------------------------------------- reasoning

@@ -63,6 +63,17 @@
 //     the adapter already observes — the orchestrator is never consulted and no
 //     agent event type was added.
 //
+//   - P8 (PANDO-EP-0003): the native thread API — GET {path}/threads (paginated,
+//     newest-first, scoped to the agui_threads table this adapter owns), GET
+//     {path}/threads/{id}/messages and DELETE {path}/threads/{id} — replaces the
+//     interim workaround of proxying the Web-UI REST API's session endpoints, so
+//     a browser client can rebuild a conversation without co-mounting it (see
+//     threads.go). The AG-UI Message[] conversion it needed (transcript.go) is
+//     reused by MESSAGES_SNAPSHOT: the first run this process serves for a
+//     pre-existing thread's attach resynchronises the client in-band, right
+//     after STATE_SNAPSHOT, capped to a configured message count/byte budget and
+//     flagged truncated when it is (server.go's runPrelude).
+//
 // # Tool calls that never reach the event stream
 //
 // agent.processEvent only publishes AgentEventTypeToolCall for providers that

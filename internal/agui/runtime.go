@@ -140,17 +140,23 @@ func (r *Runtime) resolveAgent(name string) (config.AgentName, *Profile, error) 
 // Since P5 the mapping survives a restart (see threads.go). A binding whose
 // session has since been deleted is dropped rather than returned: the run would
 // otherwise fail on every message of a thread the browser still considers open.
-func (r *Runtime) sessionForThread(ctx context.Context, threadID, agentName, title string, profile *Profile) (string, error) {
-	if sessionID, ok := r.threads.get(ctx, threadID); ok {
-		if sess, err := r.deps.Sessions.Get(ctx, sessionID); err == nil && sess.ID != "" {
+//
+// The second return value, existed, reports whether the session was already
+// there before this call (a known thread binding, or a client reusing an
+// existing Pando session id as its thread id) as opposed to being created by
+// this very call. PANDO-US-0016's MESSAGES_SNAPSHOT resync is gated on it: a
+// thread created by this call has no history to resync yet.
+func (r *Runtime) sessionForThread(ctx context.Context, threadID, agentName, title string, profile *Profile) (sessionID string, existed bool, err error) {
+	if boundID, ok := r.threads.get(ctx, threadID); ok {
+		if sess, err := r.deps.Sessions.Get(ctx, boundID); err == nil && sess.ID != "" {
 			// The handler is per session and the mapping outlives the process, so
 			// it must be (re)installed here, not only where the session is created.
-			r.installPermissionPolicy(sessionID)
-			r.applySessionOverrides(sessionID, profile)
-			return sessionID, nil
+			r.installPermissionPolicy(boundID)
+			r.applySessionOverrides(boundID, profile)
+			return boundID, true, nil
 		}
 		logging.Warn("agui: thread pointed at a missing session, rebinding",
-			"thread", threadID, "session", sessionID)
+			"thread", threadID, "session", boundID)
 		r.threads.forget(ctx, threadID)
 	}
 	// A client may reuse a Pando session id as its thread id; honour it.
@@ -158,18 +164,18 @@ func (r *Runtime) sessionForThread(ctx context.Context, threadID, agentName, tit
 		r.threads.put(ctx, threadID, sess.ID, agentName)
 		r.installPermissionPolicy(sess.ID)
 		r.applySessionOverrides(sess.ID, profile)
-		return sess.ID, nil
+		return sess.ID, true, nil
 	}
 
 	sess, err := r.deps.Sessions.Create(ctx, sessionTitle(title))
 	if err != nil {
-		return "", fmt.Errorf("agui: create session for thread %q: %w", threadID, err)
+		return "", false, fmt.Errorf("agui: create session for thread %q: %w", threadID, err)
 	}
 	r.threads.put(ctx, threadID, sess.ID, agentName)
 	r.installPermissionPolicy(sess.ID)
 	r.applySessionOverrides(sess.ID, profile)
 	logging.Debug("agui: thread bound to session", "thread", threadID, "session", sess.ID)
-	return sess.ID, nil
+	return sess.ID, false, nil
 }
 
 // applySessionOverrides scopes a profile's Persona/Prompt/Model -- or, absent

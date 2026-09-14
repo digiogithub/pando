@@ -182,27 +182,54 @@ func newStateStore() *stateStore {
 	return &stateStore{byThread: make(map[string]*stateTracker)}
 }
 
-// get returns the thread's document, creating it on first contact. A document
-// built for a different session is discarded: the thread was rebound and its
-// files and sub-agents belong to a conversation that no longer exists.
-func (s *stateStore) get(threadID, sessionID string, agentName config.AgentName, model models.Model, clientState any) *stateTracker {
+// get returns the thread's document, creating it on first contact, and
+// reports whether a NEW document was built for this call. A document built
+// for a different session is discarded and counts as new too: the thread was
+// rebound and its files and sub-agents belong to a conversation that no
+// longer exists.
+//
+// PANDO-US-0016 uses the "created" flag: combined with whether the session
+// already existed (see Runtime.sessionForThread), a freshly created document
+// for a pre-existing session means this run is the first this process has
+// served for that thread's attach, which is when MESSAGES_SNAPSHOT resyncs
+// the client.
+func (s *stateStore) get(threadID, sessionID string, agentName config.AgentName, model models.Model, clientState any) (tracker *stateTracker, created bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if tracker, ok := s.byThread[threadID]; ok {
-		if tracker.session() == sessionID {
-			tracker.rebind(model, clientState)
+	if existing, ok := s.byThread[threadID]; ok {
+		if existing.session() == sessionID {
+			existing.rebind(model, clientState)
 			s.touchLocked(threadID)
-			return tracker
+			return existing, false
 		}
 		delete(s.byThread, threadID)
 	}
 
-	tracker := newStateTracker(threadID, sessionID, agentName, model, clientState)
+	tracker = newStateTracker(threadID, sessionID, agentName, model, clientState)
 	s.byThread[threadID] = tracker
 	s.touchLocked(threadID)
 	s.evictLocked()
-	return tracker
+	return tracker, true
+}
+
+// delete drops a thread's state document outright. Used when the thread
+// itself is deleted (PANDO-US-0015's DELETE route): a fresh session created
+// afterward for the same thread id must not inherit a stale todo/file/
+// sub-agent board from the conversation it replaced.
+func (s *stateStore) delete(threadID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.byThread[threadID]; !ok {
+		return
+	}
+	delete(s.byThread, threadID)
+	for i, id := range s.order {
+		if id == threadID {
+			s.order = append(s.order[:i], s.order[i+1:]...)
+			break
+		}
+	}
 }
 
 func (s *stateStore) touchLocked(threadID string) {

@@ -3,12 +3,15 @@ package agui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/message"
 )
 
 // newTestRuntime builds a Runtime without agents or services. Everything these
@@ -348,5 +351,198 @@ func TestPoolKeyIsToolsetAwareAndOrderIndependent(t *testing.T) {
 func TestPoolKeyDistinguishesProfilesOverSameBase(t *testing.T) {
 	if poolKey("backlog-assistant", nil) == poolKey("docs-assistant", nil) {
 		t.Fatal("two profiles sharing a Base agent must not collapse onto one pool key")
+	}
+}
+
+// -------------------------------------------------------- PANDO-US-0016
+// MESSAGES_SNAPSHOT resync, exercised directly against runPrelude: it is the
+// exact code path handleRun uses to open a run, without needing a real agent
+// pool.
+
+// newRunPreludeTestRuntime builds a Runtime with just enough (Deps.Messages
+// and cfg) for runPrelude, which touches neither the agent pool nor the
+// thread store.
+func newRunPreludeTestRuntime(messages *fakeMessageService) *Runtime {
+	return &Runtime{
+		deps: Deps{Messages: messages},
+		cfg:  testConfig(),
+	}
+}
+
+func seedUserMessage(messages *fakeMessageService, sessionID, id, text string) {
+	messages.seed(sessionID, message.Message{
+		ID: id, SessionID: sessionID, Role: message.User,
+		Parts: []message.ContentPart{message.TextContent{Text: text}},
+	})
+}
+
+// TestRunPreludeOrderingOnPreExistingThreadResync is the PANDO-US-0016
+// acceptance criterion: on a pre-existing thread's first attach, event
+// ordering is RUN_STARTED -> STATE_SNAPSHOT -> MESSAGES_SNAPSHOT.
+func TestRunPreludeOrderingOnPreExistingThreadResync(t *testing.T) {
+	messages := newFakeMessageService()
+	seedUserMessage(messages, "sess1", "m1", "hi")
+	seedUserMessage(messages, "sess1", "m2", "hello back")
+
+	r := newRunPreludeTestRuntime(messages)
+	state := newTestTracker()
+	tr := newTranslator("t1", "r1").withState(state)
+
+	rec := httptest.NewRecorder()
+	sse, err := NewSSEWriter(rec)
+	if err != nil {
+		t.Fatalf("sse: %v", err)
+	}
+	if err := r.runPrelude(context.Background(), sse, tr, state, "sess1", true); err != nil {
+		t.Fatalf("runPrelude: %v", err)
+	}
+
+	types := frameTypes(rec.Body.String())
+	started := indexOf(types, string(EventRunStarted))
+	stateSnap := indexOf(types, string(EventStateSnapshot))
+	msgsSnap := indexOf(types, string(EventMessagesSnapshot))
+	if started < 0 || stateSnap < 0 || msgsSnap < 0 {
+		t.Fatalf("missing an expected event: %v", types)
+	}
+	if !(started < stateSnap && stateSnap < msgsSnap) {
+		t.Fatalf("want RUN_STARTED -> STATE_SNAPSHOT -> MESSAGES_SNAPSHOT, got: %v", types)
+	}
+	if !strings.Contains(rec.Body.String(), `"hello back"`) {
+		t.Fatalf("expected the seeded history in the snapshot: %s", rec.Body.String())
+	}
+}
+
+// TestRunPreludeBrandNewThreadEmitsNoMessagesSnapshot is the PANDO-US-0016
+// acceptance criterion: a brand-new thread (resync=false, as handleRun
+// computes it from sessionForThread's existed=false) gets no
+// MESSAGES_SNAPSHOT, only the two events every run always opens with.
+func TestRunPreludeBrandNewThreadEmitsNoMessagesSnapshot(t *testing.T) {
+	messages := newFakeMessageService()
+	r := newRunPreludeTestRuntime(messages)
+	state := newTestTracker()
+	tr := newTranslator("t1", "r1").withState(state)
+
+	rec := httptest.NewRecorder()
+	sse, err := NewSSEWriter(rec)
+	if err != nil {
+		t.Fatalf("sse: %v", err)
+	}
+	if err := r.runPrelude(context.Background(), sse, tr, state, "sess1", false); err != nil {
+		t.Fatalf("runPrelude: %v", err)
+	}
+
+	types := frameTypes(rec.Body.String())
+	if indexOf(types, string(EventMessagesSnapshot)) >= 0 {
+		t.Fatalf("a brand-new thread must not emit MESSAGES_SNAPSHOT: %v", types)
+	}
+	if indexOf(types, string(EventRunStarted)) < 0 || indexOf(types, string(EventStateSnapshot)) < 0 {
+		t.Fatalf("expected RUN_STARTED and STATE_SNAPSHOT regardless of resync: %v", types)
+	}
+}
+
+// TestRunPreludeSkipsResyncWhenNotRequestedEvenWithHistory guards against
+// resync being (re)derived from the message store instead of the caller's
+// decision: a thread WITH history still gets no snapshot when resync=false,
+// which is what "once per attach" (not "once per pre-existing thread")
+// requires.
+func TestRunPreludeSkipsResyncWhenNotRequestedEvenWithHistory(t *testing.T) {
+	messages := newFakeMessageService()
+	seedUserMessage(messages, "sess1", "m1", "already have this")
+
+	r := newRunPreludeTestRuntime(messages)
+	state := newTestTracker()
+	tr := newTranslator("t1", "r1").withState(state)
+
+	rec := httptest.NewRecorder()
+	sse, err := NewSSEWriter(rec)
+	if err != nil {
+		t.Fatalf("sse: %v", err)
+	}
+	if err := r.runPrelude(context.Background(), sse, tr, state, "sess1", false); err != nil {
+		t.Fatalf("runPrelude: %v", err)
+	}
+	if strings.Contains(rec.Body.String(), string(EventMessagesSnapshot)) {
+		t.Fatalf("resync=false must suppress MESSAGES_SNAPSHOT even with history present: %s", rec.Body.String())
+	}
+}
+
+// TestRunPreludeTruncatesLargeHistoryWithinLatencyBudget is the PANDO-US-0016
+// acceptance criterion: a history above the configured cap yields a
+// truncated, most-recent-first-complete snapshot flagged as truncated, built
+// before the run starts (so it cannot itself become the slow part of a run).
+func TestRunPreludeTruncatesLargeHistoryWithinLatencyBudget(t *testing.T) {
+	messages := newFakeMessageService()
+	for i := 1; i <= 10; i++ {
+		seedUserMessage(messages, "sess1", fmt.Sprintf("m%d", i), fmt.Sprintf("message number %d", i))
+	}
+
+	r := newRunPreludeTestRuntime(messages)
+	r.cfg.MessagesSnapshotMaxMessages = 3
+	state := newTestTracker()
+	tr := newTranslator("t1", "r1").withState(state)
+
+	rec := httptest.NewRecorder()
+	sse, err := NewSSEWriter(rec)
+	if err != nil {
+		t.Fatalf("sse: %v", err)
+	}
+
+	start := time.Now()
+	if err := r.runPrelude(context.Background(), sse, tr, state, "sess1", true); err != nil {
+		t.Fatalf("runPrelude: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("runPrelude took too long for a 10-message history: %v", elapsed)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"truncated":true`) {
+		t.Fatalf("expected the snapshot to report truncated:true: %s", body)
+	}
+	if strings.Contains(body, `"message number 1"`) || strings.Contains(body, `"message number 7"`) {
+		t.Fatalf("expected only the most recent messages, oldest ones leaked through: %s", body)
+	}
+	if !strings.Contains(body, `"message number 10"`) || !strings.Contains(body, `"message number 8"`) {
+		t.Fatalf("expected the 3 most recent messages (8, 9, 10) kept: %s", body)
+	}
+}
+
+// TestRunPreludeToolCallAndResultSurviveIntoTheSnapshot is the PANDO-US-0016
+// acceptance criterion: tool calls and their results survive the conversion
+// with matching toolCallIds.
+func TestRunPreludeToolCallAndResultSurviveIntoTheSnapshot(t *testing.T) {
+	messages := newFakeMessageService()
+	messages.seed("sess1",
+		message.Message{ID: "m1", SessionID: "sess1", Role: message.User,
+			Parts: []message.ContentPart{message.TextContent{Text: "read the file"}}},
+		message.Message{ID: "m2", SessionID: "sess1", Role: message.Assistant,
+			Parts: []message.ContentPart{
+				message.ToolCall{ID: "call-1", Name: "view", Input: `{"file_path":"a.go"}`, Finished: true},
+			}},
+		message.Message{ID: "m3", SessionID: "sess1", Role: message.Tool,
+			Parts: []message.ContentPart{
+				message.ToolResult{ToolCallID: "call-1", Name: "view", Content: "package main"},
+			}},
+	)
+
+	r := newRunPreludeTestRuntime(messages)
+	state := newTestTracker()
+	tr := newTranslator("t1", "r1").withState(state)
+
+	rec := httptest.NewRecorder()
+	sse, err := NewSSEWriter(rec)
+	if err != nil {
+		t.Fatalf("sse: %v", err)
+	}
+	if err := r.runPrelude(context.Background(), sse, tr, state, "sess1", true); err != nil {
+		t.Fatalf("runPrelude: %v", err)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"id":"call-1"`) {
+		t.Fatalf("expected the assistant's tool call in the snapshot: %s", body)
+	}
+	if !strings.Contains(body, `"toolCallId":"call-1"`) {
+		t.Fatalf("expected the tool result's matching toolCallId in the snapshot: %s", body)
 	}
 }

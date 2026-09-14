@@ -93,6 +93,16 @@ type Config struct {
 	// each Profile's fields as already effective. Keyed by profile name
 	// (the route segment a client's POST {path}/<name> resolves against).
 	Profiles map[string]Profile
+	// MessagesSnapshotMaxMessages caps how many of a thread's most recent
+	// messages MESSAGES_SNAPSHOT carries (PANDO-US-0016). ConfigFromApp
+	// always resolves this to defaultMessagesSnapshotMaxMessages; <= 0 means
+	// no count limit (only MessagesSnapshotMaxBytes applies).
+	MessagesSnapshotMaxMessages int
+	// MessagesSnapshotMaxBytes caps the snapshot's total JSON-encoded size,
+	// in addition to MessagesSnapshotMaxMessages. ConfigFromApp always
+	// resolves this to defaultMessagesSnapshotMaxBytes; <= 0 means no byte
+	// limit (only MessagesSnapshotMaxMessages applies).
+	MessagesSnapshotMaxBytes int
 }
 
 // Profile is one resolved AG-UI profile: a Base built-in agent plus the
@@ -136,6 +146,13 @@ const (
 	defaultPoolTTL      = 30 * time.Minute
 	defaultHeartbeat    = 15 * time.Second
 	defaultAgentTimeout = 0 // no adapter-side cap; the client closing the stream cancels
+
+	// defaultMessagesSnapshotMaxMessages and defaultMessagesSnapshotMaxBytes
+	// bound MESSAGES_SNAPSHOT (PANDO-US-0016): a thread's history can grow
+	// without limit, but the resync payload sent on the first run of a
+	// pre-existing thread's attach must not.
+	defaultMessagesSnapshotMaxMessages = 200
+	defaultMessagesSnapshotMaxBytes    = 256 << 10 // 256 KiB
 )
 
 // ConfigFromApp resolves an AGUIConfig into the adapter's own Config, applying
@@ -170,6 +187,8 @@ func ConfigFromApp(c config.AGUIConfig) Config {
 			out.AgentPoolTTL = d
 		}
 	}
+	out.MessagesSnapshotMaxMessages = defaultMessagesSnapshotMaxMessages
+	out.MessagesSnapshotMaxBytes = defaultMessagesSnapshotMaxBytes
 	for _, name := range c.Agents {
 		agentName := config.AgentName(name)
 		if config.IsKnownAgent(agentName) {

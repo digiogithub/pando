@@ -2,7 +2,7 @@
 id: PANDO-US-0015
 type: story
 title: "Thread API: list threads, read a thread's messages, delete a thread"
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0003
 milestone: PANDO-M-0001

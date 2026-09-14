@@ -19,15 +19,24 @@ import (
 
 // Register mounts the adapter's routes on mux:
 //
-//	POST {path}/{agent}  run an agent, streaming AG-UI events over SSE
-//	GET  {path}/info     agent discovery, consumed by CopilotKit's runtime
+//	POST   {path}/{agent}               run an agent, streaming AG-UI events over SSE
+//	GET    {path}/info                  agent discovery, consumed by CopilotKit's runtime
+//	GET    {path}/threads               list this adapter's threads, paginated newest-first
+//	GET    {path}/threads/{id}/messages read a thread's transcript, AG-UI Message[] shaped
+//	DELETE {path}/threads/{id}          delete a thread: its messages, session and binding
 //
 // It is the only place this package touches the outside world's routing, and it
-// is called only when the feature is enabled.
+// is called only when the feature is enabled. The thread routes (PANDO-US-0015)
+// let a browser client rebuild a conversation without co-mounting the Web-UI
+// REST API: they work on the dedicated `agui-serve` listener, which carries no
+// REST API by design (see cmd/agui_serve.go).
 func (r *Runtime) Register(mux *http.ServeMux) {
 	path := strings.TrimSuffix(r.cfg.Path, "/")
 	mux.HandleFunc("GET "+path+"/info", r.handleInfo)
 	mux.HandleFunc("OPTIONS "+path+"/", r.handlePreflight)
+	mux.HandleFunc("GET "+path+"/threads", r.handleListThreads)
+	mux.HandleFunc("GET "+path+"/threads/{id}/messages", r.handleThreadMessages)
+	mux.HandleFunc("DELETE "+path+"/threads/{id}", r.handleDeleteThread)
 	mux.HandleFunc("POST "+path+"/{agent}", r.handleRun)
 	mux.HandleFunc("POST "+path, r.handleRun)
 	logging.Info("AG-UI routes registered", "path", path)
@@ -339,7 +348,7 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 		prompt = ctxBlock + "\n\n" + prompt
 	}
 
-	sessionID, err := r.sessionForThread(req.Context(), in.ThreadID, routeKey, prompt, profile)
+	sessionID, existed, err := r.sessionForThread(req.Context(), in.ThreadID, routeKey, prompt, profile)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -362,12 +371,12 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 
 	// The document belongs to the thread, not to this run: files, todos and
 	// sub-agents accumulate over the conversation instead of resetting each turn.
-	state := r.states.get(in.ThreadID, sessionID, agentName, svc.Model(), in.State)
+	// attached reports whether this call built a brand-new document for the
+	// thread -- combined with existed, that is "the first run this process has
+	// served for a pre-existing thread's attach" (PANDO-US-0016).
+	state, attached := r.states.get(in.ThreadID, sessionID, agentName, svc.Model(), in.State)
 	t := newTranslator(in.ThreadID, in.RunID).withState(state)
-	if err := sse.WriteAll(t.Start()); err != nil {
-		return
-	}
-	if err := sse.Write(state.Snapshot()); err != nil {
+	if err := r.runPrelude(req.Context(), sse, t, state, sessionID, existed && attached); err != nil {
 		return
 	}
 
@@ -403,6 +412,38 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 	r.runs.put(run)
 
 	r.stream(req.Context(), sse, t, run)
+}
+
+// runPrelude writes the events that open every run, in the order the protocol
+// requires: RUN_STARTED, then STATE_SNAPSHOT.
+//
+// resync additionally requests MESSAGES_SNAPSHOT right after STATE_SNAPSHOT
+// (PANDO-US-0016): the caller has already established it is the first run
+// this process has served for a pre-existing thread's attach, so the browser
+// that lost its local transcript is resynchronised in-band, in the same
+// response, without a second round trip to the thread API. The snapshot is
+// built here, before the agent run starts, so a large history cannot block
+// the event loop once it is running -- and skipped silently (never failing
+// the run) if the message store errors, since a resync the client did not
+// strictly ask for must not be allowed to abort the turn it rides along with.
+func (r *Runtime) runPrelude(ctx context.Context, sse *SSEWriter, t *translator, state *stateTracker, sessionID string, resync bool) error {
+	if err := sse.WriteAll(t.Start()); err != nil {
+		return err
+	}
+	if err := sse.Write(state.Snapshot()); err != nil {
+		return err
+	}
+	if !resync {
+		return nil
+	}
+	msgs, err := r.deps.Messages.List(ctx, sessionID)
+	if err != nil {
+		logging.Debug("agui: could not build MESSAGES_SNAPSHOT, skipping resync",
+			"session", sessionID, "error", err)
+		return nil
+	}
+	snap := buildMessagesSnapshot(msgs, r.cfg.MessagesSnapshotMaxMessages, r.cfg.MessagesSnapshotMaxBytes)
+	return sse.Write(snap)
 }
 
 // resumeRun re-attaches to a run that was suspended waiting for the browser. It

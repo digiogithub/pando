@@ -2,7 +2,7 @@
 id: PANDO-US-0016
 type: story
 title: Emit MESSAGES_SNAPSHOT on the first run of a pre-existing thread
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0003
 milestone: PANDO-M-0001
