@@ -12,16 +12,48 @@ import (
 )
 
 // newSuspendableRun wires a run whose agent side is a plain channel, which is
-// all the streaming loop actually needs.
+// all the pump actually needs, with its translator pre-built the way
+// handleRun would build it for a first segment.
 func newSuspendableRun(events chan agent.AgentEvent, suspend chan suspension) *activeRun {
-	return &activeRun{
-		threadID:  "t1",
-		sessionID: "s1",
-		events:    events,
-		cancel:    func() {},
-		state:     newTestTracker(),
-		suspend:   suspend,
+	state := newTestTracker()
+	t := newTranslator("t1", "r1").withState(state)
+	return newActiveRun("t1", "s1", events, func() {}, state, suspend, t)
+}
+
+// attachAndRecord starts run's pump and attaches an httptest recorder to it
+// in the background, waiting until the attach has actually subscribed before
+// calling populate (nil is fine). Without that handshake, a test that queues
+// events straight onto run's channels before attaching would race the pump:
+// it could process and broadcast them before anyone subscribed, and since
+// first=true's attach skips the (nothing-to-replay) buffer, those events
+// would be silently lost and the attach would then block forever waiting for
+// events that already happened — a real, observed hang under -race, not a
+// hypothetical one. It is the test replacement for the old synchronous
+// r.stream(ctx, sse, tr, run) call, blocking until the attach detaches
+// (a segment boundary, the events channel closing, or reqCtx being done).
+func attachAndRecord(t *testing.T, r *Runtime, run *activeRun, reqCtx context.Context, first bool, populate func()) *httptest.ResponseRecorder {
+	t.Helper()
+	go r.pump(run)
+	rec := httptest.NewRecorder()
+	sse, err := NewSSEWriter(rec)
+	if err != nil {
+		t.Fatalf("sse: %v", err)
 	}
+	done := make(chan struct{})
+	go func() {
+		r.attachRun(reqCtx, sse, run, first)
+		close(done)
+	}()
+	waitForSubscriberCount(t, run, 1)
+	if populate != nil {
+		populate()
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("attachRun never returned")
+	}
+	return rec
 }
 
 func frameTypes(body string) []string {
@@ -61,23 +93,18 @@ func TestStreamSuspendsOnFrontendTool(t *testing.T) {
 	suspend := make(chan suspension, 1)
 	run := newSuspendableRun(events, suspend)
 	r.runs.put(run)
+	t.Cleanup(func() { close(events) })
 
-	// The agent queues the call's events, then blocks inside the tool.
-	events <- agent.AgentEvent{
-		Type: agent.AgentEventTypeToolCall,
-		ToolCall: &message.ToolCall{
-			ID: "call-1", Name: "showChart", Input: `{"title":"sales"}`, Finished: true,
-		},
-	}
-	suspend <- suspension{callID: "call-1"}
-
-	rec := httptest.NewRecorder()
-	sse, err := NewSSEWriter(rec)
-	if err != nil {
-		t.Fatalf("sse: %v", err)
-	}
-	tr := newTranslator("t1", "r1").withState(run.state)
-	r.stream(context.Background(), sse, tr, run)
+	rec := attachAndRecord(t, r, run, context.Background(), true, func() {
+		// The agent queues the call's events, then blocks inside the tool.
+		events <- agent.AgentEvent{
+			Type: agent.AgentEventTypeToolCall,
+			ToolCall: &message.ToolCall{
+				ID: "call-1", Name: "showChart", Input: `{"title":"sales"}`, Finished: true,
+			},
+		}
+		suspend <- suspension{callID: "call-1"}
+	})
 	run.unpark()
 
 	types := frameTypes(rec.Body.String())
@@ -108,17 +135,16 @@ func TestStreamDescribesToolCallTheAgentNeverStreamed(t *testing.T) {
 	suspend := make(chan suspension, 1)
 	run := newSuspendableRun(events, suspend)
 	r.runs.put(run)
+	t.Cleanup(func() { close(events) })
 
-	// No AgentEventTypeToolCall is ever queued: the tool ran, the run suspended,
-	// and the stream stayed silent about it.
-	suspend <- suspension{
-		callID: "call-9",
-		call:   &toolCallInfo{name: "showChart", input: `{"title":"sales"}`},
-	}
-
-	rec := httptest.NewRecorder()
-	sse, _ := NewSSEWriter(rec)
-	r.stream(context.Background(), sse, newTranslator("t1", "r1").withState(run.state), run)
+	rec := attachAndRecord(t, r, run, context.Background(), true, func() {
+		// No AgentEventTypeToolCall is ever queued: the tool ran, the run
+		// suspended, and the stream stayed silent about it.
+		suspend <- suspension{
+			callID: "call-9",
+			call:   &toolCallInfo{name: "showChart", input: `{"title":"sales"}`},
+		}
+	})
 	run.unpark()
 
 	body := rec.Body.String()
@@ -145,21 +171,20 @@ func TestStreamDoesNotDuplicateAStreamedToolCall(t *testing.T) {
 	suspend := make(chan suspension, 1)
 	run := newSuspendableRun(events, suspend)
 	r.runs.put(run)
+	t.Cleanup(func() { close(events) })
 
-	events <- agent.AgentEvent{
-		Type: agent.AgentEventTypeToolCall,
-		ToolCall: &message.ToolCall{
-			ID: "call-1", Name: "showChart", Input: `{"title":"sales"}`, Finished: true,
-		},
-	}
-	suspend <- suspension{
-		callID: "call-1",
-		call:   &toolCallInfo{name: "showChart", input: `{"title":"sales"}`},
-	}
-
-	rec := httptest.NewRecorder()
-	sse, _ := NewSSEWriter(rec)
-	r.stream(context.Background(), sse, newTranslator("t1", "r1").withState(run.state), run)
+	rec := attachAndRecord(t, r, run, context.Background(), true, func() {
+		events <- agent.AgentEvent{
+			Type: agent.AgentEventTypeToolCall,
+			ToolCall: &message.ToolCall{
+				ID: "call-1", Name: "showChart", Input: `{"title":"sales"}`, Finished: true,
+			},
+		}
+		suspend <- suspension{
+			callID: "call-1",
+			call:   &toolCallInfo{name: "showChart", input: `{"title":"sales"}`},
+		}
+	})
 	run.unpark()
 
 	types := frameTypes(rec.Body.String())
@@ -185,44 +210,91 @@ func TestStreamFinishesAndUnregistersRun(t *testing.T) {
 	run := newSuspendableRun(events, make(chan suspension, 1))
 	r.runs.put(run)
 
-	events <- agent.AgentEvent{Type: agent.AgentEventTypeResponse}
-
-	rec := httptest.NewRecorder()
-	sse, _ := NewSSEWriter(rec)
-	r.stream(context.Background(), sse, newTranslator("t1", "r1"), run)
+	rec := attachAndRecord(t, r, run, context.Background(), true, func() {
+		events <- agent.AgentEvent{Type: agent.AgentEventTypeResponse}
+	})
 
 	if !strings.Contains(rec.Body.String(), `"outcome":"success"`) {
 		t.Fatalf("unexpected stream: %s", rec.Body.String())
+	}
+	// The attach's HTTP response ends the instant it reads the final frame
+	// off its subscriber channel, which is BEFORE the pump has necessarily
+	// finished removing the run from runStore (see activeRun.broadcastFinal
+	// and Runtime.finalizeRun's doc comments) -- wait for run.done, which
+	// closes only once that removal has actually happened.
+	select {
+	case <-run.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the run was never fully torn down")
 	}
 	if _, ok := r.runs.get("t1"); ok {
 		t.Fatal("a completed run must be unregistered")
 	}
 }
 
-// TestStreamCancelsRunWhenClientDisconnects: nobody is left to consume the
-// events, so the detached run must not be allowed to keep going.
-func TestStreamCancelsRunWhenClientDisconnects(t *testing.T) {
+// TestDisconnectParksRatherThanCancels is the PANDO-US-0017 core guarantee:
+// the browser going away mid-run must not cancel the agent's work. The run
+// stays registered and its context is never cancelled; it is merely parked.
+func TestDisconnectParksRatherThanCancels(t *testing.T) {
 	r := newTestRuntime(testConfig(), "secret")
-	run := newSuspendableRun(make(chan agent.AgentEvent), make(chan suspension))
+	events := make(chan agent.AgentEvent)
+	run := newSuspendableRun(events, make(chan suspension))
 	cancelled := make(chan struct{})
 	run.cancel = func() { close(cancelled) }
 	r.runs.put(run)
+	go r.pump(run)
+	t.Cleanup(func() { close(events) })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	rec := httptest.NewRecorder()
-	sse, _ := NewSSEWriter(rec)
-	r.stream(ctx, sse, newTranslator("t1", "r1"), run)
+	sse, err := NewSSEWriter(rec)
+	if err != nil {
+		t.Fatalf("sse: %v", err)
+	}
+	r.attachRun(ctx, sse, run, true)
 
 	select {
 	case <-cancelled:
-	default:
-		t.Fatal("the run should have been cancelled with the request")
+		t.Fatal("a mere disconnect must not cancel the run's agent context")
+	case <-time.After(50 * time.Millisecond):
+	}
+	if _, ok := r.runs.get("t1"); !ok {
+		t.Fatal("a parked run must stay registered so a reattach can resume it")
+	}
+}
+
+// TestParkedRunExpiresWithoutReconnect is the PANDO-US-0017 grace-period
+// acceptance criterion: a parked run with no reconnect inside the grace
+// period is torn down and no goroutine is left blocked on it.
+func TestParkedRunExpiresWithoutReconnect(t *testing.T) {
+	r := newTestRuntime(testConfig(), "secret")
+	r.cfg.DisconnectGrace = 10 * time.Millisecond
+	events := make(chan agent.AgentEvent)
+	run := newSuspendableRun(events, make(chan suspension))
+	r.runs.put(run)
+	go r.pump(run)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	rec := httptest.NewRecorder()
+	sse, err := NewSSEWriter(rec)
+	if err != nil {
+		t.Fatalf("sse: %v", err)
+	}
+	r.attachRun(ctx, sse, run, true)
+
+	select {
+	case <-run.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the parked run was never torn down after its grace period expired")
 	}
 	if _, ok := r.runs.get("t1"); ok {
-		t.Fatal("the run must be unregistered")
+		t.Fatal("an expired parked run must be removed from the store")
 	}
+	close(events)
 }
 
 func TestDeliverToolResults(t *testing.T) {
@@ -239,9 +311,12 @@ func TestDeliverToolResults(t *testing.T) {
 			{ID: "m3", Role: RoleTool, ToolCallID: "stale", Content: MessageContent{Text: "ignored"}},
 		},
 	}
-	resolved := r.deliverToolResults(run, in)
-	if len(resolved) != 1 || resolved[0] != "call-1" {
-		t.Fatalf("only the waiting call should count as resolved: %v", resolved)
+	candidates := r.resumeCandidates(run, in)
+	if len(candidates) != 1 || candidates[0].ToolCallID != "call-1" {
+		t.Fatalf("only the waiting call should count as a resumption candidate: %v", candidates)
+	}
+	for _, msg := range candidates {
+		r.pending.resolve(run.sessionID, msg.ToolCallID, msg)
 	}
 
 	select {
@@ -265,28 +340,8 @@ func TestDeliverToolResultsIgnoresNewTurn(t *testing.T) {
 		ThreadID: "t1", RunID: "r2",
 		Messages: []Message{{ID: "m1", Role: RoleUser, Content: MessageContent{Text: "never mind"}}},
 	}
-	if resolved := r.deliverToolResults(run, in); len(resolved) != 0 {
-		t.Fatalf("a new turn must not look like a resumption: %v", resolved)
-	}
-}
-
-func TestAbandonRunDrainsAndUnregisters(t *testing.T) {
-	r := newTestRuntime(testConfig(), "secret")
-	events := make(chan agent.AgentEvent, 2)
-	run := newSuspendableRun(events, make(chan suspension, 1))
-	r.runs.put(run)
-	r.pending.register("s1", suspension{callID: "call-1"})
-
-	events <- agent.AgentEvent{Type: agent.AgentEventTypeContentDelta, Delta: "leftover"}
-	close(events)
-
-	r.abandonRun(run)
-
-	if _, ok := r.runs.get("t1"); ok {
-		t.Fatal("an abandoned run must be unregistered")
-	}
-	if r.pending.waiting("s1") {
-		t.Fatal("abandoning must drop the pending frontend calls")
+	if candidates := r.resumeCandidates(run, in); len(candidates) != 0 {
+		t.Fatalf("a new turn must not look like a resumption: %v", candidates)
 	}
 }
 

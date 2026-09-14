@@ -103,6 +103,10 @@ type Config struct {
 	// resolves this to defaultMessagesSnapshotMaxBytes; <= 0 means no byte
 	// limit (only MessagesSnapshotMaxMessages applies).
 	MessagesSnapshotMaxBytes int
+	// DisconnectGrace bounds how long a run stays parked after its last
+	// attached client disconnects before it is torn down (PANDO-US-0017).
+	// ConfigFromApp always resolves this to defaultDisconnectGrace.
+	DisconnectGrace time.Duration
 }
 
 // Profile is one resolved AG-UI profile: a Base built-in agent plus the
@@ -153,6 +157,11 @@ const (
 	// pre-existing thread's attach must not.
 	defaultMessagesSnapshotMaxMessages = 200
 	defaultMessagesSnapshotMaxBytes    = 256 << 10 // 256 KiB
+
+	// defaultDisconnectGrace is PANDO-US-0017's documented default: how long
+	// a run stays parked after its last attached client disconnects before
+	// it is torn down.
+	defaultDisconnectGrace = 2 * time.Minute
 )
 
 // ConfigFromApp resolves an AGUIConfig into the adapter's own Config, applying
@@ -189,6 +198,12 @@ func ConfigFromApp(c config.AGUIConfig) Config {
 	}
 	out.MessagesSnapshotMaxMessages = defaultMessagesSnapshotMaxMessages
 	out.MessagesSnapshotMaxBytes = defaultMessagesSnapshotMaxBytes
+	out.DisconnectGrace = defaultDisconnectGrace
+	if c.DisconnectGrace != "" {
+		if d, err := time.ParseDuration(c.DisconnectGrace); err == nil && d > 0 {
+			out.DisconnectGrace = d
+		}
+	}
 	for _, name := range c.Agents {
 		agentName := config.AgentName(name)
 		if config.IsKnownAgent(agentName) {

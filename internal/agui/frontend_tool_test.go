@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -244,25 +246,86 @@ func TestSuppressedToolCallIsNotEchoed(t *testing.T) {
 	}
 }
 
-// TestRunStoreReplacement covers the two-tab case: a newer run for the same
-// thread must not be evicted when the older one finishes.
-func TestRunStoreReplacement(t *testing.T) {
+// TestRunStorePutIsConditional is the PANDO-US-0018 concurrency fix: put no
+// longer last-write-wins. A second run for a thread that already has one is
+// refused outright, closing the TOCTOU where two creators could otherwise
+// both register a run for the same thread. remove stays identity-checked, so
+// a stale reference to a superseded run cannot evict its replacement.
+func TestRunStorePutIsConditional(t *testing.T) {
 	store := newRunStore()
 	older := &activeRun{threadID: "t1", cancel: func() {}}
 	newer := &activeRun{threadID: "t1", cancel: func() {}}
 
-	store.put(older)
-	store.put(newer)
-	store.remove(older)
+	if !store.put(older) {
+		t.Fatal("the first put for a thread must succeed")
+	}
+	if store.put(newer) {
+		t.Fatal("a second put for a thread that already has a live run must fail")
+	}
 
+	// The thread's run is replaced the way Runtime.handleRun would: remove
+	// the old one (under the per-thread lock), then put the new one.
+	store.remove(older)
+	if !store.put(newer) {
+		t.Fatal("put must succeed once the thread's slot is free")
+	}
+
+	// A stale reference to the superseded run must not evict its replacement.
+	store.remove(older)
 	got, ok := store.get("t1")
 	if !ok || got != newer {
-		t.Fatal("removing a superseded run must not evict its replacement")
+		t.Fatal("removing a superseded run's stale reference must not evict its replacement")
 	}
 	store.remove(newer)
 	if _, ok := store.get("t1"); ok {
 		t.Fatal("the current run should have been removed")
 	}
+}
+
+// TestRunStoreLockThreadSerializesOneThread guards the PANDO-US-0018 fix
+// directly: two goroutines racing lockThread for the SAME thread never hold
+// it at once, while a THIRD thread's lockThread is never blocked by either.
+func TestRunStoreLockThreadSerializesOneThread(t *testing.T) {
+	store := newRunStore()
+	var active int32
+	var maxActive int32
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			unlock := store.lockThread("t1")
+			n := atomic.AddInt32(&active, 1)
+			for {
+				cur := atomic.LoadInt32(&maxActive)
+				if n <= cur || atomic.CompareAndSwapInt32(&maxActive, cur, n) {
+					break
+				}
+			}
+			time.Sleep(time.Millisecond)
+			atomic.AddInt32(&active, -1)
+			unlock()
+		}()
+	}
+	wg.Wait()
+	if maxActive != 1 {
+		t.Fatalf("lockThread let %d goroutines hold the same thread's lock at once", maxActive)
+	}
+
+	// A different thread must not be blocked by t1's lock.
+	unlockT1 := store.lockThread("t1")
+	done := make(chan struct{})
+	go func() {
+		unlockT2 := store.lockThread("t2")
+		unlockT2()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("lockThread(\"t2\") was blocked by an unrelated thread's lock")
+	}
+	unlockT1()
 }
 
 func TestActiveRunStopsOnce(t *testing.T) {
@@ -280,6 +343,6 @@ func TestActiveRunStopsOnce(t *testing.T) {
 	}
 
 	// Parking a stopped run must not resurrect its teardown timer.
-	run.park(func() { t.Error("a stopped run must not be parked") })
+	run.park(time.Minute, func() { t.Error("a stopped run must not be parked") })
 	time.Sleep(10 * time.Millisecond)
 }

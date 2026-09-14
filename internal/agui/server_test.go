@@ -7,11 +7,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/agent"
+	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/luaengine"
 	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/pubsub"
 )
 
 // newTestRuntime builds a Runtime without agents or services. Everything these
@@ -30,10 +37,11 @@ func newTestRuntime(cfg Config, token string) *Runtime {
 
 func testConfig() Config {
 	return Config{
-		Path:           defaultPath,
-		Agents:         []config.AgentName{config.AgentCoder},
-		AllowedOrigins: []string{"https://app.test"},
-		RequireToken:   true,
+		Path:            defaultPath,
+		Agents:          []config.AgentName{config.AgentCoder},
+		AllowedOrigins:  []string{"https://app.test"},
+		RequireToken:    true,
+		DisconnectGrace: time.Minute,
 	}
 }
 
@@ -298,6 +306,10 @@ func TestResolveAgentProfile(t *testing.T) {
 	}
 }
 
+// TestHandleRunRejectsInputWithoutUserMessage: a request with no trailing
+// user message and no live run for the thread to reattach to is neither a
+// new turn nor a resumption nor a reattach (PANDO-US-0018) — it 404s rather
+// than starting a run.
 func TestHandleRunRejectsInputWithoutUserMessage(t *testing.T) {
 	r := newTestRuntime(testConfig(), "secret")
 	body := `{"threadId":"t1","runId":"r1","messages":[{"id":"m1","role":"assistant","content":"hi"}]}`
@@ -308,8 +320,8 @@ func TestHandleRunRejectsInputWithoutUserMessage(t *testing.T) {
 	req.SetPathValue("agent", "coder")
 	r.handleRun(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }
 
@@ -544,5 +556,210 @@ func TestRunPreludeToolCallAndResultSurviveIntoTheSnapshot(t *testing.T) {
 	}
 	if !strings.Contains(body, `"toolCallId":"call-1"`) {
 		t.Fatalf("expected the tool result's matching toolCallId in the snapshot: %s", body)
+	}
+}
+
+// -------------------------------------------------------- PANDO-US-0018
+// one-run-per-thread: end-to-end handleRun races against a fake agent pool.
+
+// fakeAgentService is a minimal agent.Service stand-in: enough for handleRun
+// to run a full request through sessionForThread/pool.get/svc.Run without a
+// real model provider. Run counts every call it actually makes, which is
+// what the TOCTOU race test asserts on.
+type fakeAgentService struct {
+	*pubsub.Broker[agent.AgentEvent]
+	runCalls int32
+	// runDelay, when set, is waited (or the context's cancellation observed)
+	// before the run produces its response, widening the race window a real
+	// concurrent bug would need.
+	runDelay time.Duration
+}
+
+func newFakeAgentService() *fakeAgentService {
+	return &fakeAgentService{Broker: pubsub.NewBroker[agent.AgentEvent]()}
+}
+
+func (f *fakeAgentService) Model() models.Model { return models.Model{ID: "fake-model", Name: "fake"} }
+
+func (f *fakeAgentService) Run(ctx context.Context, sessionID, content string, _ ...message.Attachment) (<-chan agent.AgentEvent, error) {
+	atomic.AddInt32(&f.runCalls, 1)
+	ch := make(chan agent.AgentEvent, 1)
+	go func() {
+		defer close(ch)
+		if f.runDelay > 0 {
+			select {
+			case <-time.After(f.runDelay):
+			case <-ctx.Done():
+				return
+			}
+		}
+		ch <- agent.AgentEvent{Type: agent.AgentEventTypeResponse}
+	}()
+	return ch, nil
+}
+
+func (f *fakeAgentService) LastRunSystemMessages(string) []string { return nil }
+func (f *fakeAgentService) Cancel(string)                         {}
+func (f *fakeAgentService) Steer(string, string, ...message.Attachment) error {
+	return agent.ErrSessionNotBusy
+}
+func (f *fakeAgentService) PendingSteering(string) int                   { return 0 }
+func (f *fakeAgentService) InjectConclusion(string, string) error        { return agent.ErrSessionNotBusy }
+func (f *fakeAgentService) Resume(context.Context, string, string) error { return nil }
+func (f *fakeAgentService) ResurrectionCount(string) int                 { return 0 }
+func (f *fakeAgentService) IsSessionBusy(string) bool                    { return false }
+func (f *fakeAgentService) IsBusy() bool                                 { return false }
+func (f *fakeAgentService) Update(config.AgentName, models.ModelID) (models.Model, error) {
+	return models.Model{}, nil
+}
+func (f *fakeAgentService) Summarize(context.Context, string) error { return nil }
+func (f *fakeAgentService) SummarizeStream(context.Context, string) (<-chan agent.AgentEvent, error) {
+	ch := make(chan agent.AgentEvent)
+	close(ch)
+	return ch, nil
+}
+func (f *fakeAgentService) SetLuaManager(*luaengine.FilterManager) {}
+func (f *fakeAgentService) GetTools() []tools.BaseTool             { return nil }
+
+// newRaceTestRuntime builds a Runtime whose agent pool is pre-seeded with a
+// fake agent.Service under the "coder" route key, so handleRun's full
+// decide/create path runs for real (sessionForThread, pool.get, svc.Run)
+// without needing a real model provider.
+func newRaceTestRuntime(t *testing.T, svc agent.Service) *Runtime {
+	t.Helper()
+	db := newThreadDB(t)
+	r, _, _ := newThreadTestRuntime(t, db)
+	// AgentPoolSize/TTL default to their zero values in testConfig(), which
+	// would make evictLocked reap the pre-seeded entry on the very next
+	// pool.get -- give it real headroom, as ConfigFromApp always would.
+	r.cfg.AgentPoolSize = defaultPoolSize
+	r.cfg.AgentPoolTTL = defaultPoolTTL
+	r.pool = newAgentPool(r.deps, r.cfg, r.perms, nil, r.pending)
+	r.pool.entries["coder"] = &poolEntry{svc: svc, lastUsed: time.Now()}
+	return r
+}
+
+func newRunRequest(threadID, runID, prompt string) *http.Request {
+	body := fmt.Sprintf(`{"threadId":%q,"runId":%q,"messages":[{"id":"m1","role":"user","content":%q}]}`,
+		threadID, runID, prompt)
+	req := httptest.NewRequest(http.MethodPost, defaultPath+"/coder", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer secret")
+	req.SetPathValue("agent", "coder")
+	return req
+}
+
+// TestConcurrentPostsProduceExactlyOneRun is the PANDO-US-0018 acceptance
+// criterion: two (here, many) concurrent POSTs on one threadId produce
+// exactly one run; the loser(s) receive one documented error, and repeating
+// the race shows no RUN_ERROR{session_busy} leaking from the old
+// check-then-act window between runStore and svc.Run.
+func TestConcurrentPostsProduceExactlyOneRun(t *testing.T) {
+	for attempt := 0; attempt < 5; attempt++ {
+		svc := newFakeAgentService()
+		svc.runDelay = 20 * time.Millisecond
+		r := newRaceTestRuntime(t, svc)
+
+		const n = 8
+		var wg sync.WaitGroup
+		results := make([]*httptest.ResponseRecorder, n)
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				rec := httptest.NewRecorder()
+				r.handleRun(rec, newRunRequest("race-thread", fmt.Sprintf("run-%d", i), "go"))
+				results[i] = rec
+			}(i)
+		}
+		wg.Wait()
+
+		if got := atomic.LoadInt32(&svc.runCalls); got != 1 {
+			t.Fatalf("attempt %d: svc.Run was called %d times, want exactly 1", attempt, got)
+		}
+
+		var winners, losers int
+		for _, rec := range results {
+			body := rec.Body.String()
+			if strings.Contains(body, `"code":"session_busy"`) {
+				t.Fatalf("attempt %d: a request surfaced RUN_ERROR{session_busy} from the TOCTOU path: %s", attempt, body)
+			}
+			switch {
+			case rec.Code == http.StatusConflict:
+				losers++
+			case rec.Code == http.StatusOK && strings.Contains(body, `"outcome":"success"`):
+				winners++
+			default:
+				t.Fatalf("attempt %d: unexpected response status=%d body=%s", attempt, rec.Code, body)
+			}
+		}
+		if winners != 1 {
+			t.Fatalf("attempt %d: %d requests won the race, want exactly 1 (losers=%d)", attempt, winners, losers)
+		}
+		if winners+losers != n {
+			t.Fatalf("attempt %d: accounted for %d of %d requests", attempt, winners+losers, n)
+		}
+	}
+}
+
+// TestHandleRunLoserGetsDocumentedErrorWithoutAbandoningTheRun is the
+// PANDO-US-0018 "do NOT abandon a live run" constraint: a second POST
+// carrying a new user message on a thread that already has a live run is
+// rejected outright, and the original run is left completely alone (still
+// registered, its context never cancelled).
+func TestHandleRunLoserGetsDocumentedErrorWithoutAbandoningTheRun(t *testing.T) {
+	r := newTestRuntime(testConfig(), "secret")
+	events := make(chan agent.AgentEvent, 1)
+	run := newSuspendableRun(events, make(chan suspension, 1))
+	cancelled := false
+	run.cancel = func() { cancelled = true }
+	r.runs.put(run)
+
+	rec := httptest.NewRecorder()
+	r.handleRun(rec, newRunRequest("t1", "r2", "a second message"))
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rec.Code)
+	}
+	if cancelled {
+		t.Fatal("the run in progress must not be abandoned/cancelled by the loser")
+	}
+	if _, ok := r.runs.get("t1"); !ok {
+		t.Fatal("the run in progress must remain registered")
+	}
+}
+
+// TestPostWithNoNewMessageReattachesToALiveRun is PANDO-US-0018's "a POST
+// carrying no new user message" reattach path: it behaves exactly like GET
+// {path}/threads/{id}/stream.
+func TestPostWithNoNewMessageReattachesToALiveRun(t *testing.T) {
+	r := newTestRuntime(testConfig(), "secret")
+	events := make(chan agent.AgentEvent)
+	run := newSuspendableRun(events, make(chan suspension, 1))
+	r.runs.put(run)
+	go r.pump(run)
+
+	// Only finish the run once the reattach below has actually subscribed:
+	// handleRun's own attach runs synchronously in this test's main
+	// goroutine, so without this handshake the response could race ahead of
+	// it and finish (and remove) the run before the reattach even attaches.
+	go func() {
+		for i := 0; i < 2000 && run.subscriberCount() < 1; i++ {
+			time.Sleep(time.Millisecond)
+		}
+		events <- agent.AgentEvent{Type: agent.AgentEventTypeResponse}
+	}()
+
+	body := `{"threadId":"t1","runId":"r2","messages":[{"id":"m1","role":"assistant","content":"hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, defaultPath+"/coder", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer secret")
+	req.SetPathValue("agent", "coder")
+	rec := httptest.NewRecorder()
+	r.handleRun(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"outcome":"success"`) {
+		t.Fatalf("reattach via POST did not observe the run finishing: %s", rec.Body.String())
 	}
 }

@@ -23,7 +23,9 @@ import (
 //	GET    {path}/info                  agent discovery, consumed by CopilotKit's runtime
 //	GET    {path}/threads               list this adapter's threads, paginated newest-first
 //	GET    {path}/threads/{id}/messages read a thread's transcript, AG-UI Message[] shaped
+//	GET    {path}/threads/{id}/stream   reattach to a thread's live run (PANDO-US-0018)
 //	DELETE {path}/threads/{id}          delete a thread: its messages, session and binding
+//	POST   {path}/runs/{id}/cancel      cancel a thread's live or parked run (PANDO-US-0019)
 //
 // It is the only place this package touches the outside world's routing, and it
 // is called only when the feature is enabled. The thread routes (PANDO-US-0015)
@@ -36,7 +38,9 @@ func (r *Runtime) Register(mux *http.ServeMux) {
 	mux.HandleFunc("OPTIONS "+path+"/", r.handlePreflight)
 	mux.HandleFunc("GET "+path+"/threads", r.handleListThreads)
 	mux.HandleFunc("GET "+path+"/threads/{id}/messages", r.handleThreadMessages)
+	mux.HandleFunc("GET "+path+"/threads/{id}/stream", r.handleStream)
 	mux.HandleFunc("DELETE "+path+"/threads/{id}", r.handleDeleteThread)
+	mux.HandleFunc("POST "+path+"/runs/{id}/cancel", r.handleCancelRun)
 	mux.HandleFunc("POST "+path+"/{agent}", r.handleRun)
 	mux.HandleFunc("POST "+path, r.handleRun)
 	logging.Info("AG-UI routes registered", "path", path)
@@ -296,9 +300,14 @@ func requestBaseURL(req *http.Request) string {
 // handleRun is the protocol's single execution endpoint: it accepts a
 // RunAgentInput and streams the run back as AG-UI events.
 //
-// One request is either a new turn or the resolution of an interrupted one. The
-// two are told apart by content, not by a flag: a payload whose trailing tool
-// messages resolve calls the thread is currently blocked on is a resumption.
+// A request is one of four things, told apart by content and by whether the
+// thread already has a live run: a new turn (no live run, a trailing user
+// message), a resumption (a live run, trailing tool messages that resolve
+// calls it is blocked on), a reattach (a live run, no new user message and
+// nothing to resolve -- PANDO-US-0018, the same handling GET
+// {path}/threads/{id}/stream gives), or the loser of a race (a live run, a
+// new user message the run has no room for -- rejected with a single
+// documented error, never by silently abandoning the run in progress).
 func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 	if !r.authorize(w, req) {
 		return
@@ -324,23 +333,32 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if run, ok := r.runs.get(in.ThreadID); ok {
-		if resolved := r.deliverToolResults(run, in); len(resolved) > 0 {
-			r.resumeRun(w, req, run, in, resolved)
-			return
-		}
-		// The client sent a new turn instead of the awaited result. Its previous
-		// run is now unreachable, so it is torn down before the new one starts.
-		r.abandonRun(run)
+	// The per-thread lock closes the PANDO-US-0018 TOCTOU: without it, two
+	// POSTs can both observe no live run for the thread and both race into
+	// svc.Run, and the loser surfaces as agent.ErrSessionBusy deep inside the
+	// agent service instead of as a clean, documented rejection here. It is
+	// held only through the decide-and-register section below, never across
+	// the streaming that follows, so it never serializes unrelated threads
+	// (or even a resumption/reattach/reject on this same thread) against
+	// each other.
+	unlock := r.runs.lockThread(in.ThreadID)
+	run, hasRun := r.runs.get(in.ThreadID)
+	if hasRun {
+		unlock()
+		r.handleExistingThreadRun(w, req, run, in)
+		return
 	}
 
 	userMsg, ok := in.LastUserMessage()
 	if !ok {
-		writeJSONError(w, http.StatusBadRequest, "no user message to run")
+		unlock()
+		// Nothing to resolve and no live run to reattach to.
+		writeJSONError(w, http.StatusNotFound, "no live run for this thread")
 		return
 	}
 	prompt := userMsg.Content.String()
 	if strings.TrimSpace(prompt) == "" {
+		unlock()
 		writeJSONError(w, http.StatusBadRequest, "the trailing user message has no text content")
 		return
 	}
@@ -350,12 +368,14 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 
 	sessionID, existed, err := r.sessionForThread(req.Context(), in.ThreadID, routeKey, prompt, profile)
 	if err != nil {
+		unlock()
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	svc, err := r.pool.get(routeKey, agentName, profile, in.Tools)
 	if err != nil {
+		unlock()
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -364,6 +384,7 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 	// events rather than HTTP status codes.
 	sse, err := NewSSEWriter(w)
 	if err != nil {
+		unlock()
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -377,6 +398,7 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 	state, attached := r.states.get(in.ThreadID, sessionID, agentName, svc.Model(), in.State)
 	t := newTranslator(in.ThreadID, in.RunID).withState(state)
 	if err := r.runPrelude(req.Context(), sse, t, state, sessionID, existed && attached); err != nil {
+		unlock()
 		return
 	}
 
@@ -390,29 +412,168 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// The run is parented to the adapter, not to this request: a frontend tool
-	// call must survive the response that announces the interrupt.
+	// call, or a disconnect, must survive the response that reports it.
 	runCtx, cancel := context.WithCancel(r.baseCtx)
 	suspend := r.pending.watch(sessionID)
 
 	events, err := svc.Run(runCtx, sessionID, prompt)
 	if err != nil {
 		cancel()
+		unlock()
 		_ = sse.WriteAll(t.Fail(err.Error(), runErrorCode(err)))
 		return
 	}
 
-	run := &activeRun{
-		threadID:  in.ThreadID,
-		sessionID: sessionID,
-		events:    events,
-		cancel:    cancel,
-		state:     state,
-		suspend:   suspend,
+	run = newActiveRun(in.ThreadID, sessionID, events, cancel, state, suspend, t)
+	if !r.runs.put(run) {
+		// Cannot happen while holding the per-thread lock; guarded defensively
+		// so a future bug here fails loudly instead of leaking the run.
+		logging.Warn("agui: run store rejected a newly created run", "thread", in.ThreadID)
+		cancel()
+		unlock()
+		_ = sse.WriteAll(t.Fail("internal error starting the run", ""))
+		return
 	}
-	r.runs.put(run)
+	unlock()
 
-	r.stream(req.Context(), sse, t, run)
+	go r.pump(run)
+	r.attachRun(req.Context(), sse, run, true)
 }
+
+// handleExistingThreadRun decides what a request means for a thread that
+// already has a live run: a resumption, a reattach, or the loser of a race
+// against the run already in progress (PANDO-US-0018).
+func (r *Runtime) handleExistingThreadRun(w http.ResponseWriter, req *http.Request, run *activeRun, in *RunAgentInput) {
+	if candidates := r.resumeCandidates(run, in); len(candidates) > 0 {
+		r.beginResumeSegment(run, in, candidates)
+		r.streamAttach(w, req, run)
+		return
+	}
+	if _, ok := in.LastUserMessage(); ok {
+		// A new turn on a thread that is already busy is the loser case, not
+		// a reason to abandon the run in progress.
+		writeJSONError(w, http.StatusConflict, "a run is already in progress for this thread")
+		return
+	}
+	// No new user message and nothing to resolve: this is a reattach, exactly
+	// like GET {path}/threads/{id}/stream.
+	r.streamAttach(w, req, run)
+}
+
+// resumeCandidates returns the trailing tool messages that resolve a call
+// run is actually blocked on, without delivering them yet. Splitting
+// detection from delivery is what lets beginResumeSegment install the new
+// segment's translator before any result is handed to the blocked tool
+// goroutine (see its doc comment); an unrelated or stale tool message is
+// ignored, never mistaken for a resumption.
+func (r *Runtime) resumeCandidates(run *activeRun, in *RunAgentInput) []Message {
+	var out []Message
+	for _, msg := range in.TrailingToolMessages() {
+		if msg.ToolCallID != "" && r.pending.isPending(run.sessionID, msg.ToolCallID) {
+			out = append(out, msg)
+		}
+	}
+	return out
+}
+
+// beginResumeSegment starts the next protocol run over an already-suspended
+// activeRun: a new translator (inheriting the calls the previous segment
+// already closed), a fresh RUN_STARTED broadcast to every attached
+// subscriber, then delivery of the resolved tool results.
+//
+// Ordering matters: the translator is installed and RUN_STARTED broadcast
+// BEFORE any result is delivered to pending.resolve, which is what wakes the
+// blocked tool goroutine. Without that ordering, the (single) pump goroutine
+// could observe an event produced by the resumed agent while still holding
+// the old, already-closed-out translator -- reopening a call the client
+// already watched close, or emitting a bare result with no run to attribute
+// it to. See activeRun.setTranslator.
+func (r *Runtime) beginResumeSegment(run *activeRun, in *RunAgentInput, resolved []Message) {
+	t := newTranslator(in.ThreadID, in.RunID).withState(run.state).inheritEnded(run.endedCalls())
+	for _, msg := range resolved {
+		t.suppressToolCall(msg.ToolCallID)
+	}
+	run.setTranslator(t)
+	run.setSuspended(false)
+	run.unpark()
+	run.broadcast(t.Start())
+
+	logging.Debug("agui: resuming suspended run",
+		"thread", run.threadID, "session", run.sessionID, "calls", len(resolved))
+	for _, msg := range resolved {
+		r.pending.resolve(run.sessionID, msg.ToolCallID, msg)
+	}
+}
+
+// streamAttach opens an SSE response and attaches it to an already-live run
+// (a resumption, a reattach or a read-only follower) — everything handleRun
+// does after runPrelude, minus creating the run itself.
+func (r *Runtime) streamAttach(w http.ResponseWriter, req *http.Request, run *activeRun) {
+	sse, err := NewSSEWriter(w)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer sse.Close()
+	r.attachRun(req.Context(), sse, run, false)
+}
+
+// handleStream answers GET {path}/threads/{id}/stream: reattach to a
+// thread's live run (PANDO-US-0018). A thread with no live run answers 404
+// rather than starting one — reattaching is never a way to run an agent.
+func (r *Runtime) handleStream(w http.ResponseWriter, req *http.Request) {
+	if !r.authorize(w, req) {
+		return
+	}
+	threadID := strings.TrimSpace(req.PathValue("id"))
+	run, ok := r.runs.get(threadID)
+	if !ok {
+		writeJSONError(w, http.StatusNotFound, "no live run for this thread")
+		return
+	}
+	r.streamAttach(w, req, run)
+}
+
+// handleCancelRun answers POST {path}/runs/{id}/cancel: end a thread's live
+// or parked run (PANDO-US-0019). It works whether or not a stream is
+// currently attached, and whether the run is actively streaming or suspended
+// waiting on a frontend-tool/permission result — for the latter, the wait is
+// released explicitly (pending.cancelAll) before the run is stopped, so no
+// goroutine is left blocked on an answer that will never come.
+//
+// It is idempotent: an unknown thread, or one whose run has already ended,
+// answers success with no error, exactly like a repeat cancel of the same
+// run. It never touches the agui_threads binding or the session -- cancel
+// ends the run, not the thread.
+func (r *Runtime) handleCancelRun(w http.ResponseWriter, req *http.Request) {
+	if !r.authorize(w, req) {
+		return
+	}
+	threadID := strings.TrimSpace(req.PathValue("id"))
+	run, ok := r.runs.get(threadID)
+	if !ok {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	r.pending.cancelAll(run.sessionID)
+	run.requestCancel("cancelled")
+
+	// Wait briefly for the pump to finish tearing the run down, so the
+	// response can promise "gone from runStore" rather than "asked to be
+	// gone eventually". Bounded: a stuck agent goroutine must not hang this
+	// handler forever.
+	select {
+	case <-run.done:
+	case <-time.After(cancelTeardownTimeout):
+		logging.Warn("agui: cancel did not observe run teardown in time", "thread", threadID)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// cancelTeardownTimeout bounds how long handleCancelRun waits for the pump to
+// confirm teardown before answering anyway.
+const cancelTeardownTimeout = 5 * time.Second
 
 // runPrelude writes the events that open every run, in the order the protocol
 // requires: RUN_STARTED, then STATE_SNAPSHOT.
@@ -446,191 +607,136 @@ func (r *Runtime) runPrelude(ctx context.Context, sse *SSEWriter, t *translator,
 	return sse.Write(snap)
 }
 
-// resumeRun re-attaches to a run that was suspended waiting for the browser. It
-// does not start a new agent run: the same agent goroutine is still blocked
-// inside the frontend tool and simply continues once the result is delivered.
-func (r *Runtime) resumeRun(w http.ResponseWriter, req *http.Request, run *activeRun, in *RunAgentInput, resolved []string) {
+// attachRun subscribes reqCtx's request to run and streams it: replay of
+// whatever was missed (skipped for first, the request that just created the
+// run — runPrelude already wrote its opening frames directly, and nothing has
+// been broadcast yet to replay), then live events until the request detaches
+// or the run reaches a segment boundary.
+//
+// Any number of requests may be attached to one run at once (PANDO-US-0018):
+// the original stream, a reattach after a disconnect, and read-only
+// followers (additional tabs) are all exactly this call. Only a POST that
+// resolves a pending call may ever progress the run (via
+// beginResumeSegment); attaching, by itself, never does.
+func (r *Runtime) attachRun(reqCtx context.Context, sse *SSEWriter, run *activeRun, first bool) {
+	sub, ok := run.subscribe()
+	if !ok {
+		// The run finished between the caller's lookup and this attach.
+		_ = sse.WriteAll([]Event{NewRunError("run already finished", "not_found")})
+		return
+	}
 	run.unpark()
 
-	sse, err := NewSSEWriter(w)
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	defer sse.Close()
-
-	// A resumption is a new AG-UI run over the same agent run, so it gets a fresh
-	// message id. The calls the client just answered are marked as already
-	// reported: it owns those results and must not receive them back.
-	t := newTranslator(in.ThreadID, in.RunID).withState(run.state).inheritEnded(run.endedCalls())
-	for _, callID := range resolved {
-		t.suppressToolCall(callID)
-	}
-	if err := sse.WriteAll(t.Start()); err != nil {
-		return
-	}
-	if err := sse.Write(run.state.Snapshot()); err != nil {
-		return
-	}
-
-	logging.Debug("agui: resuming suspended run",
-		"thread", run.threadID, "session", run.sessionID, "calls", len(resolved))
-	r.stream(req.Context(), sse, t, run)
-}
-
-// deliverToolResults hands the client's tool messages to the proxies blocked on
-// them and returns the call ids that were actually waiting. Unknown ids are
-// ignored: a stale retry must not be mistaken for a resumption.
-func (r *Runtime) deliverToolResults(run *activeRun, in *RunAgentInput) []string {
-	var resolved []string
-	for _, msg := range in.TrailingToolMessages() {
-		if msg.ToolCallID == "" {
-			continue
+	if !first {
+		// A fresh, current state snapshot orients a (re)attaching client
+		// without depending on the bounded replay buffer to still hold the
+		// original one from run start.
+		if err := sse.Write(run.state.Snapshot()); err != nil {
+			run.unsubscribe(sub)
+			return
 		}
-		if r.pending.resolve(run.sessionID, msg.ToolCallID, msg) {
-			resolved = append(resolved, msg.ToolCallID)
+		buffered, lossy := run.replaySnapshot()
+		if lossy {
+			if err := sse.Write(NewCustom("pando.replayLossy", true)); err != nil {
+				run.unsubscribe(sub)
+				return
+			}
+		}
+		// Replay stops at the first segment boundary it encounters, exactly
+		// like the live path below: one HTTP response is one AG-UI run
+		// segment, whether its RUN_FINISHED/RUN_ERROR arrived live or is
+		// being caught up on here. A reattach that fell behind by more than
+		// one segment boundary needs a second reattach to keep catching up —
+		// simple, and consistent regardless of whether the client catches a
+		// boundary live or via replay.
+		for _, ev := range buffered {
+			if err := sse.Write(ev); err != nil {
+				run.unsubscribe(sub)
+				return
+			}
+			if isSegmentBoundary(ev) {
+				run.unsubscribe(sub)
+				return
+			}
 		}
 	}
-	return resolved
+
+	r.attachLoop(reqCtx, sse, run, sub)
 }
 
-// stream pumps the agent's events through the translator until the run ends, a
-// frontend tool suspends it, the client disconnects, or the stream fails.
+// attachLoop forwards run's live events to sse until reqCtx is done (the
+// client disconnected), the subscriber channel closes (the run truly
+// finished) or a segment boundary passes through (RUN_FINISHED or
+// RUN_ERROR): every attach's HTTP response ends there, exactly as it did
+// before reattachment existed, whether the boundary is a true end or an
+// interrupt the run will continue past in a future segment. A client that
+// wants to keep watching an interrupted run reattaches, the same as after any
+// other disconnect.
 //
-// ctx is the *request* context: it detects a browser that went away. The run
-// itself lives on until finishRun, which is why every terminal branch below
-// either calls it or deliberately parks the run.
-func (r *Runtime) stream(ctx context.Context, sse *SSEWriter, t *translator, run *activeRun) {
+// On detaching while the run is still ongoing and this was the last attached
+// subscriber, it arms the run's teardown timer: Config.DisconnectGrace for a
+// live segment, or the (longer, dedicated) suspendGrace if the run is
+// currently suspended -- see activeRun.suspended's doc comment for why those
+// two lifetimes must not be conflated.
+func (r *Runtime) attachLoop(reqCtx context.Context, sse *SSEWriter, run *activeRun, sub *subscriber) {
+	defer func() {
+		remaining, finished := run.unsubscribe(sub)
+		if finished || remaining > 0 {
+			return
+		}
+		grace := r.cfg.DisconnectGrace
+		if run.isSuspended() {
+			grace = suspendGrace
+		}
+		run.park(grace, func() {
+			logging.Warn("agui: parked run expired with nobody reattached",
+				"thread", run.threadID, "session", run.sessionID)
+			run.requestCancel("expired")
+		})
+	}()
+
 	heartbeat := time.NewTicker(defaultHeartbeat)
 	defer heartbeat.Stop()
 
 	for {
 		select {
-		case <-ctx.Done():
-			// The browser went away mid-run. Nothing will consume the rest of the
-			// events, so the run is cancelled rather than left to fill its buffer.
-			r.finishRun(run)
+		case <-reqCtx.Done():
+			// The browser went away. The pump keeps the run alive on its own
+			// (PANDO-US-0017): nothing more to do here than detach, which the
+			// deferred unsubscribe above already handles.
 			return
 
 		case <-heartbeat.C:
 			if err := sse.Comment("keep-alive"); err != nil {
-				r.finishRun(run)
 				return
 			}
 
-		case s := <-run.suspend:
-			r.suspendRun(sse, t, run, s)
-			return
-
-		case ev, ok := <-run.events:
+		case ev, ok := <-sub.ch:
 			if !ok {
-				// Channel closed without a terminal event.
-				_ = sse.WriteAll(t.Finish(OutcomeSuccess, nil))
-				r.finishRun(run)
+				// The run finished and closed every subscriber.
 				return
 			}
-
-			switch ev.Type {
-			case agent.AgentEventTypeResponse:
-				result := ev.Message.Content().String()
-				_ = sse.WriteAll(t.Finish(OutcomeSuccess, result))
-				r.finishRun(run)
-				return
-
-			case agent.AgentEventTypeError:
-				msg := "unknown error"
-				if ev.Error != nil {
-					msg = ev.Error.Error()
-				}
-				_ = sse.WriteAll(t.Fail(msg, runErrorCode(ev.Error)))
-				r.finishRun(run)
+			if err := sse.Write(ev); err != nil {
+				logging.Debug("agui: stream write failed, detaching client", "error", err)
 				return
 			}
-
-			if err := sse.WriteAll(t.Translate(ev)); err != nil {
-				logging.Debug("agui: stream write failed, dropping client", "error", err)
-				r.finishRun(run)
+			if isSegmentBoundary(ev) {
 				return
 			}
 		}
 	}
 }
 
-// suspendRun ends the HTTP response with an interrupt while leaving the agent
-// blocked on the client.
-//
-// Either way the events already queued by the agent are flushed first: a client
-// that receives RUN_FINISHED before TOOL_CALL_ARGS has no arguments to execute
-// with, and one that sees a permission prompt before the tool call that raised
-// it has no context to render.
-func (r *Runtime) suspendRun(sse *SSEWriter, t *translator, run *activeRun, s suspension) {
-	if len(s.events) > 0 {
-		// A synthetic call (a permission prompt): the agent stream will never
-		// carry it, so only what it already queued can be drained.
-		r.drainQueued(sse, t, run)
-		t.adoptToolCall(s.callID)
-		if err := sse.WriteAll(s.events); err != nil {
-			r.finishRun(run)
-			return
-		}
-	} else {
-		// A streaming provider has already queued this call's events by the time
-		// its tool runs, so flushing the queue is enough — and unlike waiting for
-		// them, it costs nothing when they are never coming.
-		r.drainQueued(sse, t, run)
-		if err := sse.WriteAll(t.completeToolCall(s.callID, callName(s), callInput(s))); err != nil {
-			r.finishRun(run)
-			return
-		}
-	}
-
-	if err := sse.WriteAll(t.Finish(OutcomeInterrupt, nil)); err != nil {
-		// The client that must answer this call is gone; nobody else can.
-		r.finishRun(run)
-		return
-	}
-	logging.Debug("agui: run suspended waiting for the client",
-		"thread", run.threadID, "call", s.callID)
-	run.rememberEnded(t.endedSnapshot())
-	run.park(func() {
-		logging.Warn("agui: suspended run expired without a client result",
-			"thread", run.threadID, "call", s.callID)
-		r.finishRun(run)
-	})
-}
-
-// callName and callInput read the suspending call's description, which is absent
-// only for synthetic calls (they carry their own events instead).
-func callName(s suspension) string {
-	if s.call == nil {
-		return ""
-	}
-	return s.call.name
-}
-
-func callInput(s suspension) string {
-	if s.call == nil {
-		return ""
-	}
-	return s.call.input
-}
-
-// drainQueued forwards whatever the agent has already produced, without waiting
-// for more. A permission prompt is raised from inside a tool's Run, so the tool
-// call that triggered it is guaranteed to be in the channel already.
-func (r *Runtime) drainQueued(sse *SSEWriter, t *translator, run *activeRun) {
-	for {
-		select {
-		case ev, ok := <-run.events:
-			if !ok {
-				return
-			}
-			if err := sse.WriteAll(t.Translate(ev)); err != nil {
-				return
-			}
-		default:
-			return
-		}
+// isSegmentBoundary reports whether ev ends an attach's HTTP response: a true
+// end (RUN_FINISHED{success}, RUN_ERROR) or an interrupt the run will
+// continue past in a future segment (RUN_FINISHED{interrupt}) are both
+// segment boundaries in this sense — see attachLoop's doc comment.
+func isSegmentBoundary(ev Event) bool {
+	switch ev.EventType() {
+	case EventRunFinished, EventRunError:
+		return true
+	default:
+		return false
 	}
 }
 

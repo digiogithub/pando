@@ -3,7 +3,6 @@ package agui
 import (
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -260,25 +259,23 @@ func TestStreamEmitsSyntheticPermissionCall(t *testing.T) {
 	suspend := make(chan suspension, 1)
 	run := newSuspendableRun(events, suspend)
 	r.runs.put(run)
+	t.Cleanup(func() { close(events) })
 
-	// The tool that raised the prompt is already in the channel.
-	events <- agent.AgentEvent{
-		Type:     agent.AgentEventTypeToolCall,
-		ToolCall: &message.ToolCall{ID: "call-bash", Name: "bash", Input: `{"command":"ls"}`, Finished: true},
-	}
-	suspend <- suspension{
-		callID: "perm-1",
-		events: []Event{
-			NewToolCallStart("perm-1", permissionToolName, ""),
-			NewToolCallArgs("perm-1", `{"toolName":"bash"}`),
-			NewToolCallEnd("perm-1"),
-		},
-	}
-
-	rec := httptest.NewRecorder()
-	sse, _ := NewSSEWriter(rec)
-	tr := newTranslator("t1", "r1")
-	r.stream(context.Background(), sse, tr, run)
+	rec := attachAndRecord(t, r, run, context.Background(), true, func() {
+		// The tool that raised the prompt is already in the channel.
+		events <- agent.AgentEvent{
+			Type:     agent.AgentEventTypeToolCall,
+			ToolCall: &message.ToolCall{ID: "call-bash", Name: "bash", Input: `{"command":"ls"}`, Finished: true},
+		}
+		suspend <- suspension{
+			callID: "perm-1",
+			events: []Event{
+				NewToolCallStart("perm-1", permissionToolName, ""),
+				NewToolCallArgs("perm-1", `{"toolName":"bash"}`),
+				NewToolCallEnd("perm-1"),
+			},
+		}
+	})
 	run.unpark()
 
 	body := rec.Body.String()

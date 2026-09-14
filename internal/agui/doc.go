@@ -115,4 +115,41 @@
 //
 // The AG-UI spec revision targeted here is the one documented at
 // https://docs.ag-ui.com as of 2026-07-28.
+//
+// # Run lifetime and durability (PANDO-EP-0003)
+//
+//   - PANDO-US-0017: a browser disconnecting mid-run no longer cancels it. The
+//     run's underlying agent event stream is drained by one long-lived
+//     goroutine, pump (run.go), started once per run and independent of any
+//     particular HTTP request; a disconnect merely detaches the request and,
+//     once the last attach is gone, arms Config.DisconnectGrace before
+//     tearing the run down. Every event the pump produces is also appended
+//     to a bounded ring (eventBuffer) for a later reattach to replay; once
+//     full it drops the oldest event and marks itself lossy rather than
+//     growing.
+//
+//   - PANDO-US-0018: GET {path}/threads/{id}/stream (and a POST carrying no
+//     new user message) reattaches to a thread's live run: subscribe, replay
+//     the buffer, then continue live — any number of attaches (the original
+//     stream, a reattach, read-only followers) may be registered on one run
+//     at once. Only the pump ever touches a run's translator, which is what
+//     keeps translate.go's single-writer, stateful design safe under
+//     concurrent attaches; a resumption after an interrupt installs a new
+//     translator (Runtime.beginResumeSegment) strictly before delivering the
+//     tool result that would otherwise let the pump observe a new segment's
+//     event through the old, already-closed-out one. handleRun's
+//     decide-whether-to-resume/reject/start-a-run section is serialized per
+//     thread (runStore.lockThread), closing the TOCTOU where two POSTs could
+//     both see no live run and both race into svc.Run.
+//
+//   - PANDO-US-0019: POST {path}/runs/{id}/cancel ends a thread's run,
+//     live or parked, from any request — not only the one streaming it.
+//     pendingRegistry.cancelAll force-delivers a cancellation to every call
+//     still waiting on the client, releasing a permission/question wait
+//     (which selects on the adapter's base context, not the run's) that a
+//     mere context cancellation would not reach. Cancellation, like a natural
+//     finish, is applied by the pump (activeRun.requestCancel wakes it via a
+//     dedicated signal channel) so RUN_ERROR{code:"cancelled"} reaches every
+//     attached stream through the one translator, never raced against it
+//     from the HTTP handler's own goroutine.
 package agui

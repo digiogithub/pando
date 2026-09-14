@@ -181,6 +181,52 @@ func (p *pendingRegistry) waiting(sessionID string) bool {
 	return ok && len(sp.calls) > 0
 }
 
+// isPending reports whether callID is currently waiting on the client for
+// sessionID, without resolving it. Used to detect a resumption
+// (Runtime.resumeCandidates, PANDO-US-0018) before delivering any result, so
+// the caller can install the new segment's translator first — resolve must
+// only happen once that ordering is settled, since resolving wakes the
+// blocked tool goroutine immediately.
+func (p *pendingRegistry) isPending(sessionID, callID string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	sp, ok := p.sessions[sessionID]
+	if !ok {
+		return false
+	}
+	_, ok = sp.calls[callID]
+	return ok
+}
+
+// cancelAll force-delivers a cancellation to every call still waiting on the
+// client for sessionID, unblocking each proxy's goroutine regardless of which
+// context it selects on. It exists because a permission/question wait
+// (awaitClient, hitl.go) selects on the adapter's base context, not the run's
+// own — so cancelling the run's context alone (activeRun.stop) does not reach
+// it. PANDO-US-0019's cancel endpoint calls this before stopping the run, so
+// no goroutine is left blocked on an answer that will never come.
+func (p *pendingRegistry) cancelAll(sessionID string) {
+	p.mu.Lock()
+	sp, ok := p.sessions[sessionID]
+	if !ok {
+		p.mu.Unlock()
+		return
+	}
+	chans := make([]chan Message, 0, len(sp.calls))
+	for _, ch := range sp.calls {
+		chans = append(chans, ch)
+	}
+	p.mu.Unlock()
+
+	for _, ch := range chans {
+		select {
+		case ch <- Message{Error: "the run was cancelled"}:
+		default:
+			// Already resolved or already cancelled by another call.
+		}
+	}
+}
+
 // discard tears down a session's bookkeeping when its run ends.
 func (p *pendingRegistry) discard(sessionID string) {
 	p.mu.Lock()

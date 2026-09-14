@@ -1176,6 +1176,15 @@ type AGUIConfig struct {
 	AgentPoolSize int `json:"agentPoolSize,omitempty" toml:"AgentPoolSize"`
 	// AgentPoolTTL evicts idle pooled agents. Duration string. Default: "30m".
 	AgentPoolTTL string `json:"agentPoolTtl,omitempty" toml:"AgentPoolTTL"`
+	// DisconnectGrace bounds how long a run stays parked after its streaming
+	// client disconnects before it is torn down (PANDO-US-0017): a dropped
+	// connection or a closed tab does not cancel an in-flight turn outright,
+	// it parks the run so a reattach (GET {path}/threads/{id}/stream, or a
+	// POST carrying no new user message) within this window resumes it with
+	// no work lost. Duration string. Default: "2m". Independent of the
+	// suspended-run reaper (the frontend-tool/permission wait timeout, see
+	// internal/agui's suspendGrace), which this setting does not affect.
+	DisconnectGrace string `json:"disconnectGrace,omitempty" toml:"DisconnectGrace"`
 	// AutoApprove approves tool permissions inside AG-UI runs without asking.
 	// It only affects the adapter's own permission service, never the desktop
 	// surfaces. Default: false.

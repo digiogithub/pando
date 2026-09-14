@@ -2,7 +2,7 @@
 id: PANDO-US-0017
 type: story
 title: "Survive client disconnect: park the run with a grace period instead of cancelling it"
-status: in_progress
+status: done
 priority: high
 parent: PANDO-EP-0003
 milestone: PANDO-M-0001

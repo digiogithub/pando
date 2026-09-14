@@ -2,7 +2,7 @@
 id: PANDO-EP-0003
 type: epic
 title: AG-UI thread lifecycle and run durability
-status: backlog
+status: done
 priority: high
 milestone: PANDO-M-0001
 labels: [agui, api]
