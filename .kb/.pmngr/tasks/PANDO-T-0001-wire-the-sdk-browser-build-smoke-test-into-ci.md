@@ -2,7 +2,7 @@
 id: PANDO-T-0001
 type: task
 title: Wire the SDK browser-build smoke test into CI
-status: backlog
+status: done
 priority: medium
 parent: PANDO-US-0006
 milestone: PANDO-M-0001
@@ -32,17 +32,45 @@ and `npm run test:browser-build`.
 - [ ] The job fails the build when the bundle regains a `node:` builtin or a CopilotKit reference.
 - [ ] The chosen repository and workflow file are recorded here, so the split is not rediscovered.
 
-## Progress
+## Resolution (2026-09-15)
 
-PANDO-US-0009 added `.github/workflows/ci.yml` inside the `sdk/typescript` repository — the first
-workflow that repository has ever had — running the build, both typechecks, the test suite, the
-browser-build smoke test and the new `check:agui-drift` script. That answers the "which repository"
-question in practice: SDK CI lives in the SDK repository.
+SDK CI lives in the SDK repository: `.github/workflows/ci.yml` in
+`madeindigio/pando-typescript-sdk`, added by PANDO-US-0009. It runs on every push to `main` and on
+every pull request, in three jobs:
 
-Two things are still open. The workflow has never run against real GitHub Actions, so it is
-unverified. And `check:agui-drift` parses the Go source of the monorepo at runtime, so the job
-checks out `digiogithub/pando`; if that repository is private the job needs a token secret, which
-nobody has provisioned. Until then the drift check cannot pass in CI even though it passes locally.
+- `build, typecheck, test` — `npm ci`, build, both typechecks, the test suite and
+  `npm run test:browser-build`, which is the smoke test this task was opened for. It fails the
+  build when the bundle regains a `node:` builtin or a CopilotKit reference.
+- `AG-UI protocol drift check` — checks out `internal/agui` from the monorepo and runs
+  `check:agui-drift` against the live Go source.
+- `HITL round trip` — added while closing this task; see below.
+
+The open question about a token secret is answered: `digiogithub/pando` is **public**, so the
+default `GITHUB_TOKEN` checks it out and no `PANDO_MONOREPO_TOKEN` is needed. The workflow keeps a
+commented-out `token:` line and a note for the day that changes.
+
+Three things had to be fixed before the workflow was actually green, none of which were visible
+locally:
+
+1. The HITL integration suite guarded only on `go version`. A GitHub runner has Go preinstalled,
+   but the SDK is checked out on its own there, so the default `REPO_ROOT` — three directories up,
+   where the monorepo sits during local development — did not exist. The suite tried to build and
+   failed instead of skipping. It now also requires a `go.mod` declaring
+   `github.com/digiogithub/pando`.
+2. A fresh checkout of the monorepo **cannot be compiled at all**: `internal/api/ui_assets_app.go`
+   embeds `webui/dist/**` and `internal/desktop/embed_binary.go` embeds `bin/pando-desktop`, both
+   gitignored build artifacts. They exist on a machine that has run a full build, which is why
+   `go build ./...` was green locally throughout. The job now runs the monorepo's own
+   `make embed-stubs` first. This affects any contributor cloning the repository, not just CI.
+3. The job cloned the monorepo's remote `main`, which did not yet carry the session's Go commits,
+   so the fixture agent was missing and the server answered `unknown agent "fixture-hitl"`. Fixed
+   by publishing the Go side.
+
+Rather than let the suite skip silently in CI — the coverage loss PANDO-US-0008 and US-0010 sat in
+review over — a dedicated `agui-integration` job checks out the monorepo, sets Go up from its
+`go.mod` and points `PANDO_REPO_ROOT` at it, so the round trip really runs.
+
+All three jobs green on run 34986903978.
 
 ## Notes
 
