@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
@@ -153,7 +154,10 @@ func (b *mcpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolRes
 		return tools.ToolResponse{}, fmt.Errorf("session ID and message ID are required for creating a new file")
 	}
 	permissionDescription := fmt.Sprintf("execute %s with the following parameters: %s", b.Info().Name, params.Input)
-	p := b.permissions.Request(
+	// The tool's own context is passed so an abandoned prompt cannot outlive
+	// the run that raised it: RequestWithContext fails closed when ctx ends.
+	p := b.permissions.RequestWithContext(
+		ctx,
 		permission.CreatePermissionRequest{
 			SessionID:   sessionID,
 			Path:        config.WorkingDirectory(),
@@ -205,15 +209,63 @@ func NewMcpTool(name string, tool mcp.Tool, permissions permission.Service, mcpC
 	}
 }
 
-var mcpTools []tools.BaseTool
-
-func ResetMcpToolsCache() {
-	mcpTools = nil
+// mcpToolDescriptor is what MCP discovery actually found: a server name, the
+// tool descriptor it advertised and the server configuration needed to call it.
+// It carries no permission.Service on purpose -- the cache below holds these,
+// never permission-bound tools.BaseTool values, so every caller of GetMcpTools
+// gets tools wired to its OWN approval service (PANDO-US-0031: the AG-UI
+// adapter owns a separate service by invariant I3, and used to be handed the
+// TUI's because the cache had baked it in at startup).
+type mcpToolDescriptor struct {
+	serverName string
+	tool       mcp.Tool
+	mcpConfig  config.MCPServer
 }
 
-func getTools(ctx context.Context, name string, m config.MCPServer, permissions permission.Service, c MCPClient) []tools.BaseTool {
+var (
+	// mcpToolsMu guards mcpToolDescriptors; mcpDiscoveryMu serializes the
+	// discovery itself so two concurrent first callers do not both connect to
+	// every configured server.
+	mcpToolsMu         sync.RWMutex
+	mcpToolDescriptors []mcpToolDescriptor
+	mcpDiscoveryMu     sync.Mutex
+)
+
+// ResetMcpToolsCache drops the discovered catalog. Its meaning is unchanged:
+// the next GetMcpTools re-runs discovery.
+func ResetMcpToolsCache() {
+	mcpToolsMu.Lock()
+	defer mcpToolsMu.Unlock()
+	mcpToolDescriptors = nil
+}
+
+func cachedMcpToolDescriptors() []mcpToolDescriptor {
+	mcpToolsMu.RLock()
+	defer mcpToolsMu.RUnlock()
+	return mcpToolDescriptors
+}
+
+// CachedMcpToolNames returns the "<server>_<tool>" names of the MCP tools
+// already discovered in this process, without connecting to anything and
+// without constructing a permission service. It returns nil when discovery has
+// not run yet: a name list for a prompt is not a reason to open MCP
+// connections, and it is certainly not a reason to populate the shared cache
+// (PANDO-US-0031, defect 2).
+func CachedMcpToolNames() []string {
+	descriptors := cachedMcpToolDescriptors()
+	if len(descriptors) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(descriptors))
+	for _, d := range descriptors {
+		names = append(names, fmt.Sprintf("%s_%s", d.serverName, d.tool.Name))
+	}
+	return names
+}
+
+func getToolDescriptors(ctx context.Context, name string, m config.MCPServer, c MCPClient) []mcpToolDescriptor {
 	logging.Debug("getTools", "serverName", name, "type", string(m.Type))
-	var stdioTools []tools.BaseTool
+	var stdioTools []mcpToolDescriptor
 	timeout := mcpclient.ResolveTimeout(m.Timeout, mcpclient.DefaultDiscoveryTimeout)
 
 	// Handshake also reports the outcome on the extension mcp topic.
@@ -244,17 +296,42 @@ func getTools(ctx context.Context, name string, m config.MCPServer, permissions 
 	}
 	logging.Debug("MCP server tools listed", "serverName", name, "toolCount", len(tools.Tools))
 	for _, t := range tools.Tools {
-		stdioTools = append(stdioTools, NewMcpTool(name, t, permissions, m))
+		stdioTools = append(stdioTools, mcpToolDescriptor{serverName: name, tool: t, mcpConfig: m})
 	}
 	defer c.Close()
 	return stdioTools
 }
 
+// GetMcpTools returns the MCP catalog as tools bound to the permission service
+// the CALLER passed. The discovery result is cached and shared (one connection
+// per server per process, as before); only the permission binding is per call.
 func GetMcpTools(ctx context.Context, permissions permission.Service) []tools.BaseTool {
-	logging.Debug("GetMcpTools called", "existingToolCount", len(mcpTools), "serverCount", len(config.Get().MCPServers))
-	if len(mcpTools) > 0 {
-		return mcpTools
+	descriptors := cachedMcpToolDescriptors()
+	logging.Debug("GetMcpTools called", "existingToolCount", len(descriptors), "serverCount", len(config.Get().MCPServers))
+	if len(descriptors) == 0 {
+		descriptors = discoverMcpTools(ctx)
 	}
+
+	result := make([]tools.BaseTool, 0, len(descriptors))
+	for _, d := range descriptors {
+		result = append(result, NewMcpTool(d.serverName, d.tool, permissions, d.mcpConfig))
+	}
+	return result
+}
+
+// discoverMcpTools connects to every configured MCP server once and caches the
+// tool descriptors it advertises. As before, an empty result is not cached, so
+// a server that was down when the process started is retried on the next call.
+func discoverMcpTools(ctx context.Context) []mcpToolDescriptor {
+	mcpDiscoveryMu.Lock()
+	defer mcpDiscoveryMu.Unlock()
+
+	// Another caller may have completed discovery while this one waited.
+	if cached := cachedMcpToolDescriptors(); len(cached) > 0 {
+		return cached
+	}
+
+	var descriptors []mcpToolDescriptor
 	for name, m := range config.Get().MCPServers {
 		logging.Debug("Initializing MCP server", "name", name, "type", string(m.Type))
 		clientCtx, clientCancel := context.WithCancel(ctx)
@@ -270,12 +347,16 @@ func GetMcpTools(ctx context.Context, permissions permission.Service) []tools.Ba
 			continue
 		}
 
-		mcpTools = append(mcpTools, getTools(ctx, name, m, permissions, c)...)
+		descriptors = append(descriptors, getToolDescriptors(ctx, name, m, c)...)
 		clientCancel()
 	}
 
-	logging.Debug("MCP tools loaded", "totalToolCount", len(mcpTools))
-	return mcpTools
+	mcpToolsMu.Lock()
+	mcpToolDescriptors = descriptors
+	mcpToolsMu.Unlock()
+
+	logging.Debug("MCP tools loaded", "totalToolCount", len(descriptors))
+	return descriptors
 }
 
 // GetMcpToolsWithGateway returns MCP-backed tools for the LLM agent.

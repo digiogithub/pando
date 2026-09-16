@@ -1,6 +1,7 @@
 package permission
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"slices"
@@ -40,6 +41,12 @@ type Service interface {
 	Grant(permission PermissionRequest)
 	Deny(permission PermissionRequest)
 	Request(opts CreatePermissionRequest) bool
+	// RequestWithContext is Request bound to the caller's context. When ctx
+	// ends before an answer arrives, the request fails closed (returns false)
+	// instead of blocking the calling tool's goroutine forever. Tools should
+	// prefer it and pass their own ctx; Request is the context.Background()
+	// shorthand kept for the call sites that have none.
+	RequestWithContext(ctx context.Context, opts CreatePermissionRequest) bool
 	AutoApproveSession(sessionID string)
 	RemoveAutoApproveSession(sessionID string)
 	RequireExplicitApprovalSession(sessionID string)
@@ -126,7 +133,17 @@ func (s *permissionService) removePending(sessionID, id string) {
 	}
 }
 
+// Request is RequestWithContext with a background context: it never gives up
+// on its own. Kept so the existing call sites that have no context of their
+// own are untouched.
 func (s *permissionService) Request(opts CreatePermissionRequest) bool {
+	return s.RequestWithContext(context.Background(), opts)
+}
+
+func (s *permissionService) RequestWithContext(ctx context.Context, opts CreatePermissionRequest) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	logging.Debug("Permission requested", "sessionID", opts.SessionID, "toolName", opts.ToolName, "action", opts.Action, "path", opts.Path)
 
 	// Session handlers are checked first — they represent explicit per-session
@@ -135,9 +152,23 @@ func (s *permissionService) Request(opts CreatePermissionRequest) bool {
 	handler, hasHandler := s.sessionHandlers[opts.SessionID]
 	s.sessionHandlersMu.RUnlock()
 	if hasHandler {
-		resp := handler(opts)
-		logging.Debug("Permission result via session handler", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", resp)
-		return resp
+		// The handler blocks (the AG-UI adapter suspends the run on a
+		// synthetic tool call and waits for the browser), so it runs on its
+		// own goroutine: that is what lets an ended context fail closed here
+		// instead of stranding the calling tool. The goroutine is not leaked
+		// -- every handler has its own timeout and returns into the buffered
+		// channel, whether or not anyone is still listening.
+		handlerCh := make(chan bool, 1)
+		go func() { handlerCh <- handler(opts) }()
+		select {
+		case resp := <-handlerCh:
+			logging.Debug("Permission result via session handler", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", resp)
+			return resp
+		case <-ctx.Done():
+			logging.Warn("Permission denied: the caller's context ended before the session handler answered",
+				"sessionID", opts.SessionID, "toolName", opts.ToolName, "action", opts.Action, "error", ctx.Err())
+			return false
+		}
 	}
 
 	s.mu.RLock()
@@ -187,10 +218,19 @@ func (s *permissionService) Request(opts CreatePermissionRequest) bool {
 
 	s.Publish(pubsub.CreatedEvent, permission)
 
-	// Wait for the response with a timeout
-	resp := <-respCh
-	logging.Debug("Permission result", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", resp)
-	return resp
+	// Wait for the answer, or for the caller to give up. There is deliberately
+	// no built-in deadline: a TUI prompt may legitimately sit unanswered for as
+	// long as the user needs. What must never happen is an unanswerable prompt
+	// outliving the run that raised it, which is what ctx closes off.
+	select {
+	case resp := <-respCh:
+		logging.Debug("Permission result", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", resp)
+		return resp
+	case <-ctx.Done():
+		logging.Warn("Permission denied: the caller's context ended before the request was answered",
+			"sessionID", opts.SessionID, "toolName", opts.ToolName, "action", opts.Action, "error", ctx.Err())
+		return false
+	}
 }
 
 func (s *permissionService) AutoApproveSession(sessionID string) {

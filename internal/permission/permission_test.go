@@ -1,6 +1,7 @@
 package permission
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -164,5 +165,90 @@ func TestRequest_UnregisterSessionHandler_RemovesCustomHandler(t *testing.T) {
 	case <-done:
 		t.Fatal("expected request without auto-approve or handler to block")
 	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// --------------------------------------------------- PANDO-US-0031: fail closed
+
+// TestRequestWithContextFailsClosedWhenTheContextEnds is the PANDO-US-0031
+// acceptance criterion for defect 3: an unanswered prompt must not block the
+// calling tool's goroutine forever once the run that raised it is gone.
+func TestRequestWithContextFailsClosedWhenTheContextEnds(t *testing.T) {
+	svc := NewPermissionService()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan bool, 1)
+	go func() {
+		done <- svc.RequestWithContext(ctx, CreatePermissionRequest{
+			SessionID: "s1", ToolName: "bash", Action: "execute", Path: "/repo",
+		})
+	}()
+
+	// Wait until the request is actually published and pending, so the
+	// cancellation below lands on a genuinely blocked wait.
+	deadline := time.Now().Add(2 * time.Second)
+	for len(svc.PendingRequests("s1")) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(svc.PendingRequests("s1")) == 0 {
+		t.Fatal("the request never became pending")
+	}
+
+	cancel()
+	select {
+	case approved := <-done:
+		if approved {
+			t.Fatal("an abandoned permission request must fail closed")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("RequestWithContext hung after its context ended")
+	}
+}
+
+// TestRequestWithContextFailsClosedOnABlockedSessionHandler covers the AG-UI
+// shape of the same defect: the blocking happens inside a registered session
+// handler (the adapter suspends the run waiting for the browser), which must
+// still be interruptible by the caller's context.
+func TestRequestWithContextFailsClosedOnABlockedSessionHandler(t *testing.T) {
+	svc := NewPermissionService()
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	svc.RegisterSessionHandler("s1", func(CreatePermissionRequest) bool {
+		close(entered)
+		<-release
+		return true
+	})
+	defer close(release)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan bool, 1)
+	go func() {
+		done <- svc.RequestWithContext(ctx, CreatePermissionRequest{SessionID: "s1", ToolName: "bash"})
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the session handler was never called")
+	}
+	cancel()
+
+	select {
+	case approved := <-done:
+		if approved {
+			t.Fatal("a handler that never answered must fail closed")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("RequestWithContext hung on a blocked session handler")
+	}
+}
+
+// TestRequestDelegatesToRequestWithContext keeps the ~61 existing call sites
+// honest: Request still blocks until answered, with no surprise deadline.
+func TestRequestDelegatesToRequestWithContext(t *testing.T) {
+	svc := NewPermissionService()
+	svc.RegisterSessionHandler("s1", func(CreatePermissionRequest) bool { return true })
+	if !svc.Request(CreatePermissionRequest{SessionID: "s1", ToolName: "bash"}) {
+		t.Fatal("Request must still honour the session handler's verdict")
 	}
 }

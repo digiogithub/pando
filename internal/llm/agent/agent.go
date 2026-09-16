@@ -2855,9 +2855,15 @@ func buildSystemMessage(
 	return finalPrompt
 }
 
-func promptMcpCatalogListing(ctx context.Context) string {
-	toolNames := promptToolNames(GetMcpTools(ctx, permission.NewPermissionService()))
-	return prompt.FormatMCPToolsForPrompt(toolNames)
+// promptMcpCatalogListing renders the MCP catalog for the system prompt. It
+// only ever reads names off the already-discovered catalog: it must not open
+// MCP connections, and it must never populate the shared cache with tools bound
+// to a throwaway permission service (PANDO-US-0031, defect 2 -- that used to
+// deadlock the next MCP tool call on every surface, the TUI included).
+func promptMcpCatalogListing(_ context.Context) string {
+	names := CachedMcpToolNames()
+	sort.Strings(names)
+	return prompt.FormatMCPToolsForPrompt(names)
 }
 
 func promptMCPServerNames(cfg *config.Config) []string {
