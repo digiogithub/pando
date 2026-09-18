@@ -321,7 +321,7 @@ func (c *copilotClient) convertMessages(messages []message.Message) (copilotMess
 						Type: "function",
 						Function: openai.ChatCompletionMessageToolCallFunctionParam{
 							Name:      call.Name,
-							Arguments: call.Input,
+							Arguments: sanitizeToolCallArguments(call.Name, call.Input),
 						},
 					}
 				}
@@ -474,6 +474,9 @@ func (c *copilotClient) send(ctx context.Context, messages []message.Message, to
 
 		toolCalls := c.toolCalls(*copilotResponse)
 		finishReason := c.finishReason(string(copilotResponse.Choices[0].FinishReason))
+		if finishReason == message.FinishReasonMaxTokens {
+			toolCalls = dropTruncatedToolCalls(toolCalls)
+		}
 
 		if len(toolCalls) > 0 {
 			finishReason = message.FinishReasonToolUse
@@ -589,7 +592,7 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 								}
 							} else {
 								// Delta tool use
-								if toolCall.ID == "" {
+								if toolCall.ID == "" || toolCall.ID == currentToolCallId {
 									currentToolCall.Function.Arguments += toolCall.Function.Arguments
 								} else {
 									// Detect new tool use
@@ -626,6 +629,9 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 				finishReason := c.finishReason(string(acc.ChatCompletion.Choices[0].FinishReason))
 				if len(acc.ChatCompletion.Choices[0].Message.ToolCalls) > 0 {
 					toolCalls = append(toolCalls, c.toolCalls(acc.ChatCompletion)...)
+				}
+				if finishReason == message.FinishReasonMaxTokens {
+					toolCalls = dropTruncatedToolCalls(toolCalls)
 				}
 				if len(toolCalls) > 0 {
 					finishReason = message.FinishReasonToolUse
@@ -720,7 +726,7 @@ func (c *copilotClient) convertMessagesToResponsesInput(msgs []message.Message) 
 					if callID == "" {
 						callID = "call_" + uuid.New().String()
 					}
-					item := responses.ResponseInputItemParamOfFunctionCall(tc.Input, callID, tc.Name)
+					item := responses.ResponseInputItemParamOfFunctionCall(sanitizeToolCallArguments(tc.Name, tc.Input), callID, tc.Name)
 					input = append(input, item)
 				}
 			} else if msg.Content().String() != "" {

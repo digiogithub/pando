@@ -143,15 +143,7 @@ func (a *anthropicClient) convertMessagesBeta(ctx context.Context, messages []me
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{OfText: &text})
 			}
 			for _, toolCall := range msg.ToolCalls() {
-				input := toolCall.Input
-				if normalized, err := toolsPkg.NormalizeJSONInput(input); err == nil {
-					input = normalized
-				}
-				var inputMap map[string]any
-				if err := json.Unmarshal([]byte(input), &inputMap); err != nil {
-					logging.Warn("Skipping tool call with unparseable arguments", "tool", toolCall.Name, "error", err)
-					continue
-				}
+				inputMap := sanitizeToolCallArgumentsMap(toolCall.Name, toolCall.Input)
 				blocks = append(blocks, anthropic.NewBetaToolUseBlock(toolCall.ID, inputMap, toolCall.Name))
 			}
 			if len(blocks) == 0 {
