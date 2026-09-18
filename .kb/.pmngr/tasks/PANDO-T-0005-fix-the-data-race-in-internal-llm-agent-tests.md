@@ -2,13 +2,13 @@
 id: PANDO-T-0005
 type: task
 title: Fix the data race between two internal/llm/agent tests
-status: backlog
+status: cancelled
 priority: medium
 author: claude
 labels: [tests, concurrency]
 estimate: 2
 created: 2026-09-14T00:00:00Z
-updated: 2026-09-14T00:00:00Z
+updated: 2026-09-18T12:40:00Z
 ---
 
 ## Description

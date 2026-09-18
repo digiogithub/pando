@@ -2,7 +2,7 @@
 id: PANDO-US-0031
 type: story
 title: "AG-UI runs deadlock on direct MCP tools: GetMcpTools caches the app's permission service"
-status: in_review
+status: done
 priority: critical
 parent: PANDO-EP-0002
 milestone: PANDO-M-0001
@@ -10,7 +10,7 @@ author: claude
 labels: [agui, mcp, permissions, bug]
 estimate: 3
 created: 2026-09-15T17:05:04Z
-updated: 2026-09-16T00:00:00Z
+updated: 2026-09-18T12:40:00Z
 ---
 
 ## Description
@@ -25,11 +25,11 @@ Do NOT fix it by making the AG-UI adapter reuse `app.Permissions`: invariant I3 
 
 ## Acceptance Criteria
 
-- [ ] `GetMcpTools` (or its replacement) returns tool instances bound to the `permissions` service the caller passed; the MCP client connections stay cached and shared.
-- [ ] With `[MCPServers.x]` configured, gateway off and `AutoApprove = false`, an AG-UI run that calls `x_<tool>` emits `pando_permission_request`, and a trailing `{"approved":true}` tool message lets the run finish with `TOOL_CALL_RESULT` and `RUN_FINISHED{outcome:"success"}` — covered by a test in `internal/agui` with an in-process MCP server.
-- [ ] With `AutoApprove = true` the same run completes without an interrupt.
-- [ ] A permission request that no client answers within the adapter's timeout fails closed with a `RUN_ERROR`, never a hang; regression test asserts the run ends.
-- [ ] The `[AGUI] Tools` allow-list keeps applying to the directly registered `<server>_<tool>` names (regression test from PANDO-US-0011 still passes).
+- [x] `GetMcpTools` (or its replacement) returns tool instances bound to the `permissions` service the caller passed; the MCP client connections stay cached and shared.
+- [x] With `[MCPServers.x]` configured, gateway off and `AutoApprove = false`, an AG-UI run that calls `x_<tool>` emits `pando_permission_request`, and a trailing `{"approved":true}` tool message lets the run finish with `TOOL_CALL_RESULT` and `RUN_FINISHED{outcome:"success"}` — covered by a test in `internal/agui` with an in-process MCP server.
+- [x] With `AutoApprove = true` the same run completes without an interrupt.
+- [x] A permission request that no client answers within the adapter's timeout fails closed with a `RUN_ERROR`, never a hang; regression test asserts the run ends.
+- [x] The `[AGUI] Tools` allow-list keeps applying to the directly registered `<server>_<tool>` names (regression test from PANDO-US-0011 still passes).
 
 ## Notes
 
