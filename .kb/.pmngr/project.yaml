@@ -13,6 +13,9 @@ docs:
 workflow:
   initial: backlog
   statuses:
+    - id: triage
+      name: Triage
+      category: triage
     - id: backlog
       name: Backlog
       category: todo
@@ -38,8 +41,8 @@ id_allocation:
   write_counters: true
   counters:
     milestone: 2
-    epic: 7
-    story: 32
+    epic: 9
+    story: 49
     task: 6
 priorities:
   - critical
