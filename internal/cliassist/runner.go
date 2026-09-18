@@ -24,6 +24,10 @@ func RunCommand(info SysInfo, command string) int {
 		shellArgs = []string{info.ShellPath, "-c", command}
 	}
 
+	// Intentionally unsandboxed: cliassist only ever runs a command the user
+	// typed and explicitly confirmed running (see the caller), never one the
+	// agent generated. Per PANDO-EP-0009/US-0047, host sandboxing confines
+	// agent-reachable commands, not user-confirmed ones.
 	cmd := exec.Command(shellArgs[0], shellArgs[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

@@ -10,6 +10,7 @@ import MCPGatewaySettings from './MCPGatewaySettings'
 import LSPSettings from './LSPSettings'
 import InternalToolsSettings from './InternalToolsSettings'
 import BashSettings from './BashSettings'
+import SandboxSettings from './SandboxSettings'
 import TokenOptimizationSettings from './TokenOptimizationSettings'
 import SkillsSettings from './SkillsSettings'
 import LuaSettings from './LuaSettings'
@@ -35,6 +36,7 @@ type SettingsCategory =
   | 'mcp-gateway'
   | 'lsp'
   | 'tools'
+  | 'sandbox'
   | 'bash'
   | 'token-optimization'
   | 'skills'
@@ -64,6 +66,7 @@ const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; group?: string; p
   { id: 'lsp', labelKey: 'settings.categories.lsp', path: 'lsp' },
   { id: 'tools', labelKey: 'settings.categories.tools', path: 'internalTools' },
   { id: 'container-runtime', labelKey: 'settings.categories.containerRuntime', path: 'container' },
+  { id: 'sandbox', labelKey: 'settings.categories.sandbox', path: 'sandbox' },
   { id: 'bash', labelKey: 'settings.categories.bash', path: 'bash' },
   { id: 'token-optimization', labelKey: 'settings.categories.tokenOptimization', path: 'tokenOptimization' },
   { id: 'skills', labelKey: 'settings.categories.skills', path: 'skills' },
@@ -346,6 +349,7 @@ export default function SettingsView() {
         {visibleCategory === 'lsp' && <LSPSettings />}
         {visibleCategory === 'tools' && <InternalToolsSettings />}
         {visibleCategory === 'container-runtime' && <ContainerRuntimeSettings />}
+        {visibleCategory === 'sandbox' && <SandboxSettings />}
         {visibleCategory === 'bash' && <BashSettings />}
         {visibleCategory === 'token-optimization' && <TokenOptimizationSettings />}
         {visibleCategory === 'skills' && <SkillsSettings />}

@@ -2,11 +2,13 @@
 id: PANDO-EP-0009
 type: epic
 title: Host command sandbox, on by default and container-free
-status: backlog
+status: done
 priority: high
 labels: [security, sandbox, bash, grok-build]
 created: 2026-09-18T08:36:24Z
-updated: 2026-09-18T08:36:24Z
+updated: 2026-09-18T11:01:15Z
+started: 2026-09-18T09:08:28Z
+closed: 2026-09-18T11:01:15Z
 ---
 
 ## Description

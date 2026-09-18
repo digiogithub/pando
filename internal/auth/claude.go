@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/digiogithub/pando/internal/sandbox/portguard"
 )
 
 const (
@@ -207,6 +209,8 @@ func ClaudeLoginStart() (*ClaudeLoginSession, error) {
 	if err != nil {
 		return nil, fmt.Errorf("start callback server: %w", err)
 	}
+	// A sandboxed command must not be able to feed the OAuth callback.
+	listener = portguard.Guard(listener, "claude-oauth-callback")
 
 	port := listener.Addr().(*net.TCPAddr).Port
 	autoRedirectURI := fmt.Sprintf("http://localhost:%d/callback", port)

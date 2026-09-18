@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+
 	"github.com/digiogithub/pando/internal/logging"
 )
 
@@ -16,6 +18,8 @@ import (
 func Main() {
 	defer logging.RecoverPanic("main", func() {
 		logging.ErrorPersist("Application terminated due to unhandled panic")
+		// A crash must not look like success to a script or CI job.
+		os.Exit(2)
 	})
 
 	Execute()

@@ -329,3 +329,52 @@ func TestResumedRunDoesNotRecloseCarriedTools(t *testing.T) {
 		t.Fatalf("unexpected event: %#v", got[0])
 	}
 }
+
+// TestPermissionAutoApproveStillAsksForSandboxEscalation: a NeverAutoApprove
+// request (bash's execute_unsandboxed) reaches the client even with
+// AutoApprove, and carries the justification for the approval card.
+func TestPermissionAutoApproveStillAsksForSandboxEscalation(t *testing.T) {
+	cfg := hitlConfig()
+	cfg.AutoApprove = true
+	r, cancel := newHITLRuntime(t, cfg)
+	defer cancel()
+
+	notify := r.pending.watch("s1")
+	r.installPermissionPolicy("s1")
+
+	verdict := make(chan bool, 1)
+	go func() {
+		verdict <- r.perms.Request(permission.CreatePermissionRequest{
+			SessionID: "s1", ToolName: "bash", Action: permission.ActionExecuteUnsandboxed,
+			RequireExplicitApproval: true, NeverAutoApprove: true, Justification: "global npm prefix",
+		})
+	}()
+
+	var s suspension
+	select {
+	case s = <-notify:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the escalation was auto-approved instead of reaching the client")
+	}
+	args, ok := s.events[1].(ToolCallArgsEvent)
+	if !ok {
+		t.Fatalf("unexpected args event: %#v", s.events[1])
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(args.Delta), &decoded); err != nil {
+		t.Fatalf("arguments are not valid JSON: %v", err)
+	}
+	if decoded["action"] != permission.ActionExecuteUnsandboxed || decoded["justification"] != "global npm prefix" ||
+		decoded["requireExplicitApproval"] != true || decoded["neverAutoApprove"] != true {
+		t.Fatalf("escalation payload = %v", decoded)
+	}
+	r.pending.resolve("s1", s.callID, clientResult(`{"approved":false}`))
+	select {
+	case approved := <-verdict:
+		if approved {
+			t.Fatal("the client denied but the escalation was approved")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the permission request never unblocked")
+	}
+}

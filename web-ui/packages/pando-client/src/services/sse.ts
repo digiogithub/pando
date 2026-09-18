@@ -248,6 +248,10 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
           action: typeof raw.action === 'string' ? raw.action : undefined,
           path: typeof raw.path === 'string' ? raw.path : undefined,
           params: raw.params,
+          justification: typeof raw.justification === 'string' && raw.justification ? raw.justification : undefined,
+          grant_key: typeof raw.grant_key === 'string' && raw.grant_key ? raw.grant_key : undefined,
+          require_explicit_approval: raw.require_explicit_approval === true,
+          never_auto_approve: raw.never_auto_approve === true,
         }
       }
       break

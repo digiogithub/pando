@@ -92,6 +92,10 @@ func newPTYSession(cwd string, cols, rows int) (*ptySession, error) {
 	rows = clampPTYDim(rows, 24)
 
 	shell, args := ptyShellCommand()
+	// Intentionally unsandboxed: this is a user terminal (WebUI "Terminal"
+	// tab), not an agent-driven command. Per PANDO-EP-0009/US-0047, host
+	// sandboxing only ever confines commands the agent reaches, directly or
+	// indirectly; the user's own interactive shell keeps full host access.
 	cmd := exec.Command(shell, args...)
 	cmd.Dir = cwd
 	cmd.Env = buildShellEnv(os.Environ())

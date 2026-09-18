@@ -185,6 +185,10 @@ func New(width, height int, shellPath string, shellArgs []string) (TerminalCompo
 	shell, args := shellCommand(shellPath, shellArgs)
 	logging.Info("terminal.New: starting shell", "id", id, "shell", shell, "args", args)
 
+	// Intentionally unsandboxed: this is the TUI's interactive user
+	// terminal, not an agent-driven command. Per PANDO-EP-0009/US-0047, host
+	// sandboxing only ever confines commands the agent reaches, directly or
+	// indirectly; the user's own shell keeps full host access.
 	cmd := exec.Command(shell, args...)
 
 	// Set up environment: inherit parent env and force TERM.

@@ -10,7 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 
+	"github.com/digiogithub/pando/internal/procgroup"
+	"github.com/digiogithub/pando/internal/sandbox"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
@@ -401,6 +404,26 @@ func (c *MesnadaACPClient) CreateTerminal(ctx context.Context, params acpsdk.Cre
 	cmd := exec.CommandContext(termCtx, params.Command, params.Args...)
 	cmd.Dir = cwd
 
+	// Terminals Pando serves to a sub-agent are covered by default
+	// (sandbox.DefaultExtendTo includes PurposeACPTerminals): the sandbox
+	// scrubs cmd.Env and confines the command exactly like a bash command
+	// would be. Fail closed on a wrap error rather than handing a sub-agent
+	// an unconfined terminal.
+	sbxPolicy, sbxCap, err := sandbox.WrapCmd(cmd, sandbox.PurposeACPTerminals)
+	if err != nil {
+		cancel()
+		if c.logFile != nil {
+			fmt.Fprintf(c.logFile, "[CREATE TERMINAL DENIED] sandbox: %v\n", err)
+		}
+		return acpsdk.CreateTerminalResponse{}, fmt.Errorf("sandbox: cannot create terminal confined: %w", err)
+	}
+	sandbox.EmitSpawn(ctx, sandbox.PurposeACPTerminals, sbxPolicy.Covers(sandbox.PurposeACPTerminals), sbxPolicy, sbxCap)
+	// Group the process regardless of sandbox coverage, so KillTerminal can
+	// stop the whole tree (a sandbox launcher such as bwrap in front of the
+	// real command, or a shell script that forks children of its own) by
+	// signalling the group rather than only the direct pid.
+	procgroup.Ensure(cmd)
+
 	// Create terminal state
 	term := &terminalState{
 		id:        terminalID,
@@ -580,12 +603,17 @@ func (c *MesnadaACPClient) KillTerminal(ctx context.Context, params acpsdk.KillT
 		term.cancelF()
 	}
 
-	// Also try to kill the process directly if it's still running
+	// Also try to kill the process directly if it's still running. Prefer
+	// killing the whole process group (see procgroup.Ensure in
+	// CreateTerminal): a sandboxed command may be a launcher in front of the
+	// real one, and signalling only its pid can leave the real work running.
 	term.mu.Lock()
 	if term.cmd != nil && term.cmd.Process != nil && term.isRunning {
-		if err := term.cmd.Process.Kill(); err != nil {
-			if c.logFile != nil {
-				fmt.Fprintf(c.logFile, "[KILL TERMINAL] ID=%s, kill error: %v\n", params.TerminalId, err)
+		if !procgroup.Kill(term.cmd.Process.Pid, syscall.SIGKILL) {
+			if err := term.cmd.Process.Kill(); err != nil {
+				if c.logFile != nil {
+					fmt.Fprintf(c.logFile, "[KILL TERMINAL] ID=%s, kill error: %v\n", params.TerminalId, err)
+				}
 			}
 		}
 	}

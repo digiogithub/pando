@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/digiogithub/pando/internal/sandbox/portguard"
 )
 
 // DefaultCallbackTimeout is how long CallbackServer.Wait blocks for the
@@ -68,6 +70,8 @@ func StartCallbackServer(redirectURI string) (*CallbackServer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mcpauth: listen on %s: %w", addr, err)
 	}
+	// A sandboxed command must not be able to feed the OAuth callback.
+	listener = portguard.Guard(listener, "mcp-oauth-callback")
 
 	cs := &CallbackServer{
 		listener: listener,

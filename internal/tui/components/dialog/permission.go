@@ -244,6 +244,9 @@ func (p *permissionDialogCmp) renderHeader() string {
 	// Add tool-specific header information
 	switch p.permission.ToolName {
 	case tools.BashToolName:
+		if p.isEscalation() {
+			headerParts = append(headerParts, p.renderEscalationHeader()...)
+		}
 		headerParts = append(headerParts, baseStyle.Foreground(t.TextMuted()).Width(p.width).Bold(true).Render("Command"))
 	case tools.EditToolName:
 		params := p.permission.Params.(tools.EditPermissionsParams)
@@ -281,6 +284,49 @@ func (p *permissionDialogCmp) renderHeader() string {
 	}
 
 	return lipgloss.NewStyle().Background(t.Background()).Render(lipgloss.JoinVertical(lipgloss.Left, headerParts...))
+}
+
+// isEscalation reports whether the request asks to run a command outside the
+// host sandbox (bash's sandbox_permissions "require_escalated").
+func (p *permissionDialogCmp) isEscalation() bool {
+	return p.permission.Action == permission.ActionExecuteUnsandboxed
+}
+
+// renderEscalationHeader renders the warning, the agent's justification and
+// what an "allow for session" answer would cover.
+func (p *permissionDialogCmp) renderEscalationHeader() []string {
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+	blank := baseStyle.Render(strings.Repeat(" ", p.width))
+
+	warning := baseStyle.Foreground(t.Warning()).Bold(true).Width(p.width - 4).
+		Render("⚠ Runs once OUTSIDE the sandbox, with full access to your files, network and credentials.")
+
+	justification := p.permission.Justification
+	if justification == "" {
+		if pr, ok := p.permission.Params.(tools.BashPermissionsParams); ok {
+			justification = pr.Justification
+		}
+	}
+	justKey := baseStyle.Foreground(t.TextMuted()).Bold(true).Render("Justification")
+	justValue := baseStyle.Foreground(t.Text()).Width(p.width - 4 - lipgloss.Width(justKey)).
+		Render(": " + justification)
+
+	scope := "only this exact command"
+	if prefix, ok := strings.CutPrefix(p.permission.GrantKey, "prefix:"); ok {
+		scope = "commands starting with \"" + prefix + "\""
+	}
+	scopeKey := baseStyle.Foreground(t.TextMuted()).Bold(true).Render("Allow for session covers")
+	scopeValue := baseStyle.Foreground(t.Text()).Width(p.width - 4 - lipgloss.Width(scopeKey)).
+		Render(": " + scope)
+
+	return []string{
+		warning,
+		blank,
+		lipgloss.JoinHorizontal(lipgloss.Left, justKey, justValue),
+		lipgloss.JoinHorizontal(lipgloss.Left, scopeKey, scopeValue),
+		blank,
+	}
 }
 
 func (p *permissionDialogCmp) renderBashContent() string {
@@ -403,11 +449,15 @@ func (p *permissionDialogCmp) render() string {
 	t := theme.CurrentTheme()
 	baseStyle := styles.BaseStyle()
 
+	titleText, titleColor, borderColor := "Permission Required", t.Primary(), t.TextMuted()
+	if p.isEscalation() {
+		titleText, titleColor, borderColor = "Run outside sandbox", t.Warning(), t.Warning()
+	}
 	title := baseStyle.
 		Bold(true).
 		Width(p.width - 4).
-		Foreground(t.Primary()).
-		Render("Permission Required")
+		Foreground(titleColor).
+		Render(titleText)
 	// Render header
 	headerContent := p.renderHeader()
 	// Render buttons
@@ -448,7 +498,7 @@ func (p *permissionDialogCmp) render() string {
 		Padding(1, 0, 0, 1).
 		Border(lipgloss.RoundedBorder()).
 		BorderBackground(t.Background()).
-		BorderForeground(t.TextMuted()).
+		BorderForeground(borderColor).
 		Width(p.width).
 		Height(p.height).
 		Render(
@@ -472,6 +522,11 @@ func (p *permissionDialogCmp) SetSize() tea.Cmd {
 	case tools.BashToolName:
 		p.width = int(float64(p.windowSize.Width) * 0.4)
 		p.height = int(float64(p.windowSize.Height) * 0.3)
+		if p.isEscalation() {
+			// Room for the warning, justification and grant scope.
+			p.width = int(float64(p.windowSize.Width) * 0.5)
+			p.height = int(float64(p.windowSize.Height) * 0.45)
+		}
 	case tools.EditToolName:
 		p.width = int(float64(p.windowSize.Width) * 0.8)
 		p.height = int(float64(p.windowSize.Height) * 0.8)

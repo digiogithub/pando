@@ -122,6 +122,14 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 		"NO_COLOR=1",
 	)
 
+	// Opt-in only (Sandbox.ExtendTo must include "subagents"): Copilot has
+	// its own permission model and writes to ~/.copilot and
+	// ~/.config/github-copilot, plus s.logDir for the converted MCP config.
+	if _, _, err := wrapSubagentCmd(cmd, "copilot", task.WorkDir, subagentSandboxOpts{ExtraRoots: []string{s.logDir}}); err != nil {
+		cancel()
+		return fmt.Errorf("sandbox: cannot start copilot confined: %w", err)
+	}
+
 	// Create or append to log file
 	logFile, err := openOrCreateLogFile(s.logDir, task)
 	if err != nil {
@@ -330,14 +338,14 @@ func (s *CopilotSpawner) Cancel(taskID string) error {
 
 	// Send SIGTERM first
 	if proc.cmd.Process != nil {
-		proc.cmd.Process.Signal(syscall.SIGTERM)
+		signalProcessTree(proc.cmd, syscall.SIGTERM)
 
 		// Wait briefly, then force kill
 		select {
 		case <-proc.done:
 			// Process exited gracefully
 		case <-time.After(5 * time.Second):
-			proc.cmd.Process.Kill()
+			killProcessTree(proc.cmd)
 		}
 	}
 
@@ -360,14 +368,14 @@ func (s *CopilotSpawner) Pause(taskID string) error {
 
 	// Send SIGTERM first
 	if proc.cmd.Process != nil {
-		proc.cmd.Process.Signal(syscall.SIGTERM)
+		signalProcessTree(proc.cmd, syscall.SIGTERM)
 
 		// Wait briefly, then force kill
 		select {
 		case <-proc.done:
 			// Process exited gracefully
 		case <-time.After(5 * time.Second):
-			proc.cmd.Process.Kill()
+			killProcessTree(proc.cmd)
 		}
 	}
 
@@ -429,7 +437,7 @@ func (s *CopilotSpawner) Shutdown() {
 	for _, proc := range procs {
 		proc.cancel()
 		if proc.cmd.Process != nil {
-			proc.cmd.Process.Signal(syscall.SIGTERM)
+			signalProcessTree(proc.cmd, syscall.SIGTERM)
 		}
 	}
 
@@ -439,7 +447,7 @@ func (s *CopilotSpawner) Shutdown() {
 		case <-proc.done:
 		case <-time.After(10 * time.Second):
 			if proc.cmd.Process != nil {
-				proc.cmd.Process.Kill()
+				killProcessTree(proc.cmd)
 			}
 		}
 	}

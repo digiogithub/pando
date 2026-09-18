@@ -17,6 +17,10 @@ import (
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
 
+// actionExecuteUnsandboxed mirrors permission.ActionExecuteUnsandboxed (this
+// package does not import permission).
+const actionExecuteUnsandboxed = "execute_unsandboxed"
+
 // ACPPermissionBridge translates Pando tool permission requests into ACP
 // requestPermission calls to the connected editor. It is installed as a session
 // handler when the session mode is "ask".
@@ -88,6 +92,46 @@ func (b *ACPPermissionBridge) Handle(req PermissionRequestData) bool {
 		locations = []acpsdk.ToolCallLocation{{Path: req.Path}}
 	}
 
+	options := []acpsdk.PermissionOption{
+		{
+			OptionId: acpsdk.PermissionOptionId("once"),
+			Kind:     acpsdk.PermissionOptionKindAllowOnce,
+			Name:     "Allow once",
+		},
+		{
+			OptionId: acpsdk.PermissionOptionId("always"),
+			Kind:     acpsdk.PermissionOptionKindAllowAlways,
+			Name:     "Always allow",
+		},
+		{
+			OptionId: acpsdk.PermissionOptionId("reject"),
+			Kind:     acpsdk.PermissionOptionKindRejectOnce,
+			Name:     "Reject",
+		},
+	}
+	if req.Action == actionExecuteUnsandboxed {
+		// A sandbox escalation: say so in the options and offer no "always"
+		// (it would not be remembered here, and every escalation must be
+		// approved on its own). The action and the justification travel in
+		// rawInput for clients that render them.
+		options = []acpsdk.PermissionOption{
+			{
+				OptionId: acpsdk.PermissionOptionId("once"),
+				Kind:     acpsdk.PermissionOptionKindAllowOnce,
+				Name:     "Run outside sandbox once",
+			},
+			{
+				OptionId: acpsdk.PermissionOptionId("reject"),
+				Kind:     acpsdk.PermissionOptionKindRejectOnce,
+				Name:     "Reject",
+			},
+		}
+		if m, ok := rawInput.(map[string]any); ok {
+			m["action"] = req.Action
+			m["sandbox_escalation"] = true
+		}
+	}
+
 	permReq := acpsdk.RequestPermissionRequest{
 		SessionId: b.sessionID,
 		ToolCall: acpsdk.ToolCallUpdate{
@@ -98,23 +142,7 @@ func (b *ACPPermissionBridge) Handle(req PermissionRequestData) bool {
 			RawInput:   rawInput,
 			Locations:  locations,
 		},
-		Options: []acpsdk.PermissionOption{
-			{
-				OptionId: acpsdk.PermissionOptionId("once"),
-				Kind:     acpsdk.PermissionOptionKindAllowOnce,
-				Name:     "Allow once",
-			},
-			{
-				OptionId: acpsdk.PermissionOptionId("always"),
-				Kind:     acpsdk.PermissionOptionKindAllowAlways,
-				Name:     "Always allow",
-			},
-			{
-				OptionId: acpsdk.PermissionOptionId("reject"),
-				Kind:     acpsdk.PermissionOptionKindRejectOnce,
-				Name:     "Reject",
-			},
-		},
+		Options: options,
 	}
 
 	requestedAt := time.Now()

@@ -145,6 +145,15 @@ func (s *OllamaOpenCodeSpawner) Spawn(ctx context.Context, task *models.Task) er
 
 	cmd.Env = env
 
+	// Opt-in only (Sandbox.ExtendTo must include "subagents"): this spawner
+	// points OpenCode's XDG_CONFIG_HOME at configHome (under s.logDir)
+	// instead of the CLI's usual ~/.config/opencode, so that is the root it
+	// actually needs writable here.
+	if _, _, err := wrapSubagentCmd(cmd, "opencode", task.WorkDir, subagentSandboxOpts{ExtraRoots: []string{s.logDir}}); err != nil {
+		cancel()
+		return fmt.Errorf("sandbox: cannot start opencode (ollama) confined: %w", err)
+	}
+
 	// Create or append to log file
 	logFile, err := openOrCreateLogFile(s.logDir, task)
 	if err != nil {
@@ -343,7 +352,7 @@ func (s *OllamaOpenCodeSpawner) Cancel(taskID string) error {
 	proc.cancel()
 
 	if proc.cmd.Process != nil {
-		if err := proc.cmd.Process.Kill(); err != nil {
+		if err := killProcessTree(proc.cmd); err != nil {
 			return fmt.Errorf("kill process: %w", err)
 		}
 	}

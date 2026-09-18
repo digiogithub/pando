@@ -11,6 +11,10 @@ import (
 // hostRuntime implements ExecutionRuntime by delegating to the persistent host shell.
 // It preserves existing behaviour 100% — no behavioural changes from the current
 // shell.GetPersistentShell path.
+//
+// Sandboxing is inherited from that shell: it is spawned through the host
+// sandbox (env scrubbing and confinement when the policy covers bash) and is
+// re-spawned when the policy changes. Docker and Podman runtimes never use it.
 type hostRuntime struct {
 	mu       sync.Mutex
 	sessions map[string]string // sessionID → workDir

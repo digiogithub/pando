@@ -15,6 +15,12 @@ import (
 
 var ErrorPermissionDenied = errors.New("permission denied")
 
+// ActionExecuteUnsandboxed is the bash tool's escalation: running one command
+// outside the host sandbox. Requests with this action are raised with
+// NeverAutoApprove unless the sandbox policy allows auto-escalation, and UIs
+// render them as a warning ("Run outside sandbox").
+const ActionExecuteUnsandboxed = "execute_unsandboxed"
+
 type CreatePermissionRequest struct {
 	SessionID               string `json:"session_id"`
 	ToolName                string `json:"tool_name"`
@@ -23,6 +29,19 @@ type CreatePermissionRequest struct {
 	Params                  any    `json:"params"`
 	Path                    string `json:"path"`
 	RequireExplicitApproval bool   `json:"require_explicit_approval,omitempty"`
+	// NeverAutoApprove makes the request immune to every automatic grant:
+	// per-session auto-approve, global auto-approve (yolo, headless modes) and
+	// "allow for session" grants that do not carry the same non-empty
+	// GrantKey. Only an explicit answer approves it, and when nobody is
+	// subscribed to answer, it is denied at once. Session handlers (ACP, AG-UI)
+	// receive the flag and must honour it.
+	NeverAutoApprove bool `json:"never_auto_approve,omitempty"`
+	// Justification is the agent's reason for the request (shown by UIs).
+	Justification string `json:"justification,omitempty"`
+	// GrantKey narrows an "allow for session" grant of this request: a stored
+	// grant only matches later requests with the same tool, action, path and
+	// GrantKey. Empty keeps the historical tool/action/path scope.
+	GrantKey string `json:"grant_key,omitempty"`
 }
 
 type PermissionRequest struct {
@@ -33,6 +52,12 @@ type PermissionRequest struct {
 	Action      string `json:"action"`
 	Params      any    `json:"params"`
 	Path        string `json:"path"`
+	// The fields below mirror CreatePermissionRequest so UIs can render the
+	// request (warning style, justification, what a session grant covers).
+	RequireExplicitApproval bool   `json:"require_explicit_approval,omitempty"`
+	NeverAutoApprove        bool   `json:"never_auto_approve,omitempty"`
+	Justification           string `json:"justification,omitempty"`
+	GrantKey                string `json:"grant_key,omitempty"`
 }
 
 type Service interface {
@@ -82,14 +107,16 @@ type permissionService struct {
 }
 
 func (s *permissionService) GrantPersistant(permission PermissionRequest) {
+	// Store the grant before answering, so a request the tool raises right
+	// after this one already sees it.
+	s.mu.Lock()
+	s.sessionPermissions = append(s.sessionPermissions, permission)
+	s.mu.Unlock()
 	respCh, ok := s.pendingRequests.Load(permission.ID)
 	if ok {
 		respCh.(chan bool) <- true
 	}
 	s.removePending(permission.SessionID, permission.ID)
-	s.mu.Lock()
-	s.sessionPermissions = append(s.sessionPermissions, permission)
-	s.mu.Unlock()
 }
 
 func (s *permissionService) Grant(permission PermissionRequest) {
@@ -172,9 +199,9 @@ func (s *permissionService) RequestWithContext(ctx context.Context, opts CreateP
 	}
 
 	s.mu.RLock()
-	bypassSessionAutoApprove := opts.RequireExplicitApproval && slices.Contains(s.explicitApproval, opts.SessionID)
+	bypassSessionAutoApprove := opts.NeverAutoApprove || opts.RequireExplicitApproval && slices.Contains(s.explicitApproval, opts.SessionID)
 	autoApprove := !bypassSessionAutoApprove && slices.Contains(s.autoApproveSessions, opts.SessionID)
-	globalAutoApprove := s.globalAutoApprove
+	globalAutoApprove := s.globalAutoApprove && !opts.NeverAutoApprove
 	s.mu.RUnlock()
 	if autoApprove {
 		logging.Debug("Permission result via auto-approve session", "sessionID", opts.SessionID, "toolName", opts.ToolName, "approved", true)
@@ -197,16 +224,34 @@ func (s *permissionService) RequestWithContext(ctx context.Context, opts CreateP
 		Description: opts.Description,
 		Action:      opts.Action,
 		Params:      opts.Params,
+
+		RequireExplicitApproval: opts.RequireExplicitApproval,
+		NeverAutoApprove:        opts.NeverAutoApprove,
+		Justification:           opts.Justification,
+		GrantKey:                opts.GrantKey,
 	}
 
 	s.mu.RLock()
 	for _, p := range s.sessionPermissions {
-		if p.ToolName == permission.ToolName && p.Action == permission.Action && p.SessionID == permission.SessionID && p.Path == permission.Path {
+		if p.ToolName == permission.ToolName && p.Action == permission.Action && p.SessionID == permission.SessionID && p.Path == permission.Path && p.GrantKey == permission.GrantKey {
+			// A NeverAutoApprove request only reuses a grant scoped by a key.
+			if opts.NeverAutoApprove && permission.GrantKey == "" {
+				continue
+			}
 			s.mu.RUnlock()
+			logging.Debug("Permission result via session grant", "sessionID", opts.SessionID, "toolName", opts.ToolName, "action", opts.Action)
 			return true
 		}
 	}
 	s.mu.RUnlock()
+
+	if opts.NeverAutoApprove && s.GetSubscriberCount() == 0 {
+		// Nobody can answer (headless or MCP-server mode): waiting would only
+		// stall the tool until its context ends.
+		logging.Warn("Permission denied: explicit approval required but no UI is listening",
+			"sessionID", opts.SessionID, "toolName", opts.ToolName, "action", opts.Action)
+		return false
+	}
 
 	respCh := make(chan bool, 1)
 

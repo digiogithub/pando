@@ -1146,6 +1146,11 @@ func dangerousGoalPatterns() []string {
 }
 
 func isDangerousPermissionRequest(req PermissionRequestData) bool {
+	// Running a command outside the host sandbox always needs the user, even
+	// in goal mode (see bash's sandbox_permissions escalation).
+	if req.Action == actionExecuteUnsandboxed {
+		return true
+	}
 	if !strings.EqualFold(strings.TrimSpace(req.ToolName), "bash") || req.Params == nil {
 		return false
 	}

@@ -2,13 +2,15 @@
 id: PANDO-US-0040
 type: story
 title: Sandbox core package, policy model and config
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0009
 labels: [security, sandbox]
 estimate: 5
 created: 2026-09-18T08:36:24Z
-updated: 2026-09-18T08:36:24Z
+updated: 2026-09-18T11:01:10Z
+started: 2026-09-18T09:08:28Z
+closed: 2026-09-18T11:01:10Z
 ---
 
 ## Description

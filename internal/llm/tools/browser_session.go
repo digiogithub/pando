@@ -16,6 +16,7 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/sandbox/portguard"
 	uiautobrowser "github.com/digiogithub/pando/internal/uiauto/platform/browser"
 )
 
@@ -29,6 +30,9 @@ type browserSession struct {
 	tempDir     string
 	// For remote browsers (e.g. Lightpanda, Obscura), the managed server process.
 	serverProcess *exec.Cmd
+	// unguard releases the DevTools port from the sandbox's guarded-port
+	// registry (a sandboxed command reaching CDP could drive the browser).
+	unguard func()
 	// jsDriven is true when the browser engine behind this session does not
 	// support chromedp's high-level query actions (WaitVisible, Click,
 	// SendKeys, OuterHTML, Text, selector Screenshot) and must be driven via
@@ -121,12 +125,27 @@ func GetOrCreateBrowserSession(sessionID string) (*browserSession, error) {
 		serverProcess *exec.Cmd
 	)
 
+	// The DevTools port is chosen here, not by the browser, so it can be
+	// guarded: a sandboxed command connecting to CDP could drive the
+	// browser (downloads, file:// reads) outside the sandbox.
+	debugPort, err := findFreePort()
+	if err != nil {
+		return nil, fmt.Errorf("find free port: %w", err)
+	}
+	unguard := portguard.Register(debugPort, "browser-cdp")
+	started := false
+	defer func() {
+		if !started {
+			unguard()
+		}
+	}()
+
 	if IsRemoteBrowserType(resolvedInstall.Type) {
 		// Lightpanda, Obscura, and other CDP-server browsers: launch the server
 		// process and connect via remote allocator — no profile or headless
 		// flags apply.
 		var err error
-		ctx, ctxCancel, allocCtx, allocCancel, serverProcess, err = startRemoteBrowserProcess(resolvedInstall)
+		ctx, ctxCancel, allocCtx, allocCancel, serverProcess, err = startRemoteBrowserProcess(resolvedInstall, debugPort)
 		if err != nil {
 			return nil, fmt.Errorf("%s startup failed: %w", resolvedInstall.Label, err)
 		}
@@ -137,10 +156,10 @@ func GetOrCreateBrowserSession(sessionID string) (*browserSession, error) {
 		}
 		profileDir := strings.TrimSpace(resolvedInstall.ProfileDir)
 		var err error
-		ctx, ctxCancel, allocCtx, allocCancel, tempDir, err = startBrowserProcess(resolvedInstall.Executable, cfg.BrowserHeadless, userDataDir, profileDir)
+		ctx, ctxCancel, allocCtx, allocCancel, tempDir, err = startBrowserProcess(resolvedInstall.Executable, cfg.BrowserHeadless, userDataDir, profileDir, debugPort)
 		if err != nil {
 			if userDataDir != "" && isBrowserProfileLockError(err) {
-				fallbackCtx, fallbackCancel, fallbackAllocCtx, fallbackAllocCancel, fallbackTempDir, fallbackErr := startBrowserWithTempProfile(resolvedInstall.Executable, cfg.BrowserHeadless)
+				fallbackCtx, fallbackCancel, fallbackAllocCtx, fallbackAllocCancel, fallbackTempDir, fallbackErr := startBrowserWithTempProfile(resolvedInstall.Executable, cfg.BrowserHeadless, debugPort)
 				if fallbackErr == nil {
 					ctx = fallbackCtx
 					ctxCancel = fallbackCancel
@@ -164,9 +183,11 @@ func GetOrCreateBrowserSession(sessionID string) (*browserSession, error) {
 		lastUsed:      time.Now(),
 		tempDir:       tempDir,
 		serverProcess: serverProcess,
+		unguard:       unguard,
 		jsDriven:      browserNeedsJSDriver(resolvedInstall.Type),
 	}
 	globalBrowserRegistry.sessions[sessionID] = sess
+	started = true
 
 	// Set up event capture (console + network) for the new session.
 	sess.setupConsoleCapture()
@@ -195,7 +216,7 @@ func isBrowserProfileLockError(err error) bool {
 	return strings.Contains(msg, "process_singleton") || strings.Contains(msg, "singletonlock") || strings.Contains(msg, "singletonsocket") || strings.Contains(msg, "profile appears to be in use") || strings.Contains(msg, "user data directory is already in use")
 }
 
-func startBrowserProcess(executable string, headless bool, userDataDir, profileDir string) (context.Context, context.CancelFunc, context.Context, context.CancelFunc, string, error) {
+func startBrowserProcess(executable string, headless bool, userDataDir, profileDir string, debugPort int) (context.Context, context.CancelFunc, context.Context, context.CancelFunc, string, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(executable),
 		chromedp.Flag("headless", headless),
@@ -203,6 +224,11 @@ func startBrowserProcess(executable string, headless bool, userDataDir, profileD
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
 	)
+	if debugPort > 0 {
+		// Overrides the default remote-debugging-port=0; chromedp still reads
+		// the websocket URL from the browser's output.
+		opts = append(opts, chromedp.Flag("remote-debugging-port", strconv.Itoa(debugPort)))
+	}
 	if userDataDir != "" {
 		opts = append(opts, chromedp.UserDataDir(userDataDir))
 	}
@@ -220,12 +246,12 @@ func startBrowserProcess(executable string, headless bool, userDataDir, profileD
 	return ctx, ctxCancel, allocCtx, allocCancel, userDataDir, nil
 }
 
-func startBrowserWithTempProfile(executable string, headless bool) (context.Context, context.CancelFunc, context.Context, context.CancelFunc, string, error) {
+func startBrowserWithTempProfile(executable string, headless bool, debugPort int) (context.Context, context.CancelFunc, context.Context, context.CancelFunc, string, error) {
 	tempDir, err := os.MkdirTemp("", "pando-browser-profile-*")
 	if err != nil {
 		return nil, nil, nil, nil, "", err
 	}
-	ctx, ctxCancel, allocCtx, allocCancel, _, err := startBrowserProcess(executable, headless, tempDir, "")
+	ctx, ctxCancel, allocCtx, allocCancel, _, err := startBrowserProcess(executable, headless, tempDir, "", debugPort)
 	if err != nil {
 		_ = os.RemoveAll(tempDir)
 		return nil, nil, nil, nil, "", err
@@ -248,6 +274,9 @@ func CloseBrowserSession(sessionID string) {
 	if sess.serverProcess != nil && sess.serverProcess.Process != nil {
 		_ = sess.serverProcess.Process.Kill()
 	}
+	if sess.unguard != nil {
+		sess.unguard()
+	}
 	if sess.tempDir != "" {
 		_ = os.RemoveAll(sess.tempDir)
 	}
@@ -265,6 +294,9 @@ func CloseAllBrowserSessions() {
 		sess.allocCancel()
 		if sess.serverProcess != nil && sess.serverProcess.Process != nil {
 			_ = sess.serverProcess.Process.Kill()
+		}
+		if sess.unguard != nil {
+			sess.unguard()
 		}
 		if sess.tempDir != "" {
 			_ = os.RemoveAll(sess.tempDir)
@@ -385,10 +417,12 @@ func remoteBrowserServeArgs(browserType, host string, port int) []string {
 // Obscura, ...) on a free local port, waits for it to accept connections, and
 // returns chromedp contexts connected via remote allocator. The returned
 // *exec.Cmd must be killed when the session closes.
-func startRemoteBrowserProcess(install BrowserInstall) (context.Context, context.CancelFunc, context.Context, context.CancelFunc, *exec.Cmd, error) {
-	port, err := findFreePort()
-	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("find free port: %w", err)
+func startRemoteBrowserProcess(install BrowserInstall, port int) (context.Context, context.CancelFunc, context.Context, context.CancelFunc, *exec.Cmd, error) {
+	if port <= 0 {
+		var err error
+		if port, err = findFreePort(); err != nil {
+			return nil, nil, nil, nil, nil, fmt.Errorf("find free port: %w", err)
+		}
 	}
 
 	host := "127.0.0.1"

@@ -119,6 +119,14 @@ func (s *MistralSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	}
 	cmd.Env = env
 
+	// Opt-in only (Sandbox.ExtendTo must include "subagents"): Vibe's own
+	// config/auth normally lives in ~/.vibe; this task instead points it at
+	// vibeHome (under s.logDir) via VIBE_HOME.
+	if _, _, err := wrapSubagentCmd(cmd, "vibe", task.WorkDir, subagentSandboxOpts{ExtraRoots: []string{s.logDir, vibeHome}}); err != nil {
+		cancel()
+		return fmt.Errorf("sandbox: cannot start vibe confined: %w", err)
+	}
+
 	logFile, err := openOrCreateLogFile(s.logDir, task)
 	if err != nil {
 		cancel()
@@ -314,11 +322,11 @@ func (s *MistralSpawner) Cancel(taskID string) error {
 	proc.cancel()
 
 	if proc.cmd.Process != nil {
-		proc.cmd.Process.Signal(syscall.SIGTERM)
+		signalProcessTree(proc.cmd, syscall.SIGTERM)
 		select {
 		case <-proc.done:
 		case <-time.After(5 * time.Second):
-			proc.cmd.Process.Kill()
+			killProcessTree(proc.cmd)
 		}
 	}
 
@@ -339,11 +347,11 @@ func (s *MistralSpawner) Pause(taskID string) error {
 	proc.cancel()
 
 	if proc.cmd.Process != nil {
-		proc.cmd.Process.Signal(syscall.SIGTERM)
+		signalProcessTree(proc.cmd, syscall.SIGTERM)
 		select {
 		case <-proc.done:
 		case <-time.After(5 * time.Second):
-			proc.cmd.Process.Kill()
+			killProcessTree(proc.cmd)
 		}
 	}
 
@@ -396,7 +404,7 @@ func (s *MistralSpawner) Shutdown() {
 	for _, proc := range procs {
 		proc.cancel()
 		if proc.cmd.Process != nil {
-			proc.cmd.Process.Signal(syscall.SIGTERM)
+			signalProcessTree(proc.cmd, syscall.SIGTERM)
 		}
 	}
 
@@ -405,7 +413,7 @@ func (s *MistralSpawner) Shutdown() {
 		case <-proc.done:
 		case <-time.After(10 * time.Second):
 			if proc.cmd.Process != nil {
-				proc.cmd.Process.Kill()
+				killProcessTree(proc.cmd)
 			}
 		}
 	}

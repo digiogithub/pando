@@ -283,6 +283,10 @@
       "additionalProperties": {
         "description": "MCP server configuration",
         "properties": {
+          "sandbox": {
+            "description": "Run this stdio MCP server inside the host command sandbox even when sandbox.extendTo does not include \"mcp\". Ignored by sse and streamable-http servers.",
+            "type": "boolean"
+          },
           "args": {
             "description": "Command arguments for the MCP server",
             "items": {
@@ -578,6 +582,135 @@
         "type": "object"
       },
       "description": "LLM provider configurations",
+      "type": "object"
+    },
+    "sandbox": {
+      "description": "Host command sandbox for agent-spawned processes (bash tool, ACP terminals, skills...). On by default; a project-local config may only tighten it. PANDO_SANDBOX (off|workspace-write|read-only|strict) overrides the mode unless locked by policy.",
+      "properties": {
+        "allowAutoEscalation": {
+          "default": false,
+          "description": "Allow re-running a sandbox-denied command unsandboxed without explicit approval",
+          "type": "boolean"
+        },
+        "autoAllowBashDisabled": {
+          "default": false,
+          "description": "Keep the bash permission prompt even while the sandbox is enforced",
+          "type": "boolean"
+        },
+        "cacheDirsDisabled": {
+          "default": false,
+          "description": "Do not keep dependency caches (Go, npm, pnpm, yarn, pip, cargo, bun, ~/.cache) writable",
+          "type": "boolean"
+        },
+        "denyPaths": {
+          "description": "Paths denied for both read and write (globs allowed)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "disabled": {
+          "default": false,
+          "description": "Turn the sandbox off entirely",
+          "type": "boolean"
+        },
+        "env": {
+          "description": "Environment scrubbing for sandboxed children",
+          "properties": {
+            "exclude": {
+              "description": "Extra variable name globs to drop",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "inherit": {
+              "default": "all",
+              "description": "Base variable set (empty = all)",
+              "enum": [
+                "",
+                "all",
+                "core",
+                "none"
+              ],
+              "type": "string"
+            },
+            "keep": {
+              "description": "Variable name globs always passed through (exclude still wins)",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "keepSecrets": {
+              "default": false,
+              "description": "Do not drop credential-looking variables (*_API_KEY, *TOKEN*, *SECRET*, *PASSWORD*...)",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "extendTo": {
+          "description": "Extra spawn sites to sandbox besides bash (acp-terminals and skills are always included)",
+          "items": {
+            "enum": [
+              "acp-terminals",
+              "skills",
+              "mcp",
+              "subagents"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "default": "workspace-write",
+          "description": "Sandbox profile (empty = workspace-write)",
+          "enum": [
+            "",
+            "workspace-write",
+            "read-only",
+            "strict",
+            "off"
+          ],
+          "type": "string"
+        },
+        "network": {
+          "default": "allowed",
+          "description": "Child network policy (empty = allowed). read-only and strict always restrict",
+          "enum": [
+            "",
+            "allowed",
+            "restricted"
+          ],
+          "type": "string"
+        },
+        "readOnlyRoots": {
+          "description": "Extra readable directories for the strict mode",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "useBwrap": {
+          "default": "auto",
+          "description": "Linux: use bubblewrap to enforce protected paths (empty = auto)",
+          "enum": [
+            "",
+            "auto",
+            "always",
+            "never"
+          ],
+          "type": "string"
+        },
+        "writableRoots": {
+          "description": "Extra writable directories (absolute, ~ or relative to the workspace)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
       "type": "object"
     },
     "skills": {

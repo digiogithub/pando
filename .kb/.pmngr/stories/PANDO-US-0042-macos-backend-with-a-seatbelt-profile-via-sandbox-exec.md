@@ -2,13 +2,15 @@
 id: PANDO-US-0042
 type: story
 title: macOS backend with a Seatbelt profile via sandbox-exec
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0009
 labels: [security, sandbox]
 estimate: 5
 created: 2026-09-18T08:36:25Z
-updated: 2026-09-18T08:36:25Z
+updated: 2026-09-18T11:01:11Z
+started: 2026-09-18T09:23:51Z
+closed: 2026-09-18T11:01:11Z
 ---
 
 ## Description

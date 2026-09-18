@@ -14,6 +14,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	oauthantigravity "github.com/digiogithub/pando/internal/oauth/antigravity"
+	"github.com/digiogithub/pando/internal/sandbox/portguard"
 )
 
 // antigravityLoginCommand starts the Antigravity Google OAuth login flow.
@@ -105,6 +106,8 @@ func antigravityLoginCommand(accountID string) tea.Cmd {
 				Handler: mux,
 			}
 
+			// A sandboxed command must not be able to feed the OAuth callback.
+			defer portguard.Register(port, "antigravity-oauth-callback")()
 			go func() { _ = srv.ListenAndServe() }()
 			defer func() {
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

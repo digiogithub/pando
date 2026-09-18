@@ -13,6 +13,7 @@ import {
   faGaugeHigh,
   faListCheck,
   faRobot,
+  faShieldHalved,
   faSpinner,
 } from '@fortawesome/free-solid-svg-icons'
 import type { PlanEntry } from '@pando/client/hooks/useChat'
@@ -22,6 +23,7 @@ import { useLSPStore } from '@pando/client/stores/lspStore'
 import { useOrchestratorStore } from '@pando/client/stores/orchestratorStore'
 import { useProjectStore } from '@pando/client/stores/projectStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
+import { useSandboxStore } from '@pando/client/stores/settingsStore'
 import ExtensionSlot from '@/components/extensions/ExtensionSlot'
 
 /** Width of the expanded panel, and of the floating tab left behind when collapsed. */
@@ -61,6 +63,14 @@ export default function ChatInfoSidebar({ plan = [] }: ChatInfoSidebarProps) {
   const fetchTasks = useOrchestratorStore((s) => s.fetchTasks)
   const workspace = useProjectStore((s) => s.workspace)
   const fetchWorkspace = useProjectStore((s) => s.fetchWorkspace)
+  const sandboxStatus = useSandboxStore((s) => s.info?.status)
+  const refreshSandboxStatus = useSandboxStore((s) => s.refreshSandboxStatus)
+
+  // Sandbox badge: refreshed on every open, so a settings change shows up.
+  useEffect(() => {
+    if (!infoSidebarOpen) return
+    void refreshSandboxStatus()
+  }, [infoSidebarOpen, refreshSandboxStatus])
 
   useEffect(() => {
     if (!infoSidebarOpen) return
@@ -152,6 +162,30 @@ export default function ChatInfoSidebar({ plan = [] }: ChatInfoSidebarProps) {
             <div style={workingDirStyle} title={workspace.cwd}>
               {workspace.cwd}
             </div>
+          </Section>
+        )}
+
+        {/* Sandbox — host command sandbox status, mirroring the TUI "Sandbox:" line */}
+        {sandboxStatus && (
+          <Section icon={faShieldHalved} title={t('chat.info.sandbox')}>
+            <div
+              style={{
+                ...workingDirStyle,
+                color: sandboxStatus.active
+                  ? 'var(--success)'
+                  : sandboxStatus.enabled
+                    ? 'var(--warning)'
+                    : 'var(--error)',
+              }}
+              title={sandboxStatus.label}
+            >
+              {sandboxStatus.label}
+            </div>
+            {sandboxStatus.enabled && !sandboxStatus.active && (
+              <div style={{ fontSize: 11, color: 'var(--fg-dim)', marginTop: '0.25rem' }}>
+                {t('chat.info.sandboxNotEnforced')}
+              </div>
+            )}
           </Section>
         )}
 

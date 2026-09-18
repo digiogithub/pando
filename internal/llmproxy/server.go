@@ -3,8 +3,11 @@ package llmproxy
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
+
+	"github.com/digiogithub/pando/internal/sandbox/portguard"
 )
 
 // LLMProxyServer is an OpenAI-compatible HTTP proxy server.
@@ -40,7 +43,17 @@ func NewServer(cfg ProxyConfig) *LLMProxyServer {
 
 // Start begins listening and serving HTTP requests.
 func (s *LLMProxyServer) Start() error {
-	return s.httpServer.ListenAndServe()
+	addr := s.httpServer.Addr
+	if addr == "" {
+		addr = ":http"
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	// Sandboxed commands must not reach the proxy (it spends the user's
+	// provider credentials).
+	return s.httpServer.Serve(portguard.Guard(ln, "llm-proxy"))
 }
 
 // Shutdown gracefully shuts down the server without interrupting active connections.

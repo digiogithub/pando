@@ -350,6 +350,13 @@ func writePermissionRequest(w http.ResponseWriter, flusher http.Flusher, p permi
 		"action":      p.Action,
 		"path":        p.Path,
 		"params":      p.Params,
+		// Additive: a sandbox escalation (action execute_unsandboxed) is
+		// rendered as a warning with the agent's justification and the scope
+		// an "allow for session" answer would cover.
+		"justification":             p.Justification,
+		"grant_key":                 p.GrantKey,
+		"require_explicit_approval": p.RequireExplicitApproval,
+		"never_auto_approve":        p.NeverAutoApprove,
 	})
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/safety"
+	"github.com/digiogithub/pando/internal/sandbox"
 	"github.com/digiogithub/pando/internal/savings"
 )
 
@@ -32,11 +33,29 @@ type BashParams struct {
 	Timeout   int    `json:"timeout"`
 	HeadLimit int    `json:"head_limit"` // Max output lines to return (0 = no limit)
 	TailLines int    `json:"tail_lines"` // Only return last N lines (0 = no limit)
+	// SandboxPermissions is SandboxPermissionsDefault (or empty) or
+	// SandboxPermissionsEscalated to ask the user to run this one command
+	// outside the host sandbox. A no-op when the sandbox is not active.
+	SandboxPermissions string `json:"sandbox_permissions,omitempty"`
+	// Justification explains an escalation; required with
+	// SandboxPermissionsEscalated while the sandbox is active.
+	Justification string `json:"justification,omitempty"`
 }
+
+// Values of BashParams.SandboxPermissions.
+const (
+	SandboxPermissionsDefault   = "use_default"
+	SandboxPermissionsEscalated = "require_escalated"
+)
 
 type BashPermissionsParams struct {
 	Command string `json:"command"`
 	Timeout int    `json:"timeout"`
+	// Justification is the agent's reason for an escalation request.
+	Justification string `json:"justification,omitempty"`
+	// Unsandboxed is true for an escalation request: the command would run
+	// outside the host sandbox.
+	Unsandboxed bool `json:"unsandboxed,omitempty"`
 }
 
 type BashResponseMetadata struct {
@@ -51,6 +70,27 @@ type BashResponseMetadata struct {
 	// before and after compression so the UI can show the token/char savings.
 	OutputFilterCharsBefore int `json:"output_filter_chars_before,omitempty"`
 	OutputFilterCharsAfter  int `json:"output_filter_chars_after,omitempty"`
+	// SandboxBackend is the host sandbox backend that confined the shell
+	// (e.g. "landlock+seccomp", "seatbelt"); empty when the command did not
+	// run in the host shell or the sandbox policy is off.
+	SandboxBackend string `json:"sandbox_backend,omitempty"`
+	// SandboxMode is the sandbox mode of the shell's policy
+	// (workspace-write, read-only, strict); empty when off or not applicable.
+	SandboxMode string `json:"sandbox_mode,omitempty"`
+	// ApprovedBySandbox is true when the permission prompt was skipped
+	// because the command ran confined by an enforced sandbox.
+	ApprovedBySandbox bool `json:"approved_by_sandbox,omitempty"`
+	// SandboxDenied is true when the command failed and its output looks like
+	// the sandbox blocked it (see sandbox.Classify); the tool output then
+	// carries a "[sandbox]" hint for the model.
+	SandboxDenied bool `json:"sandbox_denied,omitempty"`
+	// SandboxDenialKind is "fs" or "net" when SandboxDenied.
+	SandboxDenialKind string `json:"sandbox_denial_kind,omitempty"`
+	// SandboxDenialPath is the blocked path, when one was identified.
+	SandboxDenialPath string `json:"sandbox_denial_path,omitempty"`
+	// Unsandboxed is true when the user approved an escalation and the
+	// command ran once outside the sandbox.
+	Unsandboxed bool `json:"unsandboxed,omitempty"`
 }
 type bashTool struct {
 	permissions permission.Service
@@ -129,7 +169,7 @@ Before executing the command, please follow these steps:
 2. Security Check:
  - For security and to limit the threat of a prompt injection attack, some commands are limited or banned. If you use a disallowed command, you will receive an error message explaining the restriction. Explain the error to the User.
  - Verify that the command is not one of the banned commands: %s.
-
+%s
 3. Command Execution:
  - After ensuring proper quoting, execute the command.
  - Capture the output of the command.
@@ -269,7 +309,45 @@ EOF
 
 Important:
 - Return an empty response - the user will see the gh output directly
-- Never update git config`, bannedCommandsStr, MaxOutputLength)
+- Never update git config`, bannedCommandsStr, bashSandboxDescription(), MaxOutputLength)
+}
+
+// usesHostShell reports whether bash commands run in the persistent host
+// shell, the only execution path the host sandbox confines. Docker and Podman
+// isolate commands themselves, and "auto"/"embedded" may resolve to them, so
+// they are not considered sandboxed here (the embedded runtime wraps its own
+// commands through sandbox.WrapCmd, but without the auto-approval shortcut).
+func usesHostShell(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	rt := strings.TrimSpace(strings.ToLower(cfg.Container.Runtime))
+	return rt == "" || rt == string(runtime.RuntimeHost)
+}
+
+// bashSandboxDescription is the Security Check bullet describing the host
+// sandbox; empty unless commands really run confined (host shell and an
+// enforced backend). In ACP mode commands run in the client's terminal and
+// the client's own rules apply.
+func bashSandboxDescription() string {
+	if !usesHostShell(config.Get()) || !sandbox.Active() {
+		return ""
+	}
+	p := sandbox.Current()
+	var limits string
+	switch p.Mode {
+	case sandbox.ModeReadOnly:
+		limits = "writes are limited to temp dirs"
+	case sandbox.ModeStrict:
+		limits = "writes are limited to the workspace and temp dirs, and reads to the workspace and system/toolchain dirs"
+	default:
+		limits = "writes are limited to the workspace, temp dirs and package caches"
+	}
+	desc := fmt.Sprintf(" - Commands run inside Pando's sandbox (mode %s): %s; Pando's config/data and git hooks/config stay read-only; credential environment variables (API keys, tokens) are removed", p.Mode, limits)
+	if p.RestrictsNetwork() {
+		desc += "; network access is blocked"
+	}
+	return desc + ". A \"Permission denied\", \"Operation not permitted\" or \"Read-only file system\" error outside those limits comes from the sandbox (the output then ends with a [sandbox] note): do not look for workarounds. Prefer a path inside the workspace or a temp dir; if access outside the sandbox is truly required, call bash again with sandbox_permissions: \"require_escalated\" and a one-line justification. The User must approve that, and the command then runs once outside the sandbox, in the current directory but without the persistent shell's state (exports, functions).\n"
 }
 
 func NewBashTool(permission permission.Service) BaseTool {
@@ -299,6 +377,15 @@ func (b *bashTool) Info() ToolInfo {
 				"type":        "integer",
 				"description": "Return only the last N lines of output (useful for log tails). Overrides head_limit.",
 			},
+			"sandbox_permissions": map[string]any{
+				"type":        "string",
+				"enum":        []string{SandboxPermissionsDefault, SandboxPermissionsEscalated},
+				"description": "Only meaningful while Pando's host sandbox is active (ignored otherwise). \"require_escalated\" asks the user to run this command once outside the sandbox; use it only after a command failed because of the sandbox and the access is truly needed. Requires justification.",
+			},
+			"justification": map[string]any{
+				"type":        "string",
+				"description": "One line explaining why the command must run outside the sandbox. Required with sandbox_permissions \"require_escalated\"; shown to the user in the approval prompt.",
+			},
 		},
 		Required: []string{"command"},
 	}
@@ -318,6 +405,15 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 
 	if params.Command == "" {
 		return NewTextErrorResponse("missing command"), nil
+	}
+
+	escalate := false
+	switch strings.TrimSpace(params.SandboxPermissions) {
+	case "", SandboxPermissionsDefault:
+	case SandboxPermissionsEscalated:
+		escalate = true
+	default:
+		return NewTextErrorResponse(fmt.Sprintf("invalid sandbox_permissions %q: use %q or %q", params.SandboxPermissions, SandboxPermissionsDefault, SandboxPermissionsEscalated)), nil
 	}
 
 	logging.Debug("bash tool called", "command", params.Command, "timeout", params.Timeout)
@@ -356,7 +452,26 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	} else {
 		isDangerous = safety.IsDangerousShellCommand(params.Command, nil)
 	}
-	if !isSafeReadOnly {
+	// The persistent host shell is resolved before the permission check so
+	// the auto-approval below is based on the confinement of the very shell
+	// that will run the command.
+	cfg := config.Get()
+	var hostShell *shell.PersistentShell
+	var sbx shell.SandboxInfo
+	if usesHostShell(cfg) {
+		hostShell = shell.GetPersistentShell(config.WorkingDirectory())
+		sbx = hostShell.Sandbox()
+	}
+	// An escalation only means something while the shell is really confined;
+	// otherwise the command takes the regular path below.
+	if escalate && sbx.Active() {
+		return b.runEscalated(ctx, sessionID, params, hostShell, sbx, isDangerous)
+	}
+	// An enforced sandbox replaces the prompt for ordinary commands; the
+	// floor stays: dangerous commands always ask (with explicit approval), and
+	// banned commands were rejected above.
+	approvedBySandbox := !isSafeReadOnly && !isDangerous && sbx.AutoAllowBash()
+	if !isSafeReadOnly && !approvedBySandbox {
 		p := b.permissions.Request(
 			permission.CreatePermissionRequest{
 				SessionID:               sessionID,
@@ -374,13 +489,46 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 			return ToolResponse{}, permission.ErrorPermissionDenied
 		}
 	}
-	logging.Debug("bash executing", "command", params.Command, "isSafeReadOnly", isSafeReadOnly)
+	logging.Debug("bash executing", "command", params.Command, "isSafeReadOnly", isSafeReadOnly, "approvedBySandbox", approvedBySandbox)
 	startTime := time.Now()
-	stdout, stderr, exitCode, interrupted, err := b.executeCommand(ctx, sessionID, params)
+	stdout, stderr, exitCode, interrupted, err := b.executeCommand(ctx, sessionID, params, hostShell)
 	if err != nil {
 		return ToolResponse{}, fmt.Errorf("error executing command: %w", err)
 	}
 
+	metadata := BashResponseMetadata{ApprovedBySandbox: approvedBySandbox}
+	if sbx.Policy.Covers(sandbox.PurposeBash) {
+		metadata.SandboxMode = string(sbx.Policy.Mode)
+		metadata.SandboxBackend = sbx.Capability.Backend
+	}
+	// Only a run that was really confined can be blamed on the sandbox.
+	var hint string
+	if hostShell != nil && sbx.Active() && exitCode != 0 && !interrupted {
+		if d, ok := sandbox.ClassifyAt(exitCode, stdout+"\n"+stderr, sbx.Policy, hostShell.Cwd()); ok {
+			metadata.SandboxDenied = true
+			metadata.SandboxDenialKind = string(d.Kind)
+			metadata.SandboxDenialPath = d.Path
+			hint = sandboxDenialHint(d, sbx)
+			sandbox.Emit(ctx, sandbox.Event{
+				Type:      sandbox.EventDenied,
+				SessionID: sessionID,
+				Backend:   sbx.Capability.Backend,
+				Mode:      string(sbx.Policy.Mode),
+				Kind:      string(d.Kind),
+				Op:        d.Op,
+				Path:      d.Path,
+				Command:   params.Command,
+			})
+		}
+	}
+	return b.buildResult(params, stdout, stderr, exitCode, interrupted, startTime, metadata, hint), nil
+}
+
+// buildResult turns a finished command into the tool response: output
+// filtering and truncation, line limits, the error/exit-code trailer and the
+// optional [sandbox] hint. metadata carries the caller's sandbox fields; the
+// timing and output fields are filled here.
+func (b *bashTool) buildResult(params BashParams, stdout, stderr string, exitCode int, interrupted bool, startTime time.Time, metadata BashResponseMetadata, hint string) ToolResponse {
 	// RTK-style output compression: map the command to a declarative filter
 	// and strip noise before truncation/caching. Fail-safe (returns raw on any
 	// issue) and never touches the exit code or stderr handling below.
@@ -434,33 +582,181 @@ func (b *bashTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	if errorMessage != "" {
 		stdout += "\n" + errorMessage
 	}
+	if hint != "" {
+		stdout += "\n\n" + hint
+	}
 
-	metadata := BashResponseMetadata{
-		StartTime:               startTime.UnixMilli(),
-		EndTime:                 time.Now().UnixMilli(),
-		TotalLines:              totalLines,
-		Truncated:               truncated,
-		OutputFilter:            filterResult.Name,
-		OutputFilterCharsBefore: filterResult.Before,
-		OutputFilterCharsAfter:  filterResult.After,
-	}
+	metadata.StartTime = startTime.UnixMilli()
+	metadata.EndTime = time.Now().UnixMilli()
+	metadata.TotalLines = totalLines
+	metadata.Truncated = truncated
+	metadata.OutputFilter = filterResult.Name
+	metadata.OutputFilterCharsBefore = filterResult.Before
+	metadata.OutputFilterCharsAfter = filterResult.After
 	if stdout == "" {
-		return WithResponseMetadata(NewTextResponse("no output"), metadata), nil
+		return WithResponseMetadata(NewTextResponse("no output"), metadata)
 	}
-	return WithResponseMetadata(NewTextResponse(stdout), metadata), nil
+	return WithResponseMetadata(NewTextResponse(stdout), metadata)
 }
 
-func (b *bashTool) executeCommand(ctx context.Context, sessionID string, params BashParams) (string, string, int, bool, error) {
+// runEscalated handles sandbox_permissions "require_escalated" while the
+// shell is confined: it asks for an execute_unsandboxed permission and, when
+// granted, runs the command once outside the sandbox in the shell's current
+// directory (not in the persistent shell, whose state is not shared).
+//
+// Unless the policy allows auto-escalation (and the command is not
+// dangerous), the request is NeverAutoApprove
+// with RequireExplicitApproval: per-session and global auto-approve (auto,
+// yolo, goal/autopilot, headless modes) never grant it, and an "allow for
+// session" answer is stored scoped to escalationGrantKey (the command prefix),
+// so it only covers later escalations of the same command prefix.
+func (b *bashTool) runEscalated(ctx context.Context, sessionID string, params BashParams, hostShell *shell.PersistentShell, sbx shell.SandboxInfo, isDangerous bool) (ToolResponse, error) {
+	justification := strings.TrimSpace(params.Justification)
+	if justification == "" {
+		return NewTextErrorResponse(`justification is required with sandbox_permissions "require_escalated": explain in one line why the command must run outside the sandbox`), nil
+	}
+	// Dangerous commands keep the floor even with auto-escalation.
+	auto := sbx.Policy.AllowAutoEscalation && !isDangerous
+	grantKey := escalationGrantKey(params.Command)
+
+	sandbox.Emit(ctx, sandbox.Event{
+		Type:        sandbox.EventEscalationRequested,
+		SessionID:   sessionID,
+		Backend:     sbx.Capability.Backend,
+		Mode:        string(sbx.Policy.Mode),
+		Command:     params.Command,
+		Reason:      justification,
+		AutoAllowed: auto,
+	})
+	granted := b.permissions.RequestWithContext(ctx, permission.CreatePermissionRequest{
+		SessionID:               sessionID,
+		Path:                    config.WorkingDirectory(),
+		ToolName:                BashToolName,
+		Action:                  permission.ActionExecuteUnsandboxed,
+		Description:             escalationDescription(params.Command, justification, grantKey),
+		RequireExplicitApproval: !auto,
+		NeverAutoApprove:        !auto,
+		Justification:           justification,
+		GrantKey:                grantKey,
+		Params: BashPermissionsParams{
+			Command:       params.Command,
+			Timeout:       params.Timeout,
+			Justification: justification,
+			Unsandboxed:   true,
+		},
+	})
+	if !granted {
+		sandbox.Emit(ctx, sandbox.Event{
+			Type:      sandbox.EventEscalationDenied,
+			SessionID: sessionID,
+			Backend:   sbx.Capability.Backend,
+			Command:   params.Command,
+		})
+		return ToolResponse{}, permission.ErrorPermissionDenied
+	}
+	sandbox.Emit(ctx, sandbox.Event{
+		Type:      sandbox.EventEscalationGranted,
+		SessionID: sessionID,
+		Backend:   sbx.Capability.Backend,
+		Command:   params.Command,
+	})
+
+	cwd := hostShell.Cwd()
+	if cwd == "" {
+		cwd = config.WorkingDirectory()
+	}
+	startTime := time.Now()
+	stdout, stderr, exitCode, interrupted, err := shell.ExecUnsandboxed(ctx, cwd, params.Command, params.Timeout)
+	if err != nil {
+		return ToolResponse{}, fmt.Errorf("error executing command: %w", err)
+	}
+	return b.buildResult(params, stdout, stderr, exitCode, interrupted, startTime, BashResponseMetadata{Unsandboxed: true}, ""), nil
+}
+
+// escalationDescription is the permission prompt text of an escalation.
+func escalationDescription(command, justification, grantKey string) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Run outside sandbox: %s\nJustification: %s\n", command, justification)
+	sb.WriteString("The command runs once without the sandbox, with full access to your files, network and environment (credentials included).")
+	if prefix, ok := strings.CutPrefix(grantKey, grantKeyPrefix); ok {
+		fmt.Fprintf(&sb, "\n\"Allow for session\" covers later escalations of commands starting with: %s", prefix)
+	} else {
+		sb.WriteString("\n\"Allow for session\" covers only this exact command.")
+	}
+	return sb.String()
+}
+
+// Grant key tags of escalationGrantKey.
+const (
+	grantKeyPrefix = "prefix:"
+	grantKeyExact  = "exact:"
+)
+
+// escalationGrantKey scopes an "allow for session" escalation grant. A simple
+// command (plain words, no shell syntax) is keyed by its first two words
+// ("npm install", "go test"), or its only word; anything with shell syntax,
+// quoting, globs, variables, redirections or a flag in the second position is
+// keyed by the exact command. A request only matches a grant with the same
+// key, so a prefix grant never covers a command with shell syntax.
+func escalationGrantKey(command string) string {
+	c := strings.TrimSpace(command)
+	if strings.ContainsAny(c, ";&|<>`$(){}[]*?!#~=\\'\"\n\r\t") {
+		return grantKeyExact + c
+	}
+	fields := strings.Fields(c)
+	if len(fields) >= 2 && strings.HasPrefix(fields[1], "-") {
+		return grantKeyExact + strings.Join(fields, " ")
+	}
+	if len(fields) > 2 {
+		fields = fields[:2]
+	}
+	return grantKeyPrefix + strings.Join(fields, " ")
+}
+
+// sandboxDenialHint is the "[sandbox]" note appended to the output of a
+// command the sandbox most likely blocked.
+func sandboxDenialHint(d sandbox.Denial, sbx shell.SandboxInfo) string {
+	var what string
+	switch {
+	case d.Kind == sandbox.DenialNet:
+		what = "network access (network: restricted)"
+	case d.Op == sandbox.OpRead && d.Path != "":
+		what = "reading " + d.Path
+	case d.Path != "":
+		what = "a write to " + d.Path
+	case d.Op == sandbox.OpRead:
+		what = "a read outside the readable directories"
+	default:
+		what = "a write outside the writable directories"
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "[sandbox] This command likely failed because Pando's sandbox (mode %s, backend %s) blocked %s. Evidence: %s", sbx.Policy.Mode, sbx.Capability.Backend, what, d.Evidence)
+	if d.WorkspaceRootEntry && sbx.Capability.Backend == sandbox.BackendLandlock {
+		sb.WriteString("\nWith the Landlock-only backend (bubblewrap is not available), new files and directories cannot be created directly in the workspace root, because it contains protected entries (.pando, .pando.toml). Create it in a subdirectory instead, or ask the user to install bubblewrap (bwrap).")
+	}
+	if d.Kind == sandbox.DenialNet {
+		sb.WriteString("\nNetwork access is blocked for commands in this sandbox mode.")
+	} else {
+		sb.WriteString("\nIf possible, use a path inside the workspace or a temp dir instead.")
+	}
+	sb.WriteString(" If access outside the sandbox is truly needed, call bash again with sandbox_permissions: \"require_escalated\" and a one-line justification; the user will be asked to approve running the command once outside the sandbox.")
+	return sb.String()
+}
+
+// executeCommand runs the command in hostShell when given (the host runtime),
+// or through the configured container runtime otherwise.
+func (b *bashTool) executeCommand(ctx context.Context, sessionID string, params BashParams, hostShell *shell.PersistentShell) (string, string, int, bool, error) {
 	cfg := config.Get()
 	if cfg == nil {
 		return "", "", 0, false, fmt.Errorf("config not loaded")
 	}
 
 	containerCfg := cfg.Container
-	rt := strings.TrimSpace(strings.ToLower(containerCfg.Runtime))
-	if rt == "" || rt == string(runtime.RuntimeHost) {
-		shell := shell.GetPersistentShell(config.WorkingDirectory())
-		return shell.Exec(ctx, params.Command, params.Timeout)
+	if usesHostShell(cfg) {
+		if hostShell == nil {
+			hostShell = shell.GetPersistentShell(config.WorkingDirectory())
+		}
+		return hostShell.Exec(ctx, params.Command, params.Timeout)
 	}
 
 	resolver := getRuntimeResolver(ctx)
@@ -544,7 +840,9 @@ func countLines(s string) int {
 	return len(strings.Split(s, "\n"))
 }
 
-// runWithACP handles command execution via ACP client callback.
+// runWithACP handles command execution via ACP client callback. The command
+// runs in the client's terminal (Zed, VS Code, ...), so Pando's host sandbox
+// does not apply: the client owns that host and its own rules.
 func (b *bashTool) runWithACP(ctx context.Context, params BashParams, acpConnInterface interface{}) (ToolResponse, error) {
 	acpConn, ok := acpConnInterface.(*acp.ACPClientConnection)
 	if !ok {

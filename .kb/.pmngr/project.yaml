@@ -42,8 +42,8 @@ id_allocation:
   counters:
     milestone: 2
     epic: 9
-    story: 49
-    task: 6
+    story: 50
+    task: 7
 priorities:
   - critical
   - high

@@ -14,6 +14,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	embeddedrt "github.com/digiogithub/pando/internal/runtime/embedded"
+	"github.com/digiogithub/pando/internal/sandbox"
 	"github.com/google/go-containerregistry/pkg/authn"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -258,6 +259,13 @@ func (e *EmbeddedRuntime) Exec(ctx context.Context, sessionID, command string, e
 	cmd := exec.CommandContext(ctx, e.shell, "-lc", command)
 	cmd.Dir = session.WorkDir
 	cmd.Env = mergeEnv(session.BaseEnv, env)
+	// The embedded runtime executes on the host (no namespaces yet), so the
+	// command goes through the host sandbox like the bash tool's shell: env
+	// scrubbing plus confinement when the policy covers bash. The session
+	// rootfs lives in a temp dir, which every sandbox mode keeps writable.
+	if _, _, err := sandbox.WrapCmd(cmd, sandbox.PurposeBash); err != nil {
+		return ExecResult{}, fmt.Errorf("sandbox embedded command: %w", err)
+	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf

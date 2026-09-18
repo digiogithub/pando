@@ -62,7 +62,12 @@ func New(ctx context.Context, serverName string, srv config.MCPServer) (Client, 
 		if resolved.Auth != nil && resolved.Auth.ResolvedType() != config.MCPAuthNone {
 			logging.Warn("MCP stdio server has an Auth block configured; stdio servers must take credentials from env per the MCP spec, ignoring Auth", "server", serverName, "authType", resolved.Auth.ResolvedType())
 		}
-		c, err := client.NewStdioMCPClient(resolved.Command, resolved.Env, resolved.Args...)
+		// A custom CommandFunc is the only way to run this subprocess through
+		// the host sandbox: NewStdioMCPClient builds the exec.Cmd itself, so
+		// newSandboxedCommandFunc (sandbox.go) is what actually constructs it,
+		// deciding per Sandbox.ExtendTo and the server's own Sandbox flag.
+		c, err := client.NewStdioMCPClientWithOptions(resolved.Command, resolved.Env, resolved.Args,
+			transport.WithCommandFunc(newSandboxedCommandFunc(serverName, resolved.Sandbox)))
 		if err != nil {
 			return nil, err
 		}

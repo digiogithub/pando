@@ -111,6 +111,22 @@ func (s *OllamaClaudeSpawner) Spawn(ctx context.Context, task *models.Task) erro
 
 	cmd.Env = env
 
+	// Opt-in only (Sandbox.ExtendTo must include "subagents"): this spawner
+	// routes the 'claude' CLI at a local Ollama endpoint, so
+	// ANTHROPIC_AUTH_TOKEN/ANTHROPIC_API_KEY above must survive ScrubEnv's
+	// secret heuristic (Env.Keep) even though their names look
+	// credential-shaped; they hold a fixed local dummy value, not a real
+	// key read from the outer environment. Claude Code also writes to
+	// ~/.claude and ~/.claude.json, plus s.logDir for the converted MCP
+	// config.
+	if _, _, err := wrapSubagentCmd(cmd, "claude", task.WorkDir, subagentSandboxOpts{
+		ExtraRoots: []string{s.logDir},
+		KeepEnv:    []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"},
+	}); err != nil {
+		cancel()
+		return fmt.Errorf("sandbox: cannot start claude (ollama) confined: %w", err)
+	}
+
 	// Create or append to log file
 	logFile, err := openOrCreateLogFile(s.logDir, task)
 	if err != nil {
@@ -302,7 +318,7 @@ func (s *OllamaClaudeSpawner) Cancel(taskID string) error {
 	proc.cancel()
 
 	if proc.cmd.Process != nil {
-		if err := proc.cmd.Process.Kill(); err != nil {
+		if err := killProcessTree(proc.cmd); err != nil {
 			return fmt.Errorf("kill process: %w", err)
 		}
 	}

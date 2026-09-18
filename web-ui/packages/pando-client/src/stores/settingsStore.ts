@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import api from '../services/api'
-import type { SettingsConfig, ProviderConfigItem, AgentConfigItem, ToolsConfig, BashConfig, TokenOptimizationConfig } from '../types'
+import type { SettingsConfig, ProviderConfigItem, AgentConfigItem, ToolsConfig, BashConfig, TokenOptimizationConfig, SandboxConfig, SandboxConfigResponse } from '../types'
 import { useToastStore } from './toastStore'
 
 const DEFAULTS: SettingsConfig = {
@@ -520,6 +520,91 @@ export const useBashStore = create<BashStore>((set, get) => ({
 
   resetBash: () =>
     set((s) => ({ config: { ...s.original }, dirty: false })),
+}))
+
+// ---- Sandbox Store ----
+
+interface SandboxStore {
+  /** Editable section (global values, locked fields show the enforced value). */
+  config: SandboxConfig
+  original: SandboxConfig
+  /** Last GET/PUT response: status, capability, resolved policy, locks. */
+  info: SandboxConfigResponse | null
+  dirty: boolean
+  loading: boolean
+  saving: boolean
+  error: string | null
+  fetchSandbox: () => Promise<void>
+  updateField: <K extends keyof SandboxConfig>(key: K, value: SandboxConfig[K]) => void
+  saveSandbox: () => Promise<void>
+  resetSandbox: () => void
+  /** Refresh only `info` (status badge), leaving any unsaved edit alone. */
+  refreshSandboxStatus: () => Promise<void>
+  /** True when an overlay locked the given field path (e.g. "sandbox.mode"). */
+  isLocked: (path: string) => boolean
+}
+
+export const useSandboxStore = create<SandboxStore>((set, get) => ({
+  config: {},
+  original: {},
+  info: null,
+  dirty: false,
+  loading: false,
+  saving: false,
+  error: null,
+
+  fetchSandbox: async () => {
+    set({ loading: true, error: null })
+    try {
+      const data = await api.get<SandboxConfigResponse>('/api/v1/config/sandbox')
+      const cfg = { ...(data.config ?? {}) }
+      set({ info: data, config: cfg, original: { ...cfg }, dirty: false })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to load sandbox config'
+      set({ error: msg })
+    } finally {
+      set({ loading: false })
+    }
+  },
+
+  updateField: (key, value) =>
+    set((s) => {
+      const config = { ...s.config, [key]: value }
+      return { config, dirty: JSON.stringify(config) !== JSON.stringify(s.original) }
+    }),
+
+  saveSandbox: async () => {
+    set({ saving: true, error: null })
+    try {
+      const data = await api.put<SandboxConfigResponse>('/api/v1/config/sandbox', get().config)
+      const cfg = { ...(data.config ?? {}) }
+      set({ info: data, config: cfg, original: { ...cfg }, dirty: false })
+      useToastStore.getState().addToast('Sandbox settings saved', 'success')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Save failed'
+      set({ error: msg })
+      useToastStore.getState().addToast(msg, 'error')
+    } finally {
+      set({ saving: false })
+    }
+  },
+
+  resetSandbox: () =>
+    set((s) => ({ config: { ...s.original }, dirty: false })),
+
+  refreshSandboxStatus: async () => {
+    try {
+      const data = await api.get<SandboxConfigResponse>('/api/v1/config/sandbox')
+      set({ info: data })
+    } catch {
+      // The badge is informational: keep the last known status.
+    }
+  },
+
+  isLocked: (path) => {
+    const locked = get().info?.locked ?? []
+    return locked.some((p) => p.toLowerCase() === path.toLowerCase())
+  },
 }))
 
 // ---- Token Optimization Store ----

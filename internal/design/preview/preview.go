@@ -38,6 +38,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/digiogithub/pando/internal/sandbox/portguard"
 )
 
 // Prefix is the single route prefix the server owns. Everything below it is
@@ -338,6 +340,8 @@ func (s *Server) StartLoopback() error {
 		s.mu.Unlock()
 		return fmt.Errorf("preview: listen: %w", err)
 	}
+	// Pando's own listener: unreachable from sandboxed commands.
+	listener = portguard.Guard(listener, "design-preview")
 	mux := http.NewServeMux()
 	mux.Handle(Prefix, s)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}

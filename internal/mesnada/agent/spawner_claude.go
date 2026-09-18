@@ -92,6 +92,14 @@ func (s *ClaudeSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	// Set up environment with Claude Code configuration
 	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 
+	// Opt-in only (Sandbox.ExtendTo must include "subagents"): Claude Code
+	// writes to ~/.claude and ~/.claude.json, plus s.logDir for the
+	// converted MCP config.
+	if _, _, err := wrapSubagentCmd(cmd, "claude", task.WorkDir, subagentSandboxOpts{ExtraRoots: []string{s.logDir}}); err != nil {
+		cancel()
+		return fmt.Errorf("sandbox: cannot start claude confined: %w", err)
+	}
+
 	// Create or append to log file
 	logFile, err := openOrCreateLogFile(s.logDir, task)
 	if err != nil {
@@ -307,12 +315,12 @@ func (s *ClaudeSpawner) Cancel(taskID string) error {
 	proc.cancel()
 
 	if proc.cmd.Process != nil {
-		proc.cmd.Process.Signal(syscall.SIGTERM)
+		signalProcessTree(proc.cmd, syscall.SIGTERM)
 
 		select {
 		case <-proc.done:
 		case <-time.After(5 * time.Second):
-			proc.cmd.Process.Kill()
+			killProcessTree(proc.cmd)
 		}
 	}
 
@@ -334,12 +342,12 @@ func (s *ClaudeSpawner) Pause(taskID string) error {
 	proc.cancel()
 
 	if proc.cmd.Process != nil {
-		proc.cmd.Process.Signal(syscall.SIGTERM)
+		signalProcessTree(proc.cmd, syscall.SIGTERM)
 
 		select {
 		case <-proc.done:
 		case <-time.After(5 * time.Second):
-			proc.cmd.Process.Kill()
+			killProcessTree(proc.cmd)
 		}
 	}
 
@@ -393,7 +401,7 @@ func (s *ClaudeSpawner) Shutdown() {
 	for _, proc := range procs {
 		proc.cancel()
 		if proc.cmd.Process != nil {
-			proc.cmd.Process.Signal(syscall.SIGTERM)
+			signalProcessTree(proc.cmd, syscall.SIGTERM)
 		}
 	}
 
@@ -402,7 +410,7 @@ func (s *ClaudeSpawner) Shutdown() {
 		case <-proc.done:
 		case <-time.After(10 * time.Second):
 			if proc.cmd.Process != nil {
-				proc.cmd.Process.Kill()
+				killProcessTree(proc.cmd)
 			}
 		}
 	}

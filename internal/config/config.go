@@ -51,6 +51,14 @@ type MCPServer struct {
 	// MCP server. Nil means no authentication beyond whatever is already baked
 	// into Headers/Env/Args, preserving pre-existing behavior. See mcp_auth.go.
 	Auth *MCPAuth `json:"auth,omitempty" toml:"Auth" yaml:"auth"`
+	// Sandbox opts a stdio MCP server into the host sandbox (PurposeMCP)
+	// regardless of the global Sandbox.ExtendTo list, for a server whose
+	// command is untrusted or handles untrusted input. Ignored for
+	// non-stdio (sse/streamable-http) servers, which are network clients,
+	// not local processes. Default false: most stdio servers are trusted,
+	// already-installed tools that a wrap could break (e.g. one that shells
+	// out further); see docs/sandbox-coverage.md.
+	Sandbox bool `json:"sandbox,omitempty" toml:"Sandbox" yaml:"sandbox"`
 }
 
 type AgentName string
@@ -988,6 +996,76 @@ type ContainerConfig struct {
 	EmbeddedGCKeepN  int      `toml:"embedded_gc_keep_n" json:"embedded_gc_keep_n"`
 }
 
+// SandboxConfig controls the host command sandbox (internal/sandbox) that
+// confines agent-driven child processes such as the bash tool's shell.
+//
+// The zero value means ON: workspace-write mode, network allowed, bash
+// auto-approved while the sandbox is actually enforced. Every default-on
+// switch is therefore modelled as a Disabled flag or a string where empty
+// means the default, because booleans are omitempty (the
+// Bash.OutputFilterDisabled precedent).
+//
+// Precedence, highest first: an enterprise overlay lock on a sandbox.* path,
+// the PANDO_SANDBOX environment variable (applied by sandbox.Resolve), the
+// project-local config file, the global config file, the defaults above.
+//
+// A project-local file (.pando.toml/.pando.json found for the working
+// directory) may only TIGHTEN the global value, never loosen it: it cannot set
+// Disabled, choose a looser Mode, open the network, re-enable auto-allow,
+// allow auto-escalation, keep secrets in the child environment, or add
+// WritableRoots/ReadOnlyRoots outside the workspace. Those project values are
+// dropped at load time (see tightenSandboxConfig). UpdateSandbox therefore
+// persists to the GLOBAL config file, so a UI toggle is never silently
+// discarded on the next load.
+type SandboxConfig struct {
+	// Disabled turns the sandbox off entirely (the UI toggle). Zero value = on.
+	Disabled bool `json:"disabled,omitempty" toml:"Disabled,omitempty"`
+	// Mode is "" (== "workspace-write") | "read-only" | "strict" | "off".
+	Mode string `json:"mode,omitempty" toml:"Mode,omitempty"`
+	// Network is "" (== "allowed") | "restricted". read-only and strict
+	// always restrict the network regardless of this value.
+	Network string `json:"network,omitempty" toml:"Network,omitempty"`
+	// AutoAllowBashDisabled keeps the bash permission prompt even while the
+	// sandbox is enforced. Zero value = auto-allow on.
+	AutoAllowBashDisabled bool `json:"autoAllowBashDisabled,omitempty" toml:"AutoAllowBashDisabled,omitempty"`
+	// WritableRoots are extra writable directories (absolute, ~ or relative to
+	// the workspace).
+	WritableRoots []string `json:"writableRoots,omitempty" toml:"WritableRoots,omitempty"`
+	// ReadOnlyRoots are extra readable directories used by the strict mode.
+	ReadOnlyRoots []string `json:"readOnlyRoots,omitempty" toml:"ReadOnlyRoots,omitempty"`
+	// DenyPaths are denied for both read and write (globs allowed).
+	DenyPaths []string `json:"denyPaths,omitempty" toml:"DenyPaths,omitempty"`
+	// CacheDirsDisabled drops the dependency-cache allowlist (Go build/module
+	// cache, npm, pnpm, yarn, pip, cargo, bun, ~/.cache) from the writable
+	// roots. Zero value = caches writable.
+	CacheDirsDisabled bool `json:"cacheDirsDisabled,omitempty" toml:"CacheDirsDisabled,omitempty"`
+	// UseBwrap is "" (== "auto") | "always" | "never" (Linux only).
+	UseBwrap string `json:"useBwrap,omitempty" toml:"UseBwrap,omitempty"`
+	// ExtendTo lists extra spawn sites to wrap besides the bash tool:
+	// "acp-terminals", "skills", "mcp", "subagents". It is additive: the
+	// default set (acp-terminals, skills) is always included.
+	ExtendTo []string `json:"extendTo,omitempty" toml:"ExtendTo,omitempty"`
+	// AllowAutoEscalation lets a sandbox-denied command be retried
+	// unsandboxed without an explicit approval. Zero value = never.
+	AllowAutoEscalation bool `json:"allowAutoEscalation,omitempty" toml:"AllowAutoEscalation,omitempty"`
+	// Env controls how the child environment is scrubbed.
+	Env SandboxEnvConfig `json:"env,omitempty" toml:"Env,omitempty"`
+}
+
+// SandboxEnvConfig controls environment scrubbing for sandboxed children.
+type SandboxEnvConfig struct {
+	// Inherit is "" (== "all") | "core" | "none".
+	Inherit string `json:"inherit,omitempty" toml:"Inherit,omitempty"`
+	// KeepSecrets disables the default removal of credential-looking
+	// variables (*_API_KEY, *TOKEN*, *SECRET*, *PASSWORD*...).
+	KeepSecrets bool `json:"keepSecrets,omitempty" toml:"KeepSecrets,omitempty"`
+	// Exclude lists extra variable names (globs, case-insensitive) to drop.
+	Exclude []string `json:"exclude,omitempty" toml:"Exclude,omitempty"`
+	// Keep lists variable names (globs, case-insensitive) always passed
+	// through, even when they look like secrets. Exclude still wins.
+	Keep []string `json:"keep,omitempty" toml:"Keep,omitempty"`
+}
+
 // ProviderAccount defines a named provider configuration (account).
 // It allows multiple accounts of the same provider type (e.g., two Anthropic API keys).
 // The ID field is a unique slug used to identify the account (e.g., "anthropic-work").
@@ -1089,6 +1167,7 @@ type Config struct {
 	CronJobs          CronJobsConfig          `json:"cronJobs,omitempty" toml:"CronJobs"`
 	LLMCache          LLMCacheConfig          `json:"llmCache,omitempty" toml:"LLMCache"`
 	Container         ContainerConfig         `json:"container,omitempty" toml:"Container"`
+	Sandbox           SandboxConfig           `json:"sandbox,omitempty" toml:"Sandbox"`
 	MCPServer         MCPServerConfig         `json:"mcpServer,omitempty" toml:"MCPServer"`
 	Ponytail          PonytailConfig          `json:"ponytail,omitempty" toml:"Ponytail"`
 	Caveman           CavemanConfig           `json:"caveman,omitempty" toml:"Caveman"`
@@ -1902,6 +1981,15 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 		return cfg, fmt.Errorf("failed to read telemetry config: %w", err)
 	}
 
+	// Sandbox: a project-local config may only tighten the global section.
+	// Snapshot the global value before mergeLocalConfig layers the project
+	// file on top; the rule is applied after the main unmarshal.
+	var globalSandbox SandboxConfig
+	if err := viper.UnmarshalKey("sandbox", &globalSandbox); err != nil {
+		logging.Warn("Ignoring malformed global sandbox config", "error", err)
+		globalSandbox = SandboxConfig{}
+	}
+
 	// Load and merge local config
 	mergeLocalConfig(workingDir)
 
@@ -1974,6 +2062,8 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	if IsKeyLocked("telemetry.debugId") {
 		cfg.Telemetry.DebugID = overlayTelemetry.DebugID
 	}
+
+	cfg.Sandbox = applySandboxProjectRule(globalSandbox, readProjectSandboxConfig(workingDir), cfg.Sandbox, workingDir)
 
 	applyDefaultValues()
 
@@ -2217,6 +2307,11 @@ func configureViper() {
 	viper.AddConfigPath(fmt.Sprintf("$XDG_CONFIG_HOME/%s", appName))
 	viper.AddConfigPath(fmt.Sprintf("$HOME/.config/%s", appName))
 	viper.SetEnvPrefix(strings.ToUpper(appName))
+	// PANDO_SANDBOX is a mode override read by sandbox.Resolve, not a
+	// document for the "sandbox" section. Left to AutomaticEnv it would
+	// shadow every sandbox.* key from the files (viper treats a set parent
+	// env var as hiding the nested keys), so viper must never see it.
+	viper.SetEnvKeyReplacer(strings.NewReplacer(SandboxEnvVar, sandboxEnvVarHiddenFromViper))
 	viper.AutomaticEnv()
 }
 
@@ -4042,6 +4137,12 @@ func updateConfigFileAt(resolvePath func() (string, error), updateCfg func(confi
 		}
 	}
 
+	// An empty or comment-only file (or a JSON "null") decodes to no value
+	// at all; start from an empty configuration rather than a nil pointer.
+	if userCfg == nil {
+		userCfg = &Config{}
+	}
+
 	// Ensure providerAccounts is populated from the legacy providers map so
 	// callbacks that reference providerAccounts can find entries that are still
 	// stored in the old providers format in the file. After migration, clear the
@@ -5544,6 +5645,42 @@ func UpdateContainer(containerCfg ContainerConfig) error {
 		config.Container = normalized
 	}); err != nil {
 		cfg.Container = oldContainer
+		return err
+	}
+
+	return nil
+}
+
+// UpdateSandbox validates and persists the sandbox section. It always writes
+// the GLOBAL config file: a project-local file may only tighten the sandbox
+// (see SandboxConfig), so persisting a UI choice there could be discarded on
+// the next load. The in-memory value is the one a fresh Load would produce,
+// i.e. the new global value with the project-local tightening re-applied.
+func UpdateSandbox(sandboxCfg SandboxConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	normalized, err := NormalizeSandboxConfig(sandboxCfg)
+	if err != nil {
+		return err
+	}
+
+	oldSandbox := cfg.Sandbox
+	// A locked field may not change. One that merely echoes the enforced
+	// value back is accepted: the in-memory value keeps the enforced
+	// (overlay) value and the file keeps its own.
+	if err := ErrIfSandboxLockedChange(oldSandbox, normalized); err != nil {
+		return err
+	}
+	cfg.Sandbox = keepLockedSandboxFields(
+		tightenSandboxConfig(normalized, readProjectSandboxConfig(cfg.WorkingDir), cfg.WorkingDir),
+		oldSandbox)
+
+	if err := updateGlobalCfgFile(func(config *Config) {
+		config.Sandbox = keepLockedSandboxFields(normalized, config.Sandbox)
+	}); err != nil {
+		cfg.Sandbox = oldSandbox
 		return err
 	}
 

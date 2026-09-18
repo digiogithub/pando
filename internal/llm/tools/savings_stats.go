@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/sandbox"
 	"github.com/digiogithub/pando/internal/savings"
 )
 
@@ -48,7 +49,8 @@ func (s *savingsStatsTool) Info() ToolInfo {
 
 // SavingsStatsResponse is the structured metadata attached to the response.
 type SavingsStatsResponse struct {
-	Report savings.Report `json:"report"`
+	Report  savings.Report   `json:"report"`
+	Sandbox sandbox.Counters `json:"sandbox"`
 }
 
 func (s *savingsStatsTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
@@ -71,6 +73,7 @@ func (s *savingsStatsTool) Run(ctx context.Context, call ToolCall) (ToolResponse
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("failed to read savings ledger: %s", err)), nil
 	}
+	sbxCounters := sandbox.EventCounters()
 
 	var sb strings.Builder
 	sb.WriteString("## Token Savings\n\n")
@@ -79,7 +82,9 @@ func (s *savingsStatsTool) Run(ctx context.Context, call ToolCall) (ToolResponse
 	}
 	if rep.Events == 0 {
 		sb.WriteString("No savings recorded yet.\n")
-		return WithResponseMetadata(NewTextResponse(sb.String()), SavingsStatsResponse{Report: rep}), nil
+		sb.WriteString("\n")
+		writeSandboxStatsSection(&sb, sbxCounters)
+		return WithResponseMetadata(NewTextResponse(sb.String()), SavingsStatsResponse{Report: rep, Sandbox: sbxCounters}), nil
 	}
 
 	scope := "all time"
@@ -94,6 +99,25 @@ func (s *savingsStatsTool) Run(ctx context.Context, call ToolCall) (ToolResponse
 	for _, st := range rep.BySource {
 		sb.WriteString(fmt.Sprintf("- %-7s %d saved (%d events)\n", st.Source, st.Saved, st.Events))
 	}
+	sb.WriteString("\n")
+	writeSandboxStatsSection(&sb, sbxCounters)
 
-	return WithResponseMetadata(NewTextResponse(sb.String()), SavingsStatsResponse{Report: rep}), nil
+	return WithResponseMetadata(NewTextResponse(sb.String()), SavingsStatsResponse{Report: rep, Sandbox: sbxCounters}), nil
+}
+
+// writeSandboxStatsSection appends the host command sandbox's observability
+// counters (PANDO-US-0048): how many commands ran confined, were denied, or
+// went through an escalation, plus how many times the backend was requested
+// but could not be enforced. Counts are process-wide (reset on restart), the
+// same lifetime as sandbox.RecentEvents.
+func writeSandboxStatsSection(sb *strings.Builder, c sandbox.Counters) {
+	sb.WriteString("## Sandbox\n\n")
+	if c == (sandbox.Counters{}) {
+		sb.WriteString("No sandbox events recorded yet this run. See `pando sandbox status`.\n")
+		return
+	}
+	sb.WriteString(fmt.Sprintf("- Applied: %d\n", c.Applied))
+	sb.WriteString(fmt.Sprintf("- Denied: %d\n", c.Denied))
+	sb.WriteString(fmt.Sprintf("- Escalation requested/granted/denied: %d/%d/%d\n", c.EscalationRequested, c.EscalationGranted, c.EscalationDenied))
+	sb.WriteString(fmt.Sprintf("- Backend unavailable: %d\n", c.Unavailable))
 }

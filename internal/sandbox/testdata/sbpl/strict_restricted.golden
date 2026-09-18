@@ -1,0 +1,122 @@
+;; Pando sandbox profile (mode strict, network restricted). Generated; do not edit.
+(version 1)
+(deny default)
+
+;; Processes, signals and system information.
+(allow process-exec)
+(allow process-fork)
+(allow process-info* (target same-sandbox))
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow mach-lookup)
+(allow ipc-posix-shm*)
+(allow ipc-posix-sem)
+(allow user-preference-read)
+(allow pseudo-tty)
+
+;; Reads.
+(allow file-read-metadata)
+(allow file-read*
+    (literal "/")
+    (subpath (param "RD_0"))
+    (subpath (param "RD_1"))
+    (subpath (param "RD_2"))
+    (subpath (param "RD_3"))
+    (subpath (param "RD_4"))
+    (subpath (param "RD_5"))
+    (subpath (param "RD_6"))
+    (subpath (param "RD_7"))
+    (subpath (param "RD_8"))
+    (subpath (param "RD_9"))
+)
+
+;; Writes: the writable roots and the terminal/null devices.
+(allow file-write*
+    (subpath (param "WR_0"))
+    (subpath (param "WR_1"))
+    (subpath (param "WR_2"))
+    (subpath (param "WR_3"))
+    (subpath (param "WR_4"))
+    (subpath (param "WR_5"))
+    (subpath (param "WR_6"))
+    (literal "/dev/null")
+    (literal "/dev/zero")
+    (literal "/dev/tty")
+    (literal "/dev/ptmx")
+    (literal "/dev/stdout")
+    (literal "/dev/stderr")
+    (literal "/dev/dtracehelper")
+    (regex #"^/dev/ttys[0-9]+$")
+    (subpath "/dev/fd")
+)
+(allow file-read* file-write* file-ioctl
+    (literal "/dev/null")
+    (literal "/dev/tty")
+    (literal "/dev/ptmx")
+    (regex #"^/dev/ttys[0-9]+$")
+    (subpath "/dev/fd")
+)
+
+;; Network.
+(allow network*)
+(deny network-outbound (remote ip "*:*"))
+(deny network-inbound (local ip "*:*"))
+(deny network-bind (local ip "*:*"))
+
+;; Protected paths stay read-only inside writable roots (emitted after
+;; the allows: the last matching rule wins).
+(deny file-write* file-write-data file-write-create file-write-unlink file-write-mode file-write-owner file-write-flags file-write-times file-write-setugid
+    (subpath (param "PR_0"))
+    (subpath (param "PR_1"))
+    (subpath (param "PR_2"))
+    (subpath (param "PR_3"))
+    (subpath (param "PR_4"))
+)
+
+;; Existing parents of protected/denied paths cannot be renamed away or replaced.
+(deny file-write-unlink file-write-create
+    (literal (param "AN_0"))
+    (literal (param "AN_1"))
+    (literal (param "AN_2"))
+    (literal (param "AN_3"))
+)
+
+;; Denied paths: no read, no write.
+(deny file-read* file-write* file-write-data file-write-create file-write-unlink file-write-mode file-write-owner file-write-flags file-write-times file-write-setugid
+    (subpath (param "DN_0"))
+    (subpath (param "DN_1"))
+    (subpath (param "DN_2"))
+    (regex #"^/Users/dev/project/(.*/)?[^/]*\.pem(/.*)?$")
+    (regex #"^/Users/dev/project/config/[^p]rod-[^/]\.env(/.*)?$")
+)
+
+;; -D parameters
+;; RD_0=/Library
+;; RD_1=/System
+;; RD_2=/Users/dev/go
+;; RD_3=/bin
+;; RD_4=/dev
+;; RD_5=/etc
+;; RD_6=/private/etc
+;; RD_7=/private
+;; RD_8=/usr
+;; RD_9=/Users/dev/project
+;; WR_0=/Users/dev/project
+;; WR_1=/private/tmp
+;; WR_2=/tmp
+;; WR_3=/private/var/folders
+;; WR_4=/var/folders
+;; WR_5=/private/var/tmp
+;; WR_6=/var/tmp
+;; PR_0=/Users/dev/project/.git/config
+;; PR_1=/Users/dev/project/.git/hooks
+;; PR_2=/Users/dev/project/.pando
+;; PR_3=/Users/dev/project/.pando.toml
+;; PR_4=/Users/dev/.config/pando
+;; AN_0=/Users/dev/project
+;; AN_1=/Users/dev/project/.git
+;; AN_2=/tmp
+;; AN_3=/private/tmp
+;; DN_0=/Users/dev/.ssh
+;; DN_1=/tmp/secrets
+;; DN_2=/private/tmp/secrets

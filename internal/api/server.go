@@ -27,6 +27,7 @@ import (
 	"github.com/digiogithub/pando/internal/design/preview"
 	"github.com/digiogithub/pando/internal/extensions"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/sandbox/portguard"
 )
 
 type ServerConfig struct {
@@ -282,6 +283,10 @@ func (s *Server) newListener(host string) (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Sandboxed commands must not reach the API: it hands out its token to
+	// loopback callers and can turn the sandbox off. Closing the listener (a
+	// rebind, shutdown) drops the registration.
+	listener = portguard.Guard(listener, "api")
 	if !s.IsTLS() {
 		return listener, nil
 	}

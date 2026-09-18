@@ -2,13 +2,15 @@
 id: PANDO-US-0045
 type: story
 title: Violation detection, model hint and escalation approval
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0009
 labels: [security, sandbox]
 estimate: 8
 created: 2026-09-18T08:36:27Z
-updated: 2026-09-18T08:36:27Z
+updated: 2026-09-18T11:01:12Z
+started: 2026-09-18T09:43:22Z
+closed: 2026-09-18T11:01:12Z
 ---
 
 ## Description

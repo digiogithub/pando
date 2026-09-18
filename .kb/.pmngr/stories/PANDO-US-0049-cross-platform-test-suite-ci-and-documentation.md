@@ -2,13 +2,15 @@
 id: PANDO-US-0049
 type: story
 title: Cross-platform test suite, CI and documentation
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0009
 labels: [security, sandbox]
 estimate: 5
 created: 2026-09-18T08:36:28Z
-updated: 2026-09-18T08:36:28Z
+updated: 2026-09-18T11:01:14Z
+started: 2026-09-18T10:15:34Z
+closed: 2026-09-18T11:01:14Z
 ---
 
 ## Description

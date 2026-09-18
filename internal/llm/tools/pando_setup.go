@@ -11,6 +11,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/redact"
+	"github.com/digiogithub/pando/internal/sandbox"
 	"github.com/digiogithub/pando/internal/telemetry"
 )
 
@@ -204,6 +205,9 @@ func (t *pandoSetupTool) Run(ctx context.Context, call ToolCall) (ToolResponse, 
 	if args.Bool("help") || args.Bool("h") {
 		return NewTextResponse(cmd.Usage), nil
 	}
+	if err := refuseSetupSandboxWrite(cmd.Name, args); err != nil {
+		return NewTextErrorResponse(err.Error()), nil
+	}
 
 	out, err := cmd.Run(ctx, t, args)
 	if err != nil {
@@ -354,6 +358,17 @@ hostname or file path); secrets are always redacted before anything is sent.
 When the user asks to help diagnose an issue, "status" and the debug ID it
 prints is what they quote in a bug report.`,
 			Run: runSetupTelemetry,
+		},
+		{
+			Name:    "sandbox",
+			Summary: "Show the host command sandbox status (read-only)",
+			Usage: `Usage: sandbox [status]
+Prints whether commands you run are confined by Pando's sandbox: the mode, the
+network policy, the OS backend and whether it is really enforced here.
+The sandbox is the user's safety boundary, so it is read-only for you: every
+attempt to change it through pando_setup is refused. If a command needs more
+access, ask the user to change it in Settings > Sandbox (TUI or WebUI).`,
+			Run: runSetupSandbox,
 		},
 	}
 }
@@ -1349,6 +1364,91 @@ func yesNoSetup(b bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+// ---------------------------------------------------------------------------
+// sandbox
+// ---------------------------------------------------------------------------
+
+// errSetupSandboxReadOnly is the refusal for every sandbox write attempt. The
+// sandbox bounds what the agent itself may do, so the agent must never be the
+// one loosening it (PANDO-EP-0009): only the user, through the settings
+// screens, the API or the config file, can change it.
+var errSetupSandboxReadOnly = fmt.Errorf("the sandbox settings cannot be changed by the agent: they are the user's safety boundary. " +
+	"Ask the user to change them in Settings > Sandbox (TUI or WebUI) or in the [Sandbox] config section")
+
+// refuseSetupSandboxWrite rejects any pando_setup call that would change a
+// sandbox setting: a "sandbox" action other than status, a slash command named
+// after the sandbox, or any argument addressing a sandbox.* key or the
+// PANDO_SANDBOX override. pando_setup has no generic config writer today; this
+// guard keeps a future one (or a future slash command) from becoming a way
+// around the sandbox.
+func refuseSetupSandboxWrite(command string, args setupArgs) error {
+	switch command {
+	case "help", "config":
+		// Read-only commands: naming the sandbox section here only reads it.
+		return nil
+	case "sandbox":
+		switch action := strings.ToLower(strings.TrimSpace(args.Positional(0))); action {
+		case "", "status":
+			if len(args.PositionalsFrom(1)) == 0 && len(args.flags) == 0 {
+				return nil
+			}
+		}
+		return errSetupSandboxReadOnly
+	case "run":
+		name := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(args.Positional(0)), "/"))
+		if name == "sandbox" || strings.HasPrefix(name, "sandbox-") || strings.HasPrefix(name, "sandbox:") {
+			return errSetupSandboxReadOnly
+		}
+	}
+	for _, token := range args.positionals {
+		if setupTokenAddressesSandbox(token) {
+			return errSetupSandboxReadOnly
+		}
+	}
+	for name, value := range args.flags {
+		if setupTokenAddressesSandbox(name) || setupTokenAddressesSandbox(value) {
+			return errSetupSandboxReadOnly
+		}
+	}
+	return nil
+}
+
+// setupTokenAddressesSandbox reports whether an argument names a sandbox
+// configuration key ("sandbox.mode", "Sandbox.Disabled=true", "sandbox=off")
+// or the PANDO_SANDBOX environment override.
+func setupTokenAddressesSandbox(token string) bool {
+	lower := strings.ToLower(strings.TrimSpace(token))
+	lower = strings.TrimLeft(lower, "-")
+	if strings.HasPrefix(lower, strings.ToLower(config.SandboxEnvVar)) {
+		return true
+	}
+	for _, prefix := range []string{"sandbox.", "sandbox=", "sandbox:", "[sandbox]"} {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// runSetupSandbox prints the sandbox status. Writes never reach it: Run calls
+// refuseSetupSandboxWrite first.
+func runSetupSandbox(_ context.Context, _ *pandoSetupTool, _ setupArgs) (string, error) {
+	status := sandbox.CurrentStatus()
+	p := status.Policy
+	var sb strings.Builder
+	sb.WriteString("## Sandbox (read-only)\n\n")
+	sb.WriteString(fmt.Sprintf("- status:   %s\n", status.Label()))
+	sb.WriteString(fmt.Sprintf("- mode:     %s\n", p.Mode))
+	sb.WriteString(fmt.Sprintf("- network:  %s\n", p.Network))
+	sb.WriteString(fmt.Sprintf("- backend:  %s\n", status.Capability.String()))
+	sb.WriteString(fmt.Sprintf("- enforced: %s\n", yesNoSetup(status.Active)))
+	if p.Workspace != "" {
+		sb.WriteString(fmt.Sprintf("- workspace: %s\n", p.Workspace))
+	}
+	sb.WriteString("\nOnly the user can change these settings (Settings > Sandbox).\n")
+	return sb.String(), nil
 }
 
 func runSetupRun(ctx context.Context, t *pandoSetupTool, args setupArgs) (string, error) {

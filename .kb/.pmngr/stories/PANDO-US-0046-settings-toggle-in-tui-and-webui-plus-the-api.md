@@ -2,13 +2,15 @@
 id: PANDO-US-0046
 type: story
 title: Settings toggle in TUI and WebUI, plus the API
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0009
 labels: [security, sandbox]
 estimate: 5
 created: 2026-09-18T08:36:27Z
-updated: 2026-09-18T08:36:27Z
+updated: 2026-09-18T11:01:13Z
+started: 2026-09-18T09:23:52Z
+closed: 2026-09-18T11:01:13Z
 ---
 
 ## Description

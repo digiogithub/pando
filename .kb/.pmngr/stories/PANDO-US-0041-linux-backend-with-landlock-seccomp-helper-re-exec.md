@@ -2,13 +2,15 @@
 id: PANDO-US-0041
 type: story
 title: Linux backend with Landlock + seccomp helper re-exec
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0009
 labels: [security, sandbox]
 estimate: 8
 created: 2026-09-18T08:36:25Z
-updated: 2026-09-18T08:36:25Z
+updated: 2026-09-18T11:01:10Z
+started: 2026-09-18T09:23:51Z
+closed: 2026-09-18T11:01:10Z
 ---
 
 ## Description

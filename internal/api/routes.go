@@ -94,6 +94,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/config/tools", s.handleConfigTools)
 	mux.HandleFunc("GET /api/v1/config/browsers", s.handleConfigBrowsers)
 	mux.HandleFunc("/api/v1/config/openlit", s.handleConfigOpenLit)
+	mux.HandleFunc("/api/v1/config/sandbox", s.handleConfigSandbox)
 	mux.HandleFunc("/api/v1/config/bash", s.handleConfigBash)
 	mux.HandleFunc("/api/v1/config/token-optimization", s.handleConfigTokenOptimization)
 	mux.HandleFunc("/api/v1/savings", s.handleSavings)

@@ -110,6 +110,19 @@ func (s *ACPSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	// own depth for the MaxDepth cap (no-op for non-pando ACP agents).
 	cmd.Env = append(cmd.Env, fmt.Sprintf("PANDO_DELEGATION_DEPTH=%d", task.Depth))
 
+	// Opt-in only (Sandbox.ExtendTo must include "subagents"). The agent
+	// behind agentConfig.Command may be a nested Pando (its own project's
+	// .pando/.pando.toml under task.WorkDir must stay writable) or another
+	// ACP-speaking CLI (claude, codex, ...) with its own config directory.
+	bin := filepath.Base(agentConfig.Command)
+	if _, _, err := wrapSubagentCmd(cmd, bin, task.WorkDir, subagentSandboxOpts{
+		ExtraRoots:           []string{s.logDir},
+		AllowOwnControlPlane: bin == "pando",
+	}); err != nil {
+		cancel()
+		return fmt.Errorf("sandbox: cannot start ACP agent %q confined: %w", agentConfig.Command, err)
+	}
+
 	// Create pipes for stdin/stdout
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -577,14 +590,14 @@ func (s *ACPSpawner) Cancel(taskID string) error {
 
 	// Send SIGTERM first
 	if proc.cmd.Process != nil {
-		proc.cmd.Process.Signal(syscall.SIGTERM)
+		signalProcessTree(proc.cmd, syscall.SIGTERM)
 
 		// Wait briefly, then force kill
 		select {
 		case <-proc.done:
 			// Process exited gracefully
 		case <-time.After(5 * time.Second):
-			proc.cmd.Process.Kill()
+			killProcessTree(proc.cmd)
 		}
 	}
 
@@ -609,12 +622,12 @@ func (s *ACPSpawner) Pause(taskID string) error {
 	proc.cancel()
 
 	if proc.cmd.Process != nil {
-		proc.cmd.Process.Signal(syscall.SIGTERM)
+		signalProcessTree(proc.cmd, syscall.SIGTERM)
 
 		select {
 		case <-proc.done:
 		case <-time.After(5 * time.Second):
-			proc.cmd.Process.Kill()
+			killProcessTree(proc.cmd)
 		}
 	}
 
@@ -677,7 +690,7 @@ func (s *ACPSpawner) Shutdown() {
 
 		proc.cancel()
 		if proc.cmd.Process != nil {
-			proc.cmd.Process.Signal(syscall.SIGTERM)
+			signalProcessTree(proc.cmd, syscall.SIGTERM)
 		}
 	}
 
@@ -687,7 +700,7 @@ func (s *ACPSpawner) Shutdown() {
 		case <-proc.done:
 		case <-time.After(10 * time.Second):
 			if proc.cmd.Process != nil {
-				proc.cmd.Process.Kill()
+				killProcessTree(proc.cmd)
 			}
 		}
 	}

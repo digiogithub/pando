@@ -2,13 +2,15 @@
 id: PANDO-US-0047
 type: story
 title: Extend coverage to other agent-driven spawn sites
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0009
 labels: [security, sandbox]
 estimate: 5
 created: 2026-09-18T08:36:28Z
-updated: 2026-09-18T08:36:28Z
+updated: 2026-09-18T11:01:13Z
+started: 2026-09-18T09:43:22Z
+closed: 2026-09-18T11:01:13Z
 ---
 
 ## Description

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/sandbox"
 )
 
 // CLIToolSkill wraps a CLI executable as a BaseTool.
@@ -111,6 +112,17 @@ func (t *CLIToolSkill) Run(ctx context.Context, params tools.ToolCall) (tools.To
 	cmd := exec.CommandContext(ctx, t.execPath)
 	cmd.Dir = filepath.Dir(t.execPath)
 	cmd.Stdin = strings.NewReader(params.Input)
+
+	// Skill CLI tools are covered by default (sandbox.DefaultExtendTo
+	// includes PurposeSkills): the sandbox scrubs cmd.Env and confines the
+	// executable exactly like a bash command would be. Fail closed on a
+	// wrap error (enforcement was possible but setup failed) rather than
+	// silently running the skill unconfined.
+	sbxPolicy, sbxCap, err := sandbox.WrapCmd(cmd, sandbox.PurposeSkills)
+	if err != nil {
+		return tools.ToolResponse{}, fmt.Errorf("sandbox: cannot run skill %q confined: %w", t.name, err)
+	}
+	sandbox.EmitSpawn(ctx, sandbox.PurposeSkills, sbxPolicy.Covers(sandbox.PurposeSkills), sbxPolicy, sbxCap)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

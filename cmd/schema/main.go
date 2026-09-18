@@ -259,6 +259,10 @@ func generateSchema() map[string]any {
 					"type":        "string",
 					"description": "Command to execute for the MCP server",
 				},
+				"sandbox": map[string]any{
+					"type":        "boolean",
+					"description": "Run this stdio MCP server inside the host command sandbox even when sandbox.extendTo does not include \"mcp\". Ignored by sse and streamable-http servers.",
+				},
 				"env": map[string]any{
 					"type":        "array",
 					"description": "Environment variables for the MCP server",
@@ -528,6 +532,84 @@ func generateSchema() map[string]any {
 				},
 			},
 			"required": []string{"command"},
+		},
+	}
+
+	// Add host command sandbox configuration (internal/sandbox). The zero
+	// value means ON: workspace-write, network allowed, bash auto-approved
+	// while enforced. A project-local file may only tighten these values.
+	strList := func(desc string) map[string]any {
+		return map[string]any{"type": "array", "description": desc, "items": map[string]any{"type": "string"}}
+	}
+	schema["properties"].(map[string]any)["sandbox"] = map[string]any{
+		"type":        "object",
+		"description": "Host command sandbox for agent-spawned processes (bash tool, ACP terminals, skills...). On by default; a project-local config may only tighten it. PANDO_SANDBOX (off|workspace-write|read-only|strict) overrides the mode unless locked by policy.",
+		"properties": map[string]any{
+			"disabled": map[string]any{
+				"type":        "boolean",
+				"description": "Turn the sandbox off entirely",
+				"default":     false,
+			},
+			"mode": map[string]any{
+				"type":        "string",
+				"description": "Sandbox profile (empty = workspace-write)",
+				"enum":        []string{"", "workspace-write", "read-only", "strict", "off"},
+				"default":     "workspace-write",
+			},
+			"network": map[string]any{
+				"type":        "string",
+				"description": "Child network policy (empty = allowed). read-only and strict always restrict",
+				"enum":        []string{"", "allowed", "restricted"},
+				"default":     "allowed",
+			},
+			"autoAllowBashDisabled": map[string]any{
+				"type":        "boolean",
+				"description": "Keep the bash permission prompt even while the sandbox is enforced",
+				"default":     false,
+			},
+			"writableRoots": strList("Extra writable directories (absolute, ~ or relative to the workspace)"),
+			"readOnlyRoots": strList("Extra readable directories for the strict mode"),
+			"denyPaths":     strList("Paths denied for both read and write (globs allowed)"),
+			"cacheDirsDisabled": map[string]any{
+				"type":        "boolean",
+				"description": "Do not keep dependency caches (Go, npm, pnpm, yarn, pip, cargo, bun, ~/.cache) writable",
+				"default":     false,
+			},
+			"useBwrap": map[string]any{
+				"type":        "string",
+				"description": "Linux: use bubblewrap to enforce protected paths (empty = auto)",
+				"enum":        []string{"", "auto", "always", "never"},
+				"default":     "auto",
+			},
+			"extendTo": map[string]any{
+				"type":        "array",
+				"description": "Extra spawn sites to sandbox besides bash (acp-terminals and skills are always included)",
+				"items":       map[string]any{"type": "string", "enum": []string{"acp-terminals", "skills", "mcp", "subagents"}},
+			},
+			"allowAutoEscalation": map[string]any{
+				"type":        "boolean",
+				"description": "Allow re-running a sandbox-denied command unsandboxed without explicit approval",
+				"default":     false,
+			},
+			"env": map[string]any{
+				"type":        "object",
+				"description": "Environment scrubbing for sandboxed children",
+				"properties": map[string]any{
+					"inherit": map[string]any{
+						"type":        "string",
+						"description": "Base variable set (empty = all)",
+						"enum":        []string{"", "all", "core", "none"},
+						"default":     "all",
+					},
+					"keepSecrets": map[string]any{
+						"type":        "boolean",
+						"description": "Do not drop credential-looking variables (*_API_KEY, *TOKEN*, *SECRET*, *PASSWORD*...)",
+						"default":     false,
+					},
+					"exclude": strList("Extra variable name globs to drop"),
+					"keep":    strList("Variable name globs always passed through (exclude still wins)"),
+				},
+			},
 		},
 	}
 

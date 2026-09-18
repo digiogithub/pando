@@ -170,6 +170,16 @@ export interface PermissionRequest {
   action?: string
   path?: string
   params?: unknown
+  /**
+   * Agent's reason, set for sandbox escalations: action "execute_unsandboxed"
+   * asks to run a bash command once outside the host sandbox.
+   */
+  justification?: string
+  /** Scope of an "allow for session" answer: "prefix:<words>" or "exact:<command>". */
+  grant_key?: string
+  require_explicit_approval?: boolean
+  /** True when no auto-approve mode can grant the request (sandbox escalation). */
+  never_auto_approve?: boolean
 }
 
 export type PermissionAction = 'allow' | 'allow_session' | 'deny'
@@ -660,6 +670,77 @@ export interface BrowserInstallInfo {
 export interface BashConfig {
   bannedCommands: string[]
   allowedCommands: string[]
+}
+
+// Host command sandbox (matching SandboxConfig in internal/config/config.go).
+// Every field is optional: empty means the default (sandbox on,
+// workspace-write, network allowed, bash auto-allowed while enforced).
+export interface SandboxEnvConfig {
+  inherit?: string
+  keepSecrets?: boolean
+  exclude?: string[]
+  keep?: string[]
+}
+
+export interface SandboxConfig {
+  disabled?: boolean
+  mode?: string
+  network?: string
+  autoAllowBashDisabled?: boolean
+  writableRoots?: string[]
+  readOnlyRoots?: string[]
+  denyPaths?: string[]
+  cacheDirsDisabled?: boolean
+  useBwrap?: string
+  extendTo?: string[]
+  allowAutoEscalation?: boolean
+  env?: SandboxEnvConfig
+}
+
+export interface SandboxCapability {
+  backend: string
+  version?: string
+  enforced: boolean
+  reason?: string
+  protectsNestedPaths?: boolean
+  blocksPorts?: boolean
+}
+
+export interface SandboxStatus {
+  label: string
+  active: boolean
+  // full: active without gaps; a partial sandbox keeps the bash prompt.
+  full?: boolean
+  gaps?: string[]
+  enabled: boolean
+  mode: string
+  network: string
+  source: string
+  hash: string
+}
+
+export interface SandboxPolicyView {
+  workspace: string
+  writableRoots: string[]
+  readableRoots: string[]
+  protectedPaths: string[]
+  denyPaths: string[]
+  extendTo: string[]
+  autoAllowBash: boolean
+  useBwrap: string
+  guardedPorts?: number[]
+}
+
+// GET/PUT /api/v1/config/sandbox. PUT takes the `config` object back.
+export interface SandboxConfigResponse {
+  config: SandboxConfig
+  effective: SandboxConfig
+  capability: SandboxCapability
+  status: SandboxStatus
+  policy: SandboxPolicyView
+  locked: string[]
+  platform: string
+  envOverride?: string
 }
 
 // Token Optimization config (matching TokenOptimizationConfig in config.go, plus

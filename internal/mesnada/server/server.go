@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	config "github.com/digiogithub/pando/internal/mesnada/config"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	rag "github.com/digiogithub/pando/internal/rag"
+	"github.com/digiogithub/pando/internal/sandbox/portguard"
 )
 
 const (
@@ -292,7 +294,17 @@ func (s *Server) Start() error {
 	}
 
 	log.Printf("MCP server starting on %s", s.addr)
-	return s.httpServer.ListenAndServe()
+	addr := s.httpServer.Addr
+	if addr == "" {
+		addr = ":http"
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	// Sandboxed commands must not reach the MCP/ACP HTTP server (it exposes
+	// tools and task spawning outside the sandbox).
+	return s.httpServer.Serve(portguard.Guard(ln, "mcp-http"))
 }
 
 // Shutdown gracefully shuts down the server.

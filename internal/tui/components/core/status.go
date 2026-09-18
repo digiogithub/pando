@@ -368,8 +368,11 @@ func (m statusCmp) View() string {
 			Render("⏵⏵ auto-accept")
 	}
 
+	// Host command sandbox chip (mode, "!" when not enforced, or off).
+	sandboxBadge := chat.SandboxFooterBadge()
+
 	breadcrumbWidth := lipgloss.Width(breadcrumbs)
-	availableWidht := max(0, m.width-lipgloss.Width(helpWidget)-lipgloss.Width(m.model())-lipgloss.Width(diagnostics)-tokenInfoWidth-breadcrumbWidth-lipgloss.Width(autoApproveBadge))
+	availableWidht := max(0, m.width-lipgloss.Width(helpWidget)-lipgloss.Width(m.model())-lipgloss.Width(diagnostics)-tokenInfoWidth-breadcrumbWidth-lipgloss.Width(autoApproveBadge)-lipgloss.Width(sandboxBadge))
 
 	if m.info.Msg != "" {
 		infoStyle := styles.Padded().
@@ -401,6 +404,7 @@ func (m statusCmp) View() string {
 	}
 
 	status += diagnostics
+	status += sandboxBadge
 	if autoApproveBadge != "" {
 		status += autoApproveBadge
 	}

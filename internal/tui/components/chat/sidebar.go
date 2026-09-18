@@ -152,6 +152,7 @@ func (m *sidebarCmp) View() string {
 		header(m.width),
 		" ",
 		m.sessionSection(),
+		m.sandboxSection(),
 		" ",
 		m.usageSection(),
 	}

@@ -98,6 +98,15 @@ func (s *TemplateSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	}
 	cmd.Env = taskEnv
 
+	// Opt-in only (Sandbox.ExtendTo must include "subagents"). A custom
+	// engine's own config directory is unknown to Pando (sandboxExtraRoots
+	// has no entry for an arbitrary s.tpl.Command), so beyond s.logDir an
+	// operator who needs more must add it to Sandbox.WritableRoots.
+	if _, _, err := wrapSubagentCmd(cmd, filepath.Base(s.tpl.Command), task.WorkDir, subagentSandboxOpts{ExtraRoots: []string{s.logDir}}); err != nil {
+		cancel()
+		return fmt.Errorf("sandbox: cannot start template engine %q confined: %w", s.tpl.Name, err)
+	}
+
 	logFile, err := openOrCreateLogFile(s.logDir, task)
 	if err != nil {
 		cancel()
@@ -419,11 +428,11 @@ func (s *TemplateSpawner) Cancel(taskID string) error {
 	}
 	proc.cancel()
 	if proc.cmd.Process != nil {
-		proc.cmd.Process.Signal(syscall.SIGTERM)
+		signalProcessTree(proc.cmd, syscall.SIGTERM)
 		select {
 		case <-proc.done:
 		case <-time.After(5 * time.Second):
-			proc.cmd.Process.Kill()
+			killProcessTree(proc.cmd)
 		}
 	}
 	proc.task.Status = models.TaskStatusCancelled
@@ -440,11 +449,11 @@ func (s *TemplateSpawner) Pause(taskID string) error {
 	}
 	proc.cancel()
 	if proc.cmd.Process != nil {
-		proc.cmd.Process.Signal(syscall.SIGTERM)
+		signalProcessTree(proc.cmd, syscall.SIGTERM)
 		select {
 		case <-proc.done:
 		case <-time.After(5 * time.Second):
-			proc.cmd.Process.Kill()
+			killProcessTree(proc.cmd)
 		}
 	}
 	proc.task.Status = models.TaskStatusPaused
@@ -494,7 +503,7 @@ func (s *TemplateSpawner) Shutdown() {
 	for _, proc := range procs {
 		proc.cancel()
 		if proc.cmd.Process != nil {
-			proc.cmd.Process.Signal(syscall.SIGTERM)
+			signalProcessTree(proc.cmd, syscall.SIGTERM)
 		}
 	}
 	for _, proc := range procs {
@@ -502,7 +511,7 @@ func (s *TemplateSpawner) Shutdown() {
 		case <-proc.done:
 		case <-time.After(10 * time.Second):
 			if proc.cmd.Process != nil {
-				proc.cmd.Process.Kill()
+				killProcessTree(proc.cmd)
 			}
 		}
 	}

@@ -12,8 +12,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/ipc/failover"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/sandbox/portguard"
 )
 
 const (
@@ -194,6 +197,14 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 	res.PubPort = lockInfo.PubPort
 	res.RPCPort = lockInfo.RPCPort
 
+	// The primary publishes its bus ports in the shared guarded-port
+	// registry itself; guard them here too so this process's sandboxed
+	// commands cannot reach the primary even if that entry is missing (an
+	// older primary binary, an unwritable config directory).
+	unguardPub := portguard.Register(lockInfo.PubPort, "ipc-primary-pub")
+	unguardRPC := portguard.Register(lockInfo.RPCPort, "ipc-primary-rpc")
+	unguard := func() { unguardPub(); unguardRPC() }
+
 	logging.Info("IPC: role determined",
 		"role", RoleSecondary,
 		"workdir", workdir,
@@ -209,7 +220,7 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 	if rwErr != nil {
 		// Cannot open DB — fall back gracefully with an empty cleanup.
 		logging.Warn("IPC bootstrap: failed to open secondary RW DB, secondary has no DB", "error", rwErr)
-		res.Cleanup = func() {}
+		res.Cleanup = unguard
 		return res, nil
 	}
 
@@ -221,7 +232,7 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 		logging.Warn("IPC bootstrap: failed to create IPC client, secondary has no proxy", "error", clientErr)
 		res.SQLDB = rwConn
 		res.Querier = db.New(rwConn)
-		res.Cleanup = func() { _ = rwConn.Close() }
+		res.Cleanup = func() { _ = rwConn.Close(); unguard() }
 		return res, nil
 	}
 
@@ -269,6 +280,7 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 		watcher.Shutdown(shutdownCtx)
 		_ = ipcClient.Close()
 		_ = rwConn.Close()
+		unguard()
 	}
 
 	logging.Info("IPC: secondary connected to primary",
@@ -322,6 +334,13 @@ func killStalePrimary(ctx context.Context, workdir string, lockInfo *ipc.LockInf
 // an older primary that lacks the ping handler — counts as alive; only a timeout
 // (or inability to reach the RPC loop at all) counts as unresponsive.
 func primaryResponds(ctx context.Context, rpcAddr string) bool {
+	if connectForbidden(strings.TrimPrefix(rpcAddr, "tcp://")) {
+		// This process runs inside Pando's host sandbox (a sub-agent or a
+		// nested pando), which refuses connections to Pando's own ports. That
+		// says nothing about the primary's health: never kill it for that.
+		logging.Warn("IPC: connecting to the primary is forbidden (sandboxed?); assuming it is alive", "rpc", rpcAddr)
+		return true
+	}
 	probeCtx, cancel := context.WithTimeout(ctx, stalePrimaryProbeTimeout)
 	defer cancel()
 
@@ -346,6 +365,18 @@ func primaryResponds(ctx context.Context, rpcAddr string) bool {
 		return false
 	}
 	return true
+}
+
+// connectForbidden reports whether a TCP connection to addr is refused with
+// EACCES/EPERM: a policy decision (the host sandbox's guarded ports, a
+// firewall), not a dead or hung listener.
+func connectForbidden(addr string) bool {
+	c, err := net.DialTimeout("tcp", addr, time.Second)
+	if err == nil {
+		_ = c.Close()
+		return false
+	}
+	return errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM)
 }
 
 // killProcess sends SIGKILL to pid. SIGKILL (not SIGTERM) is required because a

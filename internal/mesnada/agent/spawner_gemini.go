@@ -91,6 +91,13 @@ func (s *GeminiSpawner) Spawn(ctx context.Context, task *models.Task) error {
 
 	cmd.Env = env
 
+	// Opt-in only (Sandbox.ExtendTo must include "subagents"): Gemini CLI
+	// writes to ~/.gemini, plus s.logDir for the generated settings file.
+	if _, _, err := wrapSubagentCmd(cmd, "gemini", task.WorkDir, subagentSandboxOpts{ExtraRoots: []string{s.logDir}}); err != nil {
+		cancel()
+		return fmt.Errorf("sandbox: cannot start gemini confined: %w", err)
+	}
+
 	// Create or append to log file
 	logFile, err := openOrCreateLogFile(s.logDir, task)
 	if err != nil {
@@ -297,12 +304,12 @@ func (s *GeminiSpawner) Cancel(taskID string) error {
 	proc.cancel()
 
 	if proc.cmd.Process != nil {
-		proc.cmd.Process.Signal(syscall.SIGTERM)
+		signalProcessTree(proc.cmd, syscall.SIGTERM)
 
 		select {
 		case <-proc.done:
 		case <-time.After(5 * time.Second):
-			proc.cmd.Process.Kill()
+			killProcessTree(proc.cmd)
 		}
 	}
 
@@ -324,12 +331,12 @@ func (s *GeminiSpawner) Pause(taskID string) error {
 	proc.cancel()
 
 	if proc.cmd.Process != nil {
-		proc.cmd.Process.Signal(syscall.SIGTERM)
+		signalProcessTree(proc.cmd, syscall.SIGTERM)
 
 		select {
 		case <-proc.done:
 		case <-time.After(5 * time.Second):
-			proc.cmd.Process.Kill()
+			killProcessTree(proc.cmd)
 		}
 	}
 
@@ -383,7 +390,7 @@ func (s *GeminiSpawner) Shutdown() {
 	for _, proc := range procs {
 		proc.cancel()
 		if proc.cmd.Process != nil {
-			proc.cmd.Process.Signal(syscall.SIGTERM)
+			signalProcessTree(proc.cmd, syscall.SIGTERM)
 		}
 	}
 
@@ -392,7 +399,7 @@ func (s *GeminiSpawner) Shutdown() {
 		case <-proc.done:
 		case <-time.After(10 * time.Second):
 			if proc.cmd.Process != nil {
-				proc.cmd.Process.Kill()
+				killProcessTree(proc.cmd)
 			}
 		}
 	}

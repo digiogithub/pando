@@ -1,0 +1,80 @@
+name: Sandbox E2E
+
+# Runs the host command sandbox end-to-end suites (PANDO-EP-0009) on the two
+# platforms that enforce it: Linux (Landlock + seccomp, with and without
+# bubblewrap) and macOS (Seatbelt via sandbox-exec). The Go e2e tests
+# self-skip when the kernel cannot enforce, so a skipped run is visible in the
+# -v output rather than silently green: the "Check enforcement" step fails the
+# job when the runner unexpectedly reports the sandbox as not enforced.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'internal/sandbox/**'
+      - 'internal/llm/tools/shell/**'
+      - 'internal/llm/tools/bash*.go'
+      - 'cmd/sandbox.go'
+      - 'tests/test_sandbox_cli.py'
+      - '.github/workflows/sandbox-e2e.yml'
+  pull_request:
+    paths:
+      - 'internal/sandbox/**'
+      - 'internal/llm/tools/shell/**'
+      - 'internal/llm/tools/bash*.go'
+      - 'cmd/sandbox.go'
+      - 'tests/test_sandbox_cli.py'
+      - '.github/workflows/sandbox-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sandbox-e2e:
+    name: sandbox-e2e (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Prepare embed placeholders
+        run: make embed-stubs
+
+      - name: Install bubblewrap (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+
+      - name: Allow unprivileged user namespaces (Linux)
+        # Ubuntu 24.04 runners restrict unprivileged user namespaces through
+        # AppArmor, which blocks bwrap; the Landlock-only variant runs either
+        # way. Best effort: older images do not have the knob.
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - name: Check enforcement
+        run: |
+          go build -o "$RUNNER_TEMP/pando" .
+          mkdir -p "$RUNNER_TEMP/ws" && cd "$RUNNER_TEMP/ws"
+          "$RUNNER_TEMP/pando" sandbox status
+          "$RUNNER_TEMP/pando" sandbox status --json | python3 -c 'import json,sys; s=json.load(sys.stdin); sys.exit(0 if s["enforced"] else "sandbox not enforced on this runner: %s" % s.get("reason"))'
+
+      - name: Go e2e (sandbox + shell)
+        run: go test ./internal/sandbox/... ./internal/llm/tools/shell/... -count=1 -v
+
+      - name: Go bash tool sandbox tests
+        run: go test ./internal/llm/tools/ -run 'Sandbox|Escalat' -count=1 -v
+
+      - name: Black-box CLI and settings API tests
+        run: python3 -m unittest tests/test_sandbox_cli.py -v

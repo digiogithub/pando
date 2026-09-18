@@ -2,13 +2,15 @@
 id: PANDO-US-0043
 type: story
 title: Windows degradation and Job Object containment
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0009
 labels: [security, sandbox]
 estimate: 3
 created: 2026-09-18T08:36:26Z
-updated: 2026-09-18T08:36:26Z
+updated: 2026-09-18T11:01:11Z
+started: 2026-09-18T09:23:52Z
+closed: 2026-09-18T11:01:11Z
 ---
 
 ## Description

@@ -2,13 +2,15 @@
 id: PANDO-US-0048
 type: story
 title: Observability, events and CLI status
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0009
 labels: [security, sandbox]
 estimate: 3
 created: 2026-09-18T08:36:28Z
-updated: 2026-09-18T08:36:28Z
+updated: 2026-09-18T11:01:13Z
+started: 2026-09-18T09:57:29Z
+closed: 2026-09-18T11:01:13Z
 ---
 
 ## Description

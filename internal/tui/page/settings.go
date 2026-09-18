@@ -502,6 +502,10 @@ func (p *settingsPage) saveField(msg settings.SaveFieldMsg) tea.Cmd {
 	if err := persistSetting(p.app, msg.Field); err != nil {
 		return util.ReportError(err)
 	}
+	if strings.HasPrefix(msg.Field.Key, "sandbox.") {
+		// The chat sidebar and footer badges cache the status briefly.
+		chat.InvalidateSandboxStatus()
+	}
 	if strings.HasPrefix(msg.Field.Key, "mcpServers.") {
 		agent.ResetMcpToolsCache()
 		p.refreshMCPServer(mcpServerNameFromFieldKey(msg.Field.Key))
@@ -999,6 +1003,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		// ── Tools ──
 		withGroup(buildContainerRuntimeSection(cfg), "Tools"),
 		withGroup(buildInternalToolsSection(cfg), "Tools"),
+		withGroup(buildSandboxSection(cfg), "Tools"),
 		withGroup(buildBashSection(cfg), "Tools"),
 		withGroup(buildTokenOptimizationSection(cfg), "Tools"),
 
@@ -1044,6 +1049,11 @@ func applyFieldPolicy(app *pandoapp.App, sections []settings.Section) []settings
 				// host feeds them to the same lock check, so what is drawn as
 				// managed and what the write path refuses cannot disagree.
 				field.Locked = config.IsKeyLocked(field.Key)
+				if sandboxFieldConfigPath(field.Key) != "" {
+					// Sandbox rows show inverted toggles over the stored
+					// Disabled flags; lock them by their real config path.
+					field.Locked = field.Locked || sandboxFieldLocked(field.Key)
+				}
 				if field.Locked && policy.IsReadOnly(field.Key) {
 					field.ManagedNote = policy.ReadOnlyLabel
 				}
@@ -3657,6 +3667,9 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 	if err := config.ErrIfLocked(field.Key); err != nil {
 		return err
 	}
+	if path := sandboxFieldConfigPath(field.Key); path != "" && sandboxFieldLocked(field.Key) {
+		return &config.LockedKeyError{Key: path}
+	}
 
 	switch {
 	case field.Key == "tui.theme":
@@ -3754,6 +3767,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveToolDiscovery(field)
 	case strings.HasPrefix(field.Key, "snapshots."):
 		return saveSnapshots(field)
+	case strings.HasPrefix(field.Key, "sandbox."):
+		return saveSandbox(field)
 	case strings.HasPrefix(field.Key, "bash."):
 		return saveBash(field)
 	case strings.HasPrefix(field.Key, "tokenOptimization."):

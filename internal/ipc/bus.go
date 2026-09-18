@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/ipc/protocol"
+	"github.com/digiogithub/pando/internal/sandbox/portguard"
 	"github.com/go-zeromq/zmq4"
 )
 
@@ -57,6 +58,9 @@ type Bus struct {
 	handlers map[string]HandlerFunc
 
 	cancel context.CancelFunc
+
+	// unguard removes the ports from the sandbox's guarded-port registry.
+	unguard []func()
 }
 
 // NewBus creates a Bus for the given instanceID.
@@ -89,6 +93,12 @@ func (b *Bus) Start(ctx context.Context, pubPort, rpcPort int) error {
 		return fmt.Errorf("ipc: bind ROUTER socket on %s: %w", b.RPCAddr, err)
 	}
 
+	// Sandboxed commands must not reach the bus: its JSON-RPC methods act on
+	// the primary's database and sessions outside the sandbox.
+	b.unguard = append(b.unguard,
+		portguard.Register(pubPort, "ipc-pub"),
+		portguard.Register(rpcPort, "ipc-rpc"))
+
 	go b.serveRPC(ctx)
 
 	return nil
@@ -109,6 +119,10 @@ func (b *Bus) Shutdown() error {
 	if b.cancel != nil {
 		b.cancel()
 	}
+	for _, unguard := range b.unguard {
+		unguard()
+	}
+	b.unguard = nil
 	var errs []error
 	if b.pubSock != nil {
 		if err := b.pubSock.Close(); err != nil {

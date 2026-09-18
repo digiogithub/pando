@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/sandbox/portguard"
 )
 
 // ListenerOptions describes the dedicated listener requested by Config.Port.
@@ -82,6 +83,8 @@ func (r *Runtime) StartListener(opts ListenerOptions) (*Listener, error) {
 	if err != nil {
 		return nil, fmt.Errorf("agui: listen on %s: %w", addr, err)
 	}
+	// Sandboxed commands must not reach Pando's own listeners.
+	ln = portguard.Guard(ln, "agui")
 
 	useTLS := opts.CertFile != "" && opts.KeyFile != ""
 	srv := &http.Server{

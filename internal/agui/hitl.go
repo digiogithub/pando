@@ -47,7 +47,7 @@ const permissionToolName = "pando_permission_request"
 // legitimate way to suspend the run.
 func (r *Runtime) installPermissionPolicy(sessionID string) {
 	r.perms.RegisterSessionHandler(sessionID, func(req permission.CreatePermissionRequest) bool {
-		if r.cfg.AutoApprove {
+		if r.cfg.AutoApprove && !req.NeverAutoApprove {
 			logging.Debug("agui: auto-approving tool permission",
 				"session", sessionID, "tool", req.ToolName, "action", req.Action)
 			return true
@@ -121,6 +121,18 @@ func permissionArgs(req permission.CreatePermissionRequest) string {
 		"description": req.Description,
 		"path":        req.Path,
 		"params":      req.Params,
+	}
+	// Additive fields: a sandbox escalation ("execute_unsandboxed") carries
+	// the agent's justification and must be rendered as a warning that only
+	// an explicit answer approves.
+	if req.Justification != "" {
+		payload["justification"] = req.Justification
+	}
+	if req.RequireExplicitApproval {
+		payload["requireExplicitApproval"] = true
+	}
+	if req.NeverAutoApprove {
+		payload["neverAutoApprove"] = true
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
